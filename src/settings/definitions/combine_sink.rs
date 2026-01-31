@@ -373,9 +373,9 @@ fn get_current_config() -> (HashSet<String>, String) {
     }
 }
 
-/// Disable the combined sink by removing the config file
+/// Remove the combined sink by deleting the config file
 /// Returns true if a restart is needed (config file existed and was removed)
-fn disable_combined_sink(ctx: &SettingsContext) -> Result<bool> {
+fn remove_combined_sink(ctx: &SettingsContext) -> Result<bool> {
     let config_path = combine_sink_config_file()?;
 
     // Only restart if there was actually a config to remove
@@ -384,12 +384,9 @@ fn disable_combined_sink(ctx: &SettingsContext) -> Result<bool> {
     if needs_restart {
         fs::remove_file(&config_path)
             .with_context(|| format!("Failed to remove {:?}", config_path))?;
-        ctx.notify(
-            "Combined Audio Sink",
-            "Combined sink disabled.",
-        );
+        ctx.notify("Combined Audio Sink", "Combined sink removed.");
     } else {
-        ctx.notify("Combined Audio Sink", "Combined sink was already disabled.");
+        ctx.notify("Combined Audio Sink", "Combined sink was not configured.");
     }
 
     Ok(needs_restart)
@@ -660,7 +657,7 @@ fn config_changed(desired_devices: &[String], desired_name: &str) -> Result<bool
 /// Menu action types with their display and preview information
 #[derive(Clone)]
 enum MenuAction {
-    Disable,
+    Remove,
     ChangeDevices,
     Rename,
     SetAsDefault,
@@ -697,8 +694,8 @@ impl MenuItem {
         let name = get_current_sink_name();
 
         match self.action {
-            MenuAction::Disable => PreviewBuilder::new()
-                .header(NerdFont::VolumeUp, "Disable Combined Sink")
+            MenuAction::Remove => PreviewBuilder::new()
+                .header(NerdFont::VolumeUp, "Remove Combined Sink")
                 .text("Remove the combined sink completely.")
                 .blank()
                 .line(colors::RED, Some(NerdFont::Warning), "This will:")
@@ -809,7 +806,7 @@ impl FzfSelectable for MenuItemWithPreview {
 
     fn fzf_key(&self) -> String {
         match self.item.action {
-            MenuAction::Disable => "disable",
+            MenuAction::Remove => "remove",
             MenuAction::ChangeDevices => "change_devices",
             MenuAction::Rename => "rename",
             MenuAction::SetAsDefault => "set_default",
@@ -837,7 +834,8 @@ fn rename_combined_sink(ctx: &SettingsContext) -> Result<bool> {
 
     let new_name = match result {
         TextEditOutcome::Updated(Some(name)) => name,
-        TextEditOutcome::Updated(None) => DEFAULT_COMBINED_SINK_NAME.to_string(),
+        // Empty input with ghost text showing current name = keep current name
+        TextEditOutcome::Updated(None) => current_name.clone(),
         TextEditOutcome::Cancelled | TextEditOutcome::Unchanged => return Ok(false),
     };
 
@@ -920,8 +918,8 @@ impl Setting for CombinedAudioSink {
 
             if currently_enabled {
                 items.push(MenuItem::new(
-                    MenuAction::Disable,
-                    "Disable combined sink",
+                    MenuAction::Remove,
+                    "Remove combined sink",
                     format_icon_colored(NerdFont::Cross, colors::RED),
                 ));
                 items.push(MenuItem::new(
@@ -982,15 +980,15 @@ impl Setting for CombinedAudioSink {
 
             match result {
                 FzfResult::Selected(wrapper) => match wrapper.item.action {
-                    MenuAction::Disable => match disable_combined_sink(ctx) {
+                    MenuAction::Remove => match remove_combined_sink(ctx) {
                         Ok(needs_restart) => {
                             restart_needed = needs_restart;
                             break;
                         }
                         Err(e) => {
                             ctx.emit_failure(
-                                "audio.combined_sink.disable_failed",
-                                &format!("Failed to disable: {}", e),
+                                "audio.combined_sink.remove_failed",
+                                &format!("Failed to remove: {}", e),
                             );
                         }
                     },
@@ -1061,10 +1059,12 @@ impl Setting for CombinedAudioSink {
                                             .ghost(DEFAULT_COMBINED_SINK_NAME),
                                     )? {
                                         TextEditOutcome::Updated(Some(n)) => n,
-                                        TextEditOutcome::Updated(None) => {
+                                        // Empty input with ghost text = use the default name
+                                        TextEditOutcome::Updated(None)
+                                        | TextEditOutcome::Unchanged => {
                                             DEFAULT_COMBINED_SINK_NAME.to_string()
                                         }
-                                        TextEditOutcome::Cancelled | TextEditOutcome::Unchanged => {
+                                        TextEditOutcome::Cancelled => {
                                             continue;
                                         }
                                     }
@@ -1147,5 +1147,32 @@ Audio
         assert!(!sinks[0].is_default);
         assert_eq!(sinks[1].id, "78");
         assert!(sinks[1].is_default);
+    }
+
+    #[test]
+    fn test_display_name_to_node_name() {
+        // Test basic conversion
+        assert_eq!(
+            display_name_to_node_name("Combined Output"),
+            "ins_combined_combined_output"
+        );
+
+        // Test with special characters
+        assert_eq!(
+            display_name_to_node_name("My Speakers & Headphones!"),
+            "ins_combined_my_speakers_headphones"
+        );
+
+        // Test with multiple spaces
+        assert_eq!(
+            display_name_to_node_name("Living   Room   Speakers"),
+            "ins_combined_living_room_speakers"
+        );
+
+        // Test default name
+        assert_eq!(
+            display_name_to_node_name(DEFAULT_COMBINED_SINK_NAME),
+            "ins_combined_combined_output"
+        );
     }
 }
