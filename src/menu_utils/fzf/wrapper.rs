@@ -113,16 +113,16 @@ pub(crate) fn configure_preview_and_input(
     );
 
     // Strategy for display:
-    // - With keywords: Use padding trick (keywords pushed off-screen, searchable, --no-hscroll)
-    // - With per-item previews but no keywords: Use --with-nth=1 to hide extra fields
+    // - With per-item previews: Always use --with-nth=1 to hide extra fields (preview data, base64 content)
+    // - With keywords: Also add --no-hscroll to prevent horizontal scrolling of padded keywords
     // - Neither: Simple display without any field separation
-    if has_keywords {
-        // Keywords need to be searchable but hidden via padding + --no-hscroll
-        cmd.arg("--delimiter=\x1f").arg("--no-hscroll");
-    } else if has_per_item_previews {
-        // No keywords but has preview data: hide extra fields with --with-nth
-        // (preview data doesn't need to be searchable)
+    if has_per_item_previews {
+        // Hide extra fields (key, preview data) from display - they are only for preview commands
         cmd.arg("--delimiter=\x1f").arg("--with-nth=1");
+        if has_keywords {
+            // Also prevent horizontal scrolling when keywords are padded off-screen
+            cmd.arg("--no-hscroll");
+        }
     }
 
     match strategy {
