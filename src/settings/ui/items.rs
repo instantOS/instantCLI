@@ -518,8 +518,9 @@ impl FzfSelectable for TreeSearchItem {
 
     fn fzf_search_keywords(&self) -> &[&str] {
         match self {
+            TreeSearchItem::Category { category, .. } => category.meta().search_keywords,
+            TreeSearchItem::Folder { meta, .. } => meta.search_keywords,
             TreeSearchItem::Setting { setting, .. } => setting.metadata().search_keywords,
-            _ => &[],
         }
     }
 }

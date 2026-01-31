@@ -367,6 +367,8 @@ impl FzfBuilder {
 
     fn prepare_padded_input<T: FzfSelectable>(items: &[T]) -> String {
         let mut input_lines = Vec::new();
+        // Padding to push keywords off-screen (searchable but not visible)
+        const HIDDEN_PADDING: &str = "                                                                                                    ";
 
         for item in items {
             let display = item.fzf_display_text();
@@ -375,8 +377,14 @@ impl FzfBuilder {
             // We want padding lines to have the same colored block at the start,
             // with a subtle shadow on the bottom padding using a lower block character
             let (top_padding, bottom_with_shadow) = extract_icon_padding(&display);
+            // Get search keywords for this item
+            let keywords = item.fzf_search_keywords().join(" ");
             // Create padded multi-line item with shadow on bottom
-            let padded_item = format!("{top_padding}\n  {display}\n{bottom_with_shadow}");
+            // Append hidden keywords after the display, separated by \x1f delimiter
+            // The padding pushes keywords off-screen so they're searchable but not visible
+            let padded_item = format!(
+                "{top_padding}\n  {display}{HIDDEN_PADDING}\x1f{keywords}\n{bottom_with_shadow}"
+            );
             input_lines.push(padded_item);
         }
 
@@ -421,6 +429,10 @@ impl FzfBuilder {
         cmd.arg("--layout=reverse");
         cmd.arg("--tiebreak=index");
         cmd.arg("--info=inline-right");
+
+        // Use delimiter to separate display text from hidden search keywords
+        // --no-hscroll prevents fzf from scrolling horizontally to show hidden keywords
+        cmd.arg("--delimiter=\x1f").arg("--no-hscroll");
 
         // Use --bind to print the index on accept instead of the selection text
         // {n} is the 0-based index of the selected item

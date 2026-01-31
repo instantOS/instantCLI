@@ -52,11 +52,15 @@ fn calculate_cursor_position(
 
 /// Configure fzf preview and build input text based on the preview strategy.
 /// Always includes the fzf_key after a tab so we can reliably match items.
-/// Search keywords are included in field 2 for fuzzy matching but not displayed.
+/// Search keywords are included in field 2 for fuzzy matching but visually hidden.
 ///
-/// Line format: display\x1fkeywords\x1fkey[\x1f...preview_data]
-/// - Field 1: Display text (shown to user via --with-nth=1)
-/// - Field 2: Search keywords (searched but not shown, allows alternative matching)
+/// Uses the "padding trick": display text is padded with spaces so that
+/// keywords are pushed off-screen. Combined with --no-hscroll, this keeps
+/// keywords searchable but not visible.
+///
+/// Line format: padded_display\x1fkeywords\x1fkey[\x1f...preview_data]
+/// - Field 1: Display text (padded to push keywords off-screen)
+/// - Field 2: Search keywords (searched but visually hidden off-screen)
 /// - Field 3: Key (for item lookup on selection)
 /// - Field 4+: Preview data (varies by strategy)
 pub(crate) fn configure_preview_and_input(
@@ -64,17 +68,23 @@ pub(crate) fn configure_preview_and_input(
     strategy: PreviewStrategy,
     display_data: &[ItemDisplayData],
 ) -> String {
-    // Always use Unit Separator (\x1f) delimiter to separate fields
-    // --with-nth=1 shows only the display text, but fzf searches all fields
-    // This allows keywords in field 2 to be matched without being displayed
-    cmd.arg("--delimiter=\x1f").arg("--with-nth=1");
+    // Use Unit Separator (\x1f) delimiter to separate fields
+    // Use --no-hscroll to prevent fzf from scrolling to show hidden keywords
+    // Keywords are pushed off-screen by padding display text with spaces
+    cmd.arg("--delimiter=\x1f").arg("--no-hscroll");
+
+    // Padding constant: enough spaces to push keywords off-screen for typical terminals
+    // The keywords will be searchable but not visible due to --no-hscroll
+    const HIDDEN_PADDING: &str = "                                                                                                    ";
 
     match strategy {
         PreviewStrategy::None => {
-            // Format: display\x1fkeywords\x1fkey
+            // Format: padded_display\x1fkeywords\x1fkey
             display_data
                 .iter()
-                .map(|(display, key, keywords)| format!("{display}\x1f{keywords}\x1f{key}"))
+                .map(|(display, key, keywords)| {
+                    format!("{display}{HIDDEN_PADDING}\x1f{keywords}\x1f{key}")
+                })
                 .collect::<Vec<_>>()
                 .join("\n")
         }
@@ -85,10 +95,12 @@ pub(crate) fn configure_preview_and_input(
                 "key=$(echo {{}} | cut -d'\x1f' -f3); printf '%s' '{encoded}' | base64 -d | bash -s -- \"$key\""
             ));
 
-            // Format: display\x1fkeywords\x1fkey
+            // Format: padded_display\x1fkeywords\x1fkey
             display_data
                 .iter()
-                .map(|(display, key, keywords)| format!("{display}\x1f{keywords}\x1f{key}"))
+                .map(|(display, key, keywords)| {
+                    format!("{display}{HIDDEN_PADDING}\x1f{keywords}\x1f{key}")
+                })
                 .collect::<Vec<_>>()
                 .join("\n")
         }
@@ -98,13 +110,13 @@ pub(crate) fn configure_preview_and_input(
             cmd.arg("--preview")
                 .arg("key=$(echo {} | cut -d'\x1f' -f3); echo {} | cut -d'\x1f' -f4 | base64 -d | bash -s -- \"$key\"");
 
-            // Format: display\x1fkeywords\x1fkey\x1fbase64_command
+            // Format: padded_display\x1fkeywords\x1fkey\x1fbase64_command
             display_data
                 .iter()
                 .map(|(display, key, keywords)| {
                     let command = command_map.get(display).cloned().unwrap_or_default();
                     let encoded = general_purpose::STANDARD.encode(command.as_bytes());
-                    format!("{display}\x1f{keywords}\x1f{key}\x1f{encoded}")
+                    format!("{display}{HIDDEN_PADDING}\x1f{keywords}\x1f{key}\x1f{encoded}")
                 })
                 .collect::<Vec<_>>()
                 .join("\n")
@@ -115,13 +127,13 @@ pub(crate) fn configure_preview_and_input(
             cmd.arg("--preview")
                 .arg("echo {} | cut -d'\x1f' -f4 | base64 -d");
 
-            // Format: display\x1fkeywords\x1fkey\x1fbase64_preview
+            // Format: padded_display\x1fkeywords\x1fkey\x1fbase64_preview
             display_data
                 .iter()
                 .map(|(display, key, keywords)| {
                     let preview = preview_map.get(display).cloned().unwrap_or_default();
                     let encoded = general_purpose::STANDARD.encode(preview.as_bytes());
-                    format!("{display}\x1f{keywords}\x1f{key}\x1f{encoded}")
+                    format!("{display}{HIDDEN_PADDING}\x1f{keywords}\x1f{key}\x1f{encoded}")
                 })
                 .collect::<Vec<_>>()
                 .join("\n")
@@ -135,7 +147,7 @@ pub(crate) fn configure_preview_and_input(
                  if [ \"$type\" = 'C' ]; then echo \"$content\" | bash -s -- \"$key\"; else echo \"$content\"; fi",
             );
 
-            // Format: display\x1fkeywords\x1fkey\x1ftype\x1fbase64_content
+            // Format: padded_display\x1fkeywords\x1fkey\x1ftype\x1fbase64_content
             display_data
                 .iter()
                 .map(|(display, key, keywords)| {
@@ -145,7 +157,7 @@ pub(crate) fn configure_preview_and_input(
                         None => ("T", String::new()),
                     };
                     let encoded = general_purpose::STANDARD.encode(content.as_bytes());
-                    format!("{display}\x1f{keywords}\x1f{key}\x1f{type_marker}\x1f{encoded}")
+                    format!("{display}{HIDDEN_PADDING}\x1f{keywords}\x1f{key}\x1f{type_marker}\x1f{encoded}")
                 })
                 .collect::<Vec<_>>()
                 .join("\n")
