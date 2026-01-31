@@ -406,6 +406,11 @@ fn enable_combined_sink(
     // Check if anything actually changed
     let needs_restart = config_changed(selected_node_names, display_name)?;
 
+    // Skip writing if nothing changed
+    if !needs_restart {
+        return Ok(false);
+    }
+
     // Generate the node.name with our prefix for detection
     let node_name = display_name_to_node_name(display_name);
 
@@ -450,31 +455,21 @@ fn enable_combined_sink(
     fs::create_dir_all(&config_dir)
         .with_context(|| format!("Failed to create directory {:?}", config_dir))?;
 
-    // Write the config file (overwrites if exists)
+    // Write the config file
     let config_path = config_dir.join(COMBINE_SINK_CONFIG_FILE);
     fs::write(&config_path, config)
         .with_context(|| format!("Failed to write config to {:?}", config_path))?;
 
-    if needs_restart {
-        ctx.notify(
-            "Combined Audio Sink",
-            &format!(
-                "Combined sink '{}' configured with {} devices. Restart required to activate.",
-                display_name,
-                selected_node_names.len()
-            ),
-        );
-    } else {
-        ctx.notify(
-            "Combined Audio Sink",
-            &format!(
-                "Combined sink '{}' already active with these settings.",
-                display_name
-            ),
-        );
-    }
+    ctx.notify(
+        "Combined Audio Sink",
+        &format!(
+            "Combined sink '{}' configured with {} devices. Restart required to activate.",
+            display_name,
+            selected_node_names.len()
+        ),
+    );
 
-    Ok(needs_restart)
+    Ok(true)
 }
 
 /// Restart PipeWire services to apply configuration changes
@@ -637,21 +632,25 @@ fn read_current_config() -> Result<Option<String>> {
 }
 
 /// Check if the desired config differs from current config
-/// Returns true if a restart is needed (config changed)
+/// Returns true if config changed (restart needed), false if already in desired state
 fn config_changed(desired_devices: &[String], desired_name: &str) -> Result<bool> {
-    let current = match read_current_config()? {
-        Some(content) => content,
-        None => return Ok(true), // No config exists, so we need to create it
-    };
+    let (current_devices, current_name) = get_current_config();
+
+    // If no config exists, we need to create it
+    if current_devices.is_empty() && !is_combined_sink_enabled() {
+        return Ok(true);
+    }
 
     // Check if name changed
-    let name_changed = !current.contains(&format!(r#"node.description = "{}""#, desired_name));
+    if current_name != desired_name {
+        return Ok(true);
+    }
 
-    // Check if device list changed - count matches in config
-    let current_device_count = current.matches("node.name = \"").count();
-    let devices_changed = current_device_count != desired_devices.len();
+    // Check if device list changed (compare sets, order doesn't matter)
+    let desired_set: HashSet<&String> = desired_devices.iter().collect();
+    let current_set: HashSet<&String> = current_devices.iter().collect();
 
-    Ok(name_changed || devices_changed)
+    Ok(desired_set != current_set)
 }
 
 /// Menu action types with their display and preview information
@@ -689,36 +688,62 @@ impl MenuItem {
         &self,
         currently_enabled: bool,
         is_default: bool,
-        device_count: usize,
+        devices: &[String],
+        config_path: &str,
     ) -> FzfPreview {
         let name = get_current_sink_name();
+        let device_count = devices.len();
 
         match self.action {
-            MenuAction::Remove => PreviewBuilder::new()
-                .header(NerdFont::VolumeUp, "Remove Combined Sink")
-                .text("Remove the combined sink completely.")
-                .blank()
-                .line(colors::RED, Some(NerdFont::Warning), "This will:")
-                .text("  - Remove the PipeWire config file")
-                .text("  - Clear all device selections")
-                .text("  - Remove the sink from your system")
-                .blank()
-                .line(
-                    colors::YELLOW,
-                    Some(NerdFont::Info),
-                    "Requires PipeWire restart",
-                )
-                .build(),
+            MenuAction::Remove => {
+                let mut builder = PreviewBuilder::new()
+                    .header(NerdFont::VolumeUp, "Remove Combined Sink")
+                    .text("Remove the combined sink completely.")
+                    .blank();
+
+                // Show current devices
+                if !devices.is_empty() {
+                    builder = builder.line(colors::TEAL, Some(NerdFont::VolumeUp), "Current devices:");
+                    for device in devices {
+                        builder = builder.text(&format!("  • {}", device));
+                    }
+                    builder = builder.blank();
+                }
+
+                builder = builder
+                    .field("Config file", config_path)
+                    .blank()
+                    .line(colors::RED, Some(NerdFont::Warning), "This will:")
+                    .text("  - Remove the PipeWire config file")
+                    .text("  - Remove the sink from your system")
+                    .blank()
+                    .line(
+                        colors::YELLOW,
+                        Some(NerdFont::Info),
+                        "Requires PipeWire restart",
+                    );
+                builder.build()
+            }
             MenuAction::ChangeDevices => {
+                let mut builder = PreviewBuilder::new()
+                    .header(NerdFont::Settings, "Change Devices")
+                    .text("Select which audio outputs to include in the combined sink.")
+                    .blank();
+
+                if currently_enabled && !devices.is_empty() {
+                    builder = builder.line(colors::TEAL, Some(NerdFont::VolumeUp), "Current devices:");
+                    for device in devices {
+                        builder = builder.text(&format!("  • {}", device));
+                    }
+                    builder = builder.blank();
+                }
+
                 let status = if currently_enabled {
-                    format!("Currently: {} ({} devices)", name, device_count)
+                    format!("{} ({} devices)", name, device_count)
                 } else {
                     "Not currently enabled".to_string()
                 };
-                PreviewBuilder::new()
-                    .header(NerdFont::Settings, "Change Devices")
-                    .text("Select which audio outputs to include in the combined sink.")
-                    .blank()
+                builder
                     .field("Status", &status)
                     .blank()
                     .line(
@@ -905,13 +930,19 @@ impl Setting for CombinedAudioSink {
         // Track if any changes require a restart
         let mut restart_needed = false;
 
+        // Get config path for display
+        let config_path_display = combine_sink_config_file()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|_| "~/.config/pipewire/pipewire.conf.d/combine-sink.conf".to_string());
+
         // Main configuration loop
         loop {
             // Get current state from actual sink status
             let currently_enabled = is_combined_sink_enabled();
             let is_default = is_combined_sink_default().unwrap_or(false);
             let (stored_config, current_name) = get_current_config();
-            let device_count = stored_config.len();
+            let device_list: Vec<String> = stored_config.iter().cloned().collect();
+            let device_count = device_list.len();
 
             // Build menu items
             let mut items: Vec<MenuItem> = Vec::new();
@@ -967,7 +998,8 @@ impl Setting for CombinedAudioSink {
             let items_with_preview: Vec<MenuItemWithPreview> = items
                 .into_iter()
                 .map(|item| {
-                    let preview = item.preview(currently_enabled, is_default, device_count);
+                    let preview =
+                        item.preview(currently_enabled, is_default, &device_list, &config_path_display);
                     MenuItemWithPreview::new(item, preview)
                 })
                 .collect();
