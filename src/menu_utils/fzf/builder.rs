@@ -293,6 +293,11 @@ impl FzfBuilder {
             return Ok(FzfResult::Cancelled);
         }
 
+        // Check if any item has keywords to determine if we need hidden keyword support
+        let has_keywords = items
+            .iter()
+            .any(|item| !item.fzf_search_keywords().is_empty());
+
         let input_text = Self::prepare_padded_input(&items);
         let has_preview = items
             .iter()
@@ -303,7 +308,7 @@ impl FzfBuilder {
             None
         };
 
-        let mut cmd = self.configure_padded_cmd(preview_dir.as_deref());
+        let mut cmd = self.configure_padded_cmd(preview_dir.as_deref(), has_keywords);
 
         let mut child = cmd
             .stdin(Stdio::piped())
@@ -379,12 +384,15 @@ impl FzfBuilder {
             let (top_padding, bottom_with_shadow) = extract_icon_padding(&display);
             // Get search keywords for this item
             let keywords = item.fzf_search_keywords().join(" ");
-            // Create padded multi-line item with shadow on bottom
-            // Append hidden keywords after the display, separated by \x1f delimiter
-            // The padding pushes keywords off-screen so they're searchable but not visible
-            let padded_item = format!(
-                "{top_padding}\n  {display}{HIDDEN_PADDING}\x1f{keywords}\n{bottom_with_shadow}"
-            );
+
+            // Only apply padding/delimiter trick when this item has keywords
+            let middle_line = if keywords.is_empty() {
+                format!("  {display}")
+            } else {
+                format!("  {display}{HIDDEN_PADDING}\x1f{keywords}")
+            };
+
+            let padded_item = format!("{top_padding}\n{middle_line}\n{bottom_with_shadow}");
             input_lines.push(padded_item);
         }
 
@@ -418,7 +426,11 @@ impl FzfBuilder {
         Ok(preview_dir)
     }
 
-    fn configure_padded_cmd(&self, preview_dir: Option<&std::path::Path>) -> Command {
+    fn configure_padded_cmd(
+        &self,
+        preview_dir: Option<&std::path::Path>,
+        has_keywords: bool,
+    ) -> Command {
         let mut cmd = Command::new("fzf");
         cmd.env_remove("FZF_DEFAULT_OPTS");
 
@@ -430,9 +442,10 @@ impl FzfBuilder {
         cmd.arg("--tiebreak=index");
         cmd.arg("--info=inline-right");
 
-        // Use delimiter to separate display text from hidden search keywords
-        // --no-hscroll prevents fzf from scrolling horizontally to show hidden keywords
-        cmd.arg("--delimiter=\x1f").arg("--no-hscroll");
+        // Only use delimiter and no-hscroll when at least one item has hidden keywords
+        if has_keywords {
+            cmd.arg("--delimiter=\x1f").arg("--no-hscroll");
+        }
 
         // Use --bind to print the index on accept instead of the selection text
         // {n} is the 0-based index of the selected item
