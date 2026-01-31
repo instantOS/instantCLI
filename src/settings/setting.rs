@@ -38,6 +38,8 @@ pub struct CategoryMeta {
     pub description: &'static str,
     pub icon: NerdFont,
     pub color: &'static str,
+    /// Hidden search keywords for alternative matching (e.g., "Sound" -> ["audio", "volume"])
+    pub search_keywords: &'static [&'static str],
 }
 
 impl Category {
@@ -51,6 +53,7 @@ impl Category {
                 description: "Installation and setup options.",
                 icon: NerdFont::Download,
                 color: colors::BLUE,
+                search_keywords: &[],
             },
             Category::Network => CategoryMeta {
                 id: "network",
@@ -58,6 +61,7 @@ impl Category {
                 description: "WiFi, Ethernet, VPN, and network diagnostics.",
                 icon: NerdFont::Network,
                 color: colors::GREEN,
+                search_keywords: &[],
             },
             Category::Bluetooth => CategoryMeta {
                 id: "bluetooth",
@@ -65,6 +69,7 @@ impl Category {
                 description: "Pair devices and manage Bluetooth settings.",
                 icon: NerdFont::Bluetooth,
                 color: colors::BLUE,
+                search_keywords: &[],
             },
             Category::Appearance => CategoryMeta {
                 id: "appearance",
@@ -72,6 +77,7 @@ impl Category {
                 description: "Themes, wallpaper, brightness, and visual styles.",
                 icon: NerdFont::Palette,
                 color: colors::LAVENDER,
+                search_keywords: &[],
             },
             Category::InputDevices => CategoryMeta {
                 id: "input_devices",
@@ -79,6 +85,7 @@ impl Category {
                 description: "Mouse, touchpad, and keyboard settings.",
                 icon: NerdFont::MousePointer,
                 color: colors::PEACH,
+                search_keywords: &[],
             },
             Category::Desktop => CategoryMeta {
                 id: "desktop",
@@ -86,6 +93,7 @@ impl Category {
                 description: "Desktop behaviour, window management, and layout preferences.",
                 icon: NerdFont::Desktop,
                 color: colors::MAUVE,
+                search_keywords: &[],
             },
             Category::Display => CategoryMeta {
                 id: "display",
@@ -93,6 +101,7 @@ impl Category {
                 description: "Monitor resolution, refresh rate, and display configuration.",
                 icon: NerdFont::Monitor,
                 color: colors::SKY,
+                search_keywords: &[],
             },
             Category::Audio => CategoryMeta {
                 id: "audio",
@@ -100,6 +109,7 @@ impl Category {
                 description: "Sound routing tools and audio behaviour.",
                 icon: NerdFont::VolumeUp,
                 color: colors::TEAL,
+                search_keywords: &["audio", "volume", "sound"],
             },
             Category::Apps => CategoryMeta {
                 id: "apps",
@@ -107,6 +117,7 @@ impl Category {
                 description: "Default applications and file associations.",
                 icon: NerdFont::Package,
                 color: colors::SAPPHIRE,
+                search_keywords: &[],
             },
             Category::Storage => CategoryMeta {
                 id: "storage",
@@ -114,6 +125,7 @@ impl Category {
                 description: "Disk management and auto-mounting.",
                 icon: NerdFont::Database2,
                 color: colors::YELLOW,
+                search_keywords: &[],
             },
             Category::Printers => CategoryMeta {
                 id: "printers",
@@ -121,6 +133,7 @@ impl Category {
                 description: "Discover, configure, and manage printers.",
                 icon: NerdFont::Printer,
                 color: colors::FLAMINGO,
+                search_keywords: &[],
             },
             Category::Users => CategoryMeta {
                 id: "users",
@@ -128,6 +141,7 @@ impl Category {
                 description: "Create and manage user accounts.",
                 icon: NerdFont::Users,
                 color: colors::MAROON,
+                search_keywords: &[],
             },
             Category::Language => CategoryMeta {
                 id: "language",
@@ -135,6 +149,7 @@ impl Category {
                 description: "Manage system locales and language defaults.",
                 icon: NerdFont::Globe,
                 color: colors::ROSEWATER,
+                search_keywords: &[],
             },
             Category::System => CategoryMeta {
                 id: "system",
@@ -142,6 +157,7 @@ impl Category {
                 description: "System administration and maintenance.",
                 icon: NerdFont::Server,
                 color: colors::RED,
+                search_keywords: &[],
             },
         }
     }
@@ -185,6 +201,9 @@ pub struct SettingMetadata {
     pub supported_distros: Option<&'static [OperatingSystem]>,
     /// Blacklist of distros where this setting should not be available
     pub unsupported_distros: Option<&'static [OperatingSystem]>,
+    /// Hidden search keywords for alternative matching in fzf menus.
+    /// E.g., "Sound" settings could include "audio", "volume" for discoverability.
+    pub search_keywords: &'static [&'static str],
 }
 
 impl SettingMetadata {
@@ -204,6 +223,7 @@ pub struct SettingMetadataBuilder {
     requirements: Vec<&'static Dependency>,
     supported_distros: Option<&'static [OperatingSystem]>,
     unsupported_distros: Option<&'static [OperatingSystem]>,
+    search_keywords: &'static [&'static str],
 }
 
 impl SettingMetadataBuilder {
@@ -261,6 +281,13 @@ impl SettingMetadataBuilder {
         self
     }
 
+    /// Set hidden search keywords for alternative matching in fzf menus.
+    /// E.g., "Sound" settings could include "audio", "volume" for discoverability.
+    pub fn search_keywords(mut self, keywords: &'static [&'static str]) -> Self {
+        self.search_keywords = keywords;
+        self
+    }
+
     pub fn build(self) -> SettingMetadata {
         let title = self.title.expect("SettingMetadata: title is required");
 
@@ -274,6 +301,7 @@ impl SettingMetadataBuilder {
             requirements: self.requirements,
             supported_distros: self.supported_distros,
             unsupported_distros: self.unsupported_distros,
+            search_keywords: self.search_keywords,
         }
     }
 }

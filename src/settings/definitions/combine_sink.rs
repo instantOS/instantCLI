@@ -900,6 +900,7 @@ impl Setting for CombinedAudioSink {
             .icon(NerdFont::VolumeUp)
             .summary("Combine multiple audio outputs into a single virtual sink.\n\nPlay audio through multiple devices simultaneously (e.g., speakers + headphones). Select which devices to include, rename the sink, or set it as your default output. PipeWire will only be restarted when changes require it.")
             .requires_reapply(true)
+            .search_keywords(&["audio", "volume", "sound", "sink", "output", "combine", "multi"])
             .build()
     }
 

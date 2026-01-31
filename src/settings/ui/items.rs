@@ -19,6 +19,7 @@ pub struct FolderMeta {
     pub color: &'static str,
     pub title: String,
     pub description: Option<String>,
+    pub search_keywords: &'static [&'static str],
 }
 
 impl FolderMeta {
@@ -30,6 +31,7 @@ impl FolderMeta {
             color: meta.color,
             title: meta.title.to_string(),
             description: Some(meta.description.to_string()),
+            search_keywords: meta.search_keywords,
         }
     }
 
@@ -46,6 +48,7 @@ impl FolderMeta {
             color,
             title: name.to_string(),
             description: description.map(|s| s.to_string()),
+            search_keywords: &[],
         }
     }
 }
@@ -309,6 +312,13 @@ impl FzfSelectable for MenuItem {
             MenuItem::Back { .. } => "__back__".to_string(),
         }
     }
+
+    fn fzf_search_keywords(&self) -> &[&str] {
+        match self {
+            MenuItem::Setting { setting, .. } => setting.metadata().search_keywords,
+            _ => &[],
+        }
+    }
 }
 
 impl FzfSelectable for MainMenuItem {
@@ -365,6 +375,19 @@ impl FzfSelectable for MainMenuItem {
             MainMenuItem::SearchAll => "__search__".to_string(),
             MainMenuItem::Category(node) => node.name().to_string(),
             MainMenuItem::Close => "__close__".to_string(),
+        }
+    }
+
+    fn fzf_search_keywords(&self) -> &[&str] {
+        match self {
+            MainMenuItem::Category(node) => {
+                if let TreeNode::Folder { meta, .. } = node {
+                    meta.search_keywords
+                } else {
+                    &[]
+                }
+            }
+            _ => &[],
         }
     }
 }
@@ -490,6 +513,13 @@ impl FzfSelectable for TreeSearchItem {
             TreeSearchItem::Category { category, .. } => format!("cat:{}", category.meta().title),
             TreeSearchItem::Folder { path, .. } => format!("folder:{path}"),
             TreeSearchItem::Setting { setting, .. } => format!("setting:{}", setting.metadata().id),
+        }
+    }
+
+    fn fzf_search_keywords(&self) -> &[&str] {
+        match self {
+            TreeSearchItem::Setting { setting, .. } => setting.metadata().search_keywords,
+            _ => &[],
         }
     }
 }
