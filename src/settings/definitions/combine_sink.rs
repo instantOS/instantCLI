@@ -357,8 +357,8 @@ fn disable_combined_sink(ctx: &mut SettingsContext) -> Result<()> {
 
     ctx.notify("Combined Audio Sink", "Combined sink disabled.");
 
-    // Offer to restart PipeWire to apply changes
-    offer_restart(ctx)?;
+    // Offer to restart PipeWire to apply changes (don't offer set default after disable)
+    offer_restart(ctx, false)?;
 
     Ok(())
 }
@@ -433,8 +433,8 @@ fn enable_combined_sink(
         ),
     );
 
-    // Offer to restart PipeWire to apply changes
-    offer_restart(ctx)?;
+    // Offer to restart PipeWire to apply changes (and offer set default after enable)
+    offer_restart(ctx, true)?;
 
     Ok(())
 }
@@ -460,8 +460,116 @@ fn restart_pipewire_services(ctx: &SettingsContext) -> Result<()> {
     Ok(())
 }
 
+/// Find the ID of the combined sink from wpctl status
+fn find_combined_sink_id() -> Result<String> {
+    let output = Command::new("wpctl")
+        .arg("status")
+        .output()
+        .context("Failed to run wpctl status")?;
+
+    if !output.status.success() {
+        bail!("wpctl status failed");
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // Look for the combined_output sink in the Sinks section
+    let mut in_sinks_section = false;
+    for line in stdout.lines() {
+        if line.contains("├─ Sinks:") || line.contains("└─ Sinks:") {
+            in_sinks_section = true;
+            continue;
+        }
+
+        if in_sinks_section && (line.contains("├─") || line.contains("└─")) && !line.contains("│")
+        {
+            break;
+        }
+
+        if in_sinks_section && line.contains("combined_output") {
+            // Parse the ID from lines like:
+            // │     85. combined_output [vol: 1.00]
+            // │ *   85. combined_output [vol: 1.00]
+            let cleaned = line
+                .replace('│', "")
+                .replace('├', "")
+                .replace('└', "")
+                .replace('─', "")
+                .replace('*', "")
+                .trim()
+                .to_string();
+
+            if let Some(dot_pos) = cleaned.find(". ") {
+                let id = cleaned[..dot_pos].trim().to_string();
+                if !id.is_empty() {
+                    return Ok(id);
+                }
+            }
+        }
+    }
+
+    bail!("Combined sink not found in wpctl status")
+}
+
+/// Set the combined sink as the default output
+fn set_combined_sink_as_default(ctx: &SettingsContext) -> Result<()> {
+    let sink_id = find_combined_sink_id()?;
+
+    let output = Command::new("wpctl")
+        .args(["set-default", &sink_id])
+        .output()
+        .context("Failed to run wpctl set-default")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("Failed to set default sink: {}", stderr);
+    }
+
+    ctx.emit_success(
+        "audio.combined_sink.set_default",
+        "Combined sink is now the default output.",
+    );
+
+    Ok(())
+}
+
+/// Check if combined sink is currently the default output
+fn is_combined_sink_default() -> Result<bool> {
+    let output = Command::new("wpctl")
+        .arg("status")
+        .output()
+        .context("Failed to run wpctl status")?;
+
+    if !output.status.success() {
+        bail!("wpctl status failed");
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // Look for the combined_output sink marked with * in the Sinks section
+    let mut in_sinks_section = false;
+    for line in stdout.lines() {
+        if line.contains("├─ Sinks:") || line.contains("└─ Sinks:") {
+            in_sinks_section = true;
+            continue;
+        }
+
+        if in_sinks_section && (line.contains("├─") || line.contains("└─")) && !line.contains("│")
+        {
+            break;
+        }
+
+        // Check if this is the default (marked with *)
+        if in_sinks_section && line.contains('*') && line.contains("combined_output") {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
 /// Offer to restart PipeWire services after configuration change
-fn offer_restart(ctx: &SettingsContext) -> Result<()> {
+fn offer_restart(ctx: &SettingsContext, offer_set_default: bool) -> Result<()> {
     let result = FzfWrapper::builder()
         .confirm("PipeWire needs to be restarted for changes to take effect.\n\nAudio will be briefly interrupted during restart.")
         .yes_text("Restart PipeWire")
@@ -479,12 +587,64 @@ fn offer_restart(ctx: &SettingsContext) -> Result<()> {
                     "Failed to restart PipeWire: {}\n\nPlease restart manually:\n  systemctl --user restart pipewire",
                     e
                 ));
+            } else if offer_set_default {
+                // After successful restart, offer to set as default
+                offer_set_default_output(ctx)?;
             }
         }
         crate::menu_utils::ConfirmResult::No | crate::menu_utils::ConfirmResult::Cancelled => {
             ctx.emit_info(
                 "audio.combined_sink.restart_skipped",
                 "PipeWire restart skipped. Run 'systemctl --user restart pipewire' to apply changes.",
+            );
+        }
+    }
+
+    Ok(())
+}
+
+/// Offer to set the combined sink as the default output
+fn offer_set_default_output(ctx: &SettingsContext) -> Result<()> {
+    // Check if combined sink is already the default
+    match is_combined_sink_default() {
+        Ok(true) => {
+            ctx.emit_info(
+                "audio.combined_sink.already_default",
+                "Combined sink is already the default output.",
+            );
+            return Ok(());
+        }
+        Ok(false) => {
+            // Not default, offer to set it
+        }
+        Err(e) => {
+            // Failed to check, but we can still try to set it
+            ctx.emit_info(
+                "audio.combined_sink.check_default_failed",
+                &format!("Could not check if combined sink is default: {}", e),
+            );
+        }
+    }
+
+    let result = FzfWrapper::builder()
+        .confirm("The combined sink has been created.\n\nWould you like to set it as the default audio output?")
+        .yes_text("Set as Default")
+        .no_text("Keep Current Default")
+        .confirm_dialog()?;
+
+    match result {
+        crate::menu_utils::ConfirmResult::Yes => {
+            if let Err(e) = set_combined_sink_as_default(ctx) {
+                ctx.emit_failure(
+                    "audio.combined_sink.set_default_failed",
+                    &format!("Failed to set as default: {}", e),
+                );
+            }
+        }
+        crate::menu_utils::ConfirmResult::No | crate::menu_utils::ConfirmResult::Cancelled => {
+            ctx.emit_info(
+                "audio.combined_sink.default_skipped",
+                "You can set the combined sink as default later from the main menu.",
             );
         }
     }
@@ -683,6 +843,9 @@ impl Setting for CombinedAudioSink {
             // Build menu items
             let mut items: Vec<(String, String)> = Vec::new();
 
+            // Check if combined sink is the current default
+            let is_default = is_combined_sink_default().unwrap_or(false);
+
             // Status and toggle option
             if currently_enabled {
                 items.push((
@@ -700,6 +863,16 @@ impl Setting for CombinedAudioSink {
                         stored_config.len()
                     ),
                 ));
+                // Show "Set as default" option if not already default
+                if !is_default {
+                    items.push((
+                        "set_default".to_string(),
+                        format!(
+                            "{} Set as default output",
+                            format_icon_colored(NerdFont::Star, colors::GREEN)
+                        ),
+                    ));
+                }
             } else if !valid_devices.is_empty() {
                 // Show re-enable option if we have stored devices but config was removed
                 items.push((
@@ -760,6 +933,16 @@ impl Setting for CombinedAudioSink {
                                 );
                             }
                             break;
+                        }
+                        "set_default" => {
+                            if let Err(e) = set_combined_sink_as_default(ctx) {
+                                ctx.emit_failure(
+                                    "audio.combined_sink.set_default_failed",
+                                    &format!("Failed to set as default: {}", e),
+                                );
+                            }
+                            // Continue to show the menu after setting default
+                            continue;
                         }
                         "enable" | "reconfigure" => {
                             // Build initial selection set
