@@ -4,17 +4,18 @@
 //! enabling simultaneous playback to multiple devices (e.g., speakers + headphones).
 //! Uses PipeWire's libpipewire-module-combine-stream.
 
+use crate::common::systemd::{ServiceScope, SystemdManager};
 use crate::menu_utils::{
-    prompt_text_edit, ChecklistResult, FzfSelectable, FzfWrapper, Header, TextEditOutcome,
+    ChecklistResult, FzfSelectable, FzfWrapper, Header, TextEditOutcome, prompt_text_edit,
 };
-use crate::menu_utils::{select_one_with_style_at, MenuCursor};
+use crate::menu_utils::{MenuCursor, select_one_with_style_at};
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::store::OptionalStringSettingKey;
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::prelude::*;
 use crate::ui::preview::{FzfPreview, PreviewBuilder};
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
@@ -354,10 +355,10 @@ fn disable_combined_sink(ctx: &mut SettingsContext) -> Result<()> {
     ctx.set_optional_string(COMBINED_SINK_KEY, None::<String>);
     ctx.set_optional_string(COMBINED_SINK_NAME_KEY, None::<String>);
 
-    ctx.notify(
-        "Combined Audio Sink",
-        "Combined sink disabled. Restart PipeWire to apply changes.",
-    );
+    ctx.notify("Combined Audio Sink", "Combined sink disabled.");
+
+    // Offer to restart PipeWire to apply changes
+    offer_restart(ctx)?;
 
     Ok(())
 }
@@ -426,11 +427,67 @@ fn enable_combined_sink(
     ctx.notify(
         "Combined Audio Sink",
         &format!(
-            "Combined sink '{}' configured with {} devices. Restart PipeWire to apply changes.",
+            "Combined sink '{}' configured with {} devices.",
             sink_name,
             selected_node_names.len()
         ),
     );
+
+    // Offer to restart PipeWire to apply changes
+    offer_restart(ctx)?;
+
+    Ok(())
+}
+
+/// Restart PipeWire services to apply configuration changes
+fn restart_pipewire_services(ctx: &SettingsContext) -> Result<()> {
+    let manager = SystemdManager::user();
+
+    ctx.emit_info(
+        "audio.combined_sink.restarting",
+        "Restarting PipeWire services...",
+    );
+
+    // Restart the main PipeWire services in order
+    // wireplumber should auto-restart since it depends on pipewire
+    manager.restart("pipewire")?;
+
+    ctx.emit_success(
+        "audio.combined_sink.restarted",
+        "PipeWire services restarted successfully.",
+    );
+
+    Ok(())
+}
+
+/// Offer to restart PipeWire services after configuration change
+fn offer_restart(ctx: &SettingsContext) -> Result<()> {
+    let result = FzfWrapper::builder()
+        .confirm("PipeWire needs to be restarted for changes to take effect.\n\nAudio will be briefly interrupted during restart.")
+        .yes_text("Restart PipeWire")
+        .no_text("Restart Later (manual)")
+        .confirm_dialog()?;
+
+    match result {
+        crate::menu_utils::ConfirmResult::Yes => {
+            if let Err(e) = restart_pipewire_services(ctx) {
+                ctx.emit_failure(
+                    "audio.combined_sink.restart_failed",
+                    &format!("Failed to restart PipeWire: {}", e),
+                );
+                ctx.show_message(&format!(
+                    "Failed to restart PipeWire: {}\n\nPlease restart manually:\n  systemctl --user restart pipewire",
+                    e
+                ));
+            }
+        }
+        crate::menu_utils::ConfirmResult::No | crate::menu_utils::ConfirmResult::Cancelled => {
+            ctx.emit_info(
+                "audio.combined_sink.restart_skipped",
+                "PipeWire restart skipped. Run 'systemctl --user restart pipewire' to apply changes.",
+            );
+        }
+    }
 
     Ok(())
 }
@@ -483,14 +540,20 @@ impl FzfSelectable for NameOption {
     fn fzf_preview(&self) -> FzfPreview {
         let content = match self.action {
             NameAction::KeepCurrent => PreviewBuilder::new()
-                .text("Use the current name for the combined sink.")
+                .text("Use the current display name for the combined sink.")
                 .blank()
                 .field("Current name", &self.current_name)
                 .build(),
             NameAction::EnterNew => PreviewBuilder::new()
-                .text("Enter a new custom name for your combined audio sink.")
+                .text("Rename the combined audio sink.")
                 .blank()
                 .field("Current name", &self.current_name)
+                .blank()
+                .line(
+                    colors::SKY,
+                    Some(NerdFont::Info),
+                    "This updates the existing sink's display name in audio settings.",
+                )
                 .build(),
             NameAction::Back => PreviewBuilder::new()
                 .text("Go back without changing the name.")
@@ -559,7 +622,7 @@ impl Setting for CombinedAudioSink {
             .id("audio.combined_sink")
             .title("Combined Audio Sink")
             .icon(NerdFont::VolumeUp)
-            .summary("Combine multiple audio outputs into a single virtual sink.\n\nPlay audio through multiple devices simultaneously (e.g., speakers + headphones). Creates a PipeWire combined sink configuration.")
+            .summary("Combine multiple audio outputs into a single virtual sink.\n\nPlay audio through multiple devices simultaneously (e.g., speakers + headphones). The setting can rename the existing combined sink or modify its device selection. PipeWire will be restarted automatically to apply changes (with your confirmation).")
             .requires_reapply(true)
             .build()
     }

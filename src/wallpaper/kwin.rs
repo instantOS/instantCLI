@@ -39,13 +39,15 @@ pub fn apply_wallpaper(path: &str) -> Result<()> {
     if run_qdbus_script("qdbus", &script).is_ok() {
         return Ok(());
     }
-    
+
     // Try qdbus-qt5 (Plasma 5 on some distros)
     if run_qdbus_script("qdbus-qt5", &script).is_ok() {
         return Ok(());
     }
 
-    anyhow::bail!("Failed to set KDE wallpaper: neither plasma-apply-wallpaperimage nor qdbus found/worked")
+    anyhow::bail!(
+        "Failed to set KDE wallpaper: neither plasma-apply-wallpaperimage nor qdbus found/worked"
+    )
 }
 
 fn run_qdbus_script(cmd: &str, script: &str) -> Result<()> {

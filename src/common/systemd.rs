@@ -240,6 +240,19 @@ impl SystemdManager {
         Ok(())
     }
 
+    /// Restart a service
+    #[allow(dead_code)]
+    pub fn restart(&self, service_name: &str) -> Result<()> {
+        let status = self
+            .run_systemctl(&["restart", service_name])
+            .with_context(|| format!("Failed to restart service '{}'", service_name))?;
+
+        if !status.success() {
+            anyhow::bail!("Failed to restart service '{}'", service_name);
+        }
+        Ok(())
+    }
+
     /// Enable a service
     #[allow(dead_code)]
     pub fn enable(&self, service_name: &str) -> Result<()> {
