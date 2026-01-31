@@ -10,6 +10,7 @@ pub mod appearance;
 pub mod appimages;
 pub mod apps;
 pub mod brightness;
+pub mod combine_sink;
 pub mod desktop;
 pub mod display;
 pub mod flatpak;
