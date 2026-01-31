@@ -27,7 +27,7 @@ pub fn apply_wallpaper(path: &str) -> Result<()> {
             d.reloadConfig();
         }});
         "#,
-        path_str
+        path_str.replace('\\', "\\\\").replace('"', "\\\"")
     );
 
     // Try qdbus6 (Plasma 6)
