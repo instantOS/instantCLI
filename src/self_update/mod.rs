@@ -594,7 +594,7 @@ pub async fn self_update() -> Result<()> {
             );
             println!("   Please use your package manager to update instead.");
             println!(
-                "   {}: sudo pacman -S ins  (or your package manager)",
+                "   {}: sudo <package-manager> install ins",
                 "Example".bright_black()
             );
             return Ok(());

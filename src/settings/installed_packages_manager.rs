@@ -49,10 +49,10 @@ fn run_debian_package_manager(debug: bool) -> Result<()> {
     }
 
     // List installed packages (one package per line)
-    let list_cmd = "dpkg-query -W -f='${Package}\n' 2>/dev/null | sort";
+    let list_cmd = manager.list_installed_command();
 
-    // Preview: apt show <package> (each line is just a package name)
-    let preview_cmd = "apt show {1} 2>/dev/null";
+    // Preview command
+    let preview_cmd = manager.show_package_command().replace("{package}", "{1}");
 
     // FZF prompt customization
     let prompt = if is_termux {
@@ -68,7 +68,7 @@ fn run_debian_package_manager(debug: bool) -> Result<()> {
         .responsive_layout()
         .args([
             "--preview",
-            preview_cmd,
+            preview_cmd.as_str(),
             "--preview-window",
             "down:40%:wrap", // Smaller preview for more item space
             "--layout",
@@ -176,10 +176,12 @@ fn run_arch_package_manager(debug: bool) -> Result<()> {
     }
 
     // List installed packages (one package per line)
-    let list_cmd = "pacman -Qq | sort";
+    let list_cmd = PackageManager::Pacman.list_installed_command();
 
-    // Preview: pacman -Qi <package> (each line is just a package name)
-    let preview_cmd = "pacman -Qi {1}";
+    // Preview command
+    let preview_cmd = PackageManager::Pacman
+        .show_package_command()
+        .replace("{package}", "{1}");
 
     let result = FzfWrapper::builder()
         .multi_select(true)
@@ -188,7 +190,7 @@ fn run_arch_package_manager(debug: bool) -> Result<()> {
         .responsive_layout()
         .args([
             "--preview",
-            preview_cmd,
+            preview_cmd.as_str(),
             "--preview-window",
             "down:40%:wrap", // Smaller preview for more item space
             "--layout",

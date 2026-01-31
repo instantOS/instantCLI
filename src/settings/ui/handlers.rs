@@ -125,6 +125,7 @@ pub fn handle_trait_setting(
             }
             RequirementsResult::NotAvailable { name, hint } => {
                 use crate::menu_utils::FzfWrapper;
+                let os = crate::common::distro::OperatingSystem::detect();
                 let mut messages = Vec::new();
                 messages.push(format!(
                     "'{}' requires '{}' which is not available on your system.",
@@ -132,10 +133,19 @@ pub fn handle_trait_setting(
                     name
                 ));
                 messages.push(String::new());
-                messages.push("This usually happens on immutable systems (like Bazzite) where packages cannot be installed via the package manager.".to_string());
-                messages.push(String::new());
-                messages.push("To use this setting, you may need to:".to_string());
-                messages.push(format!("  • {}", hint));
+
+                if os.is_immutable() {
+                    messages.push(format!("Your system ({}) is immutable and packages cannot be installed via the traditional package manager.", os));
+                    messages.push(String::new());
+                    messages.push(hint);
+                    messages.push(String::new());
+                    messages.push("Alternative installation methods:".to_string());
+                    messages.push("  • Install via Flatpak if available".to_string());
+                    messages.push("  • Use distrobox or another container".to_string());
+                    messages.push("  • Install on the host system if supported".to_string());
+                } else {
+                    messages.push(hint);
+                }
 
                 FzfWrapper::builder()
                     .message(messages.join("\n"))

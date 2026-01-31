@@ -147,6 +147,63 @@ impl PackageManager {
             Self::Snap => ("sudo", &["snap", "remove"]),
         }
     }
+
+    /// Get the command to list available packages.
+    ///
+    /// Returns a shell command string that lists all available packages.
+    pub fn list_available_command(&self) -> &'static str {
+        match self {
+            Self::Pacman => "pacman -Slq",
+            Self::Apt => "apt-cache search . 2>/dev/null | grep -v '^$' | cut -d' ' -f1",
+            Self::Dnf => "dnf list available 2>/dev/null | tail -n +2 | cut -d' ' -f1",
+            Self::Zypper => {
+                "zypper se --available-only 2>/dev/null | tail -n +3 | cut -d'|' -f2 | tr -d ' '"
+            }
+            Self::Pkg => "pkg list-all 2>/dev/null | cut -d'/' -f1",
+            Self::Flatpak => "flatpak remote-ls --app --columns=application 2>/dev/null",
+            Self::Aur => {
+                "curl -sL https://aur.archlinux.org/packages.gz 2>/dev/null | gunzip 2>/dev/null"
+            }
+            Self::Cargo => "cargo search --limit 1000 '' 2>/dev/null | cut -d' ' -f1",
+            Self::Snap => "snap find 2>/dev/null | tail -n +2 | cut -d' ' -f1",
+        }
+    }
+
+    /// Get the command to list installed packages.
+    ///
+    /// Returns a shell command string that lists all installed packages.
+    pub fn list_installed_command(&self) -> &'static str {
+        match self {
+            Self::Pacman => "pacman -Qq",
+            Self::Apt => "dpkg-query -W -f='${Package}\\n' 2>/dev/null | sort",
+            Self::Dnf => "dnf list installed 2>/dev/null | tail -n +2 | cut -d' ' -f1",
+            Self::Zypper => {
+                "zypper se --installed-only 2>/dev/null | tail -n +3 | cut -d'|' -f2 | tr -d ' '"
+            }
+            Self::Pkg => "pkg list-installed 2>/dev/null | cut -d'/' -f1",
+            Self::Flatpak => "flatpak list --app --columns=application 2>/dev/null",
+            Self::Aur => "pacman -Qm", // AUR packages are foreign packages in pacman
+            Self::Cargo => "cargo install --list 2>/dev/null | grep -E '^[a-zA-Z]' | cut -d' ' -f1",
+            Self::Snap => "snap list 2>/dev/null | tail -n +2 | cut -d' ' -f1",
+        }
+    }
+
+    /// Get the command to show package information.
+    ///
+    /// Returns a shell command template with {package} placeholder.
+    pub fn show_package_command(&self) -> &'static str {
+        match self {
+            Self::Pacman => "pacman -Qi {package}",
+            Self::Apt => "apt show {package} 2>/dev/null",
+            Self::Dnf => "dnf info {package} 2>/dev/null",
+            Self::Zypper => "zypper info {package} 2>/dev/null",
+            Self::Pkg => "pkg show {package} 2>/dev/null",
+            Self::Flatpak => "flatpak info {package} 2>/dev/null",
+            Self::Aur => "pacman -Qi {package}", // AUR packages use pacman for info
+            Self::Cargo => "cargo show {package} 2>/dev/null",
+            Self::Snap => "snap info {package} 2>/dev/null",
+        }
+    }
 }
 
 impl std::fmt::Display for PackageManager {
