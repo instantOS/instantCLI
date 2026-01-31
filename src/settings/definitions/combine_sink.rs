@@ -6,11 +6,11 @@
 
 use crate::common::systemd::SystemdManager;
 use crate::menu_utils::{
-    ChecklistResult, FzfSelectable, FzfWrapper, Header, TextEditOutcome, prompt_text_edit,
+    ChecklistResult, FzfResult, FzfSelectable, FzfWrapper, Header, TextEditOutcome,
+    prompt_text_edit,
 };
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
-use crate::settings::store::OptionalStringSettingKey;
 use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::prelude::*;
 use crate::ui::preview::{FzfPreview, PreviewBuilder};
@@ -20,19 +20,15 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
-/// Key for storing the combined sink configuration (list of node names)
-pub const COMBINED_SINK_KEY: OptionalStringSettingKey =
-    OptionalStringSettingKey::new("audio.combined_sink_devices");
-
-/// Key for storing the combined sink display name
-pub const COMBINED_SINK_NAME_KEY: OptionalStringSettingKey =
-    OptionalStringSettingKey::new("audio.combined_sink_name");
-
 /// PipeWire config file path
 const PIPEWIRE_CONFIG_DIR: &str = "pipewire/pipewire.conf.d";
 const COMBINE_SINK_CONFIG_FILE: &str = "combine-sink.conf";
 
-/// Default name for the combined sink
+/// Prefix used to identify combined sinks created by ins
+/// The full node.name will be `INS_COMBINED_SINK_PREFIX` followed by a sanitized display name
+const INS_COMBINED_SINK_PREFIX: &str = "ins_combined_";
+
+/// Default display name for the combined sink
 const DEFAULT_COMBINED_SINK_NAME: &str = "Combined Output";
 
 /// Information about an audio sink device
@@ -352,38 +348,48 @@ fn filter_valid_devices(
     (valid, was_filtered)
 }
 
-/// Disable the combined sink by removing the config file
-fn disable_combined_sink(ctx: &mut SettingsContext) -> Result<()> {
+/// Disable the combined sink by removing the config file and clearing all settings
+/// Returns true if a restart is needed (config file existed and was removed)
+fn disable_combined_sink(ctx: &mut SettingsContext) -> Result<bool> {
     let config_path = combine_sink_config_file()?;
 
-    if config_path.exists() {
+    // Only restart if there was actually a config to remove
+    let needs_restart = config_path.exists();
+
+    if needs_restart {
         fs::remove_file(&config_path)
             .with_context(|| format!("Failed to remove {:?}", config_path))?;
     }
 
-    // Clear the stored configuration
+    // Clear all stored configuration
     ctx.set_optional_string(COMBINED_SINK_KEY, None::<String>);
     ctx.set_optional_string(COMBINED_SINK_NAME_KEY, None::<String>);
 
-    ctx.notify("Combined Audio Sink", "Combined sink disabled.");
+    if needs_restart {
+        ctx.notify(
+            "Combined Audio Sink",
+            "Combined sink disabled and configuration cleared.",
+        );
+    } else {
+        ctx.notify("Combined Audio Sink", "Combined sink was already disabled.");
+    }
 
-    // Offer to restart PipeWire to apply changes (don't offer set default after disable)
-    offer_restart(ctx, false)?;
-
-    Ok(())
+    Ok(needs_restart)
 }
 
 /// Enable and configure the combined sink
-/// This overwrites the existing config file if it exists
+/// Returns true if a restart is needed (config changed), false otherwise
 fn enable_combined_sink(
     ctx: &mut SettingsContext,
-    _available_sinks: &[SinkInfo],
     selected_node_names: &[String],
     sink_name: &str,
-) -> Result<()> {
+) -> Result<bool> {
     if selected_node_names.len() < 2 {
         bail!("Select at least 2 devices to combine");
     }
+
+    // Check if anything actually changed
+    let needs_restart = config_changed(selected_node_names, sink_name)?;
 
     // Build the matches array for the config
     let matches: Vec<String> = selected_node_names
@@ -434,19 +440,26 @@ fn enable_combined_sink(
     ctx.set_optional_string(COMBINED_SINK_KEY, Some(selected_node_names.join("\n")));
     ctx.set_optional_string(COMBINED_SINK_NAME_KEY, Some(sink_name.to_string()));
 
-    ctx.notify(
-        "Combined Audio Sink",
-        &format!(
-            "Combined sink '{}' configured with {} devices.",
-            sink_name,
-            selected_node_names.len()
-        ),
-    );
+    if needs_restart {
+        ctx.notify(
+            "Combined Audio Sink",
+            &format!(
+                "Combined sink '{}' configured with {} devices. Restart required to activate.",
+                sink_name,
+                selected_node_names.len()
+            ),
+        );
+    } else {
+        ctx.notify(
+            "Combined Audio Sink",
+            &format!(
+                "Combined sink '{}' already active with these settings.",
+                sink_name
+            ),
+        );
+    }
 
-    // Offer to restart PipeWire to apply changes (and offer set default after enable)
-    offer_restart(ctx, true)?;
-
-    Ok(())
+    Ok(needs_restart)
 }
 
 /// Restart PipeWire services to apply configuration changes
@@ -561,7 +574,7 @@ fn is_combined_sink_default() -> Result<bool> {
 }
 
 /// Offer to restart PipeWire services after configuration change
-fn offer_restart(ctx: &SettingsContext, offer_set_default: bool) -> Result<()> {
+fn offer_restart(ctx: &SettingsContext) -> Result<()> {
     let result = FzfWrapper::builder()
         .confirm("PipeWire needs to be restarted for changes to take effect.\n\nAudio will be briefly interrupted during restart.")
         .yes_text("Restart PipeWire")
@@ -579,9 +592,6 @@ fn offer_restart(ctx: &SettingsContext, offer_set_default: bool) -> Result<()> {
                     "Failed to restart PipeWire: {}\n\nPlease restart manually:\n  systemctl --user restart pipewire",
                     e
                 ));
-            } else if offer_set_default {
-                // After successful restart, offer to set as default
-                offer_set_default_output(ctx)?;
             }
         }
         crate::menu_utils::ConfirmResult::No | crate::menu_utils::ConfirmResult::Cancelled => {
@@ -595,63 +605,212 @@ fn offer_restart(ctx: &SettingsContext, offer_set_default: bool) -> Result<()> {
     Ok(())
 }
 
-/// Offer to set the combined sink as the default output
-fn offer_set_default_output(ctx: &SettingsContext) -> Result<()> {
-    // Check if combined sink is already the default
-    match is_combined_sink_default() {
-        Ok(true) => {
-            ctx.emit_info(
-                "audio.combined_sink.already_default",
-                "Combined sink is already the default output.",
-            );
-            return Ok(());
-        }
-        Ok(false) => {
-            // Not default, offer to set it
-        }
-        Err(e) => {
-            // Failed to check, but we can still try to set it
-            ctx.emit_info(
-                "audio.combined_sink.check_default_failed",
-                &format!("Could not check if combined sink is default: {}", e),
-            );
-        }
-    }
-
-    let result = FzfWrapper::builder()
-        .confirm("The combined sink has been created.\n\nWould you like to set it as the default audio output?")
-        .yes_text("Set as Default")
-        .no_text("Keep Current Default")
-        .confirm_dialog()?;
-
-    match result {
-        crate::menu_utils::ConfirmResult::Yes => {
-            if let Err(e) = set_combined_sink_as_default(ctx) {
-                ctx.emit_failure(
-                    "audio.combined_sink.set_default_failed",
-                    &format!("Failed to set as default: {}", e),
-                );
-            }
-        }
-        crate::menu_utils::ConfirmResult::No | crate::menu_utils::ConfirmResult::Cancelled => {
-            ctx.emit_info(
-                "audio.combined_sink.default_skipped",
-                "You can set the combined sink as default later from the main menu.",
-            );
-        }
-    }
-
-    Ok(())
-}
-
 /// Get the current combined sink name, or the default if none is set
 fn get_current_sink_name(ctx: &SettingsContext) -> String {
     ctx.optional_string(COMBINED_SINK_NAME_KEY)
         .unwrap_or_else(|| DEFAULT_COMBINED_SINK_NAME.to_string())
 }
 
-/// Prompt for a new combined sink name and update the configuration
-fn rename_combined_sink(ctx: &mut SettingsContext) -> Result<()> {
+/// Read the current config file content if it exists
+fn read_current_config() -> Result<Option<String>> {
+    let config_path = combine_sink_config_file()?;
+    if !config_path.exists() {
+        return Ok(None);
+    }
+    let content = fs::read_to_string(&config_path)
+        .with_context(|| format!("Failed to read {:?}", config_path))?;
+    Ok(Some(content))
+}
+
+/// Check if the desired config differs from current config
+/// Returns true if a restart is needed (config changed)
+fn config_changed(desired_devices: &[String], desired_name: &str) -> Result<bool> {
+    let current = match read_current_config()? {
+        Some(content) => content,
+        None => return Ok(true), // No config exists, so we need to create it
+    };
+
+    // Check if name changed
+    let name_changed = !current.contains(&format!(r#"node.description = "{}""#, desired_name));
+
+    // Check if device list changed - count matches in config
+    let current_device_count = current.matches("node.name = \"").count();
+    let devices_changed = current_device_count != desired_devices.len();
+
+    Ok(name_changed || devices_changed)
+}
+
+/// Menu action types with their display and preview information
+#[derive(Clone)]
+enum MenuAction {
+    Disable,
+    ChangeDevices,
+    Rename,
+    SetAsDefault,
+    Enable,
+    Back,
+}
+
+#[derive(Clone)]
+struct MenuItem {
+    action: MenuAction,
+    label: String,
+    icon: String,
+}
+
+impl MenuItem {
+    fn new(action: MenuAction, label: impl Into<String>, icon: impl Into<String>) -> Self {
+        Self {
+            action,
+            label: label.into(),
+            icon: icon.into(),
+        }
+    }
+
+    fn display_text(&self) -> String {
+        format!("{} {}", self.icon, self.label)
+    }
+
+    fn preview(
+        &self,
+        ctx: &SettingsContext,
+        currently_enabled: bool,
+        is_default: bool,
+        device_count: usize,
+    ) -> FzfPreview {
+        let name = get_current_sink_name(ctx);
+
+        match self.action {
+            MenuAction::Disable => PreviewBuilder::new()
+                .header(NerdFont::VolumeUp, "Disable Combined Sink")
+                .text("Remove the combined sink completely.")
+                .blank()
+                .line(colors::RED, Some(NerdFont::Warning), "This will:")
+                .text("  - Remove the PipeWire config file")
+                .text("  - Clear all device selections")
+                .text("  - Remove the sink from your system")
+                .blank()
+                .line(
+                    colors::YELLOW,
+                    Some(NerdFont::Info),
+                    "Requires PipeWire restart",
+                )
+                .build(),
+            MenuAction::ChangeDevices => {
+                let status = if currently_enabled {
+                    format!("Currently: {} ({} devices)", name, device_count)
+                } else {
+                    "Not currently enabled".to_string()
+                };
+                PreviewBuilder::new()
+                    .header(NerdFont::Settings, "Change Devices")
+                    .text("Select which audio outputs to include in the combined sink.")
+                    .blank()
+                    .field("Status", &status)
+                    .blank()
+                    .line(
+                        colors::SKY,
+                        Some(NerdFont::Info),
+                        "Requires at least 2 devices",
+                    )
+                    .text("Selected devices will receive audio simultaneously")
+                    .build()
+            }
+            MenuAction::Rename => PreviewBuilder::new()
+                .header(NerdFont::Edit, "Rename Combined Sink")
+                .text("Change the display name shown in audio settings.")
+                .blank()
+                .field("Current name", &name)
+                .blank()
+                .line(
+                    colors::YELLOW,
+                    Some(NerdFont::Warning),
+                    "Will restart PipeWire to apply name change",
+                )
+                .build(),
+            MenuAction::SetAsDefault => {
+                let status = if is_default {
+                    "Already set as default"
+                } else if currently_enabled {
+                    "Not currently default"
+                } else {
+                    "Sink must be enabled first"
+                };
+                PreviewBuilder::new()
+                    .header(NerdFont::Star, "Set as Default Output")
+                    .text("Make the combined sink your primary audio output.")
+                    .blank()
+                    .field("Status", status)
+                    .blank()
+                    .line(
+                        colors::GREEN,
+                        Some(NerdFont::Check),
+                        "No restart required - takes effect immediately",
+                    )
+                    .build()
+            }
+            MenuAction::Enable => PreviewBuilder::new()
+                .header(NerdFont::Plus, "Enable Combined Sink")
+                .text("Create a new combined sink by selecting audio devices.")
+                .blank()
+                .line(
+                    colors::SKY,
+                    Some(NerdFont::Info),
+                    "Requires at least 2 devices",
+                )
+                .blank()
+                .line(
+                    colors::YELLOW,
+                    Some(NerdFont::Warning),
+                    "Will restart PipeWire to create the sink",
+                )
+                .build(),
+            MenuAction::Back => PreviewBuilder::new()
+                .header(NerdFont::ChevronLeft, "Back")
+                .text("Return to the previous menu.")
+                .build(),
+        }
+    }
+}
+
+/// Wrapper that holds both the menu item and its computed preview
+#[derive(Clone)]
+struct MenuItemWithPreview {
+    item: MenuItem,
+    preview: FzfPreview,
+}
+
+impl MenuItemWithPreview {
+    fn new(item: MenuItem, preview: FzfPreview) -> Self {
+        Self { item, preview }
+    }
+}
+
+impl FzfSelectable for MenuItemWithPreview {
+    fn fzf_display_text(&self) -> String {
+        self.item.display_text()
+    }
+
+    fn fzf_key(&self) -> String {
+        match self.item.action {
+            MenuAction::Disable => "disable",
+            MenuAction::ChangeDevices => "change_devices",
+            MenuAction::Rename => "rename",
+            MenuAction::SetAsDefault => "set_default",
+            MenuAction::Enable => "enable",
+            MenuAction::Back => "back",
+        }
+        .to_string()
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        self.preview.clone()
+    }
+}
+
+/// Rename the combined sink
+/// Returns true if a restart is needed (sink was enabled and name changed)
+fn rename_combined_sink(ctx: &mut SettingsContext) -> Result<bool> {
     let current_name = get_current_sink_name(ctx);
 
     let result = prompt_text_edit(
@@ -663,24 +822,34 @@ fn rename_combined_sink(ctx: &mut SettingsContext) -> Result<()> {
     let new_name = match result {
         TextEditOutcome::Updated(Some(name)) => name,
         TextEditOutcome::Updated(None) => DEFAULT_COMBINED_SINK_NAME.to_string(),
-        TextEditOutcome::Cancelled | TextEditOutcome::Unchanged => return Ok(()),
+        TextEditOutcome::Cancelled | TextEditOutcome::Unchanged => return Ok(false),
     };
+
+    // Don't update if name is the same
+    if new_name == current_name {
+        return Ok(false);
+    }
 
     // Update the stored name
     ctx.set_optional_string(COMBINED_SINK_NAME_KEY, Some(new_name.clone()));
 
-    // If combined sink is enabled, regenerate the config with the new name
-    if is_combined_sink_enabled() {
+    // If combined sink is enabled, we need to regenerate the config
+    let needs_restart = if is_combined_sink_enabled() {
         let stored = parse_stored_config(ctx);
         if stored.len() >= 2 {
             let node_names: Vec<String> = stored.into_iter().collect();
-            enable_combined_sink(ctx, &[], &node_names, &new_name)?;
+            // This will write the new config and return if restart is needed
+            enable_combined_sink(ctx, &node_names, &new_name)?
+        } else {
+            false
         }
-    }
+    } else {
+        false
+    };
 
     ctx.notify("Combined Audio Sink", &format!("Renamed to '{}'", new_name));
 
-    Ok(())
+    Ok(needs_restart)
 }
 
 pub struct CombinedAudioSink;
@@ -691,7 +860,7 @@ impl Setting for CombinedAudioSink {
             .id("audio.combined_sink")
             .title("Combined Audio Sink")
             .icon(NerdFont::VolumeUp)
-            .summary("Combine multiple audio outputs into a single virtual sink.\n\nPlay audio through multiple devices simultaneously (e.g., speakers + headphones). Select which devices to include, rename the sink, or set it as your default output. PipeWire will be restarted to apply changes (with your confirmation).")
+            .summary("Combine multiple audio outputs into a single virtual sink.\n\nPlay audio through multiple devices simultaneously (e.g., speakers + headphones). Select which devices to include, rename the sink, or set it as your default output. PipeWire will only be restarted when changes require it.")
             .requires_reapply(true)
             .build()
     }
@@ -726,231 +895,222 @@ impl Setting for CombinedAudioSink {
             return Ok(());
         }
 
-        // Get list of available sinks
-        let sinks = match list_sinks() {
-            Ok(s) => s,
-            Err(e) => {
-                ctx.show_message(&format!("Failed to list audio sinks: {}", e));
-                return Ok(());
-            }
-        };
-
-        // Filter stored config to only include valid devices
-        let (valid_devices, devices_removed) = filter_valid_devices(ctx, &sinks);
-        if devices_removed {
-            ctx.emit_info(
-                "audio.combined_sink.devices_removed",
-                "Some previously selected devices are no longer available and have been removed from the configuration.",
-            );
-        }
-
-        let currently_enabled = is_combined_sink_enabled();
-        let stored_config: HashSet<String> = valid_devices.iter().cloned().collect();
+        // Track if any changes require a restart
+        let mut restart_needed = false;
 
         // Main configuration loop
         loop {
-            // Build menu items
-            let mut items: Vec<(String, String)> = Vec::new();
-
-            // Check if combined sink is the current default
+            // Get current state from actual sink status
+            let currently_enabled = is_combined_sink_enabled();
             let is_default = is_combined_sink_default().unwrap_or(false);
             let current_name = get_current_sink_name(ctx);
 
-            // Status and toggle option
+            // Get stored device count (only meaningful when enabled)
+            let stored_config = parse_stored_config(ctx);
+            let device_count = stored_config.len();
+
+            // Build menu items
+            let mut items: Vec<MenuItem> = Vec::new();
+
             if currently_enabled {
-                items.push((
-                    "disable".to_string(),
-                    format!(
-                        "{} Disable combined sink",
-                        format_icon_colored(NerdFont::Cross, colors::RED)
-                    ),
+                items.push(MenuItem::new(
+                    MenuAction::Disable,
+                    "Disable combined sink",
+                    format_icon_colored(NerdFont::Cross, colors::RED),
                 ));
-                items.push((
-                    "reconfigure".to_string(),
-                    format!(
-                        "{} Change devices ({} selected)",
-                        format_icon_colored(NerdFont::Settings, colors::YELLOW),
-                        stored_config.len()
-                    ),
+                items.push(MenuItem::new(
+                    MenuAction::ChangeDevices,
+                    format!("Change devices ({} selected)", device_count),
+                    format_icon_colored(NerdFont::Settings, colors::YELLOW),
                 ));
-                items.push((
-                    "rename".to_string(),
-                    format!(
-                        "{} Rename: {}",
-                        format_icon_colored(NerdFont::Edit, colors::BLUE),
-                        current_name
-                    ),
+                items.push(MenuItem::new(
+                    MenuAction::Rename,
+                    format!("Rename: {}", current_name),
+                    format_icon_colored(NerdFont::Edit, colors::BLUE),
                 ));
-                // Show "Set as default" option if not already default
                 if !is_default {
-                    items.push((
-                        "set_default".to_string(),
-                        format!(
-                            "{} Set as default output",
-                            format_icon_colored(NerdFont::Star, colors::GREEN)
-                        ),
+                    items.push(MenuItem::new(
+                        MenuAction::SetAsDefault,
+                        "Set as default output",
+                        format_icon_colored(NerdFont::Star, colors::GREEN),
                     ));
                 }
-            } else if !valid_devices.is_empty() {
-                // Show re-enable option if we have stored devices but config was removed
-                items.push((
-                    "enable".to_string(),
-                    format!(
-                        "{} Re-enable combined sink ({} devices)",
-                        format_icon_colored(NerdFont::Plus, colors::GREEN),
-                        valid_devices.len()
-                    ),
-                ));
-                items.push((
-                    "reconfigure".to_string(),
-                    format!(
-                        "{} Change devices",
-                        format_icon_colored(NerdFont::Settings, colors::YELLOW)
-                    ),
-                ));
-                items.push((
-                    "rename".to_string(),
-                    format!(
-                        "{} Rename: {}",
-                        format_icon_colored(NerdFont::Edit, colors::BLUE),
-                        current_name
-                    ),
-                ));
             } else {
-                items.push((
-                    "enable".to_string(),
-                    format!(
-                        "{} Enable combined sink",
-                        format_icon_colored(NerdFont::Plus, colors::GREEN)
-                    ),
+                items.push(MenuItem::new(
+                    MenuAction::Enable,
+                    "Enable combined sink",
+                    format_icon_colored(NerdFont::Plus, colors::GREEN),
                 ));
             }
 
-            // Always show back option
-            items.push((
-                "back".to_string(),
-                format!(
-                    "{} Back",
-                    format_icon_colored(NerdFont::ChevronLeft, colors::OVERLAY1)
-                ),
+            items.push(MenuItem::new(
+                MenuAction::Back,
+                "Back",
+                format_icon_colored(NerdFont::ChevronLeft, colors::OVERLAY1),
             ));
 
-            let selection = dialoguer::Select::new()
-                .with_prompt("Combined Audio Sink")
-                .items(
-                    &items
-                        .iter()
-                        .map(|(_, label)| label.as_str())
-                        .collect::<Vec<_>>(),
+            // Build custom previews for each item - show actual sink state
+            let header_text = if currently_enabled {
+                format!(
+                    "Combined Audio Sink: {} (active)\n{} devices",
+                    current_name, device_count
                 )
-                .default(0)
-                .interact_opt()
-                .context("Failed to show selection dialog")?;
+            } else {
+                "Combined Audio Sink: Not active".to_string()
+            };
 
-            match selection {
-                Some(idx) => {
-                    let action = &items[idx].0;
-                    match action.as_str() {
-                        "disable" => {
-                            if let Err(e) = disable_combined_sink(ctx) {
-                                ctx.emit_failure(
-                                    "audio.combined_sink.disable_failed",
-                                    &format!("Failed to disable: {}", e),
-                                );
-                            }
+            // Build items with computed previews
+            let items_with_preview: Vec<MenuItemWithPreview> = items
+                .into_iter()
+                .map(|item| {
+                    let preview = item.preview(ctx, currently_enabled, is_default, device_count);
+                    MenuItemWithPreview::new(item, preview)
+                })
+                .collect();
+
+            // Use FzfWrapper to show menu with previews
+            let result = FzfWrapper::builder()
+                .prompt("Select action")
+                .header(Header::default(&header_text))
+                .select_padded(items_with_preview)?;
+
+            match result {
+                FzfResult::Selected(wrapper) => match wrapper.item.action {
+                    MenuAction::Disable => match disable_combined_sink(ctx) {
+                        Ok(needs_restart) => {
+                            restart_needed = needs_restart;
                             break;
                         }
-                        "set_default" => {
-                            if let Err(e) = set_combined_sink_as_default(ctx) {
-                                ctx.emit_failure(
-                                    "audio.combined_sink.set_default_failed",
-                                    &format!("Failed to set as default: {}", e),
-                                );
-                            }
-                            // Continue to show the menu after setting default
-                            continue;
-                        }
-                        "enable" | "reconfigure" => {
-                            // Build initial selection set
-                            let initial_selection: HashSet<String> = if action == "reconfigure" {
-                                stored_config.clone()
-                            } else {
-                                HashSet::new()
-                            };
-
-                            // Build checklist items with initial checked state
-                            let checklist_items: Vec<SinkChecklistItem> = sinks
-                                .iter()
-                                .map(|sink| {
-                                    let checked = initial_selection.contains(&sink.node_name);
-                                    SinkChecklistItem::new(sink.clone(), checked)
-                                })
-                                .collect();
-
-                            let header_text = format!(
-                                "Select at least 2 audio devices to combine\nSelected devices will receive audio simultaneously."
+                        Err(e) => {
+                            ctx.emit_failure(
+                                "audio.combined_sink.disable_failed",
+                                &format!("Failed to disable: {}", e),
                             );
-                            let header = Header::default(&header_text);
+                        }
+                    },
+                    MenuAction::SetAsDefault => {
+                        if let Err(e) = set_combined_sink_as_default(ctx) {
+                            ctx.emit_failure(
+                                "audio.combined_sink.set_default_failed",
+                                &format!("Failed to set as default: {}", e),
+                            );
+                        }
+                        continue;
+                    }
+                    MenuAction::Enable | MenuAction::ChangeDevices => {
+                        // Get list of available sinks
+                        let sinks = match list_sinks() {
+                            Ok(s) => s,
+                            Err(e) => {
+                                ctx.show_message(&format!("Failed to list audio sinks: {}", e));
+                                continue;
+                            }
+                        };
 
-                            let result = FzfWrapper::builder()
-                                .prompt("Select devices")
-                                .header(header)
-                                .checklist("Combine")
-                                .checklist_dialog(checklist_items)?;
+                        let is_changing = matches!(wrapper.item.action, MenuAction::ChangeDevices);
+                        let initial_selection: HashSet<String> = if is_changing {
+                            stored_config.clone()
+                        } else {
+                            HashSet::new()
+                        };
 
-                            match result {
-                                ChecklistResult::Confirmed(selected) => {
-                                    if selected.len() < 2 {
-                                        ctx.show_message(
-                                            "Please select at least 2 devices to combine",
-                                        );
-                                        continue;
+                        let checklist_items: Vec<SinkChecklistItem> = sinks
+                            .iter()
+                            .map(|sink| {
+                                let checked = initial_selection.contains(&sink.node_name);
+                                SinkChecklistItem::new(sink.clone(), checked)
+                            })
+                            .collect();
+
+                        let header_text = format!(
+                            "Select at least 2 audio devices to combine\nSelected devices will receive audio simultaneously."
+                        );
+                        let header = Header::default(&header_text);
+
+                        let result = FzfWrapper::builder()
+                            .prompt("Select devices")
+                            .header(header)
+                            .checklist("Combine")
+                            .checklist_dialog(checklist_items)?;
+
+                        match result {
+                            ChecklistResult::Confirmed(selected) => {
+                                if selected.len() < 2 {
+                                    ctx.show_message("Please select at least 2 devices to combine");
+                                    continue;
+                                }
+
+                                let selected_names: Vec<String> = selected
+                                    .iter()
+                                    .map(|item| item.sink.node_name.clone())
+                                    .collect();
+
+                                // For new sinks, prompt for name
+                                let name = if is_changing {
+                                    get_current_sink_name(ctx)
+                                } else {
+                                    match prompt_text_edit(
+                                        crate::menu_utils::TextEditPrompt::new("Sink name", None)
+                                            .header("Name your combined audio sink")
+                                            .ghost(DEFAULT_COMBINED_SINK_NAME),
+                                    )? {
+                                        TextEditOutcome::Updated(Some(n)) => n,
+                                        TextEditOutcome::Updated(None) => {
+                                            DEFAULT_COMBINED_SINK_NAME.to_string()
+                                        }
+                                        TextEditOutcome::Cancelled | TextEditOutcome::Unchanged => {
+                                            continue;
+                                        }
                                     }
+                                };
 
-                                    // Extract SinkInfo from SinkChecklistItem
-                                    let selected_names: Vec<String> = selected
-                                        .iter()
-                                        .map(|item| item.sink.node_name.clone())
-                                        .collect();
-
-                                    // Use existing name or default
-                                    let name = get_current_sink_name(ctx);
-
-                                    if let Err(e) =
-                                        enable_combined_sink(ctx, &sinks, &selected_names, &name)
-                                    {
+                                match enable_combined_sink(ctx, &selected_names, &name) {
+                                    Ok(needs_restart) => {
+                                        restart_needed = needs_restart;
+                                    }
+                                    Err(e) => {
                                         ctx.emit_failure(
                                             "audio.combined_sink.enable_failed",
                                             &format!("Failed to enable: {}", e),
                                         );
                                     }
-                                    break;
                                 }
-                                ChecklistResult::Cancelled => continue,
-                                ChecklistResult::Action(_) => {}
+                                break;
                             }
+                            ChecklistResult::Cancelled => continue,
+                            ChecklistResult::Action(_) => {}
                         }
-                        "rename" => {
-                            if let Err(e) = rename_combined_sink(ctx) {
+                    }
+                    MenuAction::Rename => {
+                        match rename_combined_sink(ctx) {
+                            Ok(needs_restart) => {
+                                restart_needed = needs_restart;
+                            }
+                            Err(e) => {
                                 ctx.emit_failure(
                                     "audio.combined_sink.rename_failed",
                                     &format!("Failed to rename: {}", e),
                                 );
                             }
-                            continue;
                         }
-                        "back" | _ => break,
+                        continue;
                     }
-                }
-                None => break,
+                    MenuAction::Back => break,
+                },
+                FzfResult::Cancelled | FzfResult::Error(_) => break,
+                FzfResult::MultiSelected(_) => break,
             }
+        }
+
+        // Offer restart if any changes require it
+        if restart_needed {
+            offer_restart(ctx)?;
         }
 
         Ok(())
     }
 
     fn restore(&self, ctx: &mut SettingsContext) -> Option<Result<()>> {
-        // Check if we need to restore the combined sink configuration
         if !is_combined_sink_enabled() {
             let stored = ctx.optional_string(COMBINED_SINK_KEY)?;
             let name = ctx
@@ -964,9 +1124,7 @@ impl Setting for CombinedAudioSink {
                 .collect();
 
             if node_names.len() >= 2 {
-                // Re-create the config file with stored settings
-                // The config file is overwritten, not appended
-                return Some(enable_combined_sink(ctx, &[], &node_names, &name));
+                return Some(enable_combined_sink(ctx, &node_names, &name).map(|_| ()));
             }
         }
         None
