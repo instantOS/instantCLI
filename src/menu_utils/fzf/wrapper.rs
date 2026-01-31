@@ -18,21 +18,25 @@ use super::utils::{check_for_old_fzf_and_exit, log_fzf_failure};
 // Helper functions for FzfWrapper::select
 // ============================================================================
 
-/// Build a lookup map from fzf_key to item, and collect display lines with keys.
+/// Item data collected for fzf display: (display_text, key, search_keywords)
+type ItemDisplayData = (String, String, String);
+
+/// Build a lookup map from fzf_key to item, and collect display lines with keys and search keywords.
 fn build_item_map<T: FzfSelectable + Clone>(
     items: &[T],
-) -> (HashMap<String, T>, Vec<(String, String)>) {
+) -> (HashMap<String, T>, Vec<ItemDisplayData>) {
     let mut item_map: HashMap<String, T> = HashMap::new();
-    let mut display_with_keys = Vec::new();
+    let mut display_data = Vec::new();
 
     for item in items {
         let display = item.fzf_display_text();
         let key = item.fzf_key();
-        display_with_keys.push((display, key.clone()));
+        let keywords = item.fzf_search_keywords().join(" ");
+        display_data.push((display, key.clone(), keywords));
         item_map.insert(key, item.clone());
     }
 
-    (item_map, display_with_keys)
+    (item_map, display_data)
 }
 
 /// Calculate the initial cursor position based on configuration.
@@ -48,20 +52,29 @@ fn calculate_cursor_position(
 
 /// Configure fzf preview and build input text based on the preview strategy.
 /// Always includes the fzf_key after a tab so we can reliably match items.
+/// Search keywords are included in field 2 for fuzzy matching but not displayed.
+///
+/// Line format: display\x1fkeywords\x1fkey[\x1f...preview_data]
+/// - Field 1: Display text (shown to user via --with-nth=1)
+/// - Field 2: Search keywords (searched but not shown, allows alternative matching)
+/// - Field 3: Key (for item lookup on selection)
+/// - Field 4+: Preview data (varies by strategy)
 pub(crate) fn configure_preview_and_input(
     cmd: &mut Command,
     strategy: PreviewStrategy,
-    display_with_keys: &[(String, String)],
+    display_data: &[ItemDisplayData],
 ) -> String {
-    // Always use Unit Separator (\x1f) delimiter to separate display from key
+    // Always use Unit Separator (\x1f) delimiter to separate fields
+    // --with-nth=1 shows only the display text, but fzf searches all fields
+    // This allows keywords in field 2 to be matched without being displayed
     cmd.arg("--delimiter=\x1f").arg("--with-nth=1");
 
     match strategy {
         PreviewStrategy::None => {
-            // Format: display\x1fkey
-            display_with_keys
+            // Format: display\x1fkeywords\x1fkey
+            display_data
                 .iter()
-                .map(|(display, key)| format!("{display}\x1f{key}"))
+                .map(|(display, key, keywords)| format!("{display}\x1f{keywords}\x1f{key}"))
                 .collect::<Vec<_>>()
                 .join("\n")
         }
@@ -69,70 +82,70 @@ pub(crate) fn configure_preview_and_input(
             // Use literal \x1f character for POSIX compatibility (works in dash/sh)
             let encoded = general_purpose::STANDARD.encode(command.as_bytes());
             cmd.arg("--preview").arg(format!(
-                "key=$(echo {{}} | cut -d'\x1f' -f2); printf '%s' '{encoded}' | base64 -d | bash -s -- \"$key\""
+                "key=$(echo {{}} | cut -d'\x1f' -f3); printf '%s' '{encoded}' | base64 -d | bash -s -- \"$key\""
             ));
 
-            // Format: display\x1fkey
-            display_with_keys
+            // Format: display\x1fkeywords\x1fkey
+            display_data
                 .iter()
-                .map(|(display, key)| format!("{display}\x1f{key}"))
+                .map(|(display, key, keywords)| format!("{display}\x1f{keywords}\x1f{key}"))
                 .collect::<Vec<_>>()
                 .join("\n")
         }
         PreviewStrategy::CommandPerItem(command_map) => {
             // Each item has its own command - base64 encode and execute via bash
-            // Preview extracts field 3, decodes, and executes as shell command
+            // Preview extracts field 4, decodes, and executes as shell command
             cmd.arg("--preview")
-                .arg("key=$(echo {} | cut -d'\x1f' -f2); echo {} | cut -d'\x1f' -f3 | base64 -d | bash -s -- \"$key\"");
+                .arg("key=$(echo {} | cut -d'\x1f' -f3); echo {} | cut -d'\x1f' -f4 | base64 -d | bash -s -- \"$key\"");
 
-            // Format: display\x1fkey\x1fbase64_command
-            display_with_keys
+            // Format: display\x1fkeywords\x1fkey\x1fbase64_command
+            display_data
                 .iter()
-                .map(|(display, key)| {
+                .map(|(display, key, keywords)| {
                     let command = command_map.get(display).cloned().unwrap_or_default();
                     let encoded = general_purpose::STANDARD.encode(command.as_bytes());
-                    format!("{display}\x1f{key}\x1f{encoded}")
+                    format!("{display}\x1f{keywords}\x1f{key}\x1f{encoded}")
                 })
                 .collect::<Vec<_>>()
                 .join("\n")
         }
         PreviewStrategy::Text(preview_map) => {
-            // Use field 3 for base64-encoded preview
+            // Use field 4 for base64-encoded preview
             // Use literal \x1f character for POSIX compatibility
             cmd.arg("--preview")
-                .arg("echo {} | cut -d'\x1f' -f3 | base64 -d");
+                .arg("echo {} | cut -d'\x1f' -f4 | base64 -d");
 
-            // Format: display\x1fkey\x1fbase64_preview
-            display_with_keys
+            // Format: display\x1fkeywords\x1fkey\x1fbase64_preview
+            display_data
                 .iter()
-                .map(|(display, key)| {
+                .map(|(display, key, keywords)| {
                     let preview = preview_map.get(display).cloned().unwrap_or_default();
                     let encoded = general_purpose::STANDARD.encode(preview.as_bytes());
-                    format!("{display}\x1f{key}\x1f{encoded}")
+                    format!("{display}\x1f{keywords}\x1f{key}\x1f{encoded}")
                 })
                 .collect::<Vec<_>>()
                 .join("\n")
         }
         PreviewStrategy::Mixed(mixed_map) => {
-            // Mixed previews: field 3 is 'T' (text) or 'C' (command), field 4 is base64 content
-            // Preview decodes field 4 and either echoes it (text) or pipes to bash (command)
+            // Mixed previews: field 4 is 'T' (text) or 'C' (command), field 5 is base64 content
+            // Preview decodes field 5 and either echoes it (text) or pipes to bash (command)
             cmd.arg("--preview").arg(
-                "type=$(echo {} | cut -d'\x1f' -f3); content=$(echo {} | cut -d'\x1f' -f4 | base64 -d); \
-                 key=$(echo {} | cut -d'\x1f' -f2); \
+                "type=$(echo {} | cut -d'\x1f' -f4); content=$(echo {} | cut -d'\x1f' -f5 | base64 -d); \
+                 key=$(echo {} | cut -d'\x1f' -f3); \
                  if [ \"$type\" = 'C' ]; then echo \"$content\" | bash -s -- \"$key\"; else echo \"$content\"; fi",
             );
 
-            // Format: display\x1fkey\x1ftype\x1fbase64_content
-            display_with_keys
+            // Format: display\x1fkeywords\x1fkey\x1ftype\x1fbase64_content
+            display_data
                 .iter()
-                .map(|(display, key)| {
+                .map(|(display, key, keywords)| {
                     let (type_marker, content) = match mixed_map.get(display) {
                         Some(MixedPreviewContent::Text(text)) => ("T", text.clone()),
                         Some(MixedPreviewContent::Command(cmd)) => ("C", cmd.clone()),
                         None => ("T", String::new()),
                     };
                     let encoded = general_purpose::STANDARD.encode(content.as_bytes());
-                    format!("{display}\x1f{key}\x1f{type_marker}\x1f{encoded}")
+                    format!("{display}\x1f{keywords}\x1f{key}\x1f{type_marker}\x1f{encoded}")
                 })
                 .collect::<Vec<_>>()
                 .join("\n")
@@ -196,20 +209,20 @@ fn parse_fzf_output<T: Clone>(
         return Ok(FzfResult::Cancelled);
     }
 
-    // Extract the key from field 2 (format: display\x1fkey or display\x1fkey\x1fpreview)
+    // Extract the key from field 3 (format: display\x1fkeywords\x1fkey[\x1f...])
     if multi_select {
         let selected_items: Vec<T> = selected_lines
             .iter()
             .filter_map(|line| {
-                // Extract key from field 2 (index 1) using Unit Separator
-                let key = line.split('\x1f').nth(1)?;
+                // Extract key from field 3 (index 2) using Unit Separator
+                let key = line.split('\x1f').nth(2)?;
                 item_map.get(key).cloned()
             })
             .collect();
         Ok(FzfResult::MultiSelected(selected_items))
     } else {
-        // Extract key from field 2 (index 1) using Unit Separator
-        if let Some(key) = selected_lines[0].split('\x1f').nth(1) {
+        // Extract key from field 3 (index 2) using Unit Separator
+        if let Some(key) = selected_lines[0].split('\x1f').nth(2) {
             match item_map.get(key).cloned() {
                 Some(item) => Ok(FzfResult::Selected(item)),
                 None => Ok(FzfResult::Cancelled),
@@ -338,12 +351,11 @@ impl FzfWrapper {
             return Ok(FzfResult::Cancelled);
         }
 
-        // Build item lookup map (keyed by fzf_key) and display lines with keys
-        let (item_map, display_with_keys) = build_item_map(&items);
+        // Build item lookup map (keyed by fzf_key) and display data with search keywords
+        let (item_map, display_data) = build_item_map(&items);
 
         // Calculate initial cursor position
-        let cursor_position =
-            calculate_cursor_position(&self.initial_cursor, display_with_keys.len());
+        let cursor_position = calculate_cursor_position(&self.initial_cursor, display_data.len());
 
         // Analyze preview strategy and build input text
         let preview_strategy = PreviewUtils::analyze_preview_strategy(&items)?;
@@ -365,8 +377,7 @@ impl FzfWrapper {
         }
 
         // Build input text and configure preview
-        let input_text =
-            configure_preview_and_input(&mut cmd, preview_strategy, &display_with_keys);
+        let input_text = configure_preview_and_input(&mut cmd, preview_strategy, &display_data);
 
         if let Some(position) = cursor_position {
             cmd.arg("--bind").arg(format!("load:pos({})", position + 1));

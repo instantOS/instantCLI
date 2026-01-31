@@ -703,7 +703,8 @@ impl MenuItem {
 
                 // Show current devices
                 if !devices.is_empty() {
-                    builder = builder.line(colors::TEAL, Some(NerdFont::VolumeUp), "Current devices:");
+                    builder =
+                        builder.line(colors::TEAL, Some(NerdFont::VolumeUp), "Current devices:");
                     for device in devices {
                         builder = builder.text(&format!("  • {}", device));
                     }
@@ -731,7 +732,8 @@ impl MenuItem {
                     .blank();
 
                 if currently_enabled && !devices.is_empty() {
-                    builder = builder.line(colors::TEAL, Some(NerdFont::VolumeUp), "Current devices:");
+                    builder =
+                        builder.line(colors::TEAL, Some(NerdFont::VolumeUp), "Current devices:");
                     for device in devices {
                         builder = builder.text(&format!("  • {}", device));
                     }
@@ -998,8 +1000,12 @@ impl Setting for CombinedAudioSink {
             let items_with_preview: Vec<MenuItemWithPreview> = items
                 .into_iter()
                 .map(|item| {
-                    let preview =
-                        item.preview(currently_enabled, is_default, &device_list, &config_path_display);
+                    let preview = item.preview(
+                        currently_enabled,
+                        is_default,
+                        &device_list,
+                        &config_path_display,
+                    );
                     MenuItemWithPreview::new(item, preview)
                 })
                 .collect();

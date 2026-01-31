@@ -1052,12 +1052,17 @@ impl FzfBuilder {
         }
 
         let preview_strategy = PreviewUtils::analyze_preview_strategy(entries)?;
-        let display_with_keys: Vec<(String, String)> = entries
+        let display_data: Vec<(String, String, String)> = entries
             .iter()
-            .map(|entry| (entry.fzf_display_text(), entry.fzf_key()))
+            .map(|entry| {
+                (
+                    entry.fzf_display_text(),
+                    entry.fzf_key(),
+                    entry.fzf_search_keywords().join(" "),
+                )
+            })
             .collect();
-        let input_text =
-            configure_preview_and_input(&mut cmd, preview_strategy, &display_with_keys);
+        let input_text = configure_preview_and_input(&mut cmd, preview_strategy, &display_data);
 
         let mut child = cmd
             .stdin(Stdio::piped())
@@ -1126,8 +1131,8 @@ impl FzfBuilder {
             }
         }
 
-        // Extract the key from selected line (format: display\x1fkey)
-        if let Some(key) = selected.split('\x1f').nth(1) {
+        // Extract the key from selected line (format: display\x1fkeywords\x1fkey)
+        if let Some(key) = selected.split('\x1f').nth(2) {
             // Check if it's the confirm action
             if key == ChecklistConfirm::confirm_key() {
                 return Ok(ChecklistSelection::Confirmed);
