@@ -259,8 +259,19 @@ fn get_node_name(sink_id: &str) -> Result<String> {
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     // Parse node.name from output
+    // Handle both formats:
+    //   node.name = "value"
+    // * node.name = "value" (marked as default)
     for line in stdout.lines() {
-        if let Some(value) = line.strip_prefix("  node.name = \"") {
+        let trimmed = line.trim_start();
+        // Remove leading "* " if present (indicates default property)
+        let without_star = if trimmed.starts_with("* ") {
+            &trimmed[2..]
+        } else {
+            trimmed
+        };
+
+        if let Some(value) = without_star.strip_prefix("node.name = \"") {
             if let Some(end) = value.find('"') {
                 return Ok(value[..end].to_string());
             }
@@ -461,6 +472,7 @@ fn restart_pipewire_services(ctx: &SettingsContext) -> Result<()> {
 }
 
 /// Find the ID of the combined sink from wpctl status
+/// The combined sink may appear in Sinks or Filters section depending on PipeWire version
 fn find_combined_sink_id() -> Result<String> {
     let output = Command::new("wpctl")
         .arg("status")
@@ -473,23 +485,13 @@ fn find_combined_sink_id() -> Result<String> {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
 
-    // Look for the combined_output sink in the Sinks section
-    let mut in_sinks_section = false;
+    // Search all lines for combined_output - it can appear in Sinks or Filters section
     for line in stdout.lines() {
-        if line.contains("├─ Sinks:") || line.contains("└─ Sinks:") {
-            in_sinks_section = true;
-            continue;
-        }
-
-        if in_sinks_section && (line.contains("├─") || line.contains("└─")) && !line.contains("│")
-        {
-            break;
-        }
-
-        if in_sinks_section && line.contains("combined_output") {
+        if line.contains("combined_output") {
             // Parse the ID from lines like:
             // │     85. combined_output [vol: 1.00]
             // │ *   85. combined_output [vol: 1.00]
+            // │  *   47. combined_output                                              [Audio/Sink]
             let cleaned = line
                 .replace('│', "")
                 .replace('├', "")
@@ -534,6 +536,7 @@ fn set_combined_sink_as_default(ctx: &SettingsContext) -> Result<()> {
 }
 
 /// Check if combined sink is currently the default output
+/// The combined sink may appear in Sinks or Filters section depending on PipeWire version
 fn is_combined_sink_default() -> Result<bool> {
     let output = Command::new("wpctl")
         .arg("status")
@@ -546,21 +549,11 @@ fn is_combined_sink_default() -> Result<bool> {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
 
-    // Look for the combined_output sink marked with * in the Sinks section
-    let mut in_sinks_section = false;
+    // Search all lines for combined_output marked with * (indicating default)
+    // It can appear in Sinks or Filters section
     for line in stdout.lines() {
-        if line.contains("├─ Sinks:") || line.contains("└─ Sinks:") {
-            in_sinks_section = true;
-            continue;
-        }
-
-        if in_sinks_section && (line.contains("├─") || line.contains("└─")) && !line.contains("│")
-        {
-            break;
-        }
-
-        // Check if this is the default (marked with *)
-        if in_sinks_section && line.contains('*') && line.contains("combined_output") {
+        // Check if this is the default (marked with *) and is combined_output
+        if line.contains('*') && line.contains("combined_output") {
             return Ok(true);
         }
     }
