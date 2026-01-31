@@ -104,6 +104,40 @@ impl FzfSelectable for SinkInfo {
     }
 }
 
+/// Wrapper for SinkInfo with initial checked state for checklist
+#[derive(Debug, Clone)]
+struct SinkChecklistItem {
+    sink: SinkInfo,
+    initially_checked: bool,
+}
+
+impl SinkChecklistItem {
+    fn new(sink: SinkInfo, checked: bool) -> Self {
+        Self {
+            sink,
+            initially_checked: checked,
+        }
+    }
+}
+
+impl FzfSelectable for SinkChecklistItem {
+    fn fzf_display_text(&self) -> String {
+        self.sink.fzf_display_text()
+    }
+
+    fn fzf_key(&self) -> String {
+        self.sink.fzf_key()
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        self.sink.fzf_preview()
+    }
+
+    fn fzf_initial_checked_state(&self) -> bool {
+        self.initially_checked
+    }
+}
+
 /// Run wpctl status and parse the Sinks section
 fn list_sinks() -> Result<Vec<SinkInfo>> {
     let output = Command::new("wpctl")
@@ -665,27 +699,19 @@ impl Setting for CombinedAudioSink {
                             break;
                         }
                         "enable" | "reconfigure" => {
-                            // Show checklist of available sinks
-                            // Pre-select previously configured devices
-                            let available_node_names: HashSet<String> =
-                                sinks.iter().map(|s| s.node_name.clone()).collect();
-
-                            // If reconfiguring with valid stored devices, use those as initial selection
+                            // Build initial selection set
                             let initial_selection: HashSet<String> = if action == "reconfigure" {
-                                stored_config
-                                    .intersection(&available_node_names)
-                                    .cloned()
-                                    .collect()
+                                stored_config.clone()
                             } else {
                                 HashSet::new()
                             };
 
-                            // Build checklist items with proper initial state
-                            let checklist_items: Vec<(SinkInfo, bool)> = sinks
+                            // Build checklist items with initial checked state
+                            let checklist_items: Vec<SinkChecklistItem> = sinks
                                 .iter()
                                 .map(|sink| {
                                     let checked = initial_selection.contains(&sink.node_name);
-                                    (sink.clone(), checked)
+                                    SinkChecklistItem::new(sink.clone(), checked)
                                 })
                                 .collect();
 
@@ -696,16 +722,11 @@ impl Setting for CombinedAudioSink {
                             );
                             let header = Header::default(&header_text);
 
-                            // Convert to SinkInfo for the checklist dialog
-                            // We need to mark checked items
                             let result = FzfWrapper::builder()
                                 .prompt("Select devices")
                                 .header(header)
                                 .checklist("Combine")
-                                .checklist_dialog_with_initial(
-                                    checklist_items.into_iter().map(|(item, _)| item).collect(),
-                                    &initial_selection,
-                                )?;
+                                .checklist_dialog(checklist_items)?;
 
                             match result {
                                 ChecklistResult::Confirmed(selected) => {
@@ -716,8 +737,11 @@ impl Setting for CombinedAudioSink {
                                         continue;
                                     }
 
-                                    let selected_names: Vec<String> =
-                                        selected.iter().map(|s| s.node_name.clone()).collect();
+                                    // Extract SinkInfo from SinkChecklistItem
+                                    let selected_names: Vec<String> = selected
+                                        .iter()
+                                        .map(|item| item.sink.node_name.clone())
+                                        .collect();
 
                                     // Get name for the sink
                                     match prompt_for_sink_name(ctx, DEFAULT_COMBINED_SINK_NAME) {
