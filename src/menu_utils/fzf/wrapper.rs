@@ -78,7 +78,7 @@ fn format_fzf_line(display: &str, key: &str, keywords: &str, extra_fields: &[&st
 
     if !needs_delimiter {
         // Simple case: no keywords, no previews
-        format!("{display}")
+        display.to_string()
     } else if keywords.is_empty() {
         // No keywords but has preview fields: still need full field structure
         // so preview commands can reliably extract field 3 (key) and field 4+ (data)

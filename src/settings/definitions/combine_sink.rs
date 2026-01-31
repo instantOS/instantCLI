@@ -190,13 +190,7 @@ fn parse_wpctl_status(output: &str) -> Result<Vec<SinkInfo>> {
 /// Parse a single sink line from wpctl status
 fn parse_sink_line(line: &str) -> Option<SinkInfo> {
     // Remove tree drawing characters
-    let cleaned = line
-        .replace('│', "")
-        .replace('├', "")
-        .replace('└', "")
-        .replace('─', "")
-        .trim()
-        .to_string();
+    let cleaned = line.replace(['│', '├', '└', '─'], "").trim().to_string();
 
     // Check if this is the default sink (marked with *)
     let is_default = cleaned.contains('*');
@@ -266,10 +260,10 @@ fn get_node_name(sink_id: &str) -> Result<String> {
             trimmed
         };
 
-        if let Some(value) = without_star.strip_prefix("node.name = \"") {
-            if let Some(end) = value.find('"') {
-                return Ok(value[..end].to_string());
-            }
+        if let Some(value) = without_star.strip_prefix("node.name = \"")
+            && let Some(end) = value.find('"')
+        {
+            return Ok(value[..end].to_string());
         }
     }
 
@@ -515,11 +509,7 @@ fn find_combined_sink_id() -> Result<String> {
             // │ *   85. ins_combined_output [vol: 1.00]
             // │  *   47. ins_combined_my_sink                                         [Audio/Sink]
             let cleaned = line
-                .replace('│', "")
-                .replace('├', "")
-                .replace('└', "")
-                .replace('─', "")
-                .replace('*', "")
+                .replace(['│', '├', '└', '─', '*'], "")
                 .trim()
                 .to_string();
 
@@ -1065,9 +1055,7 @@ impl Setting for CombinedAudioSink {
                             })
                             .collect();
 
-                        let header_text = format!(
-                            "Select at least 2 audio devices to combine\nSelected devices will receive audio simultaneously."
-                        );
+                        let header_text = "Select at least 2 audio devices to combine\nSelected devices will receive audio simultaneously.".to_string();
                         let header = Header::default(&header_text);
 
                         let result = FzfWrapper::builder()

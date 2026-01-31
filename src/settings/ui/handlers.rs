@@ -8,8 +8,20 @@ use crate::common::package::{Dependency, InstallResult, ensure_all};
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::Setting;
 
+/// Result of checking requirements for a setting
+enum RequirementsResult {
+    /// All requirements are satisfied
+    Satisfied,
+    /// User declined installation
+    Declined,
+    /// Required dependency is not available on this system
+    NotAvailable { name: String, hint: String },
+    /// Installation failed
+    Failed { reason: String },
+}
+
 /// Check requirements for a setting, prompting installation if needed
-fn ensure_requirements(setting: &'static dyn Setting) -> Result<bool> {
+fn ensure_requirements(setting: &'static dyn Setting) -> Result<RequirementsResult> {
     let metadata = setting.metadata();
 
     // Check which dependencies are missing
@@ -25,15 +37,19 @@ fn ensure_requirements(setting: &'static dyn Setting) -> Result<bool> {
     if !required_deps.is_empty() {
         match ensure_all(&required_deps)? {
             InstallResult::Installed | InstallResult::AlreadyInstalled => {}
-            InstallResult::Declined
-            | InstallResult::NotAvailable { .. }
-            | InstallResult::Failed { .. } => {
-                return Ok(false);
+            InstallResult::Declined => {
+                return Ok(RequirementsResult::Declined);
+            }
+            InstallResult::NotAvailable { name, hint } => {
+                return Ok(RequirementsResult::NotAvailable { name, hint });
+            }
+            InstallResult::Failed { reason } => {
+                return Ok(RequirementsResult::Failed { reason });
             }
         }
     }
 
-    Ok(true)
+    Ok(RequirementsResult::Satisfied)
 }
 
 /// Handle a setting action
@@ -100,8 +116,52 @@ pub fn handle_trait_setting(
     }
 
     // Check requirements before applying
-    if !setting.metadata().requirements.is_empty() && !ensure_requirements(setting)? {
-        return Ok(());
+    if !setting.metadata().requirements.is_empty() {
+        match ensure_requirements(setting)? {
+            RequirementsResult::Satisfied => {}
+            RequirementsResult::Declined => {
+                // User declined installation, just return without applying
+                return Ok(());
+            }
+            RequirementsResult::NotAvailable { name, hint } => {
+                use crate::menu_utils::FzfWrapper;
+                let mut messages = Vec::new();
+                messages.push(format!(
+                    "'{}' requires '{}' which is not available on your system.",
+                    setting.metadata().title,
+                    name
+                ));
+                messages.push(String::new());
+                messages.push("This usually happens on immutable systems (like Bazzite) where packages cannot be installed via the package manager.".to_string());
+                messages.push(String::new());
+                messages.push("To use this setting, you may need to:".to_string());
+                messages.push(format!("  • {}", hint));
+
+                FzfWrapper::builder()
+                    .message(messages.join("\n"))
+                    .title("Dependency Not Available")
+                    .message_dialog()?;
+
+                return Ok(());
+            }
+            RequirementsResult::Failed { reason } => {
+                use crate::menu_utils::FzfWrapper;
+                let mut messages = Vec::new();
+                messages.push(format!(
+                    "Failed to install required dependencies for '{}':",
+                    setting.metadata().title
+                ));
+                messages.push(String::new());
+                messages.push(reason);
+
+                FzfWrapper::builder()
+                    .message(messages.join("\n"))
+                    .title("Installation Failed")
+                    .message_dialog()?;
+
+                return Ok(());
+            }
+        }
     }
 
     // Apply the setting
