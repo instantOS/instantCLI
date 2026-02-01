@@ -7,6 +7,7 @@ use colored::Colorize;
 
 use crate::dot::config::Config;
 use crate::dot::override_config::{DotfileSource, OverrideConfig};
+use crate::dot::sources;
 use crate::ui::prelude::*;
 
 use super::discovery::{DiscoveryFilter, discover_dotfiles};
@@ -81,7 +82,7 @@ fn print_sources(
     overrides: &OverrideConfig,
 ) {
     let current = overrides.get_override(path);
-    let last = sources.len().saturating_sub(1);
+    let default_source = sources::default_source_for(sources);
 
     emit(
         Level::Info,
@@ -90,11 +91,15 @@ fn print_sources(
         None,
     );
 
-    for (i, source) in sources.iter().enumerate() {
+    for source in sources {
         let is_override = current
             .map(|o| o.source_repo == source.repo_name && o.source_subdir == source.subdir_name)
             .unwrap_or(false);
-        let is_default = current.is_none() && i == last;
+        let is_default = current.is_none()
+            && default_source
+                .as_ref()
+                .map(|d| d.repo_name == source.repo_name && d.subdir_name == source.subdir_name)
+                .unwrap_or(false);
 
         let status = if is_override {
             " (current override)".yellow().to_string()
