@@ -1,10 +1,10 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::process::Command;
 
 use crate::settings::context::SettingsContext;
 
-use super::model::SinkInfo;
 use super::INS_COMBINED_SINK_PREFIX;
+use super::model::SinkInfo;
 
 /// Run wpctl status and parse the Sinks section
 pub(super) fn list_sinks() -> Result<Vec<SinkInfo>> {

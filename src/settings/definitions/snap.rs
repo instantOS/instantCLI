@@ -43,22 +43,18 @@ fn run_snap_installer() -> Result<()> {
         anyhow::bail!("Snap is not available on this system");
     }
 
-    // List available apps. Snap doesn't have a "list all" command, so we search for common things or just search "."?
-    // The previous implementation used `snap find .` which seems to list some packages.
-    // Note: `snap find` without arguments lists featured snaps. `snap find .` lists some general ones.
-    // We will use `snap find .` as established.
-    // Output format of `snap find .`:
-    // Name  Version  Publisher  Notes  Summary
-    // ...
-    // We want to skip header.
-    // We can use awk/sed to format it for FZF if needed, but FZF can handle it.
-    // We need to parse it carefully.
+    // Use dynamic reload to search snap packages as user types.
+    // `snap find .` only returns a limited subset of packages, so we use
+    // fzf's reload binding to run `snap find {q}` with the current query.
+    // This allows finding packages like discord that don't appear in the default listing.
 
-    // Command to list packages. We'll use `tail -n +2` to skip the header.
-    // We want to display Name, Version, Summary.
-    // `snap find .` output is column aligned.
+    // Initial command shows featured snaps (empty query shows `snap find` output)
+    // Use awk to skip both the header line and empty lines
+    let initial_command = "snap find 2>/dev/null | awk 'NR>1 && !/^Name[[:space:]]+Version/'";
 
-    let list_command = "snap find . 2>/dev/null | tail -n +2";
+    // Reload command searches with the current query
+    // {q} is fzf's placeholder for the current query string
+    let reload_command = "snap find {q} 2>/dev/null | awk 'NR>1 && !/^Name[[:space:]]+Version/' || true";
 
     // Build human-readable preview command using snap info
     let package_icon = NerdFont::Package.to_string();
@@ -69,25 +65,28 @@ fn run_snap_installer() -> Result<()> {
         package_icon, error_icon
     );
 
+    // Bind change event to reload with current query
+    let reload_bind = format!("change:reload:{}", reload_command);
+
     let result = crate::menu_utils::FzfWrapper::builder()
         .multi_select(true)
-        .prompt("Select Snap apps to install")
+        .prompt("Search Snap apps")
         .args([
             "--preview",
             &preview_cmd,
             "--preview-window",
             "down:65%:wrap",
             "--bind",
+            &reload_bind,
+            "--bind",
             "ctrl-l:clear-screen",
             "--ansi",
             "--no-mouse",
-            // `snap find` output is space separated but aligned.
-            // We can rely on default awk behavior of fzf for {1} (first field).
-            // But we might want to display the whole line.
+            "--disabled",  // Disable fzf's internal filtering since we use reload for searching
             "--layout",
             "reverse-list",
         ])
-        .select_streaming(list_command)?;
+        .select_streaming(initial_command)?;
 
     match result {
         crate::menu_utils::FzfResult::MultiSelected(lines) => {

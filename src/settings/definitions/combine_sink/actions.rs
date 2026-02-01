@@ -1,18 +1,18 @@
 use std::fs;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 
 use crate::common::systemd::SystemdManager;
 use crate::menu_utils::{
-    prompt_text_edit, ConfirmResult, FzfWrapper, TextEditOutcome, TextEditPrompt,
+    ConfirmResult, FzfWrapper, TextEditOutcome, TextEditPrompt, prompt_text_edit,
 };
 use crate::settings::context::SettingsContext;
 
+use super::COMBINE_SINK_CONFIG_FILE;
 use super::config::{
     combine_sink_config_file, config_changed, display_name_to_node_name, get_current_config,
     get_current_sink_name, is_combined_sink_enabled, pipewire_config_path,
 };
-use super::COMBINE_SINK_CONFIG_FILE;
 
 /// Remove the combined sink by deleting the config file
 /// Returns true if a restart is needed (config file existed and was removed)
