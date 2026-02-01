@@ -57,9 +57,9 @@ impl CategoryNode {
 /// are top-level and which are grouped into subcategories.
 pub fn category_tree(category: Category) -> Vec<CategoryNode> {
     use crate::settings::definitions::{
-        appearance, appimages, apps, brightness, desktop, display, flatpak, installed_flatpaks,
-        installed_packages, installed_snaps, keyboard, language, mouse, network, packages,
-        printers, snap, storage, swap_escape, system, toggles, users, wiremix,
+        appearance, appimages, apps, brightness, combine_sink, desktop, display, flatpak,
+        installed_flatpaks, installed_packages, installed_snaps, keyboard, language, mouse,
+        network, packages, printers, snap, storage, swap_escape, system, toggles, users, wiremix,
     };
     match category {
         Category::Appearance => vec![
@@ -113,7 +113,10 @@ pub fn category_tree(category: Category) -> Vec<CategoryNode> {
             CategoryNode::setting(&desktop::ScreenRecordAudioSources),
         ],
         Category::Display => vec![CategoryNode::setting(&display::ConfigureDisplay)],
-        Category::Audio => vec![CategoryNode::setting(&wiremix::LaunchWiremix)],
+        Category::Audio => vec![
+            CategoryNode::setting(&wiremix::LaunchWiremix),
+            CategoryNode::setting(&combine_sink::CombinedAudioSink),
+        ],
         Category::Apps => vec![
             CategoryNode::setting(&apps::ManageAllApps),
             CategoryNode::setting(&apps::DefaultBrowser),

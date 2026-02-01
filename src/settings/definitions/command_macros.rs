@@ -144,6 +144,7 @@ macro_rules! gui_command_setting {
 /// - `$summary` - Description text
 /// - `$command` - Command to execute (as string literal)
 /// - `$requirement` - Package requirement
+/// - `$search_keywords` - Optional array of search keywords for discoverability
 ///
 /// # Example
 /// ```ignore
@@ -154,7 +155,8 @@ macro_rules! gui_command_setting {
 ///     NerdFont::Settings,
 ///     "Launch wiremix TUI to manage PipeWire routing and volumes.",
 ///     "wiremix",
-///     WIREMIX_PACKAGE
+///     WIREMIX_PACKAGE,
+///     &["audio", "volume", "sound"]
 /// );
 /// ```
 #[macro_export]
@@ -167,6 +169,7 @@ macro_rules! tui_command_setting {
         $summary:expr,
         $command:expr,
         $requirement:expr
+        $(, $search_keywords:expr)?
     ) => {
         pub struct $struct_name;
 
@@ -178,6 +181,7 @@ macro_rules! tui_command_setting {
                     .icon($icon)
                     .summary($summary)
                     .requirements(vec![$requirement])
+                    $(.search_keywords($search_keywords))?
                     .build()
             }
 

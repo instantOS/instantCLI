@@ -4,6 +4,7 @@ pub mod commands;
 mod common;
 pub mod gnome;
 pub mod hyprland;
+pub mod kwin;
 pub mod random;
 pub mod sway;
 pub mod x11;

@@ -48,10 +48,11 @@ fn run_flatpak_installer() -> Result<()> {
         "flatpak remote-ls --app --columns=name,application,description,version,origin";
 
     // Build human-readable preview command using flatpak remote-info with Nerd Font icons
+    // Try both system and user remotes to avoid interactive prompt when remote exists in both
     let package_icon = NerdFont::Package.to_string();
     let error_icon = NerdFont::Cross.to_string();
     let preview_cmd = format!(
-        "sh -c 'remote=\"$(echo \"{{5}}\" | cut -f1)\"; app=\"$(echo \"{{2}}\" | cut -f1)\"; printf \"\\033[1;34m{} %s\\033[0m\\n\" \"$app\"; flatpak remote-info \"$remote\" \"$app\" 2>/dev/null || printf \"\\033[1;31m{} No additional information available\\033[0m\\n\"'",
+        "sh -c 'remote=\"$(echo \"{{5}}\" | cut -f1)\"; app=\"$(echo \"{{2}}\" | cut -f1)\"; printf \"\\033[1;34m{} %s\\033[0m\\n\" \"$app\"; flatpak remote-info --system \"$remote\" \"$app\" 2>/dev/null || flatpak remote-info --user \"$remote\" \"$app\" 2>/dev/null || printf \"\\033[1;31m{} No additional information available\\033[0m\\n\"'",
         package_icon, error_icon
     );
 

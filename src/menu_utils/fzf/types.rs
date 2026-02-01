@@ -41,6 +41,15 @@ pub trait FzfSelectable {
     fn fzf_initial_checked_state(&self) -> bool {
         false
     }
+
+    /// Optional hidden search keywords for alternative matching.
+    ///
+    /// These keywords are included in the fzf search but not displayed.
+    /// Useful for aliases (e.g., "Sound Settings" could have keywords like "audio", "volume").
+    /// Default implementation returns an empty slice.
+    fn fzf_search_keywords(&self) -> &[&str] {
+        &[]
+    }
 }
 
 impl FzfSelectable for String {

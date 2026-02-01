@@ -293,6 +293,11 @@ impl FzfBuilder {
             return Ok(FzfResult::Cancelled);
         }
 
+        // Check if any item has keywords to determine if we need hidden keyword support
+        let has_keywords = items
+            .iter()
+            .any(|item| !item.fzf_search_keywords().is_empty());
+
         let input_text = Self::prepare_padded_input(&items);
         let has_preview = items
             .iter()
@@ -303,7 +308,7 @@ impl FzfBuilder {
             None
         };
 
-        let mut cmd = self.configure_padded_cmd(preview_dir.as_deref());
+        let mut cmd = self.configure_padded_cmd(preview_dir.as_deref(), has_keywords);
 
         let mut child = cmd
             .stdin(Stdio::piped())
@@ -367,6 +372,8 @@ impl FzfBuilder {
 
     fn prepare_padded_input<T: FzfSelectable>(items: &[T]) -> String {
         let mut input_lines = Vec::new();
+        // Padding to push keywords off-screen (searchable but not visible)
+        const HIDDEN_PADDING: &str = "                                                                                                    ";
 
         for item in items {
             let display = item.fzf_display_text();
@@ -375,8 +382,17 @@ impl FzfBuilder {
             // We want padding lines to have the same colored block at the start,
             // with a subtle shadow on the bottom padding using a lower block character
             let (top_padding, bottom_with_shadow) = extract_icon_padding(&display);
-            // Create padded multi-line item with shadow on bottom
-            let padded_item = format!("{top_padding}\n  {display}\n{bottom_with_shadow}");
+            // Get search keywords for this item
+            let keywords = item.fzf_search_keywords().join(" ");
+
+            // Only apply padding/delimiter trick when this item has keywords
+            let middle_line = if keywords.is_empty() {
+                format!("  {display}")
+            } else {
+                format!("  {display}{HIDDEN_PADDING}\x1f{keywords}")
+            };
+
+            let padded_item = format!("{top_padding}\n{middle_line}\n{bottom_with_shadow}");
             input_lines.push(padded_item);
         }
 
@@ -410,7 +426,11 @@ impl FzfBuilder {
         Ok(preview_dir)
     }
 
-    fn configure_padded_cmd(&self, preview_dir: Option<&std::path::Path>) -> Command {
+    fn configure_padded_cmd(
+        &self,
+        preview_dir: Option<&std::path::Path>,
+        has_keywords: bool,
+    ) -> Command {
         let mut cmd = Command::new("fzf");
         cmd.env_remove("FZF_DEFAULT_OPTS");
 
@@ -421,6 +441,11 @@ impl FzfBuilder {
         cmd.arg("--layout=reverse");
         cmd.arg("--tiebreak=index");
         cmd.arg("--info=inline-right");
+
+        // Only use delimiter and no-hscroll when at least one item has hidden keywords
+        if has_keywords {
+            cmd.arg("--delimiter=\x1f").arg("--no-hscroll");
+        }
 
         // Use --bind to print the index on accept instead of the selection text
         // {n} is the 0-based index of the selected item
@@ -1052,12 +1077,17 @@ impl FzfBuilder {
         }
 
         let preview_strategy = PreviewUtils::analyze_preview_strategy(entries)?;
-        let display_with_keys: Vec<(String, String)> = entries
+        let display_data: Vec<(String, String, String)> = entries
             .iter()
-            .map(|entry| (entry.fzf_display_text(), entry.fzf_key()))
+            .map(|entry| {
+                (
+                    entry.fzf_display_text(),
+                    entry.fzf_key(),
+                    entry.fzf_search_keywords().join(" "),
+                )
+            })
             .collect();
-        let input_text =
-            configure_preview_and_input(&mut cmd, preview_strategy, &display_with_keys);
+        let input_text = configure_preview_and_input(&mut cmd, preview_strategy, &display_data);
 
         let mut child = cmd
             .stdin(Stdio::piped())
@@ -1126,8 +1156,8 @@ impl FzfBuilder {
             }
         }
 
-        // Extract the key from selected line (format: display\x1fkey)
-        if let Some(key) = selected.split('\x1f').nth(1) {
+        // Extract the key from selected line (format: display\x1fkeywords\x1fkey)
+        if let Some(key) = selected.split('\x1f').nth(2) {
             // Check if it's the confirm action
             if key == ChecklistConfirm::confirm_key() {
                 return Ok(ChecklistSelection::Confirmed);

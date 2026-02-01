@@ -10,5 +10,6 @@ tui_command_setting!(
     NerdFont::Settings,
     "Launch wiremix TUI to manage PipeWire routing and volumes.",
     "wiremix",
-    &WIREMIX
+    &WIREMIX,
+    &["audio", "volume", "sound", "pipewire", "routing", "mixer"]
 );

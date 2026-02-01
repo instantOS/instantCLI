@@ -124,10 +124,29 @@ impl Dependency {
     /// Generate install hints for manual installation.
     ///
     /// Returns a string listing all possible installation methods.
+    /// On immutable systems, filters out native package managers (pacman, apt, dnf, etc.)
+    /// and only shows universal managers like Flatpak.
     pub fn install_hint(&self) -> String {
-        let hints: Vec<String> = self.packages.iter().map(|p| p.install_hint()).collect();
+        let os = OperatingSystem::detect();
+        let is_immutable = os.is_immutable();
+
+        let hints: Vec<String> = self
+            .packages
+            .iter()
+            .filter(|p| {
+                // On immutable systems, only show universal package managers
+                if is_immutable {
+                    p.manager.is_universal()
+                } else {
+                    true
+                }
+            })
+            .map(|p| p.install_hint())
+            .collect();
 
         if hints.is_empty() {
+            // When hints are empty on immutable systems, return a simple message
+            // The UI layer will provide full context about immutable systems
             format!("Install `{}`", self.name)
         } else {
             format!("Try one of:\n{}", hints.join("\n"))
@@ -190,6 +209,27 @@ pub fn ensure_all(deps: &[&'static Dependency]) -> anyhow::Result<InstallResult>
     // Check if all already installed
     if deps.iter().all(|d| d.is_installed()) {
         return Ok(InstallResult::AlreadyInstalled);
+    }
+
+    // Check if running on an immutable system
+    let os = OperatingSystem::detect();
+    if os.is_immutable() {
+        let missing_deps: Vec<_> = deps
+            .iter()
+            .filter(|d| !d.is_installed())
+            .map(|d| (d.name, d.install_hint()))
+            .collect();
+
+        if missing_deps.is_empty() {
+            return Ok(InstallResult::AlreadyInstalled);
+        }
+
+        let (name, hint) = missing_deps.first().unwrap();
+        // Just return the hint - the UI layer will add context about immutable systems
+        return Ok(InstallResult::NotAvailable {
+            name: name.to_string(),
+            hint: hint.clone(),
+        });
     }
 
     // Build the batch

@@ -69,13 +69,15 @@ fn run_unified_package_installer(debug: bool) -> Result<()> {
 
     if has_pacman {
         // List repo packages
-        list_cmds.push("pacman -Slq | sed 's/^/[Repo] /'");
+        let pacman_list = PackageManager::Pacman.list_available_command();
+        list_cmds.push(format!("{} | sed 's/^/[Repo] /'", pacman_list));
     }
 
     if aur_helper.is_some() {
         // List AUR packages using the static list
         // We use curl to fetch the list because helpers like yay don't easily list ONLY AUR packages
-        list_cmds.push("curl -sL https://aur.archlinux.org/packages.gz 2>/dev/null | gunzip 2>/dev/null | sed 's/^/[AUR] /'");
+        let aur_list = PackageManager::Aur.list_available_command();
+        list_cmds.push(format!("{} | sed 's/^/[AUR] /'", aur_list));
     }
 
     // Combine commands to run in sequence
@@ -86,7 +88,8 @@ fn run_unified_package_installer(debug: bool) -> Result<()> {
     let preview_cmd = if let Some(helper) = aur_helper {
         format!("{} -Sii {{2}}", helper)
     } else {
-        "pacman -Sii {2}".to_string()
+        let pacman_show = PackageManager::Pacman.show_package_command();
+        pacman_show.replace("{package}", "{2}")
     };
 
     // Re-detect for later use (consumed above)
@@ -98,7 +101,7 @@ fn run_unified_package_installer(debug: bool) -> Result<()> {
         .responsive_layout()
         .args([
             "--preview",
-            &preview_cmd,
+            preview_cmd.as_str(),
             "--preview-window",
             "down:40%:wrap", // Smaller preview for more item space
             "--layout",
@@ -235,12 +238,10 @@ fn run_debian_package_installer(debug: bool) -> Result<()> {
     }
 
     // Construct the list command - only package names, descriptions in preview
-    // Extract just the package name from apt-cache search output (one per line)
-    let list_cmd = "apt-cache search . 2>/dev/null | grep -v '^$' | cut -d' ' -f1";
+    let list_cmd = manager.list_available_command();
 
-    // Preview command: apt show works on both
-    // {1} refers to the package name
-    let preview_cmd = "apt show {1} 2>/dev/null";
+    // Preview command
+    let preview_cmd = manager.show_package_command().replace("{package}", "{1}");
 
     // FZF prompt customization
     let prompt = if is_termux {
@@ -255,7 +256,7 @@ fn run_debian_package_installer(debug: bool) -> Result<()> {
         .responsive_layout()
         .args([
             "--preview",
-            preview_cmd,
+            preview_cmd.as_str(),
             "--preview-window",
             "down:40%:wrap", // Smaller preview for more item space
             "--layout",

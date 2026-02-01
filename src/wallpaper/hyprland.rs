@@ -1,13 +1,16 @@
 use anyhow::{Context, Result};
 use std::process::Command;
 
+use crate::settings::deps::SWWW;
+
 /// Apply wallpaper on Hyprland using swww
 pub fn apply_wallpaper(path: &str) -> Result<()> {
     // Check if swww is installed
     if which::which("swww").is_err() {
+        let hint = SWWW.install_hint();
         anyhow::bail!(
-            "swww is not installed. Install it with: pacman -S swww\n\
-             swww is required for wallpaper support on Hyprland."
+            "swww is not installed.\n\n{}\n\nswww is required for wallpaper support on Hyprland.",
+            hint
         );
     }
 
