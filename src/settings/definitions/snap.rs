@@ -54,7 +54,8 @@ fn run_snap_installer() -> Result<()> {
 
     // Reload command searches with the current query
     // {q} is fzf's placeholder for the current query string
-    let reload_command = "snap find {q} 2>/dev/null | awk 'NR>1 && !/^Name[[:space:]]+Version/' || true";
+    let reload_command =
+        "snap find {q} 2>/dev/null | awk 'NR>1 && !/^Name[[:space:]]+Version/' || true";
 
     // Build human-readable preview command using snap info
     let package_icon = NerdFont::Package.to_string();
@@ -82,7 +83,7 @@ fn run_snap_installer() -> Result<()> {
             "ctrl-l:clear-screen",
             "--ansi",
             "--no-mouse",
-            "--disabled",  // Disable fzf's internal filtering since we use reload for searching
+            "--disabled", // Disable fzf's internal filtering since we use reload for searching
             "--layout",
             "reverse-list",
         ])

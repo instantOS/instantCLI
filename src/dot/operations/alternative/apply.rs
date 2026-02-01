@@ -29,7 +29,10 @@ pub fn is_safe_to_switch(target_path: &Path, sources: &[SourceOption]) -> Result
             return Ok(true);
         }
     }
-    Ok(false)
+
+    let config = Config::load(None)?;
+    let db = Database::new(config.database_path().to_path_buf())?;
+    db.source_hash_exists_anywhere(&target_hash)
 }
 
 /// Set override and apply the source file.
