@@ -53,7 +53,7 @@ impl Category {
                 description: "Installation and setup options.",
                 icon: NerdFont::Download,
                 color: colors::BLUE,
-                search_keywords: &[],
+                search_keywords: &["package"],
             },
             Category::Network => CategoryMeta {
                 id: "network",
@@ -61,7 +61,7 @@ impl Category {
                 description: "WiFi, Ethernet, VPN, and network diagnostics.",
                 icon: NerdFont::Network,
                 color: colors::GREEN,
-                search_keywords: &[],
+                search_keywords: &["internet", "wifi"],
             },
             Category::Bluetooth => CategoryMeta {
                 id: "bluetooth",
@@ -77,7 +77,7 @@ impl Category {
                 description: "Themes, wallpaper, brightness, and visual styles.",
                 icon: NerdFont::Palette,
                 color: colors::LAVENDER,
-                search_keywords: &[],
+                search_keywords: &["wallpaper", "theme"],
             },
             Category::InputDevices => CategoryMeta {
                 id: "input_devices",
@@ -85,7 +85,7 @@ impl Category {
                 description: "Mouse, touchpad, and keyboard settings.",
                 icon: NerdFont::MousePointer,
                 color: colors::PEACH,
-                search_keywords: &[],
+                search_keywords: &["mouse", "keyboard"],
             },
             Category::Desktop => CategoryMeta {
                 id: "desktop",
@@ -101,7 +101,7 @@ impl Category {
                 description: "Monitor resolution, refresh rate, and display configuration.",
                 icon: NerdFont::Monitor,
                 color: colors::SKY,
-                search_keywords: &[],
+                search_keywords: &["monitor"],
             },
             Category::Audio => CategoryMeta {
                 id: "audio",
