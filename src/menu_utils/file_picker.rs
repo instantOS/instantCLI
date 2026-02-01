@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use tempfile::Builder as TempFileBuilder;
+use tempfile::{Builder as TempFileBuilder, NamedTempFile};
 use which::which;
 
 use super::fzf::FzfWrapper;
@@ -142,86 +142,47 @@ impl FilePickerBuilder {
     }
 
     fn run_yazi(self) -> Result<FilePickerResult> {
-        let yazi_path = which("yazi")
-            .context("`yazi` command was not found. Install it to use the menu file picker.")?;
-
+        let yazi_path = Self::resolve_yazi_path()?;
         let config_dir = ensure_yazi_config(self.show_hidden)?;
+        self.pick_with_yazi(&yazi_path, &config_dir)
+    }
+
+    fn resolve_yazi_path() -> Result<PathBuf> {
+        which("yazi")
+            .context("`yazi` command was not found. Install it to use the menu file picker.")
+    }
+
+    fn pick_with_yazi(&self, yazi_path: &Path, config_dir: &Path) -> Result<FilePickerResult> {
         let mut preselect: Option<PathBuf> = None;
 
         loop {
-            let chooser_file = TempFileBuilder::new()
-                .prefix("ins-menu-picker-")
-                .suffix(".txt")
-                .tempfile()
-                .context("Failed to create temporary chooser file")?;
+            let chooser_file = Self::create_chooser_file()?;
             let chooser_path = chooser_file.path().to_path_buf();
 
             let status =
-                self.launch_yazi(&yazi_path, &config_dir, &chooser_path, preselect.as_deref())?;
+                self.launch_yazi(yazi_path, config_dir, &chooser_path, preselect.as_deref())?;
 
             if !status.success() {
                 return Ok(FilePickerResult::Cancelled);
             }
 
-            let mut selections: Vec<PathBuf> = fs::read_to_string(&chooser_path)
-                .unwrap_or_default()
-                .lines()
-                .map(|line| line.trim())
-                .filter(|line| !line.is_empty())
-                .map(PathBuf::from)
-                .collect();
-
+            let selections = Self::read_selections(&chooser_path);
             drop(chooser_file);
 
             if selections.is_empty() {
                 return Ok(FilePickerResult::Cancelled);
             }
 
-            let mut invalid_entries = Vec::new();
-            selections.retain(|path| match self.scope {
-                FilePickerScope::Files => {
-                    if path.is_file() {
-                        true
-                    } else {
-                        invalid_entries.push(path.clone());
-                        false
-                    }
-                }
-                FilePickerScope::Directories => {
-                    if path.is_dir() {
-                        true
-                    } else {
-                        invalid_entries.push(path.clone());
-                        false
-                    }
-                }
-                FilePickerScope::FilesAndDirectories => true,
-            });
+            let (selections, invalid_entries) = self.filter_by_scope(selections);
 
-            let has_invalid_entries = !invalid_entries.is_empty();
-
-            if has_invalid_entries && self.scope == FilePickerScope::Directories {
-                if let Some(first_invalid) = invalid_entries.first() {
-                    let message = format!(
-                        "`{}` is a file.\n\nPlease choose a directory instead.",
-                        first_invalid.display()
-                    );
-                    FzfWrapper::message(&message)?;
-                } else {
-                    FzfWrapper::message("A file was selected. Please choose a directory instead.")?;
-                }
-
-                preselect = invalid_entries.into_iter().next();
+            if let Some(next_preselect) = self.handle_directory_invalid_entries(&invalid_entries)? {
+                preselect = Some(next_preselect);
                 continue;
             }
 
             if selections.is_empty() {
-                if has_invalid_entries {
-                    let requested = match self.scope {
-                        FilePickerScope::Files => "file",
-                        FilePickerScope::Directories => "directory",
-                        FilePickerScope::FilesAndDirectories => "entry",
-                    };
+                if !invalid_entries.is_empty() {
+                    let requested = self.selection_kind();
                     return Err(anyhow!(
                         "No {} selected. Ensure you press Enter on a valid {}.",
                         requested,
@@ -231,19 +192,95 @@ impl FilePickerBuilder {
                 return Ok(FilePickerResult::Cancelled);
             }
 
-            for path in &mut selections {
-                if let Ok(canonical) = fs::canonicalize(path.as_path()) {
-                    *path = canonical;
-                }
-            }
+            return Ok(self.finalize_selection(selections));
+        }
+    }
 
-            if self.multi {
-                return Ok(FilePickerResult::MultiSelected(selections));
-            } else {
-                return Ok(FilePickerResult::Selected(
-                    selections.into_iter().next().unwrap(),
-                ));
+    fn create_chooser_file() -> Result<NamedTempFile> {
+        TempFileBuilder::new()
+            .prefix("ins-menu-picker-")
+            .suffix(".txt")
+            .tempfile()
+            .context("Failed to create temporary chooser file")
+    }
+
+    fn read_selections(chooser_path: &Path) -> Vec<PathBuf> {
+        fs::read_to_string(chooser_path)
+            .unwrap_or_default()
+            .lines()
+            .map(|line| line.trim())
+            .filter(|line| !line.is_empty())
+            .map(PathBuf::from)
+            .collect()
+    }
+
+    fn filter_by_scope(&self, selections: Vec<PathBuf>) -> (Vec<PathBuf>, Vec<PathBuf>) {
+        let mut valid = Vec::new();
+        let mut invalid = Vec::new();
+
+        for path in selections {
+            match self.scope {
+                FilePickerScope::Files => {
+                    if path.is_file() {
+                        valid.push(path);
+                    } else {
+                        invalid.push(path);
+                    }
+                }
+                FilePickerScope::Directories => {
+                    if path.is_dir() {
+                        valid.push(path);
+                    } else {
+                        invalid.push(path);
+                    }
+                }
+                FilePickerScope::FilesAndDirectories => valid.push(path),
             }
+        }
+
+        (valid, invalid)
+    }
+
+    fn handle_directory_invalid_entries(
+        &self,
+        invalid_entries: &[PathBuf],
+    ) -> Result<Option<PathBuf>> {
+        if self.scope != FilePickerScope::Directories || invalid_entries.is_empty() {
+            return Ok(None);
+        }
+
+        if let Some(first_invalid) = invalid_entries.first() {
+            let message = format!(
+                "`{}` is a file.\n\nPlease choose a directory instead.",
+                first_invalid.display()
+            );
+            FzfWrapper::message(&message)?;
+        } else {
+            FzfWrapper::message("A file was selected. Please choose a directory instead.")?;
+        }
+
+        Ok(invalid_entries.first().cloned())
+    }
+
+    fn selection_kind(&self) -> &'static str {
+        match self.scope {
+            FilePickerScope::Files => "file",
+            FilePickerScope::Directories => "directory",
+            FilePickerScope::FilesAndDirectories => "entry",
+        }
+    }
+
+    fn finalize_selection(&self, mut selections: Vec<PathBuf>) -> FilePickerResult {
+        for path in &mut selections {
+            if let Ok(canonical) = fs::canonicalize(path.as_path()) {
+                *path = canonical;
+            }
+        }
+
+        if self.multi {
+            FilePickerResult::MultiSelected(selections)
+        } else {
+            FilePickerResult::Selected(selections.into_iter().next().unwrap())
         }
     }
 

@@ -42,16 +42,6 @@ impl SliderCommand {
 
         Ok(())
     }
-
-    /// Raw components used for serialization when communicating with the menu server.
-    pub fn components(&self) -> (&str, &[String]) {
-        (&self.program, &self.args)
-    }
-
-    /// Reconstruct the command from raw components.
-    pub fn from_components(program: String, args: Vec<String>) -> Self {
-        Self { program, args }
-    }
 }
 
 /// Configuration for the slider TUI.
