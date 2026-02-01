@@ -154,9 +154,9 @@ pub fn scan_directory_for_dotfiles(dir_path: &Path, home_path: &Path) -> Result<
 pub fn merge_dotfiles(dotfiles_list: Vec<Vec<Dotfile>>) -> HashMap<PathBuf, Dotfile> {
     let mut filemap = HashMap::new();
 
-    // Reverse iteration - earlier repos override later ones
-    // This means P1 (first repo) has highest priority
-    for dotfiles in dotfiles_list.into_iter().rev() {
+    // Iterate in order - earlier repos override later ones
+    // Since we use or_insert (first wins), we iterate in priority order (high to low)
+    for dotfiles in dotfiles_list.into_iter() {
         for dotfile in dotfiles {
             // Only insert if key doesn't exist (earlier repos win)
             filemap
