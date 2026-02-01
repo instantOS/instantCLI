@@ -58,10 +58,9 @@ impl CategoryNode {
 pub fn category_tree(category: Category) -> Vec<CategoryNode> {
     use crate::settings::definitions::{
         appearance, appimages, apps, brightness, desktop, display, flatpak, installed_flatpaks,
-        installed_packages, keyboard, language, mouse, network, packages, printers, storage,
-        swap_escape, system, toggles, users, wiremix,
+        installed_packages, installed_snaps, keyboard, language, mouse, network, packages,
+        printers, snap, storage, swap_escape, system, toggles, users, wiremix,
     };
-
     match category {
         Category::Appearance => vec![
             CategoryNode::setting(&brightness::Brightness),
@@ -157,6 +156,8 @@ pub fn category_tree(category: Category) -> Vec<CategoryNode> {
             CategoryNode::setting(&installed_packages::ManageInstalledPackages),
             CategoryNode::setting(&flatpak::InstallFlatpakApps),
             CategoryNode::setting(&installed_flatpaks::ManageInstalledFlatpaks),
+            CategoryNode::setting(&snap::InstallSnapApps),
+            CategoryNode::setting(&installed_snaps::ManageInstalledSnaps),
             CategoryNode::setting(&appimages::ManageAppImages),
         ],
     }
