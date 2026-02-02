@@ -71,9 +71,6 @@ pub async fn install_config(context: &InstallContext, executor: &CommandExecutor
     configure_vconsole(context, executor)?;
     configure_sudo(context, executor)?;
     configure_mkinitcpio(context, executor)?;
-    if !context.get_answer_bool(QuestionId::MinimalMode) {
-        configure_plymouth(context, executor)?;
-    }
 
     Ok(())
 }
@@ -489,8 +486,10 @@ pub fn configure_sudo(_context: &InstallContext, executor: &CommandExecutor) -> 
     Ok(())
 }
 
-fn configure_plymouth(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
-    if !context.get_answer_bool(QuestionId::UsePlymouth) {
+pub fn configure_plymouth(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+    if !context.get_answer_bool(QuestionId::UsePlymouth)
+        || context.get_answer_bool(QuestionId::MinimalMode)
+    {
         return Ok(());
     }
 
@@ -502,25 +501,44 @@ fn configure_plymouth(context: &InstallContext, executor: &CommandExecutor) -> R
         return Ok(());
     }
 
+    let theme = "instantos";
+    let theme_dir = format!("/usr/share/plymouth/themes/{}", theme);
+    if !std::path::Path::new(&theme_dir).exists() {
+        println!(
+            "Warning: Plymouth theme '{}' not found at {}. Skipping theme apply.",
+            theme, theme_dir
+        );
+        return Ok(());
+    }
+
     // Configure Plymouth theme
     let plymouth_conf = "/etc/plymouth/plymouthd.conf";
 
     // Create Plymouth config directory if it doesn't exist
-    std::fs::create_dir_all("/etc/plymouth")?;
+    if let Err(e) = std::fs::create_dir_all("/etc/plymouth") {
+        println!("Warning: Failed to create /etc/plymouth: {}", e);
+        return Ok(());
+    }
 
     // Note: If encryption is used, the Plymouth theme will not be visible during the
     // password prompt because the theme files are on the encrypted partition.
-    let config_content = r#"[Daemon]
-Theme=instantos
-ShowDelay=0
-"#;
+    let config_content = format!("[Daemon]\nTheme={}\nShowDelay=0\n", theme);
 
-    std::fs::write(plymouth_conf, config_content)?;
+    if let Err(e) = std::fs::write(plymouth_conf, config_content) {
+        println!(
+            "Warning: Failed to write /etc/plymouth/plymouthd.conf: {}",
+            e
+        );
+        return Ok(());
+    }
 
     // Set the theme and rebuild initramfs
     let mut cmd = Command::new("plymouth-set-default-theme");
-    cmd.arg("-R").arg("instantos");
-    executor.run(&mut cmd)?;
+    cmd.arg("-R").arg(theme);
+    if let Err(e) = executor.run(&mut cmd) {
+        println!("Warning: Failed to apply Plymouth theme: {}", e);
+        return Ok(());
+    }
 
     Ok(())
 }
