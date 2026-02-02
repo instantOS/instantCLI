@@ -57,9 +57,10 @@ impl CategoryNode {
 /// are top-level and which are grouped into subcategories.
 pub fn category_tree(category: Category) -> Vec<CategoryNode> {
     use crate::settings::definitions::{
-        appearance, appimages, apps, brightness, combine_sink, desktop, display, flatpak,
-        installed_flatpaks, installed_packages, installed_snaps, keyboard, language, mouse,
-        network, packages, printers, snap, storage, swap_escape, system, toggles, users, wiremix,
+        appearance, appimages, apps, bluetooth, brightness, clipboard, combine_sink, desktop,
+        display, flatpak, installed_flatpaks, installed_packages, installed_snaps, keyboard,
+        language, mouse, network, packages, printers, snap, storage, swap_escape, system, users,
+        wiremix,
     };
     match category {
         Category::Appearance => vec![
@@ -92,9 +93,9 @@ pub fn category_tree(category: Category) -> Vec<CategoryNode> {
             CategoryNode::setting(&network::EditConnections),
         ],
         Category::Bluetooth => vec![
-            CategoryNode::setting(&toggles::BluetoothService),
-            CategoryNode::setting(&toggles::BluetoothCapabilityCheck),
-            CategoryNode::setting(&desktop::BluetoothManager),
+            CategoryNode::setting(&bluetooth::BluetoothService),
+            CategoryNode::setting(&bluetooth::BluetoothCapabilityCheck),
+            CategoryNode::setting(&bluetooth::BluetoothManager),
         ],
         Category::InputDevices => vec![
             CategoryNode::setting(&keyboard::KeyboardLayout),
@@ -108,7 +109,7 @@ pub fn category_tree(category: Category) -> Vec<CategoryNode> {
         ],
         Category::Desktop => vec![
             CategoryNode::setting(&desktop::WindowLayout),
-            CategoryNode::setting(&toggles::ClipboardManager),
+            CategoryNode::setting(&clipboard::ClipboardManager),
             CategoryNode::setting(&desktop::ScreenRecordFramerate),
             CategoryNode::setting(&desktop::ScreenRecordAudioSources),
         ],
@@ -130,7 +131,7 @@ pub fn category_tree(category: Category) -> Vec<CategoryNode> {
             CategoryNode::setting(&apps::DefaultEmail),
         ],
         Category::Storage => vec![
-            CategoryNode::setting(&toggles::AutomountDisks),
+            CategoryNode::setting(&storage::AutomountDisks),
             CategoryNode::setting(&storage::DiskManagement),
             CategoryNode::setting(&storage::PartitionEditor),
         ],

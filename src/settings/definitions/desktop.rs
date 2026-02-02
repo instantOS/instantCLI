@@ -16,7 +16,7 @@ use crate::menu_utils::{
     ChecklistResult, FzfSelectable, FzfWrapper, Header, MenuCursor, select_one_with_style_at,
 };
 use crate::settings::context::SettingsContext;
-use crate::settings::deps::{BLUEMAN, PIPER};
+use crate::settings::deps::PIPER;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::store::{
     IntSettingKey, OptionalStringSettingKey, SCREEN_RECORD_AUDIO_SOURCES_DEFAULT,
@@ -260,20 +260,6 @@ gui_command_setting!(
     "Configure gaming mice with customizable buttons, RGB lighting, and DPI settings.\n\nUses Piper to configure Logitech and other gaming mice supported by libratbag.",
     "piper",
     &PIPER
-);
-
-// ============================================================================
-// Bluetooth Manager (GUI app)
-// ============================================================================
-
-gui_command_setting!(
-    BluetoothManager,
-    "bluetooth.manager",
-    "Manage Devices",
-    NerdFont::Settings,
-    "Pair new devices and manage connected Bluetooth devices.\n\nUse this to connect headphones, speakers, keyboards, mice, and other wireless devices.",
-    "blueman-manager",
-    &BLUEMAN
 );
 
 // ============================================================================

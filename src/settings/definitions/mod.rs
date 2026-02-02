@@ -9,7 +9,9 @@ mod command_macros;
 pub mod appearance;
 pub mod appimages;
 pub mod apps;
+pub mod bluetooth;
 pub mod brightness;
+pub mod clipboard;
 pub mod combine_sink;
 pub mod desktop;
 pub mod display;
@@ -27,7 +29,6 @@ pub mod snap;
 pub mod storage;
 pub mod swap_escape;
 pub mod system;
-pub mod toggles;
 pub mod users;
 pub mod wiremix;
 
