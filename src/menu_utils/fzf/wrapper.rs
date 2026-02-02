@@ -52,22 +52,39 @@ fn calculate_cursor_position(
 
 /// Configure fzf preview and build input text based on the preview strategy.
 /// Always includes the fzf_key in field 3 so we can reliably match items.
-/// Search keywords are stored in field 2 for fuzzy matching and hidden via --with-nth=1.
+/// Search keywords are stored in field 2 for fuzzy matching.
+///
+/// NOTE: In practice, additional keywords only match if they are part of the
+/// *visible* line. To keep them searchable without showing them, we append
+/// "shadow keywords" to the display text after a large padding block so they
+/// sit off-screen. This is intentionally hacky, but it is the only reliable
+/// way to keep keyword matching working across fzf versions. The padding is
+/// only applied when keywords exist.
 ///
 /// Line format: display\x1fkeywords\x1fkey[\x1f...preview_data]
-/// - Field 1: Display text
+/// - Field 1: Display text (plus off-screen shadow keywords when present)
 /// - Field 2: Search keywords (empty string when none, but position kept for compatibility)
 /// - Field 3: Key (for item lookup on selection)
 /// - Field 4+: Preview data (varies by strategy)
 /// Helper to format a single line with optional keywords and extra preview fields.
 /// Structure: display\x1fkeywords\x1fkey\x1f[extra_fields...]
-/// - Field 1: Display text
+/// - Field 1: Display text (plus off-screen shadow keywords when present)
 /// - Field 2: Search keywords (empty string when none, but position kept for compatibility)
 /// - Field 3: Key (always present, used by preview commands to extract field 3)
 /// - Field 4+: Preview data (only when extra_fields provided)
 fn format_fzf_line(display: &str, key: &str, keywords: &str, extra_fields: &[&str]) -> String {
+    // Shadow keywords: keep them in the visible line but push them off-screen.
+    // Only apply the padding when keywords exist.
+    const HIDDEN_PADDING: &str = "                                                                                                    ";
+
+    let display_with_shadow = if keywords.is_empty() {
+        display.to_string()
+    } else {
+        format!("{display}{HIDDEN_PADDING}{keywords}")
+    };
+
     let mut fields = Vec::with_capacity(3 + extra_fields.len());
-    fields.push(display.to_string());
+    fields.push(display_with_shadow);
     fields.push(keywords.to_string());
     fields.push(key.to_string());
     for field in extra_fields {
@@ -86,16 +103,10 @@ pub(crate) fn configure_preview_and_input(
         .iter()
         .any(|(_, _, keywords)| !keywords.is_empty());
 
-    // Determine if we need field separation for per-item previews
-    let has_per_item_previews = matches!(
-        strategy,
-        PreviewStrategy::CommandPerItem(_) | PreviewStrategy::Text(_) | PreviewStrategy::Mixed(_)
-    );
-
     // Always hide extra fields (keywords, key, preview data) from display.
-    // Field 1 remains the visible label; field 2+ are for matching/preview.
+    // Field 1 remains the visible label (and contains any shadow keywords).
     cmd.arg("--delimiter=\x1f").arg("--with-nth=1");
-    if has_per_item_previews && has_keywords {
+    if has_keywords {
         cmd.arg("--no-hscroll");
     }
 
