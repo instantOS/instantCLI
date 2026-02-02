@@ -6,6 +6,7 @@ use anyhow::Result;
 
 use crate::common::package::{PackageManager, uninstall_packages};
 use crate::settings::context::SettingsContext;
+use crate::settings::deps::FLATPAK;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::ui::prelude::*;
 
@@ -21,6 +22,7 @@ impl Setting for ManageInstalledFlatpaks {
             .title("Manage installed Flatpaks")
             .icon(NerdFont::Package)
             .summary("View and uninstall installed Flatpak applications.")
+            .requirements(vec![&FLATPAK])
             .build()
     }
 
@@ -36,10 +38,6 @@ impl Setting for ManageInstalledFlatpaks {
 /// Run the interactive installed Flatpak manager
 fn run_installed_flatpaks_manager() -> Result<()> {
     println!("Starting installed Flatpak manager...");
-
-    if !PackageManager::Flatpak.is_available() {
-        anyhow::bail!("Flatpak is not available on this system");
-    }
 
     // List installed apps with relevant columns
     let list_command = "flatpak list --app --columns=name,application,version,origin,size";
