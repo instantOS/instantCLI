@@ -612,4 +612,14 @@ mod tests {
             "Stop Recording: Stop current screen recording"
         );
     }
+
+    #[test]
+    fn test_find_screenshot_freeze_action() {
+        let action = find_action("sz");
+        assert!(action.is_some());
+        assert_eq!(
+            action.unwrap().description,
+            "Freeze Area: Screenshot region displayed at exact position (Sway)"
+        );
+    }
 }
