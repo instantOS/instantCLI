@@ -349,7 +349,7 @@ fn write_entry_bindings<W: Write>(
                 )?;
             }
             AssistEntry::Group(group) => {
-                let sub_keys_hint = build_sub_keys_hint(&group.children);
+                let sub_keys_hint = build_sub_keys_hint(group.children);
                 writeln!(
                     output,
                     "    bindsym {} mode \"{}_{}{} (h for help)\"",

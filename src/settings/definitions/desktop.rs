@@ -640,124 +640,210 @@ impl Setting for ScreenRecordAudioSources {
 
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
         let stored = ctx.optional_string(Self::KEY);
-        let sources = match list_audio_sources_short() {
-            Ok(list) if !list.is_empty() => list,
-            Ok(_) => {
-                ctx.show_message("No audio sources found. Is PipeWire/PulseAudio running?");
-                return Ok(());
-            }
-            Err(_) => {
-                ctx.show_message("Unable to list audio sources. Ensure pactl is installed.");
-                return Ok(());
-            }
+        let sources = match load_audio_sources(ctx)? {
+            Some(list) => list,
+            None => return Ok(()),
         };
-
-        let defaults = pactl_defaults().unwrap_or(AudioDefaults {
-            sink: None,
-            source: None,
-        });
-
+        let defaults = load_audio_defaults();
         let default_sources = default_source_names(&defaults, &sources);
-        let use_defaults = is_audio_sources_default(&stored);
-        let mut mode = if use_defaults {
-            AudioSourceMode::Defaults
-        } else {
-            AudioSourceMode::Custom
+        let (mut mode, mut custom_selected) = load_audio_source_state(stored);
+
+        run_audio_source_mode_menu(
+            ctx,
+            &sources,
+            &defaults,
+            &default_sources,
+            &mut mode,
+            &mut custom_selected,
+        )
+    }
+}
+
+fn load_audio_sources(ctx: &SettingsContext) -> Result<Option<Vec<AudioSourceInfo>>> {
+    match list_audio_sources_short() {
+        Ok(list) if !list.is_empty() => Ok(Some(list)),
+        Ok(_) => {
+            ctx.show_message("No audio sources found. Is PipeWire/PulseAudio running?");
+            Ok(None)
+        }
+        Err(_) => {
+            ctx.show_message("Unable to list audio sources. Ensure pactl is installed.");
+            Ok(None)
+        }
+    }
+}
+
+fn load_audio_defaults() -> AudioDefaults {
+    pactl_defaults().unwrap_or(AudioDefaults {
+        sink: None,
+        source: None,
+    })
+}
+
+fn load_audio_source_state(stored: Option<String>) -> (AudioSourceMode, Vec<String>) {
+    let use_defaults = is_audio_sources_default(&stored);
+    let mode = if use_defaults {
+        AudioSourceMode::Defaults
+    } else {
+        AudioSourceMode::Custom
+    };
+    let custom_selected = if use_defaults {
+        Vec::new()
+    } else {
+        parse_audio_source_selection(stored)
+    };
+    (mode, custom_selected)
+}
+
+fn run_audio_source_mode_menu(
+    ctx: &mut SettingsContext,
+    sources: &[AudioSourceInfo],
+    defaults: &AudioDefaults,
+    default_sources: &[String],
+    mode: &mut AudioSourceMode,
+    custom_selected: &mut Vec<String>,
+) -> Result<()> {
+    loop {
+        let items = build_audio_source_mode_items(*mode, default_sources, custom_selected);
+        let initial_index = mode_to_index(*mode);
+
+        let selection = select_one_with_style_at(items.clone(), initial_index)?;
+        let Some(choice) = selection else {
+            break;
         };
-        let mut custom_selected = if use_defaults {
-            Vec::new()
-        } else {
-            parse_audio_source_selection(stored)
-        };
 
-        loop {
-            let items = vec![
-                AudioSourceModeItem::new(
-                    AudioSourceMode::Defaults,
-                    matches!(mode, AudioSourceMode::Defaults),
-                    &default_sources,
-                    &custom_selected,
-                ),
-                AudioSourceModeItem::new(
-                    AudioSourceMode::Custom,
-                    matches!(mode, AudioSourceMode::Custom),
-                    &default_sources,
-                    &custom_selected,
-                ),
-            ];
-            let initial_index = match mode {
-                AudioSourceMode::Defaults => Some(0),
-                AudioSourceMode::Custom => Some(1),
-            };
-
-            let selection = select_one_with_style_at(items.clone(), initial_index)?;
-            let Some(choice) = selection else {
-                break;
-            };
-
-            match choice.mode {
-                AudioSourceMode::Defaults => {
-                    mode = AudioSourceMode::Defaults;
-                    ctx.set_optional_string(Self::KEY, Some(SCREEN_RECORD_AUDIO_SOURCES_DEFAULT));
-                    ctx.notify("Screen Recording", "Using auto-detect audio sources");
-                    continue;
-                }
-                AudioSourceMode::Custom => {
-                    mode = AudioSourceMode::Custom;
-                    let seed_selection = if custom_selected.is_empty() {
-                        default_sources.clone()
-                    } else {
-                        custom_selected.clone()
-                    };
-                    let selected_set: std::collections::HashSet<String> =
-                        seed_selection.iter().cloned().collect();
-                    let items: Vec<AudioSourceItem> = sources
-                        .iter()
-                        .cloned()
-                        .map(|source| {
-                            let checked = selected_set.contains(&source.name);
-                            AudioSourceItem::new(source, checked, &defaults)
-                        })
-                        .collect();
-
-                    let header_text = format!(
-                        "Select audio sources to include with recordings.\nEnter toggles, select Save to confirm.\nAuto-detected sources (ignored in custom mode): {}",
-                        format_sources_list(&default_sources)
-                    );
-                    let header = Header::default(&header_text);
-
-                    let selection = FzfWrapper::builder()
-                        .prompt("Audio sources")
-                        .header(header)
-                        .checklist("Save")
-                        .allow_empty_confirm(true)
-                        .checklist_dialog(items)?;
-
-                    match selection {
-                        ChecklistResult::Confirmed(items) => {
-                            let chosen: Vec<String> =
-                                items.into_iter().map(|item| item.name).collect();
-                            custom_selected = chosen.clone();
-
-                            if chosen.is_empty() {
-                                ctx.set_optional_string(Self::KEY, None::<String>);
-                                ctx.notify("Screen Recording", "Audio sources cleared");
-                            } else {
-                                ctx.set_optional_string(Self::KEY, Some(chosen.join("\n")));
-                                ctx.notify(
-                                    "Screen Recording",
-                                    &format!("Selected {} audio sources", chosen.len()),
-                                );
-                            }
-                            continue;
-                        }
-                        ChecklistResult::Cancelled => continue,
-                        ChecklistResult::Action(_) => {}
-                    }
-                }
+        match choice.mode {
+            AudioSourceMode::Defaults => {
+                *mode = AudioSourceMode::Defaults;
+                apply_default_audio_sources(ctx);
+            }
+            AudioSourceMode::Custom => {
+                *mode = AudioSourceMode::Custom;
+                handle_custom_audio_sources(
+                    ctx,
+                    sources,
+                    defaults,
+                    default_sources,
+                    custom_selected,
+                )?;
             }
         }
+    }
 
-        Ok(())
+    Ok(())
+}
+
+fn build_audio_source_mode_items(
+    mode: AudioSourceMode,
+    default_sources: &[String],
+    custom_selected: &[String],
+) -> Vec<AudioSourceModeItem> {
+    vec![
+        AudioSourceModeItem::new(
+            AudioSourceMode::Defaults,
+            matches!(mode, AudioSourceMode::Defaults),
+            default_sources,
+            custom_selected,
+        ),
+        AudioSourceModeItem::new(
+            AudioSourceMode::Custom,
+            matches!(mode, AudioSourceMode::Custom),
+            default_sources,
+            custom_selected,
+        ),
+    ]
+}
+
+fn mode_to_index(mode: AudioSourceMode) -> Option<usize> {
+    match mode {
+        AudioSourceMode::Defaults => Some(0),
+        AudioSourceMode::Custom => Some(1),
+    }
+}
+
+fn apply_default_audio_sources(ctx: &mut SettingsContext) {
+    ctx.set_optional_string(
+        ScreenRecordAudioSources::KEY,
+        Some(SCREEN_RECORD_AUDIO_SOURCES_DEFAULT),
+    );
+    ctx.notify("Screen Recording", "Using auto-detect audio sources");
+}
+
+fn handle_custom_audio_sources(
+    ctx: &mut SettingsContext,
+    sources: &[AudioSourceInfo],
+    defaults: &AudioDefaults,
+    default_sources: &[String],
+    custom_selected: &mut Vec<String>,
+) -> Result<()> {
+    let seed_selection = seed_custom_audio_selection(custom_selected, default_sources);
+    let items = build_audio_source_checklist(sources, defaults, &seed_selection);
+    let header = build_custom_audio_header(default_sources);
+
+    let selection = FzfWrapper::builder()
+        .prompt("Audio sources")
+        .header(header)
+        .checklist("Save")
+        .allow_empty_confirm(true)
+        .checklist_dialog(items)?;
+
+    match selection {
+        ChecklistResult::Confirmed(items) => {
+            let chosen: Vec<String> = items.into_iter().map(|item| item.name).collect();
+            *custom_selected = chosen.clone();
+            apply_custom_audio_selection(ctx, &chosen);
+        }
+        ChecklistResult::Cancelled => {}
+        ChecklistResult::Action(_) => {}
+    }
+
+    Ok(())
+}
+
+fn seed_custom_audio_selection(
+    custom_selected: &[String],
+    default_sources: &[String],
+) -> Vec<String> {
+    if custom_selected.is_empty() {
+        default_sources.to_vec()
+    } else {
+        custom_selected.to_vec()
+    }
+}
+
+fn build_audio_source_checklist(
+    sources: &[AudioSourceInfo],
+    defaults: &AudioDefaults,
+    seed_selection: &[String],
+) -> Vec<AudioSourceItem> {
+    let selected_set: std::collections::HashSet<String> = seed_selection.iter().cloned().collect();
+    sources
+        .iter()
+        .cloned()
+        .map(|source| {
+            let checked = selected_set.contains(&source.name);
+            AudioSourceItem::new(source, checked, defaults)
+        })
+        .collect()
+}
+
+fn build_custom_audio_header(default_sources: &[String]) -> Header {
+    let header_text = format!(
+        "Select audio sources to include with recordings.\nEnter toggles, select Save to confirm.\nAuto-detected sources (ignored in custom mode): {}",
+        format_sources_list(default_sources)
+    );
+    Header::default(&header_text)
+}
+
+fn apply_custom_audio_selection(ctx: &mut SettingsContext, chosen: &[String]) {
+    if chosen.is_empty() {
+        ctx.set_optional_string(ScreenRecordAudioSources::KEY, None::<String>);
+        ctx.notify("Screen Recording", "Audio sources cleared");
+    } else {
+        ctx.set_optional_string(ScreenRecordAudioSources::KEY, Some(chosen.join("\n")));
+        ctx.notify(
+            "Screen Recording",
+            &format!("Selected {} audio sources", chosen.len()),
+        );
     }
 }
