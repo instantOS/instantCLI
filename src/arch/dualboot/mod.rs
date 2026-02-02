@@ -1,7 +1,6 @@
 // New modular structure
 pub mod detection;
 pub mod feasibility;
-pub mod free_space;
 pub mod os_detection;
 pub mod parsing;
 pub mod resize;
