@@ -121,7 +121,6 @@ impl FzfSelectable for FinalReviewOption {
     }
 }
 
-
 impl FzfSelectable for FinalReviewItem {
     fn fzf_display_text(&self) -> String {
         match self {

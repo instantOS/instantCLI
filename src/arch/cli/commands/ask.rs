@@ -1,10 +1,124 @@
 use anyhow::Result;
 
 use crate::arch::cli::DEFAULT_QUESTIONS_FILE;
-use crate::arch::engine::QuestionEngine;
+use crate::arch::engine::{InstallSummary, QuestionEngine, build_install_summary};
 use crate::common::distro::is_live_iso;
+use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper};
+use crate::ui::catppuccin::{colors, format_icon_colored};
+use crate::ui::nerd_font::NerdFont;
+use crate::ui::preview::PreviewBuilder;
 
 use super::super::utils::ensure_root;
+
+#[derive(Clone, Copy)]
+enum ExistingAnswersChoice {
+    UseExisting,
+    StartOver,
+}
+
+#[derive(Clone)]
+struct ExistingAnswersOption {
+    choice: ExistingAnswersChoice,
+    label: String,
+    preview: FzfPreview,
+}
+
+impl ExistingAnswersOption {
+    fn new(choice: ExistingAnswersChoice, label: String, preview: FzfPreview) -> Self {
+        Self {
+            choice,
+            label,
+            preview,
+        }
+    }
+}
+
+impl FzfSelectable for ExistingAnswersOption {
+    fn fzf_display_text(&self) -> String {
+        self.label.clone()
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        self.preview.clone()
+    }
+
+    fn fzf_key(&self) -> String {
+        self.label.clone()
+    }
+}
+
+fn build_existing_answers_preview(
+    summary: &InstallSummary,
+    config_path: &std::path::Path,
+    answers_count: usize,
+) -> FzfPreview {
+    let answers_label = if answers_count == 1 {
+        "1 answer".to_string()
+    } else {
+        format!("{} answers", answers_count)
+    };
+
+    PreviewBuilder::new()
+        .header(NerdFont::FileText, "Use Saved Answers")
+        .text("Load the saved configuration and continue the wizard.")
+        .blank()
+        .field("File", &config_path.display().to_string())
+        .field("Saved", &answers_label)
+        .blank()
+        .line(colors::TEAL, None, "Summary")
+        .raw(&summary.text)
+        .build()
+}
+
+fn build_start_over_preview(config_path: &std::path::Path) -> FzfPreview {
+    PreviewBuilder::new()
+        .header(NerdFont::Broom, "Start Fresh")
+        .text("Clear saved answers and restart the wizard.")
+        .blank()
+        .line(
+            colors::YELLOW,
+            Some(NerdFont::Warning),
+            "Deletes the existing configuration file.",
+        )
+        .field("File", &config_path.display().to_string())
+        .build()
+}
+
+fn prompt_existing_answers(
+    summary: &InstallSummary,
+    config_path: &std::path::Path,
+    answers_count: usize,
+) -> Result<Option<ExistingAnswersChoice>> {
+    let options = vec![
+        ExistingAnswersOption::new(
+            ExistingAnswersChoice::UseExisting,
+            format!(
+                "{} Use saved answers",
+                format_icon_colored(NerdFont::Clipboard, colors::GREEN)
+            ),
+            build_existing_answers_preview(summary, config_path, answers_count),
+        ),
+        ExistingAnswersOption::new(
+            ExistingAnswersChoice::StartOver,
+            format!(
+                "{} Start fresh (clear answers)",
+                format_icon_colored(NerdFont::Broom, colors::YELLOW)
+            ),
+            build_start_over_preview(config_path),
+        ),
+    ];
+
+    let selection = FzfWrapper::builder()
+        .header("Existing configuration found")
+        .prompt("Select")
+        .responsive_layout()
+        .select(options)?;
+
+    match selection {
+        FzfResult::Selected(option) => Ok(Some(option.choice)),
+        _ => Ok(None),
+    }
+}
 
 /// Handle the Ask command - either ask a single question or run the full questionnaire
 pub(super) async fn handle_ask_command(
@@ -42,6 +156,9 @@ pub(super) async fn handle_ask_command(
         ensure_root()?;
 
         println!("Starting Arch Linux installation wizard...");
+
+        let config_path =
+            output_config.unwrap_or_else(|| std::path::PathBuf::from(DEFAULT_QUESTIONS_FILE));
 
         // Perform system checks
         let system_info = crate::arch::engine::SystemInfo::detect();
@@ -103,7 +220,38 @@ pub(super) async fn handle_ask_command(
         println!("  Virtual Machine: {:?}", system_info.vm_type);
         println!("  RAM: {:?} GB", system_info.total_ram_gb);
 
+        let mut existing_context: Option<crate::arch::engine::InstallContext> = None;
+        if config_path.exists() {
+            match crate::arch::engine::InstallContext::load(&config_path) {
+                Ok(mut context) => {
+                    if !context.answers.is_empty() {
+                        context.system_info = system_info.clone();
+                        let summary = build_install_summary(&context);
+                        let answers_count = context.answers.len();
+                        match prompt_existing_answers(&summary, &config_path, answers_count)? {
+                            Some(ExistingAnswersChoice::UseExisting) => {
+                                existing_context = Some(context);
+                            }
+                            Some(ExistingAnswersChoice::StartOver) => {
+                                std::fs::remove_file(&config_path)?;
+                            }
+                            None => return Ok(()),
+                        }
+                    }
+                }
+                Err(err) => {
+                    let _ = FzfWrapper::message(&format!(
+                        "Existing configuration could not be read and will be ignored:\n{}",
+                        err
+                    ));
+                }
+            }
+        }
+
         let mut engine = QuestionEngine::new(questions);
+        if let Some(context) = existing_context {
+            engine.context = context;
+        }
         engine.context.system_info = system_info;
 
         // Initialize data providers
@@ -126,9 +274,6 @@ pub(super) async fn handle_ask_command(
         );
 
         let toml_content = context.to_toml()?;
-
-        let config_path =
-            output_config.unwrap_or_else(|| std::path::PathBuf::from(DEFAULT_QUESTIONS_FILE));
 
         // Ensure parent directory exists
         if let Some(parent) = config_path.parent()
