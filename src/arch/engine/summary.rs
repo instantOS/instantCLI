@@ -104,8 +104,7 @@ pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary 
     let locale = answer_or(context, QuestionId::Locale, "<not set>");
     let keymap = answer_or(context, QuestionId::Keymap, "<not set>");
 
-    let partitioning_method =
-        answer_or(context, QuestionId::PartitioningMethod, "<not set>");
+    let partitioning_method = answer_or(context, QuestionId::PartitioningMethod, "<not set>");
     let partitioning_kind = partitioning_kind_from(&partitioning_method);
 
     let disk = format_disk_label(context);
@@ -175,7 +174,9 @@ pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary 
         "Not set"
     };
 
-    let encryption_password_status = if context.get_answer(&QuestionId::EncryptionPassword).is_some()
+    let encryption_password_status = if context
+        .get_answer(&QuestionId::EncryptionPassword)
+        .is_some()
     {
         "Set"
     } else {
@@ -198,7 +199,10 @@ pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary 
 
     match partitioning_kind {
         PartitioningKind::Automatic => {
-            let layout = format_automatic_layout(context, context.get_answer_bool(QuestionId::UseEncryption));
+            let layout = format_automatic_layout(
+                context,
+                context.get_answer_bool(QuestionId::UseEncryption),
+            );
             builder = builder
                 .field_indented("Layout", &layout)
                 .field_indented("Swap", "Auto (RAM-based)");
@@ -210,7 +214,8 @@ pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary 
                 None => "<not set>".to_string(),
             };
             let uses_free_space = resize_target == "Use existing free space";
-            let linux_size = format_dualboot_size(context).unwrap_or_else(|| "<not set>".to_string());
+            let linux_size =
+                format_dualboot_size(context).unwrap_or_else(|| "<not set>".to_string());
             let resize_method = format_dualboot_resize_method(context, uses_free_space);
 
             builder = builder

@@ -6,8 +6,8 @@ use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 
 use super::context::InstallContext;
-use super::summary::{InstallSummary, PartitioningKind, build_install_summary};
 use super::question::{Question, QuestionResult};
+use super::summary::{InstallSummary, PartitioningKind, build_install_summary};
 
 pub struct QuestionEngine {
     questions: Vec<Box<dyn Question>>,
@@ -121,30 +121,6 @@ impl FzfSelectable for FinalReviewOption {
     }
 }
 
-impl FinalReviewItem {
-    fn preview(&self) -> FzfPreview {
-        match self {
-            FinalReviewItem::Install => PreviewBuilder::new()
-                .header(NerdFont::Download, "Start Installation")
-                .text("Apply the selected configuration.")
-                .blank()
-                .line(
-                    colors::GREEN,
-                    Some(NerdFont::Check),
-                    "Begins the install process.",
-                )
-                .build(),
-            FinalReviewItem::ReviewAnswers => review_answers_preview(),
-            FinalReviewItem::AdvancedOptions => PreviewBuilder::new()
-                .header(NerdFont::Sliders, "Advanced Options")
-                .text("Configure optional steps before installing.")
-                .blank()
-                .line(colors::TEAL, None, "Optional questions and tweaks.")
-                .build(),
-            FinalReviewItem::AbortInstallation => abort_installation_preview(),
-        }
-    }
-}
 
 impl FzfSelectable for FinalReviewItem {
     fn fzf_display_text(&self) -> String {
@@ -169,7 +145,7 @@ impl FzfSelectable for FinalReviewItem {
     }
 
     fn fzf_preview(&self) -> FzfPreview {
-        self.preview()
+        FzfPreview::None
     }
 
     fn fzf_key(&self) -> String {
@@ -203,7 +179,6 @@ fn abort_installation_preview() -> FzfPreview {
         )
         .build()
 }
-
 
 fn build_final_review_preview(item: &FinalReviewItem, summary: &InstallSummary) -> FzfPreview {
     match item {
