@@ -51,49 +51,29 @@ fn calculate_cursor_position(
 }
 
 /// Configure fzf preview and build input text based on the preview strategy.
-/// Always includes the fzf_key after a tab so we can reliably match items.
-/// Search keywords are included in field 2 for fuzzy matching but visually hidden.
+/// Always includes the fzf_key in field 3 so we can reliably match items.
+/// Search keywords are stored in field 2 for fuzzy matching and hidden via --with-nth=1.
 ///
-/// Uses the "padding trick": display text is padded with spaces so that
-/// keywords are pushed off-screen. Combined with --no-hscroll, this keeps
-/// keywords searchable but not visible.
-///
-/// Line format: padded_display\x1fkeywords\x1fkey[\x1f...preview_data]
-/// - Field 1: Display text (padded to push keywords off-screen)
-/// - Field 2: Search keywords (searched but visually hidden off-screen)
+/// Line format: display\x1fkeywords\x1fkey[\x1f...preview_data]
+/// - Field 1: Display text
+/// - Field 2: Search keywords (empty string when none, but position kept for compatibility)
 /// - Field 3: Key (for item lookup on selection)
 /// - Field 4+: Preview data (varies by strategy)
-/// Helper to format a single line with optional hidden keywords.
-/// Format fzf line with optional hidden keywords and extra preview fields.
-/// Structure: display[padding]\x1f[keywords]\x1fkey\x1f[extra_fields...]
-/// - Field 1: Display text (padded when keywords exist to push them off-screen)
+/// Helper to format a single line with optional keywords and extra preview fields.
+/// Structure: display\x1fkeywords\x1fkey\x1f[extra_fields...]
+/// - Field 1: Display text
 /// - Field 2: Search keywords (empty string when none, but position kept for compatibility)
 /// - Field 3: Key (always present, used by preview commands to extract field 3)
 /// - Field 4+: Preview data (only when extra_fields provided)
 fn format_fzf_line(display: &str, key: &str, keywords: &str, extra_fields: &[&str]) -> String {
-    const HIDDEN_PADDING: &str = "                                                                                                    ";
-
-    // Build fields after the display
-    let needs_delimiter = !keywords.is_empty() || !extra_fields.is_empty();
-
-    if !needs_delimiter {
-        // Simple case: no keywords, no previews
-        display.to_string()
-    } else if keywords.is_empty() {
-        // No keywords but has preview fields: still need full field structure
-        // so preview commands can reliably extract field 3 (key) and field 4+ (data)
-        format!("{display}\x1f\x1f{key}\x1f{}", extra_fields.join("\x1f"))
-    } else {
-        // Has keywords: use padding trick to hide them off-screen
-        if extra_fields.is_empty() {
-            format!("{display}{HIDDEN_PADDING}\x1f{keywords}\x1f{key}")
-        } else {
-            format!(
-                "{display}{HIDDEN_PADDING}\x1f{keywords}\x1f{key}\x1f{}",
-                extra_fields.join("\x1f")
-            )
-        }
+    let mut fields = Vec::with_capacity(3 + extra_fields.len());
+    fields.push(display.to_string());
+    fields.push(keywords.to_string());
+    fields.push(key.to_string());
+    for field in extra_fields {
+        fields.push((*field).to_string());
     }
+    fields.join("\x1f")
 }
 
 pub(crate) fn configure_preview_and_input(
@@ -112,17 +92,11 @@ pub(crate) fn configure_preview_and_input(
         PreviewStrategy::CommandPerItem(_) | PreviewStrategy::Text(_) | PreviewStrategy::Mixed(_)
     );
 
-    // Strategy for display:
-    // - With per-item previews: Always use --with-nth=1 to hide extra fields (preview data, base64 content)
-    // - With keywords: Also add --no-hscroll to prevent horizontal scrolling of padded keywords
-    // - Neither: Simple display without any field separation
-    if has_per_item_previews {
-        // Hide extra fields (key, preview data) from display - they are only for preview commands
-        cmd.arg("--delimiter=\x1f").arg("--with-nth=1");
-        if has_keywords {
-            // Also prevent horizontal scrolling when keywords are padded off-screen
-            cmd.arg("--no-hscroll");
-        }
+    // Always hide extra fields (keywords, key, preview data) from display.
+    // Field 1 remains the visible label; field 2+ are for matching/preview.
+    cmd.arg("--delimiter=\x1f").arg("--with-nth=1");
+    if has_per_item_previews && has_keywords {
+        cmd.arg("--no-hscroll");
     }
 
     match strategy {
