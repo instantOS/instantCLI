@@ -113,7 +113,8 @@ fn apply_cursor_theme_changes(ctx: &mut SettingsContext, theme: &str) {
     }
 
     // 2. Regenerate sway config (reads cursor theme from gsettings)
-    if let Err(e) = crate::setup::setup_sway() {
+    use crate::setup::{SetupCommands, handle_setup_command};
+    if let Err(e) = handle_setup_command(SetupCommands::Sway) {
         ctx.emit_failure(
             "settings.appearance.cursor_theme.sway_config_error",
             &format!("Failed to update sway config: {e}"),
