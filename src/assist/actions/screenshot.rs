@@ -5,6 +5,8 @@ use crate::assist::utils::{
     AreaSelectionConfig, capture_area_to_file, capture_area_to_memory, copy_image_to_clipboard,
     copy_to_clipboard, generate_screenshot_filename, show_notification,
 };
+use crate::common::compositor::sway;
+use crate::common::compositor::CompositorType;
 use crate::common::display_server::DisplayServer;
 use crate::common::paths;
 
@@ -327,6 +329,77 @@ pub fn screenshot_area_to_pictures() -> Result<()> {
 
     // Use shared notification utility
     show_notification("Screenshot saved", image_path.to_str().unwrap_or(""))?;
+
+    Ok(())
+}
+
+/// Parse slurp geometry string (e.g., "100,200 300x400") into (x, y, width, height)
+fn parse_slurp_geometry(geometry: &str) -> Result<(i32, i32, i32, i32)> {
+    // Format: "x,y widthxheight"
+    let parts: Vec<&str> = geometry.split_whitespace().collect();
+    if parts.len() != 2 {
+        anyhow::bail!("Invalid geometry format: {}", geometry);
+    }
+
+    let pos_parts: Vec<&str> = parts[0].split(',').collect();
+    let size_parts: Vec<&str> = parts[1].split('x').collect();
+
+    if pos_parts.len() != 2 || size_parts.len() != 2 {
+        anyhow::bail!("Invalid geometry format: {}", geometry);
+    }
+
+    let x: i32 = pos_parts[0].parse().context("Failed to parse x coordinate")?;
+    let y: i32 = pos_parts[1].parse().context("Failed to parse y coordinate")?;
+    let width: i32 = size_parts[0].parse().context("Failed to parse width")?;
+    let height: i32 = size_parts[1].parse().context("Failed to parse height")?;
+
+    Ok((x, y, width, height))
+}
+
+/// Take a screenshot of a region and display it as a floating window at the exact position
+/// This effectively "freezes" that part of the screen. Currently only supports Sway.
+pub fn screenshot_freeze() -> Result<()> {
+    let compositor = CompositorType::detect();
+    if !matches!(compositor, CompositorType::Sway) {
+        anyhow::bail!(
+            "Screenshot freeze is only supported on Sway. Detected: {:?}",
+            compositor
+        );
+    }
+
+    let config = AreaSelectionConfig::new();
+
+    let geometry = match config.select_area() {
+        Ok(geom) => geom,
+        Err(_) => return Ok(()),
+    };
+
+    let (x, y, width, height) = parse_slurp_geometry(&geometry)?;
+
+    let display_server = config.display_server();
+    let screenshot_data = capture_area_to_memory(&geometry, display_server)?;
+
+    // Write screenshot to temp file
+    let temp_path = std::env::temp_dir().join(format!("ins_freeze_{}.png", std::process::id()));
+    std::fs::write(&temp_path, &screenshot_data).context("Failed to write temporary screenshot")?;
+
+    // Launch feh with specific geometry
+    let geometry_arg = format!("{}x{}+{}+{}", width, height, x, y);
+
+    Command::new("feh")
+        .arg("--class")
+        .arg("ins_freeze")
+        .arg("--geometry")
+        .arg(&geometry_arg)
+        .arg("--borderless")
+        .arg("--auto-zoom")
+        .arg(&temp_path)
+        .spawn()
+        .context("Failed to launch feh")?;
+
+    // Wait for feh window to appear, then make it floating
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    let _ = sway::swaymsg("[app_id=\"ins_freeze\"] floating enable, border none");
 
     Ok(())
 }

@@ -322,3 +322,15 @@ pub static FFMPEG: Dependency = Dependency {
     ],
     tests: &[InstallTest::WhichSucceeds("ffmpeg")],
 };
+
+/// feh - lightweight image viewer
+pub static FEH: Dependency = Dependency {
+    name: "feh",
+    description: Some("Lightweight image viewer"),
+    packages: &[
+        PackageDefinition::new("feh", PackageManager::Pacman),
+        PackageDefinition::new("feh", PackageManager::Apt),
+        PackageDefinition::new("feh", PackageManager::Dnf),
+    ],
+    tests: &[InstallTest::WhichSucceeds("feh")],
+};

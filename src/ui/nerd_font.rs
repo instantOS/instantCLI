@@ -270,6 +270,9 @@ pub enum NerdFont {
 
     // Recording
     CircleStop,
+
+    // Weather and Temperature
+    Snowflake,
 }
 
 impl NerdFont {
@@ -540,6 +543,9 @@ impl NerdFont {
 
             // Recording
             Self::CircleStop => '\u{f28d}', // fa-stop-circle (stop recording)
+
+            // Weather and Temperature
+            Self::Snowflake => '󰼶', // md-snowflake (freeze)
         }
     }
 }
