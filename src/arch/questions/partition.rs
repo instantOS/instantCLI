@@ -207,7 +207,8 @@ impl Question for PartitionSelectorQuestion {
         // We do this here to get fresh data after cfdisk
         let output = std::process::Command::new("lsblk")
             .args(["-n", "-o", "NAME,SIZE,TYPE", "-r", disk_path])
-            .output()?;
+            .output()
+            .context("Failed to run lsblk to get partitions")?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let mut partitions: Vec<PartitionEntry> = Vec::new();

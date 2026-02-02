@@ -425,12 +425,8 @@ impl Question for RunCfdiskQuestion {
         // Check for cfdisk
         if !crate::common::deps::CFDISK.is_installed() {
             // Prompt to install cfdisk
-            if let Err(e) = crate::common::package::ensure_all(&[&crate::common::deps::CFDISK]) {
-                return Err(anyhow::anyhow!(
-                    "cfdisk is required for manual partitioning but could not be installed: {}",
-                    e
-                ));
-            }
+            crate::common::package::ensure_all(&[&crate::common::deps::CFDISK])
+                .context("cfdisk is required for manual partitioning but could not be installed")?;
         }
 
         println!("Starting cfdisk on {}...", disk_path);
