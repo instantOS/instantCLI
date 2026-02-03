@@ -21,13 +21,15 @@ pub fn status_all(
     show_sources: bool,
 ) -> anyhow::Result<()> {
     let all_dotfiles = crate::dot::get_all_dotfiles(cfg, db)?;
+    let units = crate::dot::units::get_all_units(cfg, db)?;
+    let unit_index = crate::dot::units::build_unit_index(&all_dotfiles, &units, db)?;
 
     if let Some(path_str) = path {
         // Show status for specific path
-        show_single_file_status(path_str, &all_dotfiles, cfg, db, show_sources)?;
+        show_single_file_status(path_str, &all_dotfiles, cfg, db, show_sources, &unit_index)?;
     } else {
         // Show summary and file list
-        show_status_summary(&all_dotfiles, cfg, db, show_all, show_sources)?;
+        show_status_summary(&all_dotfiles, cfg, db, show_all, show_sources, &unit_index)?;
     }
 
     Ok(())

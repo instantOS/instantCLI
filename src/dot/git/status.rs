@@ -1,5 +1,6 @@
 use crate::dot::config;
 use crate::dot::git::{get_dotfile_dir_name, get_repo_name_for_dotfile};
+use crate::dot::units::UnitIndex;
 use crate::ui::prelude::*;
 use anyhow::{Context, Result};
 use colored::*;
@@ -65,6 +66,7 @@ pub fn show_single_file_status(
     cfg: &config::Config,
     db: &crate::dot::db::Database,
     _show_sources: bool,
+    unit_index: &UnitIndex,
 ) -> Result<()> {
     let target_path = crate::dot::resolve_dotfile_path(path_str)?;
 
@@ -104,7 +106,7 @@ pub fn show_single_file_status(
                 let files: Vec<_> = matching
                     .into_iter()
                     .map(|(path, dotfile)| {
-                        let status = get_dotfile_status(dotfile, db);
+                        let status = get_dotfile_status(dotfile, db, unit_index);
                         let repo_name = get_repo_name_for_dotfile(dotfile, cfg);
                         let dotfile_dir = get_dotfile_dir_name(dotfile, cfg);
                         let relative_path = path.strip_prefix(&home).unwrap_or(path);
@@ -139,7 +141,7 @@ pub fn show_single_file_status(
                 println!("{}", tilde_dir.bold());
 
                 for (path, dotfile) in matching {
-                    let status = get_dotfile_status(dotfile, db);
+                    let status = get_dotfile_status(dotfile, db, unit_index);
                     let repo_name = get_repo_name_for_dotfile(dotfile, cfg);
                     let dotfile_dir = get_dotfile_dir_name(dotfile, cfg);
                     let relative_path = path.strip_prefix(&home).unwrap_or(path);
@@ -172,13 +174,32 @@ pub fn show_single_file_status(
             if let Some(dotfile) = all_dotfiles.get(&target_path) {
                 let repo_name = get_repo_name_for_dotfile(dotfile, cfg);
                 let dotfile_dir = get_dotfile_dir_name(dotfile, cfg);
+                let status = get_dotfile_status(dotfile, db, unit_index);
+                let unit_details = unit_index
+                    .unit_modified_files_for_target(&target_path)
+                    .map(|(unit_path, modified_files)| {
+                        let home = dirs::home_dir().unwrap_or_default();
+                        let unit_display = format!("~/{}", unit_path.display());
+                        let modified_display: Vec<_> = modified_files
+                            .iter()
+                            .map(|path| {
+                                let relative_path = path.strip_prefix(&home).unwrap_or(path);
+                                format!("~/{}", relative_path.display())
+                            })
+                            .collect();
+                        serde_json::json!({
+                            "path": unit_display,
+                            "modified_files": modified_display
+                        })
+                    });
                 let status_data = serde_json::json!({
                     "path": target_path.display().to_string(),
-                    "status": get_dotfile_status(dotfile, db),
+                    "status": status,
                     "source": dotfile.source_path.display().to_string(),
                     "repo": repo_name.as_str(),
                     "dotfile_dir": dotfile_dir,
-                    "tracked": true
+                    "tracked": true,
+                    "unit": unit_details
                 });
                 emit(
                     Level::Info,
@@ -219,10 +240,27 @@ pub fn show_single_file_status(
                 println!(
                     "{} -> {}",
                     target_path.display(),
-                    get_dotfile_status(dotfile, db)
+                    get_dotfile_status(dotfile, db, unit_index)
                 );
                 println!("  Source: {}", dotfile.source_path.display());
                 println!("  Repo: {repo_name} ({dotfile_dir}){override_indicator}");
+
+                if let Some((unit_path, modified_files)) =
+                    unit_index.unit_modified_files_for_target(&target_path)
+                {
+                    let home = dirs::home_dir().context("Failed to get home directory")?;
+                    let unit_display = format!("~/{}", unit_path.display());
+                    println!(
+                        "  Unit: {} (modified files: {})",
+                        unit_display.yellow(),
+                        modified_files.len()
+                    );
+                    for path in modified_files {
+                        let relative_path = path.strip_prefix(&home).unwrap_or(path);
+                        let tilde_path = format!("~/{}", relative_path.display());
+                        println!("    - {}", tilde_path.yellow());
+                    }
+                }
             } else {
                 println!("{} -> not tracked", target_path.display());
             }
@@ -239,11 +277,13 @@ pub fn show_status_summary(
     db: &crate::dot::db::Database,
     show_all: bool,
     show_sources: bool,
+    unit_index: &UnitIndex,
 ) -> Result<()> {
     let home = dirs::home_dir().context("Failed to get home directory")?;
 
     // Categorize files and get summary
-    let (files_by_status, summary) = categorize_files_and_get_summary(all_dotfiles, cfg, db);
+    let (files_by_status, summary) =
+        categorize_files_and_get_summary(all_dotfiles, cfg, db, unit_index);
 
     match get_output_format() {
         OutputFormat::Json => {
@@ -267,6 +307,7 @@ pub fn categorize_files_and_get_summary<'a>(
     all_dotfiles: &'a HashMap<PathBuf, crate::dot::Dotfile>,
     cfg: &'a config::Config,
     db: &'a crate::dot::db::Database,
+    unit_index: &'a UnitIndex,
 ) -> (HashMap<DotFileStatus, Vec<FileInfo>>, StatusSummary) {
     let mut files_by_status = HashMap::new();
     let mut clean_count = 0;
@@ -277,7 +318,7 @@ pub fn categorize_files_and_get_summary<'a>(
     let overrides = crate::dot::override_config::OverrideConfig::load().unwrap_or_default();
 
     for (target_path, dotfile) in all_dotfiles {
-        let status = get_dotfile_status(dotfile, db);
+        let status = get_dotfile_status(dotfile, db, unit_index);
         let repo_name = get_repo_name_for_dotfile(dotfile, cfg);
         let dotfile_dir = get_dotfile_dir_name(dotfile, cfg);
         let is_overridden = overrides.has_override(target_path);
@@ -535,6 +576,7 @@ fn show_modified_files(
                 override_indicator.magenta()
             );
         }
+
     }
     println!();
 }
@@ -579,6 +621,7 @@ fn show_outdated_files(
                 override_indicator.magenta()
             );
         }
+
     }
     println!();
 }
@@ -623,6 +666,7 @@ fn show_clean_files(
                 override_indicator.magenta()
             );
         }
+
     }
     println!();
 }
@@ -723,11 +767,17 @@ fn show_action_suggestions(modified_count: usize, outdated_count: usize, clean_c
 pub fn get_dotfile_status(
     dotfile: &crate::dot::Dotfile,
     db: &crate::dot::db::Database,
+    unit_index: &UnitIndex,
 ) -> DotFileStatus {
     if !dotfile.is_target_unmodified(db).unwrap_or(false) {
         DotFileStatus::Modified
     } else if dotfile.is_outdated(db) {
         DotFileStatus::Outdated
+    } else if unit_index
+        .modified_unit_for_target(&dotfile.target_path)
+        .is_some()
+    {
+        DotFileStatus::Modified
     } else {
         DotFileStatus::Clean
     }

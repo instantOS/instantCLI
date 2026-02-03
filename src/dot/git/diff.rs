@@ -64,7 +64,7 @@ fn diff_directory(
     let mut showed_diff = false;
 
     for (path, dotfile) in matching {
-        let status = get_dotfile_status(dotfile, db);
+        let status = get_dotfile_status(dotfile, db, &crate::dot::units::UnitIndex::default());
 
         if matches!(status, DotFileStatus::Clean) {
             continue;
@@ -103,7 +103,7 @@ fn diff_file(
     db: &crate::dot::db::Database,
 ) -> Result<()> {
     if let Some(dotfile) = all_dotfiles.get(target_path) {
-        let status = get_dotfile_status(dotfile, db);
+        let status = get_dotfile_status(dotfile, db, &crate::dot::units::UnitIndex::default());
 
         match status {
             DotFileStatus::Clean => {
@@ -128,8 +128,12 @@ pub fn show_all_diffs(
     cfg: &config::Config,
     db: &crate::dot::db::Database,
 ) -> Result<()> {
-    let (files_by_status, _) =
-        crate::dot::git::status::categorize_files_and_get_summary(all_dotfiles, cfg, db);
+    let (files_by_status, _) = crate::dot::git::status::categorize_files_and_get_summary(
+        all_dotfiles,
+        cfg,
+        db,
+        &crate::dot::units::UnitIndex::default(),
+    );
 
     let modified_count = files_by_status
         .get(&DotFileStatus::Modified)

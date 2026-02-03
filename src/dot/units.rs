@@ -23,15 +23,55 @@ use std::path::{Path, PathBuf};
 /// Returns the unit path if the file is within a unit directory, None otherwise.
 pub fn find_unit_for_path(target_path: &Path, units: &[PathBuf]) -> Option<PathBuf> {
     let home = PathBuf::from(shellexpand::tilde("~").to_string());
+    let mut best_unit: Option<&PathBuf> = None;
 
     for unit in units {
         // Unit paths are relative to home, e.g. ".config/nvim"
         let unit_full_path = home.join(unit);
         if target_path.starts_with(&unit_full_path) {
-            return Some(unit.clone());
+            best_unit = match best_unit {
+                None => Some(unit),
+                Some(current) => {
+                    let current_depth = current.components().count();
+                    let unit_depth = unit.components().count();
+                    if unit_depth > current_depth {
+                        Some(unit)
+                    } else if unit_depth == current_depth {
+                        let unit_key = unit.to_string_lossy();
+                        let current_key = current.to_string_lossy();
+                        if unit_key < current_key {
+                            Some(unit)
+                        } else {
+                            Some(current)
+                        }
+                    } else {
+                        Some(current)
+                    }
+                }
+            };
         }
     }
-    None
+
+    best_unit.cloned()
+}
+
+fn normalize_unit_path(unit: &str) -> PathBuf {
+    let home = PathBuf::from(shellexpand::tilde("~").to_string());
+
+    if unit.starts_with('~') {
+        let expanded = PathBuf::from(shellexpand::tilde(unit).to_string());
+        return expanded
+            .strip_prefix(&home)
+            .unwrap_or(&expanded)
+            .to_path_buf();
+    }
+
+    let path = PathBuf::from(unit);
+    if path.is_absolute() {
+        return path.strip_prefix(&home).unwrap_or(&path).to_path_buf();
+    }
+
+    path
 }
 
 /// Get all effective units by combining global config units and repo-defined units.
@@ -42,15 +82,7 @@ pub fn get_all_units(config: &Config, db: &Database) -> Result<Vec<PathBuf>> {
 
     // Add global config units
     for unit in &config.units {
-        let path = if unit.starts_with('~') {
-            PathBuf::from(shellexpand::tilde(unit).to_string())
-                .strip_prefix(shellexpand::tilde("~").to_string())
-                .unwrap_or(Path::new(unit))
-                .to_path_buf()
-        } else {
-            PathBuf::from(unit)
-        };
-        units_set.insert(path);
+        units_set.insert(normalize_unit_path(unit));
     }
 
     // Add repo-defined units
@@ -61,12 +93,85 @@ pub fn get_all_units(config: &Config, db: &Database) -> Result<Vec<PathBuf>> {
         }
         if let Ok(local_repo) = repo_manager.get_repository_info(&repo_config.name) {
             for unit in &local_repo.meta.units {
-                units_set.insert(PathBuf::from(unit));
+                units_set.insert(normalize_unit_path(unit));
             }
         }
     }
 
     Ok(units_set.into_iter().collect())
+}
+
+#[derive(Debug, Default)]
+pub struct UnitIndex {
+    unit_for_target: HashMap<PathBuf, PathBuf>,
+    modified_files_by_unit: HashMap<PathBuf, Vec<PathBuf>>,
+}
+
+impl UnitIndex {
+    pub fn unit_for_target(&self, target_path: &Path) -> Option<&PathBuf> {
+        self.unit_for_target.get(target_path)
+    }
+
+    pub fn is_unit_modified(&self, unit_path: &Path) -> bool {
+        self.modified_files_by_unit.contains_key(unit_path)
+    }
+
+    pub fn modified_unit_for_target(&self, target_path: &Path) -> Option<&PathBuf> {
+        let unit_path = self.unit_for_target.get(target_path)?;
+        if self.is_unit_modified(unit_path) {
+            Some(unit_path)
+        } else {
+            None
+        }
+    }
+
+    pub fn unit_modified_files_for_target(
+        &self,
+        target_path: &Path,
+    ) -> Option<(&PathBuf, &Vec<PathBuf>)> {
+        let unit_path = self.unit_for_target.get(target_path)?;
+        let modified_files = self.modified_files_by_unit.get(unit_path)?;
+        Some((unit_path, modified_files))
+    }
+
+    pub fn modified_units(&self) -> impl Iterator<Item = &PathBuf> {
+        self.modified_files_by_unit.keys()
+    }
+}
+
+/// Build a unit index for fast unit lookup and modification checks.
+pub fn build_unit_index(
+    all_dotfiles: &HashMap<PathBuf, Dotfile>,
+    units: &[PathBuf],
+    db: &Database,
+) -> Result<UnitIndex> {
+    let mut index = UnitIndex::default();
+
+    if units.is_empty() {
+        return Ok(index);
+    }
+
+    for dotfile in all_dotfiles.values() {
+        if let Some(unit_path) = find_unit_for_path(&dotfile.target_path, units) {
+            index
+                .unit_for_target
+                .insert(dotfile.target_path.clone(), unit_path.clone());
+
+            if !dotfile.is_target_unmodified(db)? {
+                index
+                    .modified_files_by_unit
+                    .entry(unit_path)
+                    .or_default()
+                    .push(dotfile.target_path.clone());
+            }
+        }
+    }
+
+    for files in index.modified_files_by_unit.values_mut() {
+        files.sort();
+    }
+
+    Ok(index)
 }
 
 /// Check if any file in the same unit as the dotfile is modified.
@@ -127,23 +232,8 @@ pub fn get_modified_units(
     units: &[PathBuf],
     db: &Database,
 ) -> Result<HashSet<PathBuf>> {
-    let mut modified_units = HashSet::new();
-
-    for dotfile in all_dotfiles.values() {
-        if let Some(unit_path) = find_unit_for_path(&dotfile.target_path, units) {
-            // Skip if we already know this unit is modified
-            if modified_units.contains(&unit_path) {
-                continue;
-            }
-
-            // Check if this file is modified
-            if !dotfile.is_target_unmodified(db)? {
-                modified_units.insert(unit_path);
-            }
-        }
-    }
-
-    Ok(modified_units)
+    let index = build_unit_index(all_dotfiles, units, db)?;
+    Ok(index.modified_units().cloned().collect())
 }
 
 #[cfg(test)]
