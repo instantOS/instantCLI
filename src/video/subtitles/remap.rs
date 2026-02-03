@@ -200,7 +200,8 @@ mod tests {
             start: Duration::from_millis(start_ms),
             end: Duration::from_millis(end_ms),
             text: text.to_string(),
-            words: vec![], // No word-level timing for basic tests
+            words: vec![],
+            source_id: "a".to_string(),
         }
     }
 

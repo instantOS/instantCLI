@@ -1,8 +1,9 @@
 use super::core::{TimelinePlan, TimelinePlanItem};
-use super::graph::{McmfEdge, add_edge, min_cost_max_flow};
+use super::graph::{add_edge, min_cost_max_flow, McmfEdge};
 use crate::video::document::SegmentKind;
 use crate::video::support::transcript::TranscriptCue;
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
+use std::collections::HashMap;
 
 pub fn align_plan_with_subtitles(plan: &mut TimelinePlan, cues: &[TranscriptCue]) -> Result<()> {
     let dialogue_indices = align_dialogue_clips_to_cues(plan, cues)?;
@@ -32,7 +33,23 @@ fn align_dialogue_clips_to_cues(
     plan: &mut TimelinePlan,
     cues: &[TranscriptCue],
 ) -> Result<Vec<usize>> {
-    let mut dialogue_clips: Vec<(usize, f64, f64, String)> = Vec::new();
+    let mut dialogue_indices: Vec<usize> = Vec::new();
+
+    let mut cue_map: HashMap<&str, Vec<TranscriptCue>> = HashMap::new();
+    for cue in cues {
+        let key = cue.source_id.as_str();
+        cue_map.entry(key).or_default().push(cue.clone());
+    }
+
+    for cues in cue_map.values_mut() {
+        cues.sort_by(|a, b| {
+            a.start
+                .partial_cmp(&b.start)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+    }
+
+    let mut per_source_indices: HashMap<String, Vec<usize>> = HashMap::new();
 
     for (idx, item) in plan.items.iter().enumerate() {
         let TimelinePlanItem::Clip(clip) = item else {
@@ -43,31 +60,47 @@ fn align_dialogue_clips_to_cues(
             continue;
         }
 
-        dialogue_clips.push((idx, clip.start, clip.end, clip.text.clone()));
+        per_source_indices
+            .entry(clip.source_id.clone())
+            .or_default()
+            .push(idx);
     }
 
-    if dialogue_clips.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let assignments = assign_cues_max_overlap(&dialogue_clips, cues)?;
-
-    let mut dialogue_indices: Vec<usize> = Vec::new();
-    for (clip_idx, cue_idx) in assignments {
-        let Some(TimelinePlanItem::Clip(clip)) = plan.items.get_mut(clip_idx) else {
-            continue;
+    for (source_id, clip_indices) in per_source_indices {
+        let Some(source_cues) = cue_map.get(source_id.as_str()) else {
+            bail!("No transcript cues loaded for source `{}`", source_id);
         };
 
-        let (start, end) = padded_cue_bounds(
-            cues,
-            cue_idx,
-            DEFAULT_DIALOGUE_PADDING_SECONDS,
-            DEFAULT_PADDING_GUARD_SECONDS,
-        );
+        let mut dialogue_clips: Vec<(usize, f64, f64, String)> = Vec::new();
+        for idx in clip_indices {
+            let Some(TimelinePlanItem::Clip(clip)) = plan.items.get(idx) else {
+                continue;
+            };
+            dialogue_clips.push((idx, clip.start, clip.end, clip.text.clone()));
+        }
 
-        clip.start = start;
-        clip.end = end;
-        dialogue_indices.push(clip_idx);
+        if dialogue_clips.is_empty() {
+            continue;
+        }
+
+        let assignments = assign_cues_max_overlap(&dialogue_clips, source_cues)?;
+
+        for (clip_idx, cue_idx) in assignments {
+            let Some(TimelinePlanItem::Clip(clip)) = plan.items.get_mut(clip_idx) else {
+                continue;
+            };
+
+            let (start, end) = padded_cue_bounds(
+                source_cues,
+                cue_idx,
+                DEFAULT_DIALOGUE_PADDING_SECONDS,
+                DEFAULT_PADDING_GUARD_SECONDS,
+            );
+
+            clip.start = start;
+            clip.end = end;
+            dialogue_indices.push(clip_idx);
+        }
     }
 
     Ok(dialogue_indices)
@@ -489,14 +522,14 @@ fn overlap_seconds(a_start: f64, a_end: f64, b_start: f64, b_end: f64) -> f64 {
 mod tests {
     use super::*;
     use crate::video::document::parse_video_document;
-    use crate::video::planning::{StandalonePlan, TimelinePlanItem, plan_timeline};
+    use crate::video::planning::{plan_timeline, StandalonePlan, TimelinePlanItem};
     use crate::video::support::transcript::TranscriptCue;
 
     use std::path::Path;
     use std::time::Duration;
 
     use super::super::core::{
-        DEFAULT_PAUSE_MAX_SECONDS, DEFAULT_PAUSE_MIN_SECONDS, pause_duration_seconds,
+        pause_duration_seconds, DEFAULT_PAUSE_MAX_SECONDS, DEFAULT_PAUSE_MIN_SECONDS,
     };
 
     #[test]
@@ -509,11 +542,10 @@ mod tests {
             plan.items.first(),
             Some(TimelinePlanItem::Music(_))
         ));
-        assert!(
-            plan.items
-                .iter()
-                .any(|item| matches!(item, TimelinePlanItem::Clip(_)))
-        );
+        assert!(plan
+            .items
+            .iter()
+            .any(|item| matches!(item, TimelinePlanItem::Clip(_))));
     }
 
     #[test]
@@ -620,12 +652,14 @@ mod tests {
                 end: Duration::from_millis(950),
                 text: "first".to_string(),
                 words: vec![],
+                source_id: "a".to_string(),
             },
             TranscriptCue {
                 start: Duration::from_millis(1200),
                 end: Duration::from_millis(2450),
                 text: "second".to_string(),
                 words: vec![],
+                source_id: "a".to_string(),
             },
         ];
 
@@ -663,12 +697,14 @@ mod tests {
                 end: Duration::from_millis(1100),
                 text: "completely different".to_string(),
                 words: vec![],
+                source_id: "a".to_string(),
             },
             TranscriptCue {
                 start: Duration::from_millis(1100),
                 end: Duration::from_millis(2000),
                 text: "also different".to_string(),
                 words: vec![],
+                source_id: "a".to_string(),
             },
         ];
 
@@ -709,18 +745,21 @@ mod tests {
                 end: Duration::from_millis(1000),
                 text: "first".to_string(),
                 words: vec![],
+                source_id: "a".to_string(),
             },
             TranscriptCue {
                 start: Duration::from_millis(1020),
                 end: Duration::from_millis(2000),
                 text: "mid".to_string(),
                 words: vec![],
+                source_id: "a".to_string(),
             },
             TranscriptCue {
                 start: Duration::from_millis(2020),
                 end: Duration::from_millis(3000),
                 text: "third".to_string(),
                 words: vec![],
+                source_id: "a".to_string(),
             },
         ];
 
@@ -758,6 +797,7 @@ mod tests {
             end: Duration::from_millis(1000),
             text: "only".to_string(),
             words: vec![],
+            source_id: "a".to_string(),
         }];
 
         let err = align_plan_with_subtitles(&mut plan, &cues).unwrap_err();
@@ -789,30 +829,35 @@ mod tests {
                 end: Duration::from_millis(7274),
                 text: "Hello".to_string(),
                 words: vec![],
+                source_id: "a".to_string(),
             },
             TranscriptCue {
                 start: Duration::from_millis(9677),
                 end: Duration::from_millis(11559),
                 text: "I do not want".to_string(),
                 words: vec![],
+                source_id: "a".to_string(),
             },
             TranscriptCue {
                 start: Duration::from_millis(14403),
                 end: Duration::from_millis(16005),
                 text: "A big pile".to_string(),
                 words: vec![],
+                source_id: "a".to_string(),
             },
             TranscriptCue {
                 start: Duration::from_millis(19189),
                 end: Duration::from_millis(20730),
                 text: "Goodbye".to_string(),
                 words: vec![],
+                source_id: "a".to_string(),
             },
             TranscriptCue {
                 start: Duration::from_millis(20791),
                 end: Duration::from_millis(26898),
                 text: "No, you don't say".to_string(),
                 words: vec![],
+                source_id: "a".to_string(),
             },
         ];
 
@@ -877,12 +922,14 @@ mod tests {
                 end: Duration::from_millis(1234),
                 text: "intro".to_string(),
                 words: vec![],
+                source_id: "a".to_string(),
             },
             TranscriptCue {
                 start: Duration::from_millis(6789),
                 end: Duration::from_millis(8000),
                 text: "outro".to_string(),
                 words: vec![],
+                source_id: "a".to_string(),
             },
         ];
 
@@ -930,12 +977,14 @@ mod tests {
                 end: Duration::from_millis(1000),
                 text: "intro".to_string(),
                 words: vec![],
+                source_id: "a".to_string(),
             },
             TranscriptCue {
                 start: Duration::from_millis(50_000),
                 end: Duration::from_millis(51_000),
                 text: "outro".to_string(),
                 words: vec![],
+                source_id: "a".to_string(),
             },
         ];
 

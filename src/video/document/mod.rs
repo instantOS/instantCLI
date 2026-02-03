@@ -1,14 +1,17 @@
 pub mod frontmatter;
 pub mod markdown;
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{anyhow, bail, Context, Result};
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use serde::Deserialize;
 
 use self::frontmatter::split_frontmatter;
+
+const DEFAULT_SOURCE_ID: &str = "a";
 
 #[derive(Debug)]
 pub struct VideoDocument {
@@ -18,20 +21,17 @@ pub struct VideoDocument {
 
 #[derive(Debug, Clone)]
 pub struct VideoMetadata {
-    pub video: Option<VideoMetadataVideo>,
-    pub transcript: Option<VideoMetadataTranscript>,
+    pub sources: Vec<VideoSource>,
+    pub default_source: Option<String>,
 }
 
 #[derive(Debug, Clone)]
-pub struct VideoMetadataVideo {
-    pub hash: Option<String>,
+pub struct VideoSource {
+    pub id: String,
     pub name: Option<String>,
-    pub source: Option<PathBuf>,
-}
-
-#[derive(Debug, Clone)]
-pub struct VideoMetadataTranscript {
-    pub source: Option<PathBuf>,
+    pub source: PathBuf,
+    pub transcript: PathBuf,
+    pub hash: Option<String>,
 }
 
 #[derive(Debug)]
@@ -54,6 +54,7 @@ pub struct SegmentBlock {
     pub range: TimeRange,
     pub text: String,
     pub kind: SegmentKind,
+    pub source_id: String,
 }
 
 #[derive(Debug)]
@@ -101,52 +102,133 @@ pub fn parse_video_document(content: &str, source_path: &Path) -> Result<VideoDo
 
     let line_offset = count_newlines(&content[..body_offset]);
     let body = strip_html_comments(body);
-    let blocks = parse_body_blocks(&body, line_offset)?;
+    let source_config = SegmentSourceConfig::from_metadata(&metadata)?;
+    let blocks = parse_body_blocks(&body, line_offset, &source_config)?;
 
     Ok(VideoDocument { metadata, blocks })
 }
 
 fn parse_metadata(front_matter: Option<&str>, source_path: &Path) -> Result<VideoMetadata> {
-    if let Some(fm) = front_matter {
-        if fm.trim().is_empty() {
-            return Ok(VideoMetadata {
-                video: None,
-                transcript: None,
+    let Some(fm) = front_matter else {
+        return Ok(VideoMetadata {
+            sources: Vec::new(),
+            default_source: None,
+        });
+    };
+
+    if fm.trim().is_empty() {
+        return Ok(VideoMetadata {
+            sources: Vec::new(),
+            default_source: None,
+        });
+    }
+
+    let parsed: FrontMatter = serde_yaml::from_str(fm).with_context(|| {
+        format!(
+            "Failed to parse YAML front matter in {}",
+            source_path.display()
+        )
+    })?;
+
+    let mut sources = Vec::new();
+    if let Some(entries) = parsed.sources {
+        for entry in entries {
+            let id = entry
+                .id
+                .ok_or_else(|| anyhow!("Each source must include an id"))?;
+            let id = id.trim().to_string();
+            if id.is_empty() {
+                bail!("Source id must not be empty");
+            }
+            if id.contains(':') || id.contains(char::is_whitespace) {
+                bail!("Source id `{}` must not include ':' or whitespace", id);
+            }
+            let source = entry
+                .source
+                .ok_or_else(|| anyhow!("Source `{}` is missing `source`", id))?;
+            let transcript = entry
+                .transcript
+                .ok_or_else(|| anyhow!("Source `{}` is missing `transcript`", id))?;
+            sources.push(VideoSource {
+                id,
+                name: entry.name,
+                source: PathBuf::from(source),
+                transcript: PathBuf::from(transcript),
+                hash: entry.hash,
             });
         }
-        let parsed: FrontMatter = serde_yaml::from_str(fm).with_context(|| {
-            format!(
-                "Failed to parse YAML front matter in {}",
-                source_path.display()
-            )
-        })?;
-
-        Ok(VideoMetadata {
-            video: parsed.video.map(|video| VideoMetadataVideo {
-                hash: video.hash,
-                name: video.name,
-                source: video.source.map(PathBuf::from),
-            }),
-            transcript: parsed.transcript.map(|transcript| VideoMetadataTranscript {
-                source: transcript.source.map(PathBuf::from),
-            }),
-        })
-    } else {
-        Ok(VideoMetadata {
-            video: None,
-            transcript: None,
-        })
     }
+
+    if sources.is_empty() {
+        if let Some(video) = parsed.video {
+            let legacy_id = parsed
+                .default_source
+                .clone()
+                .unwrap_or_else(|| DEFAULT_SOURCE_ID.to_string());
+            let source = video
+                .source
+                .ok_or_else(|| anyhow!("Legacy front matter is missing `video.source`"))?;
+            let transcript = parsed
+                .transcript
+                .and_then(|value| value.source)
+                .ok_or_else(|| anyhow!("Legacy front matter is missing `transcript.source`"))?;
+            sources.push(VideoSource {
+                id: legacy_id.clone(),
+                name: video.name,
+                source: PathBuf::from(source),
+                transcript: PathBuf::from(transcript),
+                hash: video.hash,
+            });
+            return Ok(VideoMetadata {
+                sources,
+                default_source: Some(legacy_id),
+            });
+        }
+        return Ok(VideoMetadata {
+            sources: Vec::new(),
+            default_source: None,
+        });
+    }
+
+    let mut default_source = parsed.default_source;
+    if default_source.is_none() && sources.len() == 1 {
+        default_source = Some(sources[0].id.clone());
+    }
+
+    if let Some(default_id) = default_source.as_ref() {
+        if !sources.iter().any(|source| &source.id == default_id) {
+            bail!(
+                "default_source `{}` does not match any declared source id",
+                default_id
+            );
+        }
+    }
+
+    let mut seen = HashSet::new();
+    for source in &sources {
+        if !seen.insert(source.id.clone()) {
+            bail!("Duplicate source id `{}` in front matter", source.id);
+        }
+    }
+
+    Ok(VideoMetadata {
+        sources,
+        default_source,
+    })
 }
 
-fn parse_body_blocks(body: &str, base_line_offset: usize) -> Result<Vec<DocumentBlock>> {
+fn parse_body_blocks(
+    body: &str,
+    base_line_offset: usize,
+    source_config: &SegmentSourceConfig,
+) -> Result<Vec<DocumentBlock>> {
     let options = Options::ENABLE_TABLES
         | Options::ENABLE_TASKLISTS
         | Options::ENABLE_STRIKETHROUGH
         | Options::ENABLE_FOOTNOTES;
 
     let line_map = LineMap::new(body);
-    let mut state = BodyParserState::new(base_line_offset, &line_map);
+    let mut state = BodyParserState::new(base_line_offset, &line_map, source_config);
 
     for (event, range) in Parser::new_ext(body, options).into_offset_iter() {
         state.process_event(event, range)?;
@@ -163,10 +245,15 @@ struct BodyParserState<'a> {
     blockquote: Option<BlockquoteState>,
     base_line_offset: usize,
     line_map: &'a LineMap,
+    source_config: &'a SegmentSourceConfig,
 }
 
 impl<'a> BodyParserState<'a> {
-    fn new(base_line_offset: usize, line_map: &'a LineMap) -> Self {
+    fn new(
+        base_line_offset: usize,
+        line_map: &'a LineMap,
+        source_config: &'a SegmentSourceConfig,
+    ) -> Self {
         Self {
             blocks: Vec::new(),
             paragraph: None,
@@ -175,6 +262,7 @@ impl<'a> BodyParserState<'a> {
             blockquote: None,
             base_line_offset,
             line_map,
+            source_config,
         }
     }
 
@@ -265,7 +353,8 @@ impl<'a> BodyParserState<'a> {
 
     fn flush_paragraph(&mut self) -> Result<()> {
         if let Some(state) = self.paragraph.take() {
-            let mut paragraph_blocks = state.into_document_blocks(self.base_line_offset)?;
+            let mut paragraph_blocks =
+                state.into_document_blocks(self.base_line_offset, self.source_config)?;
             self.blocks.append(&mut paragraph_blocks);
         }
         Ok(())
@@ -439,7 +528,11 @@ impl ParagraphState {
         self.pending_image.is_some()
     }
 
-    fn into_document_blocks(self, base_line_offset: usize) -> Result<Vec<DocumentBlock>> {
+    fn into_document_blocks(
+        self,
+        base_line_offset: usize,
+        source_config: &SegmentSourceConfig,
+    ) -> Result<Vec<DocumentBlock>> {
         if self.fragments.is_empty() {
             return Ok(Vec::new());
         }
@@ -466,15 +559,21 @@ impl ParagraphState {
 
                     let text = InlineFragment::render_many(&following).trim().to_string();
                     let line = base_line_offset + code_line;
-                    let range = parse_time_range(&code).with_context(|| {
-                        format!("Invalid timestamp range `{}` at line {}", code, line)
-                    })?;
+                    let (source_id, range) = parse_segment_reference(&code, source_config, line)
+                        .with_context(|| {
+                            format!("Invalid timestamp `{}` at line {}", code, line)
+                        })?;
                     let kind = if text.eq_ignore_ascii_case("silence") {
                         SegmentKind::Silence
                     } else {
                         SegmentKind::Dialogue
                     };
-                    blocks.push(DocumentBlock::Segment(SegmentBlock { range, text, kind }));
+                    blocks.push(DocumentBlock::Segment(SegmentBlock {
+                        range,
+                        text,
+                        kind,
+                        source_id,
+                    }));
                 }
                 _ => leftover_text.push(fragment),
             }
@@ -741,6 +840,86 @@ fn parse_timestamp(value: &str) -> Result<Duration> {
     Ok(Duration::from_millis(total_millis))
 }
 
+struct SegmentSourceConfig {
+    default_source: String,
+    known_sources: HashSet<String>,
+}
+
+impl SegmentSourceConfig {
+    fn from_metadata(metadata: &VideoMetadata) -> Result<Self> {
+        if metadata.sources.is_empty() {
+            return Ok(Self {
+                default_source: DEFAULT_SOURCE_ID.to_string(),
+                known_sources: HashSet::new(),
+            });
+        }
+
+        let mut known_sources = HashSet::new();
+        for source in &metadata.sources {
+            known_sources.insert(source.id.clone());
+        }
+
+        let default_source = metadata
+            .default_source
+            .clone()
+            .unwrap_or_else(|| metadata.sources[0].id.clone());
+
+        if !known_sources.contains(&default_source) {
+            bail!(
+                "default_source `{}` is not a declared source",
+                default_source
+            );
+        }
+
+        Ok(Self {
+            default_source,
+            known_sources,
+        })
+    }
+}
+
+fn parse_segment_reference(
+    input: &str,
+    source_config: &SegmentSourceConfig,
+    line: usize,
+) -> Result<(String, TimeRange)> {
+    let trimmed = input.trim();
+    let (source_id, range_str) = if let Some((prefix, rest)) = trimmed.split_once(':') {
+        if rest.contains(':') && !prefix.contains('-') {
+            (prefix, rest)
+        } else {
+            (source_config.default_source.as_str(), trimmed)
+        }
+    } else {
+        (source_config.default_source.as_str(), trimmed)
+    };
+
+    let source_id = source_id.trim();
+    if source_id.is_empty() {
+        bail!("Missing source id at line {}", line);
+    }
+    if source_id.contains(char::is_whitespace) {
+        bail!(
+            "Source id `{}` at line {} must not include whitespace",
+            source_id,
+            line
+        );
+    }
+
+    if !source_config.known_sources.is_empty() && !source_config.known_sources.contains(source_id) {
+        bail!("Unknown source id `{}` at line {}", source_id, line);
+    }
+
+    let range = parse_time_range(range_str).with_context(|| {
+        format!(
+            "Invalid timestamp range `{}` for source `{}`",
+            range_str, source_id
+        )
+    })?;
+
+    Ok((source_id.to_string(), range))
+}
+
 struct LineMap {
     offsets: Vec<usize>,
 }
@@ -922,8 +1101,19 @@ impl LineMap {
 
 #[derive(Debug, Deserialize)]
 struct FrontMatter {
+    sources: Option<Vec<FrontMatterSource>>,
+    default_source: Option<String>,
     video: Option<FrontMatterVideo>,
     transcript: Option<FrontMatterTranscript>,
+}
+
+#[derive(Debug, Deserialize)]
+struct FrontMatterSource {
+    id: Option<String>,
+    name: Option<String>,
+    source: Option<String>,
+    transcript: Option<String>,
+    hash: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

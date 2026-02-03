@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 
-pub use self::paths::{resolve_transcript_path, resolve_video_path};
+pub use self::paths::resolve_video_sources;
 
 use crate::ui::prelude::{Level, emit};
 
@@ -54,7 +54,7 @@ impl RenderMode {
 
 use super::cli::RenderArgs;
 use super::config::{VideoConfig, VideoDirectories};
-use super::document::{VideoMetadata, parse_video_document};
+use super::document::{VideoMetadata, VideoSource, parse_video_document};
 use super::subtitles::{AssStyle, generate_ass_file, remap_subtitles_to_timeline};
 
 use self::ffmpeg::compiler::FfmpegCompiler;
@@ -94,6 +94,29 @@ macro_rules! log {
     }};
 }
 
+fn resolve_source_path(path: &Path, markdown_dir: &Path) -> Result<PathBuf> {
+    if path.is_absolute() {
+        Ok(path.to_path_buf())
+    } else {
+        Ok(markdown_dir.join(path))
+    }
+}
+
+fn find_default_source<'a>(
+    metadata: &VideoMetadata,
+    sources: &'a [VideoSource],
+) -> Result<&'a VideoSource> {
+    let default_id = metadata
+        .default_source
+        .as_ref()
+        .or_else(|| sources.first().map(|source| &source.id))
+        .ok_or_else(|| anyhow!("No video sources available"))?;
+    sources
+        .iter()
+        .find(|source| &source.id == default_id)
+        .ok_or_else(|| anyhow!("Default source `{}` not found", default_id))
+}
+
 pub fn handle_render(args: RenderArgs) -> Result<()> {
     let runner = SystemFfmpegRunner;
     handle_render_with_services(args, &runner)
@@ -114,11 +137,17 @@ fn handle_render_with_services(args: RenderArgs, runner: &dyn FfmpegRunner) -> R
     let markdown_dir = markdown_path.parent().unwrap_or_else(|| Path::new("."));
 
     let document = load_video_document(&markdown_path)?;
-    let cues = load_transcript_cues(&document.metadata, markdown_dir)?;
+    let sources = resolve_video_sources(&document.metadata, markdown_dir)?;
+    if sources.is_empty() {
+        bail!(
+            "No video sources configured. Add `sources` in front matter before rendering."
+        );
+    }
+    let cues = load_transcript_cues(&sources, markdown_dir)?;
     let plan = build_timeline_plan(&document, &cues, &markdown_path)?;
 
-    let video_path = resolve_source_video_path(&document.metadata, markdown_dir)?;
-    let audio_path = resolve_audio_path(&video_path)?;
+    let default_source = find_default_source(&document.metadata, &sources)?;
+    let audio_path = resolve_audio_path(&default_source.source)?;
 
     // Determine render mode from CLI args
     let render_mode = if args.reels {
@@ -145,14 +174,14 @@ fn handle_render_with_services(args: RenderArgs, runner: &dyn FfmpegRunner) -> R
     } else {
         Some(paths::resolve_output_path(
             args.out_file.as_ref(),
-            &video_path,
+            &default_source.source,
             markdown_dir,
             render_mode,
         )?)
     };
 
     if let Some(output_path) = &output_path {
-        prepare_output_destination(output_path, &args, &video_path)?;
+        prepare_output_destination(output_path, &args, &default_source.source)?;
     }
 
     log!(
@@ -160,7 +189,7 @@ fn handle_render_with_services(args: RenderArgs, runner: &dyn FfmpegRunner) -> R
         "video.render.probe",
         "Probing source video dimensions"
     );
-    let (video_width, video_height) = probe_video_dimensions(&video_path)?;
+    let (video_width, video_height) = probe_video_dimensions(&default_source.source)?;
 
     // Use render mode to determine target dimensions
     let (target_width, target_height) = render_mode.target_dimensions(video_width, video_height);
@@ -172,7 +201,7 @@ fn handle_render_with_services(args: RenderArgs, runner: &dyn FfmpegRunner) -> R
         "video.render.timeline.build",
         "Building render timeline (may generate slides)"
     );
-    let (nle_timeline, stats) = build_nle_timeline(plan, &generator, &video_path, markdown_dir)?;
+    let (nle_timeline, stats) = build_nle_timeline(plan, &generator, &sources, markdown_dir)?;
 
     report_timeline_stats(&stats);
 
@@ -317,32 +346,44 @@ pub(super) fn load_video_document(markdown_path: &Path) -> Result<super::documen
 }
 
 pub(super) fn load_transcript_cues(
-    metadata: &VideoMetadata,
+    sources: &[VideoSource],
     markdown_dir: &Path,
 ) -> Result<Vec<super::support::transcript::TranscriptCue>> {
-    let transcript_path = paths::resolve_transcript_path(metadata, markdown_dir)?;
-    let transcript_path = canonicalize_existing(&transcript_path)?;
+    let mut cues = Vec::new();
 
-    log!(
-        Level::Info,
-        "video.render.transcript.read",
-        "Reading transcript from {}",
-        transcript_path.display()
-    );
+    for source in sources {
+        let transcript_path = resolve_source_path(&source.transcript, markdown_dir)?;
+        let transcript_path = canonicalize_existing(&transcript_path)?;
 
-    let transcript_contents = fs::read_to_string(&transcript_path).with_context(|| {
-        format!(
-            "Failed to read transcript file {}",
+        log!(
+            Level::Info,
+            "video.render.transcript.read",
+            "Reading transcript for {} from {}",
+            source.id,
             transcript_path.display()
-        )
-    })?;
+        );
 
-    log!(
-        Level::Info,
-        "video.render.transcript.parse",
-        "Parsing transcript cues"
-    );
-    parse_whisper_json(&transcript_contents)
+        let transcript_contents = fs::read_to_string(&transcript_path).with_context(|| {
+            format!(
+                "Failed to read transcript file {}",
+                transcript_path.display()
+            )
+        })?;
+
+        log!(
+            Level::Info,
+            "video.render.transcript.parse",
+            "Parsing transcript cues for {}",
+            source.id
+        );
+        let mut parsed = parse_whisper_json(&transcript_contents)?;
+        for cue in &mut parsed {
+            cue.source_id = source.id.clone();
+        }
+        cues.extend(parsed);
+    }
+
+    Ok(cues)
 }
 
 pub(super) fn build_timeline_plan(
@@ -374,21 +415,22 @@ pub(super) fn build_timeline_plan(
     Ok(plan)
 }
 
-pub(super) fn resolve_source_video_path(
+pub(super) fn resolve_video_sources(
     metadata: &VideoMetadata,
     markdown_dir: &Path,
-) -> Result<PathBuf> {
-    let video_path = paths::resolve_video_path(metadata, markdown_dir)?;
-    let video_path = canonicalize_existing(&video_path)?;
-
-    log!(
-        Level::Info,
-        "video.render.video",
-        "Using source video {}",
-        video_path.display()
-    );
-
-    Ok(video_path)
+) -> Result<Vec<VideoSource>> {
+    let sources = paths::resolve_video_sources(metadata, markdown_dir)?;
+    for source in &sources {
+        let resolved = canonicalize_existing(&source.source)?;
+        log!(
+            Level::Info,
+            "video.render.video",
+            "Using source {} video {}",
+            source.id,
+            resolved.display()
+        );
+    }
+    Ok(sources)
 }
 
 fn resolve_audio_path(video_path: &Path) -> Result<PathBuf> {
@@ -528,7 +570,7 @@ struct TimelineStats {
 fn build_nle_timeline(
     plan: TimelinePlan,
     generator: &dyn SlideProvider,
-    source_video: &Path,
+    sources: &[VideoSource],
     markdown_dir: &Path,
 ) -> Result<(Timeline, TimelineStats)> {
     let stats = TimelineStats {
@@ -540,7 +582,7 @@ fn build_nle_timeline(
     let mut state = TimelineBuildState::new(markdown_dir);
 
     for item in plan.items {
-        state.apply_plan_item(item, generator, source_video)?;
+        state.apply_plan_item(item, generator, sources)?;
     }
 
     state.finalize();
@@ -574,10 +616,10 @@ impl TimelineBuildState {
         &mut self,
         item: TimelinePlanItem,
         generator: &dyn SlideProvider,
-        source_video: &Path,
+        sources: &[VideoSource],
     ) -> Result<()> {
         match item {
-            TimelinePlanItem::Clip(clip_plan) => self.add_clip(clip_plan, generator, source_video),
+            TimelinePlanItem::Clip(clip_plan) => self.add_clip(clip_plan, generator, sources),
             TimelinePlanItem::Standalone(standalone_plan) => {
                 self.add_standalone(standalone_plan, generator)
             }
@@ -589,15 +631,26 @@ impl TimelineBuildState {
         &mut self,
         clip_plan: super::planning::ClipPlan,
         generator: &dyn SlideProvider,
-        source_video: &Path,
+        sources: &[VideoSource],
     ) -> Result<()> {
+        let source_video = sources
+            .iter()
+            .find(|source| source.id == clip_plan.source_id)
+            .ok_or_else(|| {
+                anyhow!(
+                    "No source configured for segment source id `{}`",
+                    clip_plan.source_id
+                )
+            })?
+            .source
+            .clone();
         let duration = clip_plan.end - clip_plan.start;
 
         let segment = Segment::new_video_subset(
             self.current_time,
             duration,
             clip_plan.start,
-            source_video.to_path_buf(),
+            source_video,
             None,
             false,
         );
@@ -807,6 +860,7 @@ mod tests {
                     kind: SegmentKind::Dialogue,
                     text: "hello world".to_string(),
                     overlay: None,
+                    source_id: "a".to_string(),
                 }),
                 TimelinePlanItem::Standalone(StandalonePlan::Heading {
                     level: 1,
@@ -818,6 +872,7 @@ mod tests {
                     kind: SegmentKind::Dialogue,
                     text: "this is a test".to_string(),
                     overlay: None,
+                    source_id: "a".to_string(),
                 }),
             ],
             standalone_count: 1,
@@ -827,8 +882,16 @@ mod tests {
             segment_count: 2,
         };
 
+        let sources = vec![VideoSource {
+            id: "a".to_string(),
+            name: Some("source".to_string()),
+            source: source_video.to_path_buf(),
+            transcript: PathBuf::from("source.json"),
+            hash: None,
+        }];
+
         let (timeline, _stats) =
-            build_nle_timeline(plan, &StubSlides, source_video, markdown_dir).unwrap();
+            build_nle_timeline(plan, &StubSlides, &sources, markdown_dir).unwrap();
 
         assert_eq!(timeline.segments.len(), 3);
 

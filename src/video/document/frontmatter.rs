@@ -1,4 +1,4 @@
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 
 /// Strips YAML frontmatter from content and returns the body content.
 ///

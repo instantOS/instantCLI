@@ -8,7 +8,7 @@ use super::transcribe::handle_transcribe;
 use crate::video::audio::{PreprocessorType, create_preprocessor, parse_preprocessor_type};
 use crate::video::cli::{ConvertArgs, TranscribeArgs};
 use crate::video::config::{VideoConfig, VideoDirectories, VideoProjectPaths};
-use crate::video::document::markdown::{MarkdownMetadata, build_markdown};
+use crate::video::document::markdown::{MarkdownMetadata, MarkdownSource, build_markdown};
 use crate::video::support::transcript::parse_whisper_json;
 use crate::video::support::utils::{canonicalize_existing, compute_file_hash};
 
@@ -226,7 +226,10 @@ fn generate_markdown_output(
     let transcript_contents = fs::read_to_string(transcript_path)
         .with_context(|| format!("Failed to read transcript at {}", transcript_path.display()))?;
 
-    let cues = parse_whisper_json(&transcript_contents)?;
+    let mut cues = parse_whisper_json(&transcript_contents)?;
+    for cue in &mut cues {
+        cue.source_id = "a".to_string();
+    }
 
     let video_name = video_path
         .file_name()
@@ -242,11 +245,16 @@ fn generate_markdown_output(
         )
     })?;
 
-    let metadata = MarkdownMetadata {
+    let sources = vec![MarkdownSource {
+        id: "a",
+        name: Some(video_name.as_str()),
         video_hash,
-        video_name: video_name.as_str(),
         video_source: &relative_video_path,
         transcript_source: &relative_subtitle_path,
+    }];
+    let metadata = MarkdownMetadata {
+        sources: &sources,
+        default_source: "a",
     };
 
     let markdown = build_markdown(&cues, &metadata);

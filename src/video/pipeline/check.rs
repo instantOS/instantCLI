@@ -1,14 +1,13 @@
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 
-use crate::ui::prelude::{Level, emit};
+use crate::ui::prelude::{emit, Level};
 
 use crate::video::cli::CheckArgs;
 use crate::video::planning::TimelinePlanItem;
 use crate::video::render::{
-    build_timeline_plan, load_transcript_cues, load_video_document, resolve_source_video_path,
-    resolve_transcript_path,
+    build_timeline_plan, load_transcript_cues, load_video_document, resolve_video_sources,
 };
 use crate::video::support::ffmpeg::probe_video_dimensions;
 use crate::video::support::utils::canonicalize_existing;
@@ -26,19 +25,30 @@ pub fn handle_check(args: CheckArgs) -> Result<()> {
     // Load video document using shared helper
     let document = load_video_document(&markdown_path)?;
 
+    // Resolve video sources
+    let sources = resolve_video_sources(&document.metadata, markdown_dir)?;
+    if sources.is_empty() {
+        bail!("No video sources configured in front matter.");
+    }
+
     // Load transcript cues using shared helper
-    let cues = load_transcript_cues(&document.metadata, markdown_dir)?;
+    let cues = load_transcript_cues(&sources, markdown_dir)?;
 
     // Build timeline plan using shared helper
     let plan = build_timeline_plan(&document, &cues, &markdown_path)?;
 
-    // Resolve video path using shared helper
-    let video_path = resolve_source_video_path(&document.metadata, markdown_dir)?;
-    let (video_width, video_height) = probe_video_dimensions(&video_path)?;
-
-    // Get transcript path for logging
-    let transcript_path = resolve_transcript_path(&document.metadata, markdown_dir)?;
-    let transcript_path = canonicalize_existing(&transcript_path)?;
+    let default_source = sources
+        .iter()
+        .find(|source| {
+            document
+                .metadata
+                .default_source
+                .as_ref()
+                .map(|id| id == &source.id)
+                .unwrap_or(true)
+        })
+        .unwrap_or(&sources[0]);
+    let (video_width, video_height) = probe_video_dimensions(&default_source.source)?;
 
     let duration_seconds = plan_duration_seconds(&plan);
     let duration_pretty = format_duration(duration_seconds);
@@ -55,11 +65,11 @@ pub fn handle_check(args: CheckArgs) -> Result<()> {
     log!(
         Level::Info,
         "video.check.inputs",
-        "Video: {} ({}x{})\nTranscript: {} ({} cue(s))",
-        video_path.display(),
+        "Default video: {} ({}x{})\nSources: {} ({} cue(s))",
+        default_source.source.display(),
         video_width,
         video_height,
-        transcript_path.display(),
+        sources.len(),
         cues.len()
     );
 

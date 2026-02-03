@@ -1,12 +1,19 @@
 use crate::video::support::transcript::TranscriptCue;
+use crate::video::support::transcript::TranscriptCue;
 use crate::video::support::utils::duration_to_tenths;
 use chrono::Utc;
 use std::path::Path;
 use std::time::Duration;
 
 pub struct MarkdownMetadata<'a> {
+    pub sources: &'a [MarkdownSource],
+    pub default_source: &'a str,
+}
+
+pub struct MarkdownSource<'a> {
+    pub id: &'a str,
+    pub name: Option<&'a str>,
     pub video_hash: &'a str,
-    pub video_name: &'a str,
     pub video_source: &'a Path,
     pub transcript_source: &'a Path,
 }
@@ -23,8 +30,14 @@ pub fn build_markdown(cues: &[TranscriptCue], metadata: &MarkdownMetadata<'_>) -
             }
         }
 
+        let source_id = if cue.source_id.trim().is_empty() {
+            metadata.default_source
+        } else {
+            cue.source_id.as_str()
+        };
         lines.push(format!(
-            "`{}-{}` {}",
+            "`{}:{}-{}` {}",
+            source_id,
             format_timestamp(cue.start),
             format_timestamp(cue.end),
             cue.text.trim()
@@ -57,14 +70,37 @@ fn insert_silence_lines(lines: &mut Vec<String>, mut start: Duration, end: Durat
 
 fn build_front_matter(metadata: &MarkdownMetadata<'_>) -> String {
     let timestamp = Utc::now().to_rfc3339();
-    let video_source = yaml_quote(&metadata.video_source.to_string_lossy());
-    let transcript_source = yaml_quote(&metadata.transcript_source.to_string_lossy());
-    let video_hash = yaml_quote(metadata.video_hash);
-    let video_name = yaml_quote(metadata.video_name);
+    let default_source = yaml_quote(metadata.default_source);
+    let mut source_lines = Vec::new();
+    for source in metadata.sources {
+        let source_id = yaml_quote(source.id);
+        let video_source = yaml_quote(&source.video_source.to_string_lossy());
+        let transcript_source = yaml_quote(&source.transcript_source.to_string_lossy());
+        let video_hash = yaml_quote(source.video_hash);
+        source_lines.push(format!(
+            "- id: {source_id}\n  hash: {video_hash}\n  name: {name}\n  source: {video_source}\n  transcript: {transcript_source}",
+            name = yaml_quote(source.name.unwrap_or("")),
+        ));
+    }
+    let sources_block = if source_lines.is_empty() {
+        "[]".to_string()
+    } else {
+        source_lines.join("\n")
+    };
 
     format!(
-        "---\nvideo:\n  hash: {video_hash}\n  name: {video_name}\n  source: {video_source}\ntranscript:\n  source: {transcript_source}\ngenerated_at: '{timestamp}'\n---"
+        "---\ndefault_source: {default_source}\nsources:\n{sources}\ngenerated_at: '{timestamp}'\n---",
+        sources = indent_yaml_block(&sources_block, 0),
     )
+}
+
+fn indent_yaml_block(block: &str, indent: usize) -> String {
+    let pad = " ".repeat(indent);
+    block
+        .lines()
+        .map(|line| format!("{pad}{line}"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn yaml_quote(value: &str) -> String {
@@ -100,17 +136,23 @@ mod tests {
             end: Duration::from_millis(end),
             text: text.to_string(),
             words: vec![],
+            source_id: "a".to_string(),
         }
     }
 
     #[test]
     fn inserts_silence_chunks() {
         let cues = vec![cue(3000, 4000, "Hello"), cue(11000, 12000, "World")];
-        let metadata = MarkdownMetadata {
+        let sources = vec![MarkdownSource {
+            id: "a",
+            name: Some("clip.mp4"),
             video_hash: "hash",
-            video_name: "clip.mp4",
             video_source: Path::new("/video/clip.mp4"),
             transcript_source: Path::new("/tmp/clip.srt"),
+        }];
+        let metadata = MarkdownMetadata {
+            sources: &sources,
+            default_source: "a",
         };
 
         let output = build_markdown(&cues, &metadata);
