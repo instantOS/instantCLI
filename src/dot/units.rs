@@ -18,41 +18,38 @@ use anyhow::Result;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-/// Find the unit path that a target path belongs to (if any).
+/// Find all unit paths that a target path belongs to (if any).
 ///
-/// Returns the unit path if the file is within a unit directory, None otherwise.
-pub fn find_unit_for_path(target_path: &Path, units: &[PathBuf]) -> Option<PathBuf> {
+/// Returns units sorted by depth (more specific first), then lexicographically.
+pub fn find_units_for_path(target_path: &Path, units: &[PathBuf]) -> Vec<PathBuf> {
     let home = PathBuf::from(shellexpand::tilde("~").to_string());
-    let mut best_unit: Option<&PathBuf> = None;
+    let mut matches = Vec::new();
 
     for unit in units {
         // Unit paths are relative to home, e.g. ".config/nvim"
         let unit_full_path = home.join(unit);
         if target_path.starts_with(&unit_full_path) {
-            best_unit = match best_unit {
-                None => Some(unit),
-                Some(current) => {
-                    let current_depth = current.components().count();
-                    let unit_depth = unit.components().count();
-                    if unit_depth > current_depth {
-                        Some(unit)
-                    } else if unit_depth == current_depth {
-                        let unit_key = unit.to_string_lossy();
-                        let current_key = current.to_string_lossy();
-                        if unit_key < current_key {
-                            Some(unit)
-                        } else {
-                            Some(current)
-                        }
-                    } else {
-                        Some(current)
-                    }
-                }
-            };
+            matches.push(unit.clone());
         }
     }
 
-    best_unit.cloned()
+    matches.sort_by(|a, b| {
+        let depth_cmp = b.components().count().cmp(&a.components().count());
+        if depth_cmp == std::cmp::Ordering::Equal {
+            a.to_string_lossy().cmp(&b.to_string_lossy())
+        } else {
+            depth_cmp
+        }
+    });
+    matches.dedup();
+    matches
+}
+
+/// Find the most specific unit path that a target path belongs to (if any).
+///
+/// Returns the deepest matching unit, if any.
+pub fn find_unit_for_path(target_path: &Path, units: &[PathBuf]) -> Option<PathBuf> {
+    find_units_for_path(target_path, units).into_iter().next()
 }
 
 fn normalize_unit_path(unit: &str) -> PathBuf {
@@ -103,35 +100,41 @@ pub fn get_all_units(config: &Config, db: &Database) -> Result<Vec<PathBuf>> {
 
 #[derive(Debug, Default)]
 pub struct UnitIndex {
-    unit_for_target: HashMap<PathBuf, PathBuf>,
+    units_for_target: HashMap<PathBuf, Vec<PathBuf>>,
     modified_files_by_unit: HashMap<PathBuf, Vec<PathBuf>>,
 }
 
 impl UnitIndex {
-    pub fn unit_for_target(&self, target_path: &Path) -> Option<&PathBuf> {
-        self.unit_for_target.get(target_path)
+    pub fn units_for_target(&self, target_path: &Path) -> Option<&Vec<PathBuf>> {
+        self.units_for_target.get(target_path)
     }
 
     pub fn is_unit_modified(&self, unit_path: &Path) -> bool {
         self.modified_files_by_unit.contains_key(unit_path)
     }
 
-    pub fn modified_unit_for_target(&self, target_path: &Path) -> Option<&PathBuf> {
-        let unit_path = self.unit_for_target.get(target_path)?;
-        if self.is_unit_modified(unit_path) {
-            Some(unit_path)
-        } else {
-            None
-        }
+    pub fn is_target_in_modified_unit(&self, target_path: &Path) -> bool {
+        self.modified_units_with_files_for_target(target_path)
+            .first()
+            .is_some()
     }
 
-    pub fn unit_modified_files_for_target(
+    pub fn modified_units_with_files_for_target(
         &self,
         target_path: &Path,
-    ) -> Option<(&PathBuf, &Vec<PathBuf>)> {
-        let unit_path = self.unit_for_target.get(target_path)?;
-        let modified_files = self.modified_files_by_unit.get(unit_path)?;
-        Some((unit_path, modified_files))
+    ) -> Vec<(PathBuf, Vec<PathBuf>)> {
+        let Some(units) = self.units_for_target.get(target_path) else {
+            return Vec::new();
+        };
+
+        units
+            .iter()
+            .filter_map(|unit_path| {
+                self.modified_files_by_unit
+                    .get(unit_path)
+                    .map(|files| (unit_path.clone(), files.clone()))
+            })
+            .collect()
     }
 
     pub fn modified_units(&self) -> impl Iterator<Item = &PathBuf> {
@@ -152,23 +155,27 @@ pub fn build_unit_index(
     }
 
     for dotfile in all_dotfiles.values() {
-        if let Some(unit_path) = find_unit_for_path(&dotfile.target_path, units) {
+        let units_for_target = find_units_for_path(&dotfile.target_path, units);
+        if !units_for_target.is_empty() {
             index
-                .unit_for_target
-                .insert(dotfile.target_path.clone(), unit_path.clone());
+                .units_for_target
+                .insert(dotfile.target_path.clone(), units_for_target.clone());
 
             if !dotfile.is_target_unmodified(db)? {
-                index
-                    .modified_files_by_unit
-                    .entry(unit_path)
-                    .or_default()
-                    .push(dotfile.target_path.clone());
+                for unit_path in units_for_target {
+                    index
+                        .modified_files_by_unit
+                        .entry(unit_path)
+                        .or_default()
+                        .push(dotfile.target_path.clone());
+                }
             }
         }
     }
 
     for files in index.modified_files_by_unit.values_mut() {
         files.sort();
+        files.dedup();
     }
 
     Ok(index)
@@ -184,21 +191,20 @@ pub fn is_unit_modified(
     all_dotfiles: &HashMap<PathBuf, Dotfile>,
     units: &[PathBuf],
     db: &Database,
-) -> Result<(bool, Option<PathBuf>)> {
-    // Check if this dotfile belongs to a unit
-    let unit_path = match find_unit_for_path(&dotfile.target_path, units) {
-        Some(path) => path,
-        None => return Ok((false, None)),
-    };
+) -> Result<(bool, Vec<PathBuf>)> {
+    let units_for_target = find_units_for_path(&dotfile.target_path, units);
+    if units_for_target.is_empty() {
+        return Ok((false, Vec::new()));
+    }
 
-    // Check all siblings in the same unit
-    for sibling in get_unit_siblings(dotfile, all_dotfiles, units) {
+    let siblings = get_unit_siblings(dotfile, all_dotfiles, units);
+    for sibling in siblings {
         if !sibling.is_target_unmodified(db)? {
-            return Ok((true, Some(unit_path)));
+            return Ok((true, units_for_target));
         }
     }
 
-    Ok((false, Some(unit_path)))
+    Ok((false, units_for_target))
 }
 
 /// Get all dotfiles that belong to the same unit as the given dotfile.
@@ -209,18 +215,28 @@ pub fn get_unit_siblings<'a>(
     all_dotfiles: &'a HashMap<PathBuf, Dotfile>,
     units: &[PathBuf],
 ) -> Vec<&'a Dotfile> {
-    let unit_path = match find_unit_for_path(&dotfile.target_path, units) {
-        Some(path) => path,
-        None => return vec![],
-    };
+    let units_for_target = find_units_for_path(&dotfile.target_path, units);
+    if units_for_target.is_empty() {
+        return vec![];
+    }
 
     let home = PathBuf::from(shellexpand::tilde("~").to_string());
-    let unit_full_path = home.join(&unit_path);
+    let mut seen = HashSet::new();
+    let mut siblings = Vec::new();
 
-    all_dotfiles
-        .values()
-        .filter(|df| df.target_path.starts_with(&unit_full_path))
-        .collect()
+    for unit_path in units_for_target {
+        let unit_full_path = home.join(&unit_path);
+        for sibling in all_dotfiles
+            .values()
+            .filter(|df| df.target_path.starts_with(&unit_full_path))
+        {
+            if seen.insert(sibling.target_path.clone()) {
+                siblings.push(sibling);
+            }
+        }
+    }
+
+    siblings
 }
 
 /// Compute which units have any modified files.
@@ -272,6 +288,34 @@ mod tests {
         // File in different directory
         let other = home.join(".config/kitty/kitty.conf");
         assert_eq!(find_unit_for_path(&other, &units), None);
+    }
+
+    #[test]
+    fn test_find_units_for_path_overlap() {
+        let home = PathBuf::from(shellexpand::tilde("~").to_string());
+        let units = vec![
+            PathBuf::from(".config"),
+            PathBuf::from(".config/nvim"),
+            PathBuf::from(".config/nvim/lua"),
+        ];
+
+        let nvim_init = home.join(".config/nvim/init.lua");
+        let matches = find_units_for_path(&nvim_init, &units);
+        assert_eq!(
+            matches,
+            vec![PathBuf::from(".config/nvim"), PathBuf::from(".config")]
+        );
+
+        let lua_file = home.join(".config/nvim/lua/plugins.lua");
+        let matches = find_units_for_path(&lua_file, &units);
+        assert_eq!(
+            matches,
+            vec![
+                PathBuf::from(".config/nvim/lua"),
+                PathBuf::from(".config/nvim"),
+                PathBuf::from(".config")
+            ]
+        );
     }
 
     #[test]

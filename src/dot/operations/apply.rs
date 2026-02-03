@@ -1,7 +1,7 @@
 use crate::dot::config::Config;
 use crate::dot::db::Database;
 use crate::dot::dotfile::Dotfile;
-use crate::dot::units::{find_unit_for_path, get_all_units, get_modified_units};
+use crate::dot::units::{get_all_units, get_modified_units};
 use crate::dot::utils::get_all_dotfiles;
 use crate::ui::prelude::*;
 use anyhow::Result;
@@ -78,28 +78,39 @@ fn determine_and_apply_action(
     db: &Database,
 ) -> Result<ApplyAction> {
     // Check if file belongs to a modified unit
-    if let Some(unit_path) = find_unit_for_path(&dotfile.target_path, units)
-        && modified_units.contains(&unit_path)
-    {
-        // Report the unit skip once per unit
-        if !stats.reported_units.contains(&unit_path) {
-            emit(
-                Level::Warn,
-                "dot.apply.skipped_unit",
-                &format!(
-                    "{} Skipped unit ~/{} (contains modified files)",
-                    char::from(NerdFont::ShieldAlert),
-                    unit_path.display().to_string().yellow()
-                ),
-                Some(serde_json::json!({
-                    "unit": format!("~/{}", unit_path.display()),
-                    "action": "skipped_unit",
-                    "reason": "unit_modified"
-                })),
-            );
-            stats.reported_units.insert(unit_path);
+    let unit_paths = crate::dot::units::find_units_for_path(&dotfile.target_path, units);
+    if !unit_paths.is_empty() {
+        let mut should_skip = false;
+        for unit_path in unit_paths {
+            if !modified_units.contains(&unit_path) {
+                continue;
+            }
+
+            should_skip = true;
+
+            // Report the unit skip once per unit
+            if !stats.reported_units.contains(&unit_path) {
+                emit(
+                    Level::Warn,
+                    "dot.apply.skipped_unit",
+                    &format!(
+                        "{} Skipped unit ~/{} (contains modified files)",
+                        char::from(NerdFont::ShieldAlert),
+                        unit_path.display().to_string().yellow()
+                    ),
+                    Some(serde_json::json!({
+                        "unit": format!("~/{}", unit_path.display()),
+                        "action": "skipped_unit",
+                        "reason": "unit_modified"
+                    })),
+                );
+                stats.reported_units.insert(unit_path);
+            }
         }
-        return Ok(ApplyAction::SkippedUnit);
+
+        if should_skip {
+            return Ok(ApplyAction::SkippedUnit);
+        }
     }
 
     apply_single_dotfile(dotfile, db)

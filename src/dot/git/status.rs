@@ -175,32 +175,43 @@ pub fn show_single_file_status(
                 let repo_name = get_repo_name_for_dotfile(dotfile, cfg);
                 let dotfile_dir = get_dotfile_dir_name(dotfile, cfg);
                 let status = get_dotfile_status(dotfile, db, unit_index);
-                let unit_details = unit_index
-                    .unit_modified_files_for_target(&target_path)
-                    .map(|(unit_path, modified_files)| {
-                        let home = dirs::home_dir().unwrap_or_default();
-                        let unit_display = format!("~/{}", unit_path.display());
-                        let modified_display: Vec<_> = modified_files
-                            .iter()
-                            .map(|path| {
-                                let relative_path = path.strip_prefix(&home).unwrap_or(path);
-                                format!("~/{}", relative_path.display())
+                let unit_details = {
+                    let entries = unit_index
+                        .modified_units_with_files_for_target(&target_path)
+                        .into_iter()
+                        .map(|(unit_path, modified_files)| {
+                            let home = dirs::home_dir().unwrap_or_default();
+                            let unit_display = format!("~/{}", unit_path.display());
+                            let modified_display: Vec<_> = modified_files
+                                .iter()
+                                .map(|path| {
+                                    let relative_path = path.strip_prefix(&home).unwrap_or(path);
+                                    format!("~/{}", relative_path.display())
+                                })
+                                .collect();
+                            serde_json::json!({
+                                "path": unit_display,
+                                "modified_files": modified_display
                             })
-                            .collect();
-                        serde_json::json!({
-                            "path": unit_display,
-                            "modified_files": modified_display
                         })
-                    });
-                let status_data = serde_json::json!({
+                        .collect::<Vec<_>>();
+                    if entries.is_empty() {
+                        None
+                    } else {
+                        Some(serde_json::Value::Array(entries))
+                    }
+                };
+                let mut status_data = serde_json::json!({
                     "path": target_path.display().to_string(),
                     "status": status,
                     "source": dotfile.source_path.display().to_string(),
                     "repo": repo_name.as_str(),
                     "dotfile_dir": dotfile_dir,
-                    "tracked": true,
-                    "unit": unit_details
+                    "tracked": true
                 });
+                if let Some(details) = unit_details {
+                    status_data["units"] = details;
+                }
                 emit(
                     Level::Info,
                     "dot.status.file",
@@ -245,20 +256,22 @@ pub fn show_single_file_status(
                 println!("  Source: {}", dotfile.source_path.display());
                 println!("  Repo: {repo_name} ({dotfile_dir}){override_indicator}");
 
-                if let Some((unit_path, modified_files)) =
-                    unit_index.unit_modified_files_for_target(&target_path)
-                {
+                let modified_units = unit_index.modified_units_with_files_for_target(&target_path);
+                if !modified_units.is_empty() {
                     let home = dirs::home_dir().context("Failed to get home directory")?;
-                    let unit_display = format!("~/{}", unit_path.display());
-                    println!(
-                        "  Unit: {} (modified files: {})",
-                        unit_display.yellow(),
-                        modified_files.len()
-                    );
-                    for path in modified_files {
-                        let relative_path = path.strip_prefix(&home).unwrap_or(path);
-                        let tilde_path = format!("~/{}", relative_path.display());
-                        println!("    - {}", tilde_path.yellow());
+                    println!("  Units:");
+                    for (unit_path, modified_files) in modified_units {
+                        let unit_display = format!("~/{}", unit_path.display());
+                        println!(
+                            "    {} (modified files: {})",
+                            unit_display.yellow(),
+                            modified_files.len()
+                        );
+                        for path in modified_files {
+                            let relative_path = path.strip_prefix(&home).unwrap_or(&path);
+                            let tilde_path = format!("~/{}", relative_path.display());
+                            println!("      - {}", tilde_path.yellow());
+                        }
                     }
                 }
             } else {
@@ -576,7 +589,6 @@ fn show_modified_files(
                 override_indicator.magenta()
             );
         }
-
     }
     println!();
 }
@@ -621,7 +633,6 @@ fn show_outdated_files(
                 override_indicator.magenta()
             );
         }
-
     }
     println!();
 }
@@ -666,7 +677,6 @@ fn show_clean_files(
                 override_indicator.magenta()
             );
         }
-
     }
     println!();
 }
@@ -770,15 +780,16 @@ pub fn get_dotfile_status(
     unit_index: &UnitIndex,
 ) -> DotFileStatus {
     if !dotfile.is_target_unmodified(db).unwrap_or(false) {
-        DotFileStatus::Modified
-    } else if dotfile.is_outdated(db) {
-        DotFileStatus::Outdated
-    } else if unit_index
-        .modified_unit_for_target(&dotfile.target_path)
-        .is_some()
-    {
-        DotFileStatus::Modified
-    } else {
-        DotFileStatus::Clean
+        return DotFileStatus::Modified;
     }
+
+    if unit_index.is_target_in_modified_unit(&dotfile.target_path) {
+        return DotFileStatus::Modified;
+    }
+
+    if dotfile.is_outdated(db) {
+        return DotFileStatus::Outdated;
+    }
+
+    DotFileStatus::Clean
 }

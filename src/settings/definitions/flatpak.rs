@@ -96,10 +96,7 @@ fn normalize_fzf_to_app_ids(result: FzfResult<String>) -> Result<Vec<String>> {
         FzfResult::Error(err) => bail!("App selection failed: {}", err),
     };
 
-    Ok(lines
-        .iter()
-        .map(|line| parse_app_id(line))
-        .collect())
+    Ok(lines.iter().map(|line| parse_app_id(line)).collect())
 }
 
 fn parse_app_id(line: &str) -> String {
