@@ -1,4 +1,5 @@
 use anyhow::Result;
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::common::{TildePath, paths};
@@ -15,6 +16,7 @@ use crate::video::cli::{
 };
 use crate::video::{
     audio,
+    document::{frontmatter::split_frontmatter, parse_video_document},
     pipeline::{check, convert, setup, stats, transcribe},
     render, slides,
 };
@@ -445,7 +447,10 @@ async fn run_transcribe() -> Result<()> {
 }
 
 async fn run_render() -> Result<()> {
-    let Some(markdown_path) = select_markdown_file("Select markdown for rendering")? else {
+    let suggestions = discover_video_markdown_suggestions()?;
+    let Some(markdown_path) =
+        select_markdown_file("Select markdown for rendering", suggestions)?
+    else {
         return Ok(());
     };
 
@@ -493,7 +498,8 @@ async fn run_render() -> Result<()> {
 }
 
 async fn run_slide() -> Result<()> {
-    let Some(markdown_path) = select_markdown_file("Select markdown for slide")? else {
+    let Some(markdown_path) = select_markdown_file("Select markdown for slide", Vec::new())?
+    else {
         return Ok(());
     };
 
@@ -527,7 +533,9 @@ async fn run_slide() -> Result<()> {
 }
 
 async fn run_check() -> Result<()> {
-    let Some(markdown_path) = select_markdown_file("Select markdown to validate")? else {
+    let Some(markdown_path) =
+        select_markdown_file("Select markdown to validate", Vec::new())?
+    else {
         return Ok(());
     };
 
@@ -537,7 +545,8 @@ async fn run_check() -> Result<()> {
 }
 
 async fn run_stats() -> Result<()> {
-    let Some(markdown_path) = select_markdown_file("Select markdown for stats")? else {
+    let Some(markdown_path) = select_markdown_file("Select markdown for stats", Vec::new())?
+    else {
         return Ok(());
     };
 
@@ -623,6 +632,7 @@ fn select_video_file(title: &str) -> Result<Option<PathBuf>> {
         picker_hint,
         FilePickerScope::Files,
         start_dir,
+        Vec::new(),
     )
 }
 
@@ -640,10 +650,11 @@ fn select_transcript_file() -> Result<Option<PathBuf>> {
         picker_hint,
         FilePickerScope::Files,
         None,
+        Vec::new(),
     )
 }
 
-fn select_markdown_file(title: &str) -> Result<Option<PathBuf>> {
+fn select_markdown_file(title: &str, suggestions: Vec<PathBuf>) -> Result<Option<PathBuf>> {
     let header = format!("{} {title}", char::from(NerdFont::FileText));
     let manual_prompt = format!("{} Enter markdown path:", char::from(NerdFont::Edit));
     let picker_hint = format!("{} Select a markdown file", char::from(NerdFont::Info));
@@ -654,6 +665,7 @@ fn select_markdown_file(title: &str) -> Result<Option<PathBuf>> {
         picker_hint,
         FilePickerScope::Files,
         None,
+        suggestions,
     )
 }
 
@@ -663,6 +675,7 @@ fn select_path_with_picker(
     picker_hint: String,
     scope: FilePickerScope,
     start_dir: Option<PathBuf>,
+    suggestions: Vec<PathBuf>,
 ) -> Result<Option<PathBuf>> {
     let mut builder = PathInputBuilder::new()
         .header(header)
@@ -676,8 +689,72 @@ fn select_path_with_picker(
         builder = builder.start_dir(dir);
     }
 
+    if !suggestions.is_empty() {
+        builder = builder.suggested_paths(suggestions);
+    }
+
     let selection = builder.choose()?;
     selection.to_path_buf()
+}
+
+fn discover_video_markdown_suggestions() -> Result<Vec<PathBuf>> {
+    let entries = match fs::read_dir(".") {
+        Ok(entries) => entries,
+        Err(_) => return Ok(Vec::new()),
+    };
+
+    let mut suggestions = Vec::new();
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+
+        if !is_markdown_file(&path) {
+            continue;
+        }
+
+        if is_video_markdown_file(&path)? {
+            let canonical = path.canonicalize().unwrap_or(path);
+            if !suggestions.contains(&canonical) {
+                suggestions.push(canonical);
+            }
+        }
+    }
+
+    suggestions.sort();
+    Ok(suggestions)
+}
+
+fn is_markdown_file(path: &Path) -> bool {
+    matches!(
+        path.extension().and_then(|ext| ext.to_str()),
+        Some("md") | Some("markdown")
+    )
+}
+
+fn is_video_markdown_file(path: &Path) -> Result<bool> {
+    let contents = match fs::read_to_string(path) {
+        Ok(contents) => contents,
+        Err(_) => return Ok(false),
+    };
+
+    let (front_matter, _, _) = match split_frontmatter(&contents) {
+        Ok(value) => value,
+        Err(_) => return Ok(false),
+    };
+
+    let front = match front_matter {
+        Some(value) => value,
+        None => return Ok(false),
+    };
+
+    if !front.contains("video:") {
+        return Ok(false);
+    }
+
+    Ok(parse_video_document(&contents, path).is_ok())
 }
 
 fn select_transcript_choice() -> Result<Option<TranscriptChoice>> {

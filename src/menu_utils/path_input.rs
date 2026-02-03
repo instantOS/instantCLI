@@ -1,6 +1,6 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 
 use super::file_picker::{FilePickerScope, MenuWrapper};
 use super::fzf::{FzfResult, FzfSelectable, FzfWrapper};
@@ -12,6 +12,7 @@ enum PathInputChoice {
     Manual,
     Picker,
     WinePrefix,
+    Suggestion(PathBuf),
 }
 
 #[derive(Debug, Clone)]
@@ -32,7 +33,10 @@ impl FzfSelectable for PathInputOption {
     }
 
     fn fzf_key(&self) -> String {
-        self.label.clone()
+        match &self.choice {
+            PathInputChoice::Suggestion(path) => path.to_string_lossy().to_string(),
+            _ => self.label.clone(),
+        }
     }
 }
 
@@ -46,6 +50,7 @@ pub struct PathInputBuilder {
     manual_option_label: String,
     picker_option_label: String,
     wine_prefix_option_label: Option<String>,
+    suggested_paths: Vec<PathBuf>,
 }
 
 impl PathInputBuilder {
@@ -64,6 +69,7 @@ impl PathInputBuilder {
             manual_option_label: format!("{manual_icon} Enter a specific path"),
             picker_option_label: format!("{picker_icon} Browse with the picker"),
             wine_prefix_option_label: None,
+            suggested_paths: Vec::new(),
         }
     }
 
@@ -107,6 +113,15 @@ impl PathInputBuilder {
         self
     }
 
+    pub fn suggested_paths<I, P>(mut self, paths: I) -> Self
+    where
+        I: IntoIterator<Item = P>,
+        P: Into<PathBuf>,
+    {
+        self.suggested_paths = paths.into_iter().map(Into::into).collect();
+        self
+    }
+
     fn wine_prefix_enabled(&self) -> bool {
         self.wine_prefix_option_label.is_some()
     }
@@ -139,10 +154,41 @@ impl PathInputBuilder {
 
     //TODO: does this have multiple responsibilities? Refactor?
     pub fn choose(self) -> Result<PathInputSelection> {
-        let mut options = vec![
-            PathInputOption::new(self.manual_option_label.clone(), PathInputChoice::Manual),
-            PathInputOption::new(self.picker_option_label.clone(), PathInputChoice::Picker),
-        ];
+        let mut options = Vec::new();
+
+        let mut seen = std::collections::HashSet::new();
+        for path in &self.suggested_paths {
+            if let Ok(canonical) = path.canonicalize() {
+                if canonical.exists() {
+                    let key = canonical.to_string_lossy().to_string();
+                    if !seen.insert(key.clone()) {
+                        continue;
+                    }
+                    options.push(PathInputOption::new(
+                        format_suggested_label(&canonical),
+                        PathInputChoice::Suggestion(canonical),
+                    ));
+                    continue;
+                }
+            }
+            let key = path.to_string_lossy().to_string();
+            if !seen.insert(key) {
+                continue;
+            }
+            options.push(PathInputOption::new(
+                format_suggested_label(path),
+                PathInputChoice::Suggestion(path.clone()),
+            ));
+        }
+
+        options.push(PathInputOption::new(
+            self.manual_option_label.clone(),
+            PathInputChoice::Manual,
+        ));
+        options.push(PathInputOption::new(
+            self.picker_option_label.clone(),
+            PathInputChoice::Picker,
+        ));
 
         // Only add wine prefix option if explicitly configured
         if self.wine_prefix_enabled() {
@@ -183,6 +229,9 @@ impl PathInputBuilder {
                             None => continue, // Error occurred, retry
                         }
                     }
+                    PathInputChoice::Suggestion(path) => {
+                        return Ok(PathInputSelection::Picker(path));
+                    }
                 },
                 FzfResult::Cancelled => return Ok(PathInputSelection::Cancelled),
                 FzfResult::MultiSelected(_) => return Ok(PathInputSelection::Cancelled),
@@ -198,6 +247,17 @@ pub enum PathInputSelection {
     Picker(PathBuf),
     WinePrefix(PathBuf),
     Cancelled,
+}
+
+fn format_suggested_label(path: &Path) -> String {
+    let icon = char::from(NerdFont::Star);
+    let display = path.to_string_lossy();
+    let short = if display.len() > 80 {
+        format!("{}...", &display[..79])
+    } else {
+        display.to_string()
+    };
+    format!("{icon} {short}")
 }
 
 impl PathInputSelection {
