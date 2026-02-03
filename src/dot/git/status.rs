@@ -69,6 +69,7 @@ pub fn show_single_file_status(
     unit_index: &UnitIndex,
 ) -> Result<()> {
     let target_path = crate::dot::resolve_dotfile_path(path_str)?;
+    let home = dirs::home_dir().context("Failed to get home directory")?;
 
     if target_path.is_dir() {
         let mut matching: Vec<_> = all_dotfiles
@@ -102,7 +103,6 @@ pub fn show_single_file_status(
 
         match get_output_format() {
             OutputFormat::Json => {
-                let home = dirs::home_dir().unwrap_or_default();
                 let files: Vec<_> = matching
                     .into_iter()
                     .map(|(path, dotfile)| {
@@ -135,7 +135,6 @@ pub fn show_single_file_status(
                 );
             }
             OutputFormat::Text => {
-                let home = dirs::home_dir().context("Failed to get home directory")?;
                 let relative_dir = target_path.strip_prefix(&home).unwrap_or(&target_path);
                 let tilde_dir = format!("~/{}", relative_dir.display());
                 println!("{}", tilde_dir.bold());
@@ -175,32 +174,26 @@ pub fn show_single_file_status(
                 let repo_name = get_repo_name_for_dotfile(dotfile, cfg);
                 let dotfile_dir = get_dotfile_dir_name(dotfile, cfg);
                 let status = get_dotfile_status(dotfile, db, unit_index);
-                let unit_details = {
-                    let entries = unit_index
-                        .modified_units_with_files_for_target(&target_path)
-                        .into_iter()
-                        .map(|(unit_path, modified_files)| {
-                            let home = dirs::home_dir().unwrap_or_default();
-                            let unit_display = format!("~/{}", unit_path.display());
-                            let modified_display: Vec<_> = modified_files
-                                .iter()
-                                .map(|path| {
-                                    let relative_path = path.strip_prefix(&home).unwrap_or(path);
-                                    format!("~/{}", relative_path.display())
-                                })
-                                .collect();
-                            serde_json::json!({
-                                "path": unit_display,
-                                "modified_files": modified_display
+                let unit_details = unit_index
+                    .unit_statuses_for_target(&target_path)
+                    .into_iter()
+                    .map(|unit_status| {
+                        let unit_display = format!("~/{}", unit_status.unit_path.display());
+                        let modified_display: Vec<_> = unit_status
+                            .modified_files
+                            .iter()
+                            .map(|path| {
+                                let relative_path = path.strip_prefix(&home).unwrap_or(path);
+                                format!("~/{}", relative_path.display())
                             })
+                            .collect();
+                        serde_json::json!({
+                            "path": unit_display,
+                            "modified_files": modified_display,
+                            "modified": !unit_status.modified_files.is_empty()
                         })
-                        .collect::<Vec<_>>();
-                    if entries.is_empty() {
-                        None
-                    } else {
-                        Some(serde_json::Value::Array(entries))
-                    }
-                };
+                    })
+                    .collect::<Vec<_>>();
                 let mut status_data = serde_json::json!({
                     "path": target_path.display().to_string(),
                     "status": status,
@@ -209,9 +202,7 @@ pub fn show_single_file_status(
                     "dotfile_dir": dotfile_dir,
                     "tracked": true
                 });
-                if let Some(details) = unit_details {
-                    status_data["units"] = details;
-                }
+                status_data["units"] = serde_json::Value::Array(unit_details);
                 emit(
                     Level::Info,
                     "dot.status.file",
@@ -256,18 +247,22 @@ pub fn show_single_file_status(
                 println!("  Source: {}", dotfile.source_path.display());
                 println!("  Repo: {repo_name} ({dotfile_dir}){override_indicator}");
 
-                let modified_units = unit_index.modified_units_with_files_for_target(&target_path);
-                if !modified_units.is_empty() {
-                    let home = dirs::home_dir().context("Failed to get home directory")?;
+                let unit_statuses = unit_index.unit_statuses_for_target(&target_path);
+                if !unit_statuses.is_empty() {
                     println!("  Units:");
-                    for (unit_path, modified_files) in modified_units {
-                        let unit_display = format!("~/{}", unit_path.display());
+                    for unit_status in unit_statuses {
+                        let unit_display = format!("~/{}", unit_status.unit_path.display());
+                        if unit_status.modified_files.is_empty() {
+                            println!("    {} (clean)", unit_display.green());
+                            continue;
+                        }
+
                         println!(
                             "    {} (modified files: {})",
                             unit_display.yellow(),
-                            modified_files.len()
+                            unit_status.modified_files.len()
                         );
-                        for path in modified_files {
+                        for path in unit_status.modified_files {
                             let relative_path = path.strip_prefix(&home).unwrap_or(&path);
                             let tilde_path = format!("~/{}", relative_path.display());
                             println!("      - {}", tilde_path.yellow());

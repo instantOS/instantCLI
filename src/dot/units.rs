@@ -97,11 +97,38 @@ pub struct UnitIndex {
     modified_files_by_unit: HashMap<PathBuf, Vec<PathBuf>>,
 }
 
+#[derive(Debug, Clone)]
+pub struct UnitStatus {
+    pub unit_path: PathBuf,
+    pub modified_files: Vec<PathBuf>,
+}
+
 impl UnitIndex {
     pub fn is_target_in_modified_unit(&self, target_path: &Path) -> bool {
         !self
             .modified_units_with_files_for_target(target_path)
             .is_empty()
+    }
+
+    pub fn unit_statuses_for_target(&self, target_path: &Path) -> Vec<UnitStatus> {
+        let Some(units) = self.units_for_target.get(target_path) else {
+            return Vec::new();
+        };
+
+        units
+            .iter()
+            .map(|unit_path| {
+                let modified_files = self
+                    .modified_files_by_unit
+                    .get(unit_path)
+                    .cloned()
+                    .unwrap_or_default();
+                UnitStatus {
+                    unit_path: unit_path.clone(),
+                    modified_files,
+                }
+            })
+            .collect()
     }
 
     pub fn modified_units_with_files_for_target(
