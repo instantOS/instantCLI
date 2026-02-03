@@ -448,8 +448,7 @@ async fn run_transcribe() -> Result<()> {
 
 async fn run_render() -> Result<()> {
     let suggestions = discover_video_markdown_suggestions()?;
-    let Some(markdown_path) =
-        select_markdown_file("Select markdown for rendering", suggestions)?
+    let Some(markdown_path) = select_markdown_file("Select markdown for rendering", suggestions)?
     else {
         return Ok(());
     };
@@ -498,8 +497,7 @@ async fn run_render() -> Result<()> {
 }
 
 async fn run_slide() -> Result<()> {
-    let Some(markdown_path) = select_markdown_file("Select markdown for slide", Vec::new())?
-    else {
+    let Some(markdown_path) = select_markdown_file("Select markdown for slide", Vec::new())? else {
         return Ok(());
     };
 
@@ -533,8 +531,7 @@ async fn run_slide() -> Result<()> {
 }
 
 async fn run_check() -> Result<()> {
-    let Some(markdown_path) =
-        select_markdown_file("Select markdown to validate", Vec::new())?
+    let Some(markdown_path) = select_markdown_file("Select markdown to validate", Vec::new())?
     else {
         return Ok(());
     };
@@ -545,8 +542,7 @@ async fn run_check() -> Result<()> {
 }
 
 async fn run_stats() -> Result<()> {
-    let Some(markdown_path) = select_markdown_file("Select markdown for stats", Vec::new())?
-    else {
+    let Some(markdown_path) = select_markdown_file("Select markdown for stats", Vec::new())? else {
         return Ok(());
     };
 

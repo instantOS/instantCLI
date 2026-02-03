@@ -1,11 +1,14 @@
 use std::path::{Path, PathBuf};
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 
 use super::file_picker::{FilePickerScope, MenuWrapper};
 use super::fzf::{FzfResult, FzfSelectable, FzfWrapper};
+use crate::arch::dualboot::types::format_size;
 use crate::common::TildePath;
+use crate::game::utils::save_files::format_system_time_for_display;
 use crate::ui::nerd_font::NerdFont;
+use crate::ui::preview::{FzfPreview, PreviewBuilder};
 
 #[derive(Debug, Clone)]
 enum PathInputChoice {
@@ -36,6 +39,15 @@ impl FzfSelectable for PathInputOption {
         match &self.choice {
             PathInputChoice::Suggestion(path) => path.to_string_lossy().to_string(),
             _ => self.label.clone(),
+        }
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        match &self.choice {
+            PathInputChoice::Manual => preview_manual(),
+            PathInputChoice::Picker => preview_picker(),
+            PathInputChoice::WinePrefix => preview_wine_prefix(),
+            PathInputChoice::Suggestion(path) => preview_suggestion(path),
         }
     }
 }
@@ -258,6 +270,68 @@ fn format_suggested_label(path: &Path) -> String {
         display.to_string()
     };
     format!("{icon} {short}")
+}
+
+fn preview_manual() -> FzfPreview {
+    PreviewBuilder::new()
+        .header(NerdFont::Edit, "Enter a path")
+        .text("Type a path manually in the next prompt.")
+        .blank()
+        .text("Tips:")
+        .bullet("Use ~ for your home directory")
+        .bullet("Paste absolute paths")
+        .bullet("Trailing / treats input as a folder")
+        .build()
+}
+
+fn preview_picker() -> FzfPreview {
+    PreviewBuilder::new()
+        .header(NerdFont::FolderOpen, "Browse with picker")
+        .text("Launch the file picker to browse the filesystem.")
+        .blank()
+        .text("Useful when you want to visually select a path.")
+        .build()
+}
+
+fn preview_wine_prefix() -> FzfPreview {
+    PreviewBuilder::new()
+        .header(NerdFont::Wine, "Select Wine prefix")
+        .text("Pick a Wine prefix directory for Windows paths.")
+        .blank()
+        .text("Choose the root of the prefix (usually ends with /drive_c).")
+        .build()
+}
+
+fn preview_suggestion(path: &Path) -> FzfPreview {
+    let metadata = path.metadata().ok();
+    let is_dir = metadata.as_ref().map(|m| m.is_dir()).unwrap_or(false);
+    let size = metadata
+        .as_ref()
+        .map(|m| {
+            if m.is_file() {
+                format_size(m.len())
+            } else {
+                "-".to_string()
+            }
+        })
+        .unwrap_or_else(|| "-".to_string());
+    let modified = metadata.and_then(|m| m.modified().ok());
+    let modified_display = format_system_time_for_display(modified);
+
+    let mut builder = PreviewBuilder::new()
+        .header(NerdFont::Star, "Suggested path")
+        .field("Path", &path.to_string_lossy())
+        .field("Type", if is_dir { "Directory" } else { "File" })
+        .field("Modified", &modified_display)
+        .field("Size", &size);
+
+    if is_dir {
+        builder = builder
+            .blank()
+            .text("Selecting a folder will open it in the picker.");
+    }
+
+    builder.build()
 }
 
 impl PathInputSelection {
