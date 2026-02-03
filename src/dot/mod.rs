@@ -9,6 +9,7 @@ pub mod menu;
 pub mod meta;
 pub mod override_config;
 pub mod repo;
+pub mod sources;
 
 // New organized modules
 pub mod operations;

@@ -32,24 +32,26 @@ pub enum SetupCommands {
 
 /// Handle setup command dispatch
 pub fn handle_setup_command(command: SetupCommands) -> Result<()> {
-    match command {
-        SetupCommands::Sway => setup_sway(),
-        SetupCommands::I3 => setup_i3(),
-    }
+    let wm = match command {
+        SetupCommands::Sway => WindowManager::Sway,
+        SetupCommands::I3 => WindowManager::I3,
+    };
+    setup_wm(wm)
 }
 
-/// Set up Sway window manager integration
-pub fn setup_sway() -> Result<()> {
-    setup_wm(WindowManager::Sway)
-}
-
-/// Set up i3 window manager integration
-pub fn setup_i3() -> Result<()> {
-    setup_wm(WindowManager::I3)
-}
-
-/// Generic window manager setup
 fn setup_wm(wm: WindowManager) -> Result<()> {
+    validate_compositor(&wm);
+    let manager = WmConfigManager::new(wm);
+    let config_changed = write_config_if_changed(&manager)?;
+    let include_added = ensure_main_config_include(&manager, &wm)?;
+    report_status(&wm, config_changed, include_added, &manager);
+    if config_changed || include_added {
+        maybe_reload_wm(&manager, &wm);
+    }
+    Ok(())
+}
+
+fn validate_compositor(wm: &WindowManager) {
     let compositor = CompositorType::detect();
     let expected_compositor = match wm {
         WindowManager::Sway => CompositorType::Sway,
@@ -69,96 +71,104 @@ fn setup_wm(wm: WindowManager) -> Result<()> {
             None,
         );
     }
+}
 
-    let manager = WmConfigManager::new(wm);
-
-    // Generate the full expected config content
+fn write_config_if_changed(manager: &WmConfigManager) -> Result<bool> {
     let expected_content = generate_sway_config()?;
-
-    // Compare hash of expected content with what's on disk
     let disk_hash = manager.hash_config().unwrap_or(0);
     let expected_hash = hash_string(&expected_content);
-    let config_changed = disk_hash != expected_hash;
-
-    // Write if changed
-    if config_changed {
+    let changed = disk_hash != expected_hash;
+    if changed {
         manager.write_full_config(&expected_content)?;
     }
+    Ok(changed)
+}
 
-    // Ensure include exists in main config
-    let include_added = match manager.ensure_included_in_main_config() {
-        Ok(added) => added,
+fn ensure_main_config_include(manager: &WmConfigManager, wm: &WindowManager) -> Result<bool> {
+    match manager.ensure_included_in_main_config() {
+        Ok(added) => Ok(added),
         Err(e) => {
             emit(
                 Level::Warn,
-                "setup.sway.include_failed",
+                &format!("setup.{}.include_failed", wm.name()),
                 &format!(
-                    "{} Could not add include to sway config: {}",
+                    "{} Could not add include to {} config: {}",
                     char::from(NerdFont::Warning),
+                    wm.name(),
                     e
                 ),
                 None,
             );
-            false
+            Ok(false)
         }
-    };
+    }
+}
 
+fn report_status(
+    wm: &WindowManager,
+    config_changed: bool,
+    include_added: bool,
+    manager: &WmConfigManager,
+) {
     if config_changed || include_added {
         emit(
             Level::Success,
-            "setup.sway.updated",
-            &format!("{} Sway config updated", char::from(NerdFont::Check)),
-            None,
-        );
-        emit(
-            Level::Info,
-            "setup.sway.config_path",
-            &format!("  Config file: {}", manager.config_path().display()),
-            None,
-        );
-
-        // Reload sway
-        match manager.reload() {
-            Ok(()) => {
-                emit(
-                    Level::Success,
-                    "setup.sway.reloaded",
-                    &format!("{} Sway configuration reloaded", char::from(NerdFont::Sync)),
-                    None,
-                );
-            }
-            Err(e) => {
-                emit(
-                    Level::Warn,
-                    "setup.sway.reload_failed",
-                    &format!(
-                        "{} Failed to reload Sway: {}",
-                        char::from(NerdFont::Warning),
-                        e
-                    ),
-                    None,
-                );
-            }
-        }
-    } else {
-        emit(
-            Level::Info,
-            "setup.sway.unchanged",
+            &format!("setup.{}.updated", wm.name()),
             &format!(
-                "{} Sway config unchanged, skipping reload",
-                char::from(NerdFont::Check)
+                "{} {} config updated",
+                char::from(NerdFont::Check),
+                wm.name()
             ),
             None,
         );
+    } else {
         emit(
             Level::Info,
-            "setup.sway.config_path",
-            &format!("  Config file: {}", manager.config_path().display()),
+            &format!("setup.{}.unchanged", wm.name()),
+            &format!(
+                "{} {} config unchanged, skipping reload",
+                char::from(NerdFont::Check),
+                wm.name()
+            ),
             None,
         );
     }
+    emit(
+        Level::Info,
+        &format!("setup.{}.config_path", wm.name()),
+        &format!("  Config file: {}", manager.config_path().display()),
+        None,
+    );
+}
 
-    Ok(())
+fn maybe_reload_wm(manager: &WmConfigManager, wm: &WindowManager) {
+    match manager.reload() {
+        Ok(()) => {
+            emit(
+                Level::Success,
+                &format!("setup.{}.reloaded", wm.name()),
+                &format!(
+                    "{} {} configuration reloaded",
+                    char::from(NerdFont::Sync),
+                    wm.name()
+                ),
+                None,
+            );
+        }
+        Err(e) => {
+            emit(
+                Level::Warn,
+                &format!("setup.{}.reload_failed", wm.name()),
+                &format!(
+                    "{} Failed to reload {}: {}",
+                    char::from(NerdFont::Warning),
+                    wm.name(),
+                    e
+                ),
+                None,
+            );
+        }
+    }
 }
 
 /// Generate the full sway config content.
@@ -254,12 +264,23 @@ fn generate_modes<W: Write>(
     mode_name: &str,
     prefix: &str,
 ) -> Result<()> {
+    let keys_hint = build_keys_hint(entries, prefix);
+    write_mode_header(output, mode_name, &keys_hint)?;
+    write_help_binding(output, prefix)?;
+    write_entry_bindings(output, entries, mode_name, prefix)?;
+    writeln!(output, "}}\n")?;
+    generate_submodes(output, entries, mode_name, prefix)?;
+
+    Ok(())
+}
+
+/// Build a hint string showing available keys, filtering out 'h' in submodes.
+fn build_keys_hint(entries: &[crate::assist::registry::AssistEntry], prefix: &str) -> String {
     use crate::assist::registry::AssistEntry;
 
-    let mut available_keys: Vec<char> = entries
+    let mut keys: Vec<char> = entries
         .iter()
         .filter_map(|entry| {
-            // Filter out 'h' if it's already handled as a help binding in a submode
             if !prefix.is_empty() {
                 match entry {
                     AssistEntry::Action(action) if action.key == 'h' => None,
@@ -270,38 +291,55 @@ fn generate_modes<W: Write>(
             }
         })
         .collect();
-    available_keys.sort_unstable();
-    let keys_hint = if available_keys.is_empty() {
-        "".to_string()
-    } else {
-        let keys_str: Vec<String> = available_keys.iter().map(|c| c.to_string()).collect();
-        format!(" (keys: {})", keys_str.join(", "))
-    };
 
-    let mode_name_with_hint = format!("{}{} (h for help)", mode_name, keys_hint);
-    writeln!(output, "mode \"{}\" {{", mode_name_with_hint)?;
+    if keys.is_empty() {
+        return String::new();
+    }
+
+    keys.sort_unstable();
+    let keys_str: Vec<String> = keys.iter().map(|c| c.to_string()).collect();
+    format!(" (keys: {})", keys_str.join(", "))
+}
+
+/// Write the mode header with name and exit bindings.
+fn write_mode_header<W: Write>(output: &mut W, mode_name: &str, keys_hint: &str) -> Result<()> {
+    let full_name = format!("{}{} (h for help)", mode_name, keys_hint);
+    writeln!(output, "mode \"{}\" {{", full_name)?;
     writeln!(output, "    # Exit with Escape or Return")?;
     writeln!(output, "    bindsym Return mode default")?;
     writeln!(output, "    bindsym Escape mode default\n")?;
+    Ok(())
+}
 
-    // Add help binding if we're in a submode
-    if !prefix.is_empty() {
-        let help_cmd = format!("ins assist run {}h", prefix);
-        writeln!(
-            output,
-            "    # Show help for this mode\n    bindsym h exec --no-startup-id {}; mode default\n",
-            help_cmd
-        )?;
+/// Write the help binding for submodes (when prefix is not empty).
+fn write_help_binding<W: Write>(output: &mut W, prefix: &str) -> Result<()> {
+    if prefix.is_empty() {
+        return Ok(());
     }
+    let help_cmd = format!("ins assist run {}h", prefix);
+    writeln!(
+        output,
+        "    # Show help for this mode\n    bindsym h exec --no-startup-id {}; mode default\n",
+        help_cmd
+    )?;
+    Ok(())
+}
+
+/// Write action and group bindings for the current mode.
+fn write_entry_bindings<W: Write>(
+    output: &mut W,
+    entries: &[crate::assist::registry::AssistEntry],
+    mode_name: &str,
+    prefix: &str,
+) -> Result<()> {
+    use crate::assist::registry::AssistEntry;
 
     for entry in entries {
         match entry {
             AssistEntry::Action(action) => {
-                // Skip 'h' if we're in a submode (already handled above)
                 if !prefix.is_empty() && action.key == 'h' {
                     continue;
                 }
-
                 let key_sequence = format!("{}{}", prefix, action.key);
                 let cmd = format!("ins assist run {}", key_sequence);
                 writeln!(
@@ -311,23 +349,7 @@ fn generate_modes<W: Write>(
                 )?;
             }
             AssistEntry::Group(group) => {
-                // Collect available keys for the submode
-                let mut sub_keys: Vec<char> = group
-                    .children
-                    .iter()
-                    .filter_map(|child| match child {
-                        AssistEntry::Action(action) if action.key == 'h' => None,
-                        _ => Some(child.key()),
-                    })
-                    .collect();
-                sub_keys.sort_unstable();
-                let sub_keys_hint = if sub_keys.is_empty() {
-                    "".to_string()
-                } else {
-                    let keys_str: Vec<String> = sub_keys.iter().map(|c| c.to_string()).collect();
-                    format!(" (keys: {})", keys_str.join(", "))
-                };
-
+                let sub_keys_hint = build_sub_keys_hint(group.children);
                 writeln!(
                     output,
                     "    bindsym {} mode \"{}_{}{} (h for help)\"",
@@ -336,10 +358,39 @@ fn generate_modes<W: Write>(
             }
         }
     }
+    Ok(())
+}
 
-    writeln!(output, "}}\n")?;
+/// Build a keys hint for a group's children (excluding 'h').
+fn build_sub_keys_hint(children: &[crate::assist::registry::AssistEntry]) -> String {
+    use crate::assist::registry::AssistEntry;
 
-    // Recursively generate modes for groups
+    let mut keys: Vec<char> = children
+        .iter()
+        .filter_map(|child| match child {
+            AssistEntry::Action(action) if action.key == 'h' => None,
+            _ => Some(child.key()),
+        })
+        .collect();
+
+    if keys.is_empty() {
+        return String::new();
+    }
+
+    keys.sort_unstable();
+    let keys_str: Vec<String> = keys.iter().map(|c| c.to_string()).collect();
+    format!(" (keys: {})", keys_str.join(", "))
+}
+
+/// Recursively generate submodes for all groups.
+fn generate_submodes<W: Write>(
+    output: &mut W,
+    entries: &[crate::assist::registry::AssistEntry],
+    mode_name: &str,
+    prefix: &str,
+) -> Result<()> {
+    use crate::assist::registry::AssistEntry;
+
     for entry in entries {
         if let AssistEntry::Group(group) = entry {
             let sub_mode_name = format!("{}_{}", mode_name, group.key);
@@ -347,7 +398,6 @@ fn generate_modes<W: Write>(
             generate_modes(output, group.children, &sub_mode_name, &new_prefix)?;
         }
     }
-
     Ok(())
 }
 

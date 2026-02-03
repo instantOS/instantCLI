@@ -246,6 +246,7 @@ mod tests {
         assert!(!PackageManager::Pacman.is_universal());
         assert!(PackageManager::Flatpak.is_universal());
         assert!(PackageManager::Cargo.is_universal());
+        assert!(PackageManager::Snap.is_universal());
     }
 
     #[test]
@@ -270,5 +271,17 @@ mod tests {
         assert_eq!(PackageManager::Pacman.display_name(), "Pacman");
         assert_eq!(PackageManager::Apt.display_name(), "APT");
         assert_eq!(PackageManager::Flatpak.display_name(), "Flatpak");
+        assert_eq!(PackageManager::Snap.display_name(), "Snap");
+    }
+
+    #[test]
+    fn test_snap_commands() {
+        let (cmd, args) = PackageManager::Snap.install_command();
+        assert_eq!(cmd, "sudo");
+        assert_eq!(args, &["snap", "install"]);
+
+        let (cmd, args) = PackageManager::Snap.uninstall_command();
+        assert_eq!(cmd, "sudo");
+        assert_eq!(args, &["snap", "remove"]);
     }
 }

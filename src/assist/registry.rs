@@ -220,6 +220,13 @@ pub const ASSISTS: &[AssistEntry] = &[
                 execute: actions::screenshot::screenshot_area_to_pictures,
             }),
             AssistEntry::Action(AssistAction {
+                key: 'z',
+                description: "Freeze Area: Screenshot region displayed at exact position (Sway)",
+                icon: NerdFont::Snowflake,
+                dependencies: &[&SLURP, &GRIM, &FEH],
+                execute: actions::screenshot::screenshot_freeze,
+            }),
+            AssistEntry::Action(AssistAction {
                 key: 'q',
                 description: "QR Code Scanner: Scan QR code from selected area",
                 icon: NerdFont::QrCode,
@@ -603,6 +610,16 @@ mod tests {
         assert_eq!(
             action.unwrap().description,
             "Stop Recording: Stop current screen recording"
+        );
+    }
+
+    #[test]
+    fn test_find_screenshot_freeze_action() {
+        let action = find_action("sz");
+        assert!(action.is_some());
+        assert_eq!(
+            action.unwrap().description,
+            "Freeze Area: Screenshot region displayed at exact position (Sway)"
         );
     }
 }

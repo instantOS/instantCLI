@@ -6,6 +6,7 @@ use anyhow::Result;
 
 use crate::common::package::{PackageManager, install_package_names};
 use crate::settings::context::SettingsContext;
+use crate::settings::deps::FLATPAK;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::ui::prelude::*;
 
@@ -22,6 +23,7 @@ impl Setting for InstallFlatpakApps {
             .title("Install Flatpak apps")
             .icon(NerdFont::Download)
             .summary("Browse and install Flatpak applications using an interactive fuzzy finder.")
+            .requirements(vec![&FLATPAK])
             .build()
     }
 
@@ -37,11 +39,6 @@ impl Setting for InstallFlatpakApps {
 /// Run the interactive Flatpak installer
 fn run_flatpak_installer() -> Result<()> {
     println!("Starting Flatpak app installer...");
-
-    // Check if flatpak is available
-    if !PackageManager::Flatpak.is_available() {
-        anyhow::bail!("Flatpak is not available on this system");
-    }
 
     // List available apps from all remotes with origin column for preview
     let list_command =

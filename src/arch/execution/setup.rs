@@ -33,6 +33,9 @@ pub async fn setup_instantos(
         setup_instant_repo(executor).await?;
         install_instant_packages(context, executor)?;
 
+        // Configure Plymouth theme (after instantOS packages are installed)
+        super::config::configure_plymouth(context, executor)?;
+
         // Update /etc/os-release to identify as instantOS
         update_os_release(executor)?;
 

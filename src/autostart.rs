@@ -2,6 +2,7 @@ use crate::common::compositor::CompositorType;
 use crate::common::paths;
 use crate::common::systemd;
 use crate::dot::commands::DotCommands;
+use crate::setup::{SetupCommands, handle_setup_command};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -95,7 +96,7 @@ pub async fn run(debug: bool) -> Result<()> {
         if debug {
             println!("Running sway setup");
         }
-        if let Err(e) = crate::setup::setup_sway()
+        if let Err(e) = handle_setup_command(SetupCommands::Sway)
             && debug
         {
             eprintln!("Sway setup failed: {}", e);

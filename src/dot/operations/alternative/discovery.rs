@@ -4,15 +4,13 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-use anyhow::Result;
-use colored::Colorize;
-use walkdir::WalkDir;
-
 use crate::dot::config::Config;
-use crate::dot::localrepo::LocalRepo;
 use crate::dot::override_config::{DotfileSource, OverrideConfig};
+use crate::dot::sources;
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::{Level, emit};
+use anyhow::Result;
+use colored::Colorize;
 
 /// A dotfile with all its available sources across repos.
 #[derive(Clone)]
@@ -50,55 +48,8 @@ pub fn discover_dotfiles(
     dir_path: &Path,
     filter: DiscoveryFilter,
 ) -> Result<Vec<DiscoveredDotfile>> {
-    let home = home_dir();
-    let mut sources_by_target: HashMap<PathBuf, Vec<DotfileSource>> = HashMap::new();
-
-    for repo_config in &config.repos {
-        if !repo_config.enabled {
-            continue;
-        }
-
-        let local_repo = match LocalRepo::new(config, repo_config.name.clone()) {
-            Ok(repo) => repo,
-            Err(_) => continue,
-        };
-
-        for dotfile_dir in local_repo.active_dotfile_dirs() {
-            for entry in WalkDir::new(&dotfile_dir.path)
-                .into_iter()
-                .filter_map(|e| e.ok())
-                .filter(|e| {
-                    !e.path().to_string_lossy().contains("/.git/") && e.file_type().is_file()
-                })
-            {
-                let source_path = entry.path().to_path_buf();
-                let relative_path = match source_path.strip_prefix(&dotfile_dir.path) {
-                    Ok(rel) => rel,
-                    Err(_) => continue,
-                };
-                let target_path = home.join(relative_path);
-
-                if !target_path.starts_with(dir_path) {
-                    continue;
-                }
-
-                let subdir_name = dotfile_dir
-                    .path
-                    .file_name()
-                    .map(|s| s.to_string_lossy().to_string())
-                    .unwrap_or_default();
-
-                sources_by_target
-                    .entry(target_path)
-                    .or_default()
-                    .push(DotfileSource {
-                        repo_name: repo_config.name.clone(),
-                        subdir_name,
-                        source_path,
-                    });
-            }
-        }
-    }
+    let home = sources::home_dir();
+    let sources_by_target = sources::list_sources_by_target_in_dir(config, dir_path)?;
 
     // Load overrides to include files with explicit overrides even if they only have 1 source
     let overrides = OverrideConfig::load().unwrap_or_default();
@@ -141,7 +92,7 @@ pub fn discover_dotfiles(
                             }
                         } else {
                             let relative_path =
-                                target_path.strip_prefix(home_dir()).unwrap_or(&target_path);
+                                target_path.strip_prefix(&home).unwrap_or(&target_path);
                             let source_path = config
                                 .repos_path()
                                 .join(repo_name)
@@ -234,12 +185,8 @@ pub fn get_destinations(config: &Config) -> Vec<DotfileSource> {
     destinations
 }
 
-pub fn home_dir() -> PathBuf {
-    PathBuf::from(shellexpand::tilde("~").to_string())
-}
-
 pub fn to_display_path(path: &Path) -> String {
-    path.strip_prefix(home_dir())
+    path.strip_prefix(sources::home_dir())
         .map(|p| format!("~/{}", p.display()))
         .unwrap_or_else(|_| path.display().to_string())
 }

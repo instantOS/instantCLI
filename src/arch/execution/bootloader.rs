@@ -116,20 +116,32 @@ fn configure_grub_encryption(context: &InstallContext, executor: &CommandExecuto
         return Ok(());
     }
 
-    // disk is now just the device path (e.g., "/dev/sda")
+    let luks_part = luks_partition_path(context)?;
+    let uuid = read_luks_uuid(&luks_part)?;
+    println!("Found LUKS UUID: {}", uuid);
+
+    let grub_default = "/etc/default/grub";
+    let content = std::fs::read_to_string(grub_default)?;
+    let param = build_grub_encryption_param(&uuid);
+    let new_content = set_grub_cryptodisk_enabled(&add_grub_kernel_param(&content, &param));
+    std::fs::write(grub_default, new_content)?;
+
+    Ok(())
+}
+
+fn luks_partition_path(context: &InstallContext) -> Result<String> {
     let disk = context
         .get_answer(&QuestionId::Disk)
         .context("Disk not selected")?;
 
-    // LUKS is always on partition 2 in our layout
-    let luks_part = crate::arch::execution::disk::get_part_path(disk, 2);
+    Ok(crate::arch::execution::disk::get_part_path(disk, 2))
+}
 
+fn read_luks_uuid(luks_part: &str) -> Result<String> {
     println!("Getting UUID for LUKS partition: {}", luks_part);
 
-    // Find UUID of LUKS partition
-    // Use -o value -s UUID to get just the UUID
     let output = Command::new("blkid")
-        .args(["-o", "value", "-s", "UUID", &luks_part])
+        .args(["-o", "value", "-s", "UUID", luks_part])
         .output()?;
 
     if !output.status.success() {
@@ -137,47 +149,40 @@ fn configure_grub_encryption(context: &InstallContext, executor: &CommandExecuto
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    // Take the first line and trim it to avoid issues if multiple lines are returned (unlikely with specific device)
     let uuid = stdout.lines().next().unwrap_or("").trim().to_string();
 
     if uuid.is_empty() {
         anyhow::bail!("Could not find UUID for LUKS partition {}", luks_part);
     }
 
-    println!("Found LUKS UUID: {}", uuid);
+    Ok(uuid)
+}
 
-    let grub_default = "/etc/default/grub";
-    let content = std::fs::read_to_string(grub_default)?;
-
-    // Add root and resume parameters for LVM
-    // rd.luks.name=UUID=cryptlvm root=/dev/mapper/instantOS-root resume=/dev/mapper/instantOS-swap
-    let param = format!(
+fn build_grub_encryption_param(uuid: &str) -> String {
+    format!(
         "rd.luks.name={}=cryptlvm root=/dev/mapper/instantOS-root resume=/dev/mapper/instantOS-swap",
         uuid
-    );
+    )
+}
 
-    let mut new_content = add_grub_kernel_param(&content, &param);
-
-    // Enable GRUB_ENABLE_CRYPTODISK=y
-    if !new_content.contains("GRUB_ENABLE_CRYPTODISK=y") {
-        if new_content.contains("GRUB_ENABLE_CRYPTODISK=") {
-            // Replace existing
-            let mut lines: Vec<String> = new_content.lines().map(|s| s.to_string()).collect();
-            for line in &mut lines {
-                if line.trim().starts_with("GRUB_ENABLE_CRYPTODISK=") {
-                    *line = "GRUB_ENABLE_CRYPTODISK=y".to_string();
-                }
-            }
-            new_content = lines.join("\n");
-        } else {
-            // Append
-            new_content.push_str("\nGRUB_ENABLE_CRYPTODISK=y\n");
-        }
+fn set_grub_cryptodisk_enabled(content: &str) -> String {
+    if content.contains("GRUB_ENABLE_CRYPTODISK=y") {
+        return content.to_string();
     }
 
-    std::fs::write(grub_default, new_content)?;
+    if content.contains("GRUB_ENABLE_CRYPTODISK=") {
+        let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+        for line in &mut lines {
+            if line.trim().starts_with("GRUB_ENABLE_CRYPTODISK=") {
+                *line = "GRUB_ENABLE_CRYPTODISK=y".to_string();
+            }
+        }
+        return lines.join("\n");
+    }
 
-    Ok(())
+    let mut new_content = content.to_string();
+    new_content.push_str("\nGRUB_ENABLE_CRYPTODISK=y\n");
+    new_content
 }
 
 fn configure_grub_plymouth(_context: &InstallContext, executor: &CommandExecutor) -> Result<()> {

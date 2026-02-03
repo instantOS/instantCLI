@@ -210,7 +210,7 @@ fn offer_create_alternative(dir: &Path, display: &str) -> Result<()> {
 fn pick_new_file_to_track() -> Result<Option<std::path::PathBuf>> {
     use crate::menu_utils::{FilePickerScope, MenuWrapper};
 
-    let home = super::discovery::home_dir();
+    let home = crate::dot::sources::home_dir();
 
     match MenuWrapper::file_picker()
         .start_dir(&home)

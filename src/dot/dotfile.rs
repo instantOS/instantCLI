@@ -81,8 +81,8 @@ impl Dotfile {
         let target_hash = self.get_file_hash(&self.target_path, false, db)?;
 
         // Step 2: Check if target hash matches any source hash in DB
-        // This means the file was created by instantCLI and hasn't been modified
-        if db.source_hash_exists(&target_hash, &self.target_path)? {
+        // This means the file matches a known source version and can be restored
+        if db.source_hash_exists_anywhere(&target_hash)? {
             return Ok(true);
         }
 

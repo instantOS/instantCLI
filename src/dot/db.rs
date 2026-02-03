@@ -202,6 +202,18 @@ impl Database {
         Ok(result.next().is_some())
     }
 
+    pub fn source_hash_exists_anywhere(&self, hash: &str) -> Result<bool> {
+        let result: Option<i32> = self
+            .conn
+            .query_row(
+                "SELECT 1 FROM file_hashes WHERE hash = ? AND source_file = 1 LIMIT 1",
+                [hash],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(result.is_some())
+    }
+
     #[allow(dead_code)]
     pub fn target_hash_exists(&self, hash: &str, path: &Path) -> Result<bool> {
         let mut stmt = self
@@ -331,6 +343,28 @@ mod tests {
 
         // Should not exist as target hash
         assert!(!db.target_hash_exists("test_hash", &test_path).unwrap());
+    }
+
+    #[test]
+    fn test_source_hash_exists_anywhere() {
+        let dir = tempdir().unwrap();
+        let test_path = dir.path().join("test_file");
+        let other_path = dir.path().join("other_file");
+        std::fs::write(&test_path, "test content").unwrap();
+        std::fs::write(&other_path, "other content").unwrap();
+
+        let db_path = dir.path().join("test.db");
+        let db = Database::new(db_path).unwrap();
+
+        db.add_hash("test_hash", &test_path, DotFileType::SourceFile)
+            .unwrap();
+
+        assert!(db.source_hash_exists_anywhere("test_hash").unwrap());
+        assert!(!db.source_hash_exists_anywhere("missing_hash").unwrap());
+
+        // Ensure it does not require a matching path
+        assert!(db.source_hash_exists_anywhere("test_hash").unwrap());
+        assert!(!db.source_hash_exists("test_hash", &other_path).unwrap());
     }
 
     #[test]

@@ -7,6 +7,7 @@ use crate::ui::preview::PreviewBuilder;
 
 use super::context::InstallContext;
 use super::question::{Question, QuestionResult};
+use super::summary::{InstallSummary, PartitioningKind, build_install_summary};
 
 pub struct QuestionEngine {
     questions: Vec<Box<dyn Question>>,
@@ -94,28 +95,29 @@ enum FinalReviewItem {
     AbortInstallation,
 }
 
-impl FinalReviewItem {
-    fn preview(&self) -> FzfPreview {
-        match self {
-            FinalReviewItem::Install => PreviewBuilder::new()
-                .header(NerdFont::Download, "Start Installation")
-                .text("Apply the selected configuration.")
-                .blank()
-                .line(
-                    colors::GREEN,
-                    Some(NerdFont::Check),
-                    "Begins the install process.",
-                )
-                .build(),
-            FinalReviewItem::ReviewAnswers => review_answers_preview(),
-            FinalReviewItem::AdvancedOptions => PreviewBuilder::new()
-                .header(NerdFont::Sliders, "Advanced Options")
-                .text("Configure optional steps before installing.")
-                .blank()
-                .line(colors::TEAL, None, "Optional questions and tweaks.")
-                .build(),
-            FinalReviewItem::AbortInstallation => abort_installation_preview(),
-        }
+#[derive(Clone)]
+struct FinalReviewOption {
+    kind: FinalReviewItem,
+    preview: FzfPreview,
+}
+
+impl FinalReviewOption {
+    fn new(kind: FinalReviewItem, preview: FzfPreview) -> Self {
+        Self { kind, preview }
+    }
+}
+
+impl FzfSelectable for FinalReviewOption {
+    fn fzf_display_text(&self) -> String {
+        self.kind.fzf_display_text()
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        self.preview.clone()
+    }
+
+    fn fzf_key(&self) -> String {
+        self.kind.fzf_key()
     }
 }
 
@@ -142,7 +144,7 @@ impl FzfSelectable for FinalReviewItem {
     }
 
     fn fzf_preview(&self) -> FzfPreview {
-        self.preview()
+        FzfPreview::None
     }
 
     fn fzf_key(&self) -> String {
@@ -175,6 +177,42 @@ fn abort_installation_preview() -> FzfPreview {
             "Exits before installation starts.",
         )
         .build()
+}
+
+fn build_final_review_preview(item: &FinalReviewItem, summary: &InstallSummary) -> FzfPreview {
+    match item {
+        FinalReviewItem::Install => {
+            let mut builder = PreviewBuilder::new()
+                .header(NerdFont::Download, "Start Installation")
+                .text("Apply the selected configuration.")
+                .blank();
+
+            if summary.partitioning_kind == PartitioningKind::Automatic {
+                builder = builder
+                    .line(
+                        colors::YELLOW,
+                        Some(NerdFont::Warning),
+                        "Selected disk will be erased.",
+                    )
+                    .blank();
+            }
+
+            builder.raw(&summary.text).build()
+        }
+        FinalReviewItem::ReviewAnswers => PreviewBuilder::new()
+            .header(NerdFont::List, "Review Answers")
+            .text("Browse and edit your previous responses.")
+            .blank()
+            .raw(&summary.text)
+            .build(),
+        FinalReviewItem::AdvancedOptions => PreviewBuilder::new()
+            .header(NerdFont::Sliders, "Advanced Options")
+            .text("Configure optional steps before installing.")
+            .blank()
+            .raw(&summary.text)
+            .build(),
+        FinalReviewItem::AbortInstallation => abort_installation_preview(),
+    }
 }
 
 impl QuestionEngine {
@@ -402,11 +440,24 @@ impl QuestionEngine {
     }
 
     async fn handle_final_review(&mut self) -> Result<bool> {
+        let summary = build_install_summary(&self.context);
         let options = vec![
-            FinalReviewItem::Install,
-            FinalReviewItem::ReviewAnswers,
-            FinalReviewItem::AdvancedOptions,
-            FinalReviewItem::AbortInstallation,
+            FinalReviewOption::new(
+                FinalReviewItem::Install,
+                build_final_review_preview(&FinalReviewItem::Install, &summary),
+            ),
+            FinalReviewOption::new(
+                FinalReviewItem::ReviewAnswers,
+                build_final_review_preview(&FinalReviewItem::ReviewAnswers, &summary),
+            ),
+            FinalReviewOption::new(
+                FinalReviewItem::AdvancedOptions,
+                build_final_review_preview(&FinalReviewItem::AdvancedOptions, &summary),
+            ),
+            FinalReviewOption::new(
+                FinalReviewItem::AbortInstallation,
+                build_final_review_preview(&FinalReviewItem::AbortInstallation, &summary),
+            ),
         ];
         let nav = FzfWrapper::builder()
             .header(Header::fancy("Installation Configuration Complete"))
@@ -416,27 +467,29 @@ impl QuestionEngine {
             .select(options)?;
 
         match nav {
-            FzfResult::Selected(FinalReviewItem::Install) => Ok(true),
-            FzfResult::Selected(FinalReviewItem::ReviewAnswers) => {
-                while let Some(review_idx) = self.handle_review(self.questions.len())? {
-                    self.force_ask_question(review_idx).await?;
+            FzfResult::Selected(option) => match option.kind {
+                FinalReviewItem::Install => Ok(true),
+                FinalReviewItem::ReviewAnswers => {
+                    while let Some(review_idx) = self.handle_review(self.questions.len())? {
+                        self.force_ask_question(review_idx).await?;
+                    }
+                    Ok(false)
                 }
-                Ok(false)
-            }
-            FzfResult::Selected(FinalReviewItem::AdvancedOptions) => {
-                if let Some(adv_idx) = self.handle_advanced_options()? {
-                    self.force_ask_question(adv_idx).await?;
+                FinalReviewItem::AdvancedOptions => {
+                    if let Some(adv_idx) = self.handle_advanced_options()? {
+                        self.force_ask_question(adv_idx).await?;
+                    }
+                    Ok(false)
                 }
-                Ok(false)
-            }
-            FzfResult::Selected(FinalReviewItem::AbortInstallation) => {
-                if let Ok(ConfirmResult::Yes) =
-                    FzfWrapper::confirm("Are you sure you want to abort?")
-                {
-                    std::process::exit(0);
+                FinalReviewItem::AbortInstallation => {
+                    if let Ok(ConfirmResult::Yes) =
+                        FzfWrapper::confirm("Are you sure you want to abort?")
+                    {
+                        std::process::exit(0);
+                    }
+                    Ok(false)
                 }
-                Ok(false)
-            }
+            },
             _ => Ok(false),
         }
     }

@@ -5,7 +5,7 @@ use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, SliderConfig};
 use crate::ui::catppuccin::colors;
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 
 pub struct DualBootPartitionQuestion;
 
@@ -133,12 +133,10 @@ impl Question for DualBootPartitionQuestion {
         let feasibility = check_disk_dualboot_feasibility(disk_info);
 
         if !feasibility.feasible {
-            return Err(anyhow::anyhow!(
-                "Dual boot not feasible: {}",
-                feasibility
-                    .reason
-                    .unwrap_or_else(|| "Unknown reason".to_string())
-            ));
+            let reason = feasibility
+                .reason
+                .unwrap_or_else(|| "Unknown reason".to_string());
+            bail!("Dual boot not feasible: {reason}");
         }
 
         let shrinkable_partitions: Vec<crate::arch::dualboot::PartitionInfo> = disk_info
@@ -291,7 +289,7 @@ impl Question for DualBootSizeQuestion {
             .context("No resize info for partition")?;
 
         if !resize_info.can_shrink {
-            return Err(anyhow::anyhow!("Partition is not shrinkable"));
+            bail!("Partition is not shrinkable");
         }
 
         let partition_size = partition.size_bytes;
@@ -339,7 +337,7 @@ impl Question for DualBootSizeQuestion {
                 Ok(QuestionResult::Answer(bytes.to_string()))
             }
             Ok(None) => Ok(QuestionResult::Cancelled),
-            Err(e) => Err(anyhow::anyhow!("Slider failed: {}", e)),
+            Err(e) => Err(e).context("Slider failed")?,
         }
     }
 }

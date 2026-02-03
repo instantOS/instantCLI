@@ -76,103 +76,82 @@ impl MkinitcpioConfig {
         self.hooks.iter().any(|h| h == hook)
     }
 
+    fn hook_index(&self, hook: &str) -> Option<usize> {
+        self.hooks.iter().position(|h| h == hook)
+    }
+
+    fn max_index_of(&self, hooks: &[&str]) -> Option<usize> {
+        hooks
+            .iter()
+            .filter_map(|hook| self.hooks.iter().position(|h| h == *hook))
+            .max()
+    }
+
+    fn min_index_of(&self, hooks: &[&str]) -> Option<usize> {
+        hooks
+            .iter()
+            .filter_map(|hook| self.hooks.iter().position(|h| h == *hook))
+            .min()
+    }
+
+    fn insertion_bounds(&self, after: &[&str], before: &[&str]) -> (usize, usize) {
+        let min_idx = after
+            .iter()
+            .filter_map(|hook| self.hooks.iter().position(|h| h == *hook))
+            .map(|idx| idx + 1)
+            .max()
+            .unwrap_or(0);
+
+        let max_idx = before
+            .iter()
+            .filter_map(|hook| self.hooks.iter().position(|h| h == *hook))
+            .min()
+            .unwrap_or(self.hooks.len());
+
+        (min_idx, max_idx)
+    }
+
+    fn target_for_after_violation(&self, after: &[&str], before: &[&str]) -> usize {
+        let (min_idx, max_idx) = self.insertion_bounds(after, before);
+        if min_idx > max_idx { min_idx } else { max_idx }
+    }
+
+    fn target_for_before_violation(&self, after: &[&str], before: &[&str]) -> usize {
+        let (min_idx, max_idx) = self.insertion_bounds(after, before);
+        if max_idx < min_idx { max_idx } else { min_idx }
+    }
+
     pub fn ensure_hook_position(&mut self, hook: &str, after: &[&str], before: &[&str]) {
         self.ensure_hook(hook);
 
         let mut changed = true;
-        // Iteratively reposition the hook to satisfy all constraints
         for _ in 0..10 {
             if !changed {
                 break;
             }
             changed = false;
 
-            let current_idx = self.hooks.iter().position(|h| h == hook).unwrap();
+            let Some(current_idx) = self.hook_index(hook) else {
+                break;
+            };
 
-            // Find the rightmost 'after' constraint (hook must come after this)
-            let mut max_after_idx = -1isize;
-            for &a in after {
-                if let Some(idx) = self.hooks.iter().position(|h| h == a)
-                    && (idx as isize) > max_after_idx
-                {
-                    max_after_idx = idx as isize;
-                }
-            }
-
-            if max_after_idx >= current_idx as isize {
-                // Violates 'after' constraint - reposition the hook
+            if let Some(max_after_idx) = self.max_index_of(after)
+                && max_after_idx >= current_idx
+            {
                 let removed = self.hooks.remove(current_idx);
-
-                // Calculate valid insertion range after removal
-                let mut min_idx = 0;
-                for &a in after {
-                    if let Some(idx) = self.hooks.iter().position(|h| h == a)
-                        && idx + 1 > min_idx
-                    {
-                        min_idx = idx + 1;
-                    }
-                }
-
-                let mut max_idx = self.hooks.len();
-                for &b in before {
-                    if let Some(idx) = self.hooks.iter().position(|h| h == b)
-                        && idx < max_idx
-                    {
-                        max_idx = idx;
-                    }
-                }
-
-                let target = if min_idx > max_idx {
-                    min_idx // Conflicting constraints - prioritize 'after' (dependencies)
-                } else {
-                    max_idx
-                };
-
+                let target = self.target_for_after_violation(after, before);
                 self.hooks.insert(target, removed);
                 changed = true;
-            } else {
-                // Find the leftmost 'before' constraint (hook must come before this)
-                let mut min_before_idx = self.hooks.len() as isize;
-                for &b in before {
-                    if let Some(idx) = self.hooks.iter().position(|h| h == b)
-                        && (idx as isize) < min_before_idx
-                    {
-                        min_before_idx = idx as isize;
-                    }
-                }
+                continue;
+            }
 
-                if min_before_idx <= current_idx as isize {
-                    // Violates 'before' constraint - reposition the hook
-                    let removed = self.hooks.remove(current_idx);
-
-                    // Calculate valid insertion range after removal
-                    let mut min_idx = 0;
-                    for &a in after {
-                        if let Some(idx) = self.hooks.iter().position(|h| h == a)
-                            && idx + 1 > min_idx
-                        {
-                            min_idx = idx + 1;
-                        }
-                    }
-
-                    let mut max_idx = self.hooks.len();
-                    for &b in before {
-                        if let Some(idx) = self.hooks.iter().position(|h| h == b)
-                            && idx < max_idx
-                        {
-                            max_idx = idx;
-                        }
-                    }
-
-                    let target = if max_idx < min_idx {
-                        max_idx // Conflicting constraints - prioritize 'before' (dependents)
-                    } else {
-                        min_idx
-                    };
-
-                    self.hooks.insert(target, removed);
-                    changed = true;
-                }
+            if let Some(min_before_idx) = self.min_index_of(before)
+                && min_before_idx <= current_idx
+            {
+                let removed = self.hooks.remove(current_idx);
+                let target = self.target_for_before_violation(after, before);
+                self.hooks.insert(target, removed);
+                changed = true;
             }
         }
     }

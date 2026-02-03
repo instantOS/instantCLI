@@ -5,6 +5,8 @@ use crate::assist::utils::{
     AreaSelectionConfig, capture_area_to_file, capture_area_to_memory, copy_image_to_clipboard,
     copy_to_clipboard, generate_screenshot_filename, show_notification,
 };
+use crate::common::compositor::CompositorType;
+use crate::common::compositor::sway;
 use crate::common::display_server::DisplayServer;
 use crate::common::paths;
 
@@ -327,6 +329,107 @@ pub fn screenshot_area_to_pictures() -> Result<()> {
 
     // Use shared notification utility
     show_notification("Screenshot saved", image_path.to_str().unwrap_or(""))?;
+
+    Ok(())
+}
+
+/// Parse slurp geometry string (e.g., "100,200 300x400") into (x, y, width, height)
+fn parse_slurp_geometry(geometry: &str) -> Result<(i32, i32, i32, i32)> {
+    // Format: "x,y widthxheight"
+    let parts: Vec<&str> = geometry.split_whitespace().collect();
+    if parts.len() != 2 {
+        anyhow::bail!("Invalid geometry format: {}", geometry);
+    }
+
+    let pos_parts: Vec<&str> = parts[0].split(',').collect();
+    let size_parts: Vec<&str> = parts[1].split('x').collect();
+
+    if pos_parts.len() != 2 || size_parts.len() != 2 {
+        anyhow::bail!("Invalid geometry format: {}", geometry);
+    }
+
+    let x: i32 = pos_parts[0]
+        .parse()
+        .context("Failed to parse x coordinate")?;
+    let y: i32 = pos_parts[1]
+        .parse()
+        .context("Failed to parse y coordinate")?;
+    let width: i32 = size_parts[0].parse().context("Failed to parse width")?;
+    let height: i32 = size_parts[1].parse().context("Failed to parse height")?;
+
+    Ok((x, y, width, height))
+}
+
+/// Wait for an XWayland window with the given class to appear, using exponential backoff.
+/// Returns Ok(true) if window found, Ok(false) if timed out.
+fn wait_for_xwayland_window(class: &str, max_attempts: u32) -> Result<bool> {
+    let mut delay_ms = 50u64;
+    for _ in 0..max_attempts {
+        let tree = sway::swaymsg_get_tree()?;
+        if tree.contains(&format!("\"class\": \"{}\"", class)) {
+            return Ok(true);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+        delay_ms = (delay_ms * 2).min(500); // Cap at 500ms
+    }
+    Ok(false)
+}
+
+/// Take a screenshot of a region and display it as a floating window at the exact position
+/// This effectively "freezes" that part of the screen. Currently only supports Sway.
+pub fn screenshot_freeze() -> Result<()> {
+    let compositor = CompositorType::detect();
+    if !matches!(compositor, CompositorType::Sway) {
+        anyhow::bail!(
+            "Screenshot freeze is only supported on Sway. Detected: {:?}",
+            compositor
+        );
+    }
+
+    let config = AreaSelectionConfig::new();
+
+    let geometry = match config.select_area() {
+        Ok(geom) => geom,
+        Err(_) => return Ok(()),
+    };
+
+    let (x, y, width, height) = parse_slurp_geometry(&geometry)?;
+
+    let display_server = config.display_server();
+    let screenshot_data = capture_area_to_memory(&geometry, display_server)?;
+
+    // Write screenshot to temp file
+    let temp_path = std::env::temp_dir().join(format!("ins_freeze_{}.png", std::process::id()));
+    std::fs::write(&temp_path, &screenshot_data).context("Failed to write temporary screenshot")?;
+
+    // Launch feh with specific geometry
+    // feh is an X11 app, so on Sway it runs via XWayland and uses "class" not "app_id"
+    let geometry_arg = format!("{}x{}+{}+{}", width, height, x, y);
+
+    Command::new("feh")
+        .arg("--class")
+        .arg("ins_freeze")
+        .arg("--geometry")
+        .arg(&geometry_arg)
+        .arg("--borderless")
+        .arg("--auto-zoom")
+        .arg(&temp_path)
+        .spawn()
+        .context("Failed to launch feh")?;
+
+    // Wait for feh window to appear with exponential backoff
+    if !wait_for_xwayland_window("ins_freeze", 10)? {
+        anyhow::bail!("feh window did not appear");
+    }
+
+    // Make it floating and position it exactly
+    // Use "class" for XWayland apps (not "app_id" which is for native Wayland)
+    // Use "move absolute position" to avoid title bar offset issues
+    let sway_cmd = format!(
+        "[class=\"ins_freeze\"] floating enable, border none, move absolute position {} {}",
+        x, y
+    );
+    let _ = sway::swaymsg(&sway_cmd);
 
     Ok(())
 }

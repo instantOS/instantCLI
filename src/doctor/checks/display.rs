@@ -203,7 +203,8 @@ impl DoctorCheck for SwaySetupCheck {
     }
 
     async fn fix(&self) -> Result<()> {
-        crate::setup::setup_sway()?;
+        use crate::setup::{SetupCommands, handle_setup_command};
+        handle_setup_command(SetupCommands::Sway)?;
         Ok(())
     }
 }

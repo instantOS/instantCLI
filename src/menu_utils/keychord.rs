@@ -40,10 +40,6 @@ impl KeyChordNode {
     pub fn find_chord(&self, key: &KeyCode) -> Option<&KeyChord> {
         self.chords.iter().find(|chord| chord.key == *key)
     }
-
-    pub fn is_empty(&self) -> bool {
-        self.chords.is_empty()
-    }
 }
 
 #[derive(Clone, Debug)]

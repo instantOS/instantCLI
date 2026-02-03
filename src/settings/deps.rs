@@ -336,6 +336,20 @@ pub static WIREMIX: Dependency = Dependency {
 };
 
 // =============================================================================
+// Flatpak
+// =============================================================================
+
+pub static FLATPAK: Dependency = Dependency {
+    name: "Flatpak",
+    description: Some("Application sandboxing and distribution framework"),
+    packages: &[
+        PackageDefinition::new("flatpak", PackageManager::Pacman),
+        PackageDefinition::new("flatpak", PackageManager::Apt),
+    ],
+    tests: &[InstallTest::WhichSucceeds("flatpak")],
+};
+
+// =============================================================================
 // AppImages
 // =============================================================================
 

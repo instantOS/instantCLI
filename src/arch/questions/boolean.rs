@@ -1,5 +1,5 @@
 use crate::arch::engine::{InstallContext, Question, QuestionId, QuestionResult};
-use crate::menu_utils::FzfWrapper;
+use crate::menu_utils::{ConfirmResult, FzfWrapper};
 use crate::ui::nerd_font::NerdFont;
 use anyhow::Result;
 
@@ -87,17 +87,15 @@ impl Question for BooleanQuestion {
     }
 
     async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
-        // Always present Yes/No in a consistent order, ignoring the default for UI purposes
-        let options = vec!["yes".to_string(), "no".to_string()];
-
+        // Use FzfWrapper's confirmation dialog for consistent yes/no prompts
         let result = FzfWrapper::builder()
-            .header(format!("{} {}", self.icon, self.prompt))
-            .select(options)?;
+            .confirm(format!("{} {}", self.icon, self.prompt))
+            .confirm_dialog()?;
 
         match result {
-            crate::menu_utils::FzfResult::Selected(ans) => Ok(QuestionResult::Answer(ans)),
-            crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
-            _ => Ok(QuestionResult::Cancelled),
+            ConfirmResult::Yes => Ok(QuestionResult::Answer("yes".to_string())),
+            ConfirmResult::No => Ok(QuestionResult::Answer("no".to_string())),
+            ConfirmResult::Cancelled => Ok(QuestionResult::Cancelled),
         }
     }
 }

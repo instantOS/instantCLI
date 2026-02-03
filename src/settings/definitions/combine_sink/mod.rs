@@ -9,8 +9,8 @@ use std::collections::HashSet;
 use anyhow::Result;
 
 use crate::menu_utils::{
-    prompt_text_edit, ChecklistResult, FzfResult, FzfWrapper, Header, TextEditOutcome,
-    TextEditPrompt,
+    ChecklistResult, FzfResult, FzfWrapper, Header, TextEditOutcome, TextEditPrompt,
+    prompt_text_edit,
 };
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
@@ -26,9 +26,7 @@ use actions::{enable_combined_sink, offer_restart, remove_combined_sink, rename_
 use config::{
     combine_sink_config_file, get_current_config, get_current_sink_name, is_combined_sink_enabled,
 };
-use menu::{
-    MenuAction, build_header_text, build_items_with_previews, build_menu_items,
-};
+use menu::{MenuAction, build_header_text, build_items_with_previews, build_menu_items};
 use model::SinkChecklistItem;
 use wpctl::{is_combined_sink_default, list_sinks, set_combined_sink_as_default};
 
@@ -100,7 +98,8 @@ impl Setting for CombinedAudioSink {
             let device_list: Vec<String> = stored_config.iter().cloned().collect();
             let device_count = device_list.len();
 
-            let items = build_menu_items(currently_enabled, is_default, device_count, &current_name);
+            let items =
+                build_menu_items(currently_enabled, is_default, device_count, &current_name);
 
             // Build custom previews for each item - show actual sink state
             let header_text = build_header_text(currently_enabled, &current_name, device_count);
@@ -262,9 +261,9 @@ impl Setting for CombinedAudioSink {
 
 #[cfg(test)]
 mod tests {
+    use super::DEFAULT_COMBINED_SINK_NAME;
     use super::config::display_name_to_node_name;
     use super::wpctl::parse_wpctl_status;
-    use super::DEFAULT_COMBINED_SINK_NAME;
 
     #[test]
     fn test_parse_wpctl_status() {

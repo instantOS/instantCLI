@@ -13,7 +13,7 @@ use crate::common::TildePath;
 use crate::common::paths;
 use crate::dot::config::Config;
 use crate::dot::dotfile::Dotfile;
-use crate::dot::localrepo::LocalRepo;
+use crate::dot::sources;
 
 /// A single dotfile source override
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -136,39 +136,7 @@ impl OverrideConfig {
 
 /// Find all available sources for a dotfile across all repos and subdirs
 pub fn find_all_sources(config: &Config, target_path: &Path) -> Result<Vec<DotfileSource>> {
-    let home = PathBuf::from(shellexpand::tilde("~").to_string());
-    let relative_path = target_path.strip_prefix(&home).unwrap_or(target_path);
-    let mut sources = Vec::new();
-
-    for repo_config in &config.repos {
-        if !repo_config.enabled {
-            continue;
-        }
-
-        let local_repo = match LocalRepo::new(config, repo_config.name.clone()) {
-            Ok(repo) => repo,
-            Err(_) => continue,
-        };
-
-        for dotfile_dir in local_repo.active_dotfile_dirs() {
-            let source_path = dotfile_dir.path.join(relative_path);
-            if source_path.exists() {
-                let subdir_name = dotfile_dir
-                    .path
-                    .file_name()
-                    .map(|s| s.to_string_lossy().to_string())
-                    .unwrap_or_default();
-
-                sources.push(DotfileSource {
-                    repo_name: repo_config.name.clone(),
-                    subdir_name,
-                    source_path,
-                });
-            }
-        }
-    }
-
-    Ok(sources)
+    sources::list_sources_for_target(config, target_path)
 }
 
 /// Apply overrides to a merged dotfiles map

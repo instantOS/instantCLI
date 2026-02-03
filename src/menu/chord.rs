@@ -275,110 +275,18 @@ impl KeyChordNavigator {
     }
 
     fn draw(&mut self) -> Result<()> {
-        let path_display = if self.path.is_empty() {
-            "<root>".to_string()
-        } else {
-            self.path.join("  ›  ")
-        };
-
+        let path_display = path_display(&self.path);
         let node_description = self.current_node.description.clone();
-        let items: Vec<ListItem> = self
-            .current_node
-            .chords
-            .iter()
-            .map(|chord| match &chord.child {
-                KeyChordChild::Node(node) => {
-                    let line = Line::from(vec![
-                        Span::styled(
-                            format!(" {:>4} ", key_label(&chord.key)),
-                            Style::default()
-                                .fg(Color::Cyan)
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Span::raw("  "),
-                        Span::raw(&chord.description),
-                        Span::styled(
-                            format!("  [{}]", node.description),
-                            Style::default().fg(Color::DarkGray),
-                        ),
-                    ]);
-                    ListItem::new(line)
-                }
-                KeyChordChild::Leaf(_) => {
-                    let line = Line::from(vec![
-                        Span::styled(
-                            format!(" {:>4} ", key_label(&chord.key)),
-                            Style::default()
-                                .fg(Color::Green)
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Span::raw("  "),
-                        Span::raw(&chord.description),
-                    ]);
-                    ListItem::new(line)
-                }
-            })
-            .collect();
+        let items = chord_items(&self.current_node.chords);
+        let instructions = instructions_line();
 
-        let instructions = Line::from(vec![
-            Span::styled("Esc", Style::default().fg(Color::Cyan)),
-            Span::raw("/"),
-            Span::styled("Backspace", Style::default().fg(Color::Cyan)),
-            Span::raw(" to go back or quit"),
-        ]);
-
-        self.terminal.draw(|frame| {
-            let area = frame.area();
-            frame.render_widget(Clear, area);
-
-            let layout = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints(
-                    [
-                        Constraint::Length(3),
-                        Constraint::Length(2),
-                        Constraint::Min(5),
-                        Constraint::Length(1),
-                    ]
-                    .as_ref(),
-                )
-                .split(area);
-
-            let title = Paragraph::new(Line::from(vec![
-                Span::styled(
-                    "Chord Picker",
-                    Style::default()
-                        .fg(Color::Magenta)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::raw(" — "),
-                Span::raw(node_description.clone()),
-            ]));
-
-            let path = Paragraph::new(Line::from(vec![
-                Span::styled("Path: ", Style::default().fg(Color::DarkGray)),
-                Span::raw(path_display.clone()),
-            ]));
-
-            let list = List::new(items)
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .title(" Available Chords "),
-                )
-                .highlight_symbol("» ");
-
-            let instruction_para = Paragraph::new(instructions.clone())
-                .alignment(Alignment::Center)
-                .style(Style::default().fg(Color::Gray));
-
-            frame.render_widget(title, layout[0]);
-            frame.render_widget(path, layout[1]);
-            frame.render_widget(list, layout[2]);
-            frame.render_widget(instruction_para, layout[3]);
-        })?;
-
-        Ok(())
+        render_frame(
+            &mut self.terminal,
+            node_description,
+            path_display,
+            items,
+            instructions,
+        )
     }
 
     fn cleanup(&mut self) -> Result<()> {
@@ -398,6 +306,127 @@ impl Drop for KeyChordNavigator {
     fn drop(&mut self) {
         let _ = self.cleanup();
     }
+}
+
+fn path_display(path: &[String]) -> String {
+    if path.is_empty() {
+        "<root>".to_string()
+    } else {
+        path.join("  ›  ")
+    }
+}
+
+fn chord_items<'a>(chords: &'a [KeyChord]) -> Vec<ListItem<'a>> {
+    chords.iter().map(chord_item).collect()
+}
+
+fn chord_item<'a>(chord: &'a KeyChord) -> ListItem<'a> {
+    match &chord.child {
+        KeyChordChild::Node(node) => chord_node_item(chord, node),
+        KeyChordChild::Leaf(_) => chord_leaf_item(chord),
+    }
+}
+
+fn chord_node_item<'a>(chord: &'a KeyChord, node: &'a KeyChordNode) -> ListItem<'a> {
+    let line = Line::from(vec![
+        Span::styled(
+            format!(" {:>4} ", key_label(&chord.key)),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw("  "),
+        Span::raw(&chord.description),
+        Span::styled(
+            format!("  [{}]", node.description),
+            Style::default().fg(Color::DarkGray),
+        ),
+    ]);
+    ListItem::new(line)
+}
+
+fn chord_leaf_item<'a>(chord: &'a KeyChord) -> ListItem<'a> {
+    let line = Line::from(vec![
+        Span::styled(
+            format!(" {:>4} ", key_label(&chord.key)),
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw("  "),
+        Span::raw(&chord.description),
+    ]);
+    ListItem::new(line)
+}
+
+fn instructions_line() -> Line<'static> {
+    Line::from(vec![
+        Span::styled("Esc", Style::default().fg(Color::Cyan)),
+        Span::raw("/"),
+        Span::styled("Backspace", Style::default().fg(Color::Cyan)),
+        Span::raw(" to go back or quit"),
+    ])
+}
+
+fn render_frame<'a>(
+    terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    node_description: String,
+    path_display: String,
+    items: Vec<ListItem<'a>>,
+    instructions: Line<'static>,
+) -> Result<()> {
+    terminal.draw(|frame| {
+        let area = frame.area();
+        frame.render_widget(Clear, area);
+
+        let layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(
+                [
+                    Constraint::Length(3),
+                    Constraint::Length(2),
+                    Constraint::Min(5),
+                    Constraint::Length(1),
+                ]
+                .as_ref(),
+            )
+            .split(area);
+
+        let title = Paragraph::new(Line::from(vec![
+            Span::styled(
+                "Chord Picker",
+                Style::default()
+                    .fg(Color::Magenta)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" — "),
+            Span::raw(node_description),
+        ]));
+
+        let path = Paragraph::new(Line::from(vec![
+            Span::styled("Path: ", Style::default().fg(Color::DarkGray)),
+            Span::raw(path_display),
+        ]));
+
+        let list = List::new(items)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(" Available Chords "),
+            )
+            .highlight_symbol("» ");
+
+        let instruction_para = Paragraph::new(instructions)
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(Color::Gray));
+
+        frame.render_widget(title, layout[0]);
+        frame.render_widget(path, layout[1]);
+        frame.render_widget(list, layout[2]);
+        frame.render_widget(instruction_para, layout[3]);
+    })?;
+
+    Ok(())
 }
 
 fn key_label(code: &KeyCode) -> String {

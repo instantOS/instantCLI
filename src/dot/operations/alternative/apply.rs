@@ -12,8 +12,8 @@ use crate::dot::dotfile::Dotfile;
 use crate::dot::override_config::{DotfileSource, OverrideConfig};
 use crate::ui::prelude::*;
 
-use super::discovery::home_dir;
 use super::picker::SourceOption;
+use crate::dot::sources;
 
 /// Check if target file is safe to switch (matches any known source).
 pub fn is_safe_to_switch(target_path: &Path, sources: &[SourceOption]) -> Result<bool> {
@@ -29,7 +29,10 @@ pub fn is_safe_to_switch(target_path: &Path, sources: &[SourceOption]) -> Result
             return Ok(true);
         }
     }
-    Ok(false)
+
+    let config = Config::load(None)?;
+    let db = Database::new(config.database_path().to_path_buf())?;
+    db.source_hash_exists_anywhere(&target_hash)
 }
 
 /// Set override and apply the source file.
@@ -174,7 +177,9 @@ pub fn add_to_destination(
         );
     }
 
-    let relative = target_path.strip_prefix(home_dir()).unwrap_or(target_path);
+    let relative = target_path
+        .strip_prefix(sources::home_dir())
+        .unwrap_or(target_path);
     let dest_path = dest.source_path.join(relative);
 
     if let Some(parent) = dest_path.parent() {
