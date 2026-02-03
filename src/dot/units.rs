@@ -99,9 +99,9 @@ pub struct UnitIndex {
 
 impl UnitIndex {
     pub fn is_target_in_modified_unit(&self, target_path: &Path) -> bool {
-        self.modified_units_with_files_for_target(target_path)
-            .first()
-            .is_some()
+        !self
+            .modified_units_with_files_for_target(target_path)
+            .is_empty()
     }
 
     pub fn modified_units_with_files_for_target(

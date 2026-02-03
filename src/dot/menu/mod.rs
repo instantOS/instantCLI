@@ -22,6 +22,7 @@ pub enum DotMenuEntry {
     Repo(String, bool), // name, is_external
     AddRepo,
     AlternateFiles,
+    GlobalUnits,
     CloseMenu,
 }
 
@@ -53,6 +54,10 @@ impl FzfSelectable for DotMenuEntry {
                     format_icon_colored(NerdFont::List, colors::PEACH)
                 )
             }
+            DotMenuEntry::GlobalUnits => format!(
+                "{} Global Units",
+                format_icon_colored(NerdFont::FolderConfig, colors::TEAL)
+            ),
             DotMenuEntry::CloseMenu => format!("{} Close Menu", format_back_icon()),
         }
     }
@@ -62,6 +67,7 @@ impl FzfSelectable for DotMenuEntry {
             DotMenuEntry::Repo(name, _) => name.clone(),
             DotMenuEntry::AddRepo => "!__add_repo__".to_string(),
             DotMenuEntry::AlternateFiles => "!__alternate_files__".to_string(),
+            DotMenuEntry::GlobalUnits => "!__global_units__".to_string(),
             DotMenuEntry::CloseMenu => "!__close_menu__".to_string(),
         }
     }
@@ -87,6 +93,15 @@ impl FzfSelectable for DotMenuEntry {
                 .text("Select which repository or subdirectory")
                 .text("a dotfile should be sourced from when")
                 .text("multiple versions exist.")
+                .build(),
+            DotMenuEntry::GlobalUnits => PreviewBuilder::new()
+                .header(NerdFont::FolderConfig, "Global Units")
+                .text("Manage global dotfile units shared across repos.")
+                .blank()
+                .text("Units are atomic directories; modify one file")
+                .text("and the entire unit is protected from updates.")
+                .blank()
+                .subtext("Repo authors should prefer repo-scoped units.")
                 .build(),
             DotMenuEntry::CloseMenu => PreviewBuilder::new()
                 .header(NerdFont::Cross, "Close Menu")
@@ -134,6 +149,7 @@ fn select_dot_menu_entry(
 
     entries.push(DotMenuEntry::AddRepo);
     entries.push(DotMenuEntry::AlternateFiles);
+    entries.push(DotMenuEntry::GlobalUnits);
     entries.push(DotMenuEntry::CloseMenu);
 
     // Create entries with custom previews (Repo gets dynamic preview, others use trait impl)
@@ -210,6 +226,10 @@ pub fn dot_menu(debug: bool) -> Result<()> {
                         subdir: None,
                     },
                 )?;
+                reload_menu_state(&mut config, &mut db)?;
+            }
+            DotMenuEntry::GlobalUnits => {
+                crate::dot::menu::repo_actions::handle_global_units_menu(&mut config, &db)?;
                 reload_menu_state(&mut config, &mut db)?;
             }
             DotMenuEntry::CloseMenu => return Ok(()),

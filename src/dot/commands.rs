@@ -87,6 +87,9 @@ pub enum DotCommands {
     },
     /// Manage dotfile units
     Unit {
+        /// Manage units in a repo (defaults to global units)
+        #[arg(long, value_name = "REPO")]
+        repo: Option<String>,
         #[command(subcommand)]
         command: UnitCommands,
     },
@@ -313,32 +316,23 @@ fn handle_ignore_command(
     Ok(())
 }
 
-fn normalize_unit_path(path: &str) -> Result<String> {
-    if path.starts_with('~') {
-        Ok(path.to_string())
-    } else if path.starts_with('/') {
-        let home = shellexpand::tilde("~").to_string();
-        if path.starts_with(&home) {
-            Ok(format!("~{}", path.strip_prefix(&home).unwrap_or(path)))
-        } else {
-            Err(anyhow::anyhow!(
-                "Path must be within home directory. Use ~ or relative paths."
-            ))
-        }
-    } else {
-        Ok(format!("~/{}", path.trim_start_matches('/')))
-    }
-}
-
 fn handle_unit_command(
     config: &mut Config,
+    db: &Database,
     command: &UnitCommands,
+    repo: Option<&str>,
     config_path: Option<&str>,
 ) -> Result<()> {
+    let scope = match repo {
+        Some(name) => crate::dot::unit_manager::UnitScope::Repo(name.to_string()),
+        None => crate::dot::unit_manager::UnitScope::Global,
+    };
+    let context = crate::dot::unit_manager::unit_path_context_for_write(&scope, config, db)?;
+
     match command {
         UnitCommands::Add { path } => {
-            let normalized_path = normalize_unit_path(path)?;
-            config.add_unit(normalized_path.clone(), config_path)?;
+            let normalized_path = crate::dot::unit_manager::normalize_unit_input(path, &context)?;
+            crate::dot::unit_manager::add_unit(&scope, config, db, &normalized_path, config_path)?;
             emit(
                 Level::Success,
                 "dot.unit.added",
@@ -349,13 +343,20 @@ fn handle_unit_command(
                 ),
                 Some(serde_json::json!({
                     "path": normalized_path,
-                    "action": "added"
+                    "action": "added",
+                    "scope": scope_label(&scope)
                 })),
             );
         }
         UnitCommands::Remove { path } => {
-            let normalized_path = normalize_unit_path(path)?;
-            config.remove_unit(&normalized_path, config_path)?;
+            let normalized_path = crate::dot::unit_manager::normalize_unit_input(path, &context)?;
+            crate::dot::unit_manager::remove_unit(
+                &scope,
+                config,
+                db,
+                &normalized_path,
+                config_path,
+            )?;
             emit(
                 Level::Success,
                 "dot.unit.removed",
@@ -366,12 +367,14 @@ fn handle_unit_command(
                 ),
                 Some(serde_json::json!({
                     "path": normalized_path,
-                    "action": "removed"
+                    "action": "removed",
+                    "scope": scope_label(&scope)
                 })),
             );
         }
         UnitCommands::List => {
-            if config.units.is_empty() {
+            let units = crate::dot::unit_manager::list_units(&scope, config, db)?;
+            if units.is_empty() {
                 emit(
                     Level::Info,
                     "dot.unit.list.empty",
@@ -387,17 +390,19 @@ fn handle_unit_command(
                     "dot.unit.list.header",
                     &format!("{} Unit directories:", char::from(NerdFont::List)),
                     Some(serde_json::json!({
-                        "count": config.units.len()
+                        "count": units.len(),
+                        "scope": scope_label(&scope)
                     })),
                 );
-                for (i, unit) in config.units.iter().enumerate() {
+                for (i, unit) in units.iter().enumerate() {
                     emit(
                         Level::Info,
                         "dot.unit.list.item",
                         &format!("  {} {}", i + 1, unit.cyan()),
                         Some(serde_json::json!({
                             "index": i + 1,
-                            "path": unit
+                            "path": unit,
+                            "scope": scope_label(&scope)
                         })),
                     );
                 }
@@ -406,6 +411,13 @@ fn handle_unit_command(
     }
 
     Ok(())
+}
+
+fn scope_label(scope: &crate::dot::unit_manager::UnitScope) -> String {
+    match scope {
+        crate::dot::unit_manager::UnitScope::Global => "global".to_string(),
+        crate::dot::unit_manager::UnitScope::Repo(name) => format!("repo:{name}"),
+    }
 }
 
 fn handle_priority_command(
@@ -565,8 +577,8 @@ pub fn handle_dot_command(
         DotCommands::Ignore { command } => {
             handle_ignore_command(&mut config, command, config_path)?;
         }
-        DotCommands::Unit { command } => {
-            handle_unit_command(&mut config, command, config_path)?;
+        DotCommands::Unit { repo, command } => {
+            handle_unit_command(&mut config, &db, command, repo.as_deref(), config_path)?;
         }
         DotCommands::Commit { args } => {
             super::git_commit_all(&config, args, debug)?;

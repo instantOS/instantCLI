@@ -10,6 +10,7 @@ pub mod meta;
 pub mod override_config;
 pub mod repo;
 pub mod sources;
+pub mod unit_manager;
 
 // New organized modules
 pub mod operations;
