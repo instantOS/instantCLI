@@ -45,13 +45,6 @@ pub fn find_units_for_path(target_path: &Path, units: &[PathBuf]) -> Vec<PathBuf
     matches
 }
 
-/// Find the most specific unit path that a target path belongs to (if any).
-///
-/// Returns the deepest matching unit, if any.
-pub fn find_unit_for_path(target_path: &Path, units: &[PathBuf]) -> Option<PathBuf> {
-    find_units_for_path(target_path, units).into_iter().next()
-}
-
 fn normalize_unit_path(unit: &str) -> PathBuf {
     let home = PathBuf::from(shellexpand::tilde("~").to_string());
 
@@ -105,14 +98,6 @@ pub struct UnitIndex {
 }
 
 impl UnitIndex {
-    pub fn units_for_target(&self, target_path: &Path) -> Option<&Vec<PathBuf>> {
-        self.units_for_target.get(target_path)
-    }
-
-    pub fn is_unit_modified(&self, unit_path: &Path) -> bool {
-        self.modified_files_by_unit.contains_key(unit_path)
-    }
-
     pub fn is_target_in_modified_unit(&self, target_path: &Path) -> bool {
         self.modified_units_with_files_for_target(target_path)
             .first()
@@ -181,64 +166,6 @@ pub fn build_unit_index(
     Ok(index)
 }
 
-/// Check if any file in the same unit as the dotfile is modified.
-///
-/// Returns `(is_any_sibling_modified, unit_path)` where:
-/// - `is_any_sibling_modified` is true if any tracked file in the same unit has been modified
-/// - `unit_path` is Some if the file belongs to a unit, None otherwise
-pub fn is_unit_modified(
-    dotfile: &Dotfile,
-    all_dotfiles: &HashMap<PathBuf, Dotfile>,
-    units: &[PathBuf],
-    db: &Database,
-) -> Result<(bool, Vec<PathBuf>)> {
-    let units_for_target = find_units_for_path(&dotfile.target_path, units);
-    if units_for_target.is_empty() {
-        return Ok((false, Vec::new()));
-    }
-
-    let siblings = get_unit_siblings(dotfile, all_dotfiles, units);
-    for sibling in siblings {
-        if !sibling.is_target_unmodified(db)? {
-            return Ok((true, units_for_target));
-        }
-    }
-
-    Ok((false, units_for_target))
-}
-
-/// Get all dotfiles that belong to the same unit as the given dotfile.
-///
-/// Returns an empty vec if the dotfile doesn't belong to any unit.
-pub fn get_unit_siblings<'a>(
-    dotfile: &Dotfile,
-    all_dotfiles: &'a HashMap<PathBuf, Dotfile>,
-    units: &[PathBuf],
-) -> Vec<&'a Dotfile> {
-    let units_for_target = find_units_for_path(&dotfile.target_path, units);
-    if units_for_target.is_empty() {
-        return vec![];
-    }
-
-    let home = PathBuf::from(shellexpand::tilde("~").to_string());
-    let mut seen = HashSet::new();
-    let mut siblings = Vec::new();
-
-    for unit_path in units_for_target {
-        let unit_full_path = home.join(&unit_path);
-        for sibling in all_dotfiles
-            .values()
-            .filter(|df| df.target_path.starts_with(&unit_full_path))
-        {
-            if seen.insert(sibling.target_path.clone()) {
-                siblings.push(sibling);
-            }
-        }
-    }
-
-    siblings
-}
-
 /// Compute which units have any modified files.
 ///
 /// Returns a set of unit paths that contain at least one modified file.
@@ -255,39 +182,23 @@ pub fn get_modified_units(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dot::db::Database;
-    use std::fs;
-    use tempfile::tempdir;
 
     #[test]
-    fn test_find_unit_for_path() {
+    fn test_find_units_for_path_basic() {
         let home = PathBuf::from(shellexpand::tilde("~").to_string());
         let units = vec![
             PathBuf::from(".config/nvim"),
             PathBuf::from(".config/helix"),
         ];
 
-        // File inside a unit
         let nvim_init = home.join(".config/nvim/init.lua");
         assert_eq!(
-            find_unit_for_path(&nvim_init, &units),
-            Some(PathBuf::from(".config/nvim"))
+            find_units_for_path(&nvim_init, &units),
+            vec![PathBuf::from(".config/nvim")]
         );
 
-        // File in nested unit path
-        let nvim_lua = home.join(".config/nvim/lua/plugins.lua");
-        assert_eq!(
-            find_unit_for_path(&nvim_lua, &units),
-            Some(PathBuf::from(".config/nvim"))
-        );
-
-        // File not in any unit
         let bashrc = home.join(".bashrc");
-        assert_eq!(find_unit_for_path(&bashrc, &units), None);
-
-        // File in different directory
-        let other = home.join(".config/kitty/kitty.conf");
-        assert_eq!(find_unit_for_path(&other, &units), None);
+        assert!(find_units_for_path(&bashrc, &units).is_empty());
     }
 
     #[test]
@@ -316,38 +227,5 @@ mod tests {
                 PathBuf::from(".config")
             ]
         );
-    }
-
-    #[test]
-    fn test_get_unit_siblings() {
-        let home = PathBuf::from(shellexpand::tilde("~").to_string());
-        let units = vec![PathBuf::from(".config/nvim")];
-
-        let mut dotfiles = HashMap::new();
-
-        let nvim_init = Dotfile {
-            source_path: PathBuf::from("/repo/dots/.config/nvim/init.lua"),
-            target_path: home.join(".config/nvim/init.lua"),
-        };
-        let nvim_plugins = Dotfile {
-            source_path: PathBuf::from("/repo/dots/.config/nvim/lua/plugins.lua"),
-            target_path: home.join(".config/nvim/lua/plugins.lua"),
-        };
-        let bashrc = Dotfile {
-            source_path: PathBuf::from("/repo/dots/.bashrc"),
-            target_path: home.join(".bashrc"),
-        };
-
-        dotfiles.insert(nvim_init.target_path.clone(), nvim_init.clone());
-        dotfiles.insert(nvim_plugins.target_path.clone(), nvim_plugins.clone());
-        dotfiles.insert(bashrc.target_path.clone(), bashrc.clone());
-
-        // nvim_init should have nvim_plugins as sibling (and itself)
-        let siblings = get_unit_siblings(&nvim_init, &dotfiles, &units);
-        assert_eq!(siblings.len(), 2);
-
-        // bashrc should have no siblings (not in a unit)
-        let siblings = get_unit_siblings(&bashrc, &dotfiles, &units);
-        assert!(siblings.is_empty());
     }
 }
