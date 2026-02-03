@@ -19,6 +19,8 @@ pub enum VideoCommands {
     Preprocess(PreprocessArgs),
     /// Setup video tools (local preprocessor, Auphonic, WhisperX)
     Setup(SetupArgs),
+    /// Interactive video menu (guided workflows)
+    Menu,
 }
 
 #[derive(Args, Debug, Clone)]
