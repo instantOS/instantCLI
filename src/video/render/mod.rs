@@ -117,6 +117,46 @@ fn find_default_source<'a>(
         .ok_or_else(|| anyhow!("Default source `{}` not found", default_id))
 }
 
+fn validate_timeline_sources(
+    document: &super::document::VideoDocument,
+    sources: &[VideoSource],
+    cues: &[super::support::transcript::TranscriptCue],
+) -> Result<()> {
+    let mut referenced_sources = std::collections::HashSet::new();
+    for block in &document.blocks {
+        if let super::document::DocumentBlock::Segment(segment) = block {
+            referenced_sources.insert(segment.source_id.clone());
+        }
+    }
+
+    let mut available_sources = std::collections::HashSet::new();
+    for source in sources {
+        available_sources.insert(source.id.clone());
+    }
+
+    for source_id in &referenced_sources {
+        if !available_sources.contains(source_id) {
+            bail!("Timeline references unknown source `{}`", source_id);
+        }
+    }
+
+    let mut cue_sources = std::collections::HashSet::new();
+    for cue in cues {
+        cue_sources.insert(cue.source_id.clone());
+    }
+
+    for source_id in &referenced_sources {
+        if !cue_sources.contains(source_id) {
+            bail!(
+                "No transcript cues loaded for source `{}`; check front matter transcripts",
+                source_id
+            );
+        }
+    }
+
+    Ok(())
+}
+
 pub fn handle_render(args: RenderArgs) -> Result<()> {
     let runner = SystemFfmpegRunner;
     handle_render_with_services(args, &runner)
@@ -139,15 +179,14 @@ fn handle_render_with_services(args: RenderArgs, runner: &dyn FfmpegRunner) -> R
     let document = load_video_document(&markdown_path)?;
     let sources = resolve_video_sources(&document.metadata, markdown_dir)?;
     if sources.is_empty() {
-        bail!(
-            "No video sources configured. Add `sources` in front matter before rendering."
-        );
+        bail!("No video sources configured. Add `sources` in front matter before rendering.");
     }
     let cues = load_transcript_cues(&sources, markdown_dir)?;
+    validate_timeline_sources(&document, &sources, &cues)?;
     let plan = build_timeline_plan(&document, &cues, &markdown_path)?;
 
     let default_source = find_default_source(&document.metadata, &sources)?;
-    let audio_path = resolve_audio_path(&default_source.source)?;
+    let audio_map = build_audio_source_map(&sources)?;
 
     // Determine render mode from CLI args
     let render_mode = if args.reels {
@@ -244,7 +283,8 @@ fn handle_render_with_services(args: RenderArgs, runner: &dyn FfmpegRunner) -> R
         source_width: video_width,
         source_height: video_height,
         config: video_config,
-        audio_source: audio_path,
+        audio_source: default_source.source.clone(),
+        audio_map,
         subtitle_path,
         runner,
     });
@@ -424,6 +464,7 @@ pub(super) fn resolve_video_sources(
     for source in sources {
         let resolved_source = resolve_source_path(&source.source, markdown_dir)?;
         let resolved_transcript = resolve_source_path(&source.transcript, markdown_dir)?;
+        let resolved_audio = resolve_audio_path(&resolved_source)?;
         let canonical = canonicalize_existing(&resolved_source)?;
         log!(
             Level::Info,
@@ -435,6 +476,7 @@ pub(super) fn resolve_video_sources(
         resolved.push(VideoSource {
             source: resolved_source,
             transcript: resolved_transcript,
+            audio: resolved_audio,
             ..source
         });
     }
@@ -493,6 +535,17 @@ fn resolve_audio_path(video_path: &Path) -> Result<PathBuf> {
         );
         Ok(video_path.to_path_buf())
     }
+}
+
+fn build_audio_source_map(
+    sources: &[VideoSource],
+) -> Result<std::collections::HashMap<String, PathBuf>> {
+    let mut audio_map = std::collections::HashMap::new();
+    for source in sources {
+        let audio_path = resolve_audio_path(&source.source)?;
+        audio_map.insert(source.id.clone(), audio_path);
+    }
+    Ok(audio_map)
 }
 
 fn prepare_output_destination(
@@ -642,7 +695,7 @@ impl TimelineBuildState {
         generator: &dyn SlideProvider,
         sources: &[VideoSource],
     ) -> Result<()> {
-        let source_video = sources
+        let source = sources
             .iter()
             .find(|source| source.id == clip_plan.source_id)
             .ok_or_else(|| {
@@ -650,9 +703,9 @@ impl TimelineBuildState {
                     "No source configured for segment source id `{}`",
                     clip_plan.source_id
                 )
-            })?
-            .source
-            .clone();
+            })?;
+        let source_video = source.source.clone();
+        let audio_source = source.audio.clone();
         let duration = clip_plan.end - clip_plan.start;
 
         let segment = Segment::new_video_subset(
@@ -660,6 +713,8 @@ impl TimelineBuildState {
             duration,
             clip_plan.start,
             source_video,
+            audio_source,
+            clip_plan.source_id.clone(),
             None,
             false,
         );
@@ -718,8 +773,16 @@ impl TimelineBuildState {
     ) -> Result<()> {
         let video_path = generator.standalone_slide_video(markdown, duration)?;
 
-        let segment =
-            Segment::new_video_subset(self.current_time, duration, 0.0, video_path, None, true);
+        let segment = Segment::new_video_subset(
+            self.current_time,
+            duration,
+            0.0,
+            video_path.clone(),
+            video_path,
+            "__slide".to_string(),
+            None,
+            true,
+        );
         self.timeline.add_segment(segment);
         self.current_time += duration;
         Ok(())
@@ -775,6 +838,7 @@ struct RenderPipeline<'a> {
     source_height: u32,
     config: VideoConfig,
     audio_source: PathBuf,
+    audio_map: std::collections::HashMap<String, PathBuf>,
     subtitle_path: Option<PathBuf>,
     runner: &'a dyn FfmpegRunner,
 }
@@ -787,6 +851,7 @@ struct RenderPipelineParams<'a> {
     source_height: u32,
     config: VideoConfig,
     audio_source: PathBuf,
+    audio_map: std::collections::HashMap<String, PathBuf>,
     subtitle_path: Option<PathBuf>,
     runner: &'a dyn FfmpegRunner,
 }
@@ -801,6 +866,7 @@ impl<'a> RenderPipeline<'a> {
             source_height: params.source_height,
             config: params.config,
             audio_source: params.audio_source,
+            audio_map: params.audio_map,
             subtitle_path: params.subtitle_path,
             runner: params.runner,
         }
@@ -831,6 +897,7 @@ impl<'a> RenderPipeline<'a> {
                 self.output.clone(),
                 &self.timeline,
                 self.audio_source.clone(),
+                &self.audio_map,
             )?
             .args)
     }
@@ -896,6 +963,7 @@ mod tests {
             name: Some("source".to_string()),
             source: source_video.to_path_buf(),
             transcript: PathBuf::from("source.json"),
+            audio: PathBuf::from("source_audio.wav"),
             hash: None,
         }];
 

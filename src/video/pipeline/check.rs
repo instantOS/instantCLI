@@ -1,8 +1,8 @@
 use std::path::Path;
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 
-use crate::ui::prelude::{emit, Level};
+use crate::ui::prelude::{Level, emit};
 
 use crate::video::cli::CheckArgs;
 use crate::video::planning::TimelinePlanItem;

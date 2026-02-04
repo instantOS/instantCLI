@@ -45,6 +45,10 @@ pub enum SegmentData {
         start_time: f64,
         /// Path to the source video file
         source_video: PathBuf,
+        /// Path to the audio source for this clip
+        audio_source: PathBuf,
+        /// Source identifier for matching transcript cues
+        source_id: String,
         /// Optional transform to apply to this video segment
         transform: Option<Transform>,
         /// If true, no dialogue audio should be played for this segment (e.g., title cards)
@@ -123,6 +127,8 @@ impl Segment {
         duration: f64,
         source_start: f64,
         source_video: PathBuf,
+        audio_source: PathBuf,
+        source_id: String,
         transform: Option<Transform>,
         mute_audio: bool,
     ) -> Self {
@@ -132,6 +138,8 @@ impl Segment {
             data: SegmentData::VideoSubset {
                 start_time: source_start,
                 source_video,
+                audio_source,
+                source_id,
                 transform,
                 mute_audio,
             },
@@ -229,6 +237,13 @@ impl SegmentData {
         }
     }
 
+    pub fn audio_source(&self) -> Option<&PathBuf> {
+        match self {
+            SegmentData::VideoSubset { audio_source, .. } => Some(audio_source),
+            _ => None,
+        }
+    }
+
     /// Get the transform for this segment data (if applicable)
     pub fn transform(&self) -> Option<&Transform> {
         match self {
@@ -253,8 +268,16 @@ mod tests {
     #[test]
     fn test_add_segment() {
         let mut timeline = Timeline::new();
-        let segment =
-            Segment::new_video_subset(0.0, 10.0, 5.0, PathBuf::from("test.mp4"), None, false);
+        let segment = Segment::new_video_subset(
+            0.0,
+            10.0,
+            5.0,
+            PathBuf::from("test.mp4"),
+            PathBuf::from("test.mp4"),
+            "a".to_string(),
+            None,
+            false,
+        );
         timeline.add_segment(segment);
         assert_eq!(timeline.segments.len(), 1);
         assert_eq!(timeline.total_duration(), 10.0);
@@ -268,6 +291,8 @@ mod tests {
             10.0,
             0.0,
             PathBuf::from("test.mp4"),
+            PathBuf::from("test.mp4"),
+            "a".to_string(),
             None,
             false,
         ));
@@ -276,6 +301,8 @@ mod tests {
             5.0,
             10.0,
             PathBuf::from("test.mp4"),
+            PathBuf::from("test.mp4"),
+            "a".to_string(),
             None,
             false,
         ));
@@ -284,6 +311,8 @@ mod tests {
             5.0,
             20.0,
             PathBuf::from("test.mp4"),
+            PathBuf::from("test.mp4"),
+            "a".to_string(),
             None,
             false,
         ));

@@ -8,10 +8,11 @@ use crate::ui::prelude::{Level, emit};
 use super::transcribe::handle_transcribe;
 use crate::video::audio::{PreprocessorType, create_preprocessor, parse_preprocessor_type};
 use crate::video::cli::{AppendArgs, ConvertArgs, TranscribeArgs};
-use crate::video::document::{VideoSource, parse_video_document};
 use crate::video::config::{VideoConfig, VideoDirectories, VideoProjectPaths};
 use crate::video::document::markdown::{MarkdownMetadata, MarkdownSource, build_markdown};
-use crate::video::support::transcript::parse_whisper_json;
+use crate::video::document::{VideoSource, parse_video_document};
+use crate::video::document::frontmatter::split_frontmatter;
+use crate::video::support::transcript::{TranscriptCue, parse_whisper_json};
 use crate::video::support::utils::{canonicalize_existing, compute_file_hash};
 
 pub async fn handle_convert(args: ConvertArgs) -> Result<()> {
@@ -138,6 +139,7 @@ pub async fn handle_append(args: AppendArgs) -> Result<()> {
         name: Some(video_name.clone()),
         source: relative_video_path,
         transcript: relative_subtitle_path,
+        audio: PathBuf::from(""),
         hash: Some(video_hash.clone()),
     });
 
@@ -160,15 +162,11 @@ pub async fn handle_append(args: AppendArgs) -> Result<()> {
     let front = build_front_matter_from_metadata(&metadata);
     let new_contents = format!("{front}\n{new_body}");
 
-    if markdown_path.exists() && !args.force {
-        anyhow::bail!(
-            "Markdown file {} already exists. Use --force to overwrite.",
-            markdown_path.display()
-        );
-    }
-
     fs::write(&markdown_path, new_contents.as_bytes()).with_context(|| {
-        format!("Failed to write markdown file to {}", markdown_path.display())
+        format!(
+            "Failed to write markdown file to {}",
+            markdown_path.display()
+        )
     })?;
 
     emit(
@@ -402,7 +400,7 @@ fn generate_markdown_output(
     Ok(())
 }
 
-fn load_transcript_cues(path: &Path) -> Result<Vec<crate::video::support::transcript::TranscriptCue>> {
+fn load_transcript_cues(path: &Path) -> Result<Vec<TranscriptCue>> {
     let transcript_contents = fs::read_to_string(path)
         .with_context(|| format!("Failed to read transcript at {}", path.display()))?;
     parse_whisper_json(&transcript_contents)
@@ -448,9 +446,7 @@ fn build_source_markdown(
     lines.join("\n")
 }
 
-fn build_front_matter_from_metadata(
-    metadata: &crate::video::document::VideoMetadata,
-) -> String {
+fn build_front_matter_from_metadata(metadata: &crate::video::document::VideoMetadata) -> String {
     let timestamp = chrono::Utc::now().to_rfc3339();
     let default_source = metadata
         .default_source
@@ -468,12 +464,14 @@ fn build_front_matter_from_metadata(
             "- id: {source_id}\n  hash: {video_hash}\n  name: {name}\n  source: {video_source}\n  transcript: {transcript_source}"
         ));
     }
-    let sources_block = if source_lines.is_empty() {
-        "[]".to_string()
-    } else {
-        source_lines.join("\n")
-    };
+    if source_lines.is_empty() {
+        return format!(
+            "---\ndefault_source: {default_source}\nsources: []\ngenerated_at: '{timestamp}'\n---",
+            default_source = yaml_quote(&default_source),
+        );
+    }
 
+    let sources_block = source_lines.join("\n");
     format!(
         "---\ndefault_source: {default_source}\nsources:\n{sources}\ngenerated_at: '{timestamp}'\n---",
         default_source = yaml_quote(&default_source),

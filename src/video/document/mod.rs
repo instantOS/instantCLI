@@ -31,6 +31,7 @@ pub struct VideoSource {
     pub name: Option<String>,
     pub source: PathBuf,
     pub transcript: PathBuf,
+    pub audio: PathBuf,
     pub hash: Option<String>,
 }
 
@@ -154,6 +155,7 @@ fn parse_metadata(front_matter: Option<&str>, source_path: &Path) -> Result<Vide
                 name: entry.name,
                 source: PathBuf::from(source),
                 transcript: PathBuf::from(transcript),
+                audio: PathBuf::from(""),
                 hash: entry.hash,
             });
         }
@@ -177,6 +179,7 @@ fn parse_metadata(front_matter: Option<&str>, source_path: &Path) -> Result<Vide
                 name: video.name,
                 source: PathBuf::from(source),
                 transcript: PathBuf::from(transcript),
+                audio: PathBuf::from(""),
                 hash: video.hash,
             });
             return Ok(VideoMetadata {
@@ -980,6 +983,7 @@ mod tests {
                 assert!((segment.range.start_seconds() - 0.0).abs() < f64::EPSILON);
                 assert!((segment.range.end_seconds() - 1.0).abs() < f64::EPSILON);
                 assert_eq!(segment.text, "first line");
+                assert_eq!(segment.source_id, "a");
             }
             other => panic!("Expected first block to be Segment, got {:?}", other),
         }
@@ -989,6 +993,7 @@ mod tests {
                 assert!((segment.range.start_seconds() - 1.5).abs() < f64::EPSILON);
                 assert!((segment.range.end_seconds() - 2.0).abs() < f64::EPSILON);
                 assert_eq!(segment.text, "second line");
+                assert_eq!(segment.source_id, "a");
             }
             other => panic!("Expected second block to be Segment, got {:?}", other),
         }
@@ -1117,6 +1122,49 @@ with `00:01.0-00:02.0` embedded timestamp
             DocumentBlock::Segment(segment) => assert_eq!(segment.text, "Keep this too"),
             other => panic!("Expected Segment, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn parses_explicit_source_prefix() {
+        let markdown = concat!(
+            "---\n",
+            "sources:\n",
+            "- id: a\n  source: video_a.mp4\n  transcript: a.json\n",
+            "- id: b\n  source: video_b.mp4\n  transcript: b.json\n",
+            "default_source: a\n",
+            "---\n",
+            "`a:00:00.0-00:01.0` hello\n",
+            "`b:00:01.0-00:02.0` world\n",
+        );
+        let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
+
+        let segments: Vec<_> = document
+            .blocks
+            .iter()
+            .filter_map(|block| match block {
+                DocumentBlock::Segment(segment) => Some(segment),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(segments.len(), 2);
+        assert_eq!(segments[0].source_id, "a");
+        assert_eq!(segments[1].source_id, "b");
+    }
+
+    #[test]
+    fn rejects_missing_source_prefix_when_multiple_sources() {
+        let markdown = concat!(
+            "---\n",
+            "sources:\n",
+            "- id: a\n  source: video_a.mp4\n  transcript: a.json\n",
+            "- id: b\n  source: video_b.mp4\n  transcript: b.json\n",
+            "default_source: a\n",
+            "---\n",
+            "`00:00.0-00:01.0` missing prefix\n",
+        );
+
+        let err = parse_video_document(markdown, Path::new("test.md")).unwrap_err();
+        assert!(err.to_string().contains("Missing source id for timestamp"));
     }
 }
 

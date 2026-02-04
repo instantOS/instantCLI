@@ -82,25 +82,17 @@ fn build_front_matter(metadata: &MarkdownMetadata<'_>) -> String {
             name = yaml_quote(source.name.unwrap_or("")),
         ));
     }
-    let sources_block = if source_lines.is_empty() {
-        "[]".to_string()
-    } else {
-        source_lines.join("\n")
-    };
+    if source_lines.is_empty() {
+        return format!(
+            "---\ndefault_source: {default_source}\nsources: []\ngenerated_at: '{timestamp}'\n---"
+        );
+    }
 
+    let sources_block = source_lines.join("\n");
     format!(
         "---\ndefault_source: {default_source}\nsources:\n{sources}\ngenerated_at: '{timestamp}'\n---",
         sources = indent_yaml_block(&sources_block, 0),
     )
-}
-
-fn indent_yaml_block(block: &str, indent: usize) -> String {
-    let pad = " ".repeat(indent);
-    block
-        .lines()
-        .map(|line| format!("{pad}{line}"))
-        .collect::<Vec<_>>()
-        .join("\n")
 }
 
 fn yaml_quote(value: &str) -> String {

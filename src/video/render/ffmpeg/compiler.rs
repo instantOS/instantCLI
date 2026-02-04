@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{anyhow, bail, Result};
 
 use super::super::RenderMode;
 use crate::video::config::VideoConfig;
@@ -67,10 +67,12 @@ impl FfmpegCompiler {
         output: PathBuf,
         timeline: &Timeline,
         audio_source: PathBuf,
+        audio_map: &std::collections::HashMap<String, PathBuf>,
     ) -> Result<FfmpegCompileOutput> {
         let mut args = Vec::new();
 
-        let (source_map, source_order) = self.build_input_source_map(timeline, &audio_source);
+        let (source_map, source_order) =
+            self.build_input_source_map(timeline, &audio_source, audio_map);
 
         // Add all input files in the order they were discovered
         for source in &source_order {
@@ -116,17 +118,33 @@ impl FfmpegCompiler {
         &self,
         timeline: &Timeline,
         audio_source: &Path,
+        audio_map: &std::collections::HashMap<String, PathBuf>,
     ) -> (HashMap<PathBuf, usize>, Vec<PathBuf>) {
         let mut source_map: HashMap<PathBuf, usize> = HashMap::new();
         let mut source_order: Vec<PathBuf> = Vec::new();
         let mut next_index = 0;
 
         for segment in &timeline.segments {
-            if let Some(source) = segment.data.source_path()
-                && !source_map.contains_key(source)
-            {
-                source_map.insert(source.clone(), next_index);
-                source_order.push(source.clone());
+            if let Some(source) = segment.data.source_path() {
+                if !source_map.contains_key(source) {
+                    source_map.insert(source.clone(), next_index);
+                    source_order.push(source.clone());
+                    next_index += 1;
+                }
+            }
+            if let Some(audio) = segment.data.audio_source() {
+                if !source_map.contains_key(audio) {
+                    source_map.insert(audio.clone(), next_index);
+                    source_order.push(audio.clone());
+                    next_index += 1;
+                }
+            }
+        }
+
+        for audio in audio_map.values() {
+            if !source_map.contains_key(audio) {
+                source_map.insert(audio.clone(), next_index);
+                source_order.push(audio.clone());
                 next_index += 1;
             }
         }
@@ -218,6 +236,7 @@ impl FfmpegCompiler {
             let SegmentData::VideoSubset {
                 start_time,
                 source_video,
+                audio_source,
                 mute_audio,
                 ..
             } = &segment.data
@@ -229,6 +248,13 @@ impl FfmpegCompiler {
                 anyhow!(
                     "No ffmpeg input available for source video {}",
                     source_video.display()
+                )
+            })?;
+
+            let audio_input_index = source_map.get(audio_source).ok_or_else(|| {
+                anyhow!(
+                    "No ffmpeg input available for audio source {}",
+                    audio_source.display()
                 )
             })?;
 
@@ -560,6 +586,8 @@ mod tests {
             1.0,
             5.0,
             PathBuf::from("video.mp4"),
+            PathBuf::from("audio.mp4"),
+            "a".to_string(),
             None,
             false,
         ));
@@ -568,6 +596,8 @@ mod tests {
             1.0,
             1.0,
             PathBuf::from("video.mp4"),
+            PathBuf::from("audio.mp4"),
+            "a".to_string(),
             None,
             false,
         ));
@@ -576,6 +606,8 @@ mod tests {
             1.0,
             3.0,
             PathBuf::from("video.mp4"),
+            PathBuf::from("audio.mp4"),
+            "a".to_string(),
             None,
             false,
         ));
@@ -663,6 +695,8 @@ mod tests {
             0.0,
             5.0,
             PathBuf::from("video.mp4"),
+            PathBuf::from("audio.mp4"),
+            "a".to_string(),
             None,
             false,
         ));

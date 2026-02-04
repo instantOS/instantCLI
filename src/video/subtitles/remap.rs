@@ -55,6 +55,7 @@ pub fn remap_subtitles_to_timeline(
         let SegmentData::VideoSubset {
             start_time: source_start,
             mute_audio,
+            source_id,
             ..
         } = &segment.data
         else {
@@ -72,6 +73,9 @@ pub fn remap_subtitles_to_timeline(
 
         // Find cues that overlap with this segment's source time range
         for cue in cues {
+            if cue.source_id != *source_id {
+                continue;
+            }
             let cue_start = cue.start.as_secs_f64();
             let cue_end = cue.end.as_secs_f64();
 
@@ -217,6 +221,7 @@ mod tests {
             data: SegmentData::VideoSubset {
                 start_time: source_start,
                 source_video: PathBuf::from("test.mp4"),
+                source_id: "a".to_string(),
                 transform: None,
                 mute_audio: mute,
             },

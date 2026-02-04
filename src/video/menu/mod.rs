@@ -52,7 +52,7 @@ impl FzfSelectable for VideoMenuEntry {
             ),
             VideoMenuEntry::Append => format!(
                 "{} Add Recording to Markdown",
-                format_icon_colored(NerdFont::SourceMerge, colors::MAUVE)
+                format_icon_colored(NerdFont::SourceMerge, colors::PEACH)
             ),
             VideoMenuEntry::Render => format!(
                 "{} Render Edited Video",
@@ -412,8 +412,7 @@ async fn run_convert() -> Result<()> {
 
 async fn run_append() -> Result<()> {
     let suggestions = discover_video_markdown_suggestions()?;
-    let Some(markdown_path) =
-        select_markdown_file("Select markdown to append", suggestions)?
+    let Some(markdown_path) = select_markdown_file("Select markdown to append", suggestions)?
     else {
         return Ok(());
     };
