@@ -1,71 +1,19 @@
 use anyhow::Result;
 
 use crate::video::audio;
-use crate::video::cli::{AppendArgs, PreprocessArgs, SetupArgs, SlideArgs, TranscribeArgs};
-use crate::video::pipeline::{convert, setup, transcribe};
+use crate::video::cli::{PreprocessArgs, SetupArgs, SlideArgs, TranscribeArgs};
+use crate::video::pipeline::{setup, transcribe};
 use crate::video::slides;
 
-use super::file_selection::{
-    discover_video_markdown_suggestions, select_markdown_file, select_output_path,
-    select_transcript_file, select_video_file,
-};
+use super::file_selection::{select_markdown_file, select_output_path, select_video_file};
 use super::prompts::{
     confirm_toggle, default_slide_output_name, prompt_optional, prompt_with_default,
-    select_convert_audio_choice, select_output_choice, select_preprocess_backend_choice,
-    select_transcribe_mode, select_transcript_choice,
+    select_output_choice, select_preprocess_backend_choice, select_transcribe_mode,
 };
 use super::types::{
-    ConvertAudioChoice, DEFAULT_TRANSCRIBE_COMPUTE_TYPE, DEFAULT_TRANSCRIBE_DEVICE,
-    DEFAULT_TRANSCRIBE_VAD_METHOD, OutputChoice, PreprocessBackendChoice, PromptOutcome,
-    TranscribeMode, TranscriptChoice,
+    DEFAULT_TRANSCRIBE_COMPUTE_TYPE, DEFAULT_TRANSCRIBE_DEVICE, DEFAULT_TRANSCRIBE_VAD_METHOD,
+    OutputChoice, PreprocessBackendChoice, PromptOutcome, TranscribeMode,
 };
-
-pub async fn run_append() -> Result<()> {
-    let suggestions = discover_video_markdown_suggestions()?;
-    let Some(markdown_path) = select_markdown_file("Select markdown to append", suggestions)?
-    else {
-        return Ok(());
-    };
-
-    let Some(video_path) = select_video_file("Select additional video")? else {
-        return Ok(());
-    };
-
-    let transcript_choice = match select_transcript_choice()? {
-        Some(choice) => choice,
-        None => return Ok(()),
-    };
-
-    let transcript_path = match transcript_choice {
-        TranscriptChoice::Auto => None,
-        TranscriptChoice::Provide => match select_transcript_file()? {
-            Some(path) => Some(path),
-            None => return Ok(()),
-        },
-    };
-
-    let audio_choice = match select_convert_audio_choice()? {
-        Some(choice) => choice,
-        None => return Ok(()),
-    };
-
-    let (no_preprocess, preprocessor) = match audio_choice {
-        ConvertAudioChoice::UseConfig => (false, None),
-        ConvertAudioChoice::Local => (false, Some("local".to_string())),
-        ConvertAudioChoice::Auphonic => (false, Some("auphonic".to_string())),
-        ConvertAudioChoice::Skip => (true, None),
-    };
-
-    convert::handle_append(AppendArgs {
-        markdown: markdown_path,
-        video: video_path,
-        transcript: transcript_path,
-        force: false,
-        no_preprocess,
-        preprocessor,
-    })
-    .await
-}
 
 pub async fn run_transcribe() -> Result<()> {
     let Some(video_path) = select_video_file("Select video or audio for transcription")? else {

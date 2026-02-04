@@ -1,23 +1,30 @@
 use anyhow::Result;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::menu_utils::{ConfirmResult, FzfPreview, FzfResult, FzfSelectable, FzfWrapper, Header};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
-use crate::video::cli::{CheckArgs, RenderArgs, StatsArgs};
+use crate::video::cli::{AppendArgs, CheckArgs, RenderArgs, StatsArgs};
 use crate::video::document::parse_video_document;
-use crate::video::pipeline::{check, stats};
+use crate::video::pipeline::{check, convert, stats};
 use crate::video::render;
 
-use super::file_selection::{discover_video_markdown_suggestions, select_markdown_file};
-use super::prompts::{confirm_action, prompt_optional_path, select_render_options};
-use super::types::PromptOutcome;
+use super::file_selection::{
+    discover_video_file_suggestions, discover_video_markdown_suggestions, select_markdown_file,
+    select_video_file_with_suggestions,
+};
+use super::prompts::{
+    confirm_action, prompt_optional_path, select_convert_audio_choice, select_render_options,
+    select_transcript_choice,
+};
+use super::types::{ConvertAudioChoice, PromptOutcome, TranscriptChoice};
 
 #[derive(Debug, Clone)]
 enum ProjectMenuEntry {
     Render,
+    AddRecording,
     Validate,
     Stats,
     ClearCache,
@@ -30,6 +37,10 @@ impl FzfSelectable for ProjectMenuEntry {
             ProjectMenuEntry::Render => format!(
                 "{} Render Edited Video",
                 format_icon_colored(NerdFont::PlayCircle, colors::GREEN)
+            ),
+            ProjectMenuEntry::AddRecording => format!(
+                "{} Add Recording",
+                format_icon_colored(NerdFont::SourceMerge, colors::PEACH)
             ),
             ProjectMenuEntry::Validate => format!(
                 "{} Validate Markdown",
@@ -50,6 +61,7 @@ impl FzfSelectable for ProjectMenuEntry {
     fn fzf_key(&self) -> String {
         match self {
             ProjectMenuEntry::Render => "!__render__".to_string(),
+            ProjectMenuEntry::AddRecording => "!__add_recording__".to_string(),
             ProjectMenuEntry::Validate => "!__validate__".to_string(),
             ProjectMenuEntry::Stats => "!__stats__".to_string(),
             ProjectMenuEntry::ClearCache => "!__clear_cache__".to_string(),
@@ -67,6 +79,15 @@ impl FzfSelectable for ProjectMenuEntry {
                 .bullet("Overlay slides and title cards")
                 .bullet("Reels mode output")
                 .bullet("Audio preprocessing caches")
+                .build(),
+            ProjectMenuEntry::AddRecording => PreviewBuilder::new()
+                .header(NerdFont::SourceMerge, "Add Recording")
+                .text("Add another video recording to this project.")
+                .blank()
+                .text("This will:")
+                .bullet("Transcribe the new recording")
+                .bullet("Add it as a new source")
+                .bullet("Append timestamped segments to the timeline")
                 .build(),
             ProjectMenuEntry::Validate => PreviewBuilder::new()
                 .header(NerdFont::CheckCircle, "Validate Markdown")
@@ -106,6 +127,7 @@ pub async fn run_project_menu() -> Result<()> {
     loop {
         let entries = vec![
             ProjectMenuEntry::Render,
+            ProjectMenuEntry::AddRecording,
             ProjectMenuEntry::Validate,
             ProjectMenuEntry::Stats,
             ProjectMenuEntry::ClearCache,
@@ -129,6 +151,9 @@ pub async fn run_project_menu() -> Result<()> {
                 ProjectMenuEntry::Render => {
                     run_render_for_project(&markdown_path).await?;
                 }
+                ProjectMenuEntry::AddRecording => {
+                    run_add_recording(&markdown_path).await?;
+                }
                 ProjectMenuEntry::Validate => {
                     check::handle_check(CheckArgs {
                         markdown: markdown_path.clone(),
@@ -148,6 +173,52 @@ pub async fn run_project_menu() -> Result<()> {
             _ => return Ok(()),
         }
     }
+}
+
+async fn run_add_recording(markdown_path: &Path) -> Result<()> {
+    let suggestions = discover_video_file_suggestions()?;
+    let Some(video_path) = select_video_file_with_suggestions("Select video to add", suggestions)?
+    else {
+        return Ok(());
+    };
+
+    let transcript_choice = match select_transcript_choice()? {
+        Some(choice) => choice,
+        None => return Ok(()),
+    };
+
+    let transcript_path = match transcript_choice {
+        TranscriptChoice::Auto => None,
+        TranscriptChoice::Provide => {
+            use super::file_selection::select_transcript_file;
+            match select_transcript_file()? {
+                Some(path) => Some(path),
+                None => return Ok(()),
+            }
+        }
+    };
+
+    let audio_choice = match select_convert_audio_choice()? {
+        Some(choice) => choice,
+        None => return Ok(()),
+    };
+
+    let (no_preprocess, preprocessor) = match audio_choice {
+        ConvertAudioChoice::UseConfig => (false, None),
+        ConvertAudioChoice::Local => (false, Some("local".to_string())),
+        ConvertAudioChoice::Auphonic => (false, Some("auphonic".to_string())),
+        ConvertAudioChoice::Skip => (true, None),
+    };
+
+    convert::handle_append(AppendArgs {
+        markdown: markdown_path.to_path_buf(),
+        video: video_path,
+        transcript: transcript_path,
+        force: false,
+        no_preprocess,
+        preprocessor,
+    })
+    .await
 }
 
 async fn run_render_for_project(markdown_path: &Path) -> Result<()> {
