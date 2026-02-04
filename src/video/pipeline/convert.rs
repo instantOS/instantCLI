@@ -139,7 +139,7 @@ pub async fn handle_append(args: AppendArgs) -> Result<()> {
         name: Some(video_name.clone()),
         source: relative_video_path,
         transcript: relative_subtitle_path,
-        audio: PathBuf::from(""),
+        audio: PathBuf::new(),
         hash: Some(video_hash.clone()),
     });
 

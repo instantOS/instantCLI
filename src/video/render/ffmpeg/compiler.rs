@@ -80,14 +80,9 @@ impl FfmpegCompiler {
             args.push(source.to_string_lossy().into_owned());
         }
 
-        let audio_input_index = *source_map
-            .get(&audio_source)
-            .ok_or_else(|| anyhow!("Audio source must be present in ffmpeg input map"))?;
-
         let total_duration = timeline.total_duration();
 
-        let filter_complex =
-            self.build_filter_complex(timeline, &source_map, audio_input_index, total_duration)?;
+        let filter_complex = self.build_filter_complex(timeline, &source_map, total_duration)?;
         args.push("-filter_complex".to_string());
         args.push(filter_complex);
 
@@ -161,19 +156,14 @@ impl FfmpegCompiler {
         &self,
         timeline: &Timeline,
         source_map: &HashMap<PathBuf, usize>,
-        audio_input_index: usize,
         total_duration: f64,
     ) -> Result<String> {
         let mut filters: Vec<String> = Vec::new();
 
         let (video_segments, overlay_segments, music_segments) = categorize_segments(timeline);
 
-        let has_base_track = self.build_base_track_filters(
-            &mut filters,
-            &video_segments,
-            source_map,
-            audio_input_index,
-        )?;
+        let has_base_track =
+            self.build_base_track_filters(&mut filters, &video_segments, source_map)?;
 
         let mut current_video_label = "concat_v".to_string();
 
@@ -216,7 +206,6 @@ impl FfmpegCompiler {
         filters: &mut Vec<String>,
         video_segments: &[&Segment],
         source_map: &HashMap<PathBuf, usize>,
-        audio_input_index: usize,
     ) -> Result<bool> {
         if video_segments.is_empty() {
             return Ok(false);

@@ -155,7 +155,7 @@ fn parse_metadata(front_matter: Option<&str>, source_path: &Path) -> Result<Vide
                 name: entry.name,
                 source: PathBuf::from(source),
                 transcript: PathBuf::from(transcript),
-                audio: PathBuf::from(""),
+                audio: PathBuf::new(),
                 hash: entry.hash,
             });
         }
@@ -179,7 +179,7 @@ fn parse_metadata(front_matter: Option<&str>, source_path: &Path) -> Result<Vide
                 name: video.name,
                 source: PathBuf::from(source),
                 transcript: PathBuf::from(transcript),
-                audio: PathBuf::from(""),
+                audio: PathBuf::new(),
                 hash: video.hash,
             });
             return Ok(VideoMetadata {
