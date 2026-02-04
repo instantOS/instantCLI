@@ -1,28 +1,49 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::{Result, anyhow};
 
 use super::file_picker::{FilePickerScope, MenuWrapper};
 use super::fzf::{FzfResult, FzfSelectable, FzfWrapper};
+use crate::arch::dualboot::types::format_size;
 use crate::common::TildePath;
+use crate::game::utils::save_files::format_system_time_for_display;
 use crate::ui::nerd_font::NerdFont;
+use crate::ui::preview::{FzfPreview, PreviewBuilder};
+
+/// A function that generates a custom preview for a suggested path
+pub type SuggestionPreviewFn = Arc<dyn Fn(&Path) -> FzfPreview + Send + Sync>;
 
 #[derive(Debug, Clone)]
 enum PathInputChoice {
     Manual,
     Picker,
     WinePrefix,
+    Suggestion(PathBuf),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 struct PathInputOption {
     label: String,
     choice: PathInputChoice,
+    custom_preview: Option<FzfPreview>,
 }
 
 impl PathInputOption {
     fn new(label: String, choice: PathInputChoice) -> Self {
-        Self { label, choice }
+        Self {
+            label,
+            choice,
+            custom_preview: None,
+        }
+    }
+
+    fn new_with_preview(label: String, choice: PathInputChoice, preview: FzfPreview) -> Self {
+        Self {
+            label,
+            choice,
+            custom_preview: Some(preview),
+        }
     }
 }
 
@@ -32,11 +53,26 @@ impl FzfSelectable for PathInputOption {
     }
 
     fn fzf_key(&self) -> String {
-        self.label.clone()
+        match &self.choice {
+            PathInputChoice::Suggestion(path) => path.to_string_lossy().to_string(),
+            _ => self.label.clone(),
+        }
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        if let Some(preview) = &self.custom_preview {
+            return preview.clone();
+        }
+        match &self.choice {
+            PathInputChoice::Manual => preview_manual(),
+            PathInputChoice::Picker => preview_picker(),
+            PathInputChoice::WinePrefix => preview_wine_prefix(),
+            PathInputChoice::Suggestion(path) => preview_suggestion(path),
+        }
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct PathInputBuilder {
     header: String,
     manual_prompt: String,
@@ -46,6 +82,8 @@ pub struct PathInputBuilder {
     manual_option_label: String,
     picker_option_label: String,
     wine_prefix_option_label: Option<String>,
+    suggested_paths: Vec<PathBuf>,
+    suggestion_preview_fn: Option<SuggestionPreviewFn>,
 }
 
 impl PathInputBuilder {
@@ -64,6 +102,8 @@ impl PathInputBuilder {
             manual_option_label: format!("{manual_icon} Enter a specific path"),
             picker_option_label: format!("{picker_icon} Browse with the picker"),
             wine_prefix_option_label: None,
+            suggested_paths: Vec::new(),
+            suggestion_preview_fn: None,
         }
     }
 
@@ -107,6 +147,25 @@ impl PathInputBuilder {
         self
     }
 
+    pub fn suggested_paths<I, P>(mut self, paths: I) -> Self
+    where
+        I: IntoIterator<Item = P>,
+        P: Into<PathBuf>,
+    {
+        self.suggested_paths = paths.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Set a custom preview function for suggested paths.
+    /// When set, this function is called instead of the default preview_suggestion.
+    pub fn suggestion_preview<F>(mut self, f: F) -> Self
+    where
+        F: Fn(&Path) -> FzfPreview + Send + Sync + 'static,
+    {
+        self.suggestion_preview_fn = Some(Arc::new(f));
+        self
+    }
+
     fn wine_prefix_enabled(&self) -> bool {
         self.wine_prefix_option_label.is_some()
     }
@@ -139,10 +198,51 @@ impl PathInputBuilder {
 
     //TODO: does this have multiple responsibilities? Refactor?
     pub fn choose(self) -> Result<PathInputSelection> {
-        let mut options = vec![
-            PathInputOption::new(self.manual_option_label.clone(), PathInputChoice::Manual),
-            PathInputOption::new(self.picker_option_label.clone(), PathInputChoice::Picker),
-        ];
+        let mut options = Vec::new();
+
+        let mut seen = std::collections::HashSet::new();
+        for path in &self.suggested_paths {
+            if let Ok(canonical) = path.canonicalize()
+                && canonical.exists()
+            {
+                let key = canonical.to_string_lossy().to_string();
+                if !seen.insert(key.clone()) {
+                    continue;
+                }
+                let preview = match &self.suggestion_preview_fn {
+                    Some(f) => f(&canonical),
+                    None => preview_suggestion(&canonical),
+                };
+                options.push(PathInputOption::new_with_preview(
+                    format_suggested_label(&canonical),
+                    PathInputChoice::Suggestion(canonical),
+                    preview,
+                ));
+                continue;
+            }
+            let key = path.to_string_lossy().to_string();
+            if !seen.insert(key) {
+                continue;
+            }
+            let preview = match &self.suggestion_preview_fn {
+                Some(f) => f(path),
+                None => preview_suggestion(path),
+            };
+            options.push(PathInputOption::new_with_preview(
+                format_suggested_label(path),
+                PathInputChoice::Suggestion(path.clone()),
+                preview,
+            ));
+        }
+
+        options.push(PathInputOption::new(
+            self.manual_option_label.clone(),
+            PathInputChoice::Manual,
+        ));
+        options.push(PathInputOption::new(
+            self.picker_option_label.clone(),
+            PathInputChoice::Picker,
+        ));
 
         // Only add wine prefix option if explicitly configured
         if self.wine_prefix_enabled() {
@@ -183,6 +283,9 @@ impl PathInputBuilder {
                             None => continue, // Error occurred, retry
                         }
                     }
+                    PathInputChoice::Suggestion(path) => {
+                        return Ok(PathInputSelection::Picker(path));
+                    }
                 },
                 FzfResult::Cancelled => return Ok(PathInputSelection::Cancelled),
                 FzfResult::MultiSelected(_) => return Ok(PathInputSelection::Cancelled),
@@ -198,6 +301,79 @@ pub enum PathInputSelection {
     Picker(PathBuf),
     WinePrefix(PathBuf),
     Cancelled,
+}
+
+fn format_suggested_label(path: &Path) -> String {
+    let icon = char::from(NerdFont::Star);
+    let display = path.to_string_lossy();
+    let short = if display.len() > 80 {
+        format!("{}...", &display[..79])
+    } else {
+        display.to_string()
+    };
+    format!("{icon} {short}")
+}
+
+fn preview_manual() -> FzfPreview {
+    PreviewBuilder::new()
+        .header(NerdFont::Edit, "Enter a path")
+        .text("Type a path manually in the next prompt.")
+        .blank()
+        .text("Tips:")
+        .bullet("Use ~ for your home directory")
+        .bullet("Paste absolute paths")
+        .bullet("Trailing / treats input as a folder")
+        .build()
+}
+
+fn preview_picker() -> FzfPreview {
+    PreviewBuilder::new()
+        .header(NerdFont::FolderOpen, "Browse with picker")
+        .text("Launch the file picker to browse the filesystem.")
+        .blank()
+        .text("Useful when you want to visually select a path.")
+        .build()
+}
+
+fn preview_wine_prefix() -> FzfPreview {
+    PreviewBuilder::new()
+        .header(NerdFont::Wine, "Select Wine prefix")
+        .text("Pick a Wine prefix directory for Windows paths.")
+        .blank()
+        .text("Choose the root of the prefix (usually ends with /drive_c).")
+        .build()
+}
+
+fn preview_suggestion(path: &Path) -> FzfPreview {
+    let metadata = path.metadata().ok();
+    let is_dir = metadata.as_ref().map(|m| m.is_dir()).unwrap_or(false);
+    let size = metadata
+        .as_ref()
+        .map(|m| {
+            if m.is_file() {
+                format_size(m.len())
+            } else {
+                "-".to_string()
+            }
+        })
+        .unwrap_or_else(|| "-".to_string());
+    let modified = metadata.and_then(|m| m.modified().ok());
+    let modified_display = format_system_time_for_display(modified);
+
+    let mut builder = PreviewBuilder::new()
+        .header(NerdFont::Star, "Suggested path")
+        .field("Path", &path.to_string_lossy())
+        .field("Type", if is_dir { "Directory" } else { "File" })
+        .field("Modified", &modified_display)
+        .field("Size", &size);
+
+    if is_dir {
+        builder = builder
+            .blank()
+            .text("Selecting a folder will open it in the picker.");
+    }
+
+    builder.build()
 }
 
 impl PathInputSelection {

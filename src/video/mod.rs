@@ -3,6 +3,7 @@ pub mod cli;
 pub mod commands;
 mod config;
 pub mod document;
+pub mod menu;
 mod pipeline;
 pub mod planning;
 pub mod render;

@@ -18,6 +18,7 @@ pub struct TranscriptCue {
     /// Individual word timings for karaoke-style highlighting.
     /// If empty, the cue text is displayed without word-level highlighting.
     pub words: Vec<WordTiming>,
+    pub source_id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -129,6 +130,7 @@ fn create_cue_from_cluster(cluster: &[WhisperWord]) -> TranscriptCue {
         end: Duration::from_secs_f64(end),
         text,
         words,
+        source_id: "".to_string(),
     }
 }
 

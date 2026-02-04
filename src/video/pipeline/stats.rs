@@ -8,7 +8,7 @@ use crate::ui::prelude::{Level, emit};
 use crate::video::cli::StatsArgs;
 use crate::video::document::parse_video_document;
 use crate::video::planning::plan_timeline;
-use crate::video::render::resolve_video_path;
+use crate::video::render::resolve_video_sources;
 use crate::video::support::utils::canonicalize_existing;
 
 pub fn handle_stats(args: StatsArgs) -> Result<()> {
@@ -19,25 +19,36 @@ pub fn handle_stats(args: StatsArgs) -> Result<()> {
     let document = parse_video_document(&markdown_contents, &markdown_path)?;
 
     let markdown_dir = markdown_path.parent().unwrap_or_else(|| Path::new("."));
-    match resolve_video_path(&document.metadata, markdown_dir) {
-        Ok(path) => {
-            let exists = path.exists();
-            emit(
-                if exists { Level::Success } else { Level::Warn },
-                "video.stats.video",
-                &format!(
-                    "Source video {} {}",
-                    if exists { "found at" } else { "missing at" },
-                    path.display()
-                ),
-                None,
-            );
+    match resolve_video_sources(&document.metadata, markdown_dir) {
+        Ok(sources) => {
+            if sources.is_empty() {
+                emit(
+                    Level::Warn,
+                    "video.stats.video_metadata",
+                    "No video sources configured in front matter",
+                    None,
+                );
+            }
+            for source in sources {
+                let exists = source.source.exists();
+                emit(
+                    if exists { Level::Success } else { Level::Warn },
+                    "video.stats.video",
+                    &format!(
+                        "Source {} video {} {}",
+                        source.id,
+                        if exists { "found at" } else { "missing at" },
+                        source.source.display()
+                    ),
+                    None,
+                );
+            }
         }
         Err(error) => {
             emit(
                 Level::Error,
                 "video.stats.video_metadata",
-                &format!("Unable to resolve source video: {error}"),
+                &format!("Unable to resolve source videos: {error}"),
                 None,
             );
         }

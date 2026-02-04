@@ -25,6 +25,7 @@ pub struct ClipPlan {
     pub kind: SegmentKind,
     pub text: String,
     pub overlay: Option<OverlayPlan>,
+    pub source_id: String,
 }
 
 #[derive(Debug, Clone)]
@@ -113,6 +114,7 @@ impl TimelinePlanner {
             kind: segment.kind,
             text: segment.text.clone(),
             overlay: self.overlay_state.clone(),
+            source_id: segment.source_id.clone(),
         }));
         self.last_clip_idx = Some(self.items.len() - 1);
         self.stats.segment_count += 1;

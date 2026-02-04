@@ -67,10 +67,12 @@ impl FfmpegCompiler {
         output: PathBuf,
         timeline: &Timeline,
         audio_source: PathBuf,
+        audio_map: &std::collections::HashMap<String, PathBuf>,
     ) -> Result<FfmpegCompileOutput> {
         let mut args = Vec::new();
 
-        let (source_map, source_order) = self.build_input_source_map(timeline, &audio_source);
+        let (source_map, source_order) =
+            self.build_input_source_map(timeline, &audio_source, audio_map);
 
         // Add all input files in the order they were discovered
         for source in &source_order {
@@ -78,14 +80,9 @@ impl FfmpegCompiler {
             args.push(source.to_string_lossy().into_owned());
         }
 
-        let audio_input_index = *source_map
-            .get(&audio_source)
-            .ok_or_else(|| anyhow!("Audio source must be present in ffmpeg input map"))?;
-
         let total_duration = timeline.total_duration();
 
-        let filter_complex =
-            self.build_filter_complex(timeline, &source_map, audio_input_index, total_duration)?;
+        let filter_complex = self.build_filter_complex(timeline, &source_map, total_duration)?;
         args.push("-filter_complex".to_string());
         args.push(filter_complex);
 
@@ -116,6 +113,7 @@ impl FfmpegCompiler {
         &self,
         timeline: &Timeline,
         audio_source: &Path,
+        audio_map: &std::collections::HashMap<String, PathBuf>,
     ) -> (HashMap<PathBuf, usize>, Vec<PathBuf>) {
         let mut source_map: HashMap<PathBuf, usize> = HashMap::new();
         let mut source_order: Vec<PathBuf> = Vec::new();
@@ -127,6 +125,21 @@ impl FfmpegCompiler {
             {
                 source_map.insert(source.clone(), next_index);
                 source_order.push(source.clone());
+                next_index += 1;
+            }
+            if let Some(audio) = segment.data.audio_source()
+                && !source_map.contains_key(audio)
+            {
+                source_map.insert(audio.clone(), next_index);
+                source_order.push(audio.clone());
+                next_index += 1;
+            }
+        }
+
+        for audio in audio_map.values() {
+            if !source_map.contains_key(audio) {
+                source_map.insert(audio.clone(), next_index);
+                source_order.push(audio.clone());
                 next_index += 1;
             }
         }
@@ -143,19 +156,14 @@ impl FfmpegCompiler {
         &self,
         timeline: &Timeline,
         source_map: &HashMap<PathBuf, usize>,
-        audio_input_index: usize,
         total_duration: f64,
     ) -> Result<String> {
         let mut filters: Vec<String> = Vec::new();
 
         let (video_segments, overlay_segments, music_segments) = categorize_segments(timeline);
 
-        let has_base_track = self.build_base_track_filters(
-            &mut filters,
-            &video_segments,
-            source_map,
-            audio_input_index,
-        )?;
+        let has_base_track =
+            self.build_base_track_filters(&mut filters, &video_segments, source_map)?;
 
         let mut current_video_label = "concat_v".to_string();
 
@@ -198,7 +206,6 @@ impl FfmpegCompiler {
         filters: &mut Vec<String>,
         video_segments: &[&Segment],
         source_map: &HashMap<PathBuf, usize>,
-        audio_input_index: usize,
     ) -> Result<bool> {
         if video_segments.is_empty() {
             return Ok(false);
@@ -218,6 +225,7 @@ impl FfmpegCompiler {
             let SegmentData::VideoSubset {
                 start_time,
                 source_video,
+                audio_source,
                 mute_audio,
                 ..
             } = &segment.data
@@ -229,6 +237,13 @@ impl FfmpegCompiler {
                 anyhow!(
                     "No ffmpeg input available for source video {}",
                     source_video.display()
+                )
+            })?;
+
+            let audio_input_index = source_map.get(audio_source).ok_or_else(|| {
+                anyhow!(
+                    "No ffmpeg input available for audio source {}",
+                    audio_source.display()
                 )
             })?;
 
@@ -560,6 +575,8 @@ mod tests {
             1.0,
             5.0,
             PathBuf::from("video.mp4"),
+            PathBuf::from("audio.mp4"),
+            "a".to_string(),
             None,
             false,
         ));
@@ -568,6 +585,8 @@ mod tests {
             1.0,
             1.0,
             PathBuf::from("video.mp4"),
+            PathBuf::from("audio.mp4"),
+            "a".to_string(),
             None,
             false,
         ));
@@ -576,6 +595,8 @@ mod tests {
             1.0,
             3.0,
             PathBuf::from("video.mp4"),
+            PathBuf::from("audio.mp4"),
+            "a".to_string(),
             None,
             false,
         ));
@@ -663,6 +684,8 @@ mod tests {
             0.0,
             5.0,
             PathBuf::from("video.mp4"),
+            PathBuf::from("audio.mp4"),
+            "a".to_string(),
             None,
             false,
         ));

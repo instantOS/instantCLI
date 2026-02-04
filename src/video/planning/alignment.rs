@@ -3,6 +3,7 @@ use super::graph::{McmfEdge, add_edge, min_cost_max_flow};
 use crate::video::document::SegmentKind;
 use crate::video::support::transcript::TranscriptCue;
 use anyhow::{Result, bail};
+use std::collections::{HashMap, HashSet};
 
 pub fn align_plan_with_subtitles(plan: &mut TimelinePlan, cues: &[TranscriptCue]) -> Result<()> {
     let dialogue_indices = align_dialogue_clips_to_cues(plan, cues)?;
@@ -32,7 +33,23 @@ fn align_dialogue_clips_to_cues(
     plan: &mut TimelinePlan,
     cues: &[TranscriptCue],
 ) -> Result<Vec<usize>> {
-    let mut dialogue_clips: Vec<(usize, f64, f64, String)> = Vec::new();
+    let mut dialogue_indices: Vec<usize> = Vec::new();
+
+    let mut cue_map: HashMap<String, Vec<TranscriptCue>> = HashMap::new();
+    for cue in cues {
+        let key = cue.source_id.clone();
+        cue_map.entry(key).or_default().push(cue.clone());
+    }
+
+    for cues in cue_map.values_mut() {
+        cues.sort_by(|a, b| {
+            a.start
+                .partial_cmp(&b.start)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+    }
+
+    let mut per_source_indices: HashMap<String, Vec<usize>> = HashMap::new();
 
     for (idx, item) in plan.items.iter().enumerate() {
         let TimelinePlanItem::Clip(clip) = item else {
@@ -43,31 +60,47 @@ fn align_dialogue_clips_to_cues(
             continue;
         }
 
-        dialogue_clips.push((idx, clip.start, clip.end, clip.text.clone()));
+        per_source_indices
+            .entry(clip.source_id.clone())
+            .or_default()
+            .push(idx);
     }
 
-    if dialogue_clips.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let assignments = assign_cues_max_overlap(&dialogue_clips, cues)?;
-
-    let mut dialogue_indices: Vec<usize> = Vec::new();
-    for (clip_idx, cue_idx) in assignments {
-        let Some(TimelinePlanItem::Clip(clip)) = plan.items.get_mut(clip_idx) else {
-            continue;
+    for (source_id, clip_indices) in per_source_indices {
+        let Some(source_cues) = cue_map.get(&source_id) else {
+            bail!("No transcript cues loaded for source `{}`", source_id);
         };
 
-        let (start, end) = padded_cue_bounds(
-            cues,
-            cue_idx,
-            DEFAULT_DIALOGUE_PADDING_SECONDS,
-            DEFAULT_PADDING_GUARD_SECONDS,
-        );
+        let mut dialogue_clips: Vec<(usize, f64, f64, String)> = Vec::new();
+        for idx in clip_indices {
+            let Some(TimelinePlanItem::Clip(clip)) = plan.items.get(idx) else {
+                continue;
+            };
+            dialogue_clips.push((idx, clip.start, clip.end, clip.text.clone()));
+        }
 
-        clip.start = start;
-        clip.end = end;
-        dialogue_indices.push(clip_idx);
+        if dialogue_clips.is_empty() {
+            continue;
+        }
+
+        let assignments = assign_cues_max_overlap(&dialogue_clips, source_cues)?;
+
+        for (clip_idx, cue_idx) in assignments {
+            let Some(TimelinePlanItem::Clip(clip)) = plan.items.get_mut(clip_idx) else {
+                continue;
+            };
+
+            let (start, end) = padded_cue_bounds(
+                source_cues,
+                cue_idx,
+                DEFAULT_DIALOGUE_PADDING_SECONDS,
+                DEFAULT_PADDING_GUARD_SECONDS,
+            );
+
+            clip.start = start;
+            clip.end = end;
+            dialogue_indices.push(clip_idx);
+        }
     }
 
     Ok(dialogue_indices)
@@ -302,6 +335,14 @@ fn validate_alignment_inputs(
         bail!("Unable to align subtitles: no subtitle cues available");
     }
 
+    let mut source_ids = HashSet::new();
+    for cue in cues {
+        source_ids.insert(cue.source_id.as_str());
+    }
+    if source_ids.len() > 1 {
+        bail!("Unable to align subtitles: mixed source ids supplied");
+    }
+
     let clip_count = dialogue_clips.len();
     let cue_count = cues.len();
 
@@ -501,7 +542,7 @@ mod tests {
 
     #[test]
     fn includes_music_blocks_in_plan() {
-        let markdown = "```music\ntrack.mp3\n```\n`00:00:00.000-00:00:01.000` line";
+        let markdown = "```music\ntrack.mp3\n```\n`a@00:00:00.000-00:00:01.000` line";
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
         let plan = plan_timeline(&document).unwrap();
 
@@ -519,10 +560,10 @@ mod tests {
     #[test]
     fn slide_applies_to_immediately_previous_clip_and_clears_on_separator() {
         let markdown = concat!(
-            "`00:00:00.0-00:00:01.0` first\n",
+            "`a@00:00:00.0-00:00:01.0` first\n",
             "slide 1\n\n",
             "---\n\n",
-            "`00:00:01.0-00:00:02.0` second\n",
+            "`a@00:00:01.0-00:00:02.0` second\n",
         );
 
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
@@ -548,10 +589,10 @@ mod tests {
     #[test]
     fn consecutive_slides_merge_into_single_overlay() {
         let markdown = concat!(
-            "`00:00:00.0-00:00:01.0` first\n",
+            "`a@00:00:00.0-00:00:01.0` first\n",
             "slide 1\n\n",
             "slide 2\n\n",
-            "`00:00:01.0-00:00:02.0` second\n",
+            "`a@00:00:01.0-00:00:02.0` second\n",
         );
 
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
@@ -580,11 +621,11 @@ mod tests {
     #[test]
     fn pause_duration_scales_with_word_count() {
         let markdown = concat!(
-            "`00:00:00.0-00:00:01.0` first\n\n",
+            "`a@00:00:00.0-00:00:01.0` first\n\n",
             "---\n\n",
             "short\n\n",
             "---\n\n",
-            "`00:00:01.0-00:00:02.0` second\n",
+            "`a@00:00:01.0-00:00:02.0` second\n",
         );
 
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
@@ -610,7 +651,7 @@ mod tests {
 
     #[test]
     fn aligns_dialogue_segments_with_subtitles() {
-        let markdown = "`00:00:00.0-00:00:01.2` first\n`00:00:01.2-00:00:02.3` second\n";
+        let markdown = "`a@00:00:00.0-00:00:01.2` first\n`a@00:00:01.2-00:00:02.3` second\n";
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
         let mut plan = plan_timeline(&document).unwrap();
 
@@ -620,12 +661,14 @@ mod tests {
                 end: Duration::from_millis(950),
                 text: "first".to_string(),
                 words: vec![],
+                source_id: "a".to_string(),
             },
             TranscriptCue {
                 start: Duration::from_millis(1200),
                 end: Duration::from_millis(2450),
                 text: "second".to_string(),
                 words: vec![],
+                source_id: "a".to_string(),
             },
         ];
 
@@ -653,7 +696,7 @@ mod tests {
 
     #[test]
     fn aligns_using_time_overlap_not_text() {
-        let markdown = "`00:00:00.0-00:00:01.0` hello\n`00:00:01.0-00:00:02.0` world\n";
+        let markdown = "`a@00:00:00.0-00:00:01.0` hello\n`a@00:00:01.0-00:00:02.0` world\n";
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
         let mut plan = plan_timeline(&document).unwrap();
 
@@ -663,12 +706,14 @@ mod tests {
                 end: Duration::from_millis(1100),
                 text: "completely different".to_string(),
                 words: vec![],
+                source_id: "a".to_string(),
             },
             TranscriptCue {
                 start: Duration::from_millis(1100),
                 end: Duration::from_millis(2000),
                 text: "also different".to_string(),
                 words: vec![],
+                source_id: "a".to_string(),
             },
         ];
 
@@ -698,7 +743,7 @@ mod tests {
 
     #[test]
     fn padding_never_overlaps_neighbor_cues() {
-        let markdown = "`00:00:01.0-00:00:02.0` mid\n";
+        let markdown = "`a@00:00:01.0-00:00:02.0` mid\n";
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
         let mut plan = plan_timeline(&document).unwrap();
 
@@ -709,18 +754,21 @@ mod tests {
                 end: Duration::from_millis(1000),
                 text: "first".to_string(),
                 words: vec![],
+                source_id: "a".to_string(),
             },
             TranscriptCue {
                 start: Duration::from_millis(1020),
                 end: Duration::from_millis(2000),
                 text: "mid".to_string(),
                 words: vec![],
+                source_id: "a".to_string(),
             },
             TranscriptCue {
                 start: Duration::from_millis(2020),
                 end: Duration::from_millis(3000),
                 text: "third".to_string(),
                 words: vec![],
+                source_id: "a".to_string(),
             },
         ];
 
@@ -749,7 +797,7 @@ mod tests {
     fn does_not_match_same_cue_twice() {
         // Two planned dialogue clips overlap the same single cue.
         // We should error rather than align both clips to identical cue bounds.
-        let markdown = "`00:00:00.0-00:00:00.5` first\n`00:00:00.4-00:00:00.9` second\n";
+        let markdown = "`a@00:00:00.0-00:00:00.5` first\n`a@00:00:00.4-00:00:00.9` second\n";
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
         let mut plan = plan_timeline(&document).unwrap();
 
@@ -758,6 +806,7 @@ mod tests {
             end: Duration::from_millis(1000),
             text: "only".to_string(),
             words: vec![],
+            source_id: "a".to_string(),
         }];
 
         let err = align_plan_with_subtitles(&mut plan, &cues).unwrap_err();
@@ -773,11 +822,11 @@ mod tests {
         // Model the `vidtest/pups.video.md` shape: segments appear out-of-order relative to time.
         // Two segments overlap the same last cue; cue uniqueness avoids rendering duplicates.
         let markdown = concat!(
-            "`00:00:09.7-00:00:11.6` I do not want to eat the following.\n",
-            "`00:00:00.9-00:00:09.7` Hello, I want to eat a big, big orange.\n",
-            "`00:00:14.4-00:00:16.0` A big pile of dog poo.\n",
-            "`00:00:24.8-00:00:26.9` No, you don't say that.\n",
-            "`00:00:19.2-00:00:24.8` Goodbye, this has been it.\n",
+            "`a@00:00:09.7-00:00:11.6` I do not want to eat the following.\n",
+            "`a@00:00:00.9-00:00:09.7` Hello, I want to eat a big, big orange.\n",
+            "`a@00:00:14.4-00:00:16.0` A big pile of dog poo.\n",
+            "`a@00:00:24.8-00:00:26.9` No, you don't say that.\n",
+            "`a@00:00:19.2-00:00:24.8` Goodbye, this has been it.\n",
         );
 
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
@@ -789,30 +838,35 @@ mod tests {
                 end: Duration::from_millis(7274),
                 text: "Hello".to_string(),
                 words: vec![],
+                source_id: "a".to_string(),
             },
             TranscriptCue {
                 start: Duration::from_millis(9677),
                 end: Duration::from_millis(11559),
                 text: "I do not want".to_string(),
                 words: vec![],
+                source_id: "a".to_string(),
             },
             TranscriptCue {
                 start: Duration::from_millis(14403),
                 end: Duration::from_millis(16005),
                 text: "A big pile".to_string(),
                 words: vec![],
+                source_id: "a".to_string(),
             },
             TranscriptCue {
                 start: Duration::from_millis(19189),
                 end: Duration::from_millis(20730),
                 text: "Goodbye".to_string(),
                 words: vec![],
+                source_id: "a".to_string(),
             },
             TranscriptCue {
                 start: Duration::from_millis(20791),
                 end: Duration::from_millis(26898),
                 text: "No, you don't say".to_string(),
                 words: vec![],
+                source_id: "a".to_string(),
             },
         ];
 
@@ -867,7 +921,7 @@ mod tests {
 
     #[test]
     fn redistributes_silence_segments_across_actual_gap() {
-        let markdown = "`00:00:00.0-00:00:01.2` intro\n`00:00:01.2-00:00:03.8` SILENCE\n`00:00:03.8-00:00:06.8` SILENCE\n`00:00:06.8-00:00:08.0` outro\n";
+        let markdown = "`a@00:00:00.0-00:00:01.2` intro\n`a@00:00:01.2-00:00:03.8` SILENCE\n`a@00:00:03.8-00:00:06.8` SILENCE\n`a@00:00:06.8-00:00:08.0` outro\n";
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
         let mut plan = plan_timeline(&document).unwrap();
 
@@ -877,12 +931,14 @@ mod tests {
                 end: Duration::from_millis(1234),
                 text: "intro".to_string(),
                 words: vec![],
+                source_id: "a".to_string(),
             },
             TranscriptCue {
                 start: Duration::from_millis(6789),
                 end: Duration::from_millis(8000),
                 text: "outro".to_string(),
                 words: vec![],
+                source_id: "a".to_string(),
             },
         ];
 
@@ -920,7 +976,7 @@ mod tests {
 
     #[test]
     fn does_not_stretch_silence_when_gap_is_huge() {
-        let markdown = "`00:00:00.0-00:00:01.0` intro\n`00:00:01.0-00:00:02.0` SILENCE\n`00:00:02.0-00:00:03.0` SILENCE\n`00:00:50.0-00:00:51.0` outro\n";
+        let markdown = "`a@00:00:00.0-00:00:01.0` intro\n`a@00:00:01.0-00:00:02.0` SILENCE\n`a@00:00:02.0-00:00:03.0` SILENCE\n`a@00:00:50.0-00:00:51.0` outro\n";
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
         let mut plan = plan_timeline(&document).unwrap();
 
@@ -930,12 +986,14 @@ mod tests {
                 end: Duration::from_millis(1000),
                 text: "intro".to_string(),
                 words: vec![],
+                source_id: "a".to_string(),
             },
             TranscriptCue {
                 start: Duration::from_millis(50_000),
                 end: Duration::from_millis(51_000),
                 text: "outro".to_string(),
                 words: vec![],
+                source_id: "a".to_string(),
             },
         ];
 
