@@ -111,7 +111,7 @@ fn yaml_quote(value: &str) -> String {
     }
 }
 
-fn format_timestamp(duration: Duration) -> String {
+pub fn format_timestamp(duration: Duration) -> String {
     let total_tenths = duration_to_tenths(duration);
     let total_secs = total_tenths / 10;
     let tenths = total_tenths % 10;

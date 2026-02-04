@@ -420,17 +420,26 @@ pub(super) fn resolve_video_sources(
     markdown_dir: &Path,
 ) -> Result<Vec<VideoSource>> {
     let sources = paths::resolve_video_sources(metadata, markdown_dir)?;
-    for source in &sources {
-        let resolved = canonicalize_existing(&source.source)?;
+    let mut resolved = Vec::new();
+    for source in sources {
+        let resolved_source = resolve_source_path(&source.source, markdown_dir)?;
+        let resolved_transcript = resolve_source_path(&source.transcript, markdown_dir)?;
+        let canonical = canonicalize_existing(&resolved_source)?;
         log!(
             Level::Info,
             "video.render.video",
             "Using source {} video {}",
             source.id,
-            resolved.display()
+            canonical.display()
         );
+        resolved.push(VideoSource {
+            source: resolved_source,
+            transcript: resolved_transcript,
+            ..source
+        });
     }
-    Ok(sources)
+
+    Ok(resolved)
 }
 
 fn resolve_audio_path(video_path: &Path) -> Result<PathBuf> {

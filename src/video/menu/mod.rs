@@ -11,8 +11,8 @@ use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_m
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 use crate::video::cli::{
-    CheckArgs, ConvertArgs, PreprocessArgs, RenderArgs, SetupArgs, SlideArgs, StatsArgs,
-    TranscribeArgs,
+    AppendArgs, CheckArgs, ConvertArgs, PreprocessArgs, RenderArgs, SetupArgs, SlideArgs,
+    StatsArgs, TranscribeArgs,
 };
 use crate::video::{
     audio,
@@ -29,6 +29,7 @@ const DEFAULT_TRANSCRIBE_VAD_METHOD: &str = "silero";
 enum VideoMenuEntry {
     Convert,
     Transcribe,
+    Append,
     Render,
     Slide,
     Check,
@@ -48,6 +49,10 @@ impl FzfSelectable for VideoMenuEntry {
             VideoMenuEntry::Transcribe => format!(
                 "{} Transcribe with WhisperX",
                 format_icon_colored(NerdFont::Keyboard, colors::SAPPHIRE)
+            ),
+            VideoMenuEntry::Append => format!(
+                "{} Add Recording to Markdown",
+                format_icon_colored(NerdFont::SourceMerge, colors::MAUVE)
             ),
             VideoMenuEntry::Render => format!(
                 "{} Render Edited Video",
@@ -81,6 +86,7 @@ impl FzfSelectable for VideoMenuEntry {
         match self {
             VideoMenuEntry::Convert => "!__convert__".to_string(),
             VideoMenuEntry::Transcribe => "!__transcribe__".to_string(),
+            VideoMenuEntry::Append => "!__append__".to_string(),
             VideoMenuEntry::Render => "!__render__".to_string(),
             VideoMenuEntry::Slide => "!__slide__".to_string(),
             VideoMenuEntry::Check => "!__check__".to_string(),
@@ -107,6 +113,15 @@ impl FzfSelectable for VideoMenuEntry {
                 .text("Generate or refresh a WhisperX transcript.")
                 .blank()
                 .text("Transcript output is cached for reuse.")
+                .build(),
+            VideoMenuEntry::Append => PreviewBuilder::new()
+                .header(NerdFont::SourceMerge, "Append recording")
+                .text("Add another recording to an existing video markdown.")
+                .blank()
+                .text("This will:")
+                .bullet("Transcribe the new clip")
+                .bullet("Append a new source to front matter")
+                .bullet("Add timestamped segments to the timeline")
                 .build(),
             VideoMenuEntry::Render => PreviewBuilder::new()
                 .header(NerdFont::PlayCircle, "Render")
@@ -284,6 +299,7 @@ pub async fn video_menu(_debug: bool) -> Result<()> {
         match entry {
             VideoMenuEntry::Convert => run_convert().await?,
             VideoMenuEntry::Transcribe => run_transcribe().await?,
+            VideoMenuEntry::Append => run_append().await?,
             VideoMenuEntry::Render => run_render().await?,
             VideoMenuEntry::Slide => run_slide().await?,
             VideoMenuEntry::Check => run_check().await?,
@@ -299,6 +315,7 @@ fn select_video_menu_entry(cursor: &mut MenuCursor) -> Result<Option<VideoMenuEn
     let entries = vec![
         VideoMenuEntry::Convert,
         VideoMenuEntry::Transcribe,
+        VideoMenuEntry::Append,
         VideoMenuEntry::Render,
         VideoMenuEntry::Check,
         VideoMenuEntry::Stats,
@@ -386,6 +403,59 @@ async fn run_convert() -> Result<()> {
         video: video_path,
         transcript: transcript_path,
         out_file: output_path,
+        force,
+        no_preprocess,
+        preprocessor,
+    })
+    .await
+}
+
+async fn run_append() -> Result<()> {
+    let suggestions = discover_video_markdown_suggestions()?;
+    let Some(markdown_path) =
+        select_markdown_file("Select markdown to append", suggestions)?
+    else {
+        return Ok(());
+    };
+
+    let Some(video_path) = select_video_file("Select additional video")? else {
+        return Ok(());
+    };
+
+    let transcript_choice = match select_transcript_choice()? {
+        Some(choice) => choice,
+        None => return Ok(()),
+    };
+
+    let transcript_path = match transcript_choice {
+        TranscriptChoice::Auto => None,
+        TranscriptChoice::Provide => match select_transcript_file()? {
+            Some(path) => Some(path),
+            None => return Ok(()),
+        },
+    };
+
+    let audio_choice = match select_convert_audio_choice()? {
+        Some(choice) => choice,
+        None => return Ok(()),
+    };
+
+    let (no_preprocess, preprocessor) = match audio_choice {
+        ConvertAudioChoice::UseConfig => (false, None),
+        ConvertAudioChoice::Local => (false, Some("local".to_string())),
+        ConvertAudioChoice::Auphonic => (false, Some("auphonic".to_string())),
+        ConvertAudioChoice::Skip => (true, None),
+    };
+
+    let force = match confirm_toggle("Enable force overwrite and reprocess audio?")? {
+        PromptOutcome::Value(force) => force,
+        PromptOutcome::Cancelled => return Ok(()),
+    };
+
+    convert::handle_append(AppendArgs {
+        markdown: markdown_path,
+        video: video_path,
+        transcript: transcript_path,
         force,
         no_preprocess,
         preprocessor,
@@ -746,7 +816,7 @@ fn is_video_markdown_file(path: &Path) -> Result<bool> {
         None => return Ok(false),
     };
 
-    if !front.contains("video:") {
+    if !(front.contains("sources:") || front.contains("video:")) {
         return Ok(false);
     }
 

@@ -5,6 +5,8 @@ use std::path::PathBuf;
 pub enum VideoCommands {
     /// Convert a timestamped transcript into editable video markdown
     Convert(ConvertArgs),
+    /// Append another recording to a video markdown file
+    Append(AppendArgs),
     /// Generate a transcript for a video using WhisperX
     Transcribe(TranscribeArgs),
     /// Render a video according to edits in a markdown file
@@ -43,6 +45,33 @@ pub struct ConvertArgs {
     /// Optional output file path; defaults to <videoname>.md next to the video
     #[arg(short = 'o', long = "out-file", value_hint = ValueHint::FilePath)]
     pub out_file: Option<PathBuf>,
+
+    /// Overwrite existing markdown file
+    #[arg(long)]
+    pub force: bool,
+
+    /// Skip audio preprocessing entirely
+    #[arg(long)]
+    pub no_preprocess: bool,
+
+    /// Override preprocessor type (local, auphonic, none)
+    #[arg(long)]
+    pub preprocessor: Option<String>,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct AppendArgs {
+    /// Existing markdown file to append to
+    #[arg(value_hint = ValueHint::FilePath)]
+    pub markdown: PathBuf,
+
+    /// Source video file to append
+    #[arg(value_hint = ValueHint::FilePath)]
+    pub video: PathBuf,
+
+    /// Timestamped transcript file (WhisperX JSON)
+    #[arg(short = 't', long = "transcript", value_hint = ValueHint::FilePath)]
+    pub transcript: Option<PathBuf>,
 
     /// Overwrite existing markdown file
     #[arg(long)]

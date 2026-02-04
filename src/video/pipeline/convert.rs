@@ -1,4 +1,5 @@
 use anyhow::{Context, Result, anyhow};
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -6,7 +7,8 @@ use crate::ui::prelude::{Level, emit};
 
 use super::transcribe::handle_transcribe;
 use crate::video::audio::{PreprocessorType, create_preprocessor, parse_preprocessor_type};
-use crate::video::cli::{ConvertArgs, TranscribeArgs};
+use crate::video::cli::{AppendArgs, ConvertArgs, TranscribeArgs};
+use crate::video::document::{VideoSource, parse_video_document};
 use crate::video::config::{VideoConfig, VideoDirectories, VideoProjectPaths};
 use crate::video::document::markdown::{MarkdownMetadata, MarkdownSource, build_markdown};
 use crate::video::support::transcript::parse_whisper_json;
@@ -58,6 +60,121 @@ pub async fn handle_convert(args: ConvertArgs) -> Result<()> {
         Level::Success,
         "video.convert.success",
         &format!("Generated markdown at {}", output_path.display()),
+        None,
+    );
+
+    Ok(())
+}
+
+pub async fn handle_append(args: AppendArgs) -> Result<()> {
+    emit(
+        Level::Info,
+        "video.append.start",
+        &format!(
+            "Appending {} to {}...",
+            args.video.display(),
+            args.markdown.display()
+        ),
+        None,
+    );
+
+    let markdown_path = canonicalize_existing(&args.markdown)?;
+    let markdown_dir = markdown_path.parent().unwrap_or_else(|| Path::new("."));
+    let markdown_contents = fs::read_to_string(&markdown_path)
+        .with_context(|| format!("Failed to read markdown file {}", markdown_path.display()))?;
+    let document = parse_video_document(&markdown_contents, &markdown_path)?;
+    let mut metadata = document.metadata;
+
+    let video_path = canonicalize_existing(&args.video)?;
+    let video_hash = compute_file_hash(&video_path)?;
+
+    let directories = VideoDirectories::new()?;
+    let project_paths = directories.project_paths(&video_hash);
+    project_paths.ensure_directories()?;
+
+    let transcript_path = ensure_transcript(
+        &video_path,
+        &directories,
+        &project_paths,
+        args.transcript.as_ref(),
+        &ConvertArgs {
+            video: args.video.clone(),
+            transcript: args.transcript.clone(),
+            out_file: None,
+            force: args.force,
+            no_preprocess: args.no_preprocess,
+            preprocessor: args.preprocessor.clone(),
+        },
+    )
+    .await?;
+
+    let mut cues = load_transcript_cues(&transcript_path)?;
+
+    let video_name = video_path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .context("Video file name is not valid UTF-8")?;
+
+    let relative_video_path = pathdiff::diff_paths(&video_path, markdown_dir).ok_or_else(|| {
+        anyhow!(
+            "Failed to compute relative path from {} to {}",
+            markdown_dir.display(),
+            video_path.display()
+        )
+    })?;
+
+    let subtitle_dir = markdown_dir.join("insvideodata");
+    let subtitle_output_path = subtitle_dir.join(format!("{video_hash}.json"));
+    let relative_subtitle_path = Path::new("./insvideodata").join(format!("{video_hash}.json"));
+    copy_transcript(&transcript_path, &subtitle_output_path)?;
+
+    let source_id = next_source_id(&metadata)?;
+    for cue in &mut cues {
+        cue.source_id = source_id.clone();
+    }
+
+    metadata.sources.push(VideoSource {
+        id: source_id.clone(),
+        name: Some(video_name.clone()),
+        source: relative_video_path,
+        transcript: relative_subtitle_path,
+        hash: Some(video_hash.clone()),
+    });
+
+    if metadata.default_source.is_none() {
+        metadata.default_source = Some(source_id.clone());
+    }
+
+    let (front_matter, body, _) = split_frontmatter(&markdown_contents)?;
+    let existing_body = body.trim_end();
+
+    let appended_text = build_source_markdown(&cues, &source_id);
+    let mut new_body = String::new();
+    if !existing_body.is_empty() {
+        new_body.push_str(existing_body);
+        new_body.push_str("\n\n");
+    }
+    new_body.push_str(&appended_text);
+    new_body.push('\n');
+
+    let front = build_front_matter_from_metadata(&metadata);
+    let new_contents = format!("{front}\n{new_body}");
+
+    if markdown_path.exists() && !args.force {
+        anyhow::bail!(
+            "Markdown file {} already exists. Use --force to overwrite.",
+            markdown_path.display()
+        );
+    }
+
+    fs::write(&markdown_path, new_contents.as_bytes()).with_context(|| {
+        format!("Failed to write markdown file to {}", markdown_path.display())
+    })?;
+
+    emit(
+        Level::Success,
+        "video.append.success",
+        &format!("Appended recording to {}", markdown_path.display()),
         None,
     );
 
@@ -283,6 +400,89 @@ fn generate_markdown_output(
     );
 
     Ok(())
+}
+
+fn load_transcript_cues(path: &Path) -> Result<Vec<crate::video::support::transcript::TranscriptCue>> {
+    let transcript_contents = fs::read_to_string(path)
+        .with_context(|| format!("Failed to read transcript at {}", path.display()))?;
+    parse_whisper_json(&transcript_contents)
+}
+
+fn next_source_id(metadata: &crate::video::document::VideoMetadata) -> Result<String> {
+    let mut used = HashSet::new();
+    for source in &metadata.sources {
+        used.insert(source.id.clone());
+    }
+
+    for ch in 'a'..='z' {
+        let candidate = ch.to_string();
+        if !used.contains(&candidate) {
+            return Ok(candidate);
+        }
+    }
+
+    let mut idx = 1;
+    loop {
+        let candidate = format!("s{idx}");
+        if !used.contains(&candidate) {
+            return Ok(candidate);
+        }
+        idx += 1;
+    }
+}
+
+fn build_source_markdown(
+    cues: &[crate::video::support::transcript::TranscriptCue],
+    source_id: &str,
+) -> String {
+    let mut lines = Vec::with_capacity(cues.len());
+    for cue in cues {
+        lines.push(format!(
+            "`{}:{}-{}` {}",
+            source_id,
+            format_timestamp(cue.start),
+            format_timestamp(cue.end),
+            cue.text.trim()
+        ));
+    }
+    lines.join("\n")
+}
+
+fn build_front_matter_from_metadata(
+    metadata: &crate::video::document::VideoMetadata,
+) -> String {
+    let timestamp = chrono::Utc::now().to_rfc3339();
+    let default_source = metadata
+        .default_source
+        .as_ref()
+        .cloned()
+        .unwrap_or_else(|| "a".to_string());
+    let mut source_lines = Vec::new();
+    for source in &metadata.sources {
+        let source_id = yaml_quote(&source.id);
+        let video_source = yaml_quote(&source.source.to_string_lossy());
+        let transcript_source = yaml_quote(&source.transcript.to_string_lossy());
+        let video_hash = yaml_quote(source.hash.as_deref().unwrap_or(""));
+        let name = yaml_quote(source.name.as_deref().unwrap_or(""));
+        source_lines.push(format!(
+            "- id: {source_id}\n  hash: {video_hash}\n  name: {name}\n  source: {video_source}\n  transcript: {transcript_source}"
+        ));
+    }
+    let sources_block = if source_lines.is_empty() {
+        "[]".to_string()
+    } else {
+        source_lines.join("\n")
+    };
+
+    format!(
+        "---\ndefault_source: {default_source}\nsources:\n{sources}\ngenerated_at: '{timestamp}'\n---",
+        default_source = yaml_quote(&default_source),
+        sources = sources_block,
+    )
+}
+
+fn format_timestamp(duration: std::time::Duration) -> String {
+    crate::video::document::markdown::format_timestamp(duration)
 }
 
 fn copy_transcript(src: &Path, dest: &Path) -> Result<()> {
