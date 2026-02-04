@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::{Result, anyhow};
 
@@ -10,6 +11,9 @@ use crate::game::utils::save_files::format_system_time_for_display;
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::{FzfPreview, PreviewBuilder};
 
+/// A function that generates a custom preview for a suggested path
+pub type SuggestionPreviewFn = Arc<dyn Fn(&Path) -> FzfPreview + Send + Sync>;
+
 #[derive(Debug, Clone)]
 enum PathInputChoice {
     Manual,
@@ -18,15 +22,28 @@ enum PathInputChoice {
     Suggestion(PathBuf),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 struct PathInputOption {
     label: String,
     choice: PathInputChoice,
+    custom_preview: Option<FzfPreview>,
 }
 
 impl PathInputOption {
     fn new(label: String, choice: PathInputChoice) -> Self {
-        Self { label, choice }
+        Self {
+            label,
+            choice,
+            custom_preview: None,
+        }
+    }
+
+    fn new_with_preview(label: String, choice: PathInputChoice, preview: FzfPreview) -> Self {
+        Self {
+            label,
+            choice,
+            custom_preview: Some(preview),
+        }
     }
 }
 
@@ -43,6 +60,9 @@ impl FzfSelectable for PathInputOption {
     }
 
     fn fzf_preview(&self) -> FzfPreview {
+        if let Some(preview) = &self.custom_preview {
+            return preview.clone();
+        }
         match &self.choice {
             PathInputChoice::Manual => preview_manual(),
             PathInputChoice::Picker => preview_picker(),
@@ -52,7 +72,7 @@ impl FzfSelectable for PathInputOption {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct PathInputBuilder {
     header: String,
     manual_prompt: String,
@@ -63,6 +83,7 @@ pub struct PathInputBuilder {
     picker_option_label: String,
     wine_prefix_option_label: Option<String>,
     suggested_paths: Vec<PathBuf>,
+    suggestion_preview_fn: Option<SuggestionPreviewFn>,
 }
 
 impl PathInputBuilder {
@@ -82,6 +103,7 @@ impl PathInputBuilder {
             picker_option_label: format!("{picker_icon} Browse with the picker"),
             wine_prefix_option_label: None,
             suggested_paths: Vec::new(),
+            suggestion_preview_fn: None,
         }
     }
 
@@ -134,6 +156,16 @@ impl PathInputBuilder {
         self
     }
 
+    /// Set a custom preview function for suggested paths.
+    /// When set, this function is called instead of the default preview_suggestion.
+    pub fn suggestion_preview<F>(mut self, f: F) -> Self
+    where
+        F: Fn(&Path) -> FzfPreview + Send + Sync + 'static,
+    {
+        self.suggestion_preview_fn = Some(Arc::new(f));
+        self
+    }
+
     fn wine_prefix_enabled(&self) -> bool {
         self.wine_prefix_option_label.is_some()
     }
@@ -177,9 +209,14 @@ impl PathInputBuilder {
                 if !seen.insert(key.clone()) {
                     continue;
                 }
-                options.push(PathInputOption::new(
+                let preview = match &self.suggestion_preview_fn {
+                    Some(f) => f(&canonical),
+                    None => preview_suggestion(&canonical),
+                };
+                options.push(PathInputOption::new_with_preview(
                     format_suggested_label(&canonical),
                     PathInputChoice::Suggestion(canonical),
+                    preview,
                 ));
                 continue;
             }
@@ -187,9 +224,14 @@ impl PathInputBuilder {
             if !seen.insert(key) {
                 continue;
             }
-            options.push(PathInputOption::new(
+            let preview = match &self.suggestion_preview_fn {
+                Some(f) => f(path),
+                None => preview_suggestion(path),
+            };
+            options.push(PathInputOption::new_with_preview(
                 format_suggested_label(path),
                 PathInputChoice::Suggestion(path.clone()),
+                preview,
             ));
         }
 

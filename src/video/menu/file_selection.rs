@@ -3,11 +3,50 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::common::paths;
-use crate::menu_utils::{FilePickerScope, PathInputBuilder};
+use crate::menu_utils::{FilePickerScope, FzfPreview, PathInputBuilder};
 use crate::ui::nerd_font::NerdFont;
+use crate::ui::preview::PreviewBuilder;
 use crate::video::document::{frontmatter::split_frontmatter, parse_video_document};
+use crate::video::support::ffmpeg::probe_media_metadata;
 
 use super::types::{AUDIO_EXTENSIONS, VIDEO_EXTENSIONS};
+
+/// Generate a rich preview for a video/audio file using ffprobe metadata
+fn video_file_preview(path: &Path) -> FzfPreview {
+    let metadata = probe_media_metadata(path);
+    let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("Unknown");
+    let icon = if metadata.is_audio_only() { NerdFont::Music } else { NerdFont::Video };
+
+    let mut builder = PreviewBuilder::new().header(icon, file_name);
+
+    if let Some(duration) = metadata.duration_display() {
+        builder = builder.field("Duration", &duration);
+    }
+    if !metadata.is_audio_only() {
+        if let Some(resolution) = metadata.resolution_display() {
+            builder = builder.field("Resolution", &resolution);
+        }
+        if let Some(codec) = &metadata.video_codec {
+            builder = builder.field("Video Codec", codec);
+        }
+        if let Some(fps) = metadata.framerate_display() {
+            builder = builder.field("Frame Rate", &fps);
+        }
+    }
+    if let Some(codec) = &metadata.audio_codec {
+        builder = builder.field("Audio Codec", codec);
+    }
+    if let Some(channels) = metadata.audio_channels {
+        let ch = match channels { 1 => "Mono".into(), 2 => "Stereo".into(), n => format!("{n} channels") };
+        builder = builder.field("Channels", &ch);
+    }
+    if let Some(bitrate) = metadata.bitrate_display() {
+        builder = builder.field("Bitrate", &bitrate);
+    }
+
+    builder.blank().subtext(&path.to_string_lossy()).build()
+}
+
 
 pub fn discover_video_file_suggestions() -> Result<Vec<PathBuf>> {
     let entries = match fs::read_dir(".") {
@@ -178,6 +217,36 @@ fn select_path_with_picker(
         .picker_hint(picker_hint)
         .manual_option_label(format!("{} Enter a path", char::from(NerdFont::Edit)))
         .picker_option_label(format!("{} Browse files", char::from(NerdFont::FolderOpen)));
+
+    if let Some(dir) = start_dir {
+        builder = builder.start_dir(dir);
+    }
+
+    if !suggestions.is_empty() {
+        builder = builder.suggested_paths(suggestions);
+    }
+
+    let selection = builder.choose()?;
+    selection.to_path_buf()
+}
+
+/// Like select_path_with_picker but uses ffprobe-based video previews for suggestions
+fn select_video_path_with_picker(
+    header: String,
+    manual_prompt: String,
+    picker_hint: String,
+    scope: FilePickerScope,
+    start_dir: Option<PathBuf>,
+    suggestions: Vec<PathBuf>,
+) -> Result<Option<PathBuf>> {
+    let mut builder = PathInputBuilder::new()
+        .header(header)
+        .manual_prompt(manual_prompt)
+        .scope(scope)
+        .picker_hint(picker_hint)
+        .manual_option_label(format!("{} Enter a path", char::from(NerdFont::Edit)))
+        .picker_option_label(format!("{} Browse files", char::from(NerdFont::FolderOpen)))
+        .suggestion_preview(video_file_preview);
 
     if let Some(dir) = start_dir {
         builder = builder.start_dir(dir);
