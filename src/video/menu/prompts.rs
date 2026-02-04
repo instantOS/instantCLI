@@ -109,6 +109,13 @@ pub fn resolve_output_path_from_selection(
 }
 
 pub fn select_convert_audio_choice() -> Result<Option<ConvertAudioChoice>> {
+    let config = crate::video::config::VideoConfig::load().ok();
+    let default_preprocessor = crate::video::audio::PreprocessorType::default();
+    let configured_preprocessor = config
+        .as_ref()
+        .map(|cfg| &cfg.preprocessor)
+        .unwrap_or(&default_preprocessor);
+
     let items = vec![
         ChoiceItem::new(
             "config",
@@ -119,7 +126,10 @@ pub fn select_convert_audio_choice() -> Result<Option<ConvertAudioChoice>> {
             ConvertAudioChoice::UseConfig,
             PreviewBuilder::new()
                 .header(NerdFont::Settings, "Use configuration")
-                .text("Use the preprocessor configured in video.toml.")
+                .text(&format!(
+                    "Use the preprocessor configured in video.toml: {}",
+                    configured_preprocessor
+                ))
                 .build(),
         ),
         ChoiceItem::new(

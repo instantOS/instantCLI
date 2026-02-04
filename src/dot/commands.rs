@@ -414,10 +414,7 @@ fn handle_unit_command(
 }
 
 fn scope_label(scope: &crate::dot::unit_manager::UnitScope) -> String {
-    match scope {
-        crate::dot::unit_manager::UnitScope::Global => "global".to_string(),
-        crate::dot::unit_manager::UnitScope::Repo(name) => format!("repo:{name}"),
-    }
+    scope.to_string()
 }
 
 fn handle_priority_command(

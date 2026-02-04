@@ -18,6 +18,16 @@ pub enum PreprocessorType {
     None,
 }
 
+impl std::fmt::Display for PreprocessorType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PreprocessorType::Local => write!(f, "Local (DeepFilterNet + ffmpeg-normalize)"),
+            PreprocessorType::Auphonic => write!(f, "Auphonic (cloud processing)"),
+            PreprocessorType::None => write!(f, "None (skip preprocessing)"),
+        }
+    }
+}
+
 /// Result from audio preprocessing
 pub struct PreprocessResult {
     /// Path to the processed audio file

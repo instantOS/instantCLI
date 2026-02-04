@@ -107,11 +107,7 @@ pub async fn run_preprocess() -> Result<()> {
         None => return Ok(()),
     };
 
-    let backend = match backend_choice {
-        PreprocessBackendChoice::Local => "local".to_string(),
-        PreprocessBackendChoice::Auphonic => "auphonic".to_string(),
-        PreprocessBackendChoice::None => "none".to_string(),
-    };
+    let backend = backend_choice.to_string();
 
     let (api_key, preset) = if matches!(backend_choice, PreprocessBackendChoice::Auphonic) {
         let api_key = match prompt_optional(

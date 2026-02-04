@@ -12,6 +12,15 @@ pub enum UnitScope {
     Repo(String),
 }
 
+impl std::fmt::Display for UnitScope {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UnitScope::Global => write!(f, "global"),
+            UnitScope::Repo(name) => write!(f, "repo:{}", name),
+        }
+    }
+}
+
 impl UnitScope {
     pub fn repo_name(&self) -> Option<&str> {
         match self {

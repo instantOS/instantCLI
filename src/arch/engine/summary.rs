@@ -13,6 +13,17 @@ pub(crate) enum PartitioningKind {
     Unknown,
 }
 
+impl std::fmt::Display for PartitioningKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PartitioningKind::Automatic => write!(f, "automatic"),
+            PartitioningKind::DualBoot => write!(f, "dual-boot"),
+            PartitioningKind::Manual => write!(f, "manual"),
+            PartitioningKind::Unknown => write!(f, "unknown"),
+        }
+    }
+}
+
 pub(crate) struct InstallSummary {
     pub(crate) text: String,
     pub(crate) partitioning_kind: PartitioningKind,

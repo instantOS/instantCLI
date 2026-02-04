@@ -204,10 +204,30 @@ pub enum ConvertAudioChoice {
     Skip,
 }
 
+impl std::fmt::Display for ConvertAudioChoice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ConvertAudioChoice::UseConfig => write!(f, "use-config"),
+            ConvertAudioChoice::Local => write!(f, "local"),
+            ConvertAudioChoice::Auphonic => write!(f, "auphonic"),
+            ConvertAudioChoice::Skip => write!(f, "skip"),
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 pub enum TranscriptChoice {
     Auto,
     Provide,
+}
+
+impl std::fmt::Display for TranscriptChoice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TranscriptChoice::Auto => write!(f, "auto"),
+            TranscriptChoice::Provide => write!(f, "provide"),
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -216,10 +236,28 @@ pub enum OutputChoice {
     Custom,
 }
 
+impl std::fmt::Display for OutputChoice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OutputChoice::Default => write!(f, "default"),
+            OutputChoice::Custom => write!(f, "custom"),
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 pub enum TranscribeMode {
     Defaults,
     Customize,
+}
+
+impl std::fmt::Display for TranscribeMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TranscribeMode::Defaults => write!(f, "defaults"),
+            TranscribeMode::Customize => write!(f, "customize"),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -231,11 +269,33 @@ pub enum RenderToggle {
     Force,
 }
 
+impl std::fmt::Display for RenderToggle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RenderToggle::Reels => write!(f, "reels"),
+            RenderToggle::Subtitles => write!(f, "subtitles"),
+            RenderToggle::Precache => write!(f, "precache"),
+            RenderToggle::DryRun => write!(f, "dry-run"),
+            RenderToggle::Force => write!(f, "force"),
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 pub enum PreprocessBackendChoice {
     Local,
     Auphonic,
     None,
+}
+
+impl std::fmt::Display for PreprocessBackendChoice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PreprocessBackendChoice::Local => write!(f, "local"),
+            PreprocessBackendChoice::Auphonic => write!(f, "auphonic"),
+            PreprocessBackendChoice::None => write!(f, "none"),
+        }
+    }
 }
 
 pub struct RenderOptions {

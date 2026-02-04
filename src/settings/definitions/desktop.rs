@@ -6,22 +6,22 @@ use anyhow::Result;
 use std::process::Command;
 
 use crate::common::audio::{
-    AudioDefaults, AudioSourceInfo, default_source_names, list_audio_sources_short, pactl_defaults,
+    default_source_names, list_audio_sources_short, pactl_defaults, AudioDefaults, AudioSourceInfo,
 };
 use crate::common::compositor::CompositorType;
 use crate::common::display::SwayDisplayProvider;
 use crate::menu::client::MenuClient;
 use crate::menu::protocol::SliderRequest;
 use crate::menu_utils::{
-    ChecklistResult, FzfSelectable, FzfWrapper, Header, MenuCursor, select_one_with_style_at,
+    select_one_with_style_at, ChecklistResult, FzfSelectable, FzfWrapper, Header, MenuCursor,
 };
 use crate::settings::context::SettingsContext;
 use crate::settings::deps::PIPER;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::store::{
-    IntSettingKey, OptionalStringSettingKey, SCREEN_RECORD_AUDIO_SOURCES_DEFAULT,
-    SCREEN_RECORD_AUDIO_SOURCES_KEY, SCREEN_RECORD_FRAMERATE_KEY, StringSettingKey,
-    is_audio_sources_default, parse_audio_source_selection,
+    is_audio_sources_default, parse_audio_source_selection, IntSettingKey,
+    OptionalStringSettingKey, StringSettingKey, SCREEN_RECORD_AUDIO_SOURCES_DEFAULT,
+    SCREEN_RECORD_AUDIO_SOURCES_KEY, SCREEN_RECORD_FRAMERATE_KEY,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::prelude::*;
@@ -484,6 +484,15 @@ enum AudioSourceMode {
     Custom,
 }
 
+impl std::fmt::Display for AudioSourceMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AudioSourceMode::Defaults => write!(f, "auto"),
+            AudioSourceMode::Custom => write!(f, "custom"),
+        }
+    }
+}
+
 #[derive(Clone)]
 struct AudioSourceModeItem {
     mode: AudioSourceMode,
@@ -563,10 +572,7 @@ impl FzfSelectable for AudioSourceModeItem {
     }
 
     fn fzf_key(&self) -> String {
-        match self.mode {
-            AudioSourceMode::Defaults => "auto".to_string(),
-            AudioSourceMode::Custom => "custom".to_string(),
-        }
+        self.mode.to_string()
     }
 }
 

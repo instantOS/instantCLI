@@ -31,6 +31,15 @@ pub enum RecordingFormat {
     WebM,
 }
 
+impl std::fmt::Display for RecordingFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RecordingFormat::Mp4 => write!(f, "mp4"),
+            RecordingFormat::WebM => write!(f, "webm"),
+        }
+    }
+}
+
 impl RecordingFormat {
     fn extension(&self) -> &'static str {
         match self {

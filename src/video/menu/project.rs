@@ -211,8 +211,8 @@ async fn run_add_recording(markdown_path: &Path) -> Result<()> {
 
     let (no_preprocess, preprocessor) = match audio_choice {
         ConvertAudioChoice::UseConfig => (false, None),
-        ConvertAudioChoice::Local => (false, Some("local".to_string())),
-        ConvertAudioChoice::Auphonic => (false, Some("auphonic".to_string())),
+        ConvertAudioChoice::Local => (false, Some(ConvertAudioChoice::Local.to_string())),
+        ConvertAudioChoice::Auphonic => (false, Some(ConvertAudioChoice::Auphonic.to_string())),
         ConvertAudioChoice::Skip => (true, None),
     };
 
