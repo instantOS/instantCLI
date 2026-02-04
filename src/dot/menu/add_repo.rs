@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 
-use crate::dot::config::{Config, extract_repo_name};
+use crate::dot::config::{extract_repo_name, Config};
 use crate::dot::db::Database;
 use crate::dot::repo::cli::RepoCommands;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header};
@@ -49,6 +49,18 @@ enum ShorthandChoice {
     Cancel,
 }
 
+impl std::fmt::Display for ShorthandChoice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ShorthandChoice::GitHub => write!(f, "github"),
+            ShorthandChoice::GitLab => write!(f, "gitlab"),
+            ShorthandChoice::Codeberg => write!(f, "codeberg"),
+            ShorthandChoice::EnterAnother => write!(f, "another"),
+            ShorthandChoice::Cancel => write!(f, "cancel"),
+        }
+    }
+}
+
 impl FzfSelectable for ShorthandChoice {
     fn fzf_display_text(&self) -> String {
         match self {
@@ -74,13 +86,7 @@ impl FzfSelectable for ShorthandChoice {
         }
     }
     fn fzf_key(&self) -> String {
-        match self {
-            ShorthandChoice::GitHub => "github".to_string(),
-            ShorthandChoice::GitLab => "gitlab".to_string(),
-            ShorthandChoice::Codeberg => "codeberg".to_string(),
-            ShorthandChoice::EnterAnother => "another".to_string(),
-            ShorthandChoice::Cancel => "cancel".to_string(),
-        }
+        self.to_string()
     }
     fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
         crate::menu::protocol::FzfPreview::None
@@ -93,6 +99,16 @@ enum PlainNameChoice {
     CreateLocal,
     EnterAnother,
     Cancel,
+}
+
+impl std::fmt::Display for PlainNameChoice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PlainNameChoice::CreateLocal => write!(f, "create"),
+            PlainNameChoice::EnterAnother => write!(f, "another"),
+            PlainNameChoice::Cancel => write!(f, "cancel"),
+        }
+    }
 }
 
 impl FzfSelectable for PlainNameChoice {
@@ -110,11 +126,7 @@ impl FzfSelectable for PlainNameChoice {
         }
     }
     fn fzf_key(&self) -> String {
-        match self {
-            PlainNameChoice::CreateLocal => "create".to_string(),
-            PlainNameChoice::EnterAnother => "another".to_string(),
-            PlainNameChoice::Cancel => "cancel".to_string(),
-        }
+        self.to_string()
     }
     fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
         crate::menu::protocol::FzfPreview::None
@@ -127,6 +139,16 @@ enum EmptyInputChoice {
     UseDefault,
     GoBack,
     EnterAnother,
+}
+
+impl std::fmt::Display for EmptyInputChoice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EmptyInputChoice::UseDefault => write!(f, "default"),
+            EmptyInputChoice::GoBack => write!(f, "back"),
+            EmptyInputChoice::EnterAnother => write!(f, "another"),
+        }
+    }
 }
 
 impl FzfSelectable for EmptyInputChoice {
@@ -144,11 +166,7 @@ impl FzfSelectable for EmptyInputChoice {
         }
     }
     fn fzf_key(&self) -> String {
-        match self {
-            EmptyInputChoice::UseDefault => "default".to_string(),
-            EmptyInputChoice::GoBack => "back".to_string(),
-            EmptyInputChoice::EnterAnother => "another".to_string(),
-        }
+        self.to_string()
     }
     fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
         crate::menu::protocol::FzfPreview::None

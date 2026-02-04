@@ -2,12 +2,12 @@ mod edit_menu;
 mod editors;
 mod state;
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 
 use crate::game::config::{InstallationsConfig, InstantGameConfig};
 use crate::game::games::manager::AddGameOptions;
 use crate::game::games::manager::GameManager;
-use crate::game::games::selection::{GameMenuEntry, select_game_menu_entry};
+use crate::game::games::selection::{select_game_menu_entry, GameMenuEntry};
 use crate::game::operations::launch_game;
 use crate::game::operations::sync::sync_game_saves;
 use crate::game::restic;
@@ -31,6 +31,19 @@ enum GameAction {
     Back,
 }
 
+impl std::fmt::Display for GameAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GameAction::Launch => write!(f, "launch"),
+            GameAction::Edit => write!(f, "edit"),
+            GameAction::Setup => write!(f, "setup"),
+            GameAction::Move => write!(f, "move"),
+            GameAction::Checkpoint => write!(f, "checkpoint"),
+            GameAction::Back => write!(f, "back"),
+        }
+    }
+}
+
 #[derive(Clone)]
 struct GameActionItem {
     display: String,
@@ -44,14 +57,7 @@ impl FzfSelectable for GameActionItem {
     }
 
     fn fzf_key(&self) -> String {
-        match self.action {
-            GameAction::Launch => "launch".to_string(),
-            GameAction::Edit => "edit".to_string(),
-            GameAction::Setup => "setup".to_string(),
-            GameAction::Move => "move".to_string(),
-            GameAction::Checkpoint => "checkpoint".to_string(),
-            GameAction::Back => "back".to_string(),
-        }
+        self.action.to_string()
     }
 
     fn fzf_preview(&self) -> FzfPreview {

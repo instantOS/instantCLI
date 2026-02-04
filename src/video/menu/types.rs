@@ -23,6 +23,20 @@ pub enum VideoMenuEntry {
     CloseMenu,
 }
 
+impl std::fmt::Display for VideoMenuEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VideoMenuEntry::NewProject => write!(f, "!__new_project__"),
+            VideoMenuEntry::Transcribe => write!(f, "!__transcribe__"),
+            VideoMenuEntry::Project => write!(f, "!__project__"),
+            VideoMenuEntry::Slide => write!(f, "!__slide__"),
+            VideoMenuEntry::Preprocess => write!(f, "!__preprocess__"),
+            VideoMenuEntry::Setup => write!(f, "!__setup__"),
+            VideoMenuEntry::CloseMenu => write!(f, "!__close_menu__"),
+        }
+    }
+}
+
 impl FzfSelectable for VideoMenuEntry {
     fn fzf_display_text(&self) -> String {
         match self {
@@ -55,15 +69,7 @@ impl FzfSelectable for VideoMenuEntry {
     }
 
     fn fzf_key(&self) -> String {
-        match self {
-            VideoMenuEntry::NewProject => "!__new_project__".to_string(),
-            VideoMenuEntry::Transcribe => "!__transcribe__".to_string(),
-            VideoMenuEntry::Project => "!__project__".to_string(),
-            VideoMenuEntry::Slide => "!__slide__".to_string(),
-            VideoMenuEntry::Preprocess => "!__preprocess__".to_string(),
-            VideoMenuEntry::Setup => "!__setup__".to_string(),
-            VideoMenuEntry::CloseMenu => "!__close_menu__".to_string(),
-        }
+        self.to_string()
     }
 
     fn fzf_preview(&self) -> FzfPreview {

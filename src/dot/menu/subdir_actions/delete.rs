@@ -17,6 +17,16 @@ enum DeleteChoice {
     Cancel,
 }
 
+impl std::fmt::Display for DeleteChoice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DeleteChoice::KeepFiles => write!(f, "keep"),
+            DeleteChoice::DeleteFiles => write!(f, "delete"),
+            DeleteChoice::Cancel => write!(f, "cancel"),
+        }
+    }
+}
+
 impl FzfSelectable for DeleteChoice {
     fn fzf_display_text(&self) -> String {
         match self {
@@ -33,11 +43,7 @@ impl FzfSelectable for DeleteChoice {
     }
 
     fn fzf_key(&self) -> String {
-        match self {
-            DeleteChoice::KeepFiles => "keep".to_string(),
-            DeleteChoice::DeleteFiles => "delete".to_string(),
-            DeleteChoice::Cancel => "cancel".to_string(),
-        }
+        self.to_string()
     }
 
     fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {

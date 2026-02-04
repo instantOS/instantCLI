@@ -23,6 +23,17 @@ enum PauseMenuItem {
     AbortInstallation,
 }
 
+impl std::fmt::Display for PauseMenuItem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PauseMenuItem::Resume => write!(f, "resume"),
+            PauseMenuItem::ReviewAnswers => write!(f, "review_answers"),
+            PauseMenuItem::GoBack => write!(f, "go_back"),
+            PauseMenuItem::AbortInstallation => write!(f, "abort_installation"),
+        }
+    }
+}
+
 impl PauseMenuItem {
     fn preview(&self) -> FzfPreview {
         match self {
@@ -78,12 +89,7 @@ impl FzfSelectable for PauseMenuItem {
     }
 
     fn fzf_key(&self) -> String {
-        match self {
-            PauseMenuItem::Resume => "resume".to_string(),
-            PauseMenuItem::ReviewAnswers => "review_answers".to_string(),
-            PauseMenuItem::GoBack => "go_back".to_string(),
-            PauseMenuItem::AbortInstallation => "abort_installation".to_string(),
-        }
+        self.to_string()
     }
 }
 
@@ -93,6 +99,17 @@ enum FinalReviewItem {
     ReviewAnswers,
     AdvancedOptions,
     AbortInstallation,
+}
+
+impl std::fmt::Display for FinalReviewItem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FinalReviewItem::Install => write!(f, "install"),
+            FinalReviewItem::ReviewAnswers => write!(f, "review_answers"),
+            FinalReviewItem::AdvancedOptions => write!(f, "advanced_options"),
+            FinalReviewItem::AbortInstallation => write!(f, "abort_installation"),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -148,12 +165,7 @@ impl FzfSelectable for FinalReviewItem {
     }
 
     fn fzf_key(&self) -> String {
-        match self {
-            FinalReviewItem::Install => "install".to_string(),
-            FinalReviewItem::ReviewAnswers => "review_answers".to_string(),
-            FinalReviewItem::AdvancedOptions => "advanced_options".to_string(),
-            FinalReviewItem::AbortInstallation => "abort_installation".to_string(),
-        }
+        self.to_string()
     }
 }
 

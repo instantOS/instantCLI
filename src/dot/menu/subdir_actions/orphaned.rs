@@ -17,6 +17,16 @@ enum OrphanedAction {
     Back,
 }
 
+impl std::fmt::Display for OrphanedAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OrphanedAction::Disable => write!(f, "disable"),
+            OrphanedAction::AddToMetadata => write!(f, "add"),
+            OrphanedAction::Back => write!(f, "back"),
+        }
+    }
+}
+
 impl FzfSelectable for OrphanedAction {
     fn fzf_display_text(&self) -> String {
         match self {
@@ -33,11 +43,7 @@ impl FzfSelectable for OrphanedAction {
     }
 
     fn fzf_key(&self) -> String {
-        match self {
-            OrphanedAction::Disable => "disable".to_string(),
-            OrphanedAction::AddToMetadata => "add".to_string(),
-            OrphanedAction::Back => "back".to_string(),
-        }
+        self.to_string()
     }
 
     fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
