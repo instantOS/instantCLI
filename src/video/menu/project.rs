@@ -31,6 +31,19 @@ enum ProjectMenuEntry {
     Back,
 }
 
+impl std::fmt::Display for ProjectMenuEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ProjectMenuEntry::Render => write!(f, "!__render__"),
+            ProjectMenuEntry::AddRecording => write!(f, "!__add_recording__"),
+            ProjectMenuEntry::Validate => write!(f, "!__validate__"),
+            ProjectMenuEntry::Stats => write!(f, "!__stats__"),
+            ProjectMenuEntry::ClearCache => write!(f, "!__clear_cache__"),
+            ProjectMenuEntry::Back => write!(f, "!__back__"),
+        }
+    }
+}
+
 impl FzfSelectable for ProjectMenuEntry {
     fn fzf_display_text(&self) -> String {
         match self {
@@ -59,14 +72,7 @@ impl FzfSelectable for ProjectMenuEntry {
     }
 
     fn fzf_key(&self) -> String {
-        match self {
-            ProjectMenuEntry::Render => "!__render__".to_string(),
-            ProjectMenuEntry::AddRecording => "!__add_recording__".to_string(),
-            ProjectMenuEntry::Validate => "!__validate__".to_string(),
-            ProjectMenuEntry::Stats => "!__stats__".to_string(),
-            ProjectMenuEntry::ClearCache => "!__clear_cache__".to_string(),
-            ProjectMenuEntry::Back => "!__back__".to_string(),
-        }
+        self.to_string()
     }
 
     fn fzf_preview(&self) -> FzfPreview {

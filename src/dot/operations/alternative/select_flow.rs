@@ -60,6 +60,15 @@ fn handle_single_source(
             Back,
         }
 
+        impl std::fmt::Display for Choice {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                match self {
+                    Choice::Remove => write!(f, "remove"),
+                    Choice::Back => write!(f, "back"),
+                }
+            }
+        }
+
         impl FzfSelectable for Choice {
             fn fzf_display_text(&self) -> String {
                 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
@@ -72,10 +81,7 @@ fn handle_single_source(
                 }
             }
             fn fzf_key(&self) -> String {
-                match self {
-                    Choice::Remove => "remove".into(),
-                    Choice::Back => "back".into(),
-                }
+                self.to_string()
             }
         }
 

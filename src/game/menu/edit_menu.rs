@@ -24,6 +24,19 @@ pub enum MenuAction {
     Back,
 }
 
+impl std::fmt::Display for MenuAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MenuAction::EditName => write!(f, "edit_name"),
+            MenuAction::EditDescription => write!(f, "edit_description"),
+            MenuAction::EditLaunchCommand => write!(f, "edit_launch_command"),
+            MenuAction::EditSavePath => write!(f, "edit_save_path"),
+            MenuAction::Save => write!(f, "save"),
+            MenuAction::Back => write!(f, "back"),
+        }
+    }
+}
+
 /// Menu item with display text, preview, and action
 #[derive(Debug, Clone)]
 pub struct MenuItem {
@@ -48,14 +61,7 @@ impl FzfSelectable for MenuItem {
     }
 
     fn fzf_key(&self) -> String {
-        match self.action {
-            MenuAction::EditName => "edit_name".to_string(),
-            MenuAction::EditDescription => "edit_description".to_string(),
-            MenuAction::EditLaunchCommand => "edit_launch_command".to_string(),
-            MenuAction::EditSavePath => "edit_save_path".to_string(),
-            MenuAction::Save => "save".to_string(),
-            MenuAction::Back => "back".to_string(),
-        }
+        self.action.to_string()
     }
 
     fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {

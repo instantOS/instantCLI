@@ -16,6 +16,19 @@ pub(super) enum MenuAction {
     Back,
 }
 
+impl std::fmt::Display for MenuAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MenuAction::Remove => write!(f, "remove"),
+            MenuAction::ChangeDevices => write!(f, "change_devices"),
+            MenuAction::Rename => write!(f, "rename"),
+            MenuAction::SetAsDefault => write!(f, "set_default"),
+            MenuAction::Enable => write!(f, "enable"),
+            MenuAction::Back => write!(f, "back"),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub(super) struct MenuItem {
     pub(super) action: MenuAction,
@@ -188,15 +201,7 @@ impl FzfSelectable for MenuItemWithPreview {
     }
 
     fn fzf_key(&self) -> String {
-        match self.item.action {
-            MenuAction::Remove => "remove",
-            MenuAction::ChangeDevices => "change_devices",
-            MenuAction::Rename => "rename",
-            MenuAction::SetAsDefault => "set_default",
-            MenuAction::Enable => "enable",
-            MenuAction::Back => "back",
-        }
-        .to_string()
+        self.item.action.to_string()
     }
 
     fn fzf_preview(&self) -> FzfPreview {

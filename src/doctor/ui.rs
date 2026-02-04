@@ -15,6 +15,16 @@ pub enum MenuAction {
     Close,
 }
 
+impl std::fmt::Display for MenuAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MenuAction::ViewAll => write!(f, "__VIEW_ALL__"),
+            MenuAction::FixAll => write!(f, "__ALL__"),
+            MenuAction::Close => write!(f, "__CLOSE__"),
+        }
+    }
+}
+
 /// Wrapper enum for menu items that can be either an action or an issue
 #[derive(Clone)]
 pub enum DoctorMenuItem {
@@ -116,11 +126,7 @@ impl FzfSelectable for DoctorMenuItem {
 
     fn fzf_key(&self) -> String {
         match self {
-            DoctorMenuItem::Action(action) => match action {
-                MenuAction::ViewAll => "__VIEW_ALL__".to_string(),
-                MenuAction::FixAll => "__ALL__".to_string(),
-                MenuAction::Close => "__CLOSE__".to_string(),
-            },
+            DoctorMenuItem::Action(action) => action.to_string(),
             DoctorMenuItem::Issue(issue) => issue.fzf_key(),
             DoctorMenuItem::Check(check) => check.fzf_key(),
         }
@@ -233,11 +239,7 @@ impl FzfSelectable for FixableIssue {
 
     fn fzf_key(&self) -> String {
         if let Some(action) = self.action {
-            match action {
-                MenuAction::ViewAll => "__VIEW_ALL__".to_string(),
-                MenuAction::FixAll => "__ALL__".to_string(),
-                MenuAction::Close => "__CLOSE__".to_string(),
-            }
+            action.to_string()
         } else {
             self.check_id.clone().unwrap_or_default()
         }
