@@ -14,10 +14,9 @@ pub const AUDIO_EXTENSIONS: &[&str] = &["mp3", "wav", "flac", "m4a", "ogg", "aac
 
 #[derive(Debug, Clone)]
 pub enum VideoMenuEntry {
-    Convert,
+    NewProject,
     Transcribe,
     Project,
-    Append,
     Slide,
     Preprocess,
     Setup,
@@ -27,21 +26,17 @@ pub enum VideoMenuEntry {
 impl FzfSelectable for VideoMenuEntry {
     fn fzf_display_text(&self) -> String {
         match self {
-            VideoMenuEntry::Convert => format!(
-                "{} Convert to Markdown",
-                format_icon_colored(NerdFont::FileText, colors::PEACH)
+            VideoMenuEntry::NewProject => format!(
+                "{} New Project",
+                format_icon_colored(NerdFont::FileText, colors::GREEN)
             ),
             VideoMenuEntry::Transcribe => format!(
                 "{} Transcribe with WhisperX",
                 format_icon_colored(NerdFont::Keyboard, colors::SAPPHIRE)
             ),
             VideoMenuEntry::Project => format!(
-                "{} Project",
-                format_icon_colored(NerdFont::Folder, colors::GREEN)
-            ),
-            VideoMenuEntry::Append => format!(
-                "{} Add Recording to Markdown",
-                format_icon_colored(NerdFont::SourceMerge, colors::PEACH)
+                "{} Open Project",
+                format_icon_colored(NerdFont::Folder, colors::PEACH)
             ),
             VideoMenuEntry::Slide => format!(
                 "{} Generate Slide Image",
@@ -61,10 +56,9 @@ impl FzfSelectable for VideoMenuEntry {
 
     fn fzf_key(&self) -> String {
         match self {
-            VideoMenuEntry::Convert => "!__convert__".to_string(),
+            VideoMenuEntry::NewProject => "!__new_project__".to_string(),
             VideoMenuEntry::Transcribe => "!__transcribe__".to_string(),
             VideoMenuEntry::Project => "!__project__".to_string(),
-            VideoMenuEntry::Append => "!__append__".to_string(),
             VideoMenuEntry::Slide => "!__slide__".to_string(),
             VideoMenuEntry::Preprocess => "!__preprocess__".to_string(),
             VideoMenuEntry::Setup => "!__setup__".to_string(),
@@ -74,15 +68,15 @@ impl FzfSelectable for VideoMenuEntry {
 
     fn fzf_preview(&self) -> FzfPreview {
         match self {
-            VideoMenuEntry::Convert => PreviewBuilder::new()
-                .header(NerdFont::FileText, "Convert to Markdown")
-                .text("Generate editable video markdown from source files.")
+            VideoMenuEntry::NewProject => PreviewBuilder::new()
+                .header(NerdFont::FileText, "New Project")
+                .text("Create a new video project from source recordings.")
                 .blank()
                 .text("This will:")
-                .bullet("Build a list of videos to convert")
+                .bullet("Select one or more video files")
                 .bullet("Optionally preprocess audio")
-                .bullet("Transcribe with WhisperX if needed")
-                .bullet("Create markdown timelines for each video")
+                .bullet("Transcribe with WhisperX")
+                .bullet("Create a single markdown with all sources")
                 .build(),
             VideoMenuEntry::Transcribe => PreviewBuilder::new()
                 .header(NerdFont::Keyboard, "Transcribe")
@@ -91,23 +85,14 @@ impl FzfSelectable for VideoMenuEntry {
                 .text("Transcript output is cached for reuse.")
                 .build(),
             VideoMenuEntry::Project => PreviewBuilder::new()
-                .header(NerdFont::Folder, "Project")
+                .header(NerdFont::Folder, "Open Project")
                 .text("Work with an existing video project.")
                 .blank()
                 .text("Actions:")
                 .bullet("Render edited video")
+                .bullet("Add more recordings")
                 .bullet("Validate markdown")
                 .bullet("Show timeline stats")
-                .bullet("Clear cache")
-                .build(),
-            VideoMenuEntry::Append => PreviewBuilder::new()
-                .header(NerdFont::SourceMerge, "Append recording")
-                .text("Add another recording to an existing video markdown.")
-                .blank()
-                .text("This will:")
-                .bullet("Transcribe the new clip")
-                .bullet("Append a new source to front matter")
-                .bullet("Add timestamped segments to the timeline")
                 .build(),
             VideoMenuEntry::Slide => PreviewBuilder::new()
                 .header(NerdFont::Image, "Generate Slide")

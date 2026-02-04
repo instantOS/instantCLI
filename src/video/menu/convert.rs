@@ -5,28 +5,28 @@ use crate::menu_utils::{ConfirmResult, FzfPreview, FzfResult, FzfSelectable, Fzf
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
-use crate::video::cli::ConvertArgs;
+use crate::video::cli::{AppendArgs, ConvertArgs};
 use crate::video::pipeline::convert;
 
 use super::file_selection::{
     compute_default_output_path, discover_video_file_suggestions,
-    select_video_file_with_suggestions,
+    select_video_file_with_suggestions, select_output_path,
 };
-use super::prompts::{confirm_action, select_convert_audio_choice};
-use super::types::ConvertAudioChoice;
+use super::prompts::{confirm_action, select_convert_audio_choice, select_output_choice};
+use super::types::{ConvertAudioChoice, OutputChoice};
 
 #[derive(Debug, Clone)]
-enum ConvertListEntry {
+enum NewProjectEntry {
     Video(PathBuf),
     Add,
-    Convert,
+    Create,
     Back,
 }
 
-impl FzfSelectable for ConvertListEntry {
+impl FzfSelectable for NewProjectEntry {
     fn fzf_display_text(&self) -> String {
         match self {
-            ConvertListEntry::Video(path) => {
+            NewProjectEntry::Video(path) => {
                 let name = path
                     .file_name()
                     .and_then(|s| s.to_str())
@@ -37,30 +37,30 @@ impl FzfSelectable for ConvertListEntry {
                     name
                 )
             }
-            ConvertListEntry::Add => format!(
+            NewProjectEntry::Add => format!(
                 "{} Add video",
                 format_icon_colored(NerdFont::Plus, colors::GREEN)
             ),
-            ConvertListEntry::Convert => format!(
-                "{} Convert all",
+            NewProjectEntry::Create => format!(
+                "{} Create project",
                 format_icon_colored(NerdFont::PlayCircle, colors::PEACH)
             ),
-            ConvertListEntry::Back => format!("{} Back", format_back_icon()),
+            NewProjectEntry::Back => format!("{} Back", format_back_icon()),
         }
     }
 
     fn fzf_key(&self) -> String {
         match self {
-            ConvertListEntry::Video(path) => format!("video:{}", path.display()),
-            ConvertListEntry::Add => "!__add__".to_string(),
-            ConvertListEntry::Convert => "!__convert__".to_string(),
-            ConvertListEntry::Back => "!__back__".to_string(),
+            NewProjectEntry::Video(path) => format!("video:{}", path.display()),
+            NewProjectEntry::Add => "!__add__".to_string(),
+            NewProjectEntry::Create => "!__create__".to_string(),
+            NewProjectEntry::Back => "!__back__".to_string(),
         }
     }
 
     fn fzf_preview(&self) -> FzfPreview {
         match self {
-            ConvertListEntry::Video(path) => {
+            NewProjectEntry::Video(path) => {
                 let display = path.display().to_string();
                 PreviewBuilder::new()
                     .header(NerdFont::Video, "Video File")
@@ -69,15 +69,17 @@ impl FzfSelectable for ConvertListEntry {
                     .text("Select to remove from list")
                     .build()
             }
-            ConvertListEntry::Add => PreviewBuilder::new()
+            NewProjectEntry::Add => PreviewBuilder::new()
                 .header(NerdFont::Plus, "Add Video")
-                .text("Add another video file to the conversion list.")
+                .text("Add another video file to the project.")
                 .build(),
-            ConvertListEntry::Convert => PreviewBuilder::new()
-                .header(NerdFont::PlayCircle, "Convert All")
-                .text("Convert all videos in the list to markdown.")
+            NewProjectEntry::Create => PreviewBuilder::new()
+                .header(NerdFont::PlayCircle, "Create Project")
+                .text("Create a new project with all selected videos.")
+                .blank()
+                .text("All videos will be added as sources to a single markdown file.")
                 .build(),
-            ConvertListEntry::Back => PreviewBuilder::new()
+            NewProjectEntry::Back => PreviewBuilder::new()
                 .header(NerdFont::Cross, "Back")
                 .text("Return to previous menu.")
                 .build(),
@@ -85,23 +87,25 @@ impl FzfSelectable for ConvertListEntry {
     }
 }
 
-pub async fn run_convert_multi() -> Result<()> {
+/// Create a new project from multiple videos.
+/// This creates a single markdown file with all videos as sources.
+pub async fn run_new_project() -> Result<()> {
     let mut videos: Vec<PathBuf> = Vec::new();
 
     loop {
-        let mut entries: Vec<ConvertListEntry> = videos
+        let mut entries: Vec<NewProjectEntry> = videos
             .iter()
-            .map(|p| ConvertListEntry::Video(p.clone()))
+            .map(|p| NewProjectEntry::Video(p.clone()))
             .collect();
 
-        entries.push(ConvertListEntry::Add);
+        entries.push(NewProjectEntry::Add);
         if !videos.is_empty() {
-            entries.push(ConvertListEntry::Convert);
+            entries.push(NewProjectEntry::Create);
         }
-        entries.push(ConvertListEntry::Back);
+        entries.push(NewProjectEntry::Back);
 
         let header_text = if videos.is_empty() {
-            "Add videos to convert".to_string()
+            "Add videos to create project".to_string()
         } else {
             format!("{} video(s) selected", videos.len())
         };
@@ -115,7 +119,7 @@ pub async fn run_convert_multi() -> Result<()> {
 
         match result {
             FzfResult::Selected(entry) => match entry {
-                ConvertListEntry::Video(path) => {
+                NewProjectEntry::Video(path) => {
                     let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("video");
                     if let ConfirmResult::Yes =
                         confirm_action(&format!("Remove '{name}' from list?"), "Remove", "Keep")?
@@ -123,7 +127,7 @@ pub async fn run_convert_multi() -> Result<()> {
                         videos.retain(|p| p != &path);
                     }
                 }
-                ConvertListEntry::Add => {
+                NewProjectEntry::Add => {
                     let suggestions = discover_video_file_suggestions()?;
                     if let Some(path) =
                         select_video_file_with_suggestions("Select video to add", suggestions)?
@@ -132,14 +136,14 @@ pub async fn run_convert_multi() -> Result<()> {
                         videos.push(path);
                     }
                 }
-                ConvertListEntry::Convert => {
+                NewProjectEntry::Create => {
                     if videos.is_empty() {
-                        FzfWrapper::message("No videos to convert")?;
+                        FzfWrapper::message("No videos selected")?;
                         continue;
                     }
-                    return run_convert_batch(videos).await;
+                    return create_multi_source_project(videos).await;
                 }
-                ConvertListEntry::Back => return Ok(()),
+                NewProjectEntry::Back => return Ok(()),
             },
             FzfResult::Cancelled => return Ok(()),
             _ => return Ok(()),
@@ -147,7 +151,8 @@ pub async fn run_convert_multi() -> Result<()> {
     }
 }
 
-async fn run_convert_batch(videos: Vec<PathBuf>) -> Result<()> {
+/// Create a single markdown file with multiple video sources.
+async fn create_multi_source_project(videos: Vec<PathBuf>) -> Result<()> {
     let audio_choice = match select_convert_audio_choice()? {
         Some(choice) => choice,
         None => return Ok(()),
@@ -160,20 +165,37 @@ async fn run_convert_batch(videos: Vec<PathBuf>) -> Result<()> {
         ConvertAudioChoice::Skip => (true, None),
     };
 
-    let conflicts: Vec<PathBuf> = videos
-        .iter()
-        .filter_map(|v| {
-            let out = compute_default_output_path(v);
-            if out.exists() { Some(out) } else { None }
-        })
-        .collect();
+    // Use the first video to determine default output path
+    let first_video = &videos[0];
+    let default_output = compute_default_output_path(first_video);
+    let default_name = default_output
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("project.video.md")
+        .to_string();
 
-    let force = if !conflicts.is_empty() {
-        let msg = format!(
-            "{} existing markdown file(s) will be overwritten. Continue?",
-            conflicts.len()
-        );
-        match confirm_action(&msg, "Overwrite", "Cancel")? {
+    let output_choice = match select_output_choice("Project output", &default_name)? {
+        Some(choice) => choice,
+        None => return Ok(()),
+    };
+
+    let output_path = match output_choice {
+        OutputChoice::Default => default_output,
+        OutputChoice::Custom => {
+            let start_dir = first_video.parent().map(|p| p.to_path_buf());
+            match select_output_path(&default_name, start_dir)? {
+                Some(path) => path,
+                None => return Ok(()),
+            }
+        }
+    };
+
+    let force = if output_path.exists() {
+        match confirm_action(
+            "Markdown file already exists. Overwrite?",
+            "Overwrite",
+            "Cancel",
+        )? {
             ConfirmResult::Yes => true,
             _ => return Ok(()),
         }
@@ -181,12 +203,24 @@ async fn run_convert_batch(videos: Vec<PathBuf>) -> Result<()> {
         false
     };
 
-    for video_path in videos {
-        convert::handle_convert(ConvertArgs {
-            video: video_path,
+    // Create the project with the first video
+    convert::handle_convert(ConvertArgs {
+        video: videos[0].clone(),
+        transcript: None,
+        out_file: Some(output_path.clone()),
+        force,
+        no_preprocess,
+        preprocessor: preprocessor.clone(),
+    })
+    .await?;
+
+    // Append additional videos
+    for video in videos.into_iter().skip(1) {
+        convert::handle_append(AppendArgs {
+            markdown: output_path.clone(),
+            video,
             transcript: None,
-            out_file: None,
-            force,
+            force: false,
             no_preprocess,
             preprocessor: preprocessor.clone(),
         })

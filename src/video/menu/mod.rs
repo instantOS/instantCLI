@@ -10,8 +10,8 @@ use anyhow::Result;
 use crate::menu_utils::{FzfResult, FzfWrapper, Header, MenuCursor};
 use crate::ui::catppuccin::fzf_mocha_args;
 
-use convert::run_convert_multi;
-use operations::{run_append, run_preprocess, run_setup, run_slide, run_transcribe};
+use convert::run_new_project;
+use operations::{run_preprocess, run_setup, run_slide, run_transcribe};
 use project::run_project_menu;
 use types::VideoMenuEntry;
 
@@ -24,10 +24,9 @@ pub async fn video_menu(_debug: bool) -> Result<()> {
         };
 
         match entry {
-            VideoMenuEntry::Convert => run_convert_multi().await?,
+            VideoMenuEntry::NewProject => run_new_project().await?,
             VideoMenuEntry::Transcribe => run_transcribe().await?,
             VideoMenuEntry::Project => run_project_menu().await?,
-            VideoMenuEntry::Append => run_append().await?,
             VideoMenuEntry::Slide => run_slide().await?,
             VideoMenuEntry::Preprocess => run_preprocess().await?,
             VideoMenuEntry::Setup => run_setup().await?,
@@ -38,10 +37,9 @@ pub async fn video_menu(_debug: bool) -> Result<()> {
 
 fn select_video_menu_entry(cursor: &mut MenuCursor) -> Result<Option<VideoMenuEntry>> {
     let entries = vec![
-        VideoMenuEntry::Convert,
+        VideoMenuEntry::NewProject,
         VideoMenuEntry::Transcribe,
         VideoMenuEntry::Project,
-        VideoMenuEntry::Append,
         VideoMenuEntry::Slide,
         VideoMenuEntry::Preprocess,
         VideoMenuEntry::Setup,
