@@ -1,6 +1,6 @@
-use anyhow::Result;
+use anyhow::{Result, anyhow, bail};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::menu_utils::{ConfirmResult, FzfPreview, FzfResult, FzfSelectable, FzfWrapper, Header};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
@@ -13,7 +13,7 @@ use crate::video::render;
 
 use super::file_selection::{
     discover_video_file_suggestions, discover_video_markdown_suggestions, select_markdown_file,
-    select_video_file_with_suggestions,
+    select_output_path, select_video_file_with_suggestions,
 };
 use super::prompts::{
     confirm_action, prompt_optional_path, select_convert_audio_choice, select_render_options,
@@ -249,7 +249,13 @@ async fn run_render_for_project(markdown_path: &Path) -> Result<()> {
         }
     }
 
-    let out_file = if render_options.precache_slides {
+    let render_mode = if reels {
+        render::RenderMode::Reels
+    } else {
+        render::RenderMode::Standard
+    };
+
+    let mut out_file = if render_options.precache_slides {
         None
     } else {
         match prompt_optional_path(
@@ -261,22 +267,42 @@ async fn run_render_for_project(markdown_path: &Path) -> Result<()> {
         }
     };
 
-    let force = if !render_options.force {
-        if let Some(ref out) = out_file {
-            if out.exists() {
-                match confirm_action("Output file exists. Overwrite?", "Overwrite", "Cancel")? {
-                    ConfirmResult::Yes => true,
-                    _ => return Ok(()),
-                }
-            } else {
-                false
+    let mut force = render_options.force;
+    if !render_options.precache_slides && !force {
+        let markdown_dir = markdown_path.parent().unwrap_or_else(|| Path::new("."));
+        let default_source = resolve_default_source_path(markdown_path, markdown_dir)?;
+        loop {
+            let output_path = resolve_render_output_path(
+                out_file.as_ref(),
+                markdown_dir,
+                &default_source,
+                render_mode,
+            )?;
+            if !output_path.exists() {
+                break;
             }
-        } else {
-            false
+
+            match prompt_output_conflict(&output_path)? {
+                Some(OutputConflictChoice::Overwrite) => {
+                    force = true;
+                    break;
+                }
+                Some(OutputConflictChoice::Rename) => {
+                    let default_name = output_path
+                        .file_name()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("output.mp4")
+                        .to_string();
+                    let start_dir = output_path.parent().map(|p| p.to_path_buf());
+                    let Some(path) = select_output_path(&default_name, start_dir)? else {
+                        return Ok(());
+                    };
+                    out_file = Some(path);
+                }
+                _ => return Ok(()),
+            }
         }
-    } else {
-        true
-    };
+    }
 
     render::handle_render(RenderArgs {
         markdown: markdown_path.to_path_buf(),
@@ -326,4 +352,158 @@ fn run_clear_cache(markdown_path: &Path) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[derive(Clone, Copy)]
+enum OutputConflictChoice {
+    Overwrite,
+    Rename,
+    Cancel,
+}
+
+#[derive(Clone)]
+struct OutputConflictOption {
+    choice: OutputConflictChoice,
+    label: String,
+    preview: FzfPreview,
+}
+
+impl OutputConflictOption {
+    fn new(choice: OutputConflictChoice, label: String, preview: FzfPreview) -> Self {
+        Self {
+            choice,
+            label,
+            preview,
+        }
+    }
+}
+
+impl FzfSelectable for OutputConflictOption {
+    fn fzf_display_text(&self) -> String {
+        self.label.clone()
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        self.preview.clone()
+    }
+
+    fn fzf_key(&self) -> String {
+        self.label.clone()
+    }
+}
+
+fn prompt_output_conflict(output_path: &Path) -> Result<Option<OutputConflictChoice>> {
+    let path_display = output_path.display().to_string();
+    let options = vec![
+        OutputConflictOption::new(
+            OutputConflictChoice::Overwrite,
+            format!(
+                "{} Overwrite existing file",
+                format_icon_colored(NerdFont::Warning, colors::YELLOW)
+            ),
+            PreviewBuilder::new()
+                .header(NerdFont::Warning, "Overwrite output")
+                .text("Replace the existing file with the new render.")
+                .blank()
+                .field("File", &path_display)
+                .line(
+                    colors::YELLOW,
+                    Some(NerdFont::InfoCircle),
+                    "The current file will be removed.",
+                )
+                .build(),
+        ),
+        OutputConflictOption::new(
+            OutputConflictChoice::Rename,
+            format!(
+                "{} Choose a different output",
+                format_icon_colored(NerdFont::Edit, colors::SAPPHIRE)
+            ),
+            PreviewBuilder::new()
+                .header(NerdFont::Edit, "Choose a new output")
+                .text("Pick a different file name or output folder.")
+                .blank()
+                .field("Current", &path_display)
+                .build(),
+        ),
+        OutputConflictOption::new(
+            OutputConflictChoice::Cancel,
+            format!(
+                "{} Cancel render",
+                format_icon_colored(NerdFont::Cross, colors::RED)
+            ),
+            PreviewBuilder::new()
+                .header(NerdFont::Cross, "Cancel")
+                .text("Return to the project menu without rendering.")
+                .blank()
+                .field("Output", &path_display)
+                .build(),
+        ),
+    ];
+
+    let selection = FzfWrapper::builder()
+        .header(Header::default(&format!("Output already exists:\n{}", path_display)))
+        .prompt("Select")
+        .args(fzf_mocha_args())
+        .responsive_layout()
+        .select(options)?;
+
+    match selection {
+        FzfResult::Selected(option) => Ok(Some(option.choice)),
+        _ => Ok(None),
+    }
+}
+
+fn resolve_default_source_path(markdown_path: &Path, markdown_dir: &Path) -> Result<PathBuf> {
+    let contents = fs::read_to_string(markdown_path)?;
+    let document = parse_video_document(&contents, markdown_path)?;
+    let sources = &document.metadata.sources;
+
+    if sources.is_empty() {
+        bail!("No video sources configured. Add `sources` in front matter before rendering.");
+    }
+
+    let default_id = document
+        .metadata
+        .default_source
+        .as_ref()
+        .or_else(|| sources.first().map(|source| &source.id))
+        .ok_or_else(|| anyhow!("No video sources available"))?;
+
+    let source = sources
+        .iter()
+        .find(|source| &source.id == default_id)
+        .ok_or_else(|| anyhow!("Default source `{}` not found", default_id))?;
+
+    let source_path = if source.source.is_absolute() {
+        source.source.clone()
+    } else {
+        markdown_dir.join(&source.source)
+    };
+
+    Ok(source_path)
+}
+
+fn resolve_render_output_path(
+    out_file: Option<&PathBuf>,
+    markdown_dir: &Path,
+    default_source: &Path,
+    render_mode: render::RenderMode,
+) -> Result<PathBuf> {
+    if let Some(provided) = out_file {
+        return Ok(if provided.is_absolute() {
+            provided.clone()
+        } else {
+            markdown_dir.join(provided)
+        });
+    }
+
+    let mut output = default_source.to_path_buf();
+    let stem = default_source
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| anyhow!("Video path {} has no valid file name", default_source.display()))?;
+    let suffix = render_mode.output_suffix();
+    output.set_file_name(format!("{stem}{suffix}.mp4"));
+    Ok(output)
 }
