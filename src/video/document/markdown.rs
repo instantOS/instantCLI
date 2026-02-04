@@ -22,20 +22,19 @@ pub fn build_markdown(cues: &[TranscriptCue], metadata: &MarkdownMetadata<'_>) -
     let mut previous_end = Duration::from_secs(0);
 
     for cue in cues {
-        if cue.start > previous_end {
-            let silence_gap = cue.start - previous_end;
-            if silence_gap >= Duration::from_secs(1) {
-                insert_silence_lines(&mut lines, previous_end, cue.start);
-            }
-        }
-
         let source_id = if cue.source_id.trim().is_empty() {
             metadata.default_source
         } else {
             cue.source_id.as_str()
         };
+        if cue.start > previous_end {
+            let silence_gap = cue.start - previous_end;
+            if silence_gap >= Duration::from_secs(1) {
+                insert_silence_lines(&mut lines, previous_end, cue.start, source_id);
+            }
+        }
         lines.push(format!(
-            "`{}:{}-{}` {}",
+            "`{}@{}-{}` {}",
             source_id,
             format_timestamp(cue.start),
             format_timestamp(cue.end),
@@ -54,12 +53,18 @@ pub fn build_markdown(cues: &[TranscriptCue], metadata: &MarkdownMetadata<'_>) -
     }
 }
 
-fn insert_silence_lines(lines: &mut Vec<String>, mut start: Duration, end: Duration) {
+fn insert_silence_lines(
+    lines: &mut Vec<String>,
+    mut start: Duration,
+    end: Duration,
+    source_id: &str,
+) {
     let max_chunk = Duration::from_secs(5);
     while start < end {
         let chunk_end = std::cmp::min(end, start + max_chunk);
         lines.push(format!(
-            "`{}-{}` SILENCE",
+            "`{}@{}-{}` SILENCE",
+            source_id,
             format_timestamp(start),
             format_timestamp(chunk_end)
         ));
@@ -147,7 +152,7 @@ mod tests {
         };
 
         let output = build_markdown(&cues, &metadata);
-        assert!(output.contains("`00:04.0-00:09.0` SILENCE"));
-        assert!(output.contains("`00:09.0-00:11.0` SILENCE"));
+        assert!(output.contains("`a@00:04.0-00:09.0` SILENCE"));
+        assert!(output.contains("`a@00:09.0-00:11.0` SILENCE"));
     }
 }

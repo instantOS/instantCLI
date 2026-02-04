@@ -810,7 +810,7 @@ fn is_video_markdown_file(path: &Path) -> Result<bool> {
         Err(_) => return Ok(false),
     };
 
-    let front = match front_matter {
+    let front: &str = match front_matter {
         Some(value) => value,
         None => return Ok(false),
     };

@@ -5,7 +5,7 @@ pub mod timeline;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, bail, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 
 use crate::ui::prelude::{Level, emit};
 

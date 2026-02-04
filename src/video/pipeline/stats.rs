@@ -3,7 +3,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
-use crate::ui::prelude::{emit, Level};
+use crate::ui::prelude::{Level, emit};
 
 use crate::video::cli::StatsArgs;
 use crate::video::document::parse_video_document;

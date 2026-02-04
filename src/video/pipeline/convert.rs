@@ -9,9 +9,9 @@ use super::transcribe::handle_transcribe;
 use crate::video::audio::{PreprocessorType, create_preprocessor, parse_preprocessor_type};
 use crate::video::cli::{AppendArgs, ConvertArgs, TranscribeArgs};
 use crate::video::config::{VideoConfig, VideoDirectories, VideoProjectPaths};
+use crate::video::document::frontmatter::split_frontmatter;
 use crate::video::document::markdown::{MarkdownMetadata, MarkdownSource, build_markdown};
 use crate::video::document::{VideoSource, parse_video_document};
-use crate::video::document::frontmatter::split_frontmatter;
 use crate::video::support::transcript::{TranscriptCue, parse_whisper_json};
 use crate::video::support::utils::{canonicalize_existing, compute_file_hash};
 
@@ -148,7 +148,7 @@ pub async fn handle_append(args: AppendArgs) -> Result<()> {
     }
 
     let (_front_matter, body, _) = split_frontmatter(&markdown_contents)?;
-    let existing_body = body.trim_end();
+    let existing_body = body.trim_end_matches(&['\r', '\n'][..]);
 
     let appended_text = build_source_markdown(&cues, &source_id);
     let mut new_body = String::new();
@@ -436,7 +436,7 @@ fn build_source_markdown(
     let mut lines = Vec::with_capacity(cues.len());
     for cue in cues {
         lines.push(format!(
-            "`{}:{}-{}` {}",
+            "`{}@{}-{}` {}",
             source_id,
             format_timestamp(cue.start),
             format_timestamp(cue.end),

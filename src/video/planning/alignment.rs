@@ -542,7 +542,7 @@ mod tests {
 
     #[test]
     fn includes_music_blocks_in_plan() {
-        let markdown = "```music\ntrack.mp3\n```\n`00:00:00.000-00:00:01.000` line";
+        let markdown = "```music\ntrack.mp3\n```\n`a@00:00:00.000-00:00:01.000` line";
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
         let plan = plan_timeline(&document).unwrap();
 
@@ -560,10 +560,10 @@ mod tests {
     #[test]
     fn slide_applies_to_immediately_previous_clip_and_clears_on_separator() {
         let markdown = concat!(
-            "`00:00:00.0-00:00:01.0` first\n",
+            "`a@00:00:00.0-00:00:01.0` first\n",
             "slide 1\n\n",
             "---\n\n",
-            "`00:00:01.0-00:00:02.0` second\n",
+            "`a@00:00:01.0-00:00:02.0` second\n",
         );
 
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
@@ -589,10 +589,10 @@ mod tests {
     #[test]
     fn consecutive_slides_merge_into_single_overlay() {
         let markdown = concat!(
-            "`00:00:00.0-00:00:01.0` first\n",
+            "`a@00:00:00.0-00:00:01.0` first\n",
             "slide 1\n\n",
             "slide 2\n\n",
-            "`00:00:01.0-00:00:02.0` second\n",
+            "`a@00:00:01.0-00:00:02.0` second\n",
         );
 
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
@@ -621,11 +621,11 @@ mod tests {
     #[test]
     fn pause_duration_scales_with_word_count() {
         let markdown = concat!(
-            "`00:00:00.0-00:00:01.0` first\n\n",
+            "`a@00:00:00.0-00:00:01.0` first\n\n",
             "---\n\n",
             "short\n\n",
             "---\n\n",
-            "`00:00:01.0-00:00:02.0` second\n",
+            "`a@00:00:01.0-00:00:02.0` second\n",
         );
 
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
@@ -651,7 +651,7 @@ mod tests {
 
     #[test]
     fn aligns_dialogue_segments_with_subtitles() {
-        let markdown = "`00:00:00.0-00:00:01.2` first\n`00:00:01.2-00:00:02.3` second\n";
+        let markdown = "`a@00:00:00.0-00:00:01.2` first\n`a@00:00:01.2-00:00:02.3` second\n";
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
         let mut plan = plan_timeline(&document).unwrap();
 
@@ -696,7 +696,7 @@ mod tests {
 
     #[test]
     fn aligns_using_time_overlap_not_text() {
-        let markdown = "`00:00:00.0-00:00:01.0` hello\n`00:00:01.0-00:00:02.0` world\n";
+        let markdown = "`a@00:00:00.0-00:00:01.0` hello\n`a@00:00:01.0-00:00:02.0` world\n";
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
         let mut plan = plan_timeline(&document).unwrap();
 
@@ -743,7 +743,7 @@ mod tests {
 
     #[test]
     fn padding_never_overlaps_neighbor_cues() {
-        let markdown = "`00:00:01.0-00:00:02.0` mid\n";
+        let markdown = "`a@00:00:01.0-00:00:02.0` mid\n";
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
         let mut plan = plan_timeline(&document).unwrap();
 
@@ -797,7 +797,7 @@ mod tests {
     fn does_not_match_same_cue_twice() {
         // Two planned dialogue clips overlap the same single cue.
         // We should error rather than align both clips to identical cue bounds.
-        let markdown = "`00:00:00.0-00:00:00.5` first\n`00:00:00.4-00:00:00.9` second\n";
+        let markdown = "`a@00:00:00.0-00:00:00.5` first\n`a@00:00:00.4-00:00:00.9` second\n";
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
         let mut plan = plan_timeline(&document).unwrap();
 
@@ -822,11 +822,11 @@ mod tests {
         // Model the `vidtest/pups.video.md` shape: segments appear out-of-order relative to time.
         // Two segments overlap the same last cue; cue uniqueness avoids rendering duplicates.
         let markdown = concat!(
-            "`00:00:09.7-00:00:11.6` I do not want to eat the following.\n",
-            "`00:00:00.9-00:00:09.7` Hello, I want to eat a big, big orange.\n",
-            "`00:00:14.4-00:00:16.0` A big pile of dog poo.\n",
-            "`00:00:24.8-00:00:26.9` No, you don't say that.\n",
-            "`00:00:19.2-00:00:24.8` Goodbye, this has been it.\n",
+            "`a@00:00:09.7-00:00:11.6` I do not want to eat the following.\n",
+            "`a@00:00:00.9-00:00:09.7` Hello, I want to eat a big, big orange.\n",
+            "`a@00:00:14.4-00:00:16.0` A big pile of dog poo.\n",
+            "`a@00:00:24.8-00:00:26.9` No, you don't say that.\n",
+            "`a@00:00:19.2-00:00:24.8` Goodbye, this has been it.\n",
         );
 
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
@@ -921,7 +921,7 @@ mod tests {
 
     #[test]
     fn redistributes_silence_segments_across_actual_gap() {
-        let markdown = "`00:00:00.0-00:00:01.2` intro\n`00:00:01.2-00:00:03.8` SILENCE\n`00:00:03.8-00:00:06.8` SILENCE\n`00:00:06.8-00:00:08.0` outro\n";
+        let markdown = "`a@00:00:00.0-00:00:01.2` intro\n`a@00:00:01.2-00:00:03.8` SILENCE\n`a@00:00:03.8-00:00:06.8` SILENCE\n`a@00:00:06.8-00:00:08.0` outro\n";
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
         let mut plan = plan_timeline(&document).unwrap();
 
@@ -976,7 +976,7 @@ mod tests {
 
     #[test]
     fn does_not_stretch_silence_when_gap_is_huge() {
-        let markdown = "`00:00:00.0-00:00:01.0` intro\n`00:00:01.0-00:00:02.0` SILENCE\n`00:00:02.0-00:00:03.0` SILENCE\n`00:00:50.0-00:00:51.0` outro\n";
+        let markdown = "`a@00:00:00.0-00:00:01.0` intro\n`a@00:00:01.0-00:00:02.0` SILENCE\n`a@00:00:02.0-00:00:03.0` SILENCE\n`a@00:00:50.0-00:00:51.0` outro\n";
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
         let mut plan = plan_timeline(&document).unwrap();
 

@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use serde::Deserialize;
 
@@ -948,7 +948,15 @@ mod tests {
 
     #[test]
     fn parses_multiple_segments_within_single_paragraph() {
-        let markdown = "`00:00.0-00:01.0` first line\n`00:01.5-00:02.0` second line\n";
+        let markdown = concat!(
+            "---\n",
+            "sources:\n",
+            "- id: a\n  source: video_a.mp4\n  transcript: a.json\n",
+            "default_source: a\n",
+            "---\n",
+            "`a@00:00.0-00:01.0` first line\n",
+            "`a@00:01.5-00:02.0` second line\n",
+        );
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
 
         assert_eq!(document.blocks.len(), 2);
@@ -1008,15 +1016,18 @@ mod tests {
 
     #[test]
     fn skips_html_comments() {
-        let markdown = r#"`00:00.0-00:01.0` This should appear
-
-<!-- This is a comment that should be skipped -->
-
-`00:01.0-00:02.0` This should also appear
-
-<!-- `00:02.0-00:03.0` This timestamp should be skipped -->
-
-`00:03.0-00:04.0` Final segment"#;
+        let markdown = concat!(
+            "---\n",
+            "sources:\n",
+            "- id: a\n  source: video_a.mp4\n  transcript: a.json\n",
+            "default_source: a\n",
+            "---\n",
+            "`a@00:00.0-00:01.0` This should appear\n\n",
+            "<!-- This is a comment that should be skipped -->\n\n",
+            "`a@00:01.0-00:02.0` This should also appear\n\n",
+            "<!-- `a@00:02.0-00:03.0` This timestamp should be skipped -->\n\n",
+            "`a@00:03.0-00:04.0` Final segment",
+        );
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
 
         // Should have exactly 3 segments, not 4 (the commented one should be skipped)
@@ -1046,15 +1057,20 @@ mod tests {
 
     #[test]
     fn skips_multiline_html_comments() {
-        let markdown = r#"`00:00.0-00:01.0` First segment
-
-<!-- 
-Multi-line comment
-that spans multiple lines
-with `00:01.0-00:02.0` embedded timestamp
--->
-
-`00:02.0-00:03.0` Second segment"#;
+        let markdown = concat!(
+            "---\n",
+            "sources:\n",
+            "- id: a\n  source: video_a.mp4\n  transcript: a.json\n",
+            "default_source: a\n",
+            "---\n",
+            "`a@00:00.0-00:01.0` First segment\n\n",
+            "<!-- \n",
+            "Multi-line comment\n",
+            "that spans multiple lines\n",
+            "with `a@00:01.0-00:02.0` embedded timestamp\n",
+            "-->\n\n",
+            "`a@00:02.0-00:03.0` Second segment",
+        );
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
 
         // Should have exactly 2 segments, not 3 (the commented one should be skipped)
@@ -1077,14 +1093,19 @@ with `00:01.0-00:02.0` embedded timestamp
 
     #[test]
     fn strips_comment_wrapped_timestamp_lines_before_parsing() {
-        let markdown = r#"`00:00.0-00:04.0` Keep this
-
-<!--
-`00:04.0-00:08.0` Drop this whole clip
-`00:08.0-00:12.0` Drop this too
--->
-
-`00:12.0-00:16.0` Keep this too"#;
+        let markdown = concat!(
+            "---\n",
+            "sources:\n",
+            "- id: a\n  source: video_a.mp4\n  transcript: a.json\n",
+            "default_source: a\n",
+            "---\n",
+            "`a@00:00.0-00:04.0` Keep this\n\n",
+            "<!--\n",
+            "`a@00:04.0-00:08.0` Drop this whole clip\n",
+            "`a@00:08.0-00:12.0` Drop this too\n",
+            "-->\n\n",
+            "`a@00:12.0-00:16.0` Keep this too",
+        );
 
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
 
@@ -1108,8 +1129,8 @@ with `00:01.0-00:02.0` embedded timestamp
             "- id: b\n  source: video_b.mp4\n  transcript: b.json\n",
             "default_source: a\n",
             "---\n",
-            "`a:00:00.0-00:01.0` hello\n",
-            "`b:00:01.0-00:02.0` world\n",
+            "`a@00:00.0-00:01.0` hello\n",
+            "`b@00:01.0-00:02.0` world\n",
         );
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
 
@@ -1152,7 +1173,7 @@ with `00:01.0-00:02.0` embedded timestamp
             "default_source: a\n",
             "---\n",
             "`00:00.0-00:01.0` SILENCE\n",
-            "`a:00:01.0-00:02.0` hello\n",
+            "`a@00:01.0-00:02.0` hello\n",
         );
 
         let err = parse_video_document(markdown, Path::new("test.md")).unwrap_err();
@@ -1192,5 +1213,3 @@ struct FrontMatterSource {
     transcript: Option<String>,
     hash: Option<String>,
 }
-
-#[derive(Debug, Deserialize)]
