@@ -172,13 +172,13 @@ impl<K: Copy> ToggleItem<K> {
     }
 }
 
-impl<K: Copy> FzfSelectable for ToggleItem<K> {
+impl<K: Copy + std::fmt::Debug> FzfSelectable for ToggleItem<K> {
     fn fzf_display_text(&self) -> String {
         self.label.clone()
     }
 
     fn fzf_key(&self) -> String {
-        self.label.clone()
+        format!("toggle:{:?}", self.key)
     }
 
     fn fzf_preview(&self) -> FzfPreview {
@@ -222,7 +222,7 @@ pub enum TranscribeMode {
     Customize,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RenderToggle {
     Reels,
     Subtitles,
