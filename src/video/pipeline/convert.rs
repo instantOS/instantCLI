@@ -147,7 +147,7 @@ pub async fn handle_append(args: AppendArgs) -> Result<()> {
         metadata.default_source = Some(source_id.clone());
     }
 
-    let (front_matter, body, _) = split_frontmatter(&markdown_contents)?;
+    let (_front_matter, body, _) = split_frontmatter(&markdown_contents)?;
     let existing_body = body.trim_end();
 
     let appended_text = build_source_markdown(&cues, &source_id);

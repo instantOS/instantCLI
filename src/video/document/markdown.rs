@@ -1,12 +1,11 @@
 use crate::video::support::transcript::TranscriptCue;
-use crate::video::support::transcript::TranscriptCue;
 use crate::video::support::utils::duration_to_tenths;
 use chrono::Utc;
 use std::path::Path;
 use std::time::Duration;
 
 pub struct MarkdownMetadata<'a> {
-    pub sources: &'a [MarkdownSource],
+    pub sources: &'a [MarkdownSource<'a>],
     pub default_source: &'a str,
 }
 
@@ -91,7 +90,7 @@ fn build_front_matter(metadata: &MarkdownMetadata<'_>) -> String {
     let sources_block = source_lines.join("\n");
     format!(
         "---\ndefault_source: {default_source}\nsources:\n{sources}\ngenerated_at: '{timestamp}'\n---",
-        sources = indent_yaml_block(&sources_block, 0),
+        sources = sources_block,
     )
 }
 

@@ -1,7 +1,6 @@
-use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 
 use super::RenderMode;
 use crate::video::document::{VideoMetadata, VideoSource};
@@ -29,6 +28,7 @@ pub fn resolve_video_sources(
             name: source.name.clone(),
             source: video_path,
             transcript: transcript_path,
+            audio: PathBuf::new(),
             hash: source.hash.clone(),
         });
     }

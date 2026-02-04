@@ -5,9 +5,7 @@ pub mod timeline;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, bail};
-
-pub use self::paths::resolve_video_sources;
+use anyhow::{Context, Result, bail, anyhow};
 
 use crate::ui::prelude::{Level, emit};
 
@@ -455,7 +453,7 @@ pub(super) fn build_timeline_plan(
     Ok(plan)
 }
 
-pub(super) fn resolve_video_sources(
+pub fn resolve_video_sources(
     metadata: &VideoMetadata,
     markdown_dir: &Path,
 ) -> Result<Vec<VideoSource>> {

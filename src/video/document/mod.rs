@@ -543,6 +543,7 @@ impl ParagraphState {
         let mut blocks = Vec::new();
         let mut fragments = self.fragments.into_iter().peekable();
         let mut leftover_text = Vec::new();
+        let mut last_source_id: Option<String> = None;
 
         while let Some(fragment) = fragments.next() {
             match fragment.kind {
@@ -562,15 +563,22 @@ impl ParagraphState {
 
                     let text = InlineFragment::render_many(&following).trim().to_string();
                     let line = base_line_offset + code_line;
-                    let (source_id, range) = parse_segment_reference(&code, source_config, line)
-                        .with_context(|| {
-                            format!("Invalid timestamp `{}` at line {}", code, line)
-                        })?;
                     let kind = if text.eq_ignore_ascii_case("silence") {
                         SegmentKind::Silence
                     } else {
                         SegmentKind::Dialogue
                     };
+                    let fallback_source = if kind == SegmentKind::Silence {
+                        last_source_id.as_deref()
+                    } else {
+                        None
+                    };
+                    let (source_id, range) =
+                        parse_segment_reference(&code, source_config, line, fallback_source)
+                            .with_context(|| {
+                                format!("Invalid timestamp `{}` at line {}", code, line)
+                            })?;
+                    last_source_id = Some(source_id.clone());
                     blocks.push(DocumentBlock::Segment(SegmentBlock {
                         range,
                         text,
@@ -889,6 +897,7 @@ fn parse_segment_reference(
     input: &str,
     source_config: &SegmentSourceConfig,
     line: usize,
+    fallback_source: Option<&str>,
 ) -> Result<(String, TimeRange)> {
     let trimmed = input.trim();
     let mut explicit_source: Option<&str> = None;
@@ -911,11 +920,22 @@ fn parse_segment_reference(
         }
     }
 
-    if explicit_source.is_none() && source_config.require_explicit {
+    let fallback_source = fallback_source.and_then(|value| {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
+    });
+
+    let resolved_source = explicit_source.or(fallback_source);
+
+    if resolved_source.is_none() && source_config.require_explicit {
         bail!("Missing source id for timestamp at line {}", line);
     }
 
-    let source_id = explicit_source.unwrap_or(source_config.default_source.as_str());
+    let source_id = resolved_source.unwrap_or(source_config.default_source.as_str());
 
     let source_id = source_id.trim();
     if source_id.is_empty() {
@@ -1161,6 +1181,53 @@ with `00:01.0-00:02.0` embedded timestamp
             "default_source: a\n",
             "---\n",
             "`00:00.0-00:01.0` missing prefix\n",
+        );
+
+        let err = parse_video_document(markdown, Path::new("test.md")).unwrap_err();
+        assert!(err.to_string().contains("Missing source id for timestamp"));
+    }
+
+    #[test]
+    fn allows_silence_without_prefix_using_previous_source() {
+        let markdown = concat!(
+            "---\n",
+            "sources:\n",
+            "- id: a\n  source: video_a.mp4\n  transcript: a.json\n",
+            "- id: b\n  source: video_b.mp4\n  transcript: b.json\n",
+            "default_source: a\n",
+            "---\n",
+            "`b:00:00.0-00:01.0` hello\n",
+            "`00:01.0-00:02.0` SILENCE\n",
+            "`a:00:02.0-00:03.0` world\n",
+        );
+
+        let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
+        let segments: Vec<_> = document
+            .blocks
+            .iter()
+            .filter_map(|block| match block {
+                DocumentBlock::Segment(segment) => Some(segment),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(segments.len(), 3);
+        assert_eq!(segments[0].source_id, "b");
+        assert_eq!(segments[1].source_id, "b");
+        assert_eq!(segments[2].source_id, "a");
+    }
+
+    #[test]
+    fn rejects_silence_without_prefix_at_start_when_multiple_sources() {
+        let markdown = concat!(
+            "---\n",
+            "sources:\n",
+            "- id: a\n  source: video_a.mp4\n  transcript: a.json\n",
+            "- id: b\n  source: video_b.mp4\n  transcript: b.json\n",
+            "default_source: a\n",
+            "---\n",
+            "`00:00.0-00:01.0` SILENCE\n",
+            "`a:00:01.0-00:02.0` hello\n",
         );
 
         let err = parse_video_document(markdown, Path::new("test.md")).unwrap_err();
