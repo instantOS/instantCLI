@@ -25,15 +25,18 @@ const DEFAULT_TRANSCRIBE_COMPUTE_TYPE: &str = "int8";
 const DEFAULT_TRANSCRIBE_DEVICE: &str = "cpu";
 const DEFAULT_TRANSCRIBE_VAD_METHOD: &str = "silero";
 
+const VIDEO_EXTENSIONS: &[&str] = &[
+    "mp4", "mkv", "webm", "mov", "m4v", "avi", "wmv", "flv", "ts", "mts", "m2ts",
+];
+const AUDIO_EXTENSIONS: &[&str] = &["mp3", "wav", "flac", "m4a", "ogg", "aac", "wma", "aiff"];
+
 #[derive(Debug, Clone)]
 enum VideoMenuEntry {
     Convert,
     Transcribe,
+    Project,
     Append,
-    Render,
     Slide,
-    Check,
-    Stats,
     Preprocess,
     Setup,
     CloseMenu,
@@ -50,25 +53,17 @@ impl FzfSelectable for VideoMenuEntry {
                 "{} Transcribe with WhisperX",
                 format_icon_colored(NerdFont::Keyboard, colors::SAPPHIRE)
             ),
+            VideoMenuEntry::Project => format!(
+                "{} Project",
+                format_icon_colored(NerdFont::Folder, colors::GREEN)
+            ),
             VideoMenuEntry::Append => format!(
                 "{} Add Recording to Markdown",
                 format_icon_colored(NerdFont::SourceMerge, colors::PEACH)
             ),
-            VideoMenuEntry::Render => format!(
-                "{} Render Edited Video",
-                format_icon_colored(NerdFont::PlayCircle, colors::GREEN)
-            ),
             VideoMenuEntry::Slide => format!(
                 "{} Generate Slide Image",
                 format_icon_colored(NerdFont::Image, colors::YELLOW)
-            ),
-            VideoMenuEntry::Check => format!(
-                "{} Validate Markdown",
-                format_icon_colored(NerdFont::CheckCircle, colors::TEAL)
-            ),
-            VideoMenuEntry::Stats => format!(
-                "{} Show Timeline Stats",
-                format_icon_colored(NerdFont::Chart, colors::BLUE)
             ),
             VideoMenuEntry::Preprocess => format!(
                 "{} Preprocess Audio",
@@ -86,11 +81,9 @@ impl FzfSelectable for VideoMenuEntry {
         match self {
             VideoMenuEntry::Convert => "!__convert__".to_string(),
             VideoMenuEntry::Transcribe => "!__transcribe__".to_string(),
+            VideoMenuEntry::Project => "!__project__".to_string(),
             VideoMenuEntry::Append => "!__append__".to_string(),
-            VideoMenuEntry::Render => "!__render__".to_string(),
             VideoMenuEntry::Slide => "!__slide__".to_string(),
-            VideoMenuEntry::Check => "!__check__".to_string(),
-            VideoMenuEntry::Stats => "!__stats__".to_string(),
             VideoMenuEntry::Preprocess => "!__preprocess__".to_string(),
             VideoMenuEntry::Setup => "!__setup__".to_string(),
             VideoMenuEntry::CloseMenu => "!__close_menu__".to_string(),
@@ -101,18 +94,29 @@ impl FzfSelectable for VideoMenuEntry {
         match self {
             VideoMenuEntry::Convert => PreviewBuilder::new()
                 .header(NerdFont::FileText, "Convert to Markdown")
-                .text("Generate editable video markdown from a source file.")
+                .text("Generate editable video markdown from source files.")
                 .blank()
                 .text("This will:")
+                .bullet("Build a list of videos to convert")
                 .bullet("Optionally preprocess audio")
                 .bullet("Transcribe with WhisperX if needed")
-                .bullet("Create a markdown timeline next to the video")
+                .bullet("Create markdown timelines for each video")
                 .build(),
             VideoMenuEntry::Transcribe => PreviewBuilder::new()
                 .header(NerdFont::Keyboard, "Transcribe")
                 .text("Generate or refresh a WhisperX transcript.")
                 .blank()
                 .text("Transcript output is cached for reuse.")
+                .build(),
+            VideoMenuEntry::Project => PreviewBuilder::new()
+                .header(NerdFont::Folder, "Project")
+                .text("Work with an existing video project.")
+                .blank()
+                .text("Actions:")
+                .bullet("Render edited video")
+                .bullet("Validate markdown")
+                .bullet("Show timeline stats")
+                .bullet("Clear cache")
                 .build(),
             VideoMenuEntry::Append => PreviewBuilder::new()
                 .header(NerdFont::SourceMerge, "Append recording")
@@ -123,32 +127,11 @@ impl FzfSelectable for VideoMenuEntry {
                 .bullet("Append a new source to front matter")
                 .bullet("Add timestamped segments to the timeline")
                 .build(),
-            VideoMenuEntry::Render => PreviewBuilder::new()
-                .header(NerdFont::PlayCircle, "Render")
-                .text("Render a video from an edited markdown timeline.")
-                .blank()
-                .text("Supports:")
-                .bullet("Overlay slides and title cards")
-                .bullet("Reels mode output")
-                .bullet("Audio preprocessing caches")
-                .build(),
             VideoMenuEntry::Slide => PreviewBuilder::new()
                 .header(NerdFont::Image, "Generate Slide")
                 .text("Render a single slide image from markdown.")
                 .blank()
                 .text("Useful for title cards and overlays.")
-                .build(),
-            VideoMenuEntry::Check => PreviewBuilder::new()
-                .header(NerdFont::CheckCircle, "Validate Markdown")
-                .text("Validate markdown and summarize the planned output.")
-                .blank()
-                .text("Shows segment counts and warnings.")
-                .build(),
-            VideoMenuEntry::Stats => PreviewBuilder::new()
-                .header(NerdFont::Chart, "Timeline Stats")
-                .text("Display statistics for a markdown timeline.")
-                .blank()
-                .text("Shows segments, slides, and unsupported blocks.")
                 .build(),
             VideoMenuEntry::Preprocess => PreviewBuilder::new()
                 .header(NerdFont::Sliders, "Preprocess Audio")
@@ -297,13 +280,11 @@ pub async fn video_menu(_debug: bool) -> Result<()> {
         };
 
         match entry {
-            VideoMenuEntry::Convert => run_convert().await?,
+            VideoMenuEntry::Convert => run_convert_multi().await?,
             VideoMenuEntry::Transcribe => run_transcribe().await?,
+            VideoMenuEntry::Project => run_project_menu().await?,
             VideoMenuEntry::Append => run_append().await?,
-            VideoMenuEntry::Render => run_render().await?,
             VideoMenuEntry::Slide => run_slide().await?,
-            VideoMenuEntry::Check => run_check().await?,
-            VideoMenuEntry::Stats => run_stats().await?,
             VideoMenuEntry::Preprocess => run_preprocess().await?,
             VideoMenuEntry::Setup => run_setup().await?,
             VideoMenuEntry::CloseMenu => return Ok(()),
@@ -315,10 +296,8 @@ fn select_video_menu_entry(cursor: &mut MenuCursor) -> Result<Option<VideoMenuEn
     let entries = vec![
         VideoMenuEntry::Convert,
         VideoMenuEntry::Transcribe,
+        VideoMenuEntry::Project,
         VideoMenuEntry::Append,
-        VideoMenuEntry::Render,
-        VideoMenuEntry::Check,
-        VideoMenuEntry::Stats,
         VideoMenuEntry::Slide,
         VideoMenuEntry::Preprocess,
         VideoMenuEntry::Setup,
@@ -347,41 +326,140 @@ fn select_video_menu_entry(cursor: &mut MenuCursor) -> Result<Option<VideoMenuEn
     }
 }
 
-async fn run_convert() -> Result<()> {
-    let Some(video_path) = select_video_file("Select source video")? else {
-        return Ok(());
-    };
+#[derive(Debug, Clone)]
+enum ConvertListEntry {
+    Video(PathBuf),
+    Add,
+    Convert,
+    Back,
+}
 
-    let transcript_choice = match select_transcript_choice()? {
-        Some(choice) => choice,
-        None => return Ok(()),
-    };
-
-    let transcript_path = match transcript_choice {
-        TranscriptChoice::Auto => None,
-        TranscriptChoice::Provide => match select_transcript_file()? {
-            Some(path) => Some(path),
-            None => return Ok(()),
-        },
-    };
-
-    let default_output_name = default_convert_output_name(&video_path);
-    let output_choice = match select_output_choice("Markdown output", &default_output_name)? {
-        Some(choice) => choice,
-        None => return Ok(()),
-    };
-
-    let output_path = match output_choice {
-        OutputChoice::Default => None,
-        OutputChoice::Custom => {
-            let start_dir = video_path.parent().map(|p| p.to_path_buf());
-            match select_output_path(&default_output_name, start_dir)? {
-                Some(path) => Some(path),
-                None => return Ok(()),
+impl FzfSelectable for ConvertListEntry {
+    fn fzf_display_text(&self) -> String {
+        match self {
+            ConvertListEntry::Video(path) => {
+                let name = path
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("unknown");
+                format!(
+                    "{} {}",
+                    format_icon_colored(NerdFont::Video, colors::LAVENDER),
+                    name
+                )
             }
+            ConvertListEntry::Add => format!(
+                "{} Add video",
+                format_icon_colored(NerdFont::Plus, colors::GREEN)
+            ),
+            ConvertListEntry::Convert => format!(
+                "{} Convert all",
+                format_icon_colored(NerdFont::PlayCircle, colors::PEACH)
+            ),
+            ConvertListEntry::Back => format!("{} Back", format_back_icon()),
         }
-    };
+    }
 
+    fn fzf_key(&self) -> String {
+        match self {
+            ConvertListEntry::Video(path) => format!("video:{}", path.display()),
+            ConvertListEntry::Add => "!__add__".to_string(),
+            ConvertListEntry::Convert => "!__convert__".to_string(),
+            ConvertListEntry::Back => "!__back__".to_string(),
+        }
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        match self {
+            ConvertListEntry::Video(path) => {
+                let display = path.display().to_string();
+                PreviewBuilder::new()
+                    .header(NerdFont::Video, "Video File")
+                    .text(&display)
+                    .blank()
+                    .text("Select to remove from list")
+                    .build()
+            }
+            ConvertListEntry::Add => PreviewBuilder::new()
+                .header(NerdFont::Plus, "Add Video")
+                .text("Add another video file to the conversion list.")
+                .build(),
+            ConvertListEntry::Convert => PreviewBuilder::new()
+                .header(NerdFont::PlayCircle, "Convert All")
+                .text("Convert all videos in the list to markdown.")
+                .build(),
+            ConvertListEntry::Back => PreviewBuilder::new()
+                .header(NerdFont::Cross, "Back")
+                .text("Return to previous menu.")
+                .build(),
+        }
+    }
+}
+
+async fn run_convert_multi() -> Result<()> {
+    let mut videos: Vec<PathBuf> = Vec::new();
+
+    loop {
+        let mut entries: Vec<ConvertListEntry> = videos
+            .iter()
+            .map(|p| ConvertListEntry::Video(p.clone()))
+            .collect();
+
+        entries.push(ConvertListEntry::Add);
+        if !videos.is_empty() {
+            entries.push(ConvertListEntry::Convert);
+        }
+        entries.push(ConvertListEntry::Back);
+
+        let header_text = if videos.is_empty() {
+            "Add videos to convert".to_string()
+        } else {
+            format!("{} video(s) selected", videos.len())
+        };
+
+        let result = FzfWrapper::builder()
+            .header(Header::fancy(&header_text))
+            .prompt("Select")
+            .args(fzf_mocha_args())
+            .responsive_layout()
+            .select(entries)?;
+
+        match result {
+            FzfResult::Selected(entry) => match entry {
+                ConvertListEntry::Video(path) => {
+                    let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("video");
+                    if let ConfirmResult::Yes =
+                        confirm_action(&format!("Remove '{name}' from list?"), "Remove", "Keep")?
+                    {
+                        videos.retain(|p| p != &path);
+                    }
+                }
+                ConvertListEntry::Add => {
+                    let suggestions = discover_video_file_suggestions()?;
+                    if let Some(path) =
+                        select_video_file_with_suggestions("Select video to add", suggestions)?
+                    {
+                        if !videos.contains(&path) {
+                            videos.push(path);
+                        }
+                    }
+                }
+                ConvertListEntry::Convert => {
+                    if videos.is_empty() {
+                        FzfWrapper::message("No videos to convert")?;
+                        continue;
+                    }
+                    return run_convert_batch(videos).await;
+                }
+                ConvertListEntry::Back => return Ok(()),
+            },
+            FzfResult::Cancelled => return Ok(()),
+            _ => return Ok(()),
+        }
+    }
+}
+
+async fn run_convert_batch(videos: Vec<PathBuf>) -> Result<()> {
     let audio_choice = match select_convert_audio_choice()? {
         Some(choice) => choice,
         None => return Ok(()),
@@ -394,20 +472,347 @@ async fn run_convert() -> Result<()> {
         ConvertAudioChoice::Skip => (true, None),
     };
 
-    let force = match confirm_toggle("Enable force overwrite and reprocess audio?")? {
-        PromptOutcome::Value(force) => force,
-        PromptOutcome::Cancelled => return Ok(()),
+    let conflicts: Vec<PathBuf> = videos
+        .iter()
+        .filter_map(|v| {
+            let out = compute_default_output_path(v);
+            if out.exists() { Some(out) } else { None }
+        })
+        .collect();
+
+    let force = if !conflicts.is_empty() {
+        let msg = format!(
+            "{} existing markdown file(s) will be overwritten. Continue?",
+            conflicts.len()
+        );
+        match confirm_action(&msg, "Overwrite", "Cancel")? {
+            ConfirmResult::Yes => true,
+            _ => return Ok(()),
+        }
+    } else {
+        false
     };
 
-    convert::handle_convert(ConvertArgs {
-        video: video_path,
-        transcript: transcript_path,
-        out_file: output_path,
+    for video_path in videos {
+        convert::handle_convert(ConvertArgs {
+            video: video_path,
+            transcript: None,
+            out_file: None,
+            force,
+            no_preprocess,
+            preprocessor: preprocessor.clone(),
+        })
+        .await?;
+    }
+
+    Ok(())
+}
+
+#[derive(Debug, Clone)]
+enum ProjectMenuEntry {
+    Render,
+    Validate,
+    Stats,
+    ClearCache,
+    Back,
+}
+
+impl FzfSelectable for ProjectMenuEntry {
+    fn fzf_display_text(&self) -> String {
+        match self {
+            ProjectMenuEntry::Render => format!(
+                "{} Render Edited Video",
+                format_icon_colored(NerdFont::PlayCircle, colors::GREEN)
+            ),
+            ProjectMenuEntry::Validate => format!(
+                "{} Validate Markdown",
+                format_icon_colored(NerdFont::CheckCircle, colors::TEAL)
+            ),
+            ProjectMenuEntry::Stats => format!(
+                "{} Show Timeline Stats",
+                format_icon_colored(NerdFont::Chart, colors::BLUE)
+            ),
+            ProjectMenuEntry::ClearCache => format!(
+                "{} Clear Cache",
+                format_icon_colored(NerdFont::Trash, colors::RED)
+            ),
+            ProjectMenuEntry::Back => format!("{} Back", format_back_icon()),
+        }
+    }
+
+    fn fzf_key(&self) -> String {
+        match self {
+            ProjectMenuEntry::Render => "!__render__".to_string(),
+            ProjectMenuEntry::Validate => "!__validate__".to_string(),
+            ProjectMenuEntry::Stats => "!__stats__".to_string(),
+            ProjectMenuEntry::ClearCache => "!__clear_cache__".to_string(),
+            ProjectMenuEntry::Back => "!__back__".to_string(),
+        }
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        match self {
+            ProjectMenuEntry::Render => PreviewBuilder::new()
+                .header(NerdFont::PlayCircle, "Render")
+                .text("Render a video from an edited markdown timeline.")
+                .blank()
+                .text("Supports:")
+                .bullet("Overlay slides and title cards")
+                .bullet("Reels mode output")
+                .bullet("Audio preprocessing caches")
+                .build(),
+            ProjectMenuEntry::Validate => PreviewBuilder::new()
+                .header(NerdFont::CheckCircle, "Validate Markdown")
+                .text("Validate markdown and summarize the planned output.")
+                .blank()
+                .text("Shows segment counts and warnings.")
+                .build(),
+            ProjectMenuEntry::Stats => PreviewBuilder::new()
+                .header(NerdFont::Chart, "Timeline Stats")
+                .text("Display statistics for a markdown timeline.")
+                .blank()
+                .text("Shows segments, slides, and unsupported blocks.")
+                .build(),
+            ProjectMenuEntry::ClearCache => PreviewBuilder::new()
+                .header(NerdFont::Trash, "Clear Cache")
+                .text("Delete cached files for this project.")
+                .blank()
+                .text("This includes:")
+                .bullet("Preprocessed audio")
+                .bullet("Transcript cache")
+                .bullet("Generated slides")
+                .build(),
+            ProjectMenuEntry::Back => PreviewBuilder::new()
+                .header(NerdFont::Cross, "Back")
+                .text("Return to the main video menu.")
+                .build(),
+        }
+    }
+}
+
+async fn run_project_menu() -> Result<()> {
+    let suggestions = discover_video_markdown_suggestions()?;
+    let Some(markdown_path) = select_markdown_file("Select project", suggestions)? else {
+        return Ok(());
+    };
+
+    loop {
+        let entries = vec![
+            ProjectMenuEntry::Render,
+            ProjectMenuEntry::Validate,
+            ProjectMenuEntry::Stats,
+            ProjectMenuEntry::ClearCache,
+            ProjectMenuEntry::Back,
+        ];
+
+        let project_name = markdown_path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("Project");
+
+        let result = FzfWrapper::builder()
+            .header(Header::fancy(project_name))
+            .prompt("Select")
+            .args(fzf_mocha_args())
+            .responsive_layout()
+            .select(entries)?;
+
+        match result {
+            FzfResult::Selected(entry) => match entry {
+                ProjectMenuEntry::Render => {
+                    run_render_for_project(&markdown_path).await?;
+                }
+                ProjectMenuEntry::Validate => {
+                    check::handle_check(CheckArgs {
+                        markdown: markdown_path.clone(),
+                    })?;
+                }
+                ProjectMenuEntry::Stats => {
+                    stats::handle_stats(StatsArgs {
+                        markdown: markdown_path.clone(),
+                    })?;
+                }
+                ProjectMenuEntry::ClearCache => {
+                    run_clear_cache(&markdown_path)?;
+                }
+                ProjectMenuEntry::Back => return Ok(()),
+            },
+            FzfResult::Cancelled => return Ok(()),
+            _ => return Ok(()),
+        }
+    }
+}
+
+async fn run_render_for_project(markdown_path: &Path) -> Result<()> {
+    let render_options = match select_render_options()? {
+        Some(options) => options,
+        None => return Ok(()),
+    };
+
+    let mut reels = render_options.reels;
+    let mut subtitles = render_options.subtitles;
+
+    if subtitles && !reels {
+        match confirm_action(
+            "Subtitles are only supported in reels mode. Enable reels?",
+            "Enable reels",
+            "Disable subtitles",
+        )? {
+            ConfirmResult::Yes => reels = true,
+            ConfirmResult::No => subtitles = false,
+            ConfirmResult::Cancelled => return Ok(()),
+        }
+    }
+
+    let out_file = if render_options.precache_slides {
+        None
+    } else {
+        match prompt_optional_path(
+            "Output path (optional)",
+            "Leave empty for default output path",
+        )? {
+            PromptOutcome::Value(value) => value,
+            PromptOutcome::Cancelled => return Ok(()),
+        }
+    };
+
+    let force = if !render_options.force {
+        if let Some(ref out) = out_file {
+            if out.exists() {
+                match confirm_action("Output file exists. Overwrite?", "Overwrite", "Cancel")? {
+                    ConfirmResult::Yes => true,
+                    _ => return Ok(()),
+                }
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    } else {
+        true
+    };
+
+    render::handle_render(RenderArgs {
+        markdown: markdown_path.to_path_buf(),
+        out_file,
         force,
-        no_preprocess,
-        preprocessor,
+        precache_slides: render_options.precache_slides,
+        dry_run: render_options.dry_run,
+        reels,
+        subtitles,
     })
-    .await
+}
+
+fn run_clear_cache(markdown_path: &Path) -> Result<()> {
+    use crate::video::config::VideoDirectories;
+    use crate::video::support::utils::compute_file_hash;
+
+    match confirm_action(
+        "Delete all cached files for this project?",
+        "Delete",
+        "Cancel",
+    )? {
+        ConfirmResult::Yes => {}
+        _ => return Ok(()),
+    }
+
+    let contents = fs::read_to_string(markdown_path)?;
+    let doc = parse_video_document(&contents, markdown_path)?;
+    let directories = VideoDirectories::new()?;
+
+    let mut cleared_count = 0;
+    for source in &doc.metadata.sources {
+        if let Ok(hash) = compute_file_hash(&source.source) {
+            let project_paths = directories.project_paths(&hash);
+            let transcript_dir = project_paths.transcript_dir();
+
+            if transcript_dir.exists() {
+                fs::remove_dir_all(transcript_dir)?;
+                cleared_count += 1;
+            }
+        }
+    }
+
+    if cleared_count > 0 {
+        FzfWrapper::message(&format!("Cleared cache for {} source(s)", cleared_count))?;
+    } else {
+        FzfWrapper::message("No cache directories found")?;
+    }
+
+    Ok(())
+}
+
+fn discover_video_file_suggestions() -> Result<Vec<PathBuf>> {
+    let entries = match fs::read_dir(".") {
+        Ok(entries) => entries,
+        Err(_) => return Ok(Vec::new()),
+    };
+
+    let mut suggestions = Vec::new();
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+
+        if is_video_or_audio_file(&path) {
+            let canonical = path.canonicalize().unwrap_or(path);
+            if !suggestions.contains(&canonical) {
+                suggestions.push(canonical);
+            }
+        }
+    }
+
+    suggestions.sort();
+    if suggestions.len() > 50 {
+        suggestions.truncate(50);
+    }
+    Ok(suggestions)
+}
+
+fn is_video_or_audio_file(path: &Path) -> bool {
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase());
+
+    match ext {
+        Some(e) => VIDEO_EXTENSIONS.contains(&e.as_str()) || AUDIO_EXTENSIONS.contains(&e.as_str()),
+        None => false,
+    }
+}
+
+fn compute_default_output_path(video_path: &Path) -> PathBuf {
+    let parent = video_path.parent().unwrap_or(Path::new("."));
+    let stem = video_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("video");
+    parent.join(format!("{stem}.video.md"))
+}
+
+fn select_video_file_with_suggestions(
+    title: &str,
+    suggestions: Vec<PathBuf>,
+) -> Result<Option<PathBuf>> {
+    let header = format!("{} {title}", char::from(NerdFont::Video));
+    let manual_prompt = format!("{} Enter file path:", char::from(NerdFont::Edit));
+    let picker_hint = format!(
+        "{} Select a video or audio file",
+        char::from(NerdFont::Info)
+    );
+    let start_dir = paths::videos_dir().ok();
+
+    select_path_with_picker(
+        header,
+        manual_prompt,
+        picker_hint,
+        FilePickerScope::Files,
+        start_dir,
+        suggestions,
+    )
 }
 
 async fn run_append() -> Result<()> {
@@ -446,16 +851,11 @@ async fn run_append() -> Result<()> {
         ConvertAudioChoice::Skip => (true, None),
     };
 
-    let force = match confirm_toggle("Enable force overwrite and reprocess audio?")? {
-        PromptOutcome::Value(force) => force,
-        PromptOutcome::Cancelled => return Ok(()),
-    };
-
     convert::handle_append(AppendArgs {
         markdown: markdown_path,
         video: video_path,
         transcript: transcript_path,
-        force,
+        force: false,
         no_preprocess,
         preprocessor,
     })
@@ -500,68 +900,13 @@ async fn run_transcribe() -> Result<()> {
         };
     }
 
-    let force = match confirm_toggle("Re-generate transcript even if cached?")? {
-        PromptOutcome::Value(force) => force,
-        PromptOutcome::Cancelled => return Ok(()),
-    };
-
     transcribe::handle_transcribe(TranscribeArgs {
         video: video_path,
         compute_type,
         device,
         model,
         vad_method,
-        force,
-    })
-}
-
-async fn run_render() -> Result<()> {
-    let suggestions = discover_video_markdown_suggestions()?;
-    let Some(markdown_path) = select_markdown_file("Select markdown for rendering", suggestions)?
-    else {
-        return Ok(());
-    };
-
-    let render_options = match select_render_options()? {
-        Some(options) => options,
-        None => return Ok(()),
-    };
-
-    let mut reels = render_options.reels;
-    let mut subtitles = render_options.subtitles;
-
-    if subtitles && !reels {
-        match confirm_action(
-            "Subtitles are only supported in reels mode. Enable reels?",
-            "Enable reels",
-            "Disable subtitles",
-        )? {
-            ConfirmResult::Yes => reels = true,
-            ConfirmResult::No => subtitles = false,
-            ConfirmResult::Cancelled => return Ok(()),
-        }
-    }
-
-    let out_file = if render_options.precache_slides {
-        None
-    } else {
-        match prompt_optional_path(
-            "Output path (optional)",
-            "Leave empty for default output path",
-        )? {
-            PromptOutcome::Value(value) => value,
-            PromptOutcome::Cancelled => return Ok(()),
-        }
-    };
-
-    render::handle_render(RenderArgs {
-        markdown: markdown_path,
-        out_file,
-        force: render_options.force,
-        precache_slides: render_options.precache_slides,
-        dry_run: render_options.dry_run,
-        reels,
-        subtitles,
+        force: false,
     })
 }
 
@@ -596,27 +941,6 @@ async fn run_slide() -> Result<()> {
         markdown: markdown_path,
         out_file,
         reels,
-    })
-}
-
-async fn run_check() -> Result<()> {
-    let Some(markdown_path) = select_markdown_file("Select markdown to validate", Vec::new())?
-    else {
-        return Ok(());
-    };
-
-    check::handle_check(CheckArgs {
-        markdown: markdown_path,
-    })
-}
-
-async fn run_stats() -> Result<()> {
-    let Some(markdown_path) = select_markdown_file("Select markdown for stats", Vec::new())? else {
-        return Ok(());
-    };
-
-    stats::handle_stats(StatsArgs {
-        markdown: markdown_path,
     })
 }
 
@@ -1276,14 +1600,6 @@ fn prompt_optional_path(prompt: &str, ghost: &str) -> Result<PromptOutcome<Optio
         FzfResult::Cancelled => Ok(PromptOutcome::Cancelled),
         _ => Ok(PromptOutcome::Cancelled),
     }
-}
-
-fn default_convert_output_name(video_path: &Path) -> String {
-    let stem = video_path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("video");
-    format!("{stem}.video.md")
 }
 
 fn default_slide_output_name(markdown_path: &Path) -> String {
