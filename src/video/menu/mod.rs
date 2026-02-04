@@ -815,7 +815,7 @@ fn is_video_markdown_file(path: &Path) -> Result<bool> {
         None => return Ok(false),
     };
 
-    if !(front.contains("sources:") || front.contains("video:")) {
+    if !front.contains("sources:") {
         return Ok(false);
     }
 

@@ -162,31 +162,6 @@ fn parse_metadata(front_matter: Option<&str>, source_path: &Path) -> Result<Vide
     }
 
     if sources.is_empty() {
-        if let Some(video) = parsed.video {
-            let legacy_id = parsed
-                .default_source
-                .clone()
-                .unwrap_or_else(|| DEFAULT_SOURCE_ID.to_string());
-            let source = video
-                .source
-                .ok_or_else(|| anyhow!("Legacy front matter is missing `video.source`"))?;
-            let transcript = parsed
-                .transcript
-                .and_then(|value| value.source)
-                .ok_or_else(|| anyhow!("Legacy front matter is missing `transcript.source`"))?;
-            sources.push(VideoSource {
-                id: legacy_id.clone(),
-                name: video.name,
-                source: PathBuf::from(source),
-                transcript: PathBuf::from(transcript),
-                audio: PathBuf::new(),
-                hash: video.hash,
-            });
-            return Ok(VideoMetadata {
-                sources,
-                default_source: Some(legacy_id),
-            });
-        }
         return Ok(VideoMetadata {
             sources: Vec::new(),
             default_source: None,
@@ -543,7 +518,6 @@ impl ParagraphState {
         let mut blocks = Vec::new();
         let mut fragments = self.fragments.into_iter().peekable();
         let mut leftover_text = Vec::new();
-        let mut last_source_id: Option<String> = None;
 
         while let Some(fragment) = fragments.next() {
             match fragment.kind {
@@ -568,17 +542,10 @@ impl ParagraphState {
                     } else {
                         SegmentKind::Dialogue
                     };
-                    let fallback_source = if kind == SegmentKind::Silence {
-                        last_source_id.as_deref()
-                    } else {
-                        None
-                    };
-                    let (source_id, range) =
-                        parse_segment_reference(&code, source_config, line, fallback_source)
-                            .with_context(|| {
-                                format!("Invalid timestamp `{}` at line {}", code, line)
-                            })?;
-                    last_source_id = Some(source_id.clone());
+                    let (source_id, range) = parse_segment_reference(&code, source_config, line)
+                        .with_context(|| {
+                            format!("Invalid timestamp `{}` at line {}", code, line)
+                        })?;
                     blocks.push(DocumentBlock::Segment(SegmentBlock {
                         range,
                         text,
@@ -897,13 +864,12 @@ fn parse_segment_reference(
     input: &str,
     source_config: &SegmentSourceConfig,
     line: usize,
-    fallback_source: Option<&str>,
 ) -> Result<(String, TimeRange)> {
     let trimmed = input.trim();
     let mut explicit_source: Option<&str> = None;
     let mut range_str = trimmed;
 
-    if let Some((prefix, rest)) = trimmed.split_once(':') {
+    if let Some((prefix, rest)) = trimmed.split_once('@') {
         let prefix = prefix.trim();
         let rest = rest.trim();
         let prefix_valid = is_valid_source_id(prefix);
@@ -920,22 +886,11 @@ fn parse_segment_reference(
         }
     }
 
-    let fallback_source = fallback_source.and_then(|value| {
-        let trimmed = value.trim();
-        if trimmed.is_empty() {
-            None
-        } else {
-            Some(trimmed)
-        }
-    });
-
-    let resolved_source = explicit_source.or(fallback_source);
-
-    if resolved_source.is_none() && source_config.require_explicit {
+    if explicit_source.is_none() && source_config.require_explicit {
         bail!("Missing source id for timestamp at line {}", line);
     }
 
-    let source_id = resolved_source.unwrap_or(source_config.default_source.as_str());
+    let source_id = explicit_source.unwrap_or(source_config.default_source.as_str());
 
     let source_id = source_id.trim();
     if source_id.is_empty() {
@@ -1196,36 +1151,6 @@ with `00:01.0-00:02.0` embedded timestamp
             "- id: b\n  source: video_b.mp4\n  transcript: b.json\n",
             "default_source: a\n",
             "---\n",
-            "`b:00:00.0-00:01.0` hello\n",
-            "`00:01.0-00:02.0` SILENCE\n",
-            "`a:00:02.0-00:03.0` world\n",
-        );
-
-        let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
-        let segments: Vec<_> = document
-            .blocks
-            .iter()
-            .filter_map(|block| match block {
-                DocumentBlock::Segment(segment) => Some(segment),
-                _ => None,
-            })
-            .collect();
-
-        assert_eq!(segments.len(), 3);
-        assert_eq!(segments[0].source_id, "b");
-        assert_eq!(segments[1].source_id, "b");
-        assert_eq!(segments[2].source_id, "a");
-    }
-
-    #[test]
-    fn rejects_silence_without_prefix_at_start_when_multiple_sources() {
-        let markdown = concat!(
-            "---\n",
-            "sources:\n",
-            "- id: a\n  source: video_a.mp4\n  transcript: a.json\n",
-            "- id: b\n  source: video_b.mp4\n  transcript: b.json\n",
-            "default_source: a\n",
-            "---\n",
             "`00:00.0-00:01.0` SILENCE\n",
             "`a:00:01.0-00:02.0` hello\n",
         );
@@ -1257,8 +1182,6 @@ impl LineMap {
 struct FrontMatter {
     sources: Option<Vec<FrontMatterSource>>,
     default_source: Option<String>,
-    video: Option<FrontMatterVideo>,
-    transcript: Option<FrontMatterTranscript>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1271,13 +1194,3 @@ struct FrontMatterSource {
 }
 
 #[derive(Debug, Deserialize)]
-struct FrontMatterVideo {
-    hash: Option<String>,
-    name: Option<String>,
-    source: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct FrontMatterTranscript {
-    source: Option<String>,
-}
