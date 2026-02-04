@@ -170,18 +170,18 @@ impl PathInputBuilder {
 
         let mut seen = std::collections::HashSet::new();
         for path in &self.suggested_paths {
-            if let Ok(canonical) = path.canonicalize() {
-                if canonical.exists() {
-                    let key = canonical.to_string_lossy().to_string();
-                    if !seen.insert(key.clone()) {
-                        continue;
-                    }
-                    options.push(PathInputOption::new(
-                        format_suggested_label(&canonical),
-                        PathInputChoice::Suggestion(canonical),
-                    ));
+            if let Ok(canonical) = path.canonicalize()
+                && canonical.exists()
+            {
+                let key = canonical.to_string_lossy().to_string();
+                if !seen.insert(key.clone()) {
                     continue;
                 }
+                options.push(PathInputOption::new(
+                    format_suggested_label(&canonical),
+                    PathInputChoice::Suggestion(canonical),
+                ));
+                continue;
             }
             let key = path.to_string_lossy().to_string();
             if !seen.insert(key) {

@@ -120,19 +120,19 @@ impl FfmpegCompiler {
         let mut next_index = 0;
 
         for segment in &timeline.segments {
-            if let Some(source) = segment.data.source_path() {
-                if !source_map.contains_key(source) {
-                    source_map.insert(source.clone(), next_index);
-                    source_order.push(source.clone());
-                    next_index += 1;
-                }
+            if let Some(source) = segment.data.source_path()
+                && !source_map.contains_key(source)
+            {
+                source_map.insert(source.clone(), next_index);
+                source_order.push(source.clone());
+                next_index += 1;
             }
-            if let Some(audio) = segment.data.audio_source() {
-                if !source_map.contains_key(audio) {
-                    source_map.insert(audio.clone(), next_index);
-                    source_order.push(audio.clone());
-                    next_index += 1;
-                }
+            if let Some(audio) = segment.data.audio_source()
+                && !source_map.contains_key(audio)
+            {
+                source_map.insert(audio.clone(), next_index);
+                source_order.push(audio.clone());
+                next_index += 1;
             }
         }
 

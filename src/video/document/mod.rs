@@ -173,13 +173,13 @@ fn parse_metadata(front_matter: Option<&str>, source_path: &Path) -> Result<Vide
         default_source = Some(sources[0].id.clone());
     }
 
-    if let Some(default_id) = default_source.as_ref() {
-        if !sources.iter().any(|source| &source.id == default_id) {
-            bail!(
-                "default_source `{}` does not match any declared source id",
-                default_id
-            );
-        }
+    if let Some(default_id) = default_source.as_ref()
+        && !sources.iter().any(|source| &source.id == default_id)
+    {
+        bail!(
+            "default_source `{}` does not match any declared source id",
+            default_id
+        );
     }
 
     let mut seen = HashSet::new();
