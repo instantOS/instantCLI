@@ -179,7 +179,6 @@ pub async fn open_project_for_path(markdown_path: &Path) -> Result<()> {
             _ => return Ok(()),
         }
     }
-
 }
 
 async fn run_add_recording(markdown_path: &Path) -> Result<()> {
@@ -442,7 +441,10 @@ fn prompt_output_conflict(output_path: &Path) -> Result<Option<OutputConflictCho
     ];
 
     let selection = FzfWrapper::builder()
-        .header(Header::default(&format!("Output already exists:\n{}", path_display)))
+        .header(Header::default(&format!(
+            "Output already exists:\n{}",
+            path_display
+        )))
         .prompt("Select")
         .args(fzf_mocha_args())
         .responsive_layout()
@@ -502,7 +504,12 @@ fn resolve_render_output_path(
     let stem = default_source
         .file_stem()
         .and_then(|s| s.to_str())
-        .ok_or_else(|| anyhow!("Video path {} has no valid file name", default_source.display()))?;
+        .ok_or_else(|| {
+            anyhow!(
+                "Video path {} has no valid file name",
+                default_source.display()
+            )
+        })?;
     let suffix = render_mode.output_suffix();
     output.set_file_name(format!("{stem}{suffix}.mp4"));
     Ok(output)

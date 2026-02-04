@@ -14,8 +14,15 @@ use super::types::{AUDIO_EXTENSIONS, VIDEO_EXTENSIONS};
 /// Generate a rich preview for a video/audio file using ffprobe metadata
 fn video_file_preview(path: &Path) -> FzfPreview {
     let metadata = probe_media_metadata(path);
-    let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("Unknown");
-    let icon = if metadata.is_audio_only() { NerdFont::Music } else { NerdFont::Video };
+    let file_name = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("Unknown");
+    let icon = if metadata.is_audio_only() {
+        NerdFont::Music
+    } else {
+        NerdFont::Video
+    };
 
     let mut builder = PreviewBuilder::new().header(icon, file_name);
 
@@ -37,7 +44,11 @@ fn video_file_preview(path: &Path) -> FzfPreview {
         builder = builder.field("Audio Codec", codec);
     }
     if let Some(channels) = metadata.audio_channels {
-        let ch = match channels { 1 => "Mono".into(), 2 => "Stereo".into(), n => format!("{n} channels") };
+        let ch = match channels {
+            1 => "Mono".into(),
+            2 => "Stereo".into(),
+            n => format!("{n} channels"),
+        };
         builder = builder.field("Channels", &ch);
     }
     if let Some(bitrate) = metadata.bitrate_display() {
@@ -46,7 +57,6 @@ fn video_file_preview(path: &Path) -> FzfPreview {
 
     builder.blank().subtext(&path.to_string_lossy()).build()
 }
-
 
 pub fn discover_video_file_suggestions() -> Result<Vec<PathBuf>> {
     let entries = match fs::read_dir(".") {

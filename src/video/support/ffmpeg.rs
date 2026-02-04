@@ -221,10 +221,14 @@ impl MediaMetadata {
 pub fn probe_media_metadata(path: &Path) -> MediaMetadata {
     let output = Command::new("ffprobe")
         .args([
-            "-v", "error",
-            "-show_entries", "format=duration,bit_rate",
-            "-show_entries", "stream=codec_name,codec_type,width,height,r_frame_rate,sample_rate,channels",
-            "-of", "json",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration,bit_rate",
+            "-show_entries",
+            "stream=codec_name,codec_type,width,height,r_frame_rate,sample_rate,channels",
+            "-of",
+            "json",
         ])
         .arg(path)
         .output();
