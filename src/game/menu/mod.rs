@@ -2,12 +2,12 @@ mod edit_menu;
 mod editors;
 mod state;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 
 use crate::game::config::{InstallationsConfig, InstantGameConfig};
 use crate::game::games::manager::AddGameOptions;
 use crate::game::games::manager::GameManager;
-use crate::game::games::selection::{select_game_menu_entry, GameMenuEntry};
+use crate::game::games::selection::{GameMenuEntry, select_game_menu_entry};
 use crate::game::operations::launch_game;
 use crate::game::operations::sync::sync_game_saves;
 use crate::game::restic;

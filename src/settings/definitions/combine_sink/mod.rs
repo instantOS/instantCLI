@@ -8,10 +8,7 @@ use std::collections::HashSet;
 
 use anyhow::Result;
 
-use crate::menu_utils::{
-    ChecklistResult, FzfResult, FzfWrapper, Header, TextEditOutcome, TextEditPrompt,
-    prompt_text_edit,
-};
+use crate::menu_utils::{ChecklistResult, FzfResult, FzfWrapper, Header};
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::ui::prelude::*;
@@ -22,7 +19,10 @@ mod menu;
 mod model;
 mod wpctl;
 
-use actions::{enable_combined_sink, offer_restart, remove_combined_sink, rename_combined_sink};
+use actions::{
+    enable_combined_sink, offer_restart, offer_set_as_default, remove_combined_sink,
+    rename_combined_sink,
+};
 use config::{
     combine_sink_config_file, get_current_config, get_current_sink_name, is_combined_sink_enabled,
 };
@@ -188,30 +188,21 @@ impl Setting for CombinedAudioSink {
                                     .map(|item| item.sink.node_name.clone())
                                     .collect();
 
-                                // For new sinks, prompt for name
+                                // Use current name for changes, default name for new sinks
                                 let name = if is_changing {
                                     get_current_sink_name()
                                 } else {
-                                    match prompt_text_edit(
-                                        TextEditPrompt::new("Sink name", None)
-                                            .header("Name your combined audio sink")
-                                            .ghost(DEFAULT_COMBINED_SINK_NAME),
-                                    )? {
-                                        TextEditOutcome::Updated(Some(n)) => n,
-                                        // Empty input with ghost text = use the default name
-                                        TextEditOutcome::Updated(None)
-                                        | TextEditOutcome::Unchanged => {
-                                            DEFAULT_COMBINED_SINK_NAME.to_string()
-                                        }
-                                        TextEditOutcome::Cancelled => {
-                                            continue;
-                                        }
-                                    }
+                                    DEFAULT_COMBINED_SINK_NAME.to_string()
                                 };
 
                                 match enable_combined_sink(ctx, &selected_names, &name) {
                                     Ok(needs_restart) => {
                                         restart_needed = needs_restart;
+                                        // For new sinks, offer to set as default
+                                        if !is_changing && needs_restart {
+                                            // Continue to menu so user can see "Set as default" option
+                                            // after restart is offered
+                                        }
                                     }
                                     Err(e) => {
                                         ctx.emit_failure(
@@ -220,6 +211,8 @@ impl Setting for CombinedAudioSink {
                                         );
                                     }
                                 }
+                                // After enabling/changing, break to offer restart,
+                                // then we'll offer to set as default
                                 break;
                             }
                             ChecklistResult::Cancelled => continue,
@@ -250,6 +243,11 @@ impl Setting for CombinedAudioSink {
         // Offer restart if any changes require it
         if restart_needed {
             offer_restart(ctx)?;
+
+            // After enabling a new combined sink and restarting, offer to set as default
+            if is_combined_sink_enabled() && !is_combined_sink_default().unwrap_or(false) {
+                offer_set_as_default(ctx)?;
+            }
         }
 
         Ok(())

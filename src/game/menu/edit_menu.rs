@@ -238,8 +238,7 @@ fn build_menu_items(state: &EditState) -> Vec<MenuItem> {
         format!("installations.toml: {}\n", icmd)
     } else {
         "installations.toml: <not set>\n".to_string()
-    }
-        + "\nThe installation-specific command overrides the shared command if both are set.";
+    } + "\nThe installation-specific command overrides the shared command if both are set.";
 
     items.push(MenuItem::new(
         format!(

@@ -157,6 +157,15 @@ fn offer_create_alternative(dir: &Path, display: &str) -> Result<()> {
         Cancel,
     }
 
+    impl std::fmt::Display for Choice {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self {
+                Choice::Create => write!(f, "create"),
+                Choice::Cancel => write!(f, "cancel"),
+            }
+        }
+    }
+
     impl crate::menu_utils::FzfSelectable for Choice {
         fn fzf_display_text(&self) -> String {
             use crate::ui::catppuccin::{colors, format_icon_colored};
@@ -172,10 +181,7 @@ fn offer_create_alternative(dir: &Path, display: &str) -> Result<()> {
             }
         }
         fn fzf_key(&self) -> String {
-            match self {
-                Choice::Create => "create".into(),
-                Choice::Cancel => "cancel".into(),
-            }
+            self.to_string()
         }
     }
 

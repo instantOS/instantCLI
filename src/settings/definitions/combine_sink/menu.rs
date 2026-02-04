@@ -228,13 +228,17 @@ pub(super) fn build_menu_items(
             format!("Rename: {}", current_name),
             format_icon_colored(NerdFont::Edit, colors::BLUE),
         ));
-        if !is_default {
-            items.push(MenuItem::new(
-                MenuAction::SetAsDefault,
-                "Set as default output",
-                format_icon_colored(NerdFont::Star, colors::GREEN),
-            ));
-        }
+        // Always show "Set as default" option - show current status in label
+        let default_label = if is_default {
+            "Default output ✓"
+        } else {
+            "Set as default output"
+        };
+        items.push(MenuItem::new(
+            MenuAction::SetAsDefault,
+            default_label,
+            format_icon_colored(NerdFont::Star, colors::GREEN),
+        ));
     } else {
         items.push(MenuItem::new(
             MenuAction::Enable,

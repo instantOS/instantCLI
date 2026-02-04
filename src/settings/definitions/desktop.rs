@@ -6,22 +6,22 @@ use anyhow::Result;
 use std::process::Command;
 
 use crate::common::audio::{
-    default_source_names, list_audio_sources_short, pactl_defaults, AudioDefaults, AudioSourceInfo,
+    AudioDefaults, AudioSourceInfo, default_source_names, list_audio_sources_short, pactl_defaults,
 };
 use crate::common::compositor::CompositorType;
 use crate::common::display::SwayDisplayProvider;
 use crate::menu::client::MenuClient;
 use crate::menu::protocol::SliderRequest;
 use crate::menu_utils::{
-    select_one_with_style_at, ChecklistResult, FzfSelectable, FzfWrapper, Header, MenuCursor,
+    ChecklistResult, FzfSelectable, FzfWrapper, Header, MenuCursor, select_one_with_style_at,
 };
 use crate::settings::context::SettingsContext;
 use crate::settings::deps::PIPER;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::store::{
-    is_audio_sources_default, parse_audio_source_selection, IntSettingKey,
-    OptionalStringSettingKey, StringSettingKey, SCREEN_RECORD_AUDIO_SOURCES_DEFAULT,
-    SCREEN_RECORD_AUDIO_SOURCES_KEY, SCREEN_RECORD_FRAMERATE_KEY,
+    IntSettingKey, OptionalStringSettingKey, SCREEN_RECORD_AUDIO_SOURCES_DEFAULT,
+    SCREEN_RECORD_AUDIO_SOURCES_KEY, SCREEN_RECORD_FRAMERATE_KEY, StringSettingKey,
+    is_audio_sources_default, parse_audio_source_selection,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::prelude::*;

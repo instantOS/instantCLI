@@ -25,6 +25,24 @@ enum MirrorAction {
     Mirror,
 }
 
+impl std::fmt::Display for MirrorAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MirrorAction::Stop => write!(f, "stop"),
+            MirrorAction::Mirror => write!(f, "mirror"),
+        }
+    }
+}
+
+impl MirrorAction {
+    fn from_str(s: &str) -> Self {
+        match s {
+            "stop" => MirrorAction::Stop,
+            _ => MirrorAction::Mirror,
+        }
+    }
+}
+
 /// User selection from the mirror menu
 #[derive(Debug, Clone)]
 struct MirrorSelection {
@@ -358,13 +376,7 @@ fn create_menu_item(
     output_name: Option<&str>,
 ) -> SerializableMenuItem {
     let mut metadata = HashMap::new();
-    metadata.insert(
-        "action".to_string(),
-        match action {
-            MirrorAction::Stop => "stop".to_string(),
-            MirrorAction::Mirror => "mirror".to_string(),
-        },
-    );
+    metadata.insert("action".to_string(), action.to_string());
 
     if let Some(name) = output_name {
         metadata.insert("output".to_string(), name.to_string());
@@ -394,10 +406,7 @@ fn parse_menu_selection(item: &SerializableMenuItem) -> Result<Option<MirrorSele
 
     let action = metadata
         .get("action")
-        .map(|s| match s.as_str() {
-            "stop" => MirrorAction::Stop,
-            _ => MirrorAction::Mirror,
-        })
+        .map(|s| MirrorAction::from_str(s))
         .unwrap_or(MirrorAction::Mirror);
 
     let output_name = metadata.get("output").cloned();

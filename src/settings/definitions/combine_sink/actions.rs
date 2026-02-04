@@ -13,6 +13,7 @@ use super::config::{
     combine_sink_config_file, config_changed, display_name_to_node_name, get_current_config,
     get_current_sink_name, is_combined_sink_enabled, pipewire_config_path,
 };
+use super::wpctl::set_combined_sink_as_default;
 
 /// Remove the combined sink by deleting the config file
 /// Returns true if a restart is needed (config file existed and was removed)
@@ -206,4 +207,27 @@ pub(super) fn rename_combined_sink(ctx: &SettingsContext) -> Result<bool> {
     ctx.notify("Combined Audio Sink", &format!("Renamed to '{}'", new_name));
 
     Ok(needs_restart)
+}
+
+/// Offer to set the combined sink as the default output after creation
+pub(super) fn offer_set_as_default(ctx: &SettingsContext) -> Result<()> {
+    let result = FzfWrapper::builder()
+        .confirm("Would you like to set the combined sink as your default audio output?")
+        .yes_text("Set as default")
+        .no_text("Keep current default")
+        .confirm_dialog()?;
+
+    match result {
+        ConfirmResult::Yes => {
+            if let Err(e) = set_combined_sink_as_default(ctx) {
+                ctx.emit_failure(
+                    "audio.combined_sink.set_default_failed",
+                    &format!("Failed to set as default: {}", e),
+                );
+            }
+        }
+        ConfirmResult::No | ConfirmResult::Cancelled => {}
+    }
+
+    Ok(())
 }
