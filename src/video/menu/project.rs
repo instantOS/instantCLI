@@ -1,6 +1,6 @@
 use anyhow::Result;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::menu_utils::{ConfirmResult, FzfPreview, FzfResult, FzfSelectable, FzfWrapper, Header};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
@@ -124,6 +124,12 @@ pub async fn run_project_menu() -> Result<()> {
         return Ok(());
     };
 
+    open_project_for_path(&markdown_path).await
+}
+
+/// Open the project menu for a specific markdown path.
+/// This is used when we already know the path (e.g., after creating a new project).
+pub async fn open_project_for_path(markdown_path: &Path) -> Result<()> {
     loop {
         let entries = vec![
             ProjectMenuEntry::Render,
@@ -149,23 +155,23 @@ pub async fn run_project_menu() -> Result<()> {
         match result {
             FzfResult::Selected(entry) => match entry {
                 ProjectMenuEntry::Render => {
-                    run_render_for_project(&markdown_path).await?;
+                    run_render_for_project(markdown_path).await?;
                 }
                 ProjectMenuEntry::AddRecording => {
-                    run_add_recording(&markdown_path).await?;
+                    run_add_recording(markdown_path).await?;
                 }
                 ProjectMenuEntry::Validate => {
                     check::handle_check(CheckArgs {
-                        markdown: markdown_path.clone(),
+                        markdown: markdown_path.to_path_buf(),
                     })?;
                 }
                 ProjectMenuEntry::Stats => {
                     stats::handle_stats(StatsArgs {
-                        markdown: markdown_path.clone(),
+                        markdown: markdown_path.to_path_buf(),
                     })?;
                 }
                 ProjectMenuEntry::ClearCache => {
-                    run_clear_cache(&markdown_path)?;
+                    run_clear_cache(markdown_path)?;
                 }
                 ProjectMenuEntry::Back => return Ok(()),
             },
@@ -173,6 +179,7 @@ pub async fn run_project_menu() -> Result<()> {
             _ => return Ok(()),
         }
     }
+
 }
 
 async fn run_add_recording(markdown_path: &Path) -> Result<()> {

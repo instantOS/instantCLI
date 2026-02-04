@@ -10,8 +10,9 @@ use crate::video::pipeline::convert;
 
 use super::file_selection::{
     compute_default_output_path, discover_video_file_suggestions,
-    select_video_file_with_suggestions, select_output_path,
+    select_output_path, select_video_file_with_suggestions,
 };
+use super::project::open_project_for_path;
 use super::prompts::{confirm_action, select_convert_audio_choice, select_output_choice};
 use super::types::{ConvertAudioChoice, OutputChoice};
 
@@ -227,5 +228,13 @@ async fn create_multi_source_project(videos: Vec<PathBuf>) -> Result<()> {
         .await?;
     }
 
-    Ok(())
+    // Show success message
+    let project_name = output_path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("project");
+    FzfWrapper::message(&format!("Project '{}' created successfully!", project_name))?;
+
+    // Open the project menu for the new project
+    open_project_for_path(&output_path).await
 }
