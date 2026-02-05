@@ -81,7 +81,8 @@ impl SlideProvider for SlideGenerator {
     }
 }
 use super::planning::{
-    StandalonePlan, TimelinePlan, TimelinePlanItem, align_plan_with_subtitles, plan_timeline,
+    BrollPlan, StandalonePlan, TimelinePlan, TimelinePlanItem, align_plan_with_subtitles,
+    plan_timeline,
 };
 use super::support::utils::canonicalize_existing;
 
