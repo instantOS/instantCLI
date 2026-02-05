@@ -167,7 +167,7 @@ async fn setup_auphonic(force: bool) -> Result<()> {
     // Check existing API key if available and not forcing
     if let Some(api_key) = &config.auphonic_api_key {
         if !force {
-            match verify_existing_key(&client, api_key).await? {
+            match verify_existing_key(&client, api_key).await {
                 VerificationResult::Valid => {
                     check_and_emit_account_type(&client, api_key).await;
                     return Ok(());
@@ -204,7 +204,7 @@ enum VerificationResult {
     Invalid(String),
 }
 
-async fn verify_existing_key(client: &Client, api_key: &str) -> Result<VerificationResult> {
+async fn verify_existing_key(client: &Client, api_key: &str) -> VerificationResult {
     emit(
         Level::Info,
         "video.setup.auphonic",
@@ -219,9 +219,9 @@ async fn verify_existing_key(client: &Client, api_key: &str) -> Result<Verificat
                 "Auphonic API key is valid.",
                 None,
             );
-            Ok(VerificationResult::Valid)
+            VerificationResult::Valid
         }
-        Err(e) => Ok(VerificationResult::Invalid(e.to_string())),
+        Err(e) => VerificationResult::Invalid(e.to_string()),
     }
 }
 
@@ -323,7 +323,7 @@ fn setup_whisperx(_force: bool) -> Result<()> {
     );
 
     // Check if uv is installed
-    if cmd!("which", "uv").run().is_err() {
+    if !check_command_exists("uv") {
         emit(
             Level::Warn,
             "video.setup.whisperx",

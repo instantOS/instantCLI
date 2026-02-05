@@ -79,35 +79,40 @@ pub async fn handle_append(args: AppendArgs) -> Result<()> {
         None,
     );
 
-    let mut ctx = load_markdown_document(&args.markdown)?;
+    let MarkdownAppendContext {
+        markdown_path,
+        markdown_dir,
+        markdown_contents,
+        metadata: mut metadata,
+    } = load_markdown_document(&args.markdown)?;
 
-    let video = prepare_video_and_transcript(&args).await?;
+    let VideoAppendInput {
+        video_path,
+        video_hash,
+        transcript_path,
+        cues,
+    } = prepare_video_and_transcript(&args).await?;
 
     let source_id = add_new_source_to_metadata(
-        &mut ctx.metadata,
-        &video.video_path,
-        &ctx.markdown_dir,
-        &video.video_hash,
-        &video.transcript_path,
+        &mut metadata,
+        &video_path,
+        &markdown_dir,
+        &video_hash,
+        &transcript_path,
     )?;
 
-    let new_contents = build_appended_markdown(
-        &ctx.markdown_contents,
-        &ctx.metadata,
-        &video.cues,
-        &source_id,
-    )?;
-    fs::write(&ctx.markdown_path, new_contents.as_bytes()).with_context(|| {
+    let new_contents = build_appended_markdown(&markdown_contents, &metadata, &cues, &source_id)?;
+    fs::write(&markdown_path, new_contents.as_bytes()).with_context(|| {
         format!(
             "Failed to write markdown file to {}",
-            ctx.markdown_path.display()
+            markdown_path.display()
         )
     })?;
 
     emit(
         Level::Success,
         "video.append.success",
-        &format!("Appended recording to {}", ctx.markdown_path.display()),
+        &format!("Appended recording to {}", markdown_path.display()),
         None,
     );
 
