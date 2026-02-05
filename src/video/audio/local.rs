@@ -130,7 +130,12 @@ impl LocalPreprocessor {
                 "ffmpeg-normalize",
                 &input.to_string_lossy(),
                 "--preset",
-                "podcast",
+                "streaming-video",
+                "--dynamic",
+                "-lrt",
+                "2",
+                "--true-peak",
+                "-1.0",
                 "-o",
                 &output.to_string_lossy(),
                 "-f", // Force overwrite
