@@ -9,52 +9,6 @@ use crate::video::audio::auphonic;
 use crate::video::cli::SetupArgs;
 use crate::video::config::VideoConfig;
 
-/// Checks account type and updates config accordingly
-async fn check_and_update_auphonic_config(
-    client: &Client,
-    api_key: &str,
-    config: &mut VideoConfig,
-) -> Result<()> {
-    emit(
-        Level::Info,
-        "video.setup.auphonic",
-        "Checking account type...",
-        None,
-    );
-    match auphonic::get_user_info(client, api_key).await {
-        Ok(user_info) => {
-            if auphonic::is_free_account(&user_info) {
-                emit(
-                    Level::Warn,
-                    "video.setup.auphonic",
-                    "Free account detected. Consider using local preprocessor to avoid jingle insertion.",
-                    None,
-                );
-            } else {
-                emit(
-                    Level::Success,
-                    "video.setup.auphonic",
-                    "Premium account detected.",
-                    None,
-                );
-            }
-            config.save()?;
-        }
-        Err(e) => {
-            emit(
-                Level::Warn,
-                "video.setup.auphonic",
-                &format!(
-                    "Failed to check account type ({}). Current setting will be maintained.",
-                    e
-                ),
-                None,
-            );
-        }
-    }
-    Ok(())
-}
-
 pub async fn handle_setup(args: SetupArgs) -> Result<()> {
     emit(
         Level::Info,
@@ -345,7 +299,8 @@ async fn verify_and_save_new_key(
         None,
     );
 
-    check_and_update_auphonic_config(client, api_key, config).await?;
+    // This is best-effort (non-fatal) and only emits UI messages.
+    check_and_emit_account_type(client, api_key).await;
 
     config.auphonic_api_key = Some(api_key.to_string());
     config.save()?;

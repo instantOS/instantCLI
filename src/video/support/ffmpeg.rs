@@ -255,9 +255,10 @@ fn parse_ffprobe_json(json_str: &str) -> MediaMetadata {
     }
 
     if let Some(bit_rate) = extract_json_string(json_str, "bit_rate")
-        && let Ok(bps) = bit_rate.parse::<u64>() {
-            metadata.bitrate_kbps = Some(bps / 1000);
-        }
+        && let Ok(bps) = bit_rate.parse::<u64>()
+    {
+        metadata.bitrate_kbps = Some(bps / 1000);
+    }
 
     // Parse streams - find video and audio streams
     let streams_start = json_str.find("\"streams\"");

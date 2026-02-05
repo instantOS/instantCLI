@@ -11,7 +11,7 @@ use crate::video::cli::{AppendArgs, ConvertArgs, TranscribeArgs};
 use crate::video::config::{VideoConfig, VideoDirectories, VideoProjectPaths};
 use crate::video::document::frontmatter::split_frontmatter;
 use crate::video::document::markdown::{MarkdownMetadata, MarkdownSource, build_markdown};
-use crate::video::document::{VideoSource, parse_video_document};
+use crate::video::document::{VideoMetadata, VideoSource, parse_video_document};
 use crate::video::support::transcript::{TranscriptCue, parse_whisper_json};
 use crate::video::support::utils::{canonicalize_existing, compute_file_hash};
 
@@ -79,48 +79,49 @@ pub async fn handle_append(args: AppendArgs) -> Result<()> {
         None,
     );
 
-    let (markdown_path, markdown_dir, markdown_contents, mut metadata) =
-        load_markdown_document(&args.markdown).await?;
+    let mut ctx = load_markdown_document(&args.markdown)?;
 
-    let (video_path, video_hash, transcript_path, mut cues) =
-        prepare_video_and_transcript(&args, &markdown_dir).await?;
+    let video = prepare_video_and_transcript(&args).await?;
 
     let source_id = add_new_source_to_metadata(
-        &mut metadata,
-        &video_path,
-        &markdown_dir,
-        &video_hash,
-        &transcript_path,
+        &mut ctx.metadata,
+        &video.video_path,
+        &ctx.markdown_dir,
+        &video.video_hash,
+        &video.transcript_path,
     )?;
 
-    update_cue_source_ids(&mut cues, &source_id);
-
-    let new_contents = build_appended_markdown(&markdown_contents, &metadata, &cues, &source_id)?;
-    fs::write(&markdown_path, new_contents.as_bytes()).with_context(|| {
+    let new_contents = build_appended_markdown(
+        &ctx.markdown_contents,
+        &ctx.metadata,
+        &video.cues,
+        &source_id,
+    )?;
+    fs::write(&ctx.markdown_path, new_contents.as_bytes()).with_context(|| {
         format!(
             "Failed to write markdown file to {}",
-            markdown_path.display()
+            ctx.markdown_path.display()
         )
     })?;
 
     emit(
         Level::Success,
         "video.append.success",
-        &format!("Appended recording to {}", markdown_path.display()),
+        &format!("Appended recording to {}", ctx.markdown_path.display()),
         None,
     );
 
     Ok(())
 }
 
-async fn load_markdown_document(
-    markdown_path: &Path,
-) -> Result<(
-    PathBuf,
-    PathBuf,
-    String,
-    crate::video::document::VideoMetadata,
-)> {
+struct MarkdownAppendContext {
+    markdown_path: PathBuf,
+    markdown_dir: PathBuf,
+    markdown_contents: String,
+    metadata: VideoMetadata,
+}
+
+fn load_markdown_document(markdown_path: &Path) -> Result<MarkdownAppendContext> {
     let markdown_path = canonicalize_existing(markdown_path)?;
     let markdown_dir = markdown_path
         .parent()
@@ -130,23 +131,15 @@ async fn load_markdown_document(
         .with_context(|| format!("Failed to read markdown file {}", markdown_path.display()))?;
     let document = parse_video_document(&markdown_contents, &markdown_path)?;
 
-    Ok((
+    Ok(MarkdownAppendContext {
         markdown_path,
         markdown_dir,
         markdown_contents,
-        document.metadata,
-    ))
+        metadata: document.metadata,
+    })
 }
 
-async fn prepare_video_and_transcript(
-    args: &AppendArgs,
-    _markdown_dir: &Path,
-) -> Result<(
-    PathBuf,
-    String,
-    PathBuf,
-    Vec<crate::video::support::transcript::TranscriptCue>,
-)> {
+async fn prepare_video_and_transcript(args: &AppendArgs) -> Result<VideoAppendInput> {
     let video_path = canonicalize_existing(&args.video)?;
     let video_hash = compute_file_hash(&video_path)?;
 
@@ -172,11 +165,23 @@ async fn prepare_video_and_transcript(
 
     let cues = load_transcript_cues(&transcript_path)?;
 
-    Ok((video_path, video_hash, transcript_path, cues))
+    Ok(VideoAppendInput {
+        video_path,
+        video_hash,
+        transcript_path,
+        cues,
+    })
+}
+
+struct VideoAppendInput {
+    video_path: PathBuf,
+    video_hash: String,
+    transcript_path: PathBuf,
+    cues: Vec<TranscriptCue>,
 }
 
 fn add_new_source_to_metadata(
-    metadata: &mut crate::video::document::VideoMetadata,
+    metadata: &mut VideoMetadata,
     video_path: &Path,
     markdown_dir: &Path,
     video_hash: &str,
@@ -218,19 +223,10 @@ fn add_new_source_to_metadata(
     Ok(source_id)
 }
 
-fn update_cue_source_ids(
-    cues: &mut [crate::video::support::transcript::TranscriptCue],
-    source_id: &str,
-) {
-    for cue in cues {
-        cue.source_id = source_id.to_string();
-    }
-}
-
 fn build_appended_markdown(
     markdown_contents: &str,
-    metadata: &crate::video::document::VideoMetadata,
-    cues: &[crate::video::support::transcript::TranscriptCue],
+    metadata: &VideoMetadata,
+    cues: &[TranscriptCue],
     source_id: &str,
 ) -> Result<String> {
     let (_front_matter, body, _) = split_frontmatter(markdown_contents)?;

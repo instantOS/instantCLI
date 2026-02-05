@@ -6,8 +6,7 @@ use anyhow::{Context, Result};
 use crate::ui::prelude::{Level, emit};
 
 use crate::video::cli::StatsArgs;
-use crate::video::document::VideoSource;
-use crate::video::document::parse_video_document;
+use crate::video::document::{VideoMetadata, VideoSource, parse_video_document};
 use crate::video::planning::{TimelinePlan, plan_timeline};
 use crate::video::render::resolve_video_sources;
 use crate::video::support::utils::canonicalize_existing;
@@ -20,7 +19,7 @@ pub fn handle_stats(args: StatsArgs) -> Result<()> {
     let document = parse_video_document(&markdown_contents, &markdown_path)?;
 
     let markdown_dir = markdown_path.parent().unwrap_or_else(|| Path::new("."));
-    check_video_sources(&document.metadata, markdown_dir)?;
+    check_video_sources(&document.metadata, markdown_dir);
 
     let plan = plan_timeline(&document)?;
     emit_plan_stats(&plan);
@@ -28,10 +27,7 @@ pub fn handle_stats(args: StatsArgs) -> Result<()> {
     Ok(())
 }
 
-fn check_video_sources(
-    metadata: &crate::video::document::VideoMetadata,
-    markdown_dir: &Path,
-) -> Result<()> {
+fn check_video_sources(metadata: &VideoMetadata, markdown_dir: &Path) {
     match resolve_video_sources(metadata, markdown_dir) {
         Ok(resolved) => {
             if resolved.is_empty() {
@@ -55,7 +51,6 @@ fn check_video_sources(
             );
         }
     };
-    Ok(())
 }
 
 fn emit_source_status(source: &VideoSource) {
