@@ -1222,6 +1222,44 @@ mod tests {
         let msg = format!("{err:#}");
         assert!(msg.contains("Missing source id for timestamp"));
     }
+
+    #[test]
+    fn parses_broll_from_blockquote_with_segment() {
+        let markdown = concat!(
+            "---\n",
+            "sources:\n",
+            "- id: a\n  source: video_a.mp4\n  transcript: a.json\n",
+            "default_source: a\n",
+            "---\n",
+            "> `a@00:05.0-00:10.0` some optional text\n",
+        );
+        let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
+
+        assert_eq!(document.blocks.len(), 1);
+        match &document.blocks[0] {
+            DocumentBlock::Broll(broll) => {
+                assert!((broll.range.start_seconds() - 5.0).abs() < f64::EPSILON);
+                assert!((broll.range.end_seconds() - 10.0).abs() < f64::EPSILON);
+                assert_eq!(broll.text, "some optional text");
+                assert_eq!(broll.source_id, "a");
+            }
+            other => panic!("Expected Broll block, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn blockquote_without_segment_becomes_unhandled() {
+        let markdown = "> This is just a quote without timestamps.\n";
+        let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
+
+        assert_eq!(document.blocks.len(), 1);
+        match &document.blocks[0] {
+            DocumentBlock::Unhandled(unhandled) => {
+                assert!(unhandled.description.starts_with("> "));
+            }
+            other => panic!("Expected Unhandled block, got {:?}", other),
+        }
+    }
 }
 
 impl LineMap {
