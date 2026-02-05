@@ -35,11 +35,9 @@ pub struct OverlayPlan {
 }
 
 #[derive(Debug, Clone)]
-pub enum StandalonePlan {
-    Pause {
-        markdown: String,
-        duration_seconds: f64,
-    },
+pub struct StandalonePlan {
+    pub markdown: String,
+    pub duration_seconds: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -160,7 +158,7 @@ impl TimelinePlanner {
             }
         }
         self.overlay_state = None;
-        self.broll_state = None;  // Clear B-roll state on separator (like overlays)
+        self.broll_state = None; // Clear B-roll state on separator (like overlays)
         self.in_separator_region = true;
     }
 
@@ -227,7 +225,7 @@ impl TimelinePlanner {
         }
         let trimmed = merged.trim();
         self.items
-            .push(TimelinePlanItem::Standalone(StandalonePlan::Pause {
+            .push(TimelinePlanItem::Standalone(StandalonePlan {
                 markdown: merged.clone(),
                 duration_seconds: pause_duration_seconds(trimmed),
             }));

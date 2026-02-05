@@ -1,8 +1,8 @@
 use super::core::{TimelinePlan, TimelinePlanItem};
-use super::graph::{add_edge, min_cost_max_flow, McmfEdge};
+use super::graph::{McmfEdge, add_edge, min_cost_max_flow};
 use crate::video::document::SegmentKind;
 use crate::video::support::transcript::TranscriptCue;
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use std::collections::{HashMap, HashSet};
 
 pub fn align_plan_with_subtitles(plan: &mut TimelinePlan, cues: &[TranscriptCue]) -> Result<()> {
@@ -530,14 +530,14 @@ fn overlap_seconds(a_start: f64, a_end: f64, b_start: f64, b_end: f64) -> f64 {
 mod tests {
     use super::*;
     use crate::video::document::parse_video_document;
-    use crate::video::planning::{plan_timeline, StandalonePlan, TimelinePlanItem};
+    use crate::video::planning::{StandalonePlan, TimelinePlanItem, plan_timeline};
     use crate::video::support::transcript::TranscriptCue;
 
     use std::path::Path;
     use std::time::Duration;
 
     use super::super::core::{
-        pause_duration_seconds, DEFAULT_PAUSE_MAX_SECONDS, DEFAULT_PAUSE_MIN_SECONDS,
+        DEFAULT_PAUSE_MAX_SECONDS, DEFAULT_PAUSE_MIN_SECONDS, pause_duration_seconds,
     };
 
     #[test]
@@ -550,10 +550,11 @@ mod tests {
             plan.items.first(),
             Some(TimelinePlanItem::Music(_))
         ));
-        assert!(plan
-            .items
-            .iter()
-            .any(|item| matches!(item, TimelinePlanItem::Clip(_))));
+        assert!(
+            plan.items
+                .iter()
+                .any(|item| matches!(item, TimelinePlanItem::Clip(_)))
+        );
     }
 
     #[test]
@@ -634,9 +635,7 @@ mod tests {
             .items
             .iter()
             .filter_map(|item| match item {
-                TimelinePlanItem::Standalone(StandalonePlan::Pause {
-                    duration_seconds, ..
-                }) => Some(*duration_seconds),
+                TimelinePlanItem::Standalone(standalone) => Some(standalone.duration_seconds),
                 _ => None,
             })
             .collect();

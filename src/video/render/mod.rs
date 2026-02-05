@@ -993,7 +993,7 @@ mod tests {
                     broll: None,
                     source_id: "a".to_string(),
                 }),
-                TimelinePlanItem::Standalone(StandalonePlan::Pause {
+                TimelinePlanItem::Standalone(StandalonePlan {
                     markdown: "# title card".to_string(),
                     duration_seconds: 2.0,
                 }),
