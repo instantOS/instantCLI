@@ -2,13 +2,13 @@
 //!
 //! Natural scrolling, button swap, and mouse sensitivity settings.
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use std::process::Command;
 
-use crate::common::compositor::{CompositorType, sway};
+use crate::common::compositor::{sway, CompositorType};
 use crate::menu::client::MenuClient;
 use crate::menu::protocol::SliderRequest;
-use crate::preview::{PreviewId, preview_command};
+use crate::preview::{preview_command, PreviewId};
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::store::{BoolSettingKey, IntSettingKey};
@@ -183,7 +183,7 @@ fn run_mouse_speed_slider(initial_value: Option<i64>) -> Result<Option<i64>> {
 
     let current_exe = std::env::current_exe()?;
     let program = current_exe.to_string_lossy().to_string();
-    let args = vec![program, "assist".to_string(), "mouse-speed-set".to_string()];
+    let args = vec![program, "assist".to_string(), "mouse-set".to_string()];
 
     let request = SliderRequest {
         min: 0,
