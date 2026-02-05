@@ -10,8 +10,8 @@ use super::menu_items::{
 };
 use super::store::UserStore;
 use super::system::{
-    get_all_system_groups, get_system_users_with_home, get_user_info, group_exists,
-    wheel_sudo_status, WheelSudoStatus,
+    WheelSudoStatus, get_all_system_groups, get_system_users_with_home, get_user_info,
+    group_exists, wheel_sudo_status,
 };
 use super::utils::{
     add_user_to_group, change_user_shell, create_user, prompt_password_with_confirmation,
@@ -172,21 +172,27 @@ fn handle_user(ctx: &mut SettingsContext, store: &mut UserStore, username: &str)
 
         let has_wheel = user_info.groups.iter().any(|group| group == WHEEL_GROUP);
         let wheel_warning = matches!(wheel_sudo_status(), WheelSudoStatus::Denied);
+        let is_managed = store.is_managed(username);
 
         let actions = vec![
-            UserActionItem::ChangeShell,
+            UserActionItem::ChangeShell {
+                current_shell: user_info.shell.clone(),
+            },
             UserActionItem::ChangePassword,
-            UserActionItem::ManageGroups,
+            UserActionItem::ManageGroups {
+                groups: user_info.groups.clone(),
+                primary_group: user_info.primary_group.clone(),
+            },
             UserActionItem::ToggleSudo {
                 enabled: has_wheel,
                 wheel_warning,
             },
-            UserActionItem::Remove,
+            UserActionItem::Remove { is_managed },
             UserActionItem::Back,
         ];
 
         match select_one_with_style(actions)? {
-            Some(UserActionItem::ChangeShell) => {
+            Some(UserActionItem::ChangeShell { .. }) => {
                 if let Some(new_shell) = select_shell(ctx, "Select shell")? {
                     change_user_shell(ctx, username, &new_shell)?;
                     // Mark as managed if not already
@@ -201,7 +207,7 @@ fn handle_user(ctx: &mut SettingsContext, store: &mut UserStore, username: &str)
                     set_user_password(ctx, username, &password)?;
                 }
             }
-            Some(UserActionItem::ManageGroups) => {
+            Some(UserActionItem::ManageGroups { .. }) => {
                 if manage_user_groups(ctx, store, username)? {
                     changed = true;
                 }
@@ -211,7 +217,7 @@ fn handle_user(ctx: &mut SettingsContext, store: &mut UserStore, username: &str)
                     changed = true;
                 }
             }
-            Some(UserActionItem::Remove) => {
+            Some(UserActionItem::Remove { .. }) => {
                 store.remove(username);
                 ctx.emit_info(
                     "settings.users.removed",
@@ -308,10 +314,12 @@ fn manage_user_groups(
             }
         };
 
-        let items = build_group_menu_items(&user_info.groups);
+        let items = build_group_menu_items(&user_info.groups, user_info.primary_group.as_deref());
 
         match select_one_with_style(items)? {
-            Some(GroupMenuItem::ExistingGroup(group_name)) => {
+            Some(GroupMenuItem::ExistingGroup {
+                name: group_name, ..
+            }) => {
                 if manage_single_group(ctx, store, username, &group_name, &user_info)? {
                     changed = true;
                 }
@@ -329,10 +337,16 @@ fn manage_user_groups(
 }
 
 /// Build menu items for group management
-fn build_group_menu_items(current_groups: &[String]) -> Vec<GroupMenuItem> {
+fn build_group_menu_items(
+    current_groups: &[String],
+    primary_group: Option<&str>,
+) -> Vec<GroupMenuItem> {
     let mut items: Vec<GroupMenuItem> = current_groups
         .iter()
-        .map(|name| GroupMenuItem::ExistingGroup(name.clone()))
+        .map(|name| GroupMenuItem::ExistingGroup {
+            name: name.clone(),
+            is_primary: primary_group == Some(name.as_str()),
+        })
         .collect();
 
     items.push(GroupMenuItem::AddGroup);
@@ -409,12 +423,19 @@ fn manage_single_group(
     group_name: &str,
     user_info: &super::models::UserInfo,
 ) -> Result<bool> {
-    let actions = vec![GroupActionItem::RemoveGroup, GroupActionItem::Back];
+    let is_primary = Some(group_name) == user_info.primary_group.as_deref();
+    let actions = vec![
+        GroupActionItem::RemoveGroup {
+            name: group_name.to_string(),
+            is_primary,
+        },
+        GroupActionItem::Back,
+    ];
 
     match select_one_with_style(actions)? {
-        Some(GroupActionItem::RemoveGroup) => {
+        Some(GroupActionItem::RemoveGroup { is_primary, .. }) => {
             // Don't remove primary group
-            if Some(group_name) == user_info.primary_group.as_deref() {
+            if is_primary {
                 ctx.emit_info(
                     "settings.users.groups",
                     &format!("Cannot remove primary group: {}", group_name),

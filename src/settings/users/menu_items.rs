@@ -83,7 +83,10 @@ impl FzfSelectable for ManageMenuItem {
                 .text("TOML configuration for tracking")
                 .text("and management.")
                 .build(),
-            ManageMenuItem::Back => FzfPreview::Text("Return to settings".to_string()),
+            ManageMenuItem::Back => PreviewBuilder::new()
+                .header(NerdFont::ArrowLeft, "Back")
+                .text("Return to settings.")
+                .build(),
         }
     }
 }
@@ -91,24 +94,34 @@ impl FzfSelectable for ManageMenuItem {
 /// Actions available for a specific user
 #[derive(Clone)]
 pub(super) enum UserActionItem {
-    ChangeShell,
+    ChangeShell {
+        current_shell: String,
+    },
     ChangePassword,
-    ManageGroups,
-    ToggleSudo { enabled: bool, wheel_warning: bool },
-    Remove,
+    ManageGroups {
+        groups: Vec<String>,
+        primary_group: Option<String>,
+    },
+    ToggleSudo {
+        enabled: bool,
+        wheel_warning: bool,
+    },
+    Remove {
+        is_managed: bool,
+    },
     Back,
 }
 
 impl FzfSelectable for UserActionItem {
     fn fzf_display_text(&self) -> String {
         match self {
-            UserActionItem::ChangeShell => {
+            UserActionItem::ChangeShell { .. } => {
                 format!("{} Change shell", format_icon(NerdFont::Terminal))
             }
             UserActionItem::ChangePassword => {
                 format!("{} Change password", format_icon(NerdFont::Key))
             }
-            UserActionItem::ManageGroups => {
+            UserActionItem::ManageGroups { .. } => {
                 format!("{} Manage groups", format_icon(NerdFont::List))
             }
             UserActionItem::ToggleSudo { enabled, .. } => {
@@ -123,21 +136,64 @@ impl FzfSelectable for UserActionItem {
                     status
                 )
             }
-            UserActionItem::Remove => format!("{} Remove entry", format_icon(NerdFont::Trash)),
+            UserActionItem::Remove { .. } => {
+                format!("{} Remove entry", format_icon(NerdFont::Trash))
+            }
             UserActionItem::Back => format!("{} Back", format_icon(NerdFont::ArrowLeft)),
         }
     }
 
     fn fzf_preview(&self) -> FzfPreview {
         match self {
-            UserActionItem::ChangeShell => {
-                FzfPreview::Text("Update the user's default shell on the system".to_string())
-            }
-            UserActionItem::ChangePassword => {
-                FzfPreview::Text("Change the user's password".to_string())
-            }
-            UserActionItem::ManageGroups => {
-                FzfPreview::Text("Add or remove supplementary groups".to_string())
+            UserActionItem::ChangeShell { current_shell } => PreviewBuilder::new()
+                .header(NerdFont::Terminal, "Change Shell")
+                .text("Update the user's default login shell.")
+                .blank()
+                .field("Current shell", current_shell)
+                .build(),
+            UserActionItem::ChangePassword => PreviewBuilder::new()
+                .header(NerdFont::Key, "Change Password")
+                .text("Set a new password for this user.")
+                .blank()
+                .subtext("You will be prompted to confirm the password.")
+                .build(),
+            UserActionItem::ManageGroups {
+                groups,
+                primary_group,
+            } => {
+                let primary = primary_group.as_deref();
+                let group_labels: Vec<String> = if groups.is_empty() {
+                    primary
+                        .map(|group| vec![format!("{group} (primary)")])
+                        .unwrap_or_default()
+                } else {
+                    groups
+                        .iter()
+                        .map(|group| {
+                            if Some(group.as_str()) == primary {
+                                format!("{group} (primary)")
+                            } else {
+                                group.clone()
+                            }
+                        })
+                        .collect()
+                };
+
+                let mut builder = PreviewBuilder::new()
+                    .header(NerdFont::List, "Manage Groups")
+                    .text("Add or remove supplementary groups for this user.")
+                    .blank();
+
+                if group_labels.is_empty() {
+                    builder = builder.subtext("No groups assigned.");
+                } else {
+                    builder = builder
+                        .line(colors::TEAL, Some(NerdFont::List), "Current groups:")
+                        .blank()
+                        .bullets(group_labels);
+                }
+
+                builder.build()
             }
             UserActionItem::ToggleSudo {
                 enabled,
@@ -185,10 +241,29 @@ impl FzfSelectable for UserActionItem {
 
                 builder.build()
             }
-            UserActionItem::Remove => FzfPreview::Text(
-                "Stop managing this user (does not delete the account)".to_string(),
-            ),
-            UserActionItem::Back => FzfPreview::Text("Return to the previous menu".to_string()),
+            UserActionItem::Remove { is_managed } => {
+                let status = if *is_managed {
+                    "Managed"
+                } else {
+                    "Not managed"
+                };
+                PreviewBuilder::new()
+                    .header(NerdFont::Trash, "Remove Entry")
+                    .text("Stop tracking this user in the configuration.")
+                    .blank()
+                    .line(
+                        colors::TEAL,
+                        Some(NerdFont::Tag),
+                        &format!("Status: {}", status),
+                    )
+                    .blank()
+                    .subtext("This does not delete the system account.")
+                    .build()
+            }
+            UserActionItem::Back => PreviewBuilder::new()
+                .header(NerdFont::ArrowLeft, "Back")
+                .text("Return to the previous menu.")
+                .build(),
         }
     }
 }
@@ -196,7 +271,7 @@ impl FzfSelectable for UserActionItem {
 /// Menu item for group management
 #[derive(Clone)]
 pub(super) enum GroupMenuItem {
-    ExistingGroup(String),
+    ExistingGroup { name: String, is_primary: bool },
     AddGroup,
     Back,
 }
@@ -204,7 +279,7 @@ pub(super) enum GroupMenuItem {
 impl FzfSelectable for GroupMenuItem {
     fn fzf_display_text(&self) -> String {
         match self {
-            GroupMenuItem::ExistingGroup(name) => {
+            GroupMenuItem::ExistingGroup { name, .. } => {
                 format!("{} {}", char::from(NerdFont::List), name)
             }
             GroupMenuItem::AddGroup => format!("{} Add group", format_icon(NerdFont::Plus)),
@@ -213,28 +288,55 @@ impl FzfSelectable for GroupMenuItem {
     }
 
     fn fzf_preview(&self) -> FzfPreview {
-        let text = match self {
-            GroupMenuItem::ExistingGroup(name) => {
-                format!("Group: {}\n\nSelect to manage this group membership", name)
+        match self {
+            GroupMenuItem::ExistingGroup { name, is_primary } => {
+                let group_type = if *is_primary {
+                    "Primary"
+                } else {
+                    "Supplementary"
+                };
+                let mut builder = PreviewBuilder::new()
+                    .header(NerdFont::List, "Group")
+                    .field("Name", name)
+                    .field("Type", group_type)
+                    .blank()
+                    .text("Select to manage this group membership.");
+
+                if *is_primary {
+                    builder = builder.blank().line(
+                        colors::YELLOW,
+                        Some(NerdFont::Warning),
+                        "Primary groups cannot be removed.",
+                    );
+                }
+
+                builder.build()
             }
-            GroupMenuItem::AddGroup => "Add a new supplementary group to the user".to_string(),
-            GroupMenuItem::Back => "Return to user management".to_string(),
-        };
-        FzfPreview::Text(text)
+            GroupMenuItem::AddGroup => PreviewBuilder::new()
+                .header(NerdFont::Plus, "Add Group")
+                .text("Add a supplementary group to this user.")
+                .blank()
+                .subtext("Use Tab to select multiple groups.")
+                .build(),
+            GroupMenuItem::Back => PreviewBuilder::new()
+                .header(NerdFont::ArrowLeft, "Back")
+                .text("Return to user management.")
+                .build(),
+        }
     }
 }
 
 /// Actions for a specific group
 #[derive(Clone)]
 pub(super) enum GroupActionItem {
-    RemoveGroup,
+    RemoveGroup { name: String, is_primary: bool },
     Back,
 }
 
 impl FzfSelectable for GroupActionItem {
     fn fzf_display_text(&self) -> String {
         match self {
-            GroupActionItem::RemoveGroup => {
+            GroupActionItem::RemoveGroup { .. } => {
                 format!("{} Remove group", format_icon(NerdFont::Minus))
             }
             GroupActionItem::Back => format!("{} Back", format_icon(NerdFont::ArrowLeft)),
@@ -242,11 +344,29 @@ impl FzfSelectable for GroupActionItem {
     }
 
     fn fzf_preview(&self) -> FzfPreview {
-        let text = match self {
-            GroupActionItem::RemoveGroup => "Remove this group from the user",
-            GroupActionItem::Back => "Return to group list",
-        };
-        FzfPreview::Text(text.to_string())
+        match self {
+            GroupActionItem::RemoveGroup { name, is_primary } => {
+                let mut builder = PreviewBuilder::new()
+                    .header(NerdFont::Minus, "Remove Group")
+                    .text("Remove this group from the user.")
+                    .blank()
+                    .field("Group", name);
+
+                if *is_primary {
+                    builder = builder.blank().line(
+                        colors::YELLOW,
+                        Some(NerdFont::Warning),
+                        "Primary groups cannot be removed.",
+                    );
+                }
+
+                builder.build()
+            }
+            GroupActionItem::Back => PreviewBuilder::new()
+                .header(NerdFont::ArrowLeft, "Back")
+                .text("Return to group list.")
+                .build(),
+        }
     }
 }
 
@@ -262,7 +382,10 @@ impl FzfSelectable for GroupItem {
     }
 
     fn fzf_preview(&self) -> FzfPreview {
-        FzfPreview::Text(format!("Group: {}", self.name))
+        PreviewBuilder::new()
+            .header(NerdFont::List, "Group")
+            .field("Name", &self.name)
+            .build()
     }
 }
 
@@ -278,6 +401,9 @@ impl FzfSelectable for ShellItem {
     }
 
     fn fzf_preview(&self) -> FzfPreview {
-        FzfPreview::Text(format!("Shell: {}", self.path))
+        PreviewBuilder::new()
+            .header(NerdFont::Terminal, "Shell")
+            .field("Path", &self.path)
+            .build()
     }
 }
