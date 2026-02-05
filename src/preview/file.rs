@@ -252,12 +252,11 @@ fn parse_dimensions_from_file_output(output: &str) -> Option<(u32, u32)> {
     ];
 
     for pattern in re_patterns {
-        if let Some(caps) = regex_lite::Regex::new(pattern)
-            .ok()
-            .and_then(|re| re.captures(output))
+        if let Ok(re) = regex::Regex::new(pattern)
+            && let Some(caps) = re.captures(output)
         {
             if let (Some(w), Some(h)) = (caps.get(1), caps.get(2)) {
-                if let (Ok(width), Ok(height)) = (w.as_str().parse(), h.as_str().parse()) {
+                if let (Ok(width), Ok(height)) = (w.as_str().parse::<u32>(), h.as_str().parse::<u32>()) {
                     return Some((width, height));
                 }
             }

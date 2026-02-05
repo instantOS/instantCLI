@@ -216,6 +216,7 @@ fn render_preview(id: PreviewId, ctx: &PreviewContext) -> Result<String> {
         ),
         PreviewId::Disk => disks::render_disk_preview(ctx),
         PreviewId::Partition => disks::render_partition_preview(ctx),
+        PreviewId::FileSuggestion => file::render_file_suggestion_preview(ctx),
     }
 }
 

@@ -5,9 +5,8 @@ use anyhow::{Result, anyhow};
 
 use super::file_picker::{FilePickerScope, MenuWrapper};
 use super::fzf::{FzfResult, FzfSelectable, FzfWrapper};
-use crate::arch::dualboot::types::format_size;
 use crate::common::TildePath;
-use crate::game::utils::save_files::format_system_time_for_display;
+use crate::preview::{PreviewId, preview_command};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::{FzfPreview, PreviewBuilder};
 
@@ -356,36 +355,10 @@ fn preview_wine_prefix() -> FzfPreview {
         .build()
 }
 
-fn preview_suggestion(path: &Path) -> FzfPreview {
-    let metadata = path.metadata().ok();
-    let is_dir = metadata.as_ref().map(|m| m.is_dir()).unwrap_or(false);
-    let size = metadata
-        .as_ref()
-        .map(|m| {
-            if m.is_file() {
-                format_size(m.len())
-            } else {
-                "-".to_string()
-            }
-        })
-        .unwrap_or_else(|| "-".to_string());
-    let modified = metadata.and_then(|m| m.modified().ok());
-    let modified_display = format_system_time_for_display(modified);
-
-    let mut builder = PreviewBuilder::new()
-        .header(NerdFont::Star, "Suggested path")
-        .field("Path", &path.to_string_lossy())
-        .field("Type", if is_dir { "Directory" } else { "File" })
-        .field("Modified", &modified_display)
-        .field("Size", &size);
-
-    if is_dir {
-        builder = builder
-            .blank()
-            .text("Selecting a folder will open it in the picker.");
-    }
-
-    builder.build()
+fn preview_suggestion(_path: &Path) -> FzfPreview {
+    // Use async command-based preview for rich file type detection
+    // The path is passed as the fzf key ($1) to the preview command
+    FzfPreview::Command(preview_command(PreviewId::FileSuggestion))
 }
 
 impl PathInputSelection {
