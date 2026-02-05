@@ -1,7 +1,7 @@
 use crate::menu_utils::{FzfPreview, FzfSelectable};
 use crate::ui::prelude::*;
 
-use crate::ui::catppuccin::format_icon;
+use crate::ui::catppuccin::{colors, format_icon, format_icon_colored};
 
 /// Menu item for the main user management screen
 #[derive(Clone)]
@@ -94,6 +94,7 @@ pub(super) enum UserActionItem {
     ChangeShell,
     ChangePassword,
     ManageGroups,
+    ToggleSudo { enabled: bool, wheel_warning: bool },
     Remove,
     Back,
 }
@@ -110,20 +111,85 @@ impl FzfSelectable for UserActionItem {
             UserActionItem::ManageGroups => {
                 format!("{} Manage groups", format_icon(NerdFont::List))
             }
+            UserActionItem::ToggleSudo { enabled, .. } => {
+                let (icon, color, status) = if *enabled {
+                    (NerdFont::ToggleOn, colors::GREEN, "enabled")
+                } else {
+                    (NerdFont::ToggleOff, colors::RED, "disabled")
+                };
+                format!(
+                    "{} Can use sudo ({})",
+                    format_icon_colored(icon, color),
+                    status
+                )
+            }
             UserActionItem::Remove => format!("{} Remove entry", format_icon(NerdFont::Trash)),
             UserActionItem::Back => format!("{} Back", format_icon(NerdFont::ArrowLeft)),
         }
     }
 
     fn fzf_preview(&self) -> FzfPreview {
-        let text = match self {
-            UserActionItem::ChangeShell => "Update the user's default shell on the system",
-            UserActionItem::ChangePassword => "Change the user's password",
-            UserActionItem::ManageGroups => "Add or remove supplementary groups",
-            UserActionItem::Remove => "Stop managing this user (does not delete the account)",
-            UserActionItem::Back => "Return to the previous menu",
-        };
-        FzfPreview::Text(text.to_string())
+        match self {
+            UserActionItem::ChangeShell => {
+                FzfPreview::Text("Update the user's default shell on the system".to_string())
+            }
+            UserActionItem::ChangePassword => {
+                FzfPreview::Text("Change the user's password".to_string())
+            }
+            UserActionItem::ManageGroups => {
+                FzfPreview::Text("Add or remove supplementary groups".to_string())
+            }
+            UserActionItem::ToggleSudo {
+                enabled,
+                wheel_warning,
+            } => {
+                let (status_color, status_icon, action_color, action_icon, action_label) =
+                    if *enabled {
+                        (
+                            colors::GREEN,
+                            NerdFont::ToggleOn,
+                            colors::RED,
+                            NerdFont::ToggleOff,
+                            "Select to disable",
+                        )
+                    } else {
+                        (
+                            colors::RED,
+                            NerdFont::ToggleOff,
+                            colors::GREEN,
+                            NerdFont::ToggleOn,
+                            "Select to enable",
+                        )
+                    };
+
+                let mut builder = PreviewBuilder::new()
+                    .header(NerdFont::Shield, "Sudo Access")
+                    .line(
+                        status_color,
+                        Some(status_icon),
+                        &format!("Status: {}", if *enabled { "Enabled" } else { "Disabled" }),
+                    )
+                    .blank()
+                    .line(action_color, Some(action_icon), action_label)
+                    .blank()
+                    .subtext("Adds or removes the user from the wheel group.")
+                    .field("Group", "wheel");
+
+                if *wheel_warning {
+                    builder = builder.blank().line(
+                        colors::YELLOW,
+                        Some(NerdFont::Warning),
+                        "Wheel group is not allowed to use sudo on this system.",
+                    );
+                }
+
+                builder.build()
+            }
+            UserActionItem::Remove => FzfPreview::Text(
+                "Stop managing this user (does not delete the account)".to_string(),
+            ),
+            UserActionItem::Back => FzfPreview::Text("Return to the previous menu".to_string()),
+        }
     }
 }
 

@@ -9,12 +9,17 @@ use super::menu_items::{
     GroupActionItem, GroupItem, GroupMenuItem, ManageMenuItem, UserActionItem,
 };
 use super::store::UserStore;
-use super::system::{get_all_system_groups, get_system_users_with_home, get_user_info};
+use super::system::{
+    WheelSudoStatus, get_all_system_groups, get_system_users_with_home, get_user_info,
+    group_exists, wheel_sudo_status,
+};
 use super::utils::{
     add_user_to_group, change_user_shell, create_user, prompt_password_with_confirmation,
     remove_user_from_group, select_groups, select_shell, set_user_password, validate_username,
 };
 use crate::menu_utils::select_one_with_style;
+
+const WHEEL_GROUP: &str = "wheel";
 
 /// Main entry point for user management
 pub fn manage_users(ctx: &mut SettingsContext) -> Result<()> {
@@ -157,10 +162,25 @@ fn handle_user(ctx: &mut SettingsContext, store: &mut UserStore, username: &str)
     let mut changed = false;
 
     loop {
+        let user_info = match get_user_info(username)? {
+            Some(info) => info,
+            None => {
+                ctx.emit_info("settings.users.user", "User not found on system.");
+                return Ok(changed);
+            }
+        };
+
+        let has_wheel = user_info.groups.iter().any(|group| group == WHEEL_GROUP);
+        let wheel_warning = matches!(wheel_sudo_status(), WheelSudoStatus::Denied);
+
         let actions = vec![
             UserActionItem::ChangeShell,
             UserActionItem::ChangePassword,
             UserActionItem::ManageGroups,
+            UserActionItem::ToggleSudo {
+                enabled: has_wheel,
+                wheel_warning,
+            },
             UserActionItem::Remove,
             UserActionItem::Back,
         ];
@@ -186,6 +206,11 @@ fn handle_user(ctx: &mut SettingsContext, store: &mut UserStore, username: &str)
                     changed = true;
                 }
             }
+            Some(UserActionItem::ToggleSudo { enabled, .. }) => {
+                if toggle_user_sudo(ctx, store, username, enabled)? {
+                    changed = true;
+                }
+            }
             Some(UserActionItem::Remove) => {
                 store.remove(username);
                 ctx.emit_info(
@@ -200,6 +225,48 @@ fn handle_user(ctx: &mut SettingsContext, store: &mut UserStore, username: &str)
     }
 
     Ok(changed)
+}
+
+fn toggle_user_sudo(
+    ctx: &mut SettingsContext,
+    store: &mut UserStore,
+    username: &str,
+    currently_enabled: bool,
+) -> Result<bool> {
+    if !group_exists(WHEEL_GROUP)? {
+        ctx.emit_info(
+            "settings.users.sudo",
+            "Wheel group not found on this system.",
+        );
+        return Ok(false);
+    }
+
+    if currently_enabled {
+        remove_user_from_group(ctx, username, WHEEL_GROUP)?;
+        ctx.emit_success(
+            "settings.users.sudo",
+            &format!("Removed {} from wheel group.", username),
+        );
+    } else {
+        add_user_to_group(ctx, username, WHEEL_GROUP)?;
+        ctx.emit_success(
+            "settings.users.sudo",
+            &format!("Added {} to wheel group.", username),
+        );
+    }
+
+    if !store.is_managed(username) {
+        store.add(username);
+    }
+
+    if matches!(wheel_sudo_status(), WheelSudoStatus::Denied) {
+        ctx.emit_info(
+            "settings.users.sudo",
+            "Warning: wheel group is not allowed to use sudo on this system.",
+        );
+    }
+
+    Ok(true)
 }
 
 /// Manage groups for a user
