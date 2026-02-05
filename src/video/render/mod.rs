@@ -737,11 +737,7 @@ impl TimelineBuildState {
             return Ok(());
         }
 
-        let total_clip_duration: f64 = broll_plan
-            .clips
-            .iter()
-            .map(|c| c.end - c.start)
-            .sum();
+        let total_clip_duration: f64 = broll_plan.clips.iter().map(|c| c.end - c.start).sum();
 
         let broll_start = self.current_time;
         let mut elapsed = 0.0;

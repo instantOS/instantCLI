@@ -1,11 +1,11 @@
 use std::path::Path;
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 
 use crate::ui::prelude::Level;
 
 use crate::video::cli::CheckArgs;
-use crate::video::pipeline::report::{emit_report, format_report_lines, ReportLine};
+use crate::video::pipeline::report::{ReportLine, emit_report, format_report_lines};
 use crate::video::planning::TimelinePlanItem;
 use crate::video::render::{
     build_timeline_plan, load_transcript_cues, load_video_document, resolve_video_sources,

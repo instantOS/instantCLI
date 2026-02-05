@@ -103,12 +103,11 @@ fn detect_mimetype(path: &Path) -> String {
         .args(["--mime-type", "-b"])
         .arg(path)
         .output()
+        && output.status.success()
     {
-        if output.status.success() {
-            let mime = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !mime.is_empty() {
-                return mime;
-            }
+        let mime = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !mime.is_empty() {
+            return mime;
         }
     }
 
@@ -117,12 +116,11 @@ fn detect_mimetype(path: &Path) -> String {
         .args(["query", "filetype"])
         .arg(path)
         .output()
+        && output.status.success()
     {
-        if output.status.success() {
-            let mime = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !mime.is_empty() {
-                return mime;
-            }
+        let mime = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !mime.is_empty() {
+            return mime;
         }
     }
 
@@ -213,13 +211,13 @@ fn render_image_preview(path: &Path, mimetype: &str) -> Result<String> {
 
 fn probe_image_dimensions(path: &Path) -> Option<(u32, u32)> {
     // Try file command first
-    if let Ok(output) = Command::new("file").arg(path).output() {
-        if output.status.success() {
-            let info = String::from_utf8_lossy(&output.stdout);
-            // Parse patterns like "1920 x 1080" or "1920x1080"
-            if let Some(dims) = parse_dimensions_from_file_output(&info) {
-                return Some(dims);
-            }
+    if let Ok(output) = Command::new("file").arg(path).output()
+        && output.status.success()
+    {
+        let info = String::from_utf8_lossy(&output.stdout);
+        // Parse patterns like "1920 x 1080" or "1920x1080"
+        if let Some(dims) = parse_dimensions_from_file_output(&info) {
+            return Some(dims);
         }
     }
 
@@ -228,15 +226,14 @@ fn probe_image_dimensions(path: &Path) -> Option<(u32, u32)> {
         .args(["-format", "%wx%h"])
         .arg(path)
         .output()
+        && output.status.success()
     {
-        if output.status.success() {
-            let dims = String::from_utf8_lossy(&output.stdout);
-            let parts: Vec<&str> = dims.trim().split('x').collect();
-            if parts.len() == 2 {
-                if let (Ok(w), Ok(h)) = (parts[0].parse(), parts[1].parse()) {
-                    return Some((w, h));
-                }
-            }
+        let dims = String::from_utf8_lossy(&output.stdout);
+        let parts: Vec<&str> = dims.trim().split('x').collect();
+        if parts.len() == 2
+            && let (Ok(w), Ok(h)) = (parts[0].parse(), parts[1].parse())
+        {
+            return Some((w, h));
         }
     }
 
@@ -245,21 +242,15 @@ fn probe_image_dimensions(path: &Path) -> Option<(u32, u32)> {
 
 fn parse_dimensions_from_file_output(output: &str) -> Option<(u32, u32)> {
     // Look for patterns like "1920 x 1080" or "1920x1080"
-    let re_patterns = [
-        r"(\d+)\s*x\s*(\d+)",
-        r"(\d+)x(\d+)",
-        r", (\d+) x (\d+)",
-    ];
+    let re_patterns = [r"(\d+)\s*x\s*(\d+)", r"(\d+)x(\d+)", r", (\d+) x (\d+)"];
 
     for pattern in re_patterns {
         if let Ok(re) = regex::Regex::new(pattern)
             && let Some(caps) = re.captures(output)
+            && let (Some(w), Some(h)) = (caps.get(1), caps.get(2))
+            && let (Ok(width), Ok(height)) = (w.as_str().parse::<u32>(), h.as_str().parse::<u32>())
         {
-            if let (Some(w), Some(h)) = (caps.get(1), caps.get(2)) {
-                if let (Ok(width), Ok(height)) = (w.as_str().parse::<u32>(), h.as_str().parse::<u32>()) {
-                    return Some((width, height));
-                }
-            }
+            return Some((width, height));
         }
     }
 
@@ -334,18 +325,18 @@ fn render_pdf_preview(path: &Path, mimetype: &str) -> Result<String> {
     }
 
     // Try pdfinfo if available
-    if let Ok(output) = Command::new("pdfinfo").arg(path).output() {
-        if output.status.success() {
-            let info = String::from_utf8_lossy(&output.stdout);
-            for line in info.lines() {
-                if let Some(pages) = line.strip_prefix("Pages:") {
-                    builder = builder.field("Pages", pages.trim());
-                }
-                if let Some(title) = line.strip_prefix("Title:") {
-                    let title = title.trim();
-                    if !title.is_empty() {
-                        builder = builder.field("Title", title);
-                    }
+    if let Ok(output) = Command::new("pdfinfo").arg(path).output()
+        && output.status.success()
+    {
+        let info = String::from_utf8_lossy(&output.stdout);
+        for line in info.lines() {
+            if let Some(pages) = line.strip_prefix("Pages:") {
+                builder = builder.field("Pages", pages.trim());
+            }
+            if let Some(title) = line.strip_prefix("Title:") {
+                let title = title.trim();
+                if !title.is_empty() {
+                    builder = builder.field("Title", title);
                 }
             }
         }
@@ -372,10 +363,10 @@ fn render_directory_preview(path: &Path) -> Result<String> {
         builder = builder.field("Items", &count.to_string());
     }
 
-    if let Ok(meta) = path.metadata() {
-        if let Ok(modified) = meta.modified() {
-            builder = builder.field("Modified", &format_system_time_for_display(Some(modified)));
-        }
+    if let Ok(meta) = path.metadata()
+        && let Ok(modified) = meta.modified()
+    {
+        builder = builder.field("Modified", &format_system_time_for_display(Some(modified)));
     }
 
     builder = builder.blank().subtext(&path.to_string_lossy());

@@ -6,9 +6,9 @@ use anyhow::{Context, Result};
 use crate::ui::prelude::Level;
 
 use crate::video::cli::StatsArgs;
-use crate::video::document::{parse_video_document, VideoMetadata, VideoSource};
-use crate::video::pipeline::report::{emit_report, format_report_lines, ReportLine};
-use crate::video::planning::{plan_timeline, TimelinePlan};
+use crate::video::document::{VideoMetadata, VideoSource, parse_video_document};
+use crate::video::pipeline::report::{ReportLine, emit_report, format_report_lines};
+use crate::video::planning::{TimelinePlan, plan_timeline};
 use crate::video::render::resolve_video_sources;
 use crate::video::support::utils::canonicalize_existing;
 

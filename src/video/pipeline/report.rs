@@ -1,4 +1,4 @@
-use crate::ui::prelude::{emit, Level};
+use crate::ui::prelude::{Level, emit};
 
 #[derive(Debug, Clone)]
 pub(crate) struct ReportLine {

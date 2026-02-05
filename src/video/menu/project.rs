@@ -1,4 +1,4 @@
-use anyhow::{Result, anyhow, bail, Context};
+use anyhow::{Context, Result, anyhow, bail};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -540,14 +540,18 @@ fn resolve_render_output_path(
 }
 
 fn run_edit_for_project(markdown_path: &Path) -> Result<()> {
-    use std::process::Command;
     use std::env;
+    use std::process::Command;
 
     // Get editor from environment or fall back to nvim
     let editor = env::var("EDITOR").unwrap_or_else(|_| "nvim".to_string());
 
-    FzfWrapper::message(&format!("Opening {} in {}...",
-        markdown_path.file_name().and_then(|s| s.to_str()).unwrap_or("file"),
+    FzfWrapper::message(&format!(
+        "Opening {} in {}...",
+        markdown_path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("file"),
         editor
     ))?;
 
