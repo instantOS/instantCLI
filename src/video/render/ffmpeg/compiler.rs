@@ -201,7 +201,6 @@ impl FfmpegCompiler {
         Ok(filters.join("; "))
     }
 
-    //TODO: this function is too long, refactor
     fn build_base_track_filters(
         &self,
         filters: &mut Vec<String>,
@@ -221,80 +220,15 @@ impl FfmpegCompiler {
                 continue;
             }
 
-            let idx = concat_count;
-            concat_count += 1;
-            let SegmentData::VideoSubset {
-                start_time,
-                source_video,
-                audio_source,
-                mute_audio,
-                ..
-            } = &segment.data
-            else {
-                continue;
-            };
-
-            let input_index = source_map.get(source_video).ok_or_else(|| {
-                anyhow!(
-                    "No ffmpeg input available for source video {}",
-                    source_video.display()
-                )
-            })?;
-
-            let audio_input_index = source_map.get(audio_source).ok_or_else(|| {
-                anyhow!(
-                    "No ffmpeg input available for audio source {}",
-                    audio_source.display()
-                )
-            })?;
-
-            let video_label = format!("v{idx}");
-            let audio_label = format!("a{idx}");
-            let end_time = start_time + segment.duration;
-
-            // Trim and set timing
-            let trimmed_label = format!("v{idx}_raw");
-            filters.push(format!(
-                "[{input}:v]trim=start={start}:end={end},setpts=PTS-STARTPTS[{trimmed}]",
-                input = input_index,
-                start = format_time(*start_time),
-                end = format_time(end_time),
-                trimmed = trimmed_label,
-            ));
-
-            // Apply letterboxing/pillboxing if needed
-            if let Some(padding_filter) = self.build_padding_filter(&trimmed_label, &video_label) {
-                filters.push(padding_filter);
-            } else {
-                // No padding needed, but normalize SAR for consistent concat
-                filters.push(format!(
-                    "[{trimmed}]setsar=1[{video}]",
-                    trimmed = trimmed_label,
-                    video = video_label
-                ));
+            if self.push_single_video_subset_filters(
+                filters,
+                &mut concat_inputs,
+                &mut concat_count,
+                segment,
+                source_map,
+            )? {
+                // segment added
             }
-
-            if *mute_audio {
-                filters.push(format!(
-                    "anullsrc=r=48000:cl=stereo,atrim=duration={dur}[{audio}]",
-                    dur = format_time(segment.duration),
-                    audio = audio_label,
-                ));
-            } else {
-                filters.push(format!(
-                    "[{input}:a]atrim=start={start}:end={end},asetpts=PTS-STARTPTS[{audio}]",
-                    input = audio_input_index,
-                    start = format_time(*start_time),
-                    end = format_time(end_time),
-                    audio = audio_label,
-                ));
-            }
-
-            concat_inputs.push_str(&format!(
-                "[{video}][{audio}]",
-                video = video_label,
-                audio = audio_label
-            ));
         }
 
         filters.push(format!(
@@ -304,6 +238,128 @@ impl FfmpegCompiler {
         ));
 
         Ok(true)
+    }
+
+    fn push_single_video_subset_filters(
+        &self,
+        filters: &mut Vec<String>,
+        concat_inputs: &mut String,
+        concat_count: &mut usize,
+        segment: &Segment,
+        source_map: &HashMap<PathBuf, usize>,
+    ) -> Result<bool> {
+        let SegmentData::VideoSubset {
+            start_time,
+            source_video,
+            audio_source,
+            mute_audio,
+            ..
+        } = &segment.data
+        else {
+            return Ok(false);
+        };
+
+        let idx = *concat_count;
+        *concat_count += 1;
+
+        let input_index = get_ffmpeg_input_index(
+            source_map,
+            source_video,
+            "No ffmpeg input available for source video",
+        )?;
+
+        let audio_input_index = get_ffmpeg_input_index(
+            source_map,
+            audio_source,
+            "No ffmpeg input available for audio source",
+        )?;
+
+        let video_label = format!("v{idx}");
+        let audio_label = format!("a{idx}");
+        let end_time = start_time + segment.duration;
+
+        let trimmed_label =
+            self.push_trimmed_video_filters(filters, idx, input_index, *start_time, end_time);
+        self.push_normalized_video_filters(filters, &trimmed_label, &video_label);
+        self.push_audio_filters(
+            filters,
+            *mute_audio,
+            audio_input_index,
+            *start_time,
+            end_time,
+            segment.duration,
+            &audio_label,
+        );
+
+        concat_inputs.push_str(&format!(
+            "[{video}][{audio}]",
+            video = video_label,
+            audio = audio_label
+        ));
+        Ok(true)
+    }
+
+    fn push_trimmed_video_filters(
+        &self,
+        filters: &mut Vec<String>,
+        idx: usize,
+        input_index: usize,
+        start_time: f64,
+        end_time: f64,
+    ) -> String {
+        let trimmed_label = format!("v{idx}_raw");
+        filters.push(format!(
+            "[{input}:v]trim=start={start}:end={end},setpts=PTS-STARTPTS[{trimmed}]",
+            input = input_index,
+            start = format_time(start_time),
+            end = format_time(end_time),
+            trimmed = trimmed_label,
+        ));
+        trimmed_label
+    }
+
+    fn push_normalized_video_filters(
+        &self,
+        filters: &mut Vec<String>,
+        trimmed_label: &str,
+        video_label: &str,
+    ) {
+        if let Some(padding_filter) = self.build_padding_filter(trimmed_label, video_label) {
+            filters.push(padding_filter);
+        } else {
+            filters.push(format!(
+                "[{trimmed}]setsar=1[{video}]",
+                trimmed = trimmed_label,
+                video = video_label
+            ));
+        }
+    }
+
+    fn push_audio_filters(
+        &self,
+        filters: &mut Vec<String>,
+        mute_audio: bool,
+        audio_input_index: usize,
+        start_time: f64,
+        end_time: f64,
+        segment_duration: f64,
+        audio_label: &str,
+    ) {
+        if mute_audio {
+            filters.push(format!(
+                "anullsrc=r=48000:cl=stereo,atrim=duration={dur}[{audio}]",
+                dur = format_time(segment_duration),
+                audio = audio_label,
+            ));
+        } else {
+            filters.push(format!(
+                "[{input}:a]atrim=start={start}:end={end},asetpts=PTS-STARTPTS[{audio}]",
+                input = audio_input_index,
+                start = format_time(start_time),
+                end = format_time(end_time),
+                audio = audio_label,
+            ));
+        }
     }
 
     fn apply_overlays(
@@ -446,6 +502,17 @@ fn categorize_segments(timeline: &Timeline) -> (Vec<&Segment>, Vec<&Segment>, Ve
         }
     }
     (video, overlay, music)
+}
+
+fn get_ffmpeg_input_index(
+    source_map: &HashMap<PathBuf, usize>,
+    source: &Path,
+    error_prefix: &str,
+) -> Result<usize> {
+    source_map
+        .get(source)
+        .copied()
+        .ok_or_else(|| anyhow!("{error_prefix} {}", source.display()))
 }
 
 fn collect_music_segment_labels(

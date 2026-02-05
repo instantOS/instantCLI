@@ -33,6 +33,116 @@ pub struct RemappedSubtitle {
 /// Minimum subtitle display duration in seconds.
 const MIN_SUBTITLE_DURATION_SECS: f64 = 0.5;
 
+#[derive(Debug, Clone, Copy)]
+struct SegmentTiming<'a> {
+    source_id: &'a str,
+    source_start: f64,
+    source_end: f64,
+    time_offset: f64,
+    segment_end: f64,
+}
+
+fn video_segment_timing(
+    segment: &crate::video::render::timeline::Segment,
+) -> Option<SegmentTiming<'_>> {
+    let SegmentData::VideoSubset {
+        start_time: source_start,
+        mute_audio,
+        source_id,
+        ..
+    } = &segment.data
+    else {
+        return None;
+    };
+
+    // Skip muted segments (title cards, etc.) - no subtitles
+    if *mute_audio {
+        return None;
+    }
+
+    let source_end = *source_start + segment.duration;
+    let time_offset = segment.start_time - *source_start;
+    let segment_end = segment.start_time + segment.duration;
+
+    Some(SegmentTiming {
+        source_id: source_id.as_str(),
+        source_start: *source_start,
+        source_end,
+        time_offset,
+        segment_end,
+    })
+}
+
+fn ranges_overlap(
+    range_a_start: f64,
+    range_a_end: f64,
+    range_b_start: f64,
+    range_b_end: f64,
+) -> bool {
+    !(range_a_end <= range_b_start || range_a_start >= range_b_end)
+}
+
+fn overlap_range(
+    range_a_start: f64,
+    range_a_end: f64,
+    range_b_start: f64,
+    range_b_end: f64,
+) -> (f64, f64) {
+    (
+        range_a_start.max(range_b_start),
+        range_a_end.min(range_b_end),
+    )
+}
+
+fn remap_words_to_segment(
+    cue: &TranscriptCue,
+    source_start: f64,
+    source_end: f64,
+    time_offset: f64,
+) -> Vec<RemappedWord> {
+    cue.words
+        .iter()
+        .filter_map(|word| {
+            let word_start = word.start.as_secs_f64();
+            let word_end = word.end.as_secs_f64();
+
+            if !ranges_overlap(word_start, word_end, source_start, source_end) {
+                return None;
+            }
+
+            let (clamped_start, clamped_end) =
+                overlap_range(word_start, word_end, source_start, source_end);
+
+            Some(RemappedWord {
+                word: word.word.clone(),
+                start: Duration::from_secs_f64(clamped_start + time_offset),
+                end: Duration::from_secs_f64(clamped_end + time_offset),
+            })
+        })
+        .collect()
+}
+
+fn ensure_min_duration(final_start: f64, final_end: f64, segment_end: f64) -> f64 {
+    let duration = final_end - final_start;
+    if duration < MIN_SUBTITLE_DURATION_SECS {
+        (final_start + MIN_SUBTITLE_DURATION_SECS).min(segment_end)
+    } else {
+        final_end
+    }
+}
+
+fn subtitle_text(cue: &TranscriptCue, remapped_words: &[RemappedWord]) -> String {
+    if remapped_words.is_empty() {
+        cue.text.clone()
+    } else {
+        remapped_words
+            .iter()
+            .map(|w| w.word.as_str())
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+}
+
 /// Remap transcript cues from source video time to final timeline time.
 ///
 /// For each video segment in the timeline, finds transcript cues that overlap
@@ -45,7 +155,6 @@ const MIN_SUBTITLE_DURATION_SECS: f64 = 0.5;
 ///
 /// # Returns
 /// A vector of subtitles with timing adjusted to the final timeline.
-//TODO: this function is too long, refactor
 pub fn remap_subtitles_to_timeline(
     timeline: &Timeline,
     cues: &[TranscriptCue],
@@ -53,90 +162,54 @@ pub fn remap_subtitles_to_timeline(
     let mut subtitles = Vec::new();
 
     for segment in &timeline.segments {
-        let SegmentData::VideoSubset {
-            start_time: source_start,
-            mute_audio,
-            source_id,
-            ..
-        } = &segment.data
-        else {
+        let Some(segment_timing) = video_segment_timing(segment) else {
             continue;
         };
 
-        // Skip muted segments (title cards, etc.) - no subtitles
-        if *mute_audio {
-            continue;
-        }
-
-        let source_end = source_start + segment.duration;
-        // Time offset to convert source time to final timeline time
-        let time_offset = segment.start_time - source_start;
-
         // Find cues that overlap with this segment's source time range
         for cue in cues {
-            if cue.source_id != *source_id {
+            if cue.source_id != segment_timing.source_id {
                 continue;
             }
             let cue_start = cue.start.as_secs_f64();
             let cue_end = cue.end.as_secs_f64();
 
             // Check for overlap with source range
-            if cue_end <= *source_start || cue_start >= source_end {
+            if !ranges_overlap(
+                cue_start,
+                cue_end,
+                segment_timing.source_start,
+                segment_timing.source_end,
+            ) {
                 continue; // No overlap
             }
 
             // Calculate the portion of the cue that falls within this segment
-            let overlap_start = cue_start.max(*source_start);
-            let overlap_end = cue_end.min(source_end);
+            let (overlap_start, overlap_end) = overlap_range(
+                cue_start,
+                cue_end,
+                segment_timing.source_start,
+                segment_timing.source_end,
+            );
 
             // Remap cue timing to final timeline
-            let final_start = overlap_start + time_offset;
-            let final_end = overlap_end + time_offset;
+            let final_start = overlap_start + segment_timing.time_offset;
+            let final_end = overlap_end + segment_timing.time_offset;
 
             // Remap word timings, filtering to only words within this segment
-            let remapped_words: Vec<RemappedWord> = cue
-                .words
-                .iter()
-                .filter_map(|word| {
-                    let word_start = word.start.as_secs_f64();
-                    let word_end = word.end.as_secs_f64();
-
-                    // Check if word overlaps with segment's source range
-                    if word_end <= *source_start || word_start >= source_end {
-                        return None;
-                    }
-
-                    // Clamp word timing to segment boundaries and remap
-                    let clamped_start = word_start.max(*source_start);
-                    let clamped_end = word_end.min(source_end);
-
-                    Some(RemappedWord {
-                        word: word.word.clone(),
-                        start: Duration::from_secs_f64(clamped_start + time_offset),
-                        end: Duration::from_secs_f64(clamped_end + time_offset),
-                    })
-                })
-                .collect();
+            let remapped_words = remap_words_to_segment(
+                cue,
+                segment_timing.source_start,
+                segment_timing.source_end,
+                segment_timing.time_offset,
+            );
 
             // Ensure minimum duration for readability
-            let duration = final_end - final_start;
-            let adjusted_end = if duration < MIN_SUBTITLE_DURATION_SECS {
-                (final_start + MIN_SUBTITLE_DURATION_SECS)
-                    .min(segment.start_time + segment.duration)
-            } else {
-                final_end
-            };
+            let adjusted_end =
+                ensure_min_duration(final_start, final_end, segment_timing.segment_end);
 
             // Build text from remapped words if available, otherwise use cue text
-            let text = if remapped_words.is_empty() {
-                cue.text.clone()
-            } else {
-                remapped_words
-                    .iter()
-                    .map(|w| w.word.as_str())
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            };
+            let text = subtitle_text(cue, &remapped_words);
 
             subtitles.push(RemappedSubtitle {
                 start: Duration::from_secs_f64(final_start),
