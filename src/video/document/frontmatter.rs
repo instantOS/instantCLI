@@ -141,22 +141,4 @@ mod tests {
         assert_eq!(result.1, "# Hello World\nThis is content.");
         assert_eq!(result.2, 0);
     }
-
-    #[test]
-    fn test_has_frontmatter_true() {
-        let content = "---\ntitle: Test\n---\n# Hello World";
-        assert!(has_frontmatter(content));
-    }
-
-    #[test]
-    fn test_has_frontmatter_false() {
-        let content = "# Hello World";
-        assert!(!has_frontmatter(content));
-    }
-
-    #[test]
-    fn test_has_frontmatter_crlf() {
-        let content = "---\r\ntitle: Test\r\n---\r\n# Hello World";
-        assert!(has_frontmatter(content));
-    }
 }

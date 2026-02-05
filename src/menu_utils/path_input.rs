@@ -196,41 +196,38 @@ impl PathInputBuilder {
         }
     }
 
-    //TODO: does this have multiple responsibilities? Refactor?
-    pub fn choose(self) -> Result<PathInputSelection> {
-        let mut options = Vec::new();
+    fn suggestion_preview_for(&self, path: &Path) -> FzfPreview {
+        match &self.suggestion_preview_fn {
+            Some(f) => f(path),
+            None => preview_suggestion(path),
+        }
+    }
 
+    fn normalize_suggested_path(&self, path: &PathBuf) -> (PathBuf, String) {
+        if let Ok(canonical) = path.canonicalize()
+            && canonical.exists()
+        {
+            let key = canonical.to_string_lossy().to_string();
+            return (canonical, key);
+        }
+
+        (path.clone(), path.to_string_lossy().to_string())
+    }
+
+    fn build_options(&self) -> Vec<PathInputOption> {
+        let mut options = Vec::new();
         let mut seen = std::collections::HashSet::new();
+
         for path in &self.suggested_paths {
-            if let Ok(canonical) = path.canonicalize()
-                && canonical.exists()
-            {
-                let key = canonical.to_string_lossy().to_string();
-                if !seen.insert(key.clone()) {
-                    continue;
-                }
-                let preview = match &self.suggestion_preview_fn {
-                    Some(f) => f(&canonical),
-                    None => preview_suggestion(&canonical),
-                };
-                options.push(PathInputOption::new_with_preview(
-                    format_suggested_label(&canonical),
-                    PathInputChoice::Suggestion(canonical),
-                    preview,
-                ));
-                continue;
-            }
-            let key = path.to_string_lossy().to_string();
+            let (path, key) = self.normalize_suggested_path(path);
             if !seen.insert(key) {
                 continue;
             }
-            let preview = match &self.suggestion_preview_fn {
-                Some(f) => f(path),
-                None => preview_suggestion(path),
-            };
+
+            let preview = self.suggestion_preview_for(&path);
             options.push(PathInputOption::new_with_preview(
-                format_suggested_label(path),
-                PathInputChoice::Suggestion(path.clone()),
+                format_suggested_label(&path),
+                PathInputChoice::Suggestion(path),
                 preview,
             ));
         }
@@ -252,6 +249,26 @@ impl PathInputBuilder {
             ));
         }
 
+        options
+    }
+
+    fn prompt_manual_path(&self) -> Result<Option<String>> {
+        let input = FzfWrapper::input(&self.manual_prompt)?;
+        let trimmed = input.trim().to_string();
+        if trimmed.is_empty() {
+            println!(
+                "{} No path entered. Please choose a path.",
+                char::from(NerdFont::Warning)
+            );
+            return Ok(None);
+        }
+
+        Ok(Some(trimmed))
+    }
+
+    pub fn choose(self) -> Result<PathInputSelection> {
+        let options = self.build_options();
+
         loop {
             let selection = FzfWrapper::builder()
                 .header(self.header.clone())
@@ -260,16 +277,11 @@ impl PathInputBuilder {
             match selection {
                 FzfResult::Selected(option) => match option.choice {
                     PathInputChoice::Manual => {
-                        let input = FzfWrapper::input(&self.manual_prompt)?;
-                        let trimmed = input.trim().to_string();
-                        if trimmed.is_empty() {
-                            println!(
-                                "{} No path entered. Please choose a path.",
-                                char::from(NerdFont::Warning)
-                            );
-                            continue;
+                        if let Some(input) = self.prompt_manual_path()? {
+                            return Ok(PathInputSelection::Manual(input));
                         }
-                        return Ok(PathInputSelection::Manual(trimmed));
+
+                        continue;
                     }
                     PathInputChoice::Picker => {
                         match self.run_picker()? {

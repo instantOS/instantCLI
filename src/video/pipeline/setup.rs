@@ -9,52 +9,6 @@ use crate::video::audio::auphonic;
 use crate::video::cli::SetupArgs;
 use crate::video::config::VideoConfig;
 
-/// Checks account type and updates config accordingly
-async fn check_and_update_auphonic_config(
-    client: &Client,
-    api_key: &str,
-    config: &mut VideoConfig,
-) -> Result<()> {
-    emit(
-        Level::Info,
-        "video.setup.auphonic",
-        "Checking account type...",
-        None,
-    );
-    match auphonic::get_user_info(client, api_key).await {
-        Ok(user_info) => {
-            if auphonic::is_free_account(&user_info) {
-                emit(
-                    Level::Warn,
-                    "video.setup.auphonic",
-                    "Free account detected. Consider using local preprocessor to avoid jingle insertion.",
-                    None,
-                );
-            } else {
-                emit(
-                    Level::Success,
-                    "video.setup.auphonic",
-                    "Premium account detected.",
-                    None,
-                );
-            }
-            config.save()?;
-        }
-        Err(e) => {
-            emit(
-                Level::Warn,
-                "video.setup.auphonic",
-                &format!(
-                    "Failed to check account type ({}). Current setting will be maintained.",
-                    e
-                ),
-                None,
-            );
-        }
-    }
-    Ok(())
-}
-
 pub async fn handle_setup(args: SetupArgs) -> Result<()> {
     emit(
         Level::Info,
@@ -84,8 +38,8 @@ fn setup_local_preprocessor(_force: bool) -> Result<()> {
         None,
     );
 
-    // Check uvx
-    if cmd!("which", "uvx").run().is_err() {
+    // Check required dependencies
+    if !check_command_exists("uvx") {
         emit(
             Level::Warn,
             "video.setup.local",
@@ -95,8 +49,7 @@ fn setup_local_preprocessor(_force: bool) -> Result<()> {
         return Ok(());
     }
 
-    // Check ffmpeg
-    if cmd!("which", "ffmpeg").run().is_err() {
+    if !check_command_exists("ffmpeg") {
         emit(
             Level::Warn,
             "video.setup.local",
@@ -106,6 +59,25 @@ fn setup_local_preprocessor(_force: bool) -> Result<()> {
         return Ok(());
     }
 
+    // Check optional tools
+    check_deepfilternet();
+    check_ffmpeg_normalize();
+
+    emit(
+        Level::Success,
+        "video.setup.local",
+        "Local preprocessor dependencies checked.",
+        None,
+    );
+
+    Ok(())
+}
+
+fn check_command_exists(command: &str) -> bool {
+    cmd!("which", command).run().is_ok()
+}
+
+fn check_deepfilternet() {
     emit(
         Level::Info,
         "video.setup.local",
@@ -113,7 +85,6 @@ fn setup_local_preprocessor(_force: bool) -> Result<()> {
         None,
     );
 
-    // Try running DeepFilterNet --version to trigger download/cache
     let dfn_result = cmd!(
         "uvx",
         "--python",
@@ -148,7 +119,9 @@ fn setup_local_preprocessor(_force: bool) -> Result<()> {
             None,
         );
     }
+}
 
+fn check_ffmpeg_normalize() {
     emit(
         Level::Info,
         "video.setup.local",
@@ -178,15 +151,6 @@ fn setup_local_preprocessor(_force: bool) -> Result<()> {
             None,
         );
     }
-
-    emit(
-        Level::Success,
-        "video.setup.local",
-        "Local preprocessor dependencies checked.",
-        None,
-    );
-
-    Ok(())
 }
 
 async fn setup_auphonic(force: bool) -> Result<()> {
@@ -200,63 +164,15 @@ async fn setup_auphonic(force: bool) -> Result<()> {
     let mut config = VideoConfig::load()?;
     let client = Client::new();
 
+    // Check existing API key if available and not forcing
     if let Some(api_key) = &config.auphonic_api_key {
         if !force {
-            emit(
-                Level::Info,
-                "video.setup.auphonic",
-                "Auphonic API key found. Verifying...",
-                None,
-            );
-            match auphonic::verify_api_key(&client, api_key).await {
-                Ok(_) => {
-                    emit(
-                        Level::Success,
-                        "video.setup.auphonic",
-                        "Auphonic API key is valid.",
-                        None,
-                    );
-
-                    // Check account type for existing valid keys
-                    emit(
-                        Level::Info,
-                        "video.setup.auphonic",
-                        "Checking account type...",
-                        None,
-                    );
-                    match auphonic::get_user_info(&client, api_key).await {
-                        Ok(user_info) => {
-                            if auphonic::is_free_account(&user_info) {
-                                emit(
-                                    Level::Warn,
-                                    "video.setup.auphonic",
-                                    "Free account detected. Consider using local preprocessor (default) to avoid jingle insertion.",
-                                    None,
-                                );
-                            } else {
-                                emit(
-                                    Level::Success,
-                                    "video.setup.auphonic",
-                                    "Premium account detected. You can use 'preprocessor = \"auphonic\"' in config.",
-                                    None,
-                                );
-                            }
-                        }
-                        Err(e) => {
-                            emit(
-                                Level::Warn,
-                                "video.setup.auphonic",
-                                &format!(
-                                    "Failed to check account type ({}). Current setting will be maintained.",
-                                    e
-                                ),
-                                None,
-                            );
-                        }
-                    }
+            match verify_existing_key(&client, api_key).await {
+                VerificationResult::Valid => {
+                    check_and_emit_account_type(&client, api_key).await;
                     return Ok(());
                 }
-                Err(e) => {
+                VerificationResult::Invalid(e) => {
                     emit(
                         Level::Warn,
                         "video.setup.auphonic",
@@ -276,12 +192,83 @@ async fn setup_auphonic(force: bool) -> Result<()> {
         );
     }
 
-    // Ask for API key
+    // Prompt for and configure new API key
+    let api_key = prompt_for_api_key()?;
+    verify_and_save_new_key(&client, &api_key, &mut config).await?;
+
+    Ok(())
+}
+
+enum VerificationResult {
+    Valid,
+    Invalid(String),
+}
+
+async fn verify_existing_key(client: &Client, api_key: &str) -> VerificationResult {
+    emit(
+        Level::Info,
+        "video.setup.auphonic",
+        "Auphonic API key found. Verifying...",
+        None,
+    );
+    match auphonic::verify_api_key(client, api_key).await {
+        Ok(_) => {
+            emit(
+                Level::Success,
+                "video.setup.auphonic",
+                "Auphonic API key is valid.",
+                None,
+            );
+            VerificationResult::Valid
+        }
+        Err(e) => VerificationResult::Invalid(e.to_string()),
+    }
+}
+
+async fn check_and_emit_account_type(client: &Client, api_key: &str) {
+    emit(
+        Level::Info,
+        "video.setup.auphonic",
+        "Checking account type...",
+        None,
+    );
+    match auphonic::get_user_info(client, api_key).await {
+        Ok(user_info) => {
+            if auphonic::is_free_account(&user_info) {
+                emit(
+                    Level::Warn,
+                    "video.setup.auphonic",
+                    "Free account detected. Consider using local preprocessor (default) to avoid jingle insertion.",
+                    None,
+                );
+            } else {
+                emit(
+                    Level::Success,
+                    "video.setup.auphonic",
+                    "Premium account detected. You can use 'preprocessor = \"auphonic\"' in config.",
+                    None,
+                );
+            }
+        }
+        Err(e) => {
+            emit(
+                Level::Warn,
+                "video.setup.auphonic",
+                &format!(
+                    "Failed to check account type ({}). Current setting will be maintained.",
+                    e
+                ),
+                None,
+            );
+        }
+    }
+}
+
+fn prompt_for_api_key() -> Result<String> {
     let prompt = "Enter your Auphonic API key (from https://auphonic.com/accounts/settings/):";
     let api_key = match FzfWrapper::input(prompt) {
         Ok(input) => input.trim().to_string(),
         Err(e) => {
-            // If cancelled or error
             anyhow::bail!("Failed to get API key input: {}", e);
         }
     };
@@ -290,14 +277,21 @@ async fn setup_auphonic(force: bool) -> Result<()> {
         anyhow::bail!("API key cannot be empty.");
     }
 
-    // Verify new key
+    Ok(api_key)
+}
+
+async fn verify_and_save_new_key(
+    client: &Client,
+    api_key: &str,
+    config: &mut VideoConfig,
+) -> Result<()> {
     emit(
         Level::Info,
         "video.setup.auphonic",
         "Verifying new API key...",
         None,
     );
-    auphonic::verify_api_key(&client, &api_key).await?;
+    auphonic::verify_api_key(client, api_key).await?;
     emit(
         Level::Success,
         "video.setup.auphonic",
@@ -305,11 +299,10 @@ async fn setup_auphonic(force: bool) -> Result<()> {
         None,
     );
 
-    // Check account type and update config
-    check_and_update_auphonic_config(&client, &api_key, &mut config).await?;
+    // This is best-effort (non-fatal) and only emits UI messages.
+    check_and_emit_account_type(client, api_key).await;
 
-    // Save
-    config.auphonic_api_key = Some(api_key);
+    config.auphonic_api_key = Some(api_key.to_string());
     config.save()?;
     emit(
         Level::Success,
@@ -330,7 +323,7 @@ fn setup_whisperx(_force: bool) -> Result<()> {
     );
 
     // Check if uv is installed
-    if cmd!("which", "uv").run().is_err() {
+    if !check_command_exists("uv") {
         emit(
             Level::Warn,
             "video.setup.whisperx",

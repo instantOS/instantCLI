@@ -6,9 +6,9 @@ use anyhow::{Context, Result};
 use crate::ui::prelude::Level;
 
 use crate::video::cli::StatsArgs;
-use crate::video::document::parse_video_document;
+use crate::video::document::{parse_video_document, VideoMetadata, VideoSource};
 use crate::video::pipeline::report::{emit_report, format_report_lines, ReportLine};
-use crate::video::planning::plan_timeline;
+use crate::video::planning::{plan_timeline, TimelinePlan};
 use crate::video::render::resolve_video_sources;
 use crate::video::support::utils::canonicalize_existing;
 
@@ -32,27 +32,30 @@ fn build_stats_report(args: StatsArgs) -> Result<Vec<ReportLine>> {
     let document = parse_video_document(&markdown_contents, &markdown_path)?;
 
     let markdown_dir = markdown_path.parent().unwrap_or_else(|| Path::new("."));
-    match resolve_video_sources(&document.metadata, markdown_dir) {
-        Ok(sources) => {
-            if sources.is_empty() {
+    check_video_sources(&document.metadata, markdown_dir, &mut report);
+
+    let plan = plan_timeline(&document)?;
+    emit_plan_stats(&plan, &mut report);
+
+    Ok(report)
+}
+
+fn check_video_sources(
+    metadata: &VideoMetadata,
+    markdown_dir: &Path,
+    report: &mut Vec<ReportLine>,
+) {
+    match resolve_video_sources(metadata, markdown_dir) {
+        Ok(resolved) => {
+            if resolved.is_empty() {
                 report.push(ReportLine::new(
                     Level::Warn,
                     "video.stats.video_metadata",
                     "No video sources configured in front matter",
                 ));
             }
-            for source in sources {
-                let exists = source.source.exists();
-                report.push(ReportLine::new(
-                    if exists { Level::Success } else { Level::Warn },
-                    "video.stats.video",
-                    format!(
-                        "Source {} video {} {}",
-                        source.id,
-                        if exists { "found at" } else { "missing at" },
-                        source.source.display()
-                    ),
-                ));
+            for source in resolved {
+                emit_source_status(&source, report);
             }
         }
         Err(error) => {
@@ -63,9 +66,23 @@ fn build_stats_report(args: StatsArgs) -> Result<Vec<ReportLine>> {
             ));
         }
     };
+}
 
-    let plan = plan_timeline(&document)?;
+fn emit_source_status(source: &VideoSource, report: &mut Vec<ReportLine>) {
+    let exists = source.source.exists();
+    report.push(ReportLine::new(
+        if exists { Level::Success } else { Level::Warn },
+        "video.stats.video",
+        format!(
+            "Source {} video {} {}",
+            source.id,
+            if exists { "found at" } else { "missing at" },
+            source.source.display()
+        ),
+    ));
+}
 
+fn emit_plan_stats(plan: &TimelinePlan, report: &mut Vec<ReportLine>) {
     if plan.items.is_empty() {
         report.push(ReportLine::new(
             Level::Warn,
@@ -102,6 +119,4 @@ fn build_stats_report(args: StatsArgs) -> Result<Vec<ReportLine>> {
             overlays = plan.overlay_count,
         ),
     ));
-
-    Ok(report)
 }
