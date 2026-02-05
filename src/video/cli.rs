@@ -139,7 +139,7 @@ pub struct RenderArgs {
     #[arg(long)]
     pub reels: bool,
 
-    /// Burn subtitles into the video (reels mode only, positions in bottom bar)
+    /// Burn subtitles into the video (works in both normal and reels mode)
     #[arg(long)]
     pub subtitles: bool,
 }

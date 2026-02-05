@@ -239,20 +239,8 @@ async fn run_render_for_project(markdown_path: &Path) -> Result<()> {
         None => return Ok(()),
     };
 
-    let mut reels = render_options.reels;
-    let mut subtitles = render_options.subtitles;
-
-    if subtitles && !reels {
-        match confirm_action(
-            "Subtitles are only supported in reels mode. Enable reels?",
-            "Enable reels",
-            "Disable subtitles",
-        )? {
-            ConfirmResult::Yes => reels = true,
-            ConfirmResult::No => subtitles = false,
-            ConfirmResult::Cancelled => return Ok(()),
-        }
-    }
+    let reels = render_options.reels;
+    let subtitles = render_options.subtitles;
 
     let render_mode = if reels {
         render::RenderMode::Reels

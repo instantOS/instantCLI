@@ -75,6 +75,7 @@ pub enum MusicDirective {
     Source(String),
 }
 
+//TODO: why does this and MusicDirective exist, if this has just one field
 #[derive(Debug)]
 pub struct MusicBlock {
     pub directive: MusicDirective,

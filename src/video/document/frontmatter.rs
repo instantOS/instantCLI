@@ -84,17 +84,6 @@ pub fn split_frontmatter(content: &str) -> Result<(Option<&str>, &str, usize)> {
     Err(anyhow!("Closing front matter delimiter '---' not found"))
 }
 
-/// Checks if content has YAML frontmatter.
-///
-/// # Arguments
-/// * `content` - The content to check
-///
-/// # Returns
-/// * `bool` - true if frontmatter is present, false otherwise
-pub fn has_frontmatter(content: &str) -> bool {
-    content.starts_with("---\n") || content.starts_with("---\r\n")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

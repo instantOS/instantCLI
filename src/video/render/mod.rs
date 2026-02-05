@@ -193,18 +193,7 @@ fn handle_render_with_services(args: RenderArgs, runner: &dyn FfmpegRunner) -> R
         RenderMode::Standard
     };
 
-    // Warn if subtitles requested but not in reels mode
-    if burn_subtitles && render_mode != RenderMode::Reels {
-        emit(
-            Level::Warn,
-            "video.render.subtitles.mode",
-            "Subtitles are currently only supported in reels mode (--reels). Ignoring --subtitles flag.",
-            None,
-        );
-    }
-
-    // Automatically enable subtitles for Reels mode
-    let burn_subtitles = burn_subtitles || render_mode == RenderMode::Reels;
+    // Subtitles are now supported in both Standard and Reels modes
 
     let output_path = if pre_cache_only {
         None
@@ -256,18 +245,20 @@ fn handle_render_with_services(args: RenderArgs, runner: &dyn FfmpegRunner) -> R
         bail!("Output path is required when not pre-caching");
     };
 
-    // Generate subtitles if requested and in reels mode
-    let subtitle_path = if burn_subtitles && render_mode == RenderMode::Reels {
+    // Generate subtitles if requested
+    let subtitle_path = if burn_subtitles {
         log!(
             Level::Info,
             "video.render.subtitles",
-            "Generating ASS subtitles for reels mode"
+            "Generating ASS subtitles for {:?} mode",
+            render_mode
         );
         Some(generate_subtitle_file(
             &nle_timeline,
             &cues,
             &output_path,
             (target_width, target_height),
+            render_mode,
         )?)
     } else {
         None
@@ -327,6 +318,7 @@ fn generate_subtitle_file(
     cues: &[super::support::transcript::TranscriptCue],
     output_path: &Path,
     play_res: (u32, u32),
+    render_mode: RenderMode,
 ) -> Result<PathBuf> {
     let remapped = remap_subtitles_to_timeline(timeline, cues);
 
@@ -346,7 +338,11 @@ fn generate_subtitle_file(
         );
     }
 
-    let style = AssStyle::for_reels(timeline.has_overlays);
+    // Select style based on render mode
+    let style = match render_mode {
+        RenderMode::Reels => AssStyle::for_reels(timeline.has_overlays),
+        RenderMode::Standard => AssStyle::for_standard(),
+    };
     let ass_content = generate_ass_file(&remapped, &style, play_res);
 
     // Write ASS file next to output with .ass extension

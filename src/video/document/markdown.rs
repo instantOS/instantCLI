@@ -9,6 +9,8 @@ pub struct MarkdownMetadata<'a> {
     pub default_source: &'a str,
 }
 
+//TODO: document what this is and why it is needed
+//why is it called that? Should it have a better name?
 pub struct MarkdownSource<'a> {
     pub id: &'a str,
     pub name: Option<&'a str>,

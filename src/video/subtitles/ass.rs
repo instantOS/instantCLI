@@ -153,6 +153,18 @@ impl AssStyle {
         style
     }
 
+    /// Create a style optimized for standard mode (normal video).
+    /// Positions subtitles at the bottom of the video like movies and YouTube videos.
+    /// Uses Catppuccin Mocha theme with the same karaoke animations as reels.
+    pub fn for_standard() -> Self {
+        let mut style = Self::catppuccin_mocha();
+        // For standard video, position at the bottom with comfortable margin
+        // Similar to typical movie/YouTube subtitle positioning
+        style.font_size = 52; // Standard size for desktop viewing
+        style.margin_v = 60; // Standard bottom margin for subtitles
+        style
+    }
+
     /// Format the style line for the ASS file.
     fn to_style_line(&self) -> String {
         let bold_val = if self.bold { -1 } else { 0 };

@@ -227,7 +227,9 @@ pub fn select_render_options() -> Result<Option<RenderOptions>> {
             false,
             PreviewBuilder::new()
                 .header(NerdFont::FileText, "Subtitles")
-                .text("Burn subtitles into the output video (reels only).")
+                .text("Burn subtitles into the output video with karaoke-style highlighting.")
+                .blank()
+                .text("Works in both normal and reels mode.")
                 .build(),
         ),
         ToggleItem::new(
