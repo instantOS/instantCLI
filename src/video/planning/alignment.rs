@@ -1,8 +1,8 @@
 use super::core::{TimelinePlan, TimelinePlanItem};
-use super::graph::{McmfEdge, add_edge, min_cost_max_flow};
+use super::graph::{add_edge, min_cost_max_flow, McmfEdge};
 use crate::video::document::SegmentKind;
 use crate::video::support::transcript::TranscriptCue;
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use std::collections::{HashMap, HashSet};
 
 pub fn align_plan_with_subtitles(plan: &mut TimelinePlan, cues: &[TranscriptCue]) -> Result<()> {
@@ -530,14 +530,14 @@ fn overlap_seconds(a_start: f64, a_end: f64, b_start: f64, b_end: f64) -> f64 {
 mod tests {
     use super::*;
     use crate::video::document::parse_video_document;
-    use crate::video::planning::{StandalonePlan, TimelinePlanItem, plan_timeline};
+    use crate::video::planning::{plan_timeline, StandalonePlan, TimelinePlanItem};
     use crate::video::support::transcript::TranscriptCue;
 
     use std::path::Path;
     use std::time::Duration;
 
     use super::super::core::{
-        DEFAULT_PAUSE_MAX_SECONDS, DEFAULT_PAUSE_MIN_SECONDS, pause_duration_seconds,
+        pause_duration_seconds, DEFAULT_PAUSE_MAX_SECONDS, DEFAULT_PAUSE_MIN_SECONDS,
     };
 
     #[test]
@@ -550,11 +550,10 @@ mod tests {
             plan.items.first(),
             Some(TimelinePlanItem::Music(_))
         ));
-        assert!(
-            plan.items
-                .iter()
-                .any(|item| matches!(item, TimelinePlanItem::Clip(_)))
-        );
+        assert!(plan
+            .items
+            .iter()
+            .any(|item| matches!(item, TimelinePlanItem::Clip(_))));
     }
 
     #[test]
@@ -1026,5 +1025,100 @@ mod tests {
         assert!((silence1.end - 2.0).abs() < 1e-6);
         assert!((silence2.start - 2.0).abs() < 1e-6);
         assert!((silence2.end - 3.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn broll_persists_across_segments_until_separator() {
+        // B-roll should persist across multiple segments (like overlays) until a separator clears it
+        let markdown = concat!(
+            "`a@00:00:00.0-00:00:01.0` first segment\n",
+            "\n",
+            "> `b@00:00:00.0-00:00:05.0` B-roll footage\n",
+            "\n",
+            "`a@00:00:01.0-00:00:02.0` second segment (should have B-roll)\n",
+            "`a@00:00:02.0-00:00:03.0` third segment (should have B-roll)\n",
+            "\n",
+            "---\n",
+            "\n",
+            "`a@00:00:03.0-00:00:04.0` fourth segment (no B-roll after separator)\n",
+        );
+
+        let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
+        let plan = plan_timeline(&document).unwrap();
+
+        let clips: Vec<_> = plan
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                TimelinePlanItem::Clip(clip) => Some(clip),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(clips.len(), 4, "expected 4 clips");
+
+        // First clip has no B-roll (B-roll defined after it)
+        assert!(
+            clips[0].broll.is_none(),
+            "first clip should not have B-roll"
+        );
+
+        // Second and third clips have B-roll (persisted from first B-roll definition)
+        assert!(clips[1].broll.is_some(), "second clip should have B-roll");
+        assert!(clips[2].broll.is_some(), "third clip should have B-roll");
+
+        // Fourth clip has no B-roll (cleared by separator)
+        assert!(
+            clips[3].broll.is_none(),
+            "fourth clip should not have B-roll after separator"
+        );
+    }
+
+    #[test]
+    fn broll_can_be_stopped_with_separator() {
+        // Test that a separator stops B-roll and new B-roll can be defined after
+        let markdown = concat!(
+            "`a@00:00:00.0-00:00:01.0` first\n",
+            "\n",
+            "> `b@00:00:00.0-00:00:03.0` first B-roll\n",
+            "\n",
+            "`a@00:00:01.0-00:00:02.0` second (with first B-roll)\n",
+            "\n",
+            "---\n",
+            "\n",
+            "`a@00:00:02.0-00:00:03.0` third (no B-roll)\n",
+            "\n",
+            "> `c@00:00:00.0-00:00:02.0` second B-roll\n",
+            "\n",
+            "`a@00:00:03.0-00:00:04.0` fourth (with second B-roll)\n",
+        );
+
+        let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
+        let plan = plan_timeline(&document).unwrap();
+
+        let clips: Vec<_> = plan
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                TimelinePlanItem::Clip(clip) => Some(clip),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(clips.len(), 4, "expected 4 clips");
+
+        // First clip has no B-roll
+        assert!(clips[0].broll.is_none());
+
+        // Second clip has first B-roll (from source b)
+        assert!(clips[1].broll.is_some());
+        assert_eq!(clips[1].broll.as_ref().unwrap().clips[0].source_id, "b");
+
+        // Third clip has no B-roll (after separator)
+        assert!(clips[2].broll.is_none());
+
+        // Fourth clip has second B-roll (from source c)
+        assert!(clips[3].broll.is_some());
+        assert_eq!(clips[3].broll.as_ref().unwrap().clips[0].source_id, "c");
     }
 }
