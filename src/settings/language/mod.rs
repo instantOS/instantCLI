@@ -112,7 +112,7 @@ fn handle_add_locale(ctx: &mut SettingsContext, state: &LocaleState) -> Result<b
         .iter()
         .filter(|entry| !entry.enabled)
         .cloned()
-        .map(LocaleToggleItem::from_entry)
+        .map(|entry| LocaleToggleItem::from_entry(entry, state.current_locale()))
         .collect();
 
     if candidates.is_empty() {

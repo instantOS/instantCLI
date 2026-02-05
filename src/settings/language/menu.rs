@@ -4,7 +4,7 @@ use crate::menu_utils::{FzfPreview, FzfSelectable};
 use crate::ui::prelude::*;
 
 use super::state::{LocaleEntry, LocaleState};
-use crate::ui::catppuccin::format_icon;
+use crate::ui::catppuccin::{colors, format_icon};
 
 #[derive(Clone)]
 pub(super) enum LanguageMenuItem {
@@ -25,11 +25,19 @@ impl FzfSelectable for LanguageMenuItem {
     fn fzf_preview(&self) -> FzfPreview {
         match self {
             LanguageMenuItem::Locale(entry) => entry.fzf_preview(),
-            LanguageMenuItem::Add => FzfPreview::Text(
-                "Enable additional locales by writing to /etc/locale.gen and running locale-gen"
-                    .to_string(),
-            ),
-            LanguageMenuItem::Back => FzfPreview::Text("Return to settings".to_string()),
+            LanguageMenuItem::Add => PreviewBuilder::new()
+                .header(NerdFont::Plus, "Add Locale")
+                .text("Enable additional locales in /etc/locale.gen.")
+                .blank()
+                .bullets([
+                    "Select one or more locales to generate",
+                    "Runs locale-gen after selection",
+                ])
+                .build(),
+            LanguageMenuItem::Back => PreviewBuilder::new()
+                .header(NerdFont::ArrowLeft, "Back")
+                .text("Return to settings.")
+                .build(),
         }
     }
 }
@@ -65,32 +73,40 @@ impl LocaleMenuEntry {
     }
 
     fn fzf_preview(&self) -> FzfPreview {
-        let mut lines = vec![format!(
-            "{} Locale: {}",
-            char::from(NerdFont::Info),
-            self.locale
-        )];
+        let display_name = locale_display_name(&self.label, &self.locale, self.has_human_name);
 
-        if self.is_current {
-            lines.push(format!(
-                "{} This is the current system language (LANG).",
-                char::from(NerdFont::Check)
-            ));
+        let mut builder = PreviewBuilder::new()
+            .header(NerdFont::Language, "Locale")
+            .subtext("System language and formatting for applications.")
+            .blank()
+            .field("Locale", &self.locale);
+
+        if let Some(name) = &display_name {
+            builder = builder.field("Language", name);
         }
 
-        lines.push(if self.enabled {
-            format!(
-                "{} Generated locale present in /etc/locale.gen",
-                char::from(NerdFont::CheckCircle)
-            )
-        } else {
-            format!(
-                "{} Locale not yet generated; add it to /etc/locale.gen",
-                char::from(NerdFont::Warning)
-            )
-        });
+        builder = builder
+            .blank()
+            .line(colors::TEAL, Some(NerdFont::InfoCircle), "Status");
 
-        FzfPreview::Text(lines.join("\n"))
+        if self.enabled {
+            builder = builder.line(
+                colors::GREEN,
+                Some(NerdFont::CheckCircle),
+                "Generated in /etc/locale.gen",
+            );
+        } else {
+            builder = builder.line(colors::YELLOW, Some(NerdFont::Warning), "Not generated yet");
+        }
+
+        if self.is_current {
+            builder = builder.line(colors::GREEN, Some(NerdFont::Check), "Current system LANG");
+        }
+
+        builder = builder.blank();
+        builder = append_locale_details(builder, &self.locale);
+
+        builder.build()
     }
 }
 
@@ -139,16 +155,27 @@ impl FzfSelectable for LocaleActionItem {
     }
 
     fn fzf_preview(&self) -> FzfPreview {
-        let text = match self {
-            LocaleActionItem::SetDefault { label, .. } => {
-                format!("Set LANG to use {label} as the system language.")
-            }
-            LocaleActionItem::Remove { label, .. } => {
-                format!("Comment {label} out of /etc/locale.gen and regenerate locales.")
-            }
-            LocaleActionItem::Back => "Return to the locale list".to_string(),
-        };
-        FzfPreview::Text(text)
+        match self {
+            LocaleActionItem::SetDefault { label, .. } => PreviewBuilder::new()
+                .header(NerdFont::Check, "Set Default Language")
+                .text(&format!("Set LANG to use {label}."))
+                .blank()
+                .text("Log out or reboot for applications to pick it up.")
+                .build(),
+            LocaleActionItem::Remove { label, .. } => PreviewBuilder::new()
+                .header(NerdFont::Trash, "Remove Locale")
+                .text(&format!("Disable {label} in /etc/locale.gen."))
+                .blank()
+                .bullets([
+                    "Runs locale-gen to regenerate locales",
+                    "Restart apps that used this locale",
+                ])
+                .build(),
+            LocaleActionItem::Back => PreviewBuilder::new()
+                .header(NerdFont::ArrowLeft, "Back")
+                .text("Return to the locale list.")
+                .build(),
+        }
     }
 }
 
@@ -157,11 +184,13 @@ pub(super) struct LocaleToggleItem {
     pub(super) locale: String,
     label: String,
     has_human_name: bool,
+    is_current: bool,
 }
 
 impl LocaleToggleItem {
-    pub(super) fn from_entry(entry: LocaleEntry) -> Self {
+    pub(super) fn from_entry(entry: LocaleEntry, current: Option<&str>) -> Self {
         Self {
+            is_current: current == Some(entry.locale.as_str()),
             locale: entry.locale,
             label: entry.label,
             has_human_name: entry.has_human_name,
@@ -172,6 +201,36 @@ impl LocaleToggleItem {
 impl FzfSelectable for LocaleToggleItem {
     fn fzf_display_text(&self) -> String {
         self.label.clone()
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        let display_name = locale_display_name(&self.label, &self.locale, self.has_human_name);
+
+        let mut builder = PreviewBuilder::new()
+            .header(NerdFont::Language, "Locale")
+            .subtext("Generate this locale via locale-gen.")
+            .blank()
+            .field("Locale", &self.locale);
+
+        if let Some(name) = &display_name {
+            builder = builder.field("Language", name);
+        }
+
+        if self.is_current {
+            builder = builder.line(colors::GREEN, Some(NerdFont::Check), "Matches current LANG");
+        }
+
+        builder = builder.blank();
+        builder = append_locale_details(builder, &self.locale);
+
+        builder
+            .blank()
+            .line(colors::TEAL, Some(NerdFont::Gear), "Action")
+            .bullets([
+                "Adds to /etc/locale.gen",
+                "Runs locale-gen to build locale data",
+            ])
+            .build()
     }
 }
 
@@ -197,6 +256,74 @@ impl Ord for LocaleToggleItem {
             _ => self.label.cmp(&other.label),
         }
     }
+}
+
+#[derive(Default)]
+struct LocaleParts {
+    language: Option<String>,
+    territory: Option<String>,
+    encoding: Option<String>,
+    modifier: Option<String>,
+}
+
+fn locale_display_name(label: &str, locale: &str, has_human_name: bool) -> Option<String> {
+    if !has_human_name {
+        return None;
+    }
+
+    let suffix = format!(" ({locale})");
+    Some(label.strip_suffix(&suffix).unwrap_or(label).to_string())
+}
+
+fn parse_locale_parts(locale: &str) -> LocaleParts {
+    let (without_modifier, modifier) = match locale.split_once('@') {
+        Some((base, modifier)) if !modifier.is_empty() => (base, Some(modifier.to_string())),
+        _ => (locale, None),
+    };
+
+    let (without_encoding, encoding) = match without_modifier.split_once('.') {
+        Some((base, encoding)) if !encoding.is_empty() => (base, Some(encoding.to_string())),
+        _ => (without_modifier, None),
+    };
+
+    let (language, territory) = match without_encoding.split_once('_') {
+        Some((language, territory)) => (
+            (!language.is_empty()).then(|| language.to_string()),
+            (!territory.is_empty()).then(|| territory.to_string()),
+        ),
+        None => (
+            (!without_encoding.is_empty()).then(|| without_encoding.to_string()),
+            None,
+        ),
+    };
+
+    LocaleParts {
+        language,
+        territory,
+        encoding,
+        modifier,
+    }
+}
+
+fn append_locale_details(mut builder: PreviewBuilder, locale: &str) -> PreviewBuilder {
+    let parts = parse_locale_parts(locale);
+
+    builder = builder.line(colors::TEAL, Some(NerdFont::Tag), "Details");
+
+    if let Some(language) = parts.language {
+        builder = builder.field_indented("Language code", &language);
+    }
+    if let Some(territory) = parts.territory {
+        builder = builder.field_indented("Region", &territory);
+    }
+    if let Some(encoding) = parts.encoding {
+        builder = builder.field_indented("Encoding", &encoding);
+    }
+    if let Some(modifier) = parts.modifier {
+        builder = builder.field_indented("Variant", &modifier);
+    }
+
+    builder
 }
 
 pub(super) fn build_language_menu_items(state: &LocaleState) -> Vec<LanguageMenuItem> {
