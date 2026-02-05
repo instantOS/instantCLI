@@ -186,17 +186,31 @@ fn pick_color_kde() -> Result<Option<String>> {
 /// Try specialized color pickers first, fallback to universal approach
 fn pick_color_with_fallbacks(display_server: &DisplayServer) -> Result<Option<String>> {
     // Try specialized tools first based on compositor
-    if CompositorType::detect() == CompositorType::KWin {
+    let compositor = CompositorType::detect();
+
+    if compositor == CompositorType::KWin {
         // KDE: use spectacle based picker
         return pick_color_kde();
-    } else {
-        // Try hyprpicker for wlroots compositors
-        if let Ok(output) = Command::new("hyprpicker").output()
-            && output.status.success()
-        {
-            let color = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !color.is_empty() {
-                return Ok(Some(color));
+    }
+
+    // Try hyprpicker for wlroots-based compositors (Sway, Hyprland)
+    if matches!(compositor, CompositorType::Hyprland | CompositorType::Sway) {
+        match Command::new("hyprpicker").output() {
+            Ok(output) => {
+                if output.status.success() {
+                    let color = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    if !color.is_empty() {
+                        return Ok(Some(color));
+                    }
+                }
+                // User cancelled hyprpicker - return None, don't fall through to slurp
+                return Ok(None);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                // hyprpicker not installed, fall through to universal
+            }
+            Err(_) => {
+                // Other error running hyprpicker, fall through to universal
             }
         }
     }
