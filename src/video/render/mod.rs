@@ -719,7 +719,78 @@ impl TimelineBuildState {
             self.add_overlay(&overlay_plan.markdown, duration, generator)?;
         }
 
+        if let Some(broll_plan) = clip_plan.broll {
+            self.add_broll(&broll_plan, duration, sources)?;
+        }
+
         self.current_time += duration;
+        Ok(())
+    }
+
+    fn add_broll(
+        &mut self,
+        broll_plan: &BrollPlan,
+        available_duration: f64,
+        sources: &[VideoSource],
+    ) -> Result<()> {
+        if broll_plan.clips.is_empty() {
+            return Ok(());
+        }
+
+        let total_clip_duration: f64 = broll_plan
+            .clips
+            .iter()
+            .map(|c| c.end - c.start)
+            .sum();
+
+        let broll_start = self.current_time;
+        let mut elapsed = 0.0;
+
+        for (i, clip) in broll_plan.clips.iter().enumerate() {
+            let source = sources
+                .iter()
+                .find(|s| s.id == clip.source_id)
+                .ok_or_else(|| {
+                    anyhow!(
+                        "No source configured for B-roll source id `{}`",
+                        clip.source_id
+                    )
+                })?;
+
+            let clip_natural_duration = clip.end - clip.start;
+            let is_last = i == broll_plan.clips.len() - 1;
+
+            let clip_duration = if is_last {
+                if total_clip_duration <= available_duration {
+                    available_duration - elapsed
+                } else {
+                    (available_duration - elapsed).max(0.0)
+                }
+            } else if elapsed + clip_natural_duration > available_duration {
+                break;
+            } else {
+                clip_natural_duration
+            };
+
+            if clip_duration <= 0.0 {
+                break;
+            }
+
+            let segment = Segment::new_broll(
+                broll_start + elapsed,
+                clip_duration,
+                clip.start,
+                source.source.clone(),
+                clip.source_id.clone(),
+            );
+            self.timeline.add_segment(segment);
+            elapsed += clip_duration;
+
+            if elapsed >= available_duration {
+                break;
+            }
+        }
+
         Ok(())
     }
 
@@ -931,6 +1002,7 @@ mod tests {
                     kind: SegmentKind::Dialogue,
                     text: "hello world".to_string(),
                     overlay: None,
+                    broll: None,
                     source_id: "a".to_string(),
                 }),
                 TimelinePlanItem::Standalone(StandalonePlan::Heading {
@@ -943,6 +1015,7 @@ mod tests {
                     kind: SegmentKind::Dialogue,
                     text: "this is a test".to_string(),
                     overlay: None,
+                    broll: None,
                     source_id: "a".to_string(),
                 }),
             ],

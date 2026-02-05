@@ -160,12 +160,22 @@ impl FfmpegCompiler {
     ) -> Result<String> {
         let mut filters: Vec<String> = Vec::new();
 
-        let (video_segments, overlay_segments, music_segments) = categorize_segments(timeline);
+        let (video_segments, overlay_segments, music_segments, broll_segments) =
+            categorize_segments(timeline);
 
         let has_base_track =
             self.build_base_track_filters(&mut filters, &video_segments, source_map)?;
 
         let mut current_video_label = "concat_v".to_string();
+
+        if !broll_segments.is_empty() {
+            current_video_label = self.apply_broll_overlays(
+                &mut filters,
+                &broll_segments,
+                source_map,
+                &current_video_label,
+            )?;
+        }
 
         if !overlay_segments.is_empty() {
             current_video_label = self.apply_overlays(
@@ -362,6 +372,70 @@ impl FfmpegCompiler {
         }
     }
 
+    fn apply_broll_overlays(
+        &self,
+        filters: &mut Vec<String>,
+        broll_segments: &[&Segment],
+        source_map: &HashMap<PathBuf, usize>,
+        input_label: &str,
+    ) -> Result<String> {
+        let mut current_video_label = input_label.to_string();
+
+        for (idx, segment) in broll_segments.iter().enumerate() {
+            let SegmentData::Broll {
+                start_time: source_start,
+                source_video,
+                ..
+            } = &segment.data
+            else {
+                continue;
+            };
+
+            let input_index = source_map.get(source_video).ok_or_else(|| {
+                anyhow!(
+                    "No ffmpeg input available for B-roll video {}",
+                    source_video.display()
+                )
+            })?;
+
+            let trimmed_label = format!("broll_trim_{idx}");
+            let scaled_label = format!("broll_scaled_{idx}");
+            let output_label = format!("broll_out_{idx}");
+
+            let trim_end = source_start + segment.duration;
+            filters.push(format!(
+                "[{input}:v]trim=start={start}:end={end},setpts=PTS-STARTPTS[{out}]",
+                input = input_index,
+                start = source_start,
+                end = trim_end,
+                out = trimmed_label,
+            ));
+
+            filters.push(format!(
+                "[{input}]scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:0x1E1E2E,setsar=1[{out}]",
+                input = trimmed_label,
+                width = self.target_width,
+                height = self.target_height,
+                out = scaled_label,
+            ));
+
+            let enable_condition =
+                format!("between(t,{},{})", segment.start_time, segment.end_time());
+
+            filters.push(format!(
+                "[{video}][{broll}]overlay=x=0:y=0:enable='{condition}'[{output}]",
+                video = current_video_label,
+                broll = scaled_label,
+                condition = enable_condition,
+                output = output_label,
+            ));
+
+            current_video_label = output_label;
+        }
+
+        Ok(current_video_label)
+    }
+
     fn apply_overlays(
         &self,
         filters: &mut Vec<String>,
@@ -489,19 +563,23 @@ impl FfmpegCompiler {
     }
 }
 
-fn categorize_segments(timeline: &Timeline) -> (Vec<&Segment>, Vec<&Segment>, Vec<&Segment>) {
+fn categorize_segments(
+    timeline: &Timeline,
+) -> (Vec<&Segment>, Vec<&Segment>, Vec<&Segment>, Vec<&Segment>) {
     let mut video = Vec::new();
     let mut overlay = Vec::new();
     let mut music = Vec::new();
+    let mut broll = Vec::new();
 
     for segment in &timeline.segments {
         match &segment.data {
             SegmentData::VideoSubset { .. } => video.push(segment),
             SegmentData::Image { .. } => overlay.push(segment),
             SegmentData::Music { .. } => music.push(segment),
+            SegmentData::Broll { .. } => broll.push(segment),
         }
     }
-    (video, overlay, music)
+    (video, overlay, music, broll)
 }
 
 fn get_ffmpeg_input_index(

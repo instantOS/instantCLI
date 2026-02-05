@@ -262,6 +262,7 @@ impl SegmentData {
             SegmentData::VideoSubset { source_video, .. } => Some(source_video),
             SegmentData::Image { source_image, .. } => Some(source_image),
             SegmentData::Music { audio_source } => Some(audio_source),
+            SegmentData::Broll { source_video, .. } => Some(source_video),
         }
     }
 
@@ -278,6 +279,7 @@ impl SegmentData {
             SegmentData::VideoSubset { transform, .. } => transform.as_ref(),
             SegmentData::Image { transform, .. } => transform.as_ref(),
             SegmentData::Music { .. } => None,
+            SegmentData::Broll { .. } => None,
         }
     }
 }
