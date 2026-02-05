@@ -464,6 +464,27 @@ td {
 }
 
 /* =========================================
+   Math / KaTeX
+   ========================================= */
+
+.katex-display {
+  margin: 1em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  text-align: center;
+  padding: 0.5em 0;
+}
+
+.katex {
+  font-size: 1.1em; /* Slight bump to match text weight */
+  color: var(--ctp-text);
+}
+
+.katex-html {
+  overflow: hidden;
+}
+
+/* =========================================
    Layout Variants
    ========================================= */
 
@@ -650,8 +671,8 @@ body.layout-dense pre {
 @media (aspect-ratio < 1/1) {
   body {
     /* Unequal padding to clear UI elements (Reels/TikTok captions & buttons) */
-    padding-top: 15vh;
-    padding-bottom: 30vh;
+    padding-top: 12vh;
+    padding-bottom: 20vh;
     padding-left: 6vw;
     padding-right: 6vw;
     
@@ -666,26 +687,27 @@ body.layout-dense pre {
   }
 
   /* Adjust typography scaling for vertical layout */
+  /* Reduced from 6em/3.2em to let JS scaler handle growth if space permits */
   h1 {
-    font-size: 6em; 
+    font-size: 5em; 
     line-height: 1.15;
   }
 
   h2 {
-    font-size: 4.5em;
+    font-size: 4em;
   }
 
   h3 {
-    font-size: 3.5em;
+    font-size: 3em;
   }
 
   p {
-    font-size: 3.2em;
+    font-size: 2.8em;
     line-height: 1.5;
   }
 
   ul, ol {
-    font-size: 3.2em;
+    font-size: 2.8em;
     padding-left: 1.2em;
   }
 
@@ -706,16 +728,16 @@ body.layout-dense pre {
   }
 
   body.layout-hero h1 {
-    font-size: 9em; /* Slightly smaller than 10em to avoid excessive wrapping */
+    font-size: 8em; /* Slightly smaller than 10em to avoid excessive wrapping */
     line-height: 1.2;
   }
 
   body.layout-hero p {
-    font-size: 4.5em;
+    font-size: 4em;
   }
 
   body.layout-quote blockquote {
-    font-size: 4em;
+    font-size: 3.5em;
     padding: 1.5em 1.5em;
     margin: 1em 0;
   }
