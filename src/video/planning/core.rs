@@ -36,10 +36,6 @@ pub struct OverlayPlan {
 
 #[derive(Debug, Clone)]
 pub enum StandalonePlan {
-    Heading {
-        level: u32,
-        text: String,
-    },
     Pause {
         markdown: String,
         duration_seconds: f64,
@@ -145,14 +141,12 @@ impl TimelinePlanner {
     }
 
     fn handle_heading(&mut self, heading: &crate::video::document::HeadingBlock) {
-        self.items
-            .push(TimelinePlanItem::Standalone(StandalonePlan::Heading {
-                level: heading.level,
-                text: heading.text.clone(),
-            }));
-        self.stats.standalone_count += 1;
+        // Headings are treated like regular content - they become overlays or pause slides
+        // depending on context. The slide renderer detects heading-only content for hero styling.
+        let hashes = "#".repeat(heading.level.max(1) as usize);
+        let markdown = format!("{} {}", hashes, heading.text.trim());
+        self.pending_content.push(markdown);
         self.stats.heading_count += 1;
-        // Headings don't exit separator region
     }
 
     fn handle_separator(&mut self) {

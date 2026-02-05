@@ -1,11 +1,11 @@
 use std::path::Path;
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 
 use crate::ui::prelude::Level;
 
 use crate::video::cli::CheckArgs;
-use crate::video::pipeline::report::{ReportLine, emit_report, format_report_lines};
+use crate::video::pipeline::report::{emit_report, format_report_lines, ReportLine};
 use crate::video::planning::TimelinePlanItem;
 use crate::video::render::{
     build_timeline_plan, load_transcript_cues, load_video_document, resolve_video_sources,
@@ -124,12 +124,7 @@ fn plan_duration_seconds(plan: &crate::video::planning::TimelinePlan) -> f64 {
         .iter()
         .map(|item| match item {
             TimelinePlanItem::Clip(clip) => (clip.end - clip.start).max(0.0),
-            TimelinePlanItem::Standalone(standalone) => match standalone {
-                crate::video::planning::StandalonePlan::Heading { .. } => 2.0,
-                crate::video::planning::StandalonePlan::Pause {
-                    duration_seconds, ..
-                } => *duration_seconds,
-            },
+            TimelinePlanItem::Standalone(standalone) => standalone.duration_seconds,
             TimelinePlanItem::Music(_) => 0.0,
         })
         .sum::<f64>()

@@ -812,19 +812,11 @@ impl TimelineBuildState {
         standalone_plan: StandalonePlan,
         generator: &dyn SlideProvider,
     ) -> Result<()> {
-        match standalone_plan {
-            StandalonePlan::Heading { level, text, .. } => {
-                let heading_level = level.max(1);
-                let hashes = "#".repeat(heading_level as usize);
-                let markdown_content = format!("{hashes} {}\n", text.trim());
-                self.add_standalone_slide(&markdown_content, 2.0, generator)
-            }
-            StandalonePlan::Pause {
-                markdown,
-                duration_seconds,
-                ..
-            } => self.add_standalone_slide(&markdown, duration_seconds, generator),
-        }
+        self.add_standalone_slide(
+            &standalone_plan.markdown,
+            standalone_plan.duration_seconds,
+            generator,
+        )
     }
 
     fn add_standalone_slide(
@@ -1001,9 +993,9 @@ mod tests {
                     broll: None,
                     source_id: "a".to_string(),
                 }),
-                TimelinePlanItem::Standalone(StandalonePlan::Heading {
-                    level: 1,
-                    text: "title card".to_string(),
+                TimelinePlanItem::Standalone(StandalonePlan::Pause {
+                    markdown: "# title card".to_string(),
+                    duration_seconds: 2.0,
                 }),
                 TimelinePlanItem::Clip(ClipPlan {
                     start: 12.0,
