@@ -7,10 +7,10 @@ use crate::ui::prelude::Level;
 use crate::video::document::VideoSource;
 use crate::video::render::logging::log_event;
 use crate::video::render::sources::resolve_source_path;
-use crate::video::support::transcript::{parse_whisper_json, TranscriptCue};
+use crate::video::support::transcript::{TranscriptCue, parse_whisper_json};
 use crate::video::support::utils::canonicalize_existing;
 
-pub(super) fn load_transcript_cues(
+pub(crate) fn load_transcript_cues(
     sources: &[VideoSource],
     markdown_dir: &Path,
 ) -> Result<Vec<TranscriptCue>> {

@@ -1,12 +1,12 @@
 use std::path::Path;
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 
 use crate::ui::prelude::Level;
-use crate::video::planning::{align_plan_with_subtitles, plan_timeline, TimelinePlan};
+use crate::video::planning::{TimelinePlan, align_plan_with_subtitles, plan_timeline};
 use crate::video::render::logging::log_event;
 
-pub(super) fn build_timeline_plan(
+pub(crate) fn build_timeline_plan(
     document: &crate::video::document::VideoDocument,
     cues: &[crate::video::support::transcript::TranscriptCue],
     markdown_path: &Path,

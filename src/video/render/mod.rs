@@ -7,10 +7,10 @@ pub mod paths;
 mod pipeline;
 mod plan;
 mod sources;
+mod subtitles;
 pub mod timeline;
 mod timeline_builder;
 mod transcripts;
-mod subtitles;
 
 use std::path::{Path, PathBuf};
 
@@ -18,24 +18,35 @@ use anyhow::{Result, bail};
 
 use crate::ui::prelude::Level;
 
-use super::cli::RenderArgs;
-use super::config::VideoConfig;
+pub(crate) use self::document::load_video_document;
 use self::ffmpeg::services::{FfmpegRunner, SystemFfmpegRunner};
 use self::logging::log_event;
 pub use self::mode::RenderMode;
 use self::output::prepare_output_destination;
 use self::pipeline::{RenderPipeline, RenderPipelineParams};
-use self::plan::build_timeline_plan;
-use self::sources::{
-    build_audio_source_map, find_default_source, resolve_video_sources, validate_timeline_sources,
-};
+pub(crate) use self::plan::build_timeline_plan;
+pub(crate) use self::sources::resolve_video_sources;
+use self::sources::{build_audio_source_map, find_default_source, validate_timeline_sources};
 use self::subtitles::generate_subtitle_file;
 use self::timeline_builder::{SlideProvider, TimelineStats, build_nle_timeline};
-use self::transcripts::load_transcript_cues;
+pub(crate) use self::transcripts::load_transcript_cues;
+use super::cli::RenderArgs;
+use super::config::VideoConfig;
 use super::support::ffmpeg::probe_video_dimensions;
 
 use super::slides::SlideGenerator;
 use super::support::utils::canonicalize_existing;
+
+impl SlideProvider for SlideGenerator {
+    fn overlay_slide_image(&self, markdown: &str) -> Result<PathBuf> {
+        Ok(self.markdown_slide(markdown)?.image_path)
+    }
+
+    fn standalone_slide_video(&self, markdown: &str, duration: f64) -> Result<PathBuf> {
+        let asset = self.markdown_slide(markdown)?;
+        self.ensure_video_for_duration(&asset, duration)
+    }
+}
 
 pub async fn handle_render(args: RenderArgs) -> Result<()> {
     let runner = SystemFfmpegRunner;
@@ -56,7 +67,7 @@ async fn handle_render_with_services(args: RenderArgs, runner: &dyn FfmpegRunner
     let markdown_path = canonicalize_existing(&args.markdown)?;
     let markdown_dir = markdown_path.parent().unwrap_or_else(|| Path::new("."));
 
-    let document = document::load_video_document(&markdown_path)?;
+    let document = load_video_document(&markdown_path)?;
     let video_config = VideoConfig::load()?;
     let sources = resolve_video_sources(&document.metadata, markdown_dir, &video_config).await?;
     if sources.is_empty() {
@@ -191,7 +202,6 @@ async fn handle_render_with_services(args: RenderArgs, runner: &dyn FfmpegRunner
     Ok(())
 }
 
-
 fn report_timeline_stats(stats: &TimelineStats) {
     if stats.standalone_count > 0 {
         log_event(
@@ -231,9 +241,11 @@ fn report_timeline_stats(stats: &TimelineStats) {
 mod tests {
     use super::*;
     use crate::video::document::SegmentKind;
+    use crate::video::document::VideoSource;
     use crate::video::planning::ClipPlan;
+    use crate::video::planning::{StandalonePlan, TimelinePlan, TimelinePlanItem};
     use crate::video::render::timeline::SegmentData;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
     struct StubSlides;
 

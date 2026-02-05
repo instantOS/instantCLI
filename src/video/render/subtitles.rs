@@ -7,7 +7,7 @@ use crate::ui::prelude::Level;
 use crate::video::render::logging::log_event;
 use crate::video::render::mode::RenderMode;
 use crate::video::render::timeline::Timeline;
-use crate::video::subtitles::{generate_ass_file, remap_subtitles_to_timeline, AssStyle};
+use crate::video::subtitles::{AssStyle, generate_ass_file, remap_subtitles_to_timeline};
 
 /// Generate an ASS subtitle file for the timeline.
 pub(super) fn generate_subtitle_file(

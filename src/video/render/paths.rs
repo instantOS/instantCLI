@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Result, anyhow};
 
-use super::RenderMode;
+use super::mode::RenderMode;
 use crate::video::document::{VideoMetadata, VideoSource};
 
 pub fn resolve_video_sources(

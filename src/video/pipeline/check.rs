@@ -8,23 +8,23 @@ use crate::video::cli::CheckArgs;
 use crate::video::pipeline::report::{ReportLine, emit_report, format_report_lines};
 use crate::video::planning::TimelinePlanItem;
 use crate::video::render::{
-    build_timeline_plan, load_transcript_cues, load_video_document, paths::resolve_video_sources,
+    build_timeline_plan, load_transcript_cues, load_video_document, resolve_video_sources,
 };
 use crate::video::support::ffmpeg::probe_video_dimensions;
 use crate::video::support::utils::canonicalize_existing;
 
-pub fn handle_check(args: CheckArgs) -> Result<()> {
-    let report = build_check_report(args)?;
+pub async fn handle_check(args: CheckArgs) -> Result<()> {
+    let report = build_check_report(args).await?;
     emit_report(&report);
     Ok(())
 }
 
-pub fn check_report_lines(args: CheckArgs) -> Result<Vec<String>> {
-    let report = build_check_report(args)?;
+pub async fn check_report_lines(args: CheckArgs) -> Result<Vec<String>> {
+    let report = build_check_report(args).await?;
     Ok(format_report_lines(&report))
 }
 
-fn build_check_report(args: CheckArgs) -> Result<Vec<ReportLine>> {
+async fn build_check_report(args: CheckArgs) -> Result<Vec<ReportLine>> {
     let mut report: Vec<ReportLine> = Vec::new();
     let markdown_path = canonicalize_existing(&args.markdown)?;
     let markdown_dir = markdown_path.parent().unwrap_or_else(|| Path::new("."));
@@ -33,7 +33,8 @@ fn build_check_report(args: CheckArgs) -> Result<Vec<ReportLine>> {
     let document = load_video_document(&markdown_path)?;
 
     // Resolve video sources
-    let sources = resolve_video_sources(&document.metadata, markdown_dir)?;
+    let config = crate::video::config::VideoConfig::load()?;
+    let sources = resolve_video_sources(&document.metadata, markdown_dir, &config).await?;
     if sources.is_empty() {
         bail!("No video sources configured in front matter.");
     }

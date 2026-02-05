@@ -4,10 +4,10 @@ use std::path::Path;
 use anyhow::{Context, Result};
 
 use crate::ui::prelude::Level;
-use crate::video::document::{parse_video_document, VideoDocument};
+use crate::video::document::{VideoDocument, parse_video_document};
 use crate::video::render::logging::log_event;
 
-pub(super) fn load_video_document(markdown_path: &Path) -> Result<VideoDocument> {
+pub(crate) fn load_video_document(markdown_path: &Path) -> Result<VideoDocument> {
     log_event(
         Level::Info,
         "video.render.markdown.read",

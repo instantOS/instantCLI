@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Result, anyhow, bail};
 
-use super::super::RenderMode;
+use super::super::mode::RenderMode;
 use crate::video::config::VideoConfig;
 use crate::video::render::timeline::{Segment, SegmentData, Timeline};
 

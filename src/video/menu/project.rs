@@ -182,13 +182,15 @@ pub async fn open_project_for_path(markdown_path: &Path) -> Result<()> {
                 ProjectMenuEntry::Validate => {
                     let lines = check::check_report_lines(CheckArgs {
                         markdown: markdown_path.to_path_buf(),
-                    })?;
+                    })
+                    .await?;
                     show_report_dialog("Validation Results", lines)?;
                 }
                 ProjectMenuEntry::Stats => {
                     let lines = stats::stats_report_lines(StatsArgs {
                         markdown: markdown_path.to_path_buf(),
-                    })?;
+                    })
+                    .await?;
                     show_report_dialog("Timeline Stats", lines)?;
                 }
                 ProjectMenuEntry::Edit => {

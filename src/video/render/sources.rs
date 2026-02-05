@@ -1,16 +1,16 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 
 use crate::ui::prelude::Level;
 use crate::video::audio::{PreprocessorType, create_preprocessor};
 use crate::video::config::{VideoConfig, VideoDirectories};
+use crate::video::document::VideoDocument;
 use crate::video::document::{VideoMetadata, VideoSource};
 use crate::video::render::logging::log_event;
 use crate::video::render::paths;
 use crate::video::support::utils::{canonicalize_existing, compute_file_hash};
-use crate::video::document::VideoDocument;
 
 pub(super) fn resolve_source_path(path: &Path, markdown_dir: &Path) -> Result<PathBuf> {
     if path.is_absolute() {
@@ -75,7 +75,7 @@ pub(super) fn validate_timeline_sources(
     Ok(())
 }
 
-pub async fn resolve_video_sources(
+pub(crate) async fn resolve_video_sources(
     metadata: &VideoMetadata,
     markdown_dir: &Path,
     config: &VideoConfig,
