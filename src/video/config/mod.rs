@@ -95,10 +95,10 @@ impl Default for VideoConfig {
 
 impl VideoConfig {
     fn default_music_volume() -> f32 {
-        0.2
+        0.1
     }
 
-    pub const DEFAULT_MUSIC_VOLUME: f32 = 0.2;
+    pub const DEFAULT_MUSIC_VOLUME: f32 = 0.1;
 
     pub fn load() -> Result<Self> {
         <Self as DocumentedConfig>::load_from_path_documented(video_config_path()?)

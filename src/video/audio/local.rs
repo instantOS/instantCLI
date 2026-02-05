@@ -111,18 +111,20 @@ impl LocalPreprocessor {
     }
 
     /// Run ffmpeg-normalize for loudness normalization
-    /// Uses dynamic compression for consistent speech levels + YouTube loudness target
+    /// Uses aggressive dynamic compression for consistent speech levels
     fn run_normalize(input: &Path, output: &Path) -> Result<()> {
         emit(
             Level::Info,
             "video.preprocess.normalize",
-            "Running loudness normalization with compression...",
+            "Running aggressive loudness normalization with heavy compression...",
             None,
         );
 
-        // Dynamic normalization: compresses audio to reduce volume fluctuations
-        // Good for speech where mic distance varies
-        // Using louder target for spoken content + more compression for consistency
+        // AGGRESSIVE normalization settings for consistent speech volume:
+        // - Target -10 LUFS: Louder overall level for speech (was -12)
+        // - Loudness Range 1 LU: Very tight compression (was 3) - keeps volume consistent
+        //   even when moving away from microphone
+        // - True peak -1 dBTP: Prevent clipping
         let status = Command::new("uvx")
             .args([
                 "ffmpeg-normalize",
@@ -134,7 +136,7 @@ impl LocalPreprocessor {
                 "-tp",
                 "-1", // True peak: -1 dBTP
                 "-lrt",
-                "3", // Even more compression: 3 LU (was 4) for very consistent volume
+                "1", // AGGRESSIVE compression: 1 LU (was 3) - very tight volume control
                 "-o",
                 &output.to_string_lossy(),
                 "-f", // Force overwrite
