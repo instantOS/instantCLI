@@ -411,21 +411,38 @@ impl FfmpegCompiler {
                 out = trimmed_label,
             ));
 
+            // Scale b-roll to 90% of target size, add catppuccin blue border, then pad to full size
+            let border_width = 4;
+            let inner_width = (self.target_width as f64 * 0.9) as u32 - (border_width * 2);
+            let inner_height = (self.target_height as f64 * 0.9) as u32 - (border_width * 2);
+            let outer_width = (self.target_width as f64 * 0.9) as u32;
+            let outer_height = (self.target_height as f64 * 0.9) as u32;
+            let catppuccin_blue = "0x89B4FA"; // Catppuccin Mocha Blue
+
             filters.push(format!(
-                "[{input}]scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:0x1E1E2E,setsar=1[{out}]",
+                "[{input}]scale={iw}:{ih}:force_original_aspect_ratio=decrease,pad={iw}:{ih}:(ow-iw)/2:(oh-ih)/2:0x1E1E2E,setsar=1,pad={ow}:{oh}:(ow-iw)/2:(oh-ih)/2:{color}[{out}]",
                 input = trimmed_label,
-                width = self.target_width,
-                height = self.target_height,
+                iw = inner_width,
+                ih = inner_height,
+                ow = outer_width,
+                oh = outer_height,
+                color = catppuccin_blue,
                 out = scaled_label,
             ));
 
             let enable_condition =
                 format!("between(t,{},{})", segment.start_time, segment.end_time());
 
+            // Center the scaled b-roll on the main video
+            let x_offset = (self.target_width - outer_width) / 2;
+            let y_offset = (self.target_height - outer_height) / 2;
+
             filters.push(format!(
-                "[{video}][{broll}]overlay=x=0:y=0:enable='{condition}'[{output}]",
+                "[{video}][{broll}]overlay=x={x}:y={y}:enable='{condition}'[{output}]",
                 video = current_video_label,
                 broll = scaled_label,
+                x = x_offset,
+                y = y_offset,
                 condition = enable_condition,
                 output = output_label,
             ));
