@@ -141,5 +141,4 @@ mod tests {
         assert_eq!(result.1, "# Hello World\nThis is content.");
         assert_eq!(result.2, 0);
     }
-
 }

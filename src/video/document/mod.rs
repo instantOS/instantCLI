@@ -1161,7 +1161,9 @@ mod tests {
         );
 
         let err = parse_video_document(markdown, Path::new("test.md")).unwrap_err();
-        assert!(err.to_string().contains("Missing source id for timestamp"));
+        // Use alternate formatting to include the full error chain.
+        let msg = format!("{err:#}");
+        assert!(msg.contains("Missing source id for timestamp"));
     }
 
     #[test]
@@ -1178,7 +1180,8 @@ mod tests {
         );
 
         let err = parse_video_document(markdown, Path::new("test.md")).unwrap_err();
-        assert!(err.to_string().contains("Missing source id for timestamp"));
+        let msg = format!("{err:#}");
+        assert!(msg.contains("Missing source id for timestamp"));
     }
 }
 

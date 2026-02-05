@@ -615,11 +615,13 @@ mod tests {
             None,
         );
         let timeline = Timeline::new();
+        let audio_map = HashMap::new();
         let output = compiler
             .compile(
                 PathBuf::from("out.mp4"),
                 &timeline,
                 PathBuf::from("audio.mp4"),
+                &audio_map,
             )
             .unwrap();
         assert_eq!(output.args.last().unwrap(), "out.mp4");
@@ -669,11 +671,13 @@ mod tests {
             false,
         ));
 
+        let audio_map = HashMap::new();
         let output = compiler
             .compile(
                 PathBuf::from("out.mp4"),
                 &timeline,
                 PathBuf::from("audio.mp4"),
+                &audio_map,
             )
             .unwrap();
 
@@ -761,10 +765,8 @@ mod tests {
         // Create a dummy source map
         let mut source_map = HashMap::new();
         source_map.insert(PathBuf::from("video.mp4"), 0);
-        let audio_input_index = 0;
-
         let filter_complex = compiler
-            .build_filter_complex(&timeline, &source_map, audio_input_index, 5.0)
+            .build_filter_complex(&timeline, &source_map, 5.0)
             .unwrap();
 
         assert!(filter_complex.contains("ass='/tmp/subs.ass'"));

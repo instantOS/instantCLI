@@ -295,6 +295,7 @@ mod tests {
             data: SegmentData::VideoSubset {
                 start_time: source_start,
                 source_video: PathBuf::from("test.mp4"),
+                audio_source: PathBuf::from("test.mp4"),
                 source_id: "a".to_string(),
                 transform: None,
                 mute_audio: mute,

@@ -83,7 +83,7 @@ pub async fn handle_append(args: AppendArgs) -> Result<()> {
         markdown_path,
         markdown_dir,
         markdown_contents,
-        metadata: mut metadata,
+        mut metadata,
     } = load_markdown_document(&args.markdown)?;
 
     let VideoAppendInput {
