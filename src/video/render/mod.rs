@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, anyhow, bail};
 
 use crate::ui::prelude::{Level, emit};
+use crate::video::audio::AudioPreprocessor;
 
 /// Rendering mode for the output video
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -520,16 +521,41 @@ fn resolve_audio_path(video_path: &Path) -> Result<PathBuf> {
             ),
             None,
         );
-        Ok(auphonic_processed_path)
-    } else {
+        return Ok(auphonic_processed_path);
+    }
+
+    // No preprocessed audio found - run local preprocessing
+    emit(
+        Level::Info,
+        "video.render.audio.preprocess",
+        "No preprocessed audio found. Running local preprocessing (DeepFilterNet + normalize)...",
+        None,
+    );
+
+    let preprocessor = super::audio::local::LocalPreprocessor::new();
+    if !preprocessor.is_available() {
         emit(
             Level::Warn,
-            "video.render.audio",
-            "No preprocessed audio found (local or Auphonic). Using original video audio.",
+            "video.render.audio.preprocess",
+            "Local preprocessor not available (missing uvx or ffmpeg). Using original video audio.",
             None,
         );
-        Ok(video_path.to_path_buf())
+        return Ok(video_path.to_path_buf());
     }
+
+    // Run preprocessing synchronously using tokio runtime
+    let result = tokio::runtime::Runtime::new()
+        .context("Failed to create tokio runtime for audio preprocessing")?
+        .block_on(preprocessor.process(video_path, false))?;
+
+    emit(
+        Level::Success,
+        "video.render.audio.preprocess",
+        &format!("Preprocessed audio ready: {}", result.output_path.display()),
+        None,
+    );
+
+    Ok(result.output_path)
 }
 
 fn build_audio_source_map(
