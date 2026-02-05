@@ -3,6 +3,7 @@
 use anyhow::{Context, Result};
 use std::process::Command;
 
+use crate::assist::{assist_command_argv, AssistInternalCommand};
 use crate::menu::client::MenuClient;
 use crate::menu::protocol::SliderRequest;
 use crate::settings::context::SettingsContext;
@@ -127,9 +128,7 @@ fn run_brightness_slider(initial_value: Option<i64>) -> Result<Option<i64>> {
     let client = MenuClient::new();
     client.ensure_server_running()?;
 
-    let current_exe = std::env::current_exe()?;
-    let program = current_exe.to_string_lossy().to_string();
-    let args = vec![program, "assist".to_string(), "brightness-set".to_string()];
+    let args = assist_command_argv(AssistInternalCommand::BrightnessSet)?;
 
     let request = SliderRequest {
         min: 0,

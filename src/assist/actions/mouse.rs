@@ -1,3 +1,4 @@
+use crate::assist::{assist_command_argv, AssistInternalCommand};
 use crate::common::compositor::CompositorType;
 use crate::menu::client::MenuClient;
 use crate::menu::protocol::SliderRequest;
@@ -53,9 +54,7 @@ pub fn run_mouse_speed_slider(initial_value: Option<i64>) -> Result<Option<i64>>
 
     // We need a command that the slider can execute.
     // We'll use "ins assist mouse-set"
-    let current_exe = std::env::current_exe()?;
-    let program = current_exe.to_string_lossy().to_string();
-    let args = vec![program, "assist".to_string(), "mouse-set".to_string()];
+    let args = assist_command_argv(AssistInternalCommand::MouseSet)?;
 
     let request = SliderRequest {
         min: 0,
