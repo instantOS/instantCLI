@@ -387,6 +387,16 @@ enum OutputConflictChoice {
     Cancel,
 }
 
+impl OutputConflictChoice {
+    fn key(&self) -> &'static str {
+        match self {
+            OutputConflictChoice::Overwrite => "overwrite",
+            OutputConflictChoice::Rename => "rename",
+            OutputConflictChoice::Cancel => "cancel",
+        }
+    }
+}
+
 #[derive(Clone)]
 struct OutputConflictOption {
     choice: OutputConflictChoice,
@@ -414,7 +424,7 @@ impl FzfSelectable for OutputConflictOption {
     }
 
     fn fzf_key(&self) -> String {
-        self.label.clone()
+        format!("output_conflict:{}", self.choice.key())
     }
 }
 
