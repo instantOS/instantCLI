@@ -120,7 +120,7 @@ pub fn select_video_file_with_suggestions(
     );
     let start_dir = paths::videos_dir().ok();
 
-    select_path_with_picker(
+    select_video_path_with_picker(
         header,
         manual_prompt,
         picker_hint,
@@ -139,7 +139,7 @@ pub fn select_video_file(title: &str) -> Result<Option<PathBuf>> {
     );
     let start_dir = paths::videos_dir().ok();
 
-    select_path_with_picker(
+    select_video_path_with_picker(
         header,
         manual_prompt,
         picker_hint,

@@ -19,6 +19,7 @@ mod appearance;
 mod bluetooth;
 mod default_apps;
 mod disks;
+mod file;
 mod helpers;
 mod keyboard;
 mod mime;
@@ -71,6 +72,8 @@ pub enum PreviewId {
     Disk,
     #[value(name = "partition")]
     Partition,
+    #[value(name = "file-suggestion")]
+    FileSuggestion,
 }
 
 impl PreviewId {
@@ -98,6 +101,7 @@ impl PreviewId {
             PreviewId::DefaultPdfViewer => "default-pdf-viewer",
             PreviewId::Disk => "disk",
             PreviewId::Partition => "partition",
+            PreviewId::FileSuggestion => "file-suggestion",
         }
     }
 }
