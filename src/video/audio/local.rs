@@ -129,14 +129,8 @@ impl LocalPreprocessor {
             .args([
                 "ffmpeg-normalize",
                 &input.to_string_lossy(),
-                "-nt",
-                "ebu", // EBU R128 normalization
-                "-t",
-                "-12", // Louder target for speech: -12 LUFS (was -14)
-                "-tp",
-                "-1", // True peak: -1 dBTP
-                "-lrt",
-                "1", // AGGRESSIVE compression: 1 LU (was 3) - very tight volume control
+                "--preset",
+                "podcast",
                 "-o",
                 &output.to_string_lossy(),
                 "-f", // Force overwrite
