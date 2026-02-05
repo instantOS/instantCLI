@@ -42,6 +42,7 @@ pub enum DocumentBlock {
     Separator,
     Unhandled(UnhandledBlock),
     Music(MusicBlock),
+    Broll(BrollBlock),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,6 +68,13 @@ pub struct HeadingBlock {
 #[derive(Debug)]
 pub struct UnhandledBlock {
     pub description: String,
+}
+
+#[derive(Debug)]
+pub struct BrollBlock {
+    pub range: TimeRange,
+    pub text: String,
+    pub source_id: String,
 }
 
 #[derive(Debug, Clone)]
@@ -276,7 +284,7 @@ impl<'a> BodyParserState<'a> {
                 self.blockquote = Some(BlockquoteState::new());
             }
             Event::End(TagEnd::BlockQuote(_)) => {
-                self.flush_blockquote();
+                self.flush_blockquote()?;
             }
             Event::Start(Tag::Image {
                 dest_url, title, ..
@@ -298,7 +306,9 @@ impl<'a> BodyParserState<'a> {
             }
             Event::Code(code) => {
                 let line = self.byte_to_line(range.start);
-                if let Some(state) = self.paragraph.as_mut() {
+                if let Some(state) = self.blockquote.as_mut() {
+                    state.push_code(code.into_string());
+                } else if let Some(state) = self.paragraph.as_mut() {
                     state.push_fragment(InlineFragment::code(line, code.into_string()));
                 }
             }
@@ -355,21 +365,32 @@ impl<'a> BodyParserState<'a> {
         Ok(())
     }
 
-    fn flush_blockquote(&mut self) {
+    fn flush_blockquote(&mut self) -> Result<()> {
         if let Some(state) = self.blockquote.take() {
-            // Re-wrap content with `> ` prefix so it renders as <blockquote> in Pandoc
-            let markdown = state
-                .content
-                .lines()
-                .map(|line| format!("> {}", line))
-                .collect::<Vec<_>>()
-                .join("\n");
-            if !markdown.trim().is_empty() {
-                self.blocks.push(DocumentBlock::Unhandled(UnhandledBlock {
-                    description: markdown,
+            if let Some(code_span) = state.code_span {
+                let (source_id, range) =
+                    parse_segment_reference(&code_span, self.source_config, self.base_line_offset)?;
+                let text = state.following_text.trim().to_string();
+                self.blocks.push(DocumentBlock::Broll(BrollBlock {
+                    range,
+                    text,
+                    source_id,
                 }));
+            } else {
+                let markdown = state
+                    .content
+                    .lines()
+                    .map(|line| format!("> {}", line))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                if !markdown.trim().is_empty() {
+                    self.blocks.push(DocumentBlock::Unhandled(UnhandledBlock {
+                        description: markdown,
+                    }));
+                }
             }
         }
+        Ok(())
     }
 
     fn handle_text(&mut self, text: String, start: usize) {
@@ -598,17 +619,35 @@ impl HeadingState {
 
 struct BlockquoteState {
     content: String,
+    code_span: Option<String>,
+    following_text: String,
 }
 
 impl BlockquoteState {
     fn new() -> Self {
         Self {
             content: String::new(),
+            code_span: None,
+            following_text: String::new(),
         }
     }
 
     fn push_text(&mut self, text: String) {
-        self.content.push_str(&text);
+        if self.code_span.is_some() {
+            self.following_text.push_str(&text);
+        } else {
+            self.content.push_str(&text);
+        }
+    }
+
+    fn push_code(&mut self, code: String) {
+        if self.code_span.is_none() {
+            self.code_span = Some(code);
+        } else {
+            self.content.push('`');
+            self.content.push_str(&code);
+            self.content.push('`');
+        }
     }
 
     fn push_newline(&mut self) {
@@ -1182,6 +1221,44 @@ mod tests {
         let err = parse_video_document(markdown, Path::new("test.md")).unwrap_err();
         let msg = format!("{err:#}");
         assert!(msg.contains("Missing source id for timestamp"));
+    }
+
+    #[test]
+    fn parses_broll_from_blockquote_with_segment() {
+        let markdown = concat!(
+            "---\n",
+            "sources:\n",
+            "- id: a\n  source: video_a.mp4\n  transcript: a.json\n",
+            "default_source: a\n",
+            "---\n",
+            "> `a@00:05.0-00:10.0` some optional text\n",
+        );
+        let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
+
+        assert_eq!(document.blocks.len(), 1);
+        match &document.blocks[0] {
+            DocumentBlock::Broll(broll) => {
+                assert!((broll.range.start_seconds() - 5.0).abs() < f64::EPSILON);
+                assert!((broll.range.end_seconds() - 10.0).abs() < f64::EPSILON);
+                assert_eq!(broll.text, "some optional text");
+                assert_eq!(broll.source_id, "a");
+            }
+            other => panic!("Expected Broll block, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn blockquote_without_segment_becomes_unhandled() {
+        let markdown = "> This is just a quote without timestamps.\n";
+        let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
+
+        assert_eq!(document.blocks.len(), 1);
+        match &document.blocks[0] {
+            DocumentBlock::Unhandled(unhandled) => {
+                assert!(unhandled.description.starts_with("> "));
+            }
+            other => panic!("Expected Unhandled block, got {:?}", other),
+        }
     }
 }
 

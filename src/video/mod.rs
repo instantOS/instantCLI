@@ -9,7 +9,7 @@ pub mod planning;
 pub mod render;
 pub mod slides;
 pub mod subtitles;
-mod support;
+pub mod support;
 
 pub use cli::VideoCommands;
 pub use commands::handle_video_command;

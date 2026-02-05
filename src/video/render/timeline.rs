@@ -66,6 +66,15 @@ pub enum SegmentData {
         /// Path to the audio source file
         audio_source: PathBuf,
     },
+    /// B-roll video overlay (muted video that plays on top of the main video)
+    Broll {
+        /// Start time in the source video (in seconds)
+        start_time: f64,
+        /// Path to the source video file
+        source_video: PathBuf,
+        /// Source identifier for finding the video file
+        source_id: String,
+    },
 }
 
 /// Transform operations that can be applied to video or image segments
@@ -172,6 +181,25 @@ impl Segment {
         }
     }
 
+    /// Create a new B-roll segment (muted video overlay)
+    pub fn new_broll(
+        start_time: f64,
+        duration: f64,
+        source_start: f64,
+        source_video: PathBuf,
+        source_id: String,
+    ) -> Self {
+        Segment {
+            start_time,
+            duration,
+            data: SegmentData::Broll {
+                start_time: source_start,
+                source_video,
+                source_id,
+            },
+        }
+    }
+
     /// Get the end time of this segment
     pub fn end_time(&self) -> f64 {
         self.start_time + self.duration
@@ -234,6 +262,7 @@ impl SegmentData {
             SegmentData::VideoSubset { source_video, .. } => Some(source_video),
             SegmentData::Image { source_image, .. } => Some(source_image),
             SegmentData::Music { audio_source } => Some(audio_source),
+            SegmentData::Broll { source_video, .. } => Some(source_video),
         }
     }
 
@@ -250,6 +279,7 @@ impl SegmentData {
             SegmentData::VideoSubset { transform, .. } => transform.as_ref(),
             SegmentData::Image { transform, .. } => transform.as_ref(),
             SegmentData::Music { .. } => None,
+            SegmentData::Broll { .. } => None,
         }
     }
 }

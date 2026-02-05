@@ -1,4 +1,4 @@
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Result, anyhow, bail, Context};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -27,6 +27,7 @@ enum ProjectMenuEntry {
     AddRecording,
     Validate,
     Stats,
+    Edit,
     ClearCache,
     Back,
 }
@@ -38,6 +39,7 @@ impl std::fmt::Display for ProjectMenuEntry {
             ProjectMenuEntry::AddRecording => write!(f, "!__add_recording__"),
             ProjectMenuEntry::Validate => write!(f, "!__validate__"),
             ProjectMenuEntry::Stats => write!(f, "!__stats__"),
+            ProjectMenuEntry::Edit => write!(f, "!__edit__"),
             ProjectMenuEntry::ClearCache => write!(f, "!__clear_cache__"),
             ProjectMenuEntry::Back => write!(f, "!__back__"),
         }
@@ -62,6 +64,10 @@ impl FzfSelectable for ProjectMenuEntry {
             ProjectMenuEntry::Stats => format!(
                 "{} Show Timeline Stats",
                 format_icon_colored(NerdFont::Chart, colors::BLUE)
+            ),
+            ProjectMenuEntry::Edit => format!(
+                "{} Edit Markdown",
+                format_icon_colored(NerdFont::Edit, colors::MAUVE)
             ),
             ProjectMenuEntry::ClearCache => format!(
                 "{} Clear Cache",
@@ -107,6 +113,12 @@ impl FzfSelectable for ProjectMenuEntry {
                 .blank()
                 .text("Shows segments, slides, and unsupported blocks.")
                 .build(),
+            ProjectMenuEntry::Edit => PreviewBuilder::new()
+                .header(NerdFont::Edit, "Edit Markdown")
+                .text("Open the markdown file in your text editor.")
+                .blank()
+                .text("Uses $EDITOR or falls back to 'nvim'.")
+                .build(),
             ProjectMenuEntry::ClearCache => PreviewBuilder::new()
                 .header(NerdFont::Trash, "Clear Cache")
                 .text("Delete cached files for this project.")
@@ -142,6 +154,7 @@ pub async fn open_project_for_path(markdown_path: &Path) -> Result<()> {
             ProjectMenuEntry::AddRecording,
             ProjectMenuEntry::Validate,
             ProjectMenuEntry::Stats,
+            ProjectMenuEntry::Edit,
             ProjectMenuEntry::ClearCache,
             ProjectMenuEntry::Back,
         ];
@@ -177,6 +190,9 @@ pub async fn open_project_for_path(markdown_path: &Path) -> Result<()> {
                         markdown: markdown_path.to_path_buf(),
                     })?;
                     show_report_dialog("Timeline Stats", lines)?;
+                }
+                ProjectMenuEntry::Edit => {
+                    run_edit_for_project(markdown_path)?;
                 }
                 ProjectMenuEntry::ClearCache => {
                     run_clear_cache(markdown_path)?;
@@ -521,4 +537,28 @@ fn resolve_render_output_path(
     let suffix = render_mode.output_suffix();
     output.set_file_name(format!("{stem}{suffix}.mp4"));
     Ok(output)
+}
+
+fn run_edit_for_project(markdown_path: &Path) -> Result<()> {
+    use std::process::Command;
+    use std::env;
+
+    // Get editor from environment or fall back to nvim
+    let editor = env::var("EDITOR").unwrap_or_else(|_| "nvim".to_string());
+
+    FzfWrapper::message(&format!("Opening {} in {}...",
+        markdown_path.file_name().and_then(|s| s.to_str()).unwrap_or("file"),
+        editor
+    ))?;
+
+    let status = Command::new(&editor)
+        .arg(markdown_path)
+        .status()
+        .with_context(|| format!("Failed to open editor '{}'", editor))?;
+
+    if !status.success() {
+        bail!("Editor exited with non-zero status: {:?}", status);
+    }
+
+    Ok(())
 }
