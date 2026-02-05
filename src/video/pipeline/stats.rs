@@ -3,15 +3,28 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
-use crate::ui::prelude::{Level, emit};
+use crate::ui::prelude::Level;
 
 use crate::video::cli::StatsArgs;
 use crate::video::document::parse_video_document;
+use crate::video::pipeline::report::{emit_report, format_report_lines, ReportLine};
 use crate::video::planning::plan_timeline;
 use crate::video::render::resolve_video_sources;
 use crate::video::support::utils::canonicalize_existing;
 
 pub fn handle_stats(args: StatsArgs) -> Result<()> {
+    let report = build_stats_report(args)?;
+    emit_report(&report);
+    Ok(())
+}
+
+pub fn stats_report_lines(args: StatsArgs) -> Result<Vec<String>> {
+    let report = build_stats_report(args)?;
+    Ok(format_report_lines(&report))
+}
+
+fn build_stats_report(args: StatsArgs) -> Result<Vec<ReportLine>> {
+    let mut report: Vec<ReportLine> = Vec::new();
     let markdown_path = canonicalize_existing(&args.markdown)?;
     let markdown_contents = fs::read_to_string(&markdown_path)
         .with_context(|| format!("Failed to read markdown file {}", markdown_path.display()))?;
@@ -22,80 +35,73 @@ pub fn handle_stats(args: StatsArgs) -> Result<()> {
     match resolve_video_sources(&document.metadata, markdown_dir) {
         Ok(sources) => {
             if sources.is_empty() {
-                emit(
+                report.push(ReportLine::new(
                     Level::Warn,
                     "video.stats.video_metadata",
                     "No video sources configured in front matter",
-                    None,
-                );
+                ));
             }
             for source in sources {
                 let exists = source.source.exists();
-                emit(
+                report.push(ReportLine::new(
                     if exists { Level::Success } else { Level::Warn },
                     "video.stats.video",
-                    &format!(
+                    format!(
                         "Source {} video {} {}",
                         source.id,
                         if exists { "found at" } else { "missing at" },
                         source.source.display()
                     ),
-                    None,
-                );
+                ));
             }
         }
         Err(error) => {
-            emit(
+            report.push(ReportLine::new(
                 Level::Error,
                 "video.stats.video_metadata",
-                &format!("Unable to resolve source videos: {error}"),
-                None,
-            );
+                format!("Unable to resolve source videos: {error}"),
+            ));
         }
     };
 
     let plan = plan_timeline(&document)?;
 
     if plan.items.is_empty() {
-        emit(
+        report.push(ReportLine::new(
             Level::Warn,
             "video.stats.empty",
             "No renderable blocks detected in the markdown file",
-            None,
-        );
+        ));
     }
 
     if plan.ignored_count == 0 {
-        emit(
+        report.push(ReportLine::new(
             Level::Success,
             "video.stats.supported",
             "Markdown contains only supported editing instructions",
-            None,
-        );
+        ));
     } else {
-        emit(
+        report.push(ReportLine::new(
             Level::Warn,
             "video.stats.unsupported",
-            &format!(
+            format!(
                 "Markdown contains {count} block(s) that are currently unsupported",
                 count = plan.ignored_count
             ),
-            None,
-        );
+        ));
     }
 
-    emit(
+    report.push(ReportLine::new(
         Level::Info,
         "video.stats.counts",
-        &format!(
+        format!(
             "Segments: {segments}, Standalone slides: {slides}, Heading slides: {headings}, Overlay slides: {overlays}",
             segments = plan.segment_count,
             slides = plan.standalone_count,
             headings = plan.heading_count,
             overlays = plan.overlay_count,
         ),
-        None,
-    );
+    ));
 
-    Ok(())
+    Ok(report)
 }

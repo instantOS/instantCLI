@@ -167,14 +167,16 @@ pub async fn open_project_for_path(markdown_path: &Path) -> Result<()> {
                     run_add_recording(markdown_path).await?;
                 }
                 ProjectMenuEntry::Validate => {
-                    check::handle_check(CheckArgs {
+                    let lines = check::check_report_lines(CheckArgs {
                         markdown: markdown_path.to_path_buf(),
                     })?;
+                    show_report_dialog("Validation Results", lines)?;
                 }
                 ProjectMenuEntry::Stats => {
-                    stats::handle_stats(StatsArgs {
+                    let lines = stats::stats_report_lines(StatsArgs {
                         markdown: markdown_path.to_path_buf(),
                     })?;
+                    show_report_dialog("Timeline Stats", lines)?;
                 }
                 ProjectMenuEntry::ClearCache => {
                     run_clear_cache(markdown_path)?;
@@ -344,6 +346,18 @@ fn run_clear_cache(markdown_path: &Path) -> Result<()> {
         FzfWrapper::message("No cache directories found")?;
     }
 
+    Ok(())
+}
+
+fn show_report_dialog(title: &str, lines: Vec<String>) -> Result<()> {
+    if lines.is_empty() {
+        FzfWrapper::message("No details available")?;
+    } else {
+        FzfWrapper::builder()
+            .message(lines.join("\n"))
+            .title(title)
+            .message_dialog()?;
+    }
     Ok(())
 }
 

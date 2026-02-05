@@ -1,10 +1,11 @@
 use std::path::Path;
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 
-use crate::ui::prelude::{Level, emit};
+use crate::ui::prelude::Level;
 
 use crate::video::cli::CheckArgs;
+use crate::video::pipeline::report::{emit_report, format_report_lines, ReportLine};
 use crate::video::planning::TimelinePlanItem;
 use crate::video::render::{
     build_timeline_plan, load_transcript_cues, load_video_document, resolve_video_sources,
@@ -13,12 +14,18 @@ use crate::video::support::ffmpeg::probe_video_dimensions;
 use crate::video::support::utils::canonicalize_existing;
 
 pub fn handle_check(args: CheckArgs) -> Result<()> {
-    macro_rules! log {
-        ($level:expr, $code:expr, $($arg:tt)*) => {
-            emit($level, $code, &format!($($arg)*), None);
-        };
-    }
+    let report = build_check_report(args)?;
+    emit_report(&report);
+    Ok(())
+}
 
+pub fn check_report_lines(args: CheckArgs) -> Result<Vec<String>> {
+    let report = build_check_report(args)?;
+    Ok(format_report_lines(&report))
+}
+
+fn build_check_report(args: CheckArgs) -> Result<Vec<ReportLine>> {
+    let mut report: Vec<ReportLine> = Vec::new();
     let markdown_path = canonicalize_existing(&args.markdown)?;
     let markdown_dir = markdown_path.parent().unwrap_or_else(|| Path::new("."));
 
@@ -55,56 +62,61 @@ pub fn handle_check(args: CheckArgs) -> Result<()> {
     let pause_count = plan.standalone_count.saturating_sub(plan.heading_count);
     let unsupported_blocks = plan.ignored_count;
 
-    log!(
+    report.push(ReportLine::new(
         Level::Success,
         "video.check.valid",
-        "{} is valid video markdown",
-        markdown_path.display()
-    );
+        format!("{} is valid video markdown", markdown_path.display()),
+    ));
 
-    log!(
+    report.push(ReportLine::new(
         Level::Info,
         "video.check.inputs",
-        "Default video: {} ({}x{})\nSources: {} ({} cue(s))",
-        default_source.source.display(),
-        video_width,
-        video_height,
-        sources.len(),
-        cues.len()
-    );
+        format!(
+            "Default video: {} ({}x{})\nSources: {} ({} cue(s))",
+            default_source.source.display(),
+            video_width,
+            video_height,
+            sources.len(),
+            cues.len()
+        ),
+    ));
 
-    log!(
+    report.push(ReportLine::new(
         Level::Info,
         "video.check.duration",
-        "Planned output duration: {duration_pretty} (~{seconds:.1}s)",
-        seconds = duration_seconds
-    );
+        format!(
+            "Planned output duration: {duration_pretty} (~{seconds:.1}s)",
+            seconds = duration_seconds
+        ),
+    ));
 
-    log!(
+    report.push(ReportLine::new(
         Level::Info,
         "video.check.counts",
-        "Clips: {segments}, Overlay slides: {overlays}, Heading slides: {headings}, Pause slides: {pauses}",
-        segments = plan.segment_count,
-        overlays = plan.overlay_count,
-        headings = plan.heading_count,
-        pauses = pause_count,
-    );
+        format!(
+            "Clips: {segments}, Overlay slides: {overlays}, Heading slides: {headings}, Pause slides: {pauses}",
+            segments = plan.segment_count,
+            overlays = plan.overlay_count,
+            headings = plan.heading_count,
+            pauses = pause_count,
+        ),
+    ));
 
     if unsupported_blocks == 0 {
-        log!(
+        report.push(ReportLine::new(
             Level::Success,
             "video.check.supported",
-            "All markdown blocks are supported"
-        );
+            "All markdown blocks are supported",
+        ));
     } else {
-        log!(
+        report.push(ReportLine::new(
             Level::Warn,
             "video.check.partial_support",
-            "{unsupported_blocks} unsupported block(s) will be ignored during render",
-        );
+            format!("{unsupported_blocks} unsupported block(s) will be ignored during render"),
+        ));
     }
 
-    Ok(())
+    Ok(report)
 }
 
 fn plan_duration_seconds(plan: &crate::video::planning::TimelinePlan) -> f64 {
