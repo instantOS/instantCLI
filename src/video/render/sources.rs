@@ -4,11 +4,13 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, bail, Result};
 
 use crate::ui::prelude::Level;
+use crate::video::audio::{PreprocessorType, create_preprocessor};
+use crate::video::config::{VideoConfig, VideoDirectories};
 use crate::video::document::{VideoMetadata, VideoSource};
 use crate::video::render::logging::log_event;
 use crate::video::render::paths;
 use crate::video::support::utils::{canonicalize_existing, compute_file_hash};
-use crate::video::{config::VideoDirectories, document::VideoDocument};
+use crate::video::document::VideoDocument;
 
 pub(super) fn resolve_source_path(path: &Path, markdown_dir: &Path) -> Result<PathBuf> {
     if path.is_absolute() {
@@ -73,16 +75,17 @@ pub(super) fn validate_timeline_sources(
     Ok(())
 }
 
-pub fn resolve_video_sources(
+pub async fn resolve_video_sources(
     metadata: &VideoMetadata,
     markdown_dir: &Path,
+    config: &VideoConfig,
 ) -> Result<Vec<VideoSource>> {
     let sources = paths::resolve_video_sources(metadata, markdown_dir)?;
     let mut resolved = Vec::new();
     for source in sources {
         let resolved_source = resolve_source_path(&source.source, markdown_dir)?;
         let resolved_transcript = resolve_source_path(&source.transcript, markdown_dir)?;
-        let resolved_audio = resolve_audio_path(&resolved_source)?;
+        let resolved_audio = resolve_audio_path(&resolved_source, config).await?;
         let canonical = canonicalize_existing(&resolved_source)?;
         log_event(
             Level::Info,
@@ -100,7 +103,7 @@ pub fn resolve_video_sources(
     Ok(resolved)
 }
 
-fn resolve_audio_path(video_path: &Path) -> Result<PathBuf> {
+async fn resolve_audio_path(video_path: &Path, config: &VideoConfig) -> Result<PathBuf> {
     log_event(
         Level::Info,
         "video.render.video.hash",
@@ -139,21 +142,61 @@ fn resolve_audio_path(video_path: &Path) -> Result<PathBuf> {
                 auphonic_processed_path.display()
             ),
         );
-        Ok(auphonic_processed_path)
-    } else {
+        return Ok(auphonic_processed_path);
+    }
+
+    // No preprocessed audio found - run configured preprocessing
+    let preprocessor = create_preprocessor(&config.preprocessor, config);
+
+    // Skip preprocessing if configured to None
+    if matches!(config.preprocessor, PreprocessorType::None) {
+        log_event(
+            Level::Info,
+            "video.render.audio",
+            "Preprocessing disabled. Using original video audio.",
+        );
+        return Ok(video_path.to_path_buf());
+    }
+
+    if !preprocessor.is_available() {
         log_event(
             Level::Warn,
-            "video.render.audio",
-            "No preprocessed audio found (local or Auphonic). Using original video audio.",
+            "video.render.audio.preprocess",
+            format!(
+                "Preprocessor '{}' not available. Using original video audio.",
+                preprocessor.name()
+            ),
         );
-        Ok(video_path.to_path_buf())
+        return Ok(video_path.to_path_buf());
     }
+
+    log_event(
+        Level::Info,
+        "video.render.audio.preprocess",
+        format!(
+            "No preprocessed audio found. Running {} preprocessing...",
+            preprocessor.name()
+        ),
+    );
+
+    let result = preprocessor.process(video_path, false).await?;
+
+    log_event(
+        Level::Success,
+        "video.render.audio.preprocess",
+        format!("Preprocessed audio ready: {}", result.output_path.display()),
+    );
+
+    Ok(result.output_path)
 }
 
-pub(super) fn build_audio_source_map(sources: &[VideoSource]) -> Result<HashMap<String, PathBuf>> {
+pub(super) async fn build_audio_source_map(
+    sources: &[VideoSource],
+    config: &VideoConfig,
+) -> Result<HashMap<String, PathBuf>> {
     let mut audio_map = HashMap::new();
     for source in sources {
-        let audio_path = resolve_audio_path(&source.source)?;
+        let audio_path = resolve_audio_path(&source.source, config).await?;
         audio_map.insert(source.id.clone(), audio_path);
     }
     Ok(audio_map)
