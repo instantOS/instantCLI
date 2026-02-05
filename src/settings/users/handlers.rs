@@ -14,8 +14,9 @@ use super::system::{
     group_exists, wheel_sudo_status,
 };
 use super::utils::{
-    add_user_to_group, change_user_shell, create_user, prompt_password_with_confirmation,
-    remove_user_from_group, select_groups, select_shell, set_user_password, validate_username,
+    add_user_to_group, change_user_shell, create_group, create_user, prompt_group_name,
+    prompt_password_with_confirmation, remove_user_from_group, select_groups, select_shell,
+    set_user_password, validate_group_name, validate_username,
 };
 use crate::menu_utils::select_one_with_style;
 
@@ -329,6 +330,11 @@ fn manage_user_groups(
                     changed = true;
                 }
             }
+            Some(GroupMenuItem::CreateGroup) => {
+                if create_group_for_user(ctx, store, username, &user_info.groups)? {
+                    changed = true;
+                }
+            }
             _ => break,
         }
     }
@@ -350,8 +356,79 @@ fn build_group_menu_items(
         .collect();
 
     items.push(GroupMenuItem::AddGroup);
+    items.push(GroupMenuItem::CreateGroup);
     items.push(GroupMenuItem::Back);
     items
+}
+
+fn create_group_for_user(
+    ctx: &mut SettingsContext,
+    store: &mut UserStore,
+    username: &str,
+    current_groups: &[String],
+) -> Result<bool> {
+    let group_name = prompt_group_name()?;
+    if group_name.is_empty() {
+        ctx.emit_info("settings.users.groups", "Group creation cancelled.");
+        return Ok(false);
+    }
+
+    if let Err(err) = validate_group_name(&group_name) {
+        ctx.emit_info(
+            "settings.users.groups",
+            &format!("Invalid group name: {}", err),
+        );
+        return Ok(false);
+    }
+
+    if group_exists(&group_name)? {
+        if current_groups.iter().any(|group| group == &group_name) {
+            ctx.emit_info(
+                "settings.users.groups",
+                &format!("{} is already in group {}.", username, group_name),
+            );
+            return Ok(false);
+        }
+
+        let message = format!(
+            "Group '{}' already exists. Add '{}' to it?",
+            group_name, username
+        );
+        let result = FzfWrapper::builder()
+            .confirm(message)
+            .yes_text("Add user")
+            .no_text("Skip")
+            .show_confirmation()?;
+
+        if matches!(result, crate::menu_utils::ConfirmResult::Yes) {
+            add_user_to_group(ctx, username, &group_name)?;
+            if !store.is_managed(username) {
+                store.add(username);
+            }
+            return Ok(true);
+        }
+
+        return Ok(false);
+    }
+
+    create_group(ctx, &group_name)?;
+
+    let message = format!("Add '{}' to the new '{}' group?", username, group_name);
+    let result = FzfWrapper::builder()
+        .confirm(message)
+        .yes_text("Add user")
+        .no_text("Skip")
+        .show_confirmation()?;
+
+    if matches!(result, crate::menu_utils::ConfirmResult::Yes) {
+        add_user_to_group(ctx, username, &group_name)?;
+        if !store.is_managed(username) {
+            store.add(username);
+        }
+        return Ok(true);
+    }
+
+    Ok(false)
 }
 
 /// Add groups to a user

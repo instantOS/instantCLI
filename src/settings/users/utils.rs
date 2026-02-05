@@ -141,6 +141,29 @@ pub(super) fn remove_user_from_group(
     Ok(())
 }
 
+/// Prompt for a new group name
+pub(super) fn prompt_group_name() -> Result<String> {
+    let group_name = FzfWrapper::builder()
+        .prompt("New group")
+        .input()
+        .input_dialog()?;
+    Ok(group_name.trim().to_string())
+}
+
+/// Create a new system group
+pub(super) fn create_group(ctx: &mut SettingsContext, group_name: &str) -> Result<()> {
+    ctx.emit_info(
+        "settings.users.groups",
+        &format!("Creating group {}", group_name),
+    );
+    ctx.run_command_as_root("groupadd", [group_name])?;
+    ctx.emit_success(
+        "settings.users.groups",
+        &format!("Group {} created.", group_name),
+    );
+    Ok(())
+}
+
 /// Prompt user to select a shell
 pub(super) fn select_shell(ctx: &SettingsContext, prompt: &str) -> Result<Option<String>> {
     let available_shells = get_available_shells()?;
@@ -243,6 +266,54 @@ pub(super) fn validate_username(username: &str) -> Result<(), UsernameValidation
 
     if chars.any(|c| !c.is_ascii_lowercase() && !c.is_ascii_digit() && c != '-' && c != '_') {
         return Err(UsernameValidationError::InvalidChar);
+    }
+
+    Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum GroupNameValidationError {
+    Empty,
+    TooLong,
+    InvalidStart,
+    InvalidChar,
+}
+
+impl fmt::Display for GroupNameValidationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            GroupNameValidationError::Empty => write!(f, "Group name cannot be empty."),
+            GroupNameValidationError::TooLong => {
+                write!(f, "Group name must be at most 32 characters long.")
+            }
+            GroupNameValidationError::InvalidStart => {
+                write!(f, "Group name must start with a lowercase letter.")
+            }
+            GroupNameValidationError::InvalidChar => write!(
+                f,
+                "Group name may only contain lowercase letters, digits, hyphens, or underscores."
+            ),
+        }
+    }
+}
+
+pub(super) fn validate_group_name(group_name: &str) -> Result<(), GroupNameValidationError> {
+    if group_name.is_empty() {
+        return Err(GroupNameValidationError::Empty);
+    }
+
+    if group_name.chars().count() > 32 {
+        return Err(GroupNameValidationError::TooLong);
+    }
+
+    let mut chars = group_name.chars();
+    let first = chars.next().ok_or(GroupNameValidationError::Empty)?;
+    if !first.is_ascii_lowercase() {
+        return Err(GroupNameValidationError::InvalidStart);
+    }
+
+    if chars.any(|c| !c.is_ascii_lowercase() && !c.is_ascii_digit() && c != '-' && c != '_') {
+        return Err(GroupNameValidationError::InvalidChar);
     }
 
     Ok(())

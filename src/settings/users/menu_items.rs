@@ -273,6 +273,7 @@ impl FzfSelectable for UserActionItem {
 pub(super) enum GroupMenuItem {
     ExistingGroup { name: String, is_primary: bool },
     AddGroup,
+    CreateGroup,
     Back,
 }
 
@@ -282,7 +283,13 @@ impl FzfSelectable for GroupMenuItem {
             GroupMenuItem::ExistingGroup { name, .. } => {
                 format!("{} {}", char::from(NerdFont::List), name)
             }
-            GroupMenuItem::AddGroup => format!("{} Add group", format_icon(NerdFont::Plus)),
+            GroupMenuItem::AddGroup => {
+                format!("{} Add existing group", format_icon(NerdFont::Plus))
+            }
+            GroupMenuItem::CreateGroup => format!(
+                "{} Create group",
+                format_icon_colored(NerdFont::Plus, colors::GREEN)
+            ),
             GroupMenuItem::Back => format!("{} Back", format_icon(NerdFont::ArrowLeft)),
         }
     }
@@ -314,9 +321,15 @@ impl FzfSelectable for GroupMenuItem {
             }
             GroupMenuItem::AddGroup => PreviewBuilder::new()
                 .header(NerdFont::Plus, "Add Group")
-                .text("Add a supplementary group to this user.")
+                .text("Add an existing supplementary group to this user.")
                 .blank()
                 .subtext("Use Tab to select multiple groups.")
+                .build(),
+            GroupMenuItem::CreateGroup => PreviewBuilder::new()
+                .header(NerdFont::Plus, "Create Group")
+                .text("Create a new system group.")
+                .blank()
+                .subtext("You can optionally add this user after creation.")
                 .build(),
             GroupMenuItem::Back => PreviewBuilder::new()
                 .header(NerdFont::ArrowLeft, "Back")
