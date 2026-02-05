@@ -201,6 +201,7 @@ impl FfmpegCompiler {
         Ok(filters.join("; "))
     }
 
+    //TODO: this function is too long, refactor
     fn build_base_track_filters(
         &self,
         filters: &mut Vec<String>,

@@ -45,6 +45,7 @@ const MIN_SUBTITLE_DURATION_SECS: f64 = 0.5;
 ///
 /// # Returns
 /// A vector of subtitles with timing adjusted to the final timeline.
+//TODO: this function is too long, refactor
 pub fn remap_subtitles_to_timeline(
     timeline: &Timeline,
     cues: &[TranscriptCue],
