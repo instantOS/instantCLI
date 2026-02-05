@@ -33,8 +33,14 @@ window.addEventListener('load', () => {
         body.classList.add('layout-image');
     }
 
+    // "Title" condition: ONLY a single heading, nothing else
+    const isSingleHeading = headings === 1 && paragraphs === 0 && codeBlocks === 0 && listItems === 0 && blockquotes === 0 && imgElements === 0;
+    if (isSingleHeading) {
+        body.classList.add('layout-title');
+    }
+
     // "Hero" condition: Only headers or very minimal text, but NO blockquotes
-    if (codeBlocks === 0 && listItems === 0 && blockquotes === 0 && paragraphs <= 1 && headings > 0 && textLength < 200) {
+    if (!isSingleHeading && codeBlocks === 0 && listItems === 0 && blockquotes === 0 && paragraphs <= 1 && headings > 0 && textLength < 200) {
         body.classList.add('layout-hero');
     }
 
@@ -46,29 +52,40 @@ window.addEventListener('load', () => {
 
     // 2. Auto-scaling logic
     let currentScale = 100;
-    const minScale = 20;
+    const minScale = 10;
     let maxScale = 300; // Allow growing up to 3x base size
 
-    if (body.classList.contains('layout-hero')) {
+    if (body.classList.contains('layout-title')) {
+        maxScale = 400; // Allow single headings to grow even more
+    } else if (body.classList.contains('layout-hero')) {
         maxScale = 250; // Cap hero slightly more to avoid clipping
     }
 
     function checkOverflow() {
-        const buffer = 20; // px safety margin
+        const buffer = 40; // px safety margin
+        
+        // Use window dimensions and compare against content's scroll dimensions
+        // This is more reliable than checking body.scrollHeight which is fixed to 100vh
+        const style = window.getComputedStyle(body);
+        const paddingTop = parseFloat(style.paddingTop);
+        const paddingBottom = parseFloat(style.paddingBottom);
+        const paddingLeft = parseFloat(style.paddingLeft);
+        const paddingRight = parseFloat(style.paddingRight);
+        
+        const availableHeight = window.innerHeight - paddingTop - paddingBottom - buffer;
+        const availableWidth = window.innerWidth - paddingLeft - paddingRight - buffer;
 
         // Vertical overflow
-        if (body.scrollHeight > body.clientHeight - buffer || content.scrollHeight > body.clientHeight - buffer) {
+        if (content.scrollHeight > availableHeight) {
             return true;
         }
 
-        // Horizontal overflow (global)
-        if (body.scrollWidth > body.clientWidth - buffer) {
+        // Horizontal overflow
+        if (content.scrollWidth > availableWidth) {
             return true;
         }
 
         // Horizontal overflow (code blocks)
-        // Code blocks usually don't wrap, so we must check if they need scrolling.
-        // For a static slide, scrolling = cut off content.
         const pres = content.querySelectorAll('pre');
         for (const pre of pres) {
             if (pre.scrollWidth > pre.clientWidth) {

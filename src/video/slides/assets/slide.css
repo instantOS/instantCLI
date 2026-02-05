@@ -469,7 +469,7 @@ td {
 
 /* Hero Layout */
 body.layout-hero .content {
-  transform: scale(1.1);
+  width: 85%;
   text-align: center;
   align-items: center;
 }
@@ -498,6 +498,27 @@ body.layout-hero p {
   text-align: center;
   color: var(--ctp-subtext0);
   max-width: 90%;
+}
+
+/* Title Layout (Single Heading) */
+body.layout-title .content {
+  width: 90%;
+  max-width: none;
+  text-align: center;
+  align-items: center;
+}
+
+body.layout-title h1,
+body.layout-title h2,
+body.layout-title h3 {
+  font-size: 11em;
+  margin-bottom: 0;
+  line-height: 1.1;
+  background: linear-gradient(to bottom, var(--ctp-text) 30%, var(--ctp-mauve) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  filter: drop-shadow(0 0 30px rgba(203, 166, 247, 0.3));
 }
 
 /* Quote Layout - Modern, fancy Catppuccin design */
