@@ -75,13 +75,15 @@ struct TimelinePlanner {
     stats: PlanStats,
     /// Current overlay to apply to upcoming segments.
     overlay_state: Option<OverlayPlan>,
+    /// Current B-roll state to apply to upcoming segments (persists like overlays).
+    broll_state: Option<BrollPlan>,
     /// Index of the last clip added (for retroactive overlay application).
     last_clip_idx: Option<usize>,
     /// True if we're after a separator and before any segment (pause region).
     in_separator_region: bool,
     /// Accumulator for merging consecutive unhandled blocks.
     pending_content: Vec<String>,
-    /// Pending B-roll clips to apply to the previous segment.
+    /// Pending B-roll clips being accumulated before applying to state.
     pending_broll: Vec<BrollClip>,
 }
 
@@ -100,6 +102,7 @@ impl TimelinePlanner {
             items: Vec::new(),
             stats: PlanStats::default(),
             overlay_state: None,
+            broll_state: None,
             last_clip_idx: None,
             in_separator_region: false,
             pending_content: Vec::new(),
@@ -124,8 +127,8 @@ impl TimelinePlanner {
     fn handle_segment(&mut self, segment: &crate::video::document::SegmentBlock) {
         // Flush pending content as overlay before processing segment
         self.flush_pending_as_overlay();
-        // Flush pending B-roll to previous clip before adding new segment
-        self.flush_pending_broll();
+        // Flush pending B-roll to state (applies to upcoming segments like overlays)
+        self.flush_pending_broll_to_state();
 
         self.items.push(TimelinePlanItem::Clip(ClipPlan {
             start: segment.range.start_seconds(),
@@ -133,7 +136,7 @@ impl TimelinePlanner {
             kind: segment.kind,
             text: segment.text.clone(),
             overlay: self.overlay_state.clone(),
-            broll: None,
+            broll: self.broll_state.clone(),
             source_id: segment.source_id.clone(),
         }));
         self.last_clip_idx = Some(self.items.len() - 1);
@@ -153,8 +156,8 @@ impl TimelinePlanner {
     }
 
     fn handle_separator(&mut self) {
-        // Flush pending B-roll to previous clip
-        self.flush_pending_broll();
+        // Flush pending B-roll to state before separator
+        self.flush_pending_broll_to_state();
         if !self.pending_content.is_empty() {
             if self.in_separator_region {
                 self.flush_pending_as_pause();
@@ -163,6 +166,7 @@ impl TimelinePlanner {
             }
         }
         self.overlay_state = None;
+        self.broll_state = None;  // Clear B-roll state on separator (like overlays)
         self.in_separator_region = true;
     }
 
@@ -174,8 +178,8 @@ impl TimelinePlanner {
     }
 
     fn handle_unhandled(&mut self, unhandled: &crate::video::document::UnhandledBlock) {
-        // Unhandled content (like text overlays) terminates B-roll sequence
-        self.flush_pending_broll();
+        // Flush pending B-roll to state (B-roll persists across segments like overlays)
+        self.flush_pending_broll_to_state();
         let trimmed = unhandled.description.trim();
         if trimmed.is_empty() {
             self.stats.ignored_count += 1;
@@ -193,23 +197,19 @@ impl TimelinePlanner {
     }
 
     fn final_flush(&mut self) {
-        // Flush pending B-roll to last clip
-        self.flush_pending_broll();
+        // Flush pending B-roll to state
+        self.flush_pending_broll_to_state();
         // Any remaining pending content becomes an overlay for the last clip
         self.flush_pending_as_overlay();
     }
 
-    /// Flush pending B-roll clips to the last clip.
-    fn flush_pending_broll(&mut self) {
+    /// Flush pending B-roll clips to the B-roll state (persists across segments like overlays).
+    fn flush_pending_broll_to_state(&mut self) {
         if self.pending_broll.is_empty() {
             return;
         }
         let clips = std::mem::take(&mut self.pending_broll);
-        if let Some(last_idx) = self.last_clip_idx
-            && let Some(TimelinePlanItem::Clip(clip)) = self.items.get_mut(last_idx)
-        {
-            clip.broll = Some(BrollPlan { clips });
-        }
+        self.broll_state = Some(BrollPlan { clips });
     }
 
     /// Merge pending content into an overlay and apply to the last clip.
