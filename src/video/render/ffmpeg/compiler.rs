@@ -403,11 +403,14 @@ impl FfmpegCompiler {
             let output_label = format!("broll_out_{idx}");
 
             let trim_end = source_start + segment.duration;
+            // Offset b-roll timestamps to match the main video timeline
+            // This ensures the overlay filter syncs frames correctly when using enable='between(t,...)'
             filters.push(format!(
-                "[{input}:v]trim=start={start}:end={end},setpts=PTS-STARTPTS[{out}]",
+                "[{input}:v]trim=start={start}:end={end},setpts=PTS-STARTPTS+{offset}/TB[{out}]",
                 input = input_index,
                 start = source_start,
                 end = trim_end,
+                offset = segment.start_time,
                 out = trimmed_label,
             ));
 
