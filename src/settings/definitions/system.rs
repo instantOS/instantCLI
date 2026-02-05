@@ -5,6 +5,7 @@
 use anyhow::{Context, Result};
 use duct::cmd;
 
+use crate::arch::dualboot::types::format_size;
 use crate::common::distro::OperatingSystem;
 use crate::common::package::{InstallResult, ensure_all};
 use crate::common::systemd::SystemdManager;
@@ -32,6 +33,7 @@ impl Setting for AboutSystem {
             .icon(NerdFont::About)
             .summary("Display system information using fastfetch.")
             .requirements(vec![&FASTFETCH])
+            .search_keywords(&["fastfetch", "neofetch"])
             .build()
     }
 
@@ -65,6 +67,7 @@ impl Setting for SystemDoctor {
             .icon(NerdFont::ShieldCheck)
             .summary("Run system diagnostics to check for common issues and available fixes.")
             .requirements(vec![&PACMAN_CONTRIB])
+            .search_keywords(&["health"])
             .build()
     }
 
@@ -171,7 +174,8 @@ tui_command_setting!(
     NerdFont::Upgrade,
     "Upgrade all installed packages and system components using topgrade.",
     "topgrade",
-    &TOPGRADE
+    &TOPGRADE,
+    &["update"]
 );
 
 // ============================================================================
@@ -205,6 +209,47 @@ impl Setting for PacmanAutoclean {
         let target = !current;
         ctx.set_bool(Self::KEY, target);
         apply_pacman_autoclean(ctx, target)
+    }
+}
+
+// ============================================================================
+// Clear Pacman Cache
+// ============================================================================
+
+pub struct ClearPacmanCache;
+
+impl Setting for ClearPacmanCache {
+    fn metadata(&self) -> SettingMetadata {
+        SettingMetadata::builder()
+            .id("system.pacman_cache_clear")
+            .title("Clear pacman cache")
+            .icon(NerdFont::Trash)
+            .summary("Remove all cached pacman packages using pacman -Scc.")
+            .supported_distros(&[OperatingSystem::Arch])
+            .build()
+    }
+
+    fn setting_type(&self) -> SettingType {
+        SettingType::Action
+    }
+
+    fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
+        let cache_size = describe_pacman_cache_size();
+        let message = format!("Clear pacman cache?\n\nCache size: {cache_size}");
+
+        let result = FzfWrapper::builder()
+            .confirm(message)
+            .yes_text("Clear cache")
+            .no_text("Keep cache")
+            .show_confirmation()?;
+
+        if matches!(result, crate::menu_utils::ConfirmResult::Yes) {
+            ctx.emit_info("settings.pacman_cache.clearing", "Clearing pacman cache...");
+            ctx.run_command_as_root("pacman", ["-Scc"])?;
+            ctx.notify("Pacman cache", "Pacman cache cleared.");
+        }
+
+        Ok(())
     }
 }
 
@@ -258,6 +303,52 @@ pub fn apply_pacman_autoclean(ctx: &mut SettingsContext, enabled: bool) -> Resul
     }
 
     Ok(())
+}
+
+const PACMAN_CACHE_DIR: &str = "/var/cache/pacman/pkg";
+
+fn describe_pacman_cache_size() -> String {
+    match calculate_dir_size(PACMAN_CACHE_DIR) {
+        Ok(size) => format_size(size),
+        Err(_) => "Unknown".to_string(),
+    }
+}
+
+fn calculate_dir_size(path: &str) -> Result<u64> {
+    let cache_path = std::path::Path::new(path);
+    if !cache_path.exists() {
+        return Ok(0);
+    }
+
+    let mut total_size: u64 = 0;
+    let mut dirs_to_visit = vec![cache_path.to_path_buf()];
+
+    while let Some(dir) = dirs_to_visit.pop() {
+        let entries = match std::fs::read_dir(&dir) {
+            Ok(entries) => entries,
+            Err(_) => continue,
+        };
+
+        for entry in entries {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(_) => continue,
+            };
+
+            let metadata = match entry.metadata() {
+                Ok(metadata) => metadata,
+                Err(_) => continue,
+            };
+
+            if metadata.is_file() {
+                total_size += metadata.len();
+            } else if metadata.is_dir() {
+                dirs_to_visit.push(entry.path());
+            }
+        }
+    }
+
+    Ok(total_size)
 }
 
 const COCKPIT_SOCKET_NAME: &str = "cockpit.socket";

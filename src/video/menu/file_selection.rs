@@ -2,7 +2,6 @@ use anyhow::Result;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::common::paths;
 use crate::menu_utils::{FilePickerScope, PathInputBuilder};
 use crate::ui::nerd_font::NerdFont;
 use crate::video::document::{frontmatter::split_frontmatter, parse_video_document};
@@ -10,32 +9,7 @@ use crate::video::document::{frontmatter::split_frontmatter, parse_video_documen
 use super::types::{AUDIO_EXTENSIONS, VIDEO_EXTENSIONS};
 
 pub fn discover_video_file_suggestions() -> Result<Vec<PathBuf>> {
-    let entries = match fs::read_dir(".") {
-        Ok(entries) => entries,
-        Err(_) => return Ok(Vec::new()),
-    };
-
-    let mut suggestions = Vec::new();
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-
-        if is_video_or_audio_file(&path) {
-            let canonical = path.canonicalize().unwrap_or(path);
-            if !suggestions.contains(&canonical) {
-                suggestions.push(canonical);
-            }
-        }
-    }
-
-    suggestions.sort();
-    if suggestions.len() > 50 {
-        suggestions.truncate(50);
-    }
-    Ok(suggestions)
+    discover_media_suggestions()
 }
 
 pub fn is_video_or_audio_file(path: &Path) -> bool {
@@ -48,6 +22,14 @@ pub fn is_video_or_audio_file(path: &Path) -> bool {
         Some(e) => VIDEO_EXTENSIONS.contains(&e.as_str()) || AUDIO_EXTENSIONS.contains(&e.as_str()),
         None => false,
     }
+}
+
+pub fn discover_slide_markdown_suggestions() -> Result<Vec<PathBuf>> {
+    let mut suggestions = collect_markdown_candidates()?;
+    if suggestions.len() > 60 {
+        suggestions.truncate(60);
+    }
+    Ok(suggestions)
 }
 
 pub fn compute_default_output_path(video_path: &Path) -> PathBuf {
@@ -69,7 +51,7 @@ pub fn select_video_file_with_suggestions(
         "{} Select a video or audio file",
         char::from(NerdFont::Info)
     );
-    let start_dir = paths::videos_dir().ok();
+    let start_dir = None;
 
     select_path_with_picker(
         header,
@@ -88,7 +70,7 @@ pub fn select_video_file(title: &str) -> Result<Option<PathBuf>> {
         "{} Select a video or audio file",
         char::from(NerdFont::Info)
     );
-    let start_dir = paths::videos_dir().ok();
+    let start_dir = None;
 
     select_path_with_picker(
         header,
@@ -192,33 +174,95 @@ fn select_path_with_picker(
 }
 
 pub fn discover_video_markdown_suggestions() -> Result<Vec<PathBuf>> {
-    let entries = match fs::read_dir(".") {
-        Ok(entries) => entries,
-        Err(_) => return Ok(Vec::new()),
-    };
+    let mut suggestions = collect_markdown_candidates()?;
+    suggestions.retain(|path| is_video_markdown_file(path).unwrap_or(false));
+    if suggestions.len() > 60 {
+        suggestions.truncate(60);
+    }
+    Ok(suggestions)
+}
 
+fn discover_media_suggestions() -> Result<Vec<PathBuf>> {
+    let candidates = collect_media_candidates()?;
+    let mut suggestions = filter_media_candidates(candidates)?;
+    suggestions.sort();
+    if suggestions.len() > 50 {
+        suggestions.truncate(50);
+    }
+    Ok(suggestions)
+}
+
+fn filter_media_candidates(candidates: Vec<PathBuf>) -> Result<Vec<PathBuf>> {
     let mut suggestions = Vec::new();
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-
-        if !is_markdown_file(&path) {
-            continue;
-        }
-
-        if is_video_markdown_file(&path)? {
+    for path in candidates {
+        if path.is_file() && is_video_or_audio_file(&path) {
             let canonical = path.canonicalize().unwrap_or(path);
             if !suggestions.contains(&canonical) {
                 suggestions.push(canonical);
             }
         }
     }
-
-    suggestions.sort();
     Ok(suggestions)
+}
+
+fn collect_media_candidates() -> Result<Vec<PathBuf>> {
+    let mut candidates = Vec::new();
+    candidates.extend(collect_dir_media(".")?);
+    Ok(candidates)
+}
+
+fn collect_dir_media<P: Into<PathBuf>>(dir: P) -> Result<Vec<PathBuf>> {
+    let dir = dir.into();
+    let entries = match fs::read_dir(&dir) {
+        Ok(entries) => entries,
+        Err(_) => return Ok(Vec::new()),
+    };
+
+    let mut candidates = Vec::new();
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_file() && is_video_or_audio_file(&path) {
+            candidates.push(path);
+        }
+    }
+
+    Ok(candidates)
+}
+
+fn collect_markdown_candidates() -> Result<Vec<PathBuf>> {
+    let mut candidates = Vec::new();
+    candidates.extend(collect_dir_markdown("."));
+
+    let mut unique = Vec::new();
+    for path in candidates {
+        let canonical = path.canonicalize().unwrap_or(path);
+        if !unique.contains(&canonical) {
+            unique.push(canonical);
+        }
+    }
+
+    unique.sort();
+    Ok(unique)
+}
+
+fn collect_dir_markdown<P: Into<PathBuf>>(dir: P) -> Vec<PathBuf> {
+    let dir = dir.into();
+    let entries = match fs::read_dir(&dir) {
+        Ok(entries) => entries,
+        Err(_) => return Vec::new(),
+    };
+
+    let mut candidates = Vec::new();
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_file() && is_markdown_file(&path) {
+            candidates.push(path);
+        }
+    }
+
+    candidates
 }
 
 fn is_markdown_file(path: &Path) -> bool {

@@ -2,7 +2,6 @@
 
 Guidance for automated agents in this repository.
 - Never create git commits, amend, rebase, or push; ask the user instead.
-- Use workspace editors (`edit`/`write`) for file changes only.
 - Use package managers for deps; do not hand-edit Cargo.toml versions.
 - Build/check after changes: `cargo check` (preferred) or `cargo build` (debug only; avoid `--release`).
 - Single binary build uses `cargo build --bin ins`; jobs pinned by `.cargo/config.toml`.

@@ -5,7 +5,7 @@ use crate::video::cli::{PreprocessArgs, SetupArgs, SlideArgs, TranscribeArgs};
 use crate::video::pipeline::{setup, transcribe};
 use crate::video::slides;
 
-use super::file_selection::{select_markdown_file, select_output_path, select_video_file};
+use super::file_selection::{select_markdown_file, select_output_path};
 use super::prompts::{
     confirm_toggle, default_slide_output_name, prompt_optional, prompt_with_default,
     select_output_choice, select_preprocess_backend_choice, select_transcribe_mode,
@@ -16,7 +16,12 @@ use super::types::{
 };
 
 pub async fn run_transcribe() -> Result<()> {
-    let Some(video_path) = select_video_file("Select video or audio for transcription")? else {
+    let suggestions = super::file_selection::discover_video_file_suggestions()?;
+    let Some(video_path) = super::file_selection::select_video_file_with_suggestions(
+        "Select video or audio for transcription",
+        suggestions,
+    )?
+    else {
         return Ok(());
     };
 
@@ -64,7 +69,9 @@ pub async fn run_transcribe() -> Result<()> {
 }
 
 pub async fn run_slide() -> Result<()> {
-    let Some(markdown_path) = select_markdown_file("Select markdown for slide", Vec::new())? else {
+    let suggestions = super::file_selection::discover_slide_markdown_suggestions()?;
+    let Some(markdown_path) = select_markdown_file("Select markdown for slide", suggestions)?
+    else {
         return Ok(());
     };
 
@@ -98,7 +105,12 @@ pub async fn run_slide() -> Result<()> {
 }
 
 pub async fn run_preprocess() -> Result<()> {
-    let Some(input_path) = select_video_file("Select audio or video to preprocess")? else {
+    let suggestions = super::file_selection::discover_video_file_suggestions()?;
+    let Some(input_path) = super::file_selection::select_video_file_with_suggestions(
+        "Select audio or video to preprocess",
+        suggestions,
+    )?
+    else {
         return Ok(());
     };
 

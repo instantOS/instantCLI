@@ -10,6 +10,16 @@ use crate::video::cli::SetupArgs;
 use crate::video::config::VideoConfig;
 
 pub async fn handle_setup(args: SetupArgs) -> Result<()> {
+    if !args.force && video_tools_ready()? {
+        emit(
+            Level::Info,
+            "video.setup",
+            "Video tools already configured. Use --force to recheck.",
+            None,
+        );
+        return Ok(());
+    }
+
     emit(
         Level::Info,
         "video.setup",
@@ -28,6 +38,35 @@ pub async fn handle_setup(args: SetupArgs) -> Result<()> {
         None,
     );
     Ok(())
+}
+
+fn video_tools_ready() -> Result<bool> {
+    let local_ready = check_command_exists("uvx")
+        && check_command_exists("ffmpeg")
+        && cmd!("uvx", "ffmpeg-normalize", "--version").run().is_ok()
+        && cmd!(
+            "uvx",
+            "--python",
+            "3.10",
+            "--from",
+            "deepfilternet",
+            "--with",
+            "torch<2.1",
+            "--with",
+            "torchaudio<2.1",
+            "deepFilter",
+            "--version"
+        )
+        .run()
+        .is_ok();
+
+    let whisper_ready =
+        check_command_exists("uv") && cmd!("uvx", "whisperx", "--version").run().is_ok();
+
+    let config = VideoConfig::load()?;
+    let auphonic_ready = config.auphonic_api_key.is_some();
+
+    Ok(local_ready && whisper_ready && auphonic_ready)
 }
 
 fn setup_local_preprocessor(_force: bool) -> Result<()> {
