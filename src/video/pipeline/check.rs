@@ -8,7 +8,7 @@ use crate::video::cli::CheckArgs;
 use crate::video::pipeline::report::{ReportLine, emit_report, format_report_lines};
 use crate::video::planning::TimelinePlanItem;
 use crate::video::render::{
-    build_timeline_plan, load_transcript_cues, load_video_document, resolve_video_sources,
+    build_timeline_plan, load_transcript_cues, load_video_document, paths::resolve_video_sources,
 };
 use crate::video::support::ffmpeg::probe_video_dimensions;
 use crate::video::support::utils::canonicalize_existing;

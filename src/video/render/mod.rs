@@ -1,5 +1,5 @@
 mod ffmpeg;
-mod paths;
+pub mod paths;
 pub mod timeline;
 
 use std::fs;
@@ -8,7 +8,6 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, anyhow, bail};
 
 use crate::ui::prelude::{Level, emit};
-use crate::video::audio::AudioPreprocessor;
 
 /// Rendering mode for the output video
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -157,12 +156,12 @@ fn validate_timeline_sources(
     Ok(())
 }
 
-pub fn handle_render(args: RenderArgs) -> Result<()> {
+pub async fn handle_render(args: RenderArgs) -> Result<()> {
     let runner = SystemFfmpegRunner;
-    handle_render_with_services(args, &runner)
+    handle_render_with_services(args, &runner).await
 }
 
-fn handle_render_with_services(args: RenderArgs, runner: &dyn FfmpegRunner) -> Result<()> {
+async fn handle_render_with_services(args: RenderArgs, runner: &dyn FfmpegRunner) -> Result<()> {
     let pre_cache_only = args.precache_slides;
     let dry_run = args.dry_run;
     let burn_subtitles = args.subtitles;
@@ -177,7 +176,8 @@ fn handle_render_with_services(args: RenderArgs, runner: &dyn FfmpegRunner) -> R
     let markdown_dir = markdown_path.parent().unwrap_or_else(|| Path::new("."));
 
     let document = load_video_document(&markdown_path)?;
-    let sources = resolve_video_sources(&document.metadata, markdown_dir)?;
+    let video_config = VideoConfig::load()?;
+    let sources = resolve_video_sources(&document.metadata, markdown_dir, &video_config).await?;
     if sources.is_empty() {
         bail!("No video sources configured. Add `sources` in front matter before rendering.");
     }
@@ -186,7 +186,7 @@ fn handle_render_with_services(args: RenderArgs, runner: &dyn FfmpegRunner) -> R
     let plan = build_timeline_plan(&document, &cues, &markdown_path)?;
 
     let default_source = find_default_source(&document.metadata, &sources)?;
-    let audio_map = build_audio_source_map(&sources)?;
+    let audio_map = build_audio_source_map(&sources, &video_config).await?;
 
     // Determine render mode from CLI args
     let render_mode = if args.reels {
@@ -266,7 +266,7 @@ fn handle_render_with_services(args: RenderArgs, runner: &dyn FfmpegRunner) -> R
         None
     };
 
-    let video_config = VideoConfig::load()?;
+    // video_config already loaded above for audio preprocessing
     let pipeline = RenderPipeline::new(RenderPipelineParams {
         output: output_path.clone(),
         timeline: nle_timeline,
@@ -451,16 +451,17 @@ pub(super) fn build_timeline_plan(
     Ok(plan)
 }
 
-pub fn resolve_video_sources(
+pub async fn resolve_video_sources(
     metadata: &VideoMetadata,
     markdown_dir: &Path,
+    config: &VideoConfig,
 ) -> Result<Vec<VideoSource>> {
     let sources = paths::resolve_video_sources(metadata, markdown_dir)?;
     let mut resolved = Vec::new();
     for source in sources {
         let resolved_source = resolve_source_path(&source.source, markdown_dir)?;
         let resolved_transcript = resolve_source_path(&source.transcript, markdown_dir)?;
-        let resolved_audio = resolve_audio_path(&resolved_source)?;
+        let resolved_audio = resolve_audio_path(&resolved_source, config).await?;
         let canonical = canonicalize_existing(&resolved_source)?;
         log!(
             Level::Info,
@@ -480,7 +481,7 @@ pub fn resolve_video_sources(
     Ok(resolved)
 }
 
-fn resolve_audio_path(video_path: &Path) -> Result<PathBuf> {
+async fn resolve_audio_path(video_path: &Path, config: &VideoConfig) -> Result<PathBuf> {
     log!(
         Level::Info,
         "video.render.video.hash",
@@ -524,29 +525,44 @@ fn resolve_audio_path(video_path: &Path) -> Result<PathBuf> {
         return Ok(auphonic_processed_path);
     }
 
-    // No preprocessed audio found - run local preprocessing
-    emit(
-        Level::Info,
-        "video.render.audio.preprocess",
-        "No preprocessed audio found. Running local preprocessing (DeepFilterNet + normalize)...",
-        None,
-    );
+    // No preprocessed audio found - run configured preprocessing
+    let preprocessor = super::audio::create_preprocessor(&config.preprocessor, config);
 
-    let preprocessor = super::audio::local::LocalPreprocessor::new();
-    if !preprocessor.is_available() {
+    // Skip preprocessing if configured to None
+    if matches!(config.preprocessor, super::audio::PreprocessorType::None) {
         emit(
-            Level::Warn,
-            "video.render.audio.preprocess",
-            "Local preprocessor not available (missing uvx or ffmpeg). Using original video audio.",
+            Level::Info,
+            "video.render.audio",
+            "Preprocessing disabled. Using original video audio.",
             None,
         );
         return Ok(video_path.to_path_buf());
     }
 
-    // Run preprocessing synchronously using tokio runtime
-    let result = tokio::runtime::Runtime::new()
-        .context("Failed to create tokio runtime for audio preprocessing")?
-        .block_on(preprocessor.process(video_path, false))?;
+    if !preprocessor.is_available() {
+        emit(
+            Level::Warn,
+            "video.render.audio.preprocess",
+            &format!(
+                "Preprocessor '{}' not available. Using original video audio.",
+                preprocessor.name()
+            ),
+            None,
+        );
+        return Ok(video_path.to_path_buf());
+    }
+
+    emit(
+        Level::Info,
+        "video.render.audio.preprocess",
+        &format!(
+            "No preprocessed audio found. Running {} preprocessing...",
+            preprocessor.name()
+        ),
+        None,
+    );
+
+    let result = preprocessor.process(video_path, false).await?;
 
     emit(
         Level::Success,
@@ -558,12 +574,13 @@ fn resolve_audio_path(video_path: &Path) -> Result<PathBuf> {
     Ok(result.output_path)
 }
 
-fn build_audio_source_map(
+async fn build_audio_source_map(
     sources: &[VideoSource],
+    config: &VideoConfig,
 ) -> Result<std::collections::HashMap<String, PathBuf>> {
     let mut audio_map = std::collections::HashMap::new();
     for source in sources {
-        let audio_path = resolve_audio_path(&source.source)?;
+        let audio_path = resolve_audio_path(&source.source, config).await?;
         audio_map.insert(source.id.clone(), audio_path);
     }
     Ok(audio_map)

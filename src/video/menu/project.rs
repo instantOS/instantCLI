@@ -324,6 +324,7 @@ async fn run_render_for_project(markdown_path: &Path) -> Result<()> {
         reels,
         subtitles,
     })
+    .await
 }
 
 fn run_clear_cache(markdown_path: &Path) -> Result<()> {
