@@ -10,8 +10,8 @@ use super::menu_items::{
 };
 use super::store::UserStore;
 use super::system::{
-    WheelSudoStatus, get_all_system_groups, get_system_users_with_home, get_user_info,
-    group_exists, wheel_sudo_status,
+    get_all_system_groups, get_system_users_with_home, get_user_info, group_exists,
+    wheel_sudo_status, WheelSudoStatus,
 };
 use super::utils::{
     add_user_to_group, change_user_shell, create_user, prompt_password_with_confirmation,
@@ -242,6 +242,19 @@ fn toggle_user_sudo(
     }
 
     if currently_enabled {
+        if is_current_user(username) {
+            let result = FzfWrapper::builder()
+                .confirm(
+                    "You are removing sudo access from the current user. This cannot be undone without another admin account.",
+                )
+                .yes_text("Remove sudo")
+                .no_text("Cancel")
+                .show_confirmation()?;
+
+            if result != crate::menu_utils::ConfirmResult::Yes {
+                return Ok(false);
+            }
+        }
         remove_user_from_group(ctx, username, WHEEL_GROUP)?;
         ctx.emit_success(
             "settings.users.sudo",
@@ -267,6 +280,14 @@ fn toggle_user_sudo(
     }
 
     Ok(true)
+}
+
+fn is_current_user(username: &str) -> bool {
+    std::env::var("SUDO_USER")
+        .ok()
+        .or_else(|| std::env::var("USER").ok())
+        .as_deref()
+        == Some(username)
 }
 
 /// Manage groups for a user
