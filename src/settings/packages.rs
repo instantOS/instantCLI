@@ -4,7 +4,9 @@
 
 use crate::common::distro::OperatingSystem;
 use crate::common::package::{PackageManager, detect_aur_helper, install_package_names};
-use crate::menu_utils::{ConfirmResult, FzfResult, FzfWrapper};
+use crate::menu_utils::{ConfirmResult, FzfResult, FzfWrapper, Header};
+use crate::preview::{PreviewId, preview_command_streaming};
+use crate::ui::catppuccin::fzf_mocha_args;
 use anyhow::{Context, Result};
 
 use super::SettingsContext;
@@ -32,7 +34,6 @@ pub fn run_package_installer_action(ctx: &mut SettingsContext) -> Result<()> {
 // ============================================================================
 
 /// Run a simple single-manager package installer.
-/// Works for any distro with a single native package manager.
 fn run_simple_installer(manager: PackageManager, debug: bool) -> Result<()> {
     if debug {
         println!("Starting {} package installer...", manager);
@@ -43,14 +44,15 @@ fn run_simple_installer(manager: PackageManager, debug: bool) -> Result<()> {
     }
 
     let list_cmd = manager.list_available_command();
-    let preview_cmd = manager.show_package_command().replace("{package}", "{1}");
+    let preview_cmd = preview_command_streaming(PreviewId::Package);
 
     let result = FzfWrapper::builder()
         .multi_select(true)
-        .prompt("Select packages to install")
-        .header("Tab to select multiple, Enter to confirm")
+        .prompt("Select packages")
+        .header(Header::fancy("Install Packages"))
+        .args(fzf_mocha_args())
+        .args(["--preview", &preview_cmd, "--ansi"])
         .responsive_layout()
-        .args(package_selector_args(&preview_cmd))
         .select_streaming(list_cmd)
         .context("Failed to run package selector")?;
 
@@ -64,7 +66,6 @@ fn run_simple_installer(manager: PackageManager, debug: bool) -> Result<()> {
 // ============================================================================
 
 /// Run the Arch package installer with support for both pacman and AUR.
-/// Uses tab-delimited format internally to track package sources.
 fn run_arch_installer(debug: bool) -> Result<()> {
     if debug {
         println!("Starting Arch package installer...");
@@ -89,56 +90,24 @@ fn run_arch_installer(debug: bool) -> Result<()> {
     }
     let full_command = format!("{{ {}; }}", list_cmds.join("; "));
 
-    // Build preview command with source-aware display
-    let preview_cmd = build_arch_preview_command(aur_helper);
+    let preview_cmd = preview_command_streaming(PreviewId::Package);
 
     let result = FzfWrapper::builder()
         .multi_select(true)
-        .prompt("Select packages to install")
-        .header("Tab to select multiple, Enter to confirm")
-        .responsive_layout()
+        .prompt("Select packages")
+        .header(Header::fancy("Install Packages"))
+        .args(fzf_mocha_args())
         .args([
             "--delimiter", "\t",
-            "--with-nth", "2", // Show only package name
+            "--with-nth", "2",
             "--preview", &preview_cmd,
-            "--preview-window", "down:40%:wrap",
-            "--layout", "reverse-list",
-            "--height", "90%",
-            "--bind", "ctrl-l:clear-screen",
             "--ansi",
-            "--no-mouse",
         ])
+        .responsive_layout()
         .select_streaming(&full_command)
         .context("Failed to run package selector")?;
 
-    // Re-detect for installation
-    let aur_helper = detect_aur_helper();
-
-    handle_arch_install_result(result, aur_helper, debug)
-}
-
-/// Build the preview command for Arch that shows source info.
-fn build_arch_preview_command(aur_helper: Option<&str>) -> String {
-    if let Some(helper) = aur_helper {
-        format!(
-            r#"source=$(echo {{}} | cut -f1); pkg=$(echo {{}} | cut -f2);
-if [ "$source" = "aur" ]; then
-    echo -e "\033[38;2;203;166;247mAUR Package\033[0m"
-    echo "────────────────────────────"
-    {} -Si "$pkg" 2>/dev/null || echo "No info available"
-else
-    echo -e "\033[38;2;166;227;161mRepository Package\033[0m"
-    echo "────────────────────────────"
-    pacman -Si "$pkg" 2>/dev/null || echo "No info available"
-fi"#,
-            helper
-        )
-    } else {
-        r#"pkg=$(echo {} | cut -f2);
-echo -e "\033[38;2;166;227;161mRepository Package\033[0m"
-echo "────────────────────────────"
-pacman -Si "$pkg" 2>/dev/null || echo "No info available""#.to_string()
-    }
+    handle_arch_install_result(result, detect_aur_helper(), debug)
 }
 
 /// Handle Arch install result, splitting packages by source.
@@ -207,12 +176,8 @@ fn handle_arch_install_result(
             println!("✓ Package installation completed successfully!");
             Ok(())
         }
-        FzfResult::MultiSelected(_) => {
+        FzfResult::MultiSelected(_) | FzfResult::Cancelled => {
             println!("No packages selected.");
-            Ok(())
-        }
-        FzfResult::Cancelled => {
-            println!("Package selection cancelled.");
             Ok(())
         }
         FzfResult::Error(err) => anyhow::bail!("Package selection failed: {}", err),
@@ -241,19 +206,6 @@ fn parse_arch_selections(lines: &[String]) -> (Vec<String>, Vec<String>) {
 // ============================================================================
 // Shared Utilities
 // ============================================================================
-
-/// Common fzf args for package selection.
-fn package_selector_args(preview_cmd: &str) -> [&str; 12] {
-    [
-        "--preview", preview_cmd,
-        "--preview-window", "down:40%:wrap",
-        "--layout", "reverse-list",
-        "--height", "90%",
-        "--bind", "ctrl-l:clear-screen",
-        "--ansi",
-        "--no-mouse",
-    ]
-}
 
 /// Handle install result for simple (non-Arch) package managers.
 fn handle_install_result<F>(
@@ -306,12 +258,8 @@ where
             println!("✓ Package installation completed successfully!");
             Ok(())
         }
-        FzfResult::MultiSelected(_) => {
+        FzfResult::MultiSelected(_) | FzfResult::Cancelled => {
             println!("No packages selected.");
-            Ok(())
-        }
-        FzfResult::Cancelled => {
-            println!("Package selection cancelled.");
             Ok(())
         }
         FzfResult::Error(err) => anyhow::bail!("Package selection failed: {}", err),
