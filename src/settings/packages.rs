@@ -23,36 +23,14 @@ pub fn run_package_installer_action(ctx: &mut SettingsContext) -> Result<()> {
     }
 }
 
-/// Package source enumeration
-#[derive(Debug, Clone, PartialEq)]
-enum PackageSource {
-    Pacman,
-    AUR,
-}
-
-/// A package with its source information
-#[derive(Debug, Clone)]
-struct Package {
-    #[allow(dead_code)]
-    name: String,
-    #[allow(dead_code)]
-    source: PackageSource,
-}
-
-impl Package {
-    fn extract_name_from_display(display: &str) -> (String, PackageSource) {
-        if display.starts_with("[AUR] ") {
-            (display[6..].to_string(), PackageSource::AUR)
-        } else if display.starts_with("[Repo] ") {
-            (display[7..].to_string(), PackageSource::Pacman)
-        } else {
-            // Fallback for backwards compatibility
-            (display.to_string(), PackageSource::Pacman)
-        }
-    }
-}
+// ============================================================================
+// Arch Package Installer
+// ============================================================================
 
 /// Run the unified package installer (supports both pacman and AUR)
+///
+/// Uses a streaming approach for performance with large package lists.
+/// Packages are displayed by name only; the preview shows source and details.
 fn run_unified_package_installer(debug: bool) -> Result<()> {
     if debug {
         println!("Starting unified package installer...");
@@ -66,58 +44,77 @@ fn run_unified_package_installer(debug: bool) -> Result<()> {
         anyhow::bail!("Neither pacman nor an AUR helper is available on this system");
     }
 
-    // Construct the list command
+    // Build the streaming command that outputs: source<TAB>package_name
+    // We use a tab delimiter so fzf can show only field 2 (package name)
+    // while we use field 1 (source) in the preview
     let mut list_cmds = Vec::new();
 
     if has_pacman {
-        // List repo packages
+        // List repo packages with "repo" prefix
         let pacman_list = PackageManager::Pacman.list_available_command();
-        list_cmds.push(format!("{} | sed 's/^/[Repo] /'", pacman_list));
+        list_cmds.push(format!("{} | sed 's/^/repo\\t/'", pacman_list));
     }
 
     if aur_helper.is_some() {
-        // List AUR packages using the static list
-        // We use curl to fetch the list because helpers like yay don't easily list ONLY AUR packages
+        // List AUR packages with "aur" prefix
         let aur_list = PackageManager::Aur.list_available_command();
-        list_cmds.push(format!("{} | sed 's/^/[AUR] /'", aur_list));
+        list_cmds.push(format!("{} | sed 's/^/aur\\t/'", aur_list));
     }
 
-    // Combine commands to run in sequence
+    // Combine commands
     let full_command = format!("{{ {}; }}", list_cmds.join("; "));
 
-    // Determine preview command
-    // If we have an AUR helper, it can usually preview both repo and AUR packages
+    // Build preview command that shows source info and package details
+    // Field 1 = source (repo/aur), Field 2 = package name
     let preview_cmd = if let Some(helper) = aur_helper {
-        format!("{} -Sii {{2}}", helper)
+        // AUR helper can query both repo and AUR packages
+        format!(
+            r#"source=$(echo {{}} | cut -f1); pkg=$(echo {{}} | cut -f2);
+if [ "$source" = "aur" ]; then
+    echo -e "\033[38;2;203;166;247mAUR Package\033[0m"
+    echo "────────────────────────────"
+    {} -Si "$pkg" 2>/dev/null || echo "No info available"
+else
+    echo -e "\033[38;2;166;227;161mRepository Package\033[0m"
+    echo "────────────────────────────"
+    pacman -Si "$pkg" 2>/dev/null || echo "No info available"
+fi"#,
+            helper
+        )
     } else {
-        let pacman_show = PackageManager::Pacman.show_package_command();
-        pacman_show.replace("{package}", "{2}")
+        // Pacman only
+        r#"source=$(echo {} | cut -f1); pkg=$(echo {} | cut -f2);
+echo -e "\033[38;2;166;227;161mRepository Package\033[0m"
+echo "────────────────────────────"
+pacman -Si "$pkg" 2>/dev/null || echo "No info available""#
+            .to_string()
     };
 
-    // Re-detect for later use (consumed above)
+    // Re-detect for later use
     let aur_helper = detect_aur_helper();
 
     let result = FzfWrapper::builder()
         .multi_select(true)
         .prompt("Select packages to install")
+        .header("Tab to select multiple, Enter to confirm")
         .responsive_layout()
         .args([
+            "--delimiter",
+            "\t",
+            "--with-nth",
+            "2", // Show only the package name (field 2)
             "--preview",
             preview_cmd.as_str(),
             "--preview-window",
-            "down:40%:wrap", // Smaller preview for more item space
+            "down:40%:wrap",
             "--layout",
-            "reverse-list", // More compact, dense layout for many items
+            "reverse-list",
             "--height",
-            "90%", // Use most of the screen
+            "90%",
             "--bind",
             "ctrl-l:clear-screen",
             "--ansi",
             "--no-mouse",
-            "--delimiter",
-            " ",
-            "--with-nth",
-            "1..",
         ])
         .select_streaming(&full_command)
         .context("Failed to run package selector")?;
@@ -129,14 +126,20 @@ fn run_unified_package_installer(debug: bool) -> Result<()> {
                 return Ok(());
             }
 
+            // Parse selected lines: source<TAB>package_name
             let mut pacman_packages = Vec::new();
             let mut aur_packages = Vec::new();
 
-            for line in lines {
-                let (name, source) = Package::extract_name_from_display(&line);
-                match source {
-                    PackageSource::Pacman => pacman_packages.push(name),
-                    PackageSource::AUR => aur_packages.push(name),
+            for line in &lines {
+                if let Some((source, name)) = line.split_once('\t') {
+                    match source {
+                        "repo" => pacman_packages.push(name.to_string()),
+                        "aur" => aur_packages.push(name.to_string()),
+                        _ => pacman_packages.push(name.to_string()),
+                    }
+                } else {
+                    // Fallback if no tab delimiter (shouldn't happen)
+                    pacman_packages.push(line.clone());
                 }
             }
 
@@ -186,21 +189,26 @@ fn run_unified_package_installer(debug: bool) -> Result<()> {
             println!("✓ Package installation completed successfully!");
         }
         FzfResult::Selected(line) => {
-            let (name, source) = Package::extract_name_from_display(&line);
+            // Parse: source<TAB>package_name
+            let (source, name) = line
+                .split_once('\t')
+                .map(|(s, n)| (s, n.to_string()))
+                .unwrap_or(("repo", line.clone()));
 
             if debug {
-                println!("Selected package: {} ({:?})", name, source);
+                println!("Selected package: {} (source: {})", name, source);
             }
 
             match source {
-                PackageSource::Pacman => install_package_names(PackageManager::Pacman, &[&name])?,
-                PackageSource::AUR => {
+                "aur" => {
                     if aur_helper.is_some() {
                         install_package_names(PackageManager::Aur, &[&name])?;
                     } else {
                         println!("Warning: AUR package selected but no AUR helper found.");
+                        return Ok(());
                     }
                 }
+                _ => install_package_names(PackageManager::Pacman, &[&name])?,
             }
             println!("✓ Package installation completed successfully!");
         }
@@ -255,16 +263,17 @@ fn run_debian_package_installer(debug: bool) -> Result<()> {
     let result = FzfWrapper::builder()
         .multi_select(true)
         .prompt(prompt)
+        .header("Tab to select multiple, Enter to confirm")
         .responsive_layout()
         .args([
             "--preview",
             preview_cmd.as_str(),
             "--preview-window",
-            "down:40%:wrap", // Smaller preview for more item space
+            "down:40%:wrap",
             "--layout",
-            "reverse-list", // More compact, dense layout for many items
+            "reverse-list",
             "--height",
-            "90%", // Use most of the screen
+            "90%",
             "--bind",
             "ctrl-l:clear-screen",
             "--ansi",
@@ -364,16 +373,17 @@ fn run_fedora_package_installer(debug: bool) -> Result<()> {
     let result = FzfWrapper::builder()
         .multi_select(true)
         .prompt("Select packages to install")
+        .header("Tab to select multiple, Enter to confirm")
         .responsive_layout()
         .args([
             "--preview",
             preview_cmd.as_str(),
             "--preview-window",
-            "down:40%:wrap", // Smaller preview for more item space
+            "down:40%:wrap",
             "--layout",
-            "reverse-list", // More compact, dense layout for many items
+            "reverse-list",
             "--height",
-            "90%", // Use most of the screen
+            "90%",
             "--bind",
             "ctrl-l:clear-screen",
             "--ansi",
