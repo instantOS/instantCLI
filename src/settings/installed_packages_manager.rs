@@ -16,6 +16,8 @@ pub fn run_installed_packages_manager(debug: bool) -> Result<()> {
         run_debian_package_manager(debug)
     } else if os.is_arch_based() {
         run_arch_package_manager(debug)
+    } else if os.is_fedora_based() {
+        run_fedora_package_manager(debug)
     } else {
         anyhow::bail!(
             "Package manager not supported on this system ({})",
@@ -266,6 +268,126 @@ fn run_arch_package_manager(debug: bool) -> Result<()> {
             }
 
             uninstall_packages(PackageManager::Pacman, &[&package_name])?;
+
+            println!("✓ Package uninstallation completed successfully!");
+        }
+        FzfResult::Cancelled => {
+            println!("Package selection cancelled.");
+        }
+        FzfResult::Error(err) => {
+            anyhow::bail!("Package selection failed: {}", err);
+        }
+    }
+
+    Ok(())
+}
+
+// ============================================================================
+// Fedora Package Manager
+// ============================================================================
+
+/// Run the Fedora installed packages manager
+fn run_fedora_package_manager(debug: bool) -> Result<()> {
+    if debug {
+        println!("Starting Fedora package manager...");
+    }
+
+    // Validate package manager availability
+    let manager = PackageManager::Dnf;
+
+    if !manager.is_available() {
+        anyhow::bail!("{} is not available on this system", manager);
+    }
+
+    // List installed packages (one package per line)
+    let list_cmd = manager.list_installed_command();
+
+    // Preview command
+    let preview_cmd = manager.show_package_command().replace("{package}", "{1}");
+
+    let result = FzfWrapper::builder()
+        .multi_select(true)
+        .prompt("Select packages to uninstall")
+        .header("Tab to select multiple packages, Enter to confirm uninstall")
+        .responsive_layout()
+        .args([
+            "--preview",
+            preview_cmd.as_str(),
+            "--preview-window",
+            "down:40%:wrap", // Smaller preview for more item space
+            "--layout",
+            "reverse-list", // More compact, dense layout for many items
+            "--height",
+            "90%", // Use most of the screen
+            "--bind",
+            "ctrl-l:clear-screen",
+            "--ansi",
+            "--no-mouse",
+        ])
+        .select_streaming(list_cmd)
+        .context("Failed to run package selector")?;
+
+    match result {
+        FzfResult::MultiSelected(lines) => {
+            if lines.is_empty() {
+                println!("No packages selected.");
+                return Ok(());
+            }
+
+            let packages: Vec<String> = lines.into_iter().map(|s| s.to_string()).collect();
+
+            if debug {
+                println!("Selected packages: {:?}", packages);
+            }
+
+            // Confirm uninstallation
+            let confirm_msg = format!(
+                "Uninstall {} package{}?\n\nThis action cannot be undone.",
+                packages.len(),
+                if packages.len() == 1 { "" } else { "s" }
+            );
+
+            let confirm = FzfWrapper::builder()
+                .confirm(&confirm_msg)
+                .yes_text("Uninstall")
+                .no_text("Cancel")
+                .show_confirmation()?;
+
+            if !matches!(confirm, ConfirmResult::Yes) {
+                println!("Uninstall cancelled.");
+                return Ok(());
+            }
+
+            let refs: Vec<&str> = packages.iter().map(|s| s.as_str()).collect();
+            uninstall_packages(manager, &refs)?;
+
+            println!("✓ Package uninstallation completed successfully!");
+        }
+        FzfResult::Selected(line) => {
+            let package_name = line.trim().to_string();
+
+            if debug {
+                println!("Selected package: {}", package_name);
+            }
+
+            // Confirm uninstallation
+            let confirm_msg = format!(
+                "Uninstall package '{}'?\n\nThis action cannot be undone.",
+                package_name
+            );
+
+            let confirm = FzfWrapper::builder()
+                .confirm(&confirm_msg)
+                .yes_text("Uninstall")
+                .no_text("Cancel")
+                .show_confirmation()?;
+
+            if !matches!(confirm, ConfirmResult::Yes) {
+                println!("Uninstall cancelled.");
+                return Ok(());
+            }
+
+            uninstall_packages(manager, &[&package_name])?;
 
             println!("✓ Package uninstallation completed successfully!");
         }

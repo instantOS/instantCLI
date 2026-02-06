@@ -23,7 +23,11 @@ impl Setting for ManageInstalledPackages {
             .title("Manage installed packages")
             .icon(NerdFont::Package)
             .summary("View and uninstall installed system packages.")
-            .supported_distros(&[OperatingSystem::Arch, OperatingSystem::Debian])
+            .supported_distros(&[
+                OperatingSystem::Arch,
+                OperatingSystem::Debian,
+                OperatingSystem::Fedora,
+            ])
             .build()
     }
 
