@@ -12,8 +12,8 @@ use crate::ui::prelude::*;
 
 /// Manage installed packages setting.
 ///
-/// This setting allows users to view and uninstall installed system packages.
-/// Currently supports Debian-based (apt/pkg) and Arch-based (pacman/AUR) systems.
+/// Allows users to view and uninstall installed system packages.
+/// Supports any distro with a native package manager.
 pub struct ManageInstalledPackages;
 
 impl Setting for ManageInstalledPackages {
@@ -27,6 +27,7 @@ impl Setting for ManageInstalledPackages {
                 OperatingSystem::Arch,
                 OperatingSystem::Debian,
                 OperatingSystem::Fedora,
+                OperatingSystem::OpenSUSE,
             ])
             .build()
     }
