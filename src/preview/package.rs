@@ -15,7 +15,7 @@ use super::PreviewContext;
 /// Key format: "package_name" or "source\tpackage_name" for Arch.
 pub fn render_package_preview(ctx: &PreviewContext) -> Result<String> {
     let key = ctx.key().unwrap_or_default();
-    
+
     // Check if this is an Arch-style key with source prefix
     let (source, package) = if let Some((src, pkg)) = key.split_once('\t') {
         (Some(src), pkg)
@@ -31,7 +31,7 @@ pub fn render_package_preview(ctx: &PreviewContext) -> Result<String> {
     }
 
     let os = OperatingSystem::detect();
-    
+
     // For Arch with source info
     if let Some(src) = source {
         return render_arch_package_preview(package, src);
@@ -51,7 +51,7 @@ pub fn render_package_preview(ctx: &PreviewContext) -> Result<String> {
 /// Render preview for an installed package (uninstall context).
 pub fn render_installed_package_preview(ctx: &PreviewContext) -> Result<String> {
     let package = ctx.key().unwrap_or_default();
-    
+
     if package.is_empty() {
         return Ok(PreviewBuilder::new()
             .header(NerdFont::Package, "Package Info")
@@ -60,7 +60,7 @@ pub fn render_installed_package_preview(ctx: &PreviewContext) -> Result<String> 
     }
 
     let os = OperatingSystem::detect();
-    
+
     if let Some(manager) = os.native_package_manager() {
         render_manager_package_preview(package, manager)
     } else {
@@ -136,8 +136,7 @@ fn render_manager_package_preview(package: &str, manager: PackageManager) -> Res
             .build_string());
     }
 
-    let mut builder = PreviewBuilder::new()
-        .header(NerdFont::Package, package);
+    let mut builder = PreviewBuilder::new().header(NerdFont::Package, package);
 
     // Parse based on package manager format
     match manager {

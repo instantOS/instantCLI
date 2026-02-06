@@ -59,7 +59,8 @@ fn handle_uninstall_result(
 ) -> Result<()> {
     match result {
         FzfResult::MultiSelected(lines) if !lines.is_empty() => {
-            let packages: Vec<String> = lines.into_iter()
+            let packages: Vec<String> = lines
+                .into_iter()
                 .map(|l| l.trim().to_string())
                 .filter(|s| !s.is_empty())
                 .collect();

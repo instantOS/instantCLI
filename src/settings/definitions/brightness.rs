@@ -3,7 +3,7 @@
 use anyhow::{Context, Result};
 use std::process::Command;
 
-use crate::assist::{assist_command_argv, AssistInternalCommand};
+use crate::assist::{AssistInternalCommand, assist_command_argv};
 use crate::menu::client::MenuClient;
 use crate::menu::protocol::SliderRequest;
 use crate::settings::context::SettingsContext;

@@ -478,8 +478,7 @@ impl FfmpegCompiler {
         let mut current_video_label = input_label.to_string();
 
         for (idx, segment) in overlay_segments.iter().enumerate() {
-            let SegmentData::Image { source_image, .. } = &segment.data
-            else {
+            let SegmentData::Image { source_image, .. } = &segment.data else {
                 continue;
             };
 

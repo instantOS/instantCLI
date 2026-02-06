@@ -1,4 +1,4 @@
-use crate::assist::{assist_command_argv, AssistInternalCommand};
+use crate::assist::{AssistInternalCommand, assist_command_argv};
 use crate::common::compositor::CompositorType;
 use crate::menu::client::MenuClient;
 use crate::menu::protocol::SliderRequest;

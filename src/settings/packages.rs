@@ -56,9 +56,11 @@ fn run_simple_installer(manager: PackageManager, debug: bool) -> Result<()> {
         .select_streaming(list_cmd)
         .context("Failed to run package selector")?;
 
-    handle_install_result(result, |packages| {
-        install_package_names(manager, packages)
-    }, debug)
+    handle_install_result(
+        result,
+        |packages| install_package_names(manager, packages),
+        debug,
+    )
 }
 
 // ============================================================================
@@ -98,9 +100,12 @@ fn run_arch_installer(debug: bool) -> Result<()> {
         .header(Header::fancy("Install Packages"))
         .args(fzf_mocha_args())
         .args([
-            "--delimiter", "\t",
-            "--with-nth", "2",
-            "--preview", &preview_cmd,
+            "--delimiter",
+            "\t",
+            "--with-nth",
+            "2",
+            "--preview",
+            &preview_cmd,
             "--ansi",
         ])
         .responsive_layout()
@@ -208,17 +213,14 @@ fn parse_arch_selections(lines: &[String]) -> (Vec<String>, Vec<String>) {
 // ============================================================================
 
 /// Handle install result for simple (non-Arch) package managers.
-fn handle_install_result<F>(
-    result: FzfResult<String>,
-    install_fn: F,
-    debug: bool,
-) -> Result<()>
+fn handle_install_result<F>(result: FzfResult<String>, install_fn: F, debug: bool) -> Result<()>
 where
     F: FnOnce(&[&str]) -> Result<()>,
 {
     match result {
         FzfResult::MultiSelected(lines) if !lines.is_empty() => {
-            let packages: Vec<String> = lines.into_iter()
+            let packages: Vec<String> = lines
+                .into_iter()
                 .map(|l| l.trim().to_string())
                 .filter(|s| !s.is_empty())
                 .collect();
@@ -268,8 +270,6 @@ where
 
 /// Show confirmation dialog and return whether user confirmed.
 fn confirm_action(message: &str) -> Result<bool> {
-    let result = FzfWrapper::builder()
-        .confirm(message)
-        .show_confirmation()?;
+    let result = FzfWrapper::builder().confirm(message).show_confirmation()?;
     Ok(matches!(result, ConfirmResult::Yes))
 }

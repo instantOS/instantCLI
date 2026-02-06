@@ -7,4 +7,6 @@ pub mod instantmenu;
 pub mod registry;
 pub mod utils;
 
-pub use commands::{AssistCommands, AssistInternalCommand, assist_command_argv, dispatch_assist_command};
+pub use commands::{
+    AssistCommands, AssistInternalCommand, assist_command_argv, dispatch_assist_command,
+};
