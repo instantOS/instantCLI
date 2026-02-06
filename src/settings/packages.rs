@@ -13,6 +13,8 @@ pub fn run_package_installer_action(ctx: &mut SettingsContext) -> Result<()> {
         run_unified_package_installer(ctx.debug())
     } else if os.is_debian_based() {
         run_debian_package_installer(ctx.debug())
+    } else if os.is_fedora_based() {
+        run_fedora_package_installer(ctx.debug())
     } else {
         anyhow::bail!(
             "Package installer not supported on this system ({})",
@@ -253,6 +255,115 @@ fn run_debian_package_installer(debug: bool) -> Result<()> {
     let result = FzfWrapper::builder()
         .multi_select(true)
         .prompt(prompt)
+        .responsive_layout()
+        .args([
+            "--preview",
+            preview_cmd.as_str(),
+            "--preview-window",
+            "down:40%:wrap", // Smaller preview for more item space
+            "--layout",
+            "reverse-list", // More compact, dense layout for many items
+            "--height",
+            "90%", // Use most of the screen
+            "--bind",
+            "ctrl-l:clear-screen",
+            "--ansi",
+            "--no-mouse",
+        ])
+        .select_streaming(list_cmd)
+        .context("Failed to run package selector")?;
+
+    match result {
+        FzfResult::MultiSelected(lines) => {
+            if lines.is_empty() {
+                println!("No packages selected.");
+                return Ok(());
+            }
+
+            // Parse package names - each line is just a package name
+            let packages: Vec<String> = lines
+                .into_iter()
+                .map(|line| line.trim().to_string())
+                .collect();
+
+            if packages.is_empty() {
+                println!("No valid packages selected.");
+                return Ok(());
+            }
+
+            if debug {
+                println!("Selected packages: {:?}", packages);
+            }
+
+            // Confirm installation
+            let confirm_msg = format!(
+                "Install {} package{}?",
+                packages.len(),
+                if packages.len() == 1 { "" } else { "s" }
+            );
+
+            let confirm = FzfWrapper::builder()
+                .confirm(&confirm_msg)
+                .show_confirmation()?;
+
+            if !matches!(confirm, crate::menu_utils::ConfirmResult::Yes) {
+                println!("Installation cancelled.");
+                return Ok(());
+            }
+
+            let refs: Vec<&str> = packages.iter().map(|s| s.as_str()).collect();
+            install_package_names(manager, &refs)?;
+
+            println!("✓ Package installation completed successfully!");
+        }
+        FzfResult::Selected(line) => {
+            let package_name = line.trim().to_string();
+
+            if debug {
+                println!("Selected package: {}", package_name);
+            }
+
+            install_package_names(manager, &[&package_name])?;
+
+            println!("✓ Package installation completed successfully!");
+        }
+        FzfResult::Cancelled => {
+            println!("Package selection cancelled.");
+        }
+        FzfResult::Error(err) => {
+            anyhow::bail!("Package selection failed: {}", err);
+        }
+    }
+
+    Ok(())
+}
+
+// ============================================================================
+// Fedora Package Installer
+// ============================================================================
+
+/// Run the Fedora package installer (dnf)
+fn run_fedora_package_installer(debug: bool) -> Result<()> {
+    if debug {
+        println!("Starting Fedora package installer...");
+    }
+
+    // Validate package manager availability
+    let manager = PackageManager::Dnf;
+
+    if !manager.is_available() {
+        anyhow::bail!("{} is not available on this system", manager);
+    }
+
+    // Construct the list command - only package names, descriptions in preview
+    let list_cmd = manager.list_available_command();
+
+    // Preview command
+    let preview_cmd = manager.show_package_command().replace("{package}", "{1}");
+
+    let result = FzfWrapper::builder()
+        .multi_select(true)
+        .prompt("Select packages to install")
         .responsive_layout()
         .args([
             "--preview",

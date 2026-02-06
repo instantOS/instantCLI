@@ -144,6 +144,15 @@ impl OperatingSystem {
                 .unwrap_or(false)
     }
 
+    /// Check if this OS is Fedora-based (uses dnf)
+    pub fn is_fedora_based(&self) -> bool {
+        *self == Self::Fedora
+            || self
+                .based_on()
+                .map(|p| p.is_fedora_based())
+                .unwrap_or(false)
+    }
+
     /// Check if this OS is immutable (read-only root filesystem)
     /// Immutable OSes cannot be modified in the traditional way and
     /// updates replace the entire OS image.

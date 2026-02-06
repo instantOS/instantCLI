@@ -29,7 +29,11 @@ impl Setting for InstallPackages {
             .title("Install packages")
             .icon(NerdFont::Download)
             .summary("Browse and install system packages using an interactive fuzzy finder.")
-            .supported_distros(&[OperatingSystem::Arch, OperatingSystem::Debian])
+            .supported_distros(&[
+                OperatingSystem::Arch,
+                OperatingSystem::Debian,
+                OperatingSystem::Fedora,
+            ])
             .build()
     }
 
