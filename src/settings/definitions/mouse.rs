@@ -2,14 +2,14 @@
 //!
 //! Natural scrolling, button swap, and mouse sensitivity settings.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::process::Command;
 
-use crate::assist::{assist_command_argv, AssistInternalCommand};
-use crate::common::compositor::{sway, CompositorType};
+use crate::assist::{AssistInternalCommand, assist_command_argv};
+use crate::common::compositor::{CompositorType, sway};
 use crate::menu::client::MenuClient;
 use crate::menu::protocol::SliderRequest;
-use crate::preview::{preview_command, PreviewId};
+use crate::preview::{PreviewId, preview_command};
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::store::{BoolSettingKey, IntSettingKey};

@@ -250,12 +250,11 @@ fn parse_include_path(line: &str, current_path: &Path) -> Option<PathBuf> {
 
 fn trim_quotes(value: &str) -> &str {
     let trimmed = value.trim();
-    if trimmed.len() >= 2 {
-        if (trimmed.starts_with('"') && trimmed.ends_with('"'))
-            || (trimmed.starts_with('\'') && trimmed.ends_with('\''))
-        {
-            return &trimmed[1..trimmed.len() - 1];
-        }
+    if trimmed.len() >= 2
+        && ((trimmed.starts_with('"') && trimmed.ends_with('"'))
+            || (trimmed.starts_with('\'') && trimmed.ends_with('\'')))
+    {
+        return &trimmed[1..trimmed.len() - 1];
     }
     trimmed
 }

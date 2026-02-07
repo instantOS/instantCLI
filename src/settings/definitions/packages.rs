@@ -1,6 +1,6 @@
 //! Package installer settings
 //!
-//! Interactive package browser and installer using pacman/AUR or apt/pkg.
+//! Interactive package browser and installer supporting multiple package managers.
 
 use anyhow::Result;
 
@@ -16,10 +16,11 @@ use crate::ui::prelude::*;
 
 /// Install packages setting that supports multiple package managers.
 ///
-/// This setting automatically detects the current distribution and uses the
-/// appropriate package manager:
+/// Automatically detects the distribution and uses the appropriate package manager:
 /// - Arch-based: pacman + AUR helpers
 /// - Debian-based: apt (or pkg on Termux)
+/// - Fedora-based: dnf
+/// - openSUSE: zypper
 pub struct InstallPackages;
 
 impl Setting for InstallPackages {
@@ -29,7 +30,12 @@ impl Setting for InstallPackages {
             .title("Install packages")
             .icon(NerdFont::Download)
             .summary("Browse and install system packages using an interactive fuzzy finder.")
-            .supported_distros(&[OperatingSystem::Arch, OperatingSystem::Debian])
+            .supported_distros(&[
+                OperatingSystem::Arch,
+                OperatingSystem::Debian,
+                OperatingSystem::Fedora,
+                OperatingSystem::OpenSUSE,
+            ])
             .build()
     }
 

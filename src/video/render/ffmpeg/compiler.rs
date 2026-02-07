@@ -7,6 +7,11 @@ use super::super::mode::RenderMode;
 use crate::video::config::VideoConfig;
 use crate::video::render::timeline::{Segment, SegmentData, Timeline};
 
+const OVERLAY_FRAME_SCALE: f64 = 0.9;
+const OVERLAY_FRAME_BORDER_WIDTH: u32 = 4;
+const OVERLAY_FRAME_BORDER_COLOR: &str = "0x89B4FA";
+const OVERLAY_FRAME_BACKGROUND_COLOR: &str = "0x1E1E2E";
+
 #[derive(Debug, Clone)]
 pub struct FfmpegCompileOutput {
     pub args: Vec<String>,
@@ -209,6 +214,27 @@ impl FfmpegCompiler {
         )?;
 
         Ok(filters.join("; "))
+    }
+
+    fn build_overlay_frame_filters(&self, input_label: &str, output_label: &str) -> String {
+        let inner_width = (self.target_width as f64 * OVERLAY_FRAME_SCALE) as u32
+            - (OVERLAY_FRAME_BORDER_WIDTH * 2);
+        let inner_height = (self.target_height as f64 * OVERLAY_FRAME_SCALE) as u32
+            - (OVERLAY_FRAME_BORDER_WIDTH * 2);
+        let outer_width = (self.target_width as f64 * OVERLAY_FRAME_SCALE) as u32;
+        let outer_height = (self.target_height as f64 * OVERLAY_FRAME_SCALE) as u32;
+
+        format!(
+            "[{input}]scale={iw}:{ih}:force_original_aspect_ratio=decrease,pad={iw}:{ih}:(ow-iw)/2:(oh-ih)/2:{background},setsar=1,pad={ow}:{oh}:(ow-iw)/2:(oh-ih)/2:{border}[{out}]",
+            input = input_label,
+            iw = inner_width,
+            ih = inner_height,
+            ow = outer_width,
+            oh = outer_height,
+            background = OVERLAY_FRAME_BACKGROUND_COLOR,
+            border = OVERLAY_FRAME_BORDER_COLOR,
+            out = output_label,
+        )
     }
 
     fn build_base_track_filters(
@@ -414,29 +440,15 @@ impl FfmpegCompiler {
                 out = trimmed_label,
             ));
 
-            // Scale b-roll to 90% of target size, add catppuccin blue border, then pad to full size
-            let border_width = 4;
-            let inner_width = (self.target_width as f64 * 0.9) as u32 - (border_width * 2);
-            let inner_height = (self.target_height as f64 * 0.9) as u32 - (border_width * 2);
-            let outer_width = (self.target_width as f64 * 0.9) as u32;
-            let outer_height = (self.target_height as f64 * 0.9) as u32;
-            let catppuccin_blue = "0x89B4FA"; // Catppuccin Mocha Blue
-
-            filters.push(format!(
-                "[{input}]scale={iw}:{ih}:force_original_aspect_ratio=decrease,pad={iw}:{ih}:(ow-iw)/2:(oh-ih)/2:0x1E1E2E,setsar=1,pad={ow}:{oh}:(ow-iw)/2:(oh-ih)/2:{color}[{out}]",
-                input = trimmed_label,
-                iw = inner_width,
-                ih = inner_height,
-                ow = outer_width,
-                oh = outer_height,
-                color = catppuccin_blue,
-                out = scaled_label,
-            ));
+            let scaled_broll = self.build_overlay_frame_filters(&trimmed_label, &scaled_label);
+            filters.push(scaled_broll);
 
             let enable_condition =
                 format!("between(t,{},{})", segment.start_time, segment.end_time());
 
             // Center the scaled b-roll on the main video
+            let outer_width = (self.target_width as f64 * OVERLAY_FRAME_SCALE) as u32;
+            let outer_height = (self.target_height as f64 * OVERLAY_FRAME_SCALE) as u32;
             let x_offset = (self.target_width - outer_width) / 2;
             let y_offset = (self.target_height - outer_height) / 2;
 
@@ -466,11 +478,7 @@ impl FfmpegCompiler {
         let mut current_video_label = input_label.to_string();
 
         for (idx, segment) in overlay_segments.iter().enumerate() {
-            let SegmentData::Image {
-                source_image,
-                transform,
-            } = &segment.data
-            else {
+            let SegmentData::Image { source_image, .. } = &segment.data else {
                 continue;
             };
 
@@ -483,16 +491,16 @@ impl FfmpegCompiler {
 
             let overlay_label = format!("overlay_{idx}");
             let output_label = format!("overlaid_{idx}");
-
-            let scale_factor = transform.as_ref().and_then(|t| t.scale).unwrap_or(0.8);
+            let overlay_input = format!("overlay_raw_{idx}");
 
             filters.push(format!(
-                "[{input}:v]scale=w=ceil({width}*{scale}/2)*2:h=-1:flags=lanczos,setsar=1,format=rgba[{overlay}]",
+                "[{input}:v]format=rgba[{overlay}]",
                 input = input_index,
-                width = self.target_width,
-                scale = scale_factor,
-                overlay = overlay_label,
+                overlay = overlay_input,
             ));
+
+            let framed_overlay = self.build_overlay_frame_filters(&overlay_input, &overlay_label);
+            filters.push(framed_overlay);
 
             let enable_condition =
                 format!("between(t,{},{})", segment.start_time, segment.end_time());

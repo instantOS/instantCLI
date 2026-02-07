@@ -24,6 +24,7 @@ mod helpers;
 mod keyboard;
 mod mime;
 mod mouse;
+mod package;
 mod timezone;
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -74,6 +75,10 @@ pub enum PreviewId {
     Partition,
     #[value(name = "file-suggestion")]
     FileSuggestion,
+    #[value(name = "package")]
+    Package,
+    #[value(name = "installed-package")]
+    InstalledPackage,
 }
 
 impl PreviewId {
@@ -102,6 +107,8 @@ impl PreviewId {
             PreviewId::Disk => "disk",
             PreviewId::Partition => "partition",
             PreviewId::FileSuggestion => "file-suggestion",
+            PreviewId::Package => "package",
+            PreviewId::InstalledPackage => "installed-package",
         }
     }
 }
@@ -115,6 +122,13 @@ impl std::fmt::Display for PreviewId {
 pub fn preview_command(id: PreviewId) -> String {
     let exe = current_exe_command();
     format!("{exe} preview --id {} --key \"$1\"", id.as_str())
+}
+
+/// Preview command for streaming fzf menus.
+/// Uses fzf's {} placeholder instead of $1 for the key.
+pub fn preview_command_streaming(id: PreviewId) -> String {
+    let exe = current_exe_command();
+    format!("{exe} preview --id {} --key {{}}", id.as_str())
 }
 
 pub fn handle_preview_command(id: PreviewId, key: Option<String>) -> Result<()> {
@@ -217,6 +231,8 @@ fn render_preview(id: PreviewId, ctx: &PreviewContext) -> Result<String> {
         PreviewId::Disk => disks::render_disk_preview(ctx),
         PreviewId::Partition => disks::render_partition_preview(ctx),
         PreviewId::FileSuggestion => file::render_file_suggestion_preview(ctx),
+        PreviewId::Package => package::render_package_preview(ctx),
+        PreviewId::InstalledPackage => package::render_installed_package_preview(ctx),
     }
 }
 

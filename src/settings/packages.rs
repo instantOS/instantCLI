@@ -1,18 +1,26 @@
-use super::SettingsContext;
+//! Package installer for the settings TUI
+//!
+//! Provides interactive package installation using fzf with streaming for performance.
+
 use crate::common::distro::OperatingSystem;
 use crate::common::package::{PackageManager, detect_aur_helper, install_package_names};
-use crate::menu_utils::{FzfResult, FzfWrapper};
+use crate::menu_utils::{ConfirmResult, FzfResult, FzfWrapper, Header};
+use crate::preview::{PreviewId, preview_command_streaming};
+use crate::ui::catppuccin::fzf_mocha_args;
 use anyhow::{Context, Result};
 
-/// Run the interactive package installer as a settings action
-/// This dispatches to the appropriate package manager based on the detected OS.
+use super::SettingsContext;
+
+/// Run the interactive package installer as a settings action.
+/// Dispatches to the appropriate package manager based on the detected OS.
 pub fn run_package_installer_action(ctx: &mut SettingsContext) -> Result<()> {
     let os = OperatingSystem::detect();
+    let debug = ctx.debug();
 
     if os.is_arch_based() {
-        run_unified_package_installer(ctx.debug())
-    } else if os.is_debian_based() {
-        run_debian_package_installer(ctx.debug())
+        run_arch_installer(debug)
+    } else if let Some(manager) = os.native_package_manager() {
+        run_simple_installer(manager, debug)
     } else {
         anyhow::bail!(
             "Package installer not supported on this system ({})",
@@ -21,42 +29,50 @@ pub fn run_package_installer_action(ctx: &mut SettingsContext) -> Result<()> {
     }
 }
 
-/// Package source enumeration
-#[derive(Debug, Clone, PartialEq)]
-enum PackageSource {
-    Pacman,
-    AUR,
-}
+// ============================================================================
+// Simple Package Installer (Debian, Fedora, openSUSE, Termux)
+// ============================================================================
 
-/// A package with its source information
-#[derive(Debug, Clone)]
-struct Package {
-    #[allow(dead_code)]
-    name: String,
-    #[allow(dead_code)]
-    source: PackageSource,
-}
-
-impl Package {
-    fn extract_name_from_display(display: &str) -> (String, PackageSource) {
-        if display.starts_with("[AUR] ") {
-            (display[6..].to_string(), PackageSource::AUR)
-        } else if display.starts_with("[Repo] ") {
-            (display[7..].to_string(), PackageSource::Pacman)
-        } else {
-            // Fallback for backwards compatibility
-            (display.to_string(), PackageSource::Pacman)
-        }
-    }
-}
-
-/// Run the unified package installer (supports both pacman and AUR)
-fn run_unified_package_installer(debug: bool) -> Result<()> {
+/// Run a simple single-manager package installer.
+fn run_simple_installer(manager: PackageManager, debug: bool) -> Result<()> {
     if debug {
-        println!("Starting unified package installer...");
+        println!("Starting {} package installer...", manager);
     }
 
-    // Check what package managers are available
+    if !manager.is_available() {
+        anyhow::bail!("{} is not available on this system", manager);
+    }
+
+    let list_cmd = manager.list_available_command();
+    let preview_cmd = preview_command_streaming(PreviewId::Package);
+
+    let result = FzfWrapper::builder()
+        .multi_select(true)
+        .prompt("Select packages")
+        .header(Header::fancy("Install Packages"))
+        .args(fzf_mocha_args())
+        .args(["--preview", &preview_cmd, "--ansi"])
+        .responsive_layout()
+        .select_streaming(list_cmd)
+        .context("Failed to run package selector")?;
+
+    handle_install_result(
+        result,
+        |packages| install_package_names(manager, packages),
+        debug,
+    )
+}
+
+// ============================================================================
+// Arch Package Installer (Pacman + AUR)
+// ============================================================================
+
+/// Run the Arch package installer with support for both pacman and AUR.
+fn run_arch_installer(debug: bool) -> Result<()> {
+    if debug {
+        println!("Starting Arch package installer...");
+    }
+
     let aur_helper = detect_aur_helper();
     let has_pacman = PackageManager::Pacman.is_available();
 
@@ -64,224 +80,149 @@ fn run_unified_package_installer(debug: bool) -> Result<()> {
         anyhow::bail!("Neither pacman nor an AUR helper is available on this system");
     }
 
-    // Construct the list command
+    // Build streaming command: source<TAB>package_name
     let mut list_cmds = Vec::new();
-
     if has_pacman {
-        // List repo packages
-        let pacman_list = PackageManager::Pacman.list_available_command();
-        list_cmds.push(format!("{} | sed 's/^/[Repo] /'", pacman_list));
+        let cmd = PackageManager::Pacman.list_available_command();
+        list_cmds.push(format!("{} | sed 's/^/repo\\t/'", cmd));
     }
-
     if aur_helper.is_some() {
-        // List AUR packages using the static list
-        // We use curl to fetch the list because helpers like yay don't easily list ONLY AUR packages
-        let aur_list = PackageManager::Aur.list_available_command();
-        list_cmds.push(format!("{} | sed 's/^/[AUR] /'", aur_list));
+        let cmd = PackageManager::Aur.list_available_command();
+        list_cmds.push(format!("{} | sed 's/^/aur\\t/'", cmd));
     }
-
-    // Combine commands to run in sequence
     let full_command = format!("{{ {}; }}", list_cmds.join("; "));
 
-    // Determine preview command
-    // If we have an AUR helper, it can usually preview both repo and AUR packages
-    let preview_cmd = if let Some(helper) = aur_helper {
-        format!("{} -Sii {{2}}", helper)
-    } else {
-        let pacman_show = PackageManager::Pacman.show_package_command();
-        pacman_show.replace("{package}", "{2}")
-    };
-
-    // Re-detect for later use (consumed above)
-    let aur_helper = detect_aur_helper();
+    let preview_cmd = preview_command_streaming(PreviewId::Package);
 
     let result = FzfWrapper::builder()
         .multi_select(true)
-        .prompt("Select packages to install")
-        .responsive_layout()
+        .prompt("Select packages")
+        .header(Header::fancy("Install Packages"))
+        .args(fzf_mocha_args())
         .args([
-            "--preview",
-            preview_cmd.as_str(),
-            "--preview-window",
-            "down:40%:wrap", // Smaller preview for more item space
-            "--layout",
-            "reverse-list", // More compact, dense layout for many items
-            "--height",
-            "90%", // Use most of the screen
-            "--bind",
-            "ctrl-l:clear-screen",
-            "--ansi",
-            "--no-mouse",
             "--delimiter",
-            " ",
+            "\t",
             "--with-nth",
-            "1..",
+            "2",
+            "--preview",
+            &preview_cmd,
+            "--ansi",
         ])
+        .responsive_layout()
         .select_streaming(&full_command)
         .context("Failed to run package selector")?;
 
+    handle_arch_install_result(result, detect_aur_helper(), debug)
+}
+
+/// Handle Arch install result, splitting packages by source.
+fn handle_arch_install_result(
+    result: FzfResult<String>,
+    aur_helper: Option<&str>,
+    debug: bool,
+) -> Result<()> {
     match result {
-        FzfResult::MultiSelected(lines) => {
-            if lines.is_empty() {
-                println!("No packages selected.");
-                return Ok(());
-            }
-
-            let mut pacman_packages = Vec::new();
-            let mut aur_packages = Vec::new();
-
-            for line in lines {
-                let (name, source) = Package::extract_name_from_display(&line);
-                match source {
-                    PackageSource::Pacman => pacman_packages.push(name),
-                    PackageSource::AUR => aur_packages.push(name),
-                }
-            }
+        FzfResult::MultiSelected(lines) if !lines.is_empty() => {
+            let (repo_pkgs, aur_pkgs) = parse_arch_selections(&lines);
 
             if debug {
-                println!("Selected Repo packages: {:?}", pacman_packages);
-                println!("Selected AUR packages: {:?}", aur_packages);
+                println!("Repo packages: {:?}", repo_pkgs);
+                println!("AUR packages: {:?}", aur_pkgs);
             }
 
-            // Confirm installation
-            let total = pacman_packages.len() + aur_packages.len();
-            let confirm_msg = format!(
+            let total = repo_pkgs.len() + aur_pkgs.len();
+            let msg = format!(
                 "Install {} package{} ({} Repo, {} AUR)?",
                 total,
                 if total == 1 { "" } else { "s" },
-                pacman_packages.len(),
-                aur_packages.len()
+                repo_pkgs.len(),
+                aur_pkgs.len()
             );
 
-            let confirm = FzfWrapper::builder()
-                .confirm(&confirm_msg)
-                .show_confirmation()?;
-
-            if !matches!(confirm, crate::menu_utils::ConfirmResult::Yes) {
+            if !confirm_action(&msg)? {
                 println!("Installation cancelled.");
                 return Ok(());
             }
 
-            // Install Repo packages first
-            if !pacman_packages.is_empty() {
-                let refs: Vec<&str> = pacman_packages.iter().map(|s| s.as_str()).collect();
+            if !repo_pkgs.is_empty() {
+                let refs: Vec<&str> = repo_pkgs.iter().map(|s| s.as_str()).collect();
                 install_package_names(PackageManager::Pacman, &refs)?;
             }
 
-            // Install AUR packages
-            if !aur_packages.is_empty() {
+            if !aur_pkgs.is_empty() {
                 if aur_helper.is_some() {
-                    let refs: Vec<&str> = aur_packages.iter().map(|s| s.as_str()).collect();
+                    let refs: Vec<&str> = aur_pkgs.iter().map(|s| s.as_str()).collect();
                     install_package_names(PackageManager::Aur, &refs)?;
                 } else {
-                    println!(
-                        "Warning: AUR packages selected but no AUR helper found. Skipping: {:?}",
-                        aur_packages
-                    );
+                    println!("Warning: No AUR helper found. Skipping: {:?}", aur_pkgs);
                 }
             }
 
             println!("✓ Package installation completed successfully!");
+            Ok(())
         }
         FzfResult::Selected(line) => {
-            let (name, source) = Package::extract_name_from_display(&line);
+            let (source, name) = line.split_once('\t').unwrap_or(("repo", &line));
 
             if debug {
-                println!("Selected package: {} ({:?})", name, source);
+                println!("Selected: {} ({})", name, source);
             }
 
-            match source {
-                PackageSource::Pacman => install_package_names(PackageManager::Pacman, &[&name])?,
-                PackageSource::AUR => {
-                    if aur_helper.is_some() {
-                        install_package_names(PackageManager::Aur, &[&name])?;
-                    } else {
-                        println!("Warning: AUR package selected but no AUR helper found.");
-                    }
+            if source == "aur" {
+                if aur_helper.is_some() {
+                    install_package_names(PackageManager::Aur, &[name])?;
+                } else {
+                    anyhow::bail!("AUR package selected but no AUR helper found");
                 }
+            } else {
+                install_package_names(PackageManager::Pacman, &[name])?;
             }
+
             println!("✓ Package installation completed successfully!");
+            Ok(())
         }
-        FzfResult::Cancelled => {
-            println!("Package selection cancelled.");
+        FzfResult::MultiSelected(_) | FzfResult::Cancelled => {
+            println!("No packages selected.");
+            Ok(())
         }
-        FzfResult::Error(err) => {
-            anyhow::bail!("Package selection failed: {}", err);
+        FzfResult::Error(err) => anyhow::bail!("Package selection failed: {}", err),
+    }
+}
+
+/// Parse Arch selections into (repo_packages, aur_packages).
+fn parse_arch_selections(lines: &[String]) -> (Vec<String>, Vec<String>) {
+    let mut repo = Vec::new();
+    let mut aur = Vec::new();
+
+    for line in lines {
+        if let Some((source, name)) = line.split_once('\t') {
+            match source {
+                "aur" => aur.push(name.to_string()),
+                _ => repo.push(name.to_string()),
+            }
+        } else {
+            repo.push(line.clone());
         }
     }
 
-    Ok(())
+    (repo, aur)
 }
 
 // ============================================================================
-// Debian/Ubuntu Package Installer
+// Shared Utilities
 // ============================================================================
 
-/// Run the unified Debian/Ubuntu package installer
-fn run_debian_package_installer(debug: bool) -> Result<()> {
-    if debug {
-        println!("Starting Debian package installer...");
-    }
-
-    let os = OperatingSystem::detect();
-    let is_termux = matches!(os, OperatingSystem::Termux);
-
-    // Validate package manager availability
-    let manager = if is_termux {
-        PackageManager::Pkg
-    } else {
-        PackageManager::Apt
-    };
-
-    if !manager.is_available() {
-        anyhow::bail!("{} is not available on this system", manager);
-    }
-
-    // Construct the list command - only package names, descriptions in preview
-    let list_cmd = manager.list_available_command();
-
-    // Preview command
-    let preview_cmd = manager.show_package_command().replace("{package}", "{1}");
-
-    // FZF prompt customization
-    let prompt = if is_termux {
-        "Select Termux packages to install"
-    } else {
-        "Select packages to install"
-    };
-
-    let result = FzfWrapper::builder()
-        .multi_select(true)
-        .prompt(prompt)
-        .responsive_layout()
-        .args([
-            "--preview",
-            preview_cmd.as_str(),
-            "--preview-window",
-            "down:40%:wrap", // Smaller preview for more item space
-            "--layout",
-            "reverse-list", // More compact, dense layout for many items
-            "--height",
-            "90%", // Use most of the screen
-            "--bind",
-            "ctrl-l:clear-screen",
-            "--ansi",
-            "--no-mouse",
-        ])
-        .select_streaming(list_cmd)
-        .context("Failed to run package selector")?;
-
+/// Handle install result for simple (non-Arch) package managers.
+fn handle_install_result<F>(result: FzfResult<String>, install_fn: F, debug: bool) -> Result<()>
+where
+    F: FnOnce(&[&str]) -> Result<()>,
+{
     match result {
-        FzfResult::MultiSelected(lines) => {
-            if lines.is_empty() {
-                println!("No packages selected.");
-                return Ok(());
-            }
-
-            // Parse package names - each line is just a package name
+        FzfResult::MultiSelected(lines) if !lines.is_empty() => {
             let packages: Vec<String> = lines
                 .into_iter()
-                .map(|line| line.trim().to_string())
+                .map(|l| l.trim().to_string())
+                .filter(|s| !s.is_empty())
                 .collect();
 
             if packages.is_empty() {
@@ -293,45 +234,42 @@ fn run_debian_package_installer(debug: bool) -> Result<()> {
                 println!("Selected packages: {:?}", packages);
             }
 
-            // Confirm installation
-            let confirm_msg = format!(
+            let msg = format!(
                 "Install {} package{}?",
                 packages.len(),
                 if packages.len() == 1 { "" } else { "s" }
             );
 
-            let confirm = FzfWrapper::builder()
-                .confirm(&confirm_msg)
-                .show_confirmation()?;
-
-            if !matches!(confirm, crate::menu_utils::ConfirmResult::Yes) {
+            if !confirm_action(&msg)? {
                 println!("Installation cancelled.");
                 return Ok(());
             }
 
             let refs: Vec<&str> = packages.iter().map(|s| s.as_str()).collect();
-            install_package_names(manager, &refs)?;
+            install_fn(&refs)?;
 
             println!("✓ Package installation completed successfully!");
+            Ok(())
         }
         FzfResult::Selected(line) => {
-            let package_name = line.trim().to_string();
-
+            let name = line.trim();
             if debug {
-                println!("Selected package: {}", package_name);
+                println!("Selected package: {}", name);
             }
-
-            install_package_names(manager, &[&package_name])?;
-
+            install_fn(&[name])?;
             println!("✓ Package installation completed successfully!");
+            Ok(())
         }
-        FzfResult::Cancelled => {
-            println!("Package selection cancelled.");
+        FzfResult::MultiSelected(_) | FzfResult::Cancelled => {
+            println!("No packages selected.");
+            Ok(())
         }
-        FzfResult::Error(err) => {
-            anyhow::bail!("Package selection failed: {}", err);
-        }
+        FzfResult::Error(err) => anyhow::bail!("Package selection failed: {}", err),
     }
+}
 
-    Ok(())
+/// Show confirmation dialog and return whether user confirmed.
+fn confirm_action(message: &str) -> Result<bool> {
+    let result = FzfWrapper::builder().confirm(message).show_confirmation()?;
+    Ok(matches!(result, ConfirmResult::Yes))
 }

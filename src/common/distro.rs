@@ -144,6 +144,15 @@ impl OperatingSystem {
                 .unwrap_or(false)
     }
 
+    /// Check if this OS is Fedora-based (uses dnf)
+    pub fn is_fedora_based(&self) -> bool {
+        *self == Self::Fedora
+            || self
+                .based_on()
+                .map(|p| p.is_fedora_based())
+                .unwrap_or(false)
+    }
+
     /// Check if this OS is immutable (read-only root filesystem)
     /// Immutable OSes cannot be modified in the traditional way and
     /// updates replace the entire OS image.
@@ -380,9 +389,17 @@ ID_LIKE="arch""#;
         assert!(OperatingSystem::LinuxMint.is_debian_based());
         assert!(OperatingSystem::Termux.is_debian_based());
 
+        assert!(OperatingSystem::Fedora.is_fedora_based());
+        assert!(OperatingSystem::CentOS.is_fedora_based());
+        assert!(OperatingSystem::Bazzite.is_fedora_based());
+
         // Cross-checks
         assert!(!OperatingSystem::Arch.is_debian_based());
+        assert!(!OperatingSystem::Arch.is_fedora_based());
         assert!(!OperatingSystem::Ubuntu.is_arch_based());
+        assert!(!OperatingSystem::Ubuntu.is_fedora_based());
+        assert!(!OperatingSystem::Fedora.is_arch_based());
+        assert!(!OperatingSystem::Fedora.is_debian_based());
         assert!(!OperatingSystem::Termux.is_arch_based());
     }
 

@@ -5,6 +5,7 @@ use crate::dot::db::DotFileType;
 use crate::dot::get_all_dotfiles;
 use crate::dot::localrepo as repo_mod;
 use anyhow::{Context, Result};
+use git2::Repository;
 use std::path::PathBuf;
 
 /// Get the dotfile directory name for a dotfile
@@ -50,11 +51,22 @@ pub fn add_repo(config: &mut config::Config, repo: config::Repo, debug: bool) ->
 
     let target = base.join(repo_dir_name);
 
+    let mut skip_clone = false;
     if target.exists() {
-        return Err(anyhow::anyhow!(
-            "Destination '{}' already exists",
-            target.display()
-        ));
+        if Repository::open(&target).is_ok() {
+            if debug {
+                eprintln!(
+                    "Destination '{}' already exists and is a git repository. Skipping clone.",
+                    target.display()
+                );
+            }
+            skip_clone = true;
+        } else if target.read_dir()?.next().is_some() {
+            return Err(anyhow::anyhow!(
+                "Destination '{}' already exists and is not empty or a git repository",
+                target.display()
+            ));
+        }
     }
 
     // For local paths, canonicalize to absolute path and disable shallow clone
@@ -68,12 +80,25 @@ pub fn add_repo(config: &mut config::Config, repo: config::Repo, debug: bool) ->
         (repo.url.clone(), Some(config.clone_depth as i32))
     };
 
-    let pb = common::progress::create_spinner(format!("Cloning {}...", clone_url));
+    if !skip_clone {
+        let pb = common::progress::create_spinner(format!("Cloning {}...", clone_url));
 
-    git::clone_repo(&clone_url, &target, repo.branch.as_deref(), depth)
-        .context("Failed to clone repository")?;
+        git::clone_repo(&clone_url, &target, repo.branch.as_deref(), depth)
+            .context("Failed to clone repository")?;
 
-    common::progress::finish_spinner_with_success(pb, format!("Cloned {}", clone_url));
+        common::progress::finish_spinner_with_success(pb, format!("Cloned {}", clone_url));
+    } else if let Some(branch) = repo.branch.as_deref() {
+        // If we reused an existing repo, try to ensure the correct branch is checked out
+        if let Ok(mut repo_instance) = Repository::open(&target) {
+            if let Err(e) = git::checkout_branch(&mut repo_instance, branch) {
+                if debug {
+                    eprintln!("Warning: Failed to checkout branch '{}': {}", branch, e);
+                }
+            } else if debug {
+                eprintln!("Checked out branch '{}'", branch);
+            }
+        }
+    }
 
     // Create missing dots directories (git doesn't track empty directories)
     if let Ok(meta) = crate::dot::meta::read_meta(&target) {
@@ -91,7 +116,21 @@ pub fn add_repo(config: &mut config::Config, repo: config::Repo, debug: bool) ->
     }
 
     // Validate metadata
-    let local_repo = repo_mod::LocalRepo::new(config, repo.name.clone())?;
+    let local_repo = match repo_mod::LocalRepo::new(config, repo.name.clone()) {
+        Ok(repo) => repo,
+        Err(e) => {
+            if !target.join("instantdots.toml").exists() {
+                // This might be an external repo (yadm/stow) that will be configured
+                // by the caller (clone_repository).
+                if debug {
+                    eprintln!("Repo has no metadata. Skipping validation and hash registration.");
+                }
+                return Ok(target);
+            }
+            return Err(e);
+        }
+    };
+
     let meta = &local_repo.meta;
 
     if debug {
