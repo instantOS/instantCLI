@@ -140,10 +140,7 @@ impl PackageManager {
             Self::Pkg => ("pkg", &["uninstall", "-y"]),
             Self::Flatpak => ("flatpak", &["uninstall", "-y"]),
             Self::Aur => ("yay", &["-R", "--noconfirm"]),
-            Self::Cargo => {
-                // Cargo doesn't have uninstall, need to manually remove binary
-                ("sh", &["-c"])
-            }
+            Self::Cargo => ("cargo", &["uninstall"]),
             Self::Snap => ("sudo", &["snap", "remove"]),
         }
     }
