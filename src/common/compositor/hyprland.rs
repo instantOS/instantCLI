@@ -96,7 +96,7 @@ impl Hyprland {
 
 /// Client information from hyprctl clients -j
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct HyprlandClient {
+pub struct HyprlandClient {
     pub address: String,
     pub class: String,
     pub title: String,
@@ -107,7 +107,7 @@ struct HyprlandClient {
 
 /// Workspace information from hyprctl clients -j
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct HyprlandWorkspace {
+pub struct HyprlandWorkspace {
     pub name: String,
 }
 

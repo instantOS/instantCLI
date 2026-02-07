@@ -37,7 +37,6 @@ dep!(ZATHURA, "Zathura", "zathura");
 
 pub static ZATHURA_PDF_MUPDF: Dependency = Dependency {
     name: "Zathura PDF Plugin",
-    description: None,
     packages: &[
         PackageDefinition::new("zathura-pdf-mupdf", PackageManager::Pacman),
         PackageDefinition::new("zathura-pdf-poppler", PackageManager::Apt),
@@ -134,7 +133,6 @@ dep!(TOTEM, "GNOME Videos", "totem");
 
 pub static HARUNA: Dependency = Dependency {
     name: "Haruna",
-    description: Some("Modern Qt/KDE video player based on mpv"),
     packages: &[PackageDefinition::new("haruna", PackageManager::Pacman)],
     tests: &[InstallTest::WhichSucceeds("haruna")],
 };
@@ -217,7 +215,6 @@ pub static TEXT_EDITORS: &[InstallableApp] = &[
 
 pub static ADWAITA_DARK: Dependency = Dependency {
     name: "Adwaita (GNOME default)",
-    description: Some("Standard GNOME theme with dark variant"),
     packages: &[
         PackageDefinition::new("gnome-themes-extra", PackageManager::Pacman),
         PackageDefinition::new("gnome-themes-extra", PackageManager::Apt),
@@ -227,7 +224,6 @@ pub static ADWAITA_DARK: Dependency = Dependency {
 
 pub static ADW_GTK_THEME: Dependency = Dependency {
     name: "Adwaita-like GTK Theme",
-    description: Some("Modern Adwaita-like theme for GTK applications"),
     packages: &[
         PackageDefinition::new("adw-gtk-theme", PackageManager::Pacman),
         PackageDefinition::new("adw-gtk-theme", PackageManager::Apt),
@@ -237,7 +233,6 @@ pub static ADW_GTK_THEME: Dependency = Dependency {
 
 pub static MATERIA_THEME: Dependency = Dependency {
     name: "Materia Theme",
-    description: Some("Material Design inspired theme"),
     packages: &[
         PackageDefinition::new("materia-gtk-theme", PackageManager::Pacman),
         PackageDefinition::new("materia-gtk-theme", PackageManager::Apt),
@@ -247,7 +242,6 @@ pub static MATERIA_THEME: Dependency = Dependency {
 
 pub static BREEZE_GTK: Dependency = Dependency {
     name: "Breeze GTK",
-    description: Some("KDE Breeze theme for GTK apps"),
     packages: &[
         PackageDefinition::new("breeze-gtk", PackageManager::Pacman),
         PackageDefinition::new("breeze-gtk-theme", PackageManager::Apt),
@@ -257,7 +251,6 @@ pub static BREEZE_GTK: Dependency = Dependency {
 
 pub static ELEMENTARY_THEME: Dependency = Dependency {
     name: "elementary OS Theme",
-    description: Some("Clean and modern theme from elementary OS"),
     packages: &[
         PackageDefinition::new("gtk-theme-elementary", PackageManager::Pacman),
         PackageDefinition::new("gtk-theme-elementary", PackageManager::Apt),
@@ -269,7 +262,6 @@ pub static ELEMENTARY_THEME: Dependency = Dependency {
 
 pub static ORCHIS_THEME: Dependency = Dependency {
     name: "Orchis Theme",
-    description: Some("Modern Material Design theme with rounded corners"),
     packages: &[
         PackageDefinition::new("orchis-theme", PackageManager::Pacman),
         PackageDefinition::new("orchis-theme", PackageManager::Apt),
@@ -279,7 +271,6 @@ pub static ORCHIS_THEME: Dependency = Dependency {
 
 pub static ADAPTA_THEME: Dependency = Dependency {
     name: "Adapta Theme",
-    description: Some("Adaptive GTK theme based on Material Design"),
     packages: &[
         PackageDefinition::new("adapta-gtk-theme", PackageManager::Pacman),
         PackageDefinition::new("adapta-gtk-theme", PackageManager::Apt),
@@ -289,7 +280,6 @@ pub static ADAPTA_THEME: Dependency = Dependency {
 
 pub static POP_THEME: Dependency = Dependency {
     name: "Pop!_OS Theme",
-    description: Some("Elegant dark theme from Pop!_OS"),
     packages: &[
         PackageDefinition::new("pop-gtk-theme", PackageManager::Pacman),
         PackageDefinition::new("pop-gtk-theme", PackageManager::Apt),
@@ -346,7 +336,6 @@ pub static GTK_THEMES: &[InstallableApp] = &[
 
 pub static ADWAITA_ICON_THEME: Dependency = Dependency {
     name: "Adwaita Icons",
-    description: Some("Default GNOME icon theme with modern design"),
     packages: &[
         PackageDefinition::new("adwaita-icon-theme", PackageManager::Pacman),
         PackageDefinition::new("adwaita-icon-theme", PackageManager::Apt),
@@ -356,7 +345,6 @@ pub static ADWAITA_ICON_THEME: Dependency = Dependency {
 
 pub static PAPIRUS_ICON_THEME: Dependency = Dependency {
     name: "Papirus Icons",
-    description: Some("Modern paper-like icon theme with shadows"),
     packages: &[
         PackageDefinition::new("papirus-icon-theme", PackageManager::Pacman),
         PackageDefinition::new("papirus-icon-theme", PackageManager::Apt),
@@ -366,7 +354,6 @@ pub static PAPIRUS_ICON_THEME: Dependency = Dependency {
 
 pub static TELA_CIRCLE_ICON_THEME: Dependency = Dependency {
     name: "Tela Circle Icons",
-    description: Some("Flat colorful circle-shaped icon theme"),
     packages: &[
         PackageDefinition::new("tela-circle-icon-theme", PackageManager::Pacman),
         PackageDefinition::new("tela-circle-icon-theme", PackageManager::Apt),
@@ -376,7 +363,6 @@ pub static TELA_CIRCLE_ICON_THEME: Dependency = Dependency {
 
 pub static OBSIDIAN_ICON_THEME: Dependency = Dependency {
     name: "Obsidian Icons",
-    description: Some("Dark icon theme with colorful accents"),
     packages: &[
         PackageDefinition::new("obsidian-icon-theme", PackageManager::Pacman),
         PackageDefinition::new("obsidian-icon-theme", PackageManager::Apt),
@@ -386,7 +372,6 @@ pub static OBSIDIAN_ICON_THEME: Dependency = Dependency {
 
 pub static COSMIC_ICON_THEME: Dependency = Dependency {
     name: "COSMIC Icons",
-    description: Some("Modern icon theme from COSMIC desktop"),
     packages: &[
         PackageDefinition::new("cosmic-icon-theme", PackageManager::Pacman),
         PackageDefinition::new("cosmic-icon-theme", PackageManager::Apt),
@@ -478,7 +463,6 @@ pub static FILE_MANAGERS: &[InstallableApp] = &[
 
 pub static FIREFOX: Dependency = Dependency {
     name: "Firefox",
-    description: Some("Privacy-focused open source browser from Mozilla"),
     packages: &[
         PackageDefinition::new("firefox", PackageManager::Pacman),
         PackageDefinition::new("firefox", PackageManager::Apt),
@@ -488,7 +472,6 @@ pub static FIREFOX: Dependency = Dependency {
 
 pub static CHROMIUM: Dependency = Dependency {
     name: "Chromium",
-    description: Some("Open source foundation for Google Chrome"),
     packages: &[
         PackageDefinition::new("chromium", PackageManager::Pacman),
         PackageDefinition::new("chromium-browser", PackageManager::Apt),
@@ -498,7 +481,6 @@ pub static CHROMIUM: Dependency = Dependency {
 
 pub static FALKON: Dependency = Dependency {
     name: "Falkon",
-    description: Some("Qt-based browser with KDE integration"),
     packages: &[
         PackageDefinition::new("falkon", PackageManager::Pacman),
         PackageDefinition::new("falkon", PackageManager::Apt),
@@ -508,7 +490,6 @@ pub static FALKON: Dependency = Dependency {
 
 pub static EPIPHANY: Dependency = Dependency {
     name: "GNOME Web (Epiphany)",
-    description: Some("Simple and clean browser for GNOME desktop"),
     packages: &[
         PackageDefinition::new("epiphany", PackageManager::Pacman),
         PackageDefinition::new("epiphany-browser", PackageManager::Apt),

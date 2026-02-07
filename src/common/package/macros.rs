@@ -11,9 +11,6 @@
 /// // Package with different names
 /// dep!(CHROMIUM, "Chromium", pacman: "chromium", apt: "chromium-browser");
 ///
-/// // With description
-/// dep!(VLC, "VLC", "vlc", "Universal media player");
-///
 /// // With Flatpak fallback
 /// dep!(FIREFOX, "Firefox", "firefox", flatpak: "org.mozilla.firefox");
 ///
@@ -27,7 +24,6 @@ macro_rules! dep {
         pub static $name: $crate::common::package::Dependency =
             $crate::common::package::Dependency {
                 name: $display,
-                description: None,
                 packages: &[
                     $crate::common::package::PackageDefinition {
                         package_name: $pkg,
@@ -51,7 +47,6 @@ macro_rules! dep {
         pub static $name: $crate::common::package::Dependency =
             $crate::common::package::Dependency {
                 name: $display,
-                description: Some($desc),
                 packages: &[
                     $crate::common::package::PackageDefinition {
                         package_name: $pkg,
@@ -75,7 +70,6 @@ macro_rules! dep {
         pub static $name: $crate::common::package::Dependency =
             $crate::common::package::Dependency {
                 name: $display,
-                description: None,
                 packages: &[
                     $crate::common::package::PackageDefinition {
                         package_name: $pacman,
@@ -99,7 +93,6 @@ macro_rules! dep {
         pub static $name: $crate::common::package::Dependency =
             $crate::common::package::Dependency {
                 name: $display,
-                description: None,
                 packages: &[
                     $crate::common::package::PackageDefinition {
                         package_name: $pacman,
@@ -123,7 +116,6 @@ macro_rules! dep {
         pub static $name: $crate::common::package::Dependency =
             $crate::common::package::Dependency {
                 name: $display,
-                description: None,
                 packages: &[
                     $crate::common::package::PackageDefinition {
                         package_name: $pkg,
@@ -152,7 +144,6 @@ macro_rules! dep {
         pub static $name: $crate::common::package::Dependency =
             $crate::common::package::Dependency {
                 name: $display,
-                description: None,
                 packages: &[
                     $crate::common::package::PackageDefinition {
                         package_name: $pacman,

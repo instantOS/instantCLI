@@ -11,7 +11,6 @@ use crate::common::requirements::InstallTest;
 
 pub static CLIPMENU: Dependency = Dependency {
     name: "clipmenu",
-    description: Some("Clipboard manager daemon"),
     packages: &[PackageDefinition::new("clipmenu", PackageManager::Pacman)],
     tests: &[InstallTest::WhichSucceeds("clipmenud")],
 };
@@ -22,7 +21,6 @@ pub static CLIPMENU: Dependency = Dependency {
 
 pub static UDISKIE: Dependency = Dependency {
     name: "udiskie",
-    description: Some("Automounter for removable media"),
     packages: &[
         PackageDefinition::new("udiskie", PackageManager::Pacman),
         PackageDefinition::new("udiskie", PackageManager::Apt),
@@ -36,7 +34,6 @@ pub static UDISKIE: Dependency = Dependency {
 
 pub static BLUEZ: Dependency = Dependency {
     name: "BlueZ bluetooth daemon",
-    description: Some("Linux Bluetooth protocol stack"),
     packages: &[
         PackageDefinition::new("bluez", PackageManager::Pacman),
         PackageDefinition::new("bluez", PackageManager::Apt),
@@ -49,7 +46,6 @@ pub static BLUEZ: Dependency = Dependency {
 
 pub static BLUEZ_UTILS: Dependency = Dependency {
     name: "BlueZ utilities",
-    description: Some("Bluetooth utilities (bluetoothctl)"),
     packages: &[
         PackageDefinition::new("bluez-utils", PackageManager::Pacman),
         PackageDefinition::new("bluez", PackageManager::Apt),
@@ -63,7 +59,6 @@ pub static BLUEZ_UTILS: Dependency = Dependency {
 
 pub static COCKPIT: Dependency = Dependency {
     name: "Cockpit",
-    description: Some("Web-based system administration"),
     packages: &[
         PackageDefinition::new("cockpit", PackageManager::Pacman),
         PackageDefinition::new("cockpit", PackageManager::Apt),
@@ -76,7 +71,6 @@ pub static COCKPIT: Dependency = Dependency {
 
 pub static FASTFETCH: Dependency = Dependency {
     name: "fastfetch",
-    description: Some("System information tool"),
     packages: &[
         PackageDefinition::new("fastfetch", PackageManager::Pacman),
         PackageDefinition::new("fastfetch", PackageManager::Apt),
@@ -86,7 +80,6 @@ pub static FASTFETCH: Dependency = Dependency {
 
 pub static PACMAN_CONTRIB: Dependency = Dependency {
     name: "pacman-contrib",
-    description: Some("Pacman helper utilities"),
     packages: &[PackageDefinition::new(
         "pacman-contrib",
         PackageManager::Pacman,
@@ -99,14 +92,12 @@ pub static PACMAN_CONTRIB: Dependency = Dependency {
 
 pub static TOPGRADE: Dependency = Dependency {
     name: "topgrade",
-    description: Some("System upgrade tool"),
     packages: &[PackageDefinition::new("topgrade", PackageManager::Pacman)],
     tests: &[InstallTest::WhichSucceeds("topgrade")],
 };
 
 pub static GNOME_FIRMWARE: Dependency = Dependency {
     name: "GNOME Firmware manager",
-    description: Some("Device firmware manager"),
     packages: &[
         PackageDefinition::new("gnome-firmware", PackageManager::Pacman),
         PackageDefinition::new("gnome-firmware", PackageManager::Apt),
@@ -116,7 +107,6 @@ pub static GNOME_FIRMWARE: Dependency = Dependency {
 
 pub static CHROMIUM: Dependency = Dependency {
     name: "Chromium browser",
-    description: Some("Open source web browser"),
     packages: &[
         PackageDefinition::new("chromium", PackageManager::Pacman),
         PackageDefinition::new("chromium-browser", PackageManager::Apt),
@@ -133,7 +123,6 @@ pub static COCKPIT_DEPS: &[&Dependency] = &[&COCKPIT, &CHROMIUM];
 
 pub static XDG_UTILS: Dependency = Dependency {
     name: "xdg-utils",
-    description: Some("Desktop integration utilities"),
     packages: &[
         PackageDefinition::new("xdg-utils", PackageManager::Pacman),
         PackageDefinition::new("xdg-utils", PackageManager::Apt),
@@ -147,7 +136,6 @@ pub static XDG_UTILS: Dependency = Dependency {
 
 pub static NM_CONNECTION_EDITOR: Dependency = Dependency {
     name: "Network connection editor",
-    description: Some("NetworkManager connection editor"),
     packages: &[
         PackageDefinition::new("nm-connection-editor", PackageManager::Pacman),
         PackageDefinition::new("network-manager-gnome", PackageManager::Apt),
@@ -157,7 +145,6 @@ pub static NM_CONNECTION_EDITOR: Dependency = Dependency {
 
 pub static NMTUI: Dependency = Dependency {
     name: "Network Manager TUI",
-    description: Some("NetworkManager Text User Interface"),
     packages: &[
         PackageDefinition::new("networkmanager", PackageManager::Pacman),
         PackageDefinition::new("network-manager", PackageManager::Apt),
@@ -171,7 +158,6 @@ pub static NMTUI: Dependency = Dependency {
 
 pub static YAZI: Dependency = Dependency {
     name: "Yazi file manager",
-    description: Some("Terminal file manager with image preview"),
     packages: &[
         PackageDefinition::new("yazi", PackageManager::Pacman),
         PackageDefinition::new("yazi", PackageManager::Apt),
@@ -181,14 +167,12 @@ pub static YAZI: Dependency = Dependency {
 
 pub static SWWW: Dependency = Dependency {
     name: "swww",
-    description: Some("Wayland wallpaper daemon for Hyprland"),
     packages: &[PackageDefinition::new("swww", PackageManager::Pacman)],
     tests: &[InstallTest::WhichSucceeds("swww")],
 };
 
 pub static ZENITY: Dependency = Dependency {
     name: "Zenity dialogs",
-    description: Some("GTK dialog utility"),
     packages: &[
         PackageDefinition::new("zenity", PackageManager::Pacman),
         PackageDefinition::new("zenity", PackageManager::Apt),
@@ -202,7 +186,6 @@ pub static ZENITY: Dependency = Dependency {
 
 pub static CUPS: Dependency = Dependency {
     name: "CUPS print server",
-    description: Some("Common Unix Printing System"),
     packages: &[
         PackageDefinition::new("cups", PackageManager::Pacman),
         PackageDefinition::new("cups", PackageManager::Apt),
@@ -215,7 +198,6 @@ pub static CUPS: Dependency = Dependency {
 
 pub static CUPS_FILTERS: Dependency = Dependency {
     name: "cups-filters",
-    description: Some("Driverless printing support"),
     packages: &[
         PackageDefinition::new("cups-filters", PackageManager::Pacman),
         PackageDefinition::new("cups-filters", PackageManager::Apt),
@@ -225,7 +207,6 @@ pub static CUPS_FILTERS: Dependency = Dependency {
 
 pub static GHOSTSCRIPT: Dependency = Dependency {
     name: "Ghostscript",
-    description: Some("PostScript/PDF interpreter"),
     packages: &[
         PackageDefinition::new("ghostscript", PackageManager::Pacman),
         PackageDefinition::new("ghostscript", PackageManager::Apt),
@@ -235,7 +216,6 @@ pub static GHOSTSCRIPT: Dependency = Dependency {
 
 pub static AVAHI: Dependency = Dependency {
     name: "Avahi",
-    description: Some("mDNS/DNS-SD discovery daemon"),
     packages: &[
         PackageDefinition::new("avahi", PackageManager::Pacman),
         PackageDefinition::new("avahi-daemon", PackageManager::Apt),
@@ -245,7 +225,6 @@ pub static AVAHI: Dependency = Dependency {
 
 pub static SYSTEM_CONFIG_PRINTER: Dependency = Dependency {
     name: "Printer configuration utility",
-    description: Some("CUPS printer configuration tool"),
     packages: &[
         PackageDefinition::new("system-config-printer", PackageManager::Pacman),
         PackageDefinition::new("system-config-printer", PackageManager::Apt),
@@ -255,7 +234,6 @@ pub static SYSTEM_CONFIG_PRINTER: Dependency = Dependency {
 
 pub static NSS_MDNS: Dependency = Dependency {
     name: "nss-mdns",
-    description: Some("mDNS name resolution"),
     packages: &[
         PackageDefinition::new("nss-mdns", PackageManager::Pacman),
         PackageDefinition::new("libnss-mdns", PackageManager::Apt),
@@ -282,7 +260,6 @@ pub static PRINTER_DEPS: &[&Dependency] = &[
 
 pub static PIPER: Dependency = Dependency {
     name: "Piper mouse configurator",
-    description: Some("Gaming mouse configuration tool"),
     packages: &[
         PackageDefinition::new("piper", PackageManager::Pacman),
         PackageDefinition::new("piper", PackageManager::Apt),
@@ -292,7 +269,6 @@ pub static PIPER: Dependency = Dependency {
 
 pub static BLUEMAN: Dependency = Dependency {
     name: "Blueman",
-    description: Some("GTK Bluetooth manager"),
     packages: &[
         PackageDefinition::new("blueman", PackageManager::Pacman),
         PackageDefinition::new("blueman", PackageManager::Apt),
@@ -306,7 +282,6 @@ pub static BLUEMAN: Dependency = Dependency {
 
 pub static GNOME_DISKS: Dependency = Dependency {
     name: "GNOME Disks",
-    description: Some("Disk management utility"),
     packages: &[
         PackageDefinition::new("gnome-disk-utility", PackageManager::Pacman),
         PackageDefinition::new("gnome-disk-utility", PackageManager::Apt),
@@ -316,7 +291,6 @@ pub static GNOME_DISKS: Dependency = Dependency {
 
 pub static GPARTED: Dependency = Dependency {
     name: "GParted",
-    description: Some("Partition editor"),
     packages: &[
         PackageDefinition::new("gparted", PackageManager::Pacman),
         PackageDefinition::new("gparted", PackageManager::Apt),
@@ -330,7 +304,6 @@ pub static GPARTED: Dependency = Dependency {
 
 pub static WIREMIX: Dependency = Dependency {
     name: "Wiremix",
-    description: Some("PipeWire TUI audio mixer"),
     packages: &[PackageDefinition::new("wiremix", PackageManager::Pacman)],
     tests: &[InstallTest::WhichSucceeds("wiremix")],
 };
@@ -341,7 +314,6 @@ pub static WIREMIX: Dependency = Dependency {
 
 pub static FLATPAK: Dependency = Dependency {
     name: "Flatpak",
-    description: Some("Application sandboxing and distribution framework"),
     packages: &[
         PackageDefinition::new("flatpak", PackageManager::Pacman),
         PackageDefinition::new("flatpak", PackageManager::Apt),
@@ -355,7 +327,6 @@ pub static FLATPAK: Dependency = Dependency {
 
 pub static GEARLEVER: Dependency = Dependency {
     name: "Gear Lever",
-    description: Some("AppImage manager"),
     packages: &[PackageDefinition::new(
         "it.mijorus.gearlever",
         PackageManager::Flatpak,

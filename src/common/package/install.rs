@@ -45,10 +45,11 @@ pub fn install_package_names(manager: PackageManager, packages: &[&str]) -> Resu
 
 /// Install packages using pacman.
 fn install_pacman(packages: &[&str]) -> Result<()> {
-    let mut args = vec!["pacman", "-S", "--noconfirm"];
+    let (sudo, base_args) = PackageManager::Pacman.install_command();
+    let mut args: Vec<&str> = base_args.to_vec();
     args.extend(packages);
 
-    cmd("sudo", &args)
+    cmd(sudo, &args)
         .run()
         .context("Failed to install packages with pacman")?;
 
@@ -57,10 +58,11 @@ fn install_pacman(packages: &[&str]) -> Result<()> {
 
 /// Install packages using apt.
 fn install_apt(packages: &[&str]) -> Result<()> {
-    let mut args = vec!["apt", "install", "-y"];
+    let (sudo, base_args) = PackageManager::Apt.install_command();
+    let mut args: Vec<&str> = base_args.to_vec();
     args.extend(packages);
 
-    cmd("sudo", &args)
+    cmd(sudo, &args)
         .run()
         .context("Failed to install packages with apt")?;
 
@@ -69,10 +71,11 @@ fn install_apt(packages: &[&str]) -> Result<()> {
 
 /// Install packages using dnf.
 fn install_dnf(packages: &[&str]) -> Result<()> {
-    let mut args = vec!["dnf", "install", "-y"];
+    let (sudo, base_args) = PackageManager::Dnf.install_command();
+    let mut args: Vec<&str> = base_args.to_vec();
     args.extend(packages);
 
-    cmd("sudo", &args)
+    cmd(sudo, &args)
         .run()
         .context("Failed to install packages with dnf")?;
 
@@ -81,10 +84,11 @@ fn install_dnf(packages: &[&str]) -> Result<()> {
 
 /// Install packages using zypper.
 fn install_zypper(packages: &[&str]) -> Result<()> {
-    let mut args = vec!["zypper", "install", "-y"];
+    let (sudo, base_args) = PackageManager::Zypper.install_command();
+    let mut args: Vec<&str> = base_args.to_vec();
     args.extend(packages);
 
-    cmd("sudo", &args)
+    cmd(sudo, &args)
         .run()
         .context("Failed to install packages with zypper")?;
 
@@ -93,10 +97,11 @@ fn install_zypper(packages: &[&str]) -> Result<()> {
 
 /// Install packages using pkg (Termux).
 fn install_pkg(packages: &[&str]) -> Result<()> {
-    let mut args = vec!["install", "-y"];
+    let (program, base_args) = PackageManager::Pkg.install_command();
+    let mut args: Vec<&str> = base_args.to_vec();
     args.extend(packages);
 
-    cmd("pkg", &args)
+    cmd(program, &args)
         .run()
         .context("Failed to install packages with pkg")?;
 
@@ -110,10 +115,11 @@ fn install_flatpak(packages: &[&str]) -> Result<()> {
         setup_flathub()?;
     }
 
-    let mut args = vec!["install", "-y", "flathub"];
+    let (program, base_args) = PackageManager::Flatpak.install_command();
+    let mut args: Vec<&str> = base_args.to_vec();
     args.extend(packages);
 
-    cmd("flatpak", &args)
+    cmd(program, &args)
         .run()
         .context("Failed to install packages from Flatpak")?;
 
@@ -148,7 +154,8 @@ fn install_aur(packages: &[&str]) -> Result<()> {
     let helper = detect_aur_helper()
         .ok_or_else(|| anyhow::anyhow!("No AUR helper found (install yay, paru, etc.)"))?;
 
-    let mut args = vec!["-S", "--noconfirm"];
+    let (_default_helper, base_args) = PackageManager::Aur.install_command();
+    let mut args: Vec<&str> = base_args.to_vec();
     args.extend(packages);
 
     cmd(helper, &args)
@@ -172,10 +179,11 @@ fn install_cargo(packages: &[&str]) -> Result<()> {
 
 /// Install packages using snap.
 fn install_snap(packages: &[&str]) -> Result<()> {
-    let mut args = vec!["snap", "install"];
+    let (sudo, base_args) = PackageManager::Snap.install_command();
+    let mut args: Vec<&str> = base_args.to_vec();
     args.extend(packages);
 
-    cmd("sudo", &args)
+    cmd(sudo, &args)
         .run()
         .context("Failed to install packages with snap")?;
 
@@ -205,10 +213,11 @@ pub fn uninstall_packages(manager: PackageManager, packages: &[&str]) -> Result<
 
 /// Uninstall packages using pacman.
 fn uninstall_pacman(packages: &[&str]) -> Result<()> {
-    let mut args = vec!["pacman", "-R", "--noconfirm"];
+    let (sudo, base_args) = PackageManager::Pacman.uninstall_command();
+    let mut args: Vec<&str> = base_args.to_vec();
     args.extend(packages);
 
-    cmd("sudo", &args)
+    cmd(sudo, &args)
         .run()
         .context("Failed to uninstall packages with pacman")?;
 
@@ -217,10 +226,11 @@ fn uninstall_pacman(packages: &[&str]) -> Result<()> {
 
 /// Uninstall packages using apt.
 fn uninstall_apt(packages: &[&str]) -> Result<()> {
-    let mut args = vec!["apt", "remove", "-y"];
+    let (sudo, base_args) = PackageManager::Apt.uninstall_command();
+    let mut args: Vec<&str> = base_args.to_vec();
     args.extend(packages);
 
-    cmd("sudo", &args)
+    cmd(sudo, &args)
         .run()
         .context("Failed to uninstall packages with apt")?;
 
@@ -229,10 +239,11 @@ fn uninstall_apt(packages: &[&str]) -> Result<()> {
 
 /// Uninstall packages using dnf.
 fn uninstall_dnf(packages: &[&str]) -> Result<()> {
-    let mut args = vec!["dnf", "remove", "-y"];
+    let (sudo, base_args) = PackageManager::Dnf.uninstall_command();
+    let mut args: Vec<&str> = base_args.to_vec();
     args.extend(packages);
 
-    cmd("sudo", &args)
+    cmd(sudo, &args)
         .run()
         .context("Failed to uninstall packages with dnf")?;
 
@@ -241,10 +252,11 @@ fn uninstall_dnf(packages: &[&str]) -> Result<()> {
 
 /// Uninstall packages using zypper.
 fn uninstall_zypper(packages: &[&str]) -> Result<()> {
-    let mut args = vec!["zypper", "remove", "-y"];
+    let (sudo, base_args) = PackageManager::Zypper.uninstall_command();
+    let mut args: Vec<&str> = base_args.to_vec();
     args.extend(packages);
 
-    cmd("sudo", &args)
+    cmd(sudo, &args)
         .run()
         .context("Failed to uninstall packages with zypper")?;
 
@@ -253,10 +265,11 @@ fn uninstall_zypper(packages: &[&str]) -> Result<()> {
 
 /// Uninstall packages using pkg (Termux).
 fn uninstall_pkg(packages: &[&str]) -> Result<()> {
-    let mut args = vec!["uninstall", "-y"];
+    let (program, base_args) = PackageManager::Pkg.uninstall_command();
+    let mut args: Vec<&str> = base_args.to_vec();
     args.extend(packages);
 
-    cmd("pkg", &args)
+    cmd(program, &args)
         .run()
         .context("Failed to uninstall packages with pkg")?;
 
@@ -265,10 +278,11 @@ fn uninstall_pkg(packages: &[&str]) -> Result<()> {
 
 /// Uninstall packages from Flatpak.
 fn uninstall_flatpak(packages: &[&str]) -> Result<()> {
-    let mut args = vec!["uninstall", "-y"];
+    let (program, base_args) = PackageManager::Flatpak.uninstall_command();
+    let mut args: Vec<&str> = base_args.to_vec();
     args.extend(packages);
 
-    cmd("flatpak", &args)
+    cmd(program, &args)
         .run()
         .context("Failed to uninstall packages from Flatpak")?;
 
@@ -280,7 +294,8 @@ fn uninstall_aur(packages: &[&str]) -> Result<()> {
     let helper = detect_aur_helper()
         .ok_or_else(|| anyhow::anyhow!("No AUR helper found (install yay, paru, etc.)"))?;
 
-    let mut args = vec!["-R", "--noconfirm"];
+    let (_default_helper, base_args) = PackageManager::Aur.uninstall_command();
+    let mut args: Vec<&str> = base_args.to_vec();
     args.extend(packages);
 
     cmd(helper, &args)
@@ -292,10 +307,11 @@ fn uninstall_aur(packages: &[&str]) -> Result<()> {
 
 /// Uninstall packages using snap.
 fn uninstall_snap(packages: &[&str]) -> Result<()> {
-    let mut args = vec!["snap", "remove"];
+    let (sudo, base_args) = PackageManager::Snap.uninstall_command();
+    let mut args: Vec<&str> = base_args.to_vec();
     args.extend(packages);
 
-    cmd("sudo", &args)
+    cmd(sudo, &args)
         .run()
         .context("Failed to uninstall packages with snap")?;
 

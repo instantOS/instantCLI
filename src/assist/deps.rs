@@ -13,7 +13,6 @@ use crate::common::requirements::InstallTest;
 /// Playerctl - MPRIS media player controller
 pub static PLAYERCTL: Dependency = Dependency {
     name: "playerctl",
-    description: Some("MPRIS media player controller"),
     packages: &[
         PackageDefinition::new("playerctl", PackageManager::Pacman),
         PackageDefinition::new("playerctl", PackageManager::Apt),
@@ -25,7 +24,6 @@ pub static PLAYERCTL: Dependency = Dependency {
 /// QR code encoder
 pub static QRENCODE: Dependency = Dependency {
     name: "qrencode",
-    description: Some("QR code encoder"),
     packages: &[
         PackageDefinition::new("qrencode", PackageManager::Pacman),
         PackageDefinition::new("qrencode", PackageManager::Apt),
@@ -37,7 +35,6 @@ pub static QRENCODE: Dependency = Dependency {
 /// ZBar - barcode/QR code reader
 pub static ZBAR: Dependency = Dependency {
     name: "zbar",
-    description: Some("Barcode and QR code reader"),
     packages: &[
         PackageDefinition::new("zbar", PackageManager::Pacman),
         PackageDefinition::new("zbar-tools", PackageManager::Apt),
@@ -49,7 +46,6 @@ pub static ZBAR: Dependency = Dependency {
 /// Flameshot - screenshot tool
 pub static FLAMESHOT: Dependency = Dependency {
     name: "flameshot",
-    description: Some("Powerful screenshot tool"),
     packages: &[
         PackageDefinition::new("flameshot", PackageManager::Pacman),
         PackageDefinition::new("flameshot", PackageManager::Apt),
@@ -62,7 +58,6 @@ pub static FLAMESHOT: Dependency = Dependency {
 /// instantpass - password manager (Arch only)
 pub static INSTANTPASS: Dependency = Dependency {
     name: "instantpass",
-    description: Some("Instant password manager"),
     packages: &[
         PackageDefinition::new("instantpass", PackageManager::Pacman),
         PackageDefinition::new("instantpass", PackageManager::Aur),
@@ -73,7 +68,6 @@ pub static INSTANTPASS: Dependency = Dependency {
 /// mpv - minimal video player
 pub static MPV: Dependency = Dependency {
     name: "mpv",
-    description: Some("Minimal, scriptable video player"),
     packages: &[
         PackageDefinition::new("mpv", PackageManager::Pacman),
         PackageDefinition::new("mpv", PackageManager::Apt),
@@ -86,7 +80,6 @@ pub static MPV: Dependency = Dependency {
 /// Tesseract OCR
 pub static TESSERACT: Dependency = Dependency {
     name: "tesseract",
-    description: Some("OCR engine"),
     packages: &[
         PackageDefinition::new("tesseract", PackageManager::Pacman),
         PackageDefinition::new("tesseract-ocr", PackageManager::Apt),
@@ -98,7 +91,6 @@ pub static TESSERACT: Dependency = Dependency {
 /// Brightness control
 pub static BRIGHTNESSCTL: Dependency = Dependency {
     name: "brightnessctl",
-    description: Some("Brightness control"),
     packages: &[
         PackageDefinition::new("brightnessctl", PackageManager::Pacman),
         PackageDefinition::new("brightnessctl", PackageManager::Apt),
@@ -110,7 +102,6 @@ pub static BRIGHTNESSCTL: Dependency = Dependency {
 /// ASCII aquarium animation
 pub static ASCIIQUARIUM: Dependency = Dependency {
     name: "asciiquarium",
-    description: Some("ASCII art aquarium animation"),
     packages: &[
         PackageDefinition::new("asciiquarium", PackageManager::Pacman),
         PackageDefinition::new("asciiquarium", PackageManager::Apt),
@@ -121,7 +112,6 @@ pub static ASCIIQUARIUM: Dependency = Dependency {
 /// Matrix animation
 pub static CMATRIX: Dependency = Dependency {
     name: "cmatrix",
-    description: Some("Matrix-style terminal animation"),
     packages: &[
         PackageDefinition::new("cmatrix", PackageManager::Pacman),
         PackageDefinition::new("cmatrix", PackageManager::Apt),
@@ -133,7 +123,6 @@ pub static CMATRIX: Dependency = Dependency {
 /// Slurp - Wayland region selector
 pub static SLURP: Dependency = Dependency {
     name: "slurp",
-    description: Some("Wayland region selector"),
     packages: &[
         PackageDefinition::new("slurp", PackageManager::Pacman),
         PackageDefinition::new("slurp", PackageManager::Apt),
@@ -145,7 +134,6 @@ pub static SLURP: Dependency = Dependency {
 /// Slop - X11 region selector
 pub static SLOP: Dependency = Dependency {
     name: "slop",
-    description: Some("X11 region selector"),
     packages: &[
         PackageDefinition::new("slop", PackageManager::Pacman),
         PackageDefinition::new("slop", PackageManager::Apt),
@@ -156,7 +144,6 @@ pub static SLOP: Dependency = Dependency {
 /// Grim - Wayland screenshot tool
 pub static GRIM: Dependency = Dependency {
     name: "grim",
-    description: Some("Wayland screenshot tool"),
     packages: &[
         PackageDefinition::new("grim", PackageManager::Pacman),
         PackageDefinition::new("grim", PackageManager::Apt),
@@ -168,7 +155,6 @@ pub static GRIM: Dependency = Dependency {
 /// wl-mirror - Wayland screen mirroring
 pub static WL_MIRROR: Dependency = Dependency {
     name: "wl-mirror",
-    description: Some("Wayland screen mirroring tool"),
     packages: &[
         PackageDefinition::new("wl-mirror", PackageManager::Pacman),
         PackageDefinition::new("wl-mirror", PackageManager::Apt),
@@ -180,7 +166,6 @@ pub static WL_MIRROR: Dependency = Dependency {
 /// xrandr - X11 extension for screen configuration
 pub static XRANDR: Dependency = Dependency {
     name: "xrandr",
-    description: Some("X11 display configuration tool"),
     packages: &[
         PackageDefinition::new("xorg-xrandr", PackageManager::Pacman),
         PackageDefinition::new("x11-xserver-utils", PackageManager::Apt),
@@ -192,7 +177,6 @@ pub static XRANDR: Dependency = Dependency {
 /// autorandr - Automatic X11 display configuration
 pub static AUTORANDR: Dependency = Dependency {
     name: "autorandr",
-    description: Some("Automatic X11 display configuration"),
     packages: &[
         PackageDefinition::new("autorandr", PackageManager::Pacman),
         PackageDefinition::new("autorandr", PackageManager::Apt),
@@ -204,7 +188,6 @@ pub static AUTORANDR: Dependency = Dependency {
 /// ImageMagick - image manipulation
 pub static IMAGEMAGICK: Dependency = Dependency {
     name: "imagemagick",
-    description: Some("Image manipulation toolkit"),
     packages: &[
         PackageDefinition::new("imagemagick", PackageManager::Pacman),
         PackageDefinition::new("imagemagick", PackageManager::Apt),
@@ -216,7 +199,6 @@ pub static IMAGEMAGICK: Dependency = Dependency {
 /// Wayland clipboard utilities
 pub static WL_CLIPBOARD: Dependency = Dependency {
     name: "wl-clipboard",
-    description: Some("Wayland clipboard utilities"),
     packages: &[
         PackageDefinition::new("wl-clipboard", PackageManager::Pacman),
         PackageDefinition::new("wl-clipboard", PackageManager::Apt),
@@ -228,7 +210,6 @@ pub static WL_CLIPBOARD: Dependency = Dependency {
 /// X11 clipboard utility
 pub static XCLIP: Dependency = Dependency {
     name: "xclip",
-    description: Some("X11 clipboard utility"),
     packages: &[
         PackageDefinition::new("xclip", PackageManager::Pacman),
         PackageDefinition::new("xclip", PackageManager::Apt),
@@ -240,7 +221,6 @@ pub static XCLIP: Dependency = Dependency {
 /// libnotify - notification library
 pub static LIBNOTIFY: Dependency = Dependency {
     name: "libnotify",
-    description: Some("Desktop notification library"),
     packages: &[
         PackageDefinition::new("libnotify", PackageManager::Pacman),
         PackageDefinition::new("libnotify-bin", PackageManager::Apt),
@@ -252,7 +232,6 @@ pub static LIBNOTIFY: Dependency = Dependency {
 /// Hyprpicker - Hyprland color picker
 pub static HYPRPICKER: Dependency = Dependency {
     name: "hyprpicker",
-    description: Some("Hyprland color picker"),
     packages: &[
         PackageDefinition::new("hyprpicker", PackageManager::Pacman),
         PackageDefinition::new("hyprpicker", PackageManager::Aur),
@@ -263,7 +242,6 @@ pub static HYPRPICKER: Dependency = Dependency {
 /// xcolor - X11 color picker (with Cargo fallback)
 pub static XCOLOR: Dependency = Dependency {
     name: "xcolor",
-    description: Some("X11 color picker"),
     packages: &[
         PackageDefinition::new("xcolor", PackageManager::Pacman),
         PackageDefinition::new("xcolor", PackageManager::Cargo),
@@ -274,7 +252,6 @@ pub static XCOLOR: Dependency = Dependency {
 /// kdialog - KDE dialog utility (includes color picker)
 pub static KDIALOG: Dependency = Dependency {
     name: "kdialog",
-    description: Some("KDE dialog utility with color picker"),
     packages: &[
         PackageDefinition::new("kdialog", PackageManager::Pacman),
         PackageDefinition::new("kdialog", PackageManager::Dnf),
@@ -286,7 +263,6 @@ pub static KDIALOG: Dependency = Dependency {
 /// Emote - emoji picker (Flatpak only)
 pub static EMOTE: Dependency = Dependency {
     name: "Emote",
-    description: Some("Emoji picker for Linux"),
     packages: &[PackageDefinition::new(
         "com.tomjwatson.Emote",
         PackageManager::Flatpak,
@@ -300,7 +276,6 @@ pub static EMOTE: Dependency = Dependency {
 /// wf-recorder - Wayland screen recorder
 pub static WF_RECORDER: Dependency = Dependency {
     name: "wf-recorder",
-    description: Some("Screen recorder for wlroots-based compositors"),
     packages: &[
         PackageDefinition::new("wf-recorder", PackageManager::Pacman),
         PackageDefinition::new("wf-recorder", PackageManager::Apt),
@@ -312,9 +287,6 @@ pub static WF_RECORDER: Dependency = Dependency {
 /// FFmpeg - Multimedia framework
 pub static FFMPEG: Dependency = Dependency {
     name: "ffmpeg",
-    description: Some(
-        "Complete, cross-platform solution to record, convert and stream audio and video",
-    ),
     packages: &[
         PackageDefinition::new("ffmpeg", PackageManager::Pacman),
         PackageDefinition::new("ffmpeg", PackageManager::Apt),
@@ -326,7 +298,6 @@ pub static FFMPEG: Dependency = Dependency {
 /// feh - lightweight image viewer
 pub static FEH: Dependency = Dependency {
     name: "feh",
-    description: Some("Lightweight image viewer"),
     packages: &[
         PackageDefinition::new("feh", PackageManager::Pacman),
         PackageDefinition::new("feh", PackageManager::Apt),

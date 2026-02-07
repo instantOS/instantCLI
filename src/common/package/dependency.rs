@@ -25,7 +25,6 @@ use crate::common::requirements::InstallTest;
 ///
 /// static FIREFOX: Dependency = Dependency {
 ///     name: "Firefox",
-///     description: Some("Mozilla Firefox web browser"),
 ///     packages: &[
 ///         PackageDefinition::new("firefox", PackageManager::Pacman),
 ///         PackageDefinition::new("firefox", PackageManager::Apt),
@@ -38,9 +37,6 @@ use crate::common::requirements::InstallTest;
 pub struct Dependency {
     /// Human-readable name for the dependency.
     pub name: &'static str,
-
-    /// Description for UI display.
-    pub description: Option<&'static str>,
 
     /// Available packages that can satisfy this dependency.
     ///
@@ -349,7 +345,6 @@ mod tests {
 
     static TEST_DEPENDENCY: Dependency = Dependency {
         name: "test-pkg",
-        description: Some("A test package"),
         packages: TEST_PACKAGES,
         tests: TEST_TESTS,
     };
@@ -369,7 +364,6 @@ mod tests {
 
     static NONEXISTENT_DEPENDENCY: Dependency = Dependency {
         name: "nonexistent",
-        description: None,
         packages: EMPTY_PACKAGES,
         tests: NONEXISTENT_TESTS,
     };
