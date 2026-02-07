@@ -221,19 +221,6 @@ fn find_setting_in_tree(nodes: &[CategoryNode], setting_id: &str) -> bool {
     false
 }
 
-/// Get breadcrumbs for a setting by searching the category tree
-///
-/// Returns the path from the category root to the setting (excluding the setting itself)
-pub fn get_breadcrumbs_for_setting(category: Category, setting_id: &str) -> Vec<String> {
-    let tree = category_tree(category);
-    let mut path = Vec::new();
-    if find_setting_path(&tree, setting_id, &mut path) {
-        path
-    } else {
-        Vec::new()
-    }
-}
-
 fn find_setting_path(nodes: &[CategoryNode], setting_id: &str, path: &mut Vec<String>) -> bool {
     for node in nodes {
         if let Some(setting) = node.setting {

@@ -379,11 +379,4 @@ impl PathInputSelection {
     pub fn to_path_buf(&self) -> Result<Option<PathBuf>> {
         Ok(self.to_tilde_path()?.map(|tilde| tilde.into_path_buf()))
     }
-
-    pub fn to_tilde_string(&self) -> Result<Option<String>> {
-        match self.to_tilde_path()? {
-            Some(tilde) => Ok(Some(tilde.to_tilde_string()?)),
-            None => Ok(None),
-        }
-    }
 }

@@ -44,13 +44,6 @@ pub fn is_valid_wine_prefix(path: &Path) -> bool {
     drive_c_path.exists() && drive_c_path.is_dir()
 }
 
-/// Converts a Wine prefix path and a relative path within the prefix to a full path
-/// For example, given prefix "/home/user/.wine" and relative path "users/user/AppData/Local/LOA/Saved",
-/// this would return "/home/user/.wine/drive_c/users/user/AppData/Local/LOA/Saved"
-pub fn wine_prefix_path(prefix: &Path, relative_path: &str) -> PathBuf {
-    prefix.join("drive_c").join(relative_path)
-}
-
 /// Checks if a path appears to be from a Wine prefix
 /// Looks for common Wine directory patterns
 pub fn is_wine_prefix_path(path: &str) -> bool {

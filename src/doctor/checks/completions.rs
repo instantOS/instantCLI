@@ -37,24 +37,6 @@ impl DetectedShell {
             Err(_) => Self::Other("unknown".to_string()),
         }
     }
-
-    /// Get the completion function name for this shell
-    fn completion_function(&self) -> &'static str {
-        match self {
-            Self::Bash => "_clap_complete_ins",
-            Self::Zsh => "_clap_dynamic_completer_ins",
-            Self::Other(_) => "",
-        }
-    }
-
-    /// Get the shell command name
-    fn shell_name(&self) -> &'static str {
-        match self {
-            Self::Bash => "bash",
-            Self::Zsh => "zsh",
-            Self::Other(_) => "other",
-        }
-    }
 }
 
 #[derive(Default)]

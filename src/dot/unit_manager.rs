@@ -32,7 +32,6 @@ impl UnitScope {
 
 #[derive(Clone, Debug)]
 pub struct UnitRepoContext {
-    pub name: String,
     pub path: PathBuf,
     pub dot_dirs: Vec<PathBuf>,
 }
@@ -215,7 +214,6 @@ fn repo_context_for_write(
         .collect();
 
     Ok(UnitRepoContext {
-        name: repo_name.to_string(),
         path: repo_path,
         dot_dirs,
     })

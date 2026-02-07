@@ -7,11 +7,6 @@ use std::path::PathBuf;
 
 use crate::common::paths;
 
-// Re-export debug functions from ui module for backward compatibility
-pub fn set_debug_mode(enabled: bool) {
-    crate::ui::set_debug_mode(enabled);
-}
-
 pub fn is_debug_enabled() -> bool {
     crate::ui::is_debug_enabled()
 }
@@ -43,12 +38,6 @@ impl ResticCommandLogger {
         }
 
         Ok(Self { log_dir })
-    }
-
-    pub fn with_enabled(enabled: bool) -> Result<Self> {
-        // Set global debug state and create logger
-        set_debug_mode(enabled);
-        Self::new()
     }
 
     fn get_log_dir() -> Result<PathBuf> {

@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
     fs,
-    path::{Path, PathBuf},
+    path::PathBuf,
 };
 
 use crate::common::paths;
@@ -286,16 +286,8 @@ impl SettingsStore {
         }
     }
 
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
-
     pub fn contains(&self, key: &str) -> bool {
         self.data.get(key).is_some()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.data.sections.is_empty()
     }
 }
 

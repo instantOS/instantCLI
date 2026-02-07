@@ -18,12 +18,6 @@ pub struct DesktopAppDetails {
     pub file_path: PathBuf,      // Path to .desktop file
 }
 
-/// Path executable details loaded lazily when needed
-#[derive(Debug, Clone, Default)]
-pub struct PathExecutableDetails {
-    pub path: PathBuf, // Full path to executable
-}
-
 impl LaunchItem {
     pub fn sort_key(&self) -> String {
         self.to_string().to_lowercase()
