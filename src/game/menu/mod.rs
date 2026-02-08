@@ -9,6 +9,7 @@ use crate::game::games::manager::AddGameOptions;
 use crate::game::games::manager::GameManager;
 use crate::game::games::selection::{GameMenuEntry, select_game_menu_entry};
 use crate::game::operations::launch_game;
+use crate::game::operations::steam;
 use crate::game::operations::sync::sync_game_saves;
 use crate::game::restic;
 use crate::game::setup;
@@ -28,6 +29,7 @@ enum GameAction {
     Setup,
     Move,
     Checkpoint,
+    AddToSteam,
     Back,
 }
 
@@ -39,6 +41,7 @@ impl std::fmt::Display for GameAction {
             GameAction::Setup => write!(f, "setup"),
             GameAction::Move => write!(f, "move"),
             GameAction::Checkpoint => write!(f, "checkpoint"),
+            GameAction::AddToSteam => write!(f, "add-to-steam"),
             GameAction::Back => write!(f, "back"),
         }
     }
@@ -243,6 +246,28 @@ fn build_action_menu(game_name: &str, state: &GameState) -> Vec<GameActionItem> 
         });
     }
 
+    if state.launch_command.is_some() {
+        actions.push(GameActionItem {
+            display: format!(
+                "{} Add to Steam",
+                format_icon_colored(NerdFont::Steam, colors::SAPPHIRE)
+            ),
+            action: GameAction::AddToSteam,
+            preview: PreviewBuilder::new()
+                .header(NerdFont::Steam, "Add to Steam")
+                .text(&format!(
+                    "Add '{}' as a non-Steam game shortcut.",
+                    game_name
+                ))
+                .blank()
+                .text("The shortcut will launch the game through ins,")
+                .text("which automatically syncs saves before and after.")
+                .blank()
+                .subtext("Steam must not be running when adding shortcuts.")
+                .build(),
+        });
+    }
+
     actions.push(GameActionItem {
         display: format!("{} Back", format_back_icon()),
         action: GameAction::Back,
@@ -319,6 +344,27 @@ fn handle_action(
             } else {
                 Ok(ActionResult::Stay)
             }
+        }
+        GameAction::AddToSteam => {
+            let launch_cmd = state.launch_command.as_deref().unwrap_or("");
+            match steam::add_game_to_steam(game_name, launch_cmd) {
+                Ok(true) => {
+                    FzfWrapper::message(&format!(
+                        "Added '{}' to Steam as a non-Steam game.\n\nRestart Steam to see it in your library.",
+                        game_name
+                    ))?;
+                }
+                Ok(false) => {
+                    FzfWrapper::message(&format!(
+                        "'{}' is already in your Steam library.",
+                        game_name
+                    ))?;
+                }
+                Err(e) => {
+                    FzfWrapper::message(&format!("Failed to add to Steam: {}", e))?;
+                }
+            }
+            Ok(ActionResult::Stay)
         }
         GameAction::Back => {
             if exit_after {
@@ -449,6 +495,22 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
                     }
                 }
                 // Return to menu after user dismisses the message
+                continue;
+            }
+            GameMenuEntry::AddMenuToSteam => {
+                match steam::add_game_menu_to_steam() {
+                    Ok(true) => {
+                        FzfWrapper::message(
+                            "Added 'ins game menu' to Steam.\n\nRestart Steam to see it in your library.",
+                        )?;
+                    }
+                    Ok(false) => {
+                        FzfWrapper::message("'ins game menu' is already in your Steam library.")?;
+                    }
+                    Err(e) => {
+                        FzfWrapper::message(&format!("Failed to add to Steam: {}", e))?;
+                    }
+                }
                 continue;
             }
             GameMenuEntry::Game(game_name, _) => {

@@ -15,6 +15,7 @@ pub enum GameMenuEntry {
     AddGame,
     SetupGames,
     SyncAll,
+    AddMenuToSteam,
     CloseMenu,
 }
 
@@ -52,6 +53,12 @@ impl FzfSelectable for GameMenuEntry {
                     format_icon_colored(NerdFont::CloudSync, colors::BLUE)
                 )
             }
+            GameMenuEntry::AddMenuToSteam => {
+                format!(
+                    "{} Add Menu to Steam",
+                    format_icon_colored(NerdFont::Steam, colors::SAPPHIRE)
+                )
+            }
             GameMenuEntry::CloseMenu => format!("{} Close Menu", format_back_icon()),
         }
     }
@@ -62,6 +69,7 @@ impl FzfSelectable for GameMenuEntry {
             GameMenuEntry::AddGame => "!__add_game__".to_string(),
             GameMenuEntry::SetupGames => "!__setup_games__".to_string(),
             GameMenuEntry::SyncAll => "!__sync_all__".to_string(),
+            GameMenuEntry::AddMenuToSteam => "!__add_menu_to_steam__".to_string(),
             GameMenuEntry::CloseMenu => "!__close_menu__".to_string(),
         }
     }
@@ -121,6 +129,15 @@ impl FzfSelectable for GameMenuEntry {
                 .bullet("Skip games that are already up-to-date")
                 .blank()
                 .subtext("Games without installations will be skipped.")
+                .build(),
+            GameMenuEntry::AddMenuToSteam => PreviewBuilder::new()
+                .header(NerdFont::Steam, "Add Menu to Steam")
+                .text("Add the game menu as a non-Steam shortcut.")
+                .blank()
+                .text("Launches ins game menu in a terminal emulator")
+                .text("directly from your Steam library.")
+                .blank()
+                .subtext("Steam must not be running when adding shortcuts.")
                 .build(),
             GameMenuEntry::CloseMenu => PreviewBuilder::new()
                 .header(NerdFont::Cross, "Close Menu")
@@ -334,6 +351,7 @@ pub fn select_game_menu_entry(cursor: &mut MenuCursor) -> Result<Option<GameMenu
         GameMenuEntry::AddGame,
         GameMenuEntry::SetupGames,
         GameMenuEntry::SyncAll,
+        GameMenuEntry::AddMenuToSteam,
         GameMenuEntry::CloseMenu,
     ];
 

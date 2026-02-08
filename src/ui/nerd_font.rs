@@ -279,6 +279,7 @@ pub enum NerdFont {
     Windows,
     Fullscreen,
     Fish,
+    Steam,
 }
 
 impl NerdFont {
@@ -558,6 +559,7 @@ impl NerdFont {
             Self::Windows => '\u{f17a}',    // fa-windows
             Self::Fullscreen => '\u{f065}', // fa-expand (fullscreen)
             Self::Fish => '󰈺',              // md-fish (dolphin)
+            Self::Steam => '\u{f1b6}',      // fa-steam
         }
     }
 }

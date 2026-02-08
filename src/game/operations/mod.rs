@@ -1,5 +1,6 @@
 pub mod exec;
 pub mod launch;
+pub mod steam;
 pub mod sync;
 
 pub use exec::exec_game_command;
