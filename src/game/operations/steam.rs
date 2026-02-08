@@ -395,6 +395,72 @@ pub fn add_game_to_steam(game_name: &str, _launch_command: &str) -> Result<bool>
     Ok(added_count > 0)
 }
 
+pub fn is_game_in_steam(game_name: &str) -> Result<bool> {
+    let userdata_dirs = match find_steam_userdata_dirs() {
+        Ok(dirs) => dirs,
+        Err(_) => return Ok(false),
+    };
+
+    if userdata_dirs.is_empty() {
+        return Ok(false);
+    }
+
+    for userdata_dir in &userdata_dirs {
+        let vdf_path = shortcuts_vdf_path(userdata_dir);
+        let shortcuts = read_shortcuts_vdf(&vdf_path).unwrap_or_default();
+        if shortcuts.iter().any(|s| s.app_name == game_name) {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
+pub fn remove_game_from_steam(game_name: &str) -> Result<bool> {
+    if is_steam_running() {
+        bail!(
+            "Steam is currently running. Please close Steam before modifying shortcuts.\n\
+             Steam overwrites shortcuts.vdf while running."
+        );
+    }
+
+    let userdata_dirs = find_steam_userdata_dirs()?;
+    if userdata_dirs.is_empty() {
+        bail!("No Steam userdata directories found.");
+    }
+
+    let mut removed_count = 0;
+
+    for userdata_dir in &userdata_dirs {
+        let vdf_path = shortcuts_vdf_path(userdata_dir);
+        if !vdf_path.exists() {
+            continue;
+        }
+
+        let shortcuts = read_shortcuts_vdf(&vdf_path).unwrap_or_default();
+        let initial_len = shortcuts.len();
+
+        let shortcuts: Vec<SteamShortcut> = shortcuts
+            .into_iter()
+            .filter(|s| s.app_name != game_name)
+            .collect();
+
+        if shortcuts.len() < initial_len {
+            let data = write_shortcuts_vdf(&shortcuts);
+
+            if vdf_path.exists() {
+                let backup_path = vdf_path.with_extension("vdf.bak");
+                std::fs::copy(&vdf_path, &backup_path).context("Failed to backup shortcuts.vdf")?;
+            }
+
+            std::fs::write(&vdf_path, data).context("Failed to write shortcuts.vdf")?;
+            removed_count += 1;
+        }
+    }
+
+    Ok(removed_count > 0)
+}
+
 pub fn add_game_menu_to_steam() -> Result<bool> {
     use crate::common::terminal::detect_terminal;
 

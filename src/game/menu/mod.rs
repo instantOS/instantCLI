@@ -251,6 +251,19 @@ fn build_action_menu(game_name: &str, state: &GameState) -> Vec<GameActionItem> 
     }
 
     if state.launch_command.is_some() {
+        let is_in_steam = steam::is_game_in_steam(game_name).unwrap_or(false);
+        let status_text = if is_in_steam {
+            format!(
+                "{} Already in Steam Library",
+                format_icon_colored(NerdFont::Check, colors::GREEN)
+            )
+        } else {
+            format!(
+                "{} Not in Steam Library",
+                format_icon_colored(NerdFont::Cross, colors::RED)
+            )
+        };
+
         actions.push(GameActionItem {
             display: format!(
                 "{} Add to Steam",
@@ -259,15 +272,14 @@ fn build_action_menu(game_name: &str, state: &GameState) -> Vec<GameActionItem> 
             action: GameAction::AddToSteam,
             preview: PreviewBuilder::new()
                 .header(NerdFont::Steam, "Add to Steam")
-                .text(&format!(
-                    "Add '{}' as a non-Steam game shortcut.",
-                    game_name
-                ))
+                .text(&format!("Manage Steam shortcut for '{}'.", game_name))
+                .blank()
+                .text(&status_text)
                 .blank()
                 .text("The shortcut will launch the game through ins,")
                 .text("which automatically syncs saves before and after.")
                 .blank()
-                .subtext("Steam must not be running when adding shortcuts.")
+                .subtext("Steam must not be running when modifying shortcuts.")
                 .build(),
         });
     }
@@ -397,21 +409,49 @@ fn handle_action(
         }
         GameAction::AddToSteam => {
             let launch_cmd = state.launch_command.as_deref().unwrap_or("");
-            match steam::add_game_to_steam(game_name, launch_cmd) {
-                Ok(true) => {
-                    FzfWrapper::message(&format!(
-                        "Added '{}' to Steam as a non-Steam game.\n\nRestart Steam to see it in your library.",
+
+            if steam::is_game_in_steam(game_name).unwrap_or(false) {
+                match FzfWrapper::builder()
+                    .confirm(&format!(
+                        "'{}' is already in Steam.\n\nRemove it?",
                         game_name
-                    ))?;
+                    ))
+                    .yes_text("Remove from Steam")
+                    .no_text("Keep it")
+                    .confirm_dialog()?
+                {
+                    ConfirmResult::Yes => match steam::remove_game_from_steam(game_name) {
+                        Ok(true) => FzfWrapper::message(&format!(
+                            "Removed '{}' from Steam.\n\nRestart Steam to update your library.",
+                            game_name
+                        ))?,
+                        Ok(false) => FzfWrapper::message(&format!(
+                            "'{}' was not found in Steam (maybe already removed).",
+                            game_name
+                        ))?,
+                        Err(e) => {
+                            FzfWrapper::message(&format!("Failed to remove from Steam: {}", e))?
+                        }
+                    },
+                    _ => {}
                 }
-                Ok(false) => {
-                    FzfWrapper::message(&format!(
-                        "'{}' is already in your Steam library.",
-                        game_name
-                    ))?;
-                }
-                Err(e) => {
-                    FzfWrapper::message(&format!("Failed to add to Steam: {}", e))?;
+            } else {
+                match steam::add_game_to_steam(game_name, launch_cmd) {
+                    Ok(true) => {
+                        FzfWrapper::message(&format!(
+                            "Added '{}' to Steam as a non-Steam game.\n\nRestart Steam to see it in your library.",
+                            game_name
+                        ))?;
+                    }
+                    Ok(false) => {
+                        FzfWrapper::message(&format!(
+                            "'{}' is already in your Steam library.",
+                            game_name
+                        ))?;
+                    }
+                    Err(e) => {
+                        FzfWrapper::message(&format!("Failed to add to Steam: {}", e))?;
+                    }
                 }
             }
             Ok(ActionResult::Stay)
