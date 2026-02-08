@@ -126,13 +126,47 @@ impl OperatingSystem {
         }
     }
 
-    // ========================================================================
-    // Family Check Methods
-    // ========================================================================
+    /// Check if this OS belongs to the target OS family.
+    ///
+    /// Returns true if self is the same as target, or if self is transitively
+    /// based on target (i.e., target is somewhere in self's ancestry chain).
+    ///
+    /// # Examples
+    /// ```
+    /// use crate::common::distro::OperatingSystem;
+    ///
+    /// // Exact match - Debian is in the Debian family
+    /// assert!(OperatingSystem::Debian.in_family(&OperatingSystem::Debian));
+    ///
+    /// // Direct derivative - Ubuntu is based on Debian
+    /// assert!(OperatingSystem::Ubuntu.in_family(&OperatingSystem::Debian));
+    ///
+    /// // Transitive derivative - PopOS -> Ubuntu -> Debian
+    /// assert!(OperatingSystem::PopOS.in_family(&OperatingSystem::Debian));
+    ///
+    /// // Not related - Fedora is not in the Debian family
+    /// assert!(!OperatingSystem::Fedora.in_family(&OperatingSystem::Debian));
+    /// ```
+    pub fn in_family(&self, root: &OperatingSystem) -> bool {
+        self == root || self.based_on().map_or(false, |p| p.in_family(root))
+    }
 
-    /// Check if this OS is Arch-based (uses pacman)
-    pub fn is_arch_based(&self) -> bool {
-        *self == Self::Arch || self.based_on().map(|p| p.is_arch_based()).unwrap_or(false)
+    /// Check if this OS belongs to any of the target families.
+    ///
+    /// This is useful for checking compatibility with multiple supported families.
+    ///
+    /// # Examples
+    /// ```
+    /// use crate::common::distro::OperatingSystem;
+    ///
+    /// // Check if OS is Arch-family or Debian-family
+    /// let supported = &[OperatingSystem::Arch, OperatingSystem::Debian];
+    /// assert!(OperatingSystem::Manjaro.in_any_family(supported));
+    /// assert!(OperatingSystem::Ubuntu.in_any_family(supported));
+    /// assert!(!OperatingSystem::Fedora.in_any_family(supported));
+    /// ```
+    pub fn in_any_family(&self, roots: &[OperatingSystem]) -> bool {
+        roots.iter().any(|r| self.in_family(r))
     }
 
     /// Check if this OS is immutable (read-only root filesystem)
@@ -140,20 +174,6 @@ impl OperatingSystem {
     /// updates replace the entire OS image.
     pub fn is_immutable(&self) -> bool {
         matches!(self, Self::SteamOS | Self::Bazzite)
-    }
-
-    // ========================================================================
-    // Specific OS Check Methods
-    // ========================================================================
-
-    /// Check if this OS is compatible with a list of supported OSs
-    /// Checks if self is in the list, or if any of its base OSs are in the list.
-    pub fn is_supported_by(&self, supported: &[OperatingSystem]) -> bool {
-        if supported.contains(self) {
-            return true;
-        }
-        self.based_on()
-            .is_some_and(|base| base.is_supported_by(supported))
     }
 
     // ========================================================================
@@ -343,7 +363,7 @@ LOGO=archlinux-logo
 ID_LIKE="arch""#;
         let os = OperatingSystem::parse_os_release(content);
         assert_eq!(os, OperatingSystem::InstantOS);
-        assert!(os.is_arch_based());
+        assert!(os.in_family(&OperatingSystem::Arch));
     }
 
     #[test]
@@ -355,32 +375,31 @@ ID_LIKE="arch""#;
         let os = OperatingSystem::parse_os_release(content);
         // Falls back to Arch for unknown arch-based distros
         assert_eq!(os, OperatingSystem::Arch);
-        assert!(os.is_arch_based());
+        assert!(os.in_family(&OperatingSystem::Arch));
     }
 
     #[test]
     fn test_family_checks() {
-        // Arch family
-        assert!(OperatingSystem::Arch.is_arch_based());
-        assert!(OperatingSystem::InstantOS.is_arch_based());
-        assert!(OperatingSystem::Manjaro.is_arch_based());
-        assert!(OperatingSystem::EndeavourOS.is_arch_based());
-        assert!(!OperatingSystem::Ubuntu.is_arch_based());
-        assert!(!OperatingSystem::Fedora.is_arch_based());
-        assert!(!OperatingSystem::Termux.is_arch_based());
+        // Arch family - use in_family for all family checks
+        assert!(OperatingSystem::Arch.in_family(&OperatingSystem::Arch));
+        assert!(OperatingSystem::InstantOS.in_family(&OperatingSystem::Arch));
+        assert!(OperatingSystem::Manjaro.in_family(&OperatingSystem::Arch));
+        assert!(OperatingSystem::EndeavourOS.in_family(&OperatingSystem::Arch));
+        assert!(!OperatingSystem::Ubuntu.in_family(&OperatingSystem::Arch));
+        assert!(!OperatingSystem::Fedora.in_family(&OperatingSystem::Arch));
+        assert!(!OperatingSystem::Termux.in_family(&OperatingSystem::Arch));
 
-        // Use is_supported_by for generic family checks
-        let debian_family = &[OperatingSystem::Debian];
-        assert!(OperatingSystem::Debian.is_supported_by(debian_family));
-        assert!(OperatingSystem::Ubuntu.is_supported_by(debian_family));
-        assert!(OperatingSystem::PopOS.is_supported_by(debian_family));
-        assert!(OperatingSystem::LinuxMint.is_supported_by(debian_family));
-        assert!(OperatingSystem::Termux.is_supported_by(debian_family));
+        // Debian family (includes Ubuntu and derivatives)
+        assert!(OperatingSystem::Debian.in_family(&OperatingSystem::Debian));
+        assert!(OperatingSystem::Ubuntu.in_family(&OperatingSystem::Debian));
+        assert!(OperatingSystem::PopOS.in_family(&OperatingSystem::Debian));
+        assert!(OperatingSystem::LinuxMint.in_family(&OperatingSystem::Debian));
+        assert!(OperatingSystem::Termux.in_family(&OperatingSystem::Debian));
 
-        let fedora_family = &[OperatingSystem::Fedora];
-        assert!(OperatingSystem::Fedora.is_supported_by(fedora_family));
-        assert!(OperatingSystem::CentOS.is_supported_by(fedora_family));
-        assert!(OperatingSystem::Bazzite.is_supported_by(fedora_family));
+        // Fedora family
+        assert!(OperatingSystem::Fedora.in_family(&OperatingSystem::Fedora));
+        assert!(OperatingSystem::CentOS.in_family(&OperatingSystem::Fedora));
+        assert!(OperatingSystem::Bazzite.in_family(&OperatingSystem::Fedora));
     }
 
     #[test]
@@ -456,34 +475,28 @@ ID_LIKE="arch""#;
     }
 
     #[test]
-    fn test_is_supported_by() {
-        let supported_arch = &[OperatingSystem::Arch];
-        let supported_ubuntu = &[OperatingSystem::Ubuntu];
-        let supported_debian = &[OperatingSystem::Debian];
-        let supported_instantos = &[OperatingSystem::InstantOS];
+    fn test_in_any_family() {
+        // Test checking membership in multiple families
+        let arch_or_debian = &[OperatingSystem::Arch, OperatingSystem::Debian];
 
-        // Arch support
-        assert!(OperatingSystem::Arch.is_supported_by(supported_arch));
-        assert!(OperatingSystem::InstantOS.is_supported_by(supported_arch));
-        assert!(OperatingSystem::Manjaro.is_supported_by(supported_arch));
-        assert!(!OperatingSystem::Ubuntu.is_supported_by(supported_arch));
+        // Arch derivatives match
+        assert!(OperatingSystem::Arch.in_any_family(arch_or_debian));
+        assert!(OperatingSystem::InstantOS.in_any_family(arch_or_debian));
+        assert!(OperatingSystem::Manjaro.in_any_family(arch_or_debian));
 
-        // Ubuntu support
-        assert!(OperatingSystem::Ubuntu.is_supported_by(supported_ubuntu));
-        assert!(OperatingSystem::PopOS.is_supported_by(supported_ubuntu));
-        assert!(!OperatingSystem::Debian.is_supported_by(supported_ubuntu)); // Parent not supported by child
-        assert!(!OperatingSystem::Arch.is_supported_by(supported_ubuntu));
+        // Debian derivatives match
+        assert!(OperatingSystem::Debian.in_any_family(arch_or_debian));
+        assert!(OperatingSystem::Ubuntu.in_any_family(arch_or_debian));
+        assert!(OperatingSystem::PopOS.in_any_family(arch_or_debian));
 
-        // Debian support
-        assert!(OperatingSystem::Debian.is_supported_by(supported_debian));
-        assert!(OperatingSystem::Ubuntu.is_supported_by(supported_debian)); // Ubuntu is based on Debian
-        assert!(OperatingSystem::PopOS.is_supported_by(supported_debian)); // PopOS -> Ubuntu -> Debian
-        assert!(OperatingSystem::Termux.is_supported_by(supported_debian));
+        // Fedora does not match
+        assert!(!OperatingSystem::Fedora.in_any_family(arch_or_debian));
 
-        // InstantOS specific support
-        assert!(OperatingSystem::InstantOS.is_supported_by(supported_instantos));
-        assert!(!OperatingSystem::Arch.is_supported_by(supported_instantos));
-        assert!(!OperatingSystem::Manjaro.is_supported_by(supported_instantos));
+        // Single family checks using in_family
+        assert!(OperatingSystem::Ubuntu.in_family(&OperatingSystem::Debian));
+        assert!(!OperatingSystem::Debian.in_family(&OperatingSystem::Ubuntu)); // Parent not child
+        assert!(OperatingSystem::InstantOS.in_family(&OperatingSystem::Arch));
+        assert!(!OperatingSystem::Arch.in_family(&OperatingSystem::InstantOS)); // Parent not child
     }
 
     #[test]
@@ -498,7 +511,7 @@ BUILD_ID=20250313.1
 STEAMOS_DEFAULT_UPDATE_BRANCH=stable"#;
         let os = OperatingSystem::parse_os_release(content);
         assert_eq!(os, OperatingSystem::SteamOS);
-        assert!(os.is_arch_based());
+        assert!(os.in_family(&OperatingSystem::Arch));
         assert!(os.is_immutable());
         assert_eq!(os.name(), "SteamOS");
     }
@@ -557,8 +570,8 @@ LOGO=bazzite-logo-icon"#;
     }
 
     #[test]
-    fn test_bazzite_is_not_arch_based() {
-        assert!(!OperatingSystem::Bazzite.is_arch_based());
+    fn test_bazzite_is_not_arch_family() {
+        assert!(!OperatingSystem::Bazzite.in_family(&OperatingSystem::Arch));
     }
 
     #[test]

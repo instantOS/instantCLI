@@ -26,7 +26,7 @@ pub async fn handle_arch_command(command: ArchCommands, debug: bool) -> Result<(
     let os = OperatingSystem::detect();
 
     // Only warn about non-Arch distros for commands other than Info
-    if !os.is_arch_based() && !matches!(command, ArchCommands::Info) {
+    if !os.in_family(&OperatingSystem::Arch) && !matches!(command, ArchCommands::Info) {
         eprintln!(
             "Warning: You appear to be running on {}, but this command is intended for Arch Linux.",
             os

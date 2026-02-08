@@ -4,7 +4,7 @@
 
 use anyhow::Result;
 
-use crate::common::package::{Dependency, InstallResult, ensure_all};
+use crate::common::package::{ensure_all, Dependency, InstallResult};
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::Setting;
 
@@ -61,7 +61,7 @@ pub fn handle_trait_setting(
     if let Some(unsupported) = setting.metadata().unsupported_distros {
         let current_os = crate::common::distro::OperatingSystem::detect();
 
-        if current_os.is_supported_by(unsupported) {
+        if current_os.in_any_family(unsupported) {
             use crate::menu_utils::FzfWrapper;
             FzfWrapper::builder()
                 .message(
@@ -92,7 +92,7 @@ pub fn handle_trait_setting(
     if let Some(supported) = setting.metadata().supported_distros {
         let current_os = crate::common::distro::OperatingSystem::detect();
 
-        if !current_os.is_supported_by(supported) {
+        if !current_os.in_any_family(supported) {
             use crate::menu_utils::FzfWrapper;
             let mut messages = Vec::new();
             messages.push(format!(

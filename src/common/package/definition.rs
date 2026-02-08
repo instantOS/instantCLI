@@ -82,7 +82,7 @@ impl PackageDefinition {
     pub fn applies_to(&self, os: &OperatingSystem) -> bool {
         match self.distros {
             None => true, // Universal - applies to all distros with this manager
-            Some(distros) => os.is_supported_by(distros),
+            Some(distros) => os.in_any_family(distros),
         }
     }
 

@@ -87,7 +87,10 @@ impl PackageManager {
 
             // Cross-platform managers - check binary availability
             Self::Flatpak => which::which("flatpak").is_ok(),
-            Self::Aur => OperatingSystem::detect().is_arch_based() && detect_aur_helper().is_some(),
+            Self::Aur => {
+                OperatingSystem::detect().in_family(&OperatingSystem::Arch)
+                    && detect_aur_helper().is_some()
+            }
             Self::Cargo => which::which("cargo").is_ok(),
             Self::Snap => which::which("snap").is_ok(),
         }

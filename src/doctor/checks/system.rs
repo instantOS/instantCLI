@@ -1,4 +1,5 @@
 use super::{CheckStatus, DoctorCheck, PrivilegeLevel};
+use crate::common::distro::OperatingSystem;
 use anyhow::Result;
 use async_trait::async_trait;
 use tokio::process::Command as TokioCommand;
@@ -91,7 +92,7 @@ impl DoctorCheck for PendingUpdatesCheck {
     async fn execute(&self) -> CheckStatus {
         // Only run on Arch-based systems
         let os = crate::common::distro::OperatingSystem::detect();
-        if !os.is_arch_based() {
+        if !os.in_family(&OperatingSystem::Arch) {
             return CheckStatus::Skipped("Not an Arch-based system".to_string());
         }
 

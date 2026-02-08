@@ -17,7 +17,7 @@ pub fn run_package_installer_action(ctx: &mut SettingsContext) -> Result<()> {
     let os = OperatingSystem::detect();
     let debug = ctx.debug();
 
-    if os.is_arch_based() {
+    if os.in_family(&OperatingSystem::Arch) {
         run_arch_installer(debug)
     } else if let Some(manager) = os.native_package_manager() {
         run_simple_installer(manager, debug)
