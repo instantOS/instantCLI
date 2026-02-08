@@ -397,13 +397,13 @@ impl<'a> BodyParserState<'a> {
         if let Some(state) = self.blockquote.as_mut() {
             state.push_text(text.clone());
         } else if self.paragraph.is_some() {
-            // If inside an image tag, accumulate as alt text; otherwise add as text fragment
             let line = self.byte_to_line(start);
-            let state = self.paragraph.as_mut().unwrap();
-            if state.is_inside_image() {
-                state.push_image_alt(&text);
-            } else {
-                state.push_fragment(InlineFragment::text(line, text.clone()));
+            if let Some(state) = &mut self.paragraph {
+                if state.is_inside_image() {
+                    state.push_image_alt(&text);
+                } else {
+                    state.push_fragment(InlineFragment::text(line, text.clone()));
+                }
             }
         }
         if let Some(state) = self.heading.as_mut() {
@@ -419,11 +419,12 @@ impl<'a> BodyParserState<'a> {
             state.push_newline();
         } else if self.paragraph.is_some() {
             let line = self.byte_to_line(start);
-            let state = self.paragraph.as_mut().unwrap();
-            if hard {
-                state.push_fragment(InlineFragment::hard_break(line));
-            } else {
-                state.push_fragment(InlineFragment::soft_break(line));
+            if let Some(state) = &mut self.paragraph {
+                if hard {
+                    state.push_fragment(InlineFragment::hard_break(line));
+                } else {
+                    state.push_fragment(InlineFragment::soft_break(line));
+                }
             }
         }
         if let Some(state) = self.heading.as_mut() {

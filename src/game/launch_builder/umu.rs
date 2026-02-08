@@ -2,7 +2,7 @@
 //!
 //! Builds commands for running Windows games via umu-run (Proton/Wine wrapper)
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
@@ -194,9 +194,9 @@ impl UmuBuilder {
     }
 
     fn format_command(
-        wine_prefix: &PathBuf,
+        wine_prefix: &Path,
         proton_path: &ProtonPath,
-        executable: &PathBuf,
+        executable: &Path,
         _fullscreen: bool,
     ) -> String {
         let prefix_str = wine_prefix.to_string_lossy();

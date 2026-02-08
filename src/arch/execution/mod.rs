@@ -158,7 +158,7 @@ impl CommandExecutor {
     ) -> std::thread::JoinHandle<()> {
         std::thread::spawn(move || {
             let reader = std::io::BufReader::new(reader);
-            for l in reader.lines().flatten() {
+            for l in reader.lines().map_while(Result::ok) {
                 if is_stderr {
                     eprintln!("{}", l);
                 } else {

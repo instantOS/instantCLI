@@ -127,9 +127,7 @@ pub(crate) fn run_browse_menu(dir: &Path, display: &str, mode: BrowseMode) -> Re
                     let file_display = to_display_path(&path);
                     let sources = find_all_sources(&config, &path)?;
                     let create_result = run_create_flow(&path, &file_display, &sources)?;
-                    if matches!(create_result, Flow::Done) {
-                        preselect = Some(file_display);
-                    } else if matches!(create_result, Flow::Cancelled) {
+                    if matches!(create_result, Flow::Done | Flow::Cancelled) {
                         preselect = Some(file_display);
                     }
                 }

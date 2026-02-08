@@ -70,12 +70,6 @@ pub fn get_save_directory_info(save_path: &Path) -> Result<SaveDirectoryInfo> {
     })
 }
 
-/// Get only the most recent file modification time in a directory
-pub fn get_most_recent_file_time(save_path: &Path) -> Result<Option<SystemTime>> {
-    let info = get_save_directory_info(save_path)?;
-    Ok(info.last_modified)
-}
-
 /// Parse snapshot time string (ISO 8601) to DateTime<Utc>
 pub fn parse_snapshot_time(iso_time: &str) -> Result<DateTime<Utc>> {
     DateTime::parse_from_rfc3339(iso_time)

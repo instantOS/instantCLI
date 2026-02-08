@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use base64::{Engine as _, engine::general_purpose};
+use base64::{engine::general_purpose, Engine as _};
 
 /// Game save tag management with base64 encoding
 ///
@@ -86,15 +86,6 @@ pub fn create_game_tags(game_name: &str) -> Vec<String> {
 /// Encode a dependency ID for use as a restic tag fragment
 pub fn encode_dependency_id_for_tag(dependency_id: &str) -> String {
     general_purpose::STANDARD.encode(dependency_id.as_bytes())
-}
-
-/// Decode a dependency ID from a restic tag fragment
-pub fn decode_dependency_id_from_tag(encoded_tag: &str) -> Result<String> {
-    let decoded_bytes = general_purpose::STANDARD
-        .decode(encoded_tag)
-        .context("Failed to decode base64 dependency tag")?;
-
-    String::from_utf8(decoded_bytes).context("Decoded dependency tag contains invalid UTF-8")
 }
 
 /// Create tag set for dependency snapshot (game + dependency ID)

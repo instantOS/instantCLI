@@ -63,25 +63,6 @@ pub fn select_video_file_with_suggestions(
     )
 }
 
-pub fn select_video_file(title: &str) -> Result<Option<PathBuf>> {
-    let header = format!("{} {title}", char::from(NerdFont::Video));
-    let manual_prompt = format!("{} Enter file path:", char::from(NerdFont::Edit));
-    let picker_hint = format!(
-        "{} Select a video or audio file",
-        char::from(NerdFont::Info)
-    );
-    let start_dir = None;
-
-    select_path_with_picker(
-        header,
-        manual_prompt,
-        picker_hint,
-        FilePickerScope::Files,
-        start_dir,
-        Vec::new(),
-    )
-}
-
 pub fn select_transcript_file() -> Result<Option<PathBuf>> {
     let header = format!("{} Select transcript file", char::from(NerdFont::FileText));
     let manual_prompt = format!("{} Enter transcript path:", char::from(NerdFont::Edit));

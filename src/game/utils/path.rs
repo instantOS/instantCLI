@@ -1,5 +1,5 @@
-use anyhow::{Result, anyhow};
-use std::path::{Path, PathBuf};
+use anyhow::{anyhow, Result};
+use std::path::Path;
 
 use crate::common::TildePath;
 use crate::menu_utils::PathInputSelection;
@@ -30,12 +30,6 @@ pub fn path_selection_to_tilde(selection: PathInputSelection) -> Result<Option<T
         }
         PathInputSelection::Cancelled => Ok(None),
     }
-}
-
-/// Convert a PathInputSelection into a PathBuf
-/// Returns None if the selection was cancelled or empty
-pub fn path_selection_to_pathbuf(selection: PathInputSelection) -> Result<Option<PathBuf>> {
-    Ok(path_selection_to_tilde(selection)?.map(|tilde| tilde.into_path_buf()))
 }
 
 /// Validates that a path is a valid Wine prefix by checking for the presence of a drive_c directory

@@ -42,11 +42,7 @@ pub fn compute_file_hash(path: &Path) -> Result<String> {
         }
     } else {
         let mut sample_count = file_size / TARGET_STEP;
-        if sample_count < MIN_SAMPLES {
-            sample_count = MIN_SAMPLES;
-        } else if sample_count > MAX_SAMPLES {
-            sample_count = MAX_SAMPLES;
-        }
+        sample_count = sample_count.clamp(MIN_SAMPLES, MAX_SAMPLES);
 
         let mut buffer = vec![0u8; SAMPLE_SIZE];
         let last_offset = file_size.saturating_sub(SAMPLE_SIZE as u64);
