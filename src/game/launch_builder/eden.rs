@@ -6,6 +6,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 
+use crate::game::launch_builder::appimage_finder::find_appimage_by_paths;
 use crate::menu_utils::{
     ConfirmResult, FilePickerScope, FzfWrapper, PathInputBuilder, PathInputSelection,
 };
@@ -17,14 +18,16 @@ use super::prompts::{
 use super::validation::{EDEN_EXTENSIONS, format_valid_extensions, validate_eden_file};
 
 /// Default Eden AppImage location
-const DEFAULT_EDEN_PATH: &str = "~/AppImages/eden.AppImage";
+/// (Matched case-insensitively - will find eden.AppImage, EDEN.APPIMAGE, etc.)
+const DEFAULT_EDEN_PATH: &str = "~/AppImages/eden.appimage";
 
 /// Alternative Eden AppImage locations to check
+/// Filenames are matched case-insensitively, so eden.appimage will find
+/// Eden.AppImage, EDEN.APPIMAGE, eden.appimage, etc.
 const EDEN_SEARCH_PATHS: &[&str] = &[
-    "~/AppImages/eden.AppImage",
-    "~/AppImages/Eden.AppImage",
-    "~/.local/bin/eden.AppImage",
-    "~/.local/share/applications/eden.AppImage",
+    "~/AppImages/eden.appimage",
+    "~/.local/bin/eden.appimage",
+    "~/.local/share/applications/eden.appimage",
 ];
 
 pub struct EdenBuilder;
@@ -59,26 +62,22 @@ impl EdenBuilder {
     }
 
     fn find_or_select_eden() -> Result<Option<PathBuf>> {
-        // Try to find Eden in common locations
-        for search_path in EDEN_SEARCH_PATHS {
-            let expanded = shellexpand::tilde(search_path);
-            let path = PathBuf::from(expanded.into_owned());
-            if path.exists() && path.is_file() {
-                // Found Eden, ask if user wants to use it
-                match FzfWrapper::builder()
-                    .confirm(format!(
-                        "{} Found Eden at:\n{}\n\nUse this?",
-                        char::from(NerdFont::Check),
-                        path.display()
-                    ))
-                    .yes_text("Use This")
-                    .no_text("Choose Different")
-                    .confirm_dialog()?
-                {
-                    ConfirmResult::Yes => return Ok(Some(path)),
-                    ConfirmResult::No => break,
-                    ConfirmResult::Cancelled => return Ok(None),
-                }
+        // Try to find Eden in common locations using case-insensitive matching
+        if let Some(path) = find_appimage_by_paths(EDEN_SEARCH_PATHS) {
+            // Found Eden, ask if user wants to use it
+            match FzfWrapper::builder()
+                .confirm(format!(
+                    "{} Found Eden at:\n{}\n\nUse this?",
+                    char::from(NerdFont::Check),
+                    path.display()
+                ))
+                .yes_text("Use This")
+                .no_text("Choose Different")
+                .confirm_dialog()?
+            {
+                ConfirmResult::Yes => return Ok(Some(path)),
+                ConfirmResult::No => {}
+                ConfirmResult::Cancelled => return Ok(None),
             }
         }
 

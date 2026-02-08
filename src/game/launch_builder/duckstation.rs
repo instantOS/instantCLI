@@ -10,6 +10,7 @@ use std::process::Command;
 
 use anyhow::{Context, Result};
 
+use crate::game::launch_builder::appimage_finder::find_appimage_by_paths;
 use crate::menu_utils::{
     ConfirmResult, FilePickerScope, FzfWrapper, PathInputBuilder, PathInputSelection,
 };
@@ -30,12 +31,12 @@ const DUCKSTATION_DOWNLOAD_URL: &str =
     "https://github.com/stenzek/duckstation/releases/download/latest/DuckStation-x64.AppImage";
 
 /// Alternative DuckStation AppImage locations to check
+/// Filenames are matched case-insensitively, so duckstation.appimage will find
+/// DuckStation-x64.AppImage, duckstation.appimage, DUCKSTATION.APPIMAGE, etc.
 const DUCKSTATION_SEARCH_PATHS: &[&str] = &[
     "~/AppImages/DuckStation-x64.AppImage",
     "~/AppImages/duckstation.AppImage",
-    "~/AppImages/DuckStation.AppImage",
     "~/.local/bin/DuckStation-x64.AppImage",
-    "~/.local/bin/duckstation.AppImage",
     "~/.local/share/applications/DuckStation-x64.AppImage",
 ];
 
@@ -74,26 +75,22 @@ impl DuckStationBuilder {
     }
 
     fn find_or_download_duckstation() -> Result<Option<PathBuf>> {
-        // Try to find DuckStation in common locations
-        for search_path in DUCKSTATION_SEARCH_PATHS {
-            let expanded = shellexpand::tilde(search_path);
-            let path = PathBuf::from(expanded.into_owned());
-            if path.exists() && path.is_file() {
-                // Found DuckStation, ask if user wants to use it
-                match FzfWrapper::builder()
-                    .confirm(format!(
-                        "{} Found DuckStation at:\n{}\n\nUse this?",
-                        char::from(NerdFont::Check),
-                        path.display()
-                    ))
-                    .yes_text("Use This")
-                    .no_text("Choose Different")
-                    .confirm_dialog()?
-                {
-                    ConfirmResult::Yes => return Ok(Some(path)),
-                    ConfirmResult::No => break,
-                    ConfirmResult::Cancelled => return Ok(None),
-                }
+        // Try to find DuckStation in common locations using case-insensitive matching
+        if let Some(path) = find_appimage_by_paths(DUCKSTATION_SEARCH_PATHS) {
+            // Found DuckStation, ask if user wants to use it
+            match FzfWrapper::builder()
+                .confirm(format!(
+                    "{} Found DuckStation at:\n{}\n\nUse this?",
+                    char::from(NerdFont::Check),
+                    path.display()
+                ))
+                .yes_text("Use This")
+                .no_text("Choose Different")
+                .confirm_dialog()?
+            {
+                ConfirmResult::Yes => return Ok(Some(path)),
+                ConfirmResult::No => {}
+                ConfirmResult::Cancelled => return Ok(None),
             }
         }
 

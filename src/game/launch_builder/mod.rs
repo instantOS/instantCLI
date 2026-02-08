@@ -8,6 +8,7 @@
 //! - mGBA-Qt (Game Boy Advance emulator)
 //! - DuckStation (PlayStation 1 emulator)
 
+mod appimage_finder;
 mod azahar;
 mod dolphin;
 mod duckstation;
