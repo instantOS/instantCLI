@@ -8,6 +8,7 @@
 //! - mGBA-Qt (Game Boy Advance emulator)
 //! - DuckStation (PlayStation 1 emulator)
 
+mod azahar;
 mod dolphin;
 mod duckstation;
 mod eden;
@@ -26,6 +27,7 @@ use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_m
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 
+pub use azahar::AzaharBuilder;
 pub use dolphin::DolphinBuilder;
 pub use duckstation::DuckStationBuilder;
 pub use eden::EdenBuilder;
@@ -40,6 +42,7 @@ pub enum LauncherType {
     Eden,
     DolphinFlatpak,
     Pcsx2Flatpak,
+    AzaharFlatpak,
     MgbaQt,
     DuckStation,
     Back,
@@ -52,6 +55,7 @@ impl std::fmt::Display for LauncherType {
             LauncherType::Eden => write!(f, "eden"),
             LauncherType::DolphinFlatpak => write!(f, "dolphin-flatpak"),
             LauncherType::Pcsx2Flatpak => write!(f, "pcsx2-flatpak"),
+            LauncherType::AzaharFlatpak => write!(f, "azahar-flatpak"),
             LauncherType::MgbaQt => write!(f, "mgba-qt"),
             LauncherType::DuckStation => write!(f, "duckstation"),
             LauncherType::Back => write!(f, "back"),
@@ -184,6 +188,31 @@ fn build_launcher_items() -> Vec<LauncherItem> {
                 .build(),
         },
         LauncherItem {
+            launcher: LauncherType::AzaharFlatpak,
+            display: format!(
+                "{} Azahar Flatpak (Nintendo 3DS)",
+                format_icon_colored(NerdFont::Gamepad, colors::YELLOW)
+            ),
+            preview: PreviewBuilder::new()
+                .header(NerdFont::Gamepad, "Azahar (Flatpak)")
+                .text("Nintendo 3DS emulator.")
+                .blank()
+                .text("Runs 3DS games via the Flatpak")
+                .text("version of Azahar (Citra fork).")
+                .blank()
+                .separator()
+                .blank()
+                .text("Supported formats:")
+                .bullet(".3ds - Standard 3DS ROM")
+                .bullet(".3dsx - Homebrew format")
+                .bullet(".cia - CTR Importable Archive")
+                .bullet(".app/.elf - Executables")
+                .bullet(".cci/.cxi - Cartridge images")
+                .blank()
+                .subtext("Requires: org.azahar_emu.Azahar flatpak")
+                .build(),
+        },
+        LauncherItem {
             launcher: LauncherType::MgbaQt,
             display: format!(
                 "{} mGBA-Qt (Game Boy Advance)",
@@ -284,6 +313,7 @@ pub fn build_launch_command() -> Result<Option<String>> {
         LauncherType::Eden => EdenBuilder::build_command(),
         LauncherType::DolphinFlatpak => DolphinBuilder::build_command(),
         LauncherType::Pcsx2Flatpak => Pcsx2Builder::build_command(),
+        LauncherType::AzaharFlatpak => AzaharBuilder::build_command(),
         LauncherType::MgbaQt => MgbaBuilder::build_command(),
         LauncherType::DuckStation => DuckStationBuilder::build_command(),
         LauncherType::Back => Ok(None),

@@ -19,6 +19,9 @@ pub const DUCKSTATION_EXTENSIONS: &[&str] = &[
     "bin", "cue", "iso", "img", "chd", "pbp", "ecm", "mds", "psf", "minipsf", "m3u",
 ];
 
+/// Valid file extensions for Azahar (3DS) games
+pub const AZAHAR_EXTENSIONS: &[&str] = &["3ds", "3dsx", "cia", "app", "elf", "axf", "cci", "cxi"];
+
 /// Valid file extensions for Windows executables (umu-run)
 pub const WINDOWS_EXTENSIONS: &[&str] = &["exe", "msi", "bat"];
 
@@ -168,6 +171,27 @@ pub fn validate_duckstation_file(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Validate a file for Azahar emulator
+pub fn validate_azahar_file(path: &Path) -> Result<(), String> {
+    if !path.exists() {
+        return Err(format!("File does not exist: {}", path.display()));
+    }
+
+    if !path.is_file() {
+        return Err(format!("Path is not a file: {}", path.display()));
+    }
+
+    if !has_valid_extension(path, AZAHAR_EXTENSIONS) {
+        return Err(format!(
+            "Invalid file type for Azahar. Expected: {}\nGot: {}",
+            format_valid_extensions(AZAHAR_EXTENSIONS),
+            path.display()
+        ));
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -198,6 +222,19 @@ mod tests {
         assert!(!has_valid_extension(
             Path::new("game.nsp"),
             WINDOWS_EXTENSIONS
+        ));
+
+        assert!(has_valid_extension(
+            Path::new("game.3ds"),
+            AZAHAR_EXTENSIONS
+        ));
+        assert!(has_valid_extension(
+            Path::new("game.cia"),
+            AZAHAR_EXTENSIONS
+        ));
+        assert!(!has_valid_extension(
+            Path::new("game.iso"),
+            AZAHAR_EXTENSIONS
         ));
     }
 
