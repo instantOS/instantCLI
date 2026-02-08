@@ -176,7 +176,7 @@ fn build_action_menu(game_name: &str, state: &GameState) -> Vec<GameActionItem> 
         ),
         action: GameAction::Launch,
         preview: launch_preview,
-        keywords: vec![],
+        keywords: vec!["play", "start", "run"],
     });
 
     // Edit preview
@@ -215,7 +215,7 @@ fn build_action_menu(game_name: &str, state: &GameState) -> Vec<GameActionItem> 
         ),
         action: GameAction::Edit,
         preview: edit_preview,
-        keywords: vec![],
+        keywords: vec!["change", "modify", "configure", "settings"],
     });
 
     // Move option - only show if game has a save path configured
