@@ -155,8 +155,192 @@ fn add_preview_statistics(
     builder
 }
 
+/// Context for determining snapshot restoration status
+struct SnapshotComparisonContext {
+    is_same_host: bool,
+    is_current_checkpoint: bool,
+}
+
+impl SnapshotComparisonContext {
+    fn new(
+        snapshot_hostname: &str,
+        snapshot_id: &str,
+        snapshot_short_id: &str,
+        nearest_checkpoint: Option<&str>,
+    ) -> Self {
+        let current_hostname = get_current_hostname();
+        let is_same_host = current_hostname.as_deref() == Some(snapshot_hostname);
+        let is_current_checkpoint = nearest_checkpoint
+            .map(|id| id == snapshot_id || id == snapshot_short_id)
+            .unwrap_or(false);
+
+        Self {
+            is_same_host,
+            is_current_checkpoint,
+        }
+    }
+}
+
+/// Add status line based on time comparison result
+fn add_comparison_status(
+    builder: PreviewBuilder,
+    comparison: &TimeComparison,
+    context: &SnapshotComparisonContext,
+) -> PreviewBuilder {
+    let mut builder = builder;
+    match comparison {
+        TimeComparison::LocalNewer | TimeComparison::LocalNewerWithinTolerance(_) => {
+            builder = builder
+                .line(
+                    colors::YELLOW,
+                    Some(NerdFont::Warning),
+                    "STATUS: LOCAL SAVES ARE NEWER",
+                )
+                .subtext("Restoring would overwrite newer local saves");
+        }
+        TimeComparison::SnapshotNewer => {
+            builder = add_snapshot_newer_status(builder, context);
+        }
+        TimeComparison::SnapshotNewerWithinTolerance(_) => {
+            builder = add_snapshot_newer_within_tolerance_status(builder, context);
+        }
+        TimeComparison::Same => {
+            builder = add_same_timestamp_status(builder, context);
+        }
+        TimeComparison::Error(msg) => {
+            builder = builder
+                .line(
+                    colors::RED,
+                    Some(NerdFont::Cross),
+                    "STATUS: COMPARISON ERROR",
+                )
+                .subtext(&format!("Error: {}", truncate_string(msg, 60)));
+        }
+    }
+
+    builder
+}
+
+/// Add status when snapshot is newer
+fn add_snapshot_newer_status(
+    builder: PreviewBuilder,
+    context: &SnapshotComparisonContext,
+) -> PreviewBuilder {
+    if context.is_current_checkpoint && context.is_same_host {
+        builder
+            .line(colors::BLUE, Some(NerdFont::Check), "STATUS: CURRENT STATE")
+            .subtext("This snapshot matches the current local state")
+    } else if context.is_same_host {
+        builder
+            .line(
+                colors::GREEN,
+                Some(NerdFont::Check),
+                "STATUS: LOCAL UNCHANGED",
+            )
+            .subtext("Local saves unmodified since this backup")
+    } else {
+        builder
+            .line(
+                colors::GREEN,
+                Some(NerdFont::Check),
+                "STATUS: SNAPSHOT IS NEWER",
+            )
+            .subtext("Safe to restore (backup contains newer data)")
+    }
+}
+
+/// Add status when snapshot is newer within tolerance
+fn add_snapshot_newer_within_tolerance_status(
+    builder: PreviewBuilder,
+    context: &SnapshotComparisonContext,
+) -> PreviewBuilder {
+    if context.is_current_checkpoint {
+        builder
+            .line(colors::BLUE, Some(NerdFont::Check), "STATUS: CURRENT STATE")
+            .subtext("This snapshot matches the current local state")
+    } else if context.is_same_host {
+        builder
+            .line(colors::BLUE, Some(NerdFont::Sync), "STATUS: SYNCHRONIZED")
+            .subtext("Local saves match backup timestamp")
+    } else {
+        builder
+            .line(
+                colors::GREEN,
+                Some(NerdFont::Check),
+                "STATUS: SNAPSHOT IS NEWER",
+            )
+            .subtext("Safe to restore (backup contains newer data)")
+    }
+}
+
+/// Add status when timestamps are the same
+fn add_same_timestamp_status(
+    builder: PreviewBuilder,
+    context: &SnapshotComparisonContext,
+) -> PreviewBuilder {
+    if context.is_current_checkpoint {
+        builder
+            .line(colors::BLUE, Some(NerdFont::Check), "STATUS: CURRENT STATE")
+            .subtext("This snapshot matches the current local state")
+    } else {
+        builder
+            .line(
+                colors::BLUE,
+                Some(NerdFont::Clock),
+                "STATUS: TIMESTAMPS MATCH",
+            )
+            .subtext("Local saves match backup timestamp")
+    }
+}
+
+/// Add comparison details when local files exist
+fn add_local_files_comparison(
+    mut builder: PreviewBuilder,
+    local_info: &crate::game::utils::save_files::SaveDirectoryInfo,
+    snapshot_time: &str,
+    context: &SnapshotComparisonContext,
+) -> PreviewBuilder {
+    let file_count_str = format_number(local_info.file_count);
+    let size_str = format_file_size(local_info.total_size);
+    builder = builder.field(
+        "Local Files",
+        &format!("{file_count_str} files ({size_str})"),
+    );
+
+    if let Some(local_time) = local_info.last_modified {
+        let local_time_str = format_system_time_for_display(Some(local_time));
+        builder = builder.field("Last Modified", &local_time_str).blank();
+
+        match compare_snapshot_vs_local(snapshot_time, local_time) {
+            Ok(comparison) => {
+                builder = add_comparison_status(builder, &comparison, context);
+            }
+            Err(_) => {
+                builder = builder
+                    .line(
+                        colors::RED,
+                        Some(NerdFont::Cross),
+                        "STATUS: COMPARISON FAILED",
+                    )
+                    .subtext("Unable to compare timestamps");
+            }
+        }
+    } else {
+        builder = builder
+            .field("Last Modified", "Unknown")
+            .blank()
+            .line(
+                colors::RED,
+                Some(NerdFont::Cross),
+                "STATUS: MODIFICATION TIME UNKNOWN",
+            )
+            .subtext("Cannot determine if local saves are newer");
+    }
+
+    builder
+}
+
 /// Add local save comparison section to preview builder
-//TODO: this function is too long, refactor
 fn add_preview_local_comparison(
     mut builder: PreviewBuilder,
     local_save_info: Option<&crate::game::utils::save_files::SaveDirectoryInfo>,
@@ -176,127 +360,18 @@ fn add_preview_local_comparison(
         )
         .blank();
 
-    if let Some(local_info) = local_save_info {
-        if local_info.file_count > 0 {
-            let file_count_str = format_number(local_info.file_count);
-            let size_str = format_file_size(local_info.total_size);
-            builder = builder.field(
-                "Local Files",
-                &format!("{file_count_str} files ({size_str})"),
-            );
+    let context = SnapshotComparisonContext::new(
+        snapshot_hostname,
+        snapshot_id,
+        snapshot_short_id,
+        nearest_checkpoint,
+    );
 
-            if let Some(local_time) = local_info.last_modified {
-                let local_time_str = format_system_time_for_display(Some(local_time));
-                builder = builder.field("Last Modified", &local_time_str);
-
-                builder = builder.blank();
-
-                let current_hostname = get_current_hostname();
-                let is_same_host = current_hostname.as_deref() == Some(snapshot_hostname);
-                let is_current_checkpoint = nearest_checkpoint
-                    .map(|id| id == snapshot_id || id == snapshot_short_id)
-                    .unwrap_or(false);
-
-                // Add comparison result with clear status indication
-                match compare_snapshot_vs_local(snapshot_time, local_time) {
-                    Ok(TimeComparison::LocalNewer)
-                    | Ok(TimeComparison::LocalNewerWithinTolerance(_)) => {
-                        builder = builder
-                            .line(
-                                colors::YELLOW,
-                                Some(NerdFont::Warning),
-                                "STATUS: LOCAL SAVES ARE NEWER",
-                            )
-                            .subtext("Restoring would overwrite newer local saves");
-                    }
-                    Ok(TimeComparison::SnapshotNewer) => {
-                        if is_current_checkpoint && is_same_host {
-                            builder = builder
-                                .line(colors::BLUE, Some(NerdFont::Check), "STATUS: CURRENT STATE")
-                                .subtext("This snapshot matches the current local state");
-                        } else if is_same_host {
-                            builder = builder
-                                .line(
-                                    colors::GREEN,
-                                    Some(NerdFont::Check),
-                                    "STATUS: LOCAL UNCHANGED",
-                                )
-                                .subtext("Local saves unmodified since this backup");
-                        } else {
-                            builder = builder
-                                .line(
-                                    colors::GREEN,
-                                    Some(NerdFont::Check),
-                                    "STATUS: SNAPSHOT IS NEWER",
-                                )
-                                .subtext("Safe to restore (backup contains newer data)");
-                        }
-                    }
-                    Ok(TimeComparison::SnapshotNewerWithinTolerance(_)) => {
-                        if is_current_checkpoint {
-                            builder = builder
-                                .line(colors::BLUE, Some(NerdFont::Check), "STATUS: CURRENT STATE")
-                                .subtext("This snapshot matches the current local state");
-                        } else if is_same_host {
-                            builder = builder
-                                .line(colors::BLUE, Some(NerdFont::Sync), "STATUS: SYNCHRONIZED")
-                                .subtext("Local saves match backup timestamp");
-                        } else {
-                            builder = builder
-                                .line(
-                                    colors::GREEN,
-                                    Some(NerdFont::Check),
-                                    "STATUS: SNAPSHOT IS NEWER",
-                                )
-                                .subtext("Safe to restore (backup contains newer data)");
-                        }
-                    }
-                    Ok(TimeComparison::Same) => {
-                        if is_current_checkpoint {
-                            builder = builder
-                                .line(colors::BLUE, Some(NerdFont::Check), "STATUS: CURRENT STATE")
-                                .subtext("This snapshot matches the current local state");
-                        } else {
-                            builder = builder
-                                .line(
-                                    colors::BLUE,
-                                    Some(NerdFont::Clock),
-                                    "STATUS: TIMESTAMPS MATCH",
-                                )
-                                .subtext("Local saves match backup timestamp");
-                        }
-                    }
-                    Ok(TimeComparison::Error(msg)) => {
-                        builder = builder
-                            .line(
-                                colors::RED,
-                                Some(NerdFont::Cross),
-                                "STATUS: COMPARISON ERROR",
-                            )
-                            .subtext(&format!("Error: {}", truncate_string(&msg, 60)));
-                    }
-                    Err(_) => {
-                        builder = builder
-                            .line(
-                                colors::RED,
-                                Some(NerdFont::Cross),
-                                "STATUS: COMPARISON FAILED",
-                            )
-                            .subtext("Unable to compare timestamps");
-                    }
-                }
-            } else {
-                builder = builder
-                    .field("Last Modified", "Unknown")
-                    .blank()
-                    .line(
-                        colors::RED,
-                        Some(NerdFont::Cross),
-                        "STATUS: MODIFICATION TIME UNKNOWN",
-                    )
-                    .subtext("Cannot determine if local saves are newer");
-            }
-        } else {
+    match local_save_info {
+        Some(local_info) if local_info.file_count > 0 => {
+            builder = add_local_files_comparison(builder, local_info, snapshot_time, &context);
+        }
+        Some(_) => {
             builder = builder
                 .field("Local Files", "None found")
                 .blank()
@@ -307,16 +382,17 @@ fn add_preview_local_comparison(
                 )
                 .subtext("Safe to restore (no files to overwrite)");
         }
-    } else {
-        builder = builder
-            .field("Local Files", "Information unavailable")
-            .blank()
-            .line(
-                colors::RED,
-                Some(NerdFont::Cross),
-                "STATUS: LOCAL SAVE INFO UNKNOWN",
-            )
-            .subtext("Cannot determine local save status");
+        None => {
+            builder = builder
+                .field("Local Files", "Information unavailable")
+                .blank()
+                .line(
+                    colors::RED,
+                    Some(NerdFont::Cross),
+                    "STATUS: LOCAL SAVE INFO UNKNOWN",
+                )
+                .subtext("Cannot determine local save status");
+        }
     }
 
     builder
