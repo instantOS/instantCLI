@@ -34,13 +34,6 @@ pub fn skip_reason_for_privilege_level(
     }
 }
 
-/// Check if a check should be skipped based on current privileges.
-/// Returns Some(reason) if the check should be skipped, None if it can run.
-pub fn should_skip_for_privileges(required: PrivilegeLevel) -> Option<&'static str> {
-    let is_root = matches!(sudo::check(), RunningAs::Root);
-    skip_reason_for_privilege_level(required, is_root)
-}
-
 /// Escalate privileges and fix a batch of checks
 /// Replaces the current process with sudo, passing check IDs as arguments
 pub fn escalate_for_fix(check_ids: Vec<String>) -> Result<(), anyhow::Error> {

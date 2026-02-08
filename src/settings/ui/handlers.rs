@@ -4,7 +4,7 @@
 
 use anyhow::Result;
 
-use crate::common::package::{ensure_all, Dependency, InstallResult};
+use crate::common::package::{Dependency, InstallResult, ensure_all};
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::Setting;
 

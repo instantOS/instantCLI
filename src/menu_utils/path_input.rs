@@ -202,7 +202,7 @@ impl PathInputBuilder {
         }
     }
 
-    fn normalize_suggested_path(&self, path: &PathBuf) -> (PathBuf, String) {
+    fn normalize_suggested_path(&self, path: &Path) -> (PathBuf, String) {
         if let Ok(canonical) = path.canonicalize()
             && canonical.exists()
         {
@@ -210,7 +210,7 @@ impl PathInputBuilder {
             return (canonical, key);
         }
 
-        (path.clone(), path.to_string_lossy().to_string())
+        (path.to_path_buf(), path.to_string_lossy().to_string())
     }
 
     fn build_options(&self) -> Vec<PathInputOption> {

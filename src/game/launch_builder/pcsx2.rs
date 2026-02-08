@@ -3,7 +3,7 @@
 //! Builds commands for running PS2 games via the PCSX2 Flatpak
 
 use anyhow::Result;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::menu_utils::{ConfirmResult, FzfWrapper};
 use crate::ui::nerd_font::NerdFont;
@@ -96,7 +96,7 @@ impl Pcsx2Builder {
         }
     }
 
-    fn format_command(game_file: &PathBuf, batch_mode: bool, fullscreen: bool) -> String {
+    fn format_command(game_file: &Path, batch_mode: bool, fullscreen: bool) -> String {
         let game_str = game_file.to_string_lossy();
 
         let mut parts = vec!["flatpak".to_string(), "run".to_string()];

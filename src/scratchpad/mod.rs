@@ -152,11 +152,8 @@ impl ScratchpadCommand {
                         };
 
                         if filtered_windows.is_empty() {
-                            if args.name.is_some() {
-                                println!(
-                                    "No scratchpad terminal found with name: {}",
-                                    args.name.unwrap()
-                                );
+                            if let Some(name) = args.name {
+                                println!("No scratchpad terminal found with name: {}", name);
                             } else {
                                 println!("No scratchpad terminals found.");
                             }

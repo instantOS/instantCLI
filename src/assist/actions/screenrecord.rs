@@ -477,14 +477,12 @@ fn build_ffmpeg_args(
     audio_target: Option<&AudioTarget>,
     framerate: Option<i64>,
 ) -> Result<Vec<String>> {
-    let mut args = Vec::new();
-
-    // Input options
-    args.push("-f".to_string());
-    args.push("x11grab".to_string());
-
-    args.push("-draw_mouse".to_string());
-    args.push("1".to_string());
+    let mut args = vec![
+        "-f".to_string(),
+        "x11grab".to_string(),
+        "-draw_mouse".to_string(),
+        "1".to_string(),
+    ];
 
     if let Some(geom) = geometry {
         if let Some((size, x, y)) = parse_geometry_string(geom) {

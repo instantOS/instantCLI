@@ -148,7 +148,7 @@ impl OperatingSystem {
     /// assert!(!OperatingSystem::Fedora.in_family(&OperatingSystem::Debian));
     /// ```
     pub fn in_family(&self, root: &OperatingSystem) -> bool {
-        self == root || self.based_on().map_or(false, |p| p.in_family(root))
+        self == root || self.based_on().is_some_and(|p| p.in_family(root))
     }
 
     /// Check if this OS belongs to any of the target families.
