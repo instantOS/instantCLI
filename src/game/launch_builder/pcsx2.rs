@@ -2,16 +2,16 @@
 //!
 //! Builds commands for running PS2 games via the PCSX2 Flatpak
 
-use std::path::PathBuf;
-use std::process::Command;
-
 use anyhow::Result;
+use std::path::PathBuf;
 
-use crate::menu_utils::{
-    ConfirmResult, FilePickerScope, FzfWrapper, PathInputBuilder, PathInputSelection,
-};
+use crate::menu_utils::{ConfirmResult, FzfWrapper};
 use crate::ui::nerd_font::NerdFont;
 
+use super::flatpak::is_flatpak_app_installed;
+use super::prompts::{
+    FileSelectionPrompt, ask_fullscreen, confirm_command, select_file_with_validation,
+};
 use super::validation::{PCSX2_EXTENSIONS, format_valid_extensions, validate_pcsx2_file};
 
 /// PCSX2 Flatpak application ID
@@ -45,13 +45,13 @@ impl Pcsx2Builder {
         let batch_mode = Self::ask_batch_mode()?;
 
         // Step 4: Ask for fullscreen
-        let fullscreen = Self::ask_fullscreen()?;
+        let fullscreen = ask_fullscreen()?;
 
         // Build the command
         let command = Self::format_command(&game_file, batch_mode, fullscreen);
 
         // Show preview and confirm
-        if Self::confirm_command(&command)? {
+        if confirm_command(&command)? {
             Ok(Some(command))
         } else {
             Ok(None)
@@ -59,63 +59,24 @@ impl Pcsx2Builder {
     }
 
     fn check_pcsx2_installed() -> Result<bool> {
-        let output = Command::new("flatpak")
-            .args(["list", "--app", "--columns=application"])
-            .output();
-
-        match output {
-            Ok(output) => {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                Ok(stdout.lines().any(|line| line.trim() == PCSX2_FLATPAK_ID))
-            }
-            Err(_) => {
-                // flatpak command not found
-                Ok(false)
-            }
-        }
+        is_flatpak_app_installed(PCSX2_FLATPAK_ID)
     }
 
     fn select_game_file() -> Result<Option<PathBuf>> {
-        let selection = PathInputBuilder::new()
-            .header(format!(
-                "{} Select PlayStation 2 Game File",
-                char::from(NerdFont::Disc)
-            ))
-            .scope(FilePickerScope::Files)
-            .picker_hint(format!(
-                "{} Select a PS2 game file ({})",
-                char::from(NerdFont::Info),
-                format_valid_extensions(PCSX2_EXTENSIONS)
-            ))
-            .manual_option_label(format!(
-                "{} Type game file path",
-                char::from(NerdFont::Edit)
-            ))
-            .picker_option_label(format!(
-                "{} Browse for game file",
-                char::from(NerdFont::FolderOpen)
-            ))
-            .choose()?;
-
-        match selection {
-            PathInputSelection::Manual(input) => {
-                let path = PathBuf::from(shellexpand::tilde(&input).into_owned());
-                if let Err(e) = validate_pcsx2_file(&path) {
-                    FzfWrapper::message(&format!("{} {}", char::from(NerdFont::CrossCircle), e))?;
-                    return Ok(None);
-                }
-                Ok(Some(path))
-            }
-            PathInputSelection::Picker(path) => {
-                if let Err(e) = validate_pcsx2_file(&path) {
-                    FzfWrapper::message(&format!("{} {}", char::from(NerdFont::CrossCircle), e))?;
-                    return Ok(None);
-                }
-                Ok(Some(path))
-            }
-            PathInputSelection::WinePrefix(_) => Ok(None),
-            PathInputSelection::Cancelled => Ok(None),
-        }
+        select_file_with_validation(
+            FileSelectionPrompt::game_file(
+                format!(
+                    "{} Select PlayStation 2 Game File",
+                    char::from(NerdFont::Disc)
+                ),
+                format!(
+                    "{} Select a PS2 game file ({})",
+                    char::from(NerdFont::Info),
+                    format_valid_extensions(PCSX2_EXTENSIONS)
+                ),
+            ),
+            validate_pcsx2_file,
+        )
     }
 
     fn ask_batch_mode() -> Result<bool> {
@@ -130,16 +91,6 @@ impl Pcsx2Builder {
             .no_text("No, keep PCSX2 open")
             .confirm_dialog()?
         {
-            ConfirmResult::Yes => Ok(true),
-            _ => Ok(false),
-        }
-    }
-
-    fn ask_fullscreen() -> Result<bool> {
-        match FzfWrapper::confirm(&format!(
-            "{} Run in fullscreen mode?",
-            char::from(NerdFont::Fullscreen)
-        ))? {
             ConfirmResult::Yes => Ok(true),
             _ => Ok(false),
         }
@@ -165,18 +116,5 @@ impl Pcsx2Builder {
         parts.push(format!("\"{}\"", game_str));
 
         parts.join(" ")
-    }
-
-    fn confirm_command(command: &str) -> Result<bool> {
-        let message = format!(
-            "{} Generated Launch Command:\n\n{}\n\nUse this command?",
-            char::from(NerdFont::Rocket),
-            command
-        );
-
-        match FzfWrapper::confirm(&message)? {
-            ConfirmResult::Yes => Ok(true),
-            _ => Ok(false),
-        }
     }
 }

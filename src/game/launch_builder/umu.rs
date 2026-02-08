@@ -12,6 +12,9 @@ use crate::menu_utils::{
 };
 use crate::ui::nerd_font::NerdFont;
 
+use super::prompts::{
+    FileSelectionPrompt, ask_fullscreen, confirm_command, select_file_with_validation,
+};
 use super::validation::{WINDOWS_EXTENSIONS, validate_windows_executable};
 
 /// Proton version selection
@@ -67,13 +70,13 @@ impl UmuBuilder {
         };
 
         // Step 4: Optional fullscreen flag
-        let fullscreen = Self::ask_fullscreen()?;
+        let fullscreen = ask_fullscreen()?;
 
         // Build the command
         let command = Self::format_command(&wine_prefix, &proton_path, &executable, fullscreen);
 
         // Show preview and confirm
-        let confirmed = Self::confirm_command(&command)?;
+        let confirmed = confirm_command(&command)?;
         if confirmed {
             Ok(Some(command))
         } else {
@@ -172,56 +175,22 @@ impl UmuBuilder {
     }
 
     fn select_executable() -> Result<Option<PathBuf>> {
-        let selection = PathInputBuilder::new()
-            .header(format!(
-                "{} Select Windows Executable",
-                char::from(NerdFont::Windows)
-            ))
-            .scope(FilePickerScope::Files)
-            .picker_hint(format!(
-                "{} Select the .exe file to run ({})",
-                char::from(NerdFont::Info),
-                super::validation::format_valid_extensions(WINDOWS_EXTENSIONS)
-            ))
-            .manual_option_label(format!(
-                "{} Type executable path",
-                char::from(NerdFont::Edit)
-            ))
-            .picker_option_label(format!(
-                "{} Browse for executable",
-                char::from(NerdFont::FolderOpen)
-            ))
-            .choose()?;
-
-        match selection {
-            PathInputSelection::Manual(input) => {
-                let path = PathBuf::from(shellexpand::tilde(&input).into_owned());
-                if let Err(e) = validate_windows_executable(&path) {
-                    FzfWrapper::message(&format!("{} {}", char::from(NerdFont::CrossCircle), e))?;
-                    return Ok(None);
-                }
-                Ok(Some(path))
-            }
-            PathInputSelection::Picker(path) => {
-                if let Err(e) = validate_windows_executable(&path) {
-                    FzfWrapper::message(&format!("{} {}", char::from(NerdFont::CrossCircle), e))?;
-                    return Ok(None);
-                }
-                Ok(Some(path))
-            }
-            PathInputSelection::WinePrefix(_) => Ok(None),
-            PathInputSelection::Cancelled => Ok(None),
-        }
-    }
-
-    fn ask_fullscreen() -> Result<bool> {
-        match FzfWrapper::confirm(&format!(
-            "{} Run in fullscreen mode?",
-            char::from(NerdFont::Fullscreen)
-        ))? {
-            ConfirmResult::Yes => Ok(true),
-            _ => Ok(false),
-        }
+        select_file_with_validation(
+            FileSelectionPrompt::new(
+                format!(
+                    "{} Select Windows Executable",
+                    char::from(NerdFont::Windows)
+                ),
+                format!(
+                    "{} Select the .exe file to run ({})",
+                    char::from(NerdFont::Info),
+                    super::validation::format_valid_extensions(WINDOWS_EXTENSIONS)
+                ),
+                format!("{} Type executable path", char::from(NerdFont::Edit)),
+                format!("{} Browse for executable", char::from(NerdFont::FolderOpen)),
+            ),
+            validate_windows_executable,
+        )
     }
 
     fn format_command(
@@ -249,19 +218,6 @@ impl UmuBuilder {
         parts.push(format!("umu-run \"{}\"", exe_str));
 
         parts.join(" ")
-    }
-
-    fn confirm_command(command: &str) -> Result<bool> {
-        let message = format!(
-            "{} Generated Launch Command:\n\n{}\n\nUse this command?",
-            char::from(NerdFont::Rocket),
-            command
-        );
-
-        match FzfWrapper::confirm(&message)? {
-            ConfirmResult::Yes => Ok(true),
-            _ => Ok(false),
-        }
     }
 }
 

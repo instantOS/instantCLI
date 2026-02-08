@@ -6,12 +6,14 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 
-use crate::menu_utils::{
-    ConfirmResult, FilePickerScope, FzfWrapper, PathInputBuilder, PathInputSelection,
-};
+use crate::menu_utils::FzfWrapper;
 use crate::ui::nerd_font::NerdFont;
 
-use super::validation::{format_valid_extensions, validate_mgba_file, MGBA_EXTENSIONS};
+use super::prompts::{
+    FileSelectionPrompt, ask_fullscreen, confirm_command, select_file_with_validation,
+};
+
+use super::validation::{MGBA_EXTENSIONS, format_valid_extensions, validate_mgba_file};
 
 /// mGBA-Qt command name
 const MGBA_COMMAND: &str = "mgba-qt";
@@ -42,13 +44,13 @@ impl MgbaBuilder {
         };
 
         // Step 3: Ask for fullscreen
-        let fullscreen = Self::ask_fullscreen()?;
+        let fullscreen = ask_fullscreen()?;
 
         // Build the command
         let command = Self::format_command(&game_file, fullscreen);
 
         // Show preview and confirm
-        if Self::confirm_command(&command)? {
+        if confirm_command(&command)? {
             Ok(Some(command))
         } else {
             Ok(None)
@@ -60,56 +62,20 @@ impl MgbaBuilder {
     }
 
     fn select_game_file() -> Result<Option<PathBuf>> {
-        let selection = PathInputBuilder::new()
-            .header(format!(
-                "{} Select Game Boy Advance Game File",
-                char::from(NerdFont::Gamepad)
-            ))
-            .scope(FilePickerScope::Files)
-            .picker_hint(format!(
-                "{} Select a GBA/GB/GBC game file ({})",
-                char::from(NerdFont::Info),
-                format_valid_extensions(MGBA_EXTENSIONS)
-            ))
-            .manual_option_label(format!(
-                "{} Type game file path",
-                char::from(NerdFont::Edit)
-            ))
-            .picker_option_label(format!(
-                "{} Browse for game file",
-                char::from(NerdFont::FolderOpen)
-            ))
-            .choose()?;
-
-        match selection {
-            PathInputSelection::Manual(input) => {
-                let path = PathBuf::from(shellexpand::tilde(&input).into_owned());
-                if let Err(e) = validate_mgba_file(&path) {
-                    FzfWrapper::message(&format!("{} {}", char::from(NerdFont::CrossCircle), e))?;
-                    return Ok(None);
-                }
-                Ok(Some(path))
-            }
-            PathInputSelection::Picker(path) => {
-                if let Err(e) = validate_mgba_file(&path) {
-                    FzfWrapper::message(&format!("{} {}", char::from(NerdFont::CrossCircle), e))?;
-                    return Ok(None);
-                }
-                Ok(Some(path))
-            }
-            PathInputSelection::WinePrefix(_) => Ok(None),
-            PathInputSelection::Cancelled => Ok(None),
-        }
-    }
-
-    fn ask_fullscreen() -> Result<bool> {
-        match FzfWrapper::confirm(&format!(
-            "{} Run in fullscreen mode?",
-            char::from(NerdFont::Fullscreen)
-        ))? {
-            ConfirmResult::Yes => Ok(true),
-            _ => Ok(false),
-        }
+        select_file_with_validation(
+            FileSelectionPrompt::game_file(
+                format!(
+                    "{} Select Game Boy Advance Game File",
+                    char::from(NerdFont::Gamepad)
+                ),
+                format!(
+                    "{} Select a GBA/GB/GBC game file ({})",
+                    char::from(NerdFont::Info),
+                    format_valid_extensions(MGBA_EXTENSIONS)
+                ),
+            ),
+            validate_mgba_file,
+        )
     }
 
     fn format_command(game_file: &PathBuf, fullscreen: bool) -> String {
@@ -124,18 +90,5 @@ impl MgbaBuilder {
         parts.push(format!("\"{}\"", game_str));
 
         parts.join(" ")
-    }
-
-    fn confirm_command(command: &str) -> Result<bool> {
-        let message = format!(
-            "{} Generated Launch Command:\n\n{}\n\nUse this command?",
-            char::from(NerdFont::Rocket),
-            command
-        );
-
-        match FzfWrapper::confirm(&message)? {
-            ConfirmResult::Yes => Ok(true),
-            _ => Ok(false),
-        }
     }
 }

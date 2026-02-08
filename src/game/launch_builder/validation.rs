@@ -15,7 +15,9 @@ pub const PCSX2_EXTENSIONS: &[&str] = &["iso", "bin", "chd", "cso", "gz", "elf",
 pub const MGBA_EXTENSIONS: &[&str] = &["gba", "gb", "gbc", "sgb", "zip", "7z"];
 
 /// Valid file extensions for DuckStation (PlayStation 1) games
-pub const DUCKSTATION_EXTENSIONS: &[&str] = &["bin", "cue", "iso", "img", "chd", "pbp", "ecm", "mds", "psf", "minipsf", "m3u"];
+pub const DUCKSTATION_EXTENSIONS: &[&str] = &[
+    "bin", "cue", "iso", "img", "chd", "pbp", "ecm", "mds", "psf", "minipsf", "m3u",
+];
 
 /// Valid file extensions for Windows executables (umu-run)
 pub const WINDOWS_EXTENSIONS: &[&str] = &["exe", "msi", "bat"];

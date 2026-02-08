@@ -11,8 +11,10 @@
 mod dolphin;
 mod duckstation;
 mod eden;
+mod flatpak;
 mod mgba;
 mod pcsx2;
+mod prompts;
 mod umu;
 mod validation;
 

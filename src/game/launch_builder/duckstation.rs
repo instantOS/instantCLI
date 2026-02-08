@@ -15,7 +15,12 @@ use crate::menu_utils::{
 };
 use crate::ui::nerd_font::NerdFont;
 
-use super::validation::{format_valid_extensions, validate_duckstation_file, DUCKSTATION_EXTENSIONS};
+use super::prompts::{
+    FileSelectionPrompt, ask_fullscreen, confirm_command, select_file_with_validation,
+};
+use super::validation::{
+    DUCKSTATION_EXTENSIONS, format_valid_extensions, validate_duckstation_file,
+};
 
 /// Default DuckStation AppImage location
 const DEFAULT_DUCKSTATION_PATH: &str = "~/AppImages/DuckStation-x64.AppImage";
@@ -52,7 +57,7 @@ impl DuckStationBuilder {
         };
 
         // Step 3: Ask for fullscreen
-        let fullscreen = Self::ask_fullscreen()?;
+        let fullscreen = ask_fullscreen()?;
 
         // Step 4: Ask for batch mode (exit when game closes)
         let batch_mode = Self::ask_batch_mode()?;
@@ -61,7 +66,7 @@ impl DuckStationBuilder {
         let command = Self::format_command(&duckstation_path, &game_file, fullscreen, batch_mode);
 
         // Show preview and confirm
-        if Self::confirm_command(&command)? {
+        if confirm_command(&command)? {
             Ok(Some(command))
         } else {
             Ok(None)
@@ -215,10 +220,7 @@ impl DuckStationBuilder {
                 char::from(NerdFont::Info),
                 DEFAULT_DUCKSTATION_PATH
             ))
-            .manual_option_label(format!(
-                "{} Type AppImage path",
-                char::from(NerdFont::Edit)
-            ))
+            .manual_option_label(format!("{} Type AppImage path", char::from(NerdFont::Edit)))
             .picker_option_label(format!(
                 "{} Browse for AppImage",
                 char::from(NerdFont::FolderOpen)
@@ -255,56 +257,20 @@ impl DuckStationBuilder {
     }
 
     fn select_game_file() -> Result<Option<PathBuf>> {
-        let selection = PathInputBuilder::new()
-            .header(format!(
-                "{} Select PlayStation 1 Game File",
-                char::from(NerdFont::Disc)
-            ))
-            .scope(FilePickerScope::Files)
-            .picker_hint(format!(
-                "{} Select a PS1 game file ({})",
-                char::from(NerdFont::Info),
-                format_valid_extensions(DUCKSTATION_EXTENSIONS)
-            ))
-            .manual_option_label(format!(
-                "{} Type game file path",
-                char::from(NerdFont::Edit)
-            ))
-            .picker_option_label(format!(
-                "{} Browse for game file",
-                char::from(NerdFont::FolderOpen)
-            ))
-            .choose()?;
-
-        match selection {
-            PathInputSelection::Manual(input) => {
-                let path = PathBuf::from(shellexpand::tilde(&input).into_owned());
-                if let Err(e) = validate_duckstation_file(&path) {
-                    FzfWrapper::message(&format!("{} {}", char::from(NerdFont::CrossCircle), e))?;
-                    return Ok(None);
-                }
-                Ok(Some(path))
-            }
-            PathInputSelection::Picker(path) => {
-                if let Err(e) = validate_duckstation_file(&path) {
-                    FzfWrapper::message(&format!("{} {}", char::from(NerdFont::CrossCircle), e))?;
-                    return Ok(None);
-                }
-                Ok(Some(path))
-            }
-            PathInputSelection::WinePrefix(_) => Ok(None),
-            PathInputSelection::Cancelled => Ok(None),
-        }
-    }
-
-    fn ask_fullscreen() -> Result<bool> {
-        match FzfWrapper::confirm(&format!(
-            "{} Run in fullscreen mode?",
-            char::from(NerdFont::Fullscreen)
-        ))? {
-            ConfirmResult::Yes => Ok(true),
-            _ => Ok(false),
-        }
+        select_file_with_validation(
+            FileSelectionPrompt::game_file(
+                format!(
+                    "{} Select PlayStation 1 Game File",
+                    char::from(NerdFont::Disc)
+                ),
+                format!(
+                    "{} Select a PS1 game file ({})",
+                    char::from(NerdFont::Info),
+                    format_valid_extensions(DUCKSTATION_EXTENSIONS)
+                ),
+            ),
+            validate_duckstation_file,
+        )
     }
 
     fn ask_batch_mode() -> Result<bool> {
@@ -347,18 +313,5 @@ impl DuckStationBuilder {
         parts.push(format!("\"{}\"", game_str));
 
         parts.join(" ")
-    }
-
-    fn confirm_command(command: &str) -> Result<bool> {
-        let message = format!(
-            "{} Generated Launch Command:\n\n{}\n\nUse this command?",
-            char::from(NerdFont::Rocket),
-            command
-        );
-
-        match FzfWrapper::confirm(&message)? {
-            ConfirmResult::Yes => Ok(true),
-            _ => Ok(false),
-        }
     }
 }
