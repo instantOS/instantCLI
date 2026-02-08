@@ -12,7 +12,7 @@ use crate::menu_utils::{
 };
 use crate::ui::nerd_font::NerdFont;
 
-use super::validation::{validate_windows_executable, WINDOWS_EXTENSIONS};
+use super::validation::{WINDOWS_EXTENSIONS, validate_windows_executable};
 
 /// Proton version selection
 #[derive(Debug, Clone)]
@@ -160,9 +160,7 @@ impl UmuBuilder {
                         .scope(FilePickerScope::Directories)
                         .pick()?;
                     match result {
-                        FilePickerResult::Selected(path) => {
-                            Ok(Some(ProtonPath::Custom(path)))
-                        }
+                        FilePickerResult::Selected(path) => Ok(Some(ProtonPath::Custom(path))),
                         _ => Ok(None),
                     }
                 } else {

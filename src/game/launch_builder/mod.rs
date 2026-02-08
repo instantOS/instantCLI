@@ -4,9 +4,11 @@
 //! - umu-run (Wine/Proton games)
 //! - Eden (Switch emulator)
 //! - Dolphin via Flatpak (GameCube/Wii emulator)
+//! - PCSX2 via Flatpak (PlayStation 2 emulator)
 
 mod dolphin;
 mod eden;
+mod pcsx2;
 mod umu;
 mod validation;
 
@@ -20,6 +22,7 @@ use crate::ui::preview::PreviewBuilder;
 
 pub use dolphin::DolphinBuilder;
 pub use eden::EdenBuilder;
+pub use pcsx2::Pcsx2Builder;
 pub use umu::UmuBuilder;
 
 /// Launcher type selection
@@ -28,6 +31,7 @@ pub enum LauncherType {
     UmuRun,
     Eden,
     DolphinFlatpak,
+    Pcsx2Flatpak,
     Back,
 }
 
@@ -37,6 +41,7 @@ impl std::fmt::Display for LauncherType {
             LauncherType::UmuRun => write!(f, "umu-run"),
             LauncherType::Eden => write!(f, "eden"),
             LauncherType::DolphinFlatpak => write!(f, "dolphin-flatpak"),
+            LauncherType::Pcsx2Flatpak => write!(f, "pcsx2-flatpak"),
             LauncherType::Back => write!(f, "back"),
         }
     }
@@ -141,6 +146,32 @@ fn build_launcher_items() -> Vec<LauncherItem> {
                 .build(),
         },
         LauncherItem {
+            launcher: LauncherType::Pcsx2Flatpak,
+            display: format!(
+                "{} PCSX2 Flatpak (PlayStation 2)",
+                format_icon_colored(NerdFont::Disc, colors::SAPPHIRE)
+            ),
+            preview: PreviewBuilder::new()
+                .header(NerdFont::Disc, "PCSX2 (Flatpak)")
+                .text("PlayStation 2 emulator.")
+                .blank()
+                .text("Runs PS2 games via the Flatpak")
+                .text("version of PCSX2.")
+                .blank()
+                .separator()
+                .blank()
+                .text("Supported formats:")
+                .bullet(".iso - Standard disc image")
+                .bullet(".bin - Binary disc image")
+                .bullet(".chd - Compressed Hunks of Data")
+                .bullet(".cso - Compressed ISO")
+                .bullet(".gz - Gzip compressed")
+                .bullet(".elf/.irx - Executables")
+                .blank()
+                .subtext("Requires: net.pcsx2.PCSX2 flatpak")
+                .build(),
+        },
+        LauncherItem {
             launcher: LauncherType::Back,
             display: format!("{} Back", format_back_icon()),
             preview: PreviewBuilder::new()
@@ -187,6 +218,7 @@ pub fn build_launch_command() -> Result<Option<String>> {
         LauncherType::UmuRun => UmuBuilder::build_command(),
         LauncherType::Eden => EdenBuilder::build_command(),
         LauncherType::DolphinFlatpak => DolphinBuilder::build_command(),
+        LauncherType::Pcsx2Flatpak => Pcsx2Builder::build_command(),
         LauncherType::Back => Ok(None),
     }
 }

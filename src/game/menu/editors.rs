@@ -43,9 +43,7 @@ impl FzfSelectable for InputMethodItem {
 }
 
 /// Show a menu to choose between manual input or command builder
-fn select_launch_command_input_method(
-    current: Option<&str>,
-) -> Result<LaunchCommandInputMethod> {
+fn select_launch_command_input_method(current: Option<&str>) -> Result<LaunchCommandInputMethod> {
     let current_display = current.unwrap_or("<not set>");
 
     let items = vec![
@@ -78,6 +76,7 @@ fn select_launch_command_input_method(
                 .bullet("umu-run - Wine/Proton games")
                 .bullet("Eden - Nintendo Switch emulator")
                 .bullet("Dolphin Flatpak - GameCube/Wii")
+                .bullet("PCSX2 Flatpak - PlayStation 2")
                 .blank()
                 .text("The builder validates files and")
                 .text("generates a ready-to-use command.")

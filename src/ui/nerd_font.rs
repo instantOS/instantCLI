@@ -554,10 +554,10 @@ impl NerdFont {
             Self::Snowflake => '󰼶', // md-snowflake (freeze)
 
             // Gaming and Emulation
-            Self::Disc => '󰗮',        // md-disc (CD/DVD disc)
-            Self::Windows => '\u{f17a}', // fa-windows
+            Self::Disc => '󰗮',              // md-disc (CD/DVD disc)
+            Self::Windows => '\u{f17a}',    // fa-windows
             Self::Fullscreen => '\u{f065}', // fa-expand (fullscreen)
-            Self::Fish => '󰈺',        // md-fish (dolphin)
+            Self::Fish => '󰈺',              // md-fish (dolphin)
         }
     }
 }

@@ -11,7 +11,7 @@ use crate::menu_utils::{
 };
 use crate::ui::nerd_font::NerdFont;
 
-use super::validation::{format_valid_extensions, validate_eden_file, EDEN_EXTENSIONS};
+use super::validation::{EDEN_EXTENSIONS, format_valid_extensions, validate_eden_file};
 
 /// Default Eden AppImage location
 const DEFAULT_EDEN_PATH: &str = "~/AppImages/eden.AppImage";
@@ -91,10 +91,7 @@ impl EdenBuilder {
                 char::from(NerdFont::Info),
                 DEFAULT_EDEN_PATH
             ))
-            .manual_option_label(format!(
-                "{} Type AppImage path",
-                char::from(NerdFont::Edit)
-            ))
+            .manual_option_label(format!("{} Type AppImage path", char::from(NerdFont::Edit)))
             .picker_option_label(format!(
                 "{} Browse for AppImage",
                 char::from(NerdFont::FolderOpen)

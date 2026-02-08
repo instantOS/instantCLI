@@ -1,6 +1,6 @@
-//! Dolphin (GameCube/Wii emulator) launch command builder via Flatpak
+//! PCSX2 (PlayStation 2 emulator) launch command builder via Flatpak
 //!
-//! Builds commands for running GameCube/Wii games via the Dolphin Flatpak
+//! Builds commands for running PS2 games via the PCSX2 Flatpak
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -12,25 +12,25 @@ use crate::menu_utils::{
 };
 use crate::ui::nerd_font::NerdFont;
 
-use super::validation::{DOLPHIN_EXTENSIONS, format_valid_extensions, validate_dolphin_file};
+use super::validation::{PCSX2_EXTENSIONS, format_valid_extensions, validate_pcsx2_file};
 
-/// Dolphin Flatpak application ID
-const DOLPHIN_FLATPAK_ID: &str = "org.DolphinEmu.dolphin-emu";
+/// PCSX2 Flatpak application ID
+const PCSX2_FLATPAK_ID: &str = "net.pcsx2.PCSX2";
 
-pub struct DolphinBuilder;
+pub struct Pcsx2Builder;
 
-impl DolphinBuilder {
-    /// Build a Dolphin Flatpak launch command interactively
+impl Pcsx2Builder {
+    /// Build a PCSX2 Flatpak launch command interactively
     pub fn build_command() -> Result<Option<String>> {
-        // Step 1: Check if Dolphin Flatpak is installed
-        if !Self::check_dolphin_installed()? {
+        // Step 1: Check if PCSX2 Flatpak is installed
+        if !Self::check_pcsx2_installed()? {
             FzfWrapper::message(&format!(
-                "{} Dolphin Flatpak not found!\n\n\
+                "{} PCSX2 Flatpak not found!\n\n\
                  Install it with:\n\
                  flatpak install flathub {}\n\n\
-                 Or visit: https://flathub.org/apps/org.DolphinEmu.dolphin-emu",
+                 Or visit: https://flathub.org/apps/net.pcsx2.PCSX2",
                 char::from(NerdFont::CrossCircle),
-                DOLPHIN_FLATPAK_ID
+                PCSX2_FLATPAK_ID
             ))?;
             return Ok(None);
         }
@@ -44,12 +44,8 @@ impl DolphinBuilder {
         // Step 3: Ask for batch mode (exit when game closes)
         let batch_mode = Self::ask_batch_mode()?;
 
-        // Step 4: Ask for fullscreen (only if not batch mode, as batch implies game-focused)
-        let fullscreen = if !batch_mode {
-            Self::ask_fullscreen()?
-        } else {
-            false
-        };
+        // Step 4: Ask for fullscreen
+        let fullscreen = Self::ask_fullscreen()?;
 
         // Build the command
         let command = Self::format_command(&game_file, batch_mode, fullscreen);
@@ -62,7 +58,7 @@ impl DolphinBuilder {
         }
     }
 
-    fn check_dolphin_installed() -> Result<bool> {
+    fn check_pcsx2_installed() -> Result<bool> {
         let output = Command::new("flatpak")
             .args(["list", "--app", "--columns=application"])
             .output();
@@ -70,7 +66,7 @@ impl DolphinBuilder {
         match output {
             Ok(output) => {
                 let stdout = String::from_utf8_lossy(&output.stdout);
-                Ok(stdout.lines().any(|line| line.trim() == DOLPHIN_FLATPAK_ID))
+                Ok(stdout.lines().any(|line| line.trim() == PCSX2_FLATPAK_ID))
             }
             Err(_) => {
                 // flatpak command not found
@@ -82,14 +78,14 @@ impl DolphinBuilder {
     fn select_game_file() -> Result<Option<PathBuf>> {
         let selection = PathInputBuilder::new()
             .header(format!(
-                "{} Select GameCube/Wii Game File",
+                "{} Select PlayStation 2 Game File",
                 char::from(NerdFont::Disc)
             ))
             .scope(FilePickerScope::Files)
             .picker_hint(format!(
-                "{} Select a GameCube/Wii game file ({})",
+                "{} Select a PS2 game file ({})",
                 char::from(NerdFont::Info),
-                format_valid_extensions(DOLPHIN_EXTENSIONS)
+                format_valid_extensions(PCSX2_EXTENSIONS)
             ))
             .manual_option_label(format!(
                 "{} Type game file path",
@@ -104,14 +100,14 @@ impl DolphinBuilder {
         match selection {
             PathInputSelection::Manual(input) => {
                 let path = PathBuf::from(shellexpand::tilde(&input).into_owned());
-                if let Err(e) = validate_dolphin_file(&path) {
+                if let Err(e) = validate_pcsx2_file(&path) {
                     FzfWrapper::message(&format!("{} {}", char::from(NerdFont::CrossCircle), e))?;
                     return Ok(None);
                 }
                 Ok(Some(path))
             }
             PathInputSelection::Picker(path) => {
-                if let Err(e) = validate_dolphin_file(&path) {
+                if let Err(e) = validate_pcsx2_file(&path) {
                     FzfWrapper::message(&format!("{} {}", char::from(NerdFont::CrossCircle), e))?;
                     return Ok(None);
                 }
@@ -126,12 +122,12 @@ impl DolphinBuilder {
         match FzfWrapper::builder()
             .confirm(format!(
                 "{} Use batch mode?\n\n\
-                 Batch mode will exit Dolphin when the game closes.\n\
+                 Batch mode will exit PCSX2 when the game closes.\n\
                  This is recommended for launching games directly.",
                 char::from(NerdFont::Terminal)
             ))
             .yes_text("Yes, use batch mode")
-            .no_text("No, keep Dolphin open")
+            .no_text("No, keep PCSX2 open")
             .confirm_dialog()?
         {
             ConfirmResult::Yes => Ok(true),
@@ -154,17 +150,18 @@ impl DolphinBuilder {
 
         let mut parts = vec!["flatpak".to_string(), "run".to_string()];
 
-        parts.push(DOLPHIN_FLATPAK_ID.to_string());
+        parts.push(PCSX2_FLATPAK_ID.to_string());
 
         if batch_mode {
-            parts.push("-b".to_string());
+            parts.push("-batch".to_string());
         }
 
         if fullscreen {
-            parts.push("-f".to_string());
+            parts.push("-fullscreen".to_string());
         }
 
-        parts.push("-e".to_string());
+        // Use -- to signal end of options (in case filename starts with -)
+        parts.push("--".to_string());
         parts.push(format!("\"{}\"", game_str));
 
         parts.join(" ")

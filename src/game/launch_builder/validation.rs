@@ -8,6 +8,9 @@ pub const EDEN_EXTENSIONS: &[&str] = &["nsp", "xci", "nca"];
 /// Valid file extensions for Dolphin (GameCube/Wii) games
 pub const DOLPHIN_EXTENSIONS: &[&str] = &["iso", "wbfs", "gcm", "ciso", "gcz", "wad", "dol", "elf"];
 
+/// Valid file extensions for PCSX2 (PlayStation 2) games
+pub const PCSX2_EXTENSIONS: &[&str] = &["iso", "bin", "chd", "cso", "gz", "elf", "irx"];
+
 /// Valid file extensions for Windows executables (umu-run)
 pub const WINDOWS_EXTENSIONS: &[&str] = &["exe", "msi", "bat"];
 
@@ -87,6 +90,27 @@ pub fn validate_windows_executable(path: &Path) -> Result<(), String> {
         return Err(format!(
             "Invalid file type for umu-run. Expected: {}\nGot: {}",
             format_valid_extensions(WINDOWS_EXTENSIONS),
+            path.display()
+        ));
+    }
+
+    Ok(())
+}
+
+/// Validate a file for PCSX2 emulator
+pub fn validate_pcsx2_file(path: &Path) -> Result<(), String> {
+    if !path.exists() {
+        return Err(format!("File does not exist: {}", path.display()));
+    }
+
+    if !path.is_file() {
+        return Err(format!("Path is not a file: {}", path.display()));
+    }
+
+    if !has_valid_extension(path, PCSX2_EXTENSIONS) {
+        return Err(format!(
+            "Invalid file type for PCSX2. Expected: {}\nGot: {}",
+            format_valid_extensions(PCSX2_EXTENSIONS),
             path.display()
         ));
     }
