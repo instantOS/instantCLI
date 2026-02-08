@@ -6,6 +6,7 @@ use crate::game::utils::save_files::{
 };
 use crate::menu_utils::{FzfSelectable, FzfWrapper};
 use crate::restic::wrapper::Snapshot;
+use crate::ui::catppuccin::colors;
 use crate::ui::prelude::*;
 use anyhow::{Context, Result};
 
@@ -30,8 +31,7 @@ impl FzfSelectable for Snapshot {
         let game_name =
             tags::extract_game_name_from_tags(&self.tags).unwrap_or_else(|| "unknown".to_string());
 
-        let preview_text = create_snapshot_preview(self, &game_name);
-        crate::menu::protocol::FzfPreview::Text(preview_text)
+        build_snapshot_preview(self, &game_name, None)
     }
 }
 
@@ -46,7 +46,7 @@ fn format_date(iso_date: &str) -> String {
 }
 
 /// Format date with "time ago" information
-fn format_date_with_time_ago(iso_date: &str) -> String {
+fn format_date_with_time_ago(iso_date: &str) -> (String, String) {
     if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(iso_date) {
         let now = chrono::Utc::now();
         let duration = now.signed_duration_since(parsed.with_timezone(&chrono::Utc));
@@ -68,65 +68,61 @@ fn format_date_with_time_ago(iso_date: &str) -> String {
             format!("{} months ago", duration.num_days().abs() / 30)
         };
 
-        format!("{formatted_date}\n({time_ago})")
+        (formatted_date, format!("({time_ago})"))
     } else {
-        iso_date.to_string()
+        (iso_date.to_string(), String::new())
     }
 }
 
-/// Create header section for snapshot preview
-fn create_preview_header(snapshot: &Snapshot, game_name: &str) -> String {
-    let formatted_time = format_date_with_time_ago(&snapshot.time);
+/// Add header section to preview builder
+fn add_preview_header(
+    mut builder: PreviewBuilder,
+    snapshot: &Snapshot,
+    game_name: &str,
+) -> PreviewBuilder {
+    let (formatted_time, time_ago) = format_date_with_time_ago(&snapshot.time);
 
-    format!(
-        "{} SNAPSHOT INFORMATION\n\
-         \n\
-         Game:      {}\n\
-         Host:      {}\n\
-         Created:   {}\n\
-         Short ID:  {}\n\n",
-        char::from(NerdFont::Folder),
-        game_name,
-        snapshot.hostname,
-        formatted_time.lines().next().unwrap_or(""),
-        snapshot.short_id
-    )
+    builder = builder
+        .header(NerdFont::Folder, "Snapshot Information")
+        .field("Game", game_name)
+        .field("Host", &snapshot.hostname)
+        .field("Created", &formatted_time);
+
+    if !time_ago.is_empty() {
+        builder = builder.field_indented("", &time_ago);
+    }
+
+    builder.field("Short ID", &snapshot.short_id)
 }
 
-/// Create file statistics section for snapshot preview
-fn create_preview_statistics(summary: &crate::restic::wrapper::SnapshotSummary) -> String {
-    let mut stats = String::new();
+/// Add file statistics section to preview builder
+fn add_preview_statistics(
+    mut builder: PreviewBuilder,
+    summary: &crate::restic::wrapper::SnapshotSummary,
+) -> PreviewBuilder {
     let total_files = summary.files_new + summary.files_changed + summary.files_unmodified;
 
-    stats.push_str(" BACKUP STATISTICS\n\n");
-    stats.push_str(&format!(
-        "Total Files:      {}\n",
-        format_number(total_files)
-    ));
+    builder = builder
+        .blank()
+        .separator()
+        .line(colors::MAUVE, Some(NerdFont::Chart), "Backup Statistics")
+        .blank()
+        .field("Total Files", &format_number(total_files));
 
     if summary.files_new > 0 {
-        stats.push_str(&format!(
-            "  ├─ New:         {}\n",
-            format_number(summary.files_new)
-        ));
+        builder = builder.field_indented("New", &format_number(summary.files_new));
     }
     if summary.files_changed > 0 {
-        stats.push_str(&format!(
-            "  ├─ Changed:     {}\n",
-            format_number(summary.files_changed)
-        ));
+        builder = builder.field_indented("Changed", &format_number(summary.files_changed));
     }
     if summary.files_unmodified > 0 {
-        stats.push_str(&format!(
-            "  └─ Unmodified:  {}\n",
-            format_number(summary.files_unmodified)
-        ));
+        builder = builder.field_indented("Unmodified", &format_number(summary.files_unmodified));
     }
 
     // Data size
     if summary.data_added > 0 {
         let size_str = format_file_size(summary.data_added);
-        stats.push_str(&format!("\nData Added:       {size_str}\n"));
+        builder = builder.field("Data Added", &size_str);
     }
 
     // Duration
@@ -138,185 +134,210 @@ fn create_preview_statistics(summary: &crate::restic::wrapper::SnapshotSummary) 
         let duration_secs = duration.num_seconds();
         if duration_secs > 0 {
             let duration_str = format_duration(duration_secs);
-            stats.push_str(&format!("Duration:         {duration_str}\n"));
+            builder = builder.field("Duration", &duration_str);
         }
     }
 
-    stats.push('\n');
-
-    stats
+    builder
 }
 
-/// Create local save comparison section for snapshot preview
-fn create_preview_local_comparison(
-    local_save_info: &Option<crate::game::utils::save_files::SaveDirectoryInfo>,
+/// Add local save comparison section to preview builder
+fn add_preview_local_comparison(
+    mut builder: PreviewBuilder,
+    local_save_info: Option<&crate::game::utils::save_files::SaveDirectoryInfo>,
     snapshot_time: &str,
-) -> String {
-    let mut comparison = String::new();
-
-    comparison.push_str(" LOCAL SAVE COMPARISON\n\n");
+) -> PreviewBuilder {
+    builder = builder
+        .blank()
+        .separator()
+        .line(
+            colors::MAUVE,
+            Some(NerdFont::Download),
+            "Local Save Comparison",
+        )
+        .blank();
 
     if let Some(local_info) = local_save_info {
         if local_info.file_count > 0 {
             let file_count_str = format_number(local_info.file_count);
             let size_str = format_file_size(local_info.total_size);
-            comparison.push_str(&format!(
-                "Local Files:      {file_count_str} files ({size_str})\n"
-            ));
+            builder = builder.field(
+                "Local Files",
+                &format!("{file_count_str} files ({size_str})"),
+            );
 
             if let Some(local_time) = local_info.last_modified {
                 let local_time_str = format_system_time_for_display(Some(local_time));
-                comparison.push_str(&format!("Last Modified:    {local_time_str}\n"));
+                builder = builder.field("Last Modified", &local_time_str);
+
+                builder = builder.blank();
 
                 // Add comparison result with clear status indication
                 match compare_snapshot_vs_local(snapshot_time, local_time) {
                     Ok(TimeComparison::LocalNewer)
                     | Ok(TimeComparison::LocalNewerWithinTolerance(_)) => {
-                        comparison.push_str("\n STATUS: LOCAL SAVES ARE NEWER\n");
-                        comparison.push_str("     Restoring would overwrite newer local saves\n");
+                        builder = builder
+                            .line(
+                                colors::YELLOW,
+                                Some(NerdFont::Warning),
+                                "STATUS: LOCAL SAVES ARE NEWER",
+                            )
+                            .subtext("Restoring would overwrite newer local saves");
                     }
                     Ok(TimeComparison::SnapshotNewer)
                     | Ok(TimeComparison::SnapshotNewerWithinTolerance(_)) => {
-                        comparison.push_str("\n STATUS: SNAPSHOT IS NEWER\n");
-                        comparison.push_str("     Safe to restore (backup contains newer data)\n");
+                        builder = builder
+                            .line(
+                                colors::GREEN,
+                                Some(NerdFont::Check),
+                                "STATUS: SNAPSHOT IS NEWER",
+                            )
+                            .subtext("Safe to restore (backup contains newer data)");
                     }
                     Ok(TimeComparison::Same) => {
-                        comparison.push_str("\n STATUS: TIMESTAMPS MATCH\n");
-                        comparison.push_str("     Local saves match backup timestamp\n");
+                        builder = builder
+                            .line(
+                                colors::BLUE,
+                                Some(NerdFont::Clock),
+                                "STATUS: TIMESTAMPS MATCH",
+                            )
+                            .subtext("Local saves match backup timestamp");
                     }
                     Ok(TimeComparison::Error(msg)) => {
-                        comparison.push_str("\n STATUS: COMPARISON ERROR\n");
-                        comparison.push_str(&format!("    Error: {}\n", truncate_string(&msg, 60)));
+                        builder = builder
+                            .line(
+                                colors::RED,
+                                Some(NerdFont::Cross),
+                                "STATUS: COMPARISON ERROR",
+                            )
+                            .subtext(&format!("Error: {}", truncate_string(&msg, 60)));
                     }
                     Err(_) => {
-                        comparison.push_str("\n STATUS: COMPARISON FAILED\n");
-                        comparison.push_str("    Unable to compare timestamps\n");
+                        builder = builder
+                            .line(
+                                colors::RED,
+                                Some(NerdFont::Cross),
+                                "STATUS: COMPARISON FAILED",
+                            )
+                            .subtext("Unable to compare timestamps");
                     }
                 }
             } else {
-                comparison.push_str("Last Modified:    Unknown\n");
-                comparison.push_str("\n STATUS: MODIFICATION TIME UNKNOWN\n");
-                comparison.push_str("    Cannot determine if local saves are newer\n");
+                builder = builder
+                    .field("Last Modified", "Unknown")
+                    .blank()
+                    .line(
+                        colors::RED,
+                        Some(NerdFont::Cross),
+                        "STATUS: MODIFICATION TIME UNKNOWN",
+                    )
+                    .subtext("Cannot determine if local saves are newer");
             }
         } else {
-            comparison
-                .push_str("│   Local Files:      None found                              │\n");
-            comparison
-                .push_str("│                                                                │\n");
-            comparison
-                .push_str("│   STATUS: NO LOCAL SAVES                                     │\n");
-            comparison
-                .push_str("│       Safe to restore (no files to overwrite)              │\n");
+            builder = builder
+                .field("Local Files", "None found")
+                .blank()
+                .line(
+                    colors::GREEN,
+                    Some(NerdFont::Check),
+                    "STATUS: NO LOCAL SAVES",
+                )
+                .subtext("Safe to restore (no files to overwrite)");
         }
     } else {
-        comparison.push_str("Local Files:      Information unavailable\n");
-        comparison.push_str("\n🔴 STATUS: LOCAL SAVE INFO UNKNOWN\n");
-        comparison.push_str("    Cannot determine local save status\n");
+        builder = builder
+            .field("Local Files", "Information unavailable")
+            .blank()
+            .line(
+                colors::RED,
+                Some(NerdFont::Cross),
+                "STATUS: LOCAL SAVE INFO UNKNOWN",
+            )
+            .subtext("Cannot determine local save status");
     }
 
-    comparison.push('\n');
-    comparison
+    builder
 }
 
-/// Create tags and paths section for snapshot preview
-fn create_preview_metadata(snapshot: &Snapshot) -> String {
-    let mut metadata = String::new();
-
-    metadata.push_str("  SNAPSHOT METADATA\n\n");
+/// Add metadata section to preview builder
+fn add_preview_metadata(mut builder: PreviewBuilder, snapshot: &Snapshot) -> PreviewBuilder {
+    builder = builder
+        .blank()
+        .separator()
+        .line(colors::MAUVE, Some(NerdFont::Tag), "Snapshot Metadata")
+        .blank();
 
     // Tags
     if !snapshot.tags.is_empty() {
         let tags_str = snapshot.tags.join(", ");
         let truncated_tags = truncate_string(&tags_str, 60);
-        metadata.push_str(&format!("Tags:             {truncated_tags}\n"));
+        builder = builder.field("Tags", &truncated_tags);
     } else {
-        metadata.push_str("Tags:             None\n");
+        builder = builder.field("Tags", "None");
     }
 
     // Full ID for reference
-    metadata.push_str(&format!(
-        "Full ID:          {}\n",
-        truncate_string(&snapshot.id, 50)
-    ));
+    builder = builder.field("Full ID", &truncate_string(&snapshot.id, 50));
 
     // Paths
     if !snapshot.paths.is_empty() {
-        metadata.push_str("\nBackup Paths:\n");
+        builder = builder.blank().subtext("Backup Paths:");
         for (i, path) in snapshot.paths.iter().take(5).enumerate() {
             // Limit to 5 paths to prevent overflow
             let truncated_path = truncate_string(path, 70);
             if i == 0 {
-                metadata.push_str(&format!("  ├─ {truncated_path}\n"));
+                builder = builder.bullet(&truncated_path);
             } else if i == snapshot.paths.len() - 1 || i == 4 {
-                metadata.push_str(&format!("  └─ {truncated_path}\n"));
+                builder = builder.bullet(&truncated_path);
             } else {
-                metadata.push_str(&format!("  ├─ {truncated_path}\n"));
+                builder = builder.bullet(&truncated_path);
             }
         }
 
         // Show count if there are more paths than displayed
         if snapshot.paths.len() > 5 {
             let remaining = snapshot.paths.len() - 5;
-            metadata.push_str(&format!("  └─ ... and {remaining} more paths\n"));
+            builder = builder.bullet(&format!("... and {remaining} more paths"));
         }
     } else {
-        metadata.push_str("\nBackup Paths:     None specified\n");
+        builder = builder.field("Backup Paths", "None specified");
     }
 
-    metadata
+    builder
 }
 
-/// Create rich preview text for snapshot
-fn create_snapshot_preview(snapshot: &Snapshot, game_name: &str) -> String {
-    let mut preview = String::new();
-
-    // Header
-    preview.push_str(&create_preview_header(snapshot, game_name));
-
-    // File statistics
-    if let Some(summary) = &snapshot.summary {
-        preview.push_str(&create_preview_statistics(summary));
-    } else {
-        preview.push_str(" No detailed statistics available\n");
-    }
-
-    // Metadata
-    preview.push_str(&create_preview_metadata(snapshot));
-
-    preview
-}
-
-/// Create enhanced snapshot preview with local save comparison
-fn create_enhanced_snapshot_preview(
+/// Create preview using PreviewBuilder
+fn build_snapshot_preview(
     snapshot: &Snapshot,
     game_name: &str,
-    local_save_info: &Option<crate::game::utils::save_files::SaveDirectoryInfo>,
-) -> String {
-    let mut preview = String::new();
+    local_save_info: Option<&crate::game::utils::save_files::SaveDirectoryInfo>,
+) -> crate::menu::protocol::FzfPreview {
+    let mut builder = PreviewBuilder::new();
 
     // Header
-    preview.push_str(&create_preview_header(snapshot, game_name));
+    builder = add_preview_header(builder, snapshot, game_name);
 
-    // Local save comparison section
-    preview.push_str(&create_preview_local_comparison(
-        local_save_info,
-        &snapshot.time,
-    ));
+    // Local save comparison section (only if info provided)
+    if local_save_info.is_some() {
+        builder = add_preview_local_comparison(builder, local_save_info, &snapshot.time);
+    }
 
     // File statistics
     if let Some(summary) = &snapshot.summary {
-        preview.push_str(&create_preview_statistics(summary));
+        builder = add_preview_statistics(builder, summary);
     } else {
-        preview.push_str(&format!(
-            "{} No detailed statistics available\n",
-            char::from(NerdFont::List)
-        ));
+        builder = builder
+            .blank()
+            .separator()
+            .line(colors::MAUVE, Some(NerdFont::Chart), "Backup Statistics")
+            .blank()
+            .subtext("No detailed statistics available");
     }
 
     // Metadata
-    preview.push_str(&create_preview_metadata(snapshot));
+    builder = add_preview_metadata(builder, snapshot);
 
-    preview
+    builder.build()
 }
 
 /// Format file size for display
@@ -487,11 +508,10 @@ impl FzfSelectable for EnhancedSnapshot {
     }
 
     fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
-        let preview_text = create_enhanced_snapshot_preview(
+        build_snapshot_preview(
             &self.snapshot,
             &self.game_name,
-            &self.local_save_info,
-        );
-        crate::menu::protocol::FzfPreview::Text(preview_text)
+            self.local_save_info.as_ref(),
+        )
     }
 }
