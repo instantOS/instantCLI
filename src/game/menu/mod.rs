@@ -421,32 +421,6 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
                 // Return to menu after adding
                 continue;
             }
-            GameMenuEntry::BuildLaunchCommand => {
-                match crate::game::launch_builder::build_launch_command() {
-                    Ok(Some(command)) => {
-                        // Show the generated command and offer to copy
-                        let message = format!(
-                            "{} Launch Command Built!\n\n{}\n\n\
-                             You can use this as a launch command when adding a game,\n\
-                             or set it in the Edit menu for an existing game.",
-                            char::from(NerdFont::Check),
-                            command
-                        );
-                        FzfWrapper::message(&message)?;
-                    }
-                    Ok(None) => {
-                        // User cancelled
-                    }
-                    Err(e) => {
-                        FzfWrapper::message(&format!(
-                            "{} Failed to build launch command: {}",
-                            char::from(NerdFont::CrossCircle),
-                            e
-                        ))?;
-                    }
-                }
-                continue;
-            }
             GameMenuEntry::SetupGames => {
                 setup::setup_uninstalled_games()?;
                 // Return to menu after setup
