@@ -351,9 +351,23 @@ fn edit_game_launch_command(state: &mut EditState) -> Result<bool> {
             .run()
         }
         LaunchCommandInputMethod::Remove => {
-            state.game_mut().launch_command = None;
-            FzfWrapper::message("Launch command removed from games.toml")?;
-            Ok(true)
+            // Ask for confirmation before removing
+            match FzfWrapper::builder()
+                .confirm(&format!(
+                    "{} Remove launch command from games.toml?\n\nThis will remove the shared command used across all devices.",
+                    char::from(NerdFont::Trash)
+                ))
+                .yes_text("Remove Command")
+                .no_text("Keep Command")
+                .confirm_dialog()?
+            {
+                crate::menu_utils::ConfirmResult::Yes => {
+                    state.game_mut().launch_command = None;
+                    FzfWrapper::message("Launch command removed from games.toml")?;
+                    Ok(true)
+                }
+                crate::menu_utils::ConfirmResult::No | crate::menu_utils::ConfirmResult::Cancelled => Ok(false),
+            }
         }
         LaunchCommandInputMethod::Builder => {
             match crate::game::launch_builder::build_launch_command()? {
@@ -430,11 +444,25 @@ fn edit_installation_launch_command(state: &mut EditState) -> Result<bool> {
             .run()
         }
         LaunchCommandInputMethod::Remove => {
-            if let Some(installation) = state.installation_mut() {
-                installation.launch_command = None;
+            // Ask for confirmation before removing
+            match FzfWrapper::builder()
+                .confirm(&format!(
+                    "{} Remove launch command override from installations.toml?\n\nThis will remove the device-specific override.",
+                    char::from(NerdFont::Trash)
+                ))
+                .yes_text("Remove Override")
+                .no_text("Keep Override")
+                .confirm_dialog()?
+            {
+                crate::menu_utils::ConfirmResult::Yes => {
+                    if let Some(installation) = state.installation_mut() {
+                        installation.launch_command = None;
+                    }
+                    FzfWrapper::message("Launch command override removed from installations.toml")?;
+                    Ok(true)
+                }
+                crate::menu_utils::ConfirmResult::No | crate::menu_utils::ConfirmResult::Cancelled => Ok(false),
             }
-            FzfWrapper::message("Launch command override removed from installations.toml")?;
-            Ok(true)
         }
         LaunchCommandInputMethod::Builder => {
             match crate::game::launch_builder::build_launch_command()? {
