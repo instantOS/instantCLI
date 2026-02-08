@@ -8,13 +8,14 @@ use crate::game::config::{InstallationsConfig, InstantGameConfig};
 use crate::game::games::manager::AddGameOptions;
 use crate::game::games::manager::GameManager;
 use crate::game::games::selection::{GameMenuEntry, select_game_menu_entry};
+use crate::game::launch_builder::build_launch_command;
 use crate::game::operations::launch_game;
 use crate::game::operations::steam;
 use crate::game::operations::sync::sync_game_saves;
 use crate::game::restic;
 use crate::game::setup;
 use crate::menu::protocol::FzfPreview;
-use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
+use crate::menu_utils::{ConfirmResult, FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -297,11 +298,57 @@ fn handle_action(
     match action {
         GameAction::Launch => {
             if state.launch_command.is_none() {
-                FzfWrapper::message(&format!(
-                    "No launch command configured for '{}'.\n\nUse Edit to set a launch command first.",
-                    game_name
-                ))?;
-                return Ok(ActionResult::Stay);
+                // Offer to build a launch command
+                match FzfWrapper::builder()
+                    .confirm(&format!(
+                        "{} No launch command configured for '{}'.\n\n\
+                         Would you like to build one now?",
+                        char::from(NerdFont::Warning),
+                        game_name
+                    ))
+                    .yes_text("Build Launch Command")
+                    .no_text("Cancel")
+                    .confirm_dialog()?
+                {
+                    ConfirmResult::Yes => {
+                        // Build launch command interactively
+                        match build_launch_command()? {
+                            Some(cmd) => {
+                                // Save the launch command to the installation config
+                                let mut installations = state.installations.clone();
+                                let installation = installations
+                                    .installations
+                                    .iter_mut()
+                                    .find(|i| i.game_name.0 == game_name);
+
+                                if let Some(installation) = installation {
+                                    installation.launch_command = Some(cmd.clone());
+                                    installations.save()?;
+                                    FzfWrapper::message(&format!(
+                                        "{} Launch command saved for '{}'.\n\n\
+                                         Command: {}\n\nLaunching game now...",
+                                        char::from(NerdFont::Check),
+                                        game_name,
+                                        cmd
+                                    ))?;
+                                } else {
+                                    FzfWrapper::message(&format!(
+                                        "{} No installation found for '{}'.\n\n\
+                                         Cannot save launch command. Please run Setup first.",
+                                        char::from(NerdFont::CrossCircle),
+                                        game_name
+                                    ))?;
+                                    return Ok(ActionResult::Stay);
+                                }
+                            }
+                            None => {
+                                FzfWrapper::message("Launch command building cancelled.")?;
+                                return Ok(ActionResult::Stay);
+                            }
+                        }
+                    }
+                    ConfirmResult::No | ConfirmResult::Cancelled => return Ok(ActionResult::Stay),
+                }
             }
             if state.needs_setup {
                 FzfWrapper::message(&format!(
