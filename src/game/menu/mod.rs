@@ -151,11 +151,14 @@ fn build_action_menu(game_name: &str, state: &GameState) -> Vec<GameActionItem> 
         if let Some(cmd) = &state.launch_command {
             builder = builder.blank().field("Command", cmd);
         } else {
-            builder = builder.blank().line(
-                colors::YELLOW,
-                Some(NerdFont::Warning),
-                "No launch command configured. Use Edit to set one.",
-            );
+            builder = builder
+                .blank()
+                .line(
+                    colors::YELLOW,
+                    Some(NerdFont::Warning),
+                    "No launch command configured.",
+                )
+                .subtext("Pressing Launch will offer to build one.");
         }
         builder.build()
     };

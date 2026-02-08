@@ -18,6 +18,8 @@ use super::state::EditState;
 enum LaunchCommandInputMethod {
     Manual,
     Builder,
+    CopyFromOther,
+    Remove,
     Cancel,
 }
 
@@ -42,11 +44,20 @@ impl FzfSelectable for InputMethodItem {
     }
 }
 
+/// Info about the "other" launch command source, used to offer copying
+struct OtherCommandInfo<'a> {
+    command: &'a str,
+    source_label: &'a str,
+}
+
 /// Show a menu to choose between manual input or command builder
-fn select_launch_command_input_method(current: Option<&str>) -> Result<LaunchCommandInputMethod> {
+fn select_launch_command_input_method(
+    current: Option<&str>,
+    other: Option<OtherCommandInfo<'_>>,
+) -> Result<LaunchCommandInputMethod> {
     let current_display = current.unwrap_or("<not set>");
 
-    let items = vec![
+    let mut items = vec![
         InputMethodItem {
             display: format!(
                 "{} Type command manually",
@@ -83,15 +94,60 @@ fn select_launch_command_input_method(current: Option<&str>) -> Result<LaunchCom
                 .build(),
             method: LaunchCommandInputMethod::Builder,
         },
-        InputMethodItem {
-            display: format!("{} Cancel", format_back_icon()),
-            preview: PreviewBuilder::new()
-                .header(NerdFont::ArrowLeft, "Cancel")
-                .text("Return without making changes.")
-                .build(),
-            method: LaunchCommandInputMethod::Cancel,
-        },
     ];
+
+    if current.is_some() {
+        items.push(InputMethodItem {
+            display: format!(
+                "{} Remove command",
+                format_icon_colored(NerdFont::Trash, colors::RED)
+            ),
+            preview: PreviewBuilder::new()
+                .header(NerdFont::Trash, "Remove Command")
+                .text("Clear the current launch command.")
+                .blank()
+                .field("Current", current_display)
+                .build(),
+            method: LaunchCommandInputMethod::Remove,
+        });
+    }
+
+    if let Some(ref info) = other {
+        if current.is_none() {
+            items.push(InputMethodItem {
+                display: format!(
+                    "{} Copy from {}",
+                    format_icon_colored(NerdFont::Clipboard, colors::GREEN),
+                    info.source_label,
+                ),
+                preview: PreviewBuilder::new()
+                    .header(
+                        NerdFont::Clipboard,
+                        &format!("Copy from {}", info.source_label),
+                    )
+                    .text(&format!(
+                        "Use the {} command as a starting point.",
+                        info.source_label,
+                    ))
+                    .blank()
+                    .field("Command", info.command)
+                    .blank()
+                    .text("The command will be copied into the editor")
+                    .text("so you can use it as-is or adjust it.")
+                    .build(),
+                method: LaunchCommandInputMethod::CopyFromOther,
+            });
+        }
+    }
+
+    items.push(InputMethodItem {
+        display: format!("{} Cancel", format_back_icon()),
+        preview: PreviewBuilder::new()
+            .header(NerdFont::ArrowLeft, "Cancel")
+            .text("Return without making changes.")
+            .build(),
+        method: LaunchCommandInputMethod::Cancel,
+    });
 
     let result = FzfWrapper::builder()
         .header(Header::fancy("How do you want to set the launch command?"))
@@ -257,8 +313,13 @@ fn edit_game_launch_command(state: &mut EditState) -> Result<bool> {
     let current_owned = state.game().launch_command.clone();
     let current = current_owned.as_deref();
 
-    // Offer choice between manual input or command builder
-    match select_launch_command_input_method(current)? {
+    let inst_cmd_owned = state.installation().and_then(|i| i.launch_command.clone());
+    let other = inst_cmd_owned.as_deref().map(|cmd| OtherCommandInfo {
+        command: cmd,
+        source_label: "device-specific override",
+    });
+
+    match select_launch_command_input_method(current, other)? {
         LaunchCommandInputMethod::Manual => {
             let header = format!("Current command: {}", current.unwrap_or("<not set>"));
             OptionalTextEditor::new(
@@ -271,6 +332,28 @@ fn edit_game_launch_command(state: &mut EditState) -> Result<bool> {
             )
             .suffix("in games.toml")
             .run()
+        }
+        LaunchCommandInputMethod::CopyFromOther => {
+            let source = inst_cmd_owned.as_deref();
+            let header = format!(
+                "Copied from device-specific override: {}",
+                source.unwrap_or("<not set>")
+            );
+            OptionalTextEditor::new(
+                TextEditPrompt::new("Launch command", source)
+                    .header(header)
+                    .ghost("Leave empty to cancel"),
+                None,
+                "Launch command",
+                |value| state.game_mut().launch_command = value,
+            )
+            .suffix("in games.toml")
+            .run()
+        }
+        LaunchCommandInputMethod::Remove => {
+            state.game_mut().launch_command = None;
+            FzfWrapper::message("Launch command removed from games.toml")?;
+            Ok(true)
         }
         LaunchCommandInputMethod::Builder => {
             match crate::game::launch_builder::build_launch_command()? {
@@ -301,8 +384,13 @@ fn edit_installation_launch_command(state: &mut EditState) -> Result<bool> {
         .and_then(|install| install.launch_command.clone());
     let current = current_owned.as_deref();
 
-    // Offer choice between manual input or command builder
-    match select_launch_command_input_method(current)? {
+    let game_cmd_owned = state.game().launch_command.clone();
+    let other = game_cmd_owned.as_deref().map(|cmd| OtherCommandInfo {
+        command: cmd,
+        source_label: "shared command",
+    });
+
+    match select_launch_command_input_method(current, other)? {
         LaunchCommandInputMethod::Manual => {
             let header = format!("Current override: {}", current.unwrap_or("<not set>"));
             OptionalTextEditor::new(
@@ -319,6 +407,34 @@ fn edit_installation_launch_command(state: &mut EditState) -> Result<bool> {
             )
             .suffix("in installations.toml")
             .run()
+        }
+        LaunchCommandInputMethod::CopyFromOther => {
+            let source = game_cmd_owned.as_deref();
+            let header = format!(
+                "Copied from shared command: {}",
+                source.unwrap_or("<not set>")
+            );
+            OptionalTextEditor::new(
+                TextEditPrompt::new("Launch command override", source)
+                    .header(header)
+                    .ghost("Leave empty to cancel"),
+                None,
+                "Launch command override",
+                |value| {
+                    if let Some(installation) = state.installation_mut() {
+                        installation.launch_command = value;
+                    }
+                },
+            )
+            .suffix("in installations.toml")
+            .run()
+        }
+        LaunchCommandInputMethod::Remove => {
+            if let Some(installation) = state.installation_mut() {
+                installation.launch_command = None;
+            }
+            FzfWrapper::message("Launch command override removed from installations.toml")?;
+            Ok(true)
         }
         LaunchCommandInputMethod::Builder => {
             match crate::game::launch_builder::build_launch_command()? {
