@@ -273,6 +273,12 @@ pub enum NerdFont {
 
     // Weather and Temperature
     Snowflake,
+
+    // Gaming and Emulation
+    Disc,
+    Windows,
+    Fullscreen,
+    Fish,
 }
 
 impl NerdFont {
@@ -546,6 +552,12 @@ impl NerdFont {
 
             // Weather and Temperature
             Self::Snowflake => '󰼶', // md-snowflake (freeze)
+
+            // Gaming and Emulation
+            Self::Disc => '󰗮',        // md-disc (CD/DVD disc)
+            Self::Windows => '\u{f17a}', // fa-windows
+            Self::Fullscreen => '\u{f065}', // fa-expand (fullscreen)
+            Self::Fish => '󰈺',        // md-fish (dolphin)
         }
     }
 }

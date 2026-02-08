@@ -13,6 +13,7 @@ use anyhow::{Context, Result};
 pub enum GameMenuEntry {
     Game(String, bool), // name, is_installed (has local installation)
     AddGame,
+    BuildLaunchCommand,
     SetupGames,
     SyncAll,
     CloseMenu,
@@ -40,6 +41,12 @@ impl FzfSelectable for GameMenuEntry {
                     format_icon_colored(NerdFont::Plus, colors::GREEN)
                 )
             }
+            GameMenuEntry::BuildLaunchCommand => {
+                format!(
+                    "{} Build Launch Command",
+                    format_icon_colored(NerdFont::Rocket, colors::MAUVE)
+                )
+            }
             GameMenuEntry::SetupGames => {
                 format!(
                     "{} Set Up Existing Games",
@@ -60,6 +67,7 @@ impl FzfSelectable for GameMenuEntry {
         match self {
             GameMenuEntry::Game(name, _) => name.clone(),
             GameMenuEntry::AddGame => "!__add_game__".to_string(),
+            GameMenuEntry::BuildLaunchCommand => "!__build_launch_command__".to_string(),
             GameMenuEntry::SetupGames => "!__setup_games__".to_string(),
             GameMenuEntry::SyncAll => "!__sync_all__".to_string(),
             GameMenuEntry::CloseMenu => "!__close_menu__".to_string(),
@@ -101,6 +109,18 @@ impl FzfSelectable for GameMenuEntry {
                 .bullet("Setting a game name and description")
                 .bullet("Configuring the launch command")
                 .bullet("Selecting the save data location")
+                .build(),
+            GameMenuEntry::BuildLaunchCommand => PreviewBuilder::new()
+                .header(NerdFont::Rocket, "Build Launch Command")
+                .text("Interactively build a launch command.")
+                .blank()
+                .text("Supported launchers:")
+                .bullet("umu-run - Wine/Proton games")
+                .bullet("Eden - Nintendo Switch emulator")
+                .bullet("Dolphin Flatpak - GameCube/Wii emulator")
+                .blank()
+                .text("The builder will validate files and")
+                .text("generate a ready-to-use command.")
                 .build(),
             GameMenuEntry::SetupGames => PreviewBuilder::new()
                 .header(NerdFont::Wrench, "Set Up Existing Games")
@@ -332,6 +352,7 @@ pub fn select_game_menu_entry(cursor: &mut MenuCursor) -> Result<Option<GameMenu
     // Build menu entries: special actions first, then games
     let mut entries = vec![
         GameMenuEntry::AddGame,
+        GameMenuEntry::BuildLaunchCommand,
         GameMenuEntry::SetupGames,
         GameMenuEntry::SyncAll,
         GameMenuEntry::CloseMenu,

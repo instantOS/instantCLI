@@ -366,9 +366,10 @@ mod tests {
 
     #[test]
     fn test_game_installation_update_checkpoint() {
-        let mut installation = GameInstallation::new(
+        let mut installation = GameInstallation::with_kind(
             GameName("test_game".to_string()),
             TildePath::new(PathBuf::from("~/.test/saves")),
+            PathContentKind::Directory,
         );
 
         installation.update_checkpoint("checkpoint456");

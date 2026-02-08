@@ -456,7 +456,7 @@ layout = "monocle"
             data: SettingsFile::default(),
         };
 
-        assert!(store.is_empty());
+        assert!(store.data.sections.is_empty());
 
         let key = BoolSettingKey::new("test.key", true);
         assert!(store.bool(key)); // Should return default

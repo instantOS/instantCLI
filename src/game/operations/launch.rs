@@ -237,8 +237,11 @@ mod tests {
     }
 
     fn installation(name: &str, launch_command: Option<&str>) -> GameInstallation {
-        let mut inst =
-            GameInstallation::new(name, TildePath::new(PathBuf::from("/tmp/instantcli-tests")));
+        let mut inst = GameInstallation::with_kind(
+            name,
+            TildePath::new(PathBuf::from("/tmp/instantcli-tests")),
+            crate::game::config::PathContentKind::Directory,
+        );
         inst.launch_command = launch_command.map(|cmd| cmd.to_string());
         inst
     }
