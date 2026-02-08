@@ -3,6 +3,7 @@ use anyhow::Result;
 use crate::menu_utils::{ConfirmResult, FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
+use crate::ui::preview::PreviewBuilder;
 
 use super::editors;
 use super::state::EditState;
@@ -233,18 +234,18 @@ fn build_menu_items(state: &EditState) -> Vec<MenuItem> {
         ("<not set>", "not configured")
     };
 
-    let launch_preview = format!(
-        "Effective command: {}\nSource: {}\n\n",
-        effective_cmd, cmd_source
-    ) + &if let Some(gcmd) = game_cmd {
-        format!("games.toml: {}\n", gcmd)
-    } else {
-        "games.toml: <not set>\n".to_string()
-    } + &if let Some(icmd) = inst_cmd {
-        format!("installations.toml: {}\n", icmd)
-    } else {
-        "installations.toml: <not set>\n".to_string()
-    } + "\nThe installation-specific command overrides the shared command if both are set.";
+    let launch_preview = PreviewBuilder::new()
+        .header(NerdFont::Rocket, "Launch Command")
+        .field("Effective command", effective_cmd)
+        .field("Source", cmd_source)
+        .blank()
+        .separator()
+        .blank()
+        .field("games.toml", game_cmd.unwrap_or("<not set>"))
+        .field("installations.toml", inst_cmd.unwrap_or("<not set>"))
+        .blank()
+        .subtext("The installation-specific command overrides the shared command if both are set.")
+        .build_string();
 
     items.push(MenuItem::new(
         format!(
@@ -263,12 +264,20 @@ fn build_menu_items(state: &EditState) -> Vec<MenuItem> {
             .to_tilde_string()
             .unwrap_or_else(|_| inst.save_path.as_path().to_string_lossy().to_string());
 
+        let save_preview = PreviewBuilder::new()
+            .header(NerdFont::Folder, "Save Path")
+            .field("Path", &save_path_str)
+            .blank()
+            .subtext("Edit the save path in installations.toml (device-specific)")
+            .build_string();
+
         items.push(MenuItem::new(
-            format!("{} Save Path: {}", format_icon_colored(NerdFont::Folder, colors::LAVENDER), save_path_str),
             format!(
-                "Current save path: {}\n\nEdit the save path in installations.toml (device-specific)",
+                "{} Save Path: {}",
+                format_icon_colored(NerdFont::Folder, colors::LAVENDER),
                 save_path_str
             ),
+            save_preview,
             MenuAction::EditSavePath,
         ));
     }
