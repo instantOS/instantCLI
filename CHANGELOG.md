@@ -7,6 +7,130 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.6](https://github.com/instantOS/instantCLI/compare/v0.13.5...v0.13.6) - 2026-02-08
+
+### Fixed
+
+- fix mouse sensitivity
+- fix video project thingy
+- fix
+- fix
+- fix missing audio
+- fix math in reels mode
+- fix
+- fix b-roll not playing frames
+- fix sway picker
+- fix toggle
+- fix silence parsing
+- fix
+- fix plymouth application
+- fix fzf wrapper
+- fix yes/no menu
+- fix modified detection
+
+### Other
+
+- init ability to remove from steam
+- better previews
+- ask for confirmation
+- offer command removal
+- better game menu setup flow
+- case insensitive appimage search
+- init `add to steam` support
+- azahar support for ins game
+- more clippy
+- make use of transform abstraction
+- cleaner OS detection
+- make clippy happy
+- less duplication
+- add duckstation/mgba support to ins game launch
+- init PCSX2
+- update location
+- init launch builder
+- refactor package install
+- remove unused field
+- remove unused shit
+- faster hashing algorithm
+- better locale preview
+- type safe sliders
+- add ability to create a group
+- better previews
+- better sudo remove warning
+- add sudoers setting
+- more keywords, pacman cache clear option
+- more refactor
+- init refactor
+- better normalize
+- use podcast preset
+- make normalization more aggressive
+- improve title scaling
+- init removal of separate title handling
+- make b-roll distinguishable
+- more b-roll tests
+- change how broll works
+- fmt
+- Merge branch 'dev' of github.com:instantOS/instantCLI into dev
+- merge refactor
+- better menu
+- add subtitle support for standard mode
+- more display traits
+- better sink flow
+- implement display for some enums
+- better preprocessor preview
+- fmt
+- better vidoe name conflict resolution
+- better flow
+- add recording option
+- better menu flow
+- better video preview
+- video menu refactor
+- restructure video menu
+- change from : to @ for sources
+- remove legacy frontmatter support
+- init ffmpeg compile work
+- more multi source support
+- cli commands for multi source
+- init support for multiple video sources
+- file picker previews
+- add path suggestions to picker
+- init video menu
+- init units menu
+- remove dead code
+- allow overlapping units
+- refactor flatpak installer
+- add unit support to `ins status`
+- refactor grub handling
+- refactor mkinitcpio requirements
+- add flatpak dep
+- refactor ask command
+- init detection of existing answers
+- move out previews
+- more consistent error handling
+- make ins arch use correct wrapper
+- init review menu previews
+- better settings location
+- remove old mod
+- better positioning
+- init screen freeze thingy
+- refactor recording source settings
+- refactor ins assist mode generation
+- refactor sway setup
+- refactor dotfile source detection
+- refactor keychord TUI
+- refactor yazi run
+- more keywords
+- better snap search
+- Merge branch 'dev' of github.com:instantOS/instantCLI into dev
+- init snap support
+- refactor swapescape and args
+- refactor mirror
+- add ability to mirror
+- init better x11 mirroring
+- init X11 support for display mirror
+- add x11 support for screen recordings
+- init ffmpeg dep
+- better lang preview
+
 ## [0.13.5](https://github.com/instantOS/instantCLI/compare/v0.13.4...v0.13.5) - 2026-01-29
 
 ### Fixed
