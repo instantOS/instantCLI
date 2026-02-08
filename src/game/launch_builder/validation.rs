@@ -11,6 +11,12 @@ pub const DOLPHIN_EXTENSIONS: &[&str] = &["iso", "wbfs", "gcm", "ciso", "gcz", "
 /// Valid file extensions for PCSX2 (PlayStation 2) games
 pub const PCSX2_EXTENSIONS: &[&str] = &["iso", "bin", "chd", "cso", "gz", "elf", "irx"];
 
+/// Valid file extensions for mGBA (Game Boy Advance) games
+pub const MGBA_EXTENSIONS: &[&str] = &["gba", "gb", "gbc", "sgb", "zip", "7z"];
+
+/// Valid file extensions for DuckStation (PlayStation 1) games
+pub const DUCKSTATION_EXTENSIONS: &[&str] = &["bin", "cue", "iso", "img", "chd", "pbp", "ecm", "mds", "psf", "minipsf", "m3u"];
+
 /// Valid file extensions for Windows executables (umu-run)
 pub const WINDOWS_EXTENSIONS: &[&str] = &["exe", "msi", "bat"];
 
@@ -111,6 +117,48 @@ pub fn validate_pcsx2_file(path: &Path) -> Result<(), String> {
         return Err(format!(
             "Invalid file type for PCSX2. Expected: {}\nGot: {}",
             format_valid_extensions(PCSX2_EXTENSIONS),
+            path.display()
+        ));
+    }
+
+    Ok(())
+}
+
+/// Validate a file for mGBA emulator
+pub fn validate_mgba_file(path: &Path) -> Result<(), String> {
+    if !path.exists() {
+        return Err(format!("File does not exist: {}", path.display()));
+    }
+
+    if !path.is_file() {
+        return Err(format!("Path is not a file: {}", path.display()));
+    }
+
+    if !has_valid_extension(path, MGBA_EXTENSIONS) {
+        return Err(format!(
+            "Invalid file type for mGBA. Expected: {}\nGot: {}",
+            format_valid_extensions(MGBA_EXTENSIONS),
+            path.display()
+        ));
+    }
+
+    Ok(())
+}
+
+/// Validate a file for DuckStation emulator
+pub fn validate_duckstation_file(path: &Path) -> Result<(), String> {
+    if !path.exists() {
+        return Err(format!("File does not exist: {}", path.display()));
+    }
+
+    if !path.is_file() {
+        return Err(format!("Path is not a file: {}", path.display()));
+    }
+
+    if !has_valid_extension(path, DUCKSTATION_EXTENSIONS) {
+        return Err(format!(
+            "Invalid file type for DuckStation. Expected: {}\nGot: {}",
+            format_valid_extensions(DUCKSTATION_EXTENSIONS),
             path.display()
         ));
     }
