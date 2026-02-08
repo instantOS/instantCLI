@@ -112,32 +112,32 @@ fn select_launch_command_input_method(
         });
     }
 
-    if let Some(ref info) = other {
-        if current.is_none() {
-            items.push(InputMethodItem {
-                display: format!(
-                    "{} Copy from {}",
-                    format_icon_colored(NerdFont::Clipboard, colors::GREEN),
+    if let Some(ref info) = other
+        && current.is_none()
+    {
+        items.push(InputMethodItem {
+            display: format!(
+                "{} Copy from {}",
+                format_icon_colored(NerdFont::Clipboard, colors::GREEN),
+                info.source_label,
+            ),
+            preview: PreviewBuilder::new()
+                .header(
+                    NerdFont::Clipboard,
+                    &format!("Copy from {}", info.source_label),
+                )
+                .text(&format!(
+                    "Use the {} command as a starting point.",
                     info.source_label,
-                ),
-                preview: PreviewBuilder::new()
-                    .header(
-                        NerdFont::Clipboard,
-                        &format!("Copy from {}", info.source_label),
-                    )
-                    .text(&format!(
-                        "Use the {} command as a starting point.",
-                        info.source_label,
-                    ))
-                    .blank()
-                    .field("Command", info.command)
-                    .blank()
-                    .text("The command will be copied into the editor")
-                    .text("so you can use it as-is or adjust it.")
-                    .build(),
-                method: LaunchCommandInputMethod::CopyFromOther,
-            });
-        }
+                ))
+                .blank()
+                .field("Command", info.command)
+                .blank()
+                .text("The command will be copied into the editor")
+                .text("so you can use it as-is or adjust it.")
+                .build(),
+            method: LaunchCommandInputMethod::CopyFromOther,
+        });
     }
 
     items.push(InputMethodItem {
@@ -353,7 +353,7 @@ fn edit_game_launch_command(state: &mut EditState) -> Result<bool> {
         LaunchCommandInputMethod::Remove => {
             // Ask for confirmation before removing
             match FzfWrapper::builder()
-                .confirm(&format!(
+                .confirm(format!(
                     "{} Remove launch command from games.toml?\n\nThis will remove the shared command used across all devices.",
                     char::from(NerdFont::Trash)
                 ))
@@ -446,7 +446,7 @@ fn edit_installation_launch_command(state: &mut EditState) -> Result<bool> {
         LaunchCommandInputMethod::Remove => {
             // Ask for confirmation before removing
             match FzfWrapper::builder()
-                .confirm(&format!(
+                .confirm(format!(
                     "{} Remove launch command override from installations.toml?\n\nThis will remove the device-specific override.",
                     char::from(NerdFont::Trash)
                 ))

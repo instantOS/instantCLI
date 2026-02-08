@@ -10,6 +10,20 @@ use crate::ui::catppuccin::colors;
 use crate::ui::prelude::*;
 use anyhow::{Context, Result};
 
+/// Get the current system hostname
+fn get_current_hostname() -> Option<String> {
+    std::process::Command::new("hostname")
+        .output()
+        .ok()
+        .and_then(|output| {
+            if output.status.success() {
+                Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
+            } else {
+                None
+            }
+        })
+}
+
 impl FzfSelectable for Snapshot {
     fn fzf_display_text(&self) -> String {
         let date = format_date(&self.time);
@@ -31,7 +45,7 @@ impl FzfSelectable for Snapshot {
         let game_name =
             tags::extract_game_name_from_tags(&self.tags).unwrap_or_else(|| "unknown".to_string());
 
-        build_snapshot_preview(self, &game_name, None)
+        build_snapshot_preview(self, &game_name, None, None)
     }
 }
 
@@ -142,10 +156,15 @@ fn add_preview_statistics(
 }
 
 /// Add local save comparison section to preview builder
+//TODO: this function is too long, refactor
 fn add_preview_local_comparison(
     mut builder: PreviewBuilder,
     local_save_info: Option<&crate::game::utils::save_files::SaveDirectoryInfo>,
     snapshot_time: &str,
+    snapshot_hostname: &str,
+    snapshot_id: &str,
+    snapshot_short_id: &str,
+    nearest_checkpoint: Option<&str>,
 ) -> PreviewBuilder {
     builder = builder
         .blank()
@@ -172,6 +191,12 @@ fn add_preview_local_comparison(
 
                 builder = builder.blank();
 
+                let current_hostname = get_current_hostname();
+                let is_same_host = current_hostname.as_deref() == Some(snapshot_hostname);
+                let is_current_checkpoint = nearest_checkpoint
+                    .map(|id| id == snapshot_id || id == snapshot_short_id)
+                    .unwrap_or(false);
+
                 // Add comparison result with clear status indication
                 match compare_snapshot_vs_local(snapshot_time, local_time) {
                     Ok(TimeComparison::LocalNewer)
@@ -184,24 +209,62 @@ fn add_preview_local_comparison(
                             )
                             .subtext("Restoring would overwrite newer local saves");
                     }
-                    Ok(TimeComparison::SnapshotNewer)
-                    | Ok(TimeComparison::SnapshotNewerWithinTolerance(_)) => {
-                        builder = builder
-                            .line(
-                                colors::GREEN,
-                                Some(NerdFont::Check),
-                                "STATUS: SNAPSHOT IS NEWER",
-                            )
-                            .subtext("Safe to restore (backup contains newer data)");
+                    Ok(TimeComparison::SnapshotNewer) => {
+                        if is_current_checkpoint && is_same_host {
+                            builder = builder
+                                .line(colors::BLUE, Some(NerdFont::Check), "STATUS: CURRENT STATE")
+                                .subtext("This snapshot matches the current local state");
+                        } else if is_same_host {
+                            builder = builder
+                                .line(
+                                    colors::GREEN,
+                                    Some(NerdFont::Check),
+                                    "STATUS: LOCAL UNCHANGED",
+                                )
+                                .subtext("Local saves unmodified since this backup");
+                        } else {
+                            builder = builder
+                                .line(
+                                    colors::GREEN,
+                                    Some(NerdFont::Check),
+                                    "STATUS: SNAPSHOT IS NEWER",
+                                )
+                                .subtext("Safe to restore (backup contains newer data)");
+                        }
+                    }
+                    Ok(TimeComparison::SnapshotNewerWithinTolerance(_)) => {
+                        if is_current_checkpoint {
+                            builder = builder
+                                .line(colors::BLUE, Some(NerdFont::Check), "STATUS: CURRENT STATE")
+                                .subtext("This snapshot matches the current local state");
+                        } else if is_same_host {
+                            builder = builder
+                                .line(colors::BLUE, Some(NerdFont::Sync), "STATUS: SYNCHRONIZED")
+                                .subtext("Local saves match backup timestamp");
+                        } else {
+                            builder = builder
+                                .line(
+                                    colors::GREEN,
+                                    Some(NerdFont::Check),
+                                    "STATUS: SNAPSHOT IS NEWER",
+                                )
+                                .subtext("Safe to restore (backup contains newer data)");
+                        }
                     }
                     Ok(TimeComparison::Same) => {
-                        builder = builder
-                            .line(
-                                colors::BLUE,
-                                Some(NerdFont::Clock),
-                                "STATUS: TIMESTAMPS MATCH",
-                            )
-                            .subtext("Local saves match backup timestamp");
+                        if is_current_checkpoint {
+                            builder = builder
+                                .line(colors::BLUE, Some(NerdFont::Check), "STATUS: CURRENT STATE")
+                                .subtext("This snapshot matches the current local state");
+                        } else {
+                            builder = builder
+                                .line(
+                                    colors::BLUE,
+                                    Some(NerdFont::Clock),
+                                    "STATUS: TIMESTAMPS MATCH",
+                                )
+                                .subtext("Local saves match backup timestamp");
+                        }
                     }
                     Ok(TimeComparison::Error(msg)) => {
                         builder = builder
@@ -311,6 +374,7 @@ fn build_snapshot_preview(
     snapshot: &Snapshot,
     game_name: &str,
     local_save_info: Option<&crate::game::utils::save_files::SaveDirectoryInfo>,
+    nearest_checkpoint: Option<&str>,
 ) -> crate::menu::protocol::FzfPreview {
     let mut builder = PreviewBuilder::new();
 
@@ -319,7 +383,15 @@ fn build_snapshot_preview(
 
     // Local save comparison section (only if info provided)
     if local_save_info.is_some() {
-        builder = add_preview_local_comparison(builder, local_save_info, &snapshot.time);
+        builder = add_preview_local_comparison(
+            builder,
+            local_save_info,
+            &snapshot.time,
+            &snapshot.hostname,
+            &snapshot.id,
+            &snapshot.short_id,
+            nearest_checkpoint,
+        );
     }
 
     // File statistics
@@ -429,10 +501,13 @@ pub fn select_snapshot_interactive_with_local_comparison(
     }
 
     // Get local save information for comparison if installation is provided
-    let local_save_info = if let Some(install) = installation {
-        get_save_directory_info(install.save_path.as_path()).ok()
+    let (local_save_info, nearest_checkpoint) = if let Some(install) = installation {
+        (
+            get_save_directory_info(install.save_path.as_path()).ok(),
+            install.nearest_checkpoint.clone(),
+        )
     } else {
-        None
+        (None, None)
     };
 
     // Show selection prompt
@@ -443,6 +518,7 @@ pub fn select_snapshot_interactive_with_local_comparison(
             snapshot,
             local_save_info: local_save_info.clone(),
             game_name: game_name.to_string(),
+            nearest_checkpoint: nearest_checkpoint.clone(),
         })
         .collect();
 
@@ -469,6 +545,7 @@ pub struct EnhancedSnapshot {
     pub snapshot: Snapshot,
     pub local_save_info: Option<crate::game::utils::save_files::SaveDirectoryInfo>,
     pub game_name: String,
+    pub nearest_checkpoint: Option<String>,
 }
 
 impl FzfSelectable for EnhancedSnapshot {
@@ -512,6 +589,7 @@ impl FzfSelectable for EnhancedSnapshot {
             &self.snapshot,
             &self.game_name,
             self.local_save_info.as_ref(),
+            self.nearest_checkpoint.as_deref(),
         )
     }
 }

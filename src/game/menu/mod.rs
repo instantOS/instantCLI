@@ -315,7 +315,7 @@ fn handle_action(
             if state.launch_command.is_none() {
                 // Offer to build a launch command
                 match FzfWrapper::builder()
-                    .confirm(&format!(
+                    .confirm(format!(
                         "{} No launch command configured for '{}'.\n\n\
                          Would you like to build one now?",
                         char::from(NerdFont::Warning),
@@ -411,16 +411,17 @@ fn handle_action(
             let launch_cmd = state.launch_command.as_deref().unwrap_or("");
 
             if steam::is_game_in_steam(game_name).unwrap_or(false) {
-                match FzfWrapper::builder()
-                    .confirm(&format!(
+                if FzfWrapper::builder()
+                    .confirm(format!(
                         "'{}' is already in Steam.\n\nRemove it?",
                         game_name
                     ))
                     .yes_text("Remove from Steam")
                     .no_text("Keep it")
                     .confirm_dialog()?
+                    == ConfirmResult::Yes
                 {
-                    ConfirmResult::Yes => match steam::remove_game_from_steam(game_name) {
+                    match steam::remove_game_from_steam(game_name) {
                         Ok(true) => FzfWrapper::message(&format!(
                             "Removed '{}' from Steam.\n\nRestart Steam to update your library.",
                             game_name
@@ -432,8 +433,7 @@ fn handle_action(
                         Err(e) => {
                             FzfWrapper::message(&format!("Failed to remove from Steam: {}", e))?
                         }
-                    },
-                    _ => {}
+                    }
                 }
             } else {
                 match steam::add_game_to_steam(game_name, launch_cmd) {
