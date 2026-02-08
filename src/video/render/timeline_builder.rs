@@ -5,7 +5,7 @@ use anyhow::{Result, anyhow};
 use crate::video::document::VideoSource;
 use crate::video::planning::{BrollPlan, StandalonePlan, TimelinePlan, TimelinePlanItem};
 use crate::video::render::ffmpeg::services::{DefaultMusicSourceResolver, MusicSourceResolver};
-use crate::video::render::timeline::{Segment, Timeline, Transform};
+use crate::video::render::timeline::{Segment, Timeline};
 
 pub(super) trait SlideProvider {
     fn overlay_slide_image(&self, markdown: &str) -> Result<std::path::PathBuf>;
@@ -173,6 +173,7 @@ impl TimelineBuildState {
                 clip.start,
                 source.source.clone(),
                 clip.source_id.clone(),
+                None,
             );
             self.timeline.add_segment(segment);
             elapsed += clip_duration;
@@ -192,12 +193,7 @@ impl TimelineBuildState {
         generator: &dyn SlideProvider,
     ) -> Result<()> {
         let image_path = generator.overlay_slide_image(markdown)?;
-        let overlay_segment = Segment::new_image(
-            self.current_time,
-            duration,
-            image_path,
-            Some(Transform::with_scale(0.8)),
-        );
+        let overlay_segment = Segment::new_image(self.current_time, duration, image_path, None);
         self.timeline.add_segment(overlay_segment);
         Ok(())
     }

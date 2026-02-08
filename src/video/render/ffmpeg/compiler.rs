@@ -217,12 +217,19 @@ impl FfmpegCompiler {
     }
 
     fn build_overlay_frame_filters(&self, input_label: &str, output_label: &str) -> String {
-        let inner_width = (self.target_width as f64 * OVERLAY_FRAME_SCALE) as u32
-            - (OVERLAY_FRAME_BORDER_WIDTH * 2);
-        let inner_height = (self.target_height as f64 * OVERLAY_FRAME_SCALE) as u32
-            - (OVERLAY_FRAME_BORDER_WIDTH * 2);
-        let outer_width = (self.target_width as f64 * OVERLAY_FRAME_SCALE) as u32;
-        let outer_height = (self.target_height as f64 * OVERLAY_FRAME_SCALE) as u32;
+        self.build_scaled_overlay_filters(input_label, output_label, OVERLAY_FRAME_SCALE)
+    }
+
+    fn build_scaled_overlay_filters(
+        &self,
+        input_label: &str,
+        output_label: &str,
+        scale: f64,
+    ) -> String {
+        let outer_width = (self.target_width as f64 * scale) as u32;
+        let outer_height = (self.target_height as f64 * scale) as u32;
+        let inner_width = outer_width - (OVERLAY_FRAME_BORDER_WIDTH * 2);
+        let inner_height = outer_height - (OVERLAY_FRAME_BORDER_WIDTH * 2);
 
         format!(
             "[{input}]scale={iw}:{ih}:force_original_aspect_ratio=decrease,pad={iw}:{ih}:(ow-iw)/2:(oh-ih)/2:{background},setsar=1,pad={ow}:{oh}:(ow-iw)/2:(oh-ih)/2:{border}[{out}]",
@@ -235,6 +242,28 @@ impl FfmpegCompiler {
             border = OVERLAY_FRAME_BORDER_COLOR,
             out = output_label,
         )
+    }
+
+    fn compute_overlay_position(
+        &self,
+        transform: Option<&crate::video::render::timeline::Transform>,
+        overlay_width: u32,
+        overlay_height: u32,
+    ) -> (i32, i32) {
+        let base_x = (self.target_width as i32 - overlay_width as i32) / 2;
+        let base_y = if self.render_mode.requires_padding() {
+            ((self.target_height as i32 - overlay_height as i32) as f64 * 0.3) as i32
+        } else {
+            (self.target_height as i32 - overlay_height as i32) / 2
+        };
+
+        if let Some(t) = transform
+            && let Some((tx, ty)) = t.translate
+        {
+            (base_x + tx as i32, base_y + ty as i32)
+        } else {
+            (base_x, base_y)
+        }
     }
 
     fn build_base_track_filters(
@@ -411,6 +440,7 @@ impl FfmpegCompiler {
             let SegmentData::Broll {
                 start_time: source_start,
                 source_video,
+                transform,
                 ..
             } = &segment.data
             else {
@@ -429,8 +459,6 @@ impl FfmpegCompiler {
             let output_label = format!("broll_out_{idx}");
 
             let trim_end = source_start + segment.duration;
-            // Offset b-roll timestamps to match the main video timeline
-            // This ensures the overlay filter syncs frames correctly when using enable='between(t,...)'
             filters.push(format!(
                 "[{input}:v]trim=start={start}:end={end},setpts=PTS-STARTPTS+{offset}/TB[{out}]",
                 input = input_index,
@@ -440,17 +468,23 @@ impl FfmpegCompiler {
                 out = trimmed_label,
             ));
 
-            let scaled_broll = self.build_overlay_frame_filters(&trimmed_label, &scaled_label);
+            let scale_factor = transform
+                .as_ref()
+                .and_then(|t| t.scale)
+                .map(|s| s as f64)
+                .unwrap_or(OVERLAY_FRAME_SCALE);
+
+            let scaled_broll =
+                self.build_scaled_overlay_filters(&trimmed_label, &scaled_label, scale_factor);
             filters.push(scaled_broll);
 
             let enable_condition =
                 format!("between(t,{},{})", segment.start_time, segment.end_time());
 
-            // Center the scaled b-roll on the main video
-            let outer_width = (self.target_width as f64 * OVERLAY_FRAME_SCALE) as u32;
-            let outer_height = (self.target_height as f64 * OVERLAY_FRAME_SCALE) as u32;
-            let x_offset = (self.target_width - outer_width) / 2;
-            let y_offset = (self.target_height - outer_height) / 2;
+            let overlay_width = (self.target_width as f64 * scale_factor) as u32;
+            let overlay_height = (self.target_height as f64 * scale_factor) as u32;
+            let (x_offset, y_offset) =
+                self.compute_overlay_position(transform.as_ref(), overlay_width, overlay_height);
 
             filters.push(format!(
                 "[{video}][{broll}]overlay=x={x}:y={y}:enable='{condition}'[{output}]",
@@ -478,7 +512,11 @@ impl FfmpegCompiler {
         let mut current_video_label = input_label.to_string();
 
         for (idx, segment) in overlay_segments.iter().enumerate() {
-            let SegmentData::Image { source_image, .. } = &segment.data else {
+            let SegmentData::Image {
+                source_image,
+                transform,
+            } = &segment.data
+            else {
                 continue;
             };
 
@@ -499,29 +537,30 @@ impl FfmpegCompiler {
                 overlay = overlay_input,
             ));
 
-            let framed_overlay = self.build_overlay_frame_filters(&overlay_input, &overlay_label);
+            let scale_factor = transform
+                .as_ref()
+                .and_then(|t| t.scale)
+                .map(|s| s as f64)
+                .unwrap_or(OVERLAY_FRAME_SCALE);
+
+            let framed_overlay =
+                self.build_scaled_overlay_filters(&overlay_input, &overlay_label, scale_factor);
             filters.push(framed_overlay);
 
             let enable_condition =
                 format!("between(t,{},{})", segment.start_time, segment.end_time());
 
-            // Calculate overlay position based on render mode
-            // In reels mode: center overlay on full frame at 30% from top
-            // In standard mode: center in the frame
-            let y_position = if self.render_mode.requires_padding() {
-                // For reels: center overlay on full frame at 30% from top
-                // This leaves ~70% of frame below for subtitles
-                // Formula: (H - h) * 0.3
-                "(H-h)*0.3".to_string()
-            } else {
-                "(H-h)/2".to_string()
-            };
+            let overlay_width = (self.target_width as f64 * scale_factor) as u32;
+            let overlay_height = (self.target_height as f64 * scale_factor) as u32;
+            let (x_offset, y_offset) =
+                self.compute_overlay_position(transform.as_ref(), overlay_width, overlay_height);
 
             filters.push(format!(
-                "[{video}][{overlay}]overlay=x=(W-w)/2:y={y_pos}:enable='{condition}'[{output}]",
+                "[{video}][{overlay}]overlay=x={x}:y={y}:enable='{condition}'[{output}]",
                 video = current_video_label,
                 overlay = overlay_label,
-                y_pos = y_position,
+                x = x_offset,
+                y = y_offset,
                 condition = enable_condition,
                 output = output_label,
             ));

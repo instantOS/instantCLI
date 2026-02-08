@@ -74,6 +74,8 @@ pub enum SegmentData {
         source_video: PathBuf,
         /// Source identifier for finding the video file
         source_id: String,
+        /// Optional transform to apply to this b-roll segment
+        transform: Option<Transform>,
     },
 }
 
@@ -188,6 +190,7 @@ impl Segment {
         source_start: f64,
         source_video: PathBuf,
         source_id: String,
+        transform: Option<Transform>,
     ) -> Self {
         Segment {
             start_time,
@@ -196,6 +199,7 @@ impl Segment {
                 start_time: source_start,
                 source_video,
                 source_id,
+                transform,
             },
         }
     }
@@ -279,7 +283,7 @@ impl SegmentData {
             SegmentData::VideoSubset { transform, .. } => transform.as_ref(),
             SegmentData::Image { transform, .. } => transform.as_ref(),
             SegmentData::Music { .. } => None,
-            SegmentData::Broll { .. } => None,
+            SegmentData::Broll { transform, .. } => transform.as_ref(),
         }
     }
 }
