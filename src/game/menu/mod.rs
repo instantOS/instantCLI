@@ -53,6 +53,7 @@ struct GameActionItem {
     display: String,
     action: GameAction,
     preview: FzfPreview,
+    keywords: Vec<&'static str>,
 }
 
 impl FzfSelectable for GameActionItem {
@@ -66,6 +67,10 @@ impl FzfSelectable for GameActionItem {
 
     fn fzf_preview(&self) -> FzfPreview {
         self.preview.clone()
+    }
+
+    fn fzf_search_keywords(&self) -> &[&str] {
+        &self.keywords
     }
 }
 
@@ -139,6 +144,7 @@ fn build_action_menu(game_name: &str, state: &GameState) -> Vec<GameActionItem> 
                 .blank()
                 .text("This game is registered but has no save data location set up yet.")
                 .build(),
+            keywords: vec![],
         });
     }
 
@@ -170,6 +176,7 @@ fn build_action_menu(game_name: &str, state: &GameState) -> Vec<GameActionItem> 
         ),
         action: GameAction::Launch,
         preview: launch_preview,
+        keywords: vec![],
     });
 
     // Edit preview
@@ -208,6 +215,7 @@ fn build_action_menu(game_name: &str, state: &GameState) -> Vec<GameActionItem> 
         ),
         action: GameAction::Edit,
         preview: edit_preview,
+        keywords: vec![],
     });
 
     // Move option - only show if game has a save path configured
@@ -228,6 +236,7 @@ fn build_action_menu(game_name: &str, state: &GameState) -> Vec<GameActionItem> 
                     .blank()
                     .field("Current path", path)
                     .build(),
+                keywords: vec![],
             });
         }
 
@@ -247,6 +256,7 @@ fn build_action_menu(game_name: &str, state: &GameState) -> Vec<GameActionItem> 
                 .text("View all available snapshots and select one to restore.")
                 .text("If local saves are newer, you will be warned before overwriting.")
                 .build(),
+            keywords: vec!["snapshot"],
         });
     }
 
@@ -281,6 +291,7 @@ fn build_action_menu(game_name: &str, state: &GameState) -> Vec<GameActionItem> 
                 .blank()
                 .subtext("Steam must not be running when modifying shortcuts.")
                 .build(),
+            keywords: vec![],
         });
     }
 
@@ -291,6 +302,7 @@ fn build_action_menu(game_name: &str, state: &GameState) -> Vec<GameActionItem> 
             .header(NerdFont::ArrowLeft, "Back")
             .text("Return to game selection.")
             .build(),
+        keywords: vec![],
     });
 
     actions
