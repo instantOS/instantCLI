@@ -6,6 +6,7 @@ mod clone;
 mod fuzzy;
 mod github;
 mod install;
+mod menu;
 mod package;
 mod setup;
 
@@ -20,17 +21,20 @@ pub enum DevCommands {
     Install,
     /// Setup development environment (Arch live ISO)
     Setup,
+    /// Interactive dev menu (guided workflows)
+    Menu,
 }
 
 pub async fn handle_dev_command(command: DevCommands, debug: bool) -> Result<()> {
     match command {
-        DevCommands::Clone => handle_clone(debug).await,
+        DevCommands::Clone => handle_clone_internal(debug).await,
         DevCommands::Install => handle_install(debug).await,
         DevCommands::Setup => setup::handle_setup(debug).await,
+        DevCommands::Menu => menu::dev_menu(debug).await,
     }
 }
 
-async fn handle_clone(debug: bool) -> Result<()> {
+async fn handle_clone_internal(debug: bool) -> Result<()> {
     if debug {
         eprintln!(
             "{} Fetching instantOS repositories...",
