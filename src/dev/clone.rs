@@ -11,14 +11,11 @@ pub enum CloneError {
 
     #[error("File system error: {0}")]
     FilesystemError(String),
-
-    #[error("Target directory already exists: {0}")]
-    DirectoryExists(String),
 }
 
-pub fn clone_repository(repo: &GitHubRepo, target_dir: &Path, _debug: bool) -> Result<()> {
+pub fn clone_or_pull_repository(repo: &GitHubRepo, target_dir: &Path, _debug: bool) -> Result<()> {
     if target_dir.exists() {
-        return Err(CloneError::DirectoryExists(target_dir.display().to_string()).into());
+        return pull_existing(repo, target_dir);
     }
 
     let pb = crate::common::progress::create_spinner(format!(
@@ -70,6 +67,68 @@ pub fn clone_repository(repo: &GitHubRepo, target_dir: &Path, _debug: bool) -> R
             &format!("{} {desc}", char::from(NerdFont::Info)),
             None,
         );
+    }
+
+    Ok(())
+}
+
+fn pull_existing(repo: &GitHubRepo, target_dir: &Path) -> Result<()> {
+    let pb = crate::common::progress::create_spinner(format!(
+        "Pulling latest changes for {}...",
+        repo.name
+    ));
+
+    let mut git_repo = git2::Repository::open(target_dir)
+        .context("Directory exists but is not a git repository")?;
+
+    let branch = git::current_branch(&git_repo).unwrap_or_else(|_| repo.default_branch.clone());
+
+    let result = git::fetch_branch(&mut git_repo, &branch);
+
+    match result {
+        Ok(()) => {
+            crate::common::progress::finish_spinner_with_success(
+                pb,
+                format!("Updated {}", repo.name),
+            );
+            emit(
+                Level::Success,
+                "dev.clone.pull_success",
+                &format!(
+                    "{} Pulled latest changes for {} ({})",
+                    char::from(NerdFont::Check),
+                    repo.name,
+                    target_dir.display()
+                ),
+                None,
+            );
+        }
+        Err(e) => {
+            crate::common::progress::finish_spinner_with_success(
+                pb,
+                format!("Fetch failed for {}", repo.name),
+            );
+            emit(
+                Level::Warn,
+                "dev.clone.pull_failed",
+                &format!(
+                    "{} Could not pull latest changes: {}",
+                    char::from(NerdFont::Warning),
+                    e
+                ),
+                None,
+            );
+            emit(
+                Level::Info,
+                "dev.clone.pull_path",
+                &format!(
+                    "{} Repository is at {}",
+                    char::from(NerdFont::Info),
+                    target_dir.display()
+                ),
+                None,
+            );
+        }
     }
 
     Ok(())
