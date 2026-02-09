@@ -8,7 +8,6 @@ use crate::game::config::{InstallationsConfig, InstantGameConfig};
 use crate::game::games::manager::AddGameOptions;
 use crate::game::games::manager::GameManager;
 use crate::game::games::selection::{GameMenuEntry, select_game_menu_entry};
-use crate::game::launch_builder::build_launch_command;
 use crate::game::operations::launch_game;
 use crate::game::operations::steam;
 use crate::game::operations::sync::sync_game_saves;
@@ -338,40 +337,17 @@ fn handle_action(
                     .confirm_dialog()?
                 {
                     ConfirmResult::Yes => {
-                        // Build launch command interactively
-                        match build_launch_command()? {
-                            Some(cmd) => {
-                                // Save the launch command to the installation config
-                                let mut installations = state.installations.clone();
-                                let installation = installations
-                                    .installations
-                                    .iter_mut()
-                                    .find(|i| i.game_name.0 == game_name);
-
-                                if let Some(installation) = installation {
-                                    installation.launch_command = Some(cmd.clone());
-                                    installations.save()?;
-                                    FzfWrapper::message(&format!(
-                                        "{} Launch command saved for '{}'.\n\n\
-                                         Command: {}\n\nLaunching game now...",
-                                        char::from(NerdFont::Check),
-                                        game_name,
-                                        cmd
-                                    ))?;
-                                } else {
-                                    FzfWrapper::message(&format!(
-                                        "{} No installation found for '{}'.\n\n\
-                                         Cannot save launch command. Please run Setup first.",
-                                        char::from(NerdFont::CrossCircle),
-                                        game_name
-                                    ))?;
-                                    return Ok(ActionResult::Stay);
-                                }
-                            }
-                            None => {
-                                FzfWrapper::message("Launch command building cancelled.")?;
-                                return Ok(ActionResult::Stay);
-                            }
+                        if run_edit_launch_command_for_game(
+                            game_name,
+                            &state.game_config,
+                            &state.installations,
+                        )? {
+                            FzfWrapper::message(&format!(
+                                "{} Launch command saved. Launching game now...",
+                                char::from(NerdFont::Check)
+                            ))?;
+                        } else {
+                            return Ok(ActionResult::Stay);
                         }
                     }
                     ConfirmResult::No | ConfirmResult::Cancelled => return Ok(ActionResult::Stay),
@@ -659,6 +635,38 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
 }
 
 /// Run the edit menu for a specific game
+/// Run the edit launch command menu for a specific game
+fn run_edit_launch_command_for_game(
+    game_name: &str,
+    game_config: &InstantGameConfig,
+    installations: &InstallationsConfig,
+) -> Result<bool> {
+    let game_index = game_config
+        .games
+        .iter()
+        .position(|g| g.name.0 == game_name)
+        .ok_or_else(|| anyhow!("Game '{}' not found in games.toml", game_name))?;
+
+    let installation_index = installations
+        .installations
+        .iter()
+        .position(|i| i.game_name.0 == game_name);
+
+    let mut state = EditState::new(
+        game_config.clone(),
+        installations.clone(),
+        game_index,
+        installation_index,
+    );
+
+    if editors::edit_launch_command(&mut state)? {
+        state.save()?;
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
 fn run_edit_menu_for_game(
     game_name: &str,
     game_config: &InstantGameConfig,
