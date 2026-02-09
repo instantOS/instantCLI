@@ -43,6 +43,30 @@ pub fn merge_dotfile(config: &Config, db: &Database, path: &str, verbose: bool) 
             .strip_prefix(&home)
             .unwrap_or(&dotfile.target_path);
 
+        // Check if the owning repo is read-only
+        let repo_name = get_repo_name_for_dotfile(dotfile, config);
+        let is_read_only = config
+            .repos
+            .iter()
+            .find(|r| r.name == repo_name.as_str())
+            .map(|r| r.read_only)
+            .unwrap_or(false);
+
+        if is_read_only {
+            emit(
+                Level::Info,
+                "dot.merge.read_only",
+                &format!(
+                    "{} Skipping read-only repository '{}' (~/{})",
+                    char::from(NerdFont::Lock),
+                    repo_name,
+                    relative_path.display()
+                ),
+                None,
+            );
+            continue;
+        }
+
         // Check if file is modified
         if dotfile.is_target_unmodified(db)? {
             unmodified_count += 1;
@@ -112,8 +136,6 @@ pub fn merge_dotfile(config: &Config, db: &Database, path: &str, verbose: bool) 
         let source_changed = new_source_hash != original_source_hash;
         let files_now_identical = dotfile.is_target_unmodified(db)?;
 
-        // Get repo info for git operations
-        let repo_name = get_repo_name_for_dotfile(dotfile, config);
         let repo_path = config.repos_path().join(repo_name.as_str());
 
         match (files_now_identical, source_changed) {
