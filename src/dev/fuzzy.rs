@@ -1,6 +1,9 @@
 use crate::dev::github::GitHubRepo;
 use crate::dev::package::Package;
-use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper};
+use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, Header};
+use crate::ui::catppuccin::{colors, format_icon_colored, fzf_mocha_args};
+use crate::ui::nerd_font::NerdFont;
+use crate::ui::preview::PreviewBuilder;
 use anyhow::Result;
 
 #[derive(thiserror::Error, Debug)]
@@ -18,7 +21,6 @@ pub enum FzfError {
     NoPackages,
 }
 
-/// Helper struct for GitHub repository selection
 #[derive(Debug, Clone)]
 pub struct GitHubRepoSelectItem {
     pub repo: GitHubRepo,
@@ -26,26 +28,41 @@ pub struct GitHubRepoSelectItem {
 
 impl FzfSelectable for GitHubRepoSelectItem {
     fn fzf_display_text(&self) -> String {
+        let desc = self.repo.description.as_deref().unwrap_or("No description");
         format!(
-            "{} - {}",
+            "{} {} - {}",
+            format_icon_colored(NerdFont::GitBranch, colors::MAUVE),
             self.repo.name,
-            self.repo.description.as_deref().unwrap_or("No description")
+            desc
         )
     }
 
     fn fzf_preview(&self) -> FzfPreview {
-        FzfPreview::Text(format!(
-            "Name: {}\nDescription: {}\nLanguage: {}\nStars: {}\nForks: {}",
-            self.repo.name,
-            self.repo.description.as_deref().unwrap_or("No description"),
-            self.repo.language.as_deref().unwrap_or("Not specified"),
-            self.repo.stargazers_count.unwrap_or(0),
-            self.repo.forks_count.unwrap_or(0)
-        ))
+        PreviewBuilder::new()
+            .header(NerdFont::GitBranch, &self.repo.name)
+            .text(
+                self.repo
+                    .description
+                    .as_deref()
+                    .unwrap_or("No description"),
+            )
+            .blank()
+            .field(
+                "Language",
+                self.repo.language.as_deref().unwrap_or("Not specified"),
+            )
+            .field(
+                "Stars",
+                &self.repo.stargazers_count.unwrap_or(0).to_string(),
+            )
+            .field(
+                "Forks",
+                &self.repo.forks_count.unwrap_or(0).to_string(),
+            )
+            .build()
     }
 }
 
-/// Helper struct for package selection
 #[derive(Debug, Clone)]
 pub struct PackageSelectItem {
     pub package: Package,
@@ -54,22 +71,33 @@ pub struct PackageSelectItem {
 impl FzfSelectable for PackageSelectItem {
     fn fzf_display_text(&self) -> String {
         if let Some(desc) = &self.package.description {
-            format!("{} - {}", self.package.name, desc)
+            format!(
+                "{} {} - {}",
+                format_icon_colored(NerdFont::Package, colors::SAPPHIRE),
+                self.package.name,
+                desc
+            )
         } else {
-            self.package.name.clone()
+            format!(
+                "{} {}",
+                format_icon_colored(NerdFont::Package, colors::SAPPHIRE),
+                self.package.name
+            )
         }
     }
 
     fn fzf_preview(&self) -> FzfPreview {
-        FzfPreview::Text(format!(
-            "Name: {}\nDescription: {}\nPath: {}",
-            self.package.name,
-            self.package
-                .description
-                .as_deref()
-                .unwrap_or("No description"),
-            self.package.path.display()
-        ))
+        PreviewBuilder::new()
+            .header(NerdFont::Package, &self.package.name)
+            .text(
+                self.package
+                    .description
+                    .as_deref()
+                    .unwrap_or("No description"),
+            )
+            .blank()
+            .field("Path", &self.package.path.display().to_string())
+            .build()
     }
 }
 
@@ -84,8 +112,10 @@ pub fn select_repository(repos: Vec<GitHubRepo>) -> Result<GitHubRepo, FzfError>
         .collect();
 
     match FzfWrapper::builder()
-        .prompt("Select instantOS repository to clone: ")
-        .args(["--reverse"])
+        .header(Header::fancy("Clone Repository"))
+        .prompt("Select")
+        .args(fzf_mocha_args())
+        .responsive_layout()
         .select(items)
         .map_err(|e| FzfError::FzfError(format!("Selection error: {e}")))?
     {
@@ -109,8 +139,10 @@ pub fn select_package(packages: Vec<Package>) -> Result<Package, FzfError> {
         .collect();
 
     match FzfWrapper::builder()
-        .prompt("Select instantOS package to install: ")
-        .args(["--reverse"])
+        .header(Header::fancy("Install Package"))
+        .prompt("Select")
+        .args(fzf_mocha_args())
+        .responsive_layout()
         .select(items)
         .map_err(|e| FzfError::FzfError(format!("Selection error: {e}")))?
     {
