@@ -311,27 +311,17 @@ pub fn render_snap_preview(ctx: &PreviewContext) -> Result<String> {
 fn render_snap_impl(package_info: &str) -> Result<String> {
     let parts: Vec<&str> = package_info.split('\t').collect();
 
-    if parts.len() >= 4 {
-        let name = parts[0];
-        let version = parts[1];
-        let publisher = parts[2];
-        let summary = parts[3];
+    // Extract package name from either tab-separated format or plain name
+    let name = if parts.len() >= 4 {
+        parts[0]
+    } else {
+        package_info
+            .split_whitespace()
+            .next()
+            .unwrap_or(package_info)
+    };
 
-        return Ok(PreviewBuilder::new()
-            .header(NerdFont::Package, name)
-            .line(colors::PEACH, None, "Snap Package")
-            .blank()
-            .field("Version", version)
-            .field("Publisher", publisher)
-            .blank()
-            .text(summary)
-            .build_string());
-    }
-
-    let name = package_info
-        .split_whitespace()
-        .next()
-        .unwrap_or(package_info);
+    // Fetch detailed info from snap store (async/on-demand)
     let output = cmd!("snap", "info", name)
         .stderr_null()
         .read()
@@ -351,18 +341,57 @@ fn render_snap_impl(package_info: &str) -> Result<String> {
         .line(colors::PEACH, None, "Snap Package")
         .blank();
 
+    let mut description = String::new();
+    let mut in_description = false;
+    let mut size = None;
+
     for line in output.lines() {
+        // Check for size in channels section (e.g., "latest/stable: 1.0 (100) 50MB -")
+        if line.contains("latest/stable:") && !line.starts_with("latest/stable:") {
+            if let Some(size_match) = line.split_whitespace().nth(3) {
+                if size_match.ends_with("B") {
+                    size = Some(size_match.to_string());
+                }
+            }
+        }
+
         if let Some((key, value)) = line.split_once(':') {
             let key = key.trim();
             let value = value.trim();
+
+            // Handle multi-line description
+            if key == "description" {
+                in_description = true;
+                if !value.is_empty() {
+                    description.push_str(value);
+                }
+                continue;
+            }
+
+            in_description = false;
+
             match key {
-                "Summary" => builder = builder.text(value),
-                "Version" => builder = builder.field("Version", value),
-                "Publisher" => builder = builder.field("Publisher", value),
-                "License" => builder = builder.field("License", value),
+                "summary" | "Summary" => builder = builder.text(value),
+                "version" | "Version" => builder = builder.field("Version", value),
+                "publisher" | "Publisher" => builder = builder.field("Publisher", value),
+                "license" | "License" => builder = builder.field("License", value),
+                "store-url" => builder = builder.field("Store URL", value),
                 _ => {}
             }
+        } else if in_description && !line.starts_with("channels:") {
+            description.push('\n');
+            description.push_str(line);
         }
+    }
+
+    // Add size if found
+    if let Some(s) = size {
+        builder = builder.field("Size", &s);
+    }
+
+    // Add description if we collected one
+    if !description.is_empty() {
+        builder = builder.blank().text(description.trim());
     }
 
     Ok(builder.build_string())
@@ -429,12 +458,25 @@ pub fn render_flatpak_preview(ctx: &PreviewContext) -> Result<String> {
 }
 
 fn render_flatpak_impl(package: &str) -> Result<String> {
-    let output = cmd!("flatpak", "info", package)
+    // Try to get remote info first (has size info for not-yet-installed apps)
+    let remote_output = cmd!("flatpak", "remote-info", "--system", "flathub", package)
         .stderr_null()
         .read()
-        .unwrap_or_default();
+        .ok()
+        .or_else(|| {
+            cmd!("flatpak", "remote-info", "--user", "flathub", package)
+                .stderr_null()
+                .read()
+                .ok()
+        });
 
-    if output.is_empty() {
+    // Also try to get local info if installed (has more detailed info)
+    let local_output = cmd!("flatpak", "info", package).stderr_null().read().ok();
+
+    // Use remote info as primary source, fallback to local
+    let output = remote_output.as_deref().or(local_output.as_deref());
+
+    if output.is_none() {
         return Ok(PreviewBuilder::new()
             .header(NerdFont::Package, package)
             .line(colors::PINK, None, "Flatpak Package")
@@ -445,9 +487,10 @@ fn render_flatpak_impl(package: &str) -> Result<String> {
 
     let mut builder = PreviewBuilder::new()
         .header(NerdFont::Package, package)
-        .line(colors::PINK, None, "Flatpak Package");
+        .line(colors::PINK, None, "Flatpak Package")
+        .blank();
 
-    for line in output.lines() {
+    for line in output.unwrap().lines() {
         if let Some((key, value)) = line.split_once(':') {
             let key = key.trim();
             let value = value.trim();
@@ -459,6 +502,11 @@ fn render_flatpak_impl(package: &str) -> Result<String> {
                 "Installation" => builder = builder.field("Installation", value),
                 "Installed" => builder = builder.field("Installed", value),
                 "Runtime" => builder = builder.field("Runtime", value),
+                "Version" => builder = builder.field("Version", value),
+                "License" => builder = builder.field("License", value),
+                // Include size fields from remote-info
+                "Download" => builder = builder.field("Download Size", value),
+                "Installed" => builder = builder.field("Installed Size", value),
                 _ => {
                     if line.starts_with("Description:") || line.starts_with("Summary:") {
                         builder = builder.text(value);
