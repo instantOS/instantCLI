@@ -1,18 +1,9 @@
 //! Preview system for FZF items
 
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use super::types::{FzfPreview, FzfSelectable};
-
-// UNUSED: Consider removing - not used anywhere in the codebase
-#[derive(Serialize, Deserialize)]
-struct PreviewData {
-    key: String,
-    preview_type: String,
-    preview_content: String,
-}
 
 pub struct PreviewUtils;
 

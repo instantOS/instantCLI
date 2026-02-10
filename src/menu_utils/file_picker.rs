@@ -249,15 +249,13 @@ impl FilePickerBuilder {
             return Ok(None);
         }
 
-        if let Some(first_invalid) = invalid_entries.first() {
-            let message = format!(
-                "`{}` is a file.\n\nPlease choose a directory instead.",
-                first_invalid.display()
-            );
-            FzfWrapper::message(&message)?;
-        } else {
-            FzfWrapper::message("A file was selected. Please choose a directory instead.")?;
-        }
+        // invalid_entries is guaranteed to be non-empty here due to the guard above
+        let first_invalid = invalid_entries.first().unwrap();
+        let message = format!(
+            "`{}` is a file.\n\nPlease choose a directory instead.",
+            first_invalid.display()
+        );
+        FzfWrapper::message(&message)?;
 
         Ok(invalid_entries.first().cloned())
     }
