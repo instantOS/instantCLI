@@ -125,12 +125,16 @@ fn configure_separator_mode(cmd: &mut Command) {
 /// (dimmed, skipped by up-match/down-match navigation).
 const SELECTABLE_MARKER: &str = "\u{2060}";
 
+struct FzfLineContext {
+    separator_mode: bool,
+}
+
 fn format_fzf_line(
     display: &str,
     key: &str,
     keywords: &str,
     extra_fields: &[&str],
-    separator_mode: bool,
+    ctx: &FzfLineContext,
     is_selectable: bool,
 ) -> String {
     // Shadow keywords: keep them in the visible line but push them off-screen.
@@ -143,7 +147,7 @@ fn format_fzf_line(
         format!("{display}{HIDDEN_PADDING}{keywords}")
     };
 
-    if separator_mode && is_selectable {
+    if ctx.separator_mode && is_selectable {
         display_with_shadow = format!("{SELECTABLE_MARKER}{display_with_shadow}");
     }
 
@@ -175,8 +179,9 @@ pub(crate) fn configure_preview_and_input(
         cmd.arg("--no-hscroll");
     }
 
+    let ctx = FzfLineContext { separator_mode };
     let fmt = |display: &str, key: &str, keywords: &str, selectable: bool, extra: &[&str]| {
-        format_fzf_line(display, key, keywords, extra, separator_mode, selectable)
+        format_fzf_line(display, key, keywords, extra, &ctx, selectable)
     };
 
     match strategy {
@@ -343,14 +348,9 @@ impl FzfWrapper {
         super::builder::FzfBuilder::new()
     }
 
-    pub(crate) fn new(
-        multi_select: bool,
-        prompt: Option<String>,
-        header: Option<Header>,
-        additional_args: Vec<String>,
-        initial_cursor: Option<InitialCursor>,
-        responsive_layout: bool,
-    ) -> Self {
+    pub(crate) fn from_builder(b: super::builder::FzfBuilder) -> Self {
+        let (multi_select, prompt, header, additional_args, initial_cursor, responsive_layout) =
+            b.into_wrapper_parts();
         Self {
             multi_select,
             prompt,

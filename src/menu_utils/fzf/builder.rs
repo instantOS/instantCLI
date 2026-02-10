@@ -124,6 +124,26 @@ impl FzfBuilder {
         }
     }
 
+    pub(crate) fn into_wrapper_parts(
+        self,
+    ) -> (
+        bool,
+        Option<String>,
+        Option<Header>,
+        Vec<String>,
+        Option<InitialCursor>,
+        bool,
+    ) {
+        (
+            self.multi_select,
+            self.prompt,
+            self.header,
+            self.additional_args,
+            self.initial_cursor,
+            self.responsive_layout,
+        )
+    }
+
     pub fn multi_select(mut self, multi: bool) -> Self {
         self.multi_select = multi;
         self
@@ -274,15 +294,7 @@ impl FzfBuilder {
     }
 
     pub fn select<T: FzfSelectable + Clone>(self, items: Vec<T>) -> Result<FzfResult<T>> {
-        let wrapper = FzfWrapper::new(
-            self.multi_select,
-            self.prompt,
-            self.header,
-            self.additional_args,
-            self.initial_cursor,
-            self.responsive_layout,
-        );
-        wrapper.select(items)
+        FzfWrapper::from_builder(self).select(items)
     }
 
     /// Select from a list that may contain `MenuItem::Separator` entries.
@@ -297,14 +309,7 @@ impl FzfBuilder {
     ) -> Result<FzfResult<T>> {
         use super::types::MenuItem;
 
-        let mut wrapper = FzfWrapper::new(
-            self.multi_select,
-            self.prompt,
-            self.header,
-            self.additional_args,
-            self.initial_cursor,
-            self.responsive_layout,
-        );
+        let mut wrapper = FzfWrapper::from_builder(self);
 
         loop {
             match wrapper.select(items.clone())? {
@@ -537,15 +542,7 @@ impl FzfBuilder {
     }
 
     pub fn select_streaming(self, command: &str) -> Result<FzfResult<String>> {
-        let wrapper = FzfWrapper::new(
-            self.multi_select,
-            self.prompt,
-            self.header,
-            self.additional_args,
-            self.initial_cursor,
-            self.responsive_layout,
-        );
-        wrapper.select_streaming(command)
+        FzfWrapper::from_builder(self).select_streaming(command)
     }
 
     pub fn input_dialog(self) -> Result<String> {
