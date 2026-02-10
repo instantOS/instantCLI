@@ -5,12 +5,12 @@ use anyhow::{Result, anyhow, bail};
 
 use crate::ui::prelude::Level;
 use crate::video::audio::{PreprocessorType, create_preprocessor};
-use crate::video::config::{VideoConfig, VideoDirectories};
+use crate::video::config::VideoConfig;
 use crate::video::document::VideoDocument;
 use crate::video::document::{VideoMetadata, VideoSource};
 use crate::video::render::logging::log_event;
 use crate::video::render::paths;
-use crate::video::support::utils::{canonicalize_existing, compute_file_hash};
+use crate::video::support::utils::canonicalize_existing;
 
 pub(super) fn resolve_source_path(path: &Path, markdown_dir: &Path) -> Result<PathBuf> {
     if path.is_absolute() {
@@ -104,51 +104,6 @@ pub(crate) async fn resolve_video_sources(
 }
 
 async fn resolve_audio_path(video_path: &Path, config: &VideoConfig) -> Result<PathBuf> {
-    log_event(
-        Level::Info,
-        "video.render.video.hash",
-        "Computing hash for cache lookup",
-    );
-
-    let video_hash = compute_file_hash(video_path)?;
-    let directories = VideoDirectories::new()?;
-    let project_paths = directories.project_paths(&video_hash);
-    let transcript_dir = project_paths.transcript_dir();
-
-    // Check for local preprocessed file (WAV) - Preferred
-    let local_processed_path = transcript_dir.join(format!("{}_local_processed.wav", video_hash));
-    if local_processed_path.exists() {
-        log_event(
-            Level::Info,
-            "video.render.audio",
-            format!(
-                "Using local preprocessed audio: {}",
-                local_processed_path.display()
-            ),
-        );
-        return Ok(local_processed_path);
-    }
-
-    // Check for Auphonic processed file (MP3) - Legacy/Alternative
-    let auphonic_processed_path =
-        transcript_dir.join(format!("{}_auphonic_processed.mp3", video_hash));
-
-    if auphonic_processed_path.exists() {
-        log_event(
-            Level::Info,
-            "video.render.audio",
-            format!(
-                "Using Auphonic processed audio: {}",
-                auphonic_processed_path.display()
-            ),
-        );
-        return Ok(auphonic_processed_path);
-    }
-
-    // No preprocessed audio found - run configured preprocessing
-    let preprocessor = create_preprocessor(&config.preprocessor, config);
-
-    // Skip preprocessing if configured to None
     if matches!(config.preprocessor, PreprocessorType::None) {
         log_event(
             Level::Info,
@@ -157,6 +112,8 @@ async fn resolve_audio_path(video_path: &Path, config: &VideoConfig) -> Result<P
         );
         return Ok(video_path.to_path_buf());
     }
+
+    let preprocessor = create_preprocessor(&config.preprocessor, config);
 
     if !preprocessor.is_available() {
         log_event(
@@ -170,21 +127,12 @@ async fn resolve_audio_path(video_path: &Path, config: &VideoConfig) -> Result<P
         return Ok(video_path.to_path_buf());
     }
 
-    log_event(
-        Level::Info,
-        "video.render.audio.preprocess",
-        format!(
-            "No preprocessed audio found. Running {} preprocessing...",
-            preprocessor.name()
-        ),
-    );
-
     let result = preprocessor.process(video_path, false).await?;
 
     log_event(
-        Level::Success,
+        Level::Info,
         "video.render.audio.preprocess",
-        format!("Preprocessed audio ready: {}", result.output_path.display()),
+        format!("Using preprocessed audio: {}", result.output_path.display()),
     );
 
     Ok(result.output_path)
