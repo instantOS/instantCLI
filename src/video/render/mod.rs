@@ -48,12 +48,15 @@ impl SlideProvider for SlideGenerator {
     }
 }
 
-pub async fn handle_render(args: RenderArgs) -> Result<()> {
+pub async fn handle_render(args: RenderArgs) -> Result<Option<PathBuf>> {
     let runner = SystemFfmpegRunner;
     handle_render_with_services(args, &runner).await
 }
 
-async fn handle_render_with_services(args: RenderArgs, runner: &dyn FfmpegRunner) -> Result<()> {
+async fn handle_render_with_services(
+    args: RenderArgs,
+    runner: &dyn FfmpegRunner,
+) -> Result<Option<PathBuf>> {
     let pre_cache_only = args.precache_slides;
     let dry_run = args.dry_run;
     let burn_subtitles = args.subtitles;
@@ -131,7 +134,7 @@ async fn handle_render_with_services(args: RenderArgs, runner: &dyn FfmpegRunner
             "video.render.precache_only",
             "Prepared slides in cache; skipping final render",
         );
-        return Ok(());
+        return Ok(None);
     }
 
     let Some(output_path) = output_path else {
@@ -183,7 +186,7 @@ async fn handle_render_with_services(args: RenderArgs, runner: &dyn FfmpegRunner
             "video.render.dry_run",
             "Dry run completed - ffmpeg command printed above",
         );
-        return Ok(());
+        return Ok(None);
     }
 
     log_event(
@@ -199,7 +202,7 @@ async fn handle_render_with_services(args: RenderArgs, runner: &dyn FfmpegRunner
         format!("Rendered edited timeline to {}", output_path.display()),
     );
 
-    Ok(())
+    Ok(Some(output_path))
 }
 
 fn report_timeline_stats(stats: &TimelineStats) {

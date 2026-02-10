@@ -1,6 +1,8 @@
 use anyhow::{Context, Result, anyhow, bail};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::time::Instant;
 
 use crate::menu_utils::{ConfirmResult, FzfPreview, FzfResult, FzfSelectable, FzfWrapper, Header};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
@@ -317,7 +319,8 @@ async fn run_render_for_project(markdown_path: &Path) -> Result<()> {
         }
     }
 
-    render::handle_render(RenderArgs {
+    let start = Instant::now();
+    let output_path = render::handle_render(RenderArgs {
         markdown: markdown_path.to_path_buf(),
         out_file,
         force,
@@ -326,7 +329,14 @@ async fn run_render_for_project(markdown_path: &Path) -> Result<()> {
         reels,
         subtitles,
     })
-    .await
+    .await?;
+
+    if let Some(output_path) = output_path {
+        let elapsed = start.elapsed();
+        show_post_render_menu(&output_path, elapsed)?;
+    }
+
+    Ok(())
 }
 
 fn run_clear_cache(markdown_path: &Path) -> Result<()> {
@@ -552,9 +562,121 @@ fn resolve_render_output_path(
     Ok(output)
 }
 
+fn format_render_duration(duration: std::time::Duration) -> String {
+    let total_secs = duration.as_secs();
+    let hours = total_secs / 3600;
+    let minutes = (total_secs % 3600) / 60;
+    let secs = total_secs % 60;
+
+    if hours > 0 {
+        format!("{hours}h {minutes}m {secs}s")
+    } else if minutes > 0 {
+        format!("{minutes}m {secs}s")
+    } else {
+        format!("{secs}s")
+    }
+}
+
+#[derive(Debug, Clone)]
+enum PostRenderAction {
+    OpenVideo,
+    OpenDirectory,
+    Done,
+}
+
+impl std::fmt::Display for PostRenderAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PostRenderAction::OpenVideo => write!(f, "!__open_video__"),
+            PostRenderAction::OpenDirectory => write!(f, "!__open_directory__"),
+            PostRenderAction::Done => write!(f, "!__done__"),
+        }
+    }
+}
+
+impl FzfSelectable for PostRenderAction {
+    fn fzf_display_text(&self) -> String {
+        match self {
+            PostRenderAction::OpenVideo => format!(
+                "{} Open Video",
+                format_icon_colored(NerdFont::Play, colors::GREEN)
+            ),
+            PostRenderAction::OpenDirectory => format!(
+                "{} Open Directory",
+                format_icon_colored(NerdFont::FolderOpen, colors::PEACH)
+            ),
+            PostRenderAction::Done => format!("{} Back", format_back_icon()),
+        }
+    }
+
+    fn fzf_key(&self) -> String {
+        self.to_string()
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        match self {
+            PostRenderAction::OpenVideo => PreviewBuilder::new()
+                .header(NerdFont::Play, "Open Video")
+                .text("Open the rendered video with the default player.")
+                .build(),
+            PostRenderAction::OpenDirectory => PreviewBuilder::new()
+                .header(NerdFont::FolderOpen, "Open Directory")
+                .text("Open the output directory in the file manager.")
+                .build(),
+            PostRenderAction::Done => PreviewBuilder::new()
+                .header(NerdFont::Cross, "Back")
+                .text("Return to the project menu.")
+                .build(),
+        }
+    }
+}
+
+fn show_post_render_menu(output_path: &Path, elapsed: std::time::Duration) -> Result<()> {
+    let duration_str = format_render_duration(elapsed);
+    let path_display = output_path.display().to_string();
+
+    let entries = vec![
+        PostRenderAction::OpenVideo,
+        PostRenderAction::OpenDirectory,
+        PostRenderAction::Done,
+    ];
+
+    let result = FzfWrapper::builder()
+        .header(Header::default(&format!(
+            "Render complete in {duration_str}\n{path_display}"
+        )))
+        .prompt("Select")
+        .args(fzf_mocha_args())
+        .responsive_layout()
+        .select(entries)?;
+
+    if let FzfResult::Selected(action) = result {
+        match action {
+            PostRenderAction::OpenVideo => {
+                Command::new("xdg-open")
+                    .arg(&path_display)
+                    .spawn()
+                    .context("Failed to open video")?;
+            }
+            PostRenderAction::OpenDirectory => {
+                let parent_dir = output_path
+                    .parent()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_else(|| ".".to_string());
+                Command::new("xdg-open")
+                    .arg(&parent_dir)
+                    .spawn()
+                    .context("Failed to open directory")?;
+            }
+            PostRenderAction::Done => {}
+        }
+    }
+
+    Ok(())
+}
+
 fn run_edit_for_project(markdown_path: &Path) -> Result<()> {
     use std::env;
-    use std::process::Command;
 
     // Get editor from environment or fall back to nvim
     let editor = env::var("EDITOR").unwrap_or_else(|_| "nvim".to_string());

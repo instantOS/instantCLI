@@ -541,10 +541,8 @@ fn create_dualboot_partitions(
         let diff = (size as i64 - swap_size_bytes as i64).abs();
         let margin = (swap_size_bytes / 20) as i64;
 
-        if diff < margin {
-            if swap_path.is_empty() {
-                swap_path = p.clone();
-            }
+        if diff < margin && swap_path.is_empty() {
+            swap_path = p.clone();
         }
     }
 
