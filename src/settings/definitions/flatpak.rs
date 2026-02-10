@@ -5,10 +5,12 @@
 use anyhow::{Result, bail};
 
 use crate::common::package::{PackageManager, install_package_names};
-use crate::menu_utils::{FzfResult, FzfWrapper};
+use crate::menu_utils::{ConfirmResult, FzfResult, FzfWrapper, Header};
+use crate::preview::{PreviewId, preview_command_streaming};
 use crate::settings::context::SettingsContext;
 use crate::settings::deps::FLATPAK;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
+use crate::ui::catppuccin::fzf_mocha_args;
 use crate::ui::prelude::*;
 
 // ============================================================================
@@ -32,8 +34,8 @@ impl Setting for InstallFlatpakApps {
         SettingType::Action
     }
 
-    fn apply(&self, _ctx: &mut SettingsContext) -> Result<()> {
-        run_flatpak_installer()
+    fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
+        run_flatpak_installer(ctx.debug())
     }
 }
 
@@ -42,21 +44,8 @@ impl Setting for InstallFlatpakApps {
 // ============================================================================
 
 fn flatpak_list_command() -> &'static str {
-    "flatpak remote-ls --app --columns=name,application,description,version,origin"
-}
-
-fn flatpak_preview_command() -> String {
-    let package_icon = NerdFont::Package.to_string();
-    let error_icon = NerdFont::Cross.to_string();
-
-    format!(
-        "sh -c 'remote=\"$(echo \"{{5}}\" | cut -f1)\"; app=\"$(echo \"{{2}}\" | cut -f1)\"; \
-         printf \"\\033[1;34m{} %s\\033[0m\\n\" \"$app\"; \
-         flatpak remote-info --system \"$remote\" \"$app\" 2>/dev/null || \
-         flatpak remote-info --user \"$remote\" \"$app\" 2>/dev/null || \
-         printf \"\\033[1;31m{} No additional information available\\033[0m\\n\"'",
-        package_icon, error_icon
-    )
+    // Sort by app_id and remove duplicates (same app may appear in multiple remotes)
+    "flatpak remote-ls --app --columns=application,name,description 2>/dev/null | sort -t'\\t' -k1,1 -u"
 }
 
 // ============================================================================
@@ -64,31 +53,29 @@ fn flatpak_preview_command() -> String {
 // ============================================================================
 
 fn select_flatpak_apps() -> Result<Vec<String>> {
-    let preview = flatpak_preview_command();
+    let preview_cmd = preview_command_streaming(PreviewId::Flatpak);
 
     let result = FzfWrapper::builder()
         .multi_select(true)
-        .prompt("Select Flatpak apps to install")
+        .prompt("Select packages")
+        .header(Header::fancy("Install Flatpak Apps"))
+        .args(fzf_mocha_args())
         .args([
-            "--preview",
-            &preview,
-            "--preview-window",
-            "down:65%:wrap",
-            "--bind",
-            "ctrl-l:clear-screen",
-            "--ansi",
-            "--no-mouse",
             "--delimiter",
-            "\\t",
+            "\t",
             "--with-nth",
-            "1,3..",
+            "2",
+            "--preview",
+            &preview_cmd,
+            "--ansi",
         ])
+        .responsive_layout()
         .select_streaming(flatpak_list_command())?;
 
-    normalize_fzf_to_app_ids(result)
+    extract_app_ids(result)
 }
 
-fn normalize_fzf_to_app_ids(result: FzfResult<String>) -> Result<Vec<String>> {
+fn extract_app_ids(result: FzfResult<String>) -> Result<Vec<String>> {
     let lines = match result {
         FzfResult::MultiSelected(lines) => lines,
         FzfResult::Selected(line) => vec![line],
@@ -96,43 +83,21 @@ fn normalize_fzf_to_app_ids(result: FzfResult<String>) -> Result<Vec<String>> {
         FzfResult::Error(err) => bail!("App selection failed: {}", err),
     };
 
-    Ok(lines.iter().map(|line| parse_app_id(line)).collect())
-}
-
-fn parse_app_id(line: &str) -> String {
-    line.split('\t').nth(1).unwrap_or(line).to_string()
-}
-
-// ============================================================================
-// Confirmation
-// ============================================================================
-
-fn confirm_install(count: usize) -> Result<bool> {
-    let msg = format!(
-        "Install {} Flatpak app{}?",
-        count,
-        if count == 1 { "" } else { "s" }
-    );
-
-    let result = FzfWrapper::builder().confirm(&msg).show_confirmation()?;
-    Ok(matches!(result, crate::menu_utils::ConfirmResult::Yes))
-}
-
-// ============================================================================
-// Installation
-// ============================================================================
-
-fn install_flatpak_apps(app_ids: &[String]) -> Result<()> {
-    let refs: Vec<&str> = app_ids.iter().map(|s| s.as_str()).collect();
-    install_package_names(PackageManager::Flatpak, &refs)
+    // Extract app_id from "app_id\tname\tdescription" format
+    Ok(lines
+        .into_iter()
+        .map(|line| line.split('\t').next().unwrap_or(&line).to_string())
+        .collect())
 }
 
 // ============================================================================
 // Orchestration
 // ============================================================================
 
-fn run_flatpak_installer() -> Result<()> {
-    println!("Starting Flatpak app installer...");
+fn run_flatpak_installer(debug: bool) -> Result<()> {
+    if debug {
+        println!("Starting Flatpak app installer...");
+    }
 
     let app_ids = select_flatpak_apps()?;
     if app_ids.is_empty() {
@@ -140,12 +105,21 @@ fn run_flatpak_installer() -> Result<()> {
         return Ok(());
     }
 
-    if !confirm_install(app_ids.len())? {
+    let msg = format!(
+        "Install {} Flatpak app{}?",
+        app_ids.len(),
+        if app_ids.len() == 1 { "" } else { "s" }
+    );
+
+    let result = FzfWrapper::builder().confirm(&msg).show_confirmation()?;
+    if !matches!(result, ConfirmResult::Yes) {
         println!("Installation cancelled.");
         return Ok(());
     }
 
-    install_flatpak_apps(&app_ids)?;
-    println!("✓ Flatpak app installation completed successfully!");
+    let refs: Vec<&str> = app_ids.iter().map(|s| s.as_str()).collect();
+    install_package_names(PackageManager::Flatpak, &refs)?;
+
+    println!("✓ Flatpak installation completed successfully!");
     Ok(())
 }

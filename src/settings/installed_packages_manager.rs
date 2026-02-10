@@ -89,10 +89,10 @@ fn handle_uninstall_result(
             let packages: Vec<String> = lines
                 .into_iter()
                 .map(|l| {
-                    if l.starts_with("snap\t") {
-                        if let Some((_, rest)) = l.split_once('\t') {
-                            return rest.split_whitespace().next().unwrap_or(rest).to_string();
-                        }
+                    if l.starts_with("snap\t")
+                        && let Some((_, rest)) = l.split_once('\t')
+                    {
+                        return rest.split_whitespace().next().unwrap_or(rest).to_string();
                     }
                     l.split_whitespace().next().unwrap_or(&l).to_string()
                 })
@@ -129,7 +129,7 @@ fn handle_uninstall_result(
         FzfResult::Selected(line) => {
             let name = if line.starts_with("snap\t") {
                 if let Some((_, rest)) = line.split_once('\t') {
-                    rest.split_whitespace().next().unwrap_or(&rest).to_string()
+                    rest.split_whitespace().next().unwrap_or(rest).to_string()
                 } else {
                     line.split_whitespace().next().unwrap_or(&line).to_string()
                 }

@@ -11,6 +11,19 @@ use crate::ui::preview::PreviewBuilder;
 
 use super::PreviewContext;
 
+/// Helper to extract package from context, returning None for empty.
+fn package_from_context(ctx: &PreviewContext) -> Option<&str> {
+    ctx.key().filter(|k| !k.is_empty())
+}
+
+/// Build a placeholder preview for when no package is selected.
+fn placeholder_preview(title: &str, subtitle: &str) -> Result<String> {
+    Ok(PreviewBuilder::new()
+        .header(NerdFont::Package, title)
+        .subtext(subtitle)
+        .build_string())
+}
+
 /// Render preview for a package (install context).
 /// Key format: "package_name" or "source\tpackage_name" for Arch.
 pub fn render_package_preview(ctx: &PreviewContext) -> Result<String> {
@@ -24,31 +37,24 @@ pub fn render_package_preview(ctx: &PreviewContext) -> Result<String> {
     };
 
     if package.is_empty() {
-        return Ok(PreviewBuilder::new()
-            .header(NerdFont::Package, "Package Info")
-            .subtext("Select a package to see details")
-            .build_string());
+        return placeholder_preview("Package Info", "Select a package to see details");
     }
 
-    let os = OperatingSystem::detect();
-
-    // For packages with source info
+    // For packages with source info, route directly to the specific renderer
     if let Some(src) = source {
         if let Ok(manager) = src.parse::<PackageManager>() {
-            return render_package_manager_preview(package, manager);
+            return render_for_manager(package, manager);
         } else {
-            return render_generic_package_preview(package, src);
+            return render_generic_package(package, src);
         }
     }
 
     // For other distros, use native package manager
+    let os = OperatingSystem::detect();
     if let Some(manager) = os.native_package_manager() {
-        render_package_manager_preview(package, manager)
+        render_for_manager(package, manager)
     } else {
-        Ok(PreviewBuilder::new()
-            .header(NerdFont::Package, package)
-            .subtext("Package manager not available")
-            .build_string())
+        placeholder_preview(package, "Package manager not available")
     }
 }
 
@@ -57,150 +63,55 @@ pub fn render_installed_package_preview(ctx: &PreviewContext) -> Result<String> 
     let package = ctx.key().unwrap_or_default();
 
     if package.is_empty() {
-        return Ok(PreviewBuilder::new()
-            .header(NerdFont::Package, "Package Info")
-            .subtext("Select a package to see details")
-            .build_string());
+        return placeholder_preview("Package Info", "Select a package to see details");
+    }
+
+    // Check if this has a source prefix
+    if package.contains('\t')
+        && let Some((src, pkg)) = package.split_once('\t')
+    {
+        if let Ok(manager) = src.parse::<PackageManager>() {
+            return render_for_manager(pkg, manager);
+        } else {
+            return render_generic_package(pkg, src);
+        }
     }
 
     let os = OperatingSystem::detect();
-
-    // Check if this has a source prefix
-    if package.contains('\t') {
-        if let Some((src, pkg)) = package.split_once('\t') {
-            if let Ok(manager) = src.parse::<PackageManager>() {
-                return render_package_manager_preview(pkg, manager);
-            } else {
-                return render_generic_package_preview(pkg, src);
-            }
-        }
-    }
-
     if let Some(manager) = os.native_package_manager() {
-        render_package_manager_preview(package, manager)
+        render_for_manager(package, manager)
     } else {
-        Ok(PreviewBuilder::new()
-            .header(NerdFont::Package, package)
-            .subtext("Package manager not available")
-            .build_string())
+        placeholder_preview(package, "Package manager not available")
     }
 }
 
-/// Render preview for a snap package.
-fn render_snap_package_preview(package_info: &str) -> Result<String> {
-    // package_info can be "name\tversion\tpublisher\tsummary" or just a line starting with name
-    let parts: Vec<&str> = package_info.split('\t').collect();
-
-    if parts.len() >= 4 {
-        let name = parts[0];
-        let version = parts[1];
-        let publisher = parts[2];
-        let summary = parts[3];
-
-        return Ok(PreviewBuilder::new()
-            .header(NerdFont::Package, name)
-            .line(colors::PEACH, None, "Snap Package")
-            .blank()
-            .field("Version", version)
-            .field("Publisher", publisher)
-            .blank()
-            .text(summary)
-            .build_string());
+/// Render preview for a specific package manager (used by legacy generic preview).
+fn render_for_manager(package: &str, manager: PackageManager) -> Result<String> {
+    match manager {
+        PackageManager::Apt => render_apt_impl(package),
+        PackageManager::Dnf => render_dnf_impl(package),
+        PackageManager::Zypper => render_zypper_impl(package),
+        PackageManager::Pacman => render_pacman_impl(package),
+        PackageManager::Snap => render_snap_impl(package),
+        PackageManager::Pkg => render_pkg_impl(package),
+        PackageManager::Flatpak => render_flatpak_impl(package),
+        PackageManager::Aur => render_aur_impl(package),
+        PackageManager::Cargo => render_cargo_impl(package),
     }
-
-    // If we only have the name (or a line starting with it), use the full snap info
-    let name = package_info
-        .split_whitespace()
-        .next()
-        .unwrap_or(package_info);
-    render_package_manager_preview(name, PackageManager::Snap)
 }
 
-/// Render preview for AUR package.
-fn render_aur_package_preview(package: &str) -> Result<String> {
-    let helper = detect_aur_helper().unwrap_or("yay");
-    let output = cmd!(helper, "-Si", package)
-        .stderr_null()
-        .read()
-        .unwrap_or_default();
+// ============================================================================
+// APT
+// ============================================================================
 
-    if output.is_empty() {
-        return Ok(PreviewBuilder::new()
-            .header(NerdFont::Package, package)
-            .line(colors::MAUVE, None, "AUR Package")
-            .blank()
-            .subtext("No package information available")
-            .build_string());
+pub fn render_apt_preview(ctx: &PreviewContext) -> Result<String> {
+    match package_from_context(ctx) {
+        Some(pkg) => render_apt_impl(pkg),
+        None => placeholder_preview("APT Package", "Select a package to see details"),
     }
-
-    // Parse key fields from AUR helper output
-    let mut builder = PreviewBuilder::new()
-        .header(NerdFont::Package, package)
-        .line(colors::MAUVE, None, "AUR Package")
-        .blank();
-
-    for line in output.lines() {
-        if let Some((key, value)) = line.split_once(':') {
-            let key = key.trim();
-            let value = value.trim();
-            match key {
-                "Description" => builder = builder.text(value),
-                "Version" => builder = builder.field("Version", value),
-                "Repository" => builder = builder.field("Repository", value),
-                "URL" => builder = builder.field("URL", value),
-                "Licenses" => builder = builder.field("License", value),
-                "Installed Size" | "Download Size" => builder = builder.field(key, value),
-                _ => {}
-            }
-        }
-    }
-
-    Ok(builder.build_string())
 }
 
-/// Render preview for pacman package.
-fn render_pacman_package_preview(package: &str) -> Result<String> {
-    let output = cmd!("pacman", "-Si", package)
-        .stderr_null()
-        .read()
-        .unwrap_or_default();
-
-    if output.is_empty() {
-        return Ok(PreviewBuilder::new()
-            .header(NerdFont::Package, package)
-            .line(colors::GREEN, None, "Pacman Package")
-            .blank()
-            .subtext("No package information available")
-            .build_string());
-    }
-
-    // Parse key fields from pacman output
-    let mut builder = PreviewBuilder::new()
-        .header(NerdFont::Package, package)
-        .line(colors::GREEN, None, "Pacman Package")
-        .blank();
-
-    for line in output.lines() {
-        if let Some((key, value)) = line.split_once(':') {
-            let key = key.trim();
-            let value = value.trim();
-            match key {
-                "Description" => builder = builder.text(value),
-                "Version" => builder = builder.field("Version", value),
-                "Repository" => builder = builder.field("Repository", value),
-                "URL" => builder = builder.field("URL", value),
-                "Licenses" => builder = builder.field("License", value),
-                "Installed Size" | "Download Size" => builder = builder.field(key, value),
-                _ => {}
-            }
-        }
-    }
-
-    Ok(builder.build_string())
-}
-
-/// Render preview for apt package.
-fn render_apt_package_preview(package: &str) -> Result<String> {
+fn render_apt_impl(package: &str) -> Result<String> {
     let output = cmd!("apt", "show", package)
         .stderr_null()
         .read()
@@ -238,8 +149,18 @@ fn render_apt_package_preview(package: &str) -> Result<String> {
     Ok(builder.build_string())
 }
 
-/// Render preview for dnf package.
-fn render_dnf_package_preview(package: &str) -> Result<String> {
+// ============================================================================
+// DNF
+// ============================================================================
+
+pub fn render_dnf_preview(ctx: &PreviewContext) -> Result<String> {
+    match package_from_context(ctx) {
+        Some(pkg) => render_dnf_impl(pkg),
+        None => placeholder_preview("DNF Package", "Select a package to see details"),
+    }
+}
+
+fn render_dnf_impl(package: &str) -> Result<String> {
     let output = cmd!("dnf", "info", package)
         .stderr_null()
         .read()
@@ -279,8 +200,18 @@ fn render_dnf_package_preview(package: &str) -> Result<String> {
     Ok(builder.build_string())
 }
 
-/// Render preview for zypper package.
-fn render_zypper_package_preview(package: &str) -> Result<String> {
+// ============================================================================
+// Zypper
+// ============================================================================
+
+pub fn render_zypper_preview(ctx: &PreviewContext) -> Result<String> {
+    match package_from_context(ctx) {
+        Some(pkg) => render_zypper_impl(pkg),
+        None => placeholder_preview("Zypper Package", "Select a package to see details"),
+    }
+}
+
+fn render_zypper_impl(package: &str) -> Result<String> {
     let output = cmd!("zypper", "info", package)
         .stderr_null()
         .read()
@@ -316,23 +247,139 @@ fn render_zypper_package_preview(package: &str) -> Result<String> {
     Ok(builder.build_string())
 }
 
-/// Render preview using a specific package manager.
-fn render_package_manager_preview(package: &str, manager: PackageManager) -> Result<String> {
-    match manager {
-        PackageManager::Apt => render_apt_package_preview(package),
-        PackageManager::Dnf => render_dnf_package_preview(package),
-        PackageManager::Zypper => render_zypper_package_preview(package),
-        PackageManager::Pacman => render_pacman_package_preview(package),
-        PackageManager::Snap => render_snap_package_preview(package),
-        PackageManager::Pkg => render_pkg_package_preview(package),
-        PackageManager::Flatpak => render_flatpak_package_preview(package),
-        PackageManager::Aur => render_aur_package_preview(package), // This might duplicate the aur source prefix path
-        PackageManager::Cargo => render_cargo_package_preview(package),
+// ============================================================================
+// Pacman
+// ============================================================================
+
+pub fn render_pacman_preview(ctx: &PreviewContext) -> Result<String> {
+    match package_from_context(ctx) {
+        Some(pkg) => render_pacman_impl(pkg),
+        None => placeholder_preview("Pacman Package", "Select a package to see details"),
     }
 }
 
-/// Render preview for pkg package (Termux).
-fn render_pkg_package_preview(package: &str) -> Result<String> {
+fn render_pacman_impl(package: &str) -> Result<String> {
+    let output = cmd!("pacman", "-Si", package)
+        .stderr_null()
+        .read()
+        .unwrap_or_default();
+
+    if output.is_empty() {
+        return Ok(PreviewBuilder::new()
+            .header(NerdFont::Package, package)
+            .line(colors::GREEN, None, "Pacman Package")
+            .blank()
+            .subtext("No package information available")
+            .build_string());
+    }
+
+    let mut builder = PreviewBuilder::new()
+        .header(NerdFont::Package, package)
+        .line(colors::GREEN, None, "Pacman Package")
+        .blank();
+
+    for line in output.lines() {
+        if let Some((key, value)) = line.split_once(':') {
+            let key = key.trim();
+            let value = value.trim();
+            match key {
+                "Description" => builder = builder.text(value),
+                "Version" => builder = builder.field("Version", value),
+                "Repository" => builder = builder.field("Repository", value),
+                "URL" => builder = builder.field("URL", value),
+                "Licenses" => builder = builder.field("License", value),
+                "Installed Size" | "Download Size" => builder = builder.field(key, value),
+                _ => {}
+            }
+        }
+    }
+
+    Ok(builder.build_string())
+}
+
+// ============================================================================
+// Snap
+// ============================================================================
+
+pub fn render_snap_preview(ctx: &PreviewContext) -> Result<String> {
+    match package_from_context(ctx) {
+        Some(pkg) => render_snap_impl(pkg),
+        None => placeholder_preview("Snap Package", "Select a Snap package to see details"),
+    }
+}
+
+fn render_snap_impl(package_info: &str) -> Result<String> {
+    let parts: Vec<&str> = package_info.split('\t').collect();
+
+    if parts.len() >= 4 {
+        let name = parts[0];
+        let version = parts[1];
+        let publisher = parts[2];
+        let summary = parts[3];
+
+        return Ok(PreviewBuilder::new()
+            .header(NerdFont::Package, name)
+            .line(colors::PEACH, None, "Snap Package")
+            .blank()
+            .field("Version", version)
+            .field("Publisher", publisher)
+            .blank()
+            .text(summary)
+            .build_string());
+    }
+
+    let name = package_info
+        .split_whitespace()
+        .next()
+        .unwrap_or(package_info);
+    let output = cmd!("snap", "info", name)
+        .stderr_null()
+        .read()
+        .unwrap_or_default();
+
+    if output.is_empty() {
+        return Ok(PreviewBuilder::new()
+            .header(NerdFont::Package, name)
+            .line(colors::PEACH, None, "Snap Package")
+            .blank()
+            .subtext("No package information available")
+            .build_string());
+    }
+
+    let mut builder = PreviewBuilder::new()
+        .header(NerdFont::Package, name)
+        .line(colors::PEACH, None, "Snap Package")
+        .blank();
+
+    for line in output.lines() {
+        if let Some((key, value)) = line.split_once(':') {
+            let key = key.trim();
+            let value = value.trim();
+            match key {
+                "Summary" => builder = builder.text(value),
+                "Version" => builder = builder.field("Version", value),
+                "Publisher" => builder = builder.field("Publisher", value),
+                "License" => builder = builder.field("License", value),
+                _ => {}
+            }
+        }
+    }
+
+    Ok(builder.build_string())
+}
+
+// ============================================================================
+// Pkg (Termux)
+// ============================================================================
+
+pub fn render_pkg_preview(ctx: &PreviewContext) -> Result<String> {
+    match package_from_context(ctx) {
+        Some(pkg) => render_pkg_impl(pkg),
+        None => placeholder_preview("Pkg Package", "Select a package to see details"),
+    }
+}
+
+fn render_pkg_impl(package: &str) -> Result<String> {
     let output = cmd!("pkg", "show", package)
         .stderr_null()
         .read()
@@ -370,8 +417,18 @@ fn render_pkg_package_preview(package: &str) -> Result<String> {
     Ok(builder.build_string())
 }
 
-/// Render preview for flatpak package.
-fn render_flatpak_package_preview(package: &str) -> Result<String> {
+// ============================================================================
+// Flatpak
+// ============================================================================
+
+pub fn render_flatpak_preview(ctx: &PreviewContext) -> Result<String> {
+    match package_from_context(ctx) {
+        Some(pkg) => render_flatpak_impl(pkg),
+        None => placeholder_preview("Flatpak Package", "Select a Flatpak package to see details"),
+    }
+}
+
+fn render_flatpak_impl(package: &str) -> Result<String> {
     let output = cmd!("flatpak", "info", package)
         .stderr_null()
         .read()
@@ -403,7 +460,6 @@ fn render_flatpak_package_preview(package: &str) -> Result<String> {
                 "Installed" => builder = builder.field("Installed", value),
                 "Runtime" => builder = builder.field("Runtime", value),
                 _ => {
-                    // For description-like fields that don't have a colon
                     if line.starts_with("Description:") || line.starts_with("Summary:") {
                         builder = builder.text(value);
                     }
@@ -415,8 +471,69 @@ fn render_flatpak_package_preview(package: &str) -> Result<String> {
     Ok(builder.build_string())
 }
 
-/// Render preview for cargo package.
-fn render_cargo_package_preview(package: &str) -> Result<String> {
+// ============================================================================
+// AUR
+// ============================================================================
+
+pub fn render_aur_preview(ctx: &PreviewContext) -> Result<String> {
+    match package_from_context(ctx) {
+        Some(pkg) => render_aur_impl(pkg),
+        None => placeholder_preview("AUR Package", "Select an AUR package to see details"),
+    }
+}
+
+fn render_aur_impl(package: &str) -> Result<String> {
+    let helper = detect_aur_helper().unwrap_or("yay");
+    let output = cmd!(helper, "-Si", package)
+        .stderr_null()
+        .read()
+        .unwrap_or_default();
+
+    if output.is_empty() {
+        return Ok(PreviewBuilder::new()
+            .header(NerdFont::Package, package)
+            .line(colors::MAUVE, None, "AUR Package")
+            .blank()
+            .subtext("No package information available")
+            .build_string());
+    }
+
+    let mut builder = PreviewBuilder::new()
+        .header(NerdFont::Package, package)
+        .line(colors::MAUVE, None, "AUR Package")
+        .blank();
+
+    for line in output.lines() {
+        if let Some((key, value)) = line.split_once(':') {
+            let key = key.trim();
+            let value = value.trim();
+            match key {
+                "Description" => builder = builder.text(value),
+                "Version" => builder = builder.field("Version", value),
+                "Repository" => builder = builder.field("Repository", value),
+                "URL" => builder = builder.field("URL", value),
+                "Licenses" => builder = builder.field("License", value),
+                "Installed Size" | "Download Size" => builder = builder.field(key, value),
+                _ => {}
+            }
+        }
+    }
+
+    Ok(builder.build_string())
+}
+
+// ============================================================================
+// Cargo
+// ============================================================================
+
+pub fn render_cargo_preview(ctx: &PreviewContext) -> Result<String> {
+    match package_from_context(ctx) {
+        Some(pkg) => render_cargo_impl(pkg),
+        None => placeholder_preview("Cargo Package", "Select a Cargo package to see details"),
+    }
+}
+
+fn render_cargo_impl(package: &str) -> Result<String> {
     let output = cmd!("cargo", "show", package)
         .stderr_null()
         .read()
@@ -455,8 +572,11 @@ fn render_cargo_package_preview(package: &str) -> Result<String> {
     Ok(builder.build_string())
 }
 
-/// Render preview for a generic package with custom source.
-fn render_generic_package_preview(package: &str, source: &str) -> Result<String> {
+// ============================================================================
+// Generic fallback
+// ============================================================================
+
+fn render_generic_package(package: &str, source: &str) -> Result<String> {
     Ok(PreviewBuilder::new()
         .header(NerdFont::Package, package)
         .subtext(&format!("{} Package", source))

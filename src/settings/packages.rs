@@ -44,7 +44,8 @@ fn run_simple_installer(manager: PackageManager, debug: bool) -> Result<()> {
     }
 
     let list_cmd = manager.list_available_command();
-    let preview_cmd = preview_command_streaming(PreviewId::Package);
+    let preview_id = preview_id_for_manager(manager);
+    let preview_cmd = preview_command_streaming(preview_id);
 
     let result = FzfWrapper::builder()
         .multi_select(true)
@@ -63,6 +64,21 @@ fn run_simple_installer(manager: PackageManager, debug: bool) -> Result<()> {
     )
 }
 
+/// Map a PackageManager to its corresponding PreviewId.
+fn preview_id_for_manager(manager: PackageManager) -> PreviewId {
+    match manager {
+        PackageManager::Apt => PreviewId::Apt,
+        PackageManager::Dnf => PreviewId::Dnf,
+        PackageManager::Zypper => PreviewId::Zypper,
+        PackageManager::Pacman => PreviewId::Pacman,
+        PackageManager::Snap => PreviewId::Snap,
+        PackageManager::Pkg => PreviewId::Pkg,
+        PackageManager::Flatpak => PreviewId::Flatpak,
+        PackageManager::Aur => PreviewId::Aur,
+        PackageManager::Cargo => PreviewId::Cargo,
+    }
+}
+
 /// Run the interactive Snap installer.
 pub fn run_snap_installer(debug: bool) -> Result<()> {
     if debug {
@@ -73,21 +89,22 @@ pub fn run_snap_installer(debug: bool) -> Result<()> {
         anyhow::bail!("Snap is not available on this system");
     }
 
-    let preview_cmd = preview_command_streaming(PreviewId::Package);
+    let preview_cmd = preview_command_streaming(PreviewId::Snap);
 
     // Build reload command that searches snaps as user types
     // Uses --phony to disable local filtering and rely on snap find results
+    // Output format: name\tversion\tpublisher\tsummary
     let reload_cmd = "snap find '{q}' 2>/dev/null | awk 'NR>1 && !/^Name[[:space:]]+Version/ && !/Provide a search term/ && NF { \
         name = $1; version = $2; publisher = $3; summary = \"\"; \
         for(i=5; i<=NF; i++) summary = summary $i \" \"; \
-        print \"snap\\t\" name \"\\t\" version \"\\t\" publisher \"\\t\" summary \
+        print name \"\\t\" version \"\\t\" publisher \"\\t\" summary \
     }' || true";
 
     // Load featured snaps on start; search as user types
     let featured_snaps = "snap find 2>/dev/null | awk 'NR>1 && !/^Name[[:space:]]+Version/ && !/Provide a search term/ && NF { \
         name = $1; version = $2; publisher = $3; summary = \"\"; \
         for(i=5; i<=NF; i++) summary = summary $i \" \"; \
-        print \"snap\\t\" name \"\\t\" version \"\\t\" publisher \"\\t\" summary \
+        print name \"\\t\" version \"\\t\" publisher \"\\t\" summary \
     }'";
 
     let result = FzfWrapper::builder()
@@ -99,7 +116,7 @@ pub fn run_snap_installer(debug: bool) -> Result<()> {
             "--delimiter",
             "\t",
             "--with-nth",
-            "2",
+            "1",
             "--preview",
             &preview_cmd,
             "--bind",
@@ -108,7 +125,7 @@ pub fn run_snap_installer(debug: bool) -> Result<()> {
             "--ansi",
         ])
         .responsive_layout()
-        .select_streaming(&featured_snaps)
+        .select_streaming(featured_snaps)
         .context("Failed to run snap selector")?;
 
     handle_install_result(
@@ -280,7 +297,11 @@ fn parse_arch_selections(lines: &[String]) -> (Vec<String>, Vec<String>) {
 // ============================================================================
 
 /// Handle install result for simple (non-Arch) package managers.
-fn handle_install_result<F>(result: FzfResult<String>, install_fn: F, debug: bool) -> Result<()>
+pub(crate) fn handle_install_result<F>(
+    result: FzfResult<String>,
+    install_fn: F,
+    debug: bool,
+) -> Result<()>
 where
     F: FnOnce(&[&str]) -> Result<()>,
 {

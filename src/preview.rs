@@ -79,6 +79,24 @@ pub enum PreviewId {
     Package,
     #[value(name = "installed-package")]
     InstalledPackage,
+    #[value(name = "apt")]
+    Apt,
+    #[value(name = "dnf")]
+    Dnf,
+    #[value(name = "zypper")]
+    Zypper,
+    #[value(name = "pacman")]
+    Pacman,
+    #[value(name = "snap")]
+    Snap,
+    #[value(name = "pkg")]
+    Pkg,
+    #[value(name = "flatpak")]
+    Flatpak,
+    #[value(name = "aur")]
+    Aur,
+    #[value(name = "cargo")]
+    Cargo,
 }
 
 impl PreviewId {
@@ -109,6 +127,15 @@ impl PreviewId {
             PreviewId::FileSuggestion => "file-suggestion",
             PreviewId::Package => "package",
             PreviewId::InstalledPackage => "installed-package",
+            PreviewId::Apt => "apt",
+            PreviewId::Dnf => "dnf",
+            PreviewId::Zypper => "zypper",
+            PreviewId::Pacman => "pacman",
+            PreviewId::Snap => "snap",
+            PreviewId::Pkg => "pkg",
+            PreviewId::Flatpak => "flatpak",
+            PreviewId::Aur => "aur",
+            PreviewId::Cargo => "cargo",
         }
     }
 }
@@ -233,6 +260,15 @@ fn render_preview(id: PreviewId, ctx: &PreviewContext) -> Result<String> {
         PreviewId::FileSuggestion => file::render_file_suggestion_preview(ctx),
         PreviewId::Package => package::render_package_preview(ctx),
         PreviewId::InstalledPackage => package::render_installed_package_preview(ctx),
+        PreviewId::Apt => package::render_apt_preview(ctx),
+        PreviewId::Dnf => package::render_dnf_preview(ctx),
+        PreviewId::Zypper => package::render_zypper_preview(ctx),
+        PreviewId::Pacman => package::render_pacman_preview(ctx),
+        PreviewId::Snap => package::render_snap_preview(ctx),
+        PreviewId::Pkg => package::render_pkg_preview(ctx),
+        PreviewId::Flatpak => package::render_flatpak_preview(ctx),
+        PreviewId::Aur => package::render_aur_preview(ctx),
+        PreviewId::Cargo => package::render_cargo_preview(ctx),
     }
 }
 

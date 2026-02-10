@@ -1129,7 +1129,7 @@ impl FzfBuilder {
 
         // Handle cancellation and fzf errors (except code 1 which means no match)
         if exit_code != Some(1) {
-            if let Some(_) = check_fzf_exit::<()>(&result) {
+            if check_fzf_exit::<()>(&result).is_some() {
                 return Ok(ChecklistSelection::Cancelled);
             }
         } else if !result.status.success() {
