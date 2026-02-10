@@ -530,7 +530,7 @@ fn overlap_seconds(a_start: f64, a_end: f64, b_start: f64, b_end: f64) -> f64 {
 mod tests {
     use super::*;
     use crate::video::document::parse_video_document;
-    use crate::video::planning::{StandalonePlan, TimelinePlanItem, plan_timeline};
+    use crate::video::planning::{TimelinePlanItem, plan_timeline};
     use crate::video::support::transcript::TranscriptCue;
 
     use std::path::Path;
