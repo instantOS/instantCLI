@@ -3,8 +3,8 @@ use std::path::PathBuf;
 
 use anyhow::{Result, bail};
 
-use super::util::format_time;
 use super::FfmpegCompiler;
+use super::util::format_time;
 use crate::video::render::timeline::{Segment, SegmentData};
 
 impl FfmpegCompiler {

@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use super::util::escape_ffmpeg_path;
 use super::FfmpegCompiler;
+use super::util::escape_ffmpeg_path;
 use crate::video::config::VideoConfig;
 use crate::video::render::mode::RenderMode;
 use crate::video::render::timeline::{Segment, Timeline};
@@ -108,8 +108,7 @@ fn concat_order_respects_timeline_order() {
 
 #[test]
 fn test_reels_mode_generates_padding_filter() {
-    let compiler =
-        FfmpegCompiler::new(RenderMode::Reels, 1920, 1080, VideoConfig::default(), None);
+    let compiler = FfmpegCompiler::new(RenderMode::Reels, 1920, 1080, VideoConfig::default(), None);
     let padding = compiler.build_padding_filter("v0_raw", "v0");
     assert!(padding.is_some());
 

@@ -104,16 +104,13 @@ impl GameRepositoryManager {
         );
 
         match Self::test_rclone_remote(repo_str, debug) {
-            Ok(()) => Self::handle_accessible_remote_without_repo(config, debug),
+            Ok(()) => Self::handle_remote_without_repo(config, debug),
             Err(remote_error) => Self::handle_inaccessible_remote(remote_error),
         }
     }
 
     /// Handle case where rclone remote is accessible but has no restic repository
-    fn handle_accessible_remote_without_repo(
-        config: &InstantGameConfig,
-        debug: bool,
-    ) -> Result<()> {
+    fn handle_remote_without_repo(config: &InstantGameConfig, debug: bool) -> Result<()> {
         println!(
             "{} Rclone remote is accessible!",
             char::from(NerdFont::Check)
@@ -133,9 +130,7 @@ impl GameRepositoryManager {
         match FzfWrapper::confirm("Create restic repository in existing remote?")
             .map_err(|e| anyhow::anyhow!("Failed to get user input: {}", e))?
         {
-            crate::menu_utils::ConfirmResult::Yes => {
-                Self::create_repository_in_existing_remote(config, debug)
-            }
+            crate::menu_utils::ConfirmResult::Yes => Self::create_remote_repo(config, debug),
             crate::menu_utils::ConfirmResult::No | crate::menu_utils::ConfirmResult::Cancelled => {
                 Self::handle_declined_repo_creation()
             }
@@ -143,7 +138,7 @@ impl GameRepositoryManager {
     }
 
     /// Create restic repository in existing accessible remote
-    fn create_repository_in_existing_remote(config: &InstantGameConfig, debug: bool) -> Result<()> {
+    fn create_remote_repo(config: &InstantGameConfig, debug: bool) -> Result<()> {
         println!(
             "{} Creating restic repository in existing remote...",
             char::from(NerdFont::Upload)

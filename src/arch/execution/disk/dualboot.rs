@@ -99,8 +99,7 @@ pub fn prepare_dualboot_disk(
     }
 
     let preferred_region = if let Some(ref partition_path) = resized_partition {
-        match find_next_free_region_after_partition(disk_path, disk_info.size_bytes, partition_path)
-        {
+        match find_next_free_region(disk_path, disk_info.size_bytes, partition_path) {
             Ok(Some(region)) => Some(region),
             Ok(None) if executor.dry_run => resize_plan.map(|plan| plan.preferred_region),
             Ok(None) => {
@@ -224,8 +223,7 @@ fn auto_resize_partition(
     let layout = get_partition_layout(disk_path, partition_path)
         .context("Failed to read partition layout")?;
 
-    let existing_free_region =
-        find_adjacent_free_region_after_partition(disk_path, disk_info.size_bytes, &layout)?;
+    let existing_free_region = find_adjacent_free_region(disk_path, disk_info.size_bytes, &layout)?;
     let existing_free_bytes = existing_free_region
         .as_ref()
         .map(|region| region.size_bytes)
@@ -337,7 +335,7 @@ fn auto_resize_partition(
     })
 }
 
-fn find_adjacent_free_region_after_partition(
+fn find_adjacent_free_region(
     disk_path: &str,
     disk_size_bytes: u64,
     layout: &PartitionLayout,
@@ -353,7 +351,7 @@ fn find_adjacent_free_region_after_partition(
     }))
 }
 
-fn find_next_free_region_after_partition(
+fn find_next_free_region(
     disk_path: &str,
     disk_size_bytes: u64,
     partition_path: &str,

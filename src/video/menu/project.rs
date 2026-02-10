@@ -12,7 +12,7 @@ use crate::video::pipeline::{check, convert, stats};
 use crate::video::render;
 
 use super::file_selection::{
-    discover_video_file_suggestions, discover_video_markdown_suggestions, select_markdown_file,
+    discover_video_file_suggestions, discover_video_suggestions, select_markdown_file,
     select_output_path, select_video_file_with_suggestions,
 };
 use super::prompts::{
@@ -137,7 +137,7 @@ impl FzfSelectable for ProjectMenuEntry {
 }
 
 pub async fn run_project_menu() -> Result<()> {
-    let suggestions = discover_video_markdown_suggestions()?;
+    let suggestions = discover_video_suggestions()?;
     let Some(markdown_path) = select_markdown_file("Select project", suggestions)? else {
         return Ok(());
     };

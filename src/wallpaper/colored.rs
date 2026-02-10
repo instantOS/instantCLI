@@ -18,7 +18,7 @@ pub struct ColoredOptions {
 }
 
 /// Generate a colored wallpaper with the instantOS logo
-pub async fn run(options: ColoredOptions) -> Result<PathBuf> {
+pub async fn generate_colored_wallpaper(options: ColoredOptions) -> Result<PathBuf> {
     let wallpaper_dir = get_wallpaper_dir()?;
     fs::create_dir_all(&wallpaper_dir).await?;
 

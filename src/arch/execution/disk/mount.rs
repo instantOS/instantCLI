@@ -5,7 +5,10 @@ use crate::arch::execution::CommandExecutor;
 use anyhow::{Context, Result};
 use std::process::Command;
 
-pub fn format_and_mount_partitions(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+pub fn format_and_mount_partitions(
+    context: &InstallContext,
+    executor: &CommandExecutor,
+) -> Result<()> {
     println!("Formatting and mounting partitions...");
 
     let boot_mode = &context.system_info.boot_mode;

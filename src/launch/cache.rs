@@ -51,7 +51,7 @@ impl LaunchCache {
         {
             // Background refresh if any underlying data is stale
             if !self.is_launch_cache_fresh()? || !self.is_frecency_sorted_cache_fresh()? {
-                self.trigger_background_refresh_and_resort();
+                self.background_refresh_and_sort();
             }
             return Ok(sorted_items);
         }
@@ -178,14 +178,14 @@ impl LaunchCache {
         let cache_path = self.launch_items_path.clone();
         task::spawn_blocking(move || {
             let items = Self::build_item_list_simple();
-            if let Err(e) = Self::save_launch_items_cache_simple(cache_path, items) {
+            if let Err(e) = Self::save_items_cache(cache_path, items) {
                 eprintln!("Warning: Failed to refresh launch items cache: {e}");
             }
         });
     }
 
     /// Trigger background refresh and resort of both caches
-    fn trigger_background_refresh_and_resort(&self) {
+    fn background_refresh_and_sort(&self) {
         let launch_cache_path = self.launch_items_path.clone();
         let frecency_cache_path = self.frecency_sorted_path.clone();
         let frecency_store_path = self.frecency_path.clone();
@@ -193,9 +193,7 @@ impl LaunchCache {
         task::spawn_blocking(move || {
             // Refresh the base launch items cache
             let items = Self::build_item_list_simple();
-            if let Err(e) =
-                Self::save_launch_items_cache_simple(launch_cache_path.clone(), items.clone())
-            {
+            if let Err(e) = Self::save_items_cache(launch_cache_path.clone(), items.clone()) {
                 eprintln!("Warning: Failed to refresh launch items cache: {e}");
                 return;
             }
@@ -235,9 +233,7 @@ impl LaunchCache {
             });
 
             // Save the frecency-sorted cache
-            if let Err(e) =
-                Self::save_frecency_sorted_cache_static(frecency_cache_path, &sorted_launch_items)
-            {
+            if let Err(e) = Self::save_sorted_cache(frecency_cache_path, &sorted_launch_items) {
                 eprintln!("Warning: Failed to refresh frecency sorted cache: {e}");
             }
         });
@@ -393,7 +389,7 @@ impl LaunchCache {
     }
 
     /// Save launch items to cache file
-    fn save_launch_items_cache_simple(cache_path: PathBuf, items: Vec<LaunchItem>) -> Result<()> {
+    fn save_items_cache(cache_path: PathBuf, items: Vec<LaunchItem>) -> Result<()> {
         let content: Vec<String> = items
             .into_iter()
             .map(|item| match item {
@@ -551,7 +547,7 @@ impl LaunchCache {
     }
 
     /// Static version of save_frecency_sorted_cache for background processing
-    fn save_frecency_sorted_cache_static(cache_path: PathBuf, items: &[LaunchItem]) -> Result<()> {
+    fn save_sorted_cache(cache_path: PathBuf, items: &[LaunchItem]) -> Result<()> {
         let content: Vec<String> = items
             .iter()
             .map(|item| match item {

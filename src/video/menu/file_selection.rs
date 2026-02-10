@@ -24,7 +24,7 @@ pub fn is_video_or_audio_file(path: &Path) -> bool {
     }
 }
 
-pub fn discover_slide_markdown_suggestions() -> Result<Vec<PathBuf>> {
+pub fn discover_slide_suggestions() -> Result<Vec<PathBuf>> {
     let mut suggestions = collect_markdown_candidates()?;
     if suggestions.len() > 60 {
         suggestions.truncate(60);
@@ -154,7 +154,7 @@ fn select_path_with_picker(
     selection.to_path_buf()
 }
 
-pub fn discover_video_markdown_suggestions() -> Result<Vec<PathBuf>> {
+pub fn discover_video_suggestions() -> Result<Vec<PathBuf>> {
     let mut suggestions = collect_markdown_candidates()?;
     suggestions.retain(|path| is_video_markdown_file(path).unwrap_or(false));
     if suggestions.len() > 60 {

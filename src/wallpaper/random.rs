@@ -14,7 +14,7 @@ pub struct RandomOptions {
     pub no_logo: bool,
 }
 
-pub async fn run(options: RandomOptions) -> Result<PathBuf> {
+pub async fn generate_random_wallpaper(options: RandomOptions) -> Result<PathBuf> {
     let wallpaper_dir = get_wallpaper_dir()?;
     fs::create_dir_all(&wallpaper_dir).await?;
 

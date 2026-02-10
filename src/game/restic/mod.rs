@@ -138,7 +138,7 @@ pub fn restore_game_saves(
     force: bool,
 ) -> Result<()> {
     use crate::game::restic::backup::GameBackup;
-    use crate::game::restic::snapshot_selection::select_snapshot_interactive_with_local_comparison;
+    use crate::game::restic::snapshot_selection::select_snapshot_interactive;
 
     // Step 1: Game selection using security module
     let game_selection = security::get_game_installation(game_name)?;
@@ -163,7 +163,7 @@ pub fn restore_game_saves(
         }
         None => {
             // Use enhanced snapshot selection with local save comparison
-            match select_snapshot_interactive_with_local_comparison(
+            match select_snapshot_interactive(
                 &game_selection.game_name,
                 Some(&game_selection.installation),
             )? {

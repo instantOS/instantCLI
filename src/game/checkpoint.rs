@@ -23,7 +23,7 @@ fn update_local(game_name: &str, checkpoint_id: &str) -> Result<()> {
 
 /// Extract snapshot ID from backup result string
 /// Handles both "snapshot: {id}" format and fallback to latest snapshot
-pub fn extract_snapshot_id_from_backup_result(
+pub fn extract_snapshot_id(
     backup_result: &str,
     game_name: &str,
     game_config: &super::config::InstantGameConfig,
@@ -61,8 +61,7 @@ pub fn update_checkpoint_after_backup(
     game_name: &str,
     game_config: &super::config::InstantGameConfig,
 ) -> Result<()> {
-    if let Some(snapshot_id) =
-        extract_snapshot_id_from_backup_result(backup_result, game_name, game_config)?
+    if let Some(snapshot_id) = extract_snapshot_id(backup_result, game_name, game_config)?
         && let Err(e) = update_local(game_name, &snapshot_id)
     {
         eprintln!("Warning: Could not update checkpoint: {e}");

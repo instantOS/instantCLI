@@ -105,9 +105,7 @@ pub struct UnitStatus {
 
 impl UnitIndex {
     pub fn is_target_in_modified_unit(&self, target_path: &Path) -> bool {
-        !self
-            .modified_units_with_files_for_target(target_path)
-            .is_empty()
+        !self.modified_units_for_target(target_path).is_empty()
     }
 
     pub fn unit_statuses_for_target(&self, target_path: &Path) -> Vec<UnitStatus> {
@@ -131,10 +129,7 @@ impl UnitIndex {
             .collect()
     }
 
-    pub fn modified_units_with_files_for_target(
-        &self,
-        target_path: &Path,
-    ) -> Vec<(PathBuf, Vec<PathBuf>)> {
+    pub fn modified_units_for_target(&self, target_path: &Path) -> Vec<(PathBuf, Vec<PathBuf>)> {
         let Some(units) = self.units_for_target.get(target_path) else {
             return Vec::new();
         };

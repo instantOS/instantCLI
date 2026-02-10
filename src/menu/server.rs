@@ -273,7 +273,7 @@ impl MenuServer {
 
         // Process the request with timeout and visibility monitoring
         let response = if should_manage_scratchpad && self.scratchpad_manager.is_some() {
-            self.process_request_with_integrated_monitoring(request)?
+            self.process_monitored_request(request)?
         } else {
             // Non-interactive requests or no scratchpad don't need monitoring
             self.process_request_internal(request)?
@@ -283,7 +283,7 @@ impl MenuServer {
         // This must be the FIRST thing we do after the user completes their interaction
         // to return control to the user as fast as possible.
         //
-        // NOTE: For monitored requests, monitoring is already stopped in process_request_with_integrated_monitoring
+        // NOTE: For monitored requests, monitoring is already stopped in process_monitored_request
         // before this point to prevent false cancellations when we intentionally hide the scratchpad.
         if should_manage_scratchpad
             && let Some(ref manager) = self.scratchpad_manager
@@ -307,11 +307,8 @@ impl MenuServer {
         processor.process_internal(request)
     }
 
-    /// Process request with monitoring integrated directly (much simpler approach)
-    fn process_request_with_integrated_monitoring(
-        &self,
-        request: MenuRequest,
-    ) -> Result<MenuResponse> {
+    /// Process request while monitoring scratchpad visibility in a background thread
+    fn process_monitored_request(&self, request: MenuRequest) -> Result<MenuResponse> {
         // Start a background monitoring thread that will kill fzf processes if scratchpad becomes invisible
         let monitoring_active = Arc::new(AtomicBool::new(true));
         let monitoring_active_clone = monitoring_active.clone();
@@ -442,7 +439,7 @@ impl Default for MenuServer {
 }
 
 /// Create a scratchpad configuration for the menu server
-pub fn create_menu_server_scratchpad_config() -> ScratchpadConfig {
+pub fn scratchpad_config() -> ScratchpadConfig {
     use crate::scratchpad::{config::ScratchpadConfig, terminal::Terminal};
 
     // Get current executable path for the inner command
@@ -467,7 +464,7 @@ pub async fn run_server_inside(no_scratchpad: bool) -> Result<i32> {
     let scratchpad_config = if no_scratchpad {
         None
     } else {
-        Some(create_menu_server_scratchpad_config())
+        Some(scratchpad_config())
     };
     let compositor = CompositorType::detect();
     let mut server = MenuServer::with_compositor_and_scratchpad(compositor, scratchpad_config)?;
@@ -496,7 +493,7 @@ pub async fn run_server_launch(no_scratchpad: bool) -> Result<i32> {
     }
 
     let compositor = CompositorType::detect();
-    let scratchpad_config = create_menu_server_scratchpad_config();
+    let scratchpad_config = scratchpad_config();
 
     println!("Launching menu server in scratchpad...");
 

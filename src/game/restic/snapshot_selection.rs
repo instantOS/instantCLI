@@ -202,7 +202,7 @@ fn add_comparison_status(
             builder = add_snapshot_newer_status(builder, context);
         }
         TimeComparison::SnapshotNewerWithinTolerance(_) => {
-            builder = add_snapshot_newer_within_tolerance_status(builder, context);
+            builder = add_newer_within_tolerance(builder, context);
         }
         TimeComparison::Same => {
             builder = add_same_timestamp_status(builder, context);
@@ -250,7 +250,7 @@ fn add_snapshot_newer_status(
 }
 
 /// Add status when snapshot is newer within tolerance
-fn add_snapshot_newer_within_tolerance_status(
+fn add_newer_within_tolerance(
     builder: PreviewBuilder,
     context: &SnapshotComparisonContext,
 ) -> PreviewBuilder {
@@ -552,7 +552,7 @@ fn truncate_string(s: &str, max_len: usize) -> String {
 
 /// Select a snapshot interactively with optional local save comparison
 /// Returns Some(snapshot_id) if a snapshot was selected, None if cancelled
-pub fn select_snapshot_interactive_with_local_comparison(
+pub fn select_snapshot_interactive(
     game_name: &str,
     installation: Option<&crate::game::config::GameInstallation>,
 ) -> Result<Option<String>> {

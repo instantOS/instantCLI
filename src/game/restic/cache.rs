@@ -63,16 +63,16 @@ pub fn get_snapshots_for_game(
 pub fn get_repository_snapshots(config: &InstantGameConfig) -> Result<Vec<Snapshot>> {
     let repository_path = config.repo.as_path().to_string_lossy().to_string();
 
-    if let Some(cached) = get_cached_repository_snapshots(&repository_path)? {
+    if let Some(cached) = get_cached_snapshots(&repository_path)? {
         return Ok(cached);
     }
 
-    let fetched = fetch_repository_snapshots_from_restic(config)?;
-    store_repository_snapshots(&repository_path, fetched.clone())?;
+    let fetched = fetch_snapshots(config)?;
+    store_snapshots(&repository_path, fetched.clone())?;
     Ok(fetched)
 }
 
-fn get_cached_repository_snapshots(repository_path: &str) -> Result<Option<Vec<Snapshot>>> {
+fn get_cached_snapshots(repository_path: &str) -> Result<Option<Vec<Snapshot>>> {
     let cache = get_cache()
         .lock()
         .map_err(|_| anyhow!("Snapshot cache mutex poisoned"))?;
@@ -84,7 +84,7 @@ fn get_cached_repository_snapshots(repository_path: &str) -> Result<Option<Vec<S
         .map(|cached| cached.snapshots.clone()))
 }
 
-fn store_repository_snapshots(repository_path: &str, snapshots: Vec<Snapshot>) -> Result<()> {
+fn store_snapshots(repository_path: &str, snapshots: Vec<Snapshot>) -> Result<()> {
     let mut cache = get_cache()
         .lock()
         .map_err(|_| anyhow!("Snapshot cache mutex poisoned"))?;
@@ -102,7 +102,7 @@ fn store_repository_snapshots(repository_path: &str, snapshots: Vec<Snapshot>) -
 }
 
 /// Fetch fresh snapshots for entire repository from restic (expensive operation)
-fn fetch_repository_snapshots_from_restic(config: &InstantGameConfig) -> Result<Vec<Snapshot>> {
+fn fetch_snapshots(config: &InstantGameConfig) -> Result<Vec<Snapshot>> {
     let restic = crate::restic::wrapper::ResticWrapper::new(
         config.repo.as_path().to_string_lossy().to_string(),
         config.repo_password.clone(),

@@ -567,7 +567,7 @@ fn handle_initial_checkpoint(
     );
 
     if let Some(snapshot_id) =
-        checkpoint::extract_snapshot_id_from_backup_result(&backup_summary, game_name, game_config)?
+        checkpoint::extract_snapshot_id(&backup_summary, game_name, game_config)?
     {
         installation.update_checkpoint(snapshot_id.clone());
     }
