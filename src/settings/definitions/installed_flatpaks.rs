@@ -99,51 +99,55 @@ fn run_installed_flatpaks_manager() -> Result<()> {
     let list_command = "flatpak list --app --columns=application,name,version,origin,size";
     let preview_cmd = preview_command_streaming(PreviewId::Flatpak);
 
-    let result = FzfWrapper::builder()
-        .prompt("Select a Flatpak app")
-        .header(Header::fancy("Manage Installed Flatpaks"))
-        .args(fzf_mocha_args())
-        .args([
-            "--delimiter",
-            "\t",
-            "--with-nth",
-            "2,3..", // Show name and remaining fields, hide app_id from display
-            "--preview",
-            &preview_cmd,
-            "--ansi",
-        ])
-        .responsive_layout()
-        .select_streaming(list_command)?;
+    loop {
+        let result = FzfWrapper::builder()
+            .prompt("Select a Flatpak app")
+            .header(Header::fancy("Manage Installed Flatpaks"))
+            .args(fzf_mocha_args())
+            .args([
+                "--delimiter",
+                "\t",
+                "--with-nth",
+                "2,3..", // Show name and remaining fields, hide app_id from display
+                "--preview",
+                &preview_cmd,
+                "--ansi",
+            ])
+            .responsive_layout()
+            .select_streaming(list_command)?;
 
-    let app_id = match result {
-        FzfResult::Selected(line) => line.split('\t').next().unwrap_or(&line).to_string(),
-        FzfResult::Cancelled => {
-            println!("App selection cancelled.");
-            return Ok(());
-        }
-        FzfResult::Error(err) => {
-            anyhow::bail!("App selection failed: {}", err);
-        }
-        _ => {
-            println!("No app selected.");
-            return Ok(());
-        }
-    };
+        let app_id = match result {
+            FzfResult::Selected(line) => line.split('\t').next().unwrap_or(&line).to_string(),
+            FzfResult::Cancelled => {
+                println!("App selection cancelled.");
+                return Ok(());
+            }
+            FzfResult::Error(err) => {
+                anyhow::bail!("App selection failed: {}", err);
+            }
+            _ => {
+                println!("No app selected.");
+                return Ok(());
+            }
+        };
 
-    // Show action menu for the selected app
-    let actions = vec![FlatpakAction::Run, FlatpakAction::Uninstall];
+        // Show action menu for the selected app
+        let actions = vec![FlatpakAction::Run, FlatpakAction::Uninstall];
 
-    let action = match select_one_with_style(actions)? {
-        Some(a) => a,
-        None => {
-            println!("Action selection cancelled.");
-            return Ok(());
+        let action = match select_one_with_style(actions)? {
+            Some(a) => a,
+            None => continue, // Action cancelled, return to list
+        };
+
+        match action {
+            FlatpakAction::Run => run_flatpak(&app_id)?,
+            FlatpakAction::Uninstall => {
+                if uninstall_flatpak(&app_id)? {
+                    // Uninstall completed, list will refresh on next iteration
+                }
+                // Whether cancelled or completed, return to list
+            }
         }
-    };
-
-    match action {
-        FlatpakAction::Run => run_flatpak(&app_id),
-        FlatpakAction::Uninstall => uninstall_flatpak(&app_id),
     }
 }
 
