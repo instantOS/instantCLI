@@ -158,18 +158,20 @@ pub fn category_tree(category: Category) -> Vec<CategoryNode> {
         Category::Install => vec![
             CategoryNode::setting(&packages::InstallPackages),
             CategoryNode::setting(&installed_packages::ManageInstalledPackages),
-            CategoryNode::group("Installation")
-                .description("Package installers and cache tools.")
-                .child(CategoryNode::setting(&flatpak::InstallFlatpakApps))
-                .child(CategoryNode::setting(
-                    &installed_flatpaks::ManageInstalledFlatpaks,
-                ))
+            CategoryNode::group("Snap")
+                .description("Snap package management tools.")
                 .child(CategoryNode::setting(&snap::InstallSnapApps))
                 .child(CategoryNode::setting(
                     &installed_snaps::ManageInstalledSnaps,
-                ))
-                .child(CategoryNode::setting(&appimages::ManageAppImages))
-                .child(CategoryNode::setting(&system::ClearPacmanCache)),
+                )),
+            CategoryNode::group("Flatpak")
+                .description("Flatpak package management tools.")
+                .child(CategoryNode::setting(&flatpak::InstallFlatpakApps))
+                .child(CategoryNode::setting(
+                    &installed_flatpaks::ManageInstalledFlatpaks,
+                )),
+            CategoryNode::setting(&appimages::ManageAppImages),
+            CategoryNode::setting(&system::ClearPacmanCache),
         ],
     }
 }
