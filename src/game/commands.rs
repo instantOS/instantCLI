@@ -3,21 +3,20 @@ use std::ffi::OsString;
 use anyhow::Result;
 
 use crate::common::deps::RESTIC;
-use crate::common::package::{ensure_all, InstallResult};
+use crate::common::package::{InstallResult, ensure_all};
 
 use super::cli::{DependencyCommands, GameCommands};
 use super::deps::{
-    add_dependency, install_dependency, list_dependencies as list_game_dependencies,
-    uninstall_dependency, AddDependencyOptions, InstallDependencyOptions,
-    UninstallDependencyOptions,
+    AddDependencyOptions, InstallDependencyOptions, UninstallDependencyOptions, add_dependency,
+    install_dependency, list_dependencies as list_game_dependencies, uninstall_dependency,
 };
-use super::games::manager::AddGameOptions;
 use super::games::GameManager;
+use super::games::manager::AddGameOptions;
 use super::games::{display, selection};
 use super::menu;
 use super::operations::{exec_game_command, launch_game, sync_game_saves};
-use super::repository::manager::InitOptions;
 use super::repository::GameRepositoryManager;
+use super::repository::manager::InitOptions;
 use super::restic::{
     backup_game_saves, handle_restic_command, prune_snapshots, restore_game_saves,
 };

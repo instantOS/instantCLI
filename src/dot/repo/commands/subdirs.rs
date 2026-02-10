@@ -1,7 +1,7 @@
 use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
-use crate::dot::repo::cli::SubdirCommands;
 use crate::dot::repo::DotfileRepositoryManager;
+use crate::dot::repo::cli::SubdirCommands;
 use crate::ui::nerd_font::NerdFont;
 use anyhow::Result;
 use colored::*;
@@ -86,7 +86,12 @@ fn set_subdirectories(config: &mut DotfileConfig, name: &str, subdirs: &[String]
 }
 
 /// Enable a subdirectory for a repository
-fn enable_subdirectory(config: &mut DotfileConfig, db: &Database, name: &str, subdir: &str) -> Result<()> {
+fn enable_subdirectory(
+    config: &mut DotfileConfig,
+    db: &Database,
+    name: &str,
+    subdir: &str,
+) -> Result<()> {
     // First verify the subdir exists in the repo's metadata
     let dotfile_repo = crate::dot::dotfilerepo::DotfileRepo::new(config, name.to_string())?;
     if !dotfile_repo.meta.dots_dirs.contains(&subdir.to_string()) {

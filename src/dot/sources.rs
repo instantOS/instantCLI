@@ -14,7 +14,10 @@ pub fn default_source_for(sources: &[DotfileSource]) -> Option<DotfileSource> {
     sources.first().cloned()
 }
 
-pub fn list_sources_for_target(config: &DotfileConfig, target_path: &Path) -> Result<Vec<DotfileSource>> {
+pub fn list_sources_for_target(
+    config: &DotfileConfig,
+    target_path: &Path,
+) -> Result<Vec<DotfileSource>> {
     let home = home_dir();
     let relative_path = target_path.strip_prefix(&home).unwrap_or(target_path);
     let mut sources = Vec::new();

@@ -47,7 +47,12 @@ pub fn handle_alternative(config: &DotfileConfig, opts: AlternativeOptions<'_>) 
     handle_file(config, &target_path, &display_path, action)
 }
 
-fn handle_directory(config: &DotfileConfig, dir: &Path, display: &str, action: Action) -> Result<()> {
+fn handle_directory(
+    config: &DotfileConfig,
+    dir: &Path,
+    display: &str,
+    action: Action,
+) -> Result<()> {
     match action {
         Action::Reset => Err(anyhow::anyhow!(
             "--reset is not supported for directories. Use it with a specific file."

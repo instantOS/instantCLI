@@ -28,7 +28,11 @@ fn resolve_repo_name(url: &str, name: Option<&str>) -> String {
 }
 
 /// Configure an external (yadm/stow) repository after cloning
-fn configure_external_repo(config: &mut DotfileConfig, repo_name: &str, read_only: bool) -> Result<()> {
+fn configure_external_repo(
+    config: &mut DotfileConfig,
+    repo_name: &str,
+    read_only: bool,
+) -> Result<()> {
     emit(
         Level::Info,
         "dot.repo.clone.external",
@@ -58,7 +62,11 @@ fn configure_external_repo(config: &mut DotfileConfig, repo_name: &str, read_onl
 }
 
 /// Check if repository metadata requests read-only mode and update config
-fn handle_read_only_metadata(config: &mut DotfileConfig, db: &Database, repo_name: &str) -> Result<()> {
+fn handle_read_only_metadata(
+    config: &mut DotfileConfig,
+    db: &Database,
+    repo_name: &str,
+) -> Result<()> {
     if let Ok(local_repo) = DotfileRepositoryManager::new(config, db).get_repository_info(repo_name)
         && let Some(true) = local_repo.meta.read_only
     {
@@ -93,7 +101,11 @@ pub struct CloneOptions<'a> {
 }
 
 /// Clone a new repository
-pub fn clone_repository(config: &mut DotfileConfig, db: &Database, opts: CloneOptions<'_>) -> Result<()> {
+pub fn clone_repository(
+    config: &mut DotfileConfig,
+    db: &Database,
+    opts: CloneOptions<'_>,
+) -> Result<()> {
     if opts.read_only && opts.force_write {
         return Err(anyhow::anyhow!(
             "Cannot use both --read-only and --force-write flags at the same time"

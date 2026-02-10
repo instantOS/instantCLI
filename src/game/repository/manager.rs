@@ -1,6 +1,6 @@
 use super::init::initialize_restic_repo;
-use crate::common::paths;
 use crate::common::TildePath;
+use crate::common::paths;
 use crate::game::config::InstantGameConfig;
 use crate::menu_utils::FzfWrapper;
 use crate::ui::nerd_font::NerdFont;

@@ -6,8 +6,8 @@ use crate::dot::db::Database;
 use crate::dot::meta;
 use crate::dot::repo::DotfileRepositoryManager;
 use crate::menu_utils::{
-    prompt_text_edit, ConfirmResult, FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor,
-    TextEditOutcome, TextEditPrompt,
+    ConfirmResult, FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor, TextEditOutcome,
+    TextEditPrompt, prompt_text_edit,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
@@ -44,7 +44,11 @@ impl FzfSelectable for DetailActionItem {
 }
 
 /// Handle editing repository details
-pub(super) fn handle_edit_details(repo_name: &str, config: &DotfileConfig, db: &Database) -> Result<()> {
+pub(super) fn handle_edit_details(
+    repo_name: &str,
+    config: &DotfileConfig,
+    db: &Database,
+) -> Result<()> {
     let Some((repo_path, mut metadata)) = load_edit_metadata(repo_name, config, db)? else {
         return Ok(());
     };

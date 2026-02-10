@@ -1,6 +1,6 @@
 use std::{ffi::OsStr, fmt};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use clap::ValueEnum;
 use clap_complete::engine::CompletionCandidate;
 use clap_complete::env::Shells;

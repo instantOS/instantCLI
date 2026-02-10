@@ -3,12 +3,12 @@ use std::path::PathBuf;
 
 use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
-use crate::dot::repo::{cli::RepoCommands, DotfileRepositoryManager};
+use crate::dot::repo::{DotfileRepositoryManager, cli::RepoCommands};
 use crate::menu_utils::{ConfirmResult, FzfResult, FzfWrapper, Header, MenuCursor};
 use crate::ui::catppuccin::fzf_mocha_args;
 
 use super::super::subdir_actions::handle_manage_subdirs;
-use super::action_menu::{build_repo_action_menu, RepoAction};
+use super::action_menu::{RepoAction, build_repo_action_menu};
 use super::details::handle_edit_details;
 use super::preview::build_repo_preview;
 
@@ -96,7 +96,12 @@ fn dispatch_repo_action(
     Ok(false)
 }
 
-fn toggle_repo(repo_name: &str, config: &mut DotfileConfig, db: &Database, debug: bool) -> Result<()> {
+fn toggle_repo(
+    repo_name: &str,
+    config: &mut DotfileConfig,
+    db: &Database,
+    debug: bool,
+) -> Result<()> {
     let is_enabled = config
         .repos
         .iter()
@@ -156,7 +161,12 @@ fn show_repo_info(repo_name: &str, config: &DotfileConfig, db: &Database) -> Res
     Ok(())
 }
 
-fn remove_repo(repo_name: &str, config: &mut DotfileConfig, db: &Database, debug: bool) -> Result<bool> {
+fn remove_repo(
+    repo_name: &str,
+    config: &mut DotfileConfig,
+    db: &Database,
+    debug: bool,
+) -> Result<bool> {
     let confirm = FzfWrapper::builder()
         .confirm(format!(
             "Remove repository '{}'?\n\nThis will remove it from your configuration.",
@@ -205,7 +215,11 @@ fn open_repo_shell(repo_name: &str, config: &DotfileConfig, db: &Database) -> Re
     Ok(())
 }
 
-fn repo_path_if_available(repo_name: &str, config: &DotfileConfig, db: &Database) -> Option<PathBuf> {
+fn repo_path_if_available(
+    repo_name: &str,
+    config: &DotfileConfig,
+    db: &Database,
+) -> Option<PathBuf> {
     let repo_manager = DotfileRepositoryManager::new(config, db);
     let local_repo = repo_manager.get_repository_info(repo_name).ok()?;
     local_repo.local_path(config).ok()

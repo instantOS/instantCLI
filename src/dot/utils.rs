@@ -169,7 +169,10 @@ pub fn merge_dotfiles(dotfiles_list: Vec<Vec<Dotfile>>) -> HashMap<PathBuf, Dotf
 }
 
 /// Get all dotfiles from all active repositories
-pub fn get_all_dotfiles(config: &DotfileConfig, db: &Database) -> Result<HashMap<PathBuf, Dotfile>> {
+pub fn get_all_dotfiles(
+    config: &DotfileConfig,
+    db: &Database,
+) -> Result<HashMap<PathBuf, Dotfile>> {
     let active_dirs = get_active_dotfile_dirs(config, db)?;
     let home_path = PathBuf::from(shellexpand::tilde("~").to_string());
 

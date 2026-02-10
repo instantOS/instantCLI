@@ -243,7 +243,12 @@ fn emit_no_modified(target_path: &Path, home: &Path, unmodified_count: usize, ve
 }
 
 /// Merge a modified dotfile with its source using nvim diff
-pub fn merge_dotfile(config: &DotfileConfig, db: &Database, path: &str, verbose: bool) -> Result<()> {
+pub fn merge_dotfile(
+    config: &DotfileConfig,
+    db: &Database,
+    path: &str,
+    verbose: bool,
+) -> Result<()> {
     let all_dotfiles = get_all_dotfiles(config, db)?;
     let target_path = resolve_dotfile_path(path)?;
     let home = PathBuf::from(shellexpand::tilde("~").to_string());

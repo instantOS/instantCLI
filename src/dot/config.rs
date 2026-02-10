@@ -5,9 +5,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::common::TildePath;
 use crate::common::config::DocumentedConfig;
 use crate::common::paths;
-use crate::common::TildePath;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Repo {

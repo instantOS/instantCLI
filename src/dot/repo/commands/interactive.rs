@@ -26,7 +26,11 @@ impl FzfSelectable for RepoSelectionItem {
     }
 }
 
-fn select_repo_interactive(config: &DotfileConfig, db: &Database, prompt: &str) -> Result<Option<String>> {
+fn select_repo_interactive(
+    config: &DotfileConfig,
+    db: &Database,
+    prompt: &str,
+) -> Result<Option<String>> {
     let items: Vec<RepoSelectionItem> = config
         .repos
         .iter()
@@ -57,7 +61,11 @@ fn select_repo_interactive(config: &DotfileConfig, db: &Database, prompt: &str) 
     }
 }
 
-pub(super) fn open_repo_lazygit(config: &DotfileConfig, db: &Database, name: Option<&str>) -> Result<()> {
+pub(super) fn open_repo_lazygit(
+    config: &DotfileConfig,
+    db: &Database,
+    name: Option<&str>,
+) -> Result<()> {
     let repo_name = match name {
         Some(n) => n.to_string(),
         None => {
@@ -80,7 +88,11 @@ pub(super) fn open_repo_lazygit(config: &DotfileConfig, db: &Database, name: Opt
     Ok(())
 }
 
-pub(super) fn open_repo_shell(config: &DotfileConfig, db: &Database, name: Option<&str>) -> Result<()> {
+pub(super) fn open_repo_shell(
+    config: &DotfileConfig,
+    db: &Database,
+    name: Option<&str>,
+) -> Result<()> {
     let repo_name = match name {
         Some(n) => n.to_string(),
         None => match select_repo_interactive(config, db, "Select repository to open shell in")? {

@@ -21,7 +21,7 @@ mod tests {
             .output()
             .expect("Failed to init git repo");
 
-        let mut config = Config::default();
+        let mut config = DotfileConfig::default();
         config.repos_dir = crate::common::TildePath::new(dir.path().to_path_buf());
 
         let metadata = RepoMetaData {
@@ -67,7 +67,7 @@ mod tests {
         fs::write(repo_path.join("instantdots.toml"), toml_content).unwrap();
         fs::create_dir_all(repo_path.join("dots")).unwrap();
 
-        let mut config = Config::default();
+        let mut config = DotfileConfig::default();
         config.repos_dir = crate::common::TildePath::new(dir.path().to_path_buf());
 
         let repo_config = Repo {
@@ -103,7 +103,7 @@ mod tests {
         fs::write(repo_path.join("instantdots.toml"), toml_content).unwrap();
         fs::create_dir_all(repo_path.join("dots")).unwrap();
 
-        let mut config = Config::default();
+        let mut config = DotfileConfig::default();
         config.repos_dir = crate::common::TildePath::new(dir.path().to_path_buf());
 
         let repo_config = Repo {

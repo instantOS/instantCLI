@@ -6,7 +6,11 @@ use anyhow::Result;
 use colored::*;
 
 /// Show detailed repository information
-pub(super) fn show_repository_info(config: &DotfileConfig, db: &Database, name: &str) -> Result<()> {
+pub(super) fn show_repository_info(
+    config: &DotfileConfig,
+    db: &Database,
+    name: &str,
+) -> Result<()> {
     let repo_manager = DotfileRepositoryManager::new(config, db);
 
     let local_repo = repo_manager.get_repository_info(name)?;

@@ -203,7 +203,11 @@ pub fn add_dotfile(
 
 /// Add a file with a destination picker (for --choose flag).
 /// Delegates to the shared picker in the alternative module.
-fn add_with_destination_picker(config: &DotfileConfig, _db: &Database, target_path: &Path) -> Result<()> {
+fn add_with_destination_picker(
+    config: &DotfileConfig,
+    _db: &Database,
+    target_path: &Path,
+) -> Result<()> {
     super::alternative::pick_destination_and_add(config, target_path)?;
     Ok(())
 }
