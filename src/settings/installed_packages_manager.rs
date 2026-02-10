@@ -25,6 +25,11 @@ pub fn run_installed_packages_manager(debug: bool) -> Result<()> {
     }
 }
 
+/// Run the Snap app manager.
+pub fn run_snap_uninstaller(debug: bool) -> Result<()> {
+    run_uninstaller(PackageManager::Snap, debug)
+}
+
 /// Run the package uninstaller for any supported package manager.
 fn run_uninstaller(manager: PackageManager, debug: bool) -> Result<()> {
     if debug {
@@ -35,15 +40,37 @@ fn run_uninstaller(manager: PackageManager, debug: bool) -> Result<()> {
         anyhow::bail!("{} is not available on this system", manager);
     }
 
-    let list_cmd = manager.list_installed_command();
+    let list_cmd = if manager == PackageManager::Snap {
+        // For snap, show all columns for better info and add snap source prefix
+        // Format: snap\tname\tfull_line
+        "snap list 2>/dev/null | tail -n +2 | awk '{print \"snap\\t\" $1 \"\\t\" $0}'"
+    } else {
+        manager.list_installed_command()
+    };
+
     let preview_cmd = preview_command_streaming(PreviewId::InstalledPackage);
 
     let result = FzfWrapper::builder()
         .multi_select(true)
         .prompt("Select packages")
-        .header(Header::fancy("Manage Installed Packages"))
+        .header(Header::fancy(&format!(
+            "Manage Installed {}",
+            manager.display_name()
+        )))
         .args(fzf_mocha_args())
-        .args(["--preview", &preview_cmd, "--ansi"])
+        .args([
+            "--delimiter",
+            "\t",
+            "--with-nth",
+            if manager == PackageManager::Snap {
+                "2"
+            } else {
+                "1"
+            },
+            "--preview",
+            &preview_cmd,
+            "--ansi",
+        ])
         .responsive_layout()
         .select_streaming(list_cmd)
         .context("Failed to run package selector")?;
@@ -61,7 +88,14 @@ fn handle_uninstall_result(
         FzfResult::MultiSelected(lines) if !lines.is_empty() => {
             let packages: Vec<String> = lines
                 .into_iter()
-                .map(|l| l.trim().to_string())
+                .map(|l| {
+                    if l.starts_with("snap\t") {
+                        if let Some((_, rest)) = l.split_once('\t') {
+                            return rest.split_whitespace().next().unwrap_or(rest).to_string();
+                        }
+                    }
+                    l.split_whitespace().next().unwrap_or(&l).to_string()
+                })
                 .filter(|s| !s.is_empty())
                 .collect();
 
@@ -75,8 +109,9 @@ fn handle_uninstall_result(
             }
 
             let msg = format!(
-                "Uninstall {} package{}?\n\nThis action cannot be undone.",
+                "Uninstall {} {} package{}?\n\nThis action cannot be undone.",
                 packages.len(),
+                manager.display_name(),
                 if packages.len() == 1 { "" } else { "s" }
             );
 
@@ -92,14 +127,23 @@ fn handle_uninstall_result(
             Ok(())
         }
         FzfResult::Selected(line) => {
-            let name = line.trim();
+            let name = if line.starts_with("snap\t") {
+                if let Some((_, rest)) = line.split_once('\t') {
+                    rest.split_whitespace().next().unwrap_or(&rest).to_string()
+                } else {
+                    line.split_whitespace().next().unwrap_or(&line).to_string()
+                }
+            } else {
+                line.split_whitespace().next().unwrap_or(&line).to_string()
+            };
 
             if debug {
                 println!("Selected package: {}", name);
             }
 
             let msg = format!(
-                "Uninstall package '{}'?\n\nThis action cannot be undone.",
+                "Uninstall {} package '{}'?\n\nThis action cannot be undone.",
+                manager.display_name(),
                 name
             );
 
@@ -108,7 +152,7 @@ fn handle_uninstall_result(
                 return Ok(());
             }
 
-            uninstall_packages(manager, &[name])?;
+            uninstall_packages(manager, &[&name])?;
 
             println!("✓ Package uninstallation completed successfully!");
             Ok(())

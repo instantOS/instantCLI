@@ -63,6 +63,61 @@ fn run_simple_installer(manager: PackageManager, debug: bool) -> Result<()> {
     )
 }
 
+/// Run the interactive Snap installer.
+pub fn run_snap_installer(debug: bool) -> Result<()> {
+    if debug {
+        println!("Starting Snap package installer...");
+    }
+
+    if !PackageManager::Snap.is_available() {
+        anyhow::bail!("Snap is not available on this system");
+    }
+
+    let preview_cmd = preview_command_streaming(PreviewId::Package);
+
+    // Build reload command that searches snaps as user types
+    // Uses --phony to disable local filtering and rely on snap find results
+    let reload_cmd = "snap find '{q}' 2>/dev/null | awk 'NR>1 && !/^Name[[:space:]]+Version/ && !/Provide a search term/ && NF { \
+        name = $1; version = $2; publisher = $3; summary = \"\"; \
+        for(i=5; i<=NF; i++) summary = summary $i \" \"; \
+        print \"snap\\t\" name \"\\t\" version \"\\t\" publisher \"\\t\" summary \
+    }' || true";
+
+    // Load featured snaps on start; search as user types
+    let featured_snaps = "snap find 2>/dev/null | awk 'NR>1 && !/^Name[[:space:]]+Version/ && !/Provide a search term/ && NF { \
+        name = $1; version = $2; publisher = $3; summary = \"\"; \
+        for(i=5; i<=NF; i++) summary = summary $i \" \"; \
+        print \"snap\\t\" name \"\\t\" version \"\\t\" publisher \"\\t\" summary \
+    }'";
+
+    let result = FzfWrapper::builder()
+        .multi_select(true)
+        .prompt("Search snaps")
+        .header(Header::fancy("Type to search Snap Store"))
+        .args(fzf_mocha_args())
+        .args([
+            "--delimiter",
+            "\t",
+            "--with-nth",
+            "2",
+            "--preview",
+            &preview_cmd,
+            "--bind",
+            &format!("change:reload:{}", reload_cmd),
+            "--phony",
+            "--ansi",
+        ])
+        .responsive_layout()
+        .select_streaming(&featured_snaps)
+        .context("Failed to run snap selector")?;
+
+    handle_install_result(
+        result,
+        |packages| install_package_names(PackageManager::Snap, packages),
+        debug,
+    )
+}
+
 // ============================================================================
 // Arch Package Installer (Pacman + AUR)
 // ============================================================================
@@ -84,11 +139,19 @@ fn run_arch_installer(debug: bool) -> Result<()> {
     let mut list_cmds = Vec::new();
     if has_pacman {
         let cmd = PackageManager::Pacman.list_available_command();
-        list_cmds.push(format!("{} | sed 's/^/repo\\t/'", cmd));
+        list_cmds.push(format!(
+            "{} | sed 's/^/{}\\t/'",
+            cmd,
+            PackageManager::Pacman.as_str()
+        ));
     }
     if aur_helper.is_some() {
         let cmd = PackageManager::Aur.list_available_command();
-        list_cmds.push(format!("{} | sed 's/^/aur\\t/'", cmd));
+        list_cmds.push(format!(
+            "{} | sed 's/^/{}\\t/'",
+            cmd,
+            PackageManager::Aur.as_str()
+        ));
     }
     let full_command = format!("{{ {}; }}", list_cmds.join("; "));
 
@@ -162,20 +225,23 @@ fn handle_arch_install_result(
             Ok(())
         }
         FzfResult::Selected(line) => {
-            let (source, name) = line.split_once('\t').unwrap_or(("repo", &line));
+            let (source_str, name) = line
+                .split_once('\t')
+                .unwrap_or((PackageManager::Pacman.as_str(), &line));
 
             if debug {
-                println!("Selected: {} ({})", name, source);
+                println!("Selected: {} ({})", name, source_str);
             }
 
-            if source == "aur" {
-                if aur_helper.is_some() {
-                    install_package_names(PackageManager::Aur, &[name])?;
-                } else {
-                    anyhow::bail!("AUR package selected but no AUR helper found");
+            match source_str {
+                src if src == PackageManager::Aur.as_str() => {
+                    if aur_helper.is_some() {
+                        install_package_names(PackageManager::Aur, &[name])?;
+                    } else {
+                        anyhow::bail!("AUR package selected but no AUR helper found");
+                    }
                 }
-            } else {
-                install_package_names(PackageManager::Pacman, &[name])?;
+                _ => install_package_names(PackageManager::Pacman, &[name])?,
             }
 
             println!("✓ Package installation completed successfully!");
@@ -195,10 +261,11 @@ fn parse_arch_selections(lines: &[String]) -> (Vec<String>, Vec<String>) {
     let mut aur = Vec::new();
 
     for line in lines {
-        if let Some((source, name)) = line.split_once('\t') {
-            match source {
-                "aur" => aur.push(name.to_string()),
-                _ => repo.push(name.to_string()),
+        if let Some((source_str, name)) = line.split_once('\t') {
+            if source_str == PackageManager::Aur.as_str() {
+                aur.push(name.to_string());
+            } else {
+                repo.push(name.to_string());
             }
         } else {
             repo.push(line.clone());
@@ -221,7 +288,13 @@ where
         FzfResult::MultiSelected(lines) if !lines.is_empty() => {
             let packages: Vec<String> = lines
                 .into_iter()
-                .map(|l| l.trim().to_string())
+                .map(|l| {
+                    if let Some((_, rest)) = l.split_once('\t') {
+                        rest.split_whitespace().next().unwrap_or(rest).to_string()
+                    } else {
+                        l.split_whitespace().next().unwrap_or(&l).to_string()
+                    }
+                })
                 .filter(|s| !s.is_empty())
                 .collect();
 
@@ -252,11 +325,16 @@ where
             Ok(())
         }
         FzfResult::Selected(line) => {
-            let name = line.trim();
+            let name = if let Some((_, rest)) = line.split_once('\t') {
+                rest.split_whitespace().next().unwrap_or(rest).to_string()
+            } else {
+                line.split_whitespace().next().unwrap_or(&line).to_string()
+            };
+
             if debug {
                 println!("Selected package: {}", name);
             }
-            install_fn(&[name])?;
+            install_fn(&[&name])?;
             println!("✓ Package installation completed successfully!");
             Ok(())
         }

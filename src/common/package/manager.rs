@@ -131,6 +131,24 @@ impl PackageManager {
         }
     }
 
+    /// Get the lowercase identifier for this package manager.
+    ///
+    /// This is used for fzf source prefixes and serialization.
+    /// Examples: "pacman", "apt", "snap", "aur"
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Pacman => "pacman",
+            Self::Apt => "apt",
+            Self::Dnf => "dnf",
+            Self::Zypper => "zypper",
+            Self::Pkg => "pkg",
+            Self::Flatpak => "flatpak",
+            Self::Aur => "aur",
+            Self::Cargo => "cargo",
+            Self::Snap => "snap",
+        }
+    }
+
     /// Get the uninstall command for this package manager.
     ///
     /// Returns the command and base arguments used to uninstall packages.
@@ -212,6 +230,29 @@ impl std::fmt::Display for PackageManager {
     }
 }
 
+impl std::str::FromStr for PackageManager {
+    type Err = String;
+
+    /// Parse a package manager from its string identifier.
+    ///
+    /// This is used to map fzf source prefixes to package managers.
+    /// Supports both lowercase identifiers and legacy "arch" for Pacman.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "pacman" | "arch" | "repo" => Ok(PackageManager::Pacman),
+            "apt" => Ok(PackageManager::Apt),
+            "dnf" => Ok(PackageManager::Dnf),
+            "zypper" => Ok(PackageManager::Zypper),
+            "pkg" => Ok(PackageManager::Pkg),
+            "flatpak" => Ok(PackageManager::Flatpak),
+            "aur" => Ok(PackageManager::Aur),
+            "cargo" => Ok(PackageManager::Cargo),
+            "snap" => Ok(PackageManager::Snap),
+            _ => Err(format!("Unknown package manager: {}", s)),
+        }
+    }
+}
+
 /// Detect available AUR helper (yay, paru, etc.)
 ///
 /// Returns the name of the first available AUR helper found.
@@ -283,5 +324,98 @@ mod tests {
         let (cmd, args) = PackageManager::Snap.uninstall_command();
         assert_eq!(cmd, "sudo");
         assert_eq!(args, &["snap", "remove"]);
+    }
+
+    #[test]
+    fn test_from_str() {
+        use std::str::FromStr;
+
+        // Standard identifiers
+        assert_eq!(
+            PackageManager::from_str("pacman").unwrap(),
+            PackageManager::Pacman
+        );
+        assert_eq!(
+            PackageManager::from_str("apt").unwrap(),
+            PackageManager::Apt
+        );
+        assert_eq!(
+            PackageManager::from_str("dnf").unwrap(),
+            PackageManager::Dnf
+        );
+        assert_eq!(
+            PackageManager::from_str("zypper").unwrap(),
+            PackageManager::Zypper
+        );
+        assert_eq!(
+            PackageManager::from_str("pkg").unwrap(),
+            PackageManager::Pkg
+        );
+        assert_eq!(
+            PackageManager::from_str("flatpak").unwrap(),
+            PackageManager::Flatpak
+        );
+        assert_eq!(
+            PackageManager::from_str("aur").unwrap(),
+            PackageManager::Aur
+        );
+        assert_eq!(
+            PackageManager::from_str("cargo").unwrap(),
+            PackageManager::Cargo
+        );
+        assert_eq!(
+            PackageManager::from_str("snap").unwrap(),
+            PackageManager::Snap
+        );
+
+        // Legacy/arch identifiers
+        assert_eq!(
+            PackageManager::from_str("arch").unwrap(),
+            PackageManager::Pacman
+        );
+        assert_eq!(
+            PackageManager::from_str("repo").unwrap(),
+            PackageManager::Pacman
+        );
+
+        // Unknown identifier
+        assert!(PackageManager::from_str("unknown").is_err());
+    }
+
+    #[test]
+    fn test_as_str_roundtrip() {
+        use std::str::FromStr;
+
+        // Verify all managers can roundtrip through as_str() and from_str()
+        let managers = [
+            PackageManager::Pacman,
+            PackageManager::Apt,
+            PackageManager::Dnf,
+            PackageManager::Zypper,
+            PackageManager::Pkg,
+            PackageManager::Flatpak,
+            PackageManager::Aur,
+            PackageManager::Cargo,
+            PackageManager::Snap,
+        ];
+
+        for manager in managers {
+            let s = manager.as_str();
+            let parsed = PackageManager::from_str(s).unwrap();
+            assert_eq!(manager, parsed, "Roundtrip failed for {:?}", manager);
+        }
+    }
+
+    #[test]
+    fn test_as_str_values() {
+        assert_eq!(PackageManager::Pacman.as_str(), "pacman");
+        assert_eq!(PackageManager::Apt.as_str(), "apt");
+        assert_eq!(PackageManager::Dnf.as_str(), "dnf");
+        assert_eq!(PackageManager::Zypper.as_str(), "zypper");
+        assert_eq!(PackageManager::Pkg.as_str(), "pkg");
+        assert_eq!(PackageManager::Flatpak.as_str(), "flatpak");
+        assert_eq!(PackageManager::Aur.as_str(), "aur");
+        assert_eq!(PackageManager::Cargo.as_str(), "cargo");
+        assert_eq!(PackageManager::Snap.as_str(), "snap");
     }
 }
