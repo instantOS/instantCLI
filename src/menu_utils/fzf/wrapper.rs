@@ -22,7 +22,9 @@ use super::utils::{check_for_old_fzf_and_exit, log_fzf_failure};
 type ItemDisplayData = (String, String, String, bool);
 
 /// Build a lookup map from fzf_key to item, and collect display lines with keys and search keywords.
-/// Non-selectable items (separators) are included in display_data but excluded from item_map.
+/// All items (including non-selectable separators) are included in item_map so that
+/// `parse_fzf_output` can return them — callers like `select_menu` handle separator
+/// selections by re-launching the menu.
 fn build_item_map<T: FzfSelectable + Clone>(
     items: &[T],
 ) -> (HashMap<String, T>, Vec<ItemDisplayData>) {
@@ -35,9 +37,7 @@ fn build_item_map<T: FzfSelectable + Clone>(
         let keywords = item.fzf_search_keywords().join(" ");
         let selectable = item.fzf_is_selectable();
         display_data.push((display, key.clone(), keywords, selectable));
-        if selectable {
-            item_map.insert(key, item.clone());
-        }
+        item_map.insert(key, item.clone());
     }
 
     (item_map, display_data)
@@ -85,8 +85,14 @@ fn calculate_separator_aware_cursor(
 }
 
 /// Configure fzf for separator mode: raw mode + match-based navigation.
+///
+/// Best suited for short, static menus where visual grouping aids
+/// discoverability. Avoid using separators in long, dynamically filtered
+/// lists — raw mode keeps all items visible (dimmed when non-matching)
+/// which can clutter large result sets.
 fn configure_separator_mode(cmd: &mut Command) {
     cmd.arg("--raw");
+    cmd.arg("--layout=reverse");
     cmd.arg(format!("--query={SELECTABLE_MARKER}"));
     cmd.arg("--gutter-raw= ");
     cmd.arg("--bind").arg(
@@ -97,6 +103,7 @@ fn configure_separator_mode(cmd: &mut Command) {
             "ctrl-n:down-match",
             "ctrl-k:up-match",
             "ctrl-j:down-match",
+            "result:best",
         ]
         .join(","),
     );
@@ -448,10 +455,7 @@ impl FzfWrapper {
 
         // Calculate initial cursor position, adjusting for separators
         let cursor_position = if separator_mode {
-            calculate_separator_aware_cursor(
-                &self.initial_cursor,
-                &display_data,
-            )
+            calculate_separator_aware_cursor(&self.initial_cursor, &display_data)
         } else {
             calculate_cursor_position(&self.initial_cursor, display_data.len())
         };

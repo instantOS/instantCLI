@@ -289,30 +289,45 @@ impl FzfBuilder {
     ///
     /// Separators are rendered as dimmed lines and cursor navigation skips them.
     /// Returns `FzfResult<T>` (unwrapped from `MenuItem`), never a separator.
-    /// If the user somehow selects a separator, it is treated as cancelled.
+    /// If the user somehow selects a separator, the menu re-launches with the
+    /// cursor moved to the nearest selectable item.
     pub fn select_menu<T: FzfSelectable + Clone>(
         self,
         items: Vec<super::types::MenuItem<T>>,
     ) -> Result<FzfResult<T>> {
-        match self.select(items)? {
-            FzfResult::Selected(super::types::MenuItem::Entry(item)) => {
-                Ok(FzfResult::Selected(item))
+        use super::types::MenuItem;
+
+        let mut wrapper = FzfWrapper::new(
+            self.multi_select,
+            self.prompt,
+            self.header,
+            self.additional_args,
+            self.initial_cursor,
+            self.responsive_layout,
+        );
+
+        loop {
+            match wrapper.select(items.clone())? {
+                FzfResult::Selected(MenuItem::Entry(item)) => {
+                    return Ok(FzfResult::Selected(item));
+                }
+                FzfResult::Selected(MenuItem::Separator(_)) => {
+                    wrapper.initial_cursor = None;
+                    continue;
+                }
+                FzfResult::MultiSelected(selected) => {
+                    let entries: Vec<T> = selected
+                        .into_iter()
+                        .filter_map(|mi| match mi {
+                            MenuItem::Entry(item) => Some(item),
+                            MenuItem::Separator(_) => None,
+                        })
+                        .collect();
+                    return Ok(FzfResult::MultiSelected(entries));
+                }
+                FzfResult::Cancelled => return Ok(FzfResult::Cancelled),
+                FzfResult::Error(e) => return Ok(FzfResult::Error(e)),
             }
-            FzfResult::Selected(super::types::MenuItem::Separator(_)) => {
-                Ok(FzfResult::Cancelled)
-            }
-            FzfResult::MultiSelected(items) => {
-                let entries: Vec<T> = items
-                    .into_iter()
-                    .filter_map(|mi| match mi {
-                        super::types::MenuItem::Entry(item) => Some(item),
-                        super::types::MenuItem::Separator(_) => None,
-                    })
-                    .collect();
-                Ok(FzfResult::MultiSelected(entries))
-            }
-            FzfResult::Cancelled => Ok(FzfResult::Cancelled),
-            FzfResult::Error(e) => Ok(FzfResult::Error(e)),
         }
     }
 

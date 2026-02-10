@@ -74,6 +74,10 @@ impl FzfSelectable for &str {
 ///
 /// Use with `FzfBuilder::select_menu()` to build menus with grouped sections.
 /// Separators are rendered as dimmed lines and navigation keys skip over them.
+///
+/// **Best suited for short, static menus** (e.g. home/action menus) where
+/// visual grouping aids discoverability. Avoid in long, dynamically filtered
+/// lists — raw mode keeps all items visible (dimmed) which clutters large sets.
 #[derive(Clone, Debug)]
 pub enum MenuItem<T: Clone> {
     Entry(T),
