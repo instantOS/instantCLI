@@ -406,7 +406,12 @@ impl FzfBuilder {
     fn prepare_padded_input<T: FzfSelectable>(items: &[T]) -> String {
         let mut input_lines = Vec::new();
         // Padding to push keywords off-screen (searchable but not visible)
+        // Must be long enough for wide terminals when no preview pane is present
         const HIDDEN_PADDING: &str = "                                                                                                    ";
+        const EXTRA_WIDE_PADDING: &str = "                                                                                                                                                                                                                                                                    ";
+
+        // Check if any item has a preview to determine appropriate padding
+        let has_previews = items.iter().any(|item| !matches!(item.fzf_preview(), FzfPreview::None));
 
         for item in items {
             let display = item.fzf_display_text();
@@ -419,10 +424,13 @@ impl FzfBuilder {
             let keywords = item.fzf_search_keywords().join(" ");
 
             // Only apply padding/delimiter trick when this item has keywords
+            // Use wider padding when no previews are shown (full terminal width)
             let middle_line = if keywords.is_empty() {
                 format!("  {display}")
-            } else {
+            } else if has_previews {
                 format!("  {display}{HIDDEN_PADDING}\x1f{keywords}")
+            } else {
+                format!("  {display}{EXTRA_WIDE_PADDING}\x1f{keywords}")
             };
 
             let padded_item = format!("{top_padding}\n{middle_line}\n{bottom_with_shadow}");
