@@ -56,4 +56,9 @@ impl MenuCursor {
         self.last_index = items.iter().position(|item| item.fzf_key() == *key_ref);
         self.last_key = Some(key);
     }
+
+    pub fn update_from_key(&mut self, key: &str) {
+        self.last_key = Some(key.to_string());
+        self.last_index = None;
+    }
 }

@@ -12,6 +12,7 @@ pub use cursor::MenuCursor;
 pub use file_picker::{FilePickerResult, FilePickerScope, MenuWrapper};
 pub use fzf::{
     ChecklistAction, ChecklistResult, ConfirmResult, FzfResult, FzfSelectable, FzfWrapper, Header,
+    MenuItem,
 };
 pub use keychord::{KeyChord, KeyChordAction, KeyChordChild, KeyChordNode};
 pub use path_input::{PathInputBuilder, PathInputSelection};

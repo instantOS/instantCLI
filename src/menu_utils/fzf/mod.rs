@@ -22,7 +22,7 @@ mod wrapper;
 
 // Re-export public API for backward compatibility
 pub use types::{
-    ChecklistAction, ChecklistResult, ConfirmResult, FzfResult, FzfSelectable, Header,
+    ChecklistAction, ChecklistResult, ConfirmResult, FzfResult, FzfSelectable, Header, MenuItem,
 };
 
 // Re-export main user-facing types

@@ -7,7 +7,7 @@ mod types;
 
 use anyhow::Result;
 
-use crate::menu_utils::{FzfResult, FzfWrapper, Header, MenuCursor};
+use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor, MenuItem};
 use crate::ui::catppuccin::fzf_mocha_args;
 
 use convert::run_new_project;
@@ -37,13 +37,15 @@ pub async fn video_menu(_debug: bool) -> Result<()> {
 
 fn select_video_menu_entry(cursor: &mut MenuCursor) -> Result<Option<VideoMenuEntry>> {
     let entries = vec![
-        VideoMenuEntry::NewProject,
-        VideoMenuEntry::Project,
-        VideoMenuEntry::Slide,
-        VideoMenuEntry::Setup,
-        VideoMenuEntry::Transcribe,
-        VideoMenuEntry::Preprocess,
-        VideoMenuEntry::CloseMenu,
+        MenuItem::entry(VideoMenuEntry::NewProject),
+        MenuItem::entry(VideoMenuEntry::Project),
+        MenuItem::entry(VideoMenuEntry::Slide),
+        MenuItem::separator("Advanced"),
+        MenuItem::entry(VideoMenuEntry::Transcribe),
+        MenuItem::entry(VideoMenuEntry::Preprocess),
+        MenuItem::entry(VideoMenuEntry::Setup),
+        MenuItem::line(),
+        MenuItem::entry(VideoMenuEntry::CloseMenu),
     ];
 
     let mut builder = FzfWrapper::builder()
@@ -56,11 +58,11 @@ fn select_video_menu_entry(cursor: &mut MenuCursor) -> Result<Option<VideoMenuEn
         builder = builder.initial_index(index);
     }
 
-    let result = builder.select(entries.clone())?;
+    let result = builder.select_menu(entries.clone())?;
 
     match result {
         FzfResult::Selected(entry) => {
-            cursor.update(&entry, &entries);
+            cursor.update_from_key(&entry.fzf_key());
             Ok(Some(entry))
         }
         FzfResult::Cancelled => Ok(None),

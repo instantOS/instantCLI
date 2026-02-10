@@ -285,6 +285,37 @@ impl FzfBuilder {
         wrapper.select(items)
     }
 
+    /// Select from a list that may contain `MenuItem::Separator` entries.
+    ///
+    /// Separators are rendered as dimmed lines and cursor navigation skips them.
+    /// Returns `FzfResult<T>` (unwrapped from `MenuItem`), never a separator.
+    /// If the user somehow selects a separator, it is treated as cancelled.
+    pub fn select_menu<T: FzfSelectable + Clone>(
+        self,
+        items: Vec<super::types::MenuItem<T>>,
+    ) -> Result<FzfResult<T>> {
+        match self.select(items)? {
+            FzfResult::Selected(super::types::MenuItem::Entry(item)) => {
+                Ok(FzfResult::Selected(item))
+            }
+            FzfResult::Selected(super::types::MenuItem::Separator(_)) => {
+                Ok(FzfResult::Cancelled)
+            }
+            FzfResult::MultiSelected(items) => {
+                let entries: Vec<T> = items
+                    .into_iter()
+                    .filter_map(|mi| match mi {
+                        super::types::MenuItem::Entry(item) => Some(item),
+                        super::types::MenuItem::Separator(_) => None,
+                    })
+                    .collect();
+                Ok(FzfResult::MultiSelected(entries))
+            }
+            FzfResult::Cancelled => Ok(FzfResult::Cancelled),
+            FzfResult::Error(e) => Ok(FzfResult::Error(e)),
+        }
+    }
+
     /// Select with vertical padding around each item.
     /// Uses NUL-separated multi-line items so the entire padded area is highlighted.
     /// Uses FZF's {n} index for reliable item matching instead of parsing display text.
@@ -1077,17 +1108,19 @@ impl FzfBuilder {
         }
 
         let preview_strategy = PreviewUtils::analyze_preview_strategy(entries)?;
-        let display_data: Vec<(String, String, String)> = entries
+        let display_data: Vec<(String, String, String, bool)> = entries
             .iter()
             .map(|entry| {
                 (
                     entry.fzf_display_text(),
                     entry.fzf_key(),
                     entry.fzf_search_keywords().join(" "),
+                    true,
                 )
             })
             .collect();
-        let input_text = configure_preview_and_input(&mut cmd, preview_strategy, &display_data);
+        let input_text =
+            configure_preview_and_input(&mut cmd, preview_strategy, &display_data, false);
 
         let mut child = cmd
             .stdin(Stdio::piped())

@@ -50,6 +50,12 @@ pub trait FzfSelectable {
     fn fzf_search_keywords(&self) -> &[&str] {
         &[]
     }
+
+    /// Whether this item is selectable/navigable. Non-selectable items act as
+    /// visual separators that cursor navigation skips over.
+    fn fzf_is_selectable(&self) -> bool {
+        true
+    }
 }
 
 impl FzfSelectable for String {
@@ -61,6 +67,72 @@ impl FzfSelectable for String {
 impl FzfSelectable for &str {
     fn fzf_display_text(&self) -> String {
         self.to_string()
+    }
+}
+
+/// A menu item that can be either a selectable entry or a visual separator.
+///
+/// Use with `FzfBuilder::select_menu()` to build menus with grouped sections.
+/// Separators are rendered as dimmed lines and navigation keys skip over them.
+#[derive(Clone, Debug)]
+pub enum MenuItem<T: Clone> {
+    Entry(T),
+    Separator(String),
+}
+
+impl<T: Clone> MenuItem<T> {
+    pub fn entry(item: T) -> Self {
+        MenuItem::Entry(item)
+    }
+
+    pub fn separator(label: &str) -> Self {
+        MenuItem::Separator(label.to_string())
+    }
+
+    pub fn line() -> Self {
+        MenuItem::Separator(String::new())
+    }
+}
+
+impl<T: FzfSelectable + Clone> FzfSelectable for MenuItem<T> {
+    fn fzf_display_text(&self) -> String {
+        match self {
+            MenuItem::Entry(item) => item.fzf_display_text(),
+            MenuItem::Separator(label) => {
+                let dim = hex_to_ansi_fg(colors::OVERLAY0);
+                let reset = "\x1b[0m";
+                if label.is_empty() {
+                    format!("{dim}╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌{reset}")
+                } else {
+                    format!("{dim}╌╌ {label} ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌{reset}")
+                }
+            }
+        }
+    }
+
+    fn fzf_key(&self) -> String {
+        match self {
+            MenuItem::Entry(item) => item.fzf_key(),
+            MenuItem::Separator(label) => format!("__sep__{label}"),
+        }
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        match self {
+            MenuItem::Entry(item) => item.fzf_preview(),
+            MenuItem::Separator(_) => FzfPreview::None,
+        }
+    }
+
+    fn fzf_is_selectable(&self) -> bool {
+        matches!(self, MenuItem::Entry(_))
+    }
+
+    fn fzf_search_keywords(&self) -> &[&str] {
+        match self {
+            MenuItem::Entry(item) => item.fzf_search_keywords(),
+            MenuItem::Separator(_) => &[],
+        }
     }
 }
 

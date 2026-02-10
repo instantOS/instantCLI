@@ -18,10 +18,11 @@ use super::utils::{check_for_old_fzf_and_exit, log_fzf_failure};
 // Helper functions for FzfWrapper::select
 // ============================================================================
 
-/// Item data collected for fzf display: (display_text, key, search_keywords)
-type ItemDisplayData = (String, String, String);
+/// Item data collected for fzf display: (display_text, key, search_keywords, is_selectable)
+type ItemDisplayData = (String, String, String, bool);
 
 /// Build a lookup map from fzf_key to item, and collect display lines with keys and search keywords.
+/// Non-selectable items (separators) are included in display_data but excluded from item_map.
 fn build_item_map<T: FzfSelectable + Clone>(
     items: &[T],
 ) -> (HashMap<String, T>, Vec<ItemDisplayData>) {
@@ -32,8 +33,11 @@ fn build_item_map<T: FzfSelectable + Clone>(
         let display = item.fzf_display_text();
         let key = item.fzf_key();
         let keywords = item.fzf_search_keywords().join(" ");
-        display_data.push((display, key.clone(), keywords));
-        item_map.insert(key, item.clone());
+        let selectable = item.fzf_is_selectable();
+        display_data.push((display, key.clone(), keywords, selectable));
+        if selectable {
+            item_map.insert(key, item.clone());
+        }
     }
 
     (item_map, display_data)
@@ -50,6 +54,54 @@ fn calculate_cursor_position(
     }
 }
 
+/// Calculate cursor position for separator mode, ensuring it never lands on a separator.
+fn calculate_separator_aware_cursor(
+    initial_cursor: &Option<InitialCursor>,
+    display_data: &[ItemDisplayData],
+) -> Option<usize> {
+    if display_data.is_empty() {
+        return None;
+    }
+
+    let requested = match initial_cursor {
+        Some(InitialCursor::Index(index)) => Some((*index).min(display_data.len() - 1)),
+        _ => None,
+    };
+
+    let pos = requested.unwrap_or(0);
+
+    // If the requested position is selectable, use it
+    if display_data[pos].3 {
+        return Some(pos);
+    }
+
+    // Search forward for the nearest selectable item
+    if let Some(fwd) = display_data[pos..].iter().position(|d| d.3) {
+        return Some(pos + fwd);
+    }
+
+    // Search backward
+    display_data[..pos].iter().rposition(|d| d.3)
+}
+
+/// Configure fzf for separator mode: raw mode + match-based navigation.
+fn configure_separator_mode(cmd: &mut Command) {
+    cmd.arg("--raw");
+    cmd.arg(format!("--query={SELECTABLE_MARKER}"));
+    cmd.arg("--gutter-raw= ");
+    cmd.arg("--bind").arg(
+        [
+            "up:up-match",
+            "down:down-match",
+            "ctrl-p:up-match",
+            "ctrl-n:down-match",
+            "ctrl-k:up-match",
+            "ctrl-j:down-match",
+        ]
+        .join(","),
+    );
+}
+
 /// Configure fzf preview and build input text based on the preview strategy.
 /// Always includes the fzf_key in field 3 so we can reliably match items.
 /// Search keywords are stored in field 2 for fuzzy matching.
@@ -60,28 +112,33 @@ fn calculate_cursor_position(
 /// sit off-screen. This is intentionally hacky, but it is the only reliable
 /// way to keep keyword matching working across fzf versions. The padding is
 /// only applied when keywords exist.
-///
-/// Line format: display\x1fkeywords\x1fkey[\x1f...preview_data]
-/// - Field 1: Display text (plus off-screen shadow keywords when present)
-/// - Field 2: Search keywords (empty string when none, but position kept for compatibility)
-/// - Field 3: Key (for item lookup on selection)
-/// - Field 4+: Preview data (varies by strategy)
-/// Helper to format a single line with optional keywords and extra preview fields.
-/// Structure: display\x1fkeywords\x1fkey\x1f[extra_fields...]
-/// - Field 1: Display text (plus off-screen shadow keywords when present)
-/// - Field 2: Search keywords (empty string when none, but position kept for compatibility)
-/// - Field 3: Key (always present, used by preview commands to extract field 3)
-/// - Field 4+: Preview data (only when extra_fields provided)
-fn format_fzf_line(display: &str, key: &str, keywords: &str, extra_fields: &[&str]) -> String {
+/// Zero-width character used to mark selectable items in raw/separator mode.
+/// Selectable items contain this in their display text so they match the
+/// pre-set query, while separators do not and are therefore "non-matching"
+/// (dimmed, skipped by up-match/down-match navigation).
+const SELECTABLE_MARKER: &str = "\u{2060}";
+
+fn format_fzf_line(
+    display: &str,
+    key: &str,
+    keywords: &str,
+    extra_fields: &[&str],
+    separator_mode: bool,
+    is_selectable: bool,
+) -> String {
     // Shadow keywords: keep them in the visible line but push them off-screen.
     // Only apply the padding when keywords exist.
     const HIDDEN_PADDING: &str = "                                                                                                    ";
 
-    let display_with_shadow = if keywords.is_empty() {
+    let mut display_with_shadow = if keywords.is_empty() {
         display.to_string()
     } else {
         format!("{display}{HIDDEN_PADDING}{keywords}")
     };
+
+    if separator_mode && is_selectable {
+        display_with_shadow = format!("{SELECTABLE_MARKER}{display_with_shadow}");
+    }
 
     let mut fields = Vec::with_capacity(3 + extra_fields.len());
     fields.push(display_with_shadow);
@@ -97,11 +154,12 @@ pub(crate) fn configure_preview_and_input(
     cmd: &mut Command,
     strategy: PreviewStrategy,
     display_data: &[ItemDisplayData],
+    separator_mode: bool,
 ) -> String {
     // Check if any item has keywords
     let has_keywords = display_data
         .iter()
-        .any(|(_, _, keywords)| !keywords.is_empty());
+        .any(|(_, _, keywords, _)| !keywords.is_empty());
 
     // Always hide extra fields (keywords, key, preview data) from display.
     // Field 1 remains the visible label (and contains any shadow keywords).
@@ -110,10 +168,14 @@ pub(crate) fn configure_preview_and_input(
         cmd.arg("--no-hscroll");
     }
 
+    let fmt = |display: &str, key: &str, keywords: &str, selectable: bool, extra: &[&str]| {
+        format_fzf_line(display, key, keywords, extra, separator_mode, selectable)
+    };
+
     match strategy {
         PreviewStrategy::None => display_data
             .iter()
-            .map(|(display, key, keywords)| format_fzf_line(display, key, keywords, &[]))
+            .map(|(display, key, keywords, sel)| fmt(display, key, keywords, *sel, &[]))
             .collect::<Vec<_>>()
             .join("\n"),
         PreviewStrategy::Command(command) => {
@@ -124,7 +186,7 @@ pub(crate) fn configure_preview_and_input(
 
             display_data
                 .iter()
-                .map(|(display, key, keywords)| format_fzf_line(display, key, keywords, &[]))
+                .map(|(display, key, keywords, sel)| fmt(display, key, keywords, *sel, &[]))
                 .collect::<Vec<_>>()
                 .join("\n")
         }
@@ -134,10 +196,10 @@ pub(crate) fn configure_preview_and_input(
 
             display_data
                 .iter()
-                .map(|(display, key, keywords)| {
+                .map(|(display, key, keywords, sel)| {
                     let command = command_map.get(display).cloned().unwrap_or_default();
                     let encoded = general_purpose::STANDARD.encode(command.as_bytes());
-                    format_fzf_line(display, key, keywords, &[&encoded])
+                    fmt(display, key, keywords, *sel, &[&encoded])
                 })
                 .collect::<Vec<_>>()
                 .join("\n")
@@ -148,10 +210,10 @@ pub(crate) fn configure_preview_and_input(
 
             display_data
                 .iter()
-                .map(|(display, key, keywords)| {
+                .map(|(display, key, keywords, sel)| {
                     let preview = preview_map.get(display).cloned().unwrap_or_default();
                     let encoded = general_purpose::STANDARD.encode(preview.as_bytes());
-                    format_fzf_line(display, key, keywords, &[&encoded])
+                    fmt(display, key, keywords, *sel, &[&encoded])
                 })
                 .collect::<Vec<_>>()
                 .join("\n")
@@ -165,14 +227,14 @@ pub(crate) fn configure_preview_and_input(
 
             display_data
                 .iter()
-                .map(|(display, key, keywords)| {
+                .map(|(display, key, keywords, sel)| {
                     let (type_marker, content) = match mixed_map.get(display) {
                         Some(MixedPreviewContent::Text(text)) => ("T", text.clone()),
                         Some(MixedPreviewContent::Command(cmd)) => ("C", cmd.clone()),
                         None => ("T", String::new()),
                     };
                     let encoded = general_purpose::STANDARD.encode(content.as_bytes());
-                    format_fzf_line(display, key, keywords, &[type_marker, &encoded])
+                    fmt(display, key, keywords, *sel, &[type_marker, &encoded])
                 })
                 .collect::<Vec<_>>()
                 .join("\n")
@@ -381,8 +443,18 @@ impl FzfWrapper {
         // Build item lookup map (keyed by fzf_key) and display data with search keywords
         let (item_map, display_data) = build_item_map(&items);
 
-        // Calculate initial cursor position
-        let cursor_position = calculate_cursor_position(&self.initial_cursor, display_data.len());
+        // Detect separator mode: any non-selectable items present
+        let separator_mode = display_data.iter().any(|(_, _, _, sel)| !sel);
+
+        // Calculate initial cursor position, adjusting for separators
+        let cursor_position = if separator_mode {
+            calculate_separator_aware_cursor(
+                &self.initial_cursor,
+                &display_data,
+            )
+        } else {
+            calculate_cursor_position(&self.initial_cursor, display_data.len())
+        };
 
         // Analyze preview strategy and build input text
         let preview_strategy = PreviewUtils::analyze_preview_strategy(&items)?;
@@ -404,13 +476,19 @@ impl FzfWrapper {
         }
 
         // Build input text and configure preview
-        let input_text = configure_preview_and_input(&mut cmd, preview_strategy, &display_data);
+        let input_text =
+            configure_preview_and_input(&mut cmd, preview_strategy, &display_data, separator_mode);
 
         if let Some(position) = cursor_position {
             cmd.arg("--bind").arg(format!("load:pos({})", position + 1));
         }
         for arg in &self.additional_args {
             cmd.arg(arg);
+        }
+
+        // Enable raw mode with separator-skipping navigation
+        if separator_mode {
+            configure_separator_mode(&mut cmd);
         }
 
         // Apply responsive layout settings LAST to override defaults
