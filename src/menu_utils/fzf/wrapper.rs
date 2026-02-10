@@ -238,7 +238,7 @@ pub(crate) fn configure_preview_and_input(
             display_data
                 .iter()
                 .map(|(display, key, keywords, sel)| {
-                    let command = command_map.get(display).cloned().unwrap_or_default();
+                    let command = command_map.get(key).cloned().unwrap_or_default();
                     let encoded = general_purpose::STANDARD.encode(command.as_bytes());
                     fmt(display, key, keywords, *sel, &[&encoded])
                 })
@@ -252,7 +252,7 @@ pub(crate) fn configure_preview_and_input(
             display_data
                 .iter()
                 .map(|(display, key, keywords, sel)| {
-                    let preview = preview_map.get(display).cloned().unwrap_or_default();
+                    let preview = preview_map.get(key).cloned().unwrap_or_default();
                     let encoded = general_purpose::STANDARD.encode(preview.as_bytes());
                     fmt(display, key, keywords, *sel, &[&encoded])
                 })
@@ -269,7 +269,7 @@ pub(crate) fn configure_preview_and_input(
             display_data
                 .iter()
                 .map(|(display, key, keywords, sel)| {
-                    let (type_marker, content) = match mixed_map.get(display) {
+                    let (type_marker, content) = match mixed_map.get(key) {
                         Some(MixedPreviewContent::Text(text)) => ("T", text.clone()),
                         Some(MixedPreviewContent::Command(cmd)) => ("C", cmd.clone()),
                         None => ("T", String::new()),
