@@ -49,13 +49,13 @@ fn run_snap_installer() -> Result<()> {
     // This allows finding packages like discord that don't appear in the default listing.
 
     // Initial command shows featured snaps (empty query shows `snap find` output)
-    // Use awk to skip both the header line and empty lines
-    let initial_command = "snap find 2>/dev/null | awk 'NR>1 && !/^Name[[:space:]]+Version/'";
+    // Use awk to skip the header line, empty lines, and the footer instruction message
+    let initial_command = "snap find 2>/dev/null | awk 'NR>1 && !/^Name[[:space:]]+Version/ && !/Provide a search term/ && NF'";
 
     // Reload command searches with the current query
     // {q} is fzf's placeholder for the current query string
     let reload_command =
-        "snap find {q} 2>/dev/null | awk 'NR>1 && !/^Name[[:space:]]+Version/' || true";
+        "snap find {q} 2>/dev/null | awk 'NR>1 && !/^Name[[:space:]]+Version/ && !/Provide a search term/ && NF' || true";
 
     // Build human-readable preview command using snap info
     let package_icon = NerdFont::Package.to_string();
