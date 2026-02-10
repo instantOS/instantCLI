@@ -16,11 +16,7 @@ impl SliderCommand {
             return Ok(None);
         }
 
-        let program = arguments
-            .first()
-            .cloned()
-            .context("Command requires at least one argument specifying the program")?;
-
+        let program = arguments[0].clone();
         let args = arguments[1..].to_vec();
 
         Ok(Some(Self { program, args }))
@@ -61,43 +57,96 @@ pub struct SliderConfig {
     pub command: Option<SliderCommand>,
 }
 
-impl SliderConfig {
-    /// Create a slider configuration ensuring sane defaults and value clamping.
-    pub fn new(
-        min: i64,
-        max: i64,
-        value: Option<i64>,
-        step: Option<i64>,
-        large_step: Option<i64>,
-        label: Option<String>,
-        command: Option<SliderCommand>,
-    ) -> Result<Self> {
-        if min >= max {
+/// Builder for constructing a `SliderConfig` with sensible defaults.
+pub struct SliderConfigBuilder {
+    min: i64,
+    max: i64,
+    value: Option<i64>,
+    step: Option<i64>,
+    large_step: Option<i64>,
+    label: Option<String>,
+    command: Option<SliderCommand>,
+}
+
+impl SliderConfigBuilder {
+    pub fn min(mut self, min: i64) -> Self {
+        self.min = min;
+        self
+    }
+
+    pub fn max(mut self, max: i64) -> Self {
+        self.max = max;
+        self
+    }
+
+    pub fn value(mut self, value: Option<i64>) -> Self {
+        self.value = value;
+        self
+    }
+
+    pub fn step(mut self, step: Option<i64>) -> Self {
+        self.step = step;
+        self
+    }
+
+    pub fn large_step(mut self, large_step: Option<i64>) -> Self {
+        self.large_step = large_step;
+        self
+    }
+
+    pub fn label(mut self, label: Option<String>) -> Self {
+        self.label = label;
+        self
+    }
+
+    pub fn command(mut self, command: Option<SliderCommand>) -> Self {
+        self.command = command;
+        self
+    }
+
+    /// Build the slider configuration, validating constraints and applying defaults.
+    pub fn build(self) -> Result<SliderConfig> {
+        if self.min >= self.max {
             return Err(anyhow!(
-                "Slider minimum ({min}) must be less than maximum ({max})"
+                "Slider minimum ({}) must be less than maximum ({})",
+                self.min,
+                self.max
             ));
         }
 
-        let range = max - min;
-
-        let default_small = if range >= 100 { 1 } else { 1.max(range / 100) };
+        let range = self.max - self.min;
         let default_large = (range / 10).max(5);
 
-        let step = step.unwrap_or(default_small).max(1);
-        let large_step = large_step.unwrap_or(default_large).max(step);
+        let step = self.step.unwrap_or(1).max(1);
+        let large_step = self.large_step.unwrap_or(default_large).max(step);
 
-        let mut value = value.unwrap_or(min + range / 2);
-        value = value.clamp(min, max);
+        let mut value = self.value.unwrap_or(self.min + range / 2);
+        value = value.clamp(self.min, self.max);
 
-        Ok(Self {
-            min,
-            max,
+        Ok(SliderConfig {
+            min: self.min,
+            max: self.max,
             value,
             step,
             large_step,
-            label,
-            command,
+            label: self.label,
+            command: self.command,
         })
+    }
+}
+
+impl SliderConfig {
+    /// Create a builder for configuring a slider.
+    pub fn builder() -> SliderConfigBuilder {
+        SliderConfigBuilder {
+            min: 0,
+            max: 100,
+            value: None,
+            step: None,
+            large_step: None,
+            label: None,
+            command: None,
+        }
     }
 
     /// Clamp an arbitrary value into the slider range.

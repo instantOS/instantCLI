@@ -315,14 +315,14 @@ impl Drop for SliderApp {
 /// Convenience helper to run the slider with arguments typically provided by CLI parsing.
 pub fn run_slider_command(request: &super::protocol::SliderRequest) -> Result<Option<i64>> {
     let command = SliderCommand::from_argv(&request.command)?;
-    let config = SliderConfig::new(
-        request.min,
-        request.max,
-        request.value,
-        request.step,
-        request.big_step,
-        request.label.clone(),
-        command,
-    )?;
+    let config = SliderConfig::builder()
+        .min(request.min)
+        .max(request.max)
+        .value(request.value)
+        .step(request.step)
+        .large_step(request.big_step)
+        .label(request.label.clone())
+        .command(command)
+        .build()?;
     run_slider(config)
 }

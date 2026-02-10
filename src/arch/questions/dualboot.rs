@@ -318,15 +318,14 @@ impl Question for DualBootSizeQuestion {
         let max_gb = max_linux / GB;
         let default_gb = (min_gb + max_gb) / 2;
 
-        let config = SliderConfig::new(
-            min_gb as i64,
-            max_gb as i64,
-            Some(default_gb as i64),
-            Some(1),  // Step 1 GB
-            Some(10), // Big step 10 GB
-            Some("Linux Size (GB)".to_string()),
-            None, // No command to execute on change
-        )?;
+        let config = SliderConfig::builder()
+            .min(min_gb as i64)
+            .max(max_gb as i64)
+            .value(Some(default_gb as i64))
+            .step(Some(1))       // Step 1 GB
+            .large_step(Some(10)) // Big step 10 GB
+            .label(Some("Linux Size (GB)".to_string()))
+            .build()?;
 
         // Run slider in sync task since it uses TUI
         let result = tokio::task::spawn_blocking(move || run_slider(config)).await?;
