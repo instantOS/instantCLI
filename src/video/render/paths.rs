@@ -3,38 +3,6 @@ use std::path::{Path, PathBuf};
 use anyhow::{Result, anyhow};
 
 use super::mode::RenderMode;
-use crate::video::document::{VideoMetadata, VideoSource};
-
-pub fn resolve_video_sources(
-    metadata: &VideoMetadata,
-    markdown_dir: &Path,
-) -> Result<Vec<VideoSource>> {
-    let mut resolved = Vec::new();
-
-    for source in &metadata.sources {
-        let video_path = if source.source.is_absolute() {
-            source.source.clone()
-        } else {
-            markdown_dir.join(&source.source)
-        };
-        let transcript_path = if source.transcript.is_absolute() {
-            source.transcript.clone()
-        } else {
-            markdown_dir.join(&source.transcript)
-        };
-
-        resolved.push(VideoSource {
-            id: source.id.clone(),
-            name: source.name.clone(),
-            source: video_path,
-            transcript: transcript_path,
-            audio: PathBuf::new(),
-            hash: source.hash.clone(),
-        });
-    }
-
-    Ok(resolved)
-}
 
 pub fn resolve_output_path(
     out_file: Option<&PathBuf>,

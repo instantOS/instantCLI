@@ -29,8 +29,10 @@ async fn handle_random(args: crate::wallpaper::cli::RandomArgs) -> Result<()> {
         !store.bool(WALLPAPER_LOGO_KEY)
     };
 
-    let path =
-        crate::wallpaper::random::generate_random_wallpaper(crate::wallpaper::random::RandomOptions { no_logo }).await?;
+    let path = crate::wallpaper::random::generate_random_wallpaper(
+        crate::wallpaper::random::RandomOptions { no_logo },
+    )
+    .await?;
 
     println!(
         "Generated wallpaper at: {}",
@@ -133,10 +135,9 @@ async fn handle_colored(args: crate::wallpaper::cli::ColoredArgs) -> Result<()> 
     store.set_optional_string(WALLPAPER_FG_COLOR_KEY, Some(fg_color.clone()));
     store.save().context("saving settings")?;
 
-    let path = crate::wallpaper::colored::generate_colored_wallpaper(crate::wallpaper::colored::ColoredOptions {
-        bg_color,
-        fg_color,
-    })
+    let path = crate::wallpaper::colored::generate_colored_wallpaper(
+        crate::wallpaper::colored::ColoredOptions { bg_color, fg_color },
+    )
     .await?;
 
     println!(

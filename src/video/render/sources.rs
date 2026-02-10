@@ -9,7 +9,6 @@ use crate::video::config::VideoConfig;
 use crate::video::document::VideoDocument;
 use crate::video::document::{VideoMetadata, VideoSource};
 use crate::video::render::logging::log_event;
-use crate::video::render::paths;
 use crate::video::support::utils::canonicalize_existing;
 
 pub(super) fn resolve_source_path(path: &Path, markdown_dir: &Path) -> Result<PathBuf> {
@@ -80,9 +79,8 @@ pub(crate) async fn resolve_video_sources(
     markdown_dir: &Path,
     config: &VideoConfig,
 ) -> Result<Vec<VideoSource>> {
-    let sources = paths::resolve_video_sources(metadata, markdown_dir)?;
     let mut resolved = Vec::new();
-    for source in sources {
+    for source in &metadata.sources {
         let resolved_source = resolve_source_path(&source.source, markdown_dir)?;
         let resolved_transcript = resolve_source_path(&source.transcript, markdown_dir)?;
         let resolved_audio = resolve_audio_path(&resolved_source, config).await?;
@@ -93,10 +91,12 @@ pub(crate) async fn resolve_video_sources(
             format!("Using source {} video {}", source.id, canonical.display()),
         );
         resolved.push(VideoSource {
+            id: source.id.clone(),
+            name: source.name.clone(),
             source: resolved_source,
             transcript: resolved_transcript,
             audio: resolved_audio,
-            ..source
+            hash: source.hash.clone(),
         });
     }
 
@@ -138,14 +138,9 @@ async fn resolve_audio_path(video_path: &Path, config: &VideoConfig) -> Result<P
     Ok(result.output_path)
 }
 
-pub(super) async fn build_audio_source_map(
-    sources: &[VideoSource],
-    config: &VideoConfig,
-) -> Result<HashMap<String, PathBuf>> {
-    let mut audio_map = HashMap::new();
-    for source in sources {
-        let audio_path = resolve_audio_path(&source.source, config).await?;
-        audio_map.insert(source.id.clone(), audio_path);
-    }
-    Ok(audio_map)
+pub(super) fn build_audio_source_map(sources: &[VideoSource]) -> HashMap<String, PathBuf> {
+    sources
+        .iter()
+        .map(|s| (s.id.clone(), s.audio.clone()))
+        .collect()
 }

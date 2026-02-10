@@ -3,7 +3,7 @@ use std::process::Command;
 
 use crate::assist::utils;
 
-pub fn play_bruh_sound() -> Result<()> {
+pub fn bruh() -> Result<()> {
     // Create cache directory if it doesn't exist
     let cache_dir = dirs::cache_dir().unwrap_or_else(|| std::path::PathBuf::from("/tmp"));
     let assist_cache_dir = cache_dir.join("instantassist");

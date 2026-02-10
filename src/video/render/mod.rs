@@ -78,7 +78,7 @@ async fn handle_render_with_services(args: RenderArgs, runner: &dyn FfmpegRunner
     let plan = build_timeline_plan(&document, &cues, &markdown_path)?;
 
     let default_source = find_default_source(&document.metadata, &sources)?;
-    let audio_map = build_audio_source_map(&sources, &video_config).await?;
+    let audio_map = build_audio_source_map(&sources);
 
     // Determine render mode from CLI args
     let render_mode = if args.reels {

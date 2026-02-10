@@ -1,4 +1,4 @@
-use crate::dot::config::{self, DotfileConfig};
+use crate::dot::config::DotfileConfig;
 use crate::dot::git::{get_dotfile_dir_name, get_repo_name_for_dotfile};
 use crate::dot::units::UnitIndex;
 use crate::ui::prelude::*;
