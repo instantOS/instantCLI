@@ -1,12 +1,13 @@
 use anyhow::{Context, Result};
 use std::collections::{BTreeSet, HashMap};
 
-use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
+use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuItem};
 use crate::settings::SettingsContext;
 use crate::settings::installable_packages::{
     self, ARCHIVE_MANAGERS, FILE_MANAGERS, IMAGE_VIEWERS, InstallableApp, PDF_VIEWERS,
     TEXT_EDITORS, VIDEO_PLAYERS, WEB_BROWSERS,
 };
+use crate::ui::catppuccin::fzf_mocha_args;
 use crate::ui::prelude::*;
 
 use super::app_info::{ApplicationInfo, get_application_info};

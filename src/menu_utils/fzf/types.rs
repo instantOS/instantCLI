@@ -311,8 +311,8 @@ impl ChecklistConfirm {
 
     /// Special key that identifies this as the confirm action.
     /// This unique prefix ensures it doesn't collide with real item keys.
-    pub fn confirm_key() -> String {
-        "__CHECKLIST_CONFIRM__".to_string()
+    pub fn confirm_key() -> &'static str {
+        "__CHECKLIST_CONFIRM__"
     }
 }
 
@@ -324,7 +324,7 @@ impl FzfSelectable for ChecklistConfirm {
     }
 
     fn fzf_key(&self) -> String {
-        Self::confirm_key()
+        Self::confirm_key().to_string()
     }
 
     fn fzf_initial_checked_state(&self) -> bool {
