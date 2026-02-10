@@ -11,7 +11,7 @@ use crate::ui::nerd_font::NerdFont;
 use super::preview::PreviewUtils;
 use super::types::*;
 use super::utils::*;
-use super::wrapper::{FzfWrapper, configure_preview_and_input};
+use super::wrapper::{FzfWrapper, FzfWrapperParts, check_fzf_exit, configure_preview_and_input};
 
 #[derive(Debug, Clone)]
 pub struct FzfBuilder {
@@ -124,24 +124,15 @@ impl FzfBuilder {
         }
     }
 
-    pub(crate) fn into_wrapper_parts(
-        self,
-    ) -> (
-        bool,
-        Option<String>,
-        Option<Header>,
-        Vec<String>,
-        Option<InitialCursor>,
-        bool,
-    ) {
-        (
-            self.multi_select,
-            self.prompt,
-            self.header,
-            self.additional_args,
-            self.initial_cursor,
-            self.responsive_layout,
-        )
+    pub(crate) fn into_wrapper_parts(self) -> FzfWrapperParts {
+        FzfWrapperParts {
+            multi_select: self.multi_select,
+            prompt: self.prompt,
+            header: self.header,
+            additional_args: self.additional_args,
+            initial_cursor: self.initial_cursor,
+            responsive_layout: self.responsive_layout,
+        }
     }
 
     pub fn multi_select(mut self, multi: bool) -> Self {
@@ -384,20 +375,11 @@ impl FzfBuilder {
 
         match output {
             Ok(result) => {
-                // Handle cancellation (Esc or Ctrl-C)
-                if let Some(code) = result.status.code()
-                    && (code == 130 || code == 143)
-                {
-                    return Ok(FzfResult::Cancelled);
+                if let Some(cancelled) = check_fzf_exit(&result) {
+                    return Ok(cancelled);
                 }
 
                 if !result.status.success() {
-                    check_for_old_fzf_and_exit(&result.stderr);
-                    if crate::ui::is_debug_enabled() {
-                        log_fzf_failure(&result.stderr, result.status.code(), |code, message| {
-                            crate::ui::emit(crate::ui::Level::Debug, code, message, None);
-                        });
-                    }
                     return Ok(FzfResult::Cancelled);
                 }
 
@@ -638,19 +620,8 @@ impl FzfBuilder {
         let output = child.wait_with_output()?;
         crate::menu::server::unregister_menu_process(pid);
 
-        if let Some(code) = output.status.code()
-            && (code == 130 || code == 143)
-        {
-            return Ok(FzfResult::Cancelled);
-        }
-
-        if !output.status.success() {
-            check_for_old_fzf_and_exit(&output.stderr);
-            if crate::ui::is_debug_enabled() {
-                log_fzf_failure(&output.stderr, output.status.code(), |code, message| {
-                    crate::ui::emit(crate::ui::Level::Debug, code, message, None);
-                });
-            }
+        if let Some(cancelled) = check_fzf_exit(&output) {
+            return Ok(cancelled);
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -835,14 +806,8 @@ impl FzfBuilder {
         let output = child.wait_with_output()?;
         crate::menu::server::unregister_menu_process(pid);
 
-        if let Some(code) = output.status.code()
-            && (code == 130 || code == 143)
-        {
+        if check_fzf_exit::<()>(&output).is_some() {
             return Ok(());
-        }
-
-        if !output.status.success() {
-            check_for_old_fzf_and_exit(&output.stderr);
         }
 
         Ok(())
@@ -1162,22 +1127,13 @@ impl FzfBuilder {
     ) -> Result<ChecklistSelection> {
         let exit_code = result.status.code();
 
-        // Handle cancellation (Esc, Ctrl-C)
-        if let Some(code) = exit_code
-            && (code == 130 || code == 143)
-        {
-            return Ok(ChecklistSelection::Cancelled);
-        }
-
-        // Handle other non-zero exit codes as errors (except code 1 which we handle below)
-        if !result.status.success() && exit_code != Some(1) {
-            check_for_old_fzf_and_exit(&result.stderr);
-            if crate::ui::is_debug_enabled() {
-                log_fzf_failure(&result.stderr, exit_code, |code, message| {
-                    crate::ui::emit(crate::ui::Level::Debug, code, message, None);
-                });
+        // Handle cancellation and fzf errors (except code 1 which means no match)
+        if exit_code != Some(1) {
+            if let Some(_) = check_fzf_exit::<()>(&result) {
+                return Ok(ChecklistSelection::Cancelled);
             }
-            return Ok(ChecklistSelection::Cancelled);
+        } else if !result.status.success() {
+            // code 1 with no match is handled below via empty selection
         }
 
         let stdout = String::from_utf8_lossy(&result.stdout);

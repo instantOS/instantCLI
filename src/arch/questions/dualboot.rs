@@ -322,7 +322,7 @@ impl Question for DualBootSizeQuestion {
             .min(min_gb as i64)
             .max(max_gb as i64)
             .value(Some(default_gb as i64))
-            .step(Some(1))       // Step 1 GB
+            .step(Some(1)) // Step 1 GB
             .large_step(Some(10)) // Big step 10 GB
             .label(Some("Linux Size (GB)".to_string()))
             .build()?;

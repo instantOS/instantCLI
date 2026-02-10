@@ -14,6 +14,35 @@ use super::preview::PreviewUtils;
 use super::types::*;
 use super::utils::{check_for_old_fzf_and_exit, log_fzf_failure};
 
+/// Named parts extracted from `FzfBuilder` for constructing `FzfWrapper`.
+pub(crate) struct FzfWrapperParts {
+    pub multi_select: bool,
+    pub prompt: Option<String>,
+    pub header: Option<Header>,
+    pub additional_args: Vec<String>,
+    pub initial_cursor: Option<InitialCursor>,
+    pub responsive_layout: bool,
+}
+
+/// Process fzf exit status. Returns `Some(Cancelled)` if the process was
+/// cancelled or failed, `None` if it exited successfully.
+pub(crate) fn check_fzf_exit<T>(result: &std::process::Output) -> Option<FzfResult<T>> {
+    if let Some(code) = result.status.code()
+        && (code == 130 || code == 143)
+    {
+        return Some(FzfResult::Cancelled);
+    }
+    if !result.status.success() {
+        check_for_old_fzf_and_exit(&result.stderr);
+        if crate::ui::is_debug_enabled() {
+            log_fzf_failure(&result.stderr, result.status.code(), |code, message| {
+                crate::ui::emit(crate::ui::Level::Debug, code, message, None);
+            });
+        }
+    }
+    None
+}
+
 // ============================================================================
 // Helper functions for FzfWrapper::select
 // ============================================================================
@@ -281,21 +310,8 @@ fn parse_fzf_output<T: Clone>(
     item_map: &HashMap<String, T>,
     multi_select: bool,
 ) -> Result<FzfResult<T>> {
-    // Handle cancellation (Esc, Ctrl-C)
-    if let Some(code) = result.status.code()
-        && (code == 130 || code == 143)
-    {
-        return Ok(FzfResult::Cancelled);
-    }
-
-    // Log failures for debugging
-    if !result.status.success() {
-        check_for_old_fzf_and_exit(&result.stderr);
-        if crate::ui::is_debug_enabled() {
-            log_fzf_failure(&result.stderr, result.status.code(), |code, message| {
-                crate::ui::emit(crate::ui::Level::Debug, code, message, None);
-            });
-        }
+    if let Some(cancelled) = check_fzf_exit(&result) {
+        return Ok(cancelled);
     }
 
     // Parse selected lines
@@ -349,15 +365,14 @@ impl FzfWrapper {
     }
 
     pub(crate) fn from_builder(b: super::builder::FzfBuilder) -> Self {
-        let (multi_select, prompt, header, additional_args, initial_cursor, responsive_layout) =
-            b.into_wrapper_parts();
+        let parts = b.into_wrapper_parts();
         Self {
-            multi_select,
-            prompt,
-            header: header.map(|h| h.to_fzf_string()),
-            additional_args,
-            initial_cursor,
-            responsive_layout,
+            multi_select: parts.multi_select,
+            prompt: parts.prompt,
+            header: parts.header.map(|h| h.to_fzf_string()),
+            additional_args: parts.additional_args,
+            initial_cursor: parts.initial_cursor,
+            responsive_layout: parts.responsive_layout,
         }
     }
 
@@ -407,19 +422,8 @@ impl FzfWrapper {
 
         match output {
             Ok(result) => {
-                if let Some(code) = result.status.code()
-                    && (code == 130 || code == 143)
-                {
-                    return Ok(FzfResult::Cancelled);
-                }
-
-                if !result.status.success() {
-                    check_for_old_fzf_and_exit(&result.stderr);
-                    if crate::ui::is_debug_enabled() {
-                        log_fzf_failure(&result.stderr, result.status.code(), |code, message| {
-                            crate::ui::emit(crate::ui::Level::Debug, code, message, None);
-                        });
-                    }
+                if let Some(cancelled) = check_fzf_exit(&result) {
+                    return Ok(cancelled);
                 }
 
                 let stdout = String::from_utf8_lossy(&result.stdout);
