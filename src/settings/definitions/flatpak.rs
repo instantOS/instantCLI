@@ -10,6 +10,9 @@ use crate::common::package::{PackageManager, install_package_names};
 use crate::menu_utils::{ConfirmResult, FzfResult, FzfWrapper, Header};
 use crate::preview::{PreviewId, preview_command_streaming};
 use crate::settings::context::SettingsContext;
+use crate::settings::definitions::installed_flatpaks::{
+    is_flatpak_installed, show_flatpak_action_menu,
+};
 use crate::settings::deps::FLATPAK;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::ui::catppuccin::fzf_mocha_args;
@@ -109,21 +112,64 @@ fn run_flatpak_installer(debug: bool) -> Result<()> {
         return Ok(());
     }
 
-    let msg = format!(
-        "Install {} Flatpak app{}?",
-        app_ids.len(),
-        if app_ids.len() == 1 { "" } else { "s" }
-    );
+    // Check which apps are already installed
+    let (installed, not_installed): (Vec<String>, Vec<String>) = app_ids
+        .into_iter()
+        .partition(|app_id| is_flatpak_installed(app_id));
 
-    let result = FzfWrapper::builder().confirm(&msg).show_confirmation()?;
-    if !matches!(result, ConfirmResult::Yes) {
-        println!("Installation cancelled.");
-        return Ok(());
+    // Handle single app selection that's already installed - seamless DX
+    if installed.len() == 1 && not_installed.is_empty() {
+        if debug {
+            println!(
+                "App {} is already installed, showing action menu",
+                installed[0]
+            );
+        }
+        return show_flatpak_action_menu(&installed[0]);
     }
 
-    let refs: Vec<&str> = app_ids.iter().map(|s| s.as_str()).collect();
-    install_package_names(PackageManager::Flatpak, &refs)?;
+    // Install not-installed apps first
+    if !not_installed.is_empty() {
+        let msg = format!(
+            "Install {} Flatpak app{}?",
+            not_installed.len(),
+            if not_installed.len() == 1 { "" } else { "s" }
+        );
 
-    println!("✓ Flatpak installation completed successfully!");
+        let result = FzfWrapper::builder().confirm(&msg).show_confirmation()?;
+        if !matches!(result, ConfirmResult::Yes) {
+            println!("Installation cancelled.");
+            // Still show action menu for already installed apps if any
+            if !installed.is_empty() {
+                println!(
+                    "\n{} app(s) already installed - showing action menu(s)",
+                    installed.len()
+                );
+                for app_id in installed {
+                    show_flatpak_action_menu(&app_id)?;
+                }
+            }
+            return Ok(());
+        }
+
+        let refs: Vec<&str> = not_installed.iter().map(|s| s.as_str()).collect();
+        install_package_names(PackageManager::Flatpak, &refs)?;
+
+        println!("✓ Flatpak installation completed successfully!");
+    }
+
+    // Show action menu for already installed apps
+    if !installed.is_empty() {
+        if not_installed.is_empty() {
+            println!("\nSelected app(s) already installed:");
+        } else {
+            println!("\nSome selected app(s) were already installed:");
+        }
+
+        for app_id in installed {
+            show_flatpak_action_menu(&app_id)?;
+        }
+    }
+
     Ok(())
 }

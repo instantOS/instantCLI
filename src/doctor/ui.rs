@@ -2,7 +2,7 @@ use super::CheckResult;
 use crate::menu_utils::{
     ConfirmResult, FzfPreview, FzfResult, FzfSelectable, FzfWrapper, MenuCursor,
 };
-use crate::ui::catppuccin::{colors, format_icon_colored, fzf_mocha_args};
+use crate::ui::catppuccin::{colors, format_icon_colored, format_with_color, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::prelude::*;
 use anyhow::Result;

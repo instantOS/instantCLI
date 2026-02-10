@@ -103,6 +103,14 @@ pub fn format_search_icon() -> String {
     format_icon_colored(NerdFont::Search, colors::MAUVE)
 }
 
+/// Format text with a foreground color (hex format like "#89b4fa").
+/// Uses targeted ANSI reset (\x1b[39m) to preserve FZF color compatibility.
+pub fn format_with_color(text: &str, color: &str) -> String {
+    let fg = hex_to_ansi_fg(color);
+    let reset = "\x1b[39m";
+    format!("{fg}{text}{reset}")
+}
+
 pub fn fzf_mocha_args() -> Vec<String> {
     vec![
         // Visual styling

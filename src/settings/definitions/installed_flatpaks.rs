@@ -13,7 +13,7 @@ use crate::ui::prelude::*;
 
 /// Action that can be performed on a selected Flatpak
 #[derive(Clone)]
-enum FlatpakAction {
+pub enum FlatpakAction {
     Run,
     Uninstall,
 }
@@ -38,6 +38,35 @@ impl FzfSelectable for FlatpakAction {
             FlatpakAction::Run => &["run"],
             FlatpakAction::Uninstall => &["uninstall"],
         }
+    }
+}
+
+/// Check if a Flatpak app is already installed
+pub fn is_flatpak_installed(app_id: &str) -> bool {
+    std::process::Command::new("flatpak")
+        .args(["info", app_id])
+        .stderr(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+/// Show the action menu for a Flatpak app and execute the selected action
+pub fn show_flatpak_action_menu(app_id: &str) -> Result<()> {
+    let actions = vec![FlatpakAction::Run, FlatpakAction::Uninstall];
+
+    let action = match select_one_with_style(actions)? {
+        Some(a) => a,
+        None => {
+            println!("Action selection cancelled.");
+            return Ok(());
+        }
+    };
+
+    match action {
+        FlatpakAction::Run => run_flatpak(app_id),
+        FlatpakAction::Uninstall => uninstall_flatpak(app_id),
     }
 }
 
@@ -131,7 +160,7 @@ fn run_installed_flatpaks_manager() -> Result<()> {
 }
 
 /// Run a Flatpak application
-fn run_flatpak(app_id: &str) -> Result<()> {
+pub fn run_flatpak(app_id: &str) -> Result<()> {
     println!("Starting Flatpak app: {}...", app_id);
 
     let status = std::process::Command::new("flatpak")
@@ -149,7 +178,7 @@ fn run_flatpak(app_id: &str) -> Result<()> {
 }
 
 /// Uninstall a Flatpak application
-fn uninstall_flatpak(app_id: &str) -> Result<()> {
+pub fn uninstall_flatpak(app_id: &str) -> Result<()> {
     let confirm_msg = format!("Uninstall {}?", app_id);
     let confirm = FzfWrapper::builder()
         .confirm(&confirm_msg)
