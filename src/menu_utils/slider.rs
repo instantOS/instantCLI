@@ -36,9 +36,14 @@ impl SliderCommand {
         command.stdout(std::process::Stdio::null());
         command.stderr(std::process::Stdio::null());
 
-        command
+        let mut child = command
             .spawn()
             .with_context(|| format!("Failed to execute slider command '{}'", self.program))?;
+
+        // Reap the child process in a background thread to avoid zombie processes
+        std::thread::spawn(move || {
+            let _ = child.wait();
+        });
 
         Ok(())
     }

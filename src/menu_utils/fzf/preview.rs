@@ -51,14 +51,13 @@ impl PreviewUtils {
         let mut all_same_command = true;
 
         for item in items {
-            let display = item.fzf_display_text();
-            let _key = item.fzf_key();
+            let key = item.fzf_key();
 
             match item.fzf_preview() {
                 FzfPreview::Text(text) => {
                     has_text = true;
-                    text_map.insert(display.clone(), text.clone());
-                    mixed_map.insert(display, MixedPreviewContent::Text(text));
+                    text_map.insert(key.clone(), text.clone());
+                    mixed_map.insert(key, MixedPreviewContent::Text(text));
                 }
                 FzfPreview::Command(cmd) => {
                     has_command = true;
@@ -70,8 +69,8 @@ impl PreviewUtils {
                         first_command = Some(cmd.clone());
                     }
                     // Store the actual command for per-item command execution
-                    text_map.insert(display.clone(), cmd.clone());
-                    mixed_map.insert(display, MixedPreviewContent::Command(cmd));
+                    text_map.insert(key.clone(), cmd.clone());
+                    mixed_map.insert(key, MixedPreviewContent::Command(cmd));
                 }
                 FzfPreview::None => {
                     // No preview for this item
