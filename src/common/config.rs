@@ -80,9 +80,6 @@ pub trait DocumentedConfig: Sized + Default {
     /// Check if a field is unset (Option<T> that is None)
     fn is_field_unset(&self, field_name: &str) -> bool;
 
-    /// Get path where this config should be stored
-    fn config_path() -> Result<PathBuf>;
-
     /// Create initial config file with defaults commented out
     /// Use this only for first-time file creation
     fn create_initial_config(&self, path: &Path) -> Result<()> {
@@ -229,10 +226,6 @@ macro_rules! documented_config {
                     )*
                     _ => false,
                 }
-            }
-
-            fn config_path() -> Result<PathBuf> {
-                $path
             }
 
             fn load_from_path_documented(path: PathBuf) -> Result<Self> {

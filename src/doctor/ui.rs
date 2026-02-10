@@ -2,7 +2,9 @@ use super::CheckResult;
 use crate::menu_utils::{
     ConfirmResult, FzfPreview, FzfResult, FzfSelectable, FzfWrapper, MenuCursor,
 };
-use crate::ui::catppuccin::{colors, format_icon_colored, format_with_color, fzf_mocha_args};
+use crate::ui::catppuccin::{
+    colors, format_back_icon, format_icon_colored, format_with_color, fzf_mocha_args,
+};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::prelude::*;
 use anyhow::Result;
@@ -54,6 +56,10 @@ impl DoctorMenuItem {
         DoctorMenuItem::Action(MenuAction::Close)
     }
 
+    pub fn back() -> Self {
+        DoctorMenuItem::Action(MenuAction::Close)
+    }
+
     pub fn is_action(&self, action: MenuAction) -> bool {
         match self {
             DoctorMenuItem::Action(a) => *a == action,
@@ -89,10 +95,7 @@ impl FzfSelectable for DoctorMenuItem {
                     )
                 }
                 MenuAction::Close => {
-                    format!(
-                        "{} Close",
-                        format_icon_colored(NerdFont::Cross, colors::OVERLAY1)
-                    )
+                    format!("{} Back", format_back_icon())
                 }
             },
             DoctorMenuItem::Issue(issue) => issue.fzf_display_text(),
@@ -114,8 +117,8 @@ impl FzfSelectable for DoctorMenuItem {
                         .text("Apply all available fixes")
                         .build(),
                     MenuAction::Close => PreviewBuilder::new()
-                        .header(NerdFont::Cross, "Close")
-                        .text("Exit the diagnostics menu")
+                        .header(NerdFont::ArrowLeft, "Back")
+                        .text("Return to the previous menu")
                         .build(),
                 }
             }
@@ -175,10 +178,7 @@ impl FzfSelectable for FixableIssue {
                     )
                 }
                 MenuAction::Close => {
-                    format!(
-                        "{} Close",
-                        format_icon_colored(NerdFont::Cross, colors::OVERLAY1)
-                    )
+                    format!("{} Back", format_back_icon())
                 }
             }
         } else {
@@ -451,6 +451,7 @@ pub fn build_fix_menu_items(fixable_issues: Vec<FixableIssue>) -> Vec<DoctorMenu
     let count = fixable_issues.len();
     let mut menu_items = vec![DoctorMenuItem::view_all(), DoctorMenuItem::fix_all(count)];
     menu_items.extend(fixable_issues.into_iter().map(DoctorMenuItem::Issue));
+    menu_items.push(DoctorMenuItem::back());
     menu_items
 }
 

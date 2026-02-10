@@ -4,11 +4,13 @@
 
 use anyhow::{Context, Result};
 
-use crate::common::package::{PackageManager, uninstall_packages};
-use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, select_one_with_style};
+use crate::common::package::{uninstall_packages, PackageManager};
+use crate::menu_utils::{select_one_with_style, FzfResult, FzfSelectable, FzfWrapper, Header};
+use crate::preview::{preview_command_streaming, PreviewId};
 use crate::settings::context::SettingsContext;
 use crate::settings::deps::FLATPAK;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
+use crate::ui::catppuccin::fzf_mocha_args;
 use crate::ui::prelude::*;
 
 /// Action that can be performed on a selected Flatpak
@@ -30,13 +32,6 @@ impl FzfSelectable for FlatpakAction {
         match self {
             FlatpakAction::Run => "run".to_string(),
             FlatpakAction::Uninstall => "uninstall".to_string(),
-        }
-    }
-
-    fn fzf_search_keywords(&self) -> &[&str] {
-        match self {
-            FlatpakAction::Run => &["run"],
-            FlatpakAction::Uninstall => &["uninstall"],
         }
     }
 }
@@ -99,36 +94,29 @@ impl Setting for ManageInstalledFlatpaks {
 fn run_installed_flatpaks_manager() -> Result<()> {
     println!("Starting installed Flatpak manager...");
 
-    // List installed apps with relevant columns
-    let list_command = "flatpak list --app --columns=name,application,version,origin,size";
-
-    let package_icon = NerdFont::Package.to_string();
-    let error_icon = NerdFont::Cross.to_string();
-    let preview_cmd = format!(
-        "sh -c 'app=\"$(echo \"{{2}}\" | cut -f1)\"; printf \"\\033[1;34m{} %s\\033[0m\\n\" \"$app\"; flatpak info \"$app\" 2>/dev/null || printf \"\\033[1;31m{} No additional information available\\033[0m\\n\"'",
-        package_icon, error_icon
-    );
+    // List installed apps with app_id first for preview compatibility
+    // Format: application\tname\tversion\torigin\tsize
+    let list_command = "flatpak list --app --columns=application,name,version,origin,size";
+    let preview_cmd = preview_command_streaming(PreviewId::Flatpak);
 
     let result = FzfWrapper::builder()
         .prompt("Select a Flatpak app")
+        .header(Header::fancy("Manage Installed Flatpaks"))
+        .args(fzf_mocha_args())
         .args([
+            "--delimiter",
+            "\t",
+            "--with-nth",
+            "2,3..", // Show name and remaining fields, hide app_id from display
             "--preview",
             &preview_cmd,
-            "--preview-window",
-            "down:65%:wrap",
-            "--bind",
-            "ctrl-l:clear-screen",
             "--ansi",
-            "--no-mouse",
-            "--delimiter",
-            "\\t",
-            "--with-nth",
-            "1,3..",
         ])
+        .responsive_layout()
         .select_streaming(list_command)?;
 
     let app_id = match result {
-        FzfResult::Selected(line) => line.split('\t').nth(1).unwrap_or(&line).to_string(),
+        FzfResult::Selected(line) => line.split('\t').next().unwrap_or(&line).to_string(),
         FzfResult::Cancelled => {
             println!("App selection cancelled.");
             return Ok(());

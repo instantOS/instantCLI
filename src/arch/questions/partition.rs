@@ -38,60 +38,6 @@ impl FzfSelectable for PartitionEntry {
 pub struct PartitionSize(u64);
 
 impl PartitionSize {
-    /// Parse a size string (e.g., "512M", "1G", "100MB") and return size in MB
-    pub fn parse(size_str: &str) -> Option<Self> {
-        if size_str.is_empty() {
-            return None;
-        }
-
-        let size_str = size_str.trim().to_uppercase();
-
-        // Remove any non-alphanumeric characters except digits and common size indicators
-        let cleaned: String = size_str
-            .chars()
-            .filter(|c| c.is_ascii_digit() || c.is_ascii_alphabetic() || c.is_ascii_whitespace())
-            .collect();
-
-        // Try to parse with common suffixes
-        if cleaned.ends_with("MB") || cleaned.ends_with("M") {
-            if let Ok(size) = cleaned
-                .trim_end_matches(|c: char| !c.is_ascii_digit())
-                .parse::<u64>()
-            {
-                return Some(Self(size));
-            }
-        } else if cleaned.ends_with("GB") || cleaned.ends_with("G") {
-            if let Ok(size) = cleaned
-                .trim_end_matches(|c: char| !c.is_ascii_digit())
-                .parse::<u64>()
-            {
-                return Some(Self(size * 1024));
-            }
-        } else if cleaned.ends_with("TB") || cleaned.ends_with("T") {
-            if let Ok(size) = cleaned
-                .trim_end_matches(|c: char| !c.is_ascii_digit())
-                .parse::<u64>()
-            {
-                return Some(Self(size * 1024 * 1024));
-            }
-        } else if cleaned.ends_with("KB") || cleaned.ends_with("K") {
-            if let Ok(size) = cleaned
-                .trim_end_matches(|c: char| !c.is_ascii_digit())
-                .parse::<u64>()
-            {
-                // Convert KB to MB, rounding up
-                return Some(Self(size.div_ceil(1024)));
-            }
-        } else {
-            // Try to parse as raw number (assume MB)
-            if let Ok(size) = size_str.parse::<u64>() {
-                return Some(Self(size));
-            }
-        }
-
-        None
-    }
-
     /// Create from bytes (converting to MB)
     pub fn from_bytes(bytes: u64) -> Self {
         Self(bytes / (1024 * 1024))

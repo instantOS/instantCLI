@@ -43,36 +43,6 @@ impl PackageDefinition {
         }
     }
 
-    /// Create a package definition for specific distros only.
-    ///
-    /// Use this when a package name differs between distros that share a package manager,
-    /// or when a package only exists on certain distros.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// use crate::common::package::{PackageDefinition, PackageManager};
-    /// use crate::common::distro::OperatingSystem;
-    ///
-    /// // Ubuntu uses a different package name than other Debian-based distros
-    /// let pkg = PackageDefinition::for_distros(
-    ///     "chromium-browser",
-    ///     PackageManager::Apt,
-    ///     &[OperatingSystem::Ubuntu, OperatingSystem::PopOS],
-    /// );
-    /// ```
-    pub const fn for_distros(
-        name: &'static str,
-        manager: PackageManager,
-        distros: &'static [OperatingSystem],
-    ) -> Self {
-        Self {
-            package_name: name,
-            manager,
-            distros: Some(distros),
-        }
-    }
-
     /// Check if this package definition applies to the given OS.
     ///
     /// Returns `true` if:
@@ -91,17 +61,6 @@ impl PackageDefinition {
     /// This checks if the package manager is available on the current system.
     pub fn is_available(&self) -> bool {
         self.manager.is_available()
-    }
-
-    /// Check if this package definition applies to the current system.
-    ///
-    /// This checks both that the manager is available and that the distro
-    /// restrictions (if any) are satisfied.
-    pub fn is_applicable(&self) -> bool {
-        if !self.manager.is_available() {
-            return false;
-        }
-        self.applies_to(&OperatingSystem::detect())
     }
 
     /// Get the install hint for this package definition.
@@ -135,36 +94,11 @@ mod tests {
     }
 
     #[test]
-    fn test_for_distros() {
-        let pkg = PackageDefinition::for_distros(
-            "chromium-browser",
-            PackageManager::Apt,
-            &[OperatingSystem::Ubuntu],
-        );
-        assert_eq!(pkg.package_name, "chromium-browser");
-        assert_eq!(pkg.manager, PackageManager::Apt);
-        assert!(pkg.distros.is_some());
-    }
-
-    #[test]
     fn test_applies_to_universal() {
         let pkg = PackageDefinition::new("firefox", PackageManager::Pacman);
         // Universal packages apply to any distro
         assert!(pkg.applies_to(&OperatingSystem::Arch));
         assert!(pkg.applies_to(&OperatingSystem::Ubuntu));
-    }
-
-    #[test]
-    fn test_applies_to_restricted() {
-        let pkg = PackageDefinition::for_distros(
-            "chromium-browser",
-            PackageManager::Apt,
-            &[OperatingSystem::Ubuntu],
-        );
-        // Only applies to Ubuntu and derivatives
-        assert!(pkg.applies_to(&OperatingSystem::Ubuntu));
-        assert!(pkg.applies_to(&OperatingSystem::PopOS)); // PopOS is based on Ubuntu
-        assert!(!pkg.applies_to(&OperatingSystem::Debian)); // Debian is not Ubuntu
     }
 
     #[test]

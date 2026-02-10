@@ -465,32 +465,36 @@ fn render_flatpak_impl(package_info: &str) -> Result<String> {
         package_info
     };
 
-    // Try to get remote info from any available remote
-    let remotes_output = cmd!("flatpak", "remotes", "--columns=name")
-        .stderr_null()
-        .read()
-        .unwrap_or_default();
-
-    let remotes: Vec<&str> = remotes_output.lines().collect();
-
-    // Try each remote to find package info
-    let mut remote_output = None;
-    for remote in &remotes {
-        if let Ok(output) = cmd!("flatpak", "remote-info", remote.trim(), package)
-            .stderr_null()
-            .read()
-            && !output.is_empty()
-        {
-            remote_output = Some(output);
-            break;
-        }
-    }
-
-    // Also try to get local info if installed
+    // Try local info first (faster for installed apps)
     let local_output = cmd!("flatpak", "info", package).stderr_null().read().ok();
 
-    // Use remote info as primary source, fallback to local
-    let output = remote_output.as_deref().or(local_output.as_deref());
+    // If not installed locally, try remotes
+    let output = if local_output.is_some() {
+        local_output
+    } else {
+        let remotes_output = cmd!("flatpak", "remotes", "--columns=name")
+            .stderr_null()
+            .read()
+            .unwrap_or_default();
+
+        let remotes: Vec<&str> = remotes_output.lines().collect();
+
+        // Try each remote to find package info
+        let mut remote_output = None;
+        for remote in &remotes {
+            if let Ok(output) = cmd!("flatpak", "remote-info", remote.trim(), package)
+                .stderr_null()
+                .read()
+                && !output.is_empty()
+            {
+                remote_output = Some(output);
+                break;
+            }
+        }
+        remote_output
+    };
+
+    let output = output.as_deref();
 
     if output.is_none() {
         return Ok(PreviewBuilder::new()
@@ -522,7 +526,7 @@ fn render_flatpak_impl(package_info: &str) -> Result<String> {
                 "License" => builder = builder.field("License", value),
                 // Include size fields from remote-info
                 "Download" => builder = builder.field("Download Size", value),
-                "Installed" => builder = builder.field("Installed Size", value),
+                "Installed Size" => builder = builder.field("Installed Size", value),
                 _ => {
                     if line.starts_with("Description:") || line.starts_with("Summary:") {
                         builder = builder.text(value);

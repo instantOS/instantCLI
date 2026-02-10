@@ -1,6 +1,6 @@
 //! Dependency - a requirement that can be satisfied by one of multiple packages.
 
-use super::{PackageDefinition, PackageManager};
+use super::PackageDefinition;
 use crate::common::distro::OperatingSystem;
 use crate::common::requirements::InstallTest;
 
@@ -58,17 +58,6 @@ impl Dependency {
         self.tests.iter().any(|test| test.run())
     }
 
-    /// Check if auto-install is available on the current system.
-    ///
-    /// Returns `true` if the dependency is already installed or if there's
-    /// at least one package that can be automatically installed.
-    pub fn can_auto_install(&self) -> bool {
-        if self.is_installed() {
-            return true;
-        }
-        self.get_best_package().is_some()
-    }
-
     /// Get the best package to install for the current system.
     ///
     /// Returns `None` if no suitable package is found.
@@ -98,23 +87,6 @@ impl Dependency {
 
         universal_packages.sort_by_key(|p| p.manager.priority());
         universal_packages.first().copied()
-    }
-
-    /// Get all packages that could work on the current system.
-    ///
-    /// Returns packages sorted by priority (best first).
-    pub fn get_available_packages(&self) -> Vec<&PackageDefinition> {
-        let current_os = OperatingSystem::detect();
-
-        let mut available: Vec<_> = self
-            .packages
-            .iter()
-            .filter(|p| p.is_available() && p.applies_to(&current_os))
-            .collect();
-
-        // Sort by priority (lower is better), then by position in original list
-        available.sort_by_key(|p| p.manager.priority());
-        available
     }
 
     /// Generate install hints for manual installation.
@@ -147,24 +119,6 @@ impl Dependency {
         } else {
             format!("Try one of:\n{}", hints.join("\n"))
         }
-    }
-
-    /// Get a concise list of available package managers for this dependency.
-    ///
-    /// This is useful for displaying to users which installation methods are available.
-    pub fn available_managers(&self) -> Vec<PackageManager> {
-        let current_os = OperatingSystem::detect();
-
-        let mut managers: Vec<PackageManager> = self
-            .packages
-            .iter()
-            .filter(|p| p.is_available() && p.applies_to(&current_os))
-            .map(|p| p.manager)
-            .collect();
-
-        managers.sort_by_key(|m| m.priority());
-        managers.dedup();
-        managers
     }
 
     /// Ensure this dependency is installed, prompting the user if needed.
@@ -321,6 +275,7 @@ impl InstallResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::package::PackageManager;
 
     // Static test data - must be 'static for Dependency struct
     static TEST_PACKAGES: &[PackageDefinition] = &[
@@ -355,22 +310,5 @@ mod tests {
         assert!(hint.contains("pacman -S test-pkg"));
         assert!(hint.contains("apt install test-pkg"));
         assert!(hint.contains("flatpak install flathub test-pkg"));
-    }
-
-    static EMPTY_PACKAGES: &[PackageDefinition] = &[];
-    static NONEXISTENT_TESTS: &[InstallTest] = &[InstallTest::WhichSucceeds(
-        "definitely-does-not-exist-12345",
-    )];
-
-    static NONEXISTENT_DEPENDENCY: Dependency = Dependency {
-        name: "nonexistent",
-        packages: EMPTY_PACKAGES,
-        tests: NONEXISTENT_TESTS,
-    };
-
-    #[test]
-    fn test_can_auto_install_when_not_installed() {
-        // No packages available, so can't auto-install
-        assert!(!NONEXISTENT_DEPENDENCY.can_auto_install());
     }
 }

@@ -22,11 +22,6 @@ pub struct ResizeStatus {
 }
 
 impl ResizeStatus {
-    /// Get human-readable current partition size
-    pub fn current_partition_human(&self) -> Option<String> {
-        self.current_partition_size.map(format_size)
-    }
-
     /// Get human-readable space freed
     pub fn space_freed_human(&self) -> String {
         format_size(self.space_freed_bytes)
