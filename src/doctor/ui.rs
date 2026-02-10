@@ -268,15 +268,20 @@ impl ViewableCheck {
 
 impl FzfSelectable for ViewableCheck {
     fn fzf_display_text(&self) -> String {
-        let icon = match self.status.as_str() {
-            "PASS" => NerdFont::Check,
-            "FAIL" => NerdFont::CrossCircle,
-            "WARN" => NerdFont::Warning,
-            "SKIP" => NerdFont::Minus,
-            _ => NerdFont::Info,
+        let (icon, icon_color, status_color) = match self.status.as_str() {
+            "PASS" => (NerdFont::Check, colors::GREEN, colors::GREEN),
+            "FAIL" => (NerdFont::CrossCircle, colors::RED, colors::RED),
+            "WARN" => (NerdFont::Warning, colors::YELLOW, colors::YELLOW),
+            "SKIP" => (NerdFont::Minus, colors::OVERLAY1, colors::OVERLAY1),
+            _ => (NerdFont::Info, colors::BLUE, colors::BLUE),
         };
 
-        format!("[{}] {} {}", char::from(icon), self.status, self.name)
+        format!(
+            "{} {} {}",
+            format_icon_colored(icon, icon_color),
+            format_with_color(&self.status, status_color),
+            self.name
+        )
     }
 
     fn fzf_preview(&self) -> FzfPreview {
