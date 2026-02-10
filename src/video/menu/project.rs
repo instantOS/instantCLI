@@ -25,6 +25,7 @@ use super::types::{ConvertAudioChoice, PromptOutcome, TranscriptChoice};
 
 #[derive(Debug, Clone)]
 enum ProjectMenuEntry {
+    OpenRendered { path: PathBuf, is_current: bool },
     Render,
     AddRecording,
     Validate,
@@ -37,6 +38,7 @@ enum ProjectMenuEntry {
 impl std::fmt::Display for ProjectMenuEntry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            ProjectMenuEntry::OpenRendered { .. } => write!(f, "!__open_rendered__"),
             ProjectMenuEntry::Render => write!(f, "!__render__"),
             ProjectMenuEntry::AddRecording => write!(f, "!__add_recording__"),
             ProjectMenuEntry::Validate => write!(f, "!__validate__"),
@@ -51,6 +53,19 @@ impl std::fmt::Display for ProjectMenuEntry {
 impl FzfSelectable for ProjectMenuEntry {
     fn fzf_display_text(&self) -> String {
         match self {
+            ProjectMenuEntry::OpenRendered { is_current, .. } => {
+                if *is_current {
+                    format!(
+                        "{} Open Rendered Video",
+                        format_icon_colored(NerdFont::Video, colors::GREEN)
+                    )
+                } else {
+                    format!(
+                        "{} Open Rendered Video (outdated)",
+                        format_icon_colored(NerdFont::Video, colors::YELLOW)
+                    )
+                }
+            }
             ProjectMenuEntry::Render => format!(
                 "{} Render Edited Video",
                 format_icon_colored(NerdFont::PlayCircle, colors::GREEN)
@@ -85,6 +100,28 @@ impl FzfSelectable for ProjectMenuEntry {
 
     fn fzf_preview(&self) -> FzfPreview {
         match self {
+            ProjectMenuEntry::OpenRendered {
+                path, is_current, ..
+            } => {
+                let mut builder = PreviewBuilder::new()
+                    .header(NerdFont::Video, "Rendered Video")
+                    .field("File", &path.display().to_string());
+
+                if *is_current {
+                    builder = builder.blank().line(
+                        colors::GREEN,
+                        Some(NerdFont::CheckCircle),
+                        "Up to date — rendered after last markdown edit",
+                    );
+                } else {
+                    builder = builder.blank().line(
+                        colors::YELLOW,
+                        Some(NerdFont::Warning),
+                        "Outdated — markdown has been edited since last render",
+                    );
+                }
+                builder.build()
+            }
             ProjectMenuEntry::Render => PreviewBuilder::new()
                 .header(NerdFont::PlayCircle, "Render")
                 .text("Render a video from an edited markdown timeline.")
@@ -151,7 +188,13 @@ pub async fn run_project_menu() -> Result<()> {
 /// This is used when we already know the path (e.g., after creating a new project).
 pub async fn open_project_for_path(markdown_path: &Path) -> Result<()> {
     loop {
-        let entries = vec![
+        let mut entries = Vec::new();
+
+        if let Some(entry) = rendered_entry_for_project(markdown_path) {
+            entries.push(entry);
+        }
+
+        entries.extend([
             ProjectMenuEntry::Render,
             ProjectMenuEntry::AddRecording,
             ProjectMenuEntry::Validate,
@@ -159,7 +202,7 @@ pub async fn open_project_for_path(markdown_path: &Path) -> Result<()> {
             ProjectMenuEntry::Edit,
             ProjectMenuEntry::ClearCache,
             ProjectMenuEntry::Back,
-        ];
+        ]);
 
         let project_name = markdown_path
             .file_name()
@@ -175,6 +218,9 @@ pub async fn open_project_for_path(markdown_path: &Path) -> Result<()> {
 
         match result {
             FzfResult::Selected(entry) => match entry {
+                ProjectMenuEntry::OpenRendered { ref path, .. } => {
+                    show_rendered_video_menu(path)?;
+                }
                 ProjectMenuEntry::Render => {
                     run_render_for_project(markdown_path).await?;
                 }
@@ -333,7 +379,7 @@ async fn run_render_for_project(markdown_path: &Path) -> Result<()> {
 
     if let Some(output_path) = output_path {
         let elapsed = start.elapsed();
-        show_post_render_menu(&output_path, elapsed)?;
+        show_post_render_menu(&output_path, Some(elapsed))?;
     }
 
     Ok(())
@@ -631,9 +677,15 @@ impl FzfSelectable for PostRenderAction {
     }
 }
 
-fn show_post_render_menu(output_path: &Path, elapsed: std::time::Duration) -> Result<()> {
-    let duration_str = format_render_duration(elapsed);
+fn show_post_render_menu(output_path: &Path, elapsed: Option<std::time::Duration>) -> Result<()> {
     let path_display = output_path.display().to_string();
+
+    let header_text = if let Some(elapsed) = elapsed {
+        let duration_str = format_render_duration(elapsed);
+        format!("Render complete in {duration_str}\n{path_display}")
+    } else {
+        path_display.clone()
+    };
 
     let entries = vec![
         PostRenderAction::OpenVideo,
@@ -642,9 +694,7 @@ fn show_post_render_menu(output_path: &Path, elapsed: std::time::Duration) -> Re
     ];
 
     let result = FzfWrapper::builder()
-        .header(Header::default(&format!(
-            "Render complete in {duration_str}\n{path_display}"
-        )))
+        .header(Header::default(&header_text))
         .prompt("Select")
         .args(fzf_mocha_args())
         .responsive_layout()
@@ -673,6 +723,49 @@ fn show_post_render_menu(output_path: &Path, elapsed: std::time::Duration) -> Re
     }
 
     Ok(())
+}
+
+fn show_rendered_video_menu(output_path: &Path) -> Result<()> {
+    show_post_render_menu(output_path, None)
+}
+
+fn rendered_entry_for_project(markdown_path: &Path) -> Option<ProjectMenuEntry> {
+    let markdown_dir = markdown_path.parent().unwrap_or_else(|| Path::new("."));
+    let default_source = resolve_default_source_path(markdown_path, markdown_dir).ok()?;
+    let output_path = resolve_render_output_path(
+        None,
+        markdown_dir,
+        &default_source,
+        render::RenderMode::Standard,
+    )
+    .ok()?;
+
+    if !output_path.exists() {
+        return None;
+    }
+
+    let is_current = is_render_current(markdown_path, &output_path);
+
+    Some(ProjectMenuEntry::OpenRendered {
+        path: output_path,
+        is_current,
+    })
+}
+
+fn is_render_current(markdown_path: &Path, output_path: &Path) -> bool {
+    let Ok(md_meta) = fs::metadata(markdown_path) else {
+        return false;
+    };
+    let Ok(out_meta) = fs::metadata(output_path) else {
+        return false;
+    };
+    let Ok(md_modified) = md_meta.modified() else {
+        return false;
+    };
+    let Ok(out_modified) = out_meta.modified() else {
+        return false;
+    };
+    out_modified >= md_modified
 }
 
 fn run_edit_for_project(markdown_path: &Path) -> Result<()> {
