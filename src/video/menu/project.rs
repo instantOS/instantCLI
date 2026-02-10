@@ -8,9 +8,9 @@ use crate::menu_utils::{ConfirmResult, FzfPreview, FzfResult, FzfSelectable, Fzf
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
-use crate::video::cli::{AppendArgs, CheckArgs, RenderArgs, StatsArgs};
+use crate::video::cli::{AppendArgs, CheckArgs, RenderArgs};
 use crate::video::document::parse_video_document;
-use crate::video::pipeline::{check, convert, stats};
+use crate::video::pipeline::{check, convert};
 use crate::video::render;
 
 use super::file_selection::{
@@ -29,7 +29,6 @@ enum ProjectMenuEntry {
     Render,
     AddRecording,
     Validate,
-    Stats,
     Edit,
     ClearCache,
     Back,
@@ -42,7 +41,6 @@ impl std::fmt::Display for ProjectMenuEntry {
             ProjectMenuEntry::Render => write!(f, "!__render__"),
             ProjectMenuEntry::AddRecording => write!(f, "!__add_recording__"),
             ProjectMenuEntry::Validate => write!(f, "!__validate__"),
-            ProjectMenuEntry::Stats => write!(f, "!__stats__"),
             ProjectMenuEntry::Edit => write!(f, "!__edit__"),
             ProjectMenuEntry::ClearCache => write!(f, "!__clear_cache__"),
             ProjectMenuEntry::Back => write!(f, "!__back__"),
@@ -75,12 +73,8 @@ impl FzfSelectable for ProjectMenuEntry {
                 format_icon_colored(NerdFont::SourceMerge, colors::PEACH)
             ),
             ProjectMenuEntry::Validate => format!(
-                "{} Validate Markdown",
+                "{} Inspect Timeline",
                 format_icon_colored(NerdFont::CheckCircle, colors::TEAL)
-            ),
-            ProjectMenuEntry::Stats => format!(
-                "{} Show Timeline Stats",
-                format_icon_colored(NerdFont::Chart, colors::BLUE)
             ),
             ProjectMenuEntry::Edit => format!(
                 "{} Edit Markdown",
@@ -141,16 +135,14 @@ impl FzfSelectable for ProjectMenuEntry {
                 .bullet("Append timestamped segments to the timeline")
                 .build(),
             ProjectMenuEntry::Validate => PreviewBuilder::new()
-                .header(NerdFont::CheckCircle, "Validate Markdown")
-                .text("Validate markdown and summarize the planned output.")
+                .header(NerdFont::CheckCircle, "Inspect")
+                .text("Validate markdown and show timeline statistics.")
                 .blank()
-                .text("Shows segment counts and warnings.")
-                .build(),
-            ProjectMenuEntry::Stats => PreviewBuilder::new()
-                .header(NerdFont::Chart, "Timeline Stats")
-                .text("Display statistics for a markdown timeline.")
-                .blank()
-                .text("Shows segments, slides, and unsupported blocks.")
+                .text("Shows:")
+                .bullet("Source availability")
+                .bullet("Planned duration")
+                .bullet("Segment and slide counts")
+                .bullet("Unsupported block warnings")
                 .build(),
             ProjectMenuEntry::Edit => PreviewBuilder::new()
                 .header(NerdFont::Edit, "Edit Markdown")
@@ -198,7 +190,6 @@ pub async fn open_project_for_path(markdown_path: &Path) -> Result<()> {
             ProjectMenuEntry::Render,
             ProjectMenuEntry::AddRecording,
             ProjectMenuEntry::Validate,
-            ProjectMenuEntry::Stats,
             ProjectMenuEntry::Edit,
             ProjectMenuEntry::ClearCache,
             ProjectMenuEntry::Back,
@@ -232,14 +223,7 @@ pub async fn open_project_for_path(markdown_path: &Path) -> Result<()> {
                         markdown: markdown_path.to_path_buf(),
                     })
                     .await?;
-                    show_report_dialog("Validation Results", lines)?;
-                }
-                ProjectMenuEntry::Stats => {
-                    let lines = stats::stats_report_lines(StatsArgs {
-                        markdown: markdown_path.to_path_buf(),
-                    })
-                    .await?;
-                    show_report_dialog("Timeline Stats", lines)?;
+                    show_report_dialog("Timeline Inspection", lines)?;
                 }
                 ProjectMenuEntry::Edit => {
                     run_edit_for_project(markdown_path)?;

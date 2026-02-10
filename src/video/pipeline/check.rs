@@ -5,6 +5,7 @@ use anyhow::{Result, bail};
 use crate::ui::prelude::Level;
 
 use crate::video::cli::CheckArgs;
+use crate::video::document::VideoSource;
 use crate::video::pipeline::report::{ReportLine, emit_report, format_report_lines};
 use crate::video::planning::TimelinePlanItem;
 use crate::video::render::{
@@ -82,6 +83,10 @@ async fn build_check_report(args: CheckArgs) -> Result<Vec<ReportLine>> {
         ),
     ));
 
+    for source in &sources {
+        emit_source_status(source, &mut report);
+    }
+
     report.push(ReportLine::new(
         Level::Info,
         "video.check.duration",
@@ -129,6 +134,20 @@ fn plan_duration_seconds(plan: &crate::video::planning::TimelinePlan) -> f64 {
             TimelinePlanItem::Music(_) => 0.0,
         })
         .sum::<f64>()
+}
+
+fn emit_source_status(source: &VideoSource, report: &mut Vec<ReportLine>) {
+    let exists = source.source.exists();
+    report.push(ReportLine::new(
+        if exists { Level::Success } else { Level::Warn },
+        "video.check.source",
+        format!(
+            "Source {} video {} {}",
+            source.id,
+            if exists { "found at" } else { "missing at" },
+            source.source.display()
+        ),
+    ));
 }
 
 fn format_duration(seconds: f64) -> String {

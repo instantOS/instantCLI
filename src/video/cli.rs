@@ -13,10 +13,8 @@ pub enum VideoCommands {
     Render(RenderArgs),
     /// Generate a slide image from a markdown file
     Slide(SlideArgs),
-    /// Validate a video markdown file and summarize the planned output
+    /// Validate and show statistics for a video markdown file
     Check(CheckArgs),
-    /// Display statistics about how a markdown file will be rendered
-    Stats(StatsArgs),
     /// Process audio with the configured preprocessor (local or auphonic)
     Preprocess(PreprocessArgs),
     /// Setup video tools (local preprocessor, Auphonic, WhisperX)
@@ -161,13 +159,6 @@ pub struct SlideArgs {
 
 #[derive(Args, Debug, Clone)]
 pub struct CheckArgs {
-    /// Markdown file describing the edited timeline
-    #[arg(value_hint = ValueHint::FilePath)]
-    pub markdown: PathBuf,
-}
-
-#[derive(Args, Debug, Clone)]
-pub struct StatsArgs {
     /// Markdown file describing the edited timeline
     #[arg(value_hint = ValueHint::FilePath)]
     pub markdown: PathBuf,

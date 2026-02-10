@@ -38,11 +38,11 @@ pub async fn video_menu(_debug: bool) -> Result<()> {
 fn select_video_menu_entry(cursor: &mut MenuCursor) -> Result<Option<VideoMenuEntry>> {
     let entries = vec![
         VideoMenuEntry::NewProject,
-        VideoMenuEntry::Transcribe,
         VideoMenuEntry::Project,
         VideoMenuEntry::Slide,
-        VideoMenuEntry::Preprocess,
         VideoMenuEntry::Setup,
+        VideoMenuEntry::Transcribe,
+        VideoMenuEntry::Preprocess,
         VideoMenuEntry::CloseMenu,
     ];
 

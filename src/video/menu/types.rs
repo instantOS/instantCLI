@@ -45,7 +45,7 @@ impl FzfSelectable for VideoMenuEntry {
                 format_icon_colored(NerdFont::FileText, colors::GREEN)
             ),
             VideoMenuEntry::Transcribe => format!(
-                "{} Transcribe with WhisperX",
+                "{} Transcribe (WhisperX)",
                 format_icon_colored(NerdFont::Keyboard, colors::SAPPHIRE)
             ),
             VideoMenuEntry::Project => format!(
@@ -85,10 +85,12 @@ impl FzfSelectable for VideoMenuEntry {
                 .bullet("Create a single markdown with all sources")
                 .build(),
             VideoMenuEntry::Transcribe => PreviewBuilder::new()
-                .header(NerdFont::Keyboard, "Transcribe")
-                .text("Generate or refresh a WhisperX transcript.")
+                .header(NerdFont::Keyboard, "Transcribe (Advanced)")
+                .text("Run WhisperX transcription independently.")
                 .blank()
-                .text("Transcript output is cached for reuse.")
+                .text("Useful for pre-filling the transcript cache")
+                .text("or debugging transcription settings.")
+                .text("New Project runs this automatically.")
                 .build(),
             VideoMenuEntry::Project => PreviewBuilder::new()
                 .header(NerdFont::Folder, "Open Project")
@@ -107,10 +109,12 @@ impl FzfSelectable for VideoMenuEntry {
                 .text("Useful for title cards and overlays.")
                 .build(),
             VideoMenuEntry::Preprocess => PreviewBuilder::new()
-                .header(NerdFont::Sliders, "Preprocess Audio")
-                .text("Process audio with local or Auphonic backends.")
+                .header(NerdFont::Sliders, "Preprocess Audio (Advanced)")
+                .text("Run audio preprocessing independently.")
                 .blank()
-                .text("Uses cached results when possible.")
+                .text("Useful for pre-filling the audio cache")
+                .text("or debugging preprocessing settings.")
+                .text("New Project runs this automatically.")
                 .build(),
             VideoMenuEntry::Setup => PreviewBuilder::new()
                 .header(NerdFont::Wrench, "Video Tool Setup")
