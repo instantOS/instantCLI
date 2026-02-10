@@ -1,7 +1,7 @@
 use crate::dot::config::{Config, Repo};
 use crate::dot::db::Database;
+use crate::dot::dotfilerepo::DotfileRepo;
 use crate::dot::git::repo_ops::{run_git_command, run_interactive_git_command};
-use crate::dot::localrepo::LocalRepo;
 use crate::dot::menu::repo_actions::build_repo_preview;
 use crate::dot::types::RepoMenuItem;
 use crate::menu_utils::{FzfResult, FzfWrapper, Header};
@@ -22,8 +22,8 @@ pub fn git_commit_all(config: &Config, args: &[String], debug: bool) -> Result<(
     // First check if there are changes to commit in any repo
     let mut repos_with_changes: Vec<(&Repo, std::path::PathBuf)> = Vec::new();
     for repo in repos {
-        let local_repo = LocalRepo::new(config, repo.name.clone())?;
-        let repo_path = local_repo.local_path(config)?;
+        let dotfile_repo = DotfileRepo::new(config, repo.name.clone())?;
+        let repo_path = dotfile_repo.local_path(config)?;
 
         // Check for changes (staged or unstaged)
         let status = std::process::Command::new("git")
@@ -83,8 +83,8 @@ pub fn git_push_all(config: &Config, args: &[String], debug: bool) -> Result<()>
             repo.name.cyan()
         );
 
-        let local_repo = LocalRepo::new(config, repo.name.clone())?;
-        let repo_path = local_repo.local_path(config)?;
+        let dotfile_repo = DotfileRepo::new(config, repo.name.clone())?;
+        let repo_path = dotfile_repo.local_path(config)?;
 
         if let Err(e) = run_git_command(&repo_path, &git_args, debug) {
             eprintln!("Failed to push in {}: {}", repo.name, e);
@@ -134,8 +134,8 @@ pub fn git_pull_all(config: &Config, args: &[String], debug: bool) -> Result<boo
             repo.name.cyan()
         );
 
-        let local_repo = LocalRepo::new(config, repo.name.clone())?;
-        let repo_path = local_repo.local_path(config)?;
+        let dotfile_repo = DotfileRepo::new(config, repo.name.clone())?;
+        let repo_path = dotfile_repo.local_path(config)?;
 
         // Get HEAD before pull
         let head_before = get_head_commit(&repo_path);
@@ -210,8 +210,8 @@ pub fn git_run_any(config: &Config, args: &[String], debug: bool) -> Result<()> 
         }
     };
 
-    let local_repo = LocalRepo::new(config, target_repo.name.clone())?;
-    let repo_path = local_repo.local_path(config)?;
+    let dotfile_repo = DotfileRepo::new(config, target_repo.name.clone())?;
+    let repo_path = dotfile_repo.local_path(config)?;
 
     // We treat all custom commands as potentially needing interaction (e.g. status with pager, log, etc)
     // transforming Vec<String> to Vec<&str>

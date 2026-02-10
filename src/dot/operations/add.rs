@@ -1,7 +1,7 @@
 use crate::dot::config::{self, Config};
 use crate::dot::db::Database;
 use crate::dot::dotfile::Dotfile;
-use crate::dot::localrepo::{DotfileDir, LocalRepo};
+use crate::dot::dotfilerepo::{DotfileDir, DotfileRepo};
 use crate::dot::menu::repo_actions::build_repo_preview;
 use crate::dot::types::{DotsDirSelectItem, RepoMenuItem};
 use crate::dot::utils::{filter_dotfiles_by_path, get_all_dotfiles, resolve_dotfile_path};
@@ -92,13 +92,13 @@ fn select_repo(config: &Config, db: &Database) -> Result<config::Repo> {
 }
 
 /// Prompt the user to select one of the repo's configured `dots_dirs`
-fn select_dots_dir(local_repo: &LocalRepo) -> Result<DotfileDir> {
-    let dirs = &local_repo.dotfile_dirs;
+fn select_dots_dir(dotfile_repo: &DotfileRepo) -> Result<DotfileDir> {
+    let dirs = &dotfile_repo.dotfile_dirs;
 
     if dirs.is_empty() {
         return Err(anyhow::anyhow!(
             "Repository '{}' has no configured dots_dirs",
-            local_repo.name
+            dotfile_repo.name
         ));
     }
 
@@ -111,14 +111,14 @@ fn select_dots_dir(local_repo: &LocalRepo) -> Result<DotfileDir> {
         .cloned()
         .map(|dots_dir| DotsDirSelectItem {
             dots_dir,
-            repo_name: local_repo.name.clone(),
+            repo_name: dotfile_repo.name.clone(),
         })
         .collect();
 
     match FzfWrapper::builder()
         .header(Header::fancy(&format!(
             "Select Directory in '{}'",
-            local_repo.name
+            dotfile_repo.name
         )))
         .prompt("Select")
         .args(fzf_mocha_args())
@@ -215,13 +215,13 @@ fn add_new_file(config: &Config, db: &Database, full_path: &Path) -> Result<Path
 
     // Repository selection
     let repo_config = select_repo(config, db)?;
-    let local_repo = LocalRepo::new(config, repo_config.name.clone())?;
+    let dotfile_repo = DotfileRepo::new(config, repo_config.name.clone())?;
 
     // dots_dir selection
-    let chosen_dir = select_dots_dir(&local_repo)?;
+    let chosen_dir = select_dots_dir(&dotfile_repo)?;
 
     // Build destination info
-    let repo_base = local_repo.local_path(config)?;
+    let repo_base = dotfile_repo.local_path(config)?;
     let dest = DotfileSource {
         repo_name: repo_config.name.clone(),
         subdir_name: chosen_dir
@@ -333,8 +333,8 @@ fn update_tracked_dotfiles(
         let was_updated = update_single_dotfile(dotfile, config, db)?;
         if was_updated {
             stats.updated_count += 1;
-            let local_repo = LocalRepo::new(config, repo_name.to_string())?;
-            let repo_path = local_repo.local_path(config)?;
+            let dotfile_repo = DotfileRepo::new(config, repo_name.to_string())?;
+            let repo_path = dotfile_repo.local_path(config)?;
 
             // Automatically stage the updated file
             // resolve_dotfile_path might be needed if source_path is not absolute, but Dotfile struct seems to keep absolute paths.

@@ -1,5 +1,5 @@
 use crate::dot::config;
-use crate::dot::localrepo::DotfileDir;
+use crate::dot::dotfilerepo::DotfileDir;
 use crate::menu_utils::FzfSelectable;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};

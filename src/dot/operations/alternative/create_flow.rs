@@ -199,7 +199,7 @@ fn add_file_to_destination(
 }
 
 fn create_new_subdir(config: &Config, repo_name: &str) -> Result<bool> {
-    use crate::dot::localrepo::LocalRepo;
+    use crate::dot::dotfilerepo::DotfileRepo;
 
     let new_dir = match FzfWrapper::builder()
         .prompt("New dotfile directory name: ")
@@ -211,8 +211,8 @@ fn create_new_subdir(config: &Config, repo_name: &str) -> Result<bool> {
         _ => return Ok(false),
     };
 
-    let local_repo = LocalRepo::new(config, repo_name.to_string())?;
-    let local_path = local_repo.local_path(config)?;
+    let dotfile_repo = DotfileRepo::new(config, repo_name.to_string())?;
+    let local_path = dotfile_repo.local_path(config)?;
 
     match crate::dot::meta::add_dots_dir(&local_path, &new_dir) {
         Ok(()) => {

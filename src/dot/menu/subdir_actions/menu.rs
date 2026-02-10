@@ -4,7 +4,7 @@ use anyhow::Result;
 
 use crate::dot::config::{Config, Repo};
 use crate::dot::db::Database;
-use crate::dot::localrepo::LocalRepo;
+use crate::dot::dotfilerepo::DotfileRepo;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
@@ -177,7 +177,7 @@ pub(crate) fn handle_manage_subdirs(
 
     loop {
         // Load the repo to get available subdirs
-        let local_repo = match LocalRepo::new(config, repo_name.to_string()) {
+        let dotfile_repo = match DotfileRepo::new(config, repo_name.to_string()) {
             Ok(repo) => repo,
             Err(e) => {
                 FzfWrapper::message(&format!("Failed to load repository: {}", e))?;
@@ -190,19 +190,19 @@ pub(crate) fn handle_manage_subdirs(
         let configured_subdirs = repo_config.and_then(|repo| repo.active_subdirectories.clone());
 
         let mut subdir_items =
-            build_base_items(&local_repo, &active_subdirs, configured_subdirs.as_ref());
+            build_base_items(&dotfile_repo, &active_subdirs, configured_subdirs.as_ref());
 
         let is_read_only = repo_config.map(|r| r.read_only).unwrap_or(false);
-        let is_external = local_repo.is_external(config);
+        let is_external = dotfile_repo.is_external(config);
 
-        if !is_read_only && !is_external && local_repo.meta.dots_dirs.len() > 1 {
+        if !is_read_only && !is_external && dotfile_repo.meta.dots_dirs.len() > 1 {
             subdir_items.push(SubdirMenuItem {
                 subdir: EDIT_DEFAULTS_SENTINEL.to_string(),
                 is_active: false,
                 is_orphaned: false,
                 priority: None,
                 total_active: 0,
-                default_label: Some(format_default_active_label(&local_repo.meta)),
+                default_label: Some(format_default_active_label(&dotfile_repo.meta)),
             });
         }
 
@@ -218,7 +218,7 @@ pub(crate) fn handle_manage_subdirs(
         }
 
         // Add orphaned subdirs (enabled in config but not in metadata)
-        let orphaned = local_repo.get_orphaned_active_subdirs(config);
+        let orphaned = dotfile_repo.get_orphaned_active_subdirs(config);
         for subdir in orphaned {
             subdir_items.push(SubdirMenuItem {
                 subdir,
@@ -240,7 +240,7 @@ pub(crate) fn handle_manage_subdirs(
             default_label: None,
         });
 
-        let header_text = build_header_text(repo_name, repo_config, &local_repo);
+        let header_text = build_header_text(repo_name, repo_config, &dotfile_repo);
         let selection = select_subdir(&mut cursor, &header_text, &subdir_items)?;
 
         let Some(selected) = selection else {
@@ -252,19 +252,19 @@ pub(crate) fn handle_manage_subdirs(
         }
 
         if selected.subdir == EDIT_DEFAULTS_SENTINEL {
-            handle_edit_default_subdirs(repo_name, &local_repo, config)?;
+            handle_edit_default_subdirs(repo_name, &dotfile_repo, config)?;
             continue;
         }
 
         // Handle add new subdirectory
         if selected.subdir == ADD_NEW_SENTINEL {
-            handle_add_new_subdir(&local_repo, config)?;
+            handle_add_new_subdir(&dotfile_repo, config)?;
             continue;
         }
 
         // Handle orphaned subdir with special resolution actions
         if selected.is_orphaned {
-            handle_orphaned_subdir_actions(repo_name, &selected.subdir, &local_repo, config)?;
+            handle_orphaned_subdir_actions(repo_name, &selected.subdir, &dotfile_repo, config)?;
             continue;
         }
 
@@ -274,11 +274,11 @@ pub(crate) fn handle_manage_subdirs(
 }
 
 fn build_base_items(
-    local_repo: &LocalRepo,
+    dotfile_repo: &DotfileRepo,
     active_subdirs: &[String],
     configured_subdirs: Option<&Vec<String>>,
 ) -> Vec<SubdirMenuItem> {
-    local_repo
+    dotfile_repo
         .meta
         .dots_dirs
         .iter()
@@ -314,12 +314,12 @@ fn build_base_items(
 fn build_header_text(
     repo_name: &str,
     repo_config: Option<&Repo>,
-    local_repo: &LocalRepo,
+    dotfile_repo: &DotfileRepo,
 ) -> String {
     let defaults_disabled = repo_config
         .map(|repo| repo.active_subdirectories.is_none())
         .unwrap_or(false)
-        && local_repo
+        && dotfile_repo
             .meta
             .default_active_subdirs
             .as_ref()
@@ -363,7 +363,7 @@ fn select_subdir(
     }
 }
 
-fn handle_add_new_subdir(local_repo: &LocalRepo, config: &Config) -> Result<()> {
+fn handle_add_new_subdir(dotfile_repo: &DotfileRepo, config: &Config) -> Result<()> {
     // Prompt for new directory name
     let new_dir = match FzfWrapper::builder()
         .input()
@@ -377,7 +377,7 @@ fn handle_add_new_subdir(local_repo: &LocalRepo, config: &Config) -> Result<()> 
     };
 
     // Get repo path and add the directory
-    let local_path = local_repo.local_path(config)?;
+    let local_path = dotfile_repo.local_path(config)?;
     match crate::dot::meta::add_dots_dir(&local_path, &new_dir) {
         Ok(()) => {
             FzfWrapper::message(&format!(

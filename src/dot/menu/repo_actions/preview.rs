@@ -88,10 +88,10 @@ pub fn build_repo_preview(repo_name: &str, config: &Config, db: &Database) -> St
         builder = builder.line(colors::YELLOW, Some(NerdFont::Lock), "Read-only");
     }
 
-    // Try to get more info from LocalRepo
-    if let Ok(local_repo) = repo_manager.get_repository_info(repo_name) {
+    // Try to get more info from DotfileRepo
+    if let Ok(dotfile_repo) = repo_manager.get_repository_info(repo_name) {
         let defaults_disabled = repo_config.active_subdirectories.is_none()
-            && local_repo
+            && dotfile_repo
                 .meta
                 .default_active_subdirs
                 .as_ref()
@@ -99,7 +99,7 @@ pub fn build_repo_preview(repo_name: &str, config: &Config, db: &Database) -> St
                 .unwrap_or(false);
 
         // Show description if present
-        if let Some(desc) = &local_repo.meta.description {
+        if let Some(desc) = &dotfile_repo.meta.description {
             builder = builder.blank().line(
                 colors::TEXT,
                 Some(NerdFont::FileText),
@@ -108,7 +108,7 @@ pub fn build_repo_preview(repo_name: &str, config: &Config, db: &Database) -> St
         }
 
         // Show author if present
-        if let Some(author) = &local_repo.meta.author {
+        if let Some(author) = &dotfile_repo.meta.author {
             builder = builder.line(
                 colors::BLUE,
                 Some(NerdFont::User),
@@ -128,17 +128,17 @@ pub fn build_repo_preview(repo_name: &str, config: &Config, db: &Database) -> St
             );
         }
 
-        if local_repo.meta.dots_dirs.is_empty() {
+        if dotfile_repo.meta.dots_dirs.is_empty() {
             builder = builder.indented_line(colors::SUBTEXT0, None, "No subdirectories configured");
         } else {
-            let available = local_repo.meta.dots_dirs.join(", ");
+            let available = dotfile_repo.meta.dots_dirs.join(", ");
             let active = if let Some(active_subdirs) = &repo_config.active_subdirectories {
                 if active_subdirs.is_empty() {
                     "(none configured)".to_string()
                 } else {
                     active_subdirs.join(", ")
                 }
-            } else if local_repo.meta.dots_dirs.is_empty() {
+            } else if dotfile_repo.meta.dots_dirs.is_empty() {
                 "(none configured)".to_string()
             } else {
                 let repo_path = config.repos_path().join(&repo_config.name);
@@ -163,7 +163,7 @@ pub fn build_repo_preview(repo_name: &str, config: &Config, db: &Database) -> St
         }
 
         // Local path
-        if let Ok(local_path) = local_repo.local_path(config) {
+        if let Ok(local_path) = dotfile_repo.local_path(config) {
             let tilde_path = local_path.display().to_string();
             builder = builder.blank().indented_line(
                 colors::TEXT,

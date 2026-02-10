@@ -31,7 +31,7 @@ fn list_subdirectories(
 ) -> Result<()> {
     let repo_manager = RepositoryManager::new(config, db);
 
-    let local_repo = repo_manager.get_repository_info(name)?;
+    let dotfile_repo = repo_manager.get_repository_info(name)?;
     let repo_config = config
         .repos
         .iter()
@@ -40,7 +40,7 @@ fn list_subdirectories(
 
     println!("Subdirectories for repository '{}':", name.cyan());
 
-    for dir in &local_repo.dotfile_dirs {
+    for dir in &dotfile_repo.dotfile_dirs {
         let dir_name = dir
             .path
             .file_name()
@@ -88,13 +88,13 @@ fn set_subdirectories(config: &mut Config, name: &str, subdirs: &[String]) -> Re
 /// Enable a subdirectory for a repository
 fn enable_subdirectory(config: &mut Config, db: &Database, name: &str, subdir: &str) -> Result<()> {
     // First verify the subdir exists in the repo's metadata
-    let local_repo = crate::dot::localrepo::LocalRepo::new(config, name.to_string())?;
-    if !local_repo.meta.dots_dirs.contains(&subdir.to_string()) {
+    let dotfile_repo = crate::dot::dotfilerepo::DotfileRepo::new(config, name.to_string())?;
+    if !dotfile_repo.meta.dots_dirs.contains(&subdir.to_string()) {
         return Err(anyhow::anyhow!(
             "Subdirectory '{}' not found in repository '{}'. Available: {}",
             subdir,
             name,
-            local_repo.meta.dots_dirs.join(", ")
+            dotfile_repo.meta.dots_dirs.join(", ")
         ));
     }
 

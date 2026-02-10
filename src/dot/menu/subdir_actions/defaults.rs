@@ -4,7 +4,7 @@ use anyhow::Result;
 use std::collections::HashSet;
 
 use crate::dot::config::Config;
-use crate::dot::localrepo::LocalRepo;
+use crate::dot::dotfilerepo::DotfileRepo;
 use crate::dot::meta;
 use crate::dot::types::RepoMetaData;
 use crate::menu_utils::{ChecklistAction, ChecklistResult, FzfSelectable, FzfWrapper, Header};
@@ -45,10 +45,10 @@ impl FzfSelectable for DefaultSubdirItem {
 
 pub(crate) fn handle_edit_default_subdirs(
     repo_name: &str,
-    local_repo: &LocalRepo,
+    dotfile_repo: &DotfileRepo,
     config: &Config,
 ) -> Result<()> {
-    if local_repo.is_external(config) {
+    if dotfile_repo.is_external(config) {
         FzfWrapper::message(
             "External repositories use metadata from the global config and cannot be edited here.",
         )?;
@@ -71,13 +71,13 @@ pub(crate) fn handle_edit_default_subdirs(
         return Ok(());
     }
 
-    if local_repo.meta.dots_dirs.is_empty() {
+    if dotfile_repo.meta.dots_dirs.is_empty() {
         FzfWrapper::message("No dotfile directories are defined for this repository.")?;
         return Ok(());
     }
 
-    let repo_path = local_repo.local_path(config)?;
-    let mut metadata = local_repo.meta.clone();
+    let repo_path = dotfile_repo.local_path(config)?;
+    let mut metadata = dotfile_repo.meta.clone();
     let current_set: HashSet<String> = metadata
         .default_active_subdirs
         .as_ref()

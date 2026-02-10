@@ -1,6 +1,6 @@
 use crate::dot::config::Config;
 use crate::dot::db::Database;
-use crate::dot::localrepo::LocalRepo;
+use crate::dot::dotfilerepo::DotfileRepo;
 use anyhow::Result;
 use colored::Colorize;
 
@@ -18,8 +18,8 @@ impl<'a> RepositoryManager<'a> {
     }
 
     /// Get detailed information about a specific repository
-    pub fn get_repository_info(&self, name: &str) -> Result<LocalRepo> {
-        LocalRepo::new(self.config, name.to_string())
+    pub fn get_repository_info(&self, name: &str) -> Result<DotfileRepo> {
+        DotfileRepo::new(self.config, name.to_string())
     }
 
     /// Get active dotfile directories from all enabled repositories
@@ -31,9 +31,9 @@ impl<'a> RepositoryManager<'a> {
                 continue;
             }
 
-            match LocalRepo::new(self.config, repo_config.name.clone()) {
-                Ok(local_repo) => {
-                    for dir in local_repo.active_dotfile_dirs() {
+            match DotfileRepo::new(self.config, repo_config.name.clone()) {
+                Ok(dotfile_repo) => {
+                    for dir in dotfile_repo.active_dotfile_dirs() {
                         active_dirs.push(dir.path.clone());
                     }
                 }

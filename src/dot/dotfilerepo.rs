@@ -48,7 +48,7 @@ impl DotfileDir {
 }
 
 #[derive(Clone, Debug)]
-pub struct LocalRepo {
+pub struct DotfileRepo {
     pub url: String,
     pub name: String,
     pub branch: Option<String>,
@@ -56,7 +56,7 @@ pub struct LocalRepo {
     pub meta: crate::dot::types::RepoMetaData,
 }
 
-impl LocalRepo {
+impl DotfileRepo {
     pub fn new(cfg: &Config, name: String) -> Result<Self> {
         // Check if the name exists in the config
         let repo_config = cfg
@@ -93,7 +93,7 @@ impl LocalRepo {
         let dotfile_dirs =
             Self::dotfile_dirs_from_path(&local_path, &meta.dots_dirs, &active_subdirs)?;
 
-        Ok(LocalRepo {
+        Ok(DotfileRepo {
             url: repo_config.url.clone(),
             name,
             branch: repo_config.branch.clone(),

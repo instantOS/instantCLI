@@ -3,7 +3,7 @@
 use anyhow::Result;
 
 use crate::dot::config::Config;
-use crate::dot::localrepo::LocalRepo;
+use crate::dot::dotfilerepo::DotfileRepo;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
@@ -92,12 +92,12 @@ pub(crate) fn handle_delete_subdir(
     subdir_name: &str,
     config: &mut Config,
 ) -> Result<()> {
-    // Get the local repo path
-    let local_repo = LocalRepo::new(config, repo_name.to_string())?;
-    let repo_path = local_repo.local_path(config)?;
+    // Get the dotfile repo path
+    let dotfile_repo = DotfileRepo::new(config, repo_name.to_string())?;
+    let repo_path = dotfile_repo.local_path(config)?;
 
     // External repos have a fixed structure and cannot have subdirectories removed
-    if local_repo.is_external(config) {
+    if dotfile_repo.is_external(config) {
         FzfWrapper::message(
             "External repositories use a fixed structure ('.') and cannot have subdirectories added or removed.\n\n\
             To manage subdirectories, convert to a native instantCLI repo by adding an instantdots.toml file.",

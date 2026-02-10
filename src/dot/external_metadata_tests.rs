@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::dot::config::{Config, Repo};
-    use crate::dot::localrepo::LocalRepo;
+    use crate::dot::dotfilerepo::DotfileRepo;
     use crate::dot::types::RepoMetaData;
     use std::fs;
     use tempfile::tempdir;
@@ -46,11 +46,11 @@ mod tests {
 
         config.repos.push(repo_config);
 
-        let local_repo = LocalRepo::new(&config, "repo".to_string()).unwrap();
+        let dotfile_repo = DotfileRepo::new(&config, "repo".to_string()).unwrap();
 
-        assert_eq!(local_repo.meta, metadata);
-        assert_eq!(local_repo.dotfile_dirs.len(), 1);
-        assert_eq!(local_repo.dotfile_dirs[0].path, repo_path.join("."));
+        assert_eq!(dotfile_repo.meta, metadata);
+        assert_eq!(dotfile_repo.dotfile_dirs.len(), 1);
+        assert_eq!(dotfile_repo.dotfile_dirs[0].path, repo_path.join("."));
     }
 
     #[test]
@@ -82,11 +82,11 @@ mod tests {
 
         config.repos.push(repo_config);
 
-        let local_repo = LocalRepo::new(&config, "repo".to_string()).unwrap();
+        let dotfile_repo = DotfileRepo::new(&config, "repo".to_string()).unwrap();
 
-        assert_eq!(local_repo.meta.name, "file-repo");
-        assert_eq!(local_repo.dotfile_dirs.len(), 1);
-        assert_eq!(local_repo.dotfile_dirs[0].path, repo_path.join("dots"));
+        assert_eq!(dotfile_repo.meta.name, "file-repo");
+        assert_eq!(dotfile_repo.dotfile_dirs.len(), 1);
+        assert_eq!(dotfile_repo.dotfile_dirs[0].path, repo_path.join("dots"));
     }
 
     #[test]
@@ -118,9 +118,9 @@ mod tests {
 
         config.repos.push(repo_config);
 
-        let local_repo = LocalRepo::new(&config, "repo".to_string()).unwrap();
+        let dotfile_repo = DotfileRepo::new(&config, "repo".to_string()).unwrap();
 
-        assert_eq!(local_repo.meta.name, "empty-repo");
-        assert!(local_repo.dotfile_dirs.is_empty());
+        assert_eq!(dotfile_repo.meta.name, "empty-repo");
+        assert!(dotfile_repo.dotfile_dirs.is_empty());
     }
 }

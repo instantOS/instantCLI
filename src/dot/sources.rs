@@ -1,5 +1,5 @@
 use crate::dot::config::Config;
-use crate::dot::localrepo::LocalRepo;
+use crate::dot::dotfilerepo::DotfileRepo;
 use crate::dot::override_config::DotfileSource;
 use anyhow::Result;
 use std::collections::HashMap;
@@ -24,12 +24,12 @@ pub fn list_sources_for_target(config: &Config, target_path: &Path) -> Result<Ve
             continue;
         }
 
-        let local_repo = match LocalRepo::new(config, repo_config.name.clone()) {
+        let dotfile_repo = match DotfileRepo::new(config, repo_config.name.clone()) {
             Ok(repo) => repo,
             Err(_) => continue,
         };
 
-        for dotfile_dir in local_repo.active_dotfile_dirs() {
+        for dotfile_dir in dotfile_repo.active_dotfile_dirs() {
             let source_path = dotfile_dir.path.join(relative_path);
             if source_path.exists() {
                 let subdir_name = dotfile_dir
@@ -62,12 +62,12 @@ pub fn list_sources_by_target_in_dir(
             continue;
         }
 
-        let local_repo = match LocalRepo::new(config, repo_config.name.clone()) {
+        let dotfile_repo = match DotfileRepo::new(config, repo_config.name.clone()) {
             Ok(repo) => repo,
             Err(_) => continue,
         };
 
-        for dotfile_dir in local_repo.active_dotfile_dirs() {
+        for dotfile_dir in dotfile_repo.active_dotfile_dirs() {
             let subdir_name = dotfile_dir
                 .path
                 .file_name()

@@ -3,7 +3,7 @@
 use anyhow::Result;
 
 use crate::dot::config::Config;
-use crate::dot::localrepo::LocalRepo;
+use crate::dot::dotfilerepo::DotfileRepo;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
@@ -79,7 +79,7 @@ impl FzfSelectable for OrphanedAction {
 pub(crate) fn handle_orphaned_subdir_actions(
     repo_name: &str,
     subdir_name: &str,
-    local_repo: &LocalRepo,
+    dotfile_repo: &DotfileRepo,
     config: &mut Config,
 ) -> Result<()> {
     let actions = vec![
@@ -126,7 +126,7 @@ pub(crate) fn handle_orphaned_subdir_actions(
             }
         }
         OrphanedAction::AddToMetadata => {
-            let repo_path = local_repo.local_path(config)?;
+            let repo_path = dotfile_repo.local_path(config)?;
             match crate::dot::meta::add_dots_dir(&repo_path, subdir_name) {
                 Ok(()) => {
                     FzfWrapper::message(&format!(

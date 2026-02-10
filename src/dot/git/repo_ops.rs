@@ -2,8 +2,8 @@ use crate::common;
 use crate::common::git;
 use crate::dot::config;
 use crate::dot::db::DotFileType;
+use crate::dot::dotfilerepo as repo_mod;
 use crate::dot::get_all_dotfiles;
-use crate::dot::localrepo as repo_mod;
 use anyhow::{Context, Result};
 use git2::Repository;
 use std::path::PathBuf;
@@ -116,7 +116,7 @@ pub fn add_repo(config: &mut config::Config, repo: config::Repo, debug: bool) ->
     }
 
     // Validate metadata
-    let local_repo = match repo_mod::LocalRepo::new(config, repo.name.clone()) {
+    let dotfile_repo = match repo_mod::DotfileRepo::new(config, repo.name.clone()) {
         Ok(repo) => repo,
         Err(e) => {
             if !target.join("instantdots.toml").exists() {
@@ -131,12 +131,12 @@ pub fn add_repo(config: &mut config::Config, repo: config::Repo, debug: bool) ->
         }
     };
 
-    let meta = &local_repo.meta;
+    let meta = &dotfile_repo.meta;
 
     if debug {
         eprintln!(
             "Repo {} identified as dot repo '{}' - {}",
-            local_repo.url,
+            dotfile_repo.url,
             meta.name,
             meta.description.as_deref().unwrap_or("")
         );
@@ -188,8 +188,8 @@ pub fn update_all(
     let mut any_failed = false;
 
     for repo in repos.iter() {
-        let local_repo = repo_mod::LocalRepo::new(cfg, repo.name.clone())?;
-        if let Err(e) = local_repo.update(cfg, debug) {
+        let dotfile_repo = repo_mod::DotfileRepo::new(cfg, repo.name.clone())?;
+        if let Err(e) = dotfile_repo.update(cfg, debug) {
             eprintln!("Failed to update {}:", repo.url);
             for (i, cause) in e.chain().enumerate() {
                 if i == 0 {
