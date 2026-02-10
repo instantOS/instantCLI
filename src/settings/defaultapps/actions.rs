@@ -9,6 +9,7 @@ use crate::settings::installable_packages::{
 };
 use crate::ui::catppuccin::fzf_mocha_args;
 use crate::ui::prelude::*;
+use crate::ui::preview::FzfPreview;
 
 use super::app_info::{ApplicationInfo, get_application_info};
 use super::mime_cache::{build_mime_to_apps_map, get_apps_for_mime};
@@ -114,7 +115,7 @@ pub fn manage_default_apps(ctx: &mut SettingsContext) -> Result<()> {
 
     let mut app_menu = FzfWrapper::builder()
         .prompt("Select application: ")
-        .header(Header::fancy(header_text))
+        .header(Header::fancy(&header_text))
         .args(fzf_mocha_args())
         .responsive_layout();
 
@@ -231,7 +232,7 @@ fn manage_default_app_for_mimes(
 
         let mut entries: Vec<MenuItem<DefaultAppMenuEntry>> = Vec::new();
 
-        if let Some(apps) = installable_apps {
+        if installable_apps.is_some() {
             entries.push(MenuItem::entry(DefaultAppMenuEntry::InstallMore));
             if !app_desktop_ids.is_empty() {
                 entries.push(MenuItem::line());
@@ -265,7 +266,7 @@ fn manage_default_app_for_mimes(
 
         let mut builder = FzfWrapper::builder()
             .prompt(format!("Select {}: ", app_name))
-            .header(Header::fancy(header_text))
+            .header(Header::fancy(&header_text))
             .args(fzf_mocha_args())
             .responsive_layout();
 

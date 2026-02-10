@@ -562,8 +562,10 @@ pub static ARCHIVE_MANAGERS: &[InstallableApp] = &[
 // Install More Menu Helper
 // =============================================================================
 
-use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper};
+use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper, Header};
+use crate::ui::catppuccin::{colors, fzf_mocha_args, hex_to_ansi_fg};
 use crate::ui::nerd_font::NerdFont;
+use crate::ui::preview::PreviewBuilder;
 use anyhow::Result;
 
 /// Wrapper for FZF display
@@ -574,12 +576,21 @@ struct InstallableAppItem<'a> {
 
 impl FzfSelectable for InstallableAppItem<'_> {
     fn fzf_display_text(&self) -> String {
-        let status = if self.app.is_installed() {
-            NerdFont::Check.to_string()
+        let (icon, color) = if self.app.is_installed() {
+            (NerdFont::CheckCircle, colors::GREEN)
         } else {
-            " ".to_string()
+            (NerdFont::Circle, colors::OVERLAY1)
         };
-        format!("[{}] {}", status, self.app.name)
+
+        let dim = hex_to_ansi_fg(colors::SUBTEXT0);
+        let reset = "\x1b[0m";
+
+        format!(
+            "{} {} {dim}({}){reset}",
+            crate::ui::catppuccin::format_icon_colored(icon, color),
+            self.app.name,
+            self.app.description
+        )
     }
 
     fn fzf_key(&self) -> String {
@@ -587,28 +598,36 @@ impl FzfSelectable for InstallableAppItem<'_> {
     }
 
     fn fzf_preview(&self) -> FzfPreview {
-        let mut preview = format!("{}\n\n", self.app.description);
-
-        preview.push_str("Packages:\n");
-        for dep in self.app.deps {
-            let status = if dep.is_installed() {
-                NerdFont::Check
-            } else {
-                NerdFont::Circle
-            };
-            preview.push_str(&format!("  {} {}\n", status, dep.name));
-        }
+        let mut builder = PreviewBuilder::new()
+            .header(NerdFont::Package, self.app.name)
+            .subtext(self.app.description)
+            .blank();
 
         if self.app.is_installed() {
-            preview.push_str(&format!("\n{} Already installed", NerdFont::Check));
+            builder = builder
+                .line(colors::GREEN, Some(NerdFont::CheckCircle), "Installed")
+                .subtext("All dependencies are already installed.")
+                .blank();
         } else {
-            preview.push_str(&format!(
-                "\n{} Not installed - select to install",
-                NerdFont::Circle
-            ));
+            builder = builder
+                .line(colors::SAPPHIRE, Some(NerdFont::Download), "Available")
+                .subtext("Select to install this application.")
+                .blank();
         }
 
-        FzfPreview::Text(preview)
+        builder = builder.line(colors::TEAL, Some(NerdFont::List), "Dependencies");
+
+        for dep in self.app.deps {
+            let (icon, color) = if dep.is_installed() {
+                (NerdFont::Check, colors::GREEN)
+            } else {
+                (NerdFont::Circle, colors::OVERLAY1)
+            };
+            // field_indented doesn't support color or icon yet, using indented_line for now
+            builder = builder.indented_line(color, Some(icon), dep.name);
+        }
+
+        builder.build()
     }
 }
 
@@ -618,14 +637,12 @@ pub fn show_install_more_menu(category_name: &str, apps: &[InstallableApp]) -> R
     let items: Vec<InstallableAppItem> =
         apps.iter().map(|app| InstallableAppItem { app }).collect();
 
-    let header = format!(
-        "Select an application to install\n[{}] = installed, [ ] = not installed",
-        NerdFont::Check
-    );
-
+    let header_text = format!("Select an application to install\nConfiguring: {category_name}");
     let selected = FzfWrapper::builder()
         .prompt(format!("Install {}: ", category_name))
-        .header(&header)
+        .header(Header::fancy(&header_text))
+        .args(fzf_mocha_args())
+        .responsive_layout()
         .select(items)?;
 
     match selected {
