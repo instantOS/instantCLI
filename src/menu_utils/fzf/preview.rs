@@ -41,14 +41,14 @@ impl PreviewUtils {
         let mut has_command = false;
         let mut all_same_command = true;
 
+        // First pass: collect info and populate mixed_map
         for item in items {
             let key = item.fzf_key();
 
             match item.fzf_preview() {
                 FzfPreview::Text(text) => {
                     has_text = true;
-                    text_map.insert(key.clone(), text.clone());
-                    mixed_map.insert(key, MixedPreviewContent::Text(text));
+                    mixed_map.insert(key.clone(), MixedPreviewContent::Text(text));
                 }
                 FzfPreview::Command(cmd) => {
                     has_command = true;
@@ -59,9 +59,7 @@ impl PreviewUtils {
                     } else {
                         first_command = Some(cmd.clone());
                     }
-                    // Store the actual command for per-item command execution
-                    text_map.insert(key.clone(), cmd.clone());
-                    mixed_map.insert(key, MixedPreviewContent::Command(cmd));
+                    mixed_map.insert(key.clone(), MixedPreviewContent::Command(cmd));
                 }
                 FzfPreview::None => {
                     // No preview for this item
@@ -69,7 +67,7 @@ impl PreviewUtils {
             }
         }
 
-        // Determine strategy
+        // Determine strategy and populate text_map only when needed
         if !has_text && !has_command {
             Ok(PreviewStrategy::None)
         } else if has_command && !has_text && all_same_command {
@@ -77,13 +75,24 @@ impl PreviewUtils {
             // We can use a single --preview command with {} substitution
             Ok(PreviewStrategy::Command(first_command.unwrap()))
         } else if has_command && !has_text && !all_same_command {
-            // Each item has a different command - store commands to execute
+            // Each item has a different command - populate text_map with commands
+            for (key, content) in &mixed_map {
+                if let MixedPreviewContent::Command(cmd) = content {
+                    text_map.insert(key.clone(), cmd.clone());
+                }
+            }
             Ok(PreviewStrategy::CommandPerItem(text_map))
         } else if !has_command && has_text {
-            // All text previews - use existing base64 approach
+            // All text previews - populate text_map with texts
+            for (key, content) in &mixed_map {
+                if let MixedPreviewContent::Text(text) = content {
+                    text_map.insert(key.clone(), text.clone());
+                }
+            }
             Ok(PreviewStrategy::Text(text_map))
         } else {
             // Mixed text and command previews - track type per item
+            // Don't populate text_map since it's not used in Mixed strategy
             Ok(PreviewStrategy::Mixed(mixed_map))
         }
     }

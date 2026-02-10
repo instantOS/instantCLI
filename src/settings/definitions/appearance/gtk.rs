@@ -5,13 +5,13 @@
 use anyhow::{Context, Result};
 use std::process::Command;
 
-use crate::menu_utils::{FzfSelectable, FzfWrapper};
+use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuItem};
 use crate::preview::{PreviewId, preview_command};
 use crate::settings::context::SettingsContext;
 use crate::settings::installable_packages::{self, GTK_ICON_THEMES, GTK_THEMES};
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::store::{BoolSettingKey, GTK_ICON_THEME_KEY, GTK_THEME_KEY, StringSettingKey};
-use crate::ui::catppuccin::{colors, format_icon_colored};
+use crate::ui::catppuccin::{colors, format_icon_colored, fzf_mocha_args};
 use crate::ui::prelude::*;
 
 use super::common::{apply_gtk4_overrides, list_gtk_themes, list_icon_themes, update_gtk_config};
@@ -88,7 +88,6 @@ struct ThemeMenuItem {
 #[derive(Clone)]
 enum ThemeMenuItemKind {
     InstallMore { label: String },
-    Separator,
     Theme { name: String, is_current: bool },
 }
 
@@ -96,14 +95,6 @@ impl ThemeMenuItem {
     fn install_more(label: String, preview_title: &'static str, preview_icon: NerdFont) -> Self {
         Self {
             kind: ThemeMenuItemKind::InstallMore { label },
-            preview_title,
-            preview_icon,
-        }
-    }
-
-    fn separator(preview_title: &'static str, preview_icon: NerdFont) -> Self {
-        Self {
-            kind: ThemeMenuItemKind::Separator,
             preview_title,
             preview_icon,
         }
@@ -139,7 +130,6 @@ impl FzfSelectable for ThemeMenuItem {
                 format_icon_colored(NerdFont::Package, colors::SAPPHIRE),
                 label
             ),
-            ThemeMenuItemKind::Separator => "─────────────────────".to_string(),
             ThemeMenuItemKind::Theme { name, is_current } => {
                 let icon = if *is_current {
                     NerdFont::CheckSquare
@@ -174,14 +164,12 @@ impl FzfSelectable for ThemeMenuItem {
                 .header(self.preview_icon, self.preview_title)
                 .text("Install additional themes and return to this list.")
                 .build(),
-            ThemeMenuItemKind::Separator => crate::menu_utils::FzfPreview::None,
         }
     }
 
     fn fzf_key(&self) -> String {
         match &self.kind {
             ThemeMenuItemKind::InstallMore { .. } => "__install_more__".to_string(),
-            ThemeMenuItemKind::Separator => "__separator__".to_string(),
             ThemeMenuItemKind::Theme { name, .. } => format!("theme:{name}"),
         }
     }
@@ -217,27 +205,27 @@ impl Setting for GtkIconTheme {
             let current = ctx.string(Self::KEY);
 
             // Build options list with "Install more..." at top
-            let mut options: Vec<ThemeMenuItem> = Vec::new();
+            let mut options: Vec<MenuItem<ThemeMenuItem>> = Vec::new();
 
-            options.push(ThemeMenuItem::install_more(
+            options.push(MenuItem::entry(ThemeMenuItem::install_more(
                 "Install more icon themes...".to_string(),
                 "Icon Theme",
                 NerdFont::Image,
-            ));
+            )));
 
             // Add separator if we have themes
             if !themes.is_empty() {
-                options.push(ThemeMenuItem::separator("Icon Theme", NerdFont::Image));
+                options.push(MenuItem::line());
             }
 
             // Add all theme names
             for theme in &themes {
-                options.push(ThemeMenuItem::theme(
+                options.push(MenuItem::entry(ThemeMenuItem::theme(
                     theme.clone(),
                     theme == &current,
                     "Icon Theme",
                     NerdFont::Image,
-                ));
+                )));
             }
 
             if themes.is_empty() {
@@ -249,16 +237,24 @@ impl Setting for GtkIconTheme {
 
             let mut builder = FzfWrapper::builder()
                 .prompt("Select Icon Theme")
-                .header("Choose an icon theme to apply globally");
+                .header(Header::fancy("Choose an icon theme to apply globally"))
+                .args(fzf_mocha_args())
+                .responsive_layout();
 
-            if let Some(index) = options.iter().position(ThemeMenuItem::is_current) {
+            if let Some(index) = options.iter().position(|m| {
+                if let MenuItem::Entry(item) = m {
+                    item.is_current()
+                } else {
+                    false
+                }
+            }) {
                 builder = builder.initial_index(index);
             }
 
-            let selected = builder.select(options)?;
+            let selected = builder.select_menu(options)?;
 
             match selected {
-                crate::menu_utils::FzfResult::Selected(selection) => match selection.kind {
+                FzfResult::Selected(selection) => match selection.kind {
                     ThemeMenuItemKind::InstallMore { .. } => {
                         // Show install more menu
                         let installed = installable_packages::show_install_more_menu(
@@ -272,10 +268,6 @@ impl Setting for GtkIconTheme {
                         // User cancelled or nothing installed, loop back
                         continue;
                     }
-                    ThemeMenuItemKind::Separator => {
-                        // Separator selected, ignore and loop back
-                        continue;
-                    }
                     ThemeMenuItemKind::Theme { name, .. } => {
                         // User selected a theme
                         apply_icon_theme_changes(ctx, &name);
@@ -284,12 +276,7 @@ impl Setting for GtkIconTheme {
                         return Ok(());
                     }
                 },
-                crate::menu_utils::FzfResult::MultiSelected(_)
-                | crate::menu_utils::FzfResult::Error(_) => {
-                    // Multi-selection or error, just loop back
-                    continue;
-                }
-                crate::menu_utils::FzfResult::Cancelled => {
+                _ => {
                     return Ok(());
                 }
             }
@@ -331,27 +318,27 @@ impl Setting for GtkTheme {
             let current = ctx.string(Self::KEY);
 
             // Build options list with "Install more..." at top
-            let mut options: Vec<ThemeMenuItem> = Vec::new();
+            let mut options: Vec<MenuItem<ThemeMenuItem>> = Vec::new();
 
-            options.push(ThemeMenuItem::install_more(
+            options.push(MenuItem::entry(ThemeMenuItem::install_more(
                 "Install more themes...".to_string(),
                 "GTK Theme",
                 NerdFont::Palette,
-            ));
+            )));
 
             // Add separator if we have themes
             if !themes.is_empty() {
-                options.push(ThemeMenuItem::separator("GTK Theme", NerdFont::Palette));
+                options.push(MenuItem::line());
             }
 
             // Add all theme names
             for theme in &themes {
-                options.push(ThemeMenuItem::theme(
+                options.push(MenuItem::entry(ThemeMenuItem::theme(
                     theme.clone(),
                     theme == &current,
                     "GTK Theme",
                     NerdFont::Palette,
-                ));
+                )));
             }
 
             if themes.is_empty() {
@@ -363,16 +350,24 @@ impl Setting for GtkTheme {
 
             let mut builder = FzfWrapper::builder()
                 .prompt("Select GTK Theme")
-                .header("Choose a GTK theme to apply globally");
+                .header(Header::fancy("Choose a GTK theme to apply globally"))
+                .args(fzf_mocha_args())
+                .responsive_layout();
 
-            if let Some(index) = options.iter().position(ThemeMenuItem::is_current) {
+            if let Some(index) = options.iter().position(|m| {
+                if let MenuItem::Entry(item) = m {
+                    item.is_current()
+                } else {
+                    false
+                }
+            }) {
                 builder = builder.initial_index(index);
             }
 
-            let selected = builder.select(options)?;
+            let selected = builder.select_menu(options)?;
 
             match selected {
-                crate::menu_utils::FzfResult::Selected(selection) => match selection.kind {
+                FzfResult::Selected(selection) => match selection.kind {
                     ThemeMenuItemKind::InstallMore { .. } => {
                         // Show install more menu
                         let installed =
@@ -382,10 +377,6 @@ impl Setting for GtkTheme {
                             continue;
                         }
                         // User cancelled or nothing installed, loop back
-                        continue;
-                    }
-                    ThemeMenuItemKind::Separator => {
-                        // Separator selected, ignore and loop back
                         continue;
                     }
                     ThemeMenuItemKind::Theme { name, .. } => {

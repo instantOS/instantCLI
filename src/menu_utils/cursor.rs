@@ -51,9 +51,8 @@ impl MenuCursor {
 
     pub fn update<T: FzfSelectable>(&mut self, selected: &T, items: &[T]) {
         let key = selected.fzf_key();
-        let key_ref = &key;
 
-        self.last_index = items.iter().position(|item| item.fzf_key() == *key_ref);
+        self.last_index = items.iter().position(|item| item.fzf_key() == key);
         self.last_key = Some(key);
     }
 

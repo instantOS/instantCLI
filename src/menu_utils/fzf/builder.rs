@@ -1186,7 +1186,11 @@ impl FzfBuilder {
             "--min-height".to_string(),
             "10".to_string(),
         ];
-        args.extend(super::theme::theme_args().into_iter().map(|s| s.to_string()));
+        args.extend(
+            super::theme::theme_args()
+                .into_iter()
+                .map(|s| s.to_string()),
+        );
         args
     }
 

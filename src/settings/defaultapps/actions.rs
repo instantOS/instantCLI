@@ -53,6 +53,11 @@ pub fn manage_default_apps(ctx: &mut SettingsContext) -> Result<()> {
 
     let selected_mime_info = match FzfWrapper::builder()
         .prompt("Select MIME type: ")
+        .header(Header::fancy(
+            "Default Applications\nSelect a MIME type to configure",
+        ))
+        .args(fzf_mocha_args())
+        .responsive_layout()
         .select(mime_types)?
     {
         FzfResult::Selected(info) => info,
@@ -109,7 +114,9 @@ pub fn manage_default_apps(ctx: &mut SettingsContext) -> Result<()> {
 
     let mut app_menu = FzfWrapper::builder()
         .prompt("Select application: ")
-        .header(&header_text);
+        .header(Header::fancy(header_text))
+        .args(fzf_mocha_args())
+        .responsive_layout();
 
     if let Some(index) = initial_index {
         app_menu = app_menu.initial_index(index);
@@ -171,6 +178,39 @@ pub fn set_default_archive_manager(ctx: &mut SettingsContext) -> Result<()> {
     manage_default_app_for_mimes(ctx, ARCHIVE_MIME_TYPES, "Archive Manager")
 }
 
+#[derive(Clone, Debug)]
+enum DefaultAppMenuEntry {
+    App(ApplicationInfo),
+    InstallMore,
+}
+
+impl FzfSelectable for DefaultAppMenuEntry {
+    fn fzf_display_text(&self) -> String {
+        match self {
+            DefaultAppMenuEntry::App(app) => app.fzf_display_text(),
+            DefaultAppMenuEntry::InstallMore => format!("{} Install more...", NerdFont::Package),
+        }
+    }
+
+    fn fzf_key(&self) -> String {
+        match self {
+            DefaultAppMenuEntry::App(app) => app.fzf_key(),
+            DefaultAppMenuEntry::InstallMore => "__install_more__".to_string(),
+        }
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        match self {
+            DefaultAppMenuEntry::App(app) => app.fzf_preview(),
+            DefaultAppMenuEntry::InstallMore => PreviewBuilder::new()
+                .header(NerdFont::Package, "Install More")
+                .text("Search and install more applications")
+                .text("from the official repositories.")
+                .build(),
+        }
+    }
+}
+
 fn manage_default_app_for_mimes(
     ctx: &mut SettingsContext,
     mime_types: &[&str],
@@ -182,7 +222,6 @@ fn manage_default_app_for_mimes(
     };
 
     let installable_apps = installable_apps_for(app_name);
-    let install_more_key = format!("{} Install more...", NerdFont::Package);
 
     loop {
         let mime_map = build_mime_to_apps_map().context("Failed to build MIME type map")?;
@@ -190,41 +229,61 @@ fn manage_default_app_for_mimes(
         let current_default = query_default_app(primary_mime).ok().flatten();
         let header_text = selection_header(app_name, current_default.clone(), mime_types);
 
-        let mut options: Vec<String> = Vec::new();
-        if installable_apps.is_some() {
-            options.push(install_more_key.to_string());
-        }
+        let mut entries: Vec<MenuItem<DefaultAppMenuEntry>> = Vec::new();
 
-        if !options.is_empty() && !app_desktop_ids.is_empty() {
-            options.push("─────────────────────".to_string());
+        if let Some(apps) = installable_apps {
+            entries.push(MenuItem::entry(DefaultAppMenuEntry::InstallMore));
+            if !app_desktop_ids.is_empty() {
+                entries.push(MenuItem::line());
+            }
         }
 
         let app_infos: Vec<ApplicationInfo> = app_desktop_ids
             .iter()
-            .map(|desktop_id| get_application_info(desktop_id))
+            .map(|desktop_id| {
+                let mut info = get_application_info(desktop_id);
+                info.is_default = current_default.as_deref() == Some(desktop_id.as_str());
+                info
+            })
             .collect();
 
         for app_info in &app_infos {
-            options.push(app_info.fzf_display_text());
+            entries.push(MenuItem::entry(DefaultAppMenuEntry::App(app_info.clone())));
         }
 
-        if options.is_empty() {
+        if entries.is_empty() {
             handle_missing_apps(ctx, app_name, mime_types, installable_apps.is_some());
             return Ok(());
         }
 
-        if options.len() == 1 && installable_apps.is_some() {
+        // Check if only "Install more" is available
+        if entries.len() == 1 && installable_apps.is_some() {
             handle_missing_apps(ctx, app_name, mime_types, true);
         }
 
-        let selected = FzfWrapper::builder()
+        let initial_index = app_infos.iter().position(|info| info.is_default);
+
+        let mut builder = FzfWrapper::builder()
             .prompt(format!("Select {}: ", app_name))
-            .header(&header_text)
-            .select(options)?;
+            .header(Header::fancy(header_text))
+            .args(fzf_mocha_args())
+            .responsive_layout();
+
+        if let Some(index) = initial_index {
+            // Adjust index if we have InstallMore and line separator
+            let offset = if installable_apps.is_some() {
+                if app_desktop_ids.is_empty() { 1 } else { 2 }
+            } else {
+                0
+            };
+            builder = builder.initial_index(index + offset);
+        }
+
+        let selected = builder.select_menu(entries)?;
 
         match selected {
-            FzfResult::Selected(selection) => {
-                if selection == install_more_key {
+            FzfResult::Selected(entry) => match entry {
+                DefaultAppMenuEntry::InstallMore => {
                     if let Some(apps) = installable_apps {
                         let installed =
                             installable_packages::show_install_more_menu(app_name, apps)?;
@@ -233,19 +292,13 @@ fn manage_default_app_for_mimes(
                         }
                     }
                     continue;
-                } else if selection.starts_with('─') {
-                    continue;
                 }
-
-                if let Some(app_info) = app_infos
-                    .iter()
-                    .find(|info| info.fzf_display_text() == selection)
-                {
+                DefaultAppMenuEntry::App(app_info) => {
                     apply_default_for_mimes(mime_types, &app_info.desktop_id)?;
-                    notify_success(ctx, app_name, mime_types.len(), app_info);
+                    notify_success(ctx, app_name, mime_types.len(), &app_info);
                     return Ok(());
                 }
-            }
+            },
             _ => {
                 ctx.emit_info("settings.defaultapps.cancelled", "No changes made.");
                 return Ok(());
