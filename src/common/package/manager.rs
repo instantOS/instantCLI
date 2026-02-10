@@ -177,7 +177,7 @@ impl PackageManager {
             Self::Zypper => {
                 "zypper se --available-only 2>/dev/null | tail -n +3 | cut -d'|' -f2 | tr -d ' '"
             }
-            Self::Pkg => "pkg list-all 2>/dev/null | cut -d'/' -f1",
+            Self::Pkg => "pkg list-all 2>/dev/null | grep -v '^Listing' | cut -d'/' -f1",
             Self::Flatpak => "flatpak remote-ls --app --columns=application 2>/dev/null",
             Self::Aur => {
                 "curl -sL https://aur.archlinux.org/packages.gz 2>/dev/null | gunzip 2>/dev/null"
