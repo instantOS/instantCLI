@@ -1,6 +1,6 @@
-use crate::dot::config::Config;
+use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
-use crate::dot::repo::RepositoryManager;
+use crate::dot::repo::DotfileRepositoryManager;
 use crate::menu_utils::FzfSelectable;
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
@@ -48,7 +48,7 @@ impl FzfSelectable for RepoActionItem {
 /// Build the repo action menu items
 pub(super) fn build_repo_action_menu(
     repo_name: &str,
-    config: &Config,
+    config: &DotfileConfig,
     db: &Database,
 ) -> Vec<RepoActionItem> {
     let repo_config = config.repos.iter().find(|r| r.name == repo_name);
@@ -65,7 +65,7 @@ pub(super) fn build_repo_action_menu(
     let total_repos = config.repos.len();
 
     // Get repo info for context in toggle preview
-    let repo_manager = RepositoryManager::new(config, db);
+    let repo_manager = DotfileRepositoryManager::new(config, db);
     let active_subdirs_info =
         repo_manager
             .get_repository_info(repo_name)

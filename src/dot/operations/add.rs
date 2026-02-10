@@ -1,4 +1,4 @@
-use crate::dot::config::{self, Config};
+use crate::dot::config::{self, DotfileConfig};
 use crate::dot::db::Database;
 use crate::dot::dotfile::Dotfile;
 use crate::dot::dotfilerepo::{DotfileDir, DotfileRepo};
@@ -38,7 +38,7 @@ impl DirectoryAddStats {
 }
 
 /// Prompt the user to select one of the configured repositories
-fn select_repo(config: &Config, db: &Database) -> Result<config::Repo> {
+fn select_repo(config: &DotfileConfig, db: &Database) -> Result<config::Repo> {
     if config.repos.is_empty() {
         return Err(anyhow::anyhow!("No repositories configured"));
     }
@@ -142,7 +142,7 @@ fn select_dots_dir(dotfile_repo: &DotfileRepo) -> Result<DotfileDir> {
 /// - For directories with --all: Update tracked files AND add untracked files
 /// - With --choose: Pick which repo/subdir to add the file to
 pub fn add_dotfile(
-    config: &Config,
+    config: &DotfileConfig,
     db: &Database,
     path: &str,
     add_all: bool,
@@ -203,13 +203,13 @@ pub fn add_dotfile(
 
 /// Add a file with a destination picker (for --choose flag).
 /// Delegates to the shared picker in the alternative module.
-fn add_with_destination_picker(config: &Config, _db: &Database, target_path: &Path) -> Result<()> {
+fn add_with_destination_picker(config: &DotfileConfig, _db: &Database, target_path: &Path) -> Result<()> {
     super::alternative::pick_destination_and_add(config, target_path)?;
     Ok(())
 }
 
 /// Add a new untracked file and return the repo path
-fn add_new_file(config: &Config, db: &Database, full_path: &Path) -> Result<PathBuf> {
+fn add_new_file(config: &DotfileConfig, db: &Database, full_path: &Path) -> Result<PathBuf> {
     use super::alternative::add_to_destination;
     use crate::dot::override_config::DotfileSource;
 
@@ -269,7 +269,7 @@ fn scan_and_categorize_files(
 }
 
 /// Update a single tracked dotfile and return whether it was updated or unchanged
-fn update_single_dotfile(dotfile: &Dotfile, config: &Config, db: &Database) -> Result<bool> {
+fn update_single_dotfile(dotfile: &Dotfile, config: &DotfileConfig, db: &Database) -> Result<bool> {
     let old_source_hash = if dotfile.source_path.exists() {
         Some(Dotfile::compute_hash(&dotfile.source_path)?)
     } else {
@@ -311,7 +311,7 @@ fn update_single_dotfile(dotfile: &Dotfile, config: &Config, db: &Database) -> R
 /// Update multiple tracked dotfiles
 fn update_tracked_dotfiles(
     dotfiles: &[&Dotfile],
-    config: &Config,
+    config: &DotfileConfig,
     db: &Database,
     stats: &mut DirectoryAddStats,
     debug: bool,
@@ -360,7 +360,7 @@ fn update_tracked_dotfiles(
 /// Add multiple untracked files
 fn add_untracked_files(
     file_paths: &[PathBuf],
-    config: &Config,
+    config: &DotfileConfig,
     db: &Database,
     stats: &mut DirectoryAddStats,
     _debug: bool,

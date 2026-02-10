@@ -3,20 +3,21 @@ use std::ffi::OsString;
 use anyhow::Result;
 
 use crate::common::deps::RESTIC;
-use crate::common::package::{InstallResult, ensure_all};
+use crate::common::package::{ensure_all, InstallResult};
 
 use super::cli::{DependencyCommands, GameCommands};
 use super::deps::{
-    AddDependencyOptions, InstallDependencyOptions, UninstallDependencyOptions, add_dependency,
-    install_dependency, list_dependencies as list_game_dependencies, uninstall_dependency,
+    add_dependency, install_dependency, list_dependencies as list_game_dependencies,
+    uninstall_dependency, AddDependencyOptions, InstallDependencyOptions,
+    UninstallDependencyOptions,
 };
-use super::games::GameManager;
 use super::games::manager::AddGameOptions;
+use super::games::GameManager;
 use super::games::{display, selection};
 use super::menu;
 use super::operations::{exec_game_command, launch_game, sync_game_saves};
-use super::repository::RepositoryManager;
 use super::repository::manager::InitOptions;
+use super::repository::GameRepositoryManager;
 use super::restic::{
     backup_game_saves, handle_restic_command, prune_snapshots, restore_game_saves,
 };
@@ -104,7 +105,7 @@ pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
 }
 
 fn handle_init(debug: bool, repo: Option<String>, password: Option<String>) -> Result<()> {
-    RepositoryManager::initialize_game_manager(debug, InitOptions { repo, password })
+    GameRepositoryManager::initialize_game_manager(debug, InitOptions { repo, password })
 }
 
 fn handle_add(options: AddGameOptions) -> Result<()> {

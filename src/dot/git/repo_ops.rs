@@ -1,6 +1,6 @@
 use crate::common;
 use crate::common::git;
-use crate::dot::config;
+use crate::dot::config::{self, DotfileConfig};
 use crate::dot::db::DotFileType;
 use crate::dot::dotfilerepo as repo_mod;
 use crate::dot::get_all_dotfiles;
@@ -9,7 +9,7 @@ use git2::Repository;
 use std::path::PathBuf;
 
 /// Get the dotfile directory name for a dotfile
-pub fn get_dotfile_dir_name(dotfile: &crate::dot::Dotfile, cfg: &config::Config) -> String {
+pub fn get_dotfile_dir_name(dotfile: &crate::dot::Dotfile, cfg: &DotfileConfig) -> String {
     // Find which repository this dotfile comes from
     for repo_config in &cfg.repos {
         let repo_path = cfg.repos_path().join(&repo_config.name);
@@ -30,7 +30,7 @@ pub fn get_dotfile_dir_name(dotfile: &crate::dot::Dotfile, cfg: &config::Config)
 /// Get the repository name for a dotfile (improved version)
 pub fn get_repo_name_for_dotfile(
     dotfile: &crate::dot::Dotfile,
-    cfg: &config::Config,
+    cfg: &DotfileConfig,
 ) -> crate::dot::RepoName {
     // Find which repository this dotfile comes from
     for repo_config in &cfg.repos {
@@ -44,7 +44,7 @@ pub fn get_repo_name_for_dotfile(
     crate::dot::RepoName::new("unknown".to_string())
 }
 
-pub fn add_repo(config: &mut config::Config, repo: config::Repo, debug: bool) -> Result<PathBuf> {
+pub fn add_repo(config: &mut DotfileConfig, repo: config::Repo, debug: bool) -> Result<PathBuf> {
     let base = config.repos_path();
 
     let repo_dir_name = repo.name.clone();
@@ -174,7 +174,7 @@ pub fn add_repo(config: &mut config::Config, repo: config::Repo, debug: bool) ->
 }
 
 pub fn update_all(
-    cfg: &config::Config,
+    cfg: &DotfileConfig,
     debug: bool,
     db: &crate::dot::db::Database,
     should_apply: bool,

@@ -5,9 +5,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::common::TildePath;
 use crate::common::config::DocumentedConfig;
 use crate::common::paths;
+use crate::common::TildePath;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Repo {
@@ -56,7 +56,7 @@ fn default_database_dir() -> TildePath {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Config {
+pub struct DotfileConfig {
     #[serde(default)]
     pub repos: Vec<Repo>,
     #[serde(default = "default_clone_depth")]
@@ -75,9 +75,9 @@ pub struct Config {
     pub units: Vec<String>,
 }
 
-impl Default for Config {
+impl Default for DotfileConfig {
     fn default() -> Self {
-        Config {
+        DotfileConfig {
             repos: Vec::new(),
             clone_depth: default_clone_depth(),
             hash_cleanup_days: default_hash_cleanup_days(),
@@ -97,7 +97,7 @@ pub fn config_file_path(custom_path: Option<&str>) -> Result<PathBuf> {
     Ok(paths::instant_config_dir()?.join("dots.toml"))
 }
 
-impl Config {
+impl DotfileConfig {
     /// Get active subdirectories for a specific repo by name
     pub fn get_active_subdirs(&self, repo_name: &str) -> Vec<String> {
         self.repos
@@ -548,8 +548,8 @@ pub fn extract_repo_name(repo: &str) -> String {
 // Import macro from crate root
 use crate::documented_config;
 
-// Implement DocumentedConfig trait for Config using the macro
-documented_config!(Config,
+// Implement DocumentedConfig trait for DotfileConfig using the macro
+documented_config!(DotfileConfig,
     clone_depth, "Git clone depth for repositories (default: 1 for shallow clones)",
     hash_cleanup_days, "Days before old file hashes are cleaned up from database (default: 30)",
     repos_dir, "Directory where dotfile repositories are stored",

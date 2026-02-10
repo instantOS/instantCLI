@@ -1,4 +1,4 @@
-use crate::dot::config;
+use crate::dot::config::{self, DotfileConfig};
 use crate::dot::git::{get_dotfile_dir_name, get_repo_name_for_dotfile};
 use crate::dot::units::UnitIndex;
 use crate::ui::prelude::*;
@@ -63,7 +63,7 @@ pub struct StatusSummary {
 pub fn show_single_file_status(
     path_str: &str,
     all_dotfiles: &HashMap<PathBuf, crate::dot::Dotfile>,
-    cfg: &config::Config,
+    cfg: &DotfileConfig,
     db: &crate::dot::db::Database,
     _show_sources: bool,
     unit_index: &UnitIndex,
@@ -281,7 +281,7 @@ pub fn show_single_file_status(
 /// Show comprehensive status summary
 pub fn show_status_summary(
     all_dotfiles: &HashMap<PathBuf, crate::dot::Dotfile>,
-    cfg: &config::Config,
+    cfg: &DotfileConfig,
     db: &crate::dot::db::Database,
     show_all: bool,
     show_sources: bool,
@@ -313,7 +313,7 @@ pub fn show_status_summary(
 /// Categorize files by status and get summary statistics
 pub fn categorize_files_and_get_summary<'a>(
     all_dotfiles: &'a HashMap<PathBuf, crate::dot::Dotfile>,
-    cfg: &'a config::Config,
+    cfg: &'a DotfileConfig,
     db: &'a crate::dot::db::Database,
     unit_index: &'a UnitIndex,
 ) -> (HashMap<DotFileStatus, Vec<FileInfo>>, StatusSummary) {
@@ -372,7 +372,7 @@ fn show_json_status(
     summary: &StatusSummary,
     show_all: bool,
     show_sources: bool,
-    cfg: &config::Config,
+    cfg: &DotfileConfig,
 ) {
     let home = dirs::home_dir().unwrap_or_default();
 
@@ -488,7 +488,7 @@ fn show_text_status(
     show_all: bool,
     show_sources: bool,
     home: &PathBuf,
-    cfg: &config::Config,
+    cfg: &DotfileConfig,
 ) {
     // Helper function to get priority number for a repo
     let get_priority = |repo_name: &str| -> usize {

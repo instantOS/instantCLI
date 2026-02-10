@@ -1,13 +1,13 @@
 use std::{ffi::OsStr, fmt};
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use clap::ValueEnum;
 use clap_complete::engine::CompletionCandidate;
 use clap_complete::env::Shells;
 
 use crate::assist::registry::{self, AssistEntry};
 use crate::doctor::registry::REGISTRY;
-use crate::dot::config::Config;
+use crate::dot::config::DotfileConfig;
 use crate::game::config::InstantGameConfig;
 use crate::settings::setting::Category;
 
@@ -140,7 +140,7 @@ pub fn game_name_completion(current: &OsStr) -> Vec<CompletionCandidate> {
 
 pub fn repo_name_completion(current: &OsStr) -> Vec<CompletionCandidate> {
     let prefix = lossy_prefix(current);
-    let Ok(config) = Config::load(None) else {
+    let Ok(config) = DotfileConfig::load(None) else {
         return Vec::new();
     };
 

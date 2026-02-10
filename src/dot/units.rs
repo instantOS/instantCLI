@@ -10,10 +10,10 @@
 //!
 //! The effective units are the union of both sources.
 
-use crate::dot::config::Config;
+use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
 use crate::dot::dotfile::Dotfile;
-use crate::dot::repo::RepositoryManager;
+use crate::dot::repo::DotfileRepositoryManager;
 use anyhow::Result;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -67,7 +67,7 @@ fn normalize_unit_path(unit: &str) -> PathBuf {
 /// Get all effective units by combining global config units and repo-defined units.
 ///
 /// Returns a deduplicated list of unit paths (relative to home directory).
-pub fn get_all_units(config: &Config, db: &Database) -> Result<Vec<PathBuf>> {
+pub fn get_all_units(config: &DotfileConfig, db: &Database) -> Result<Vec<PathBuf>> {
     let mut units_set: HashSet<PathBuf> = HashSet::new();
 
     // Add global config units
@@ -76,7 +76,7 @@ pub fn get_all_units(config: &Config, db: &Database) -> Result<Vec<PathBuf>> {
     }
 
     // Add repo-defined units
-    let repo_manager = RepositoryManager::new(config, db);
+    let repo_manager = DotfileRepositoryManager::new(config, db);
     for repo_config in &config.repos {
         if !repo_config.enabled {
             continue;

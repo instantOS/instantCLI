@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::dot::config::{Config, Repo};
+    use crate::dot::config::{DotfileConfig, Repo};
     use crate::dot::dotfilerepo::DotfileRepo;
     use crate::dot::types::RepoMetaData;
     use std::fs;

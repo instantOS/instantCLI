@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::{Subcommand, ValueHint};
 use colored::Colorize;
 
-use super::config::Config;
+use super::config::DotfileConfig;
 use super::db::Database;
 use super::repo::cli::{CloneArgs, RepoCommands};
 use crate::ui::prelude::*;
@@ -211,7 +211,7 @@ pub enum PriorityCommands {
 }
 
 fn handle_ignore_command(
-    config: &mut Config,
+    config: &mut DotfileConfig,
     command: &IgnoreCommands,
     config_path: Option<&str>,
 ) -> Result<()> {
@@ -317,7 +317,7 @@ fn handle_ignore_command(
 }
 
 fn handle_unit_command(
-    config: &mut Config,
+    config: &mut DotfileConfig,
     db: &Database,
     command: &UnitCommands,
     repo: Option<&str>,
@@ -418,7 +418,7 @@ fn scope_label(scope: &crate::dot::unit_manager::UnitScope) -> String {
 }
 
 fn handle_priority_command(
-    config: &mut Config,
+    config: &mut DotfileConfig,
     command: &PriorityCommands,
     config_path: Option<&str>,
 ) -> Result<()> {
@@ -522,7 +522,7 @@ pub fn handle_dot_command(
     config_path: Option<&str>,
     debug: bool,
 ) -> Result<()> {
-    let mut config = Config::load(config_path)?;
+    let mut config = DotfileConfig::load(config_path)?;
     config.ensure_directories()?;
     let db = Database::new(config.database_path().to_path_buf())?;
 

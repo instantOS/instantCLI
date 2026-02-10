@@ -719,7 +719,7 @@ fn show_uninitialized_menu() -> Result<()> {
         {
             // Run initialization
             let init_result =
-                crate::game::repository::manager::RepositoryManager::initialize_game_manager(
+                crate::game::repository::manager::GameRepositoryManager::initialize_game_manager(
                     false,
                     Default::default(),
                 );

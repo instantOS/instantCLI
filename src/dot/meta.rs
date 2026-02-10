@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::common::config::DocumentedConfig;
-use crate::dot::config::{self, Config};
+use crate::dot::config::{self, DotfileConfig};
 use crate::ui::prelude::*;
 
 /// Validate that the given path is a git repository
@@ -412,7 +412,7 @@ pub enum InitOutcome {
 }
 
 pub fn handle_init_command(
-    config: &mut Config,
+    config: &mut DotfileConfig,
     current_dir: &Path,
     name: Option<&str>,
     non_interactive: bool,
@@ -507,7 +507,7 @@ pub fn handle_init_command(
 }
 
 pub fn init_or_create_default_repo(
-    config: &mut Config,
+    config: &mut DotfileConfig,
     current_dir: &Path,
     name: Option<&str>,
     non_interactive: bool,
@@ -547,7 +547,7 @@ fn handle_existing_git_repo(
     }))
 }
 
-fn check_already_configured(config: &Config) -> Option<InitOutcome> {
+fn check_already_configured(config: &DotfileConfig) -> Option<InitOutcome> {
     // Filter out read-only repositories
     let writable_repos = config.get_writable_repos();
 
@@ -566,7 +566,7 @@ fn check_already_configured(config: &Config) -> Option<InitOutcome> {
 }
 
 pub fn create_local_repo(
-    config: &mut Config,
+    config: &mut DotfileConfig,
     name: Option<&str>,
     non_interactive: bool,
     skip_name_prompt: bool,
@@ -705,11 +705,11 @@ pub fn create_local_repo(
     })
 }
 
-fn name_in_use(config: &Config, name: &str) -> bool {
+fn name_in_use(config: &DotfileConfig, name: &str) -> bool {
     config.repos.iter().any(|r| r.name == name)
 }
 
-fn determine_repo_path(config: &Config, desired_name: &str) -> (String, PathBuf) {
+fn determine_repo_path(config: &DotfileConfig, desired_name: &str) -> (String, PathBuf) {
     let sanitized = desired_name.trim().to_string();
 
     if !name_in_use(config, &sanitized) {

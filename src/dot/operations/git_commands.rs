@@ -1,4 +1,4 @@
-use crate::dot::config::{Config, Repo};
+use crate::dot::config::{DotfileConfig, Repo};
 use crate::dot::db::Database;
 use crate::dot::dotfilerepo::DotfileRepo;
 use crate::dot::git::repo_ops::{run_git_command, run_interactive_git_command};
@@ -11,7 +11,7 @@ use anyhow::Result;
 use colored::*;
 
 /// Run git commit across all writable repositories
-pub fn git_commit_all(config: &Config, args: &[String], debug: bool) -> Result<()> {
+pub fn git_commit_all(config: &DotfileConfig, args: &[String], debug: bool) -> Result<()> {
     let repos = config.get_writable_repos();
 
     if repos.is_empty() {
@@ -63,7 +63,7 @@ pub fn git_commit_all(config: &Config, args: &[String], debug: bool) -> Result<(
 }
 
 /// Run git push across all writable repositories
-pub fn git_push_all(config: &Config, args: &[String], debug: bool) -> Result<()> {
+pub fn git_push_all(config: &DotfileConfig, args: &[String], debug: bool) -> Result<()> {
     let repos = config.get_writable_repos();
 
     if repos.is_empty() {
@@ -112,7 +112,7 @@ fn get_head_commit(repo_path: &std::path::Path) -> Option<String> {
 
 /// Run git pull across all writable repositories
 /// Returns true if any repository successfully pulled new commits
-pub fn git_pull_all(config: &Config, args: &[String], debug: bool) -> Result<bool> {
+pub fn git_pull_all(config: &DotfileConfig, args: &[String], debug: bool) -> Result<bool> {
     let repos = config.get_writable_repos();
 
     if repos.is_empty() {
@@ -168,7 +168,7 @@ pub fn git_pull_all(config: &Config, args: &[String], debug: bool) -> Result<boo
 }
 
 /// Run an arbitrary git command
-pub fn git_run_any(config: &Config, args: &[String], debug: bool) -> Result<()> {
+pub fn git_run_any(config: &DotfileConfig, args: &[String], debug: bool) -> Result<()> {
     // If no args provided, show help or error
     if args.is_empty() {
         return Err(anyhow::anyhow!("No git command provided"));

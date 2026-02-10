@@ -4,7 +4,7 @@ use std::path::Path;
 
 use anyhow::Result;
 
-use crate::dot::config::Config;
+use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
 use crate::dot::override_config::{OverrideConfig, find_all_sources};
 use crate::ui::prelude::*;
@@ -15,7 +15,7 @@ use super::picker::SourceOption;
 
 /// Handle --set REPO[/SUBDIR] flag (non-interactive).
 pub(crate) fn handle_set_direct(
-    config: &Config,
+    config: &DotfileConfig,
     path: &Path,
     display: &str,
     repo_name: &str,
@@ -103,7 +103,7 @@ pub(crate) fn handle_set_direct(
 
 /// Handle --create --repo REPO --subdir SUBDIR (non-interactive).
 pub(crate) fn handle_create_direct(
-    config: &Config,
+    config: &DotfileConfig,
     path: &Path,
     display: &str,
     repo_name: &str,

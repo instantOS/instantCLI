@@ -1,12 +1,12 @@
-use crate::dot::config::Config;
+use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
-use crate::dot::repo::RepositoryManager;
+use crate::dot::repo::DotfileRepositoryManager;
 use anyhow::{Context, Result};
 use colored::*;
 
 /// Remove a repository
 pub(super) fn remove_repository(
-    config: &mut Config,
+    config: &mut DotfileConfig,
     db: &Database,
     name: &str,
     remove_files: bool,
@@ -20,7 +20,7 @@ pub(super) fn remove_repository(
 
     if remove_files {
         // Remove the local files
-        let repo_manager = RepositoryManager::new(config, db);
+        let repo_manager = DotfileRepositoryManager::new(config, db);
         if let Ok(local_repo) = repo_manager.get_repository_info(name) {
             let local_path = local_repo.local_path(config)?;
             if local_path.exists() {

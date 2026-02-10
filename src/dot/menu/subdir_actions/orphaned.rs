@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 
-use crate::dot::config::Config;
+use crate::dot::config::DotfileConfig;
 use crate::dot::dotfilerepo::DotfileRepo;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
@@ -80,7 +80,7 @@ pub(crate) fn handle_orphaned_subdir_actions(
     repo_name: &str,
     subdir_name: &str,
     dotfile_repo: &DotfileRepo,
-    config: &mut Config,
+    config: &mut DotfileConfig,
 ) -> Result<()> {
     let actions = vec![
         OrphanedAction::Disable,

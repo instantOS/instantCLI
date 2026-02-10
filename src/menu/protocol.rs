@@ -131,7 +131,7 @@ pub enum MenuResponse {
     /// Password input result
     PasswordResult(String),
     /// Server status information
-    StatusResult(StatusInfo),
+    StatusResult(MenuStatus),
     /// Server stop acknowledgment
     StopResult,
     /// Error occurred
@@ -192,7 +192,7 @@ pub enum ServerStatus {
 
 /// Detailed server status information
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct StatusInfo {
+pub struct MenuStatus {
     /// Current server status
     pub status: ServerStatus,
     /// Server version information

@@ -1,13 +1,13 @@
-use crate::dot::config::Config;
+use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
-use crate::dot::repo::RepositoryManager;
+use crate::dot::repo::DotfileRepositoryManager;
 use crate::ui::nerd_font::NerdFont;
 use anyhow::Result;
 use colored::*;
 
 /// Show detailed repository information
-pub(super) fn show_repository_info(config: &Config, db: &Database, name: &str) -> Result<()> {
-    let repo_manager = RepositoryManager::new(config, db);
+pub(super) fn show_repository_info(config: &DotfileConfig, db: &Database, name: &str) -> Result<()> {
+    let repo_manager = DotfileRepositoryManager::new(config, db);
 
     let local_repo = repo_manager.get_repository_info(name)?;
     let repo_config = config

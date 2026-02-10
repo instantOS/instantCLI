@@ -1,18 +1,18 @@
 use crate::common::TildePath;
-use crate::dot::config::Config;
+use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
-use crate::dot::repo::RepositoryManager;
+use crate::dot::repo::DotfileRepositoryManager;
 use crate::ui::nerd_font::NerdFont;
 use anyhow::Result;
 use colored::*;
 
 /// Show git repository status (working directory and branch sync state)
 pub(super) fn show_repository_status(
-    config: &Config,
+    config: &DotfileConfig,
     db: &Database,
     name: Option<&str>,
 ) -> Result<()> {
-    let repo_manager = RepositoryManager::new(config, db);
+    let repo_manager = DotfileRepositoryManager::new(config, db);
 
     // Determine which repos to show
     let repos_to_show: Vec<_> = if let Some(name) = name {

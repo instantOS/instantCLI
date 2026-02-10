@@ -1,7 +1,7 @@
-use crate::dot::config::Config;
+use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
-use crate::dot::repo::RepositoryManager;
 use crate::dot::repo::cli::SubdirCommands;
+use crate::dot::repo::DotfileRepositoryManager;
 use crate::ui::nerd_font::NerdFont;
 use anyhow::Result;
 use colored::*;
@@ -10,7 +10,7 @@ use super::apply::apply_all_repos;
 
 /// Handle subdirectory commands
 pub(super) fn handle_subdir_command(
-    config: &mut Config,
+    config: &mut DotfileConfig,
     db: &Database,
     command: &SubdirCommands,
 ) -> Result<()> {
@@ -24,12 +24,12 @@ pub(super) fn handle_subdir_command(
 
 /// List subdirectories for a repository
 fn list_subdirectories(
-    config: &Config,
+    config: &DotfileConfig,
     db: &Database,
     name: &str,
     active_only: bool,
 ) -> Result<()> {
-    let repo_manager = RepositoryManager::new(config, db);
+    let repo_manager = DotfileRepositoryManager::new(config, db);
 
     let dotfile_repo = repo_manager.get_repository_info(name)?;
     let repo_config = config
@@ -74,7 +74,7 @@ fn list_subdirectories(
 }
 
 /// Set active subdirectories for a repository
-fn set_subdirectories(config: &mut Config, name: &str, subdirs: &[String]) -> Result<()> {
+fn set_subdirectories(config: &mut DotfileConfig, name: &str, subdirs: &[String]) -> Result<()> {
     config.set_active_subdirs(name, subdirs.to_vec(), None)?;
     println!(
         "{} active subdirectories for repository '{}': {}",
@@ -86,7 +86,7 @@ fn set_subdirectories(config: &mut Config, name: &str, subdirs: &[String]) -> Re
 }
 
 /// Enable a subdirectory for a repository
-fn enable_subdirectory(config: &mut Config, db: &Database, name: &str, subdir: &str) -> Result<()> {
+fn enable_subdirectory(config: &mut DotfileConfig, db: &Database, name: &str, subdir: &str) -> Result<()> {
     // First verify the subdir exists in the repo's metadata
     let dotfile_repo = crate::dot::dotfilerepo::DotfileRepo::new(config, name.to_string())?;
     if !dotfile_repo.meta.dots_dirs.contains(&subdir.to_string()) {
@@ -128,7 +128,7 @@ fn enable_subdirectory(config: &mut Config, db: &Database, name: &str, subdir: &
 }
 
 /// Disable a subdirectory for a repository
-fn disable_subdirectory(config: &mut Config, name: &str, subdir: &str) -> Result<()> {
+fn disable_subdirectory(config: &mut DotfileConfig, name: &str, subdir: &str) -> Result<()> {
     let mut active = config.get_active_subdirs(name);
 
     if !active.contains(&subdir.to_string()) {

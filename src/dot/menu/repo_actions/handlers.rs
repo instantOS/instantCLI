@@ -1,21 +1,21 @@
 use anyhow::Result;
 use std::path::PathBuf;
 
-use crate::dot::config::Config;
+use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
-use crate::dot::repo::{RepositoryManager, cli::RepoCommands};
+use crate::dot::repo::{cli::RepoCommands, DotfileRepositoryManager};
 use crate::menu_utils::{ConfirmResult, FzfResult, FzfWrapper, Header, MenuCursor};
 use crate::ui::catppuccin::fzf_mocha_args;
 
 use super::super::subdir_actions::handle_manage_subdirs;
-use super::action_menu::{RepoAction, build_repo_action_menu};
+use super::action_menu::{build_repo_action_menu, RepoAction};
 use super::details::handle_edit_details;
 use super::preview::build_repo_preview;
 
 /// Handle repo actions
 pub fn handle_repo_actions(
     repo_name: &str,
-    config: &mut Config,
+    config: &mut DotfileConfig,
     db: &Database,
     debug: bool,
 ) -> Result<()> {
@@ -34,7 +34,7 @@ pub fn handle_repo_actions(
 
 fn select_repo_action(
     repo_name: &str,
-    config: &Config,
+    config: &DotfileConfig,
     db: &Database,
     cursor: &mut MenuCursor,
 ) -> Result<Option<RepoAction>> {
@@ -65,7 +65,7 @@ fn select_repo_action(
 fn dispatch_repo_action(
     action: RepoAction,
     repo_name: &str,
-    config: &mut Config,
+    config: &mut DotfileConfig,
     db: &Database,
     debug: bool,
 ) -> Result<bool> {
@@ -96,7 +96,7 @@ fn dispatch_repo_action(
     Ok(false)
 }
 
-fn toggle_repo(repo_name: &str, config: &mut Config, db: &Database, debug: bool) -> Result<()> {
+fn toggle_repo(repo_name: &str, config: &mut DotfileConfig, db: &Database, debug: bool) -> Result<()> {
     let is_enabled = config
         .repos
         .iter()
@@ -109,7 +109,7 @@ fn toggle_repo(repo_name: &str, config: &mut Config, db: &Database, debug: bool)
 
 fn set_repo_enabled(
     repo_name: &str,
-    config: &mut Config,
+    config: &mut DotfileConfig,
     db: &Database,
     debug: bool,
     enabled: bool,
@@ -146,7 +146,7 @@ fn handle_priority_change(repo_name: &str, result: Result<usize>) -> Result<()> 
     Ok(())
 }
 
-fn show_repo_info(repo_name: &str, config: &Config, db: &Database) -> Result<()> {
+fn show_repo_info(repo_name: &str, config: &DotfileConfig, db: &Database) -> Result<()> {
     let info_text = build_repo_preview(repo_name, config, db);
 
     FzfWrapper::builder()
@@ -156,7 +156,7 @@ fn show_repo_info(repo_name: &str, config: &Config, db: &Database) -> Result<()>
     Ok(())
 }
 
-fn remove_repo(repo_name: &str, config: &mut Config, db: &Database, debug: bool) -> Result<bool> {
+fn remove_repo(repo_name: &str, config: &mut DotfileConfig, db: &Database, debug: bool) -> Result<bool> {
     let confirm = FzfWrapper::builder()
         .confirm(format!(
             "Remove repository '{}'?\n\nThis will remove it from your configuration.",
@@ -186,7 +186,7 @@ fn remove_repo(repo_name: &str, config: &mut Config, db: &Database, debug: bool)
     Ok(true)
 }
 
-fn open_repo_lazygit(repo_name: &str, config: &Config, db: &Database) -> Result<()> {
+fn open_repo_lazygit(repo_name: &str, config: &DotfileConfig, db: &Database) -> Result<()> {
     if let Some(repo_path) = repo_path_if_available(repo_name, config, db) {
         std::process::Command::new("lazygit")
             .current_dir(&repo_path)
@@ -195,7 +195,7 @@ fn open_repo_lazygit(repo_name: &str, config: &Config, db: &Database) -> Result<
     Ok(())
 }
 
-fn open_repo_shell(repo_name: &str, config: &Config, db: &Database) -> Result<()> {
+fn open_repo_shell(repo_name: &str, config: &DotfileConfig, db: &Database) -> Result<()> {
     if let Some(repo_path) = repo_path_if_available(repo_name, config, db) {
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "bash".to_string());
         std::process::Command::new(shell)
@@ -205,13 +205,13 @@ fn open_repo_shell(repo_name: &str, config: &Config, db: &Database) -> Result<()
     Ok(())
 }
 
-fn repo_path_if_available(repo_name: &str, config: &Config, db: &Database) -> Option<PathBuf> {
-    let repo_manager = RepositoryManager::new(config, db);
+fn repo_path_if_available(repo_name: &str, config: &DotfileConfig, db: &Database) -> Option<PathBuf> {
+    let repo_manager = DotfileRepositoryManager::new(config, db);
     let local_repo = repo_manager.get_repository_info(repo_name).ok()?;
     local_repo.local_path(config).ok()
 }
 
-fn toggle_read_only(repo_name: &str, config: &mut Config) -> Result<()> {
+fn toggle_read_only(repo_name: &str, config: &mut DotfileConfig) -> Result<()> {
     let is_read_only = config
         .repos
         .iter()

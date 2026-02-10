@@ -1,4 +1,4 @@
-use crate::dot::config::Config;
+use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
 use crate::dot::dotfile::Dotfile;
 use crate::dot::git::repo_ops::get_repo_name_for_dotfile;
@@ -17,7 +17,7 @@ enum DotfileSkip {
 
 fn should_skip_dotfile(
     dotfile: &Dotfile,
-    config: &Config,
+    config: &DotfileConfig,
     db: &Database,
     home: &Path,
     verbose: bool,
@@ -119,7 +119,7 @@ fn run_nvim_diff(dotfile: &Dotfile, home: &Path) -> Result<()> {
 
 fn report_merge_outcome(
     dotfile: &Dotfile,
-    config: &Config,
+    config: &DotfileConfig,
     db: &Database,
     original_source_hash: &str,
 ) -> Result<()> {
@@ -243,7 +243,7 @@ fn emit_no_modified(target_path: &Path, home: &Path, unmodified_count: usize, ve
 }
 
 /// Merge a modified dotfile with its source using nvim diff
-pub fn merge_dotfile(config: &Config, db: &Database, path: &str, verbose: bool) -> Result<()> {
+pub fn merge_dotfile(config: &DotfileConfig, db: &Database, path: &str, verbose: bool) -> Result<()> {
     let all_dotfiles = get_all_dotfiles(config, db)?;
     let target_path = resolve_dotfile_path(path)?;
     let home = PathBuf::from(shellexpand::tilde("~").to_string());

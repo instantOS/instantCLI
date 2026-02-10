@@ -1,19 +1,19 @@
-use crate::dot::config::Config;
+use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
 use crate::dot::dotfilerepo::DotfileRepo;
 use anyhow::Result;
 use colored::Colorize;
 
-/// RepositoryManager provides centralized iteration and management of repositories
+/// DotfileRepositoryManager provides centralized iteration and management of dotfile repositories
 /// following the existing borrowed references pattern
-pub struct RepositoryManager<'a> {
-    config: &'a Config,
+pub struct DotfileRepositoryManager<'a> {
+    config: &'a DotfileConfig,
     _db: &'a Database,
 }
 
-impl<'a> RepositoryManager<'a> {
-    /// Create a new RepositoryManager with borrowed references
-    pub fn new(config: &'a Config, db: &'a Database) -> Self {
+impl<'a> DotfileRepositoryManager<'a> {
+    /// Create a new DotfileRepositoryManager with borrowed references
+    pub fn new(config: &'a DotfileConfig, db: &'a Database) -> Self {
         Self { config, _db: db }
     }
 

@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 use crate::common::TildePath;
 use crate::common::paths;
-use crate::dot::config::Config;
+use crate::dot::config::DotfileConfig;
 use crate::dot::dotfile::Dotfile;
 use crate::dot::sources;
 
@@ -135,7 +135,7 @@ impl OverrideConfig {
 }
 
 /// Find all available sources for a dotfile across all repos and subdirs
-pub fn find_all_sources(config: &Config, target_path: &Path) -> Result<Vec<DotfileSource>> {
+pub fn find_all_sources(config: &DotfileConfig, target_path: &Path) -> Result<Vec<DotfileSource>> {
     sources::list_sources_for_target(config, target_path)
 }
 
@@ -147,7 +147,7 @@ pub fn find_all_sources(config: &Config, target_path: &Path) -> Result<Vec<Dotfi
 pub fn apply_overrides(
     dotfiles: &mut HashMap<PathBuf, Dotfile>,
     overrides: &OverrideConfig,
-    config: &Config,
+    config: &DotfileConfig,
 ) -> Result<()> {
     let home = PathBuf::from(shellexpand::tilde("~").to_string());
     let lookup = overrides.build_lookup_map();

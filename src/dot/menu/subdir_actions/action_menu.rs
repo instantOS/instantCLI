@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 
-use crate::dot::config::Config;
+use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
 use crate::dot::repo::cli::RepoCommands;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
@@ -46,7 +46,7 @@ impl FzfSelectable for SubdirActionItem {
 pub(crate) fn handle_subdir_actions(
     repo_name: &str,
     subdir_name: &str,
-    config: &mut Config,
+    config: &mut DotfileConfig,
     db: &Database,
     debug: bool,
 ) -> Result<()> {
@@ -98,7 +98,7 @@ pub(crate) fn handle_subdir_actions(
 fn build_subdir_action_menu(
     repo_name: &str,
     subdir_name: &str,
-    config: &Config,
+    config: &DotfileConfig,
 ) -> Vec<SubdirActionItem> {
     let active_subdirs = config.get_active_subdirs(repo_name);
     let repo_config = config.repos.iter().find(|r| r.name == repo_name);
@@ -241,7 +241,7 @@ fn action_item(
 fn handle_toggle_action(
     repo_name: &str,
     subdir_name: &str,
-    config: &mut Config,
+    config: &mut DotfileConfig,
     db: &Database,
     debug: bool,
 ) -> Result<()> {
@@ -281,7 +281,7 @@ enum PriorityDirection {
 fn handle_priority_move(
     repo_name: &str,
     subdir_name: &str,
-    config: &mut Config,
+    config: &mut DotfileConfig,
     direction: PriorityDirection,
 ) -> Result<()> {
     let result = match direction {

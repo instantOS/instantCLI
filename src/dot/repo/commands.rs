@@ -9,7 +9,7 @@ mod subdirs;
 mod toggle;
 
 use super::cli::RepoCommands;
-use crate::dot::config::Config;
+use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
 use anyhow::Result;
 
@@ -18,7 +18,7 @@ pub use toggle::set_read_only_status;
 
 /// Handle repository subcommands
 pub fn handle_repo_command(
-    config: &mut Config,
+    config: &mut DotfileConfig,
     db: &Database,
     command: &RepoCommands,
     debug: bool,

@@ -1,4 +1,4 @@
-use crate::dot::config::Config;
+use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
 use crate::dot::utils::{filter_dotfiles_by_path, get_all_dotfiles, resolve_dotfile_path};
 use crate::ui::prelude::*;
@@ -7,7 +7,7 @@ use colored::*;
 use std::path::PathBuf;
 
 /// Reset modified dotfiles to their original state
-pub fn reset_modified(config: &Config, db: &Database, path: &str) -> Result<()> {
+pub fn reset_modified(config: &DotfileConfig, db: &Database, path: &str) -> Result<()> {
     let all_dotfiles = get_all_dotfiles(config, db)?;
     let target_path = resolve_dotfile_path(path)?;
     let home = PathBuf::from(shellexpand::tilde("~").to_string());

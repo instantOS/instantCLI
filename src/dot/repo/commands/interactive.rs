@@ -1,7 +1,7 @@
-use crate::dot::config::Config;
+use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
 use crate::dot::menu::repo_actions::build_repo_preview;
-use crate::dot::repo::RepositoryManager;
+use crate::dot::repo::DotfileRepositoryManager;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header};
 use crate::ui::catppuccin::fzf_mocha_args;
 use anyhow::{Context, Result};
@@ -26,7 +26,7 @@ impl FzfSelectable for RepoSelectionItem {
     }
 }
 
-fn select_repo_interactive(config: &Config, db: &Database, prompt: &str) -> Result<Option<String>> {
+fn select_repo_interactive(config: &DotfileConfig, db: &Database, prompt: &str) -> Result<Option<String>> {
     let items: Vec<RepoSelectionItem> = config
         .repos
         .iter()
@@ -57,7 +57,7 @@ fn select_repo_interactive(config: &Config, db: &Database, prompt: &str) -> Resu
     }
 }
 
-pub(super) fn open_repo_lazygit(config: &Config, db: &Database, name: Option<&str>) -> Result<()> {
+pub(super) fn open_repo_lazygit(config: &DotfileConfig, db: &Database, name: Option<&str>) -> Result<()> {
     let repo_name = match name {
         Some(n) => n.to_string(),
         None => {
@@ -68,7 +68,7 @@ pub(super) fn open_repo_lazygit(config: &Config, db: &Database, name: Option<&st
         }
     };
 
-    let repo_manager = RepositoryManager::new(config, db);
+    let repo_manager = DotfileRepositoryManager::new(config, db);
     let local_repo = repo_manager.get_repository_info(&repo_name)?;
     let repo_path = local_repo.local_path(config)?;
 
@@ -80,7 +80,7 @@ pub(super) fn open_repo_lazygit(config: &Config, db: &Database, name: Option<&st
     Ok(())
 }
 
-pub(super) fn open_repo_shell(config: &Config, db: &Database, name: Option<&str>) -> Result<()> {
+pub(super) fn open_repo_shell(config: &DotfileConfig, db: &Database, name: Option<&str>) -> Result<()> {
     let repo_name = match name {
         Some(n) => n.to_string(),
         None => match select_repo_interactive(config, db, "Select repository to open shell in")? {
@@ -89,7 +89,7 @@ pub(super) fn open_repo_shell(config: &Config, db: &Database, name: Option<&str>
         },
     };
 
-    let repo_manager = RepositoryManager::new(config, db);
+    let repo_manager = DotfileRepositoryManager::new(config, db);
     let local_repo = repo_manager.get_repository_info(&repo_name)?;
     let repo_path = local_repo.local_path(config)?;
 

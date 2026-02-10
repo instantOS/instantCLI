@@ -6,7 +6,7 @@ use std::path::Path;
 use anyhow::Result;
 use colored::Colorize;
 
-use crate::dot::config::Config;
+use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
 use crate::dot::dotfile::Dotfile;
 use crate::dot::override_config::{DotfileSource, OverrideConfig};
@@ -30,14 +30,14 @@ pub fn is_safe_to_switch(target_path: &Path, sources: &[SourceOption]) -> Result
         }
     }
 
-    let config = Config::load(None)?;
+    let config = DotfileConfig::load(None)?;
     let db = Database::new(config.database_path().to_path_buf())?;
     db.source_hash_exists_anywhere(&target_hash)
 }
 
 /// Set override and apply the source file.
 pub fn set_alternative(
-    config: &Config,
+    config: &DotfileConfig,
     target_path: &Path,
     display_path: &str,
     source: &SourceOption,
@@ -78,7 +78,7 @@ pub fn set_alternative(
 
 /// Remove override and revert to default source.
 pub fn remove_override(
-    config: &Config,
+    config: &DotfileConfig,
     target_path: &Path,
     display_path: &str,
     default_source: &DotfileSource,
@@ -163,7 +163,7 @@ pub fn reset_override(target_path: &Path, display_path: &str) -> Result<()> {
 
 /// Add a file to a destination repo (copy + register + stage).
 pub fn add_to_destination(
-    config: &Config,
+    config: &DotfileConfig,
     db: &Database,
     target_path: &Path,
     dest: &DotfileSource,

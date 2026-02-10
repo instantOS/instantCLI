@@ -1,13 +1,13 @@
 use anyhow::Result;
 use std::path::{Path, PathBuf};
 
-use crate::dot::config::Config;
+use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
 use crate::dot::meta;
-use crate::dot::repo::RepositoryManager;
+use crate::dot::repo::DotfileRepositoryManager;
 use crate::menu_utils::{
-    ConfirmResult, FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor, TextEditOutcome,
-    TextEditPrompt, prompt_text_edit,
+    prompt_text_edit, ConfirmResult, FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor,
+    TextEditOutcome, TextEditPrompt,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
@@ -44,7 +44,7 @@ impl FzfSelectable for DetailActionItem {
 }
 
 /// Handle editing repository details
-pub(super) fn handle_edit_details(repo_name: &str, config: &Config, db: &Database) -> Result<()> {
+pub(super) fn handle_edit_details(repo_name: &str, config: &DotfileConfig, db: &Database) -> Result<()> {
     let Some((repo_path, mut metadata)) = load_edit_metadata(repo_name, config, db)? else {
         return Ok(());
     };
@@ -87,7 +87,7 @@ pub(super) fn handle_edit_details(repo_name: &str, config: &Config, db: &Databas
     }
 }
 
-pub fn handle_global_units_menu(config: &mut Config, db: &Database) -> Result<()> {
+pub fn handle_global_units_menu(config: &mut DotfileConfig, db: &Database) -> Result<()> {
     let mut cursor = MenuCursor::new();
     let scope = crate::dot::unit_manager::UnitScope::Global;
     let context = crate::dot::unit_manager::unit_path_context_for_write(&scope, config, db)?;
@@ -136,7 +136,7 @@ pub fn handle_global_units_menu(config: &mut Config, db: &Database) -> Result<()
 
 fn load_edit_metadata(
     repo_name: &str,
-    config: &Config,
+    config: &DotfileConfig,
     db: &Database,
 ) -> Result<Option<(PathBuf, crate::dot::types::RepoMetaData)>> {
     let repo_config = match config.repos.iter().find(|r| r.name == repo_name) {
@@ -163,7 +163,7 @@ fn load_edit_metadata(
         return Ok(None);
     }
 
-    let repo_manager = RepositoryManager::new(config, db);
+    let repo_manager = DotfileRepositoryManager::new(config, db);
     let local_repo = match repo_manager.get_repository_info(repo_name) {
         Ok(lr) => lr,
         Err(e) => {
@@ -242,7 +242,7 @@ where
 
 fn handle_manage_units(
     repo_name: &str,
-    config: &Config,
+    config: &DotfileConfig,
     db: &Database,
     repo_path: &Path,
     metadata: &mut crate::dot::types::RepoMetaData,
@@ -380,7 +380,7 @@ fn build_units_menu_items(
     items
 }
 
-fn build_global_units_menu_items(config: &Config) -> Vec<UnitMenuItem> {
+fn build_global_units_menu_items(config: &DotfileConfig) -> Vec<UnitMenuItem> {
     let mut items = Vec::new();
     items.push(UnitMenuItem {
         display: format!(
@@ -429,7 +429,7 @@ fn build_global_units_menu_items(config: &Config) -> Vec<UnitMenuItem> {
 
 fn add_global_unit_with_picker(
     context: &crate::dot::unit_manager::UnitPathContext,
-    config: &mut Config,
+    config: &mut DotfileConfig,
     db: &Database,
 ) -> Result<bool> {
     use crate::menu_utils::{FilePickerScope, MenuWrapper};

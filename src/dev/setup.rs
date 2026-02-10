@@ -1,5 +1,5 @@
 use crate::common::distro;
-use crate::dot::config::Config;
+use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
 use crate::ui::prelude::*;
 use anyhow::{Context, Result};
@@ -91,7 +91,7 @@ fn setup_dotfiles(debug: bool) -> Result<()> {
 
     // Initialize Config and Database
     // We can use the default config path
-    let mut config = Config::load(None)?;
+    let mut config = DotfileConfig::load(None)?;
     config.ensure_directories()?;
     let db = Database::new(config.database_path().to_path_buf())?;
 

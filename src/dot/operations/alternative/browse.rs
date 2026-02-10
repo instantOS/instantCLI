@@ -5,7 +5,7 @@ use std::path::Path;
 use anyhow::Result;
 use colored::Colorize;
 
-use crate::dot::config::Config;
+use crate::dot::config::DotfileConfig;
 use crate::dot::override_config::find_all_sources;
 use crate::menu_utils::{FzfResult, FzfWrapper, MenuCursor};
 use crate::ui::catppuccin::fzf_mocha_args;
@@ -30,7 +30,7 @@ pub(crate) fn run_browse_menu(dir: &Path, display: &str, mode: BrowseMode) -> Re
     };
 
     // Check once at the start
-    let config = Config::load(None)?;
+    let config = DotfileConfig::load(None)?;
     let initial_dotfiles = discover_dotfiles(&config, dir, filter)?;
 
     if initial_dotfiles.is_empty() {
@@ -53,7 +53,7 @@ pub(crate) fn run_browse_menu(dir: &Path, display: &str, mode: BrowseMode) -> Re
     let mut preselect: Option<String> = None;
 
     loop {
-        let config = Config::load(None)?;
+        let config = DotfileConfig::load(None)?;
         let dotfiles = discover_dotfiles(&config, dir, filter)?;
 
         let action_text = match mode {

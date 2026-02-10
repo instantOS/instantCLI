@@ -1,10 +1,10 @@
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
-use crate::dot::config::Config;
+use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
 use crate::dot::meta;
-use crate::dot::repo::RepositoryManager;
+use crate::dot::repo::DotfileRepositoryManager;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum UnitScope {
@@ -53,7 +53,7 @@ pub fn unit_display_path(unit: &str) -> String {
 
 pub fn unit_path_context_for_write(
     scope: &UnitScope,
-    config: &Config,
+    config: &DotfileConfig,
     db: &Database,
 ) -> Result<UnitPathContext> {
     let home = crate::dot::sources::home_dir();
@@ -107,7 +107,7 @@ pub fn normalize_unit_fs_path(path: &Path, context: &UnitPathContext) -> Result<
     );
 }
 
-pub fn list_units(scope: &UnitScope, config: &Config, db: &Database) -> Result<Vec<String>> {
+pub fn list_units(scope: &UnitScope, config: &DotfileConfig, db: &Database) -> Result<Vec<String>> {
     match scope {
         UnitScope::Global => Ok(config.units.clone()),
         UnitScope::Repo(name) => {
@@ -121,7 +121,7 @@ pub fn list_units(scope: &UnitScope, config: &Config, db: &Database) -> Result<V
                 return Ok(meta.units.clone());
             }
 
-            let repo_manager = RepositoryManager::new(config, db);
+            let repo_manager = DotfileRepositoryManager::new(config, db);
             let local_repo = repo_manager
                 .get_repository_info(name)
                 .with_context(|| format!("Failed to load repository '{}'", name))?;
@@ -132,7 +132,7 @@ pub fn list_units(scope: &UnitScope, config: &Config, db: &Database) -> Result<V
 
 pub fn add_unit(
     scope: &UnitScope,
-    config: &mut Config,
+    config: &mut DotfileConfig,
     db: &Database,
     unit: &str,
     config_path: Option<&str>,
@@ -156,7 +156,7 @@ pub fn add_unit(
 
 pub fn remove_unit(
     scope: &UnitScope,
-    config: &mut Config,
+    config: &mut DotfileConfig,
     db: &Database,
     unit: &str,
     config_path: Option<&str>,
@@ -181,7 +181,7 @@ pub fn remove_unit(
 
 fn repo_context_for_write(
     repo_name: &str,
-    config: &Config,
+    config: &DotfileConfig,
     db: &Database,
 ) -> Result<UnitRepoContext> {
     let repo_config = config
@@ -201,7 +201,7 @@ fn repo_context_for_write(
         );
     }
 
-    let repo_manager = RepositoryManager::new(config, db);
+    let repo_manager = DotfileRepositoryManager::new(config, db);
     let local_repo = repo_manager
         .get_repository_info(repo_name)
         .with_context(|| format!("Failed to load repository '{}'", repo_name))?;

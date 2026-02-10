@@ -1,4 +1,4 @@
-use crate::dot::config::Config;
+use crate::dot::config::DotfileConfig;
 use crate::dot::dotfilerepo::DotfileRepo;
 use crate::dot::override_config::DotfileSource;
 use anyhow::Result;
@@ -14,7 +14,7 @@ pub fn default_source_for(sources: &[DotfileSource]) -> Option<DotfileSource> {
     sources.first().cloned()
 }
 
-pub fn list_sources_for_target(config: &Config, target_path: &Path) -> Result<Vec<DotfileSource>> {
+pub fn list_sources_for_target(config: &DotfileConfig, target_path: &Path) -> Result<Vec<DotfileSource>> {
     let home = home_dir();
     let relative_path = target_path.strip_prefix(&home).unwrap_or(target_path);
     let mut sources = Vec::new();
@@ -51,7 +51,7 @@ pub fn list_sources_for_target(config: &Config, target_path: &Path) -> Result<Ve
 }
 
 pub fn list_sources_by_target_in_dir(
-    config: &Config,
+    config: &DotfileConfig,
     dir_path: &Path,
 ) -> Result<HashMap<PathBuf, Vec<DotfileSource>>> {
     let home = home_dir();

@@ -1,14 +1,14 @@
 use super::init::initialize_restic_repo;
-use crate::common::TildePath;
 use crate::common::paths;
+use crate::common::TildePath;
 use crate::game::config::InstantGameConfig;
 use crate::menu_utils::FzfWrapper;
 use crate::ui::nerd_font::NerdFont;
 use anyhow::{Context, Result};
 use std::process::Command;
 
-/// Manage restic repository initialization and configuration
-pub struct RepositoryManager;
+/// Manage game restic repository initialization and configuration
+pub struct GameRepositoryManager;
 
 /// Options for initializing the game repository non-interactively
 #[derive(Debug, Default)]
@@ -17,7 +17,7 @@ pub struct InitOptions {
     pub password: Option<String>,
 }
 
-impl RepositoryManager {
+impl GameRepositoryManager {
     /// Initialize the game save backup system
     pub fn initialize_game_manager(debug: bool, options: InitOptions) -> Result<()> {
         println!("Initializing game save manager...");

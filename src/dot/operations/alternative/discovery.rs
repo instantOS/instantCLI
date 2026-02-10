@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::dot::config::Config;
+use crate::dot::config::DotfileConfig;
 use crate::dot::override_config::{DotfileSource, OverrideConfig};
 use crate::dot::sources;
 use crate::ui::nerd_font::NerdFont;
@@ -46,7 +46,7 @@ fn resolve_override_status(
     target_path: &Path,
     sources: &[DotfileSource],
     overrides: &OverrideConfig,
-    config: &Config,
+    config: &DotfileConfig,
 ) -> Option<OverrideStatus> {
     let override_entry = overrides.get_override(target_path)?;
     let repo_name = &override_entry.source_repo;
@@ -81,7 +81,7 @@ fn resolve_override_status(
 
 /// Find dotfiles in a directory, optionally filtering by those with alternatives.
 pub fn discover_dotfiles(
-    config: &Config,
+    config: &DotfileConfig,
     dir_path: &Path,
     filter: DiscoveryFilter,
 ) -> Result<Vec<DiscoveredDotfile>> {
@@ -119,7 +119,7 @@ pub fn discover_dotfiles(
 /// Get all writable repo/subdir destinations.
 /// Only includes subdirs that are in the repo's metadata (dots_dirs).
 /// Warns if a subdir is in active_subdirectories but not in metadata.
-pub fn get_destinations(config: &Config) -> Vec<DotfileSource> {
+pub fn get_destinations(config: &DotfileConfig) -> Vec<DotfileSource> {
     // Track warnings to avoid duplicates within a session
     static WARNED_INVALID_SUBDIRS: OnceLock<std::sync::Mutex<HashSet<String>>> = OnceLock::new();
     let warned = WARNED_INVALID_SUBDIRS.get_or_init(|| std::sync::Mutex::new(HashSet::new()));

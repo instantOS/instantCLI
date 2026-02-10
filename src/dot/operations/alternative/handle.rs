@@ -4,7 +4,7 @@ use std::path::Path;
 
 use anyhow::Result;
 
-use crate::dot::config::Config;
+use crate::dot::config::DotfileConfig;
 use crate::dot::override_config::find_all_sources;
 use crate::dot::utils::resolve_dotfile_path;
 
@@ -28,7 +28,7 @@ pub struct AlternativeOptions<'a> {
 }
 
 /// Main entry point for the alternative command.
-pub fn handle_alternative(config: &Config, opts: AlternativeOptions<'_>) -> Result<()> {
+pub fn handle_alternative(config: &DotfileConfig, opts: AlternativeOptions<'_>) -> Result<()> {
     let action = Action::from_flags(
         opts.reset,
         opts.create,
@@ -47,7 +47,7 @@ pub fn handle_alternative(config: &Config, opts: AlternativeOptions<'_>) -> Resu
     handle_file(config, &target_path, &display_path, action)
 }
 
-fn handle_directory(config: &Config, dir: &Path, display: &str, action: Action) -> Result<()> {
+fn handle_directory(config: &DotfileConfig, dir: &Path, display: &str, action: Action) -> Result<()> {
     match action {
         Action::Reset => Err(anyhow::anyhow!(
             "--reset is not supported for directories. Use it with a specific file."
@@ -64,7 +64,7 @@ fn handle_directory(config: &Config, dir: &Path, display: &str, action: Action) 
     }
 }
 
-fn handle_file(config: &Config, path: &Path, display: &str, action: Action) -> Result<()> {
+fn handle_file(config: &DotfileConfig, path: &Path, display: &str, action: Action) -> Result<()> {
     match action {
         Action::Reset => super::apply::reset_override(path, display),
         Action::List => {

@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 
-use crate::dot::config::{Config, extract_repo_name};
+use crate::dot::config::{DotfileConfig, extract_repo_name};
 use crate::dot::db::Database;
 use crate::dot::repo::cli::RepoCommands;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header};
@@ -224,7 +224,7 @@ fn handle_shorthand_input(shorthand: &str) -> Result<AddRepoInputResult> {
 }
 
 /// Handle plain name input - offer to create local repo
-fn handle_plain_name_input(name: &str, config: &mut Config) -> Result<AddRepoInputResult> {
+fn handle_plain_name_input(name: &str, config: &mut DotfileConfig) -> Result<AddRepoInputResult> {
     let choices = vec![
         PlainNameChoice::CreateLocal,
         PlainNameChoice::EnterAnother,
@@ -320,7 +320,7 @@ fn prompt_optional_branch() -> Result<Option<String>> {
 // --- Main function ---
 
 /// Handle adding a new repository
-pub fn handle_add_repo(config: &mut Config, db: &Database, debug: bool) -> Result<()> {
+pub fn handle_add_repo(config: &mut DotfileConfig, db: &Database, debug: bool) -> Result<()> {
     const DEFAULT_REPO: &str = "https://github.com/instantOS/dotfiles";
 
     // Loop for URL input (allows retrying)

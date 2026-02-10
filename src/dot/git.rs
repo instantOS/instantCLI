@@ -14,7 +14,7 @@ pub use status::{show_single_file_status, show_status_summary};
 
 /// Status function that handles both single file and summary display
 pub fn status_all(
-    cfg: &crate::dot::config::Config,
+    cfg: &crate::dot::DotfileConfig,
     path: Option<&str>,
     db: &crate::dot::db::Database,
     show_all: bool,

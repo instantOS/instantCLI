@@ -24,6 +24,7 @@ mod external_metadata_tests;
 mod path_tests;
 
 // Re-exports for convenience - these are used throughout the dot module
+pub use crate::dot::config::DotfileConfig;
 pub use crate::dot::dotfile::Dotfile;
 pub use git::{diff_all, status_all, update_all};
 pub use operations::{

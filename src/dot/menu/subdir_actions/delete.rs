@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 
-use crate::dot::config::Config;
+use crate::dot::config::DotfileConfig;
 use crate::dot::dotfilerepo::DotfileRepo;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
@@ -90,7 +90,7 @@ impl FzfSelectable for DeleteChoice {
 pub(crate) fn handle_delete_subdir(
     repo_name: &str,
     subdir_name: &str,
-    config: &mut Config,
+    config: &mut DotfileConfig,
 ) -> Result<()> {
     // Get the dotfile repo path
     let dotfile_repo = DotfileRepo::new(config, repo_name.to_string())?;
@@ -166,7 +166,7 @@ pub(crate) fn handle_delete_subdir(
 }
 
 fn remove_from_active_subdirs(
-    config: &mut Config,
+    config: &mut DotfileConfig,
     repo_name: &str,
     subdir_name: &str,
 ) -> Result<()> {

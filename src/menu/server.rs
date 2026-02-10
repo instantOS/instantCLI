@@ -420,7 +420,7 @@ impl MenuServer {
         .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
         .unwrap_or_else(|| "Unknown".to_string());
 
-        let status_info = StatusInfo {
+        let status_info = MenuStatus {
             status,
             version: env!("CARGO_PKG_VERSION").to_string(),
             protocol_version: PROTOCOL_VERSION.to_string(),

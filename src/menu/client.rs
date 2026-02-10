@@ -170,10 +170,10 @@ impl MenuClient {
         }
     }
 
-    fn fallback_status_info(&self) -> StatusInfo {
+    fn fallback_status_info(&self) -> MenuStatus {
         let compositor_name = CompositorType::detect().name();
 
-        StatusInfo {
+        MenuStatus {
             status: ServerStatus::Ready,
             version: env!("CARGO_PKG_VERSION").to_string(),
             protocol_version: PROTOCOL_VERSION.to_string(),
@@ -326,7 +326,7 @@ impl MenuClient {
     }
 
     /// Get server status information
-    pub fn status(&self) -> Result<StatusInfo> {
+    pub fn status(&self) -> Result<MenuStatus> {
         match self.send_request(MenuRequest::Status)? {
             MenuResponse::StatusResult(status_info) => Ok(status_info),
             MenuResponse::Error(error) => anyhow::bail!("Server error: {}", error),
@@ -531,7 +531,7 @@ pub fn handle_gui_request(command: &MenuCommands) -> Result<i32> {
 }
 
 /// Print formatted status information
-pub fn print_status_info(status: &StatusInfo) {
+pub fn print_status_info(status: &MenuStatus) {
     println!("{}", "InstantCLI Menu Server Status".bold().underline());
 
     // Status with color coding

@@ -1,4 +1,4 @@
 pub mod init;
 pub mod manager;
 
-pub use manager::RepositoryManager;
+pub use manager::GameRepositoryManager;

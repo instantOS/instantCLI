@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 
-use crate::dot::config::{Config, Repo};
+use crate::dot::config::{DotfileConfig, Repo};
 use crate::dot::db::Database;
 use crate::dot::dotfilerepo::DotfileRepo;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
@@ -169,7 +169,7 @@ impl FzfSelectable for SubdirMenuItem {
 /// Handle managing subdirs
 pub(crate) fn handle_manage_subdirs(
     repo_name: &str,
-    config: &mut Config,
+    config: &mut DotfileConfig,
     db: &Database,
     debug: bool,
 ) -> Result<()> {
@@ -363,7 +363,7 @@ fn select_subdir(
     }
 }
 
-fn handle_add_new_subdir(dotfile_repo: &DotfileRepo, config: &Config) -> Result<()> {
+fn handle_add_new_subdir(dotfile_repo: &DotfileRepo, config: &DotfileConfig) -> Result<()> {
     // Prompt for new directory name
     let new_dir = match FzfWrapper::builder()
         .input()

@@ -1,16 +1,16 @@
 use crate::common::TildePath;
-use crate::dot::config::Config;
+use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
-use crate::dot::repo::RepositoryManager;
-use crate::ui::Level;
+use crate::dot::repo::DotfileRepositoryManager;
 use crate::ui::prelude::*;
+use crate::ui::Level;
 use anyhow::Result;
 use colored::*;
 
 /// Get local path in tilde notation for a repository
 fn get_local_path_tilde(
-    config: &Config,
-    repo_manager: &RepositoryManager,
+    config: &DotfileConfig,
+    repo_manager: &DotfileRepositoryManager,
     repo_name: &str,
 ) -> String {
     repo_manager
@@ -26,7 +26,7 @@ fn get_local_path_tilde(
 }
 
 /// List all configured repositories
-pub(super) fn list_repositories(config: &Config, db: &Database) -> Result<()> {
+pub(super) fn list_repositories(config: &DotfileConfig, db: &Database) -> Result<()> {
     if config.repos.is_empty() {
         match get_output_format() {
             OutputFormat::Json => {
@@ -48,7 +48,7 @@ pub(super) fn list_repositories(config: &Config, db: &Database) -> Result<()> {
         return Ok(());
     }
 
-    let repo_manager = RepositoryManager::new(config, db);
+    let repo_manager = DotfileRepositoryManager::new(config, db);
 
     match get_output_format() {
         OutputFormat::Json => {

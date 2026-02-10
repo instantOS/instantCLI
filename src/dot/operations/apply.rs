@@ -1,4 +1,4 @@
-use crate::dot::config::Config;
+use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
 use crate::dot::dotfile::Dotfile;
 use crate::dot::units::{get_all_units, get_modified_units};
@@ -37,7 +37,7 @@ impl ApplyStats {
 }
 
 /// Apply all dotfiles from configured repositories
-pub fn apply_all(config: &Config, db: &Database) -> Result<()> {
+pub fn apply_all(config: &DotfileConfig, db: &Database) -> Result<()> {
     let all_dotfiles = get_all_dotfiles(config, db)?;
 
     if all_dotfiles.is_empty() {

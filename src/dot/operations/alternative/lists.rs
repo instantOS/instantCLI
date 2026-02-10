@@ -5,14 +5,14 @@ use std::path::Path;
 use anyhow::Result;
 use colored::Colorize;
 
-use crate::dot::config::Config;
+use crate::dot::config::DotfileConfig;
 use crate::dot::override_config::{DotfileSource, OverrideConfig};
 use crate::dot::sources;
 use crate::ui::prelude::*;
 
 use super::discovery::{DiscoveryFilter, discover_dotfiles};
 
-pub(crate) fn list_directory(config: &Config, dir: &Path, display: &str) -> Result<()> {
+pub(crate) fn list_directory(config: &DotfileConfig, dir: &Path, display: &str) -> Result<()> {
     let dotfiles = discover_dotfiles(config, dir, DiscoveryFilter::WithAlternatives)?;
 
     if dotfiles.is_empty() {

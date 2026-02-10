@@ -1,6 +1,6 @@
 use crate::common;
 use crate::common::git;
-use crate::dot::config::Config;
+use crate::dot::config::DotfileConfig;
 use anyhow::{Context, Result};
 use colored::Colorize;
 use git2::Repository;
@@ -57,7 +57,7 @@ pub struct DotfileRepo {
 }
 
 impl DotfileRepo {
-    pub fn new(cfg: &Config, name: String) -> Result<Self> {
+    pub fn new(cfg: &DotfileConfig, name: String) -> Result<Self> {
         // Check if the name exists in the config
         let repo_config = cfg
             .repos
@@ -102,11 +102,11 @@ impl DotfileRepo {
         })
     }
 
-    pub fn local_path(&self, cfg: &Config) -> Result<PathBuf> {
+    pub fn local_path(&self, cfg: &DotfileConfig) -> Result<PathBuf> {
         Ok(cfg.repos_path().join(&self.name))
     }
 
-    fn local_path_from_name(cfg: &Config, name: &str) -> Result<PathBuf> {
+    fn local_path_from_name(cfg: &DotfileConfig, name: &str) -> Result<PathBuf> {
         Ok(cfg.repos_path().join(name))
     }
 
@@ -157,7 +157,7 @@ impl DotfileRepo {
         self.dotfile_dirs.iter().filter(|dir| dir.is_active)
     }
 
-    pub fn get_checked_out_branch(&self, cfg: &Config) -> Result<String> {
+    pub fn get_checked_out_branch(&self, cfg: &DotfileConfig) -> Result<String> {
         let target = self.local_path(cfg)?;
         let repo = Repository::open(&target).context("Failed to open git repository")?;
         git::current_branch(&repo).context("Failed to get current branch")
@@ -165,7 +165,7 @@ impl DotfileRepo {
 
     /// Get subdirs that are enabled in config but not in metadata's dots_dirs.
     /// These are "orphaned" subdirs that may indicate a configuration mismatch.
-    pub fn get_orphaned_active_subdirs(&self, config: &Config) -> Vec<String> {
+    pub fn get_orphaned_active_subdirs(&self, config: &DotfileConfig) -> Vec<String> {
         let active_subdirs = config.get_active_subdirs(&self.name);
         active_subdirs
             .into_iter()
@@ -174,7 +174,7 @@ impl DotfileRepo {
     }
 
     /// Check if this is an external repo (metadata from config, not instantdots.toml)
-    pub fn is_external(&self, config: &Config) -> bool {
+    pub fn is_external(&self, config: &DotfileConfig) -> bool {
         config
             .repos
             .iter()
@@ -203,7 +203,7 @@ impl DotfileRepo {
         Ok(None)
     }
 
-    fn switch_branch(&self, cfg: &Config, branch: &str, debug: bool) -> Result<()> {
+    fn switch_branch(&self, cfg: &DotfileConfig, branch: &str, debug: bool) -> Result<()> {
         let target = self.local_path(cfg)?;
         let current = self.get_checked_out_branch(cfg)?;
         if current != branch {
@@ -231,7 +231,7 @@ impl DotfileRepo {
         Ok(())
     }
 
-    pub fn update(&self, cfg: &Config, debug: bool) -> Result<()> {
+    pub fn update(&self, cfg: &DotfileConfig, debug: bool) -> Result<()> {
         let target = self.local_path(cfg)?;
 
         // If branch is specified, ensure we're on that branch

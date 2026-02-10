@@ -55,7 +55,7 @@ pub fn prompt_initialize_if_needed() -> Result<bool> {
 
     if init == ConfirmResult::Yes {
         // Call initialization logic
-        crate::game::repository::manager::RepositoryManager::initialize_game_manager(
+        crate::game::repository::manager::GameRepositoryManager::initialize_game_manager(
             false,
             Default::default(),
         )?;

@@ -6,7 +6,7 @@ use std::path::Path;
 use anyhow::Result;
 use colored::Colorize;
 
-use crate::dot::config::Config;
+use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
 use crate::dot::override_config::{DotfileSource, OverrideConfig, find_all_sources};
 use crate::menu_utils::{FzfResult, FzfWrapper, MenuCursor};
@@ -19,7 +19,7 @@ use super::flow::{Flow, emit_cancelled, message_and_continue, message_and_done};
 use super::picker::{CreateMenuItem, SourceOption};
 
 /// Pick a destination and add a file there (shared by `add --choose` and `alternative --create`).
-pub fn pick_destination_and_add(config: &Config, path: &Path) -> Result<bool> {
+pub fn pick_destination_and_add(config: &DotfileConfig, path: &Path) -> Result<bool> {
     let display = to_display_path(path);
     let existing = find_all_sources(config, path)?;
     match run_create_flow(path, &display, &existing)? {
@@ -37,7 +37,7 @@ pub(crate) fn run_create_flow(
     let mut cursor = MenuCursor::new();
 
     loop {
-        let config = Config::load(None)?;
+        let config = DotfileConfig::load(None)?;
         let destinations = get_destinations(&config);
 
         // Build menu
@@ -120,7 +120,7 @@ pub(crate) fn run_create_flow(
 }
 
 fn add_file_to_destination(
-    config: &Config,
+    config: &DotfileConfig,
     path: &Path,
     display: &str,
     item: &SourceOption,
@@ -150,7 +150,7 @@ fn add_file_to_destination(
     }
 
     // Check how many sources exist now
-    let config = Config::load(None)?;
+    let config = DotfileConfig::load(None)?;
     let sources = find_all_sources(&config, path)?;
 
     if sources.len() <= 1 {
@@ -198,7 +198,7 @@ fn add_file_to_destination(
     ))
 }
 
-fn create_new_subdir(config: &Config, repo_name: &str) -> Result<bool> {
+fn create_new_subdir(config: &DotfileConfig, repo_name: &str) -> Result<bool> {
     use crate::dot::dotfilerepo::DotfileRepo;
 
     let new_dir = match FzfWrapper::builder()
@@ -217,7 +217,7 @@ fn create_new_subdir(config: &Config, repo_name: &str) -> Result<bool> {
     match crate::dot::meta::add_dots_dir(&local_path, &new_dir) {
         Ok(()) => {
             // Add to global config
-            let mut config = Config::load(None)?;
+            let mut config = DotfileConfig::load(None)?;
             if let Some(repo) = config.repos.iter_mut().find(|r| r.name == repo_name) {
                 let active_subdirs = repo.active_subdirectories.get_or_insert_with(Vec::new);
                 if !active_subdirs.contains(&new_dir) {
@@ -247,7 +247,7 @@ fn create_new_subdir(config: &Config, repo_name: &str) -> Result<bool> {
 }
 
 fn clone_new_repo() -> Result<bool> {
-    let mut config = Config::load(None)?;
+    let mut config = DotfileConfig::load(None)?;
     let db = Database::new(config.database_path().to_path_buf())?;
     let original_count = config.repos.len();
 

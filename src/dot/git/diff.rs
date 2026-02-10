@@ -1,4 +1,4 @@
-use crate::dot::config;
+use crate::dot::config::DotfileConfig;
 use crate::dot::git::status::get_dotfile_status;
 use crate::dot::git::{get_dotfile_dir_name, get_repo_name_for_dotfile, status::DotFileStatus};
 use anyhow::{Context, Result};
@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 pub fn diff_all(
-    cfg: &config::Config,
+    cfg: &DotfileConfig,
     path: Option<&str>,
     db: &crate::dot::db::Database,
 ) -> Result<()> {
@@ -26,7 +26,7 @@ pub fn diff_all(
 pub fn show_path_diff(
     path_str: &str,
     all_dotfiles: &HashMap<PathBuf, crate::dot::Dotfile>,
-    cfg: &config::Config,
+    cfg: &DotfileConfig,
     db: &crate::dot::db::Database,
 ) -> Result<()> {
     let target_path = crate::dot::resolve_dotfile_path(path_str)?;
@@ -41,7 +41,7 @@ pub fn show_path_diff(
 fn diff_directory(
     target_dir: &Path,
     all_dotfiles: &HashMap<PathBuf, crate::dot::Dotfile>,
-    cfg: &config::Config,
+    cfg: &DotfileConfig,
     db: &crate::dot::db::Database,
 ) -> Result<()> {
     let mut matching: Vec<_> = all_dotfiles
@@ -125,7 +125,7 @@ fn diff_file(
 
 pub fn show_all_diffs(
     all_dotfiles: &HashMap<PathBuf, crate::dot::Dotfile>,
-    cfg: &config::Config,
+    cfg: &DotfileConfig,
     db: &crate::dot::db::Database,
 ) -> Result<()> {
     let (files_by_status, _) = crate::dot::git::status::categorize_files_and_get_summary(

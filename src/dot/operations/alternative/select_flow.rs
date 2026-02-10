@@ -5,7 +5,7 @@ use std::path::Path;
 use anyhow::Result;
 use colored::Colorize;
 
-use crate::dot::config::Config;
+use crate::dot::config::DotfileConfig;
 use crate::dot::override_config::{DotfileSource, OverrideConfig, find_all_sources};
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
 use crate::ui::catppuccin::fzf_mocha_args;
@@ -17,7 +17,7 @@ use super::flow::{Flow, message_and_continue, message_and_done};
 use super::picker::{MenuItem, SourceOption};
 
 pub(crate) fn run_select_flow(path: &Path, display: &str) -> Result<Flow> {
-    let config = Config::load(None)?;
+    let config = DotfileConfig::load(None)?;
     let sources = find_all_sources(&config, path)?;
 
     if sources.is_empty() {
@@ -121,7 +121,7 @@ fn handle_single_source(
         None,
     );
 
-    let config = Config::load(None)?;
+    let config = DotfileConfig::load(None)?;
     let other_dests: Vec<_> = super::discovery::get_destinations(&config)
         .into_iter()
         .filter(|d| d.repo_name != source.repo_name || d.subdir_name != source.subdir_name)
@@ -198,7 +198,7 @@ fn run_source_selection_menu(
         }
         menu.push(MenuItem::Back);
 
-        let config = Config::load(None)?;
+        let config = DotfileConfig::load(None)?;
         let mut builder = FzfWrapper::builder()
             .prompt(format!("Select source for {}: ", display))
             .args(fzf_mocha_args())

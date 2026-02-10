@@ -3,8 +3,8 @@ use super::{chord, slide};
 use crate::menu_utils::{FilePickerResult, FilePickerScope, FzfWrapper, MenuWrapper};
 use anyhow::Result;
 use std::sync::{
-    Arc,
     atomic::{AtomicBool, AtomicU64, Ordering},
+    Arc,
 };
 
 /// Handles processing of different menu request types
@@ -178,7 +178,7 @@ impl RequestProcessor {
             ServerStatus::ShuttingDown
         };
 
-        let status_info = StatusInfo {
+        let status_info = MenuStatus {
             status,
             version: env!("CARGO_PKG_VERSION").to_string(),
             protocol_version: PROTOCOL_VERSION.to_string(),

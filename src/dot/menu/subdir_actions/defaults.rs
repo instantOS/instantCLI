@@ -3,7 +3,7 @@
 use anyhow::Result;
 use std::collections::HashSet;
 
-use crate::dot::config::Config;
+use crate::dot::config::DotfileConfig;
 use crate::dot::dotfilerepo::DotfileRepo;
 use crate::dot::meta;
 use crate::dot::types::RepoMetaData;
@@ -46,7 +46,7 @@ impl FzfSelectable for DefaultSubdirItem {
 pub(crate) fn handle_edit_default_subdirs(
     repo_name: &str,
     dotfile_repo: &DotfileRepo,
-    config: &Config,
+    config: &DotfileConfig,
 ) -> Result<()> {
     if dotfile_repo.is_external(config) {
         FzfWrapper::message(

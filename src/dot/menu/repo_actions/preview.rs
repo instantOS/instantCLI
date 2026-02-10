@@ -1,13 +1,13 @@
-use crate::dot::config::Config;
+use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
-use crate::dot::repo::RepositoryManager;
+use crate::dot::repo::DotfileRepositoryManager;
 use crate::ui::catppuccin::colors;
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 
 /// Build preview for a repository in the main menu
-pub fn build_repo_preview(repo_name: &str, config: &Config, db: &Database) -> String {
-    let repo_manager = RepositoryManager::new(config, db);
+pub fn build_repo_preview(repo_name: &str, config: &DotfileConfig, db: &Database) -> String {
+    let repo_manager = DotfileRepositoryManager::new(config, db);
 
     let repo_config = match config.repos.iter().find(|r| r.name == repo_name) {
         Some(rc) => rc,

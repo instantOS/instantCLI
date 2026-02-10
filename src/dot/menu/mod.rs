@@ -6,7 +6,7 @@ mod subdir_actions;
 
 use anyhow::Result;
 
-use crate::dot::config::Config;
+use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
@@ -137,7 +137,7 @@ impl FzfSelectable for DotMenuItem {
 
 /// Select a menu entry from the main dot menu
 fn select_dot_menu_entry(
-    config: &Config,
+    config: &DotfileConfig,
     db: &Database,
     cursor: &mut MenuCursor,
 ) -> Result<Option<DotMenuEntry>> {
@@ -196,7 +196,7 @@ fn select_dot_menu_entry(
 /// Main entry point for the dot menu
 pub fn dot_menu(debug: bool) -> Result<()> {
     let mut cursor = MenuCursor::new();
-    let mut config = Config::load(None)?;
+    let mut config = DotfileConfig::load(None)?;
     let mut db = Database::new(config.database_path().to_path_buf())?;
 
     // Outer loop: main menu
@@ -237,8 +237,8 @@ pub fn dot_menu(debug: bool) -> Result<()> {
     }
 }
 
-fn reload_menu_state(config: &mut Config, db: &mut Database) -> Result<()> {
-    let new_config = Config::load(None)?;
+fn reload_menu_state(config: &mut DotfileConfig, db: &mut Database) -> Result<()> {
+    let new_config = DotfileConfig::load(None)?;
     if new_config.database_path() != config.database_path() {
         *db = Database::new(new_config.database_path().to_path_buf())?;
     }
