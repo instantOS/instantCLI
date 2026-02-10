@@ -45,7 +45,8 @@ impl Setting for InstallFlatpakApps {
 
 fn flatpak_list_command() -> &'static str {
     // Sort by app_id and remove duplicates (same app may appear in multiple remotes)
-    "flatpak remote-ls --app --columns=application,name,description 2>/dev/null | sort -t'\\t' -k1,1 -u"
+    // Using $'\\t' for bash to interpret it as an actual tab character
+    "flatpak remote-ls --app --columns=application,name,description 2>/dev/null | sort -t$'\\t' -k1,1 -u"
 }
 
 // ============================================================================

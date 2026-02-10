@@ -457,20 +457,37 @@ pub fn render_flatpak_preview(ctx: &PreviewContext) -> Result<String> {
     }
 }
 
-fn render_flatpak_impl(package: &str) -> Result<String> {
-    // Try to get remote info first (has size info for not-yet-installed apps)
-    let remote_output = cmd!("flatpak", "remote-info", "--system", "flathub", package)
+fn render_flatpak_impl(package_info: &str) -> Result<String> {
+    // Extract app_id from "app_id\tname\tdescription" format
+    let package = if package_info.contains('\t') {
+        package_info.split('\t').next().unwrap_or(package_info)
+    } else {
+        package_info
+    };
+
+    // Try to get remote info from any available remote
+    let remotes_output = cmd!("flatpak", "remotes", "--columns=name")
         .stderr_null()
         .read()
-        .ok()
-        .or_else(|| {
-            cmd!("flatpak", "remote-info", "--user", "flathub", package)
-                .stderr_null()
-                .read()
-                .ok()
-        });
+        .unwrap_or_default();
 
-    // Also try to get local info if installed (has more detailed info)
+    let remotes: Vec<&str> = remotes_output.lines().collect();
+
+    // Try each remote to find package info
+    let mut remote_output = None;
+    for remote in &remotes {
+        if let Ok(output) = cmd!("flatpak", "remote-info", remote.trim(), package)
+            .stderr_null()
+            .read()
+        {
+            if !output.is_empty() {
+                remote_output = Some(output);
+                break;
+            }
+        }
+    }
+
+    // Also try to get local info if installed
     let local_output = cmd!("flatpak", "info", package).stderr_null().read().ok();
 
     // Use remote info as primary source, fallback to local
