@@ -29,6 +29,13 @@ pub enum SettingsCommands {
         #[arg(add = ArgValueCompleter::new(crate::completions::settings_category_completion))]
         category_filter: Option<String>,
     },
+    /// Internal: Generate flatpak app list for install menu
+    #[command(hide = true)]
+    InternalGenerateFlatpakList {
+        /// Filter apps by keyword (name, id, or description)
+        #[arg(short = 'k', long = "keyword")]
+        keyword: Option<String>,
+    },
     #[command(hide = true)]
     InternalApply {
         #[arg(long = "setting-id")]
@@ -55,6 +62,9 @@ pub fn dispatch_settings_command(
             categories_only,
             category_filter,
         }) => list_settings(categories_only, category_filter.as_deref()),
+        Some(SettingsCommands::InternalGenerateFlatpakList { keyword }) => {
+            super::flatpak_list::generate_and_print_list(keyword.as_deref())
+        }
         Some(SettingsCommands::InternalApply {
             setting_id,
             bool_value,

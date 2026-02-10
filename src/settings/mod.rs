@@ -7,6 +7,7 @@ pub mod defaultapps;
 pub mod definitions;
 pub mod deps;
 pub mod firmware;
+pub mod flatpak_list;
 pub mod installable_packages;
 pub mod installed_packages_manager;
 pub mod language;

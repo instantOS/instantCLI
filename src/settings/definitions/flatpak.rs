@@ -1,6 +1,8 @@
 //! Flatpak installer settings
 //!
 //! Interactive Flatpak app browser and installer.
+//! Uses local appstream metadata for fast loading (~15x faster than remote-ls),
+//! with fallback to flatpak remote-ls if appstream is unavailable.
 
 use anyhow::{Result, bail};
 
@@ -43,10 +45,10 @@ impl Setting for InstallFlatpakApps {
 // Commands
 // ============================================================================
 
-fn flatpak_list_command() -> &'static str {
-    // Sort by app_id and remove duplicates (same app may appear in multiple remotes)
-    // Using $'\\t' for bash to interpret it as an actual tab character
-    "flatpak remote-ls --app --columns=application,name,description 2>/dev/null | sort -t$'\\t' -k1,1 -u"
+/// Build a shell command that generates the flatpak app list.
+/// Uses the internal ins command for fast appstream parsing.
+fn flatpak_list_command() -> String {
+    "ins settings internal-generate-flatpak-list".to_string()
 }
 
 // ============================================================================
@@ -55,6 +57,7 @@ fn flatpak_list_command() -> &'static str {
 
 fn select_flatpak_apps() -> Result<Vec<String>> {
     let preview_cmd = preview_command_streaming(PreviewId::Flatpak);
+    let list_cmd = flatpak_list_command();
 
     let result = FzfWrapper::builder()
         .multi_select(true)
@@ -71,7 +74,7 @@ fn select_flatpak_apps() -> Result<Vec<String>> {
             "--ansi",
         ])
         .responsive_layout()
-        .select_streaming(flatpak_list_command())?;
+        .select_streaming(&list_cmd)?;
 
     extract_app_ids(result)
 }

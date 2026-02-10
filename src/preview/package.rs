@@ -347,12 +347,12 @@ fn render_snap_impl(package_info: &str) -> Result<String> {
 
     for line in output.lines() {
         // Check for size in channels section (e.g., "latest/stable: 1.0 (100) 50MB -")
-        if line.contains("latest/stable:") && !line.starts_with("latest/stable:") {
-            if let Some(size_match) = line.split_whitespace().nth(3) {
-                if size_match.ends_with("B") {
-                    size = Some(size_match.to_string());
-                }
-            }
+        if line.contains("latest/stable:")
+            && !line.starts_with("latest/stable:")
+            && let Some(size_match) = line.split_whitespace().nth(3)
+            && size_match.ends_with("B")
+        {
+            size = Some(size_match.to_string());
         }
 
         if let Some((key, value)) = line.split_once(':') {
@@ -479,11 +479,10 @@ fn render_flatpak_impl(package_info: &str) -> Result<String> {
         if let Ok(output) = cmd!("flatpak", "remote-info", remote.trim(), package)
             .stderr_null()
             .read()
+            && !output.is_empty()
         {
-            if !output.is_empty() {
-                remote_output = Some(output);
-                break;
-            }
+            remote_output = Some(output);
+            break;
         }
     }
 
