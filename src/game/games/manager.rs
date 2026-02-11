@@ -49,6 +49,9 @@ impl GameManager {
                     let details = super::add::resolve_add_game_details(new_options, &context)?;
                     return Self::finish_add_game(&mut context, details);
                 }
+                super::add::EmulatorPrefillResult::Cancelled => {
+                    return Ok(());
+                }
             }
         }
 
@@ -90,11 +93,6 @@ impl GameManager {
         );
 
         Ok(())
-    }
-
-    /// Remove a game from the configuration
-    pub fn remove_game(game_name: Option<String>, force: bool) -> Result<()> {
-        super::remove::remove_game(game_name, force)
     }
 
     /// Relocate a game's save path to point to a new location (does not move files)

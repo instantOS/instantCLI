@@ -31,6 +31,8 @@ pub(super) enum EmulatorPrefillResult {
     Continue(AddGameOptions),
     /// Redirect to the game menu for an already-tracked game
     OpenGameMenu(String),
+    /// User cancelled the discovery selection
+    Cancelled,
 }
 
 pub(super) struct ResolvedGameDetails {
@@ -138,6 +140,7 @@ pub(super) fn maybe_prefill_from_emulators(
         FzfResult::Selected(AddMethodItem::ManualEntry) => {
             Ok(EmulatorPrefillResult::Continue(options))
         }
+        FzfResult::Cancelled => Ok(EmulatorPrefillResult::Cancelled),
         _ => Ok(EmulatorPrefillResult::Continue(options)),
     }
 }

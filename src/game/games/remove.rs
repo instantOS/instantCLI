@@ -3,7 +3,7 @@ use crate::game::games::selection::select_game_interactive;
 use crate::menu_utils::{ConfirmResult, FzfWrapper};
 use anyhow::{Context, Result, anyhow};
 
-pub(super) fn remove_game(game_name: Option<String>, force: bool) -> Result<()> {
+pub fn remove_game(game_name: Option<String>, force: bool) -> Result<()> {
     let mut config = InstantGameConfig::load().context("Failed to load game configuration")?;
     let mut installations =
         InstallationsConfig::load().context("Failed to load installations configuration")?;

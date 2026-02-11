@@ -11,7 +11,7 @@ use super::deps::{
     install_dependency, list_dependencies as list_game_dependencies, uninstall_dependency,
 };
 use super::games::AddGameOptions;
-use super::games::GameManager;
+use super::games::{GameManager, remove_game};
 use super::games::{display, selection};
 use super::menu;
 use super::operations::{exec_game_command, launch_game, sync_game_saves};
@@ -129,7 +129,7 @@ fn handle_exec(command: Vec<OsString>) -> Result<()> {
 }
 
 fn handle_remove(game_name: Option<String>, force: bool) -> Result<()> {
-    GameManager::remove_game(game_name, force)
+    remove_game(game_name, force)
 }
 
 fn handle_list() -> Result<()> {

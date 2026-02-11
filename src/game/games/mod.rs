@@ -9,3 +9,4 @@ pub mod validation;
 
 pub use add::AddGameOptions;
 pub use manager::GameManager;
+pub use remove::remove_game;
