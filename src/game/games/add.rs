@@ -2,6 +2,7 @@ use super::manager::GameCreationContext;
 use super::prompts;
 use crate::common::TildePath;
 use crate::game::config::PathContentKind;
+use crate::game::launch_builder::azahar_discovery;
 use crate::game::launch_builder::duckstation_discovery;
 use crate::game::launch_builder::eden_discovery;
 use crate::game::launch_builder::pcsx2_discovery;
@@ -52,8 +53,9 @@ pub(super) fn maybe_prefill_from_emulators(
     let eden_installed = eden_discovery::is_eden_installed();
     let pcsx2_installed = pcsx2_discovery::is_pcsx2_installed();
     let duckstation_installed = duckstation_discovery::is_duckstation_installed();
+    let azahar_installed = azahar_discovery::is_azahar_installed();
 
-    if !eden_installed && !pcsx2_installed && !duckstation_installed {
+    if !eden_installed && !pcsx2_installed && !duckstation_installed && !azahar_installed {
         return Ok(EmulatorPrefillResult::Continue(options));
     }
 
@@ -75,12 +77,27 @@ pub(super) fn maybe_prefill_from_emulators(
         Vec::new()
     };
 
-    if eden_games.is_empty() && pcsx2_memcards.is_empty() && duckstation_memcards.is_empty() {
+    let azahar_games = if azahar_installed {
+        azahar_discovery::discover_azahar_games()?
+    } else {
+        Vec::new()
+    };
+
+    if eden_games.is_empty()
+        && pcsx2_memcards.is_empty()
+        && duckstation_memcards.is_empty()
+        && azahar_games.is_empty()
+    {
         return Ok(EmulatorPrefillResult::Continue(options));
     }
 
-    let items =
-        classify_discovered_items(&eden_games, &pcsx2_memcards, &duckstation_memcards, context);
+    let items = classify_discovered_items(
+        &eden_games,
+        &pcsx2_memcards,
+        &duckstation_memcards,
+        &azahar_games,
+        context,
+    );
 
     let result = FzfWrapper::builder()
         .header(Header::fancy("Games"))
@@ -128,6 +145,17 @@ pub(super) fn maybe_prefill_from_emulators(
                 create_save_path: false,
             }))
         }
+        FzfResult::Selected(AddMethodItem::AzaharGame(game)) => {
+            let launch_command = azahar_discovery::get_azahar_launch_command(game.install_type);
+
+            Ok(EmulatorPrefillResult::Continue(AddGameOptions {
+                name: Some(game.display_name.clone()),
+                description: None,
+                launch_command,
+                save_path: Some(game.save_path.to_string_lossy().to_string()),
+                create_save_path: false,
+            }))
+        }
         FzfResult::Selected(AddMethodItem::ExistingEdenGame(info)) => {
             Ok(EmulatorPrefillResult::OpenGameMenu(info.tracked_name))
         }
@@ -135,6 +163,9 @@ pub(super) fn maybe_prefill_from_emulators(
             Ok(EmulatorPrefillResult::OpenGameMenu(info.tracked_name))
         }
         FzfResult::Selected(AddMethodItem::ExistingDuckstationGame(info)) => {
+            Ok(EmulatorPrefillResult::OpenGameMenu(info.tracked_name))
+        }
+        FzfResult::Selected(AddMethodItem::ExistingAzaharGame(info)) => {
             Ok(EmulatorPrefillResult::OpenGameMenu(info.tracked_name))
         }
         FzfResult::Selected(AddMethodItem::ManualEntry) => {
@@ -248,9 +279,11 @@ fn classify_discovered_items(
     eden_games: &[eden_discovery::EdenDiscoveredGame],
     pcsx2_memcards: &[pcsx2_discovery::Pcsx2DiscoveredMemcard],
     duckstation_memcards: &[duckstation_discovery::DuckstationDiscoveredMemcard],
+    azahar_games: &[azahar_discovery::AzaharDiscoveredGame],
     context: &GameCreationContext,
 ) -> Vec<AddMethodItem> {
-    let total_count = eden_games.len() + pcsx2_memcards.len() + duckstation_memcards.len();
+    let total_count =
+        eden_games.len() + pcsx2_memcards.len() + duckstation_memcards.len() + azahar_games.len();
     let mut items: Vec<AddMethodItem> = Vec::with_capacity(total_count + 1);
 
     items.push(AddMethodItem::ManualEntry);
@@ -299,6 +332,20 @@ fn classify_discovered_items(
         }
     }
 
+    for game in azahar_games {
+        match find_existing_game_for_save(&game.save_path, context) {
+            Some(existing_name) => {
+                items.push(AddMethodItem::ExistingAzaharGame(ExistingAzaharGameInfo {
+                    game: game.clone(),
+                    tracked_name: existing_name,
+                }));
+            }
+            None => {
+                items.push(AddMethodItem::AzaharGame(game.clone()));
+            }
+        }
+    }
+
     items
 }
 
@@ -321,14 +368,22 @@ struct ExistingDuckstationGameInfo {
 }
 
 #[derive(Clone)]
+struct ExistingAzaharGameInfo {
+    game: azahar_discovery::AzaharDiscoveredGame,
+    tracked_name: String,
+}
+
+#[derive(Clone)]
 enum AddMethodItem {
     ManualEntry,
     DiscoveredEdenGame(eden_discovery::EdenDiscoveredGame),
     Pcsx2Memcard(pcsx2_discovery::Pcsx2DiscoveredMemcard),
     DuckstationMemcard(duckstation_discovery::DuckstationDiscoveredMemcard),
+    AzaharGame(azahar_discovery::AzaharDiscoveredGame),
     ExistingEdenGame(ExistingEdenGameInfo),
     ExistingPcsx2Game(ExistingPcsx2GameInfo),
     ExistingDuckstationGame(ExistingDuckstationGameInfo),
+    ExistingAzaharGame(ExistingAzaharGameInfo),
 }
 
 impl FzfSelectable for AddMethodItem {
@@ -382,6 +437,20 @@ impl FzfSelectable for AddMethodItem {
                     info.tracked_name,
                 )
             }
+            AddMethodItem::AzaharGame(game) => {
+                format!(
+                    "{} {} (3DS)",
+                    format_icon_colored(NerdFont::Gamepad, colors::YELLOW),
+                    game.display_name,
+                )
+            }
+            AddMethodItem::ExistingAzaharGame(info) => {
+                format!(
+                    "{} {}",
+                    format_icon_colored(NerdFont::Gamepad, colors::MAUVE),
+                    info.tracked_name,
+                )
+            }
         }
     }
 
@@ -395,6 +464,9 @@ impl FzfSelectable for AddMethodItem {
             AddMethodItem::DuckstationMemcard(memcard) => {
                 format!("duckstation-{}", memcard.display_name)
             }
+            AddMethodItem::AzaharGame(game) => {
+                format!("azahar-{}", game.title_id)
+            }
             AddMethodItem::ExistingEdenGame(info) => {
                 format!("existing-{}", info.game.title_id)
             }
@@ -403,6 +475,9 @@ impl FzfSelectable for AddMethodItem {
             }
             AddMethodItem::ExistingDuckstationGame(info) => {
                 format!("existing-duckstation-{}", info.memcard.display_name)
+            }
+            AddMethodItem::ExistingAzaharGame(info) => {
+                format!("existing-azahar-{}", info.game.title_id)
             }
         }
     }
@@ -422,9 +497,11 @@ impl FzfSelectable for AddMethodItem {
             AddMethodItem::DiscoveredEdenGame(game) => eden_game_preview(game),
             AddMethodItem::Pcsx2Memcard(memcard) => pcsx2_memcard_preview(memcard),
             AddMethodItem::DuckstationMemcard(memcard) => duckstation_memcard_preview(memcard),
+            AddMethodItem::AzaharGame(game) => azahar_game_preview(game),
             AddMethodItem::ExistingEdenGame(info) => existing_eden_game_preview(info),
             AddMethodItem::ExistingPcsx2Game(info) => existing_pcsx2_game_preview(info),
             AddMethodItem::ExistingDuckstationGame(info) => existing_duckstation_game_preview(info),
+            AddMethodItem::ExistingAzaharGame(info) => existing_azahar_game_preview(info),
         }
     }
 
@@ -567,6 +644,66 @@ fn existing_duckstation_game_preview(
         .text("Save data:")
         .bullet(&save_display)
         .blank()
+        .separator()
+        .blank()
+        .subtext("Already tracked — press Enter to open game menu")
+        .build()
+}
+
+fn azahar_game_preview(
+    game: &azahar_discovery::AzaharDiscoveredGame,
+) -> crate::menu::protocol::FzfPreview {
+    let save_display = tilde_display_string(&TildePath::new(game.save_path.clone()));
+
+    let mut builder = PreviewBuilder::new()
+        .header(NerdFont::Gamepad, &game.display_name)
+        .text(&format!("Title ID: {}", game.title_id))
+        .text(&format!("Source: {}", game.install_type))
+        .blank()
+        .separator()
+        .blank();
+
+    if let Some(ref game_file) = game.game_path {
+        builder = builder
+            .text("Game file:")
+            .bullet(&game_file.to_string_lossy())
+            .blank();
+    }
+
+    builder
+        .text("Save data:")
+        .bullet(&save_display)
+        .blank()
+        .separator()
+        .blank()
+        .subtext("Auto-discovered from Azahar emulator")
+        .build()
+}
+
+fn existing_azahar_game_preview(
+    info: &ExistingAzaharGameInfo,
+) -> crate::menu::protocol::FzfPreview {
+    let save_display = tilde_display_string(&TildePath::new(info.game.save_path.clone()));
+
+    let mut builder = PreviewBuilder::new()
+        .header(NerdFont::Check, &info.tracked_name)
+        .text(&format!("Title ID: {}", info.game.title_id))
+        .text(&format!("Source: {}", info.game.install_type))
+        .blank()
+        .separator()
+        .blank()
+        .text("Save data:")
+        .bullet(&save_display)
+        .blank();
+
+    if let Some(ref game_file) = info.game.game_path {
+        builder = builder
+            .text("Game file:")
+            .bullet(&game_file.to_string_lossy())
+            .blank();
+    }
+
+    builder
         .separator()
         .blank()
         .subtext("Already tracked — press Enter to open game menu")

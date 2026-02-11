@@ -10,6 +10,7 @@
 
 mod appimage_finder;
 mod azahar;
+pub mod azahar_discovery;
 mod dolphin;
 mod duckstation;
 pub mod duckstation_discovery;
