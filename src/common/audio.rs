@@ -7,11 +7,7 @@ pub struct AudioDefaults {
     pub source: Option<String>,
 }
 
-impl AudioDefaults {
-    pub fn default_output_monitor(&self) -> Option<String> {
-        self.sink.as_ref().map(|sink| format!("{}.monitor", sink))
-    }
-}
+impl AudioDefaults {}
 
 #[derive(Debug, Clone)]
 pub struct AudioSourceInfo {
@@ -91,7 +87,10 @@ pub fn list_audio_source_names() -> Result<Vec<String>> {
 pub fn default_source_names(defaults: &AudioDefaults, sources: &[AudioSourceInfo]) -> Vec<String> {
     let mut names = Vec::new();
 
-    if let Some(default_output) = defaults.default_output_monitor()
+    if let Some(default_output) = defaults
+        .sink
+        .as_ref()
+        .map(|sink| format!("{}.monitor", sink))
         && sources.iter().any(|source| source.name == default_output)
     {
         names.push(default_output);

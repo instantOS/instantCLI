@@ -5,7 +5,7 @@ use std::path::Path;
 use anyhow::Result;
 
 use crate::dot::config::DotfileConfig;
-use crate::dot::override_config::find_all_sources;
+use crate::dot::sources;
 use crate::dot::utils::resolve_dotfile_path;
 
 use super::action::Action;
@@ -73,11 +73,11 @@ fn handle_file(config: &DotfileConfig, path: &Path, display: &str, action: Actio
     match action {
         Action::Reset => super::apply::reset_override(path, display),
         Action::List => {
-            let sources = find_all_sources(config, path)?;
+            let sources = sources::list_sources_for_target(config, path)?;
             list_file(path, display, &sources)
         }
         Action::Create => {
-            let sources = find_all_sources(config, path)?;
+            let sources = sources::list_sources_for_target(config, path)?;
             run_create_flow(path, display, &sources)?;
             Ok(())
         }

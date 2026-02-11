@@ -567,14 +567,6 @@ impl FzfBuilder {
         self.execute_message()
     }
 
-    pub fn show_confirmation(self) -> Result<ConfirmResult> {
-        self.confirm_dialog()
-    }
-
-    pub fn show_message(self) -> Result<()> {
-        self.message_dialog()
-    }
-
     /// Returns FzfResult with explicit Cancelled variant, unlike input_dialog() which returns empty string.
     /// Use this when you need to distinguish between user cancellation and empty input.
     pub fn input_result(self) -> Result<FzfResult<String>> {

@@ -1,3 +1,4 @@
+pub mod desktop;
 pub mod exec;
 pub mod launch;
 pub mod steam;

@@ -99,7 +99,7 @@ pub fn show_ip_info(ctx: &mut SettingsContext) -> Result<()> {
     FzfWrapper::builder()
         .title("Network Information")
         .message(message)
-        .show_message()?;
+        .message_dialog()?;
 
     ctx.emit_success(
         "settings.network.ip_info.shown",

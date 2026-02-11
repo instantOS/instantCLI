@@ -251,16 +251,12 @@ pub struct InstallationsConfig {
     pub installations: Vec<GameInstallation>,
 }
 
-pub fn games_config_dir() -> Result<PathBuf> {
-    paths::games_config_dir()
-}
-
 pub fn games_config_path() -> Result<PathBuf> {
-    Ok(games_config_dir()?.join("games.toml"))
+    Ok(paths::games_config_dir()?.join("games.toml"))
 }
 
 pub fn installations_config_path() -> Result<PathBuf> {
-    Ok(games_config_dir()?.join("installations.toml"))
+    Ok(paths::games_config_dir()?.join("installations.toml"))
 }
 
 impl InstantGameConfig {

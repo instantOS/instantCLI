@@ -290,7 +290,17 @@ mod x11 {
             }
         };
 
-        execute_mirror_command(source, &target_name)
+        show_notification(
+            "Mirror",
+            &format!("Mirroring {} to {}", source, target_name),
+        )?;
+
+        Command::new("xrandr")
+            .args(["--output", &target_name, "--same-as", source, "--auto"])
+            .spawn()
+            .context("Failed to run xrandr")?;
+
+        Ok(())
     }
 
     fn select_target(targets: Vec<&Output>) -> Result<Option<String>> {
@@ -301,17 +311,6 @@ mod x11 {
 
         let selection = show_menu("Mirror TO which display?", items)?;
         Ok(selection.and_then(|s| s.output_name))
-    }
-
-    fn execute_mirror_command(source: &str, target: &str) -> Result<()> {
-        show_notification("Mirror", &format!("Mirroring {} to {}", source, target))?;
-
-        Command::new("xrandr")
-            .args(["--output", target, "--same-as", source, "--auto"])
-            .spawn()
-            .context("Failed to run xrandr")?;
-
-        Ok(())
     }
 }
 

@@ -13,7 +13,6 @@ use crate::common::TildePath;
 use crate::common::paths;
 use crate::dot::config::DotfileConfig;
 use crate::dot::dotfile::Dotfile;
-use crate::dot::sources;
 
 /// A single dotfile source override
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -132,11 +131,6 @@ impl OverrideConfig {
             .map(|o| (o.target_path.as_path().to_path_buf(), o))
             .collect()
     }
-}
-
-/// Find all available sources for a dotfile across all repos and subdirs
-pub fn find_all_sources(config: &DotfileConfig, target_path: &Path) -> Result<Vec<DotfileSource>> {
-    sources::list_sources_for_target(config, target_path)
 }
 
 /// Apply overrides to a merged dotfiles map

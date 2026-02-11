@@ -8,7 +8,8 @@ use colored::Colorize;
 
 use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
-use crate::dot::override_config::{DotfileSource, OverrideConfig, find_all_sources};
+use crate::dot::override_config::{DotfileSource, OverrideConfig};
+use crate::dot::sources;
 use crate::menu_utils::{FzfResult, FzfWrapper, MenuCursor};
 use crate::ui::catppuccin::fzf_mocha_args;
 use crate::ui::prelude::*;
@@ -21,7 +22,7 @@ use super::picker::{CreateMenuItem, SourceOption};
 /// Pick a destination and add a file there (shared by `add --choose` and `alternative --create`).
 pub fn pick_destination_and_add(config: &DotfileConfig, path: &Path) -> Result<bool> {
     let display = to_display_path(path);
-    let existing = find_all_sources(config, path)?;
+    let existing = sources::list_sources_for_target(config, path)?;
     match run_create_flow(path, &display, &existing)? {
         Flow::Done => Ok(true),
         _ => Ok(false),
@@ -151,7 +152,7 @@ fn add_file_to_destination(
 
     // Check how many sources exist now
     let config = DotfileConfig::load(None)?;
-    let sources = find_all_sources(&config, path)?;
+    let sources = sources::list_sources_for_target(&config, path)?;
 
     if sources.len() <= 1 {
         // Only one source - just tracking, no override needed

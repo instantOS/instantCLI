@@ -241,7 +241,7 @@ impl Setting for ClearPacmanCache {
             .confirm(message)
             .yes_text("Clear cache")
             .no_text("Keep cache")
-            .show_confirmation()?;
+            .confirm_dialog()?;
 
         if matches!(result, crate::menu_utils::ConfirmResult::Yes) {
             ctx.emit_info("settings.pacman_cache.clearing", "Clearing pacman cache...");
@@ -381,7 +381,7 @@ pub fn launch_cockpit(ctx: &mut SettingsContext) -> Result<()> {
                 username
             ))
             .title("Cockpit")
-            .show_message()?;
+            .message_dialog()?;
     }
 
     // Launch chromium in app mode

@@ -338,31 +338,24 @@ fn is_appimage() -> bool {
         return true;
     }
     // Fallback: check if current exe path ends with .AppImage
-    if let Ok(current_exe) = std::env::current_exe() {
-        if let Some(path_str) = current_exe.to_str() {
-            return path_str.to_lowercase().ends_with(".appimage");
-        }
+    if let Ok(current_exe) = std::env::current_exe()
+        && let Some(path_str) = current_exe.to_str()
+    {
+        return path_str.to_lowercase().ends_with(".appimage");
     }
     false
-}
-
-/// Detect if running on SteamOS
-fn is_steamos() -> bool {
-    if let Ok(os_release) = std::fs::read_to_string("/etc/os-release") {
-        if os_release.contains("steamdeck") || os_release.contains("SteamOS") {
-            return true;
-        }
-    }
-    std::env::var("STEAM_DECK").is_ok()
 }
 
 /// Build launch options for Steam shortcuts
 /// On SteamOS in gaming mode, AppImages need --appimage-extract-and-run
 /// because FUSE is not available in the sandboxed Steam Runtime
 fn build_launch_options(game_name: &str) -> String {
+    use crate::common::distro::OperatingSystem;
+
     let base_cmd = format!("game launch \"{}\"", game_name);
 
-    if is_appimage() && is_steamos() {
+    // Check if running on SteamOS using the existing utility
+    if is_appimage() && OperatingSystem::detect() == OperatingSystem::SteamOS {
         // SteamOS gaming mode doesn't have FUSE, so we need to extract and run
         format!("--appimage-extract-and-run {}", base_cmd)
     } else {
@@ -563,7 +556,8 @@ pub fn add_game_menu_to_steam() -> Result<(bool, bool)> {
 
     // Build launch options for the game menu shortcut
     // On SteamOS with AppImage, we need --appimage-extract-and-run
-    let launch_options = if is_appimage() && is_steamos() {
+    use crate::common::distro::OperatingSystem;
+    let launch_options = if is_appimage() && OperatingSystem::detect() == OperatingSystem::SteamOS {
         format!(
             "-- \"{}\" --appimage-extract-and-run game menu",
             ins_bin_str

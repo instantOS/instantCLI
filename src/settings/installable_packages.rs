@@ -651,7 +651,7 @@ pub fn show_install_more_menu(category_name: &str, apps: &[InstallableApp]) -> R
                 FzfWrapper::builder()
                     .message(format!("{} is already installed.", item.app.name))
                     .title("Already Installed")
-                    .show_message()?;
+                    .message_dialog()?;
                 return Ok(false);
             }
 
@@ -663,14 +663,14 @@ pub fn show_install_more_menu(category_name: &str, apps: &[InstallableApp]) -> R
                     FzfWrapper::builder()
                         .message(format!("{} is not available:\n{}", name, hint))
                         .title("Package Not Available")
-                        .show_message()?;
+                        .message_dialog()?;
                     Ok(false)
                 }
                 InstallResult::Failed { reason } => {
                     FzfWrapper::builder()
                         .message(format!("Installation failed: {}", reason))
                         .title("Installation Failed")
-                        .show_message()?;
+                        .message_dialog()?;
                     Ok(false)
                 }
             }

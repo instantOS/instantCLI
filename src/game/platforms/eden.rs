@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 
-use crate::game::launch_builder::appimage_finder::find_appimage_by_paths;
+use crate::game::platforms::appimage_finder::find_appimage_by_paths;
 use crate::menu_utils::{
     ConfirmResult, FilePickerScope, FzfWrapper, PathInputBuilder, PathInputSelection,
 };
@@ -15,7 +15,7 @@ use crate::ui::nerd_font::NerdFont;
 use super::prompts::{
     FileSelectionPrompt, ask_fullscreen, confirm_command, select_file_with_validation,
 };
-use super::validation::{EDEN_EXTENSIONS, format_valid_extensions, validate_eden_file};
+use super::validation::{EDEN_EXTENSIONS, format_valid_extensions, validate_game_file};
 
 /// Default Eden AppImage location
 /// (Matched case-insensitively - will find eden.AppImage, EDEN.APPIMAGE, etc.)
@@ -61,7 +61,7 @@ impl EdenBuilder {
         }
     }
 
-    fn find_or_select_eden() -> Result<Option<PathBuf>> {
+    pub(crate) fn find_or_select_eden() -> Result<Option<PathBuf>> {
         // Try to find Eden in common locations using case-insensitive matching
         if let Some(path) = find_appimage_by_paths(EDEN_SEARCH_PATHS) {
             // Found Eden, ask if user wants to use it
@@ -139,7 +139,7 @@ impl EdenBuilder {
                     format_valid_extensions(EDEN_EXTENSIONS)
                 ),
             ),
-            validate_eden_file,
+            |path| validate_game_file(path, "Eden", EDEN_EXTENSIONS),
         )
     }
 
@@ -156,5 +156,13 @@ impl EdenBuilder {
         parts.push(format!("-g \"{}\"", game_str));
 
         parts.join(" ")
+    }
+
+    /// Format a simple Eden command without fullscreen flag.
+    /// Used by the discovery prefill to avoid code duplication.
+    pub(crate) fn format_command_simple(eden_path: &PathBuf, game_file: &PathBuf) -> String {
+        let eden_str = eden_path.to_string_lossy();
+        let game_str = game_file.to_string_lossy();
+        format!("\"{}\" -g \"{}\"", eden_str, game_str)
     }
 }

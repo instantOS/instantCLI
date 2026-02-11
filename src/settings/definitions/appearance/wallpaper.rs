@@ -112,12 +112,12 @@ impl Setting for SetWallpaper {
                 FzfWrapper::builder()
                     .message("Wallpaper updated successfully!")
                     .title("Wallpaper Image")
-                    .show_message()?;
+                    .message_dialog()?;
             } else {
                 FzfWrapper::builder()
                     .message("Failed to set wallpaper.")
                     .title("Error")
-                    .show_message()?;
+                    .message_dialog()?;
             }
         }
         Ok(())
@@ -237,12 +237,12 @@ impl Setting for RandomWallpaper {
             FzfWrapper::builder()
                 .message("Random wallpaper applied!")
                 .title("Wallpaper")
-                .show_message()?;
+                .message_dialog()?;
         } else {
             FzfWrapper::builder()
                 .message("Failed to fetch random wallpaper.")
                 .title("Error")
-                .show_message()?;
+                .message_dialog()?;
         }
         Ok(())
     }
@@ -396,12 +396,12 @@ impl Setting for ApplyColoredWallpaper {
             FzfWrapper::builder()
                 .message("Colored wallpaper applied!")
                 .title("Wallpaper")
-                .show_message()?;
+                .message_dialog()?;
         } else {
             FzfWrapper::builder()
                 .message("Failed to generate colored wallpaper.")
                 .title("Error")
-                .show_message()?;
+                .message_dialog()?;
         }
         Ok(())
     }

@@ -218,7 +218,7 @@ pub fn ensure_all(deps: &[&'static Dependency]) -> anyhow::Result<InstallResult>
                     .join("\n")
             ))
             .title("Warning")
-            .show_message()?;
+            .message_dialog()?;
     }
 
     if batch.is_empty() {

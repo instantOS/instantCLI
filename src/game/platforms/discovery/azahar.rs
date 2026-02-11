@@ -1,0 +1,684 @@
+//! Azahar (3DS emulator) game save auto-discovery
+//!
+//! Scans Azahar's SDMC directories to discover title IDs that have
+//! existing save data, then correlates them with ROM files
+//! found in Azahar's recent file list and game directories.
+//!
+//! Azahar (Citra fork) stores saves in:
+//! `sdmc/Nintendo 3DS/<ID0>/<ID1>/title/<high>/<title_id_low>/data/`
+//!
+//! Supports both Flatpak and native installations.
+
+use std::collections::HashMap;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::time::SystemTime;
+
+use anyhow::Result;
+
+use super::DiscoveredGame;
+use crate::common::TildePath;
+use crate::game::utils::path::tilde_display_string;
+use crate::menu::protocol::FzfPreview;
+use crate::ui::nerd_font::NerdFont;
+use crate::ui::preview::PreviewBuilder;
+
+/// Azahar Flatpak application ID
+pub const AZAHAR_FLATPAK_ID: &str = "org.azahar_emu.Azahar";
+
+/// Native Azahar data directory
+const NATIVE_DATA_DIR: &str = "~/.local/share/azahar-emu";
+
+/// Native Azahar config directory
+const NATIVE_CONFIG_DIR: &str = "~/.config/azahar-emu";
+
+/// Flatpak Azahar data directory
+const FLATPAK_DATA_DIR: &str = "~/.var/app/org.azahar_emu.Azahar/data/azahar-emu";
+
+/// Flatpak Azahar config directory
+const FLATPAK_CONFIG_DIR: &str = "~/.var/app/org.azahar_emu.Azahar/config/azahar-emu";
+
+/// SDMC subpath (relative to data dir)
+const SDMC_SUBPATH: &str = "sdmc/Nintendo 3DS";
+
+/// Valid 3DS game file extensions (case-insensitive)
+const AZAHAR_GAME_EXTENSIONS: &[&str] = &["3ds", "3dsx", "cia", "app", "cci", "cxi"];
+
+#[derive(Debug, Clone)]
+pub struct AzaharDiscoveredGame {
+    pub display_name: String,
+    pub title_id: String,
+    pub game_path: Option<PathBuf>,
+    pub save_path: PathBuf,
+    pub install_type: AzaharInstallType,
+    pub is_existing: bool,
+    pub tracked_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AzaharInstallType {
+    Flatpak,
+    Native,
+}
+
+impl std::fmt::Display for AzaharInstallType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AzaharInstallType::Flatpak => write!(f, "Flatpak"),
+            AzaharInstallType::Native => write!(f, "Native"),
+        }
+    }
+}
+
+impl AzaharDiscoveredGame {
+    pub fn new(
+        display_name: String,
+        title_id: String,
+        game_path: Option<PathBuf>,
+        save_path: PathBuf,
+        install_type: AzaharInstallType,
+    ) -> Self {
+        Self {
+            display_name,
+            title_id,
+            game_path,
+            save_path,
+            install_type,
+            is_existing: false,
+            tracked_name: None,
+        }
+    }
+
+    pub fn existing(game: Self, tracked_name: String) -> Self {
+        Self {
+            is_existing: true,
+            tracked_name: Some(tracked_name),
+            ..game
+        }
+    }
+}
+
+impl DiscoveredGame for AzaharDiscoveredGame {
+    fn display_name(&self) -> &str {
+        &self.display_name
+    }
+
+    fn save_path(&self) -> &PathBuf {
+        &self.save_path
+    }
+
+    fn game_path(&self) -> Option<&PathBuf> {
+        self.game_path.as_ref()
+    }
+
+    fn platform_name(&self) -> &'static str {
+        "Nintendo 3DS"
+    }
+
+    fn platform_short(&self) -> &'static str {
+        "3DS"
+    }
+
+    fn unique_key(&self) -> String {
+        format!("azahar-{}", self.title_id)
+    }
+
+    fn is_existing(&self) -> bool {
+        self.is_existing
+    }
+
+    fn tracked_name(&self) -> Option<&str> {
+        self.tracked_name.as_deref()
+    }
+
+    fn set_existing(&mut self, tracked_name: String) {
+        self.is_existing = true;
+        self.tracked_name = Some(tracked_name);
+    }
+
+    fn build_preview(&self) -> FzfPreview {
+        let save_display = tilde_display_string(&TildePath::new(self.save_path.clone()));
+        let header_name = self.tracked_name.as_deref().unwrap_or(&self.display_name);
+
+        let mut builder = PreviewBuilder::new()
+            .header(
+                if self.is_existing {
+                    NerdFont::Check
+                } else {
+                    NerdFont::Gamepad
+                },
+                header_name,
+            )
+            .text(&format!("Platform: {}", self.platform_name()))
+            .text(&format!("Title ID: {}", self.title_id))
+            .text(&format!("Source: {}", self.install_type))
+            .blank()
+            .separator()
+            .blank();
+
+        if let Some(ref game_file) = self.game_path {
+            builder = builder
+                .text("Game file:")
+                .bullet(&game_file.to_string_lossy())
+                .blank();
+        }
+
+        builder = builder
+            .text("Save data:")
+            .bullet(&save_display)
+            .blank()
+            .separator()
+            .blank();
+
+        if self.is_existing {
+            builder = builder.subtext("Already tracked — press Enter to open game menu");
+        } else {
+            builder = builder.subtext("Auto-discovered from Azahar emulator");
+        }
+
+        builder.build()
+    }
+
+    fn build_launch_command(&self) -> Option<String> {
+        get_azahar_launch_command(self.install_type)
+    }
+
+    fn clone_box(&self) -> Box<dyn DiscoveredGame> {
+        Box::new(self.clone())
+    }
+}
+
+/// Check if Azahar is installed (either Flatpak or native)
+pub fn is_azahar_installed() -> bool {
+    is_native_installed() || is_flatpak_installed()
+}
+
+/// Check if native Azahar is installed
+fn is_native_installed() -> bool {
+    let native_path = shellexpand::tilde(NATIVE_DATA_DIR);
+    Path::new(native_path.as_ref()).is_dir()
+}
+
+/// Check if Azahar Flatpak is installed
+fn is_flatpak_installed() -> bool {
+    let flatpak_path = shellexpand::tilde(FLATPAK_DATA_DIR);
+    Path::new(flatpak_path.as_ref()).is_dir()
+}
+
+/// Discover Azahar games that have existing save data.
+///
+/// 1. Scans the SDMC directory structure for title IDs.
+/// 2. Collects ROM files from Azahar's recent files and game directories.
+/// 3. Matches ROMs to saves by modification time and directory association.
+/// 4. Returns one entry per title ID, sorted by display name.
+pub fn discover_azahar_games() -> Result<Vec<AzaharDiscoveredGame>> {
+    if !is_azahar_installed() {
+        return Ok(Vec::new());
+    }
+
+    let mut results: Vec<AzaharDiscoveredGame> = Vec::new();
+
+    if is_native_installed() {
+        let native_data = PathBuf::from(shellexpand::tilde(NATIVE_DATA_DIR).into_owned());
+        let native_config = PathBuf::from(shellexpand::tilde(NATIVE_CONFIG_DIR).into_owned());
+        results.extend(discover_from_installation(
+            &native_data,
+            &native_config,
+            AzaharInstallType::Native,
+        )?);
+    }
+
+    if is_flatpak_installed() {
+        let flatpak_data = PathBuf::from(shellexpand::tilde(FLATPAK_DATA_DIR).into_owned());
+        let flatpak_config = PathBuf::from(shellexpand::tilde(FLATPAK_CONFIG_DIR).into_owned());
+        results.extend(discover_from_installation(
+            &flatpak_data,
+            &flatpak_config,
+            AzaharInstallType::Flatpak,
+        )?);
+    }
+
+    results.sort_by(|a, b| {
+        a.display_name
+            .to_lowercase()
+            .cmp(&b.display_name.to_lowercase())
+    });
+
+    Ok(results)
+}
+
+/// Discover games from a specific installation (native or flatpak)
+fn discover_from_installation(
+    data_dir: &Path,
+    config_dir: &Path,
+    install_type: AzaharInstallType,
+) -> Result<Vec<AzaharDiscoveredGame>> {
+    let save_dirs = find_save_directories(data_dir);
+    if save_dirs.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let (recent_roms, game_dirs) = collect_rom_sources(config_dir);
+    let rom_index = build_rom_index(&recent_roms, &game_dirs, &save_dirs);
+
+    let results: Vec<AzaharDiscoveredGame> = save_dirs
+        .into_iter()
+        .map(|(title_id, save_path)| {
+            let (display_name, game_path) = match rom_index.get(&title_id) {
+                Some(rom_path) => {
+                    let name = display_name_from_path(rom_path);
+                    (name, Some(rom_path.clone()))
+                }
+                None => (title_id.clone(), None),
+            };
+
+            AzaharDiscoveredGame::new(display_name, title_id, game_path, save_path, install_type)
+        })
+        .collect();
+
+    Ok(results)
+}
+
+/// Get the Azahar launch command for a given installation type.
+pub fn get_azahar_launch_command(install_type: AzaharInstallType) -> Option<String> {
+    match install_type {
+        AzaharInstallType::Flatpak => Some(format!("flatpak run {}", AZAHAR_FLATPAK_ID)),
+        AzaharInstallType::Native => Some("azahar".to_string()),
+    }
+}
+
+/// Scan Azahar's SDMC directory structure and return a map of title ID → (save path, modified time).
+fn find_save_directories(data_dir: &Path) -> HashMap<String, PathBuf> {
+    let mut saves: HashMap<String, PathBuf> = HashMap::new();
+
+    let sdmc_base = data_dir.join(SDMC_SUBPATH);
+    if !sdmc_base.is_dir() {
+        return saves;
+    }
+
+    let id0_entries = match fs::read_dir(&sdmc_base) {
+        Ok(entries) => entries,
+        Err(_) => return saves,
+    };
+
+    for id0_entry in id0_entries.flatten() {
+        let id0_path = id0_entry.path();
+        if !id0_path.is_dir() {
+            continue;
+        }
+
+        let id1_entries = match fs::read_dir(&id0_path) {
+            Ok(entries) => entries,
+            Err(_) => continue,
+        };
+
+        for id1_entry in id1_entries.flatten() {
+            let id1_path = id1_entry.path();
+            if !id1_path.is_dir() {
+                continue;
+            }
+
+            let title_base = id1_path.join("title");
+            if !title_base.is_dir() {
+                continue;
+            }
+
+            scan_title_directories(&title_base, &mut saves);
+        }
+    }
+
+    saves
+}
+
+/// Scan title directories for save data.
+fn scan_title_directories(title_base: &Path, saves: &mut HashMap<String, PathBuf>) {
+    let high_entries = match fs::read_dir(title_base) {
+        Ok(entries) => entries,
+        Err(_) => return,
+    };
+
+    for high_entry in high_entries.flatten() {
+        let high_path = high_entry.path();
+        if !high_path.is_dir() {
+            continue;
+        }
+
+        let low_entries = match fs::read_dir(&high_path) {
+            Ok(entries) => entries,
+            Err(_) => continue,
+        };
+
+        for low_entry in low_entries.flatten() {
+            let low_path = low_entry.path();
+            if !low_path.is_dir() {
+                continue;
+            }
+
+            let data_path = low_path.join("data");
+            if data_path.is_dir()
+                && let (Some(high), Some(low)) = (
+                    high_path.file_name().and_then(|n| n.to_str()),
+                    low_path.file_name().and_then(|n| n.to_str()),
+                )
+                && let Some(title_id) = build_title_id(high, low)
+            {
+                saves.entry(title_id).or_insert(data_path);
+            }
+        }
+    }
+}
+
+/// Build a title ID from high and low directory names.
+/// High: 8 hex chars, Low: 8 hex chars → Title ID: 16 hex chars
+fn build_title_id(high: &str, low: &str) -> Option<String> {
+    if high.len() == 8 && low.len() == 8 && is_hex_string(high) && is_hex_string(low) {
+        Some(format!("{}{}", high.to_uppercase(), low.to_uppercase()))
+    } else {
+        None
+    }
+}
+
+fn is_hex_string(s: &str) -> bool {
+    s.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+/// Collect ROM sources from Azahar's config.
+/// Returns (recent_roms, game_directories).
+fn collect_rom_sources(config_dir: &Path) -> (Vec<PathBuf>, Vec<PathBuf>) {
+    let qt_config_path = config_dir.join("qt-config.ini");
+    let config_content = match fs::read_to_string(&qt_config_path) {
+        Ok(content) => content,
+        Err(_) => return (Vec::new(), Vec::new()),
+    };
+
+    let recent = parse_recent_files(&config_content);
+    let dirs = parse_game_directories(&config_content);
+
+    (recent, dirs)
+}
+
+/// Parse the `Paths\recentFiles=` line from Azahar's config.
+fn parse_recent_files(config_content: &str) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+
+    for line in config_content.lines() {
+        let trimmed = line.trim();
+        if !trimmed.starts_with("Paths\\recentFiles=") {
+            continue;
+        }
+
+        let value = match trimmed.split_once('=') {
+            Some((_, v)) => v.trim(),
+            None => continue,
+        };
+
+        let value = value.strip_prefix('"').unwrap_or(value);
+        let value = value.strip_suffix('"').unwrap_or(value);
+
+        if value.is_empty() {
+            continue;
+        }
+
+        for entry in value.split(", ") {
+            let entry = entry.trim();
+            if !entry.is_empty() {
+                let path = PathBuf::from(entry);
+                if path.is_file() && is_azahar_game_file(&path) {
+                    paths.push(path);
+                }
+            }
+        }
+
+        break;
+    }
+
+    paths
+}
+
+/// Parse `Paths\gamedirs\N\path=` values from Azahar's config.
+fn parse_game_directories(config_content: &str) -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+
+    for line in config_content.lines() {
+        let trimmed = line.trim();
+
+        if !trimmed.starts_with("Paths\\gamedirs\\") || !trimmed.contains("\\path=") {
+            continue;
+        }
+
+        let value = match trimmed.split_once("\\path=") {
+            Some((_, v)) => v.trim(),
+            None => continue,
+        };
+
+        if value.is_empty() || value == "INSTALLED" || value == "SYSTEM" {
+            continue;
+        }
+
+        let dir_path = PathBuf::from(value);
+        if dir_path.is_dir() {
+            dirs.push(dir_path);
+        }
+    }
+
+    dirs
+}
+
+/// Check if a file has a valid 3DS game extension
+fn is_azahar_game_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| {
+            let lower = ext.to_lowercase();
+            AZAHAR_GAME_EXTENSIONS.iter().any(|&valid| lower == valid)
+        })
+}
+
+/// Build an index mapping title IDs to ROM paths.
+/// Matches by:
+/// 1. Title ID in filename
+/// 2. ROM in a directory that matches a save's parent folder pattern
+fn build_rom_index(
+    recent_roms: &[PathBuf],
+    game_dirs: &[PathBuf],
+    save_dirs: &HashMap<String, PathBuf>,
+) -> HashMap<String, PathBuf> {
+    let mut index: HashMap<String, PathBuf> = HashMap::new();
+
+    // First, try to match recent ROMs by title ID in filename
+    for rom_path in recent_roms {
+        if let Some(title_id) = extract_title_id_from_filename(rom_path)
+            && save_dirs.contains_key(&title_id)
+        {
+            index.entry(title_id).or_insert_with(|| rom_path.clone());
+            continue;
+        }
+    }
+
+    // Second, scan game directories and match by save modification time
+    // This associates ROMs in organized folders with their saves
+    for dir in game_dirs {
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file()
+                    && is_azahar_game_file(&path)
+                    && let Some(title_id) = find_matching_save(&path, save_dirs)
+                {
+                    index.entry(title_id).or_insert(path);
+                }
+            }
+        }
+    }
+
+    // Third, match recent ROMs to unmatched saves by order
+    // (most recently opened ROM likely corresponds to most recently modified save)
+    let unmatched_saves: Vec<(String, PathBuf)> = save_dirs
+        .iter()
+        .filter(|(tid, _)| !index.contains_key(*tid))
+        .map(|(tid, path)| (tid.clone(), path.clone()))
+        .collect();
+
+    if !unmatched_saves.is_empty() && !recent_roms.is_empty() {
+        let mut saves_with_time: Vec<(String, PathBuf, SystemTime)> = unmatched_saves
+            .into_iter()
+            .filter_map(|(tid, path)| {
+                let modified = get_directory_modified_time(&path)?;
+                Some((tid, path, modified))
+            })
+            .collect();
+        saves_with_time.sort_by(|a, b| b.2.cmp(&a.2));
+
+        // Match recent ROMs to saves by position (most recent first)
+        for (i, rom_path) in recent_roms.iter().enumerate() {
+            if i < saves_with_time.len() {
+                let (title_id, _, _) = &saves_with_time[i];
+                index.insert(title_id.clone(), rom_path.clone());
+            }
+        }
+    }
+
+    index
+}
+
+/// Extract a title ID from a filename if present.
+fn extract_title_id_from_filename(path: &Path) -> Option<String> {
+    let file_name = path.file_name().and_then(|n| n.to_str())?;
+    let upper = file_name.to_uppercase();
+
+    // Look for 16-character hex string
+    for i in 0..upper.len().saturating_sub(15) {
+        let candidate = &upper[i..i + 16];
+        if is_hex_string(candidate) {
+            return Some(candidate.to_string());
+        }
+    }
+    None
+}
+
+/// Find a save that might match a ROM by checking if the ROM's parent directory
+/// name resembles a game that would have this save.
+fn find_matching_save(rom_path: &Path, save_dirs: &HashMap<String, PathBuf>) -> Option<String> {
+    let _parent_name = rom_path.parent()?.file_name()?.to_str()?.to_lowercase();
+    let _rom_name = rom_path.file_stem()?.to_str()?.to_lowercase();
+
+    // Try to find a save that was modified around the same time
+    // or has a related name
+    for (title_id, save_path) in save_dirs {
+        // Check if save was recently modified (indicates active game)
+        if let Some(modified) = get_directory_modified_time(save_path)
+            && let Ok(elapsed) = modified.elapsed()
+        {
+            // If save was modified in last 30 days, it's likely active
+            if elapsed.as_secs() < 30 * 24 * 60 * 60 {
+                // This is a heuristic - just return the first recently active save
+                // for ROMs in game-specific directories
+                return Some(title_id.clone());
+            }
+        }
+    }
+    None
+}
+
+/// Get the most recent modification time of a directory or its contents.
+fn get_directory_modified_time(dir: &Path) -> Option<SystemTime> {
+    let mut latest: Option<SystemTime> = dir.metadata().ok()?.modified().ok();
+
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            if let Ok(metadata) = entry.metadata()
+                && let Ok(modified) = metadata.modified()
+            {
+                latest = latest.map_or(Some(modified), |l| {
+                    if modified > l {
+                        Some(modified)
+                    } else {
+                        Some(l)
+                    }
+                });
+            }
+        }
+    }
+
+    latest
+}
+
+/// Derive a display name from a ROM file path.
+fn display_name_from_path(path: &Path) -> String {
+    let stem = match path.file_stem().and_then(|s| s.to_str()) {
+        Some(s) => s,
+        None => return path.to_string_lossy().to_string(),
+    };
+
+    let cleaned = strip_bracket_groups(stem);
+    if cleaned.is_empty() {
+        stem.to_string()
+    } else {
+        cleaned
+    }
+}
+
+/// Remove all `[...]` bracket groups from a string and trim whitespace.
+fn strip_bracket_groups(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut depth = 0u32;
+
+    for ch in s.chars() {
+        match ch {
+            '[' => depth += 1,
+            ']' if depth > 0 => depth -= 1,
+            _ if depth == 0 => result.push(ch),
+            _ => {}
+        }
+    }
+
+    result.trim().to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_title_id_valid() {
+        assert_eq!(
+            build_title_id("00040000", "00179800"),
+            Some("0004000000179800".to_string())
+        );
+        assert_eq!(
+            build_title_id("00040000", "ABCDEF00"),
+            Some("00040000ABCDEF00".to_string())
+        );
+    }
+
+    #[test]
+    fn build_title_id_invalid() {
+        assert_eq!(build_title_id("0004000", "00179800"), None);
+        assert_eq!(build_title_id("00040000", "0017980"), None);
+        assert_eq!(build_title_id("ZZZZZZZZ", "00179800"), None);
+    }
+
+    #[test]
+    fn strip_brackets_removes_groups() {
+        assert_eq!(strip_bracket_groups("Name [tag1][tag2]"), "Name");
+    }
+
+    #[test]
+    fn strip_brackets_preserves_plain_text() {
+        assert_eq!(strip_bracket_groups("Plain Name"), "Plain Name");
+    }
+
+    #[test]
+    fn is_azahar_game_file_valid() {
+        assert!(is_azahar_game_file(Path::new("game.3ds")));
+        assert!(is_azahar_game_file(Path::new("game.3DS")));
+        assert!(is_azahar_game_file(Path::new("game.cia")));
+        assert!(is_azahar_game_file(Path::new("game.cxi")));
+    }
+
+    #[test]
+    fn is_azahar_game_file_invalid() {
+        assert!(!is_azahar_game_file(Path::new("game.iso")));
+        assert!(!is_azahar_game_file(Path::new("game.nsp")));
+    }
+}

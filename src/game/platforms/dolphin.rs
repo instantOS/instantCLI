@@ -1,9 +1,9 @@
-//! PCSX2 (PlayStation 2 emulator) launch command builder via Flatpak
+//! Dolphin (GameCube/Wii emulator) launch command builder via Flatpak
 //!
-//! Builds commands for running PS2 games via the PCSX2 Flatpak
+//! Builds commands for running GameCube/Wii games via the Dolphin Flatpak
 
 use anyhow::Result;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crate::menu_utils::{ConfirmResult, FzfWrapper};
 use crate::ui::nerd_font::NerdFont;
@@ -12,25 +12,25 @@ use super::flatpak::is_flatpak_app_installed;
 use super::prompts::{
     FileSelectionPrompt, ask_fullscreen, confirm_command, select_file_with_validation,
 };
-use super::validation::{PCSX2_EXTENSIONS, format_valid_extensions, validate_pcsx2_file};
+use super::validation::{DOLPHIN_EXTENSIONS, format_valid_extensions, validate_game_file};
 
-/// PCSX2 Flatpak application ID
-const PCSX2_FLATPAK_ID: &str = "net.pcsx2.PCSX2";
+/// Dolphin Flatpak application ID
+const DOLPHIN_FLATPAK_ID: &str = "org.DolphinEmu.dolphin-emu";
 
-pub struct Pcsx2Builder;
+pub struct DolphinBuilder;
 
-impl Pcsx2Builder {
-    /// Build a PCSX2 Flatpak launch command interactively
+impl DolphinBuilder {
+    /// Build a Dolphin Flatpak launch command interactively
     pub fn build_command() -> Result<Option<String>> {
-        // Step 1: Check if PCSX2 Flatpak is installed
-        if !Self::check_pcsx2_installed()? {
+        // Step 1: Check if Dolphin Flatpak is installed
+        if !Self::check_dolphin_installed()? {
             FzfWrapper::message(&format!(
-                "{} PCSX2 Flatpak not found!\n\n\
+                "{} Dolphin Flatpak not found!\n\n\
                  Install it with:\n\
                  flatpak install flathub {}\n\n\
-                 Or visit: https://flathub.org/apps/net.pcsx2.PCSX2",
+                 Or visit: https://flathub.org/apps/org.DolphinEmu.dolphin-emu",
                 char::from(NerdFont::CrossCircle),
-                PCSX2_FLATPAK_ID
+                DOLPHIN_FLATPAK_ID
             ))?;
             return Ok(None);
         }
@@ -44,8 +44,12 @@ impl Pcsx2Builder {
         // Step 3: Ask for batch mode (exit when game closes)
         let batch_mode = Self::ask_batch_mode()?;
 
-        // Step 4: Ask for fullscreen
-        let fullscreen = ask_fullscreen()?;
+        // Step 4: Ask for fullscreen (only if not batch mode, as batch implies game-focused)
+        let fullscreen = if !batch_mode {
+            ask_fullscreen()?
+        } else {
+            false
+        };
 
         // Build the command
         let command = Self::format_command(&game_file, batch_mode, fullscreen);
@@ -58,24 +62,24 @@ impl Pcsx2Builder {
         }
     }
 
-    fn check_pcsx2_installed() -> Result<bool> {
-        is_flatpak_app_installed(PCSX2_FLATPAK_ID)
+    fn check_dolphin_installed() -> Result<bool> {
+        is_flatpak_app_installed(DOLPHIN_FLATPAK_ID)
     }
 
     fn select_game_file() -> Result<Option<PathBuf>> {
         select_file_with_validation(
             FileSelectionPrompt::game_file(
                 format!(
-                    "{} Select PlayStation 2 Game File",
+                    "{} Select GameCube/Wii Game File",
                     char::from(NerdFont::Disc)
                 ),
                 format!(
-                    "{} Select a PS2 game file ({})",
+                    "{} Select a GameCube/Wii game file ({})",
                     char::from(NerdFont::Info),
-                    format_valid_extensions(PCSX2_EXTENSIONS)
+                    format_valid_extensions(DOLPHIN_EXTENSIONS)
                 ),
             ),
-            validate_pcsx2_file,
+            |path| validate_game_file(path, "Dolphin", DOLPHIN_EXTENSIONS),
         )
     }
 
@@ -83,12 +87,12 @@ impl Pcsx2Builder {
         match FzfWrapper::builder()
             .confirm(format!(
                 "{} Use batch mode?\n\n\
-                 Batch mode will exit PCSX2 when the game closes.\n\
+                 Batch mode will exit Dolphin when the game closes.\n\
                  This is recommended for launching games directly.",
                 char::from(NerdFont::Terminal)
             ))
             .yes_text("Yes, use batch mode")
-            .no_text("No, keep PCSX2 open")
+            .no_text("No, keep Dolphin open")
             .confirm_dialog()?
         {
             ConfirmResult::Yes => Ok(true),
@@ -96,23 +100,22 @@ impl Pcsx2Builder {
         }
     }
 
-    fn format_command(game_file: &Path, batch_mode: bool, fullscreen: bool) -> String {
+    fn format_command(game_file: &PathBuf, batch_mode: bool, fullscreen: bool) -> String {
         let game_str = game_file.to_string_lossy();
 
         let mut parts = vec!["flatpak".to_string(), "run".to_string()];
 
-        parts.push(PCSX2_FLATPAK_ID.to_string());
+        parts.push(DOLPHIN_FLATPAK_ID.to_string());
 
         if batch_mode {
-            parts.push("-batch".to_string());
+            parts.push("-b".to_string());
         }
 
         if fullscreen {
-            parts.push("-fullscreen".to_string());
+            parts.push("-f".to_string());
         }
 
-        // Use -- to signal end of options (in case filename starts with -)
-        parts.push("--".to_string());
+        parts.push("-e".to_string());
         parts.push(format!("\"{}\"", game_str));
 
         parts.join(" ")

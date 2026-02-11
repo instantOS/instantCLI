@@ -5,9 +5,10 @@ mod state;
 use anyhow::{Context, Result, anyhow};
 
 use crate::game::config::{InstallationsConfig, InstantGameConfig};
-use crate::game::games::manager::AddGameOptions;
-use crate::game::games::manager::GameManager;
+use crate::game::games::AddGameOptions;
+use crate::game::games::GameManager;
 use crate::game::games::selection::{GameMenuEntry, select_game_menu_entry};
+use crate::game::operations::desktop;
 use crate::game::operations::launch_game;
 use crate::game::operations::steam;
 use crate::game::operations::sync::sync_game_saves;
@@ -30,6 +31,7 @@ enum GameAction {
     Move,
     Checkpoint,
     AddToSteam,
+    AddToDesktop,
     Back,
 }
 
@@ -42,6 +44,7 @@ impl std::fmt::Display for GameAction {
             GameAction::Move => write!(f, "move"),
             GameAction::Checkpoint => write!(f, "checkpoint"),
             GameAction::AddToSteam => write!(f, "add-to-steam"),
+            GameAction::AddToDesktop => write!(f, "add-to-desktop"),
             GameAction::Back => write!(f, "back"),
         }
     }
@@ -281,20 +284,27 @@ fn build_action_menu(game_name: &str, state: &GameState) -> Vec<GameActionItem> 
             .text(&status_text);
 
         // Add command details if game is already in Steam
-        if is_in_steam {
-            if let Ok(Some(shortcut)) = steam::get_game_shortcut(game_name) {
-                preview_builder = preview_builder.blank().text("Current shortcut command:");
+        if is_in_steam && let Ok(Some(shortcut)) = steam::get_game_shortcut(game_name) {
+            preview_builder = preview_builder.blank().text("Current shortcut details:");
 
-                let cmd = if shortcut.launch_options.is_empty() {
-                    format!("{} {}", shortcut.exe, shortcut.start_dir)
-                } else {
-                    format!(
-                        "{} {} {}",
-                        shortcut.exe, shortcut.start_dir, shortcut.launch_options
-                    )
-                };
-                preview_builder = preview_builder.subtext(&cmd);
+            preview_builder = preview_builder
+                .subtext(&format!("Exe:        {}", shortcut.exe))
+                .subtext(&format!("Start dir:  {}", shortcut.start_dir));
+
+            if !shortcut.launch_options.is_empty() {
+                preview_builder =
+                    preview_builder.subtext(&format!("Options:    {}", shortcut.launch_options));
             }
+
+            // Show the full command as Steam would run it
+            let full_cmd = if shortcut.launch_options.is_empty() {
+                shortcut.exe.clone()
+            } else {
+                format!("{} {}", shortcut.exe, shortcut.launch_options)
+            };
+            preview_builder = preview_builder
+                .blank()
+                .subtext(&format!("Full command: {}", full_cmd));
         }
 
         let preview = preview_builder
@@ -313,6 +323,54 @@ fn build_action_menu(game_name: &str, state: &GameState) -> Vec<GameActionItem> 
             action: GameAction::AddToSteam,
             preview,
             keywords: vec![],
+        });
+
+        // Add desktop shortcut option
+        let is_on_desktop = desktop::is_game_on_desktop(game_name).unwrap_or(false);
+        let desktop_status_text = if is_on_desktop {
+            format!(
+                "{} Already on Desktop",
+                format_icon_colored(NerdFont::Check, colors::GREEN)
+            )
+        } else {
+            format!(
+                "{} Not on Desktop",
+                format_icon_colored(NerdFont::Cross, colors::RED)
+            )
+        };
+
+        // Build preview with path details if already on desktop
+        let mut desktop_preview_builder = PreviewBuilder::new()
+            .header(NerdFont::Desktop, "Add to Desktop")
+            .text(&format!("Manage desktop shortcut for '{}'.", game_name))
+            .blank()
+            .text(&desktop_status_text);
+
+        // Add path details if game is already on desktop
+        if is_on_desktop && let Ok(Some(path)) = desktop::get_game_desktop_path(game_name) {
+            desktop_preview_builder = desktop_preview_builder
+                .blank()
+                .text("Current shortcut location:")
+                .subtext(&path.display().to_string());
+        }
+
+        let desktop_preview = desktop_preview_builder
+            .blank()
+            .text("Creates a .desktop file that launches the game through ins,")
+            .text("which automatically syncs saves before and after.")
+            .blank()
+            .subtext("The shortcut will be placed on your Desktop if possible,")
+            .subtext("otherwise in the applications menu.")
+            .build();
+
+        actions.push(GameActionItem {
+            display: format!(
+                "{} Add to Desktop",
+                format_icon_colored(NerdFont::Desktop, colors::MAUVE)
+            ),
+            action: GameAction::AddToDesktop,
+            preview: desktop_preview,
+            keywords: vec!["shortcut", "launcher"],
         });
     }
 
@@ -346,24 +404,16 @@ fn handle_action(
     match action {
         GameAction::Launch => {
             if state.launch_command.is_none() {
-                // Offer to build a launch command
-                match FzfWrapper::builder()
-                    .confirm(format!(
-                        "{} No launch command configured for '{}'.\n\n\
-                         Would you like to build one now?",
-                        char::from(NerdFont::Warning),
-                        game_name
-                    ))
-                    .yes_text("Build Launch Command")
-                    .no_text("Cancel")
-                    .confirm_dialog()?
-                {
-                    ConfirmResult::Yes => {
-                        if run_edit_launch_command_for_game(
-                            game_name,
-                            &state.game_config,
-                            &state.installations,
-                        )? {
+                // Show builder menu directly to let user choose manual or builder
+                match crate::game::platforms::build_launch_command()? {
+                    Some(command) => {
+                        // Save to game config
+                        let mut game_config = state.game_config.clone();
+                        if let Some(game) =
+                            game_config.games.iter_mut().find(|g| g.name.0 == game_name)
+                        {
+                            game.launch_command = Some(command.clone());
+                            game_config.save()?;
                             FzfWrapper::message(&format!(
                                 "{} Launch command saved. Launching game now...",
                                 char::from(NerdFont::Check)
@@ -372,7 +422,7 @@ fn handle_action(
                             return Ok(ActionResult::Stay);
                         }
                     }
-                    ConfirmResult::No | ConfirmResult::Cancelled => return Ok(ActionResult::Stay),
+                    None => return Ok(ActionResult::Stay),
                 }
             }
             if state.needs_setup {
@@ -478,6 +528,58 @@ fn handle_action(
                     }
                     Err(e) => {
                         FzfWrapper::message(&format!("Failed to add to Steam: {}", e))?;
+                    }
+                }
+            }
+            Ok(ActionResult::Stay)
+        }
+        GameAction::AddToDesktop => {
+            let launch_cmd = state.launch_command.as_deref().unwrap_or("");
+
+            if desktop::is_game_on_desktop(game_name).unwrap_or(false) {
+                if FzfWrapper::builder()
+                    .confirm(format!(
+                        "'{}' is already on the Desktop.\n\nRemove it?",
+                        game_name
+                    ))
+                    .yes_text("Remove from Desktop")
+                    .no_text("Keep it")
+                    .confirm_dialog()?
+                    == ConfirmResult::Yes
+                {
+                    match desktop::remove_game_from_desktop(game_name) {
+                        Ok(true) => {
+                            FzfWrapper::message(&format!("Removed '{}' from Desktop.", game_name))?;
+                        }
+                        Ok(false) => FzfWrapper::message(&format!(
+                            "'{}' was not found on the Desktop (maybe already removed).",
+                            game_name
+                        ))?,
+                        Err(e) => {
+                            FzfWrapper::message(&format!("Failed to remove from Desktop: {}", e))?
+                        }
+                    }
+                }
+            } else {
+                match desktop::add_game_to_desktop(game_name, launch_cmd) {
+                    Ok((true, Some(path))) => {
+                        FzfWrapper::message(&format!(
+                            "Added '{}' to Desktop.\n\nLocation: {}",
+                            game_name,
+                            path.display()
+                        ))?;
+                    }
+                    Ok((true, None)) => {
+                        FzfWrapper::message(&format!("Added '{}' to Desktop.", game_name))?;
+                    }
+                    Ok((false, _)) => {
+                        FzfWrapper::message(&format!(
+                            "'{}' is already on your Desktop.",
+                            game_name
+                        ))?;
+                    }
+                    Err(e) => {
+                        FzfWrapper::message(&format!("Failed to add to Desktop: {}", e))?;
                     }
                 }
             }
@@ -618,7 +720,11 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
                     Ok((true, steam_running)) => {
                         let base_msg = "Added 'ins game menu' to Steam.";
                         let msg = if steam_running {
-                            format!("{}\n\n{}", base_msg, steam::format_steam_running_warning("added"))
+                            format!(
+                                "{}\n\n{}",
+                                base_msg,
+                                steam::format_steam_running_warning("added")
+                            )
                         } else {
                             format!("{}\n\nRestart Steam to see it in your library.", base_msg)
                         };
@@ -629,6 +735,26 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
                     }
                     Err(e) => {
                         FzfWrapper::message(&format!("Failed to add to Steam: {}", e))?;
+                    }
+                }
+                continue;
+            }
+            GameMenuEntry::AddMenuToDesktop => {
+                match desktop::add_menu_to_desktop() {
+                    Ok((true, Some(path))) => {
+                        FzfWrapper::message(&format!(
+                            "Added 'ins game menu' to Desktop.\n\nLocation: {}",
+                            path.display()
+                        ))?;
+                    }
+                    Ok((true, None)) => {
+                        FzfWrapper::message("Added 'ins game menu' to Desktop.")?;
+                    }
+                    Ok((false, _)) => {
+                        FzfWrapper::message("'ins game menu' is already on your Desktop.")?;
+                    }
+                    Err(e) => {
+                        FzfWrapper::message(&format!("Failed to add to Desktop: {}", e))?;
                     }
                 }
                 continue;
@@ -677,38 +803,6 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
 }
 
 /// Run the edit menu for a specific game
-/// Run the edit launch command menu for a specific game
-fn run_edit_launch_command_for_game(
-    game_name: &str,
-    game_config: &InstantGameConfig,
-    installations: &InstallationsConfig,
-) -> Result<bool> {
-    let game_index = game_config
-        .games
-        .iter()
-        .position(|g| g.name.0 == game_name)
-        .ok_or_else(|| anyhow!("Game '{}' not found in games.toml", game_name))?;
-
-    let installation_index = installations
-        .installations
-        .iter()
-        .position(|i| i.game_name.0 == game_name);
-
-    let mut state = EditState::new(
-        game_config.clone(),
-        installations.clone(),
-        game_index,
-        installation_index,
-    );
-
-    if editors::edit_launch_command(&mut state)? {
-        state.save()?;
-        Ok(true)
-    } else {
-        Ok(false)
-    }
-}
-
 fn run_edit_menu_for_game(
     game_name: &str,
     game_config: &InstantGameConfig,

@@ -8,69 +8,10 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 
-/// Search for an AppImage in common locations with case-insensitive matching.
-///
-/// Takes a list of search paths (directories) and an expected filename,
-/// and returns the first match found, comparing filenames case-insensitively.
-///
-/// # Arguments
-/// * `search_paths` - List of directory paths to search (with ~ expansion supported)
-/// * `expected_name` - Expected filename (will be matched case-insensitively)
-///
-/// # Returns
-/// * `Some(PathBuf)` - Full path to the found AppImage
-/// * `None` - No matching AppImage found
-///
-/// # Example
-/// ```rust
-/// // Will find eden.AppImage, eden.appimage, EDEN.APPIMAGE, etc.
-/// let paths = &["~/AppImages", "~/.local/bin"];
-/// let found = find_appimage_case_insensitive(paths, "eden.appimage");
-/// ```
-pub fn find_appimage_case_insensitive(
-    search_paths: &[&str],
-    expected_name: &str,
-) -> Option<PathBuf> {
-    let expected_lower = expected_name.to_lowercase();
-
-    for search_dir in search_paths {
-        // Expand tilde if present
-        let expanded = shellexpand::tilde(search_dir);
-        let dir_path = PathBuf::from(expanded.as_ref());
-
-        // Check if directory exists
-        if !dir_path.exists() || !dir_path.is_dir() {
-            continue;
-        }
-
-        // Read directory entries and compare case-insensitively
-        let entries = match fs::read_dir(&dir_path) {
-            Ok(entries) => entries,
-            Err(_) => continue,
-        };
-
-        for entry in entries.flatten() {
-            let file_name = entry.file_name();
-            let file_name_str = file_name.to_string_lossy();
-
-            // Compare case-insensitively
-            if file_name_str.to_lowercase() == expected_lower {
-                let full_path = dir_path.join(&file_name);
-                if full_path.is_file() {
-                    return Some(full_path);
-                }
-            }
-        }
-    }
-
-    None
-}
-
 /// Search for an AppImage by full path patterns, matching filenames case-insensitively.
 ///
-/// Unlike `find_appimage_case_insensitive`, this takes full path patterns
-/// (e.g., `~/AppImages/eden.appimage`) and will match the filename part
-/// case-insensitively while preserving the directory structure.
+/// Takes full path patterns (e.g., `~/AppImages/eden.appimage`) and will match
+/// the filename part case-insensitively while preserving the directory structure.
 ///
 /// # Arguments
 /// * `search_paths` - List of full path patterns to check

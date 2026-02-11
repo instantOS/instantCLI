@@ -4,7 +4,7 @@ use super::ui::{
     DoctorMenuItem, FixableIssue, MenuAction, build_fix_menu_items, should_escalate,
     show_all_check_results,
 };
-use super::{DoctorCheck, PrivilegeLevel, run_all_checks};
+use super::{CheckStatus, DoctorCheck, PrivilegeLevel, run_all_checks};
 use crate::menu_utils::{FzfResult, FzfWrapper};
 use crate::ui::catppuccin::fzf_mocha_args;
 use crate::ui::nerd_font::NerdFont;
@@ -336,7 +336,11 @@ pub async fn fix_all_checks(max_concurrency: usize) -> Result<()> {
 
     let fixable: Vec<_> = results
         .iter()
-        .filter(|r| r.status.is_fixable() && (r.status.needs_fix() || r.status.is_warning()))
+        .filter(|r| {
+            r.status.is_fixable()
+                && (matches!(r.status, CheckStatus::Fail { .. })
+                    || matches!(r.status, CheckStatus::Warning { .. }))
+        })
         .collect();
 
     if fixable.is_empty() {
@@ -612,7 +616,11 @@ pub async fn fix_interactive(max_concurrency: usize) -> Result<()> {
 
     let fixable_issues: Vec<_> = results
         .iter()
-        .filter(|r| r.status.is_fixable() && (r.status.needs_fix() || r.status.is_warning()))
+        .filter(|r| {
+            r.status.is_fixable()
+                && (matches!(r.status, CheckStatus::Fail { .. })
+                    || matches!(r.status, CheckStatus::Warning { .. }))
+        })
         .map(FixableIssue::from_check_result)
         .collect();
 

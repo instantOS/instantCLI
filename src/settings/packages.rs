@@ -369,6 +369,6 @@ where
 
 /// Show confirmation dialog and return whether user confirmed.
 fn confirm_action(message: &str) -> Result<bool> {
-    let result = FzfWrapper::builder().confirm(message).show_confirmation()?;
+    let result = FzfWrapper::builder().confirm(message).confirm_dialog()?;
     Ok(matches!(result, ConfirmResult::Yes))
 }

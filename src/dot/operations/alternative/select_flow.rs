@@ -6,7 +6,8 @@ use anyhow::Result;
 use colored::Colorize;
 
 use crate::dot::config::DotfileConfig;
-use crate::dot::override_config::{DotfileSource, OverrideConfig, find_all_sources};
+use crate::dot::override_config::{DotfileSource, OverrideConfig};
+use crate::dot::sources;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
 use crate::ui::catppuccin::fzf_mocha_args;
 use crate::ui::prelude::*;
@@ -18,7 +19,7 @@ use super::picker::{MenuItem, SourceOption};
 
 pub(crate) fn run_select_flow(path: &Path, display: &str) -> Result<Flow> {
     let config = DotfileConfig::load(None)?;
-    let sources = find_all_sources(&config, path)?;
+    let sources = sources::list_sources_for_target(&config, path)?;
 
     if sources.is_empty() {
         emit(
@@ -216,7 +217,7 @@ fn run_source_selection_menu(
             }
             FzfResult::Selected(MenuItem::CreateAlternative) => {
                 cursor.update(&MenuItem::CreateAlternative, &menu);
-                let sources = find_all_sources(&config, path)?;
+                let sources = sources::list_sources_for_target(&config, path)?;
                 match run_create_flow(path, display, &sources)? {
                     Flow::Continue => continue,
                     other => return Ok(other),

@@ -57,7 +57,7 @@ impl Setting for BluetoothService {
                     .confirm("System does not appear to have Bluetooth hardware. Proceed anyway?")
                     .yes_text("Proceed")
                     .no_text("Cancel")
-                    .show_confirmation()?;
+                    .confirm_dialog()?;
 
                 match result {
                     ConfirmResult::Yes => {
@@ -415,7 +415,7 @@ impl Setting for BluetoothCapabilityCheck {
         FzfWrapper::builder()
             .message(message)
             .title("Bluetooth Capability Check")
-            .show_message()?;
+            .message_dialog()?;
         Ok(())
     }
 }

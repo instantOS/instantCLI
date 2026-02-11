@@ -171,6 +171,6 @@ fn confirm_uninstall(message: &str) -> Result<bool> {
         .confirm(message)
         .yes_text("Uninstall")
         .no_text("Cancel")
-        .show_confirmation()?;
+        .confirm_dialog()?;
     Ok(matches!(result, ConfirmResult::Yes))
 }

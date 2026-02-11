@@ -8,8 +8,9 @@
 //! - mGBA-Qt (Game Boy Advance emulator)
 //! - DuckStation (PlayStation 1 emulator)
 
-mod appimage_finder;
+pub(crate) mod appimage_finder;
 mod azahar;
+pub mod discovery;
 mod dolphin;
 mod duckstation;
 mod eden;
@@ -23,7 +24,9 @@ mod validation;
 use anyhow::Result;
 
 use crate::menu::protocol::FzfPreview;
-use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header};
+use crate::menu_utils::{
+    FzfResult, FzfSelectable, FzfWrapper, Header, TextEditOutcome, TextEditPrompt, prompt_text_edit,
+};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -39,6 +42,7 @@ pub use umu::UmuBuilder;
 /// Launcher type selection
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LauncherType {
+    Manual,
     UmuRun,
     Eden,
     DolphinFlatpak,
@@ -52,6 +56,7 @@ pub enum LauncherType {
 impl std::fmt::Display for LauncherType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            LauncherType::Manual => write!(f, "manual"),
             LauncherType::UmuRun => write!(f, "umu-run"),
             LauncherType::Eden => write!(f, "eden"),
             LauncherType::DolphinFlatpak => write!(f, "dolphin-flatpak"),
@@ -88,6 +93,28 @@ impl FzfSelectable for LauncherItem {
 /// Build launcher selection menu items
 fn build_launcher_items() -> Vec<LauncherItem> {
     vec![
+        LauncherItem {
+            launcher: LauncherType::Manual,
+            display: format!(
+                "{} Manual Entry",
+                format_icon_colored(NerdFont::Edit, colors::BLUE)
+            ),
+            preview: PreviewBuilder::new()
+                .header(NerdFont::Edit, "Manual Entry")
+                .text("Type the launch command directly.")
+                .blank()
+                .text("Enter any custom command to launch the game.")
+                .text("Useful for scripts, custom emulators, or")
+                .text("commands not covered by the builders.")
+                .blank()
+                .separator()
+                .blank()
+                .text("Examples:")
+                .bullet("flatpak run com.valvesoftware.Steam")
+                .bullet("./my-game-launcher.sh")
+                .bullet("/usr/games/my-emulator game.rom")
+                .build(),
+        },
         LauncherItem {
             launcher: LauncherType::UmuRun,
             display: format!(
@@ -165,15 +192,15 @@ fn build_launcher_items() -> Vec<LauncherItem> {
         LauncherItem {
             launcher: LauncherType::Pcsx2Flatpak,
             display: format!(
-                "{} PCSX2 Flatpak (PlayStation 2)",
+                "{} PCSX2 (PlayStation 2)",
                 format_icon_colored(NerdFont::Disc, colors::SAPPHIRE)
             ),
             preview: PreviewBuilder::new()
-                .header(NerdFont::Disc, "PCSX2 (Flatpak)")
+                .header(NerdFont::Disc, "PCSX2")
                 .text("PlayStation 2 emulator.")
                 .blank()
-                .text("Runs PS2 games via the Flatpak")
-                .text("version of PCSX2.")
+                .text("Runs PS2 games via EmuDeck AppImage")
+                .text("(auto-detected) or Flatpak fallback.")
                 .blank()
                 .separator()
                 .blank()
@@ -185,7 +212,11 @@ fn build_launcher_items() -> Vec<LauncherItem> {
                 .bullet(".gz - Gzip compressed")
                 .bullet(".elf/.irx - Executables")
                 .blank()
-                .subtext("Requires: net.pcsx2.PCSX2 flatpak")
+                .separator()
+                .blank()
+                .text("Installation:")
+                .bullet("Preferred: EmuDeck (includes AppImage)")
+                .bullet("Fallback: flatpak install flathub net.pcsx2.PCSX2")
                 .build(),
         },
         LauncherItem {
@@ -310,6 +341,7 @@ pub fn build_launch_command() -> Result<Option<String>> {
     };
 
     match launcher_type {
+        LauncherType::Manual => prompt_manual_command(),
         LauncherType::UmuRun => UmuBuilder::build_command(),
         LauncherType::Eden => EdenBuilder::build_command(),
         LauncherType::DolphinFlatpak => DolphinBuilder::build_command(),
@@ -318,5 +350,23 @@ pub fn build_launch_command() -> Result<Option<String>> {
         LauncherType::MgbaQt => MgbaBuilder::build_command(),
         LauncherType::DuckStation => DuckStationBuilder::build_command(),
         LauncherType::Back => Ok(None),
+    }
+}
+
+/// Prompt user to manually enter a launch command
+fn prompt_manual_command() -> Result<Option<String>> {
+    let prompt = TextEditPrompt::new("Launch command", None)
+        .header("Enter the launch command")
+        .ghost("e.g., flatpak run com.valvesoftware.Steam -applaunch 12345");
+
+    match prompt_text_edit(prompt)? {
+        TextEditOutcome::Updated(Some(command)) => {
+            if command.trim().is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(command.trim().to_string()))
+            }
+        }
+        _ => Ok(None),
     }
 }

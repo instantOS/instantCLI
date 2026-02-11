@@ -15,7 +15,7 @@ use crate::ui::nerd_font::NerdFont;
 use super::prompts::{
     FileSelectionPrompt, ask_fullscreen, confirm_command, select_file_with_validation,
 };
-use super::validation::{WINDOWS_EXTENSIONS, validate_windows_executable};
+use super::validation::{WINDOWS_EXTENSIONS, validate_game_file};
 
 /// Proton version selection
 #[derive(Debug, Clone)]
@@ -189,7 +189,7 @@ impl UmuBuilder {
                 format!("{} Type executable path", char::from(NerdFont::Edit)),
                 format!("{} Browse for executable", char::from(NerdFont::FolderOpen)),
             ),
-            validate_windows_executable,
+            |path| validate_game_file(path, "umu-run", WINDOWS_EXTENSIONS),
         )
     }
 

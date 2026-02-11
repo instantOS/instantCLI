@@ -283,7 +283,10 @@ struct AudioSourceItem {
 impl AudioSourceItem {
     fn new(info: AudioSourceInfo, checked: bool, defaults: &AudioDefaults) -> Self {
         let is_monitor = info.name.ends_with(".monitor");
-        let default_output = defaults.default_output_monitor();
+        let default_output = defaults
+            .sink
+            .as_ref()
+            .map(|sink| format!("{}.monitor", sink));
         let is_default_output = default_output.as_deref() == Some(&info.name);
         let is_default_input = defaults.source.as_deref() == Some(&info.name);
 

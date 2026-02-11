@@ -1,4 +1,4 @@
-use super::CheckResult;
+use super::{CheckResult, CheckStatus};
 use crate::menu_utils::{
     ConfirmResult, FzfPreview, FzfResult, FzfSelectable, FzfWrapper, MenuCursor,
 };
@@ -315,13 +315,17 @@ pub fn show_available_fixes(results: &[CheckResult]) {
     let fixable_issues: Vec<_> = results
         .iter()
         .filter(|result| {
-            (result.status.needs_fix() || result.status.is_warning()) && result.status.is_fixable()
+            (matches!(result.status, CheckStatus::Fail { .. })
+                || matches!(result.status, CheckStatus::Warning { .. }))
+                && result.status.is_fixable()
         })
         .collect();
 
     let non_fixable_failures: Vec<_> = results
         .iter()
-        .filter(|result| result.status.needs_fix() && !result.status.is_fixable())
+        .filter(|result| {
+            matches!(result.status, CheckStatus::Fail { .. }) && !result.status.is_fixable()
+        })
         .collect();
 
     match get_output_format() {

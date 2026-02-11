@@ -6,8 +6,9 @@ use crate::game::config::{
     Game, GameDependency, GameInstallation, InstallationsConfig, InstantGameConfig, PathContentKind,
 };
 use crate::game::deps::manager::{InstallDependencyOptions, install_dependency};
-use crate::game::games::manager::{AddGameOptions, GameManager};
+use crate::game::games::prompts;
 use crate::game::games::validation::validate_game_manager_initialized;
+use crate::game::games::{AddGameOptions, GameManager};
 use crate::game::utils::path::tilde_display_string;
 use crate::menu::protocol;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
@@ -512,8 +513,8 @@ fn ensure_game_entry(
         candidate.name
     );
 
-    let description = GameManager::get_game_description()?;
-    let launch_command = GameManager::get_launch_command()?;
+    let description = prompts::get_game_description()?;
+    let launch_command = prompts::get_launch_command()?;
 
     let mut game = Game::new(candidate.name.clone());
 

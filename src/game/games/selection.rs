@@ -1,4 +1,5 @@
 use crate::game::config::{Game, InstallationsConfig, InstantGameConfig, PathContentKind};
+use crate::game::utils::path::tilde_display_string;
 use crate::game::utils::save_files::{
     format_file_size, format_system_time_for_display, get_save_directory_info,
 };
@@ -16,6 +17,7 @@ pub enum GameMenuEntry {
     SetupGames,
     SyncAll,
     AddMenuToSteam,
+    AddMenuToDesktop,
     CloseMenu,
 }
 
@@ -59,6 +61,12 @@ impl FzfSelectable for GameMenuEntry {
                     format_icon_colored(NerdFont::Steam, colors::SAPPHIRE)
                 )
             }
+            GameMenuEntry::AddMenuToDesktop => {
+                format!(
+                    "{} Add Menu to Desktop",
+                    format_icon_colored(NerdFont::Desktop, colors::MAUVE)
+                )
+            }
             GameMenuEntry::CloseMenu => format!("{} Close Menu", format_back_icon()),
         }
     }
@@ -70,6 +78,7 @@ impl FzfSelectable for GameMenuEntry {
             GameMenuEntry::SetupGames => "!__setup_games__".to_string(),
             GameMenuEntry::SyncAll => "!__sync_all__".to_string(),
             GameMenuEntry::AddMenuToSteam => "!__add_menu_to_steam__".to_string(),
+            GameMenuEntry::AddMenuToDesktop => "!__add_menu_to_desktop__".to_string(),
             GameMenuEntry::CloseMenu => "!__close_menu__".to_string(),
         }
     }
@@ -138,6 +147,16 @@ impl FzfSelectable for GameMenuEntry {
                 .text("directly from your Steam library.")
                 .blank()
                 .subtext("Steam must not be running when adding shortcuts.")
+                .build(),
+            GameMenuEntry::AddMenuToDesktop => PreviewBuilder::new()
+                .header(NerdFont::Desktop, "Add Menu to Desktop")
+                .text("Create a desktop shortcut for the game menu.")
+                .blank()
+                .text("Launches ins game menu in a terminal emulator")
+                .text("directly from your desktop.")
+                .blank()
+                .subtext("The shortcut will be placed on your Desktop if possible,")
+                .subtext("otherwise in the applications menu.")
                 .build(),
             GameMenuEntry::CloseMenu => PreviewBuilder::new()
                 .header(NerdFont::Cross, "Close Menu")
@@ -224,10 +243,7 @@ impl Game {
 
         // Installation section
         if let Some(install) = installation {
-            let path_display = install
-                .save_path
-                .to_tilde_string()
-                .unwrap_or_else(|_| install.save_path.as_path().to_string_lossy().to_string());
+            let path_display = tilde_display_string(&install.save_path);
 
             builder = builder
                 .blank()
@@ -352,6 +368,7 @@ pub fn select_game_menu_entry(cursor: &mut MenuCursor) -> Result<Option<GameMenu
         GameMenuEntry::SetupGames,
         GameMenuEntry::SyncAll,
         GameMenuEntry::AddMenuToSteam,
+        GameMenuEntry::AddMenuToDesktop,
         GameMenuEntry::CloseMenu,
     ];
 
