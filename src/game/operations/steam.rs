@@ -3,21 +3,21 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, anyhow, bail};
 
 #[derive(Debug, Clone)]
-struct SteamShortcut {
-    app_name: String,
-    exe: String,
-    start_dir: String,
-    icon: String,
-    shortcut_path: String,
-    launch_options: String,
-    is_hidden: u32,
-    allow_desktop_config: u32,
-    allow_overlay: u32,
-    openvr: u32,
-    devkit: u32,
-    devkit_game_id: String,
-    last_play_time: u32,
-    tags: Vec<String>,
+pub struct SteamShortcut {
+    pub app_name: String,
+    pub exe: String,
+    pub start_dir: String,
+    pub icon: String,
+    pub shortcut_path: String,
+    pub launch_options: String,
+    pub is_hidden: u32,
+    pub allow_desktop_config: u32,
+    pub allow_overlay: u32,
+    pub openvr: u32,
+    pub devkit: u32,
+    pub devkit_game_id: String,
+    pub last_play_time: u32,
+    pub tags: Vec<String>,
 }
 
 impl SteamShortcut {
@@ -370,11 +370,12 @@ fn build_launch_options(game_name: &str) -> String {
     }
 }
 
-pub fn add_game_to_steam(game_name: &str, _launch_command: &str) -> Result<bool> {
-    if is_steam_running() {
-        bail!(
-            "Steam is currently running. Please close Steam before adding shortcuts.\n\
-             Steam overwrites shortcuts.vdf while running."
+pub fn add_game_to_steam(game_name: &str, _launch_command: &str) -> Result<(bool, bool)> {
+    let steam_running = is_steam_running();
+    if steam_running {
+        eprintln!(
+            "Warning: Steam is currently running. Shortcuts added now will only appear after restarting Steam.\n\
+             Steam may overwrite shortcuts.vdf when it exits."
         );
     }
 
@@ -431,7 +432,7 @@ pub fn add_game_to_steam(game_name: &str, _launch_command: &str) -> Result<bool>
         added_count += 1;
     }
 
-    Ok(added_count > 0)
+    Ok((added_count > 0, steam_running))
 }
 
 pub fn is_game_in_steam(game_name: &str) -> Result<bool> {
@@ -455,11 +456,36 @@ pub fn is_game_in_steam(game_name: &str) -> Result<bool> {
     Ok(false)
 }
 
-pub fn remove_game_from_steam(game_name: &str) -> Result<bool> {
-    if is_steam_running() {
-        bail!(
-            "Steam is currently running. Please close Steam before modifying shortcuts.\n\
-             Steam overwrites shortcuts.vdf while running."
+/// Get shortcut details for a game if it exists in Steam
+pub fn get_game_shortcut(game_name: &str) -> Result<Option<SteamShortcut>> {
+    let userdata_dirs = find_steam_userdata_dirs()?;
+
+    for userdata_dir in &userdata_dirs {
+        let vdf_path = shortcuts_vdf_path(userdata_dir);
+        let shortcuts = read_shortcuts_vdf(&vdf_path).unwrap_or_default();
+        if let Some(shortcut) = shortcuts.iter().find(|s| s.app_name == game_name).cloned() {
+            return Ok(Some(shortcut));
+        }
+    }
+
+    Ok(None)
+}
+
+/// Build a user-friendly warning message when Steam is running during shortcut modifications
+pub fn format_steam_running_warning(operation: &str) -> String {
+    format!(
+        "⚠️  Steam is currently running.\n\
+         The shortcut has been {operation}, but changes will only take effect after restarting Steam.\n\
+         Note: If Steam exits before you restart, the changes may be lost."
+    )
+}
+
+pub fn remove_game_from_steam(game_name: &str) -> Result<(bool, bool)> {
+    let steam_running = is_steam_running();
+    if steam_running {
+        eprintln!(
+            "Warning: Steam is currently running. Shortcuts removed now will only be removed after restarting Steam.\n\
+             Steam may overwrite shortcuts.vdf when it exits."
         );
     }
 
@@ -497,16 +523,17 @@ pub fn remove_game_from_steam(game_name: &str) -> Result<bool> {
         }
     }
 
-    Ok(removed_count > 0)
+    Ok((removed_count > 0, steam_running))
 }
 
-pub fn add_game_menu_to_steam() -> Result<bool> {
+pub fn add_game_menu_to_steam() -> Result<(bool, bool)> {
     use crate::common::terminal::detect_terminal;
 
-    if is_steam_running() {
-        bail!(
-            "Steam is currently running. Please close Steam before adding shortcuts.\n\
-             Steam overwrites shortcuts.vdf while running."
+    let steam_running = is_steam_running();
+    if steam_running {
+        eprintln!(
+            "Warning: Steam is currently running. Shortcuts added now will only appear after restarting Steam.\n\
+             Steam may overwrite shortcuts.vdf when it exits."
         );
     }
 
@@ -537,7 +564,10 @@ pub fn add_game_menu_to_steam() -> Result<bool> {
     // Build launch options for the game menu shortcut
     // On SteamOS with AppImage, we need --appimage-extract-and-run
     let launch_options = if is_appimage() && is_steamos() {
-        format!("-- \"{}\" --appimage-extract-and-run game menu", ins_bin_str)
+        format!(
+            "-- \"{}\" --appimage-extract-and-run game menu",
+            ins_bin_str
+        )
     } else {
         format!("-- \"{}\" game menu", ins_bin_str)
     };
@@ -576,7 +606,7 @@ pub fn add_game_menu_to_steam() -> Result<bool> {
         added_count += 1;
     }
 
-    Ok(added_count > 0)
+    Ok((added_count > 0, steam_running))
 }
 
 #[cfg(test)]

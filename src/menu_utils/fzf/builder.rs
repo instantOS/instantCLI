@@ -411,7 +411,9 @@ impl FzfBuilder {
         const EXTRA_WIDE_PADDING: &str = "                                                                                                                                                                                                                                                                    ";
 
         // Check if any item has a preview to determine appropriate padding
-        let has_previews = items.iter().any(|item| !matches!(item.fzf_preview(), FzfPreview::None));
+        let has_previews = items
+            .iter()
+            .any(|item| !matches!(item.fzf_preview(), FzfPreview::None));
 
         for item in items {
             let display = item.fzf_display_text();

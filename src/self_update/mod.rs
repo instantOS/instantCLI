@@ -140,7 +140,10 @@ struct CrateInfo {
 }
 
 /// Fetch the latest release from GitHub that has binaries available
-async fn fetch_latest_release_with_binaries(target: &str, is_steamos: bool) -> Result<GitHubRelease> {
+async fn fetch_latest_release_with_binaries(
+    target: &str,
+    is_steamos: bool,
+) -> Result<GitHubRelease> {
     let url = format!("{}/{}/{}/releases", GITHUB_API_URL, REPO_OWNER, REPO_NAME);
 
     let client = reqwest::Client::builder()
@@ -170,7 +173,8 @@ async fn fetch_latest_release_with_binaries(target: &str, is_steamos: bool) -> R
             if is_steamos {
                 a.name.ends_with(".AppImage") && !a.name.contains(".sha256")
             } else {
-                a.name.contains(target) && (a.name.ends_with(".tar.zst") || a.name.ends_with(".tgz"))
+                a.name.contains(target)
+                    && (a.name.ends_with(".tar.zst") || a.name.ends_with(".tgz"))
             }
         });
 
@@ -265,7 +269,8 @@ fn find_asset_url(
             .assets
             .iter()
             .find(|a| {
-                a.name.contains(target) && (a.name.ends_with(".tar.zst") || a.name.ends_with(".tgz"))
+                a.name.contains(target)
+                    && (a.name.ends_with(".tar.zst") || a.name.ends_with(".tgz"))
             })
             .ok_or_else(|| anyhow!("No prebuilt archive found for {}", target))?
     };
@@ -327,7 +332,8 @@ async fn download_file(url: &str, dest: &Path, show_progress: bool) -> Result<()
 
     while let Some(item) = stream.next().await {
         let chunk: bytes::Bytes = item.context("Error while downloading file")?;
-        file.write_all(&chunk).context("Error while writing to file")?;
+        file.write_all(&chunk)
+            .context("Error while writing to file")?;
         let new = downloaded + (chunk.len() as u64);
         downloaded = new;
         if let Some(ref pb) = pb {

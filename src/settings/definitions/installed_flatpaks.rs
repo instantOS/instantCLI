@@ -4,9 +4,9 @@
 
 use anyhow::{Context, Result};
 
-use crate::common::package::{uninstall_packages, PackageManager};
-use crate::menu_utils::{select_one_with_style, FzfResult, FzfSelectable, FzfWrapper, Header};
-use crate::preview::{preview_command_streaming, PreviewId};
+use crate::common::package::{PackageManager, uninstall_packages};
+use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, select_one_with_style};
+use crate::preview::{PreviewId, preview_command_streaming};
 use crate::settings::context::SettingsContext;
 use crate::settings::deps::FLATPAK;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};

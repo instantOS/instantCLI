@@ -273,23 +273,45 @@ fn build_action_menu(game_name: &str, state: &GameState) -> Vec<GameActionItem> 
             )
         };
 
+        // Build preview with command details if already in Steam
+        let mut preview_builder = PreviewBuilder::new()
+            .header(NerdFont::Steam, "Add to Steam")
+            .text(&format!("Manage Steam shortcut for '{}'.", game_name))
+            .blank()
+            .text(&status_text);
+
+        // Add command details if game is already in Steam
+        if is_in_steam {
+            if let Ok(Some(shortcut)) = steam::get_game_shortcut(game_name) {
+                preview_builder = preview_builder.blank().text("Current shortcut command:");
+
+                let cmd = if shortcut.launch_options.is_empty() {
+                    format!("{} {}", shortcut.exe, shortcut.start_dir)
+                } else {
+                    format!(
+                        "{} {} {}",
+                        shortcut.exe, shortcut.start_dir, shortcut.launch_options
+                    )
+                };
+                preview_builder = preview_builder.subtext(&cmd);
+            }
+        }
+
+        let preview = preview_builder
+            .blank()
+            .text("The shortcut will launch the game through ins,")
+            .text("which automatically syncs saves before and after.")
+            .blank()
+            .subtext("Note: Restart Steam after adding to see the shortcut.")
+            .build();
+
         actions.push(GameActionItem {
             display: format!(
                 "{} Add to Steam",
                 format_icon_colored(NerdFont::Steam, colors::SAPPHIRE)
             ),
             action: GameAction::AddToSteam,
-            preview: PreviewBuilder::new()
-                .header(NerdFont::Steam, "Add to Steam")
-                .text(&format!("Manage Steam shortcut for '{}'.", game_name))
-                .blank()
-                .text(&status_text)
-                .blank()
-                .text("The shortcut will launch the game through ins,")
-                .text("which automatically syncs saves before and after.")
-                .blank()
-                .subtext("Steam must not be running when modifying shortcuts.")
-                .build(),
+            preview,
             keywords: vec![],
         });
     }
@@ -410,11 +432,20 @@ fn handle_action(
                     == ConfirmResult::Yes
                 {
                     match steam::remove_game_from_steam(game_name) {
-                        Ok(true) => FzfWrapper::message(&format!(
-                            "Removed '{}' from Steam.\n\nRestart Steam to update your library.",
-                            game_name
-                        ))?,
-                        Ok(false) => FzfWrapper::message(&format!(
+                        Ok((true, steam_running)) => {
+                            let base_msg = format!("Removed '{}' from Steam.", game_name);
+                            let msg = if steam_running {
+                                format!(
+                                    "{}\n\n{}",
+                                    base_msg,
+                                    steam::format_steam_running_warning("removed")
+                                )
+                            } else {
+                                format!("{}\n\nRestart Steam to update your library.", base_msg)
+                            };
+                            FzfWrapper::message(&msg)?;
+                        }
+                        Ok((false, _)) => FzfWrapper::message(&format!(
                             "'{}' was not found in Steam (maybe already removed).",
                             game_name
                         ))?,
@@ -425,13 +456,21 @@ fn handle_action(
                 }
             } else {
                 match steam::add_game_to_steam(game_name, launch_cmd) {
-                    Ok(true) => {
-                        FzfWrapper::message(&format!(
-                            "Added '{}' to Steam as a non-Steam game.\n\nRestart Steam to see it in your library.",
-                            game_name
-                        ))?;
+                    Ok((true, steam_running)) => {
+                        let base_msg =
+                            format!("Added '{}' to Steam as a non-Steam game.", game_name);
+                        let msg = if steam_running {
+                            format!(
+                                "{}\n\n{}",
+                                base_msg,
+                                steam::format_steam_running_warning("added")
+                            )
+                        } else {
+                            format!("{}\n\nRestart Steam to see it in your library.", base_msg)
+                        };
+                        FzfWrapper::message(&msg)?;
                     }
-                    Ok(false) => {
+                    Ok((false, _)) => {
                         FzfWrapper::message(&format!(
                             "'{}' is already in your Steam library.",
                             game_name
@@ -576,12 +615,16 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
             }
             GameMenuEntry::AddMenuToSteam => {
                 match steam::add_game_menu_to_steam() {
-                    Ok(true) => {
-                        FzfWrapper::message(
-                            "Added 'ins game menu' to Steam.\n\nRestart Steam to see it in your library.",
-                        )?;
+                    Ok((true, steam_running)) => {
+                        let base_msg = "Added 'ins game menu' to Steam.";
+                        let msg = if steam_running {
+                            format!("{}\n\n{}", base_msg, steam::format_steam_running_warning("added"))
+                        } else {
+                            format!("{}\n\nRestart Steam to see it in your library.", base_msg)
+                        };
+                        FzfWrapper::message(&msg)?;
                     }
-                    Ok(false) => {
+                    Ok((false, _)) => {
                         FzfWrapper::message("'ins game menu' is already in your Steam library.")?;
                     }
                     Err(e) => {
