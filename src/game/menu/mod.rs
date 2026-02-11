@@ -285,17 +285,26 @@ fn build_action_menu(game_name: &str, state: &GameState) -> Vec<GameActionItem> 
 
         // Add command details if game is already in Steam
         if is_in_steam && let Ok(Some(shortcut)) = steam::get_game_shortcut(game_name) {
-            preview_builder = preview_builder.blank().text("Current shortcut command:");
+            preview_builder = preview_builder.blank().text("Current shortcut details:");
 
-            let cmd = if shortcut.launch_options.is_empty() {
-                format!("{} {}", shortcut.exe, shortcut.start_dir)
+            preview_builder = preview_builder
+                .subtext(&format!("Exe:        {}", shortcut.exe))
+                .subtext(&format!("Start dir:  {}", shortcut.start_dir));
+
+            if !shortcut.launch_options.is_empty() {
+                preview_builder = preview_builder
+                    .subtext(&format!("Options:    {}", shortcut.launch_options));
+            }
+
+            // Show the full command as Steam would run it
+            let full_cmd = if shortcut.launch_options.is_empty() {
+                shortcut.exe.clone()
             } else {
-                format!(
-                    "{} {} {}",
-                    shortcut.exe, shortcut.start_dir, shortcut.launch_options
-                )
+                format!("{} {}", shortcut.exe, shortcut.launch_options)
             };
-            preview_builder = preview_builder.subtext(&cmd);
+            preview_builder = preview_builder
+                .blank()
+                .subtext(&format!("Full command: {}", full_cmd));
         }
 
         let preview = preview_builder
