@@ -2,13 +2,7 @@ use super::manager::GameCreationContext;
 use super::prompts;
 use crate::common::TildePath;
 use crate::game::config::PathContentKind;
-use crate::game::platforms::discovery::DiscoveredGame;
-use crate::game::platforms::discovery::azahar::{self as azahar_discovery, AzaharDiscoveredGame};
-use crate::game::platforms::discovery::duckstation::{
-    self as duckstation_discovery, DuckstationDiscoveredMemcard,
-};
-use crate::game::platforms::discovery::eden::{self as eden_discovery, EdenDiscoveredGame};
-use crate::game::platforms::discovery::pcsx2::{self as pcsx2_discovery, Pcsx2DiscoveredMemcard};
+use crate::game::platforms::discovery::{self, DiscoveredGame};
 use crate::game::utils::safeguards::{PathUsage, ensure_safe_path};
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header};
 use crate::ui::catppuccin::{colors, format_icon_colored, fzf_mocha_args};
@@ -45,54 +39,13 @@ pub(super) fn maybe_prefill_from_emulators(
     options: AddGameOptions,
     context: &GameCreationContext,
 ) -> Result<EmulatorPrefillResult> {
-    let eden_installed = eden_discovery::is_eden_installed();
-    let pcsx2_installed = pcsx2_discovery::is_pcsx2_installed();
-    let duckstation_installed = duckstation_discovery::is_duckstation_installed();
-    let azahar_installed = azahar_discovery::is_azahar_installed();
+    let discovered = discovery::discover_all()?;
 
-    if !eden_installed && !pcsx2_installed && !duckstation_installed && !azahar_installed {
+    if discovered.is_empty() {
         return Ok(EmulatorPrefillResult::Continue(options));
     }
 
-    let eden_games = if eden_installed {
-        eden_discovery::discover_eden_games()?
-    } else {
-        Vec::new()
-    };
-
-    let pcsx2_memcards = if pcsx2_installed {
-        pcsx2_discovery::discover_pcsx2_memcards()?
-    } else {
-        Vec::new()
-    };
-
-    let duckstation_memcards = if duckstation_installed {
-        duckstation_discovery::discover_duckstation_memcards()?
-    } else {
-        Vec::new()
-    };
-
-    let azahar_games = if azahar_installed {
-        azahar_discovery::discover_azahar_games()?
-    } else {
-        Vec::new()
-    };
-
-    if eden_games.is_empty()
-        && pcsx2_memcards.is_empty()
-        && duckstation_memcards.is_empty()
-        && azahar_games.is_empty()
-    {
-        return Ok(EmulatorPrefillResult::Continue(options));
-    }
-
-    let items = classify_discovered_items(
-        &eden_games,
-        &pcsx2_memcards,
-        &duckstation_memcards,
-        &azahar_games,
-        context,
-    );
+    let items = classify_discovered_items(discovered, context);
 
     let result = FzfWrapper::builder()
         .header(Header::fancy("Games"))
@@ -227,68 +180,17 @@ fn find_existing_game_for_save(save_path: &Path, context: &GameCreationContext) 
 }
 
 fn classify_discovered_items(
-    eden_games: &[EdenDiscoveredGame],
-    pcsx2_memcards: &[Pcsx2DiscoveredMemcard],
-    duckstation_memcards: &[DuckstationDiscoveredMemcard],
-    azahar_games: &[AzaharDiscoveredGame],
+    discovered: Vec<Box<dyn DiscoveredGame>>,
     context: &GameCreationContext,
 ) -> Vec<AddMethodItem> {
-    let total_count =
-        eden_games.len() + pcsx2_memcards.len() + duckstation_memcards.len() + azahar_games.len();
-    let mut items: Vec<AddMethodItem> = Vec::with_capacity(total_count + 1);
-
+    let mut items: Vec<AddMethodItem> = Vec::with_capacity(discovered.len() + 1);
     items.push(AddMethodItem::ManualEntry);
 
-    for game in eden_games {
-        match find_existing_game_for_save(&game.save_path, context) {
-            Some(existing_name) => {
-                items.push(AddMethodItem::DiscoveredGame(Box::new(
-                    EdenDiscoveredGame::existing(game.clone(), existing_name),
-                )));
-            }
-            None => {
-                items.push(AddMethodItem::DiscoveredGame(Box::new(game.clone())));
-            }
+    for mut game in discovered {
+        if let Some(existing_name) = find_existing_game_for_save(game.save_path(), context) {
+            game.set_existing(existing_name);
         }
-    }
-
-    for memcard in pcsx2_memcards {
-        match find_existing_game_for_save(&memcard.memcard_path, context) {
-            Some(existing_name) => {
-                items.push(AddMethodItem::DiscoveredGame(Box::new(
-                    Pcsx2DiscoveredMemcard::existing(memcard.clone(), existing_name),
-                )));
-            }
-            None => {
-                items.push(AddMethodItem::DiscoveredGame(Box::new(memcard.clone())));
-            }
-        }
-    }
-
-    for memcard in duckstation_memcards {
-        match find_existing_game_for_save(&memcard.memcard_path, context) {
-            Some(existing_name) => {
-                items.push(AddMethodItem::DiscoveredGame(Box::new(
-                    DuckstationDiscoveredMemcard::existing(memcard.clone(), existing_name),
-                )));
-            }
-            None => {
-                items.push(AddMethodItem::DiscoveredGame(Box::new(memcard.clone())));
-            }
-        }
-    }
-
-    for game in azahar_games {
-        match find_existing_game_for_save(&game.save_path, context) {
-            Some(existing_name) => {
-                items.push(AddMethodItem::DiscoveredGame(Box::new(
-                    AzaharDiscoveredGame::existing(game.clone(), existing_name),
-                )));
-            }
-            None => {
-                items.push(AddMethodItem::DiscoveredGame(Box::new(game.clone())));
-            }
-        }
+        items.push(AddMethodItem::DiscoveredGame(game));
     }
 
     items

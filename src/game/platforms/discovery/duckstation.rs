@@ -112,6 +112,11 @@ impl DiscoveredGame for DuckstationDiscoveredMemcard {
         self.tracked_name.as_deref()
     }
 
+    fn set_existing(&mut self, tracked_name: String) {
+        self.is_existing = true;
+        self.tracked_name = Some(tracked_name);
+    }
+
     fn build_preview(&self) -> FzfPreview {
         let save_display = tilde_display_string(&TildePath::new(self.memcard_path.clone()));
         let header_name = self.tracked_name.as_deref().unwrap_or(&self.display_name);
