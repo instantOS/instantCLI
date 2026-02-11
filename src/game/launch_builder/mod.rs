@@ -191,15 +191,15 @@ fn build_launcher_items() -> Vec<LauncherItem> {
         LauncherItem {
             launcher: LauncherType::Pcsx2Flatpak,
             display: format!(
-                "{} PCSX2 Flatpak (PlayStation 2)",
+                "{} PCSX2 (PlayStation 2)",
                 format_icon_colored(NerdFont::Disc, colors::SAPPHIRE)
             ),
             preview: PreviewBuilder::new()
-                .header(NerdFont::Disc, "PCSX2 (Flatpak)")
+                .header(NerdFont::Disc, "PCSX2")
                 .text("PlayStation 2 emulator.")
                 .blank()
-                .text("Runs PS2 games via the Flatpak")
-                .text("version of PCSX2.")
+                .text("Runs PS2 games via EmuDeck AppImage")
+                .text("(auto-detected) or Flatpak fallback.")
                 .blank()
                 .separator()
                 .blank()
@@ -211,7 +211,11 @@ fn build_launcher_items() -> Vec<LauncherItem> {
                 .bullet(".gz - Gzip compressed")
                 .bullet(".elf/.irx - Executables")
                 .blank()
-                .subtext("Requires: net.pcsx2.PCSX2 flatpak")
+                .separator()
+                .blank()
+                .text("Installation:")
+                .bullet("Preferred: EmuDeck (includes AppImage)")
+                .bullet("Fallback: flatpak install flathub net.pcsx2.PCSX2")
                 .build(),
         },
         LauncherItem {

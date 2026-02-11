@@ -70,7 +70,7 @@ fn select_launch_command_input_method(
             .bullet("umu-run - Wine/Proton games")
             .bullet("Eden - Nintendo Switch emulator")
             .bullet("Dolphin Flatpak - GameCube/Wii")
-            .bullet("PCSX2 Flatpak - PlayStation 2")
+            .bullet("PCSX2 - PlayStation 2 (EmuDeck/Flatpak)")
             .blank()
             .text("The builder validates files and")
             .text("generates a ready-to-use command.")
