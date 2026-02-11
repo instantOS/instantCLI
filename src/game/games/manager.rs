@@ -3,11 +3,15 @@ use crate::common::TildePath;
 use crate::game::config::{
     Game, GameInstallation, InstallationsConfig, InstantGameConfig, PathContentKind,
 };
+use crate::game::launch_builder::eden_discovery;
 use crate::game::utils::safeguards::{PathUsage, ensure_safe_path};
 use crate::menu_utils::{
-    ConfirmResult, FilePickerScope, FzfWrapper, PathInputBuilder, PathInputSelection,
+    ConfirmResult, FilePickerScope, FzfResult, FzfSelectable, FzfWrapper, Header, PathInputBuilder,
+    PathInputSelection,
 };
+use crate::ui::catppuccin::{colors, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
+use crate::ui::preview::PreviewBuilder;
 use anyhow::{Context, Result, anyhow};
 use std::fs;
 
@@ -429,9 +433,16 @@ impl GameManager {
 }
 
 fn resolve_add_game_details(
-    options: AddGameOptions,
+    mut options: AddGameOptions,
     context: &GameCreationContext,
 ) -> Result<ResolvedGameDetails> {
+    let interactive_prompts = options.name.is_none();
+
+    // In interactive mode, offer Eden discovery before manual entry
+    if interactive_prompts {
+        options = maybe_prefill_from_eden(options, context)?;
+    }
+
     let AddGameOptions {
         name,
         description,
@@ -439,8 +450,6 @@ fn resolve_add_game_details(
         save_path,
         create_save_path,
     } = options;
-
-    let interactive_prompts = name.is_none();
 
     let game_name = match name {
         Some(raw_name) => {
@@ -526,6 +535,160 @@ fn resolve_add_game_details(
         save_path,
         save_path_type,
     })
+}
+
+/// Offer Eden game discovery as an alternative to manual entry.
+///
+/// If Eden is installed and games with saves are found, presents a selection
+/// menu. If the user picks a discovered game, the options are prepopulated
+/// with name, launch command, and save path from the discovered data.
+fn maybe_prefill_from_eden(
+    options: AddGameOptions,
+    context: &GameCreationContext,
+) -> Result<AddGameOptions> {
+    use crate::game::launch_builder::EdenBuilder;
+
+    if !eden_discovery::is_eden_installed() {
+        return Ok(options);
+    }
+
+    let discovered = eden_discovery::discover_eden_games()?;
+    if discovered.is_empty() {
+        return Ok(options);
+    }
+
+    // Filter out games already in config
+    let available: Vec<_> = discovered
+        .into_iter()
+        .filter(|g| !context.game_exists(&g.display_name))
+        .collect();
+
+    if available.is_empty() {
+        return Ok(options);
+    }
+
+    // Build selection items
+    let mut items: Vec<AddMethodItem> = Vec::with_capacity(available.len() + 1);
+
+    // Manual entry option first
+    items.push(AddMethodItem::ManualEntry);
+
+    // Discovered games
+    for game in &available {
+        items.push(AddMethodItem::EdenGame(game.clone()));
+    }
+
+    let result = FzfWrapper::builder()
+        .header(Header::fancy("Add Game"))
+        .prompt("Select")
+        .args(fzf_mocha_args())
+        .responsive_layout()
+        .select_padded(items)?;
+
+    match result {
+        FzfResult::Selected(AddMethodItem::EdenGame(game)) => {
+            // Build the launch command if we have a ROM path
+            let launch_command = match game.game_path {
+                Some(ref game_file) => match EdenBuilder::find_or_select_eden()? {
+                    Some(eden_path) => {
+                        let eden_str = eden_path.to_string_lossy();
+                        let game_str = game_file.to_string_lossy();
+                        Some(format!("\"{}\" -g \"{}\"", eden_str, game_str))
+                    }
+                    None => None,
+                },
+                None => None,
+            };
+
+            Ok(AddGameOptions {
+                name: Some(game.display_name),
+                description: None,
+                launch_command,
+                save_path: Some(game.save_path.to_string_lossy().to_string()),
+                create_save_path: false,
+            })
+        }
+        FzfResult::Selected(AddMethodItem::ManualEntry) => Ok(options),
+        _ => Ok(options),
+    }
+}
+
+/// Selection item for the add-game method chooser
+#[derive(Clone)]
+enum AddMethodItem {
+    ManualEntry,
+    EdenGame(eden_discovery::EdenDiscoveredGame),
+}
+
+impl FzfSelectable for AddMethodItem {
+    fn fzf_display_text(&self) -> String {
+        match self {
+            AddMethodItem::ManualEntry => {
+                format!(
+                    "{} Enter a new game manually",
+                    format_icon_colored(NerdFont::Edit, colors::BLUE)
+                )
+            }
+            AddMethodItem::EdenGame(game) => {
+                format!(
+                    "{} {} (Switch)",
+                    format_icon_colored(NerdFont::Gamepad, colors::GREEN),
+                    game.display_name,
+                )
+            }
+        }
+    }
+
+    fn fzf_key(&self) -> String {
+        match self {
+            AddMethodItem::ManualEntry => "manual".to_string(),
+            AddMethodItem::EdenGame(game) => game.title_id.clone(),
+        }
+    }
+
+    fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
+        match self {
+            AddMethodItem::ManualEntry => PreviewBuilder::new()
+                .header(NerdFont::Edit, "Manual Entry")
+                .text("Enter game details manually.")
+                .blank()
+                .text("You will be prompted for:")
+                .bullet("Game name")
+                .bullet("Description (optional)")
+                .bullet("Launch command (optional)")
+                .bullet("Save data path")
+                .build(),
+            AddMethodItem::EdenGame(game) => {
+                let home = dirs::home_dir()
+                    .map(|h| h.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                let save_display = game.save_path.to_string_lossy().replace(&home, "~");
+
+                let mut builder = PreviewBuilder::new()
+                    .header(NerdFont::Gamepad, &game.display_name)
+                    .text(&format!("Title ID: {}", game.title_id))
+                    .blank()
+                    .separator()
+                    .blank();
+
+                if let Some(ref game_file) = game.game_path {
+                    builder = builder
+                        .text("Game file:")
+                        .bullet(&game_file.to_string_lossy())
+                        .blank();
+                }
+
+                builder
+                    .text("Save data:")
+                    .bullet(&save_display)
+                    .blank()
+                    .separator()
+                    .blank()
+                    .subtext("Auto-discovered from Eden emulator")
+                    .build()
+            }
+        }
+    }
 }
 
 fn some_if_not_empty(value: impl Into<String>) -> Option<String> {

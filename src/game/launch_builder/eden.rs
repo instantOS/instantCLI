@@ -61,7 +61,7 @@ impl EdenBuilder {
         }
     }
 
-    fn find_or_select_eden() -> Result<Option<PathBuf>> {
+    pub(crate) fn find_or_select_eden() -> Result<Option<PathBuf>> {
         // Try to find Eden in common locations using case-insensitive matching
         if let Some(path) = find_appimage_by_paths(EDEN_SEARCH_PATHS) {
             // Found Eden, ask if user wants to use it

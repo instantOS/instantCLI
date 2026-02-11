@@ -13,6 +13,7 @@ mod azahar;
 mod dolphin;
 mod duckstation;
 mod eden;
+pub mod eden_discovery;
 mod flatpak;
 mod mgba;
 mod pcsx2;

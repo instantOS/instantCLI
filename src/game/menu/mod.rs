@@ -292,8 +292,8 @@ fn build_action_menu(game_name: &str, state: &GameState) -> Vec<GameActionItem> 
                 .subtext(&format!("Start dir:  {}", shortcut.start_dir));
 
             if !shortcut.launch_options.is_empty() {
-                preview_builder = preview_builder
-                    .subtext(&format!("Options:    {}", shortcut.launch_options));
+                preview_builder =
+                    preview_builder.subtext(&format!("Options:    {}", shortcut.launch_options));
             }
 
             // Show the full command as Steam would run it
