@@ -8,18 +8,15 @@
 //! - mGBA-Qt (Game Boy Advance emulator)
 //! - DuckStation (PlayStation 1 emulator)
 
-mod appimage_finder;
+pub(crate) mod appimage_finder;
 mod azahar;
-pub mod azahar_discovery;
+pub mod discovery;
 mod dolphin;
 mod duckstation;
-pub mod duckstation_discovery;
 mod eden;
-pub mod eden_discovery;
 mod flatpak;
 mod mgba;
 mod pcsx2;
-pub mod pcsx2_discovery;
 mod prompts;
 mod umu;
 mod validation;

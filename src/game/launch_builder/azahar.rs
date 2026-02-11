@@ -12,7 +12,7 @@ use super::flatpak::is_flatpak_app_installed;
 use super::prompts::{
     FileSelectionPrompt, ask_fullscreen, confirm_command, select_file_with_validation,
 };
-use super::validation::{AZAHAR_EXTENSIONS, format_valid_extensions, validate_azahar_file};
+use super::validation::{AZAHAR_EXTENSIONS, format_valid_extensions, validate_game_file};
 
 /// Azahar Flatpak application ID
 const AZAHAR_FLATPAK_ID: &str = "org.azahar_emu.Azahar";
@@ -77,7 +77,7 @@ impl AzaharBuilder {
                     format_valid_extensions(AZAHAR_EXTENSIONS)
                 ),
             ),
-            validate_azahar_file,
+            |path| validate_game_file(path, "Azahar", AZAHAR_EXTENSIONS),
         )
     }
 

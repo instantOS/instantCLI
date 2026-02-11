@@ -20,7 +20,7 @@ use super::prompts::{
     FileSelectionPrompt, ask_fullscreen, confirm_command, select_file_with_validation,
 };
 use super::validation::{
-    DUCKSTATION_EXTENSIONS, format_valid_extensions, validate_duckstation_file,
+    DUCKSTATION_EXTENSIONS, format_valid_extensions, validate_game_file,
 };
 
 /// Default DuckStation AppImage location
@@ -266,7 +266,7 @@ impl DuckStationBuilder {
                     format_valid_extensions(DUCKSTATION_EXTENSIONS)
                 ),
             ),
-            validate_duckstation_file,
+            |path| validate_game_file(path, "DuckStation", DUCKSTATION_EXTENSIONS),
         )
     }
 

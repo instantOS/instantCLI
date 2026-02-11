@@ -16,6 +16,13 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
+use super::DiscoveredGame;
+use crate::common::TildePath;
+use crate::game::utils::path::tilde_display_string;
+use crate::menu::protocol::FzfPreview;
+use crate::ui::nerd_font::NerdFont;
+use crate::ui::preview::PreviewBuilder;
+
 /// Default Eden data directory
 const EDEN_DATA_DIR: &str = "~/.local/share/eden";
 
@@ -34,15 +41,128 @@ const SWITCH_GAME_EXTENSIONS: &[&str] = &["nsp", "xci"];
 /// A discovered Eden game with save data
 #[derive(Debug, Clone)]
 pub struct EdenDiscoveredGame {
-    /// Human-readable display name (filename stem if a ROM was matched,
-    /// otherwise the raw title ID)
     pub display_name: String,
-    /// 16-character hex title ID
     pub title_id: String,
-    /// Path to the ROM file, if one could be associated
     pub game_path: Option<PathBuf>,
-    /// Path to the NAND save data directory
     pub save_path: PathBuf,
+    pub is_existing: bool,
+    pub tracked_name: Option<String>,
+}
+
+impl EdenDiscoveredGame {
+    pub fn new(
+        display_name: String,
+        title_id: String,
+        game_path: Option<PathBuf>,
+        save_path: PathBuf,
+    ) -> Self {
+        Self {
+            display_name,
+            title_id,
+            game_path,
+            save_path,
+            is_existing: false,
+            tracked_name: None,
+        }
+    }
+
+    pub fn existing(game: Self, tracked_name: String) -> Self {
+        Self {
+            is_existing: true,
+            tracked_name: Some(tracked_name),
+            ..game
+        }
+    }
+}
+
+impl DiscoveredGame for EdenDiscoveredGame {
+    fn display_name(&self) -> &str {
+        &self.display_name
+    }
+
+    fn save_path(&self) -> &PathBuf {
+        &self.save_path
+    }
+
+    fn game_path(&self) -> Option<&PathBuf> {
+        self.game_path.as_ref()
+    }
+
+    fn platform_name(&self) -> &'static str {
+        "Nintendo Switch"
+    }
+
+    fn platform_short(&self) -> &'static str {
+        "Switch"
+    }
+
+    fn unique_key(&self) -> String {
+        self.title_id.clone()
+    }
+
+    fn is_existing(&self) -> bool {
+        self.is_existing
+    }
+
+    fn tracked_name(&self) -> Option<&str> {
+        self.tracked_name.as_deref()
+    }
+
+    fn build_preview(&self) -> FzfPreview {
+        let save_display = tilde_display_string(&TildePath::new(self.save_path.clone()));
+        let header_name = self.tracked_name.as_deref().unwrap_or(&self.display_name);
+
+        let mut builder = PreviewBuilder::new()
+            .header(
+                if self.is_existing {
+                    NerdFont::Check
+                } else {
+                    NerdFont::Gamepad
+                },
+                header_name,
+            )
+            .text(&format!("Platform: {}", self.platform_name()))
+            .text(&format!("Title ID: {}", self.title_id))
+            .blank()
+            .separator()
+            .blank();
+
+        if let Some(ref game_file) = self.game_path {
+            builder = builder
+                .text("Game file:")
+                .bullet(&game_file.to_string_lossy())
+                .blank();
+        }
+
+        builder = builder
+            .text("Save data:")
+            .bullet(&save_display)
+            .blank()
+            .separator()
+            .blank();
+
+        if self.is_existing {
+            builder = builder.subtext("Already tracked — press Enter to open game menu");
+        } else {
+            builder = builder.subtext("Auto-discovered from Eden emulator");
+        }
+
+        builder.build()
+    }
+
+    fn build_launch_command(&self) -> Option<String> {
+        use crate::game::launch_builder::EdenBuilder;
+        self.game_path.as_ref().and_then(|game_file| {
+            EdenBuilder::find_or_select_eden()
+                .ok()
+                .flatten()
+                .map(|eden_path| EdenBuilder::format_command_simple(&eden_path, game_file))
+        })
+    }
+
+    fn clone_box(&self) -> Box<dyn DiscoveredGame> {
+        Box::new(self.clone())
+    }
 }
 
 /// Check if the Eden emulator data directory exists
@@ -90,12 +210,7 @@ pub fn discover_eden_games() -> Result<Vec<EdenDiscoveredGame>> {
                 None => (title_id.clone(), None),
             };
 
-            EdenDiscoveredGame {
-                display_name,
-                title_id,
-                game_path,
-                save_path,
-            }
+            EdenDiscoveredGame::new(display_name, title_id, game_path, save_path)
         })
         .collect();
 

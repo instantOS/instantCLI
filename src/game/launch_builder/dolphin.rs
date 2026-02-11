@@ -12,7 +12,7 @@ use super::flatpak::is_flatpak_app_installed;
 use super::prompts::{
     FileSelectionPrompt, ask_fullscreen, confirm_command, select_file_with_validation,
 };
-use super::validation::{DOLPHIN_EXTENSIONS, format_valid_extensions, validate_dolphin_file};
+use super::validation::{DOLPHIN_EXTENSIONS, format_valid_extensions, validate_game_file};
 
 /// Dolphin Flatpak application ID
 const DOLPHIN_FLATPAK_ID: &str = "org.DolphinEmu.dolphin-emu";
@@ -79,7 +79,7 @@ impl DolphinBuilder {
                     format_valid_extensions(DOLPHIN_EXTENSIONS)
                 ),
             ),
-            validate_dolphin_file,
+            |path| validate_game_file(path, "Dolphin", DOLPHIN_EXTENSIONS),
         )
     }
 

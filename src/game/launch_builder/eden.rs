@@ -15,7 +15,7 @@ use crate::ui::nerd_font::NerdFont;
 use super::prompts::{
     FileSelectionPrompt, ask_fullscreen, confirm_command, select_file_with_validation,
 };
-use super::validation::{EDEN_EXTENSIONS, format_valid_extensions, validate_eden_file};
+use super::validation::{EDEN_EXTENSIONS, format_valid_extensions, validate_game_file};
 
 /// Default Eden AppImage location
 /// (Matched case-insensitively - will find eden.AppImage, EDEN.APPIMAGE, etc.)
@@ -139,7 +139,7 @@ impl EdenBuilder {
                     format_valid_extensions(EDEN_EXTENSIONS)
                 ),
             ),
-            validate_eden_file,
+            |path| validate_game_file(path, "Eden", EDEN_EXTENSIONS),
         )
     }
 

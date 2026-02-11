@@ -10,6 +10,13 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
+use super::DiscoveredGame;
+use crate::common::TildePath;
+use crate::game::utils::path::tilde_display_string;
+use crate::menu::protocol::FzfPreview;
+use crate::ui::nerd_font::NerdFont;
+use crate::ui::preview::PreviewBuilder;
+
 /// DuckStation Flatpak application ID
 const DUCKSTATION_FLATPAK_ID: &str = "org.duckstation.DuckStation";
 
@@ -24,18 +31,15 @@ const MEMCARD_PATHS: &[&str] = &[
 /// Memory card file extensions
 const MEMCARD_EXTENSIONS: &[&str] = &["mcd", "mcr"];
 
-/// A discovered DuckStation memory card
 #[derive(Debug, Clone)]
 pub struct DuckstationDiscoveredMemcard {
-    /// Human-readable display name (filename stem)
     pub display_name: String,
-    /// Path to the memory card file
     pub memcard_path: PathBuf,
-    /// Installation type (flatpak or native)
     pub install_type: DuckstationInstallType,
+    pub is_existing: bool,
+    pub tracked_name: Option<String>,
 }
 
-/// Installation type for DuckStation
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DuckstationInstallType {
     Flatpak,
@@ -48,6 +52,105 @@ impl std::fmt::Display for DuckstationInstallType {
             DuckstationInstallType::Flatpak => write!(f, "Flatpak"),
             DuckstationInstallType::Native => write!(f, "Native/AppImage"),
         }
+    }
+}
+
+impl DuckstationDiscoveredMemcard {
+    pub fn new(
+        display_name: String,
+        memcard_path: PathBuf,
+        install_type: DuckstationInstallType,
+    ) -> Self {
+        Self {
+            display_name,
+            memcard_path,
+            install_type,
+            is_existing: false,
+            tracked_name: None,
+        }
+    }
+
+    pub fn existing(memcard: Self, tracked_name: String) -> Self {
+        Self {
+            is_existing: true,
+            tracked_name: Some(tracked_name),
+            ..memcard
+        }
+    }
+}
+
+impl DiscoveredGame for DuckstationDiscoveredMemcard {
+    fn display_name(&self) -> &str {
+        &self.display_name
+    }
+
+    fn save_path(&self) -> &PathBuf {
+        &self.memcard_path
+    }
+
+    fn game_path(&self) -> Option<&PathBuf> {
+        None
+    }
+
+    fn platform_name(&self) -> &'static str {
+        "PlayStation 1"
+    }
+
+    fn platform_short(&self) -> &'static str {
+        "PS1"
+    }
+
+    fn unique_key(&self) -> String {
+        format!("duckstation-{}", self.display_name)
+    }
+
+    fn is_existing(&self) -> bool {
+        self.is_existing
+    }
+
+    fn tracked_name(&self) -> Option<&str> {
+        self.tracked_name.as_deref()
+    }
+
+    fn build_preview(&self) -> FzfPreview {
+        let save_display = tilde_display_string(&TildePath::new(self.memcard_path.clone()));
+        let header_name = self.tracked_name.as_deref().unwrap_or(&self.display_name);
+
+        let mut builder = PreviewBuilder::new()
+            .header(
+                if self.is_existing {
+                    NerdFont::Check
+                } else {
+                    NerdFont::Disc
+                },
+                header_name,
+            )
+            .text(&format!("Platform: {}", self.platform_name()))
+            .text(&format!("Source: {}", self.install_type))
+            .blank()
+            .separator()
+            .blank()
+            .text("Memory card:")
+            .bullet(&save_display)
+            .blank()
+            .separator()
+            .blank();
+
+        if self.is_existing {
+            builder = builder.subtext("Already tracked — press Enter to open game menu");
+        } else {
+            builder = builder.subtext("Auto-discovered from DuckStation emulator");
+        }
+
+        builder.build()
+    }
+
+    fn build_launch_command(&self) -> Option<String> {
+        get_duckstation_launch_command(self.install_type)
+    }
+
+    fn clone_box(&self) -> Box<dyn DiscoveredGame> {
+        Box::new(self.clone())
     }
 }
 
@@ -129,11 +232,11 @@ fn scan_memcard_directory(
             && MEMCARD_EXTENSIONS.contains(&ext_str.to_lowercase().as_str())
             && let Some(display_name) = display_name_from_path(&path)
         {
-            memcards.push(DuckstationDiscoveredMemcard {
+            memcards.push(DuckstationDiscoveredMemcard::new(
                 display_name,
-                memcard_path: path,
+                path,
                 install_type,
-            });
+            ));
         }
     }
 
@@ -156,7 +259,7 @@ pub fn get_duckstation_launch_command(install_type: DuckstationInstallType) -> O
         DuckstationInstallType::Native => {
             // Try to find EmuDeck AppImage first
             let emudeck_paths = &["~/emulation/tools/launchers/duckstation.appimage"];
-            if let Some(path) = super::appimage_finder::find_appimage_by_paths(emudeck_paths) {
+            if let Some(path) = crate::game::launch_builder::appimage_finder::find_appimage_by_paths(emudeck_paths) {
                 Some(format!("\"{}\"", path.display()))
             } else {
                 // Try common AppImage locations
@@ -164,7 +267,7 @@ pub fn get_duckstation_launch_command(install_type: DuckstationInstallType) -> O
                     "~/AppImages/DuckStation-x64.AppImage",
                     "~/AppImages/duckstation.appimage",
                 ];
-                if let Some(path) = super::appimage_finder::find_appimage_by_paths(appimage_paths) {
+                if let Some(path) = crate::game::launch_builder::appimage_finder::find_appimage_by_paths(appimage_paths) {
                     Some(format!("\"{}\"", path.display()))
                 } else {
                     // Fall back to system command

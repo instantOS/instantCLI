@@ -16,6 +16,13 @@ use std::time::SystemTime;
 
 use anyhow::Result;
 
+use super::DiscoveredGame;
+use crate::common::TildePath;
+use crate::game::utils::path::tilde_display_string;
+use crate::menu::protocol::FzfPreview;
+use crate::ui::nerd_font::NerdFont;
+use crate::ui::preview::PreviewBuilder;
+
 /// Azahar Flatpak application ID
 pub const AZAHAR_FLATPAK_ID: &str = "org.azahar_emu.Azahar";
 
@@ -37,23 +44,17 @@ const SDMC_SUBPATH: &str = "sdmc/Nintendo 3DS";
 /// Valid 3DS game file extensions (case-insensitive)
 const AZAHAR_GAME_EXTENSIONS: &[&str] = &["3ds", "3dsx", "cia", "app", "cci", "cxi"];
 
-/// A discovered Azahar game with save data
 #[derive(Debug, Clone)]
 pub struct AzaharDiscoveredGame {
-    /// Human-readable display name (filename stem if a ROM was matched,
-    /// otherwise the raw title ID)
     pub display_name: String,
-    /// 16-character hex title ID (e.g., "0004000000123400")
     pub title_id: String,
-    /// Path to the ROM file, if one could be associated
     pub game_path: Option<PathBuf>,
-    /// Path to the save data directory
     pub save_path: PathBuf,
-    /// Installation type (flatpak or native)
     pub install_type: AzaharInstallType,
+    pub is_existing: bool,
+    pub tracked_name: Option<String>,
 }
 
-/// Installation type for Azahar
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AzaharInstallType {
     Flatpak,
@@ -66,6 +67,119 @@ impl std::fmt::Display for AzaharInstallType {
             AzaharInstallType::Flatpak => write!(f, "Flatpak"),
             AzaharInstallType::Native => write!(f, "Native"),
         }
+    }
+}
+
+impl AzaharDiscoveredGame {
+    pub fn new(
+        display_name: String,
+        title_id: String,
+        game_path: Option<PathBuf>,
+        save_path: PathBuf,
+        install_type: AzaharInstallType,
+    ) -> Self {
+        Self {
+            display_name,
+            title_id,
+            game_path,
+            save_path,
+            install_type,
+            is_existing: false,
+            tracked_name: None,
+        }
+    }
+
+    pub fn existing(game: Self, tracked_name: String) -> Self {
+        Self {
+            is_existing: true,
+            tracked_name: Some(tracked_name),
+            ..game
+        }
+    }
+}
+
+impl DiscoveredGame for AzaharDiscoveredGame {
+    fn display_name(&self) -> &str {
+        &self.display_name
+    }
+
+    fn save_path(&self) -> &PathBuf {
+        &self.save_path
+    }
+
+    fn game_path(&self) -> Option<&PathBuf> {
+        self.game_path.as_ref()
+    }
+
+    fn platform_name(&self) -> &'static str {
+        "Nintendo 3DS"
+    }
+
+    fn platform_short(&self) -> &'static str {
+        "3DS"
+    }
+
+    fn unique_key(&self) -> String {
+        format!("azahar-{}", self.title_id)
+    }
+
+    fn is_existing(&self) -> bool {
+        self.is_existing
+    }
+
+    fn tracked_name(&self) -> Option<&str> {
+        self.tracked_name.as_deref()
+    }
+
+    fn build_preview(&self) -> FzfPreview {
+        let save_display = tilde_display_string(&TildePath::new(self.save_path.clone()));
+        let header_name = self.tracked_name.as_deref().unwrap_or(&self.display_name);
+
+        let mut builder = PreviewBuilder::new()
+            .header(
+                if self.is_existing {
+                    NerdFont::Check
+                } else {
+                    NerdFont::Gamepad
+                },
+                header_name,
+            )
+            .text(&format!("Platform: {}", self.platform_name()))
+            .text(&format!("Title ID: {}", self.title_id))
+            .text(&format!("Source: {}", self.install_type))
+            .blank()
+            .separator()
+            .blank();
+
+        if let Some(ref game_file) = self.game_path {
+            builder = builder
+                .text("Game file:")
+                .bullet(&game_file.to_string_lossy())
+                .blank();
+        }
+
+        builder = builder
+            .text("Save data:")
+            .bullet(&save_display)
+            .blank()
+            .separator()
+            .blank();
+
+        if self.is_existing {
+            builder = builder.subtext("Already tracked — press Enter to open game menu");
+        } else {
+            builder = builder.subtext("Auto-discovered from Azahar emulator");
+        }
+
+        builder.build()
+    }
+
+    fn build_launch_command(&self) -> Option<String> {
+        get_azahar_launch_command(self.install_type)
+    }
+
+    fn clone_box(&self) -> Box<dyn DiscoveredGame> {
+        Box::new(self.clone())
     }
 }
 
@@ -153,13 +267,7 @@ fn discover_from_installation(
                 None => (title_id.clone(), None),
             };
 
-            AzaharDiscoveredGame {
-                display_name,
-                title_id,
-                game_path,
-                save_path,
-                install_type,
-            }
+            AzaharDiscoveredGame::new(display_name, title_id, game_path, save_path, install_type)
         })
         .collect();
 

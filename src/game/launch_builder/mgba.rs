@@ -13,7 +13,7 @@ use super::prompts::{
     FileSelectionPrompt, ask_fullscreen, confirm_command, select_file_with_validation,
 };
 
-use super::validation::{MGBA_EXTENSIONS, format_valid_extensions, validate_mgba_file};
+use super::validation::{MGBA_EXTENSIONS, format_valid_extensions, validate_game_file};
 
 /// mGBA-Qt command name
 const MGBA_COMMAND: &str = "mgba-qt";
@@ -74,7 +74,7 @@ impl MgbaBuilder {
                     format_valid_extensions(MGBA_EXTENSIONS)
                 ),
             ),
-            validate_mgba_file,
+            |path| validate_game_file(path, "mGBA", MGBA_EXTENSIONS),
         )
     }
 

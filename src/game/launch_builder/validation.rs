@@ -45,8 +45,11 @@ pub fn format_valid_extensions(extensions: &[&str]) -> String {
         .join(", ")
 }
 
-/// Validate a file for Eden emulator
-pub fn validate_eden_file(path: &Path) -> Result<(), String> {
+/// Validate a game file for a given emulator/launcher.
+///
+/// Checks that the file exists, is a regular file, and has one of the
+/// expected extensions for the given emulator.
+pub fn validate_game_file(path: &Path, emulator_name: &str, valid_extensions: &[&str]) -> Result<(), String> {
     if !path.exists() {
         return Err(format!("File does not exist: {}", path.display()));
     }
@@ -55,136 +58,11 @@ pub fn validate_eden_file(path: &Path) -> Result<(), String> {
         return Err(format!("Path is not a file: {}", path.display()));
     }
 
-    if !has_valid_extension(path, EDEN_EXTENSIONS) {
+    if !has_valid_extension(path, valid_extensions) {
         return Err(format!(
-            "Invalid file type for Eden. Expected: {}\nGot: {}",
-            format_valid_extensions(EDEN_EXTENSIONS),
-            path.display()
-        ));
-    }
-
-    Ok(())
-}
-
-/// Validate a file for Dolphin emulator
-pub fn validate_dolphin_file(path: &Path) -> Result<(), String> {
-    if !path.exists() {
-        return Err(format!("File does not exist: {}", path.display()));
-    }
-
-    if !path.is_file() {
-        return Err(format!("Path is not a file: {}", path.display()));
-    }
-
-    if !has_valid_extension(path, DOLPHIN_EXTENSIONS) {
-        return Err(format!(
-            "Invalid file type for Dolphin. Expected: {}\nGot: {}",
-            format_valid_extensions(DOLPHIN_EXTENSIONS),
-            path.display()
-        ));
-    }
-
-    Ok(())
-}
-
-/// Validate a file for umu-run (Windows executable)
-pub fn validate_windows_executable(path: &Path) -> Result<(), String> {
-    if !path.exists() {
-        return Err(format!("File does not exist: {}", path.display()));
-    }
-
-    if !path.is_file() {
-        return Err(format!("Path is not a file: {}", path.display()));
-    }
-
-    if !has_valid_extension(path, WINDOWS_EXTENSIONS) {
-        return Err(format!(
-            "Invalid file type for umu-run. Expected: {}\nGot: {}",
-            format_valid_extensions(WINDOWS_EXTENSIONS),
-            path.display()
-        ));
-    }
-
-    Ok(())
-}
-
-/// Validate a file for PCSX2 emulator
-pub fn validate_pcsx2_file(path: &Path) -> Result<(), String> {
-    if !path.exists() {
-        return Err(format!("File does not exist: {}", path.display()));
-    }
-
-    if !path.is_file() {
-        return Err(format!("Path is not a file: {}", path.display()));
-    }
-
-    if !has_valid_extension(path, PCSX2_EXTENSIONS) {
-        return Err(format!(
-            "Invalid file type for PCSX2. Expected: {}\nGot: {}",
-            format_valid_extensions(PCSX2_EXTENSIONS),
-            path.display()
-        ));
-    }
-
-    Ok(())
-}
-
-/// Validate a file for mGBA emulator
-pub fn validate_mgba_file(path: &Path) -> Result<(), String> {
-    if !path.exists() {
-        return Err(format!("File does not exist: {}", path.display()));
-    }
-
-    if !path.is_file() {
-        return Err(format!("Path is not a file: {}", path.display()));
-    }
-
-    if !has_valid_extension(path, MGBA_EXTENSIONS) {
-        return Err(format!(
-            "Invalid file type for mGBA. Expected: {}\nGot: {}",
-            format_valid_extensions(MGBA_EXTENSIONS),
-            path.display()
-        ));
-    }
-
-    Ok(())
-}
-
-/// Validate a file for DuckStation emulator
-pub fn validate_duckstation_file(path: &Path) -> Result<(), String> {
-    if !path.exists() {
-        return Err(format!("File does not exist: {}", path.display()));
-    }
-
-    if !path.is_file() {
-        return Err(format!("Path is not a file: {}", path.display()));
-    }
-
-    if !has_valid_extension(path, DUCKSTATION_EXTENSIONS) {
-        return Err(format!(
-            "Invalid file type for DuckStation. Expected: {}\nGot: {}",
-            format_valid_extensions(DUCKSTATION_EXTENSIONS),
-            path.display()
-        ));
-    }
-
-    Ok(())
-}
-
-/// Validate a file for Azahar emulator
-pub fn validate_azahar_file(path: &Path) -> Result<(), String> {
-    if !path.exists() {
-        return Err(format!("File does not exist: {}", path.display()));
-    }
-
-    if !path.is_file() {
-        return Err(format!("Path is not a file: {}", path.display()));
-    }
-
-    if !has_valid_extension(path, AZAHAR_EXTENSIONS) {
-        return Err(format!(
-            "Invalid file type for Azahar. Expected: {}\nGot: {}",
-            format_valid_extensions(AZAHAR_EXTENSIONS),
+            "Invalid file type for {}. Expected: {}\nGot: {}",
+            emulator_name,
+            format_valid_extensions(valid_extensions),
             path.display()
         ));
     }

@@ -10,6 +10,13 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
+use super::DiscoveredGame;
+use crate::common::TildePath;
+use crate::game::utils::path::tilde_display_string;
+use crate::menu::protocol::FzfPreview;
+use crate::ui::nerd_font::NerdFont;
+use crate::ui::preview::PreviewBuilder;
+
 /// PCSX2 Flatpak application ID
 const PCSX2_FLATPAK_ID: &str = "net.pcsx2.PCSX2";
 
@@ -24,18 +31,15 @@ const MEMCARD_PATHS: &[&str] = &[
 /// Memory card file extension
 const MEMCARD_EXTENSION: &str = "ps2";
 
-/// A discovered PCSX2 memory card
 #[derive(Debug, Clone)]
 pub struct Pcsx2DiscoveredMemcard {
-    /// Human-readable display name (filename stem)
     pub display_name: String,
-    /// Path to the memory card file
     pub memcard_path: PathBuf,
-    /// Installation type (flatpak or native)
     pub install_type: Pcsx2InstallType,
+    pub is_existing: bool,
+    pub tracked_name: Option<String>,
 }
 
-/// Installation type for PCSX2
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Pcsx2InstallType {
     Flatpak,
@@ -48,6 +52,105 @@ impl std::fmt::Display for Pcsx2InstallType {
             Pcsx2InstallType::Flatpak => write!(f, "Flatpak"),
             Pcsx2InstallType::Native => write!(f, "Native/AppImage"),
         }
+    }
+}
+
+impl Pcsx2DiscoveredMemcard {
+    pub fn new(
+        display_name: String,
+        memcard_path: PathBuf,
+        install_type: Pcsx2InstallType,
+    ) -> Self {
+        Self {
+            display_name,
+            memcard_path,
+            install_type,
+            is_existing: false,
+            tracked_name: None,
+        }
+    }
+
+    pub fn existing(memcard: Self, tracked_name: String) -> Self {
+        Self {
+            is_existing: true,
+            tracked_name: Some(tracked_name),
+            ..memcard
+        }
+    }
+}
+
+impl DiscoveredGame for Pcsx2DiscoveredMemcard {
+    fn display_name(&self) -> &str {
+        &self.display_name
+    }
+
+    fn save_path(&self) -> &PathBuf {
+        &self.memcard_path
+    }
+
+    fn game_path(&self) -> Option<&PathBuf> {
+        None
+    }
+
+    fn platform_name(&self) -> &'static str {
+        "PlayStation 2"
+    }
+
+    fn platform_short(&self) -> &'static str {
+        "PS2"
+    }
+
+    fn unique_key(&self) -> String {
+        format!("pcsx2-{}", self.display_name)
+    }
+
+    fn is_existing(&self) -> bool {
+        self.is_existing
+    }
+
+    fn tracked_name(&self) -> Option<&str> {
+        self.tracked_name.as_deref()
+    }
+
+    fn build_preview(&self) -> FzfPreview {
+        let save_display = tilde_display_string(&TildePath::new(self.memcard_path.clone()));
+        let header_name = self.tracked_name.as_deref().unwrap_or(&self.display_name);
+
+        let mut builder = PreviewBuilder::new()
+            .header(
+                if self.is_existing {
+                    NerdFont::Check
+                } else {
+                    NerdFont::Disc
+                },
+                header_name,
+            )
+            .text(&format!("Platform: {}", self.platform_name()))
+            .text(&format!("Source: {}", self.install_type))
+            .blank()
+            .separator()
+            .blank()
+            .text("Memory card:")
+            .bullet(&save_display)
+            .blank()
+            .separator()
+            .blank();
+
+        if self.is_existing {
+            builder = builder.subtext("Already tracked — press Enter to open game menu");
+        } else {
+            builder = builder.subtext("Auto-discovered from PCSX2 emulator");
+        }
+
+        builder.build()
+    }
+
+    fn build_launch_command(&self) -> Option<String> {
+        get_pcsx2_launch_command(self.install_type)
+    }
+
+    fn clone_box(&self) -> Box<dyn DiscoveredGame> {
+        Box::new(self.clone())
     }
 }
 
@@ -128,11 +231,11 @@ fn scan_memcard_directory(
             && ext.to_str().map(|e| e.to_lowercase()) == Some(MEMCARD_EXTENSION.to_string())
             && let Some(display_name) = display_name_from_path(&path)
         {
-            memcards.push(Pcsx2DiscoveredMemcard {
+            memcards.push(Pcsx2DiscoveredMemcard::new(
                 display_name,
-                memcard_path: path,
+                path,
                 install_type,
-            });
+            ));
         }
     }
 
@@ -155,7 +258,7 @@ pub fn get_pcsx2_launch_command(install_type: Pcsx2InstallType) -> Option<String
         Pcsx2InstallType::Native => {
             // Try to find EmuDeck AppImage first
             let emudeck_paths = &["~/emulation/tools/launchers/pcsx2-qt.appimage"];
-            if let Some(path) = super::appimage_finder::find_appimage_by_paths(emudeck_paths) {
+            if let Some(path) = crate::game::launch_builder::appimage_finder::find_appimage_by_paths(emudeck_paths) {
                 Some(format!("\"{}\"", path.display()))
             } else {
                 // Fall back to system pcsx2 command

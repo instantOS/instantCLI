@@ -15,7 +15,7 @@ use super::flatpak::is_flatpak_app_installed;
 use super::prompts::{
     FileSelectionPrompt, ask_fullscreen, confirm_command, select_file_with_validation,
 };
-use super::validation::{PCSX2_EXTENSIONS, format_valid_extensions, validate_pcsx2_file};
+use super::validation::{PCSX2_EXTENSIONS, format_valid_extensions, validate_game_file};
 
 /// PCSX2 Flatpak application ID
 const PCSX2_FLATPAK_ID: &str = "net.pcsx2.PCSX2";
@@ -111,7 +111,7 @@ impl Pcsx2Builder {
                     format_valid_extensions(PCSX2_EXTENSIONS)
                 ),
             ),
-            validate_pcsx2_file,
+            |path| validate_game_file(path, "PCSX2", PCSX2_EXTENSIONS),
         )
     }
 
