@@ -7,12 +7,12 @@ use crate::game::launch_builder::duckstation_discovery;
 use crate::game::launch_builder::eden_discovery;
 use crate::game::launch_builder::pcsx2_discovery;
 use crate::game::utils::path::tilde_display_string;
-use crate::game::utils::safeguards::{ensure_safe_path, PathUsage};
+use crate::game::utils::safeguards::{PathUsage, ensure_safe_path};
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header};
 use crate::ui::catppuccin::{colors, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use std::fs;
 use std::path::Path;
 

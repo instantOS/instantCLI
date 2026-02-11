@@ -242,15 +242,14 @@ fn scan_title_directories(title_base: &Path, saves: &mut HashMap<String, PathBuf
             }
 
             let data_path = low_path.join("data");
-            if data_path.is_dir() {
-                if let (Some(high), Some(low)) = (
+            if data_path.is_dir()
+                && let (Some(high), Some(low)) = (
                     high_path.file_name().and_then(|n| n.to_str()),
                     low_path.file_name().and_then(|n| n.to_str()),
-                ) {
-                    if let Some(title_id) = build_title_id(high, low) {
-                        saves.entry(title_id).or_insert(data_path);
-                    }
-                }
+                )
+                && let Some(title_id) = build_title_id(high, low)
+            {
+                saves.entry(title_id).or_insert(data_path);
             }
         }
     }
@@ -375,11 +374,11 @@ fn build_rom_index(
 
     // First, try to match recent ROMs by title ID in filename
     for rom_path in recent_roms {
-        if let Some(title_id) = extract_title_id_from_filename(rom_path) {
-            if save_dirs.contains_key(&title_id) {
-                index.entry(title_id).or_insert_with(|| rom_path.clone());
-                continue;
-            }
+        if let Some(title_id) = extract_title_id_from_filename(rom_path)
+            && save_dirs.contains_key(&title_id)
+        {
+            index.entry(title_id).or_insert_with(|| rom_path.clone());
+            continue;
         }
     }
 
@@ -389,10 +388,11 @@ fn build_rom_index(
         if let Ok(entries) = fs::read_dir(dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.is_file() && is_azahar_game_file(&path) {
-                    if let Some(title_id) = find_matching_save(&path, save_dirs) {
-                        index.entry(title_id).or_insert(path);
-                    }
+                if path.is_file()
+                    && is_azahar_game_file(&path)
+                    && let Some(title_id) = find_matching_save(&path, save_dirs)
+                {
+                    index.entry(title_id).or_insert(path);
                 }
             }
         }
@@ -453,14 +453,14 @@ fn find_matching_save(rom_path: &Path, save_dirs: &HashMap<String, PathBuf>) -> 
     // or has a related name
     for (title_id, save_path) in save_dirs {
         // Check if save was recently modified (indicates active game)
-        if let Some(modified) = get_directory_modified_time(save_path) {
-            if let Ok(elapsed) = modified.elapsed() {
-                // If save was modified in last 30 days, it's likely active
-                if elapsed.as_secs() < 30 * 24 * 60 * 60 {
-                    // This is a heuristic - just return the first recently active save
-                    // for ROMs in game-specific directories
-                    return Some(title_id.clone());
-                }
+        if let Some(modified) = get_directory_modified_time(save_path)
+            && let Ok(elapsed) = modified.elapsed()
+        {
+            // If save was modified in last 30 days, it's likely active
+            if elapsed.as_secs() < 30 * 24 * 60 * 60 {
+                // This is a heuristic - just return the first recently active save
+                // for ROMs in game-specific directories
+                return Some(title_id.clone());
             }
         }
     }
@@ -473,16 +473,16 @@ fn get_directory_modified_time(dir: &Path) -> Option<SystemTime> {
 
     if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.flatten() {
-            if let Ok(metadata) = entry.metadata() {
-                if let Ok(modified) = metadata.modified() {
-                    latest = latest.map_or(Some(modified), |l| {
-                        if modified > l {
-                            Some(modified)
-                        } else {
-                            Some(l)
-                        }
-                    });
-                }
+            if let Ok(metadata) = entry.metadata()
+                && let Ok(modified) = metadata.modified()
+            {
+                latest = latest.map_or(Some(modified), |l| {
+                    if modified > l {
+                        Some(modified)
+                    } else {
+                        Some(l)
+                    }
+                });
             }
         }
     }
