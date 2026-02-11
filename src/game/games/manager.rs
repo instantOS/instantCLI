@@ -14,6 +14,7 @@ use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 use anyhow::{Context, Result, anyhow};
 use std::fs;
+use std::path::Path;
 
 /// Options for adding a game non-interactively
 #[derive(Debug, Default)]
@@ -557,25 +558,15 @@ fn maybe_prefill_from_eden(
         return Ok(options);
     }
 
-    // Filter out games already in config
-    let available: Vec<_> = discovered
-        .into_iter()
-        .filter(|g| !context.game_exists(&g.display_name))
-        .collect();
+    // Classify each discovered game as new or already tracked
+    let items = classify_discovered_games(&discovered, context);
 
-    if available.is_empty() {
+    // If everything is already tracked, skip the menu
+    if items
+        .iter()
+        .all(|item| matches!(item, AddMethodItem::ExistingGame(_)))
+    {
         return Ok(options);
-    }
-
-    // Build selection items
-    let mut items: Vec<AddMethodItem> = Vec::with_capacity(available.len() + 1);
-
-    // Manual entry option first
-    items.push(AddMethodItem::ManualEntry);
-
-    // Discovered games
-    for game in &available {
-        items.push(AddMethodItem::EdenGame(game.clone()));
     }
 
     let result = FzfWrapper::builder()
@@ -608,9 +599,55 @@ fn maybe_prefill_from_eden(
                 create_save_path: false,
             })
         }
-        FzfResult::Selected(AddMethodItem::ManualEntry) => Ok(options),
+        FzfResult::Selected(AddMethodItem::ManualEntry)
+        | FzfResult::Selected(AddMethodItem::ExistingGame(_)) => Ok(options),
         _ => Ok(options),
     }
+}
+
+/// Check if a discovered save path is already tracked by an existing installation.
+/// Returns the game name if found.
+fn find_existing_game_for_save(save_path: &Path, context: &GameCreationContext) -> Option<String> {
+    context
+        .installations
+        .installations
+        .iter()
+        .find(|inst| inst.save_path.as_path() == save_path)
+        .map(|inst| inst.game_name.0.clone())
+}
+
+/// Build the selection item list, classifying each discovered game as new
+/// or already tracked (matched by save path against existing installations).
+fn classify_discovered_games(
+    discovered: &[eden_discovery::EdenDiscoveredGame],
+    context: &GameCreationContext,
+) -> Vec<AddMethodItem> {
+    let mut items: Vec<AddMethodItem> = Vec::with_capacity(discovered.len() + 1);
+
+    items.push(AddMethodItem::ManualEntry);
+
+    for game in discovered {
+        match find_existing_game_for_save(&game.save_path, context) {
+            Some(existing_name) => {
+                items.push(AddMethodItem::ExistingGame(ExistingGameInfo {
+                    game: game.clone(),
+                    tracked_name: existing_name,
+                }));
+            }
+            None => {
+                items.push(AddMethodItem::EdenGame(game.clone()));
+            }
+        }
+    }
+
+    items
+}
+
+/// Info about a discovered game that is already tracked
+#[derive(Clone)]
+struct ExistingGameInfo {
+    game: eden_discovery::EdenDiscoveredGame,
+    tracked_name: String,
 }
 
 /// Selection item for the add-game method chooser
@@ -618,6 +655,7 @@ fn maybe_prefill_from_eden(
 enum AddMethodItem {
     ManualEntry,
     EdenGame(eden_discovery::EdenDiscoveredGame),
+    ExistingGame(ExistingGameInfo),
 }
 
 impl FzfSelectable for AddMethodItem {
@@ -636,6 +674,14 @@ impl FzfSelectable for AddMethodItem {
                     game.display_name,
                 )
             }
+            AddMethodItem::ExistingGame(info) => {
+                format!(
+                    "{} {} — already tracked as \"{}\"",
+                    format_icon_colored(NerdFont::Check, colors::SURFACE2),
+                    info.game.display_name,
+                    info.tracked_name,
+                )
+            }
         }
     }
 
@@ -643,6 +689,9 @@ impl FzfSelectable for AddMethodItem {
         match self {
             AddMethodItem::ManualEntry => "manual".to_string(),
             AddMethodItem::EdenGame(game) => game.title_id.clone(),
+            AddMethodItem::ExistingGame(info) => {
+                format!("existing-{}", info.game.title_id)
+            }
         }
     }
 
@@ -658,20 +707,22 @@ impl FzfSelectable for AddMethodItem {
                 .bullet("Launch command (optional)")
                 .bullet("Save data path")
                 .build(),
-            AddMethodItem::EdenGame(game) => {
-                let home = dirs::home_dir()
-                    .map(|h| h.to_string_lossy().to_string())
-                    .unwrap_or_default();
-                let save_display = game.save_path.to_string_lossy().replace(&home, "~");
+            AddMethodItem::EdenGame(game) => eden_game_preview(game),
+            AddMethodItem::ExistingGame(info) => {
+                let home = home_dir_string();
+                let save_display = info.game.save_path.to_string_lossy().replace(&home, "~");
 
                 let mut builder = PreviewBuilder::new()
-                    .header(NerdFont::Gamepad, &game.display_name)
-                    .text(&format!("Title ID: {}", game.title_id))
+                    .header(NerdFont::Check, &info.tracked_name)
+                    .text(&format!("Title ID: {}", info.game.title_id))
                     .blank()
                     .separator()
+                    .blank()
+                    .text("Save data:")
+                    .bullet(&save_display)
                     .blank();
 
-                if let Some(ref game_file) = game.game_path {
+                if let Some(ref game_file) = info.game.game_path {
                     builder = builder
                         .text("Game file:")
                         .bullet(&game_file.to_string_lossy())
@@ -679,16 +730,53 @@ impl FzfSelectable for AddMethodItem {
                 }
 
                 builder
-                    .text("Save data:")
-                    .bullet(&save_display)
-                    .blank()
                     .separator()
                     .blank()
-                    .subtext("Auto-discovered from Eden emulator")
+                    .subtext("Already tracked — no action needed")
                     .build()
             }
         }
     }
+
+    fn fzf_is_selectable(&self) -> bool {
+        !matches!(self, AddMethodItem::ExistingGame(_))
+    }
+}
+
+fn eden_game_preview(
+    game: &eden_discovery::EdenDiscoveredGame,
+) -> crate::menu::protocol::FzfPreview {
+    let home = home_dir_string();
+    let save_display = game.save_path.to_string_lossy().replace(&home, "~");
+
+    let mut builder = PreviewBuilder::new()
+        .header(NerdFont::Gamepad, &game.display_name)
+        .text(&format!("Title ID: {}", game.title_id))
+        .blank()
+        .separator()
+        .blank();
+
+    if let Some(ref game_file) = game.game_path {
+        builder = builder
+            .text("Game file:")
+            .bullet(&game_file.to_string_lossy())
+            .blank();
+    }
+
+    builder
+        .text("Save data:")
+        .bullet(&save_display)
+        .blank()
+        .separator()
+        .blank()
+        .subtext("Auto-discovered from Eden emulator")
+        .build()
+}
+
+fn home_dir_string() -> String {
+    dirs::home_dir()
+        .map(|h| h.to_string_lossy().to_string())
+        .unwrap_or_default()
 }
 
 fn some_if_not_empty(value: impl Into<String>) -> Option<String> {
