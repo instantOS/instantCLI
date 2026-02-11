@@ -8,7 +8,9 @@ on:
 jobs:
   sync:
     if: github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'release-plz-')
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: self-hosted
+    container:
+      image: ubuntu:latest
     permissions:
       contents: write
     steps:

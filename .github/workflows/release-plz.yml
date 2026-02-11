@@ -6,7 +6,9 @@ on:
 jobs:
   release-plz-release:
     name: Release-plz release
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: self-hosted
+    container:
+      image: ubuntu:latest
     if: ${{ github.repository_owner == 'instantOS' }}
     permissions:
       contents: write
