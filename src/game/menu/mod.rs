@@ -281,20 +281,18 @@ fn build_action_menu(game_name: &str, state: &GameState) -> Vec<GameActionItem> 
             .text(&status_text);
 
         // Add command details if game is already in Steam
-        if is_in_steam {
-            if let Ok(Some(shortcut)) = steam::get_game_shortcut(game_name) {
-                preview_builder = preview_builder.blank().text("Current shortcut command:");
+        if is_in_steam && let Ok(Some(shortcut)) = steam::get_game_shortcut(game_name) {
+            preview_builder = preview_builder.blank().text("Current shortcut command:");
 
-                let cmd = if shortcut.launch_options.is_empty() {
-                    format!("{} {}", shortcut.exe, shortcut.start_dir)
-                } else {
-                    format!(
-                        "{} {} {}",
-                        shortcut.exe, shortcut.start_dir, shortcut.launch_options
-                    )
-                };
-                preview_builder = preview_builder.subtext(&cmd);
-            }
+            let cmd = if shortcut.launch_options.is_empty() {
+                format!("{} {}", shortcut.exe, shortcut.start_dir)
+            } else {
+                format!(
+                    "{} {} {}",
+                    shortcut.exe, shortcut.start_dir, shortcut.launch_options
+                )
+            };
+            preview_builder = preview_builder.subtext(&cmd);
         }
 
         let preview = preview_builder
@@ -618,7 +616,11 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
                     Ok((true, steam_running)) => {
                         let base_msg = "Added 'ins game menu' to Steam.";
                         let msg = if steam_running {
-                            format!("{}\n\n{}", base_msg, steam::format_steam_running_warning("added"))
+                            format!(
+                                "{}\n\n{}",
+                                base_msg,
+                                steam::format_steam_running_warning("added")
+                            )
                         } else {
                             format!("{}\n\nRestart Steam to see it in your library.", base_msg)
                         };

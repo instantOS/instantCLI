@@ -338,20 +338,20 @@ fn is_appimage() -> bool {
         return true;
     }
     // Fallback: check if current exe path ends with .AppImage
-    if let Ok(current_exe) = std::env::current_exe() {
-        if let Some(path_str) = current_exe.to_str() {
-            return path_str.to_lowercase().ends_with(".appimage");
-        }
+    if let Ok(current_exe) = std::env::current_exe()
+        && let Some(path_str) = current_exe.to_str()
+    {
+        return path_str.to_lowercase().ends_with(".appimage");
     }
     false
 }
 
 /// Detect if running on SteamOS
 fn is_steamos() -> bool {
-    if let Ok(os_release) = std::fs::read_to_string("/etc/os-release") {
-        if os_release.contains("steamdeck") || os_release.contains("SteamOS") {
-            return true;
-        }
+    if let Ok(os_release) = std::fs::read_to_string("/etc/os-release")
+        && (os_release.contains("steamdeck") || os_release.contains("SteamOS"))
+    {
+        return true;
     }
     std::env::var("STEAM_DECK").is_ok()
 }

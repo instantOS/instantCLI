@@ -73,10 +73,10 @@ fn is_writable(path: &Path) -> bool {
 
 /// Detect if running on SteamOS
 fn detect_steam_os() -> bool {
-    if let Ok(os_release) = fs::read_to_string("/etc/os-release") {
-        if os_release.contains("steamdeck") || os_release.contains("SteamOS") {
-            return true;
-        }
+    if let Ok(os_release) = fs::read_to_string("/etc/os-release")
+        && (os_release.contains("steamdeck") || os_release.contains("SteamOS"))
+    {
+        return true;
     }
     env::var("STEAM_DECK").is_ok()
 }

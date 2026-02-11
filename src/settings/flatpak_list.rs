@@ -243,9 +243,9 @@ fn fallback_to_remote_ls(keyword: Option<&str>) -> Result<()> {
 
         for line in stdout.lines() {
             let parts: Vec<&str> = line.split('\t').collect();
-            let id = parts.get(0).map(|s| *s).unwrap_or("");
-            let name = parts.get(1).map(|s| *s).unwrap_or("");
-            let summary = parts.get(2).map(|s| *s).unwrap_or("");
+            let id = parts.first().copied().unwrap_or("");
+            let name = parts.get(1).copied().unwrap_or("");
+            let summary = parts.get(2).copied().unwrap_or("");
 
             if let Some(kw) = keyword_lower.as_ref() {
                 let id_matches = id.to_lowercase().contains(kw);
