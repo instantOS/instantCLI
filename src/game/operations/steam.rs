@@ -331,6 +331,45 @@ fn is_steam_running() -> bool {
         .is_ok_and(|o| o.status.success())
 }
 
+/// Detect if running as an AppImage binary
+fn is_appimage() -> bool {
+    // Check APPIMAGE environment variable (set by AppImage runtime)
+    if std::env::var("APPIMAGE").is_ok() {
+        return true;
+    }
+    // Fallback: check if current exe path ends with .AppImage
+    if let Ok(current_exe) = std::env::current_exe() {
+        if let Some(path_str) = current_exe.to_str() {
+            return path_str.to_lowercase().ends_with(".appimage");
+        }
+    }
+    false
+}
+
+/// Detect if running on SteamOS
+fn is_steamos() -> bool {
+    if let Ok(os_release) = std::fs::read_to_string("/etc/os-release") {
+        if os_release.contains("steamdeck") || os_release.contains("SteamOS") {
+            return true;
+        }
+    }
+    std::env::var("STEAM_DECK").is_ok()
+}
+
+/// Build launch options for Steam shortcuts
+/// On SteamOS in gaming mode, AppImages need --appimage-extract-and-run
+/// because FUSE is not available in the sandboxed Steam Runtime
+fn build_launch_options(game_name: &str) -> String {
+    let base_cmd = format!("game launch \"{}\"", game_name);
+
+    if is_appimage() && is_steamos() {
+        // SteamOS gaming mode doesn't have FUSE, so we need to extract and run
+        format!("--appimage-extract-and-run {}", base_cmd)
+    } else {
+        base_cmd
+    }
+}
+
 pub fn add_game_to_steam(game_name: &str, _launch_command: &str) -> Result<bool> {
     if is_steam_running() {
         bail!(
@@ -358,7 +397,7 @@ pub fn add_game_to_steam(game_name: &str, _launch_command: &str) -> Result<bool>
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_default()
     );
-    let launch_options = format!("game launch \"{}\"", game_name);
+    let launch_options = build_launch_options(game_name);
 
     let mut added_count = 0;
 
@@ -494,7 +533,14 @@ pub fn add_game_menu_to_steam() -> Result<bool> {
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_default()
     );
-    let launch_options = format!("-- \"{}\" game menu", ins_bin_str);
+
+    // Build launch options for the game menu shortcut
+    // On SteamOS with AppImage, we need --appimage-extract-and-run
+    let launch_options = if is_appimage() && is_steamos() {
+        format!("-- \"{}\" --appimage-extract-and-run game menu", ins_bin_str)
+    } else {
+        format!("-- \"{}\" game menu", ins_bin_str)
+    };
 
     let app_name = "ins game menu";
 
