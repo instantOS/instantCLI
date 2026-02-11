@@ -2,6 +2,8 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result, anyhow};
 
+use crate::common::distro::OperatingSystem;
+
 /// Desktop entry structure
 #[derive(Debug, Clone)]
 pub struct DesktopEntry {
@@ -33,7 +35,10 @@ impl DesktopEntry {
         content.push_str(&format!("Exec={}\n", self.exec));
         content.push_str(&format!("Icon={}\n", self.icon));
         content.push_str(&format!("Comment={}\n", self.comment));
-        content.push_str(&format!("Terminal={}\n", if self.terminal { "true" } else { "false" }));
+        content.push_str(&format!(
+            "Terminal={}\n",
+            if self.terminal { "true" } else { "false" }
+        ));
         content.push_str(&format!("Categories={};\n", self.categories.join(";")));
         content
     }
@@ -144,25 +149,18 @@ fn is_appimage() -> bool {
     false
 }
 
-/// Detect if running on SteamOS
-fn is_steamos() -> Result<bool> {
-    if let Ok(os_release) = std::fs::read_to_string("/etc/os-release")
-        && (os_release.contains("steamdeck") || os_release.contains("SteamOS"))
-    {
-        return Ok(true);
-    }
-    Ok(std::env::var("STEAM_DECK").is_ok())
-}
-
 /// Build exec command for desktop entries
 /// On SteamOS in gaming mode, AppImages need --appimage-extract-and-run
 fn build_exec_command(game_name: &str) -> String {
+    use crate::common::distro::OperatingSystem;
+
     let ins_bin = std::env::current_exe()
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|_| "ins".to_string());
 
     if is_appimage() {
-        if is_steamos().unwrap_or(false) {
+        // Check if running on SteamOS using the existing utility
+        if OperatingSystem::detect() == OperatingSystem::SteamOS {
             // SteamOS gaming mode doesn't have FUSE
             format!(
                 "{} --appimage-extract-and-run game launch \"{}\"",
@@ -177,10 +175,7 @@ fn build_exec_command(game_name: &str) -> String {
 }
 
 /// Add a game to the desktop as a .desktop entry
-pub fn add_game_to_desktop(
-    name: &str,
-    _launch_command: &str,
-) -> Result<(bool, Option<PathBuf>)> {
+pub fn add_game_to_desktop(name: &str, _launch_command: &str) -> Result<(bool, Option<PathBuf>)> {
     // Check if already exists
     if is_game_on_desktop(name)? {
         return Ok((false, get_game_desktop_path(name)?));
@@ -264,7 +259,8 @@ pub fn add_menu_to_desktop() -> Result<(bool, Option<PathBuf>)> {
     let terminal_str = terminal_path.to_string_lossy().to_string();
 
     // Build exec command
-    let exec = if is_appimage() && is_steamos().unwrap_or(false) {
+    // On SteamOS with AppImage, we need --appimage-extract-and-run
+    let exec = if is_appimage() && OperatingSystem::detect() == OperatingSystem::SteamOS {
         format!(
             "{} -- \"{}\" --appimage-extract-and-run game menu",
             terminal_str, ins_bin

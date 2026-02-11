@@ -338,13 +338,11 @@ fn build_action_menu(game_name: &str, state: &GameState) -> Vec<GameActionItem> 
             .text(&desktop_status_text);
 
         // Add path details if game is already on desktop
-        if is_on_desktop {
-            if let Ok(Some(path)) = desktop::get_game_desktop_path(game_name) {
-                desktop_preview_builder = desktop_preview_builder
-                    .blank()
-                    .text("Current shortcut location:")
-                    .subtext(&path.display().to_string());
-            }
+        if is_on_desktop && let Ok(Some(path)) = desktop::get_game_desktop_path(game_name) {
+            desktop_preview_builder = desktop_preview_builder
+                .blank()
+                .text("Current shortcut location:")
+                .subtext(&path.display().to_string());
         }
 
         let desktop_preview = desktop_preview_builder
@@ -550,10 +548,7 @@ fn handle_action(
                 {
                     match desktop::remove_game_from_desktop(game_name) {
                         Ok(true) => {
-                            FzfWrapper::message(&format!(
-                                "Removed '{}' from Desktop.",
-                                game_name
-                            ))?;
+                            FzfWrapper::message(&format!("Removed '{}' from Desktop.", game_name))?;
                         }
                         Ok(false) => FzfWrapper::message(&format!(
                             "'{}' was not found on the Desktop (maybe already removed).",
@@ -574,10 +569,7 @@ fn handle_action(
                         ))?;
                     }
                     Ok((true, None)) => {
-                        FzfWrapper::message(&format!(
-                            "Added '{}' to Desktop.",
-                            game_name
-                        ))?;
+                        FzfWrapper::message(&format!("Added '{}' to Desktop.", game_name))?;
                     }
                     Ok((false, _)) => {
                         FzfWrapper::message(&format!(

@@ -1,3 +1,4 @@
+use crate::common::distro::OperatingSystem;
 use crate::ui::prelude::*;
 use anyhow::{Context, Result, anyhow};
 use colored::Colorize;
@@ -69,16 +70,6 @@ fn is_writable(path: &Path) -> bool {
         .map(|m| m.permissions().mode() & 0o200 != 0)
         .unwrap_or(false)
         && nix::unistd::access(path, nix::unistd::AccessFlags::W_OK).is_ok()
-}
-
-/// Detect if running on SteamOS
-fn detect_steam_os() -> bool {
-    if let Ok(os_release) = fs::read_to_string("/etc/os-release")
-        && (os_release.contains("steamdeck") || os_release.contains("SteamOS"))
-    {
-        return true;
-    }
-    env::var("STEAM_DECK").is_ok()
 }
 
 /// Get the current installation location
@@ -651,7 +642,7 @@ pub async fn self_update() -> Result<()> {
 
     let current_version = env!("CARGO_PKG_VERSION");
     let mut location = get_install_location()?;
-    let is_steamos = detect_steam_os();
+    let is_steamos = OperatingSystem::detect() == OperatingSystem::SteamOS;
 
     if is_steamos {
         let home = dirs::home_dir().context("Could not find home directory")?;
