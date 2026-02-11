@@ -395,24 +395,16 @@ fn handle_action(
     match action {
         GameAction::Launch => {
             if state.launch_command.is_none() {
-                // Offer to build a launch command
-                match FzfWrapper::builder()
-                    .confirm(format!(
-                        "{} No launch command configured for '{}'.\n\n\
-                         Would you like to build one now?",
-                        char::from(NerdFont::Warning),
-                        game_name
-                    ))
-                    .yes_text("Build Launch Command")
-                    .no_text("Cancel")
-                    .confirm_dialog()?
-                {
-                    ConfirmResult::Yes => {
-                        if run_edit_launch_command_for_game(
-                            game_name,
-                            &state.game_config,
-                            &state.installations,
-                        )? {
+                // Show builder menu directly to let user choose manual or builder
+                match crate::game::launch_builder::build_launch_command()? {
+                    Some(command) => {
+                        // Save to game config
+                        let mut game_config = state.game_config.clone();
+                        if let Some(game) =
+                            game_config.games.iter_mut().find(|g| g.name.0 == game_name)
+                        {
+                            game.launch_command = Some(command.clone());
+                            game_config.save()?;
                             FzfWrapper::message(&format!(
                                 "{} Launch command saved. Launching game now...",
                                 char::from(NerdFont::Check)
@@ -421,7 +413,7 @@ fn handle_action(
                             return Ok(ActionResult::Stay);
                         }
                     }
-                    ConfirmResult::No | ConfirmResult::Cancelled => return Ok(ActionResult::Stay),
+                    None => return Ok(ActionResult::Stay),
                 }
             }
             if state.needs_setup {
@@ -802,38 +794,6 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
 }
 
 /// Run the edit menu for a specific game
-/// Run the edit launch command menu for a specific game
-fn run_edit_launch_command_for_game(
-    game_name: &str,
-    game_config: &InstantGameConfig,
-    installations: &InstallationsConfig,
-) -> Result<bool> {
-    let game_index = game_config
-        .games
-        .iter()
-        .position(|g| g.name.0 == game_name)
-        .ok_or_else(|| anyhow!("Game '{}' not found in games.toml", game_name))?;
-
-    let installation_index = installations
-        .installations
-        .iter()
-        .position(|i| i.game_name.0 == game_name);
-
-    let mut state = EditState::new(
-        game_config.clone(),
-        installations.clone(),
-        game_index,
-        installation_index,
-    );
-
-    if editors::edit_launch_command(&mut state)? {
-        state.save()?;
-        Ok(true)
-    } else {
-        Ok(false)
-    }
-}
-
 fn run_edit_menu_for_game(
     game_name: &str,
     game_config: &InstantGameConfig,

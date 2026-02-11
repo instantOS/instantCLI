@@ -16,8 +16,7 @@ use super::state::EditState;
 /// How the user wants to input the launch command
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LaunchCommandInputMethod {
-    Manual,
-    Builder,
+    Build,
     CopyFromOther,
     Remove,
     Cancel,
@@ -57,44 +56,27 @@ fn select_launch_command_input_method(
 ) -> Result<LaunchCommandInputMethod> {
     let current_display = current.unwrap_or("<not set>");
 
-    let mut items = vec![
-        InputMethodItem {
-            display: format!(
-                "{} Type command manually",
-                format_icon_colored(NerdFont::Edit, colors::BLUE)
-            ),
-            preview: PreviewBuilder::new()
-                .header(NerdFont::Edit, "Manual Input")
-                .text("Type or edit the launch command directly.")
-                .blank()
-                .field("Current", current_display)
-                .blank()
-                .text("Use this when you know the exact command")
-                .text("or want to make small edits.")
-                .build(),
-            method: LaunchCommandInputMethod::Manual,
-        },
-        InputMethodItem {
-            display: format!(
-                "{} Use command builder",
-                format_icon_colored(NerdFont::Rocket, colors::MAUVE)
-            ),
-            preview: PreviewBuilder::new()
-                .header(NerdFont::Rocket, "Command Builder")
-                .text("Build a launch command interactively.")
-                .blank()
-                .text("Supported launchers:")
-                .bullet("umu-run - Wine/Proton games")
-                .bullet("Eden - Nintendo Switch emulator")
-                .bullet("Dolphin Flatpak - GameCube/Wii")
-                .bullet("PCSX2 Flatpak - PlayStation 2")
-                .blank()
-                .text("The builder validates files and")
-                .text("generates a ready-to-use command.")
-                .build(),
-            method: LaunchCommandInputMethod::Builder,
-        },
-    ];
+    let mut items = vec![InputMethodItem {
+        display: format!(
+            "{} Build launch command",
+            format_icon_colored(NerdFont::Rocket, colors::MAUVE)
+        ),
+        preview: PreviewBuilder::new()
+            .header(NerdFont::Rocket, "Build Launch Command")
+            .text("Build a launch command interactively.")
+            .blank()
+            .text("Options include:")
+            .bullet("Manual Entry - Type any custom command")
+            .bullet("umu-run - Wine/Proton games")
+            .bullet("Eden - Nintendo Switch emulator")
+            .bullet("Dolphin Flatpak - GameCube/Wii")
+            .bullet("PCSX2 Flatpak - PlayStation 2")
+            .blank()
+            .text("The builder validates files and")
+            .text("generates a ready-to-use command.")
+            .build(),
+        method: LaunchCommandInputMethod::Build,
+    }];
 
     if current.is_some() {
         items.push(InputMethodItem {
@@ -320,18 +302,19 @@ fn edit_game_launch_command(state: &mut EditState) -> Result<bool> {
     });
 
     match select_launch_command_input_method(current, other)? {
-        LaunchCommandInputMethod::Manual => {
-            let header = format!("Current command: {}", current.unwrap_or("<not set>"));
-            OptionalTextEditor::new(
-                TextEditPrompt::new("Launch command", current)
-                    .header(header)
-                    .ghost("Leave empty to remove"),
-                current,
-                "Launch command",
-                |value| state.game_mut().launch_command = value,
-            )
-            .suffix("in games.toml")
-            .run()
+        LaunchCommandInputMethod::Build => {
+            match crate::game::launch_builder::build_launch_command()? {
+                Some(command) => {
+                    state.game_mut().launch_command = Some(command.clone());
+                    FzfWrapper::message(&format!(
+                        "{} Launch command set in games.toml:\n\n{}",
+                        char::from(NerdFont::Check),
+                        command
+                    ))?;
+                    Ok(true)
+                }
+                None => Ok(false),
+            }
         }
         LaunchCommandInputMethod::CopyFromOther => {
             let source = inst_cmd_owned.as_deref();
@@ -369,20 +352,6 @@ fn edit_game_launch_command(state: &mut EditState) -> Result<bool> {
                 crate::menu_utils::ConfirmResult::No | crate::menu_utils::ConfirmResult::Cancelled => Ok(false),
             }
         }
-        LaunchCommandInputMethod::Builder => {
-            match crate::game::launch_builder::build_launch_command()? {
-                Some(command) => {
-                    state.game_mut().launch_command = Some(command.clone());
-                    FzfWrapper::message(&format!(
-                        "{} Launch command set in games.toml:\n\n{}",
-                        char::from(NerdFont::Check),
-                        command
-                    ))?;
-                    Ok(true)
-                }
-                None => Ok(false),
-            }
-        }
         LaunchCommandInputMethod::Cancel => Ok(false),
     }
 }
@@ -405,22 +374,21 @@ fn edit_installation_launch_command(state: &mut EditState) -> Result<bool> {
     });
 
     match select_launch_command_input_method(current, other)? {
-        LaunchCommandInputMethod::Manual => {
-            let header = format!("Current override: {}", current.unwrap_or("<not set>"));
-            OptionalTextEditor::new(
-                TextEditPrompt::new("Launch command override", current)
-                    .header(header)
-                    .ghost("Leave empty to remove override"),
-                current,
-                "Launch command override",
-                |value| {
+        LaunchCommandInputMethod::Build => {
+            match crate::game::launch_builder::build_launch_command()? {
+                Some(command) => {
                     if let Some(installation) = state.installation_mut() {
-                        installation.launch_command = value;
+                        installation.launch_command = Some(command.clone());
                     }
-                },
-            )
-            .suffix("in installations.toml")
-            .run()
+                    FzfWrapper::message(&format!(
+                        "{} Launch command override set in installations.toml:\n\n{}",
+                        char::from(NerdFont::Check),
+                        command
+                    ))?;
+                    Ok(true)
+                }
+                None => Ok(false),
+            }
         }
         LaunchCommandInputMethod::CopyFromOther => {
             let source = game_cmd_owned.as_deref();
@@ -462,22 +430,6 @@ fn edit_installation_launch_command(state: &mut EditState) -> Result<bool> {
                     Ok(true)
                 }
                 crate::menu_utils::ConfirmResult::No | crate::menu_utils::ConfirmResult::Cancelled => Ok(false),
-            }
-        }
-        LaunchCommandInputMethod::Builder => {
-            match crate::game::launch_builder::build_launch_command()? {
-                Some(command) => {
-                    if let Some(installation) = state.installation_mut() {
-                        installation.launch_command = Some(command.clone());
-                    }
-                    FzfWrapper::message(&format!(
-                        "{} Launch command override set in installations.toml:\n\n{}",
-                        char::from(NerdFont::Check),
-                        command
-                    ))?;
-                    Ok(true)
-                }
-                None => Ok(false),
             }
         }
         LaunchCommandInputMethod::Cancel => Ok(false),
