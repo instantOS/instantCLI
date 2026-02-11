@@ -251,17 +251,49 @@ fn create_recording_mix(sources: &[String]) -> Result<AudioTarget> {
     );
     let mut module_ids = Vec::new();
 
-    let sink_module_id = create_null_sink(&sink_name)?;
+    // Create null sink
+    let sink_arg = format!("sink_name={}", sink_name);
+    let props_arg = format!("sink_properties=device.description={}", sink_name);
+
+    let sink_output = Command::new("pactl")
+        .args(["load-module", "module-null-sink", &sink_arg, &props_arg])
+        .output()
+        .context("Failed to load module-null-sink")?;
+
+    if !sink_output.status.success() {
+        let stderr = String::from_utf8_lossy(&sink_output.stderr);
+        unload_audio_modules(&module_ids);
+        anyhow::bail!("Failed to create null sink: {}", stderr.trim());
+    }
+
+    let sink_module_id = String::from_utf8_lossy(&sink_output.stdout)
+        .trim()
+        .parse::<u32>()
+        .context("Failed to parse null sink module id")?;
     module_ids.push(sink_module_id);
 
+    // Create loopbacks for each source
     for source in sources {
-        match create_loopback(source, &sink_name) {
-            Ok(module_id) => module_ids.push(module_id),
-            Err(err) => {
-                unload_audio_modules(&module_ids);
-                return Err(err);
-            }
+        let source_arg = format!("source={}", source);
+        let sink_arg = format!("sink={}", sink_name);
+
+        let loopback_output = Command::new("pactl")
+            .args(["load-module", "module-loopback", &source_arg, &sink_arg])
+            .output()
+            .context("Failed to load module-loopback")?;
+
+        if !loopback_output.status.success() {
+            let stderr = String::from_utf8_lossy(&loopback_output.stderr);
+            unload_audio_modules(&module_ids);
+            anyhow::bail!("Failed to create loopback: {}", stderr.trim());
         }
+
+        let module_id = String::from_utf8_lossy(&loopback_output.stdout)
+            .trim()
+            .parse::<u32>()
+            .context("Failed to parse loopback module id")?;
+
+        module_ids.push(module_id);
     }
 
     let monitor_name = format!("{}.monitor", sink_name);
@@ -274,46 +306,6 @@ fn create_recording_mix(sources: &[String]) -> Result<AudioTarget> {
         name: monitor_name,
         module_ids,
     })
-}
-
-fn create_null_sink(name: &str) -> Result<u32> {
-    let sink_arg = format!("sink_name={}", name);
-    let props_arg = format!("sink_properties=device.description={}", name);
-
-    let output = Command::new("pactl")
-        .args(["load-module", "module-null-sink", &sink_arg, &props_arg])
-        .output()
-        .context("Failed to load module-null-sink")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("Failed to create null sink: {}", stderr.trim());
-    }
-
-    String::from_utf8_lossy(&output.stdout)
-        .trim()
-        .parse::<u32>()
-        .context("Failed to parse null sink module id")
-}
-
-fn create_loopback(source: &str, sink: &str) -> Result<u32> {
-    let source_arg = format!("source={}", source);
-    let sink_arg = format!("sink={}", sink);
-
-    let output = Command::new("pactl")
-        .args(["load-module", "module-loopback", &source_arg, &sink_arg])
-        .output()
-        .context("Failed to load module-loopback")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("Failed to create loopback: {}", stderr.trim());
-    }
-
-    String::from_utf8_lossy(&output.stdout)
-        .trim()
-        .parse::<u32>()
-        .context("Failed to parse loopback module id")
 }
 
 fn unload_audio_module(module_id: u32) {

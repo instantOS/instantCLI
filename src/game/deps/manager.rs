@@ -674,7 +674,7 @@ fn prepare_install_target(
                     .confirm(prompt)
                     .yes_text("Overwrite directory")
                     .no_text("Cancel")
-                    .show_confirmation()?
+                    .confirm_dialog()?
                 {
                     ConfirmResult::Yes => {}
                     ConfirmResult::No | ConfirmResult::Cancelled => {
@@ -716,7 +716,7 @@ fn prepare_install_target(
                 .confirm(prompt)
                 .yes_text("Overwrite file")
                 .no_text("Cancel")
-                .show_confirmation()?
+                .confirm_dialog()?
             {
                 ConfirmResult::Yes => {}
                 ConfirmResult::No | ConfirmResult::Cancelled => {

@@ -94,7 +94,7 @@ pub fn configure_printer_support(ctx: &mut SettingsContext, enabled: bool) -> Re
             .confirm("Disable printer services? Jobs will stop printing.")
             .yes_text("Disable")
             .no_text("Cancel")
-            .show_confirmation()?;
+            .confirm_dialog()?;
 
         if result != ConfirmResult::Yes {
             ctx.set_bool(PRINTER_SERVICES_KEY, true);
@@ -259,8 +259,7 @@ Recommended improvement:\n{}",
                 .confirm(&message)
                 .yes_text("Update")
                 .no_text("Skip")
-                .show_confirmation()?;
-
+                .confirm_dialog()?;
             if result != ConfirmResult::Yes {
                 ctx.emit_info(
                     "settings.printer.nsswitch.skipped",
@@ -292,8 +291,7 @@ Recommended replacement:\n{}",
                 .confirm(&message)
                 .yes_text("Update")
                 .no_text("Skip")
-                .show_confirmation()?;
-
+                .confirm_dialog()?;
             if result != ConfirmResult::Yes {
                 ctx.emit_info(
                     "settings.printer.nsswitch.skipped",

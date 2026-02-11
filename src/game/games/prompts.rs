@@ -1,5 +1,6 @@
 use crate::common::TildePath;
 use crate::game::games::validation::validate_non_empty;
+use crate::game::utils::path::tilde_display_string;
 use crate::game::utils::safeguards::{PathUsage, ensure_safe_path};
 use crate::menu_utils::{
     ConfirmResult, FilePickerScope, FzfWrapper, PathInputBuilder, PathInputSelection,
@@ -82,9 +83,7 @@ pub(crate) fn get_save_path(game_name: &str) -> Result<TildePath> {
         return get_save_path(game_name);
     }
 
-    let save_path_display = save_path
-        .to_tilde_string()
-        .unwrap_or_else(|_| save_path.as_path().to_string_lossy().to_string());
+    let save_path_display = tilde_display_string(&save_path);
 
     match FzfWrapper::builder()
         .confirm(format!(

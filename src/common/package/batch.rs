@@ -121,7 +121,7 @@ impl InstallBatch {
             .confirm(&msg)
             .yes_text(yes_text)
             .no_text("Cancel")
-            .show_confirmation()?;
+            .confirm_dialog()?;
 
         Ok(matches!(
             should_install,
@@ -158,7 +158,7 @@ impl InstallBatch {
             FzfWrapper::builder()
                 .message(&installing_msg)
                 .title("Installing Packages")
-                .show_message()?;
+                .message_dialog()?;
 
             // Execute installation for this manager
             super::install::install_packages(*manager, packages)?;

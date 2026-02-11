@@ -1,10 +1,11 @@
 use super::add::{AddGameOptions, ResolvedGameDetails};
 use crate::game::config::{Game, GameInstallation, InstallationsConfig, InstantGameConfig};
+use crate::game::utils::path::tilde_display_string;
 use anyhow::{Context, Result};
 
 pub(super) struct GameCreationContext {
-    config: InstantGameConfig,
-    installations: InstallationsConfig,
+    pub(super) config: InstantGameConfig,
+    pub(super) installations: InstallationsConfig,
 }
 
 impl GameCreationContext {
@@ -14,22 +15,6 @@ impl GameCreationContext {
             installations: InstallationsConfig::load()
                 .context("Failed to load installations configuration")?,
         })
-    }
-
-    pub(super) fn config(&self) -> &InstantGameConfig {
-        &self.config
-    }
-
-    pub(super) fn config_mut(&mut self) -> &mut InstantGameConfig {
-        &mut self.config
-    }
-
-    pub(super) fn installations_mut(&mut self) -> &mut InstallationsConfig {
-        &mut self.installations
-    }
-
-    pub(super) fn installations(&self) -> &InstallationsConfig {
-        &self.installations
     }
 
     pub(super) fn game_exists(&self, name: &str) -> bool {
@@ -83,10 +68,10 @@ impl GameManager {
             game.launch_command = Some(command.clone());
         }
 
-        context.config_mut().games.push(game);
+        context.config.games.push(game);
 
         context
-            .installations_mut()
+            .installations
             .installations
             .push(GameInstallation::with_kind(
                 details.name.clone(),
@@ -96,10 +81,7 @@ impl GameManager {
 
         context.save()?;
 
-        let save_path_display = details
-            .save_path
-            .to_tilde_string()
-            .unwrap_or_else(|_| details.save_path.as_path().to_string_lossy().to_string());
+        let save_path_display = tilde_display_string(&details.save_path);
 
         println!("✓ Game '{}' added successfully!", details.name);
         println!(
@@ -132,7 +114,7 @@ impl GameManager {
         let save_path_type = super::relocate::determine_save_path_type(&new_path)?;
 
         super::relocate::upsert_installation(
-            &mut context.installations_mut().installations,
+            &mut context.installations.installations,
             &game_name,
             new_path.clone(),
             save_path_type,
@@ -140,21 +122,11 @@ impl GameManager {
 
         context.save()?;
 
-        let path_display = new_path
-            .to_tilde_string()
-            .unwrap_or_else(|_| new_path.as_path().to_string_lossy().to_string());
+        let path_display = tilde_display_string(&new_path);
 
         println!("✓ Save path for '{game_name}' relocated successfully!");
         println!("New save path: {}", path_display);
 
         Ok(())
-    }
-
-    pub(crate) fn get_game_description() -> Result<String> {
-        super::prompts::get_game_description()
-    }
-
-    pub(crate) fn get_launch_command() -> Result<String> {
-        super::prompts::get_launch_command()
     }
 }

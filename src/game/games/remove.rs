@@ -46,7 +46,7 @@ pub(super) fn remove_game(game_name: Option<String>, force: bool) -> Result<()> 
         ))
         .yes_text("Remove Game")
         .no_text("Keep Game")
-        .show_confirmation()
+        .confirm_dialog()
         .map_err(|e| anyhow!("Failed to get confirmation: {}", e))?
     {
         ConfirmResult::Yes => {

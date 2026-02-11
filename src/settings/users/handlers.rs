@@ -256,7 +256,7 @@ fn toggle_user_sudo(
                 )
                 .yes_text("Remove sudo")
                 .no_text("Cancel")
-                .show_confirmation()?;
+                .confirm_dialog()?;
 
             if result != crate::menu_utils::ConfirmResult::Yes {
                 return Ok(false);
@@ -398,7 +398,7 @@ fn create_group_for_user(
             .confirm(message)
             .yes_text("Add user")
             .no_text("Skip")
-            .show_confirmation()?;
+            .confirm_dialog()?;
 
         if matches!(result, crate::menu_utils::ConfirmResult::Yes) {
             add_user_to_group(ctx, username, &group_name)?;
@@ -418,7 +418,7 @@ fn create_group_for_user(
         .confirm(message)
         .yes_text("Add user")
         .no_text("Skip")
-        .show_confirmation()?;
+        .confirm_dialog()?;
 
     if matches!(result, crate::menu_utils::ConfirmResult::Yes) {
         add_user_to_group(ctx, username, &group_name)?;

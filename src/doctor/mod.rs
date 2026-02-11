@@ -69,10 +69,6 @@ impl CheckStatus {
         matches!(self, CheckStatus::Pass(_))
     }
 
-    pub fn is_warning(&self) -> bool {
-        matches!(self, CheckStatus::Warning { .. })
-    }
-
     pub fn is_skipped(&self) -> bool {
         matches!(self, CheckStatus::Skipped(_))
     }
@@ -84,10 +80,6 @@ impl CheckStatus {
             CheckStatus::Fail { fixable, .. } => *fixable,
             CheckStatus::Skipped(_) => false,
         }
-    }
-
-    pub fn needs_fix(&self) -> bool {
-        matches!(self, CheckStatus::Fail { .. })
     }
 
     pub fn status_text(&self) -> &'static str {
@@ -510,7 +502,7 @@ pub fn print_single_check_result_table(result: &CheckResult) {
                     "message": result.status.message(),
                     "fixable_indicator": result.status.fixable_indicator(),
                     "fix_message": result.fix_message,
-                    "needs_fix": result.status.needs_fix(),
+                    "needs_fix": matches!(result.status, CheckStatus::Fail { .. }),
                 })),
             );
         }
@@ -540,7 +532,7 @@ pub fn print_single_check_result_table(result: &CheckResult) {
             println!("{}", "Health Check Result:".bold());
             println!("{table}");
 
-            if result.status.needs_fix() {
+            if matches!(result.status, CheckStatus::Fail { .. }) {
                 if result.status.is_fixable() {
                     if let Some(ref msg) = result.fix_message {
                         println!();

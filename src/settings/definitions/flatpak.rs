@@ -136,7 +136,7 @@ fn run_flatpak_installer(debug: bool) -> Result<()> {
             if not_installed.len() == 1 { "" } else { "s" }
         );
 
-        let result = FzfWrapper::builder().confirm(&msg).show_confirmation()?;
+        let result = FzfWrapper::builder().confirm(&msg).confirm_dialog()?;
         if !matches!(result, ConfirmResult::Yes) {
             println!("Installation cancelled.");
             // Still show action menu for already installed apps if any

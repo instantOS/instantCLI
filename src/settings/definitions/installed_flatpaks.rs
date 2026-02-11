@@ -177,7 +177,7 @@ pub fn uninstall_flatpak(app_id: &str) -> Result<bool> {
     let confirm_msg = format!("Uninstall {}?", app_id);
     let confirm = FzfWrapper::builder()
         .confirm(&confirm_msg)
-        .show_confirmation()?;
+        .confirm_dialog()?;
 
     if !matches!(confirm, crate::menu_utils::ConfirmResult::Yes) {
         println!("Uninstallation cancelled.");

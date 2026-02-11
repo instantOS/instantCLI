@@ -4,6 +4,7 @@ use crate::common::TildePath;
 use crate::game::config::PathContentKind;
 use crate::game::launch_builder::eden_discovery;
 use crate::game::launch_builder::pcsx2_discovery;
+use crate::game::utils::path::tilde_display_string;
 use crate::game::utils::safeguards::{PathUsage, ensure_safe_path};
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header};
 use crate::ui::catppuccin::{colors, format_icon_colored, fzf_mocha_args};
@@ -80,12 +81,8 @@ pub(super) fn maybe_prefill_from_emulators(
     match result {
         FzfResult::Selected(AddMethodItem::DiscoveredEdenGame(game)) => {
             let launch_command = match game.game_path {
-                Some(ref game_file) => match EdenBuilder::find_or_select_eden()? {
-                    Some(eden_path) => {
-                        Some(EdenBuilder::format_command_simple(&eden_path, game_file))
-                    }
-                    None => None,
-                },
+                Some(ref game_file) => EdenBuilder::find_or_select_eden()?
+                    .map(|eden_path| EdenBuilder::format_command_simple(&eden_path, game_file)),
                 None => None,
             };
 
@@ -148,7 +145,7 @@ pub(super) fn resolve_add_game_details(
 
             trimmed.to_string()
         }
-        None => prompts::get_game_name(context.config())?,
+        None => prompts::get_game_name(&context.config)?,
     };
 
     let description = match description {
@@ -213,7 +210,7 @@ pub(super) fn resolve_add_game_details(
 
 fn find_existing_game_for_save(save_path: &Path, context: &GameCreationContext) -> Option<String> {
     context
-        .installations()
+        .installations
         .installations
         .iter()
         .find(|inst| inst.save_path.as_path() == save_path)
@@ -365,7 +362,7 @@ impl FzfSelectable for AddMethodItem {
 fn eden_game_preview(
     game: &eden_discovery::EdenDiscoveredGame,
 ) -> crate::menu::protocol::FzfPreview {
-    let save_display = display_save_path(&game.save_path);
+    let save_display = tilde_display_string(&TildePath::new(game.save_path.clone()));
 
     let mut builder = PreviewBuilder::new()
         .header(NerdFont::Gamepad, &game.display_name)
@@ -394,7 +391,7 @@ fn eden_game_preview(
 fn pcsx2_memcard_preview(
     memcard: &pcsx2_discovery::Pcsx2DiscoveredMemcard,
 ) -> crate::menu::protocol::FzfPreview {
-    let save_display = display_save_path(&memcard.memcard_path);
+    let save_display = tilde_display_string(&TildePath::new(memcard.memcard_path.clone()));
 
     PreviewBuilder::new()
         .header(NerdFont::Disc, &memcard.display_name)
@@ -412,7 +409,7 @@ fn pcsx2_memcard_preview(
 }
 
 fn existing_eden_game_preview(info: &ExistingEdenGameInfo) -> crate::menu::protocol::FzfPreview {
-    let save_display = display_save_path(&info.game.save_path);
+    let save_display = tilde_display_string(&TildePath::new(info.game.save_path.clone()));
 
     let mut builder = PreviewBuilder::new()
         .header(NerdFont::Check, &info.tracked_name)
@@ -439,7 +436,7 @@ fn existing_eden_game_preview(info: &ExistingEdenGameInfo) -> crate::menu::proto
 }
 
 fn existing_pcsx2_game_preview(info: &ExistingPcsx2GameInfo) -> crate::menu::protocol::FzfPreview {
-    let save_display = display_save_path(&info.memcard.memcard_path);
+    let save_display = tilde_display_string(&TildePath::new(info.memcard.memcard_path.clone()));
 
     PreviewBuilder::new()
         .header(NerdFont::Check, &info.tracked_name)
@@ -457,13 +454,6 @@ fn existing_pcsx2_game_preview(info: &ExistingPcsx2GameInfo) -> crate::menu::pro
         .blank()
         .subtext("Already tracked — press Enter to open game menu")
         .build()
-}
-
-fn display_save_path(path: &Path) -> String {
-    let home = dirs::home_dir()
-        .map(|h| h.to_string_lossy().to_string())
-        .unwrap_or_default();
-    path.to_string_lossy().replace(&home, "~")
 }
 
 fn some_if_not_empty(value: impl Into<String>) -> Option<String> {

@@ -488,7 +488,7 @@ fn resolve_restore_decision(
         .confirm(prompt)
         .yes_text("Restore and overwrite")
         .no_text("Choose a different path")
-        .show_confirmation()
+        .confirm_dialog()
         .map_err(|e| anyhow!("Failed to confirm restore overwrite: {e}"))?
     {
         ConfirmResult::Yes => Ok(RestoreFlow::Proceed(true)),
