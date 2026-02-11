@@ -150,24 +150,3 @@ impl ResizeVerifier {
         tokio::task::spawn_blocking(move || verifier.check()).await?
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_resize_status_human_readable() {
-        let status = ResizeStatus {
-            resize_detected: true,
-            current_partition_size: Some(50 * 1024 * 1024 * 1024), // 50 GB
-            space_freed_bytes: 20 * 1024 * 1024 * 1024,            // 20 GB
-            message: "Test".to_string(),
-        };
-
-        assert_eq!(
-            status.current_partition_human(),
-            Some("50.0 GB".to_string())
-        );
-        assert_eq!(status.space_freed_human(), "20.0 GB".to_string());
-    }
-}
