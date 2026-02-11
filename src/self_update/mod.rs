@@ -1,9 +1,12 @@
 use crate::ui::prelude::*;
 use anyhow::{Context, Result, anyhow};
 use colored::Colorize;
+use futures_util::StreamExt;
+use indicatif::{ProgressBar, ProgressStyle};
 use sha2::Digest;
 use std::env;
 use std::fs;
+use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use sudo::RunningAs;
@@ -68,6 +71,16 @@ fn is_writable(path: &Path) -> bool {
         && nix::unistd::access(path, nix::unistd::AccessFlags::W_OK).is_ok()
 }
 
+/// Detect if running on SteamOS
+fn detect_steam_os() -> bool {
+    if let Ok(os_release) = fs::read_to_string("/etc/os-release") {
+        if os_release.contains("steamdeck") || os_release.contains("SteamOS") {
+            return true;
+        }
+    }
+    env::var("STEAM_DECK").is_ok()
+}
+
 /// Get the current installation location
 fn get_install_location() -> Result<InstallLocation> {
     let current_exe = env::current_exe().context("Failed to get current executable path")?;
@@ -127,7 +140,7 @@ struct CrateInfo {
 }
 
 /// Fetch the latest release from GitHub that has binaries available
-async fn fetch_latest_release_with_binaries(target: &str) -> Result<GitHubRelease> {
+async fn fetch_latest_release_with_binaries(target: &str, is_steamos: bool) -> Result<GitHubRelease> {
     let url = format!("{}/{}/{}/releases", GITHUB_API_URL, REPO_OWNER, REPO_NAME);
 
     let client = reqwest::Client::builder()
@@ -154,7 +167,11 @@ async fn fetch_latest_release_with_binaries(target: &str) -> Result<GitHubReleas
     // Find the first release that has the required binary for this target
     for release in releases {
         let has_binary = release.assets.iter().any(|a| {
-            a.name.contains(target) && (a.name.ends_with(".tar.zst") || a.name.ends_with(".tgz"))
+            if is_steamos {
+                a.name.ends_with(".AppImage") && !a.name.contains(".sha256")
+            } else {
+                a.name.contains(target) && (a.name.ends_with(".tar.zst") || a.name.ends_with(".tgz"))
+            }
         });
 
         if has_binary {
@@ -163,8 +180,9 @@ async fn fetch_latest_release_with_binaries(target: &str) -> Result<GitHubReleas
     }
 
     Err(anyhow!(
-        "No release found with binaries for target: {}",
-        target
+        "No release found with binaries for target: {}{}",
+        target,
+        if is_steamos { " (AppImage)" } else { "" }
     ))
 }
 
@@ -231,14 +249,26 @@ fn confirm_update() -> Result<bool> {
 }
 
 /// Find the appropriate asset for the target architecture
-fn find_asset_url(release: &GitHubRelease, target: &str) -> Result<(String, Option<String>)> {
-    let archive_asset = release
-        .assets
-        .iter()
-        .find(|a| {
-            a.name.contains(target) && (a.name.ends_with(".tar.zst") || a.name.ends_with(".tgz"))
-        })
-        .ok_or_else(|| anyhow!("No prebuilt archive found for {}", target))?;
+fn find_asset_url(
+    release: &GitHubRelease,
+    target: &str,
+    is_steamos: bool,
+) -> Result<(String, Option<String>)> {
+    let archive_asset = if is_steamos {
+        release
+            .assets
+            .iter()
+            .find(|a| a.name.ends_with(".AppImage") && !a.name.contains(".sha256"))
+            .ok_or_else(|| anyhow!("No AppImage found for SteamOS"))?
+    } else {
+        release
+            .assets
+            .iter()
+            .find(|a| {
+                a.name.contains(target) && (a.name.ends_with(".tar.zst") || a.name.ends_with(".tgz"))
+            })
+            .ok_or_else(|| anyhow!("No prebuilt archive found for {}", target))?
+    };
 
     let sha_asset = release
         .assets
@@ -251,8 +281,8 @@ fn find_asset_url(release: &GitHubRelease, target: &str) -> Result<(String, Opti
     ))
 }
 
-/// Download a file from URL
-async fn download_file(url: &str, dest: &Path) -> Result<()> {
+/// Download a file from URL with progress bar
+async fn download_file(url: &str, dest: &Path, show_progress: bool) -> Result<()> {
     let client = reqwest::Client::builder()
         .user_agent(format!("{}/{}", BIN_NAME, env!("CARGO_PKG_VERSION")))
         .build()
@@ -271,8 +301,43 @@ async fn download_file(url: &str, dest: &Path) -> Result<()> {
         ));
     }
 
-    let bytes = response.bytes().await.context("Failed to read response")?;
-    fs::write(dest, bytes).context("Failed to write file")?;
+    let total_size = response.content_length();
+
+    let pb = if show_progress {
+        let pb = if let Some(size) = total_size {
+            ProgressBar::new(size)
+        } else {
+            ProgressBar::new_spinner()
+        };
+
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})")
+                .unwrap()
+                .progress_chars("#>-"),
+        );
+        Some(pb)
+    } else {
+        None
+    };
+
+    let mut file = fs::File::create(dest).context("Failed to create destination file")?;
+    let mut downloaded: u64 = 0;
+    let mut stream = response.bytes_stream();
+
+    while let Some(item) = stream.next().await {
+        let chunk: bytes::Bytes = item.context("Error while downloading file")?;
+        file.write_all(&chunk).context("Error while writing to file")?;
+        let new = downloaded + (chunk.len() as u64);
+        downloaded = new;
+        if let Some(ref pb) = pb {
+            pb.set_position(new);
+        }
+    }
+
+    if let Some(pb) = pb {
+        pb.finish_with_message("Download complete");
+    }
 
     Ok(())
 }
@@ -293,7 +358,7 @@ async fn verify_checksum(archive_path: &Path, sha_url: Option<&str>) -> Result<(
     };
 
     let checksum_file = archive_path.with_extension("sha256");
-    download_file(sha_url, &checksum_file).await?;
+    download_file(sha_url, &checksum_file, false).await?;
 
     let checksum_content =
         fs::read_to_string(&checksum_file).context("Failed to read checksum file")?;
@@ -579,7 +644,20 @@ pub async fn self_update() -> Result<()> {
     );
 
     let current_version = env!("CARGO_PKG_VERSION");
-    let location = get_install_location()?;
+    let mut location = get_install_location()?;
+    let is_steamos = detect_steam_os();
+
+    if is_steamos {
+        let home = dirs::home_dir().context("Could not find home directory")?;
+        let local_bin = home.join(".local").join("bin");
+        location.path = local_bin.join(BIN_NAME);
+        location.needs_sudo = false;
+        location.install_source = InstallSource::Standalone;
+
+        if !local_bin.exists() {
+            fs::create_dir_all(&local_bin).context("Failed to create ~/.local/bin")?;
+        }
+    }
 
     match location.install_source {
         InstallSource::SystemPackage => {
@@ -607,7 +685,7 @@ pub async fn self_update() -> Result<()> {
     }
 
     let target = detect_target()?;
-    let release = fetch_latest_release_with_binaries(&target).await?;
+    let release = fetch_latest_release_with_binaries(&target, is_steamos).await?;
 
     let latest_version = release.tag_name.trim_start_matches('v');
 
@@ -664,7 +742,7 @@ pub async fn self_update() -> Result<()> {
         return Ok(());
     }
 
-    let (archive_url, sha_url) = find_asset_url(&release, &target)?;
+    let (archive_url, sha_url) = find_asset_url(&release, &target, is_steamos)?;
 
     // Create temporary directory
     let temp_dir = tempfile::tempdir().context("Failed to create temporary directory")?;
@@ -677,21 +755,28 @@ pub async fn self_update() -> Result<()> {
         &format!("{} Downloading update...", char::from(NerdFont::Download)),
         None,
     );
-    download_file(&archive_url, &archive_path).await?;
+    download_file(&archive_url, &archive_path, true).await?;
 
     verify_checksum(&archive_path, sha_url.as_deref()).await?;
 
-    emit(
-        Level::Info,
-        "self_update.extracting",
-        &format!("{} Extracting archive...", char::from(NerdFont::Archive)),
-        None,
-    );
-    let extract_dir = temp_dir.path().join("extracted");
-    fs::create_dir(&extract_dir)?;
-    extract_archive(&archive_path, &extract_dir)?;
-
-    let new_binary = find_binary_in_dir(&extract_dir, BIN_NAME)?;
+    let new_binary = if is_steamos {
+        // AppImage is the binary itself
+        let mut perms = fs::metadata(&archive_path)?.permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&archive_path, perms)?;
+        archive_path
+    } else {
+        emit(
+            Level::Info,
+            "self_update.extracting",
+            &format!("{} Extracting archive...", char::from(NerdFont::Archive)),
+            None,
+        );
+        let extract_dir = temp_dir.path().join("extracted");
+        fs::create_dir(&extract_dir)?;
+        extract_archive(&archive_path, &extract_dir)?;
+        find_binary_in_dir(&extract_dir, BIN_NAME)?
+    };
 
     emit(
         Level::Info,

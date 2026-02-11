@@ -61,7 +61,10 @@ pub fn show_flatpak_action_menu(app_id: &str) -> Result<()> {
 
     match action {
         FlatpakAction::Run => run_flatpak(app_id),
-        FlatpakAction::Uninstall => uninstall_flatpak(app_id),
+        FlatpakAction::Uninstall => {
+            uninstall_flatpak(app_id)?;
+            Ok(())
+        }
     }
 }
 
@@ -170,7 +173,7 @@ pub fn run_flatpak(app_id: &str) -> Result<()> {
 }
 
 /// Uninstall a Flatpak application
-pub fn uninstall_flatpak(app_id: &str) -> Result<()> {
+pub fn uninstall_flatpak(app_id: &str) -> Result<bool> {
     let confirm_msg = format!("Uninstall {}?", app_id);
     let confirm = FzfWrapper::builder()
         .confirm(&confirm_msg)
@@ -178,12 +181,12 @@ pub fn uninstall_flatpak(app_id: &str) -> Result<()> {
 
     if !matches!(confirm, crate::menu_utils::ConfirmResult::Yes) {
         println!("Uninstallation cancelled.");
-        return Ok(());
+        return Ok(false);
     }
 
     println!("Uninstalling Flatpak app: {}", app_id);
     uninstall_packages(PackageManager::Flatpak, &[app_id])?;
     println!("✓ Flatpak app uninstallation completed successfully!");
 
-    Ok(())
+    Ok(true)
 }
