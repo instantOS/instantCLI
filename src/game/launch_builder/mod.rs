@@ -17,6 +17,7 @@ pub mod eden_discovery;
 mod flatpak;
 mod mgba;
 mod pcsx2;
+pub mod pcsx2_discovery;
 mod prompts;
 mod umu;
 mod validation;

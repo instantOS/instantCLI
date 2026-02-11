@@ -4,6 +4,7 @@ use crate::game::config::{
     Game, GameInstallation, InstallationsConfig, InstantGameConfig, PathContentKind,
 };
 use crate::game::launch_builder::eden_discovery;
+use crate::game::launch_builder::pcsx2_discovery;
 use crate::game::utils::safeguards::{PathUsage, ensure_safe_path};
 use crate::menu_utils::{
     ConfirmResult, FilePickerScope, FzfResult, FzfSelectable, FzfWrapper, Header, PathInputBuilder,
@@ -108,7 +109,10 @@ impl GameManager {
         Self::finish_add_game(&mut context, details)
     }
 
-    fn finish_add_game(context: &mut GameCreationContext, details: ResolvedGameDetails) -> Result<()> {
+    fn finish_add_game(
+        context: &mut GameCreationContext,
+        details: ResolvedGameDetails,
+    ) -> Result<()> {
         let mut game = Game::new(details.name.clone());
         if let Some(description) = &details.description {
             game.description = Some(description.clone());
@@ -569,17 +573,35 @@ fn maybe_prefill_from_eden(
 ) -> Result<EdenPrefillResult> {
     use crate::game::launch_builder::EdenBuilder;
 
-    if !eden_discovery::is_eden_installed() {
+    // Check if any emulator is installed with discoverable saves
+    let eden_installed = eden_discovery::is_eden_installed();
+    let pcsx2_installed = pcsx2_discovery::is_pcsx2_installed();
+
+    if !eden_installed && !pcsx2_installed {
         return Ok(EdenPrefillResult::Continue(options));
     }
 
-    let discovered = eden_discovery::discover_eden_games()?;
-    if discovered.is_empty() {
+    // Discover Eden games
+    let eden_games = if eden_installed {
+        eden_discovery::discover_eden_games()?
+    } else {
+        Vec::new()
+    };
+
+    // Discover PCSX2 memcards
+    let pcsx2_memcards = if pcsx2_installed {
+        pcsx2_discovery::discover_pcsx2_memcards()?
+    } else {
+        Vec::new()
+    };
+
+    // If nothing discovered, continue with manual entry
+    if eden_games.is_empty() && pcsx2_memcards.is_empty() {
         return Ok(EdenPrefillResult::Continue(options));
     }
 
-    // Classify each discovered game as new or already tracked
-    let items = classify_discovered_games(&discovered, context);
+    // Classify each discovered item as new or already tracked
+    let items = classify_discovered_items(&eden_games, &pcsx2_memcards, context);
 
     let result = FzfWrapper::builder()
         .header(Header::fancy("Games"))
@@ -611,12 +633,26 @@ fn maybe_prefill_from_eden(
                 create_save_path: false,
             }))
         }
+        FzfResult::Selected(AddMethodItem::Pcsx2Memcard(memcard)) => {
+            // Get the appropriate launch command for this PCSX2 installation type
+            let launch_command =
+                pcsx2_discovery::get_pcsx2_launch_command(memcard.install_type);
+
+            Ok(EdenPrefillResult::Continue(AddGameOptions {
+                name: Some(memcard.display_name.clone()),
+                description: None,
+                launch_command,
+                save_path: Some(memcard.memcard_path.to_string_lossy().to_string()),
+                create_save_path: false,
+            }))
+        }
         FzfResult::Selected(AddMethodItem::ExistingGame(info)) => {
             Ok(EdenPrefillResult::OpenGameMenu(info.tracked_name))
         }
-        FzfResult::Selected(AddMethodItem::ManualEntry) => {
-            Ok(EdenPrefillResult::Continue(options))
+        FzfResult::Selected(AddMethodItem::ExistingPcsx2Game(info)) => {
+            Ok(EdenPrefillResult::OpenGameMenu(info.tracked_name))
         }
+        FzfResult::Selected(AddMethodItem::ManualEntry) => Ok(EdenPrefillResult::Continue(options)),
         _ => Ok(EdenPrefillResult::Continue(options)),
     }
 }
@@ -632,17 +668,20 @@ fn find_existing_game_for_save(save_path: &Path, context: &GameCreationContext) 
         .map(|inst| inst.game_name.0.clone())
 }
 
-/// Build the selection item list, classifying each discovered game as new
+/// Build the selection item list, classifying each discovered item as new
 /// or already tracked (matched by save path against existing installations).
-fn classify_discovered_games(
-    discovered: &[eden_discovery::EdenDiscoveredGame],
+fn classify_discovered_items(
+    eden_games: &[eden_discovery::EdenDiscoveredGame],
+    pcsx2_memcards: &[pcsx2_discovery::Pcsx2DiscoveredMemcard],
     context: &GameCreationContext,
 ) -> Vec<AddMethodItem> {
-    let mut items: Vec<AddMethodItem> = Vec::with_capacity(discovered.len() + 1);
+    let total_count = eden_games.len() + pcsx2_memcards.len();
+    let mut items: Vec<AddMethodItem> = Vec::with_capacity(total_count + 1);
 
     items.push(AddMethodItem::ManualEntry);
 
-    for game in discovered {
+    // Add Eden games
+    for game in eden_games {
         match find_existing_game_for_save(&game.save_path, context) {
             Some(existing_name) => {
                 items.push(AddMethodItem::ExistingGame(ExistingGameInfo {
@@ -652,6 +691,21 @@ fn classify_discovered_games(
             }
             None => {
                 items.push(AddMethodItem::EdenGame(game.clone()));
+            }
+        }
+    }
+
+    // Add PCSX2 memcards
+    for memcard in pcsx2_memcards {
+        match find_existing_game_for_save(&memcard.memcard_path, context) {
+            Some(existing_name) => {
+                items.push(AddMethodItem::ExistingPcsx2Game(ExistingPcsx2GameInfo {
+                    memcard: memcard.clone(),
+                    tracked_name: existing_name,
+                }));
+            }
+            None => {
+                items.push(AddMethodItem::Pcsx2Memcard(memcard.clone()));
             }
         }
     }
@@ -666,12 +720,21 @@ struct ExistingGameInfo {
     tracked_name: String,
 }
 
+/// Info about a discovered PCSX2 memcard that is already tracked
+#[derive(Clone)]
+struct ExistingPcsx2GameInfo {
+    memcard: pcsx2_discovery::Pcsx2DiscoveredMemcard,
+    tracked_name: String,
+}
+
 /// Selection item for the add-game method chooser
 #[derive(Clone)]
 enum AddMethodItem {
     ManualEntry,
     EdenGame(eden_discovery::EdenDiscoveredGame),
+    Pcsx2Memcard(pcsx2_discovery::Pcsx2DiscoveredMemcard),
     ExistingGame(ExistingGameInfo),
+    ExistingPcsx2Game(ExistingPcsx2GameInfo),
 }
 
 impl FzfSelectable for AddMethodItem {
@@ -690,10 +753,24 @@ impl FzfSelectable for AddMethodItem {
                     game.display_name,
                 )
             }
+            AddMethodItem::Pcsx2Memcard(memcard) => {
+                format!(
+                    "{} {} (PS2)",
+                    format_icon_colored(NerdFont::Disc, colors::SAPPHIRE),
+                    memcard.display_name,
+                )
+            }
             AddMethodItem::ExistingGame(info) => {
                 format!(
                     "{} {}",
-                    format_icon_colored(NerdFont::Gamepad, colors::SAPPHIRE),
+                    format_icon_colored(NerdFont::Gamepad, colors::MAUVE),
+                    info.tracked_name,
+                )
+            }
+            AddMethodItem::ExistingPcsx2Game(info) => {
+                format!(
+                    "{} {}",
+                    format_icon_colored(NerdFont::Disc, colors::MAUVE),
                     info.tracked_name,
                 )
             }
@@ -704,8 +781,14 @@ impl FzfSelectable for AddMethodItem {
         match self {
             AddMethodItem::ManualEntry => "manual".to_string(),
             AddMethodItem::EdenGame(game) => game.title_id.clone(),
+            AddMethodItem::Pcsx2Memcard(memcard) => {
+                format!("pcsx2-{}", memcard.display_name)
+            }
             AddMethodItem::ExistingGame(info) => {
                 format!("existing-{}", info.game.title_id)
+            }
+            AddMethodItem::ExistingPcsx2Game(info) => {
+                format!("existing-pcsx2-{}", info.memcard.display_name)
             }
         }
     }
@@ -723,6 +806,7 @@ impl FzfSelectable for AddMethodItem {
                 .bullet("Save data path")
                 .build(),
             AddMethodItem::EdenGame(game) => eden_game_preview(game),
+            AddMethodItem::Pcsx2Memcard(memcard) => pcsx2_memcard_preview(memcard),
             AddMethodItem::ExistingGame(info) => {
                 let home = home_dir_string();
                 let save_display = info.game.save_path.to_string_lossy().replace(&home, "~");
@@ -745,6 +829,31 @@ impl FzfSelectable for AddMethodItem {
                 }
 
                 builder
+                    .separator()
+                    .blank()
+                    .subtext("Already tracked — press Enter to open game menu")
+                    .build()
+            }
+            AddMethodItem::ExistingPcsx2Game(info) => {
+                let home = home_dir_string();
+                let save_display = info
+                    .memcard
+                    .memcard_path
+                    .to_string_lossy()
+                    .replace(&home, "~");
+
+                PreviewBuilder::new()
+                    .header(NerdFont::Check, &info.tracked_name)
+                    .text(&format!(
+                        "Source: {} ({})",
+                        info.memcard.display_name, info.memcard.install_type
+                    ))
+                    .blank()
+                    .separator()
+                    .blank()
+                    .text("Save data:")
+                    .bullet(&save_display)
+                    .blank()
                     .separator()
                     .blank()
                     .subtext("Already tracked — press Enter to open game menu")
@@ -785,6 +894,27 @@ fn eden_game_preview(
         .separator()
         .blank()
         .subtext("Auto-discovered from Eden emulator")
+        .build()
+}
+
+fn pcsx2_memcard_preview(
+    memcard: &pcsx2_discovery::Pcsx2DiscoveredMemcard,
+) -> crate::menu::protocol::FzfPreview {
+    let home = home_dir_string();
+    let save_display = memcard.memcard_path.to_string_lossy().replace(&home, "~");
+
+    PreviewBuilder::new()
+        .header(NerdFont::Disc, &memcard.display_name)
+        .text(&format!("Source: {}", memcard.install_type))
+        .blank()
+        .separator()
+        .blank()
+        .text("Memory card:")
+        .bullet(&save_display)
+        .blank()
+        .separator()
+        .blank()
+        .subtext("Auto-discovered from PCSX2 emulator")
         .build()
 }
 
