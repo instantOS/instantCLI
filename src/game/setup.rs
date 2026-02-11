@@ -6,8 +6,8 @@ use crate::game::config::{
     Game, GameDependency, GameInstallation, InstallationsConfig, InstantGameConfig, PathContentKind,
 };
 use crate::game::deps::manager::{InstallDependencyOptions, install_dependency};
-use crate::game::games::manager::{AddGameOptions, GameManager};
 use crate::game::games::validation::validate_game_manager_initialized;
+use crate::game::games::{AddGameOptions, GameManager};
 use crate::game::utils::path::tilde_display_string;
 use crate::menu::protocol;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};

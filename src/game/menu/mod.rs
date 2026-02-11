@@ -5,8 +5,8 @@ mod state;
 use anyhow::{Context, Result, anyhow};
 
 use crate::game::config::{InstallationsConfig, InstantGameConfig};
-use crate::game::games::manager::AddGameOptions;
-use crate::game::games::manager::GameManager;
+use crate::game::games::AddGameOptions;
+use crate::game::games::GameManager;
 use crate::game::games::selection::{GameMenuEntry, select_game_menu_entry};
 use crate::game::operations::desktop;
 use crate::game::operations::launch_game;
