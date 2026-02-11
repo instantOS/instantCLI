@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.7](https://github.com/instantOS/instantCLI/compare/v0.13.6...v0.13.7) - 2026-02-10
+
+### Fixed
+
+- fix flatpak
+- fix snap menu
+- fix preview matching
+- fix bugs
+- fix separators
+
+### Other
+
+- more detailled previews
+- more clear previews
+- prettier snap installer
+- better categorization
+- prettier installable packages menu
+- reinvent less menu stuff
+- less unnecessary string
+- consolidate fzf exit checking
+- better slider builder
+- remove unused code
+- cleaner args
+- init support for separators
+- consolidate stats feature
+- better video project menu
+- better post render menu
+- remove unneeded function
+- cleaner audio resolver
+- rename oddly named functions
+- refactor disk execution
+- refactor compiler.rs
+- rename to better names
+- rename dotfilerepo
+- Merge branch 'dev' of github.com:instantOS/instantCLI into dev
+- better builder offer behavior
+- better clone behavior
+- better dev previews
+- init dev menu
+- refactor discover_dotfiles
+- refactor dotfile merge
+- more sensible merge
+- add keyword
+- refactor snapshots
+- even better snapshot preview
+- better snapshot preview
+
 ## [0.13.6](https://github.com/instantOS/instantCLI/compare/v0.13.5...v0.13.6) - 2026-02-08
 
 ### Fixed
