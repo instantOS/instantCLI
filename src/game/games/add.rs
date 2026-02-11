@@ -6,12 +6,12 @@ use crate::game::launch_builder::duckstation_discovery;
 use crate::game::launch_builder::eden_discovery;
 use crate::game::launch_builder::pcsx2_discovery;
 use crate::game::utils::path::tilde_display_string;
-use crate::game::utils::safeguards::{ensure_safe_path, PathUsage};
+use crate::game::utils::safeguards::{PathUsage, ensure_safe_path};
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header};
 use crate::ui::catppuccin::{colors, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use std::fs;
 use std::path::Path;
 
@@ -372,6 +372,13 @@ impl FzfSelectable for AddMethodItem {
                     info.tracked_name,
                 )
             }
+            AddMethodItem::ExistingDuckstationGame(info) => {
+                format!(
+                    "{} {}",
+                    format_icon_colored(NerdFont::Disc, colors::MAUVE),
+                    info.tracked_name,
+                )
+            }
         }
     }
 
@@ -382,11 +389,17 @@ impl FzfSelectable for AddMethodItem {
             AddMethodItem::Pcsx2Memcard(memcard) => {
                 format!("pcsx2-{}", memcard.display_name)
             }
+            AddMethodItem::DuckstationMemcard(memcard) => {
+                format!("duckstation-{}", memcard.display_name)
+            }
             AddMethodItem::ExistingEdenGame(info) => {
                 format!("existing-{}", info.game.title_id)
             }
             AddMethodItem::ExistingPcsx2Game(info) => {
                 format!("existing-pcsx2-{}", info.memcard.display_name)
+            }
+            AddMethodItem::ExistingDuckstationGame(info) => {
+                format!("existing-duckstation-{}", info.memcard.display_name)
             }
         }
     }
@@ -405,8 +418,10 @@ impl FzfSelectable for AddMethodItem {
                 .build(),
             AddMethodItem::DiscoveredEdenGame(game) => eden_game_preview(game),
             AddMethodItem::Pcsx2Memcard(memcard) => pcsx2_memcard_preview(memcard),
+            AddMethodItem::DuckstationMemcard(memcard) => duckstation_memcard_preview(memcard),
             AddMethodItem::ExistingEdenGame(info) => existing_eden_game_preview(info),
             AddMethodItem::ExistingPcsx2Game(info) => existing_pcsx2_game_preview(info),
+            AddMethodItem::ExistingDuckstationGame(info) => existing_duckstation_game_preview(info),
         }
     }
 
@@ -492,6 +507,49 @@ fn existing_eden_game_preview(info: &ExistingEdenGameInfo) -> crate::menu::proto
 }
 
 fn existing_pcsx2_game_preview(info: &ExistingPcsx2GameInfo) -> crate::menu::protocol::FzfPreview {
+    let save_display = tilde_display_string(&TildePath::new(info.memcard.memcard_path.clone()));
+
+    PreviewBuilder::new()
+        .header(NerdFont::Check, &info.tracked_name)
+        .text(&format!(
+            "Source: {} ({})",
+            info.memcard.display_name, info.memcard.install_type
+        ))
+        .blank()
+        .separator()
+        .blank()
+        .text("Save data:")
+        .bullet(&save_display)
+        .blank()
+        .separator()
+        .blank()
+        .subtext("Already tracked — press Enter to open game menu")
+        .build()
+}
+
+fn duckstation_memcard_preview(
+    memcard: &duckstation_discovery::DuckstationDiscoveredMemcard,
+) -> crate::menu::protocol::FzfPreview {
+    let save_display = tilde_display_string(&TildePath::new(memcard.memcard_path.clone()));
+
+    PreviewBuilder::new()
+        .header(NerdFont::Disc, &memcard.display_name)
+        .text(&format!("Source: {}", memcard.install_type))
+        .blank()
+        .separator()
+        .blank()
+        .text("Memory card:")
+        .bullet(&save_display)
+        .blank()
+        .separator()
+        .blank()
+        .subtext("Auto-discovered from DuckStation emulator")
+        .build()
+}
+
+fn existing_duckstation_game_preview(
+    info: &ExistingDuckstationGameInfo,
+) -> crate::menu::protocol::FzfPreview {
     let save_display = tilde_display_string(&TildePath::new(info.memcard.memcard_path.clone()));
 
     PreviewBuilder::new()
