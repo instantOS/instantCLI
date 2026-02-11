@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.8](https://github.com/instantOS/instantCLI/compare/v0.13.7...v0.13.8) - 2026-02-11
+
+### Fixed
+
+- fix back menu
+- fix appimage on SteamOS game mode
+- fix keywords on wide terminals
+- fix termux filter
+
+### Other
+
+- simplify add.rs
+- rename
+- refactor discovery to trait
+- fmt
+- better azahar previews
+- init azahar discovery
+- add duckstation previews
+- duckstation discovery
+- cleanup
+- standardize some stuff
+- split manager.rs
+- refactor manager.rs
+- clean up function names
+- pcsx2 discovery
+- better eden behavior
+- filter already added games
+- init eden discovery
+- better shortcut thingy
+- add emudeck pcsx2 support
+- better builder
+- clean up duplicates
+- add to desktop feature
+- clippy
+- remove old test
+- better steam shortcut handling
+- better self-update
+- better flatpak manage flow
+- some cleanup
+- prettier doctor
+- prettier flatpak menu
+- better flatpak list
+
 ## [0.13.7](https://github.com/instantOS/instantCLI/compare/v0.13.6...v0.13.7) - 2026-02-10
 
 ### Fixed
