@@ -302,20 +302,18 @@ fn edit_game_launch_command(state: &mut EditState) -> Result<bool> {
     });
 
     match select_launch_command_input_method(current, other)? {
-        LaunchCommandInputMethod::Build => {
-            match crate::game::launch_builder::build_launch_command()? {
-                Some(command) => {
-                    state.game_mut().launch_command = Some(command.clone());
-                    FzfWrapper::message(&format!(
-                        "{} Launch command set in games.toml:\n\n{}",
-                        char::from(NerdFont::Check),
-                        command
-                    ))?;
-                    Ok(true)
-                }
-                None => Ok(false),
+        LaunchCommandInputMethod::Build => match crate::game::platforms::build_launch_command()? {
+            Some(command) => {
+                state.game_mut().launch_command = Some(command.clone());
+                FzfWrapper::message(&format!(
+                    "{} Launch command set in games.toml:\n\n{}",
+                    char::from(NerdFont::Check),
+                    command
+                ))?;
+                Ok(true)
             }
-        }
+            None => Ok(false),
+        },
         LaunchCommandInputMethod::CopyFromOther => {
             let source = inst_cmd_owned.as_deref();
             let header = format!(
@@ -374,22 +372,20 @@ fn edit_installation_launch_command(state: &mut EditState) -> Result<bool> {
     });
 
     match select_launch_command_input_method(current, other)? {
-        LaunchCommandInputMethod::Build => {
-            match crate::game::launch_builder::build_launch_command()? {
-                Some(command) => {
-                    if let Some(installation) = state.installation_mut() {
-                        installation.launch_command = Some(command.clone());
-                    }
-                    FzfWrapper::message(&format!(
-                        "{} Launch command override set in installations.toml:\n\n{}",
-                        char::from(NerdFont::Check),
-                        command
-                    ))?;
-                    Ok(true)
+        LaunchCommandInputMethod::Build => match crate::game::platforms::build_launch_command()? {
+            Some(command) => {
+                if let Some(installation) = state.installation_mut() {
+                    installation.launch_command = Some(command.clone());
                 }
-                None => Ok(false),
+                FzfWrapper::message(&format!(
+                    "{} Launch command override set in installations.toml:\n\n{}",
+                    char::from(NerdFont::Check),
+                    command
+                ))?;
+                Ok(true)
             }
-        }
+            None => Ok(false),
+        },
         LaunchCommandInputMethod::CopyFromOther => {
             let source = game_cmd_owned.as_deref();
             let header = format!(

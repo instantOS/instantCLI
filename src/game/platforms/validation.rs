@@ -49,7 +49,11 @@ pub fn format_valid_extensions(extensions: &[&str]) -> String {
 ///
 /// Checks that the file exists, is a regular file, and has one of the
 /// expected extensions for the given emulator.
-pub fn validate_game_file(path: &Path, emulator_name: &str, valid_extensions: &[&str]) -> Result<(), String> {
+pub fn validate_game_file(
+    path: &Path,
+    emulator_name: &str,
+    valid_extensions: &[&str],
+) -> Result<(), String> {
     if !path.exists() {
         return Err(format!("File does not exist: {}", path.display()));
     }

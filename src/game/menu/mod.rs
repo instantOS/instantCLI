@@ -405,7 +405,7 @@ fn handle_action(
         GameAction::Launch => {
             if state.launch_command.is_none() {
                 // Show builder menu directly to let user choose manual or builder
-                match crate::game::launch_builder::build_launch_command()? {
+                match crate::game::platforms::build_launch_command()? {
                     Some(command) => {
                         // Save to game config
                         let mut game_config = state.game_config.clone();

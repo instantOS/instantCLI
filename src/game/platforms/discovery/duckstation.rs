@@ -259,7 +259,9 @@ pub fn get_duckstation_launch_command(install_type: DuckstationInstallType) -> O
         DuckstationInstallType::Native => {
             // Try to find EmuDeck AppImage first
             let emudeck_paths = &["~/emulation/tools/launchers/duckstation.appimage"];
-            if let Some(path) = crate::game::launch_builder::appimage_finder::find_appimage_by_paths(emudeck_paths) {
+            if let Some(path) =
+                crate::game::platforms::appimage_finder::find_appimage_by_paths(emudeck_paths)
+            {
                 Some(format!("\"{}\"", path.display()))
             } else {
                 // Try common AppImage locations
@@ -267,7 +269,9 @@ pub fn get_duckstation_launch_command(install_type: DuckstationInstallType) -> O
                     "~/AppImages/DuckStation-x64.AppImage",
                     "~/AppImages/duckstation.appimage",
                 ];
-                if let Some(path) = crate::game::launch_builder::appimage_finder::find_appimage_by_paths(appimage_paths) {
+                if let Some(path) =
+                    crate::game::platforms::appimage_finder::find_appimage_by_paths(appimage_paths)
+                {
                     Some(format!("\"{}\"", path.display()))
                 } else {
                     // Fall back to system command

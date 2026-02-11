@@ -151,7 +151,7 @@ impl DiscoveredGame for EdenDiscoveredGame {
     }
 
     fn build_launch_command(&self) -> Option<String> {
-        use crate::game::launch_builder::EdenBuilder;
+        use crate::game::platforms::EdenBuilder;
         self.game_path.as_ref().and_then(|game_file| {
             EdenBuilder::find_or_select_eden()
                 .ok()

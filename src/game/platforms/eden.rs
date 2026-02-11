@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 
-use crate::game::launch_builder::appimage_finder::find_appimage_by_paths;
+use crate::game::platforms::appimage_finder::find_appimage_by_paths;
 use crate::menu_utils::{
     ConfirmResult, FilePickerScope, FzfWrapper, PathInputBuilder, PathInputSelection,
 };

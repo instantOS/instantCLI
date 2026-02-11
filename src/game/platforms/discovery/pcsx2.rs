@@ -258,7 +258,9 @@ pub fn get_pcsx2_launch_command(install_type: Pcsx2InstallType) -> Option<String
         Pcsx2InstallType::Native => {
             // Try to find EmuDeck AppImage first
             let emudeck_paths = &["~/emulation/tools/launchers/pcsx2-qt.appimage"];
-            if let Some(path) = crate::game::launch_builder::appimage_finder::find_appimage_by_paths(emudeck_paths) {
+            if let Some(path) =
+                crate::game::platforms::appimage_finder::find_appimage_by_paths(emudeck_paths)
+            {
                 Some(format!("\"{}\"", path.display()))
             } else {
                 // Fall back to system pcsx2 command

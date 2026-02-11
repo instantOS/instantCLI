@@ -2,11 +2,13 @@ use super::manager::GameCreationContext;
 use super::prompts;
 use crate::common::TildePath;
 use crate::game::config::PathContentKind;
-use crate::game::launch_builder::discovery::azahar::{self as azahar_discovery, AzaharDiscoveredGame};
-use crate::game::launch_builder::discovery::DiscoveredGame;
-use crate::game::launch_builder::discovery::duckstation::{self as duckstation_discovery, DuckstationDiscoveredMemcard};
-use crate::game::launch_builder::discovery::eden::{self as eden_discovery, EdenDiscoveredGame};
-use crate::game::launch_builder::discovery::pcsx2::{self as pcsx2_discovery, Pcsx2DiscoveredMemcard};
+use crate::game::platforms::discovery::DiscoveredGame;
+use crate::game::platforms::discovery::azahar::{self as azahar_discovery, AzaharDiscoveredGame};
+use crate::game::platforms::discovery::duckstation::{
+    self as duckstation_discovery, DuckstationDiscoveredMemcard,
+};
+use crate::game::platforms::discovery::eden::{self as eden_discovery, EdenDiscoveredGame};
+use crate::game::platforms::discovery::pcsx2::{self as pcsx2_discovery, Pcsx2DiscoveredMemcard};
 use crate::game::utils::safeguards::{PathUsage, ensure_safe_path};
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header};
 use crate::ui::catppuccin::{colors, format_icon_colored, fzf_mocha_args};

@@ -10,7 +10,7 @@ use std::process::Command;
 
 use anyhow::{Context, Result};
 
-use crate::game::launch_builder::appimage_finder::find_appimage_by_paths;
+use crate::game::platforms::appimage_finder::find_appimage_by_paths;
 use crate::menu_utils::{
     ConfirmResult, FilePickerScope, FzfWrapper, PathInputBuilder, PathInputSelection,
 };
@@ -19,9 +19,7 @@ use crate::ui::nerd_font::NerdFont;
 use super::prompts::{
     FileSelectionPrompt, ask_fullscreen, confirm_command, select_file_with_validation,
 };
-use super::validation::{
-    DUCKSTATION_EXTENSIONS, format_valid_extensions, validate_game_file,
-};
+use super::validation::{DUCKSTATION_EXTENSIONS, format_valid_extensions, validate_game_file};
 
 /// Default DuckStation AppImage location
 const DEFAULT_DUCKSTATION_PATH: &str = "~/AppImages/DuckStation-x64.AppImage";
