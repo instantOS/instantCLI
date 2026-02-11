@@ -18,7 +18,7 @@ use super::operations::{exec_game_command, launch_game, sync_game_saves};
 use super::repository::GameRepositoryManager;
 use super::repository::manager::InitOptions;
 use super::restic::{
-    backup_game_saves, handle_restic_command, prune_snapshots, restore_game_saves,
+    backup_game_saves, handle_restic_command, prune::prune_snapshots, restore_game_saves,
 };
 use super::setup;
 use super::utils::validation::prompt_initialize_if_needed;

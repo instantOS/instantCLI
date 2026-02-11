@@ -6,7 +6,8 @@ use anyhow::Result;
 
 use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
-use crate::dot::override_config::{OverrideConfig, find_all_sources};
+use crate::dot::override_config::OverrideConfig;
+use crate::dot::sources;
 use crate::ui::prelude::*;
 
 use super::apply::{add_to_destination, is_safe_to_switch, set_alternative};
@@ -22,7 +23,7 @@ pub(crate) fn handle_set_direct(
     subdir: Option<&str>,
 ) -> Result<()> {
     // Find all sources for this file
-    let sources = find_all_sources(config, path)?;
+    let sources = sources::list_sources_for_target(config, path)?;
 
     if sources.is_empty() {
         return Err(anyhow::anyhow!(
@@ -143,7 +144,7 @@ pub(crate) fn handle_create_direct(
         })?;
 
     // Check if file already exists at destination
-    let existing = find_all_sources(config, path)?;
+    let existing = sources::list_sources_for_target(config, path)?;
     if existing
         .iter()
         .any(|s| s.repo_name == repo_name && s.subdir_name == subdir_name)
@@ -164,7 +165,7 @@ pub(crate) fn handle_create_direct(
     add_to_destination(config, &db, path, dest)?;
 
     // Set override if multiple sources now exist
-    let sources = find_all_sources(config, path)?;
+    let sources = sources::list_sources_for_target(config, path)?;
     if sources.len() > 1 {
         let mut overrides = OverrideConfig::load()?;
         overrides.set_override(

@@ -445,7 +445,3 @@ pub fn handle_restic_command(args: Vec<String>) -> Result<()> {
     }
 }
 
-/// Prune game snapshots using the configured strategy
-pub fn prune_snapshots(game_name: Option<String>, zero_changes: bool) -> Result<()> {
-    prune::prune_snapshots(game_name, zero_changes)
-}

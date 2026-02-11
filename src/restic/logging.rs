@@ -7,10 +7,6 @@ use std::path::PathBuf;
 
 use crate::common::paths;
 
-pub fn is_debug_enabled() -> bool {
-    crate::ui::is_debug_enabled()
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ResticCommandLog {
     pub timestamp: DateTime<Utc>,
@@ -33,7 +29,7 @@ impl ResticCommandLogger {
         let log_dir = Self::get_log_dir()?;
 
         // Only create directory if debug is enabled
-        if is_debug_enabled() {
+        if crate::ui::is_debug_enabled() {
             create_dir_all(&log_dir).context("Failed to create restic log directory")?;
         }
 
@@ -52,7 +48,7 @@ impl ResticCommandLogger {
         repository: &str,
     ) -> Result<()> {
         // Skip logging if debug is not enabled
-        if !is_debug_enabled() {
+        if !crate::ui::is_debug_enabled() {
             return Ok(());
         }
 

@@ -6,7 +6,7 @@ use anyhow::Result;
 use colored::Colorize;
 
 use crate::dot::config::DotfileConfig;
-use crate::dot::override_config::find_all_sources;
+use crate::dot::sources;
 use crate::menu_utils::{FzfResult, FzfWrapper, MenuCursor};
 use crate::ui::catppuccin::fzf_mocha_args;
 use crate::ui::prelude::*;
@@ -100,7 +100,7 @@ pub(crate) fn run_browse_menu(dir: &Path, display: &str, mode: BrowseMode) -> Re
                 cursor.update(&BrowseMenuItem::Dotfile(selected.clone()), &menu);
                 let result = match mode {
                     BrowseMode::CreateAlternative => {
-                        let sources = find_all_sources(&config, &selected.target_path)?;
+                        let sources = sources::list_sources_for_target(&config, &selected.target_path)?;
                         run_create_flow(&selected.target_path, &selected.display_path, &sources)?
                     }
                     BrowseMode::SelectAlternative => {
@@ -125,7 +125,7 @@ pub(crate) fn run_browse_menu(dir: &Path, display: &str, mode: BrowseMode) -> Re
                 cursor.update(&BrowseMenuItem::PickNewFile, &menu);
                 if let Some(path) = pick_new_file_to_track()? {
                     let file_display = to_display_path(&path);
-                    let sources = find_all_sources(&config, &path)?;
+                    let sources = sources::list_sources_for_target(&config, &path)?;
                     let create_result = run_create_flow(&path, &file_display, &sources)?;
                     if matches!(create_result, Flow::Done | Flow::Cancelled) {
                         preselect = Some(file_display);
