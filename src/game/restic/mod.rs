@@ -444,4 +444,3 @@ pub fn handle_restic_command(args: Vec<String>) -> Result<()> {
         ))
     }
 }
-

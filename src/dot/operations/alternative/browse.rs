@@ -100,7 +100,8 @@ pub(crate) fn run_browse_menu(dir: &Path, display: &str, mode: BrowseMode) -> Re
                 cursor.update(&BrowseMenuItem::Dotfile(selected.clone()), &menu);
                 let result = match mode {
                     BrowseMode::CreateAlternative => {
-                        let sources = sources::list_sources_for_target(&config, &selected.target_path)?;
+                        let sources =
+                            sources::list_sources_for_target(&config, &selected.target_path)?;
                         run_create_flow(&selected.target_path, &selected.display_path, &sources)?
                     }
                     BrowseMode::SelectAlternative => {

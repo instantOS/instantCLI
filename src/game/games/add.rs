@@ -2,15 +2,16 @@ use super::manager::GameCreationContext;
 use super::prompts;
 use crate::common::TildePath;
 use crate::game::config::PathContentKind;
+use crate::game::launch_builder::duckstation_discovery;
 use crate::game::launch_builder::eden_discovery;
 use crate::game::launch_builder::pcsx2_discovery;
 use crate::game::utils::path::tilde_display_string;
-use crate::game::utils::safeguards::{PathUsage, ensure_safe_path};
+use crate::game::utils::safeguards::{ensure_safe_path, PathUsage};
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header};
 use crate::ui::catppuccin::{colors, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use std::fs;
 use std::path::Path;
 
@@ -48,8 +49,9 @@ pub(super) fn maybe_prefill_from_emulators(
 
     let eden_installed = eden_discovery::is_eden_installed();
     let pcsx2_installed = pcsx2_discovery::is_pcsx2_installed();
+    let duckstation_installed = duckstation_discovery::is_duckstation_installed();
 
-    if !eden_installed && !pcsx2_installed {
+    if !eden_installed && !pcsx2_installed && !duckstation_installed {
         return Ok(EmulatorPrefillResult::Continue(options));
     }
 
@@ -65,11 +67,18 @@ pub(super) fn maybe_prefill_from_emulators(
         Vec::new()
     };
 
-    if eden_games.is_empty() && pcsx2_memcards.is_empty() {
+    let duckstation_memcards = if duckstation_installed {
+        duckstation_discovery::discover_duckstation_memcards()?
+    } else {
+        Vec::new()
+    };
+
+    if eden_games.is_empty() && pcsx2_memcards.is_empty() && duckstation_memcards.is_empty() {
         return Ok(EmulatorPrefillResult::Continue(options));
     }
 
-    let items = classify_discovered_items(&eden_games, &pcsx2_memcards, context);
+    let items =
+        classify_discovered_items(&eden_games, &pcsx2_memcards, &duckstation_memcards, context);
 
     let result = FzfWrapper::builder()
         .header(Header::fancy("Games"))
@@ -105,10 +114,25 @@ pub(super) fn maybe_prefill_from_emulators(
                 create_save_path: false,
             }))
         }
+        FzfResult::Selected(AddMethodItem::DuckstationMemcard(memcard)) => {
+            let launch_command =
+                duckstation_discovery::get_duckstation_launch_command(memcard.install_type);
+
+            Ok(EmulatorPrefillResult::Continue(AddGameOptions {
+                name: Some(memcard.display_name.clone()),
+                description: None,
+                launch_command,
+                save_path: Some(memcard.memcard_path.to_string_lossy().to_string()),
+                create_save_path: false,
+            }))
+        }
         FzfResult::Selected(AddMethodItem::ExistingEdenGame(info)) => {
             Ok(EmulatorPrefillResult::OpenGameMenu(info.tracked_name))
         }
         FzfResult::Selected(AddMethodItem::ExistingPcsx2Game(info)) => {
+            Ok(EmulatorPrefillResult::OpenGameMenu(info.tracked_name))
+        }
+        FzfResult::Selected(AddMethodItem::ExistingDuckstationGame(info)) => {
             Ok(EmulatorPrefillResult::OpenGameMenu(info.tracked_name))
         }
         FzfResult::Selected(AddMethodItem::ManualEntry) => {
@@ -220,9 +244,10 @@ fn find_existing_game_for_save(save_path: &Path, context: &GameCreationContext) 
 fn classify_discovered_items(
     eden_games: &[eden_discovery::EdenDiscoveredGame],
     pcsx2_memcards: &[pcsx2_discovery::Pcsx2DiscoveredMemcard],
+    duckstation_memcards: &[duckstation_discovery::DuckstationDiscoveredMemcard],
     context: &GameCreationContext,
 ) -> Vec<AddMethodItem> {
-    let total_count = eden_games.len() + pcsx2_memcards.len();
+    let total_count = eden_games.len() + pcsx2_memcards.len() + duckstation_memcards.len();
     let mut items: Vec<AddMethodItem> = Vec::with_capacity(total_count + 1);
 
     items.push(AddMethodItem::ManualEntry);
@@ -255,6 +280,22 @@ fn classify_discovered_items(
         }
     }
 
+    for memcard in duckstation_memcards {
+        match find_existing_game_for_save(&memcard.memcard_path, context) {
+            Some(existing_name) => {
+                items.push(AddMethodItem::ExistingDuckstationGame(
+                    ExistingDuckstationGameInfo {
+                        memcard: memcard.clone(),
+                        tracked_name: existing_name,
+                    },
+                ));
+            }
+            None => {
+                items.push(AddMethodItem::DuckstationMemcard(memcard.clone()));
+            }
+        }
+    }
+
     items
 }
 
@@ -271,12 +312,20 @@ struct ExistingPcsx2GameInfo {
 }
 
 #[derive(Clone)]
+struct ExistingDuckstationGameInfo {
+    memcard: duckstation_discovery::DuckstationDiscoveredMemcard,
+    tracked_name: String,
+}
+
+#[derive(Clone)]
 enum AddMethodItem {
     ManualEntry,
     DiscoveredEdenGame(eden_discovery::EdenDiscoveredGame),
     Pcsx2Memcard(pcsx2_discovery::Pcsx2DiscoveredMemcard),
+    DuckstationMemcard(duckstation_discovery::DuckstationDiscoveredMemcard),
     ExistingEdenGame(ExistingEdenGameInfo),
     ExistingPcsx2Game(ExistingPcsx2GameInfo),
+    ExistingDuckstationGame(ExistingDuckstationGameInfo),
 }
 
 impl FzfSelectable for AddMethodItem {
@@ -299,6 +348,13 @@ impl FzfSelectable for AddMethodItem {
                 format!(
                     "{} {} (PS2)",
                     format_icon_colored(NerdFont::Disc, colors::SAPPHIRE),
+                    memcard.display_name,
+                )
+            }
+            AddMethodItem::DuckstationMemcard(memcard) => {
+                format!(
+                    "{} {} (PS1)",
+                    format_icon_colored(NerdFont::Disc, colors::PEACH),
                     memcard.display_name,
                 )
             }

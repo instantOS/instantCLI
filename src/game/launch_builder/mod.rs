@@ -12,6 +12,7 @@ mod appimage_finder;
 mod azahar;
 mod dolphin;
 mod duckstation;
+pub mod duckstation_discovery;
 mod eden;
 pub mod eden_discovery;
 mod flatpak;
