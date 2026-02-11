@@ -7,12 +7,12 @@ use crate::game::launch_builder::duckstation_discovery;
 use crate::game::launch_builder::eden_discovery;
 use crate::game::launch_builder::pcsx2_discovery;
 use crate::game::utils::path::tilde_display_string;
-use crate::game::utils::safeguards::{PathUsage, ensure_safe_path};
+use crate::game::utils::safeguards::{ensure_safe_path, PathUsage};
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header};
 use crate::ui::catppuccin::{colors, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use std::fs;
 use std::path::Path;
 
@@ -418,21 +418,21 @@ impl FzfSelectable for AddMethodItem {
             }
             AddMethodItem::ExistingEdenGame(info) => {
                 format!(
-                    "{} {}",
+                    "{} {} (Switch)",
                     format_icon_colored(NerdFont::Gamepad, colors::MAUVE),
                     info.tracked_name,
                 )
             }
             AddMethodItem::ExistingPcsx2Game(info) => {
                 format!(
-                    "{} {}",
+                    "{} {} (PS2)",
                     format_icon_colored(NerdFont::Disc, colors::MAUVE),
                     info.tracked_name,
                 )
             }
             AddMethodItem::ExistingDuckstationGame(info) => {
                 format!(
-                    "{} {}",
+                    "{} {} (PS1)",
                     format_icon_colored(NerdFont::Disc, colors::MAUVE),
                     info.tracked_name,
                 )
@@ -446,7 +446,7 @@ impl FzfSelectable for AddMethodItem {
             }
             AddMethodItem::ExistingAzaharGame(info) => {
                 format!(
-                    "{} {}",
+                    "{} {} (3DS)",
                     format_icon_colored(NerdFont::Gamepad, colors::MAUVE),
                     info.tracked_name,
                 )
@@ -517,6 +517,7 @@ fn eden_game_preview(
 
     let mut builder = PreviewBuilder::new()
         .header(NerdFont::Gamepad, &game.display_name)
+        .text("Platform: Nintendo Switch")
         .text(&format!("Title ID: {}", game.title_id))
         .blank()
         .separator()
@@ -546,6 +547,7 @@ fn pcsx2_memcard_preview(
 
     PreviewBuilder::new()
         .header(NerdFont::Disc, &memcard.display_name)
+        .text("Platform: PlayStation 2")
         .text(&format!("Source: {}", memcard.install_type))
         .blank()
         .separator()
@@ -564,6 +566,7 @@ fn existing_eden_game_preview(info: &ExistingEdenGameInfo) -> crate::menu::proto
 
     let mut builder = PreviewBuilder::new()
         .header(NerdFont::Check, &info.tracked_name)
+        .text("Platform: Nintendo Switch")
         .text(&format!("Title ID: {}", info.game.title_id))
         .blank()
         .separator()
@@ -591,6 +594,7 @@ fn existing_pcsx2_game_preview(info: &ExistingPcsx2GameInfo) -> crate::menu::pro
 
     PreviewBuilder::new()
         .header(NerdFont::Check, &info.tracked_name)
+        .text("Platform: PlayStation 2")
         .text(&format!(
             "Source: {} ({})",
             info.memcard.display_name, info.memcard.install_type
@@ -614,6 +618,7 @@ fn duckstation_memcard_preview(
 
     PreviewBuilder::new()
         .header(NerdFont::Disc, &memcard.display_name)
+        .text("Platform: PlayStation 1")
         .text(&format!("Source: {}", memcard.install_type))
         .blank()
         .separator()
@@ -634,6 +639,7 @@ fn existing_duckstation_game_preview(
 
     PreviewBuilder::new()
         .header(NerdFont::Check, &info.tracked_name)
+        .text("Platform: PlayStation 1")
         .text(&format!(
             "Source: {} ({})",
             info.memcard.display_name, info.memcard.install_type
@@ -657,6 +663,7 @@ fn azahar_game_preview(
 
     let mut builder = PreviewBuilder::new()
         .header(NerdFont::Gamepad, &game.display_name)
+        .text("Platform: Nintendo 3DS")
         .text(&format!("Title ID: {}", game.title_id))
         .text(&format!("Source: {}", game.install_type))
         .blank()
@@ -687,6 +694,7 @@ fn existing_azahar_game_preview(
 
     let mut builder = PreviewBuilder::new()
         .header(NerdFont::Check, &info.tracked_name)
+        .text("Platform: Nintendo 3DS")
         .text(&format!("Title ID: {}", info.game.title_id))
         .text(&format!("Source: {}", info.game.install_type))
         .blank()

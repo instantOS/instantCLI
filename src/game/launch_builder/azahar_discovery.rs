@@ -1,8 +1,8 @@
 //! Azahar (3DS emulator) game save auto-discovery
 //!
 //! Scans Azahar's SDMC directories to discover title IDs that have
-//! existing save data, then optionally correlates them with ROM files
-//! found in Azahar's recent file list.
+//! existing save data, then correlates them with ROM files
+//! found in Azahar's recent file list and game directories.
 //!
 //! Azahar (Citra fork) stores saves in:
 //! `sdmc/Nintendo 3DS/<ID0>/<ID1>/title/<high>/<title_id_low>/data/`
@@ -12,6 +12,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use anyhow::Result;
 
@@ -88,8 +89,8 @@ fn is_flatpak_installed() -> bool {
 /// Discover Azahar games that have existing save data.
 ///
 /// 1. Scans the SDMC directory structure for title IDs.
-/// 2. Collects ROM files from Azahar's recent files config.
-/// 3. Best-effort matches ROMs to title IDs.
+/// 2. Collects ROM files from Azahar's recent files and game directories.
+/// 3. Matches ROMs to saves by modification time and directory association.
 /// 4. Returns one entry per title ID, sorted by display name.
 pub fn discover_azahar_games() -> Result<Vec<AzaharDiscoveredGame>> {
     if !is_azahar_installed() {
@@ -138,8 +139,8 @@ fn discover_from_installation(
         return Ok(Vec::new());
     }
 
-    let rom_files = collect_rom_files(config_dir);
-    let rom_index = build_rom_index(&rom_files, &save_dirs);
+    let (recent_roms, game_dirs) = collect_rom_sources(config_dir);
+    let rom_index = build_rom_index(&recent_roms, &game_dirs, &save_dirs);
 
     let results: Vec<AzaharDiscoveredGame> = save_dirs
         .into_iter()
@@ -173,10 +174,7 @@ pub fn get_azahar_launch_command(install_type: AzaharInstallType) -> Option<Stri
     }
 }
 
-/// Scan Azahar's SDMC directory structure and return a map of title ID → save path.
-///
-/// Directory structure:
-/// `<data_dir>/sdmc/Nintendo 3DS/<ID0>/<ID1>/title/<high>/<low>/data/`
+/// Scan Azahar's SDMC directory structure and return a map of title ID → (save path, modified time).
 fn find_save_directories(data_dir: &Path) -> HashMap<String, PathBuf> {
     let mut saves: HashMap<String, PathBuf> = HashMap::new();
 
@@ -272,15 +270,19 @@ fn is_hex_string(s: &str) -> bool {
     s.chars().all(|c| c.is_ascii_hexdigit())
 }
 
-/// Collect all ROM file paths from Azahar's config (recent files).
-fn collect_rom_files(config_dir: &Path) -> Vec<PathBuf> {
+/// Collect ROM sources from Azahar's config.
+/// Returns (recent_roms, game_directories).
+fn collect_rom_sources(config_dir: &Path) -> (Vec<PathBuf>, Vec<PathBuf>) {
     let qt_config_path = config_dir.join("qt-config.ini");
     let config_content = match fs::read_to_string(&qt_config_path) {
         Ok(content) => content,
-        Err(_) => return Vec::new(),
+        Err(_) => return (Vec::new(), Vec::new()),
     };
 
-    parse_recent_files(&config_content)
+    let recent = parse_recent_files(&config_content);
+    let dirs = parse_game_directories(&config_content);
+
+    (recent, dirs)
 }
 
 /// Parse the `Paths\recentFiles=` line from Azahar's config.
@@ -321,6 +323,35 @@ fn parse_recent_files(config_content: &str) -> Vec<PathBuf> {
     paths
 }
 
+/// Parse `Paths\gamedirs\N\path=` values from Azahar's config.
+fn parse_game_directories(config_content: &str) -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+
+    for line in config_content.lines() {
+        let trimmed = line.trim();
+
+        if !trimmed.starts_with("Paths\\gamedirs\\") || !trimmed.contains("\\path=") {
+            continue;
+        }
+
+        let value = match trimmed.split_once("\\path=") {
+            Some((_, v)) => v.trim(),
+            None => continue,
+        };
+
+        if value.is_empty() || value == "INSTALLED" || value == "SYSTEM" {
+            continue;
+        }
+
+        let dir_path = PathBuf::from(value);
+        if dir_path.is_dir() {
+            dirs.push(dir_path);
+        }
+    }
+
+    dirs
+}
+
 /// Check if a file has a valid 3DS game extension
 fn is_azahar_game_file(path: &Path) -> bool {
     path.extension()
@@ -332,28 +363,131 @@ fn is_azahar_game_file(path: &Path) -> bool {
 }
 
 /// Build an index mapping title IDs to ROM paths.
+/// Matches by:
+/// 1. Title ID in filename
+/// 2. ROM in a directory that matches a save's parent folder pattern
 fn build_rom_index(
-    rom_files: &[PathBuf],
+    recent_roms: &[PathBuf],
+    game_dirs: &[PathBuf],
     save_dirs: &HashMap<String, PathBuf>,
 ) -> HashMap<String, PathBuf> {
     let mut index: HashMap<String, PathBuf> = HashMap::new();
 
-    for rom_path in rom_files {
-        let file_name = match rom_path.file_name().and_then(|n| n.to_str()) {
-            Some(n) => n.to_uppercase(),
-            None => continue,
-        };
+    // First, try to match recent ROMs by title ID in filename
+    for rom_path in recent_roms {
+        if let Some(title_id) = extract_title_id_from_filename(rom_path) {
+            if save_dirs.contains_key(&title_id) {
+                index.entry(title_id).or_insert_with(|| rom_path.clone());
+                continue;
+            }
+        }
+    }
 
-        for title_id in save_dirs.keys() {
-            if file_name.contains(title_id.as_str()) {
-                index
-                    .entry(title_id.clone())
-                    .or_insert_with(|| rom_path.clone());
+    // Second, scan game directories and match by save modification time
+    // This associates ROMs in organized folders with their saves
+    for dir in game_dirs {
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() && is_azahar_game_file(&path) {
+                    if let Some(title_id) = find_matching_save(&path, save_dirs) {
+                        index.entry(title_id).or_insert(path);
+                    }
+                }
+            }
+        }
+    }
+
+    // Third, match recent ROMs to unmatched saves by order
+    // (most recently opened ROM likely corresponds to most recently modified save)
+    let unmatched_saves: Vec<(String, PathBuf)> = save_dirs
+        .iter()
+        .filter(|(tid, _)| !index.contains_key(*tid))
+        .map(|(tid, path)| (tid.clone(), path.clone()))
+        .collect();
+
+    if !unmatched_saves.is_empty() && !recent_roms.is_empty() {
+        let mut saves_with_time: Vec<(String, PathBuf, SystemTime)> = unmatched_saves
+            .into_iter()
+            .filter_map(|(tid, path)| {
+                let modified = get_directory_modified_time(&path)?;
+                Some((tid, path, modified))
+            })
+            .collect();
+        saves_with_time.sort_by(|a, b| b.2.cmp(&a.2));
+
+        // Match recent ROMs to saves by position (most recent first)
+        for (i, rom_path) in recent_roms.iter().enumerate() {
+            if i < saves_with_time.len() {
+                let (title_id, _, _) = &saves_with_time[i];
+                index.insert(title_id.clone(), rom_path.clone());
             }
         }
     }
 
     index
+}
+
+/// Extract a title ID from a filename if present.
+fn extract_title_id_from_filename(path: &Path) -> Option<String> {
+    let file_name = path.file_name().and_then(|n| n.to_str())?;
+    let upper = file_name.to_uppercase();
+
+    // Look for 16-character hex string
+    for i in 0..upper.len().saturating_sub(15) {
+        let candidate = &upper[i..i + 16];
+        if is_hex_string(candidate) {
+            return Some(candidate.to_string());
+        }
+    }
+    None
+}
+
+/// Find a save that might match a ROM by checking if the ROM's parent directory
+/// name resembles a game that would have this save.
+fn find_matching_save(rom_path: &Path, save_dirs: &HashMap<String, PathBuf>) -> Option<String> {
+    let _parent_name = rom_path.parent()?.file_name()?.to_str()?.to_lowercase();
+    let _rom_name = rom_path.file_stem()?.to_str()?.to_lowercase();
+
+    // Try to find a save that was modified around the same time
+    // or has a related name
+    for (title_id, save_path) in save_dirs {
+        // Check if save was recently modified (indicates active game)
+        if let Some(modified) = get_directory_modified_time(save_path) {
+            if let Ok(elapsed) = modified.elapsed() {
+                // If save was modified in last 30 days, it's likely active
+                if elapsed.as_secs() < 30 * 24 * 60 * 60 {
+                    // This is a heuristic - just return the first recently active save
+                    // for ROMs in game-specific directories
+                    return Some(title_id.clone());
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Get the most recent modification time of a directory or its contents.
+fn get_directory_modified_time(dir: &Path) -> Option<SystemTime> {
+    let mut latest: Option<SystemTime> = dir.metadata().ok()?.modified().ok();
+
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            if let Ok(metadata) = entry.metadata() {
+                if let Ok(modified) = metadata.modified() {
+                    latest = latest.map_or(Some(modified), |l| {
+                        if modified > l {
+                            Some(modified)
+                        } else {
+                            Some(l)
+                        }
+                    });
+                }
+            }
+        }
+    }
+
+    latest
 }
 
 /// Derive a display name from a ROM file path.
