@@ -157,4 +157,12 @@ impl EdenBuilder {
 
         parts.join(" ")
     }
+
+    /// Format a simple Eden command without fullscreen flag.
+    /// Used by the discovery prefill to avoid code duplication.
+    pub(crate) fn format_command_simple(eden_path: &PathBuf, game_file: &PathBuf) -> String {
+        let eden_str = eden_path.to_string_lossy();
+        let game_str = game_file.to_string_lossy();
+        format!("\"{}\" -g \"{}\"", eden_str, game_str)
+    }
 }

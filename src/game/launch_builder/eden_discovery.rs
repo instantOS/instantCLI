@@ -146,12 +146,12 @@ fn find_save_directories(data_dir: &Path) -> HashMap<String, PathBuf> {
                 continue;
             }
 
-            if let Some(dir_name) = title_entry.file_name().to_str() {
-                if is_valid_title_id(dir_name) {
-                    let title_id = dir_name.to_uppercase();
-                    // First profile wins
-                    saves.entry(title_id).or_insert(title_path);
-                }
+            if let Some(dir_name) = title_entry.file_name().to_str()
+                && is_valid_title_id(dir_name)
+            {
+                let title_id = dir_name.to_uppercase();
+                // First profile wins
+                saves.entry(title_id).or_insert(title_path);
             }
         }
     }
@@ -255,7 +255,7 @@ fn parse_game_directories(config_content: &str) -> Vec<PathBuf> {
             None => continue,
         };
 
-        if value.is_empty() || SPECIAL_GAMEDIRS.iter().any(|&s| value == s) {
+        if value.is_empty() || SPECIAL_GAMEDIRS.contains(&value) {
             continue;
         }
 

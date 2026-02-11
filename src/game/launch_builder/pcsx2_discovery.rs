@@ -124,16 +124,15 @@ fn scan_memcard_directory(
         }
 
         // Check if it's a .ps2 file
-        if let Some(ext) = path.extension() {
-            if ext.to_str().map(|e| e.to_lowercase()) == Some(MEMCARD_EXTENSION.to_string()) {
-                if let Some(display_name) = display_name_from_path(&path) {
-                    memcards.push(Pcsx2DiscoveredMemcard {
-                        display_name,
-                        memcard_path: path,
-                        install_type,
-                    });
-                }
-            }
+        if let Some(ext) = path.extension()
+            && ext.to_str().map(|e| e.to_lowercase()) == Some(MEMCARD_EXTENSION.to_string())
+            && let Some(display_name) = display_name_from_path(&path)
+        {
+            memcards.push(Pcsx2DiscoveredMemcard {
+                display_name,
+                memcard_path: path,
+                install_type,
+            });
         }
     }
 

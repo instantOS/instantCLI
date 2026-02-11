@@ -27,8 +27,8 @@ pub struct AddGameOptions {
     pub create_save_path: bool,
 }
 
-/// Result of the Eden discovery pre-fill step
-enum EdenPrefillResult {
+/// Result of the emulator discovery pre-fill step
+enum EmulatorPrefillResult {
     /// Continue with the add-game flow using these options
     Continue(AddGameOptions),
     /// Redirect to the game menu for an already-tracked game
@@ -92,13 +92,13 @@ impl GameManager {
             return Ok(());
         }
 
-        // In interactive mode, Eden discovery may redirect to an existing game's menu
+        // In interactive mode, emulator discovery may redirect to an existing game's menu
         if options.name.is_none() {
-            match maybe_prefill_from_eden(options, &context)? {
-                EdenPrefillResult::OpenGameMenu(game_name) => {
+            match maybe_prefill_from_emulators(options, &context)? {
+                EmulatorPrefillResult::OpenGameMenu(game_name) => {
                     return crate::game::menu::game_menu(Some(game_name));
                 }
-                EdenPrefillResult::Continue(new_options) => {
+                EmulatorPrefillResult::Continue(new_options) => {
                     let details = resolve_add_game_details(new_options, &context, false)?;
                     return Self::finish_add_game(&mut context, details);
                 }
@@ -227,6 +227,7 @@ impl GameManager {
     }
 
     /// Relocate a game's save path to point to a new location (does not move files)
+    // TODO: this function is too long and might have multiple responsibilities - refactor
     pub fn relocate_game(game_name: Option<String>, new_path: Option<String>) -> Result<()> {
         let mut context = GameCreationContext::load()?;
 
@@ -562,15 +563,15 @@ fn resolve_add_game_details(
     })
 }
 
-/// Offer Eden game discovery as an alternative to manual entry.
+/// Offer emulator game discovery as an alternative to manual entry.
 ///
-/// If Eden is installed and games with saves are found, presents a selection
-/// menu. If the user picks a discovered game, the options are prepopulated
-/// with name, launch command, and save path from the discovered data.
-fn maybe_prefill_from_eden(
+/// If emulators (Eden, PCSX2) are installed and games with saves are found,
+/// presents a selection menu. If the user picks a discovered game, the options
+/// are prepopulated with name, launch command, and save path from the discovered data.
+fn maybe_prefill_from_emulators(
     options: AddGameOptions,
     context: &GameCreationContext,
-) -> Result<EdenPrefillResult> {
+) -> Result<EmulatorPrefillResult> {
     use crate::game::launch_builder::EdenBuilder;
 
     // Check if any emulator is installed with discoverable saves
@@ -578,7 +579,7 @@ fn maybe_prefill_from_eden(
     let pcsx2_installed = pcsx2_discovery::is_pcsx2_installed();
 
     if !eden_installed && !pcsx2_installed {
-        return Ok(EdenPrefillResult::Continue(options));
+        return Ok(EmulatorPrefillResult::Continue(options));
     }
 
     // Discover Eden games
@@ -597,7 +598,7 @@ fn maybe_prefill_from_eden(
 
     // If nothing discovered, continue with manual entry
     if eden_games.is_empty() && pcsx2_memcards.is_empty() {
-        return Ok(EdenPrefillResult::Continue(options));
+        return Ok(EmulatorPrefillResult::Continue(options));
     }
 
     // Classify each discovered item as new or already tracked
@@ -611,21 +612,15 @@ fn maybe_prefill_from_eden(
         .select_padded(items)?;
 
     match result {
-        FzfResult::Selected(AddMethodItem::EdenGame(game)) => {
+        FzfResult::Selected(AddMethodItem::DiscoveredEdenGame(game)) => {
             // Build the launch command if we have a ROM path
             let launch_command = match game.game_path {
-                Some(ref game_file) => match EdenBuilder::find_or_select_eden()? {
-                    Some(eden_path) => {
-                        let eden_str = eden_path.to_string_lossy();
-                        let game_str = game_file.to_string_lossy();
-                        Some(format!("\"{}\" -g \"{}\"", eden_str, game_str))
-                    }
-                    None => None,
-                },
+                Some(ref game_file) => EdenBuilder::find_or_select_eden()?
+                    .map(|eden_path| EdenBuilder::format_command_simple(&eden_path, game_file)),
                 None => None,
             };
 
-            Ok(EdenPrefillResult::Continue(AddGameOptions {
+            Ok(EmulatorPrefillResult::Continue(AddGameOptions {
                 name: Some(game.display_name),
                 description: None,
                 launch_command,
@@ -635,10 +630,9 @@ fn maybe_prefill_from_eden(
         }
         FzfResult::Selected(AddMethodItem::Pcsx2Memcard(memcard)) => {
             // Get the appropriate launch command for this PCSX2 installation type
-            let launch_command =
-                pcsx2_discovery::get_pcsx2_launch_command(memcard.install_type);
+            let launch_command = pcsx2_discovery::get_pcsx2_launch_command(memcard.install_type);
 
-            Ok(EdenPrefillResult::Continue(AddGameOptions {
+            Ok(EmulatorPrefillResult::Continue(AddGameOptions {
                 name: Some(memcard.display_name.clone()),
                 description: None,
                 launch_command,
@@ -646,14 +640,16 @@ fn maybe_prefill_from_eden(
                 create_save_path: false,
             }))
         }
-        FzfResult::Selected(AddMethodItem::ExistingGame(info)) => {
-            Ok(EdenPrefillResult::OpenGameMenu(info.tracked_name))
+        FzfResult::Selected(AddMethodItem::ExistingEdenGame(info)) => {
+            Ok(EmulatorPrefillResult::OpenGameMenu(info.tracked_name))
         }
         FzfResult::Selected(AddMethodItem::ExistingPcsx2Game(info)) => {
-            Ok(EdenPrefillResult::OpenGameMenu(info.tracked_name))
+            Ok(EmulatorPrefillResult::OpenGameMenu(info.tracked_name))
         }
-        FzfResult::Selected(AddMethodItem::ManualEntry) => Ok(EdenPrefillResult::Continue(options)),
-        _ => Ok(EdenPrefillResult::Continue(options)),
+        FzfResult::Selected(AddMethodItem::ManualEntry) => {
+            Ok(EmulatorPrefillResult::Continue(options))
+        }
+        _ => Ok(EmulatorPrefillResult::Continue(options)),
     }
 }
 
@@ -684,13 +680,13 @@ fn classify_discovered_items(
     for game in eden_games {
         match find_existing_game_for_save(&game.save_path, context) {
             Some(existing_name) => {
-                items.push(AddMethodItem::ExistingGame(ExistingGameInfo {
+                items.push(AddMethodItem::ExistingEdenGame(ExistingEdenGameInfo {
                     game: game.clone(),
                     tracked_name: existing_name,
                 }));
             }
             None => {
-                items.push(AddMethodItem::EdenGame(game.clone()));
+                items.push(AddMethodItem::DiscoveredEdenGame(game.clone()));
             }
         }
     }
@@ -713,9 +709,9 @@ fn classify_discovered_items(
     items
 }
 
-/// Info about a discovered game that is already tracked
+/// Info about a discovered Eden game that is already tracked
 #[derive(Clone)]
-struct ExistingGameInfo {
+struct ExistingEdenGameInfo {
     game: eden_discovery::EdenDiscoveredGame,
     tracked_name: String,
 }
@@ -731,9 +727,9 @@ struct ExistingPcsx2GameInfo {
 #[derive(Clone)]
 enum AddMethodItem {
     ManualEntry,
-    EdenGame(eden_discovery::EdenDiscoveredGame),
+    DiscoveredEdenGame(eden_discovery::EdenDiscoveredGame),
     Pcsx2Memcard(pcsx2_discovery::Pcsx2DiscoveredMemcard),
-    ExistingGame(ExistingGameInfo),
+    ExistingEdenGame(ExistingEdenGameInfo),
     ExistingPcsx2Game(ExistingPcsx2GameInfo),
 }
 
@@ -746,7 +742,7 @@ impl FzfSelectable for AddMethodItem {
                     format_icon_colored(NerdFont::Edit, colors::BLUE)
                 )
             }
-            AddMethodItem::EdenGame(game) => {
+            AddMethodItem::DiscoveredEdenGame(game) => {
                 format!(
                     "{} {} (Switch)",
                     format_icon_colored(NerdFont::Gamepad, colors::GREEN),
@@ -760,7 +756,7 @@ impl FzfSelectable for AddMethodItem {
                     memcard.display_name,
                 )
             }
-            AddMethodItem::ExistingGame(info) => {
+            AddMethodItem::ExistingEdenGame(info) => {
                 format!(
                     "{} {}",
                     format_icon_colored(NerdFont::Gamepad, colors::MAUVE),
@@ -780,11 +776,11 @@ impl FzfSelectable for AddMethodItem {
     fn fzf_key(&self) -> String {
         match self {
             AddMethodItem::ManualEntry => "manual".to_string(),
-            AddMethodItem::EdenGame(game) => game.title_id.clone(),
+            AddMethodItem::DiscoveredEdenGame(game) => game.title_id.clone(),
             AddMethodItem::Pcsx2Memcard(memcard) => {
                 format!("pcsx2-{}", memcard.display_name)
             }
-            AddMethodItem::ExistingGame(info) => {
+            AddMethodItem::ExistingEdenGame(info) => {
                 format!("existing-{}", info.game.title_id)
             }
             AddMethodItem::ExistingPcsx2Game(info) => {
@@ -805,9 +801,9 @@ impl FzfSelectable for AddMethodItem {
                 .bullet("Launch command (optional)")
                 .bullet("Save data path")
                 .build(),
-            AddMethodItem::EdenGame(game) => eden_game_preview(game),
+            AddMethodItem::DiscoveredEdenGame(game) => eden_game_preview(game),
             AddMethodItem::Pcsx2Memcard(memcard) => pcsx2_memcard_preview(memcard),
-            AddMethodItem::ExistingGame(info) => {
+            AddMethodItem::ExistingEdenGame(info) => {
                 let home = home_dir_string();
                 let save_display = info.game.save_path.to_string_lossy().replace(&home, "~");
 
