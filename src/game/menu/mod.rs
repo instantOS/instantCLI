@@ -8,6 +8,7 @@ use crate::game::config::{InstallationsConfig, InstantGameConfig};
 use crate::game::games::manager::AddGameOptions;
 use crate::game::games::manager::GameManager;
 use crate::game::games::selection::{GameMenuEntry, select_game_menu_entry};
+use crate::game::operations::desktop;
 use crate::game::operations::launch_game;
 use crate::game::operations::steam;
 use crate::game::operations::sync::sync_game_saves;
@@ -30,6 +31,7 @@ enum GameAction {
     Move,
     Checkpoint,
     AddToSteam,
+    AddToDesktop,
     Back,
 }
 
@@ -42,6 +44,7 @@ impl std::fmt::Display for GameAction {
             GameAction::Move => write!(f, "move"),
             GameAction::Checkpoint => write!(f, "checkpoint"),
             GameAction::AddToSteam => write!(f, "add-to-steam"),
+            GameAction::AddToDesktop => write!(f, "add-to-desktop"),
             GameAction::Back => write!(f, "back"),
         }
     }
@@ -312,6 +315,56 @@ fn build_action_menu(game_name: &str, state: &GameState) -> Vec<GameActionItem> 
             preview,
             keywords: vec![],
         });
+
+        // Add desktop shortcut option
+        let is_on_desktop = desktop::is_game_on_desktop(game_name).unwrap_or(false);
+        let desktop_status_text = if is_on_desktop {
+            format!(
+                "{} Already on Desktop",
+                format_icon_colored(NerdFont::Check, colors::GREEN)
+            )
+        } else {
+            format!(
+                "{} Not on Desktop",
+                format_icon_colored(NerdFont::Cross, colors::RED)
+            )
+        };
+
+        // Build preview with path details if already on desktop
+        let mut desktop_preview_builder = PreviewBuilder::new()
+            .header(NerdFont::Desktop, "Add to Desktop")
+            .text(&format!("Manage desktop shortcut for '{}'.", game_name))
+            .blank()
+            .text(&desktop_status_text);
+
+        // Add path details if game is already on desktop
+        if is_on_desktop {
+            if let Ok(Some(path)) = desktop::get_game_desktop_path(game_name) {
+                desktop_preview_builder = desktop_preview_builder
+                    .blank()
+                    .text("Current shortcut location:")
+                    .subtext(&path.display().to_string());
+            }
+        }
+
+        let desktop_preview = desktop_preview_builder
+            .blank()
+            .text("Creates a .desktop file that launches the game through ins,")
+            .text("which automatically syncs saves before and after.")
+            .blank()
+            .subtext("The shortcut will be placed on your Desktop if possible,")
+            .subtext("otherwise in the applications menu.")
+            .build();
+
+        actions.push(GameActionItem {
+            display: format!(
+                "{} Add to Desktop",
+                format_icon_colored(NerdFont::Desktop, colors::MAUVE)
+            ),
+            action: GameAction::AddToDesktop,
+            preview: desktop_preview,
+            keywords: vec!["shortcut", "launcher"],
+        });
     }
 
     actions.push(GameActionItem {
@@ -481,6 +534,64 @@ fn handle_action(
             }
             Ok(ActionResult::Stay)
         }
+        GameAction::AddToDesktop => {
+            let launch_cmd = state.launch_command.as_deref().unwrap_or("");
+
+            if desktop::is_game_on_desktop(game_name).unwrap_or(false) {
+                if FzfWrapper::builder()
+                    .confirm(format!(
+                        "'{}' is already on the Desktop.\n\nRemove it?",
+                        game_name
+                    ))
+                    .yes_text("Remove from Desktop")
+                    .no_text("Keep it")
+                    .confirm_dialog()?
+                    == ConfirmResult::Yes
+                {
+                    match desktop::remove_game_from_desktop(game_name) {
+                        Ok(true) => {
+                            FzfWrapper::message(&format!(
+                                "Removed '{}' from Desktop.",
+                                game_name
+                            ))?;
+                        }
+                        Ok(false) => FzfWrapper::message(&format!(
+                            "'{}' was not found on the Desktop (maybe already removed).",
+                            game_name
+                        ))?,
+                        Err(e) => {
+                            FzfWrapper::message(&format!("Failed to remove from Desktop: {}", e))?
+                        }
+                    }
+                }
+            } else {
+                match desktop::add_game_to_desktop(game_name, launch_cmd) {
+                    Ok((true, Some(path))) => {
+                        FzfWrapper::message(&format!(
+                            "Added '{}' to Desktop.\n\nLocation: {}",
+                            game_name,
+                            path.display()
+                        ))?;
+                    }
+                    Ok((true, None)) => {
+                        FzfWrapper::message(&format!(
+                            "Added '{}' to Desktop.",
+                            game_name
+                        ))?;
+                    }
+                    Ok((false, _)) => {
+                        FzfWrapper::message(&format!(
+                            "'{}' is already on your Desktop.",
+                            game_name
+                        ))?;
+                    }
+                    Err(e) => {
+                        FzfWrapper::message(&format!("Failed to add to Desktop: {}", e))?;
+                    }
+                }
+            }
+            Ok(ActionResult::Stay)
+        }
         GameAction::Back => {
             if exit_after {
                 Ok(ActionResult::Exit)
@@ -631,6 +742,26 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
                     }
                     Err(e) => {
                         FzfWrapper::message(&format!("Failed to add to Steam: {}", e))?;
+                    }
+                }
+                continue;
+            }
+            GameMenuEntry::AddMenuToDesktop => {
+                match desktop::add_menu_to_desktop() {
+                    Ok((true, Some(path))) => {
+                        FzfWrapper::message(&format!(
+                            "Added 'ins game menu' to Desktop.\n\nLocation: {}",
+                            path.display()
+                        ))?;
+                    }
+                    Ok((true, None)) => {
+                        FzfWrapper::message("Added 'ins game menu' to Desktop.")?;
+                    }
+                    Ok((false, _)) => {
+                        FzfWrapper::message("'ins game menu' is already on your Desktop.")?;
+                    }
+                    Err(e) => {
+                        FzfWrapper::message(&format!("Failed to add to Desktop: {}", e))?;
                     }
                 }
                 continue;
