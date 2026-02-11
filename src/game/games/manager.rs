@@ -26,6 +26,14 @@ pub struct AddGameOptions {
     pub create_save_path: bool,
 }
 
+/// Result of the Eden discovery pre-fill step
+enum EdenPrefillResult {
+    /// Continue with the add-game flow using these options
+    Continue(AddGameOptions),
+    /// Redirect to the game menu for an already-tracked game
+    OpenGameMenu(String),
+}
+
 struct GameCreationContext {
     config: InstantGameConfig,
     installations: InstallationsConfig,
@@ -83,8 +91,24 @@ impl GameManager {
             return Ok(());
         }
 
-        let details = resolve_add_game_details(options, &context)?;
+        // In interactive mode, Eden discovery may redirect to an existing game's menu
+        if options.name.is_none() {
+            match maybe_prefill_from_eden(options, &context)? {
+                EdenPrefillResult::OpenGameMenu(game_name) => {
+                    return crate::game::menu::game_menu(Some(game_name));
+                }
+                EdenPrefillResult::Continue(new_options) => {
+                    let details = resolve_add_game_details(new_options, &context, false)?;
+                    return Self::finish_add_game(&mut context, details);
+                }
+            }
+        }
 
+        let details = resolve_add_game_details(options, &context, false)?;
+        Self::finish_add_game(&mut context, details)
+    }
+
+    fn finish_add_game(context: &mut GameCreationContext, details: ResolvedGameDetails) -> Result<()> {
         let mut game = Game::new(details.name.clone());
         if let Some(description) = &details.description {
             game.description = Some(description.clone());
@@ -434,15 +458,11 @@ impl GameManager {
 }
 
 fn resolve_add_game_details(
-    mut options: AddGameOptions,
+    options: AddGameOptions,
     context: &GameCreationContext,
+    _skip_eden: bool,
 ) -> Result<ResolvedGameDetails> {
     let interactive_prompts = options.name.is_none();
-
-    // In interactive mode, offer Eden discovery before manual entry
-    if interactive_prompts {
-        options = maybe_prefill_from_eden(options, context)?;
-    }
 
     let AddGameOptions {
         name,
@@ -546,31 +566,23 @@ fn resolve_add_game_details(
 fn maybe_prefill_from_eden(
     options: AddGameOptions,
     context: &GameCreationContext,
-) -> Result<AddGameOptions> {
+) -> Result<EdenPrefillResult> {
     use crate::game::launch_builder::EdenBuilder;
 
     if !eden_discovery::is_eden_installed() {
-        return Ok(options);
+        return Ok(EdenPrefillResult::Continue(options));
     }
 
     let discovered = eden_discovery::discover_eden_games()?;
     if discovered.is_empty() {
-        return Ok(options);
+        return Ok(EdenPrefillResult::Continue(options));
     }
 
     // Classify each discovered game as new or already tracked
     let items = classify_discovered_games(&discovered, context);
 
-    // If everything is already tracked, skip the menu
-    if items
-        .iter()
-        .all(|item| matches!(item, AddMethodItem::ExistingGame(_)))
-    {
-        return Ok(options);
-    }
-
     let result = FzfWrapper::builder()
-        .header(Header::fancy("Add Game"))
+        .header(Header::fancy("Games"))
         .prompt("Select")
         .args(fzf_mocha_args())
         .responsive_layout()
@@ -591,17 +603,21 @@ fn maybe_prefill_from_eden(
                 None => None,
             };
 
-            Ok(AddGameOptions {
+            Ok(EdenPrefillResult::Continue(AddGameOptions {
                 name: Some(game.display_name),
                 description: None,
                 launch_command,
                 save_path: Some(game.save_path.to_string_lossy().to_string()),
                 create_save_path: false,
-            })
+            }))
         }
-        FzfResult::Selected(AddMethodItem::ManualEntry)
-        | FzfResult::Selected(AddMethodItem::ExistingGame(_)) => Ok(options),
-        _ => Ok(options),
+        FzfResult::Selected(AddMethodItem::ExistingGame(info)) => {
+            Ok(EdenPrefillResult::OpenGameMenu(info.tracked_name))
+        }
+        FzfResult::Selected(AddMethodItem::ManualEntry) => {
+            Ok(EdenPrefillResult::Continue(options))
+        }
+        _ => Ok(EdenPrefillResult::Continue(options)),
     }
 }
 
@@ -676,9 +692,8 @@ impl FzfSelectable for AddMethodItem {
             }
             AddMethodItem::ExistingGame(info) => {
                 format!(
-                    "{} {} — already tracked as \"{}\"",
-                    format_icon_colored(NerdFont::Check, colors::SURFACE2),
-                    info.game.display_name,
+                    "{} {}",
+                    format_icon_colored(NerdFont::Gamepad, colors::SAPPHIRE),
                     info.tracked_name,
                 )
             }
@@ -732,14 +747,14 @@ impl FzfSelectable for AddMethodItem {
                 builder
                     .separator()
                     .blank()
-                    .subtext("Already tracked — no action needed")
+                    .subtext("Already tracked — press Enter to open game menu")
                     .build()
             }
         }
     }
 
     fn fzf_is_selectable(&self) -> bool {
-        !matches!(self, AddMethodItem::ExistingGame(_))
+        true
     }
 }
 
