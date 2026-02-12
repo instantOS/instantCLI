@@ -16,7 +16,7 @@ jobs:
       contents: write
     steps:
       - name: Install git
-        run: apt-get update && apt-get install -y git
+        run: apt-get update && apt-get install -y git bash python3
       - name: Checkout release PR branch
         uses: actions/checkout@v5
         with:
@@ -28,6 +28,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
       - name: Sync PKGBUILD version
+        shell: bash
         run: |
           set -euo pipefail
 
