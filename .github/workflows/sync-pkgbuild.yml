@@ -24,6 +24,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.ref }}
       - name: Configure git user
         run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
       - name: Sync PKGBUILD version
