@@ -2,6 +2,7 @@ use std::process::Command;
 
 use anyhow::Result;
 
+use crate::common::shell::shell_quote;
 use crate::common::systemd::{ServiceScope, SystemdManager};
 use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper, Header};
 use crate::ui::catppuccin::{colors, format_icon, format_icon_colored};
@@ -125,51 +126,27 @@ impl FzfSelectable for ServiceItem {
     }
 
     fn fzf_key(&self) -> String {
-        self.name.clone()
+        format!(
+            "{}:{}",
+            self.name,
+            match self.scope {
+                ServiceScope::System => "system",
+                ServiceScope::User => "user",
+            }
+        )
     }
 
     fn fzf_preview(&self) -> FzfPreview {
-        let active_color = match self.active.as_str() {
-            "active" => colors::GREEN,
-            "failed" => colors::RED,
-            "inactive" => colors::OVERLAY0,
-            _ => colors::YELLOW,
-        };
+        let exe = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.to_str().map(|s| s.to_string()))
+            .unwrap_or_else(|| "ins".to_string());
 
-        let enabled_color = match self.enabled.as_str() {
-            "enabled" => colors::GREEN,
-            "disabled" => colors::OVERLAY0,
-            _ => colors::SUBTEXT0,
-        };
-
-        let scope_label = match self.scope {
-            ServiceScope::System => "System",
-            ServiceScope::User => "User",
-        };
-
-        PreviewBuilder::new()
-            .header(NerdFont::Server, &self.name)
-            .field("Description", &self.description)
-            .blank()
-            .line(
-                active_color,
-                Some(NerdFont::CheckCircle),
-                &format!("Status: {}", self.active),
-            )
-            .line(
-                enabled_color,
-                Some(NerdFont::ToggleOn),
-                &format!("Enabled: {}", self.enabled),
-            )
-            .field("Scope", scope_label)
-            .blank()
-            .separator()
-            .blank()
-            .text("Actions:")
-            .bullet("Start/Stop/Restart the service")
-            .bullet("Enable/Disable at boot")
-            .bullet("View live logs (journalctl -f)")
-            .build()
+        let key = self.fzf_key();
+        FzfPreview::Command(format!(
+            "{exe} preview --id systemd-service --key {}",
+            shell_quote(&key)
+        ))
     }
 }
 
@@ -367,9 +344,9 @@ fn list_services(scope: ServiceScope) -> Result<Vec<ServiceItem>> {
         }
 
         let name = parts[0].replace(".service", "");
-        let load = parts[1];
+        let _load = parts[1];
         let active = parts[2];
-        let sub = parts[3];
+        let _sub = parts[3];
         let description = if parts.len() > 4 {
             parts[4..].join(" ")
         } else {
@@ -494,7 +471,7 @@ fn view_service_logs(service: &ServiceItem) -> Result<()> {
 use crate::menu_utils::MenuItem;
 
 pub fn launch_cockpit() -> Result<()> {
-    use crate::common::package::{ensure_all, InstallResult};
+    use crate::common::package::{InstallResult, ensure_all};
     use crate::common::systemd::SystemdManager;
     use crate::menu_utils::FzfWrapper;
     use crate::settings::deps::COCKPIT_DEPS;

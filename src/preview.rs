@@ -99,6 +99,8 @@ pub enum PreviewId {
     Cargo,
     #[value(name = "setting")]
     Setting,
+    #[value(name = "systemd-service")]
+    SystemdService,
 }
 
 impl PreviewId {
@@ -139,6 +141,7 @@ impl PreviewId {
             PreviewId::Aur => "aur",
             PreviewId::Cargo => "cargo",
             PreviewId::Setting => "setting",
+            PreviewId::SystemdService => "systemd-service",
         }
     }
 }
@@ -282,6 +285,7 @@ fn render_preview(id: PreviewId, ctx: &PreviewContext) -> Result<String> {
         PreviewId::Aur => package::render_aur_preview(ctx),
         PreviewId::Cargo => package::render_cargo_preview(ctx),
         PreviewId::Setting => render_setting_preview(ctx),
+        PreviewId::SystemdService => render_systemd_service_preview(ctx),
     }
 }
 
@@ -355,6 +359,85 @@ fn render_setting_preview(ctx: &PreviewContext) -> Result<String> {
             builder = builder.text(line);
         }
     }
+
+    Ok(builder.build_string())
+}
+
+fn render_systemd_service_preview(ctx: &PreviewContext) -> Result<String> {
+    use crate::ui::catppuccin::colors;
+
+    let key = ctx
+        .key()
+        .ok_or_else(|| anyhow::anyhow!("No service name provided"))?;
+
+    let parts: Vec<&str> = key.splitn(2, ':').collect();
+    let service_name = parts[0];
+    let scope = parts.get(1).copied().unwrap_or("system");
+
+    let scope_args: Vec<&str> = if scope == "user" {
+        vec!["--user"]
+    } else {
+        vec![]
+    };
+
+    let active = std::process::Command::new("systemctl")
+        .args(["is-active", service_name])
+        .args(&scope_args)
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_else(|_| "unknown".to_string());
+
+    let enabled = std::process::Command::new("systemctl")
+        .args(["is-enabled", service_name])
+        .args(&scope_args)
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_else(|_| "unknown".to_string());
+
+    let description = std::process::Command::new("systemctl")
+        .args(["show", service_name, "-p", "Description", "--value"])
+        .args(&scope_args)
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_else(|_| String::new());
+
+    let active_color = match active.as_str() {
+        "active" => colors::GREEN,
+        "failed" => colors::RED,
+        "inactive" => colors::OVERLAY0,
+        _ => colors::YELLOW,
+    };
+
+    let enabled_color = match enabled.as_str() {
+        "enabled" => colors::GREEN,
+        "disabled" => colors::OVERLAY0,
+        _ => colors::SUBTEXT0,
+    };
+
+    let scope_label = if scope == "user" { "User" } else { "System" };
+
+    let builder = PreviewBuilder::new()
+        .header(NerdFont::Server, service_name)
+        .field("Description", &description)
+        .blank()
+        .line(
+            active_color,
+            Some(NerdFont::CheckCircle),
+            &format!("Status: {}", active),
+        )
+        .line(
+            enabled_color,
+            Some(NerdFont::ToggleOn),
+            &format!("Enabled: {}", enabled),
+        )
+        .field("Scope", scope_label)
+        .blank()
+        .separator()
+        .blank()
+        .text("Actions:")
+        .bullet("Start/Stop/Restart the service")
+        .bullet("Enable/Disable at boot")
+        .bullet("View live logs (journalctl -f)");
 
     Ok(builder.build_string())
 }
