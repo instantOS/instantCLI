@@ -34,8 +34,6 @@ jobs:
           prefix-key: arch-test
           # Cache validation ensures correctness across Rust versions
           cache-all-crates: true
-      - name: Install rustfmt
-        run: rustup component add rustfmt
       - name: Check code formatting
         run: cargo fmt -- --check
       - name: Run clippy lints
