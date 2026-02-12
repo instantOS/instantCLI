@@ -441,7 +441,10 @@ fn render_systemd_service_preview(ctx: &PreviewContext) -> Result<String> {
         .blank()
         .separator()
         .blank()
-        .text(&format!("Run 'journalctl -u {} -f' to view live logs", service_name));
+        .text(&format!(
+            "Run 'journalctl -u {} -f' to view live logs",
+            service_name
+        ));
 
     Ok(builder.build_string())
 }

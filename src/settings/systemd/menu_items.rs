@@ -117,7 +117,7 @@ impl FzfSelectable for ServiceItem {
         };
 
         format!(
-            "{} {} {}",
+            "{} {} - {}",
             format_icon_colored(active_icon, active_color),
             self.name,
             truncate(&self.description, 40)
@@ -302,7 +302,26 @@ fn run_services_menu(scope: ServiceScope) -> Result<()> {
         .map(|s| MenuItem::entry(s.clone()))
         .collect();
 
+    let mut selected_service: Option<ServiceItem> = None;
+
     loop {
+        // If we have a selected service, show the action menu
+        if let Some(service) = selected_service.take() {
+            loop {
+                let action = select_service_action(&service)?;
+                let go_back = handle_service_action(&service, action)?;
+
+                if go_back {
+                    // User chose Back or exited logs - return to service list
+                    break;
+                }
+                // Stay in action menu - refresh service state
+                selected_service = refresh_service(&service)?;
+            }
+            continue; // Go back to service list
+        }
+
+        // Show service list
         let builder = FzfWrapper::builder()
             .header(Header::fancy(title))
             .prompt("Select service")
@@ -313,8 +332,7 @@ fn run_services_menu(scope: ServiceScope) -> Result<()> {
 
         match result {
             FzfResult::Selected(service) => {
-                let action = select_service_action(&service)?;
-                handle_service_action(&service, action)?;
+                selected_service = Some(service);
             }
             _ => break,
         }
@@ -453,34 +471,78 @@ fn select_service_action(service: &ServiceItem) -> Result<ServiceAction> {
     }
 }
 
-fn handle_service_action(service: &ServiceItem, action: ServiceAction) -> Result<()> {
+// Returns true to go back to service list, false to stay in action menu
+fn handle_service_action(service: &ServiceItem, action: ServiceAction) -> Result<bool> {
     match action {
         ServiceAction::Start => {
             service.get_manager().start(&service.name)?;
             println!("Service '{}' started.", service.name);
+            Ok(false) // Stay in action menu
         }
         ServiceAction::Stop => {
             service.get_manager().stop(&service.name)?;
             println!("Service '{}' stopped.", service.name);
+            Ok(false) // Stay in action menu
         }
         ServiceAction::Restart => {
             service.get_manager().restart(&service.name)?;
             println!("Service '{}' restarted.", service.name);
+            Ok(false) // Stay in action menu
         }
         ServiceAction::Enable => {
             service.get_manager().enable(&service.name)?;
             println!("Service '{}' enabled.", service.name);
+            Ok(false) // Stay in action menu
         }
         ServiceAction::Disable => {
             service.get_manager().disable(&service.name)?;
             println!("Service '{}' disabled.", service.name);
+            Ok(false) // Stay in action menu
         }
         ServiceAction::Logs => {
             view_service_logs(service)?;
+            Ok(false) // Stay in action menu after viewing logs
         }
-        ServiceAction::Back => return Ok(()),
+        ServiceAction::Back => Ok(true), // Go back to service list
     }
-    Ok(())
+}
+
+fn refresh_service(old: &ServiceItem) -> Result<Option<ServiceItem>> {
+    let scope_args: Vec<&str> = match old.scope {
+        ServiceScope::System => vec![],
+        ServiceScope::User => vec!["--user"],
+    };
+
+    let output = Command::new("systemctl")
+        .args(["is-active", &old.name])
+        .args(&scope_args)
+        .output()?;
+
+    let active = if output.status.success() {
+        String::from_utf8_lossy(&output.stdout).trim().to_string()
+    } else {
+        "inactive".to_string()
+    };
+
+    let enabled = get_service_enabled_state(&old.name, old.scope);
+
+    // Get description
+    let desc_output = Command::new("systemctl")
+        .args(["show", &old.name, "-p", "Description", "--value"])
+        .args(&scope_args)
+        .output()?;
+
+    let description = String::from_utf8_lossy(&desc_output.stdout)
+        .trim()
+        .to_string();
+
+    Ok(Some(ServiceItem::new(
+        old.name.clone(),
+        description,
+        active,
+        enabled,
+        old.scope,
+    )))
 }
 
 fn view_service_logs(service: &ServiceItem) -> Result<()> {
@@ -511,7 +573,7 @@ fn view_service_logs(service: &ServiceItem) -> Result<()> {
 use crate::menu_utils::MenuItem;
 
 pub fn launch_cockpit() -> Result<()> {
-    use crate::common::package::{ensure_all, InstallResult};
+    use crate::common::package::{InstallResult, ensure_all};
     use crate::common::systemd::SystemdManager;
     use crate::menu_utils::FzfWrapper;
     use crate::settings::deps::COCKPIT_DEPS;
