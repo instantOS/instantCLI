@@ -1,4 +1,5 @@
 name: Sync PKGBUILD version
+run-name: "Sync PKGBUILD: ${{ github.event.pull_request.title }}"
 on:
   pull_request_target:
     types:
