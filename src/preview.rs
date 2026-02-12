@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::ValueEnum;
 use std::env;
 
-use crate::common::shell::shell_quote;
+use crate::common::shell::{current_exe_command, shell_quote};
 use crate::settings::defaultapps::{
     ARCHIVE_MIME_TYPES, AUDIO_MIME_TYPES, IMAGE_MIME_TYPES, VIDEO_MIME_TYPES,
 };
@@ -447,14 +447,6 @@ fn render_systemd_service_preview(ctx: &PreviewContext) -> Result<String> {
         ));
 
     Ok(builder.build_string())
-}
-
-fn current_exe_command() -> String {
-    let exe = std::env::current_exe()
-        .ok()
-        .and_then(|path| path.to_str().map(|s| s.to_string()))
-        .unwrap_or_else(|| "ins".to_string());
-    shell_quote(&exe)
 }
 
 fn env_usize(name: &str) -> Option<usize> {

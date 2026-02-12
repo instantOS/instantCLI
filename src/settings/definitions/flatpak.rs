@@ -4,11 +4,12 @@
 //! Uses local appstream metadata for fast loading (~15x faster than remote-ls),
 //! with fallback to flatpak remote-ls if appstream is unavailable.
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 
-use crate::common::package::{PackageManager, install_package_names};
+use crate::common::package::{install_package_names, PackageManager};
+use crate::common::shell::current_exe_command;
 use crate::menu_utils::{ConfirmResult, FzfResult, FzfWrapper, Header};
-use crate::preview::{PreviewId, preview_command_streaming};
+use crate::preview::{preview_command_streaming, PreviewId};
 use crate::settings::context::SettingsContext;
 use crate::settings::definitions::installed_flatpaks::{
     is_flatpak_installed, show_flatpak_action_menu,
@@ -51,7 +52,8 @@ impl Setting for InstallFlatpakApps {
 /// Build a shell command that generates the flatpak app list.
 /// Uses the internal ins command for fast appstream parsing.
 fn flatpak_list_command() -> String {
-    "ins settings internal-generate-flatpak-list".to_string()
+    let exe = current_exe_command();
+    format!("{} settings internal-generate-flatpak-list", exe)
 }
 
 // ============================================================================

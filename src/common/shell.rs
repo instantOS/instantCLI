@@ -2,6 +2,8 @@
 //!
 //! This module provides common shell manipulation utilities used across the application.
 
+use std::env;
+
 /// Escape a string for use in a shell command
 ///
 /// This function quotes the string only if necessary (i.e., if it contains characters
@@ -28,6 +30,16 @@ pub fn shell_quote(s: &str) -> String {
     }
 
     format!("'{}'", s.replace('\'', r"'\''"))
+}
+
+/// Get the current executable path as a shell-quoted command string.
+/// Falls back to "ins" if the path cannot be determined.
+pub fn current_exe_command() -> String {
+    let exe = env::current_exe()
+        .ok()
+        .and_then(|path| path.to_str().map(|s| s.to_string()))
+        .unwrap_or_else(|| "ins".to_string());
+    shell_quote(&exe)
 }
 
 #[cfg(test)]

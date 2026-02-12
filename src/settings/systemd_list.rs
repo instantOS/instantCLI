@@ -2,12 +2,14 @@ use anyhow::Result;
 use std::io::{self, Write};
 use std::process::{Command, Stdio};
 
+use crate::common::shell::current_exe_command;
 use crate::common::systemd::ServiceScope;
 
 pub fn list_command(scope: &str) -> String {
+    let exe = current_exe_command();
     format!(
-        "ins settings internal-generate-systemd-list --scope {}",
-        scope
+        "{} settings internal-generate-systemd-list --scope {}",
+        exe, scope
     )
 }
 
