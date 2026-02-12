@@ -116,20 +116,11 @@ impl FzfSelectable for ServiceItem {
             _ => (NerdFont::Question, colors::YELLOW),
         };
 
-        let enabled_color = match self.enabled.as_str() {
-            "enabled" => colors::GREEN,
-            "disabled" => colors::OVERLAY0,
-            _ => colors::SUBTEXT0,
-        };
-
         format!(
-            "{} {}  {}{}{} {}",
+            "{} {} {}",
             format_icon_colored(active_icon, active_color),
             self.name,
-            format_icon_colored(NerdFont::ToggleOn, enabled_color),
-            self.enabled,
-            format_icon(NerdFont::Bullet),
-            truncate(&self.description, 50)
+            truncate(&self.description, 40)
         )
     }
 

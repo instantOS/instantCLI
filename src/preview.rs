@@ -437,7 +437,11 @@ fn render_systemd_service_preview(ctx: &PreviewContext) -> Result<String> {
         .text("Actions:")
         .bullet("Start/Stop/Restart the service")
         .bullet("Enable/Disable at boot")
-        .bullet("View live logs (journalctl -f)");
+        .bullet("View live logs (journalctl -f)")
+        .blank()
+        .separator()
+        .blank()
+        .text("Run 'journalctl -u SERVICE -f' to view live logs");
 
     Ok(builder.build_string())
 }
