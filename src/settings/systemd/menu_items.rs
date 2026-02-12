@@ -407,21 +407,42 @@ fn get_service_enabled_state(name: &str, scope: ServiceScope) -> String {
 }
 
 fn select_service_action(service: &ServiceItem) -> Result<ServiceAction> {
-    let actions = vec![
-        MenuItem::entry(ServiceAction::Start),
-        MenuItem::entry(ServiceAction::Stop),
-        MenuItem::entry(ServiceAction::Restart),
-        MenuItem::separator("Boot"),
-        MenuItem::entry(ServiceAction::Enable),
-        MenuItem::entry(ServiceAction::Disable),
-        MenuItem::line(),
-        MenuItem::entry(ServiceAction::Logs),
-        MenuItem::line(),
-        MenuItem::entry(ServiceAction::Back),
-    ];
+    let is_active = service.active == "active";
+    let is_enabled = service.enabled == "enabled";
+
+    let status_text = format!(
+        "{} • {}",
+        if is_active { "active" } else { &service.active },
+        if is_enabled { "enabled" } else { "disabled" }
+    );
+
+    let mut actions = Vec::new();
+
+    // Start/Stop based on current state
+    if is_active {
+        actions.push(MenuItem::entry(ServiceAction::Stop));
+    } else {
+        actions.push(MenuItem::entry(ServiceAction::Start));
+    }
+    actions.push(MenuItem::entry(ServiceAction::Restart));
+
+    // Enable/Disable based on current state
+    actions.push(MenuItem::separator("Boot"));
+    if is_enabled {
+        actions.push(MenuItem::entry(ServiceAction::Disable));
+    } else {
+        actions.push(MenuItem::entry(ServiceAction::Enable));
+    }
+
+    actions.push(MenuItem::line());
+    actions.push(MenuItem::entry(ServiceAction::Logs));
+    actions.push(MenuItem::line());
+    actions.push(MenuItem::entry(ServiceAction::Back));
+
+    let header = format!("{} ({})", service.name, status_text);
 
     let result = FzfWrapper::builder()
-        .header(Header::fancy(&service.name))
+        .header(Header::fancy(&header))
         .prompt("Action")
         .args(crate::ui::catppuccin::fzf_mocha_args())
         .select_menu(actions)?;
@@ -474,7 +495,15 @@ fn view_service_logs(service: &ServiceItem) -> Result<()> {
     cmd.args(["-u", &service.name, "-n", "50", "-f"]);
     cmd.args(&scope_args);
 
-    cmd.status()?;
+    let status = cmd.status();
+
+    // Ignore SIGINT (Ctrl+C) - just return to menu
+    if let Err(e) = status {
+        if e.raw_os_error() == Some(2) || e.to_string().contains("Interrupted") {
+            return Ok(());
+        }
+        return Err(e.into());
+    }
 
     Ok(())
 }

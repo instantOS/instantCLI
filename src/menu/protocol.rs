@@ -61,7 +61,7 @@ impl FzfSelectable for SerializableMenuItem {
     }
 
     fn fzf_key(&self) -> String {
-        self.display_text.clone()
+        self.fzf_display_text()
     }
 }
 
