@@ -36,6 +36,13 @@ pub enum SettingsCommands {
         #[arg(short = 'k', long = "keyword")]
         keyword: Option<String>,
     },
+    /// Internal: Generate systemd service list for streaming menu
+    #[command(hide = true)]
+    InternalGenerateSystemdList {
+        /// Service scope: system or user
+        #[arg(long = "scope")]
+        scope: String,
+    },
     #[command(hide = true)]
     InternalApply {
         #[arg(long = "setting-id")]
@@ -64,6 +71,9 @@ pub fn dispatch_settings_command(
         }) => list_settings(categories_only, category_filter.as_deref()),
         Some(SettingsCommands::InternalGenerateFlatpakList { keyword }) => {
             super::flatpak_list::generate_and_print_list(keyword.as_deref())
+        }
+        Some(SettingsCommands::InternalGenerateSystemdList { scope }) => {
+            super::systemd_list::generate_and_print_list(&scope)
         }
         Some(SettingsCommands::InternalApply {
             setting_id,

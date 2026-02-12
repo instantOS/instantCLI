@@ -5,6 +5,7 @@ use anyhow::Result;
 use crate::common::shell::shell_quote;
 use crate::common::systemd::{ServiceScope, SystemdManager};
 use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper, Header};
+use crate::preview::{preview_command_streaming, PreviewId};
 use crate::ui::catppuccin::{colors, format_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -467,7 +468,8 @@ fn select_service_action(service: &ServiceItem) -> Result<ServiceAction> {
 
     match result {
         FzfResult::Selected(action) => Ok(action),
-        _ => Err(anyhow::anyhow!("Cancelled")),
+        // Treat cancellation (Escape) as going back to service list
+        _ => Ok(ServiceAction::Back),
     }
 }
 
@@ -573,7 +575,7 @@ fn view_service_logs(service: &ServiceItem) -> Result<()> {
 use crate::menu_utils::MenuItem;
 
 pub fn launch_cockpit() -> Result<()> {
-    use crate::common::package::{InstallResult, ensure_all};
+    use crate::common::package::{ensure_all, InstallResult};
     use crate::common::systemd::SystemdManager;
     use crate::menu_utils::FzfWrapper;
     use crate::settings::deps::COCKPIT_DEPS;

@@ -19,6 +19,7 @@ pub mod setting;
 pub mod sources;
 pub mod store;
 pub mod systemd;
+pub mod systemd_list;
 pub mod ui;
 pub mod users;
 
