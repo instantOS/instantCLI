@@ -2,18 +2,18 @@ use anyhow::{Context, Result};
 use std::collections::{BTreeSet, HashMap};
 
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuItem};
-use crate::settings::SettingsContext;
 use crate::settings::installable_packages::{
-    self, ARCHIVE_MANAGERS, FILE_MANAGERS, IMAGE_VIEWERS, InstallableApp, PDF_VIEWERS,
+    self, InstallableApp, ARCHIVE_MANAGERS, FILE_MANAGERS, IMAGE_VIEWERS, PDF_VIEWERS,
     TEXT_EDITORS, VIDEO_PLAYERS, WEB_BROWSERS,
 };
+use crate::settings::SettingsContext;
 use crate::ui::catppuccin::fzf_mocha_args;
 use crate::ui::prelude::*;
 use crate::ui::preview::FzfPreview;
 
-use super::app_info::{ApplicationInfo, get_application_info};
+use super::app_info::{get_application_info, ApplicationInfo};
 use super::mime_cache::{build_mime_to_apps_map, get_apps_for_mime};
-use super::mime_info::{MimeTypeInfo, get_all_mime_types, get_mime_type_info};
+use super::mime_info::{get_all_mime_types, get_mime_type_info, MimeTypeInfo};
 use super::mime_sets::{ARCHIVE_MIME_TYPES, AUDIO_MIME_TYPES, IMAGE_MIME_TYPES, VIDEO_MIME_TYPES};
 use super::system::{query_default_app, set_default_app};
 
@@ -35,14 +35,12 @@ pub fn manage_default_apps(ctx: &mut SettingsContext) -> Result<()> {
     let mime_type_strings = get_all_mime_types(&mime_map);
 
     if mime_type_strings.is_empty() {
-        emit(
-            Level::Warn,
+        ctx.emit_failure(
             "settings.defaultapps.no_mime_types",
             &format!(
                 "{} No MIME types found in mimeinfo.cache files.",
                 char::from(NerdFont::Warning)
             ),
-            None,
         );
         return Ok(());
     }
@@ -273,7 +271,11 @@ fn manage_default_app_for_mimes(
         if let Some(index) = initial_index {
             // Adjust index if we have InstallMore and line separator
             let offset = if installable_apps.is_some() {
-                if app_desktop_ids.is_empty() { 1 } else { 2 }
+                if app_desktop_ids.is_empty() {
+                    1
+                } else {
+                    2
+                }
             } else {
                 0
             };
