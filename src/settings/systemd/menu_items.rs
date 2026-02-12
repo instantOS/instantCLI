@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 use crate::common::shell::shell_quote;
 use crate::common::systemd::{ServiceScope, SystemdManager};
 use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper, Header, MenuItem};
-use crate::preview::{preview_command_streaming, PreviewId};
+use crate::preview::{PreviewId, preview_command_streaming};
 use crate::settings::systemd_list;
 use crate::ui::catppuccin::{colors, format_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
@@ -531,14 +531,17 @@ fn view_service_logs(service: &ServiceItem) -> Result<()> {
     tokio::task::block_in_place(|| {
         tokio::runtime::Handle::try_current()
             .context("No tokio runtime available")?
-            .block_on(crate::common::terminal::run_tui_program("journalctl", &args))
+            .block_on(crate::common::terminal::run_tui_program(
+                "journalctl",
+                &args,
+            ))
     })?;
 
     Ok(())
 }
 
 pub fn launch_cockpit() -> Result<()> {
-    use crate::common::package::{ensure_all, InstallResult};
+    use crate::common::package::{InstallResult, ensure_all};
     use crate::common::systemd::SystemdManager;
     use crate::menu_utils::FzfWrapper;
     use crate::settings::deps::COCKPIT_DEPS;

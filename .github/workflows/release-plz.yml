@@ -31,7 +31,7 @@ jobs:
         run: |
           curl -sSLf https://github.com/release-plz/release-plz/releases/latest/download/release-plz-x86_64-unknown-linux-gnu.tar.gz | tar xz -C /usr/local/bin
       - name: Run release-plz
-        run: release-plz release
+        run: release-plz release --git-token "$GITHUB_TOKEN"
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
   release-plz-pr:
