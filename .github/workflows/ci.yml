@@ -34,6 +34,8 @@ jobs:
           prefix-key: arch-test
           # Cache validation ensures correctness across Rust versions
           cache-all-crates: true
+          # Don't cache ~/.cargo/bin — restoring old rustup proxies shadows pacman-installed rust
+          cache-bin: "false"
       - name: Check code formatting
         run: cargo fmt -- --check
       - name: Run clippy lints
