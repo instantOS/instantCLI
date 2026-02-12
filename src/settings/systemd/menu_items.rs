@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 use crate::common::shell::shell_quote;
 use crate::common::systemd::{ServiceScope, SystemdManager};
 use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper, Header, MenuItem};
-use crate::preview::{PreviewId, preview_command_streaming};
+use crate::preview::{preview_command_streaming, PreviewId};
 use crate::settings::systemd_list;
 use crate::ui::catppuccin::{colors, format_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
@@ -300,15 +300,19 @@ fn run_services_menu(scope: ServiceScope) -> Result<()> {
     let mut selected_service: Option<ServiceItem> = None;
 
     loop {
-        if let Some(service) = selected_service.take() {
+        if let Some(mut service) = selected_service.take() {
             loop {
                 let action = select_service_action(&service)?;
                 let go_back = handle_service_action(&service, action)?;
 
                 if go_back {
+                    selected_service = None; // Go back to service list
                     break;
                 }
                 selected_service = refresh_service(&service)?;
+                if let Some(ref new_service) = selected_service {
+                    service = new_service.clone();
+                }
             }
             continue;
         }
@@ -541,7 +545,7 @@ fn view_service_logs(service: &ServiceItem) -> Result<()> {
 }
 
 pub fn launch_cockpit() -> Result<()> {
-    use crate::common::package::{InstallResult, ensure_all};
+    use crate::common::package::{ensure_all, InstallResult};
     use crate::common::systemd::SystemdManager;
     use crate::menu_utils::FzfWrapper;
     use crate::settings::deps::COCKPIT_DEPS;
