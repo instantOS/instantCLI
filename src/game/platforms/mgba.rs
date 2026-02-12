@@ -2,7 +2,7 @@
 //!
 //! Builds commands for running GBA/GB/GBC games via mGBA-Qt
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
@@ -10,10 +10,10 @@ use crate::menu_utils::FzfWrapper;
 use crate::ui::nerd_font::NerdFont;
 
 use super::prompts::{
-    FileSelectionPrompt, ask_fullscreen, confirm_command, select_file_with_validation,
+    ask_fullscreen, confirm_command, select_file_with_validation, FileSelectionPrompt,
 };
 
-use super::validation::{MGBA_EXTENSIONS, format_valid_extensions, validate_game_file};
+use super::validation::{format_valid_extensions, validate_game_file, MGBA_EXTENSIONS};
 
 /// mGBA-Qt command name
 const MGBA_COMMAND: &str = "mgba-qt";
@@ -78,7 +78,7 @@ impl MgbaBuilder {
         )
     }
 
-    fn format_command(game_file: &PathBuf, fullscreen: bool) -> String {
+    fn format_command(game_file: &Path, fullscreen: bool) -> String {
         let game_str = game_file.to_string_lossy();
 
         let mut parts = vec![MGBA_COMMAND.to_string()];

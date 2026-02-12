@@ -5,7 +5,7 @@
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Context, Result};
@@ -17,9 +17,9 @@ use crate::menu_utils::{
 use crate::ui::nerd_font::NerdFont;
 
 use super::prompts::{
-    FileSelectionPrompt, ask_fullscreen, confirm_command, select_file_with_validation,
+    ask_fullscreen, confirm_command, select_file_with_validation, FileSelectionPrompt,
 };
-use super::validation::{DUCKSTATION_EXTENSIONS, format_valid_extensions, validate_game_file};
+use super::validation::{format_valid_extensions, validate_game_file, DUCKSTATION_EXTENSIONS};
 
 /// Default DuckStation AppImage location
 const DEFAULT_DUCKSTATION_PATH: &str = "~/AppImages/DuckStation-x64.AppImage";
@@ -286,8 +286,8 @@ impl DuckStationBuilder {
     }
 
     fn format_command(
-        duckstation_path: &PathBuf,
-        game_file: &PathBuf,
+        duckstation_path: &Path,
+        game_file: &Path,
         fullscreen: bool,
         batch_mode: bool,
     ) -> String {

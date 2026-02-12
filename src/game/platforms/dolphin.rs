@@ -3,16 +3,16 @@
 //! Builds commands for running GameCube/Wii games via the Dolphin Flatpak
 
 use anyhow::Result;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::menu_utils::{ConfirmResult, FzfWrapper};
 use crate::ui::nerd_font::NerdFont;
 
 use super::flatpak::is_flatpak_app_installed;
 use super::prompts::{
-    FileSelectionPrompt, ask_fullscreen, confirm_command, select_file_with_validation,
+    ask_fullscreen, confirm_command, select_file_with_validation, FileSelectionPrompt,
 };
-use super::validation::{DOLPHIN_EXTENSIONS, format_valid_extensions, validate_game_file};
+use super::validation::{format_valid_extensions, validate_game_file, DOLPHIN_EXTENSIONS};
 
 /// Dolphin Flatpak application ID
 const DOLPHIN_FLATPAK_ID: &str = "org.DolphinEmu.dolphin-emu";
@@ -100,7 +100,7 @@ impl DolphinBuilder {
         }
     }
 
-    fn format_command(game_file: &PathBuf, batch_mode: bool, fullscreen: bool) -> String {
+    fn format_command(game_file: &Path, batch_mode: bool, fullscreen: bool) -> String {
         let game_str = game_file.to_string_lossy();
 
         let mut parts = vec!["flatpak".to_string(), "run".to_string()];

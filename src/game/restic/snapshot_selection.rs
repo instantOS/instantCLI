@@ -1,8 +1,8 @@
 use crate::game::config::InstantGameConfig;
 use crate::game::restic::tags;
 use crate::game::utils::save_files::{
-    TimeComparison, compare_snapshot_vs_local, format_system_time_for_display,
-    get_save_directory_info,
+    compare_snapshot_vs_local, format_system_time_for_display, get_save_directory_info,
+    TimeComparison,
 };
 use crate::menu_utils::{FzfSelectable, FzfWrapper};
 use crate::restic::wrapper::Snapshot;
@@ -421,16 +421,9 @@ fn add_preview_metadata(mut builder: PreviewBuilder, snapshot: &Snapshot) -> Pre
     // Paths
     if !snapshot.paths.is_empty() {
         builder = builder.blank().subtext("Backup Paths:");
-        for (i, path) in snapshot.paths.iter().take(5).enumerate() {
-            // Limit to 5 paths to prevent overflow
+        for path in snapshot.paths.iter().take(5) {
             let truncated_path = truncate_string(path, 70);
-            if i == 0 {
-                builder = builder.bullet(&truncated_path);
-            } else if i == snapshot.paths.len() - 1 || i == 4 {
-                builder = builder.bullet(&truncated_path);
-            } else {
-                builder = builder.bullet(&truncated_path);
-            }
+            builder = builder.bullet(&truncated_path);
         }
 
         // Show count if there are more paths than displayed

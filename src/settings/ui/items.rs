@@ -90,14 +90,6 @@ impl TreeNode {
         }
     }
 
-    /// Count direct children
-    pub fn child_count(&self) -> usize {
-        match self {
-            TreeNode::Folder { children, .. } => children.len(),
-            TreeNode::Setting(_) => 0,
-        }
-    }
-
     /// Collect settings from this node (flattened), up to a limit
     pub fn collect_settings(&self, limit: usize) -> Vec<&'static dyn Setting> {
         let mut result = Vec::new();

@@ -2,7 +2,7 @@
 //!
 //! Builds commands for running Nintendo Switch games via Eden AppImage
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
@@ -13,9 +13,9 @@ use crate::menu_utils::{
 use crate::ui::nerd_font::NerdFont;
 
 use super::prompts::{
-    FileSelectionPrompt, ask_fullscreen, confirm_command, select_file_with_validation,
+    ask_fullscreen, confirm_command, select_file_with_validation, FileSelectionPrompt,
 };
-use super::validation::{EDEN_EXTENSIONS, format_valid_extensions, validate_game_file};
+use super::validation::{format_valid_extensions, validate_game_file, EDEN_EXTENSIONS};
 
 /// Default Eden AppImage location
 /// (Matched case-insensitively - will find eden.AppImage, EDEN.APPIMAGE, etc.)
@@ -143,7 +143,7 @@ impl EdenBuilder {
         )
     }
 
-    fn format_command(eden_path: &PathBuf, game_file: &PathBuf, fullscreen: bool) -> String {
+    fn format_command(eden_path: &Path, game_file: &Path, fullscreen: bool) -> String {
         let eden_str = eden_path.to_string_lossy();
         let game_str = game_file.to_string_lossy();
 
@@ -160,7 +160,7 @@ impl EdenBuilder {
 
     /// Format a simple Eden command without fullscreen flag.
     /// Used by the discovery prefill to avoid code duplication.
-    pub(crate) fn format_command_simple(eden_path: &PathBuf, game_file: &PathBuf) -> String {
+    pub(crate) fn format_command_simple(eden_path: &Path, game_file: &Path) -> String {
         let eden_str = eden_path.to_string_lossy();
         let game_str = game_file.to_string_lossy();
         format!("\"{}\" -g \"{}\"", eden_str, game_str)
