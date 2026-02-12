@@ -148,7 +148,7 @@ pub fn category_tree(category: Category) -> Vec<CategoryNode> {
             CategoryNode::setting(&system::AboutSystem),
             CategoryNode::setting(&system::SystemDoctor),
             CategoryNode::setting(&system::DotfileManager),
-            CategoryNode::setting(&system::CockpitManager),
+            CategoryNode::setting(&system::SystemdManager),
             CategoryNode::setting(&system::FirmwareManager),
             CategoryNode::setting(&system::SystemUpgrade),
             CategoryNode::setting(&system::PacmanAutoclean),

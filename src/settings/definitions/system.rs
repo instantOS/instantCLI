@@ -7,8 +7,8 @@ use duct::cmd;
 
 use crate::arch::dualboot::types::format_size;
 use crate::common::distro::OperatingSystem;
-use crate::common::package::{InstallResult, ensure_all};
-use crate::common::systemd::SystemdManager;
+use crate::common::package::{ensure_all, InstallResult};
+use crate::common::systemd::SystemdManager as SystemdUtil;
 use crate::menu_utils::FzfWrapper;
 use crate::settings::context::SettingsContext;
 use crate::settings::deps::{
@@ -124,19 +124,18 @@ impl Setting for DotfileManager {
 }
 
 // ============================================================================
-// Cockpit (uses custom launch logic, can't use macro)
+// Systemd Manager (fzf-based menu for managing services)
 // ============================================================================
 
-pub struct CockpitManager;
+pub struct SystemdManager;
 
-impl Setting for CockpitManager {
+impl Setting for SystemdManager {
     fn metadata(&self) -> SettingMetadata {
         SettingMetadata::builder()
-            .id("system.cockpit")
-            .title("Systemd manager (Cockpit)")
+            .id("system.systemd")
+            .title("Systemd Services")
             .icon(NerdFont::Server)
-            .summary("Launch Cockpit web interface for managing systemd services, logs, and system resources.")
-            .requirements(vec![&COCKPIT])
+            .summary("Manage systemd services: start, stop, enable, disable, and view logs.")
             .build()
     }
 
@@ -144,8 +143,8 @@ impl Setting for CockpitManager {
         SettingType::Action
     }
 
-    fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
-        launch_cockpit(ctx)
+    fn apply(&self, _ctx: &mut SettingsContext) -> Result<()> {
+        crate::settings::systemd::run_systemd_menu()
     }
 }
 

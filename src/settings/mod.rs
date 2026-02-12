@@ -18,6 +18,7 @@ pub mod restore;
 pub mod setting;
 pub mod sources;
 pub mod store;
+pub mod systemd;
 pub mod ui;
 pub mod users;
 
