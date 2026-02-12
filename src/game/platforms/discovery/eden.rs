@@ -65,14 +65,6 @@ impl EdenDiscoveredGame {
             tracked_name: None,
         }
     }
-
-    pub fn existing(game: Self, tracked_name: String) -> Self {
-        Self {
-            is_existing: true,
-            tracked_name: Some(tracked_name),
-            ..game
-        }
-    }
 }
 
 impl DiscoveredGame for EdenDiscoveredGame {

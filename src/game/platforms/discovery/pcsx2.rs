@@ -69,14 +69,6 @@ impl Pcsx2DiscoveredMemcard {
             tracked_name: None,
         }
     }
-
-    pub fn existing(memcard: Self, tracked_name: String) -> Self {
-        Self {
-            is_existing: true,
-            tracked_name: Some(tracked_name),
-            ..memcard
-        }
-    }
 }
 
 impl DiscoveredGame for Pcsx2DiscoveredMemcard {
