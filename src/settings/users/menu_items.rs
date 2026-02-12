@@ -3,14 +3,12 @@ use crate::ui::prelude::*;
 
 use crate::ui::catppuccin::{colors, format_icon, format_icon_colored};
 
-/// Menu item for the main user management screen
 #[derive(Clone)]
 pub(super) enum ManageMenuItem {
     User {
         username: String,
         shell: String,
         groups: Vec<String>,
-        in_toml: bool,
     },
     Add,
     Back,
@@ -44,17 +42,9 @@ impl FzfSelectable for ManageMenuItem {
                 username,
                 shell,
                 groups,
-                in_toml,
             } => {
-                let status = if *in_toml { "Managed" } else { "System" };
-
                 let mut builder = PreviewBuilder::new()
                     .header(NerdFont::User, username)
-                    .line(
-                        colors::TEAL,
-                        Some(NerdFont::Tag),
-                        &format!("Status: {}", status),
-                    )
                     .line(
                         colors::TEAL,
                         Some(NerdFont::Terminal),
@@ -77,11 +67,10 @@ impl FzfSelectable for ManageMenuItem {
             }
             ManageMenuItem::Add => PreviewBuilder::new()
                 .header(NerdFont::Plus, "Add User")
-                .text("Create a new managed user entry")
+                .text("Create a new system user account.")
                 .blank()
-                .text("The user will be added to the")
-                .text("TOML configuration for tracking")
-                .text("and management.")
+                .text("You will be prompted to set a")
+                .text("password and select groups.")
                 .build(),
             ManageMenuItem::Back => PreviewBuilder::new()
                 .header(NerdFont::ArrowLeft, "Back")
@@ -91,7 +80,6 @@ impl FzfSelectable for ManageMenuItem {
     }
 }
 
-/// Actions available for a specific user
 #[derive(Clone)]
 pub(super) enum UserActionItem {
     ChangeShell {
@@ -105,9 +93,6 @@ pub(super) enum UserActionItem {
     ToggleSudo {
         enabled: bool,
         wheel_warning: bool,
-    },
-    Remove {
-        is_managed: bool,
     },
     DeleteUser {
         username: String,
@@ -138,9 +123,6 @@ impl FzfSelectable for UserActionItem {
                     format_icon_colored(icon, color),
                     status
                 )
-            }
-            UserActionItem::Remove { .. } => {
-                format!("{} Stop managing", format_icon(NerdFont::Trash))
             }
             UserActionItem::DeleteUser { .. } => {
                 format!(
@@ -250,25 +232,6 @@ impl FzfSelectable for UserActionItem {
 
                 builder.build()
             }
-            UserActionItem::Remove { is_managed } => {
-                let status = if *is_managed {
-                    "Managed"
-                } else {
-                    "Not managed"
-                };
-                PreviewBuilder::new()
-                    .header(NerdFont::Trash, "Stop Managing")
-                    .text("Stop tracking this user in the configuration.")
-                    .blank()
-                    .line(
-                        colors::TEAL,
-                        Some(NerdFont::Tag),
-                        &format!("Status: {}", status),
-                    )
-                    .blank()
-                    .subtext("This does not delete the system account.")
-                    .build()
-            }
             UserActionItem::DeleteUser { username } => PreviewBuilder::new()
                 .header(NerdFont::Trash, "Delete User")
                 .line(colors::RED, Some(NerdFont::Warning), "DESTRUCTIVE ACTION")
@@ -290,7 +253,6 @@ impl FzfSelectable for UserActionItem {
     }
 }
 
-/// Menu item for group management
 #[derive(Clone)]
 pub(super) enum GroupMenuItem {
     ExistingGroup { name: String, is_primary: bool },
@@ -361,7 +323,6 @@ impl FzfSelectable for GroupMenuItem {
     }
 }
 
-/// Actions for a specific group
 #[derive(Clone)]
 pub(super) enum GroupActionItem {
     RemoveGroup { name: String, is_primary: bool },
@@ -405,7 +366,6 @@ impl FzfSelectable for GroupActionItem {
     }
 }
 
-/// Selectable group item
 #[derive(Clone)]
 pub(super) struct GroupItem {
     pub name: String,
@@ -424,7 +384,6 @@ impl FzfSelectable for GroupItem {
     }
 }
 
-/// Selectable shell item
 #[derive(Clone)]
 pub(super) struct ShellItem {
     pub path: String,

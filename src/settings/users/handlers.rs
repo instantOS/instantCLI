@@ -8,7 +8,6 @@ use super::super::context::SettingsContext;
 use super::menu_items::{
     GroupActionItem, GroupItem, GroupMenuItem, ManageMenuItem, UserActionItem,
 };
-use super::store::UserStore;
 use super::system::{
     get_all_system_groups, get_system_users_with_home, get_user_info, group_exists,
     wheel_sudo_status, WheelSudoStatus,
@@ -22,50 +21,30 @@ use crate::menu_utils::select_one_with_style;
 
 const WHEEL_GROUP: &str = "wheel";
 
-/// Main entry point for user management
 pub fn manage_users(ctx: &mut SettingsContext) -> Result<()> {
-    let mut store = UserStore::load()?;
-    let mut dirty = false;
-
     loop {
-        let items = build_user_menu_items(&store)?;
+        let items = build_user_menu_items()?;
 
         match select_one_with_style(items)? {
             Some(ManageMenuItem::Add) => {
-                if add_user(ctx, &mut store)? {
-                    dirty = true;
-                }
+                add_user(ctx)?;
             }
             Some(ManageMenuItem::User { username, .. }) => {
-                if handle_user(ctx, &mut store, &username)? {
-                    dirty = true;
-                }
+                handle_user(ctx, &username)?;
             }
             _ => break,
         }
     }
 
-    if dirty {
-        store.save()?;
-        ctx.emit_success("settings.users.saved", "User configuration updated.");
-    } else {
-        ctx.emit_info("settings.users.noop", "No changes made to users.");
-    }
+    ctx.emit_info("settings.users.noop", "No changes made to users.");
 
     Ok(())
 }
 
-/// Build the menu items for the main user management screen
-fn build_user_menu_items(store: &UserStore) -> Result<Vec<ManageMenuItem>> {
+fn build_user_menu_items() -> Result<Vec<ManageMenuItem>> {
     let system_users = get_system_users_with_home()?;
     let mut all_usernames = BTreeSet::new();
 
-    // Add managed users from TOML
-    for username in store.iter() {
-        all_usernames.insert(username.clone());
-    }
-
-    // Add system users with home directories
     for username in system_users {
         all_usernames.insert(username);
     }
@@ -73,16 +52,12 @@ fn build_user_menu_items(store: &UserStore) -> Result<Vec<ManageMenuItem>> {
     let mut items: Vec<ManageMenuItem> = all_usernames
         .into_iter()
         .filter_map(|username| {
-            let is_managed = store.is_managed(&username);
-
-            // Always read current state from system
             let info = get_user_info(&username).ok()??;
 
             Some(ManageMenuItem::User {
                 username,
                 shell: info.shell,
                 groups: info.groups,
-                in_toml: is_managed,
             })
         })
         .collect();
@@ -102,12 +77,11 @@ fn build_user_menu_items(store: &UserStore) -> Result<Vec<ManageMenuItem>> {
     Ok(items)
 }
 
-/// Add a new user
-fn add_user(ctx: &mut SettingsContext, store: &mut UserStore) -> Result<bool> {
+fn add_user(ctx: &mut SettingsContext) -> Result<()> {
     let username = prompt_username()?;
     if username.is_empty() {
         ctx.emit_info("settings.users.add.cancelled", "Creation cancelled.");
-        return Ok(false);
+        return Ok(());
     }
 
     if let Err(err) = validate_username(&username) {
@@ -115,41 +89,27 @@ fn add_user(ctx: &mut SettingsContext, store: &mut UserStore) -> Result<bool> {
             "settings.users.add.invalid",
             &format!("Invalid username: {}", err),
         );
-        return Ok(false);
-    }
-
-    if store.is_managed(&username) {
-        ctx.emit_info(
-            "settings.users.add.exists",
-            &format!("{} already managed.", username),
-        );
-        return Ok(false);
+        return Ok(());
     }
 
     let shell = select_shell(ctx, "Select shell")?.unwrap_or_else(super::models::default_shell);
     let selected_groups =
         select_groups("Use Tab to select multiple, Enter to confirm, Esc to skip")?;
 
-    // Create the user on the system
     create_user(ctx, &username, &shell, &selected_groups)?;
 
-    // Mark as managed
-    store.add(&username);
-
-    // Prompt for password
     if let Some(password) = prompt_password_with_confirmation(ctx, "Set password for user")? {
         set_user_password(ctx, &username, &password)?;
     }
 
     ctx.emit_success(
         "settings.users.added",
-        &format!("{} registered for management.", username),
+        &format!("User {} created.", username),
     );
 
-    Ok(true)
+    Ok(())
 }
 
-/// Prompt for a username
 fn prompt_username() -> Result<String> {
     let username = FzfWrapper::builder()
         .prompt("New username")
@@ -158,22 +118,18 @@ fn prompt_username() -> Result<String> {
     Ok(username.trim().to_string())
 }
 
-/// Handle actions for a specific user
-fn handle_user(ctx: &mut SettingsContext, store: &mut UserStore, username: &str) -> Result<bool> {
-    let mut changed = false;
-
+fn handle_user(ctx: &mut SettingsContext, username: &str) -> Result<()> {
     loop {
         let user_info = match get_user_info(username)? {
             Some(info) => info,
             None => {
                 ctx.emit_info("settings.users.user", "User not found on system.");
-                return Ok(changed);
+                return Ok(());
             }
         };
 
         let has_wheel = user_info.groups.iter().any(|group| group == WHEEL_GROUP);
         let wheel_warning = matches!(wheel_sudo_status(), WheelSudoStatus::Denied);
-        let is_managed = store.is_managed(username);
 
         let actions = vec![
             UserActionItem::ChangeShell {
@@ -188,7 +144,6 @@ fn handle_user(ctx: &mut SettingsContext, store: &mut UserStore, username: &str)
                 enabled: has_wheel,
                 wheel_warning,
             },
-            UserActionItem::Remove { is_managed },
             UserActionItem::DeleteUser {
                 username: username.to_string(),
             },
@@ -199,11 +154,6 @@ fn handle_user(ctx: &mut SettingsContext, store: &mut UserStore, username: &str)
             Some(UserActionItem::ChangeShell { .. }) => {
                 if let Some(new_shell) = select_shell(ctx, "Select shell")? {
                     change_user_shell(ctx, username, &new_shell)?;
-                    // Mark as managed if not already
-                    if !store.is_managed(username) {
-                        store.add(username);
-                        changed = true;
-                    }
                 }
             }
             Some(UserActionItem::ChangePassword) => {
@@ -212,33 +162,18 @@ fn handle_user(ctx: &mut SettingsContext, store: &mut UserStore, username: &str)
                 }
             }
             Some(UserActionItem::ManageGroups { .. }) => {
-                if manage_user_groups(ctx, store, username)? {
-                    changed = true;
-                }
+                manage_user_groups(ctx, username)?;
             }
             Some(UserActionItem::ToggleSudo { enabled, .. }) => {
-                if toggle_user_sudo(ctx, store, username, enabled)? {
-                    changed = true;
-                }
-            }
-            Some(UserActionItem::Remove { .. }) => {
-                store.remove(username);
-                ctx.emit_info(
-                    "settings.users.removed",
-                    &format!("{} removed from management.", username),
-                );
-                changed = true;
-                break;
+                toggle_user_sudo(ctx, username, enabled)?;
             }
             Some(UserActionItem::DeleteUser { .. }) => {
                 if confirm_delete_user(ctx, username)? {
                     delete_user(ctx, username)?;
-                    store.remove(username);
                     ctx.emit_success(
                         "settings.users.deleted",
                         &format!("User {} has been deleted.", username),
                     );
-                    changed = true;
                     break;
                 }
             }
@@ -246,21 +181,20 @@ fn handle_user(ctx: &mut SettingsContext, store: &mut UserStore, username: &str)
         }
     }
 
-    Ok(changed)
+    Ok(())
 }
 
 fn toggle_user_sudo(
     ctx: &mut SettingsContext,
-    store: &mut UserStore,
     username: &str,
     currently_enabled: bool,
-) -> Result<bool> {
+) -> Result<()> {
     if !group_exists(WHEEL_GROUP)? {
         ctx.emit_info(
             "settings.users.sudo",
             "Wheel group not found on this system.",
         );
-        return Ok(false);
+        return Ok(());
     }
 
     if currently_enabled {
@@ -274,7 +208,7 @@ fn toggle_user_sudo(
                 .confirm_dialog()?;
 
             if result != crate::menu_utils::ConfirmResult::Yes {
-                return Ok(false);
+                return Ok(());
             }
         }
         remove_user_from_group(ctx, username, WHEEL_GROUP)?;
@@ -290,10 +224,6 @@ fn toggle_user_sudo(
         );
     }
 
-    if !store.is_managed(username) {
-        store.add(username);
-    }
-
     if matches!(wheel_sudo_status(), WheelSudoStatus::Denied) {
         ctx.emit_info(
             "settings.users.sudo",
@@ -301,7 +231,7 @@ fn toggle_user_sudo(
         );
     }
 
-    Ok(true)
+    Ok(())
 }
 
 fn is_current_user(username: &str) -> bool {
@@ -337,21 +267,13 @@ fn confirm_delete_user(ctx: &mut SettingsContext, username: &str) -> Result<bool
     }
 }
 
-/// Manage groups for a user
-fn manage_user_groups(
-    ctx: &mut SettingsContext,
-    store: &mut UserStore,
-    username: &str,
-) -> Result<bool> {
-    let mut changed = false;
-
+fn manage_user_groups(ctx: &mut SettingsContext, username: &str) -> Result<()> {
     loop {
-        // Always read current groups from system
         let user_info = match get_user_info(username)? {
             Some(info) => info,
             None => {
                 ctx.emit_info("settings.users.groups", "User not found on system.");
-                return Ok(false);
+                return Ok(());
             }
         };
 
@@ -361,28 +283,21 @@ fn manage_user_groups(
             Some(GroupMenuItem::ExistingGroup {
                 name: group_name, ..
             }) => {
-                if manage_single_group(ctx, store, username, &group_name, &user_info)? {
-                    changed = true;
-                }
+                manage_single_group(ctx, username, &group_name, &user_info)?;
             }
             Some(GroupMenuItem::AddGroup) => {
-                if add_groups_to_user(ctx, store, username, &user_info.groups)? {
-                    changed = true;
-                }
+                add_groups_to_user(ctx, username, &user_info.groups)?;
             }
             Some(GroupMenuItem::CreateGroup) => {
-                if create_group_for_user(ctx, store, username, &user_info.groups)? {
-                    changed = true;
-                }
+                create_group_for_user(ctx, username, &user_info.groups)?;
             }
             _ => break,
         }
     }
 
-    Ok(changed)
+    Ok(())
 }
 
-/// Build menu items for group management
 fn build_group_menu_items(
     current_groups: &[String],
     primary_group: Option<&str>,
@@ -403,14 +318,13 @@ fn build_group_menu_items(
 
 fn create_group_for_user(
     ctx: &mut SettingsContext,
-    store: &mut UserStore,
     username: &str,
     current_groups: &[String],
-) -> Result<bool> {
+) -> Result<()> {
     let group_name = prompt_group_name()?;
     if group_name.is_empty() {
         ctx.emit_info("settings.users.groups", "Group creation cancelled.");
-        return Ok(false);
+        return Ok(());
     }
 
     if let Err(err) = validate_group_name(&group_name) {
@@ -418,7 +332,7 @@ fn create_group_for_user(
             "settings.users.groups",
             &format!("Invalid group name: {}", err),
         );
-        return Ok(false);
+        return Ok(());
     }
 
     if group_exists(&group_name)? {
@@ -427,7 +341,7 @@ fn create_group_for_user(
                 "settings.users.groups",
                 &format!("{} is already in group {}.", username, group_name),
             );
-            return Ok(false);
+            return Ok(());
         }
 
         let message = format!(
@@ -442,13 +356,9 @@ fn create_group_for_user(
 
         if matches!(result, crate::menu_utils::ConfirmResult::Yes) {
             add_user_to_group(ctx, username, &group_name)?;
-            if !store.is_managed(username) {
-                store.add(username);
-            }
-            return Ok(true);
         }
 
-        return Ok(false);
+        return Ok(());
     }
 
     create_group(ctx, &group_name)?;
@@ -462,29 +372,22 @@ fn create_group_for_user(
 
     if matches!(result, crate::menu_utils::ConfirmResult::Yes) {
         add_user_to_group(ctx, username, &group_name)?;
-        if !store.is_managed(username) {
-            store.add(username);
-        }
-        return Ok(true);
     }
 
-    Ok(false)
+    Ok(())
 }
 
-/// Add groups to a user
 fn add_groups_to_user(
     ctx: &mut SettingsContext,
-    store: &mut UserStore,
     username: &str,
     current_groups: &[String],
-) -> Result<bool> {
+) -> Result<()> {
     let all_groups = get_all_system_groups()?;
     if all_groups.is_empty() {
         ctx.emit_info("settings.users.groups", "No system groups found.");
-        return Ok(false);
+        return Ok(());
     }
 
-    // Filter out groups already assigned
     let current_set: BTreeSet<_> = current_groups.iter().cloned().collect();
     let available_groups: Vec<GroupItem> = all_groups
         .into_iter()
@@ -497,10 +400,9 @@ fn add_groups_to_user(
             "settings.users.groups",
             "User is already in all available groups.",
         );
-        return Ok(false);
+        return Ok(());
     }
 
-    // Show selection menu with multi-select
     let selected = FzfWrapper::builder()
         .prompt("Select groups to add")
         .header("Use Tab to select multiple, Enter to confirm")
@@ -522,24 +424,17 @@ fn add_groups_to_user(
         for group in &groups_to_add {
             add_user_to_group(ctx, username, group)?;
         }
-        // Mark as managed if not already
-        if !store.is_managed(username) {
-            store.add(username);
-        }
-        return Ok(true);
     }
 
-    Ok(false)
+    Ok(())
 }
 
-/// Manage a single group for a user
 fn manage_single_group(
     ctx: &mut SettingsContext,
-    store: &mut UserStore,
     username: &str,
     group_name: &str,
     user_info: &super::models::UserInfo,
-) -> Result<bool> {
+) -> Result<()> {
     let is_primary = Some(group_name) == user_info.primary_group.as_deref();
     let actions = vec![
         GroupActionItem::RemoveGroup {
@@ -551,29 +446,23 @@ fn manage_single_group(
 
     match select_one_with_style(actions)? {
         Some(GroupActionItem::RemoveGroup { is_primary, .. }) => {
-            // Don't remove primary group
             if is_primary {
                 ctx.emit_info(
                     "settings.users.groups",
                     &format!("Cannot remove primary group: {}", group_name),
                 );
-                return Ok(false);
+                return Ok(());
             }
 
             remove_user_from_group(ctx, username, group_name)?;
-
-            // Mark as managed if not already
-            if !store.is_managed(username) {
-                store.add(username);
-            }
 
             ctx.emit_success(
                 "settings.users.groups",
                 &format!("Removed {} from {}", group_name, username),
             );
 
-            Ok(true)
+            Ok(())
         }
-        _ => Ok(false),
+        _ => Ok(()),
     }
 }
