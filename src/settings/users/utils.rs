@@ -331,7 +331,7 @@ pub(super) fn validate_group_name(group_name: &str) -> Result<(), GroupNameValid
 
 #[cfg(test)]
 mod tests {
-    use super::{validate_username, UsernameValidationError};
+    use super::{UsernameValidationError, validate_username};
 
     #[test]
     fn accepts_valid_username() {

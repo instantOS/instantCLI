@@ -7,7 +7,7 @@ use std::{
 
 use anyhow::{Context, Result};
 
-use super::models::{default_shell, UserInfo};
+use super::models::{UserInfo, default_shell};
 
 const SUDOERS_PATH: &str = "/etc/sudoers";
 

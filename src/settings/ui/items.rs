@@ -177,11 +177,10 @@ pub enum MainMenuItem {
     Close,
 }
 
-/// Search result item
+/// Search result item (state computed lazily in preview)
 #[derive(Clone)]
 pub struct SearchItem {
     pub setting: &'static dyn Setting,
-    pub state: SettingState,
 }
 
 /// Tree search item - displays settings and categories in a tree structure
@@ -198,10 +197,9 @@ pub enum TreeSearchItem {
         tree_prefix: String,
         path: String,
     },
-    /// A setting leaf in the tree
+    /// A setting leaf in the tree (state computed lazily in preview)
     Setting {
         setting: &'static dyn Setting,
-        state: SettingState,
         tree_prefix: String,
     },
 }
@@ -409,7 +407,9 @@ impl FzfSelectable for SearchItem {
     }
 
     fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
-        build_setting_preview(self.setting, &self.state)
+        crate::menu_utils::FzfPreview::Command(crate::preview::preview_command_for_setting(
+            self.setting.metadata().id,
+        ))
     }
 
     fn fzf_key(&self) -> String {
@@ -450,7 +450,6 @@ impl FzfSelectable for TreeSearchItem {
             }
             TreeSearchItem::Setting {
                 setting,
-                state,
                 tree_prefix,
             } => {
                 let meta = setting.metadata();
@@ -459,22 +458,8 @@ impl FzfSelectable for TreeSearchItem {
                 let icon_color = meta.icon_color.unwrap_or_else(|| category.meta().color);
                 let icon = format_icon_colored(meta.icon, icon_color);
 
-                let state_suffix = match state {
-                    SettingState::Toggle { enabled: true } => {
-                        format!(" {}", format_icon_colored(NerdFont::Check, colors::GREEN))
-                    }
-                    SettingState::Toggle { enabled: false } => {
-                        format!(" {}", format_icon_colored(NerdFont::Cross, colors::RED))
-                    }
-                    SettingState::Choice { current_label } => {
-                        let subtext = crate::ui::catppuccin::hex_to_ansi_fg(colors::SUBTEXT0);
-                        format!(" {subtext}({current_label}){RESET}")
-                    }
-                    SettingState::Action | SettingState::Command => String::new(),
-                };
-
                 format!(
-                    "{tree_color}{tree_prefix}{RESET} {icon} {text_color}{}{RESET}{state_suffix}",
+                    "{tree_color}{tree_prefix}{RESET} {icon} {text_color}{}{RESET}",
                     meta.title
                 )
             }
@@ -502,9 +487,9 @@ impl FzfSelectable for TreeSearchItem {
                 meta.description.as_deref(),
                 &[],
             ),
-            TreeSearchItem::Setting { setting, state, .. } => {
-                build_setting_preview(*setting, state)
-            }
+            TreeSearchItem::Setting { setting, .. } => crate::menu_utils::FzfPreview::Command(
+                crate::preview::preview_command_for_setting(setting.metadata().id),
+            ),
         }
     }
 
@@ -539,9 +524,7 @@ fn collect_category_settings(
 }
 
 /// Build tree search items from all categories
-pub fn build_tree_search_items(
-    ctx: &crate::settings::context::SettingsContext,
-) -> Vec<TreeSearchItem> {
+pub fn build_tree_search_items() -> Vec<TreeSearchItem> {
     let mut items = Vec::new();
     let categories = Category::all();
     let total_categories = categories.len();
@@ -557,13 +540,7 @@ pub fn build_tree_search_items(
         });
 
         let tree = crate::settings::category_tree::category_tree(*category);
-        append_tree_items(
-            &mut items,
-            &tree,
-            cat_child_prefix,
-            category.meta().title,
-            ctx,
-        );
+        append_tree_items(&mut items, &tree, cat_child_prefix, category.meta().title);
     }
 
     items.reverse();
@@ -575,7 +552,6 @@ fn append_tree_items(
     nodes: &[crate::settings::category_tree::CategoryNode],
     prefix: &str,
     path: &str,
-    ctx: &crate::settings::context::SettingsContext,
 ) {
     for (i, node) in nodes.iter().enumerate() {
         let is_last = i == nodes.len() - 1;
@@ -587,10 +563,8 @@ fn append_tree_items(
         };
 
         if let Some(setting) = node.setting {
-            let state = setting.get_display_state(ctx);
             items.push(TreeSearchItem::Setting {
                 setting,
-                state,
                 tree_prefix: format!("{prefix}{connector}"),
             });
         } else if let Some(name) = node.name {
@@ -601,7 +575,7 @@ fn append_tree_items(
                 path: folder_path.clone(),
             });
 
-            append_tree_items(items, &node.children, &child_prefix, &folder_path, ctx);
+            append_tree_items(items, &node.children, &child_prefix, &folder_path);
         }
     }
 }

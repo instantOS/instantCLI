@@ -97,6 +97,8 @@ pub enum PreviewId {
     Aur,
     #[value(name = "cargo")]
     Cargo,
+    #[value(name = "setting")]
+    Setting,
 }
 
 impl PreviewId {
@@ -136,6 +138,7 @@ impl PreviewId {
             PreviewId::Flatpak => "flatpak",
             PreviewId::Aur => "aur",
             PreviewId::Cargo => "cargo",
+            PreviewId::Setting => "setting",
         }
     }
 }
@@ -156,6 +159,15 @@ pub fn preview_command(id: PreviewId) -> String {
 pub fn preview_command_streaming(id: PreviewId) -> String {
     let exe = current_exe_command();
     format!("{exe} preview --id {} --key {{}}", id.as_str())
+}
+
+/// Preview command for a specific setting by ID.
+pub fn preview_command_for_setting(setting_id: &str) -> String {
+    let exe = current_exe_command();
+    format!(
+        "{exe} preview --id setting --key {}",
+        shell_quote(setting_id)
+    )
 }
 
 pub fn handle_preview_command(id: PreviewId, key: Option<String>) -> Result<()> {
@@ -269,6 +281,7 @@ fn render_preview(id: PreviewId, ctx: &PreviewContext) -> Result<String> {
         PreviewId::Flatpak => package::render_flatpak_preview(ctx),
         PreviewId::Aur => package::render_aur_preview(ctx),
         PreviewId::Cargo => package::render_cargo_preview(ctx),
+        PreviewId::Setting => render_setting_preview(ctx),
     }
 }
 
@@ -279,6 +292,71 @@ fn render_error_preview(id: PreviewId, err: anyhow::Error) -> String {
         .blank()
         .text(&err.to_string())
         .build_string()
+}
+
+fn render_setting_preview(ctx: &PreviewContext) -> Result<String> {
+    use crate::settings::setting::{SettingState, setting_by_id};
+    use crate::ui::catppuccin::colors;
+
+    let setting_id = ctx
+        .key()
+        .ok_or_else(|| anyhow::anyhow!("No setting ID provided"))?;
+    let setting = setting_by_id(setting_id)
+        .ok_or_else(|| anyhow::anyhow!("Setting '{}' not found", setting_id))?;
+
+    let meta = setting.metadata();
+    let category = crate::settings::category_tree::get_category_for_setting(meta.id)
+        .unwrap_or(crate::settings::setting::Category::System);
+    let icon_color = meta.icon_color.unwrap_or_else(|| category.meta().color);
+
+    let mut builder = PreviewBuilder::new()
+        .line(icon_color, Some(meta.icon), meta.title)
+        .separator()
+        .blank();
+
+    if let Some(cmd) = setting.preview_command() {
+        let output = std::process::Command::new("bash")
+            .arg("-c")
+            .arg(&cmd)
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+            .unwrap_or_else(|_| format!("Failed to run preview command: {}", cmd));
+        builder = builder.text(&output);
+    } else {
+        match crate::settings::store::SettingsStore::load() {
+            Ok(store) => {
+                let settings_ctx =
+                    crate::settings::context::SettingsContext::new(store, false, false);
+                let state = setting.get_display_state(&settings_ctx);
+
+                match state {
+                    SettingState::Toggle { enabled: true } => {
+                        builder = builder
+                            .line(colors::GREEN, Some(NerdFont::Check), "Enabled")
+                            .blank();
+                    }
+                    SettingState::Toggle { enabled: false } => {
+                        builder = builder
+                            .line(colors::RED, Some(NerdFont::Cross), "Disabled")
+                            .blank();
+                    }
+                    SettingState::Choice { current_label } => {
+                        builder = builder.field("Current", &current_label).blank();
+                    }
+                    SettingState::Action | SettingState::Command => {}
+                }
+            }
+            Err(_) => {
+                builder = builder.subtext("(Could not load settings store)").blank();
+            }
+        }
+
+        for line in meta.summary.lines() {
+            builder = builder.text(line);
+        }
+    }
+
+    Ok(builder.build_string())
 }
 
 fn current_exe_command() -> String {

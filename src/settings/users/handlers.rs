@@ -9,8 +9,8 @@ use super::menu_items::{
     GroupActionItem, GroupItem, GroupMenuItem, ManageMenuItem, UserActionItem,
 };
 use super::system::{
-    get_all_system_groups, get_system_users_with_home, get_user_info, group_exists,
-    wheel_sudo_status, WheelSudoStatus,
+    WheelSudoStatus, get_all_system_groups, get_system_users_with_home, get_user_info,
+    group_exists, wheel_sudo_status,
 };
 use super::utils::{
     add_user_to_group, change_user_shell, create_group, create_user, delete_user,

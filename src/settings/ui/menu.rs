@@ -28,7 +28,7 @@ pub fn run_settings_ui(
     let mut initial_view = match navigation {
         Some(SettingsNavigation::Setting(setting_id)) => {
             // Find the setting in the tree view and jump to it
-            let tree_items = build_tree_search_items(&ctx);
+            let tree_items = build_tree_search_items();
             let target_index = tree_items.iter().position(|item| {
                 matches!(item, TreeSearchItem::Setting { setting, .. } if setting.metadata().id == setting_id)
             });
@@ -254,7 +254,7 @@ pub fn handle_search_all(ctx: &mut SettingsContext, mut cursor: MenuCursor) -> R
     use crate::ui::catppuccin::{colors, fzf_mocha_args, hex_to_ansi_fg};
 
     loop {
-        let items = build_tree_search_items(ctx);
+        let items = build_tree_search_items();
 
         if items.is_empty() {
             ctx.emit_info("settings.search.empty", "No settings found to search.");
