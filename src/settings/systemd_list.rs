@@ -126,6 +126,11 @@ fn get_service_enabled_state(name: &str, scope: ServiceScope) -> String {
             } else {
                 match state.as_str() {
                     "disabled" => "disabled".to_string(),
+                    "not-found" => "transient".to_string(),
+                    "static" => "static".to_string(),
+                    "indirect" => "indirect".to_string(),
+                    "masked" => "masked".to_string(),
+                    "linked" => "linked".to_string(),
                     _ => state,
                 }
             }

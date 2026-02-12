@@ -12,6 +12,9 @@ jobs:
     runs-on: self-hosted
     container:
       image: ubuntu:latest
+    defaults:
+      run:
+        shell: bash
     permissions:
       contents: write
     steps:
@@ -28,7 +31,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
       - name: Sync PKGBUILD version
-        shell: bash
         run: |
           set -euo pipefail
 
