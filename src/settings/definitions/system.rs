@@ -7,13 +7,9 @@ use duct::cmd;
 
 use crate::arch::dualboot::types::format_size;
 use crate::common::distro::OperatingSystem;
-use crate::common::package::{ensure_all, InstallResult};
-use crate::common::systemd::SystemdManager as SystemdUtil;
 use crate::menu_utils::FzfWrapper;
 use crate::settings::context::SettingsContext;
-use crate::settings::deps::{
-    COCKPIT, COCKPIT_DEPS, FASTFETCH, GNOME_FIRMWARE, PACMAN_CONTRIB, TOPGRADE,
-};
+use crate::settings::deps::{FASTFETCH, GNOME_FIRMWARE, PACMAN_CONTRIB, TOPGRADE};
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::sources;
 use crate::settings::store::{BoolSettingKey, PACMAN_AUTOCLEAN_KEY};
@@ -145,6 +141,31 @@ impl Setting for SystemdManager {
 
     fn apply(&self, _ctx: &mut SettingsContext) -> Result<()> {
         crate::settings::systemd::run_systemd_menu()
+    }
+}
+
+// ============================================================================
+// Web UI (Cockpit) - Launch Cockpit web interface
+// ============================================================================
+
+pub struct WebUiManager;
+
+impl Setting for WebUiManager {
+    fn metadata(&self) -> SettingMetadata {
+        SettingMetadata::builder()
+            .id("system.webui")
+            .title("Web UI (Cockpit)")
+            .icon(NerdFont::Globe)
+            .summary("Launch Cockpit web interface for managing systemd services, logs, and system resources via browser.")
+            .build()
+    }
+
+    fn setting_type(&self) -> SettingType {
+        SettingType::Action
+    }
+
+    fn apply(&self, _ctx: &mut SettingsContext) -> Result<()> {
+        crate::settings::systemd::launch_cockpit()
     }
 }
 
@@ -348,47 +369,4 @@ fn calculate_dir_size(path: &str) -> Result<u64> {
     }
 
     Ok(total_size)
-}
-
-const COCKPIT_SOCKET_NAME: &str = "cockpit.socket";
-
-/// Launch Cockpit web-based system management interface
-pub fn launch_cockpit(ctx: &mut SettingsContext) -> Result<()> {
-    // Ensure required packages are installed
-    match ensure_all(COCKPIT_DEPS)? {
-        InstallResult::Installed | InstallResult::AlreadyInstalled => {}
-        _ => {
-            ctx.emit_info("settings.cockpit.cancelled", "Cockpit launch cancelled.");
-            return Ok(());
-        }
-    }
-
-    let systemd = SystemdManager::system_with_sudo();
-
-    // Check if cockpit.socket is enabled, if not enable it
-    if !systemd.is_enabled(COCKPIT_SOCKET_NAME) {
-        systemd.enable_and_start(COCKPIT_SOCKET_NAME)?;
-
-        // Give cockpit a moment to start up
-        std::thread::sleep(std::time::Duration::from_secs(2));
-
-        // Show login hint
-        let username = std::env::var("USER").unwrap_or_else(|_| "your username".to_string());
-        FzfWrapper::builder()
-            .message(format!(
-                "Cockpit is starting...\n\nSign in with '{}' in the browser window.",
-                username
-            ))
-            .title("Cockpit")
-            .message_dialog()?;
-    }
-
-    // Launch chromium in app mode
-    std::process::Command::new("chromium")
-        .arg("--app=http://localhost:9090")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()?;
-
-    Ok(())
 }

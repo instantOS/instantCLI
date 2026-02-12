@@ -147,13 +147,13 @@ impl FzfSelectable for ServiceItem {
             ServiceScope::User => "User",
         };
 
-        let mut builder = PreviewBuilder::new()
+        PreviewBuilder::new()
             .header(NerdFont::Server, &self.name)
             .field("Description", &self.description)
             .blank()
             .line(
                 active_color,
-                Some(NerdFont::PowerOff),
+                Some(NerdFont::CheckCircle),
                 &format!("Status: {}", self.active),
             )
             .line(
@@ -168,62 +168,8 @@ impl FzfSelectable for ServiceItem {
             .text("Actions:")
             .bullet("Start/Stop/Restart the service")
             .bullet("Enable/Disable at boot")
-            .bullet("View live logs (journalctl -f)");
-
-        FzfPreview::Command(format!(
-            r#"SERVICE="{}" SCOPE="{}"
-echo "───────────────────────────────────"
-echo -e "\033[1;38;2;203;164;213m$(systemctl show -p Description --value "$SERVICE" {} 2>/dev/null)\033[0m"
-echo "───────────────────────────────────"
-echo ""
-ACTIVE=$(systemctl is-active "$SERVICE" {} 2>/dev/null)
-ENABLED=$(systemctl is-enabled "$SERVICE" {} 2>/dev/null)
-
-case "$ACTIVE" in
-    active) ACTIVE_COLOR="\033[38;2;166;227;161m" ;;
-    failed) ACTIVE_COLOR="\033[38;2;243;139;168m" ;;
-    inactive) ACTIVE_COLOR="\033[38;2;137;180;183m" ;;
-    *) ACTIVE_COLOR="\033[38;2;249;226;175m" ;;
-esac
-
-case "$ENABLED" in
-    enabled) ENABLED_COLOR="\033[38;2;166;227;161m" ;;
-    disabled) ENABLED_COLOR="\033[38;2;137;180;183m" ;;
-    *) ENABLED_COLOR="\033[38;2;205;214;219m" ;;
-esac
-
-echo -e "Status:   $ACTIVE_COLOR$ACTIVE\033[0m"
-echo -e "Enabled:  $ENABLED_COLOR$ENABLED\033[0m"
-echo "Scope:    $SCOPE"
-echo ""
-echo "───────────────────────────────────"
-echo "Actions:"
-echo "Start/Stop/Restart: Control the service"
-echo "Enable/Disable:     Boot behavior"
-echo "Logs:              View live journalctl"
-"#,
-            self.name,
-            if self.scope == ServiceScope::User {
-                "--user"
-            } else {
-                ""
-            },
-            if self.scope == ServiceScope::User {
-                "--user"
-            } else {
-                ""
-            },
-            if self.scope == ServiceScope::User {
-                "--user"
-            } else {
-                ""
-            },
-            if self.scope == ServiceScope::User {
-                "--user"
-            } else {
-                ""
-            }
-        ))
+            .bullet("View live logs (journalctl -f)")
+            .build()
     }
 }
 
@@ -327,13 +273,13 @@ pub fn run_systemd_menu() -> Result<()> {
         MenuItem::entry(SystemdMenuEntry::Back),
     ];
 
-    let mut builder = FzfWrapper::builder()
-        .header(Header::fancy("Systemd Manager"))
-        .prompt("Select")
-        .args(crate::ui::catppuccin::fzf_mocha_args())
-        .responsive_layout();
-
     loop {
+        let builder = FzfWrapper::builder()
+            .header(Header::fancy("Systemd Manager"))
+            .prompt("Select")
+            .args(crate::ui::catppuccin::fzf_mocha_args())
+            .responsive_layout();
+
         let result = builder.select_menu(entries.clone())?;
 
         match result {
@@ -363,14 +309,19 @@ fn run_services_menu(scope: ServiceScope) -> Result<()> {
         ServiceScope::User => "User Services",
     };
 
-    let mut builder = FzfWrapper::builder()
-        .header(Header::fancy(title))
-        .prompt("Select service")
-        .args(crate::ui::catppuccin::fzf_mocha_args())
-        .responsive_layout();
+    let service_entries: Vec<MenuItem<ServiceItem>> = services
+        .iter()
+        .map(|s| MenuItem::entry(s.clone()))
+        .collect();
 
     loop {
-        let result = builder.select_menu_with_key(services.clone())?;
+        let builder = FzfWrapper::builder()
+            .header(Header::fancy(title))
+            .prompt("Select service")
+            .args(crate::ui::catppuccin::fzf_mocha_args())
+            .responsive_layout();
+
+        let result = builder.select_menu(service_entries.clone())?;
 
         match result {
             FzfResult::Selected(service) => {
@@ -541,3 +492,44 @@ fn view_service_logs(service: &ServiceItem) -> Result<()> {
 }
 
 use crate::menu_utils::MenuItem;
+
+pub fn launch_cockpit() -> Result<()> {
+    use crate::common::package::{ensure_all, InstallResult};
+    use crate::common::systemd::SystemdManager;
+    use crate::menu_utils::FzfWrapper;
+    use crate::settings::deps::COCKPIT_DEPS;
+
+    match ensure_all(COCKPIT_DEPS)? {
+        InstallResult::Installed | InstallResult::AlreadyInstalled => {}
+        _ => {
+            println!("Cockpit launch cancelled.");
+            return Ok(());
+        }
+    }
+
+    let systemd = SystemdManager::system_with_sudo();
+    const COCKPIT_SOCKET_NAME: &str = "cockpit.socket";
+
+    if !systemd.is_enabled(COCKPIT_SOCKET_NAME) {
+        systemd.enable_and_start(COCKPIT_SOCKET_NAME)?;
+
+        std::thread::sleep(std::time::Duration::from_secs(2));
+
+        let username = std::env::var("USER").unwrap_or_else(|_| "your username".to_string());
+        FzfWrapper::builder()
+            .message(format!(
+                "Cockpit is starting...\n\nSign in with '{}' in the browser window.",
+                username
+            ))
+            .title("Cockpit")
+            .message_dialog()?;
+    }
+
+    std::process::Command::new("chromium")
+        .arg("--app=http://localhost:9090")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()?;
+
+    Ok(())
+}
