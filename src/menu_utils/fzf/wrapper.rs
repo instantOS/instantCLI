@@ -395,7 +395,11 @@ impl FzfWrapper {
 
         fzf_args.extend(self.additional_args.clone());
 
-        // Apply responsive layout settings LAST to override defaults
+        if let Some(InitialCursor::Index(idx)) = self.initial_cursor {
+            fzf_args.push("--bind".to_string());
+            fzf_args.push(format!("load:pos({})", idx + 1));
+        }
+
         if self.responsive_layout {
             let layout = super::utils::get_responsive_layout();
             fzf_args.push(layout.preview_window.to_string());
