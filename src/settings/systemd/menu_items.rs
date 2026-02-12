@@ -1,15 +1,15 @@
 use std::process::Command;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use crate::common::shell::shell_quote;
 use crate::common::systemd::{ServiceScope, SystemdManager};
 use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper, Header, MenuItem};
-use crate::preview::{PreviewId, preview_command_streaming};
+use crate::preview::{preview_command_streaming, PreviewId};
 use crate::settings::systemd_list;
 use crate::ui::catppuccin::{colors, format_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
-use crate::ui::preview::PreviewBuilder;
+use crate::ui::prelude::PreviewBuilder;
 
 #[derive(Clone)]
 pub enum SystemdMenuEntry {
@@ -520,32 +520,25 @@ fn refresh_service(old: &ServiceItem) -> Result<Option<ServiceItem>> {
 }
 
 fn view_service_logs(service: &ServiceItem) -> Result<()> {
-    let scope_args: Vec<&str> = match service.scope {
-        ServiceScope::System => vec![],
-        ServiceScope::User => vec!["--user"],
-    };
+    let mut args = vec!["-u", &service.name, "-n", "50", "-f"];
+    if service.scope == ServiceScope::User {
+        args.push("--user");
+    }
 
     println!("Following logs for '{}' (Ctrl+C to exit)...", service.name);
 
-    let mut cmd = Command::new("journalctl");
-    cmd.args(["-u", &service.name, "-n", "50", "-f"]);
-    cmd.args(&scope_args);
-
-    let status = cmd.status();
-
-    // Ignore SIGINT (Ctrl+C) - just return to menu
-    if let Err(e) = status {
-        if e.raw_os_error() == Some(2) || e.to_string().contains("Interrupted") {
-            return Ok(());
-        }
-        return Err(e.into());
-    }
+    // Reuse run_tui_program which properly handles /dev/tty and SIGINT
+    tokio::task::block_in_place(|| {
+        tokio::runtime::Handle::try_current()
+            .context("No tokio runtime available")?
+            .block_on(crate::common::terminal::run_tui_program("journalctl", &args))
+    })?;
 
     Ok(())
 }
 
 pub fn launch_cockpit() -> Result<()> {
-    use crate::common::package::{InstallResult, ensure_all};
+    use crate::common::package::{ensure_all, InstallResult};
     use crate::common::systemd::SystemdManager;
     use crate::menu_utils::FzfWrapper;
     use crate::settings::deps::COCKPIT_DEPS;
