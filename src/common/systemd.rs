@@ -35,6 +35,10 @@ pub enum ServiceEnablement {
     Enabled,
     Disabled,
     Static,
+    Transient,
+    Masked,
+    Indirect,
+    Linked,
     Unknown(String),
 }
 
@@ -199,16 +203,20 @@ impl SystemdManager {
     /// Get the enablement state of a service
     #[allow(dead_code)]
     pub fn get_enablement(&self, service_name: &str) -> ServiceEnablement {
-        let output = self.run_systemctl(&["is-enabled", service_name]);
+        let output = self.run_systemctl_output(&["is-enabled", service_name]);
 
         match output {
-            Ok(status) if status.success() => ServiceEnablement::Enabled,
-            Ok(status) => {
-                let exit_code = status.code().unwrap_or(1);
-                match exit_code {
-                    1 => ServiceEnablement::Disabled,
-                    2 => ServiceEnablement::Static,
-                    _ => ServiceEnablement::Unknown(format!("Exit code: {}", exit_code)),
+            Ok(o) if o.status.success() => ServiceEnablement::Enabled,
+            Ok(o) => {
+                let state = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                match state.as_str() {
+                    "disabled" => ServiceEnablement::Disabled,
+                    "static" => ServiceEnablement::Static,
+                    "not-found" => ServiceEnablement::Transient,
+                    "masked" => ServiceEnablement::Masked,
+                    "indirect" => ServiceEnablement::Indirect,
+                    "linked" => ServiceEnablement::Linked,
+                    _ => ServiceEnablement::Unknown(state),
                 }
             }
             Err(_) => ServiceEnablement::Unknown("Command failed".to_string()),

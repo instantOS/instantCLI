@@ -411,7 +411,15 @@ fn render_systemd_service_preview(ctx: &PreviewContext) -> Result<String> {
     let enabled_color = match enabled.as_str() {
         "enabled" => colors::GREEN,
         "disabled" => colors::OVERLAY0,
+        "static" => colors::BLUE,
+        "transient" => colors::MAUVE,
+        "masked" => colors::RED,
         _ => colors::SUBTEXT0,
+    };
+
+    let enabled_display = match enabled.as_str() {
+        "transient" => "Transient (no unit file)",
+        s => s,
     };
 
     let scope_label = if scope == "user" { "User" } else { "System" };
@@ -428,7 +436,7 @@ fn render_systemd_service_preview(ctx: &PreviewContext) -> Result<String> {
         .line(
             enabled_color,
             Some(NerdFont::ToggleOn),
-            &format!("Enabled: {}", enabled),
+            &format!("Enabled: {}", enabled_display),
         )
         .field("Scope", scope_label)
         .blank()
