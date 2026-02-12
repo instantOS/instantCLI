@@ -4,8 +4,9 @@ use anyhow::Result;
 
 use crate::common::shell::shell_quote;
 use crate::common::systemd::{ServiceScope, SystemdManager};
-use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper, Header};
-use crate::preview::{preview_command_streaming, PreviewId};
+use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper, Header, MenuItem};
+use crate::preview::{PreviewId, preview_command_streaming};
+use crate::settings::systemd_list;
 use crate::ui::catppuccin::{colors, format_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -283,57 +284,56 @@ pub fn run_systemd_menu() -> Result<()> {
 }
 
 fn run_services_menu(scope: ServiceScope) -> Result<()> {
-    let services = list_services(scope)?;
-
-    if services.is_empty() {
-        let scope_name = match scope {
-            ServiceScope::System => "system",
-            ServiceScope::User => "user",
-        };
-        anyhow::bail!("No {} services found", scope_name);
-    }
-
     let title = match scope {
         ServiceScope::System => "System Services",
         ServiceScope::User => "User Services",
     };
 
-    let service_entries: Vec<MenuItem<ServiceItem>> = services
-        .iter()
-        .map(|s| MenuItem::entry(s.clone()))
-        .collect();
+    let scope_str = match scope {
+        ServiceScope::System => "system",
+        ServiceScope::User => "user",
+    };
+
+    let list_cmd = systemd_list::list_command(scope_str);
+    let preview_cmd = preview_command_streaming(PreviewId::SystemdService);
 
     let mut selected_service: Option<ServiceItem> = None;
 
     loop {
-        // If we have a selected service, show the action menu
         if let Some(service) = selected_service.take() {
             loop {
                 let action = select_service_action(&service)?;
                 let go_back = handle_service_action(&service, action)?;
 
                 if go_back {
-                    // User chose Back or exited logs - return to service list
                     break;
                 }
-                // Stay in action menu - refresh service state
                 selected_service = refresh_service(&service)?;
             }
-            continue; // Go back to service list
+            continue;
         }
 
-        // Show service list
-        let builder = FzfWrapper::builder()
+        let result = FzfWrapper::builder()
             .header(Header::fancy(title))
             .prompt("Select service")
             .args(crate::ui::catppuccin::fzf_mocha_args())
-            .responsive_layout();
-
-        let result = builder.select_menu(service_entries.clone())?;
+            .args([
+                "--delimiter",
+                "\t",
+                "--with-nth",
+                "2",
+                "--preview",
+                &preview_cmd,
+                "--ansi",
+            ])
+            .responsive_layout()
+            .select_streaming(&list_cmd)?;
 
         match result {
-            FzfResult::Selected(service) => {
-                selected_service = Some(service);
+            FzfResult::Selected(line) => {
+                if let Some(service) = parse_service_from_line(&line, scope) {
+                    selected_service = Some(service);
+                }
             }
             _ => break,
         }
@@ -342,60 +342,32 @@ fn run_services_menu(scope: ServiceScope) -> Result<()> {
     Ok(())
 }
 
-fn list_services(scope: ServiceScope) -> Result<Vec<ServiceItem>> {
+fn parse_service_from_line(line: &str, scope: ServiceScope) -> Option<ServiceItem> {
+    let parts: Vec<&str> = line.split('\t').collect();
+    if parts.is_empty() {
+        return None;
+    }
+
+    let key = parts[0];
+    let key_parts: Vec<&str> = key.splitn(2, ':').collect();
+    let name = key_parts.first()?.to_string();
+    let description = parts.get(2).unwrap_or(&"").to_string();
+
     let scope_args: Vec<&str> = match scope {
         ServiceScope::System => vec![],
         ServiceScope::User => vec!["--user"],
     };
 
-    let output = Command::new("systemctl")
-        .args([
-            "list-units",
-            "--type=service",
-            "--all",
-            "--no-pager",
-            "--plain",
-            "--no-legend",
-        ])
+    let active = Command::new("systemctl")
+        .args(["is-active", &name])
         .args(&scope_args)
-        .output()?;
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_else(|_| "unknown".to_string());
 
-    if !output.status.success() {
-        return Ok(vec![]);
-    }
+    let enabled = get_service_enabled_state(&name, scope);
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut services = Vec::new();
-
-    for line in stdout.lines() {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 4 {
-            continue;
-        }
-
-        let name = parts[0].replace(".service", "");
-        let _load = parts[1];
-        let active = parts[2];
-        let _sub = parts[3];
-        let description = if parts.len() > 4 {
-            parts[4..].join(" ")
-        } else {
-            String::new()
-        };
-
-        let enabled = get_service_enabled_state(&name, scope);
-
-        services.push(ServiceItem::new(
-            name,
-            description,
-            active.to_string(),
-            enabled,
-            scope,
-        ));
-    }
-
-    services.sort_by(|a, b| a.name.cmp(&b.name));
-    Ok(services)
+    Some(ServiceItem::new(name, description, active, enabled, scope))
 }
 
 fn get_service_enabled_state(name: &str, scope: ServiceScope) -> String {
@@ -572,10 +544,8 @@ fn view_service_logs(service: &ServiceItem) -> Result<()> {
     Ok(())
 }
 
-use crate::menu_utils::MenuItem;
-
 pub fn launch_cockpit() -> Result<()> {
-    use crate::common::package::{ensure_all, InstallResult};
+    use crate::common::package::{InstallResult, ensure_all};
     use crate::common::systemd::SystemdManager;
     use crate::menu_utils::FzfWrapper;
     use crate::settings::deps::COCKPIT_DEPS;

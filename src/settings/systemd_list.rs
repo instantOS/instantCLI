@@ -4,6 +4,13 @@ use std::process::{Command, Stdio};
 
 use crate::common::systemd::ServiceScope;
 
+pub fn list_command(scope: &str) -> String {
+    format!(
+        "ins settings internal-generate-systemd-list --scope {}",
+        scope
+    )
+}
+
 pub fn generate_and_print_list(scope: &str) -> Result<()> {
     let service_scope = match scope {
         "user" => ServiceScope::User,
@@ -125,9 +132,8 @@ fn get_service_enabled_state(name: &str, scope: ServiceScope) -> String {
     }
 }
 
-fn format_display(name: &str, active: &str, enabled: &str, description: &str) -> String {
-    use crate::ui::catppuccin::colors;
-    use crate::ui::nerd_font::NerdFont;
+fn format_display(name: &str, active: &str, _enabled: &str, description: &str) -> String {
+    use crate::ui::catppuccin::{colors, format_icon_colored};
 
     let (active_icon, active_color) = match active {
         "active" => (NerdFont::CheckCircle, colors::GREEN),
@@ -136,14 +142,11 @@ fn format_display(name: &str, active: &str, enabled: &str, description: &str) ->
         _ => (NerdFont::Question, colors::YELLOW),
     };
 
-    let icon_str = format!(
-        "\x1b[38;5;{}m{}\x1b[0m",
-        active_color,
-        active_icon.as_char()
-    );
+    use crate::ui::nerd_font::NerdFont;
+    let icon_str = format_icon_colored(active_icon, active_color);
     let truncated = truncate(description, 40);
 
-    format!("{} {} - {}", icon_str, name, truncated)
+    format!("{}{} - {}", icon_str, name, truncated)
 }
 
 fn truncate(s: &str, max_len: usize) -> String {
