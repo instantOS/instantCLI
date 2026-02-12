@@ -10,13 +10,13 @@ use super::menu_items::{
 };
 use super::store::UserStore;
 use super::system::{
-    WheelSudoStatus, get_all_system_groups, get_system_users_with_home, get_user_info,
-    group_exists, wheel_sudo_status,
+    get_all_system_groups, get_system_users_with_home, get_user_info, group_exists,
+    wheel_sudo_status, WheelSudoStatus,
 };
 use super::utils::{
-    add_user_to_group, change_user_shell, create_group, create_user, prompt_group_name,
-    prompt_password_with_confirmation, remove_user_from_group, select_groups, select_shell,
-    set_user_password, validate_group_name, validate_username,
+    add_user_to_group, change_user_shell, create_group, create_user, delete_user,
+    prompt_group_name, prompt_password_with_confirmation, remove_user_from_group, select_groups,
+    select_shell, set_user_password, validate_group_name, validate_username,
 };
 use crate::menu_utils::select_one_with_style;
 
@@ -189,6 +189,9 @@ fn handle_user(ctx: &mut SettingsContext, store: &mut UserStore, username: &str)
                 wheel_warning,
             },
             UserActionItem::Remove { is_managed },
+            UserActionItem::DeleteUser {
+                username: username.to_string(),
+            },
             UserActionItem::Back,
         ];
 
@@ -226,6 +229,18 @@ fn handle_user(ctx: &mut SettingsContext, store: &mut UserStore, username: &str)
                 );
                 changed = true;
                 break;
+            }
+            Some(UserActionItem::DeleteUser { .. }) => {
+                if confirm_delete_user(ctx, username)? {
+                    delete_user(ctx, username)?;
+                    store.remove(username);
+                    ctx.emit_success(
+                        "settings.users.deleted",
+                        &format!("User {} has been deleted.", username),
+                    );
+                    changed = true;
+                    break;
+                }
             }
             _ => break,
         }
@@ -295,6 +310,31 @@ fn is_current_user(username: &str) -> bool {
         .or_else(|| std::env::var("USER").ok())
         .as_deref()
         == Some(username)
+}
+
+fn confirm_delete_user(ctx: &mut SettingsContext, username: &str) -> Result<bool> {
+    if is_current_user(username) {
+        ctx.emit_failure(
+            "settings.users.delete",
+            "Cannot delete the current user account.",
+        );
+        return Ok(false);
+    }
+
+    let expected = username.to_uppercase();
+    let prompt = format!("Type '{}' to confirm deletion", expected);
+
+    let confirmation = FzfWrapper::builder()
+        .prompt(&prompt)
+        .input()
+        .input_dialog()?;
+
+    if confirmation.trim() == expected {
+        Ok(true)
+    } else {
+        ctx.emit_info("settings.users.delete", "Deletion cancelled.");
+        Ok(false)
+    }
 }
 
 /// Manage groups for a user

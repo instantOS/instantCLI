@@ -141,6 +141,16 @@ pub(super) fn remove_user_from_group(
     Ok(())
 }
 
+/// Delete a user account and their home directory
+pub(super) fn delete_user(ctx: &mut SettingsContext, username: &str) -> Result<()> {
+    ctx.emit_info(
+        "settings.users.delete",
+        &format!("Deleting user {}...", username),
+    );
+    ctx.run_command_as_root("userdel", ["-r", username])?;
+    Ok(())
+}
+
 /// Prompt for a new group name
 pub(super) fn prompt_group_name() -> Result<String> {
     let group_name = FzfWrapper::builder()
@@ -321,7 +331,7 @@ pub(super) fn validate_group_name(group_name: &str) -> Result<(), GroupNameValid
 
 #[cfg(test)]
 mod tests {
-    use super::{UsernameValidationError, validate_username};
+    use super::{validate_username, UsernameValidationError};
 
     #[test]
     fn accepts_valid_username() {

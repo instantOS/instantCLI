@@ -109,6 +109,9 @@ pub(super) enum UserActionItem {
     Remove {
         is_managed: bool,
     },
+    DeleteUser {
+        username: String,
+    },
     Back,
 }
 
@@ -137,7 +140,13 @@ impl FzfSelectable for UserActionItem {
                 )
             }
             UserActionItem::Remove { .. } => {
-                format!("{} Remove entry", format_icon(NerdFont::Trash))
+                format!("{} Stop managing", format_icon(NerdFont::Trash))
+            }
+            UserActionItem::DeleteUser { .. } => {
+                format!(
+                    "{} Delete user",
+                    format_icon_colored(NerdFont::Trash, colors::RED)
+                )
             }
             UserActionItem::Back => format!("{} Back", format_icon(NerdFont::ArrowLeft)),
         }
@@ -248,7 +257,7 @@ impl FzfSelectable for UserActionItem {
                     "Not managed"
                 };
                 PreviewBuilder::new()
-                    .header(NerdFont::Trash, "Remove Entry")
+                    .header(NerdFont::Trash, "Stop Managing")
                     .text("Stop tracking this user in the configuration.")
                     .blank()
                     .line(
@@ -260,6 +269,19 @@ impl FzfSelectable for UserActionItem {
                     .subtext("This does not delete the system account.")
                     .build()
             }
+            UserActionItem::DeleteUser { username } => PreviewBuilder::new()
+                .header(NerdFont::Trash, "Delete User")
+                .line(colors::RED, Some(NerdFont::Warning), "DESTRUCTIVE ACTION")
+                .blank()
+                .text(&format!("Permanently delete user '{}'.", username))
+                .blank()
+                .line(colors::YELLOW, Some(NerdFont::Info), "This will:")
+                .text("  - Delete the user account")
+                .text("  - Remove the home directory")
+                .text("  - Delete all user data")
+                .blank()
+                .subtext("This action cannot be undone.")
+                .build(),
             UserActionItem::Back => PreviewBuilder::new()
                 .header(NerdFont::ArrowLeft, "Back")
                 .text("Return to the previous menu.")
