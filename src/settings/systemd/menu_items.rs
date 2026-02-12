@@ -41,6 +41,14 @@ impl FzfSelectable for SystemdMenuEntry {
         }
     }
 
+    fn fzf_key(&self) -> String {
+        match self {
+            SystemdMenuEntry::SystemServices => "system-services".to_string(),
+            SystemdMenuEntry::UserServices => "user-services".to_string(),
+            SystemdMenuEntry::Back => "back".to_string(),
+        }
+    }
+
     fn fzf_preview(&self) -> FzfPreview {
         match self {
             SystemdMenuEntry::SystemServices => PreviewBuilder::new()
@@ -193,6 +201,18 @@ impl FzfSelectable for ServiceAction {
             ),
             ServiceAction::Logs => format!("{} View Logs", format_icon(NerdFont::Terminal)),
             ServiceAction::Back => format!("{} Back", format_icon(NerdFont::ArrowLeft)),
+        }
+    }
+
+    fn fzf_key(&self) -> String {
+        match self {
+            ServiceAction::Start => "start".to_string(),
+            ServiceAction::Stop => "stop".to_string(),
+            ServiceAction::Restart => "restart".to_string(),
+            ServiceAction::Enable => "enable".to_string(),
+            ServiceAction::Disable => "disable".to_string(),
+            ServiceAction::Logs => "logs".to_string(),
+            ServiceAction::Back => "back".to_string(),
         }
     }
 
@@ -471,7 +491,7 @@ fn view_service_logs(service: &ServiceItem) -> Result<()> {
 use crate::menu_utils::MenuItem;
 
 pub fn launch_cockpit() -> Result<()> {
-    use crate::common::package::{InstallResult, ensure_all};
+    use crate::common::package::{ensure_all, InstallResult};
     use crate::common::systemd::SystemdManager;
     use crate::menu_utils::FzfWrapper;
     use crate::settings::deps::COCKPIT_DEPS;

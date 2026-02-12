@@ -6,6 +6,32 @@ pub use crate::ui::preview::FzfPreview;
 
 const RESET: &str = "\x1b[0m";
 
+/// Strip ANSI escape codes from a string for use as a stable key.
+fn strip_ansi_escape_codes(s: &str) -> String {
+    let mut result = String::new();
+    let mut chars = s.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            // Skip the '[' that starts most ANSI sequences
+            if chars.peek() == Some(&'[') {
+                chars.next();
+            }
+            // Skip until we reach a letter (the end of the escape sequence)
+            while let Some(&next) = chars.peek() {
+                if next.is_ascii_alphabetic() {
+                    break;
+                }
+                chars.next();
+            }
+        } else {
+            result.push(c);
+        }
+    }
+
+    result
+}
+
 /// Trait for types that can be displayed in FZF selection menus.
 ///
 /// # Styling with ANSI Escape Codes
@@ -30,9 +56,9 @@ pub trait FzfSelectable {
         FzfPreview::None
     }
 
-    /// Unique key for identifying this item (defaults to display text).
+    /// Unique key for identifying this item (defaults to display text with ANSI stripped).
     fn fzf_key(&self) -> String {
-        self.fzf_display_text()
+        strip_ansi_escape_codes(&self.fzf_display_text())
     }
 
     /// Optional: provide initial checked state for checklists.
