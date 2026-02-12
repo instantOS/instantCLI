@@ -10,9 +10,9 @@ use crate::ui::nerd_font::NerdFont;
 
 use super::flatpak::is_flatpak_app_installed;
 use super::prompts::{
-    ask_fullscreen, confirm_command, select_file_with_validation, FileSelectionPrompt,
+    FileSelectionPrompt, ask_fullscreen, confirm_command, select_file_with_validation,
 };
-use super::validation::{format_valid_extensions, validate_game_file, DOLPHIN_EXTENSIONS};
+use super::validation::{DOLPHIN_EXTENSIONS, format_valid_extensions, validate_game_file};
 
 /// Dolphin Flatpak application ID
 const DOLPHIN_FLATPAK_ID: &str = "org.DolphinEmu.dolphin-emu";

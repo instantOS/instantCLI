@@ -286,94 +286,100 @@ pub async fn run_all_checks(
 }
 
 // Unified table output functions
+fn format_privilege_label(check: &PrivilegeLevel, fix: &PrivilegeLevel) -> &'static str {
+    match (check, fix) {
+        (PrivilegeLevel::Any, PrivilegeLevel::Any) => "Any",
+        (PrivilegeLevel::Any, PrivilegeLevel::User) => "User (fix)",
+        (PrivilegeLevel::Any, PrivilegeLevel::Root) => "Root (fix)",
+        (PrivilegeLevel::User, PrivilegeLevel::User) => "User only",
+        (PrivilegeLevel::Root, _) => "Root required",
+        _ => "Mixed",
+    }
+}
+
 pub fn print_check_list_table(checks: &[Box<dyn DoctorCheck + Send + Sync>]) {
     use crate::ui::prelude::*;
 
     match get_output_format() {
-        crate::ui::OutputFormat::Json => {
-            let checks_data: Vec<_> = checks
-                .iter()
-                .map(|check| {
-                    let fix_available = check.fix_message().is_some();
-                    let privileges =
-                        match (check.check_privilege_level(), check.fix_privilege_level()) {
-                            (PrivilegeLevel::Any, PrivilegeLevel::Any) => "Any",
-                            (PrivilegeLevel::Any, PrivilegeLevel::User) => "User (fix)",
-                            (PrivilegeLevel::Any, PrivilegeLevel::Root) => "Root (fix)",
-                            (PrivilegeLevel::User, PrivilegeLevel::User) => "User only",
-                            (PrivilegeLevel::Root, _) => "Root required",
-                            _ => "Mixed",
-                        };
-
-                    serde_json::json!({
-                        "id": check.id(),
-                        "name": check.name(),
-                        "fix_available": fix_available,
-                        "privileges": privileges,
-                        "check_privilege": format!("{:?}", check.check_privilege_level()),
-                        "fix_privilege": format!("{:?}", check.fix_privilege_level()),
-                    })
-                })
-                .collect();
-
-            emit(
-                Level::Info,
-                "doctor.check_list",
-                "Doctor check list",
-                Some(serde_json::json!({
-                    "checks": checks_data,
-                    "count": checks_data.len(),
-                })),
-            );
-        }
-        crate::ui::OutputFormat::Text => {
-            let mut table = Table::new();
-            table
-                .load_preset(UTF8_FULL)
-                .set_content_arrangement(ContentArrangement::Dynamic)
-                .set_header(Row::from(vec![
-                    Cell::new("ID")
-                        .fg(Color::Blue)
-                        .add_attribute(Attribute::Bold),
-                    Cell::new("Name").add_attribute(Attribute::Bold),
-                    Cell::new("Fix Available").add_attribute(Attribute::Bold),
-                    Cell::new("Privileges").add_attribute(Attribute::Bold),
-                ]));
-
-            for check in checks {
-                let fix = if check.fix_message().is_some() {
-                    "✓"
-                } else {
-                    "✗"
-                };
-                let privileges = match (check.check_privilege_level(), check.fix_privilege_level())
-                {
-                    (PrivilegeLevel::Any, PrivilegeLevel::Any) => "Any",
-                    (PrivilegeLevel::Any, PrivilegeLevel::User) => "User (fix)",
-                    (PrivilegeLevel::Any, PrivilegeLevel::Root) => "Root (fix)",
-                    (PrivilegeLevel::User, PrivilegeLevel::User) => "User only",
-                    (PrivilegeLevel::Root, _) => "Root required",
-                    _ => "Mixed",
-                };
-
-                table.add_row(Row::from(vec![
-                    Cell::new(check.id()),
-                    Cell::new(check.name()),
-                    Cell::new(fix),
-                    Cell::new(privileges),
-                ]));
-            }
-
-            println!("{}", "Available Health Checks:".bold());
-            println!("{table}");
-            println!();
-            let bin = env!("CARGO_BIN_NAME");
-            println!("Usage:");
-            println!("  {bin} doctor run <id>    Run a specific check");
-            println!("  {bin} doctor fix <id>    Apply fix for a specific check");
-            println!("  {bin} doctor             Run all checks");
-        }
+        crate::ui::OutputFormat::Json => print_check_list_json(checks),
+        crate::ui::OutputFormat::Text => print_check_list_text(checks),
     }
+}
+
+fn print_check_list_json(checks: &[Box<dyn DoctorCheck + Send + Sync>]) {
+    use crate::ui::prelude::*;
+
+    let checks_data: Vec<_> = checks
+        .iter()
+        .map(|check| {
+            let privileges = format_privilege_label(
+                &check.check_privilege_level(),
+                &check.fix_privilege_level(),
+            );
+
+            serde_json::json!({
+                "id": check.id(),
+                "name": check.name(),
+                "fix_available": check.fix_message().is_some(),
+                "privileges": privileges,
+                "check_privilege": format!("{:?}", check.check_privilege_level()),
+                "fix_privilege": format!("{:?}", check.fix_privilege_level()),
+            })
+        })
+        .collect();
+
+    emit(
+        Level::Info,
+        "doctor.check_list",
+        "Doctor check list",
+        Some(serde_json::json!({
+            "checks": checks_data,
+            "count": checks_data.len(),
+        })),
+    );
+}
+
+fn print_check_list_text(checks: &[Box<dyn DoctorCheck + Send + Sync>]) {
+    use crate::ui::nerd_font::NerdFont;
+
+    let mut table = Table::new();
+    table
+        .load_preset(UTF8_FULL)
+        .set_content_arrangement(ContentArrangement::Dynamic)
+        .set_header(Row::from(vec![
+            Cell::new("ID")
+                .fg(Color::Blue)
+                .add_attribute(Attribute::Bold),
+            Cell::new("Name").add_attribute(Attribute::Bold),
+            Cell::new("Fix Available").add_attribute(Attribute::Bold),
+            Cell::new("Privileges").add_attribute(Attribute::Bold),
+        ]));
+
+    for check in checks {
+        let fix = if check.fix_message().is_some() {
+            char::from(NerdFont::Check)
+        } else {
+            char::from(NerdFont::Cross)
+        };
+        let privileges =
+            format_privilege_label(&check.check_privilege_level(), &check.fix_privilege_level());
+
+        table.add_row(Row::from(vec![
+            Cell::new(check.id()),
+            Cell::new(check.name()),
+            Cell::new(fix),
+            Cell::new(privileges),
+        ]));
+    }
+
+    println!("{}", "Available Health Checks:".bold());
+    println!("{table}");
+    println!();
+    let bin = env!("CARGO_BIN_NAME");
+    println!("Usage:");
+    println!("  {bin} doctor run <id>    Run a specific check");
+    println!("  {bin} doctor fix <id>    Apply fix for a specific check");
+    println!("  {bin} doctor             Run all checks");
 }
 
 pub fn print_results_table(results: &[CheckResult]) {

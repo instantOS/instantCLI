@@ -13,9 +13,9 @@ use crate::menu_utils::{
 use crate::ui::nerd_font::NerdFont;
 
 use super::prompts::{
-    ask_fullscreen, confirm_command, select_file_with_validation, FileSelectionPrompt,
+    FileSelectionPrompt, ask_fullscreen, confirm_command, select_file_with_validation,
 };
-use super::validation::{format_valid_extensions, validate_game_file, EDEN_EXTENSIONS};
+use super::validation::{EDEN_EXTENSIONS, format_valid_extensions, validate_game_file};
 
 /// Default Eden AppImage location
 /// (Matched case-insensitively - will find eden.AppImage, EDEN.APPIMAGE, etc.)

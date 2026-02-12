@@ -1,8 +1,8 @@
 use crate::game::config::InstantGameConfig;
 use crate::game::restic::tags;
 use crate::game::utils::save_files::{
-    compare_snapshot_vs_local, format_system_time_for_display, get_save_directory_info,
-    TimeComparison,
+    TimeComparison, compare_snapshot_vs_local, format_system_time_for_display,
+    get_save_directory_info,
 };
 use crate::menu_utils::{FzfSelectable, FzfWrapper};
 use crate::restic::wrapper::Snapshot;

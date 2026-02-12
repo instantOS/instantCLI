@@ -17,9 +17,9 @@ use crate::menu_utils::{
 use crate::ui::nerd_font::NerdFont;
 
 use super::prompts::{
-    ask_fullscreen, confirm_command, select_file_with_validation, FileSelectionPrompt,
+    FileSelectionPrompt, ask_fullscreen, confirm_command, select_file_with_validation,
 };
-use super::validation::{format_valid_extensions, validate_game_file, DUCKSTATION_EXTENSIONS};
+use super::validation::{DUCKSTATION_EXTENSIONS, format_valid_extensions, validate_game_file};
 
 /// Default DuckStation AppImage location
 const DEFAULT_DUCKSTATION_PATH: &str = "~/AppImages/DuckStation-x64.AppImage";

@@ -10,10 +10,10 @@ use crate::menu_utils::FzfWrapper;
 use crate::ui::nerd_font::NerdFont;
 
 use super::prompts::{
-    ask_fullscreen, confirm_command, select_file_with_validation, FileSelectionPrompt,
+    FileSelectionPrompt, ask_fullscreen, confirm_command, select_file_with_validation,
 };
 
-use super::validation::{format_valid_extensions, validate_game_file, MGBA_EXTENSIONS};
+use super::validation::{MGBA_EXTENSIONS, format_valid_extensions, validate_game_file};
 
 /// mGBA-Qt command name
 const MGBA_COMMAND: &str = "mgba-qt";
