@@ -36,6 +36,34 @@ jobs:
           cache-all-crates: true
           # Don't cache ~/.cargo/bin — restoring old rustup proxies shadows pacman-installed rust
           cache-bin: "false"
+      - name: Debug rust environment
+        run: |
+          echo "=== PATH ==="
+          echo "$PATH"
+          echo "=== which cargo ==="
+          which cargo
+          echo "=== which rustfmt ==="
+          which rustfmt || echo "NOT FOUND"
+          echo "=== which cargo-fmt ==="
+          which cargo-fmt || echo "NOT FOUND"
+          echo "=== rustc --print sysroot ==="
+          rustc --print sysroot
+          echo "=== ls sysroot/bin/ | grep -E 'fmt|rust' ==="
+          ls "$(rustc --print sysroot)/bin/" | grep -E 'fmt|rust' || echo "NONE"
+          echo "=== CARGO_HOME ==="
+          echo "${CARGO_HOME:-unset}"
+          echo "=== RUSTUP_HOME ==="
+          echo "${RUSTUP_HOME:-unset}"
+          echo "=== RUSTUP_TOOLCHAIN ==="
+          echo "${RUSTUP_TOOLCHAIN:-unset}"
+          echo "=== ls /github/home/.cargo/bin/ ==="
+          ls -la /github/home/.cargo/bin/ 2>&1 || echo "dir not found"
+          echo "=== ls ~/.rustup/ ==="
+          ls -la ~/.rustup/ 2>&1 || echo "dir not found"
+          echo "=== ls /github/home/.rustup/ ==="
+          ls -la /github/home/.rustup/ 2>&1 || echo "dir not found"
+          echo "=== env | sort ==="
+          env | sort
       - name: Check code formatting
         run: cargo fmt -- --check
       - name: Run clippy lints
