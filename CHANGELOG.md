@@ -7,6 +7,90 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.8](https://github.com/instantOS/instantCLI/compare/v0.13.7...v0.13.8) - 2026-02-13
+
+### Fixed
+
+- fix release-plz yet again
+- fix release-plz
+- fix shell in CI
+- fix release-plz
+- fix journalctl viewer
+- fix keys
+- fix preview
+- fix release-plz
+- fix sync job
+- fix release-plz
+- fix sync job
+- fix cache messing with the bin
+- fix checkout deps
+- fix as well
+- fix deps
+- fix git in CI
+- fix CI
+- fix error messages
+- fix uninstaller flow
+- fix release-plz
+- fix back menu
+- fix appimage on SteamOS game mode
+- fix keywords on wide terminals
+- fix termux filter
+
+### Other
+
+- better systemd log previews
+- better systemd preview
+- refresh service fix
+- less hardcoded commands
+- replace previous systemd listing
+- make systemd listing use streaming
+- better menu flow
+- better previews and systemd log handling
+- prettier preview
+- make more performant
+- init better systemd settings
+- refactor doctor print
+- remove unused function
+- clippy happy
+- what the actual fuck
+- I hate Github actions
+- rename workflows
+- async settings previews
+- remove user toml
+- better user deletion
+- migrate to self hosted runner
+- simplify add.rs
+- rename
+- refactor discovery to trait
+- fmt
+- better azahar previews
+- init azahar discovery
+- add duckstation previews
+- duckstation discovery
+- cleanup
+- standardize some stuff
+- split manager.rs
+- refactor manager.rs
+- clean up function names
+- pcsx2 discovery
+- better eden behavior
+- filter already added games
+- init eden discovery
+- better shortcut thingy
+- add emudeck pcsx2 support
+- better builder
+- clean up duplicates
+- add to desktop feature
+- clippy
+- remove old test
+- better steam shortcut handling
+- better self-update
+- better flatpak manage flow
+- some cleanup
+- prettier doctor
+- prettier flatpak menu
+- better flatpak list
+
 ## [0.13.8](https://github.com/instantOS/instantCLI/compare/v0.13.7...v0.13.8) - 2026-02-11
 
 ### Fixed
