@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 use crate::common::shell::shell_quote;
 use crate::common::systemd::{ServiceScope, SystemdManager};
 use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper, Header, MenuItem};
-use crate::preview::{preview_command_streaming, PreviewId};
+use crate::preview::{PreviewId, preview_command_streaming};
 use crate::settings::systemd_list;
 use crate::ui::catppuccin::{colors, format_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
@@ -170,9 +170,28 @@ pub enum ServiceAction {
     Back,
 }
 
-impl FzfSelectable for ServiceAction {
+/// Wrapper that pairs a `ServiceAction` with service context so the Logs
+/// preview can run `journalctl` and show real log output.
+#[derive(Clone)]
+struct ServiceActionItem {
+    action: ServiceAction,
+    service_name: String,
+    scope: ServiceScope,
+}
+
+impl ServiceActionItem {
+    fn new(action: ServiceAction, service: &ServiceItem) -> Self {
+        Self {
+            action,
+            service_name: service.name.clone(),
+            scope: service.scope,
+        }
+    }
+}
+
+impl FzfSelectable for ServiceActionItem {
     fn fzf_display_text(&self) -> String {
-        match self {
+        match &self.action {
             ServiceAction::Start => format!(
                 "{} Start",
                 format_icon_colored(NerdFont::Play, colors::GREEN)
@@ -198,7 +217,7 @@ impl FzfSelectable for ServiceAction {
     }
 
     fn fzf_key(&self) -> String {
-        match self {
+        match &self.action {
             ServiceAction::Start => "start".to_string(),
             ServiceAction::Stop => "stop".to_string(),
             ServiceAction::Restart => "restart".to_string(),
@@ -210,7 +229,7 @@ impl FzfSelectable for ServiceAction {
     }
 
     fn fzf_preview(&self) -> FzfPreview {
-        match self {
+        match &self.action {
             ServiceAction::Start => PreviewBuilder::new()
                 .header(NerdFont::Play, "Start Service")
                 .text("Start the selected systemd service.")
@@ -241,12 +260,21 @@ impl FzfSelectable for ServiceAction {
                 .blank()
                 .subtext("The service will not start automatically on boot.")
                 .build(),
-            ServiceAction::Logs => PreviewBuilder::new()
-                .header(NerdFont::Terminal, "View Logs")
-                .text("View live logs for this service.")
-                .blank()
-                .subtext("Press Ctrl+C to exit the log viewer.")
-                .build(),
+            ServiceAction::Logs => {
+                let name = shell_quote(&self.service_name);
+                let scope_flag = match self.scope {
+                    ServiceScope::User => " --user",
+                    ServiceScope::System => "",
+                };
+                FzfPreview::Command(
+                    PreviewBuilder::new()
+                        .header(NerdFont::Terminal, "View Logs")
+                        .shell(&format!(
+                            "journalctl -u {name}{scope_flag} -n 200 --no-pager --output=short 2>/dev/null || echo 'No logs available'"
+                        ))
+                        .build_shell_script(),
+                )
+            }
             ServiceAction::Back => PreviewBuilder::new()
                 .header(NerdFont::ArrowLeft, "Back")
                 .text("Return to service list.")
@@ -415,24 +443,45 @@ fn select_service_action(service: &ServiceItem) -> Result<ServiceAction> {
 
     // Start/Stop based on current state
     if is_active {
-        actions.push(MenuItem::entry(ServiceAction::Stop));
+        actions.push(MenuItem::entry(ServiceActionItem::new(
+            ServiceAction::Stop,
+            service,
+        )));
     } else {
-        actions.push(MenuItem::entry(ServiceAction::Start));
+        actions.push(MenuItem::entry(ServiceActionItem::new(
+            ServiceAction::Start,
+            service,
+        )));
     }
-    actions.push(MenuItem::entry(ServiceAction::Restart));
+    actions.push(MenuItem::entry(ServiceActionItem::new(
+        ServiceAction::Restart,
+        service,
+    )));
 
     // Enable/Disable based on current state
     actions.push(MenuItem::separator("Boot"));
     if is_enabled {
-        actions.push(MenuItem::entry(ServiceAction::Disable));
+        actions.push(MenuItem::entry(ServiceActionItem::new(
+            ServiceAction::Disable,
+            service,
+        )));
     } else {
-        actions.push(MenuItem::entry(ServiceAction::Enable));
+        actions.push(MenuItem::entry(ServiceActionItem::new(
+            ServiceAction::Enable,
+            service,
+        )));
     }
 
     actions.push(MenuItem::line());
-    actions.push(MenuItem::entry(ServiceAction::Logs));
+    actions.push(MenuItem::entry(ServiceActionItem::new(
+        ServiceAction::Logs,
+        service,
+    )));
     actions.push(MenuItem::line());
-    actions.push(MenuItem::entry(ServiceAction::Back));
+    actions.push(MenuItem::entry(ServiceActionItem::new(
+        ServiceAction::Back,
+        service,
+    )));
 
     let header = format!("{} ({})", service.name, status_text);
 
@@ -440,10 +489,11 @@ fn select_service_action(service: &ServiceItem) -> Result<ServiceAction> {
         .header(Header::fancy(&header))
         .prompt("Action")
         .args(crate::ui::catppuccin::fzf_mocha_args())
+        .responsive_layout()
         .select_menu(actions)?;
 
     match result {
-        FzfResult::Selected(action) => Ok(action),
+        FzfResult::Selected(item) => Ok(item.action),
         // Treat cancellation (Escape) as going back to service list
         _ => Ok(ServiceAction::Back),
     }
@@ -545,7 +595,7 @@ fn view_service_logs(service: &ServiceItem) -> Result<()> {
 }
 
 pub fn launch_cockpit() -> Result<()> {
-    use crate::common::package::{ensure_all, InstallResult};
+    use crate::common::package::{InstallResult, ensure_all};
     use crate::common::systemd::SystemdManager;
     use crate::menu_utils::FzfWrapper;
     use crate::settings::deps::COCKPIT_DEPS;

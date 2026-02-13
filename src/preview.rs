@@ -424,7 +424,7 @@ fn render_systemd_service_preview(ctx: &PreviewContext) -> Result<String> {
 
     let scope_label = if scope == "user" { "User" } else { "System" };
 
-    let builder = PreviewBuilder::new()
+    let mut builder = PreviewBuilder::new()
         .header(NerdFont::Server, service_name)
         .field("Description", &description)
         .blank()
@@ -441,18 +441,34 @@ fn render_systemd_service_preview(ctx: &PreviewContext) -> Result<String> {
         .field("Scope", scope_label)
         .blank()
         .separator()
-        .blank()
-        .text("Actions:")
-        .bullet("Start/Stop/Restart the service")
-        .bullet("Enable/Disable at boot")
-        .bullet("View live logs (journalctl -f)")
-        .blank()
-        .separator()
-        .blank()
-        .text(&format!(
-            "Run 'journalctl -u {} -f' to view live logs",
-            service_name
-        ));
+        .blank();
+
+    // Show recent logs inline — use remaining preview lines
+    // Header + fields take ~10 lines, leave the rest for logs
+    let log_lines = ctx.lines.unwrap_or(40).saturating_sub(12).max(5);
+    let log_output = std::process::Command::new("journalctl")
+        .args([
+            "-u",
+            service_name,
+            "-n",
+            &log_lines.to_string(),
+            "--no-pager",
+            "--output=short",
+        ])
+        .args(&scope_args)
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default();
+
+    if log_output.is_empty() {
+        builder = builder.subtext("No logs available");
+    } else {
+        builder = builder.subtext("Recent logs:");
+        builder = builder.blank();
+        for line in log_output.lines() {
+            builder = builder.raw(line);
+        }
+    }
 
     Ok(builder.build_string())
 }

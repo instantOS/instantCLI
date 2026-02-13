@@ -110,11 +110,11 @@ fn push_single_music_filter(
     let delay_ms = ((segment.start_time * 1000.0).round()).max(0.0) as u64;
 
     filters.push(format!(
-        "[{input}:a]atrim=start=0:end={duration},asetpts=PTS-STARTPTS,apad=pad_dur={duration},atrim=duration={duration},aresample=async=1:first_pts=0,adelay={delay}|{delay},volume={volume}[{label}]",
+        "[{input}:a]atrim=start=0:end={duration},asetpts=PTS-STARTPTS,apad=pad_dur={duration},atrim=duration={duration},aresample=async=1:first_pts=0,adelay={delay}|{delay},volume={volume:.6}[{label}]",
         input = input_index,
         duration = duration_str,
         delay = delay_ms,
-        volume = format!("{:.6}", music_volume),
+        volume = music_volume,
         label = label,
     ));
 }
