@@ -126,8 +126,8 @@ fn get_node_name(sink_id: &str) -> Result<String> {
     for line in stdout.lines() {
         let trimmed = line.trim_start();
         // Remove leading "* " if present (indicates default property)
-        let without_star = if trimmed.starts_with("* ") {
-            &trimmed[2..]
+        let without_star = if let Some(stripped) = trimmed.strip_prefix("* ") {
+            stripped
         } else {
             trimmed
         };

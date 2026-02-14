@@ -312,17 +312,8 @@ fn add_local_files_comparison(
         builder = builder.field("Last Modified", &local_time_str).blank();
 
         match compare_snapshot_vs_local(snapshot_time, local_time) {
-            Ok(comparison) => {
+            comparison => {
                 builder = add_comparison_status(builder, &comparison, context);
-            }
-            Err(_) => {
-                builder = builder
-                    .line(
-                        colors::RED,
-                        Some(NerdFont::Cross),
-                        "STATUS: COMPARISON FAILED",
-                    )
-                    .subtext("Unable to compare timestamps");
             }
         }
     } else {
@@ -627,13 +618,12 @@ impl FzfSelectable for EnhancedSnapshot {
             if local_info.file_count > 0 {
                 if let Some(local_time) = local_info.last_modified {
                     match compare_snapshot_vs_local(&self.snapshot.time, local_time) {
-                        Ok(TimeComparison::LocalNewer)
-                        | Ok(TimeComparison::LocalNewerWithinTolerance(_)) => " LOCAL NEWER",
-                        Ok(TimeComparison::SnapshotNewer)
-                        | Ok(TimeComparison::SnapshotNewerWithinTolerance(_)) => " SNAPSHOT NEWER",
-                        Ok(TimeComparison::Same) => " =SAME TIME",
-                        Ok(TimeComparison::Error(_)) => " COMPARE ERROR",
-                        Err(_) => " COMPARE ERROR",
+                        TimeComparison::LocalNewer
+                        | TimeComparison::LocalNewerWithinTolerance(_) => " LOCAL NEWER",
+                        TimeComparison::SnapshotNewer
+                        | TimeComparison::SnapshotNewerWithinTolerance(_) => " SNAPSHOT NEWER",
+                        TimeComparison::Same => " =SAME TIME",
+                        TimeComparison::Error(_) => " COMPARE ERROR",
                     }
                 } else {
                     &format!("{}NO LOCAL TIME", char::from(NerdFont::Warning))

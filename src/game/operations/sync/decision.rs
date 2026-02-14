@@ -80,7 +80,7 @@ pub fn determine_action(
         (Some(local_time), Some(snapshot)) => {
             // Both local saves and snapshots exist - compare timestamps
             match compare_snapshot_vs_local(&snapshot.time, local_time) {
-                Ok(TimeComparison::LocalNewer) => {
+                TimeComparison::LocalNewer => {
                     // Check if backup should be skipped:
                     // 1. Checkpoint ID matches latest snapshot
                     // 2. File was NOT modified after checkpoint was set (within tolerance)
@@ -94,7 +94,7 @@ pub fn determine_action(
                     }
                     Ok(SyncAction::CreateBackup)
                 }
-                Ok(TimeComparison::LocalNewerWithinTolerance(delta)) => {
+                TimeComparison::LocalNewerWithinTolerance(delta) => {
                     if force {
                         return Ok(SyncAction::CreateBackup);
                     }
@@ -103,7 +103,7 @@ pub fn determine_action(
                         delta_seconds: delta,
                     })
                 }
-                Ok(TimeComparison::SnapshotNewer) => {
+                TimeComparison::SnapshotNewer => {
                     if !force
                         && let Some(ref nearest_checkpoint) = installation.nearest_checkpoint
                         && nearest_checkpoint == &snapshot.id
@@ -112,7 +112,7 @@ pub fn determine_action(
                     }
                     Ok(SyncAction::RestoreFromSnapshot(snapshot.id.clone()))
                 }
-                Ok(TimeComparison::SnapshotNewerWithinTolerance(delta)) => {
+                TimeComparison::SnapshotNewerWithinTolerance(delta) => {
                     if force {
                         return Ok(SyncAction::RestoreFromSnapshot(snapshot.id.clone()));
                     }
@@ -127,13 +127,10 @@ pub fn determine_action(
                         delta_seconds: delta,
                     })
                 }
-                Ok(TimeComparison::Same) => Ok(SyncAction::NoActionNeeded),
-                Ok(TimeComparison::Error(e)) => {
+                TimeComparison::Same => Ok(SyncAction::NoActionNeeded),
+                TimeComparison::Error(e) => {
                     Ok(SyncAction::Error(format!("Time comparison error: {e}")))
                 }
-                Err(e) => Ok(SyncAction::Error(format!(
-                    "Failed to compare timestamps: {e}"
-                ))),
             }
         }
         (Some(_local_time), None) => {

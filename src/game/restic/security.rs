@@ -150,8 +150,7 @@ pub fn check_snapshot_vs_local_saves(
     };
 
     // Compare snapshot time with local save time
-    let time_comparison = compare_snapshot_vs_local(&snapshot.time, local_modified_time)
-        .context("Failed to compare snapshot and local save times")?;
+    let time_comparison = compare_snapshot_vs_local(&snapshot.time, local_modified_time);
 
     match time_comparison {
         TimeComparison::LocalNewer | TimeComparison::LocalNewerWithinTolerance(_) => {

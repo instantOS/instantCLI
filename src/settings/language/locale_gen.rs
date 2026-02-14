@@ -146,8 +146,8 @@ impl<'a> LocaleGenLine<'a> {
             return None;
         }
 
-        let (commented, after_comment) = if remainder.starts_with('#') {
-            (true, &remainder[1..])
+        let (commented, after_comment) = if let Some(stripped) = remainder.strip_prefix('#') {
+            (true, stripped)
         } else {
             (false, remainder)
         };

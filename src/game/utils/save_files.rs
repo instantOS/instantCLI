@@ -114,12 +114,15 @@ pub fn format_system_time_for_display(system_time: Option<SystemTime>) -> String
 pub fn compare_snapshot_vs_local(
     snapshot_time_str: &str,
     local_time: SystemTime,
-) -> Result<TimeComparison> {
-    let snapshot_dt = parse_snapshot_time(snapshot_time_str)?;
+) -> TimeComparison {
+    let snapshot_dt = match parse_snapshot_time(snapshot_time_str) {
+        Ok(dt) => dt,
+        Err(e) => return TimeComparison::Error(e.to_string()),
+    };
     let local_dt = system_time_to_datetime(local_time);
 
     if local_dt == snapshot_dt {
-        return Ok(TimeComparison::Same);
+        return TimeComparison::Same;
     }
 
     // Calculate the absolute time difference
@@ -133,16 +136,16 @@ pub fn compare_snapshot_vs_local(
 
     if delta_seconds <= SYNC_TOLERANCE_SECONDS {
         if local_dt > snapshot_dt {
-            return Ok(TimeComparison::LocalNewerWithinTolerance(delta_seconds));
+            return TimeComparison::LocalNewerWithinTolerance(delta_seconds);
         } else {
-            return Ok(TimeComparison::SnapshotNewerWithinTolerance(delta_seconds));
+            return TimeComparison::SnapshotNewerWithinTolerance(delta_seconds);
         }
     }
 
     if local_dt > snapshot_dt {
-        Ok(TimeComparison::LocalNewer)
+        TimeComparison::LocalNewer
     } else {
-        Ok(TimeComparison::SnapshotNewer)
+        TimeComparison::SnapshotNewer
     }
 }
 

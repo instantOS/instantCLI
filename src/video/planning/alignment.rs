@@ -454,9 +454,9 @@ impl AssignmentGraphBuilder {
         let clip_count = dialogue_clips.len();
         let mut result: Vec<(usize, usize)> = Vec::with_capacity(clip_count);
 
-        for clip_idx in 0..clip_count {
+        for (clip_idx, dialogue_clip) in dialogue_clips.iter().enumerate() {
             let clip_node = self.clip_offset + clip_idx;
-            let timeline_idx = dialogue_clips[clip_idx].0;
+            let timeline_idx = dialogue_clip.0;
 
             let mut matched: Option<usize> = None;
             for edge in &self.graph[clip_node] {

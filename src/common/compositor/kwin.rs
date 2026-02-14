@@ -243,8 +243,8 @@ impl KWin {
                     // We need to extract the content inside quotes and unescape it
                     if let Some(start_idx) = l.find("string \"") {
                         let content = &l[start_idx + 8..];
-                        if content.ends_with('"') {
-                            json_str = content[..content.len() - 1].to_string();
+                        if let Some(content) = content.strip_suffix('"') {
+                            json_str = content.to_string();
                             found = true;
                             break;
                         }
