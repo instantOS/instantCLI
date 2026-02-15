@@ -1,6 +1,7 @@
 use super::core::{TimelinePlan, TimelinePlanItem};
 use super::graph::{McmfEdge, add_edge, min_cost_max_flow};
 use crate::video::document::SegmentKind;
+use crate::video::render::timeline::TimeWindow;
 use crate::video::support::transcript::TranscriptCue;
 use anyhow::{Result, bail};
 use std::collections::{HashMap, HashSet};
@@ -22,8 +23,7 @@ const MAX_SILENCE_STRETCH_RATIO: f64 = 2.5;
 #[derive(Debug, Clone, Copy)]
 struct ClipTimeUpdate {
     idx: usize,
-    start: f64,
-    end: f64,
+    time_window: TimeWindow,
 }
 
 const DEFAULT_DIALOGUE_PADDING_SECONDS: f64 = 0.08;
@@ -71,12 +71,12 @@ fn align_dialogue_clips_to_cues(
             bail!("No transcript cues loaded for source `{}`", source_id);
         };
 
-        let mut dialogue_clips: Vec<(usize, f64, f64, String)> = Vec::new();
+        let mut dialogue_clips: Vec<(usize, TimeWindow, String)> = Vec::new();
         for idx in clip_indices {
             let Some(TimelinePlanItem::Clip(clip)) = plan.items.get(idx) else {
                 continue;
             };
-            dialogue_clips.push((idx, clip.start, clip.end, clip.text.clone()));
+            dialogue_clips.push((idx, clip.time_window, clip.text.clone()));
         }
 
         if dialogue_clips.is_empty() {
@@ -90,15 +90,14 @@ fn align_dialogue_clips_to_cues(
                 continue;
             };
 
-            let (start, end) = padded_cue_bounds(
+            let bounds = padded_cue_bounds(
                 source_cues,
                 cue_idx,
                 DEFAULT_DIALOGUE_PADDING_SECONDS,
                 DEFAULT_PADDING_GUARD_SECONDS,
             );
 
-            clip.start = start;
-            clip.end = end;
+            clip.time_window = bounds;
             dialogue_indices.push(clip_idx);
         }
     }
@@ -145,22 +144,24 @@ fn collect_silence_time_updates(
 fn apply_clip_time_updates(plan: &mut TimelinePlan, updates: Vec<ClipTimeUpdate>) {
     for update in updates {
         if let Some(TimelinePlanItem::Clip(clip)) = plan.items.get_mut(update.idx) {
-            clip.start = update.start;
-            clip.end = update.end.max(update.start);
+            clip.time_window = TimeWindow::new(
+                update.time_window.start,
+                update.time_window.end.max(update.time_window.start),
+            );
         }
     }
 }
 
 fn clip_start(items: &[TimelinePlanItem], idx: usize) -> Option<f64> {
     match items.get(idx) {
-        Some(TimelinePlanItem::Clip(clip)) => Some(clip.start),
+        Some(TimelinePlanItem::Clip(clip)) => Some(clip.time_window.start),
         _ => None,
     }
 }
 
 fn clip_end(items: &[TimelinePlanItem], idx: usize) -> Option<f64> {
     match items.get(idx) {
-        Some(TimelinePlanItem::Clip(clip)) => Some(clip.end),
+        Some(TimelinePlanItem::Clip(clip)) => Some(clip.time_window.end),
         _ => None,
     }
 }
@@ -188,7 +189,7 @@ impl SilenceRun {
         while end_idx < items.len() {
             match items.get(end_idx) {
                 Some(TimelinePlanItem::Clip(run_clip)) if run_clip.kind == SegmentKind::Silence => {
-                    approximate_total += run_clip.end - run_clip.start;
+                    approximate_total += run_clip.time_window.duration();
                     end_idx += 1;
                 }
                 _ => break,
@@ -241,7 +242,7 @@ impl SilenceRun {
                 continue;
             };
 
-            let approx_duration = run_clip.end - run_clip.start;
+            let approx_duration = run_clip.time_window.duration();
             if approx_duration <= 0.0 {
                 continue;
             }
@@ -250,14 +251,13 @@ impl SilenceRun {
             let actual_duration = actual_gap * fraction;
             updates.push(ClipTimeUpdate {
                 idx,
-                start: current,
-                end: current + actual_duration,
+                time_window: TimeWindow::new(current, current + actual_duration),
             });
             current += actual_duration;
         }
 
         if let Some(last) = updates.last_mut() {
-            last.end = next_start;
+            last.time_window.end = next_start;
         }
 
         Some(updates)
@@ -269,7 +269,7 @@ fn padded_cue_bounds(
     cue_idx: usize,
     padding_seconds: f64,
     guard_seconds: f64,
-) -> (f64, f64) {
+) -> TimeWindow {
     let cue = &cues[cue_idx];
 
     let cue_start = cue.start.as_secs_f64();
@@ -280,28 +280,25 @@ fn padded_cue_bounds(
 
     if cue_idx > 0 {
         let prev_end = cues[cue_idx - 1].end.as_secs_f64();
-        // Clamp to midpoint of gap to avoid double-playing the gap (or overlap logic)
         let gap_mid = (prev_end + cue_start) / 2.0;
         padded_start = padded_start.max(gap_mid + guard_seconds);
     }
 
     if cue_idx + 1 < cues.len() {
         let next_start = cues[cue_idx + 1].start.as_secs_f64();
-        // Clamp to midpoint of gap
         let gap_mid = (cue_end + next_start) / 2.0;
         padded_end = padded_end.min(gap_mid - guard_seconds);
     }
 
     if padded_end <= padded_start {
-        // If we have no space, collapse to zero length to avoid overlapping neighbors
-        (padded_start, padded_start)
+        TimeWindow::new(padded_start, padded_start)
     } else {
-        (padded_start, padded_end)
+        TimeWindow::new(padded_start, padded_end)
     }
 }
 
 fn assign_cues_max_overlap(
-    dialogue_clips: &[(usize, f64, f64, String)],
+    dialogue_clips: &[(usize, TimeWindow, String)],
     cues: &[TranscriptCue],
 ) -> Result<Vec<(usize, usize)>> {
     validate_alignment_inputs(dialogue_clips, cues)?;
@@ -328,7 +325,7 @@ fn assign_cues_max_overlap(
 }
 
 fn validate_alignment_inputs(
-    dialogue_clips: &[(usize, f64, f64, String)],
+    dialogue_clips: &[(usize, TimeWindow, String)],
     cues: &[TranscriptCue],
 ) -> Result<()> {
     if cues.is_empty() {
@@ -405,13 +402,11 @@ impl AssignmentGraphBuilder {
 
     fn add_overlap_options(
         &mut self,
-        dialogue_clips: &[(usize, f64, f64, String)],
+        dialogue_clips: &[(usize, TimeWindow, String)],
         cues: &[TranscriptCue],
     ) {
-        for (clip_idx, (_timeline_idx, clip_start, clip_end, _text)) in
-            dialogue_clips.iter().enumerate()
-        {
-            let clip_duration = (clip_end - clip_start).max(0.0);
+        for (clip_idx, (_timeline_idx, clip_window, _text)) in dialogue_clips.iter().enumerate() {
+            let clip_duration = clip_window.duration();
             if clip_duration <= 0.0 {
                 continue;
             }
@@ -419,7 +414,7 @@ impl AssignmentGraphBuilder {
             for (cue_idx, cue) in cues.iter().enumerate() {
                 let cue_start = cue.start.as_secs_f64();
                 let cue_end = cue.end.as_secs_f64();
-                let overlap = overlap_seconds(*clip_start, *clip_end, cue_start, cue_end);
+                let overlap = clip_window.overlap_seconds(TimeWindow::new(cue_start, cue_end));
 
                 if overlap <= 0.0 {
                     continue;
@@ -432,7 +427,7 @@ impl AssignmentGraphBuilder {
                 // Convert to integer cost: maximize overlap, then prefer closer starts.
                 // Costs are negated because the solver minimizes total cost.
                 let overlap_cost = -(overlap * 1_000_000.0).round() as i64;
-                let distance = (cue_start - *clip_start).abs();
+                let distance = (cue_start - clip_window.start).abs();
                 let distance_cost = (distance * 1_000.0).round() as i64;
 
                 let cost = overlap_cost + distance_cost;
@@ -449,7 +444,7 @@ impl AssignmentGraphBuilder {
 
     fn extract_assignments(
         &self,
-        dialogue_clips: &[(usize, f64, f64, String)],
+        dialogue_clips: &[(usize, TimeWindow, String)],
     ) -> Result<Vec<(usize, usize)>> {
         let clip_count = dialogue_clips.len();
         let mut result: Vec<(usize, usize)> = Vec::with_capacity(clip_count);
@@ -487,12 +482,11 @@ impl AssignmentGraphBuilder {
 }
 
 fn diagnose_alignment_failure(
-    dialogue_clips: &[(usize, f64, f64, String)],
+    dialogue_clips: &[(usize, TimeWindow, String)],
     cues: &[TranscriptCue],
 ) -> Result<()> {
-    // Find a useful error pointing to the first clip with no candidate cues.
-    for (_timeline_idx, clip_start, clip_end, text) in dialogue_clips {
-        let clip_duration = (clip_end - clip_start).max(0.0);
+    for (_timeline_idx, clip_window, text) in dialogue_clips {
+        let clip_duration = clip_window.duration();
         if clip_duration <= 0.0 {
             bail!("Invalid segment duration for `{}`", text);
         }
@@ -501,7 +495,7 @@ fn diagnose_alignment_failure(
         for cue in cues {
             let cue_start = cue.start.as_secs_f64();
             let cue_end = cue.end.as_secs_f64();
-            let overlap = overlap_seconds(*clip_start, *clip_end, cue_start, cue_end);
+            let overlap = clip_window.overlap_seconds(TimeWindow::new(cue_start, cue_end));
             if overlap <= 0.0 {
                 continue;
             }
@@ -518,12 +512,6 @@ fn diagnose_alignment_failure(
     }
 
     bail!("Unable to align subtitles: could not assign unique cues to every segment");
-}
-
-fn overlap_seconds(a_start: f64, a_end: f64, b_start: f64, b_end: f64) -> f64 {
-    let start = a_start.max(b_start);
-    let end = a_end.min(b_end);
-    (end - start).max(0.0)
 }
 
 #[cfg(test)]
@@ -683,13 +671,13 @@ mod tests {
 
         assert_eq!(clip_segments.len(), 2);
 
-        assert!((clip_segments[0].start - 0.0).abs() < 1e-6);
+        assert!((clip_segments[0].time_window.start - 0.0).abs() < 1e-6);
         // End is the padded cue end, clamped to the next cue start minus guard.
-        assert!((clip_segments[0].end - 1.03).abs() < 1e-6);
+        assert!((clip_segments[0].time_window.end - 1.03).abs() < 1e-6);
 
         // Start is the padded cue start, clamped to the previous cue end plus guard.
-        assert!((clip_segments[1].start - 1.12).abs() < 1e-6);
-        assert!((clip_segments[1].end - 2.53).abs() < 1e-6);
+        assert!((clip_segments[1].time_window.start - 1.12).abs() < 1e-6);
+        assert!((clip_segments[1].time_window.end - 2.53).abs() < 1e-6);
     }
 
     #[test]
@@ -729,14 +717,14 @@ mod tests {
         assert_eq!(clip_segments.len(), 2);
 
         // Clip 0 has no previous cue to clamp against.
-        assert!((clip_segments[0].start - 0.0).abs() < 1e-6);
+        assert!((clip_segments[0].time_window.start - 0.0).abs() < 1e-6);
         // Clip 0 is clamped to the next cue start minus guard.
-        assert!((clip_segments[0].end - 1.1).abs() < 1e-6);
+        assert!((clip_segments[0].time_window.end - 1.1).abs() < 1e-6);
 
         // Clip 1 is clamped to the previous cue end plus guard.
-        assert!((clip_segments[1].start - 1.1).abs() < 1e-6);
+        assert!((clip_segments[1].time_window.start - 1.1).abs() < 1e-6);
         // Clip 1 has no next cue to clamp against.
-        assert!((clip_segments[1].end - 2.08).abs() < 1e-6);
+        assert!((clip_segments[1].time_window.end - 2.08).abs() < 1e-6);
     }
 
     #[test]
@@ -787,8 +775,8 @@ mod tests {
         let next_start = cues[2].start.as_secs_f64();
 
         // The padded start/end should still fit within the 20ms gaps (with guards).
-        assert!(clip_segments[0].start >= prev_end + DEFAULT_PADDING_GUARD_SECONDS);
-        assert!(clip_segments[0].end <= next_start - DEFAULT_PADDING_GUARD_SECONDS);
+        assert!(clip_segments[0].time_window.start >= prev_end + DEFAULT_PADDING_GUARD_SECONDS);
+        assert!(clip_segments[0].time_window.end <= next_start - DEFAULT_PADDING_GUARD_SECONDS);
     }
 
     #[test]
@@ -886,8 +874,11 @@ mod tests {
         for i in 0..clip_segments.len() {
             for j in (i + 1)..clip_segments.len() {
                 assert!(
-                    (clip_segments[i].start - clip_segments[j].start).abs() > 1e-9
-                        || (clip_segments[i].end - clip_segments[j].end).abs() > 1e-9,
+                    (clip_segments[i].time_window.start - clip_segments[j].time_window.start).abs()
+                        > 1e-9
+                        || (clip_segments[i].time_window.end - clip_segments[j].time_window.end)
+                            .abs()
+                            > 1e-9,
                     "clips {} and {} aligned to identical bounds",
                     i,
                     j
@@ -898,23 +889,23 @@ mod tests {
         // Specifically: ensure the "No..." segment (4th authored) aligns to the last cue,
         // and the "Goodbye..." segment (5th authored) aligns to the prior cue.
         // This is the case that used to duplicate the last cue.
-        let (no_start, no_end) = padded_cue_bounds(
+        let no_bounds = padded_cue_bounds(
             &cues,
             4,
             DEFAULT_DIALOGUE_PADDING_SECONDS,
             DEFAULT_PADDING_GUARD_SECONDS,
         );
-        let (goodbye_start, goodbye_end) = padded_cue_bounds(
+        let goodbye_bounds = padded_cue_bounds(
             &cues,
             3,
             DEFAULT_DIALOGUE_PADDING_SECONDS,
             DEFAULT_PADDING_GUARD_SECONDS,
         );
 
-        assert!((clip_segments[3].start - no_start).abs() < 1e-6);
-        assert!((clip_segments[3].end - no_end).abs() < 1e-6);
-        assert!((clip_segments[4].start - goodbye_start).abs() < 1e-6);
-        assert!((clip_segments[4].end - goodbye_end).abs() < 1e-6);
+        assert!((clip_segments[3].time_window.start - no_bounds.start).abs() < 1e-6);
+        assert!((clip_segments[3].time_window.end - no_bounds.end).abs() < 1e-6);
+        assert!((clip_segments[4].time_window.start - goodbye_bounds.start).abs() < 1e-6);
+        assert!((clip_segments[4].time_window.end - goodbye_bounds.end).abs() < 1e-6);
     }
 
     #[test]
@@ -960,15 +951,15 @@ mod tests {
             _ => panic!("expected second clip"),
         };
 
-        assert!((first_clip.end - first_silence.start).abs() < 1e-6);
-        assert!((second_clip.start - second_silence.end).abs() < 1e-6);
-        assert!((second_silence.start - first_silence.end).abs() < 1e-6);
+        assert!((first_clip.time_window.end - first_silence.time_window.start).abs() < 1e-6);
+        assert!((second_clip.time_window.start - second_silence.time_window.end).abs() < 1e-6);
+        assert!((second_silence.time_window.start - first_silence.time_window.end).abs() < 1e-6);
 
         // Expected gap accounts for per-cue padding + guard.
         // Intro ends at cue1 end + padding; outro starts at cue2 start - padding.
         let expected_gap =
             (6.789 - DEFAULT_DIALOGUE_PADDING_SECONDS) - (1.234 + DEFAULT_DIALOGUE_PADDING_SECONDS);
-        let actual_gap = (second_clip.start - first_clip.end).max(0.0);
+        let actual_gap = (second_clip.time_window.start - first_clip.time_window.end).max(0.0);
         assert!((expected_gap - actual_gap).abs() < 1e-6);
     }
 
@@ -1016,14 +1007,14 @@ mod tests {
         };
 
         // Intro/outro are aligned to cues with padding.
-        assert!((intro.end - 1.08).abs() < 1e-6);
-        assert!((outro.start - 49.92).abs() < 1e-6);
+        assert!((intro.time_window.end - 1.08).abs() < 1e-6);
+        assert!((outro.time_window.start - 49.92).abs() < 1e-6);
 
         // ...but silence remains based on authored timestamps (not stretched to fill 49s).
-        assert!((silence1.start - 1.0).abs() < 1e-6);
-        assert!((silence1.end - 2.0).abs() < 1e-6);
-        assert!((silence2.start - 2.0).abs() < 1e-6);
-        assert!((silence2.end - 3.0).abs() < 1e-6);
+        assert!((silence1.time_window.start - 1.0).abs() < 1e-6);
+        assert!((silence1.time_window.end - 2.0).abs() < 1e-6);
+        assert!((silence2.time_window.start - 2.0).abs() < 1e-6);
+        assert!((silence2.time_window.end - 3.0).abs() < 1e-6);
     }
 
     #[test]

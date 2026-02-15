@@ -16,6 +16,44 @@
 
 use std::path::PathBuf;
 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct TimeWindow {
+    pub start: f64,
+    pub end: f64,
+}
+
+impl TimeWindow {
+    pub fn new(start: f64, end: f64) -> Self {
+        Self { start, end }
+    }
+
+    pub fn duration(&self) -> f64 {
+        self.end - self.start
+    }
+
+    pub fn overlaps(self, other: Self) -> bool {
+        self.start < other.end && self.end > other.start
+    }
+
+    pub fn overlap_seconds(self, other: Self) -> f64 {
+        let start = self.start.max(other.start);
+        let end = self.end.min(other.end);
+        (end - start).max(0.0)
+    }
+
+    pub fn overlap_window(self, other: Self) -> Self {
+        let start = self.start.max(other.start);
+        let end = self.end.min(other.end);
+        Self::new(start, end.max(start))
+    }
+}
+
+impl Segment {
+    pub fn time_window(&self) -> TimeWindow {
+        TimeWindow::new(self.start_time, self.end_time())
+    }
+}
+
 /// Non-linear editor style timeline structure
 /// This represents a sequence of segments that will be rendered in order
 #[derive(Debug, Clone)]
@@ -113,13 +151,12 @@ impl Timeline {
     }
 
     /// Get all segments that overlap with a given time range
-    pub fn segments_in_range(&self, start: f64, end: f64) -> Vec<&Segment> {
+    pub fn segments_in_range(&self, window: TimeWindow) -> Vec<&Segment> {
         self.segments
             .iter()
             .filter(|s| {
-                let seg_end = s.start_time + s.duration;
-                // Check if segments overlap
-                s.start_time < end && seg_end > start
+                let seg_window = s.time_window();
+                seg_window.overlaps(window)
             })
             .collect()
     }
@@ -351,7 +388,7 @@ mod tests {
             false,
         ));
 
-        let segments = timeline.segments_in_range(5.0, 12.0);
+        let segments = timeline.segments_in_range(TimeWindow::new(5.0, 12.0));
         assert_eq!(segments.len(), 2);
     }
 

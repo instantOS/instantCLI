@@ -6,7 +6,7 @@
 
 use std::time::Duration;
 
-use crate::video::render::timeline::{SegmentData, Timeline};
+use crate::video::render::timeline::{SegmentData, TimeWindow, Timeline};
 use crate::video::support::transcript::TranscriptCue;
 
 /// A remapped word with timing adjusted to the final timeline.
@@ -36,8 +36,7 @@ const MIN_SUBTITLE_DURATION_SECS: f64 = 0.5;
 #[derive(Debug, Clone, Copy)]
 struct SegmentTiming<'a> {
     source_id: &'a str,
-    source_start: f64,
-    source_end: f64,
+    source_window: TimeWindow,
     time_offset: f64,
     segment_end: f64,
 }
@@ -55,7 +54,6 @@ fn video_segment_timing(
         return None;
     };
 
-    // Skip muted segments (title cards, etc.) - no subtitles
     if *mute_audio {
         return None;
     }
@@ -66,38 +64,15 @@ fn video_segment_timing(
 
     Some(SegmentTiming {
         source_id: source_id.as_str(),
-        source_start: *source_start,
-        source_end,
+        source_window: TimeWindow::new(*source_start, source_end),
         time_offset,
         segment_end,
     })
 }
 
-fn ranges_overlap(
-    range_a_start: f64,
-    range_a_end: f64,
-    range_b_start: f64,
-    range_b_end: f64,
-) -> bool {
-    !(range_a_end <= range_b_start || range_a_start >= range_b_end)
-}
-
-fn overlap_range(
-    range_a_start: f64,
-    range_a_end: f64,
-    range_b_start: f64,
-    range_b_end: f64,
-) -> (f64, f64) {
-    (
-        range_a_start.max(range_b_start),
-        range_a_end.min(range_b_end),
-    )
-}
-
 fn remap_words_to_segment(
     cue: &TranscriptCue,
-    source_start: f64,
-    source_end: f64,
+    source_window: TimeWindow,
     time_offset: f64,
 ) -> Vec<RemappedWord> {
     cue.words
@@ -105,29 +80,32 @@ fn remap_words_to_segment(
         .filter_map(|word| {
             let word_start = word.start.as_secs_f64();
             let word_end = word.end.as_secs_f64();
+            let word_window = TimeWindow::new(word_start, word_end);
 
-            if !ranges_overlap(word_start, word_end, source_start, source_end) {
+            if !word_window.overlaps(source_window) {
                 return None;
             }
 
-            let (clamped_start, clamped_end) =
-                overlap_range(word_start, word_end, source_start, source_end);
+            let overlap = word_window.overlap_window(source_window);
 
             Some(RemappedWord {
                 word: word.word.clone(),
-                start: Duration::from_secs_f64(clamped_start + time_offset),
-                end: Duration::from_secs_f64(clamped_end + time_offset),
+                start: Duration::from_secs_f64(overlap.start + time_offset),
+                end: Duration::from_secs_f64(overlap.end + time_offset),
             })
         })
         .collect()
 }
 
-fn ensure_min_duration(final_start: f64, final_end: f64, segment_end: f64) -> f64 {
-    let duration = final_end - final_start;
+fn ensure_min_duration(window: TimeWindow, segment_end: f64) -> TimeWindow {
+    let duration = window.duration();
     if duration < MIN_SUBTITLE_DURATION_SECS {
-        (final_start + MIN_SUBTITLE_DURATION_SECS).min(segment_end)
+        TimeWindow::new(
+            window.start,
+            (window.start + MIN_SUBTITLE_DURATION_SECS).min(segment_end),
+        )
     } else {
-        final_end
+        window
     }
 }
 
@@ -171,49 +149,31 @@ pub fn remap_subtitles_to_timeline(
             if cue.source_id != segment_timing.source_id {
                 continue;
             }
-            let cue_start = cue.start.as_secs_f64();
-            let cue_end = cue.end.as_secs_f64();
+            let cue_window = TimeWindow::new(cue.start.as_secs_f64(), cue.end.as_secs_f64());
 
-            // Check for overlap with source range
-            if !ranges_overlap(
-                cue_start,
-                cue_end,
-                segment_timing.source_start,
-                segment_timing.source_end,
-            ) {
-                continue; // No overlap
+            if !cue_window.overlaps(segment_timing.source_window) {
+                continue;
             }
 
-            // Calculate the portion of the cue that falls within this segment
-            let (overlap_start, overlap_end) = overlap_range(
-                cue_start,
-                cue_end,
-                segment_timing.source_start,
-                segment_timing.source_end,
+            let overlap = cue_window.overlap_window(segment_timing.source_window);
+            let final_window = TimeWindow::new(
+                overlap.start + segment_timing.time_offset,
+                overlap.end + segment_timing.time_offset,
             );
 
-            // Remap cue timing to final timeline
-            let final_start = overlap_start + segment_timing.time_offset;
-            let final_end = overlap_end + segment_timing.time_offset;
-
-            // Remap word timings, filtering to only words within this segment
             let remapped_words = remap_words_to_segment(
                 cue,
-                segment_timing.source_start,
-                segment_timing.source_end,
+                segment_timing.source_window,
                 segment_timing.time_offset,
             );
 
-            // Ensure minimum duration for readability
-            let adjusted_end =
-                ensure_min_duration(final_start, final_end, segment_timing.segment_end);
+            let adjusted = ensure_min_duration(final_window, segment_timing.segment_end);
 
-            // Build text from remapped words if available, otherwise use cue text
             let text = subtitle_text(cue, &remapped_words);
 
             subtitles.push(RemappedSubtitle {
-                start: Duration::from_secs_f64(final_start),
-                end: Duration::from_secs_f64(adjusted_end),
+                start: Duration::from_secs_f64(adjusted.start),
+                end: Duration::from_secs_f64(adjusted.end),
                 text,
                 words: remapped_words,
             });

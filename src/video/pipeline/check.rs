@@ -129,7 +129,7 @@ fn plan_duration_seconds(plan: &crate::video::planning::TimelinePlan) -> f64 {
     plan.items
         .iter()
         .map(|item| match item {
-            TimelinePlanItem::Clip(clip) => (clip.end - clip.start).max(0.0),
+            TimelinePlanItem::Clip(clip) => clip.time_window.duration().max(0.0),
             TimelinePlanItem::Standalone(standalone) => standalone.duration_seconds,
             TimelinePlanItem::Music(_) => 0.0,
         })

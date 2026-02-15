@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use anyhow::{Result, anyhow};
 
 use super::FfmpegCompiler;
-use crate::video::render::timeline::{Segment, SegmentData, Transform};
+use crate::video::render::timeline::{Segment, SegmentData, TimeWindow, Transform};
 
 const OVERLAY_FRAME_SCALE: f64 = 0.9;
 const OVERLAY_FRAME_BORDER_WIDTH: u32 = 4;
@@ -74,10 +74,9 @@ impl FfmpegCompiler {
         output_label: &str,
         transform: Option<&Transform>,
         scale_factor: f64,
-        start_time: f64,
-        end_time: f64,
+        time_window: TimeWindow,
     ) -> String {
-        let enable_condition = format!("between(t,{},{})", start_time, end_time);
+        let enable_condition = format!("between(t,{},{})", time_window.start, time_window.end);
         let overlay_width = (self.target_width as f64 * scale_factor) as u32;
         let overlay_height = (self.target_height as f64 * scale_factor) as u32;
         let (x_offset, y_offset) =
@@ -153,8 +152,7 @@ impl FfmpegCompiler {
                 &output_label,
                 transform.as_ref(),
                 scale_factor,
-                segment.start_time,
-                segment.end_time(),
+                segment.time_window(),
             );
         }
 
@@ -212,8 +210,7 @@ impl FfmpegCompiler {
                 &output_label,
                 transform.as_ref(),
                 scale_factor,
-                segment.start_time,
-                segment.end_time(),
+                segment.time_window(),
             );
         }
 

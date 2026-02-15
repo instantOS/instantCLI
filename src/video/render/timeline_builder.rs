@@ -96,12 +96,12 @@ impl TimelineBuildState {
             })?;
         let source_video = source.source.clone();
         let audio_source = source.audio.clone();
-        let duration = clip_plan.end - clip_plan.start;
+        let duration = clip_plan.time_window.duration();
 
         let segment = Segment::new_video_subset(
             self.current_time,
             duration,
-            clip_plan.start,
+            clip_plan.time_window.start,
             source_video,
             audio_source,
             clip_plan.source_id.clone(),
@@ -132,7 +132,11 @@ impl TimelineBuildState {
             return Ok(());
         }
 
-        let total_clip_duration: f64 = broll_plan.clips.iter().map(|c| c.end - c.start).sum();
+        let total_clip_duration: f64 = broll_plan
+            .clips
+            .iter()
+            .map(|c| c.time_window.duration())
+            .sum();
 
         let broll_start = self.current_time;
         let mut elapsed = 0.0;
@@ -148,7 +152,7 @@ impl TimelineBuildState {
                     )
                 })?;
 
-            let clip_natural_duration = clip.end - clip.start;
+            let clip_natural_duration = clip.time_window.duration();
             let is_last = i == broll_plan.clips.len() - 1;
 
             let clip_duration = if is_last {
@@ -170,7 +174,7 @@ impl TimelineBuildState {
             let segment = Segment::new_broll(
                 broll_start + elapsed,
                 clip_duration,
-                clip.start,
+                clip.time_window.start,
                 source.source.clone(),
                 clip.source_id.clone(),
                 None,

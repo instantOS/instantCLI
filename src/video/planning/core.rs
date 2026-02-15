@@ -1,4 +1,5 @@
 use crate::video::document::{DocumentBlock, MusicDirective, SegmentKind, VideoDocument};
+use crate::video::render::timeline::TimeWindow;
 use anyhow::Result;
 
 #[derive(Debug, Clone)]
@@ -20,8 +21,7 @@ pub enum TimelinePlanItem {
 
 #[derive(Debug, Clone)]
 pub struct ClipPlan {
-    pub start: f64,
-    pub end: f64,
+    pub time_window: TimeWindow,
     pub kind: SegmentKind,
     pub text: String,
     pub overlay: Option<OverlayPlan>,
@@ -47,8 +47,7 @@ pub struct MusicPlan {
 
 #[derive(Debug, Clone)]
 pub struct BrollClip {
-    pub start: f64,
-    pub end: f64,
+    pub time_window: TimeWindow,
     pub source_id: String,
 }
 
@@ -125,8 +124,10 @@ impl TimelinePlanner {
         self.flush_pending_broll_to_state();
 
         self.items.push(TimelinePlanItem::Clip(ClipPlan {
-            start: segment.range.start_seconds(),
-            end: segment.range.end_seconds(),
+            time_window: TimeWindow::new(
+                segment.range.start_seconds(),
+                segment.range.end_seconds(),
+            ),
             kind: segment.kind,
             text: segment.text.clone(),
             overlay: self.overlay_state.clone(),
@@ -182,8 +183,7 @@ impl TimelinePlanner {
 
     fn handle_broll(&mut self, broll: &crate::video::document::BrollBlock) {
         self.pending_broll.push(BrollClip {
-            start: broll.range.start_seconds(),
-            end: broll.range.end_seconds(),
+            time_window: TimeWindow::new(broll.range.start_seconds(), broll.range.end_seconds()),
             source_id: broll.source_id.clone(),
         });
     }

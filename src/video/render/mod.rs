@@ -247,7 +247,7 @@ mod tests {
     use crate::video::document::VideoSource;
     use crate::video::planning::ClipPlan;
     use crate::video::planning::{StandalonePlan, TimelinePlan, TimelinePlanItem};
-    use crate::video::render::timeline::SegmentData;
+    use crate::video::render::timeline::{SegmentData, TimeWindow};
     use std::path::{Path, PathBuf};
 
     struct StubSlides;
@@ -270,8 +270,7 @@ mod tests {
         let plan = TimelinePlan {
             items: vec![
                 TimelinePlanItem::Clip(ClipPlan {
-                    start: 0.0,
-                    end: 12.0,
+                    time_window: TimeWindow::new(0.0, 12.0),
                     kind: SegmentKind::Dialogue,
                     text: "hello world".to_string(),
                     overlay: None,
@@ -283,8 +282,7 @@ mod tests {
                     duration_seconds: 2.0,
                 }),
                 TimelinePlanItem::Clip(ClipPlan {
-                    start: 12.0,
-                    end: 20.0,
+                    time_window: TimeWindow::new(12.0, 20.0),
                     kind: SegmentKind::Dialogue,
                     text: "this is a test".to_string(),
                     overlay: None,
