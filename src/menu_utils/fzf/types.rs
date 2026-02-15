@@ -417,3 +417,41 @@ pub(crate) enum ChecklistSelection {
     Confirmed,      // User selected confirm option
     Action(String), // Selected action key
 }
+
+/// Display data for an FZF menu item.
+///
+/// Contains all information needed to render an item in fzf and map
+/// user selections back to the original item.
+#[derive(Clone, Debug)]
+pub struct ItemDisplayData {
+    /// The visible text shown in the fzf list (may contain ANSI codes)
+    pub display_text: String,
+    /// Unique key for identifying this item
+    pub key: String,
+    /// Hidden search keywords for fuzzy matching (space-separated)
+    pub keywords: String,
+    /// Whether this item is selectable (false for separators)
+    pub is_selectable: bool,
+}
+
+impl ItemDisplayData {
+    /// Create new display data for a selectable item.
+    pub fn new(display_text: String, key: String, keywords: String) -> Self {
+        Self {
+            display_text,
+            key,
+            keywords,
+            is_selectable: true,
+        }
+    }
+
+    /// Create new display data for a non-selectable separator.
+    pub fn separator(display_text: String) -> Self {
+        Self {
+            display_text,
+            key: String::new(),
+            keywords: String::new(),
+            is_selectable: false,
+        }
+    }
+}

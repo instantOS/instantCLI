@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 
 use crate::video::config::VideoConfig;
-use crate::video::render::ffmpeg::compiler::FfmpegCompiler;
+use crate::video::render::ffmpeg::compiler::{FfmpegCompiler, RenderConfig, VideoDimensions};
 use crate::video::render::ffmpeg::services::FfmpegRunner;
 use crate::video::render::mode::RenderMode;
 use crate::video::render::timeline::Timeline;
@@ -64,13 +64,13 @@ impl<'a> RenderPipeline<'a> {
     }
 
     fn build_args(&self) -> Result<Vec<String>> {
-        let compiler = FfmpegCompiler::new(
+        let dimensions = VideoDimensions::new(self.source_width, self.source_height);
+        let render_config = RenderConfig::new(
             self.render_mode,
-            self.source_width,
-            self.source_height,
             self.config.clone(),
             self.subtitle_path.clone(),
         );
+        let compiler = FfmpegCompiler::new(dimensions, render_config);
         Ok(compiler
             .compile(
                 self.output.clone(),

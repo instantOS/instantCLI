@@ -23,6 +23,41 @@ pub struct FfmpegCompileOutput {
     pub args: Vec<String>,
 }
 
+/// Video dimensions (width x height in pixels).
+#[derive(Debug, Clone, Copy)]
+pub struct VideoDimensions {
+    pub width: u32,
+    pub height: u32,
+}
+
+impl VideoDimensions {
+    pub fn new(width: u32, height: u32) -> Self {
+        Self { width, height }
+    }
+}
+
+/// Configuration for video rendering.
+#[derive(Debug, Clone)]
+pub struct RenderConfig {
+    pub render_mode: RenderMode,
+    pub config: VideoConfig,
+    pub subtitle_path: Option<PathBuf>,
+}
+
+impl RenderConfig {
+    pub fn new(
+        render_mode: RenderMode,
+        config: VideoConfig,
+        subtitle_path: Option<PathBuf>,
+    ) -> Self {
+        Self {
+            render_mode,
+            config,
+            subtitle_path,
+        }
+    }
+}
+
 pub struct FfmpegCompiler {
     target_width: u32,
     target_height: u32,
@@ -32,21 +67,16 @@ pub struct FfmpegCompiler {
 }
 
 impl FfmpegCompiler {
-    pub fn new(
-        render_mode: RenderMode,
-        source_width: u32,
-        source_height: u32,
-        config: VideoConfig,
-        subtitle_path: Option<PathBuf>,
-    ) -> Self {
-        let (target_width, target_height) =
-            render_mode.target_dimensions(source_width, source_height);
+    pub fn new(dimensions: VideoDimensions, render_config: RenderConfig) -> Self {
+        let (target_width, target_height) = render_config
+            .render_mode
+            .target_dimensions(dimensions.width, dimensions.height);
         Self {
             target_width,
             target_height,
-            render_mode,
-            config,
-            subtitle_path,
+            render_mode: render_config.render_mode,
+            config: render_config.config,
+            subtitle_path: render_config.subtitle_path,
         }
     }
 

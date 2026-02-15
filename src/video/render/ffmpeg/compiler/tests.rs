@@ -1,21 +1,17 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use super::FfmpegCompiler;
 use super::util::escape_ffmpeg_path;
+use super::{FfmpegCompiler, RenderConfig, VideoDimensions};
 use crate::video::config::VideoConfig;
 use crate::video::render::mode::RenderMode;
 use crate::video::render::timeline::{Segment, Timeline};
 
 #[test]
 fn compiler_includes_output_path_in_args() {
-    let compiler = FfmpegCompiler::new(
-        RenderMode::Standard,
-        1920,
-        1080,
-        VideoConfig::default(),
-        None,
-    );
+    let dimensions = VideoDimensions::new(1920, 1080);
+    let render_config = RenderConfig::new(RenderMode::Standard, VideoConfig::default(), None);
+    let compiler = FfmpegCompiler::new(dimensions, render_config);
     let timeline = Timeline::new();
     let audio_map = HashMap::new();
     let output = compiler
@@ -31,13 +27,9 @@ fn compiler_includes_output_path_in_args() {
 
 #[test]
 fn concat_order_respects_timeline_order() {
-    let compiler = FfmpegCompiler::new(
-        RenderMode::Standard,
-        1920,
-        1080,
-        VideoConfig::default(),
-        None,
-    );
+    let dimensions = VideoDimensions::new(1920, 1080);
+    let render_config = RenderConfig::new(RenderMode::Standard, VideoConfig::default(), None);
+    let compiler = FfmpegCompiler::new(dimensions, render_config);
 
     let mut timeline = Timeline::new();
     timeline.add_segment(Segment::new_video_subset(
@@ -108,7 +100,9 @@ fn concat_order_respects_timeline_order() {
 
 #[test]
 fn test_reels_mode_generates_padding_filter() {
-    let compiler = FfmpegCompiler::new(RenderMode::Reels, 1920, 1080, VideoConfig::default(), None);
+    let dimensions = VideoDimensions::new(1920, 1080);
+    let render_config = RenderConfig::new(RenderMode::Reels, VideoConfig::default(), None);
+    let compiler = FfmpegCompiler::new(dimensions, render_config);
     let padding = compiler.build_padding_filter("v0_raw", "v0");
     assert!(padding.is_some());
 
@@ -122,13 +116,13 @@ fn test_reels_mode_generates_padding_filter() {
 
 #[test]
 fn test_reels_mode_padding_excludes_subtitles() {
-    let compiler = FfmpegCompiler::new(
+    let dimensions = VideoDimensions::new(1920, 1080);
+    let render_config = RenderConfig::new(
         RenderMode::Reels,
-        1920,
-        1080,
         VideoConfig::default(),
         Some(PathBuf::from("/tmp/subs.ass")),
     );
+    let compiler = FfmpegCompiler::new(dimensions, render_config);
     let padding = compiler.build_padding_filter("v0_raw", "v0");
     assert!(padding.is_some());
 
@@ -140,13 +134,13 @@ fn test_reels_mode_padding_excludes_subtitles() {
 
 #[test]
 fn test_filter_complex_includes_subtitles() {
-    let compiler = FfmpegCompiler::new(
+    let dimensions = VideoDimensions::new(1920, 1080);
+    let render_config = RenderConfig::new(
         RenderMode::Reels,
-        1920,
-        1080,
         VideoConfig::default(),
         Some(PathBuf::from("/tmp/subs.ass")),
     );
+    let compiler = FfmpegCompiler::new(dimensions, render_config);
 
     let mut timeline = Timeline::new();
     timeline.add_segment(Segment::new_video_subset(
@@ -172,13 +166,9 @@ fn test_filter_complex_includes_subtitles() {
 
 #[test]
 fn test_standard_mode_no_padding() {
-    let compiler = FfmpegCompiler::new(
-        RenderMode::Standard,
-        1920,
-        1080,
-        VideoConfig::default(),
-        None,
-    );
+    let dimensions = VideoDimensions::new(1920, 1080);
+    let render_config = RenderConfig::new(RenderMode::Standard, VideoConfig::default(), None);
+    let compiler = FfmpegCompiler::new(dimensions, render_config);
     let padding = compiler.build_padding_filter("v0_raw", "v0");
     assert!(padding.is_none());
 }

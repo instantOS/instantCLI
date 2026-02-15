@@ -1087,15 +1087,13 @@ impl FzfBuilder {
         }
 
         let preview_strategy = PreviewUtils::analyze_preview_strategy(entries)?;
-        let display_data: Vec<(String, String, String, bool)> = entries
+        let display_data: Vec<ItemDisplayData> = entries
             .iter()
-            .map(|entry| {
-                (
-                    entry.fzf_display_text(),
-                    entry.fzf_key(),
-                    entry.fzf_search_keywords().join(" "),
-                    true,
-                )
+            .map(|entry| ItemDisplayData {
+                display_text: entry.fzf_display_text(),
+                key: entry.fzf_key(),
+                keywords: entry.fzf_search_keywords().join(" "),
+                is_selectable: true,
             })
             .collect();
         let input_text =

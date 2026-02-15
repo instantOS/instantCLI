@@ -11,6 +11,7 @@ use crate::common::shell::shell_quote;
 use super::preview::MixedPreviewContent;
 use super::preview::PreviewStrategy;
 use super::preview::PreviewUtils;
+use super::types::ItemDisplayData;
 use super::types::*;
 use super::utils::{check_for_old_fzf_and_exit, log_fzf_failure};
 
@@ -47,9 +48,6 @@ pub(crate) fn check_fzf_exit<T>(result: &std::process::Output) -> Option<FzfResu
 // Helper functions for FzfWrapper::select
 // ============================================================================
 
-/// Item data collected for fzf display: (display_text, key, search_keywords, is_selectable)
-type ItemDisplayData = (String, String, String, bool);
-
 /// Build a lookup map from fzf_key to item, and collect display lines with keys and search keywords.
 /// All items (including non-selectable separators) are included in item_map so that
 /// `parse_fzf_output` can return them — callers like `select_menu` handle separator
@@ -61,11 +59,16 @@ fn build_item_map<T: FzfSelectable + Clone>(
     let mut display_data = Vec::new();
 
     for item in items {
-        let display = item.fzf_display_text();
+        let display_text = item.fzf_display_text();
         let key = item.fzf_key();
         let keywords = item.fzf_search_keywords().join(" ");
-        let selectable = item.fzf_is_selectable();
-        display_data.push((display, key.clone(), keywords, selectable));
+        let is_selectable = item.fzf_is_selectable();
+        display_data.push(ItemDisplayData {
+            display_text,
+            key: key.clone(),
+            keywords,
+            is_selectable,
+        });
         item_map.insert(key, item.clone());
     }
 
@@ -100,17 +103,17 @@ fn calculate_separator_aware_cursor(
     let pos = requested.unwrap_or(0);
 
     // If the requested position is selectable, use it
-    if display_data[pos].3 {
+    if display_data[pos].is_selectable {
         return Some(pos);
     }
 
     // Search forward for the nearest selectable item
-    if let Some(fwd) = display_data[pos..].iter().position(|d| d.3) {
+    if let Some(fwd) = display_data[pos..].iter().position(|d| d.is_selectable) {
         return Some(pos + fwd);
     }
 
     // Search backward
-    display_data[..pos].iter().rposition(|d| d.3)
+    display_data[..pos].iter().rposition(|d| d.is_selectable)
 }
 
 /// Configure fzf for separator mode: raw mode + match-based navigation.
@@ -197,9 +200,7 @@ pub(crate) fn configure_preview_and_input(
     separator_mode: bool,
 ) -> String {
     // Check if any item has keywords
-    let has_keywords = display_data
-        .iter()
-        .any(|(_, _, keywords, _)| !keywords.is_empty());
+    let has_keywords = display_data.iter().any(|d| !d.keywords.is_empty());
 
     // Always hide extra fields (keywords, key, preview data) from display.
     // Field 1 remains the visible label (and contains any shadow keywords).
@@ -209,14 +210,15 @@ pub(crate) fn configure_preview_and_input(
     }
 
     let ctx = FzfLineContext { separator_mode };
-    let fmt = |display: &str, key: &str, keywords: &str, selectable: bool, extra: &[&str]| {
-        format_fzf_line(display, key, keywords, extra, &ctx, selectable)
-    };
+    let fmt =
+        |display_text: &str, key: &str, keywords: &str, is_selectable: bool, extra: &[&str]| {
+            format_fzf_line(display_text, key, keywords, extra, &ctx, is_selectable)
+        };
 
     match strategy {
         PreviewStrategy::None => display_data
             .iter()
-            .map(|(display, key, keywords, sel)| fmt(display, key, keywords, *sel, &[]))
+            .map(|d| fmt(&d.display_text, &d.key, &d.keywords, d.is_selectable, &[]))
             .collect::<Vec<_>>()
             .join("\n"),
         PreviewStrategy::Command(command) => {
@@ -227,7 +229,7 @@ pub(crate) fn configure_preview_and_input(
 
             display_data
                 .iter()
-                .map(|(display, key, keywords, sel)| fmt(display, key, keywords, *sel, &[]))
+                .map(|d| fmt(&d.display_text, &d.key, &d.keywords, d.is_selectable, &[]))
                 .collect::<Vec<_>>()
                 .join("\n")
         }
@@ -237,10 +239,16 @@ pub(crate) fn configure_preview_and_input(
 
             display_data
                 .iter()
-                .map(|(display, key, keywords, sel)| {
-                    let command = command_map.get(key).cloned().unwrap_or_default();
+                .map(|d| {
+                    let command = command_map.get(&d.key).cloned().unwrap_or_default();
                     let encoded = general_purpose::STANDARD.encode(command.as_bytes());
-                    fmt(display, key, keywords, *sel, &[&encoded])
+                    fmt(
+                        &d.display_text,
+                        &d.key,
+                        &d.keywords,
+                        d.is_selectable,
+                        &[&encoded],
+                    )
                 })
                 .collect::<Vec<_>>()
                 .join("\n")
@@ -251,10 +259,16 @@ pub(crate) fn configure_preview_and_input(
 
             display_data
                 .iter()
-                .map(|(display, key, keywords, sel)| {
-                    let preview = preview_map.get(key).cloned().unwrap_or_default();
+                .map(|d| {
+                    let preview = preview_map.get(&d.key).cloned().unwrap_or_default();
                     let encoded = general_purpose::STANDARD.encode(preview.as_bytes());
-                    fmt(display, key, keywords, *sel, &[&encoded])
+                    fmt(
+                        &d.display_text,
+                        &d.key,
+                        &d.keywords,
+                        d.is_selectable,
+                        &[&encoded],
+                    )
                 })
                 .collect::<Vec<_>>()
                 .join("\n")
@@ -268,14 +282,20 @@ pub(crate) fn configure_preview_and_input(
 
             display_data
                 .iter()
-                .map(|(display, key, keywords, sel)| {
-                    let (type_marker, content) = match mixed_map.get(key) {
+                .map(|d| {
+                    let (type_marker, content) = match mixed_map.get(&d.key) {
                         Some(MixedPreviewContent::Text(text)) => ("T", text.clone()),
                         Some(MixedPreviewContent::Command(cmd)) => ("C", cmd.clone()),
                         None => ("T", String::new()),
                     };
                     let encoded = general_purpose::STANDARD.encode(content.as_bytes());
-                    fmt(display, key, keywords, *sel, &[type_marker, &encoded])
+                    fmt(
+                        &d.display_text,
+                        &d.key,
+                        &d.keywords,
+                        d.is_selectable,
+                        &[type_marker, &encoded],
+                    )
                 })
                 .collect::<Vec<_>>()
                 .join("\n")
@@ -459,7 +479,7 @@ impl FzfWrapper {
         let (item_map, display_data) = build_item_map(&items);
 
         // Detect separator mode: any non-selectable items present
-        let separator_mode = display_data.iter().any(|(_, _, _, sel)| !sel);
+        let separator_mode = display_data.iter().any(|d| !d.is_selectable);
 
         // Calculate initial cursor position, adjusting for separators
         let cursor_position = if separator_mode {
