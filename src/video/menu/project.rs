@@ -315,13 +315,13 @@ async fn run_render_for_project(markdown_path: &Path) -> Result<()> {
 
     let mut force = render_options.force;
     if !render_options.precache_slides && !force {
-        let markdown_dir = markdown_path.parent().unwrap_or_else(|| Path::new("."));
-        let default_source = resolve_default_source_path(markdown_path, markdown_dir)?;
+        let project_dir = markdown_path.parent().unwrap_or_else(|| Path::new("."));
+        let default_source = resolve_default_source_path(markdown_path, project_dir)?;
         loop {
             let output_path = resolve_output_path(
                 out_file.as_ref(),
                 &default_source,
-                markdown_dir,
+                project_dir,
                 render_mode,
             )?;
             if !output_path.exists() {
@@ -390,8 +390,8 @@ fn run_clear_cache(markdown_path: &Path) -> Result<()> {
     let mut cleared_count = 0;
     for source in &doc.metadata.sources {
         if let Ok(hash) = compute_file_hash(&source.source) {
-            let project_paths = directories.project_paths(&hash);
-            let transcript_dir = project_paths.transcript_dir();
+            let cache_paths = directories.cache_paths(&hash);
+            let transcript_dir = cache_paths.transcript_dir();
 
             if transcript_dir.exists() {
                 fs::remove_dir_all(transcript_dir)?;
@@ -534,7 +534,7 @@ fn prompt_output_conflict(output_path: &Path) -> Result<Option<OutputConflictCho
     }
 }
 
-fn resolve_default_source_path(markdown_path: &Path, markdown_dir: &Path) -> Result<PathBuf> {
+fn resolve_default_source_path(markdown_path: &Path, project_dir: &Path) -> Result<PathBuf> {
     let contents = fs::read_to_string(markdown_path)?;
     let document = parse_video_document(&contents, markdown_path)?;
     let sources = &document.metadata.sources;
@@ -558,7 +558,7 @@ fn resolve_default_source_path(markdown_path: &Path, markdown_dir: &Path) -> Res
     let source_path = if source.source.is_absolute() {
         source.source.clone()
     } else {
-        markdown_dir.join(&source.source)
+        project_dir.join(&source.source)
     };
 
     Ok(source_path)
@@ -686,12 +686,12 @@ fn show_rendered_video_menu(output_path: &Path) -> Result<()> {
 }
 
 fn rendered_entry_for_project(markdown_path: &Path) -> Option<ProjectMenuEntry> {
-    let markdown_dir = markdown_path.parent().unwrap_or_else(|| Path::new("."));
-    let default_source = resolve_default_source_path(markdown_path, markdown_dir).ok()?;
+    let project_dir = markdown_path.parent().unwrap_or_else(|| Path::new("."));
+    let default_source = resolve_default_source_path(markdown_path, project_dir).ok()?;
     let output_path = resolve_output_path(
         None,
         &default_source,
-        markdown_dir,
+        project_dir,
         render::RenderMode::Standard,
     )
     .ok()?;

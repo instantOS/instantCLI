@@ -48,12 +48,12 @@ impl VideoDirectories {
         })
     }
 
-    pub fn project_paths(&self, video_hash: &str) -> VideoProjectPaths {
-        let project_dir = self.data_root.join(video_hash);
+    pub fn cache_paths(&self, video_hash: &str) -> VideoCachePaths {
+        let data_dir = self.data_root.join(video_hash);
         let transcript_dir = self.cache_root.join(video_hash);
-        VideoProjectPaths {
+        VideoCachePaths {
             video_hash: video_hash.to_string(),
-            project_dir,
+            data_dir,
             transcript_dir,
             transcript_cache_path: PathBuf::new(),
         }
@@ -64,11 +64,11 @@ impl VideoDirectories {
 /// Paths for a single video project, keyed by video hash.
 ///
 /// Contains all file paths needed for video processing:
-/// - `project_dir/`: Project-specific data directory
+/// - `data_dir/`: Hash-keyed data directory
 /// - `transcript_dir/`: Contains cached transcripts and processed audio
-pub struct VideoProjectPaths {
+pub struct VideoCachePaths {
     video_hash: String,
-    project_dir: PathBuf,
+    data_dir: PathBuf,
     transcript_dir: PathBuf,
     transcript_cache_path: PathBuf,
 }
@@ -166,7 +166,7 @@ fn video_config_path() -> Result<PathBuf> {
     Ok(paths::instant_config_dir()?.join("video.toml"))
 }
 
-impl VideoProjectPaths {
+impl VideoCachePaths {
     fn resolve(mut self) -> Self {
         self.transcript_cache_path = self
             .transcript_dir
@@ -175,10 +175,10 @@ impl VideoProjectPaths {
     }
 
     pub fn ensure_directories(&self) -> Result<()> {
-        fs::create_dir_all(&self.project_dir).with_context(|| {
+        fs::create_dir_all(&self.data_dir).with_context(|| {
             format!(
-                "Failed to create project directory {}",
-                self.project_dir.display()
+                "Failed to create data directory {}",
+                self.data_dir.display()
             )
         })?;
         fs::create_dir_all(&self.transcript_dir).with_context(|| {

@@ -1,6 +1,5 @@
 use anyhow::{Context, Result};
 use duct::cmd;
-use std::ffi::OsString;
 use std::fs;
 use std::path::Path;
 
@@ -23,10 +22,10 @@ pub fn handle_transcribe(args: TranscribeArgs) -> Result<()> {
     let video_hash = compute_file_hash(&video_path)?;
 
     let directories = VideoDirectories::new()?;
-    let project_paths = directories.project_paths(&video_hash);
-    project_paths.ensure_directories()?;
+    let cache_paths = directories.cache_paths(&video_hash);
+    cache_paths.ensure_directories()?;
 
-    let transcript_path = project_paths.transcript_cache_path().to_path_buf();
+    let transcript_path = cache_paths.transcript_cache_path().to_path_buf();
     if transcript_path.exists() && !args.force {
         emit(
             Level::Info,
@@ -41,10 +40,10 @@ pub fn handle_transcribe(args: TranscribeArgs) -> Result<()> {
     }
 
     let extension = extension_or_default(&video_path, "mp4");
-    let hashed_video_path = project_paths.hashed_video_input(&extension);
+    let hashed_video_path = cache_paths.hashed_video_input(&extension);
     prepare_hashed_video_input(&video_path, &hashed_video_path)?;
 
-    let run_result = run_whisperx(&hashed_video_path, project_paths.transcript_dir(), &args);
+    let run_result = run_whisperx(&hashed_video_path, cache_paths.transcript_dir(), &args);
 
     // Clean up temporary copy regardless of success
     if let Err(err) = cleanup_hashed_video_input(&hashed_video_path) {
@@ -80,44 +79,46 @@ pub fn handle_transcribe(args: TranscribeArgs) -> Result<()> {
 }
 
 fn run_whisperx(hashed_video: &Path, output_dir: &Path, args: &TranscribeArgs) -> Result<()> {
-    let mut whisper_args: Vec<OsString> = vec![
-        OsString::from("whisperx"),
-        hashed_video.as_os_str().to_os_string(),
-        OsString::from("--output_format"),
-        OsString::from("json"),
-        OsString::from("--output_dir"),
-        output_dir.as_os_str().to_os_string(),
-        OsString::from("--vad_method"),
-        OsString::from(args.vad_method.clone()),
-        OsString::from("--compute_type"),
-        OsString::from(args.compute_type.clone()),
-        OsString::from("--device"),
-        OsString::from(args.device.clone()),
-        // Improved alignment quality parameters for CPU processing
-        OsString::from("--align_model"),
-        OsString::from("WAV2VEC2_ASR_LARGE_LV60K_960H"), // Best alignment model for accurate word-level timestamps
-        OsString::from("--batch_size"),
-        OsString::from("4"), // Smaller batch size optimized for CPU (vs 16 for GPU)
-        OsString::from("--segment_resolution"),
-        OsString::from("chunk"), // Sentence-level segmentation for better subtitle timing
-        OsString::from("--beam_size"),
-        OsString::from("5"), // Beam search for higher transcription accuracy
-        OsString::from("--patience"),
-        OsString::from("1.0"), // Beam search patience for thorough exploration
-        OsString::from("--max_line_width"),
-        OsString::from("42"), // Optimal characters per subtitle line
-        OsString::from("--threads"),
-        OsString::from("8"), // CPU thread optimization
+    let hashed_video = hashed_video.to_string_lossy();
+    let output_dir = output_dir.to_string_lossy();
+
+    let mut whisper_args: Vec<&str> = vec![
+        "whisperx",
+        &hashed_video,
+        "--output_format",
+        "json",
+        "--output_dir",
+        &output_dir,
+        "--vad_method",
+        &args.vad_method,
+        "--compute_type",
+        &args.compute_type,
+        "--device",
+        &args.device,
+        "--align_model",
+        "WAV2VEC2_ASR_LARGE_LV60K_960H",
+        "--batch_size",
+        "4",
+        "--segment_resolution",
+        "chunk",
+        "--beam_size",
+        "5",
+        "--patience",
+        "1.0",
+        "--max_line_width",
+        "42",
+        "--threads",
+        "8",
     ];
 
     if let Some(model) = &args.model {
-        whisper_args.push(OsString::from("--model"));
-        whisper_args.push(OsString::from(model.clone()));
+        whisper_args.push("--model");
+        whisper_args.push(model);
     }
 
-    cmd("uvx", whisper_args)
+    cmd("uvx", &whisper_args)
         .run()
-        .with_context(|| format!("Failed to run WhisperX for {}", hashed_video.display()))?;
+        .with_context(|| format!("Failed to run WhisperX for {}", hashed_video))?;
 
     Ok(())
 }

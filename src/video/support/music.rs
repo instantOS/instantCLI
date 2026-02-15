@@ -11,14 +11,14 @@ use super::utils::canonicalize_existing;
 use crate::video::document::MusicDirective;
 
 pub struct MusicResolver {
-    markdown_dir: PathBuf,
+    project_dir: PathBuf,
     cache: HashMap<String, PathBuf>,
 }
 
 impl MusicResolver {
-    pub fn new(markdown_dir: &Path) -> Self {
+    pub fn new(project_dir: &Path) -> Self {
         Self {
-            markdown_dir: markdown_dir.to_path_buf(),
+            project_dir: project_dir.to_path_buf(),
             cache: HashMap::new(),
         }
     }
@@ -72,9 +72,9 @@ impl MusicResolver {
 
         let has_subdirs = relative.iter().nth(1).is_some();
         if !has_subdirs {
-            attempted.push(self.markdown_dir.join("music").join(relative));
+            attempted.push(self.project_dir.join("music").join(relative));
         }
-        attempted.push(self.markdown_dir.join(relative));
+        attempted.push(self.project_dir.join(relative));
 
         if let Some(mut home) = home_dir() {
             home.push("music");

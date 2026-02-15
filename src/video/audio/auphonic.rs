@@ -255,10 +255,10 @@ impl AudioPreprocessor for AuphonicPreprocessor {
         let input_hash = compute_file_hash(input)?;
 
         let directories = VideoDirectories::new()?;
-        let project_paths = directories.project_paths(&input_hash);
-        project_paths.ensure_directories()?;
+        let cache_paths = directories.cache_paths(&input_hash);
+        cache_paths.ensure_directories()?;
 
-        let transcript_dir = project_paths.transcript_dir();
+        let transcript_dir = cache_paths.transcript_dir();
 
         let raw_cache_path = transcript_dir.join(format!("{}_auphonic_raw.mp3", input_hash));
         let processed_cache_path =

@@ -8,7 +8,7 @@ use crate::ui::prelude::{Level, emit};
 use super::transcribe::handle_transcribe;
 use crate::video::audio::{PreprocessorType, create_preprocessor, parse_preprocessor_type};
 use crate::video::cli::{AppendArgs, ConvertArgs, TranscribeArgs};
-use crate::video::config::{VideoConfig, VideoDirectories, VideoProjectPaths};
+use crate::video::config::{VideoConfig, VideoDirectories, VideoCachePaths};
 use crate::video::document::frontmatter::split_frontmatter;
 use crate::video::document::markdown::{build_markdown, format_timestamp, render_frontmatter};
 use crate::video::document::{VideoMetadata, VideoSource, parse_video_document};
@@ -26,8 +26,8 @@ pub async fn handle_convert(args: ConvertArgs) -> Result<()> {
     let video_hash = compute_file_hash(&video_path)?;
 
     let directories = VideoDirectories::new()?;
-    let project_paths = directories.project_paths(&video_hash);
-    project_paths.ensure_directories()?;
+    let cache_paths = directories.cache_paths(&video_hash);
+    cache_paths.ensure_directories()?;
 
     let output_path = determine_output_path(args.out_file.clone(), &video_path)?;
 
@@ -42,7 +42,7 @@ pub async fn handle_convert(args: ConvertArgs) -> Result<()> {
     let transcript_path = ensure_transcript(
         &video_path,
         &directories,
-        &project_paths,
+        &cache_paths,
         args.transcript.as_ref(),
         &args,
     )
@@ -143,13 +143,13 @@ async fn prepare_video_and_transcript(args: &AppendArgs) -> Result<VideoAppendIn
     let video_hash = compute_file_hash(&video_path)?;
 
     let directories = VideoDirectories::new()?;
-    let project_paths = directories.project_paths(&video_hash);
-    project_paths.ensure_directories()?;
+    let cache_paths = directories.cache_paths(&video_hash);
+    cache_paths.ensure_directories()?;
 
     let transcript_path = ensure_transcript(
         &video_path,
         &directories,
-        &project_paths,
+        &cache_paths,
         args.transcript.as_ref(),
         &ConvertArgs {
             video: args.video.clone(),
@@ -249,11 +249,11 @@ fn build_appended_markdown(
 async fn ensure_transcript(
     video_path: &Path,
     directories: &VideoDirectories,
-    project_paths: &VideoProjectPaths,
+    cache_paths: &VideoCachePaths,
     provided_transcript: Option<&PathBuf>,
     args: &ConvertArgs,
 ) -> Result<PathBuf> {
-    let cached_transcript_path = project_paths.transcript_cache_path().to_path_buf();
+    let cached_transcript_path = cache_paths.transcript_cache_path().to_path_buf();
 
     // If user provided a transcript, use it
     if let Some(provided) = provided_transcript {
@@ -368,8 +368,8 @@ fn relocate_transcript_if_needed(
     }
 
     let audio_hash = compute_file_hash(audio_source)?;
-    let audio_project_paths = directories.project_paths(&audio_hash);
-    let generated_transcript = audio_project_paths.transcript_cache_path();
+    let audio_cache_paths = directories.cache_paths(&audio_hash);
+    let generated_transcript = audio_cache_paths.transcript_cache_path();
 
     if generated_transcript.exists() {
         emit(

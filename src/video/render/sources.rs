@@ -11,11 +11,11 @@ use crate::video::document::{VideoMetadata, VideoSource};
 use crate::video::render::logging::log_event;
 use crate::video::support::utils::canonicalize_existing;
 
-pub(super) fn resolve_source_path(path: &Path, markdown_dir: &Path) -> Result<PathBuf> {
+pub(super) fn resolve_source_path(path: &Path, project_dir: &Path) -> Result<PathBuf> {
     if path.is_absolute() {
         Ok(path.to_path_buf())
     } else {
-        Ok(markdown_dir.join(path))
+        Ok(project_dir.join(path))
     }
 }
 
@@ -76,13 +76,13 @@ pub(super) fn validate_timeline_sources(
 
 pub(crate) async fn resolve_video_sources(
     metadata: &VideoMetadata,
-    markdown_dir: &Path,
+    project_dir: &Path,
     config: &VideoConfig,
 ) -> Result<Vec<VideoSource>> {
     let mut resolved = Vec::new();
     for source in &metadata.sources {
-        let resolved_source = resolve_source_path(&source.source, markdown_dir)?;
-        let resolved_transcript = resolve_source_path(&source.transcript, markdown_dir)?;
+        let resolved_source = resolve_source_path(&source.source, project_dir)?;
+        let resolved_transcript = resolve_source_path(&source.transcript, project_dir)?;
         let resolved_audio = resolve_audio_path(&resolved_source, config).await?;
         let canonical = canonicalize_existing(&resolved_source)?;
         log_event(

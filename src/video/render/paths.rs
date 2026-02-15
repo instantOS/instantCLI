@@ -7,14 +7,14 @@ use super::mode::RenderMode;
 pub fn resolve_output_path(
     out_file: Option<&PathBuf>,
     video_path: &Path,
-    markdown_dir: &Path,
+    project_dir: &Path,
     render_mode: RenderMode,
 ) -> Result<PathBuf> {
     if let Some(provided) = out_file {
         let resolved = if provided.is_absolute() {
             provided.clone()
         } else {
-            markdown_dir.join(provided)
+            project_dir.join(provided)
         };
         return Ok(resolved);
     }

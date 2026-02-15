@@ -23,7 +23,7 @@ pub(super) fn build_nle_timeline(
     plan: TimelinePlan,
     generator: &dyn SlideProvider,
     sources: &[VideoSource],
-    markdown_dir: &Path,
+    project_dir: &Path,
 ) -> Result<(Timeline, TimelineStats)> {
     let stats = TimelineStats {
         standalone_count: plan.standalone_count,
@@ -31,7 +31,7 @@ pub(super) fn build_nle_timeline(
         ignored_count: plan.ignored_count,
     };
 
-    let mut state = TimelineBuildState::new(markdown_dir);
+    let mut state = TimelineBuildState::new(project_dir);
 
     for item in plan.items {
         state.apply_plan_item(item, generator, sources)?;
@@ -55,11 +55,11 @@ struct TimelineBuildState {
 }
 
 impl TimelineBuildState {
-    fn new(markdown_dir: &Path) -> Self {
+    fn new(project_dir: &Path) -> Self {
         Self {
             timeline: Timeline::new(),
             current_time: 0.0,
-            music_resolver: Box::new(DefaultMusicSourceResolver::new(markdown_dir)),
+            music_resolver: Box::new(DefaultMusicSourceResolver::new(project_dir)),
             active_music: None,
         }
     }

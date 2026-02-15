@@ -37,9 +37,9 @@ pub struct DefaultMusicSourceResolver {
 }
 
 impl DefaultMusicSourceResolver {
-    pub fn new(markdown_dir: &Path) -> Self {
+    pub fn new(project_dir: &Path) -> Self {
         Self {
-            resolver: MusicResolver::new(markdown_dir),
+            resolver: MusicResolver::new(project_dir),
         }
     }
 }

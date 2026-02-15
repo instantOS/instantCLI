@@ -12,12 +12,12 @@ use crate::video::support::utils::canonicalize_existing;
 
 pub(crate) fn load_transcript_cues(
     sources: &[VideoSource],
-    markdown_dir: &Path,
+    project_dir: &Path,
 ) -> Result<Vec<TranscriptCue>> {
     let mut cues = Vec::new();
 
     for source in sources {
-        let transcript_path = resolve_source_path(&source.transcript, markdown_dir)?;
+        let transcript_path = resolve_source_path(&source.transcript, project_dir)?;
         let transcript_path = canonicalize_existing(&transcript_path)?;
 
         log_event(

@@ -181,10 +181,10 @@ impl AudioPreprocessor for LocalPreprocessor {
         let input_hash = compute_file_hash(input)?;
 
         let directories = VideoDirectories::new()?;
-        let project_paths = directories.project_paths(&input_hash);
-        project_paths.ensure_directories()?;
+        let cache_paths = directories.cache_paths(&input_hash);
+        cache_paths.ensure_directories()?;
 
-        let cache_dir = project_paths.transcript_dir();
+        let cache_dir = cache_paths.transcript_dir();
 
         // Final output path (WAV to avoid lossy transcoding - encoding happens at render)
         let processed_cache_path = cache_dir.join(format!("{}_local_processed.wav", input_hash));

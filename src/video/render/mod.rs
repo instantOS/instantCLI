@@ -68,15 +68,15 @@ async fn handle_render_with_services(
     );
 
     let markdown_path = canonicalize_existing(&args.markdown)?;
-    let markdown_dir = markdown_path.parent().unwrap_or_else(|| Path::new("."));
+    let project_dir = markdown_path.parent().unwrap_or_else(|| Path::new("."));
 
     let document = load_video_document(&markdown_path)?;
     let video_config = VideoConfig::load()?;
-    let sources = resolve_video_sources(&document.metadata, markdown_dir, &video_config).await?;
+    let sources = resolve_video_sources(&document.metadata, project_dir, &video_config).await?;
     if sources.is_empty() {
         bail!("No video sources configured. Add `sources` in front matter before rendering.");
     }
-    let cues = load_transcript_cues(&sources, markdown_dir)?;
+    let cues = load_transcript_cues(&sources, project_dir)?;
     validate_timeline_sources(&document, &sources, &cues)?;
     let plan = build_timeline_plan(&document, &cues, &markdown_path)?;
 
@@ -98,7 +98,7 @@ async fn handle_render_with_services(
         Some(paths::resolve_output_path(
             args.out_file.as_ref(),
             &default_source.source,
-            markdown_dir,
+            project_dir,
             render_mode,
         )?)
     };
@@ -124,7 +124,7 @@ async fn handle_render_with_services(
         "video.render.timeline.build",
         "Building render timeline (may generate slides)",
     );
-    let (nle_timeline, stats) = build_nle_timeline(plan, &generator, &sources, markdown_dir)?;
+    let (nle_timeline, stats) = build_nle_timeline(plan, &generator, &sources, project_dir)?;
 
     report_timeline_stats(&stats);
 
@@ -265,7 +265,7 @@ mod tests {
     #[test]
     fn inserts_heading_slides_between_clip_segments() {
         let source_video = Path::new("source.mp4");
-        let markdown_dir = Path::new(".");
+        let project_dir = Path::new(".");
 
         let plan = TimelinePlan {
             items: vec![
@@ -307,7 +307,7 @@ mod tests {
         }];
 
         let (timeline, _stats) =
-            build_nle_timeline(plan, &StubSlides, &sources, markdown_dir).unwrap();
+            build_nle_timeline(plan, &StubSlides, &sources, project_dir).unwrap();
 
         assert_eq!(timeline.segments.len(), 3);
 
