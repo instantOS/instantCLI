@@ -10,9 +10,7 @@ use crate::video::audio::{PreprocessorType, create_preprocessor, parse_preproces
 use crate::video::cli::{AppendArgs, ConvertArgs, TranscribeArgs};
 use crate::video::config::{VideoConfig, VideoDirectories, VideoProjectPaths};
 use crate::video::document::frontmatter::split_frontmatter;
-use crate::video::document::markdown::{
-    MarkdownMetadata, MarkdownSource, build_markdown, format_timestamp, render_frontmatter,
-};
+use crate::video::document::markdown::{build_markdown, format_timestamp, render_frontmatter};
 use crate::video::document::{VideoMetadata, VideoSource, parse_video_document};
 use crate::video::support::transcript::{TranscriptCue, parse_whisper_json};
 use crate::video::support::utils::{canonicalize_existing, compute_file_hash};
@@ -426,16 +424,16 @@ fn generate_markdown_output(
         )
     })?;
 
-    let sources = vec![MarkdownSource {
-        id: "a",
-        name: Some(video_name.as_str()),
-        video_hash,
-        video_source: &relative_video_path,
-        transcript_source: &relative_subtitle_path,
-    }];
-    let metadata = MarkdownMetadata {
-        sources: &sources,
-        default_source: "a",
+    let metadata = VideoMetadata {
+        sources: vec![VideoSource {
+            id: "a".to_string(),
+            name: Some(video_name),
+            source: relative_video_path,
+            transcript: relative_subtitle_path,
+            audio: PathBuf::new(),
+            hash: Some(video_hash.to_string()),
+        }],
+        default_source: Some("a".to_string()),
     };
 
     let markdown = build_markdown(&cues, &metadata);

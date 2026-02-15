@@ -31,6 +31,7 @@ pub struct VideoSource {
     pub name: Option<String>,
     pub source: PathBuf,
     pub transcript: PathBuf,
+    /// Resolved at runtime during render; never serialized to frontmatter.
     pub audio: PathBuf,
     pub hash: Option<String>,
 }

@@ -1,31 +1,18 @@
 use crate::video::support::transcript::TranscriptCue;
 use crate::video::support::utils::duration_to_tenths;
 use chrono::Utc;
-use std::path::Path;
 use std::time::Duration;
 
-pub struct MarkdownMetadata<'a> {
-    pub sources: &'a [MarkdownSource<'a>],
-    pub default_source: &'a str,
-}
+use super::VideoMetadata;
 
-//TODO: document what this is and why it is needed
-//why is it called that? Should it have a better name?
-pub struct MarkdownSource<'a> {
-    pub id: &'a str,
-    pub name: Option<&'a str>,
-    pub video_hash: &'a str,
-    pub video_source: &'a Path,
-    pub transcript_source: &'a Path,
-}
-
-pub fn build_markdown(cues: &[TranscriptCue], metadata: &MarkdownMetadata<'_>) -> String {
+pub fn build_markdown(cues: &[TranscriptCue], metadata: &VideoMetadata) -> String {
+    let default_source = metadata.default_source.as_deref().unwrap_or("a");
     let mut lines = Vec::with_capacity(cues.len() * 2);
     let mut previous_end = Duration::from_secs(0);
 
     for cue in cues {
         let source_id = if cue.source_id.trim().is_empty() {
-            metadata.default_source
+            default_source
         } else {
             cue.source_id.as_str()
         };
@@ -46,7 +33,7 @@ pub fn build_markdown(cues: &[TranscriptCue], metadata: &MarkdownMetadata<'_>) -
         previous_end = cue.end;
     }
 
-    let front_matter = build_front_matter(metadata);
+    let front_matter = render_frontmatter(metadata);
 
     if lines.is_empty() {
         front_matter
@@ -74,18 +61,18 @@ fn insert_silence_lines(
     }
 }
 
-fn build_front_matter(metadata: &MarkdownMetadata<'_>) -> String {
+pub fn render_frontmatter(metadata: &VideoMetadata) -> String {
     let timestamp = Utc::now().to_rfc3339();
-    let default_source = yaml_quote(metadata.default_source);
+    let default_source = yaml_quote(metadata.default_source.as_deref().unwrap_or("a"));
     let mut source_lines = Vec::new();
-    for source in metadata.sources {
-        let source_id = yaml_quote(source.id);
-        let video_source = yaml_quote(&source.video_source.to_string_lossy());
-        let transcript_source = yaml_quote(&source.transcript_source.to_string_lossy());
-        let video_hash = yaml_quote(source.video_hash);
+    for source in &metadata.sources {
+        let source_id = yaml_quote(&source.id);
+        let video_source = yaml_quote(&source.source.to_string_lossy());
+        let transcript_source = yaml_quote(&source.transcript.to_string_lossy());
+        let video_hash = yaml_quote(source.hash.as_deref().unwrap_or(""));
         source_lines.push(format!(
             "- id: {source_id}\n  hash: {video_hash}\n  name: {name}\n  source: {video_source}\n  transcript: {transcript_source}",
-            name = yaml_quote(source.name.unwrap_or("")),
+            name = yaml_quote(source.name.as_deref().unwrap_or("")),
         ));
     }
     if source_lines.is_empty() {
@@ -99,26 +86,6 @@ fn build_front_matter(metadata: &MarkdownMetadata<'_>) -> String {
         "---\ndefault_source: {default_source}\nsources:\n{sources}\ngenerated_at: '{timestamp}'\n---",
         sources = sources_block,
     )
-}
-
-pub fn render_frontmatter(metadata: &crate::video::document::VideoMetadata) -> String {
-    let default_source = metadata.default_source.as_deref().unwrap_or("a");
-    let sources: Vec<MarkdownSource<'_>> = metadata
-        .sources
-        .iter()
-        .map(|s| MarkdownSource {
-            id: &s.id,
-            name: s.name.as_deref(),
-            video_hash: s.hash.as_deref().unwrap_or(""),
-            video_source: &s.source,
-            transcript_source: &s.transcript,
-        })
-        .collect();
-    let md = MarkdownMetadata {
-        sources: &sources,
-        default_source,
-    };
-    build_front_matter(&md)
 }
 
 fn yaml_quote(value: &str) -> String {
@@ -146,7 +113,8 @@ pub fn format_timestamp(duration: Duration) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::Path;
+    use crate::video::document::VideoSource;
+    use std::path::{Path, PathBuf};
 
     fn cue(start: u64, end: u64, text: &str) -> TranscriptCue {
         TranscriptCue {
@@ -161,16 +129,16 @@ mod tests {
     #[test]
     fn inserts_silence_chunks() {
         let cues = vec![cue(3000, 4000, "Hello"), cue(11000, 12000, "World")];
-        let sources = vec![MarkdownSource {
-            id: "a",
-            name: Some("clip.mp4"),
-            video_hash: "hash",
-            video_source: Path::new("/video/clip.mp4"),
-            transcript_source: Path::new("/tmp/clip.srt"),
-        }];
-        let metadata = MarkdownMetadata {
-            sources: &sources,
-            default_source: "a",
+        let metadata = VideoMetadata {
+            sources: vec![VideoSource {
+                id: "a".to_string(),
+                name: Some("clip.mp4".to_string()),
+                source: PathBuf::from("/video/clip.mp4"),
+                transcript: PathBuf::from("/tmp/clip.srt"),
+                audio: PathBuf::new(),
+                hash: Some("hash".to_string()),
+            }],
+            default_source: Some("a".to_string()),
         };
 
         let output = build_markdown(&cues, &metadata);
