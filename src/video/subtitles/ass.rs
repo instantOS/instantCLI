@@ -79,29 +79,6 @@ impl AssStyle {
         }
     }
 
-    /// Catppuccin Mocha with accent color (Mauve) for emphasis.
-    #[allow(dead_code)]
-    pub fn catppuccin_mocha_accent() -> Self {
-        Self {
-            name: "Accent".to_string(),
-            font_name: "Inter".to_string(),
-            font_size: 52,
-            // Catppuccin Mocha "Mauve" (#CBA6F7)
-            primary_color: "&H00F7A6CB".to_string(),
-            // Catppuccin Mocha "Text" (#CDD6F4)
-            secondary_color: "&H00F4D6CD".to_string(),
-            outline_color: "&H001B1111".to_string(),
-            back_color: "&H99251818".to_string(),
-            bold: false,
-            outline: 2,
-            shadow: 1,
-            alignment: 2,
-            margin_l: 60,
-            margin_r: 60,
-            margin_v: 120,
-        }
-    }
-
     /// Catppuccin Latte theme (light mode variant).
     #[allow(dead_code)]
     pub fn catppuccin_latte() -> Self {
@@ -165,39 +142,15 @@ impl AssStyle {
         style
     }
 
-    /// Format the style line for the ASS file.
-    fn to_style_line(&self) -> String {
+    /// Format a style line for the ASS file with the given name and primary color.
+    fn format_style_line(&self, name: &str, primary_color: &str) -> String {
         let bold_val = if self.bold { -1 } else { 0 };
         format!(
             "Style: {name},{font},{size},{primary},{secondary},{outline},{back},{bold},0,0,0,100,100,0,0,1,{outline_w},{shadow},{align},{ml},{mr},{mv},1",
-            name = self.name,
+            name = name,
             font = self.font_name,
             size = self.font_size,
-            primary = self.primary_color,
-            secondary = self.secondary_color,
-            outline = self.outline_color,
-            back = self.back_color,
-            bold = bold_val,
-            outline_w = self.outline,
-            shadow = self.shadow,
-            align = self.alignment,
-            ml = self.margin_l,
-            mr = self.margin_r,
-            mv = self.margin_v,
-        )
-    }
-
-    /// Format the highlight style line (for karaoke current word).
-    /// Uses Catppuccin Mauve for the highlighted word.
-    fn to_highlight_style_line(&self) -> String {
-        let bold_val = if self.bold { -1 } else { 0 };
-        // Catppuccin Mocha "Mauve" (#CBA6F7) in ABGR format
-        let highlight_color = "&H00F7A6CB";
-        format!(
-            "Style: Highlight,{font},{size},{primary},{secondary},{outline},{back},{bold},0,0,0,100,100,0,0,1,{outline_w},{shadow},{align},{ml},{mr},{mv},1",
-            font = self.font_name,
-            size = self.font_size,
-            primary = highlight_color,
+            primary = primary_color,
             secondary = self.secondary_color,
             outline = self.outline_color,
             back = self.back_color,
@@ -273,10 +226,8 @@ pub fn generate_ass_file(
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding"
     )
     .unwrap();
-    // Default style (for text before it's highlighted)
-    writeln!(output, "{}", style.to_style_line()).unwrap();
-    // Highlight style (Catppuccin Mauve for current word)
-    writeln!(output, "{}", style.to_highlight_style_line()).unwrap();
+    writeln!(output, "{}", style.format_style_line(&style.name, &style.primary_color)).unwrap();
+    writeln!(output, "{}", style.format_style_line("Highlight", &style.primary_color)).unwrap();
     writeln!(output).unwrap();
 
     // Events section
@@ -540,7 +491,7 @@ mod tests {
     #[test]
     fn test_style_line() {
         let style = AssStyle::for_reels(false);
-        let line = style.to_style_line();
+        let line = style.format_style_line(&style.name, &style.primary_color);
 
         // Catppuccin Mocha theme with Inter font
         assert!(line.starts_with("Style: Default,Inter,70,")); // Size 70
@@ -553,7 +504,7 @@ mod tests {
     #[test]
     fn test_style_line_with_overlay() {
         let style = AssStyle::for_reels(true);
-        let line = style.to_style_line();
+        let line = style.format_style_line(&style.name, &style.primary_color);
 
         // Catppuccin Mocha theme with Inter font
         assert!(line.starts_with("Style: Default,Inter,70,")); // Size 70
