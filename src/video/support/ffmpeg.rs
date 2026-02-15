@@ -1,30 +1,126 @@
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Output};
+
+#[derive(Debug, Clone, Copy)]
+pub struct EncodingProfile {
+    pub video_codec: &'static str,
+    pub preset: &'static str,
+    pub crf: &'static str,
+    pub audio_codec: &'static str,
+    pub audio_bitrate: &'static str,
+    pub pix_fmt: Option<&'static str>,
+    pub movflags: Option<&'static str>,
+}
+
+pub const PROFILE_H264_AAC_QUALITY: EncodingProfile = EncodingProfile {
+    video_codec: "libx264",
+    preset: "medium",
+    crf: "18",
+    audio_codec: "aac",
+    audio_bitrate: "192k",
+    pix_fmt: None,
+    movflags: None,
+};
+
+pub const PROFILE_H264_AAC_QUALITY_FASTSTART: EncodingProfile = EncodingProfile {
+    video_codec: "libx264",
+    preset: "medium",
+    crf: "18",
+    audio_codec: "aac",
+    audio_bitrate: "192k",
+    pix_fmt: None,
+    movflags: Some("+faststart"),
+};
+
+pub const PROFILE_SLIDE_VIDEO: EncodingProfile = EncodingProfile {
+    video_codec: "libx264",
+    preset: "medium",
+    crf: "18",
+    audio_codec: "aac",
+    audio_bitrate: "192k",
+    pix_fmt: Some("yuv420p"),
+    movflags: None,
+};
+
+impl EncodingProfile {
+    pub fn push_to(&self, args: &mut Vec<String>) {
+        args.push("-c:v".to_string());
+        args.push(self.video_codec.to_string());
+        args.push("-preset".to_string());
+        args.push(self.preset.to_string());
+        args.push("-crf".to_string());
+        args.push(self.crf.to_string());
+        if let Some(pix_fmt) = self.pix_fmt {
+            args.push("-pix_fmt".to_string());
+            args.push(pix_fmt.to_string());
+        }
+        args.push("-c:a".to_string());
+        args.push(self.audio_codec.to_string());
+        args.push("-b:a".to_string());
+        args.push(self.audio_bitrate.to_string());
+        if let Some(movflags) = self.movflags {
+            args.push("-movflags".to_string());
+            args.push(movflags.to_string());
+        }
+    }
+}
+
+fn run_ffprobe(args: &[&str], path: &Path, ctx: &str) -> Result<Output> {
+    let output = Command::new("ffprobe")
+        .args(args)
+        .arg(path)
+        .output()
+        .with_context(|| format!("Failed to run ffprobe for {}", path.display()))?;
+
+    if !output.status.success() {
+        bail!(
+            "ffprobe failed {} for {}: {}",
+            ctx,
+            path.display(),
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+
+    Ok(output)
+}
+
+fn ffprobe_stdout_utf8(output: Output) -> Result<String> {
+    String::from_utf8(output.stdout).context("ffprobe returned non-UTF8 output")
+}
+
+pub fn run_ffmpeg_output(args: &[&str], ctx: &str) -> Result<()> {
+    let output = Command::new("ffmpeg")
+        .args(args)
+        .output()
+        .with_context(|| format!("Failed to spawn ffmpeg for {}", ctx))?;
+
+    if !output.status.success() {
+        bail!(
+            "ffmpeg failed {}: {}",
+            ctx,
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+
+    Ok(())
+}
 
 pub fn probe_duration_seconds(path: &Path) -> Result<f64> {
-    let output = Command::new("ffprobe")
-        .args([
+    let output = run_ffprobe(
+        &[
             "-v",
             "error",
             "-show_entries",
             "format=duration",
             "-of",
             "default=noprint_wrappers=1:nokey=1",
-        ])
-        .arg(path)
-        .output()
-        .with_context(|| format!("Failed to run ffprobe for {}", path.display()))?;
+        ],
+        path,
+        "to get duration",
+    )?;
 
-    if !output.status.success() {
-        anyhow::bail!(
-            "ffprobe failed for {}: {}",
-            path.display(),
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
-    }
-
-    let duration_str = String::from_utf8_lossy(&output.stdout);
+    let duration_str = ffprobe_stdout_utf8(output)?;
     let duration: f64 = duration_str
         .trim()
         .parse()
@@ -34,34 +130,22 @@ pub fn probe_duration_seconds(path: &Path) -> Result<f64> {
 }
 
 pub fn probe_video_dimensions(video_path: &Path) -> Result<(u32, u32)> {
-    let output = Command::new("ffprobe")
-        .arg("-v")
-        .arg("error")
-        .arg("-select_streams")
-        .arg("v:0")
-        .arg("-show_entries")
-        .arg("stream=width,height")
-        .arg("-of")
-        .arg("csv=s=x:p=0")
-        .arg(video_path)
-        .output()
-        .with_context(|| {
-            format!(
-                "Failed to probe video dimensions for {}",
-                video_path.display()
-            )
-        })?;
+    let output = run_ffprobe(
+        &[
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=width,height",
+            "-of",
+            "csv=s=x:p=0",
+        ],
+        video_path,
+        "to get dimensions",
+    )?;
 
-    if !output.status.success() {
-        anyhow::bail!(
-            "ffprobe exited with status {:?} while probing {}",
-            output.status.code(),
-            video_path.display()
-        );
-    }
-
-    let stdout = String::from_utf8(output.stdout)
-        .context("ffprobe returned non-UTF8 output for video dimensions")?;
+    let stdout = ffprobe_stdout_utf8(output)?;
     let value = stdout.trim();
     let mut parts = value.split('x');
 
@@ -91,8 +175,8 @@ pub fn probe_video_dimensions(video_path: &Path) -> Result<(u32, u32)> {
 }
 
 pub fn extract_audio_to_mp3(input: &Path, output: &Path) -> Result<()> {
-    let status = Command::new("ffmpeg")
-        .args([
+    run_ffmpeg_output(
+        &[
             "-y",
             "-i",
             &input.to_string_lossy(),
@@ -104,20 +188,9 @@ pub fn extract_audio_to_mp3(input: &Path, output: &Path) -> Result<()> {
             "-q:a",
             "2",
             &output.to_string_lossy(),
-        ])
-        .status()
-        .with_context(|| {
-            format!(
-                "Failed to run ffmpeg to extract audio from {}",
-                input.display()
-            )
-        })?;
-
-    if !status.success() {
-        anyhow::bail!("ffmpeg failed to extract audio from {}", input.display());
-    }
-
-    Ok(())
+        ],
+        &format!("to extract audio from {}", input.display()),
+    )
 }
 
 pub fn trim_audio_mp3(
@@ -126,8 +199,8 @@ pub fn trim_audio_mp3(
     start_seconds: f64,
     end_seconds: f64,
 ) -> Result<()> {
-    let status = Command::new("ffmpeg")
-        .args([
+    run_ffmpeg_output(
+        &[
             "-y",
             "-i",
             &input.to_string_lossy(),
@@ -140,20 +213,9 @@ pub fn trim_audio_mp3(
             "-q:a",
             "2",
             &output.to_string_lossy(),
-        ])
-        .status()
-        .with_context(|| {
-            format!(
-                "Failed to run ffmpeg to trim audio from {}",
-                input.display()
-            )
-        })?;
-
-    if !status.success() {
-        anyhow::bail!("ffmpeg failed to trim audio from {}", input.display());
-    }
-
-    Ok(())
+        ],
+        &format!("to trim audio from {}", input.display()),
+    )
 }
 
 /// Comprehensive video/audio metadata for display purposes

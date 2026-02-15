@@ -15,6 +15,7 @@ use anyhow::Result;
 use super::super::mode::RenderMode;
 use crate::video::config::VideoConfig;
 use crate::video::render::timeline::Timeline;
+use crate::video::support::ffmpeg::PROFILE_H264_AAC_QUALITY_FASTSTART;
 
 use self::util::{categorize_segments, escape_ffmpeg_path};
 
@@ -108,18 +109,7 @@ impl FfmpegCompiler {
         args.push("-map".to_string());
         args.push("[outa]".to_string());
 
-        args.push("-c:v".to_string());
-        args.push("libx264".to_string());
-        args.push("-preset".to_string());
-        args.push("medium".to_string());
-        args.push("-crf".to_string());
-        args.push("18".to_string());
-        args.push("-c:a".to_string());
-        args.push("aac".to_string());
-        args.push("-b:a".to_string());
-        args.push("192k".to_string());
-        args.push("-movflags".to_string());
-        args.push("+faststart".to_string());
+        PROFILE_H264_AAC_QUALITY_FASTSTART.push_to(&mut args);
         args.push(output.to_string_lossy().into_owned());
 
         Ok(FfmpegCompileOutput { args })

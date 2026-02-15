@@ -8,7 +8,7 @@ use crate::ui::prelude::{Level, emit};
 use super::transcribe::handle_transcribe;
 use crate::video::audio::{PreprocessorType, create_preprocessor, parse_preprocessor_type};
 use crate::video::cli::{AppendArgs, ConvertArgs, TranscribeArgs};
-use crate::video::config::{VideoConfig, VideoDirectories, VideoCachePaths};
+use crate::video::config::{VideoCachePaths, VideoConfig, VideoDirectories};
 use crate::video::document::frontmatter::split_frontmatter;
 use crate::video::document::markdown::{build_markdown, format_timestamp, render_frontmatter};
 use crate::video::document::{VideoMetadata, VideoSource, parse_video_document};

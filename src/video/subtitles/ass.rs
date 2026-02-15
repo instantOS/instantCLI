@@ -226,8 +226,18 @@ pub fn generate_ass_file(
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding"
     )
     .unwrap();
-    writeln!(output, "{}", style.format_style_line(&style.name, &style.primary_color)).unwrap();
-    writeln!(output, "{}", style.format_style_line("Highlight", &style.primary_color)).unwrap();
+    writeln!(
+        output,
+        "{}",
+        style.format_style_line(&style.name, &style.primary_color)
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "{}",
+        style.format_style_line("Highlight", &style.primary_color)
+    )
+    .unwrap();
     writeln!(output).unwrap();
 
     // Events section

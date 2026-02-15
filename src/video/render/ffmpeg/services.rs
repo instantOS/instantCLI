@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::process::Command;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 
 use crate::video::document::MusicDirective;
 use crate::video::support::music::MusicResolver;
@@ -15,13 +15,17 @@ pub struct SystemFfmpegRunner;
 
 impl FfmpegRunner for SystemFfmpegRunner {
     fn run(&self, args: &[String]) -> Result<()> {
-        let status = Command::new("ffmpeg")
+        let output = Command::new("ffmpeg")
             .args(args)
-            .status()
+            .output()
             .with_context(|| "Failed to spawn ffmpeg")?;
 
-        if !status.success() {
-            anyhow::bail!("ffmpeg exited with status {:?}", status.code());
+        if !output.status.success() {
+            bail!(
+                "ffmpeg exited with status {:?}: {}",
+                output.status.code(),
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
         }
 
         Ok(())

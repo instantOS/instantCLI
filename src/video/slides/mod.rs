@@ -7,6 +7,8 @@ use anyhow::{Context, Result};
 use dirs::cache_dir;
 use sha2::{Digest, Sha256};
 
+use crate::video::support::ffmpeg::{PROFILE_SLIDE_VIDEO, run_ffmpeg_output};
+
 pub mod cli;
 
 const DEFAULT_CSS: &str = include_str!("assets/slide.css");
@@ -221,28 +223,23 @@ impl SlideGenerator {
         }
 
         if use_cropping {
-            // Crop the screenshot to the exact requested dimensions.
-            // This removes the extra padding and any chrome UI artifacts (grey bar).
             let crop_filter = format!("crop={}:{}:0:0", self.width, self.height);
-            let status = Command::new("ffmpeg")
-                .arg("-y")
-                .arg("-v")
-                .arg("error")
-                .arg("-i")
-                .arg(&capture_target)
-                .arg("-vf")
-                .arg(crop_filter)
-                .arg(image)
-                .status()
-                .with_context(|| "Failed to spawn ffmpeg for screenshot cropping")?;
+            run_ffmpeg_output(
+                &[
+                    "-y",
+                    "-v",
+                    "error",
+                    "-i",
+                    &capture_target.to_string_lossy(),
+                    "-vf",
+                    &crop_filter,
+                    &image.to_string_lossy(),
+                ],
+                "for screenshot cropping",
+            )?;
 
-            // Cleanup raw image
             if capture_target.exists() {
                 let _ = fs::remove_file(capture_target);
-            }
-
-            if !status.success() {
-                anyhow::bail!("ffmpeg cropping exited with status {:?}", status.code());
             }
         }
 
@@ -251,42 +248,27 @@ impl SlideGenerator {
 
     fn render_video(&self, image: &Path, video: &Path, duration_secs: f64) -> Result<()> {
         let duration = format!("{:.3}", duration_secs);
-        let status = Command::new("ffmpeg")
-            .arg("-y")
-            .arg("-loop")
-            .arg("1")
-            .arg("-i")
-            .arg(image)
-            .arg("-f")
-            .arg("lavfi")
-            .arg("-i")
-            .arg("anullsrc=r=48000:cl=stereo")
-            .arg("-shortest")
-            .arg("-t")
-            .arg(&duration)
-            // Normalize SAR to 1:1 for consistent concat with other video segments
-            .arg("-vf")
-            .arg("setsar=1")
-            .arg("-c:v")
-            .arg("libx264")
-            .arg("-preset")
-            .arg("medium")
-            .arg("-crf")
-            .arg("18")
-            .arg("-pix_fmt")
-            .arg("yuv420p")
-            .arg("-c:a")
-            .arg("aac")
-            .arg("-b:a")
-            .arg("192k")
-            .arg(video)
-            .status()
-            .with_context(|| "Failed to spawn ffmpeg for slide video generation")?;
-
-        if !status.success() {
-            anyhow::bail!("ffmpeg exited with status {:?}", status.code());
-        }
-
-        Ok(())
+        let mut args = vec![
+            "-y".to_string(),
+            "-loop".to_string(),
+            "1".to_string(),
+            "-i".to_string(),
+            image.to_string_lossy().into_owned(),
+            "-f".to_string(),
+            "lavfi".to_string(),
+            "-i".to_string(),
+            "anullsrc=r=48000:cl=stereo".to_string(),
+            "-shortest".to_string(),
+            "-t".to_string(),
+            duration,
+            "-vf".to_string(),
+            "setsar=1".to_string(),
+        ];
+        PROFILE_SLIDE_VIDEO.push_to(&mut args);
+        args.push(video.to_string_lossy().into_owned());
+        run_ffmpeg_output(
+            &args.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+            &format!("for slide video generation from {}", image.display()),
+        )
     }
 }

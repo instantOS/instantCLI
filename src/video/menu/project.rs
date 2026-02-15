@@ -318,12 +318,8 @@ async fn run_render_for_project(markdown_path: &Path) -> Result<()> {
         let project_dir = markdown_path.parent().unwrap_or_else(|| Path::new("."));
         let default_source = resolve_default_source_path(markdown_path, project_dir)?;
         loop {
-            let output_path = resolve_output_path(
-                out_file.as_ref(),
-                &default_source,
-                project_dir,
-                render_mode,
-            )?;
+            let output_path =
+                resolve_output_path(out_file.as_ref(), &default_source, project_dir, render_mode)?;
             if !output_path.exists() {
                 break;
             }
