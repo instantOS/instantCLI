@@ -12,6 +12,7 @@ use crate::video::cli::{AppendArgs, CheckArgs, RenderArgs};
 use crate::video::document::parse_video_document;
 use crate::video::pipeline::{check, convert};
 use crate::video::render;
+use crate::video::render::paths::resolve_output_path;
 
 use super::file_selection::{
     discover_video_file_suggestions, discover_video_suggestions, select_markdown_file,
@@ -317,10 +318,10 @@ async fn run_render_for_project(markdown_path: &Path) -> Result<()> {
         let markdown_dir = markdown_path.parent().unwrap_or_else(|| Path::new("."));
         let default_source = resolve_default_source_path(markdown_path, markdown_dir)?;
         loop {
-            let output_path = resolve_render_output_path(
+            let output_path = resolve_output_path(
                 out_file.as_ref(),
-                markdown_dir,
                 &default_source,
+                markdown_dir,
                 render_mode,
             )?;
             if !output_path.exists() {
@@ -563,35 +564,6 @@ fn resolve_default_source_path(markdown_path: &Path, markdown_dir: &Path) -> Res
     Ok(source_path)
 }
 
-fn resolve_render_output_path(
-    out_file: Option<&PathBuf>,
-    markdown_dir: &Path,
-    default_source: &Path,
-    render_mode: render::RenderMode,
-) -> Result<PathBuf> {
-    if let Some(provided) = out_file {
-        return Ok(if provided.is_absolute() {
-            provided.clone()
-        } else {
-            markdown_dir.join(provided)
-        });
-    }
-
-    let mut output = default_source.to_path_buf();
-    let stem = default_source
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .ok_or_else(|| {
-            anyhow!(
-                "Video path {} has no valid file name",
-                default_source.display()
-            )
-        })?;
-    let suffix = render_mode.output_suffix();
-    output.set_file_name(format!("{stem}{suffix}.mp4"));
-    Ok(output)
-}
-
 fn format_render_duration(duration: std::time::Duration) -> String {
     let total_secs = duration.as_secs();
     let hours = total_secs / 3600;
@@ -716,10 +688,10 @@ fn show_rendered_video_menu(output_path: &Path) -> Result<()> {
 fn rendered_entry_for_project(markdown_path: &Path) -> Option<ProjectMenuEntry> {
     let markdown_dir = markdown_path.parent().unwrap_or_else(|| Path::new("."));
     let default_source = resolve_default_source_path(markdown_path, markdown_dir).ok()?;
-    let output_path = resolve_render_output_path(
+    let output_path = resolve_output_path(
         None,
-        markdown_dir,
         &default_source,
+        markdown_dir,
         render::RenderMode::Standard,
     )
     .ok()?;

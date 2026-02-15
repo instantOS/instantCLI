@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 
 use super::SlideGenerator;
 use crate::video::cli::SlideArgs;
-use crate::video::document::frontmatter::strip_yaml_frontmatter;
+use crate::video::document::frontmatter::split_frontmatter;
 
 pub fn handle_slide(args: SlideArgs) -> Result<()> {
     let markdown_path = args.markdown.canonicalize().with_context(|| {
@@ -18,7 +18,7 @@ pub fn handle_slide(args: SlideArgs) -> Result<()> {
         .with_context(|| format!("Failed to read markdown file {}", markdown_path.display()))?;
 
     // Strip YAML frontmatter if present
-    let content = strip_yaml_frontmatter(&markdown_contents);
+    let (_, content, _) = split_frontmatter(&markdown_contents)?;
 
     // Determine output path
     let output_path = if let Some(out) = args.out_file {

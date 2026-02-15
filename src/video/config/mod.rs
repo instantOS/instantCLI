@@ -55,8 +55,7 @@ impl VideoDirectories {
             video_hash: video_hash.to_string(),
             project_dir,
             transcript_dir,
-            markdown_path: PathBuf::from("video.md"),
-            transcript_cache_file: PathBuf::from("transcript.srt"),
+            transcript_cache_path: PathBuf::new(),
         }
         .resolve()
     }
@@ -65,15 +64,13 @@ impl VideoDirectories {
 /// Paths for a single video project, keyed by video hash.
 ///
 /// Contains all file paths needed for video processing:
-/// - `project_dir/`: Contains `video.md` (editable transcript)
+/// - `project_dir/`: Project-specific data directory
 /// - `transcript_dir/`: Contains cached transcripts and processed audio
 pub struct VideoProjectPaths {
     video_hash: String,
     project_dir: PathBuf,
     transcript_dir: PathBuf,
-    /// Path to the markdown transcript file (video.md)
-    markdown_path: PathBuf,
-    transcript_cache_file: PathBuf,
+    transcript_cache_path: PathBuf,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -171,8 +168,7 @@ fn video_config_path() -> Result<PathBuf> {
 
 impl VideoProjectPaths {
     fn resolve(mut self) -> Self {
-        self.markdown_path = self.project_dir.join(self.markdown_path);
-        self.transcript_cache_file = self
+        self.transcript_cache_path = self
             .transcript_dir
             .join(format!("{}.json", self.video_hash));
         self
@@ -198,12 +194,8 @@ impl VideoProjectPaths {
         &self.transcript_dir
     }
 
-    pub fn markdown_path(&self) -> &Path {
-        &self.markdown_path
-    }
-
     pub fn transcript_cache_path(&self) -> &Path {
-        &self.transcript_cache_file
+        &self.transcript_cache_path
     }
 
     pub fn hashed_video_input(&self, extension: &str) -> PathBuf {

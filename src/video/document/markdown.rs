@@ -101,6 +101,26 @@ fn build_front_matter(metadata: &MarkdownMetadata<'_>) -> String {
     )
 }
 
+pub fn render_frontmatter(metadata: &crate::video::document::VideoMetadata) -> String {
+    let default_source = metadata.default_source.as_deref().unwrap_or("a");
+    let sources: Vec<MarkdownSource<'_>> = metadata
+        .sources
+        .iter()
+        .map(|s| MarkdownSource {
+            id: &s.id,
+            name: s.name.as_deref(),
+            video_hash: s.hash.as_deref().unwrap_or(""),
+            video_source: &s.source,
+            transcript_source: &s.transcript,
+        })
+        .collect();
+    let md = MarkdownMetadata {
+        sources: &sources,
+        default_source,
+    };
+    build_front_matter(&md)
+}
+
 fn yaml_quote(value: &str) -> String {
     if value.is_empty() {
         "''".to_string()

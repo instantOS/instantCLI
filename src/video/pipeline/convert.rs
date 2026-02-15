@@ -10,7 +10,9 @@ use crate::video::audio::{PreprocessorType, create_preprocessor, parse_preproces
 use crate::video::cli::{AppendArgs, ConvertArgs, TranscribeArgs};
 use crate::video::config::{VideoConfig, VideoDirectories, VideoProjectPaths};
 use crate::video::document::frontmatter::split_frontmatter;
-use crate::video::document::markdown::{MarkdownMetadata, MarkdownSource, build_markdown};
+use crate::video::document::markdown::{
+    MarkdownMetadata, MarkdownSource, build_markdown, format_timestamp, render_frontmatter,
+};
 use crate::video::document::{VideoMetadata, VideoSource, parse_video_document};
 use crate::video::support::transcript::{TranscriptCue, parse_whisper_json};
 use crate::video::support::utils::{canonicalize_existing, compute_file_hash};
@@ -49,12 +51,7 @@ pub async fn handle_convert(args: ConvertArgs) -> Result<()> {
     .await?;
 
     // Step 2: Generate markdown output
-    generate_markdown_output(
-        &video_path,
-        &video_hash,
-        &transcript_path,
-        &output_path,
-    )?;
+    generate_markdown_output(&video_path, &video_hash, &transcript_path, &output_path)?;
 
     emit(
         Level::Success,
@@ -245,7 +242,7 @@ fn build_appended_markdown(
     new_body.push_str(&appended_text);
     new_body.push('\n');
 
-    let front = build_front_matter_from_metadata(metadata);
+    let front = render_frontmatter(metadata);
     Ok(format!("{front}\n{new_body}"))
 }
 
@@ -507,43 +504,6 @@ fn build_source_markdown(
     lines.join("\n")
 }
 
-fn build_front_matter_from_metadata(metadata: &crate::video::document::VideoMetadata) -> String {
-    let timestamp = chrono::Utc::now().to_rfc3339();
-    let default_source = metadata
-        .default_source
-        .as_ref()
-        .cloned()
-        .unwrap_or_else(|| "a".to_string());
-    let mut source_lines = Vec::new();
-    for source in &metadata.sources {
-        let source_id = yaml_quote(&source.id);
-        let video_source = yaml_quote(&source.source.to_string_lossy());
-        let transcript_source = yaml_quote(&source.transcript.to_string_lossy());
-        let video_hash = yaml_quote(source.hash.as_deref().unwrap_or(""));
-        let name = yaml_quote(source.name.as_deref().unwrap_or(""));
-        source_lines.push(format!(
-            "- id: {source_id}\n  hash: {video_hash}\n  name: {name}\n  source: {video_source}\n  transcript: {transcript_source}"
-        ));
-    }
-    if source_lines.is_empty() {
-        return format!(
-            "---\ndefault_source: {default_source}\nsources: []\ngenerated_at: '{timestamp}'\n---",
-            default_source = yaml_quote(&default_source),
-        );
-    }
-
-    let sources_block = source_lines.join("\n");
-    format!(
-        "---\ndefault_source: {default_source}\nsources:\n{sources}\ngenerated_at: '{timestamp}'\n---",
-        default_source = yaml_quote(&default_source),
-        sources = sources_block,
-    )
-}
-
-fn format_timestamp(duration: std::time::Duration) -> String {
-    crate::video::document::markdown::format_timestamp(duration)
-}
-
 fn copy_transcript(src: &Path, dest: &Path) -> Result<()> {
     if src == dest {
         return Ok(());
@@ -581,12 +541,3 @@ fn determine_output_path(output: Option<PathBuf>, video_path: &Path) -> Result<P
         }
     }
 }
-
-fn yaml_quote(value: &str) -> String {
-    if value.is_empty() {
-        "''".to_string()
-    } else {
-        format!("'{}'", value.replace('\'', "''"))
-    }
-}
-

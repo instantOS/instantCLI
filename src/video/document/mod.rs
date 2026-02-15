@@ -41,7 +41,7 @@ pub enum DocumentBlock {
     Heading(HeadingBlock),
     Separator,
     Unhandled(UnhandledBlock),
-    Music(MusicBlock),
+    Music(MusicDirective),
     Broll(BrollBlock),
 }
 
@@ -81,12 +81,6 @@ pub struct BrollBlock {
 pub enum MusicDirective {
     None,
     Source(String),
-}
-
-//TODO: why does this and MusicDirective exist, if this has just one field
-#[derive(Debug)]
-pub struct MusicBlock {
-    pub directive: MusicDirective,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -359,8 +353,7 @@ impl<'a> BodyParserState<'a> {
         if let Some(state) = self.code_block.take() {
             let line = self.base_line_offset + state.start_line;
             let directive = state.into_music_directive(line)?;
-            self.blocks
-                .push(DocumentBlock::Music(MusicBlock { directive }));
+            self.blocks.push(DocumentBlock::Music(directive));
         }
         Ok(())
     }
@@ -1047,7 +1040,7 @@ mod tests {
 
         assert_eq!(document.blocks.len(), 1);
         match &document.blocks[0] {
-            DocumentBlock::Music(block) => match &block.directive {
+            DocumentBlock::Music(directive) => match directive {
                 MusicDirective::Source(value) => assert_eq!(value, "background.mp3"),
                 other => panic!("Expected music source directive, got {:?}", other),
             },

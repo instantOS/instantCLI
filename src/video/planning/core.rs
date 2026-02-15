@@ -163,9 +163,9 @@ impl TimelinePlanner {
         self.in_separator_region = true;
     }
 
-    fn handle_music(&mut self, music: &crate::video::document::MusicBlock) {
+    fn handle_music(&mut self, music: &crate::video::document::MusicDirective) {
         self.items.push(TimelinePlanItem::Music(MusicPlan {
-            directive: music.directive.clone(),
+            directive: music.clone(),
         }));
         // Music blocks don't exit separator region
     }

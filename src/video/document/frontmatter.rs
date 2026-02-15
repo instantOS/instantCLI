@@ -1,45 +1,5 @@
 use anyhow::{Result, anyhow};
 
-/// Strips YAML frontmatter from content and returns the body content.
-///
-/// This function handles the common pattern of YAML frontmatter surrounded by `---` delimiters.
-/// It returns the content after the frontmatter, or the original content if no frontmatter is found.
-///
-/// # Arguments
-/// * `content` - The markdown content to process
-///
-/// # Returns
-/// * `&str` - The content with frontmatter removed
-pub fn strip_yaml_frontmatter(content: &str) -> &str {
-    if !(content.starts_with("---\n") || content.starts_with("---\r\n")) {
-        return content;
-    }
-
-    let first_newline = match content.find('\n') {
-        Some(n) => n,
-        None => return content,
-    };
-
-    let mut cursor = first_newline + 1;
-
-    while cursor < content.len() {
-        let next_newline = content[cursor..].find('\n');
-        let line_end = match next_newline {
-            Some(offset) => cursor + offset + 1,
-            None => content.len(),
-        };
-        let line = &content[cursor..line_end];
-
-        if line.trim_end_matches(['\r', '\n']) == "---" {
-            return &content[line_end..];
-        }
-
-        cursor = line_end;
-    }
-
-    content
-}
-
 /// Splits content into frontmatter and body components.
 ///
 /// This is a more comprehensive version that returns both the frontmatter content
@@ -87,42 +47,6 @@ pub fn split_frontmatter(content: &str) -> Result<(Option<&str>, &str, usize)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_strip_frontmatter_with_content() {
-        let content = "---\ntitle: Test\n---\n# Hello World\nThis is content.";
-        let result = strip_yaml_frontmatter(content);
-        assert_eq!(result, "# Hello World\nThis is content.");
-    }
-
-    #[test]
-    fn test_strip_frontmatter_without_frontmatter() {
-        let content = "# Hello World\nThis is content.";
-        let result = strip_yaml_frontmatter(content);
-        assert_eq!(result, "# Hello World\nThis is content.");
-    }
-
-    #[test]
-    fn test_strip_frontmatter_empty() {
-        let content = "";
-        let result = strip_yaml_frontmatter(content);
-        assert_eq!(result, "");
-    }
-
-    #[test]
-    fn test_strip_frontmatter_with_crlf() {
-        let content = "---\r\ntitle: Test\r\n---\r\n# Hello World";
-        let result = strip_yaml_frontmatter(content);
-        assert_eq!(result, "# Hello World");
-    }
-
-    #[test]
-    fn test_strip_frontmatter_malformed_no_end() {
-        let content = "---\ntitle: Test\n# Hello World";
-        let result = strip_yaml_frontmatter(content);
-        // When malformed, return the original content
-        assert_eq!(result, "---\ntitle: Test\n# Hello World");
-    }
 
     #[test]
     fn test_split_frontmatter_with_content() {
