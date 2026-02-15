@@ -54,7 +54,6 @@ pub async fn handle_convert(args: ConvertArgs) -> Result<()> {
         &video_hash,
         &transcript_path,
         &output_path,
-        &project_paths,
     )?;
 
     emit(
@@ -400,7 +399,6 @@ fn generate_markdown_output(
     video_hash: &str,
     transcript_path: &Path,
     output_path: &Path,
-    project_paths: &VideoProjectPaths,
 ) -> Result<()> {
     let markdown_dir = output_path.parent().unwrap_or_else(|| Path::new("."));
     let subtitle_dir = markdown_dir.join("insvideodata");
@@ -452,14 +450,6 @@ fn generate_markdown_output(
 
     fs::write(output_path, markdown.as_bytes())
         .with_context(|| format!("Failed to write markdown file to {}", output_path.display()))?;
-
-    write_metadata_file(
-        project_paths,
-        video_hash,
-        video_path,
-        &subtitle_output_path,
-        output_path,
-    )?;
 
     emit(
         Level::Info,
@@ -592,31 +582,6 @@ fn determine_output_path(output: Option<PathBuf>, video_path: &Path) -> Result<P
     }
 }
 
-fn write_metadata_file(
-    project_paths: &VideoProjectPaths,
-    video_hash: &str,
-    video_path: &Path,
-    transcript_path: &Path,
-    markdown_path: &Path,
-) -> Result<()> {
-    let timestamp = chrono::Utc::now().to_rfc3339();
-    let contents = format!(
-        "video_hash: {hash}\nvideo_source: {video}\ntranscript_source: {transcript}\nmarkdown: {markdown}\nupdated_at: '{timestamp}'\n",
-        hash = yaml_quote(video_hash),
-        video = yaml_quote(&video_path.to_string_lossy()),
-        transcript = yaml_quote(&transcript_path.to_string_lossy()),
-        markdown = yaml_quote(&markdown_path.to_string_lossy()),
-    );
-
-    fs::write(project_paths.metadata_path(), contents).with_context(|| {
-        format!(
-            "Failed to write metadata file to {}",
-            project_paths.metadata_path().display()
-        )
-    })?;
-    Ok(())
-}
-
 fn yaml_quote(value: &str) -> String {
     if value.is_empty() {
         "''".to_string()
@@ -624,3 +589,4 @@ fn yaml_quote(value: &str) -> String {
         format!("'{}'", value.replace('\'', "''"))
     }
 }
+

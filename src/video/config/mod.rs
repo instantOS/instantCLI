@@ -11,6 +11,10 @@ use crate::documented_config;
 
 pub use super::audio::PreprocessorType;
 
+/// Data directories for video projects.
+///
+/// - `data_root`: Stores project files (markdown, metadata)
+/// - `cache_root`: Stores transient files (transcripts, processed audio)
 pub struct VideoDirectories {
     data_root: PathBuf,
     cache_root: PathBuf,
@@ -52,19 +56,23 @@ impl VideoDirectories {
             project_dir,
             transcript_dir,
             markdown_path: PathBuf::from("video.md"),
-            metadata_path: PathBuf::from("metadata.yaml"),
             transcript_cache_file: PathBuf::from("transcript.srt"),
         }
         .resolve()
     }
 }
 
+/// Paths for a single video project, keyed by video hash.
+///
+/// Contains all file paths needed for video processing:
+/// - `project_dir/`: Contains `video.md` (editable transcript)
+/// - `transcript_dir/`: Contains cached transcripts and processed audio
 pub struct VideoProjectPaths {
     video_hash: String,
     project_dir: PathBuf,
     transcript_dir: PathBuf,
+    /// Path to the markdown transcript file (video.md)
     markdown_path: PathBuf,
-    metadata_path: PathBuf,
     transcript_cache_file: PathBuf,
 }
 
@@ -164,7 +172,6 @@ fn video_config_path() -> Result<PathBuf> {
 impl VideoProjectPaths {
     fn resolve(mut self) -> Self {
         self.markdown_path = self.project_dir.join(self.markdown_path);
-        self.metadata_path = self.project_dir.join(self.metadata_path);
         self.transcript_cache_file = self
             .transcript_dir
             .join(format!("{}.json", self.video_hash));
@@ -193,10 +200,6 @@ impl VideoProjectPaths {
 
     pub fn markdown_path(&self) -> &Path {
         &self.markdown_path
-    }
-
-    pub fn metadata_path(&self) -> &Path {
-        &self.metadata_path
     }
 
     pub fn transcript_cache_path(&self) -> &Path {
