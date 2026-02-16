@@ -121,7 +121,7 @@ pub fn set_mouse_speed(value: i64) -> Result<()> {
     Ok(())
 }
 
-fn get_sway_mouse_speed() -> Result<f64> {
+pub fn get_sway_mouse_speed() -> Result<f64> {
     let output = Command::new("swaymsg")
         .arg("-t")
         .arg("get_inputs")
@@ -184,7 +184,7 @@ fn get_x11_mouse_devices() -> Result<Vec<String>> {
     Ok(mouse_devices)
 }
 
-fn get_x11_mouse_speed() -> Result<f64> {
+pub fn get_x11_mouse_speed() -> Result<f64> {
     let devices = get_x11_mouse_devices()?;
 
     if let Some(first_device) = devices.first() {
@@ -231,7 +231,7 @@ fn set_x11_mouse_speed(speed: f64) -> Result<()> {
     Ok(())
 }
 
-fn get_gnome_mouse_speed() -> Result<f64> {
+pub fn get_gnome_mouse_speed() -> Result<f64> {
     let output = Command::new("gsettings")
         .args(["get", "org.gnome.desktop.peripherals.touchpad", "speed"])
         .output()
