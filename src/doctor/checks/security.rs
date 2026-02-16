@@ -253,6 +253,70 @@ async fn is_command_available(cmd: &str) -> bool {
         .unwrap_or(false)
 }
 
+#[derive(Default)]
+pub struct SshAuthSockCheck;
+
+#[async_trait]
+impl DoctorCheck for SshAuthSockCheck {
+    fn name(&self) -> &'static str {
+        "SSH Agent Socket"
+    }
+
+    fn id(&self) -> &'static str {
+        "ssh-auth-sock"
+    }
+
+    fn check_privilege_level(&self) -> PrivilegeLevel {
+        PrivilegeLevel::User
+    }
+
+    fn fix_privilege_level(&self) -> PrivilegeLevel {
+        PrivilegeLevel::User
+    }
+
+    async fn execute(&self) -> CheckStatus {
+        let xdg_runtime_dir = match std::env::var("XDG_RUNTIME_DIR") {
+            Ok(dir) => dir,
+            Err(_) => return CheckStatus::Skipped("XDG_RUNTIME_DIR not set".to_string()),
+        };
+
+        let socket_path = format!("{}/ssh-agent.socket", xdg_runtime_dir);
+
+        // Skip if the socket doesn't exist
+        if !std::path::Path::new(&socket_path).exists() {
+            return CheckStatus::Skipped("SSH agent socket not found".to_string());
+        }
+
+        // Socket exists — verify SSH_AUTH_SOCK points to it
+        match std::env::var("SSH_AUTH_SOCK") {
+            Ok(val) if val == socket_path => {
+                CheckStatus::Pass("SSH_AUTH_SOCK is correctly set".to_string())
+            }
+            Ok(val) => CheckStatus::Fail {
+                message: format!(
+                    "SSH_AUTH_SOCK is '{}' but should be '{}'",
+                    val, socket_path
+                ),
+                fixable: false,
+            },
+            Err(_) => CheckStatus::Fail {
+                message: format!(
+                    "SSH_AUTH_SOCK is not set (should be '{}')",
+                    socket_path
+                ),
+                fixable: false,
+            },
+        }
+    }
+
+    fn fix_message(&self) -> Option<String> {
+        Some(
+            "Add `export SSH_AUTH_SOCK=\"$XDG_RUNTIME_DIR/ssh-agent.socket\"` to your shell profile."
+                .to_string(),
+        )
+    }
+}
+
 async fn get_faillock_deny_limit() -> Option<usize> {
     use tokio::io::AsyncReadExt;
 

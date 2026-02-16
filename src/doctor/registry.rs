@@ -34,6 +34,7 @@ impl CheckRegistry {
         registry.register::<GitConfigCheck>("git-config");
         registry.register::<ShellCompletionCheck>("shell-completions");
         registry.register::<PipewireSessionManagerCheck>("pipewire-session-manager");
+        registry.register::<SshAuthSockCheck>("ssh-auth-sock");
 
         registry
     }
