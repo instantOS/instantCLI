@@ -7,7 +7,7 @@ use serde::Deserialize;
 
 use crate::preview::helpers::{push_raw_lines, truncate_label};
 use crate::settings::definitions::keyboard::{
-    current_vconsole_keymap, current_x11_layout, current_x11_layouts,
+    current_gnome_layouts, current_vconsole_keymap, current_x11_layout, current_x11_layouts,
 };
 use crate::ui::prelude::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -21,6 +21,8 @@ pub(crate) fn render_keyboard_layout_preview() -> Result<String> {
 
     let lines = if is_sway_session() {
         sway_keyboard_lines()
+    } else if is_gnome_session() {
+        gnome_keyboard_lines()
     } else if is_x11_session() {
         x11_keyboard_lines()
     } else {
@@ -34,7 +36,7 @@ pub(crate) fn render_keyboard_layout_preview() -> Result<String> {
         .blank()
         .text("Info")
         .text("Sway can have multiple layouts per keyboard.")
-        .text("Applies via swaymsg (Sway) or setxkbmap (X11).")
+        .text("Applies via swaymsg (Sway), gsettings (GNOME), or setxkbmap (X11).")
         .text("Saved value is reapplied on login.");
 
     Ok(builder.build_string())
@@ -101,8 +103,31 @@ fn is_sway_session() -> bool {
     std::env::var_os("SWAYSOCK").is_some() && which::which("swaymsg").is_ok()
 }
 
+fn is_gnome_session() -> bool {
+    std::env::var("XDG_CURRENT_DESKTOP")
+        .map(|s| s.to_lowercase().contains("gnome"))
+        .unwrap_or(false)
+        || std::env::var("DESKTOP_SESSION")
+            .map(|s| s.to_lowercase().contains("gnome"))
+            .unwrap_or(false)
+}
+
 fn is_x11_session() -> bool {
     std::env::var_os("DISPLAY").is_some() && which::which("setxkbmap").is_ok()
+}
+
+fn gnome_keyboard_lines() -> Vec<String> {
+    let layouts = current_gnome_layouts().unwrap_or_default();
+    let layout = layouts
+        .first()
+        .cloned()
+        .unwrap_or_else(|| "Not detected".to_string());
+
+    let mut lines = vec!["Session: GNOME".to_string(), format!("Layout: {layout}")];
+    if layouts.len() > 1 {
+        lines.push(format!("Layouts: {}", layouts.join(", ")));
+    }
+    lines
 }
 
 fn sway_keyboard_lines() -> Vec<String> {
