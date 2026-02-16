@@ -3,8 +3,8 @@ use super::{chord, slide};
 use crate::menu_utils::{FilePickerResult, FilePickerScope, FzfWrapper, MenuWrapper};
 use anyhow::Result;
 use std::sync::{
-    Arc,
     atomic::{AtomicBool, AtomicU64, Ordering},
+    Arc,
 };
 
 /// Handles processing of different menu request types
@@ -43,6 +43,7 @@ impl RequestProcessor {
                 multi,
             } => self.handle_file_picker_request(start, scope, multi),
             MenuRequest::Slide(request) => self.handle_slider_request(request),
+            MenuRequest::Message { title, message } => self.handle_message_request(title, message),
             MenuRequest::Status => Ok(self.get_status_info()),
             MenuRequest::Stop => self.handle_stop_request(),
             MenuRequest::Show => Ok(MenuResponse::ShowResult),
@@ -91,6 +92,20 @@ impl RequestProcessor {
             Ok(result) => Ok(MenuResponse::ConfirmResult(result.into())),
             Err(e) => Ok(MenuResponse::Error(format!(
                 "Failed to show confirm dialog: {e}"
+            ))),
+        }
+    }
+
+    /// Handle message dialog request
+    fn handle_message_request(&self, title: String, message: String) -> Result<MenuResponse> {
+        match FzfWrapper::builder()
+            .title(title)
+            .message(&message)
+            .message_dialog()
+        {
+            Ok(()) => Ok(MenuResponse::MessageResult),
+            Err(e) => Ok(MenuResponse::Error(format!(
+                "Failed to show message dialog: {e}"
             ))),
         }
     }

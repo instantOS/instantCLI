@@ -234,6 +234,16 @@ impl MenuClient {
         }
     }
 
+    /// Show message dialog via server
+    pub fn message(&self, title: String, message: String) -> Result<()> {
+        match self.send_request(MenuRequest::Message { title, message })? {
+            MenuResponse::MessageResult => Ok(()),
+            MenuResponse::Error(error) => anyhow::bail!("Server error: {}", error),
+            MenuResponse::Cancelled => Ok(()),
+            _ => anyhow::bail!("Unexpected response type for message request"),
+        }
+    }
+
     /// Show choice dialog via server
     pub fn choice(
         &self,

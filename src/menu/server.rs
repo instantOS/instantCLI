@@ -262,6 +262,7 @@ impl MenuServer {
                 | MenuRequest::Password { .. }
                 | MenuRequest::FilePicker { .. }
                 | MenuRequest::Slide(_)
+                | MenuRequest::Message { .. }
         );
 
         if should_manage_scratchpad
