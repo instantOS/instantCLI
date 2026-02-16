@@ -3,13 +3,14 @@ use duct::cmd;
 use std::fs;
 use std::path::Path;
 
-use crate::ui::prelude::{Level, emit};
+use crate::ui::prelude::{emit, Level};
 
 use crate::video::cli::TranscribeArgs;
 use crate::video::config::VideoDirectories;
 use crate::video::support::utils::{
     canonicalize_existing, compute_file_hash, extension_or_default,
 };
+use crate::video::support::WHISPERX_UVX_ARGS;
 
 pub fn handle_transcribe(args: TranscribeArgs) -> Result<()> {
     let video_path = canonicalize_existing(&args.video)?;
@@ -116,7 +117,11 @@ fn run_whisperx(hashed_video: &Path, output_dir: &Path, args: &TranscribeArgs) -
         whisper_args.push(model);
     }
 
-    cmd("uvx", &whisper_args)
+    // Combine uvx base args with whisperx-specific args
+    let mut full_args: Vec<&str> = WHISPERX_UVX_ARGS.to_vec();
+    full_args.extend(whisper_args);
+
+    cmd("uvx", &full_args)
         .run()
         .with_context(|| format!("Failed to run WhisperX for {}", hashed_video))?;
 
