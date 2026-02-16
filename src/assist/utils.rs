@@ -3,8 +3,57 @@ use anyhow::{Context, Result};
 use std::io::Write;
 use std::process::{Command, ExitStatus};
 
+use crate::common::compositor::CompositorType;
 use crate::common::display_server::DisplayServer;
 use crate::common::shell::shell_quote;
+
+/// Check if the current compositor supports area selection tools (like slurp)
+/// Returns None if supported, or Some(error_message) if not supported
+pub fn check_area_selection_support() -> Option<String> {
+    let compositor = CompositorType::detect();
+    let display_server = DisplayServer::detect();
+
+    if display_server.is_wayland() {
+        match compositor {
+            CompositorType::Gnome | CompositorType::KWin => {
+                let name = compositor.name();
+                return Some(format!(
+                    "Area selection is not supported on {} Wayland. \
+                    This feature requires 'slurp', which only works on wlroots-based compositors like Sway. \
+                    Try fullscreen recording instead: run 'ins assist v' or 'ins assist vw'.",
+                    name
+                ));
+            }
+            _ => {}
+        }
+    }
+
+    None
+}
+
+/// Check if the current compositor supports screen recording tools (like wf-recorder)
+/// Returns None if supported, or Some(error_message) if not supported
+pub fn check_screen_recording_support() -> Option<String> {
+    let compositor = CompositorType::detect();
+    let display_server = DisplayServer::detect();
+
+    if display_server.is_wayland() {
+        match compositor {
+            CompositorType::Gnome | CompositorType::KWin => {
+                let name = compositor.name();
+                return Some(format!(
+                    "Screen recording is not supported on {} Wayland. \
+                    The recording tool 'wf-recorder' requires wlroots protocols which {} does not support. \
+                    Consider using a different recording solution like the built-in screenshot tool or a browser-based recorder.",
+                    name, name
+                ));
+            }
+            _ => {}
+        }
+    }
+
+    None
+}
 
 /// Launch a command in a detached terminal window
 ///
@@ -308,7 +357,13 @@ impl AreaSelectionConfig {
     /// Returns geometry string that can be used with screenshot tools
     pub fn select_area(&self) -> Result<String> {
         match self.display_server {
-            DisplayServer::Wayland => self.select_area_wayland(),
+            DisplayServer::Wayland => {
+                // Check for unsupported Wayland compositors
+                if let Some(err_msg) = check_area_selection_support() {
+                    anyhow::bail!("{}", err_msg);
+                }
+                self.select_area_wayland()
+            }
             DisplayServer::X11 => self.select_area_x11(),
             _ => anyhow::bail!("Unsupported display server for area selection"),
         }

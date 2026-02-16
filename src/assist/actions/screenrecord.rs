@@ -722,6 +722,11 @@ fn start_recording_impl(geometry: Option<&str>, format: RecordingFormat) -> Resu
 
     let config = AreaSelectionConfig::new();
     let pid = if config.display_server().is_wayland() {
+        // Check for unsupported Wayland compositors
+        use crate::assist::utils::check_screen_recording_support;
+        if let Some(err_msg) = check_screen_recording_support() {
+            anyhow::bail!("{}", err_msg);
+        }
         let wf_args = build_wf_recorder_args(
             geometry,
             format,
