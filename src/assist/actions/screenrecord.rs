@@ -724,8 +724,9 @@ fn start_recording_impl(geometry: Option<&str>, format: RecordingFormat) -> Resu
     let pid = if config.display_server().is_wayland() {
         // Check for unsupported Wayland compositors
         use crate::assist::utils::check_screen_recording_support;
-        if let Some(err_msg) = check_screen_recording_support() {
-            anyhow::bail!("{}", err_msg);
+        if !check_screen_recording_support() {
+            // Error already shown via menu, just return a quiet error
+            anyhow::bail!("Screen recording not supported on this compositor");
         }
         let wf_args = build_wf_recorder_args(
             geometry,

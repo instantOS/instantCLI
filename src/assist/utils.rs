@@ -8,8 +8,8 @@ use crate::common::display_server::DisplayServer;
 use crate::common::shell::shell_quote;
 
 /// Check if the current compositor supports area selection tools (like slurp)
-/// Returns None if supported, or Some(error_message) if not supported
-pub fn check_area_selection_support() -> Option<String> {
+/// Shows a message dialog if not supported and returns false
+pub fn check_area_selection_support() -> bool {
     let compositor = CompositorType::detect();
     let display_server = DisplayServer::detect();
 
@@ -17,23 +17,27 @@ pub fn check_area_selection_support() -> Option<String> {
         match compositor {
             CompositorType::Gnome | CompositorType::KWin => {
                 let name = compositor.name();
-                return Some(format!(
+                let message = format!(
                     "Area selection is not supported on {} Wayland. \
                     This feature requires 'slurp', which only works on wlroots-based compositors like Sway. \
                     Try fullscreen recording instead: run 'ins assist v' or 'ins assist vw'.",
                     name
-                ));
+                );
+                // Show error via menu server
+                let client = crate::menu::client::MenuClient::new();
+                let _ = client.message("Feature Not Available".to_string(), message);
+                return false;
             }
             _ => {}
         }
     }
 
-    None
+    true
 }
 
 /// Check if the current compositor supports screen recording tools (like wf-recorder)
-/// Returns None if supported, or Some(error_message) if not supported
-pub fn check_screen_recording_support() -> Option<String> {
+/// Shows a message dialog if not supported and returns false
+pub fn check_screen_recording_support() -> bool {
     let compositor = CompositorType::detect();
     let display_server = DisplayServer::detect();
 
@@ -41,18 +45,22 @@ pub fn check_screen_recording_support() -> Option<String> {
         match compositor {
             CompositorType::Gnome | CompositorType::KWin => {
                 let name = compositor.name();
-                return Some(format!(
+                let message = format!(
                     "Screen recording is not supported on {} Wayland. \
                     The recording tool 'wf-recorder' requires wlroots protocols which {} does not support. \
                     Consider using a different recording solution like the built-in screenshot tool or a browser-based recorder.",
                     name, name
-                ));
+                );
+                // Show error via menu server
+                let client = crate::menu::client::MenuClient::new();
+                let _ = client.message("Feature Not Available".to_string(), message);
+                return false;
             }
             _ => {}
         }
     }
 
-    None
+    true
 }
 
 /// Launch a command in a detached terminal window
@@ -359,8 +367,9 @@ impl AreaSelectionConfig {
         match self.display_server {
             DisplayServer::Wayland => {
                 // Check for unsupported Wayland compositors
-                if let Some(err_msg) = check_area_selection_support() {
-                    anyhow::bail!("{}", err_msg);
+                if !check_area_selection_support() {
+                    // Error already shown via menu, just return a quiet error
+                    anyhow::bail!("Area selection not supported on this compositor");
                 }
                 self.select_area_wayland()
             }
