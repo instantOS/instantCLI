@@ -246,12 +246,8 @@ pub fn fetch_and_fast_forward(repo: &mut Repository) -> Result<()> {
     repo.set_head(&format!("refs/heads/{branch_name}"))
         .context("Failed to set HEAD")?;
 
-    repo.reset(
-        &upstream_commit.into_object(),
-        git2::ResetType::Hard,
-        None,
-    )
-    .context("Failed to fast-forward to upstream commit")?;
+    repo.reset(&upstream_commit.into_object(), git2::ResetType::Hard, None)
+        .context("Failed to fast-forward to upstream commit")?;
 
     Ok(())
 }

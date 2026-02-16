@@ -293,17 +293,11 @@ impl DoctorCheck for SshAuthSockCheck {
                 CheckStatus::Pass("SSH_AUTH_SOCK is correctly set".to_string())
             }
             Ok(val) => CheckStatus::Fail {
-                message: format!(
-                    "SSH_AUTH_SOCK is '{}' but should be '{}'",
-                    val, socket_path
-                ),
+                message: format!("SSH_AUTH_SOCK is '{}' but should be '{}'", val, socket_path),
                 fixable: false,
             },
             Err(_) => CheckStatus::Fail {
-                message: format!(
-                    "SSH_AUTH_SOCK is not set (should be '{}')",
-                    socket_path
-                ),
+                message: format!("SSH_AUTH_SOCK is not set (should be '{}')", socket_path),
                 fixable: false,
             },
         }
