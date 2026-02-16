@@ -182,6 +182,80 @@ pub fn clean_and_pull(repo: &mut Repository) -> Result<()> {
     Ok(())
 }
 
+/// Fetch and fast-forward: a non-destructive update that preserves local changes.
+/// If the working directory has modifications or the branches have diverged,
+/// the update is skipped with a warning instead of discarding local work.
+pub fn fetch_and_fast_forward(repo: &mut Repository) -> Result<()> {
+    let branch_name = current_branch(repo)?;
+
+    // Check if upstream exists
+    let has_upstream = {
+        let local_branch = repo.find_branch(&branch_name, git2::BranchType::Local)?;
+        local_branch.upstream().is_ok()
+    };
+
+    if !has_upstream {
+        return Ok(());
+    }
+
+    // Fetch latest
+    fetch_branch(repo, &branch_name)?;
+
+    // Re-query after fetch
+    let local_branch = repo.find_branch(&branch_name, git2::BranchType::Local)?;
+    let upstream = local_branch
+        .upstream()
+        .context("Upstream branch not found")?;
+
+    let local_commit = local_branch.get().peel_to_commit()?;
+    let upstream_commit = upstream.get().peel_to_commit()?;
+
+    if local_commit.id() == upstream_commit.id() {
+        // Already up to date
+        return Ok(());
+    }
+
+    let (ahead, behind) = repo.graph_ahead_behind(local_commit.id(), upstream_commit.id())?;
+
+    if ahead > 0 && behind > 0 {
+        anyhow::bail!(
+            "Local branch '{}' has diverged from upstream ({} ahead, {} behind). \
+             Resolve manually or mark the repository as read-only to force-update.",
+            branch_name,
+            ahead,
+            behind,
+        );
+    }
+
+    if ahead > 0 {
+        // Local is ahead of upstream — nothing to pull
+        return Ok(());
+    }
+
+    // Behind only — safe to fast-forward, but check for dirty working tree first
+    let is_dirty = !repo.statuses(None)?.is_empty();
+    if is_dirty {
+        anyhow::bail!(
+            "Working directory has local changes. \
+             Commit or stash them before updating, \
+             or mark the repository as read-only to force-update."
+        );
+    }
+
+    // Fast-forward: move the branch ref to the upstream commit
+    repo.set_head(&format!("refs/heads/{branch_name}"))
+        .context("Failed to set HEAD")?;
+
+    repo.reset(
+        &upstream_commit.into_object(),
+        git2::ResetType::Hard,
+        None,
+    )
+    .context("Failed to fast-forward to upstream commit")?;
+
+    Ok(())
+}
+
 /// Detailed repository status information
 #[derive(Debug, Clone)]
 pub struct RepoStatus {

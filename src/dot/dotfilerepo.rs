@@ -233,6 +233,13 @@ impl DotfileRepo {
     pub fn update(&self, cfg: &DotfileConfig, debug: bool) -> Result<()> {
         let target = self.local_path(cfg)?;
 
+        let is_read_only = cfg
+            .repos
+            .iter()
+            .find(|r| r.name == self.name)
+            .map(|r| r.read_only)
+            .unwrap_or(false);
+
         // If branch is specified, ensure we're on that branch
         if let Some(branch) = &self.branch {
             self.switch_branch(cfg, branch, debug)?;
@@ -243,7 +250,13 @@ impl DotfileRepo {
 
         let mut repo =
             Repository::open(&target).context("Failed to open git repository for pull")?;
-        git::clean_and_pull(&mut repo).context("Failed to pull latest changes")?;
+
+        if is_read_only {
+            git::clean_and_pull(&mut repo).context("Failed to pull latest changes")?;
+        } else {
+            git::fetch_and_fast_forward(&mut repo)
+                .context("Failed to fast-forward to latest changes")?;
+        }
 
         common::progress::finish_spinner_with_success(pb, format!("Updated {}", self.name));
 
