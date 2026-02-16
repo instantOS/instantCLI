@@ -164,6 +164,13 @@ pub const ASSISTS: &[AssistEntry] = &[
         ],
         execute: actions::color_picker::pick_color,
     }),
+    AssistEntry::Action(AssistAction {
+        key: 'o',
+        description: "Settings: Open instantOS settings manager",
+        icon: NerdFont::SettingsGear,
+        dependencies: &[],
+        execute: actions::settings::open_settings,
+    }),
     AssistEntry::Group(AssistGroup {
         key: 's',
         description: "Screenshot: Screenshot and annotation tools",
@@ -620,6 +627,16 @@ mod tests {
         assert_eq!(
             action.unwrap().description,
             "Freeze Area: Screenshot region displayed at exact position (Sway)"
+        );
+    }
+
+    #[test]
+    fn test_find_settings_action() {
+        let action = find_action("o");
+        assert!(action.is_some());
+        assert_eq!(
+            action.unwrap().description,
+            "Settings: Open instantOS settings manager"
         );
     }
 }
