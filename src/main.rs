@@ -41,9 +41,8 @@ fn handle_error(context: &str, error: &anyhow::Error) -> String {
 
 /// Helper function to execute a fallible operation with consistent error handling
 fn execute_with_error_handling<T>(operation: Result<T>, error_context: &str) -> Result<T> {
-    operation.map_err(|e| {
-        eprintln!("{}", handle_error(error_context, &e));
-        e
+    operation.inspect_err(|e| {
+        eprintln!("{}", handle_error(error_context, e));
     })
 }
 

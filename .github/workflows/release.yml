@@ -98,8 +98,10 @@ jobs:
             artifacts/ins-${{ steps.vars.outputs.version }}-x86_64.AppImage
             artifacts/ins-${{ steps.vars.outputs.version }}-x86_64.AppImage.sha256
   cross-compile:
-    name: Cross-compile for ARM targets
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    name: Cross-compile for ARM and musl targets
+    runs-on: self-hosted
+    container:
+      image: ubuntu:24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -128,13 +130,27 @@ jobs:
           target: armv7-unknown-linux-gnueabihf
           args: "--locked --release --features cross-compile"
           strip: true
+      - name: Cross compile for x86_64 musl
+        uses: houseabsolute/actions-rust-cross@v1
+        with:
+          command: build
+          target: x86_64-unknown-linux-musl
+          args: "--locked --release --features cross-compile"
+          strip: true
+      - name: Cross compile for aarch64 musl
+        uses: houseabsolute/actions-rust-cross@v1
+        with:
+          command: build
+          target: aarch64-unknown-linux-musl
+          args: "--locked --release --features cross-compile"
+          strip: true
       - name: Install cargo-ndk
         run: cargo install cargo-ndk
       - name: Add Android target
         run: rustup target add aarch64-linux-android
       - name: Build for Android
         run: cargo ndk -t aarch64-linux-android build --release --locked --features cross-compile
-      - name: Collect ARM artifacts
+      - name: Collect cross-compile artifacts
         env:
           VERSION: ${{ steps.vars.outputs.version }}
         run: |
@@ -158,6 +174,24 @@ jobs:
           sha256sum "artifacts/${pkg_dir_armv7}.tgz" > "artifacts/${pkg_dir_armv7}.tgz.sha256"
           rm -rf "$tmpdir_armv7"
 
+          # x86_64 musl (static)
+          pkg_dir_musl_x86="ins-x86_64-unknown-linux-musl-v${VERSION}"
+          tmpdir_musl_x86=$(mktemp -d)
+          mkdir -p "$tmpdir_musl_x86/$pkg_dir_musl_x86"
+          install -Dm0755 "target/x86_64-unknown-linux-musl/release/ins" "$tmpdir_musl_x86/$pkg_dir_musl_x86/ins"
+          tar -czf "artifacts/${pkg_dir_musl_x86}.tgz" -C "$tmpdir_musl_x86" "$pkg_dir_musl_x86"
+          sha256sum "artifacts/${pkg_dir_musl_x86}.tgz" > "artifacts/${pkg_dir_musl_x86}.tgz.sha256"
+          rm -rf "$tmpdir_musl_x86"
+
+          # aarch64 musl (static)
+          pkg_dir_musl_arm="ins-aarch64-unknown-linux-musl-v${VERSION}"
+          tmpdir_musl_arm=$(mktemp -d)
+          mkdir -p "$tmpdir_musl_arm/$pkg_dir_musl_arm"
+          install -Dm0755 "target/aarch64-unknown-linux-musl/release/ins" "$tmpdir_musl_arm/$pkg_dir_musl_arm/ins"
+          tar -czf "artifacts/${pkg_dir_musl_arm}.tgz" -C "$tmpdir_musl_arm" "$pkg_dir_musl_arm"
+          sha256sum "artifacts/${pkg_dir_musl_arm}.tgz" > "artifacts/${pkg_dir_musl_arm}.tgz.sha256"
+          rm -rf "$tmpdir_musl_arm"
+
           # Android ARM64 (Termux)
           pkg_dir_termux="ins-aarch64-termux-v${VERSION}"
           tmpdir_termux=$(mktemp -d)
@@ -166,20 +200,24 @@ jobs:
           tar -czf "artifacts/${pkg_dir_termux}.tgz" -C "$tmpdir_termux" "$pkg_dir_termux"
           sha256sum "artifacts/${pkg_dir_termux}.tgz" > "artifacts/${pkg_dir_termux}.tgz.sha256"
           rm -rf "$tmpdir_termux"
-      - name: Upload ARM artifacts
+      - name: Upload cross-compile artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ins-${{ steps.vars.outputs.version }}-arm-binaries
+          name: ins-${{ steps.vars.outputs.version }}-cross-binaries
           path: |
             artifacts/ins-aarch64-unknown-linux-gnu-v${{ steps.vars.outputs.version }}.tgz
             artifacts/ins-aarch64-unknown-linux-gnu-v${{ steps.vars.outputs.version }}.tgz.sha256
             artifacts/ins-armv7-unknown-linux-gnueabihf-v${{ steps.vars.outputs.version }}.tgz
             artifacts/ins-armv7-unknown-linux-gnueabihf-v${{ steps.vars.outputs.version }}.tgz.sha256
+            artifacts/ins-x86_64-unknown-linux-musl-v${{ steps.vars.outputs.version }}.tgz
+            artifacts/ins-x86_64-unknown-linux-musl-v${{ steps.vars.outputs.version }}.tgz.sha256
+            artifacts/ins-aarch64-unknown-linux-musl-v${{ steps.vars.outputs.version }}.tgz
+            artifacts/ins-aarch64-unknown-linux-musl-v${{ steps.vars.outputs.version }}.tgz.sha256
             artifacts/ins-aarch64-termux-v${{ steps.vars.outputs.version }}.tgz
             artifacts/ins-aarch64-termux-v${{ steps.vars.outputs.version }}.tgz.sha256
   pkgbuild:
     name: Build Arch package
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: self-hosted
     needs: build
     steps:
       - name: Checkout
@@ -211,13 +249,61 @@ jobs:
         with:
           name: ins-${{ steps.vars.outputs.version }}-arch-packages
           path: artifacts/
+  deb:
+    name: Build Debian package
+    runs-on: self-hosted
+    container:
+      image: ubuntu:24.04
+    needs: build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install dependencies
+        run: apt-get update && apt-get install -y dpkg-dev
+      - name: Extract version
+        id: vars
+        run: |
+          version=$(awk -F '"' '/^version =/ {print $2; exit}' Cargo.toml)
+          if [[ -z "$version" ]]; then
+            echo "Failed to determine version from Cargo.toml" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Download native build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ins-${{ steps.vars.outputs.version }}-x86_64-unknown-linux-gnu
+          path: dist
+      - name: Extract binary from tarball
+        env:
+          VERSION: ${{ steps.vars.outputs.version }}
+        run: |
+          tar -xzf "dist/ins-x86_64-unknown-linux-gnu-v${VERSION}.tgz" -C dist
+          install -Dm0755 "dist/ins-x86_64-unknown-linux-gnu-v${VERSION}/ins" target/release/ins
+      - name: Build .deb package
+        run: |
+          chmod +x utils/build_deb.sh
+          ./utils/build_deb.sh
+      - name: Collect deb artifacts
+        env:
+          VERSION: ${{ steps.vars.outputs.version }}
+        run: |
+          mkdir -p artifacts
+          mv target/deb/ins_${VERSION}_amd64.deb artifacts/
+          cd artifacts && sha256sum ins_${VERSION}_amd64.deb > ins_${VERSION}_amd64.deb.sha256
+      - name: Upload deb package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ins-${{ steps.vars.outputs.version }}-deb
+          path: artifacts/
   release:
     name: Publish GitHub release
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: self-hosted
     needs:
       - build
       - cross-compile
       - pkgbuild
+      - deb
     permissions:
       contents: write
     steps:
