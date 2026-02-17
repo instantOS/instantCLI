@@ -86,7 +86,7 @@ pub fn show_help_for_path(path: &str) -> Result<()> {
 }
 
 fn launch_help_in_terminal(path: &str) -> Result<()> {
-    let binary = utils::current_exe()?;
+    let binary = std::env::current_exe()?;
     let key_sequence = if path.is_empty() {
         "h".to_string()
     } else {

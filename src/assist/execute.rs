@@ -119,7 +119,7 @@ fn ensure_dependencies_ready(assist: &AssistAction, key_sequence: &str) -> Resul
 }
 
 fn install_dependencies_via_terminal(assist: &AssistAction, key_sequence: &str) -> Result<bool> {
-    let binary = utils::current_exe()?;
+    let binary = std::env::current_exe()?;
     let command = format!(
         "{} assist install-deps --key-sequence {}",
         shell_quote(&binary.to_string_lossy()),

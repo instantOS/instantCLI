@@ -8,7 +8,6 @@ use crate::menu::client;
 
 use super::execute::{execute_assist, install_dependencies_for_assist};
 use super::registry;
-use super::utils;
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum AssistCommands {
@@ -66,7 +65,7 @@ impl AssistInternalCommand {
 }
 
 pub fn assist_command_argv(command: AssistInternalCommand) -> Result<Vec<String>> {
-    let exe = utils::current_exe()?;
+    let exe = std::env::current_exe()?;
     Ok(vec![
         exe.to_string_lossy().to_string(),
         "assist".to_string(),

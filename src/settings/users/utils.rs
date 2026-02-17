@@ -234,99 +234,68 @@ pub(super) fn select_groups(header: &str) -> Result<Vec<String>> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum UsernameValidationError {
+pub(super) enum UnixNameValidationError {
     Empty,
     TooLong,
     InvalidStart,
     InvalidChar,
 }
 
-impl fmt::Display for UsernameValidationError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl UnixNameValidationError {
+    fn display_with_label(&self, label: &str) -> String {
         match self {
-            UsernameValidationError::Empty => write!(f, "Username cannot be empty."),
-            UsernameValidationError::TooLong => {
-                write!(f, "Username must be at most 32 characters long.")
+            UnixNameValidationError::Empty => format!("{} cannot be empty.", label),
+            UnixNameValidationError::TooLong => {
+                format!("{} must be at most 32 characters long.", label)
             }
-            UsernameValidationError::InvalidStart => {
-                write!(f, "Username must start with a lowercase letter.")
+            UnixNameValidationError::InvalidStart => {
+                format!("{} must start with a lowercase letter.", label)
             }
-            UsernameValidationError::InvalidChar => write!(
-                f,
-                "Username may only contain lowercase letters, digits, hyphens, or underscores."
+            UnixNameValidationError::InvalidChar => format!(
+                "{} may only contain lowercase letters, digits, hyphens, or underscores.",
+                label
             ),
         }
     }
 }
 
-pub(super) fn validate_username(username: &str) -> Result<(), UsernameValidationError> {
-    if username.is_empty() {
-        return Err(UsernameValidationError::Empty);
+impl fmt::Display for UnixNameValidationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.display_with_label("Name"))
+    }
+}
+
+fn validate_unix_name(name: &str) -> Result<(), UnixNameValidationError> {
+    if name.is_empty() {
+        return Err(UnixNameValidationError::Empty);
     }
 
-    if username.chars().count() > 32 {
-        return Err(UsernameValidationError::TooLong);
+    if name.chars().count() > 32 {
+        return Err(UnixNameValidationError::TooLong);
     }
 
-    let mut chars = username.chars();
-    let first = chars.next().ok_or(UsernameValidationError::Empty)?;
+    let mut chars = name.chars();
+    let first = chars.next().ok_or(UnixNameValidationError::Empty)?;
     if !first.is_ascii_lowercase() {
-        return Err(UsernameValidationError::InvalidStart);
+        return Err(UnixNameValidationError::InvalidStart);
     }
 
     if chars.any(|c| !c.is_ascii_lowercase() && !c.is_ascii_digit() && c != '-' && c != '_') {
-        return Err(UsernameValidationError::InvalidChar);
+        return Err(UnixNameValidationError::InvalidChar);
     }
 
     Ok(())
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum GroupNameValidationError {
-    Empty,
-    TooLong,
-    InvalidStart,
-    InvalidChar,
-}
+pub(super) type UsernameValidationError = UnixNameValidationError;
+pub(super) type GroupNameValidationError = UnixNameValidationError;
 
-impl fmt::Display for GroupNameValidationError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            GroupNameValidationError::Empty => write!(f, "Group name cannot be empty."),
-            GroupNameValidationError::TooLong => {
-                write!(f, "Group name must be at most 32 characters long.")
-            }
-            GroupNameValidationError::InvalidStart => {
-                write!(f, "Group name must start with a lowercase letter.")
-            }
-            GroupNameValidationError::InvalidChar => write!(
-                f,
-                "Group name may only contain lowercase letters, digits, hyphens, or underscores."
-            ),
-        }
-    }
+pub(super) fn validate_username(username: &str) -> Result<(), UsernameValidationError> {
+    validate_unix_name(username)
 }
 
 pub(super) fn validate_group_name(group_name: &str) -> Result<(), GroupNameValidationError> {
-    if group_name.is_empty() {
-        return Err(GroupNameValidationError::Empty);
-    }
-
-    if group_name.chars().count() > 32 {
-        return Err(GroupNameValidationError::TooLong);
-    }
-
-    let mut chars = group_name.chars();
-    let first = chars.next().ok_or(GroupNameValidationError::Empty)?;
-    if !first.is_ascii_lowercase() {
-        return Err(GroupNameValidationError::InvalidStart);
-    }
-
-    if chars.any(|c| !c.is_ascii_lowercase() && !c.is_ascii_digit() && c != '-' && c != '_') {
-        return Err(GroupNameValidationError::InvalidChar);
-    }
-
-    Ok(())
+    validate_unix_name(group_name)
 }
 
 #[cfg(test)]

@@ -118,7 +118,7 @@ pub fn launch_script_in_terminal(script: &str, title: &str) -> Result<()> {
 pub fn run_installation_in_terminal(install_command: &str, title: &str) -> Result<ExitStatus> {
     use tempfile::NamedTempFile;
 
-    let binary = current_exe()?;
+    let binary = std::env::current_exe()?;
 
     // Wrap the installation with proper error handling and post-execution menu
     // NOTE: We intentionally do NOT use set -e, so we can capture the exit status
@@ -268,14 +268,9 @@ pub fn launch_detached(program: &str, args: &[&str]) -> Result<()> {
     Ok(())
 }
 
-/// Get the current executable path (useful for calling self)
-pub fn current_exe() -> Result<std::path::PathBuf> {
-    std::env::current_exe().context("Failed to get current executable path")
-}
-
 /// Execute an ins menu command
 pub fn menu_command(args: &[&str]) -> Result<()> {
-    Command::new(current_exe()?)
+    Command::new(std::env::current_exe()?)
         .arg("menu")
         .args(args)
         .spawn()
@@ -606,18 +601,12 @@ pub fn generate_screenshot_filename() -> String {
 
 /// Get text content from clipboard using the appropriate tool for the display server
 pub fn get_clipboard_content(display_server: &DisplayServer) -> Result<String> {
-    let output = if display_server.is_wayland() {
-        Command::new("wl-paste")
-            .output()
-            .context("Failed to run wl-paste")?
-    } else if display_server.is_x11() {
-        Command::new("xclip")
-            .args(["-selection", "clipboard", "-o"])
-            .output()
-            .context("Failed to run xclip")?
-    } else {
-        anyhow::bail!("Unknown display server - cannot get clipboard content");
-    };
+    let (cmd, args) = display_server.get_clipboard_command();
+
+    let output = Command::new(cmd)
+        .args(&args)
+        .output()
+        .context(format!("Failed to run {}", cmd))?;
 
     if !output.status.success() {
         anyhow::bail!("Failed to get clipboard content");
