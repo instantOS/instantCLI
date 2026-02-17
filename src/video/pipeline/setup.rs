@@ -8,6 +8,7 @@ use crate::ui::prelude::{Level, emit};
 use crate::video::audio::auphonic;
 use crate::video::cli::SetupArgs;
 use crate::video::config::VideoConfig;
+use crate::video::support::WHISPERX_UVX_ARGS;
 
 pub async fn handle_setup(args: SetupArgs) -> Result<()> {
     if !args.force && video_tools_ready()? {
@@ -386,9 +387,11 @@ fn setup_whisperx(_force: bool) -> Result<()> {
         None,
     );
 
-    let output = cmd!("uvx", "whisperx", "--version")
-        .stderr_to_stdout()
-        .run();
+    // Build command with shared uvx args
+    let mut check_args: Vec<&str> = WHISPERX_UVX_ARGS.to_vec();
+    check_args.extend(&["whisperx", "--version"]);
+
+    let output = cmd("uvx", &check_args).stderr_to_stdout().run();
 
     match output {
         Ok(_) => {

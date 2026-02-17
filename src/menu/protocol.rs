@@ -109,6 +109,8 @@ pub enum MenuRequest {
     },
     /// Show slider interface
     Slide(SliderRequest),
+    /// Show message dialog with OK button
+    Message { title: String, message: String },
     /// Get server status information
     Status,
     /// Stop the server
@@ -144,6 +146,8 @@ pub enum MenuResponse {
     ShowResult,
     /// Slider result value
     SlideResult(i64),
+    /// Message dialog acknowledged
+    MessageResult,
 }
 
 /// Confirmation dialog result

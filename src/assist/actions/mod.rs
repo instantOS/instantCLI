@@ -11,4 +11,5 @@ pub mod password;
 pub mod qr;
 pub mod screenrecord;
 pub mod screenshot;
+pub mod settings;
 pub mod system;

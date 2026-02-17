@@ -26,6 +26,7 @@ pub struct LoginScreenLayout;
 impl KeyboardLayout {
     const KEY_SWAY: StringSettingKey = StringSettingKey::new("language.keyboard.sway", "");
     const KEY_X11: StringSettingKey = StringSettingKey::new("language.keyboard.x11", "");
+    const KEY_GNOME: StringSettingKey = StringSettingKey::new("language.keyboard.gnome", "");
 }
 
 impl TtyKeymap {
@@ -274,6 +275,61 @@ pub(crate) fn current_x11_layouts() -> Vec<String> {
     Vec::new()
 }
 
+/// Get current GNOME keyboard layouts from gsettings
+pub(crate) fn current_gnome_layouts() -> Option<Vec<String>> {
+    let output = Command::new("gsettings")
+        .args(["get", "org.gnome.desktop.input-sources", "sources"])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // Format: [('xkb', 'us'), ('xkb', 'de')]
+    parse_gnome_sources(&stdout)
+}
+
+/// Parse GNOME sources string into layout codes
+fn parse_gnome_sources(sources_str: &str) -> Option<Vec<String>> {
+    let trimmed = sources_str.trim();
+    if trimmed == "@as []" {
+        return Some(Vec::new());
+    }
+
+    // Remove brackets and parse tuples
+    let content = trimmed.strip_prefix('[')?.strip_suffix(']')?.trim();
+    if content.is_empty() {
+        return Some(Vec::new());
+    }
+
+    let mut layouts = Vec::new();
+    // Split by '),(' to separate tuples, handling the edge cases
+    for tuple in content.split("), (") {
+        let clean = tuple
+            .trim_start_matches('(')
+            .trim_end_matches(')')
+            .trim()
+            .trim_matches('\'');
+
+        // Each tuple is like 'xkb', 'us' or "xkb", "de"
+        let parts: Vec<&str> = clean.split("', '").collect();
+        if parts.len() == 2 {
+            let layout_code = parts[1].trim().trim_matches('\'');
+            if !layout_code.is_empty() {
+                layouts.push(layout_code.to_string());
+            }
+        }
+    }
+
+    if layouts.is_empty() {
+        None
+    } else {
+        Some(layouts)
+    }
+}
+
 fn current_x11_options() -> Option<String> {
     let output = Command::new("setxkbmap").arg("-query").output().ok()?;
     if !output.status.success() {
@@ -415,26 +471,55 @@ fn ensure_localectl(ctx: &mut SettingsContext, code: &str, message: &str) -> boo
     true
 }
 
-/// Apply keyboard layout(s) via swaymsg or setxkbmap depending on compositor
+/// Apply keyboard layout(s) via swaymsg, setxkbmap, or gsettings depending on compositor
 fn apply_keyboard_layouts(codes: &[String], compositor: &CompositorType) -> Result<()> {
     let joined = join_layout_codes(codes);
     if joined.is_empty() {
         bail!("No keyboard layouts selected");
     }
 
-    if matches!(compositor, CompositorType::Sway) {
-        let cmd = format!("input type:keyboard xkb_layout \"{joined}\"");
-        sway::swaymsg(&cmd)?;
-    } else if compositor.is_x11() {
-        let mut command = std::process::Command::new("setxkbmap");
-        command.arg("-layout").arg(&joined);
-        if let Some(options) = current_x11_options() {
-            command.arg("-option").arg(options);
+    match compositor {
+        CompositorType::Sway => {
+            let cmd = format!("input type:keyboard xkb_layout \"{joined}\"");
+            sway::swaymsg(&cmd)?;
         }
-        command
-            .status()
-            .with_context(|| format!("Failed to execute setxkbmap for layout '{joined}'"))?;
+        CompositorType::Gnome => {
+            apply_gnome_keyboard_layouts(codes)?;
+        }
+        _ if compositor.is_x11() => {
+            let mut command = std::process::Command::new("setxkbmap");
+            command.arg("-layout").arg(&joined);
+            if let Some(options) = current_x11_options() {
+                command.arg("-option").arg(options);
+            }
+            command
+                .status()
+                .with_context(|| format!("Failed to execute setxkbmap for layout '{joined}'"))?;
+        }
+        _ => bail!("Unsupported compositor for keyboard layout configuration"),
     }
+    Ok(())
+}
+
+/// Apply keyboard layouts to GNOME via gsettings
+fn apply_gnome_keyboard_layouts(codes: &[String]) -> Result<()> {
+    // Build the gsettings sources format: [('xkb', 'us'), ('xkb', 'de')]
+    let sources: Vec<String> = codes
+        .iter()
+        .map(|code| format!("('xkb', '{}')", code))
+        .collect();
+    let sources_str = format!("[{}]", sources.join(", "));
+
+    std::process::Command::new("gsettings")
+        .args([
+            "set",
+            "org.gnome.desktop.input-sources",
+            "sources",
+            &sources_str,
+        ])
+        .status()
+        .with_context(|| format!("Failed to set GNOME keyboard layouts to: {sources_str}"))?;
+
     Ok(())
 }
 
@@ -565,7 +650,7 @@ impl Setting for KeyboardLayout {
             .id("language.keyboard_layout")
             .title("Keyboard Layout")
             .icon(NerdFont::Keyboard)
-            .summary("Select one or more keyboard layouts for the current desktop session (e.g., us, de, fr).\n\nSupports Sway and X11 window managers. Use the TTY and login screen settings for system-wide layouts.")
+            .summary("Select one or more keyboard layouts for the current desktop session (e.g., us, de, fr).\n\nSupports Sway, GNOME, and X11 window managers. Use the TTY and login screen settings for system-wide layouts.")
             .requires_reapply(true)
             .build()
     }
@@ -577,12 +662,13 @@ impl Setting for KeyboardLayout {
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
         let compositor = CompositorType::detect();
         let is_sway = matches!(compositor, CompositorType::Sway);
+        let is_gnome = matches!(compositor, CompositorType::Gnome);
         let is_x11 = compositor.is_x11();
 
-        if !is_sway && !is_x11 {
+        if !is_sway && !is_gnome && !is_x11 {
             ctx.emit_unsupported(
                 "settings.keyboard.unsupported",
-                "Keyboard layout configuration is currently only supported on Sway and X11 window managers.",
+                "Keyboard layout configuration is currently only supported on Sway, GNOME, and X11 window managers.",
             );
             return Ok(());
         }
@@ -600,6 +686,8 @@ impl Setting for KeyboardLayout {
 
         let current_layout_key = if is_sway {
             Self::KEY_SWAY
+        } else if is_gnome {
+            Self::KEY_GNOME
         } else {
             Self::KEY_X11
         };
@@ -610,6 +698,8 @@ impl Setting for KeyboardLayout {
                 current_sway_layout_names()
                     .map(|names| map_layout_names_to_codes(&names, &all_layouts))
                     .unwrap_or_default()
+            } else if is_gnome {
+                current_gnome_layouts().unwrap_or_default()
             } else {
                 current_x11_layouts()
             }
@@ -675,14 +765,17 @@ impl Setting for KeyboardLayout {
     fn restore(&self, ctx: &mut SettingsContext) -> Option<Result<()>> {
         let compositor = CompositorType::detect();
         let is_sway = matches!(compositor, CompositorType::Sway);
+        let is_gnome = matches!(compositor, CompositorType::Gnome);
         let is_x11 = compositor.is_x11();
 
-        if !is_sway && !is_x11 {
+        if !is_sway && !is_gnome && !is_x11 {
             return None;
         }
 
         let key = if is_sway {
             Self::KEY_SWAY
+        } else if is_gnome {
+            Self::KEY_GNOME
         } else {
             Self::KEY_X11
         };

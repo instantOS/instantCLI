@@ -5,10 +5,7 @@
 use anyhow::{Context, Result, bail};
 use std::process::Command;
 
-use crate::assist::{AssistInternalCommand, assist_command_argv};
 use crate::common::compositor::{CompositorType, sway};
-use crate::menu::client::MenuClient;
-use crate::menu::protocol::SliderRequest;
 use crate::preview::{PreviewId, preview_command};
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
@@ -141,7 +138,7 @@ impl Setting for MouseSensitivity {
             None
         };
 
-        if let Some(value) = run_mouse_speed_slider(initial_value)? {
+        if let Some(value) = crate::assist::actions::mouse::run_mouse_speed_slider(initial_value)? {
             ctx.set_int(Self::KEY, value);
             ctx.notify(
                 "Mouse Sensitivity",
@@ -174,27 +171,6 @@ impl Setting for MouseSensitivity {
         }
         Some(Ok(()))
     }
-}
-
-fn run_mouse_speed_slider(initial_value: Option<i64>) -> Result<Option<i64>> {
-    let start_value = initial_value.unwrap_or(50);
-
-    let client = MenuClient::new();
-    client.ensure_server_running()?;
-
-    let args = assist_command_argv(AssistInternalCommand::MouseSet)?;
-
-    let request = SliderRequest {
-        min: 0,
-        max: 100,
-        value: Some(start_value),
-        step: Some(1),
-        big_step: Some(10),
-        label: Some("Mouse Sensitivity".to_string()),
-        command: args,
-    };
-
-    client.slide(request)
 }
 
 // ============================================================================
