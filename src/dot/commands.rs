@@ -148,6 +148,12 @@ pub enum DotCommands {
     },
     /// Interactive dotfile repository menu
     Menu,
+    /// Open a repository in lazygit (alias for 'repo lazygit')
+    Lg {
+        /// Repository name (optional, will prompt if not provided)
+        #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::completions::repo_name_completion))]
+        name: Option<String>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -625,6 +631,9 @@ pub fn handle_dot_command(
         }
         DotCommands::Menu => {
             super::menu::dot_menu(debug)?;
+        }
+        DotCommands::Lg { name } => {
+            super::repo::commands::interactive::open_repo_lazygit(&config, &db, name.as_deref())?;
         }
     }
 

@@ -61,11 +61,7 @@ fn select_repo_interactive(
     }
 }
 
-pub(super) fn open_repo_lazygit(
-    config: &DotfileConfig,
-    db: &Database,
-    name: Option<&str>,
-) -> Result<()> {
+pub fn open_repo_lazygit(config: &DotfileConfig, db: &Database, name: Option<&str>) -> Result<()> {
     let repo_name = match name {
         Some(n) => n.to_string(),
         None => {

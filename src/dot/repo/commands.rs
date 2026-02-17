@@ -1,12 +1,12 @@
-mod apply;
-mod clone;
-mod info;
-mod interactive;
-mod list;
-mod remove;
-mod status;
-mod subdirs;
-mod toggle;
+pub mod apply;
+pub mod clone;
+pub mod info;
+pub mod interactive;
+pub mod list;
+pub mod remove;
+pub mod status;
+pub mod subdirs;
+pub mod toggle;
 
 use super::cli::RepoCommands;
 use crate::dot::config::DotfileConfig;
