@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.9](https://github.com/instantOS/instantCLI/compare/v0.13.8...v0.13.9) - 2026-02-17
+
+### Fixed
+
+- fix screen recording failure on gnome
+- fix mouse sensitivity detection
+- fix whisper python compat issues
+
+### Other
+
+- make use of message server feature
+- init menu server message
+- init settings assist
+- add gnome keyboard settings support
+- add ins doctor ssh check
+- better behavior for update on non-read-only repos
+- better ffmpeg handling
+- cleanup
+- some renames
+- consolidate video source thingy
+- consolidate frontmatter handling
+- remove reduntant metadata
+- structure video dims
+- init timewindow refactor
+- make clippy happier
+
 ## [0.13.8](https://github.com/instantOS/instantCLI/compare/v0.13.7...v0.13.8) - 2026-02-11
 
 ### Fixed
