@@ -11,7 +11,6 @@ use crate::menu_utils::FzfWrapper;
 use crate::settings::context::SettingsContext;
 use crate::settings::deps::{FASTFETCH, GNOME_FIRMWARE, PACMAN_CONTRIB, TOPGRADE};
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
-use crate::settings::sources;
 use crate::settings::store::{BoolSettingKey, PACMAN_AUTOCLEAN_KEY};
 use crate::ui::prelude::*;
 
@@ -297,29 +296,19 @@ simple_toggle_setting!(
 // Implementations
 // ============================================================================
 
-pub fn apply_pacman_autoclean(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
-    if let Some(source) = sources::source_for(&PACMAN_AUTOCLEAN_KEY) {
-        source.apply(enabled)?;
-        let active = ctx.refresh_bool_source(PACMAN_AUTOCLEAN_KEY)?;
+pub fn apply_pacman_autoclean(ctx: &mut SettingsContext, _enabled: bool) -> Result<()> {
+    // set_bool already applied the change to the external source (if one exists)
+    // or persisted to the store (if no external source).
+    // Just refresh to get the current state for the notification.
+    let active = ctx.refresh_bool_source(PACMAN_AUTOCLEAN_KEY)?;
 
-        if active {
-            ctx.notify(
-                "Pacman cache",
-                "Automatic weekly pacman cache cleanup enabled.",
-            );
-        } else {
-            ctx.notify("Pacman cache", "Automatic pacman cache cleanup disabled.");
-        }
-    } else {
-        ctx.set_bool(PACMAN_AUTOCLEAN_KEY, enabled);
+    if active {
         ctx.notify(
             "Pacman cache",
-            if enabled {
-                "Automatic weekly pacman cache cleanup enabled."
-            } else {
-                "Automatic pacman cache cleanup disabled."
-            },
+            "Automatic weekly pacman cache cleanup enabled.",
         );
+    } else {
+        ctx.notify("Pacman cache", "Automatic pacman cache cleanup disabled.");
     }
 
     Ok(())

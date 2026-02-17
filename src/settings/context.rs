@@ -84,6 +84,26 @@ impl SettingsContext {
     }
 
     pub fn set_bool(&mut self, key: BoolSettingKey, value: bool) {
+        // If this key has an external source, apply to the external system
+        // and do NOT persist to settings.toml (external system is source of truth)
+        if let Some(source) = sources::source_for(&key) {
+            if let Err(err) = source.apply(value) {
+                emit(
+                    Level::Warn,
+                    "settings.state.apply_failed",
+                    &format!(
+                        "{} Failed to apply state for '{}': {err}",
+                        char::from(NerdFont::Warning),
+                        key.key
+                    ),
+                    None,
+                );
+            }
+            // Note: We don't mark dirty - external system manages this state
+            return;
+        }
+
+        // Internal setting - persist to store
         if self.store.bool(key) != value {
             self.store.set_bool(key, value);
             self.dirty = true;
@@ -114,6 +134,26 @@ impl SettingsContext {
     }
 
     pub fn set_string(&mut self, key: StringSettingKey, value: &str) {
+        // If this key has an external source, apply to the external system
+        // and do NOT persist to settings.toml (external system is source of truth)
+        if let Some(source) = sources::string_source_for(&key) {
+            if let Err(err) = source.apply(value) {
+                emit(
+                    Level::Warn,
+                    "settings.state.apply_failed",
+                    &format!(
+                        "{} Failed to apply state for '{}': {err}",
+                        char::from(NerdFont::Warning),
+                        key.key
+                    ),
+                    None,
+                );
+            }
+            // Note: We don't mark dirty - external system manages this state
+            return;
+        }
+
+        // Internal setting - persist to store
         if self.store.string(key) != value {
             self.store.set_string(key, value);
             self.dirty = true;
@@ -149,68 +189,17 @@ impl SettingsContext {
     }
 
     fn sync_external_states(&mut self) {
-        for &(key_ref, source) in sources::all_bool_sources() {
-            let key = *key_ref;
-            if let Err(err) = self.update_bool_from_source(key, source) {
-                emit(
-                    Level::Warn,
-                    "settings.state.sync_failed",
-                    &format!(
-                        "{} Failed to synchronize state for '{}': {err}",
-                        char::from(NerdFont::Warning),
-                        key.key
-                    ),
-                    None,
-                );
-            }
-        }
-
-        for &(key_ref, source) in sources::all_string_sources() {
-            let key = *key_ref;
-            if let Err(err) = self.update_string_from_source(key, source) {
-                emit(
-                    Level::Warn,
-                    "settings.state.sync_failed",
-                    &format!(
-                        "{} Failed to synchronize state for '{}': {err}",
-                        char::from(NerdFont::Warning),
-                        key.key
-                    ),
-                    None,
-                );
-            }
-        }
+        // External state is no longer synced to the store.
+        // External systems (systemd, gsettings) are the source of truth.
+        // Getters read from external sources on-demand.
+        // This prevents stale cached values from being persisted to settings.toml.
     }
 
-    fn update_bool_from_source(
-        &mut self,
-        key: BoolSettingKey,
-        source: &'static dyn sources::BoolStateSource,
-    ) -> Result<bool> {
-        let current = source.current()?;
-        if self.store.bool(key) != current {
-            self.store.set_bool(key, current);
-            self.dirty = true;
-        }
-        Ok(current)
-    }
-
-    fn update_string_from_source(
-        &mut self,
-        key: StringSettingKey,
-        source: &'static dyn sources::StringStateSource,
-    ) -> Result<String> {
-        let current = source.current()?;
-        if self.store.string(key) != current {
-            self.store.set_string(key, &current);
-            self.dirty = true;
-        }
-        Ok(current)
-    }
-
+    /// Refresh and return the current value from an external source.
+    /// Does NOT write to the store - external systems are the source of truth.
     pub fn refresh_bool_source(&mut self, key: BoolSettingKey) -> Result<bool> {
         if let Some(source) = sources::source_for(&key) {
-            match self.update_bool_from_source(key, source) {
+            match source.current() {
                 Ok(value) => Ok(value),
                 Err(err) => {
                     emit(
@@ -231,9 +220,11 @@ impl SettingsContext {
         }
     }
 
+    /// Refresh and return the current value from an external source.
+    /// Does NOT write to the store - external systems are the source of truth.
     pub fn refresh_string_source(&mut self, key: StringSettingKey) -> Result<String> {
         if let Some(source) = sources::string_source_for(&key) {
-            match self.update_string_from_source(key, source) {
+            match source.current() {
                 Ok(value) => Ok(value),
                 Err(err) => {
                     emit(

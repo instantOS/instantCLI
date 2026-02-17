@@ -21,7 +21,12 @@ jobs:
       - name: Install dependencies
         run: |
           pacman -Syu --noconfirm
-          pacman -S --noconfirm --needed git python pacman-contrib
+          pacman -S --noconfirm --needed git python pacman-contrib sudo
+      - name: Create builder user
+        run: |
+          useradd -m builder
+          echo "builder ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/builder
+          chmod 440 /etc/sudoers.d/builder
       - name: Checkout release PR branch
         uses: actions/checkout@v5
         with:
@@ -65,7 +70,10 @@ jobs:
             sed -i "s/^pkgrel=.*/pkgrel=1/" "$pkgbuild_file"
           fi
           if ! git diff --quiet "$pkgbuild_file"; then
-            srcinfo="$(makepkg --printsrcinfo -p "$pkgbuild_file")"
+            # Copy PKGBUILD to builder's home and generate .SRCINFO as builder user
+            cp "$pkgbuild_file" /home/builder/PKGBUILD
+            chown builder:builder /home/builder/PKGBUILD
+            srcinfo="$(su builder -c 'cd /home/builder && makepkg --printsrcinfo -p PKGBUILD')"
             printf '%s\n' "$srcinfo" > pkgbuild/ins/.SRCINFO
             git add "$pkgbuild_file" pkgbuild/ins/.SRCINFO
             git commit -m "chore: sync PKGBUILD version"
