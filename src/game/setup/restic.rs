@@ -165,7 +165,7 @@ mod tests {
 
         let save_file = temp_dir.path().join("save.sav");
         std::fs::write(&save_file, b"fusion")?;
-        restic.backup(&[&save_file], vec!["game:test".to_string()])?;
+        restic.backup(&[&save_file], vec!["game:test".to_string()], None)?;
 
         let snapshot_id = latest_snapshot_id(&config);
         let kind = infer_snapshot_kind(&config, &snapshot_id)?;
@@ -190,7 +190,7 @@ mod tests {
         std::fs::create_dir_all(&save_dir)?;
         std::fs::write(save_dir.join("slot1.dat"), b"slot")?;
         std::fs::write(save_dir.join("slot2.dat"), b"slot")?;
-        restic.backup(&[&save_dir], vec!["game:test".to_string()])?;
+        restic.backup(&[&save_dir], vec!["game:test".to_string()], None)?;
 
         let snapshot_id = latest_snapshot_id(&config);
         let kind = infer_snapshot_kind(&config, &snapshot_id)?;

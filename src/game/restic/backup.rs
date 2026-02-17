@@ -68,17 +68,9 @@ impl GameBackup {
             }
         };
 
-        let progress = if game_installation.save_path_type.is_file() {
-            // For single files, use standard backup (no include filter needed)
-            restic
-                .backup(&restic_paths, tags)
-                .context("Failed to perform restic backup for single file")?
-        } else {
-            // For directories, use standard backup
-            restic
-                .backup(&restic_paths, tags)
-                .context("Failed to perform restic backup for directory")?
-        };
+        let progress = restic
+            .backup(&restic_paths, tags, None)
+            .context("Failed to perform restic backup")?;
 
         if let Some(summary) = progress.summary {
             let snapshot_id = summary.snapshot_id.clone();

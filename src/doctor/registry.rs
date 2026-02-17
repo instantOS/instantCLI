@@ -53,6 +53,5 @@ impl CheckRegistry {
 }
 
 // Global registry instance
-lazy_static::lazy_static! {
-    pub static ref REGISTRY: CheckRegistry = CheckRegistry::new();
-}
+pub static REGISTRY: std::sync::LazyLock<CheckRegistry> =
+    std::sync::LazyLock::new(CheckRegistry::new);

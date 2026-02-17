@@ -40,23 +40,11 @@ fn handle_error(context: &str, error: &anyhow::Error) -> String {
 }
 
 /// Helper function to execute a fallible operation with consistent error handling
-fn execute_with_error_handling<T>(
-    operation: Result<T>,
-    error_context: &str,
-    success_message: Option<&str>,
-) -> Result<T> {
-    match operation {
-        Ok(result) => {
-            if let Some(msg) = success_message {
-                println!("{}", msg.green());
-            }
-            Ok(result)
-        }
-        Err(e) => {
-            eprintln!("{}", handle_error(error_context, &e));
-            Err(e)
-        }
-    }
+fn execute_with_error_handling<T>(operation: Result<T>, error_context: &str) -> Result<T> {
+    operation.map_err(|e| {
+        eprintln!("{}", handle_error(error_context, &e));
+        e
+    })
 }
 
 use crate::debug::DebugCommands;
@@ -257,28 +245,24 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
             execute_with_error_handling(
                 arch::cli::handle_arch_command(command.clone(), cli.debug).await,
                 "Error handling arch command",
-                None,
             )?;
         }
         Some(Commands::Game { command }) => {
             execute_with_error_handling(
                 game::handle_game_command(command.clone(), cli.debug),
                 "Error handling game command",
-                None,
             )?;
         }
         Some(Commands::Dot { command }) => {
             execute_with_error_handling(
                 dot::commands::handle_dot_command(command, cli.config.as_deref(), cli.debug),
                 "Error handling dot command",
-                None,
             )?;
         }
         Some(Commands::Dev { command }) => {
             execute_with_error_handling(
                 dev::handle_dev_command(command.clone(), cli.debug).await,
                 "Error handling dev command",
-                None,
             )?;
         }
         Some(Commands::Launch { list }) => {
@@ -292,7 +276,6 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
             execute_with_error_handling(
                 assist::dispatch_assist_command(cli.debug, *instantmenu, command.clone()),
                 "Error handling assist command",
-                None,
             )?;
         }
         Some(Commands::Doctor {
@@ -317,7 +300,6 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
             execute_with_error_handling(
                 setup::handle_setup_command(command.clone()),
                 "Error running setup",
-                None,
             )?;
         }
         Some(Commands::Settings {
@@ -338,56 +320,48 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
                     cli.internal_privileged_mode,
                 ),
                 "Error running settings",
-                None,
             )?;
         }
         Some(Commands::Video { command }) => {
             execute_with_error_handling(
                 video::handle_video_command(command.clone(), cli.debug).await,
                 "Error handling video command",
-                None,
             )?;
         }
         Some(Commands::Wallpaper { command }) => {
             execute_with_error_handling(
                 wallpaper::commands::handle_wallpaper_command(command.clone(), cli.debug).await,
                 "Error handling wallpaper command",
-                None,
             )?;
         }
         Some(Commands::Debug { command }) => {
             execute_with_error_handling(
                 debug::handle_debug_command(command.clone()),
                 "Error handling debug command",
-                None,
             )?;
         }
         Some(Commands::Completions { command }) => {
             execute_with_error_handling(
                 completions::handle_completions_command(command),
                 "Error handling completions command",
-                None,
             )?;
         }
         Some(Commands::SelfUpdate) => {
             execute_with_error_handling(
                 self_update::self_update().await,
                 "Error during self-update",
-                None,
             )?;
         }
         Some(Commands::Update) => {
             execute_with_error_handling(
                 update::handle_update_command(cli.debug).await,
                 "Error during update",
-                None,
             )?;
         }
         Some(Commands::Autostart) => {
             execute_with_error_handling(
                 autostart::run(cli.debug).await,
                 "Error running autostart",
-                None,
             )?;
         }
         Some(Commands::Welcome {
@@ -398,7 +372,6 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
             execute_with_error_handling(
                 welcome::handle_welcome_command(command, *gui, *force_live, cli.debug),
                 "Error running welcome",
-                None,
             )?;
         }
         None => {

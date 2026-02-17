@@ -1208,9 +1208,7 @@ dependencies = [
  "futures-util",
  "git2",
  "indicatif",
- "lazy_static",
  "nix",
- "once_cell",
  "pathdiff",
  "pulldown-cmark",
  "rand",
@@ -1218,7 +1216,6 @@ dependencies = [
  "regex",
  "reqwest",
  "rusqlite",
- "semver",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -1313,12 +1310,6 @@ dependencies = [
  "once_cell",
  "wasm-bindgen",
 ]
-
-[[package]]
-name = "lazy_static"
-version = "1.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
 name = "libc"
@@ -2032,12 +2023,6 @@ dependencies = [
  "core-foundation-sys",
  "libc",
 ]
-
-[[package]]
-name = "semver"
-version = "1.0.27"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d767eb0aabc880b29956c35734170f26ed551a859dbd361d140cdbeca61ab1e2"
 
 [[package]]
 name = "serde"

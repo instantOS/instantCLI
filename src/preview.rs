@@ -103,65 +103,23 @@ pub enum PreviewId {
     SystemdService,
 }
 
-impl PreviewId {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            PreviewId::KeyboardLayout => "keyboard-layout",
-            PreviewId::TtyKeymap => "tty-keymap",
-            PreviewId::LoginScreenLayout => "login-screen-layout",
-            PreviewId::Timezone => "timezone",
-            PreviewId::MimeType => "mime-type",
-            PreviewId::Bluetooth => "bluetooth",
-            PreviewId::DarkMode => "dark-mode",
-            PreviewId::GtkTheme => "gtk-theme",
-            PreviewId::IconTheme => "icon-theme",
-            PreviewId::CursorTheme => "cursor-theme",
-            PreviewId::MouseSensitivity => "mouse-sensitivity",
-            PreviewId::DefaultImageViewer => "default-image-viewer",
-            PreviewId::DefaultVideoPlayer => "default-video-player",
-            PreviewId::DefaultAudioPlayer => "default-audio-player",
-            PreviewId::DefaultArchiveManager => "default-archive-manager",
-            PreviewId::DefaultBrowser => "default-browser",
-            PreviewId::DefaultTextEditor => "default-text-editor",
-            PreviewId::DefaultEmail => "default-email",
-            PreviewId::DefaultFileManager => "default-file-manager",
-            PreviewId::DefaultPdfViewer => "default-pdf-viewer",
-            PreviewId::Disk => "disk",
-            PreviewId::Partition => "partition",
-            PreviewId::FileSuggestion => "file-suggestion",
-            PreviewId::Package => "package",
-            PreviewId::InstalledPackage => "installed-package",
-            PreviewId::Apt => "apt",
-            PreviewId::Dnf => "dnf",
-            PreviewId::Zypper => "zypper",
-            PreviewId::Pacman => "pacman",
-            PreviewId::Snap => "snap",
-            PreviewId::Pkg => "pkg",
-            PreviewId::Flatpak => "flatpak",
-            PreviewId::Aur => "aur",
-            PreviewId::Cargo => "cargo",
-            PreviewId::Setting => "setting",
-            PreviewId::SystemdService => "systemd-service",
-        }
-    }
-}
-
 impl std::fmt::Display for PreviewId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
+        let val = self.to_possible_value().expect("no skipped variants");
+        f.write_str(val.get_name())
     }
 }
 
 pub fn preview_command(id: PreviewId) -> String {
     let exe = current_exe_command();
-    format!("{exe} preview --id {} --key \"$1\"", id.as_str())
+    format!("{exe} preview --id {id} --key \"$1\"")
 }
 
 /// Preview command for streaming fzf menus.
 /// Uses fzf's {} placeholder instead of $1 for the key.
 pub fn preview_command_streaming(id: PreviewId) -> String {
     let exe = current_exe_command();
-    format!("{exe} preview --id {} --key {{}}", id.as_str())
+    format!("{exe} preview --id {id} --key {{}}")
 }
 
 /// Preview command for a specific setting by ID.

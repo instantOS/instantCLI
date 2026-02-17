@@ -101,50 +101,6 @@ impl ResticWrapper {
         &self,
         paths: &[P],
         tags: Vec<String>,
-    ) -> Result<BackupProgress, ResticError> {
-        // Ensure restic will skip creating a snapshot when nothing changed
-        let mut args: Vec<String> = vec![
-            "backup".to_string(),
-            "--skip-if-unchanged".to_string(),
-            "--json".to_string(),
-        ];
-
-        // Add required tags
-        for tag in tags {
-            args.push("--tag".to_string());
-            args.push(tag);
-        }
-
-        for path in paths {
-            args.push(
-                path.as_ref()
-                    .to_str()
-                    .ok_or_else(|| {
-                        ResticError::CommandFailed(format!("Invalid path: {:?}", path.as_ref()))
-                    })?
-                    .to_string(),
-            );
-        }
-
-        let mut cmd = self.base_command();
-        cmd.args(&args);
-        let output = self.execute_and_log_command(cmd, &args)?;
-
-        if !output.status.success() {
-            let code = output.status.code().unwrap_or(1);
-            let stderr = String::from_utf8(output.stderr)?;
-            return Err(ResticError::from_exit_code(code, &stderr));
-        }
-
-        let stdout = String::from_utf8(output.stdout)?;
-        BackupProgress::parse(&stdout)
-    }
-
-    /// Backup with include filter for single file support
-    pub fn backup_with_filter<P: AsRef<std::path::Path>>(
-        &self,
-        paths: &[P],
-        tags: Vec<String>,
         include_filter: Option<&str>,
     ) -> Result<BackupProgress, ResticError> {
         let mut args: Vec<String> = vec![

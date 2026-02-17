@@ -88,7 +88,7 @@ pub fn backup_dependency(
     }
 
     let progress = restic
-        .backup_with_filter(&backup_paths, tags, include_filter.as_deref())
+        .backup(&backup_paths, tags, include_filter.as_deref())
         .with_context(|| {
             format!(
                 "Failed to backup dependency '{}:{}'",
