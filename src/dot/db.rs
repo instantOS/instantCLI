@@ -72,7 +72,7 @@ pub struct Database {
     conn: Connection,
 }
 
-const CURRENT_SCHEMA_VERSION: i32 = 2;
+const CURRENT_SCHEMA_VERSION: i32 = 3;
 
 impl Database {
     pub fn new(path: PathBuf) -> Result<Self> {
@@ -139,9 +139,11 @@ impl Database {
                     (),
                 )?;
 
-                // Update to version 2
+                Self::create_indexes(conn)?;
+
+                // Update to version 3
                 conn.execute(
-                    "INSERT INTO schema_version (version, updated) VALUES (2, datetime('now'))",
+                    "INSERT INTO schema_version (version, updated) VALUES (3, datetime('now'))",
                     [],
                 )?;
             }
@@ -159,15 +161,36 @@ impl Database {
                     (),
                 )?;
 
-                // Update to version 2
+                Self::create_indexes(conn)?;
+
+                // Update to version 3
                 conn.execute(
-                    "INSERT INTO schema_version (version, updated) VALUES (2, datetime('now'))",
+                    "INSERT INTO schema_version (version, updated) VALUES (3, datetime('now'))",
+                    [],
+                )?;
+            }
+            2 => {
+                Self::create_indexes(conn)?;
+                conn.execute(
+                    "INSERT INTO schema_version (version, updated) VALUES (3, datetime('now'))",
                     [],
                 )?;
             }
             // Future migrations can be added here
             _ => {}
         }
+        Ok(())
+    }
+
+    fn create_indexes(conn: &Connection) -> Result<()> {
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_file_hashes_path_created ON file_hashes(path, created DESC)",
+            (),
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_file_hashes_hash_source ON file_hashes(hash, source_file)",
+            (),
+        )?;
         Ok(())
     }
 
