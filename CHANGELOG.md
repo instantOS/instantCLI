@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.10](https://github.com/instantOS/instantCLI/compare/v0.13.9...v0.13.10) - 2026-02-17
+
+### Fixed
+
+- fix sync again, fix settings being slow
+
+### Other
+
+- add deb packaging
+- dont do silly shiat
+- add db index
+- init lazygit command
+- dedupe username validation and current_exe
+- remove redundant deps
+- refactor slider
+- refactor all thingy
+- add `ins menu all`
+
 ## [0.13.9](https://github.com/instantOS/instantCLI/compare/v0.13.8...v0.13.9) - 2026-02-17
 
 ### Fixed
