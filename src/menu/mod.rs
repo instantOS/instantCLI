@@ -7,12 +7,12 @@ use protocol::SerializableMenuItem;
 use std::path::PathBuf;
 use std::process::Command;
 
+mod all;
 pub mod chord;
 pub mod client;
 mod fallback;
 pub mod processing;
 pub mod protocol;
-mod all;
 pub mod scratchpad_manager;
 pub mod server;
 pub mod slide;

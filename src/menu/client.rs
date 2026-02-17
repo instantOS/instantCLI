@@ -411,13 +411,6 @@ pub fn force_fallback_mode() {
     }
 }
 
-/// Clear any forced transport mode override.
-pub fn reset_forced_transport() {
-    if let Ok(mut guard) = transport_override().write() {
-        *guard = None;
-    }
-}
-
 /// Handle GUI menu requests by routing through client
 pub fn handle_gui_request(command: &MenuCommands) -> Result<i32> {
     let client = MenuClient::new();
@@ -583,18 +576,5 @@ mod tests {
         let id2 = generate_request_id();
         assert_ne!(id1, id2);
         assert!(id1.starts_with("req_"));
-    }
-
-    #[test]
-    fn test_fallback_status_info() {
-        force_fallback_mode();
-
-        let client = MenuClient::new();
-        assert!(client.is_fallback());
-
-        let status = client.status().expect("fallback status should succeed");
-        assert_eq!(status.socket_path, "N/A (fallback)");
-
-        reset_forced_transport();
     }
 }

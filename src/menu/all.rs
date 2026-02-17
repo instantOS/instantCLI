@@ -53,9 +53,9 @@ impl FzfSelectable for AllMenuEntry {
             AllMenuEntry::Video => FzfPreview::Text(
                 "Open the video tools menu (same as `ins video menu`).".to_string(),
             ),
-            AllMenuEntry::Quit => FzfPreview::Text(
-                "Close the unified menu and return to the shell.".to_string(),
-            ),
+            AllMenuEntry::Quit => {
+                FzfPreview::Text("Close the unified menu and return to the shell.".to_string())
+            }
         }
     }
 }
@@ -113,4 +113,3 @@ pub async fn run_all_menu(debug: bool) -> Result<i32> {
         }
     }
 }
-

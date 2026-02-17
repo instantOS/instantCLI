@@ -130,29 +130,12 @@ impl SliderApp {
     }
 
     fn draw(&mut self) -> Result<()> {
-        let value = self.config.value;
-        let min = self.config.min;
-        let max = self.config.max;
-        let ratio = self.config.ratio();
-        let label = self
-            .config
-            .label
-            .clone()
-            .unwrap_or_else(|| "Instant Slider".to_string());
+        let title = Self::build_title();
+        let value_line = self.build_value_line();
+        let gauge = self.build_gauge();
+        let help = Self::build_help();
 
-        let display_label = format!("{label}: {value}");
-        let range_label = format!("{min} – {max}");
-        let help_text = Line::from(vec![
-            Span::styled("Enter", Style::default().fg(Color::Green)),
-            Span::raw(" accept  •  "),
-            Span::styled("Esc/q", Style::default().fg(Color::Red)),
-            Span::raw(" quit  •  "),
-            Span::styled("h/l", Style::default().fg(Color::Cyan)),
-            Span::raw(" ±step  •  "),
-            Span::styled("j/k", Style::default().fg(Color::Cyan)),
-            Span::raw(" ±big step  •  Digits jump (1 left … 0 max)"),
-        ]);
-
+        let mut slider_area = None;
         self.terminal.draw(|frame| {
             let area = frame.area();
             frame.render_widget(Clear, area);
@@ -170,63 +153,87 @@ impl SliderApp {
                 )
                 .split(area);
 
-            let title = Paragraph::new(Line::from(vec![
-                Span::styled(
-                    "instantCLI",
-                    Style::default()
-                        .fg(Color::Magenta)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::raw(" — Slider"),
-            ]))
-            .alignment(Alignment::Center);
-
-            let value_line = Paragraph::new(Line::from(vec![
-                Span::styled(display_label.clone(), Style::default().fg(Color::Cyan)),
-                Span::raw("  •  "),
-                Span::styled(range_label.clone(), Style::default().fg(Color::Gray)),
-            ]))
-            .alignment(Alignment::Center);
-
-            let slider_block = Block::default()
-                .borders(Borders::ALL)
-                .title(format!(" {label} "))
-                .title_alignment(Alignment::Left);
-
-            // Calculate label color based on whether it's over the gauge or background
-            let label_text = format!(" {value} ");
-            let label_color = if ratio > 0.5 {
-                // When slider is more than halfway, use dark text (visible over green gauge)
-                Color::Black
-            } else {
-                // When slider is less than halfway, use light text (visible over dark background)
-                Color::White
-            };
-
-            let gauge = Gauge::default()
-                .block(slider_block)
-                .ratio(ratio.clamp(0.0, 1.0))
-                .gauge_style(
-                    Style::default()
-                        .fg(Color::Green)
-                        .bg(Color::Black)
-                        .add_modifier(Modifier::BOLD),
-                )
-                .label(Span::styled(label_text, Style::default().fg(label_color)));
-
             frame.render_widget(title, vertical[0]);
             frame.render_widget(value_line, vertical[1]);
-
             frame.render_widget(gauge, vertical[2]);
-            self.last_slider_area = Some(vertical[2]);
-
-            let help = Paragraph::new(help_text.clone())
-                .alignment(Alignment::Center)
-                .style(Style::default().fg(Color::DarkGray));
+            slider_area = Some(vertical[2]);
             frame.render_widget(help, vertical[3]);
         })?;
+        self.last_slider_area = slider_area;
 
         Ok(())
+    }
+
+    fn build_title() -> Paragraph<'static> {
+        Paragraph::new(Line::from(vec![
+            Span::styled(
+                "instantCLI",
+                Style::default()
+                    .fg(Color::Magenta)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" — Slider"),
+        ]))
+        .alignment(Alignment::Center)
+    }
+
+    fn build_value_line(&self) -> Paragraph<'static> {
+        let label = self.config.label.as_deref().unwrap_or("Instant Slider");
+        let display_label = format!("{label}: {}", self.config.value);
+        let range_label = format!("{} – {}", self.config.min, self.config.max);
+
+        Paragraph::new(Line::from(vec![
+            Span::styled(display_label, Style::default().fg(Color::Cyan)),
+            Span::raw("  •  "),
+            Span::styled(range_label, Style::default().fg(Color::Gray)),
+        ]))
+        .alignment(Alignment::Center)
+    }
+
+    fn build_gauge(&self) -> Gauge<'static> {
+        let label = self.config.label.as_deref().unwrap_or("Instant Slider");
+        let ratio = self.config.ratio();
+        let value = self.config.value;
+
+        let slider_block = Block::default()
+            .borders(Borders::ALL)
+            .title(format!(" {label} "))
+            .title_alignment(Alignment::Left);
+
+        let label_text = format!(" {value} ");
+        let label_color = if ratio > 0.5 {
+            Color::Black
+        } else {
+            Color::White
+        };
+
+        Gauge::default()
+            .block(slider_block)
+            .ratio(ratio.clamp(0.0, 1.0))
+            .gauge_style(
+                Style::default()
+                    .fg(Color::Green)
+                    .bg(Color::Black)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .label(Span::styled(label_text, Style::default().fg(label_color)))
+    }
+
+    fn build_help() -> Paragraph<'static> {
+        let help_text = Line::from(vec![
+            Span::styled("Enter", Style::default().fg(Color::Green)),
+            Span::raw(" accept  •  "),
+            Span::styled("Esc/q", Style::default().fg(Color::Red)),
+            Span::raw(" quit  •  "),
+            Span::styled("h/l", Style::default().fg(Color::Cyan)),
+            Span::raw(" ±step  •  "),
+            Span::styled("j/k", Style::default().fg(Color::Cyan)),
+            Span::raw(" ±big step  •  Digits jump (1 left … 0 max)"),
+        ]);
+
+        Paragraph::new(help_text)
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(Color::DarkGray))
     }
 
     fn bump_value(&mut self, delta: i64) {
