@@ -11,15 +11,17 @@ jobs:
     if: github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'release-plz-')
     runs-on: self-hosted
     container:
-      image: ubuntu:latest
+      image: archlinux:latest
     defaults:
       run:
         shell: bash
     permissions:
       contents: write
     steps:
-      - name: Install git
-        run: apt-get update && apt-get install -y git bash python3
+      - name: Install dependencies
+        run: |
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm --needed git python pacman-contrib
       - name: Checkout release PR branch
         uses: actions/checkout@v5
         with:
@@ -63,17 +65,7 @@ jobs:
             sed -i "s/^pkgrel=.*/pkgrel=1/" "$pkgbuild_file"
           fi
           if ! git diff --quiet "$pkgbuild_file"; then
-            srcinfo="$(
-              docker run --rm -v "$PWD/pkgbuild/ins:/pkgbuild" archlinux:latest bash -lc '
-                set -euo pipefail
-                pacman -Sy --noconfirm pacman-contrib >/dev/null
-                useradd -m builder
-                install -d -m 755 /home/builder/work
-                cp -a /pkgbuild/. /home/builder/work/
-                chown -R builder:builder /home/builder/work
-                su builder -c "cd /home/builder/work && makepkg --printsrcinfo"
-              '
-            )"
+            srcinfo="$(makepkg --printsrcinfo -p "$pkgbuild_file")"
             printf '%s\n' "$srcinfo" > pkgbuild/ins/.SRCINFO
             git add "$pkgbuild_file" pkgbuild/ins/.SRCINFO
             git commit -m "chore: sync PKGBUILD version"
