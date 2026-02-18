@@ -512,4 +512,68 @@ mod tests {
         let transform = Transform::with_scale(1.5);
         assert!(!transform.is_identity());
     }
+
+    #[test]
+    fn test_truncate_before_drops_early_segments() {
+        let mut timeline = Timeline::new();
+        // Segment 0-10s (source starts at 0)
+        timeline.add_segment(Segment::new_video_subset(
+            0.0,
+            10.0,
+            0.0,
+            AvSourceRef {
+                video: PathBuf::from("test.mp4"),
+                audio: PathBuf::from("test.mp4"),
+                id: "a".to_string(),
+            },
+            None,
+            false,
+        ));
+        // Segment 10-20s (source starts at 10)
+        timeline.add_segment(Segment::new_video_subset(
+            10.0,
+            10.0,
+            10.0,
+            AvSourceRef {
+                video: PathBuf::from("test.mp4"),
+                audio: PathBuf::from("test.mp4"),
+                id: "a".to_string(),
+            },
+            None,
+            false,
+        ));
+        // Segment 20-25s (source starts at 20)
+        timeline.add_segment(Segment::new_video_subset(
+            20.0,
+            5.0,
+            20.0,
+            AvSourceRef {
+                video: PathBuf::from("test.mp4"),
+                audio: PathBuf::from("test.mp4"),
+                id: "a".to_string(),
+            },
+            None,
+            false,
+        ));
+
+        // Seek to 15s: first seg dropped, second seg trimmed, third kept
+        let truncated = timeline.truncate_before(15.0);
+        assert_eq!(truncated.segments.len(), 2);
+
+        // First remaining segment: was 10-20, trimmed to 15-20
+        // start_time shifted to 0, duration = 5s, source start advanced to 15
+        let seg0 = &truncated.segments[0];
+        assert_eq!(seg0.start_time, 0.0);
+        assert_eq!(seg0.duration, 5.0);
+        if let SegmentData::VideoSubset { start_time, .. } = &seg0.data {
+            assert_eq!(*start_time, 15.0);
+        } else {
+            panic!("Expected VideoSubset");
+        }
+
+        // Second remaining segment: was at 20s, shifted to 5s
+        let seg1 = &truncated.segments[1];
+        assert_eq!(seg1.start_time, 5.0);
+        assert_eq!(seg1.duration, 5.0);
+    }
 }
