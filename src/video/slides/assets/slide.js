@@ -52,13 +52,18 @@ window.addEventListener('load', () => {
 
     // 2. Auto-scaling logic
     let currentScale = 100;
-    const minScale = 10;
+    let minScale = 10;
     let maxScale = 300; // Allow growing up to 3x base size
 
     if (body.classList.contains('layout-title')) {
         maxScale = 400; // Allow single headings to grow even more
     } else if (body.classList.contains('layout-hero')) {
         maxScale = 250; // Cap hero slightly more to avoid clipping
+    }
+
+    // For dense layouts with code blocks, allow shrinking more to ensure content fits
+    if (body.classList.contains('layout-dense') && codeBlocks > 0) {
+        minScale = 5; // Allow smaller text for code-heavy slides
     }
 
     function checkOverflow() {
@@ -83,14 +88,6 @@ window.addEventListener('load', () => {
         // Horizontal overflow
         if (content.scrollWidth > availableWidth) {
             return true;
-        }
-
-        // Horizontal overflow (code blocks)
-        const pres = content.querySelectorAll('pre');
-        for (const pre of pres) {
-            if (pre.scrollWidth > pre.clientWidth) {
-                return true;
-            }
         }
 
         return false;

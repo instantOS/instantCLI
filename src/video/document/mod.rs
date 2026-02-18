@@ -267,9 +267,14 @@ impl<'a> BodyParserState<'a> {
                 self.flush_heading();
             }
             Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info))) => {
+                let line = self.byte_to_line(range.start);
+                self.flush_paragraph()?;
                 if is_music_code_block(&info) {
-                    let line = self.byte_to_line(range.start);
                     self.code_block = Some(CodeBlockState::music(line));
+                } else {
+                    // Capture all other code blocks (bash, python, etc.) for rendering
+                    let lang = info.to_string();
+                    self.code_block = Some(CodeBlockState::generic(line, lang));
                 }
             }
             Event::End(TagEnd::CodeBlock) => {
@@ -352,9 +357,19 @@ impl<'a> BodyParserState<'a> {
 
     fn flush_code_block(&mut self) -> Result<()> {
         if let Some(state) = self.code_block.take() {
-            let line = self.base_line_offset + state.start_line;
-            let directive = state.into_music_directive(line)?;
-            self.blocks.push(DocumentBlock::Music(directive));
+            if state.is_music() {
+                let line = self.base_line_offset + state.start_line;
+                let directive = state.into_music_directive(line)?;
+                self.blocks.push(DocumentBlock::Music(directive));
+            } else {
+                // Generic code blocks become unhandled content for slide rendering
+                let markdown = state.to_markdown();
+                if !markdown.trim().is_empty() {
+                    self.blocks.push(DocumentBlock::Unhandled(UnhandledBlock {
+                        description: markdown,
+                    }));
+                }
+            }
         }
         Ok(())
     }
@@ -690,12 +705,21 @@ struct CodeBlockState {
 
 enum CodeBlockKindState {
     Music,
+    Generic { lang: String },
 }
 
 impl CodeBlockState {
     fn music(start_line: usize) -> Self {
         Self {
             kind: CodeBlockKindState::Music,
+            start_line,
+            content: String::new(),
+        }
+    }
+
+    fn generic(start_line: usize, lang: String) -> Self {
+        Self {
+            kind: CodeBlockKindState::Generic { lang },
             start_line,
             content: String::new(),
         }
@@ -722,7 +746,22 @@ impl CodeBlockState {
                     Ok(MusicDirective::Source(value.to_string()))
                 }
             }
+            _ => bail!("Expected music block at line {}", line),
         }
+    }
+
+    /// Convert the code block to markdown string for rendering
+    fn to_markdown(&self) -> String {
+        match &self.kind {
+            CodeBlockKindState::Music => format!("```music\n{}\n```", self.content.trim()),
+            CodeBlockKindState::Generic { lang } => {
+                format!("```{lang}\n{}\n```", self.content.trim())
+            }
+        }
+    }
+
+    fn is_music(&self) -> bool {
+        matches!(self.kind, CodeBlockKindState::Music)
     }
 }
 
@@ -1293,6 +1332,134 @@ mod tests {
         match &document.blocks[0] {
             DocumentBlock::Unhandled(unhandled) => {
                 assert!(unhandled.description.starts_with("> "));
+            }
+            other => panic!("Expected Unhandled block, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn preserves_non_timestamp_inline_code_as_text() {
+        // Code spans that don't look like timestamps (no `:` and `.`) should be preserved as text
+        let markdown = concat!(
+            "---\n",
+            "sources:\n",
+            "- id: a\n  source: video_a.mp4\n  transcript: a.json\n",
+            "default_source: a\n",
+            "---\n",
+            "testing stuff `test` stuff\n",
+            "`a@00:01.0-00:02.0` actual segment\n",
+        );
+        let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
+
+        // Should have 2 blocks: the segment and the text with inline code
+        assert_eq!(document.blocks.len(), 2, "Expected 2 blocks: one for segment, one for text with inline code");
+
+        // First block should be the segment
+        match &document.blocks[0] {
+            DocumentBlock::Segment(segment) => {
+                assert_eq!(segment.text, "actual segment");
+                assert_eq!(segment.source_id, "a");
+            }
+            other => panic!("Expected Segment block, got {:?}", other),
+        }
+
+        // Second block should be unhandled text with the inline code preserved
+        match &document.blocks[1] {
+            DocumentBlock::Unhandled(unhandled) => {
+                assert!(unhandled.description.contains("`test`"), "Inline code should be preserved as text, got: {}", unhandled.description);
+                assert!(unhandled.description.contains("testing stuff"));
+            }
+            other => panic!("Expected Unhandled block for non-timestamp code, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn looks_like_timestamp_reference_works() {
+        // Valid timestamp patterns
+        assert!(looks_like_timestamp_reference("00:01.0-00:02.0"));
+        assert!(looks_like_timestamp_reference("a@00:01.0-00:02.0"));
+        assert!(looks_like_timestamp_reference("00:01.0"));
+        assert!(looks_like_timestamp_reference("01:23:45.678"));
+        assert!(looks_like_timestamp_reference("source_id@01:23:45.678-02:34:56.789"));
+
+        // Invalid timestamp patterns (should be treated as regular code)
+        assert!(!looks_like_timestamp_reference("test"));
+        assert!(!looks_like_timestamp_reference("ins"));
+        assert!(!looks_like_timestamp_reference("`ins video`"));
+        assert!(!looks_like_timestamp_reference("some text"));
+        assert!(!looks_like_timestamp_reference("00:01")); // Missing fractional seconds
+        assert!(!looks_like_timestamp_reference("01.0")); // Missing time separator
+    }
+
+    #[test]
+    fn preserves_code_blocks_as_unhandled() {
+        // Code blocks (like ```bash) should be preserved as unhandled content for slides
+        let markdown = concat!(
+            "---\n",
+            "sources:\n",
+            "- id: a\n  source: video_a.mp4\n  transcript: a.json\n",
+            "default_source: a\n",
+            "---\n",
+            "Some text before\n",
+            "\n",
+            "```bash\n",
+            "curl -fsSL https://example.com/install.sh | sh\n",
+            "```\n",
+            "\n",
+            "Some text after\n",
+        );
+        let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
+
+        // Should have 3 blocks: text, code block, text
+        assert_eq!(document.blocks.len(), 3, "Expected 3 blocks: text, code block, text");
+
+        // First block should be text
+        match &document.blocks[0] {
+            DocumentBlock::Unhandled(unhandled) => {
+                assert!(unhandled.description.contains("Some text before"));
+            }
+            other => panic!("Expected Unhandled block for text, got {:?}", other),
+        }
+
+        // Second block should be the code block
+        match &document.blocks[1] {
+            DocumentBlock::Unhandled(unhandled) => {
+                assert!(unhandled.description.contains("```bash"), "Code block should have bash language");
+                assert!(unhandled.description.contains("curl -fsSL"), "Code block should contain the curl command");
+                assert!(unhandled.description.contains("```"), "Code block should end with ```");
+            }
+            other => panic!("Expected Unhandled block for code block, got {:?}", other),
+        }
+
+        // Third block should be text
+        match &document.blocks[2] {
+            DocumentBlock::Unhandled(unhandled) => {
+                assert!(unhandled.description.contains("Some text after"));
+            }
+            other => panic!("Expected Unhandled block for text, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn preserves_code_blocks_without_language() {
+        // Code blocks without a language specifier should also be preserved
+        let markdown = concat!(
+            "---\n",
+            "sources:\n",
+            "- id: a\n  source: video_a.mp4\n  transcript: a.json\n",
+            "default_source: a\n",
+            "---\n",
+            "```\n",
+            "plain code\n",
+            "```\n",
+        );
+        let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
+
+        assert_eq!(document.blocks.len(), 1);
+        match &document.blocks[0] {
+            DocumentBlock::Unhandled(unhandled) => {
+                assert!(unhandled.description.contains("```"));
+                assert!(unhandled.description.contains("plain code"));
             }
             other => panic!("Expected Unhandled block, got {:?}", other),
         }

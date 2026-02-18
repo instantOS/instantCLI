@@ -198,7 +198,10 @@ pre {
   margin: 0 !important;
   padding: 1.5em 2rem !important;
   width: 100%;
-  overflow-x: auto;
+  overflow-x: hidden;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 /* Remove old fake header */
