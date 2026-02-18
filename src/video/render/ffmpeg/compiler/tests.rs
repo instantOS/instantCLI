@@ -34,7 +34,11 @@ fn concat_order_respects_timeline_order() {
         0.0,
         1.0,
         5.0,
-        AvSourceRef { video: PathBuf::from("video.mp4"), audio: PathBuf::from("audio.mp4"), id: "a".to_string() },
+        AvSourceRef {
+            video: PathBuf::from("video.mp4"),
+            audio: PathBuf::from("audio.mp4"),
+            id: "a".to_string(),
+        },
         None,
         false,
     ));
@@ -42,7 +46,11 @@ fn concat_order_respects_timeline_order() {
         1.0,
         1.0,
         1.0,
-        AvSourceRef { video: PathBuf::from("video.mp4"), audio: PathBuf::from("audio.mp4"), id: "a".to_string() },
+        AvSourceRef {
+            video: PathBuf::from("video.mp4"),
+            audio: PathBuf::from("audio.mp4"),
+            id: "a".to_string(),
+        },
         None,
         false,
     ));
@@ -50,7 +58,11 @@ fn concat_order_respects_timeline_order() {
         2.0,
         1.0,
         3.0,
-        AvSourceRef { video: PathBuf::from("video.mp4"), audio: PathBuf::from("audio.mp4"), id: "a".to_string() },
+        AvSourceRef {
+            video: PathBuf::from("video.mp4"),
+            audio: PathBuf::from("audio.mp4"),
+            id: "a".to_string(),
+        },
         None,
         false,
     ));
@@ -137,7 +149,11 @@ fn test_filter_complex_includes_subtitles() {
         0.0,
         0.0,
         5.0,
-        AvSourceRef { video: PathBuf::from("video.mp4"), audio: PathBuf::from("audio.mp4"), id: "a".to_string() },
+        AvSourceRef {
+            video: PathBuf::from("video.mp4"),
+            audio: PathBuf::from("audio.mp4"),
+            id: "a".to_string(),
+        },
         None,
         false,
     ));

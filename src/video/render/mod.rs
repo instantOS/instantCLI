@@ -19,12 +19,25 @@ use anyhow::{Result, bail};
 use crate::ui::prelude::Level;
 
 pub(crate) use self::document::load_video_document;
+use self::ffmpeg::compiler::{RenderConfig, VideoDimensions};
 use self::ffmpeg::services::{FfmpegRunner, SystemFfmpegRunner};
 use self::logging::log_event;
 pub use self::mode::RenderMode;
-use self::ffmpeg::compiler::{RenderConfig, VideoDimensions};
 use self::output::prepare_output_destination;
 use self::pipeline::{RenderPipeline, RenderPipelineParams};
+
+struct RenderJob<'a> {
+    timeline: timeline::Timeline,
+    cues: &'a [crate::video::support::transcript::TranscriptCue],
+    output_path: PathBuf,
+    render_mode: RenderMode,
+    target_dims: VideoDimensions,
+    video_config: VideoConfig,
+    audio_source: PathBuf,
+    burn_subtitles: bool,
+    dry_run: bool,
+    runner: &'a dyn FfmpegRunner,
+}
 pub(crate) use self::plan::build_timeline_plan;
 pub(crate) use self::sources::resolve_video_sources;
 use self::sources::{find_default_source, validate_timeline_sources};
@@ -129,47 +142,33 @@ fn build_render_timeline(
     Ok((nle_timeline, target_dims))
 }
 
-fn execute_render(
-    nle_timeline: timeline::Timeline,
-    cues: &[crate::video::support::transcript::TranscriptCue],
-    output_path: PathBuf,
-    render_mode: RenderMode,
-    target_dims: (u32, u32),
-    video_config: VideoConfig,
-    audio_source: PathBuf,
-    burn_subtitles: bool,
-    dry_run: bool,
-    runner: &dyn FfmpegRunner,
-) -> Result<Option<PathBuf>> {
-    let (target_width, target_height) = target_dims;
-
-    let subtitle_path = if burn_subtitles {
+fn execute_render(job: RenderJob<'_>) -> Result<Option<PathBuf>> {
+    let subtitle_path = if job.burn_subtitles {
         log_event(
             Level::Info,
             "video.render.subtitles",
-            format!("Generating ASS subtitles for {:?} mode", render_mode),
+            format!("Generating ASS subtitles for {:?} mode", job.render_mode),
         );
         Some(generate_subtitle_file(
-            &nle_timeline,
-            cues,
-            &output_path,
-            (target_width, target_height),
-            render_mode,
+            &job.timeline,
+            job.cues,
+            &job.output_path,
+            job.target_dims,
+            job.render_mode,
         )?)
     } else {
         None
     };
 
+    let render_config = RenderConfig::new(job.render_mode, job.video_config, subtitle_path);
+
     let pipeline = RenderPipeline::new(RenderPipelineParams {
-        output: output_path.clone(),
-        timeline: nle_timeline,
-        render_mode,
-        target_width,
-        target_height,
-        config: video_config,
-        audio_source,
-        subtitle_path,
-        runner,
+        output: job.output_path.clone(),
+        timeline: job.timeline,
+        dimensions: job.target_dims,
+        render_config,
+        audio_source: job.audio_source,
+        runner: job.runner,
     });
 
     log_event(
@@ -178,7 +177,7 @@ fn execute_render(
         "Preparing ffmpeg pipeline",
     );
 
-    if dry_run {
+    if job.dry_run {
         pipeline.print_command()?;
         log_event(
             Level::Info,
@@ -198,10 +197,10 @@ fn execute_render(
     log_event(
         Level::Success,
         "video.render.success",
-        format!("Rendered edited timeline to {}", output_path.display()),
+        format!("Rendered edited timeline to {}", job.output_path.display()),
     );
 
-    Ok(Some(output_path))
+    Ok(Some(job.output_path))
 }
 
 async fn handle_render_with_services(
@@ -246,18 +245,18 @@ async fn handle_render_with_services(
         bail!("Output path is required when not pre-caching");
     };
 
-    execute_render(
-        nle_timeline,
-        &project.cues,
+    execute_render(RenderJob {
+        timeline: nle_timeline,
+        cues: &project.cues,
         output_path,
         render_mode,
         target_dims,
-        project.video_config,
-        project.default_source.source.clone(),
-        args.subtitles,
-        args.dry_run,
+        video_config: project.video_config,
+        audio_source: project.default_source.source.clone(),
+        burn_subtitles: args.subtitles,
+        dry_run: args.dry_run,
         runner,
-    )
+    })
 }
 
 fn report_timeline_stats(stats: &TimelineStats) {
@@ -368,7 +367,7 @@ mod tests {
 
         let SegmentData::VideoSubset {
             start_time: clip1_source_start,
-            source_video: clip1_source,
+            source,
             mute_audio: clip1_mute,
             ..
         } = &timeline.segments[0].data
@@ -378,12 +377,12 @@ mod tests {
         assert!((timeline.segments[0].start_time - 0.0).abs() < 1e-6);
         assert!((timeline.segments[0].duration - 12.0).abs() < 1e-6);
         assert!((*clip1_source_start - 0.0).abs() < 1e-6);
-        assert_eq!(clip1_source, &PathBuf::from("source.mp4"));
+        assert_eq!(&source.video, &PathBuf::from("source.mp4"));
         assert!(!clip1_mute);
 
         let SegmentData::VideoSubset {
             start_time: card_source_start,
-            source_video: card_source,
+            source: card_source,
             mute_audio: card_mute,
             ..
         } = &timeline.segments[1].data
@@ -393,12 +392,12 @@ mod tests {
         assert!((timeline.segments[1].start_time - 12.0).abs() < 1e-6);
         assert!((timeline.segments[1].duration - 2.0).abs() < 1e-6);
         assert!((*card_source_start - 0.0).abs() < 1e-6);
-        assert_eq!(card_source, &PathBuf::from("card.mp4"));
+        assert_eq!(&card_source.video, &PathBuf::from("card.mp4"));
         assert!(*card_mute);
 
         let SegmentData::VideoSubset {
             start_time: clip2_source_start,
-            source_video: clip2_source,
+            source: clip2_source,
             mute_audio: clip2_mute,
             ..
         } = &timeline.segments[2].data
@@ -408,7 +407,7 @@ mod tests {
         assert!((timeline.segments[2].start_time - 14.0).abs() < 1e-6);
         assert!((timeline.segments[2].duration - 8.0).abs() < 1e-6);
         assert!((*clip2_source_start - 12.0).abs() < 1e-6);
-        assert_eq!(clip2_source, &PathBuf::from("source.mp4"));
+        assert_eq!(&clip2_source.video, &PathBuf::from("source.mp4"));
         assert!(!clip2_mute);
     }
 

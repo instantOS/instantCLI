@@ -86,8 +86,7 @@ impl FfmpegCompiler {
     ) -> Result<FfmpegCompileOutput> {
         let mut args = Vec::new();
 
-        let (source_map, source_order) =
-            self.build_input_source_map(timeline, &audio_source);
+        let (source_map, source_order) = self.build_input_source_map(timeline, &audio_source);
 
         for source in &source_order {
             args.push("-i".to_string());

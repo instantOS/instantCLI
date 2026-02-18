@@ -47,7 +47,7 @@ fn video_segment_timing(
     let SegmentData::VideoSubset {
         start_time: source_start,
         mute_audio,
-        source_id,
+        source,
         ..
     } = &segment.data
     else {
@@ -63,7 +63,7 @@ fn video_segment_timing(
     let segment_end = segment.start_time + segment.duration;
 
     Some(SegmentTiming {
-        source_id: source_id.as_str(),
+        source_id: &source.id,
         source_window: TimeWindow::new(*source_start, source_end),
         time_offset,
         segment_end,
@@ -230,7 +230,7 @@ fn merge_overlapping_subtitles(subtitles: Vec<RemappedSubtitle>) -> Vec<Remapped
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::video::render::timeline::{Segment, SegmentData, Timeline};
+    use crate::video::render::timeline::{AvSourceRef, Segment, SegmentData, Timeline};
     use std::path::PathBuf;
 
     fn make_cue(start_ms: u64, end_ms: u64, text: &str) -> TranscriptCue {
@@ -254,9 +254,11 @@ mod tests {
             duration,
             data: SegmentData::VideoSubset {
                 start_time: source_start,
-                source_video: PathBuf::from("test.mp4"),
-                audio_source: PathBuf::from("test.mp4"),
-                source_id: "a".to_string(),
+                source: AvSourceRef {
+                    video: PathBuf::from("test.mp4"),
+                    audio: PathBuf::from("test.mp4"),
+                    id: "a".to_string(),
+                },
                 transform: None,
                 mute_audio: mute,
             },

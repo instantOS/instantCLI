@@ -4,17 +4,17 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 
 use crate::ui::prelude::Level;
+use crate::video::render::ffmpeg::compiler::VideoDimensions;
 use crate::video::render::logging::log_event;
 use crate::video::render::mode::RenderMode;
 use crate::video::render::timeline::Timeline;
 use crate::video::subtitles::{AssStyle, generate_ass_file, remap_subtitles_to_timeline};
 
-/// Generate an ASS subtitle file for the timeline.
 pub(super) fn generate_subtitle_file(
     timeline: &Timeline,
     cues: &[crate::video::support::transcript::TranscriptCue],
     output_path: &Path,
-    play_res: (u32, u32),
+    play_res: VideoDimensions,
     render_mode: RenderMode,
 ) -> Result<PathBuf> {
     let remapped = remap_subtitles_to_timeline(timeline, cues);
@@ -38,7 +38,7 @@ pub(super) fn generate_subtitle_file(
         RenderMode::Reels => AssStyle::for_reels(timeline.has_overlays),
         RenderMode::Standard => AssStyle::for_standard(),
     };
-    let ass_content = generate_ass_file(&remapped, &style, play_res);
+    let ass_content = generate_ass_file(&remapped, &style, (play_res.width, play_res.height));
 
     // Write ASS file next to output with .ass extension
     let ass_path = output_path.with_extension("ass");

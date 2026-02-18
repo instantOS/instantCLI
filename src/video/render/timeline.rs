@@ -343,7 +343,11 @@ mod tests {
             0.0,
             10.0,
             5.0,
-            AvSourceRef { video: PathBuf::from("test.mp4"), audio: PathBuf::from("test.mp4"), id: "a".to_string() },
+            AvSourceRef {
+                video: PathBuf::from("test.mp4"),
+                audio: PathBuf::from("test.mp4"),
+                id: "a".to_string(),
+            },
             None,
             false,
         );
@@ -359,7 +363,11 @@ mod tests {
             0.0,
             10.0,
             0.0,
-            AvSourceRef { video: PathBuf::from("test.mp4"), audio: PathBuf::from("test.mp4"), id: "a".to_string() },
+            AvSourceRef {
+                video: PathBuf::from("test.mp4"),
+                audio: PathBuf::from("test.mp4"),
+                id: "a".to_string(),
+            },
             None,
             false,
         ));
@@ -367,7 +375,11 @@ mod tests {
             10.0,
             5.0,
             10.0,
-            AvSourceRef { video: PathBuf::from("test.mp4"), audio: PathBuf::from("test.mp4"), id: "a".to_string() },
+            AvSourceRef {
+                video: PathBuf::from("test.mp4"),
+                audio: PathBuf::from("test.mp4"),
+                id: "a".to_string(),
+            },
             None,
             false,
         ));
@@ -375,7 +387,11 @@ mod tests {
             20.0,
             5.0,
             20.0,
-            AvSourceRef { video: PathBuf::from("test.mp4"), audio: PathBuf::from("test.mp4"), id: "a".to_string() },
+            AvSourceRef {
+                video: PathBuf::from("test.mp4"),
+                audio: PathBuf::from("test.mp4"),
+                id: "a".to_string(),
+            },
             None,
             false,
         ));
