@@ -1,9 +1,16 @@
 use anyhow::Result;
 
-use super::FfmpegCompiler;
 use super::inputs::SourceMap;
 use super::util::format_time;
+use super::FfmpegCompiler;
+use super::FilterChain;
 use crate::video::render::timeline::{Segment, SegmentData};
+
+struct VideoSubsetFilters {
+    filters: Vec<String>,
+    video_label: String,
+    audio_label: String,
+}
 
 impl FfmpegCompiler {
     pub(super) fn build_padding_filter(
@@ -31,7 +38,7 @@ impl FfmpegCompiler {
 
     pub(super) fn build_base_track_filters(
         &self,
-        filters: &mut Vec<String>,
+        filters: &mut FilterChain,
         video_segments: &[&Segment],
         source_map: &SourceMap,
     ) -> Result<bool> {
@@ -47,13 +54,17 @@ impl FfmpegCompiler {
                 continue;
             }
 
-            if self.push_single_video_subset_filters(
-                filters,
-                &mut concat_inputs,
-                &mut concat_count,
-                segment,
-                source_map,
-            )? {}
+            if let Some(output) =
+                self.build_video_subset_filters(segment, source_map, concat_count)?
+            {
+                filters.extend(output.filters);
+                concat_inputs.push_str(&format!(
+                    "[{video}][{audio}]",
+                    video = output.video_label,
+                    audio = output.audio_label
+                ));
+                concat_count += 1;
+            }
         }
 
         filters.push(format!(
@@ -65,14 +76,12 @@ impl FfmpegCompiler {
         Ok(true)
     }
 
-    fn push_single_video_subset_filters(
+    fn build_video_subset_filters(
         &self,
-        filters: &mut Vec<String>,
-        concat_inputs: &mut String,
-        concat_count: &mut usize,
         segment: &Segment,
         source_map: &SourceMap,
-    ) -> Result<bool> {
+        idx: usize,
+    ) -> Result<Option<VideoSubsetFilters>> {
         let SegmentData::VideoSubset {
             start_time,
             source,
@@ -80,11 +89,8 @@ impl FfmpegCompiler {
             ..
         } = &segment.data
         else {
-            return Ok(false);
+            return Ok(None);
         };
-
-        let idx = *concat_count;
-        *concat_count += 1;
 
         let input_index = source_map.index(&source.video)?;
         let audio_input_index = source_map.index(&source.audio)?;
@@ -94,6 +100,7 @@ impl FfmpegCompiler {
         let end_time = start_time + segment.duration;
 
         let trimmed_label = format!("v{idx}_raw");
+        let mut filters = Vec::new();
         filters.push(self.build_trimmed_video_filter(
             &trimmed_label,
             input_index,
@@ -110,12 +117,11 @@ impl FfmpegCompiler {
             &audio_label,
         ));
 
-        concat_inputs.push_str(&format!(
-            "[{video}][{audio}]",
-            video = video_label,
-            audio = audio_label
-        ));
-        Ok(true)
+        Ok(Some(VideoSubsetFilters {
+            filters,
+            video_label,
+            audio_label,
+        }))
     }
 
     fn build_trimmed_video_filter(
