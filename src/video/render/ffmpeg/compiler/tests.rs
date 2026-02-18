@@ -13,13 +13,11 @@ fn compiler_includes_output_path_in_args() {
     let render_config = RenderConfig::new(RenderMode::Standard, VideoConfig::default(), None);
     let compiler = FfmpegCompiler::new(dimensions, render_config);
     let timeline = Timeline::new();
-    let audio_map = HashMap::new();
     let output = compiler
         .compile(
             PathBuf::from("out.mp4"),
             &timeline,
             PathBuf::from("audio.mp4"),
-            &audio_map,
         )
         .unwrap();
     assert_eq!(output.args.last().unwrap(), "out.mp4");
@@ -63,13 +61,11 @@ fn concat_order_respects_timeline_order() {
         false,
     ));
 
-    let audio_map = HashMap::new();
     let output = compiler
         .compile(
             PathBuf::from("out.mp4"),
             &timeline,
             PathBuf::from("audio.mp4"),
-            &audio_map,
         )
         .unwrap();
 
@@ -100,7 +96,7 @@ fn concat_order_respects_timeline_order() {
 
 #[test]
 fn test_reels_mode_generates_padding_filter() {
-    let dimensions = VideoDimensions::new(1920, 1080);
+    let dimensions = VideoDimensions::new(1080, 1920);
     let render_config = RenderConfig::new(RenderMode::Reels, VideoConfig::default(), None);
     let compiler = FfmpegCompiler::new(dimensions, render_config);
     let padding = compiler.build_padding_filter("v0_raw", "v0");
@@ -116,7 +112,7 @@ fn test_reels_mode_generates_padding_filter() {
 
 #[test]
 fn test_reels_mode_padding_excludes_subtitles() {
-    let dimensions = VideoDimensions::new(1920, 1080);
+    let dimensions = VideoDimensions::new(1080, 1920);
     let render_config = RenderConfig::new(
         RenderMode::Reels,
         VideoConfig::default(),
@@ -134,7 +130,7 @@ fn test_reels_mode_padding_excludes_subtitles() {
 
 #[test]
 fn test_filter_complex_includes_subtitles() {
-    let dimensions = VideoDimensions::new(1920, 1080);
+    let dimensions = VideoDimensions::new(1080, 1920);
     let render_config = RenderConfig::new(
         RenderMode::Reels,
         VideoConfig::default(),

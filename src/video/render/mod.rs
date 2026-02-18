@@ -26,7 +26,7 @@ use self::output::prepare_output_destination;
 use self::pipeline::{RenderPipeline, RenderPipelineParams};
 pub(crate) use self::plan::build_timeline_plan;
 pub(crate) use self::sources::resolve_video_sources;
-use self::sources::{build_audio_source_map, find_default_source, validate_timeline_sources};
+use self::sources::{find_default_source, validate_timeline_sources};
 use self::subtitles::generate_subtitle_file;
 use self::timeline_builder::{SlideProvider, TimelineStats, build_nle_timeline};
 pub(crate) use self::transcripts::load_transcript_cues;
@@ -81,7 +81,6 @@ async fn handle_render_with_services(
     let plan = build_timeline_plan(&document, &cues, &markdown_path)?;
 
     let default_source = find_default_source(&document.metadata, &sources)?;
-    let audio_map = build_audio_source_map(&sources);
 
     // Determine render mode from CLI args
     let render_mode = if args.reels {
@@ -164,11 +163,10 @@ async fn handle_render_with_services(
         output: output_path.clone(),
         timeline: nle_timeline,
         render_mode,
-        source_width: video_width,
-        source_height: video_height,
+        target_width,
+        target_height,
         config: video_config,
         audio_source: default_source.source.clone(),
-        audio_by_source_id: audio_map,
         subtitle_path,
         runner,
     });

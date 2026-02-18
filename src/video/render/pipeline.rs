@@ -13,11 +13,10 @@ pub(super) struct RenderPipeline<'a> {
     output: PathBuf,
     timeline: Timeline,
     render_mode: RenderMode,
-    source_width: u32,
-    source_height: u32,
+    target_width: u32,
+    target_height: u32,
     config: VideoConfig,
     audio_source: PathBuf,
-    audio_by_source_id: std::collections::HashMap<String, PathBuf>,
     subtitle_path: Option<PathBuf>,
     runner: &'a dyn FfmpegRunner,
 }
@@ -26,11 +25,10 @@ pub(super) struct RenderPipelineParams<'a> {
     pub(super) output: PathBuf,
     pub(super) timeline: Timeline,
     pub(super) render_mode: RenderMode,
-    pub(super) source_width: u32,
-    pub(super) source_height: u32,
+    pub(super) target_width: u32,
+    pub(super) target_height: u32,
     pub(super) config: VideoConfig,
     pub(super) audio_source: PathBuf,
-    pub(super) audio_by_source_id: std::collections::HashMap<String, PathBuf>,
     pub(super) subtitle_path: Option<PathBuf>,
     pub(super) runner: &'a dyn FfmpegRunner,
 }
@@ -41,11 +39,10 @@ impl<'a> RenderPipeline<'a> {
             output: params.output,
             timeline: params.timeline,
             render_mode: params.render_mode,
-            source_width: params.source_width,
-            source_height: params.source_height,
+            target_width: params.target_width,
+            target_height: params.target_height,
             config: params.config,
             audio_source: params.audio_source,
-            audio_by_source_id: params.audio_by_source_id,
             subtitle_path: params.subtitle_path,
             runner: params.runner,
         }
@@ -64,7 +61,7 @@ impl<'a> RenderPipeline<'a> {
     }
 
     fn build_args(&self) -> Result<Vec<String>> {
-        let dimensions = VideoDimensions::new(self.source_width, self.source_height);
+        let dimensions = VideoDimensions::new(self.target_width, self.target_height);
         let render_config = RenderConfig::new(
             self.render_mode,
             self.config.clone(),
@@ -76,7 +73,6 @@ impl<'a> RenderPipeline<'a> {
                 self.output.clone(),
                 &self.timeline,
                 self.audio_source.clone(),
-                &self.audio_by_source_id,
             )?
             .args)
     }

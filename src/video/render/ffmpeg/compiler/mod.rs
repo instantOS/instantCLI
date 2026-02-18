@@ -68,13 +68,10 @@ pub struct FfmpegCompiler {
 }
 
 impl FfmpegCompiler {
-    pub fn new(dimensions: VideoDimensions, render_config: RenderConfig) -> Self {
-        let (target_width, target_height) = render_config
-            .render_mode
-            .target_dimensions(dimensions.width, dimensions.height);
+    pub fn new(target_dimensions: VideoDimensions, render_config: RenderConfig) -> Self {
         Self {
-            target_width,
-            target_height,
+            target_width: target_dimensions.width,
+            target_height: target_dimensions.height,
             render_mode: render_config.render_mode,
             config: render_config.config,
             subtitle_path: render_config.subtitle_path,
@@ -86,12 +83,11 @@ impl FfmpegCompiler {
         output: PathBuf,
         timeline: &Timeline,
         audio_source: PathBuf,
-        audio_by_source_id: &std::collections::HashMap<String, PathBuf>,
     ) -> Result<FfmpegCompileOutput> {
         let mut args = Vec::new();
 
         let (source_map, source_order) =
-            self.build_input_source_map(timeline, &audio_source, audio_by_source_id);
+            self.build_input_source_map(timeline, &audio_source);
 
         for source in &source_order {
             args.push("-i".to_string());

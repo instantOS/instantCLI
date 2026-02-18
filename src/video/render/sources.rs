@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Result, anyhow, bail};
@@ -136,15 +136,4 @@ async fn resolve_audio_path(video_path: &Path, config: &VideoConfig) -> Result<P
     );
 
     Ok(result.output_path)
-}
-
-/// Build a mapping from video source ID to its resolved audio file path.
-///
-/// Each video source can have a separate audio track (e.g. preprocessed audio).
-/// This map lets the ffmpeg compiler look up the audio file for any source by ID.
-pub(super) fn build_audio_source_map(sources: &[VideoSource]) -> HashMap<String, PathBuf> {
-    sources
-        .iter()
-        .map(|s| (s.id.clone(), s.audio.clone()))
-        .collect()
 }
