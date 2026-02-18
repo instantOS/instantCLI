@@ -537,8 +537,11 @@ impl ParagraphState {
         let mut leftover_text = Vec::new();
 
         while let Some(fragment) = fragments.next() {
+            // Check if this is a code fragment that looks like a timestamp
+            let is_timestamp_code = matches!(&fragment.kind, InlineFragmentKind::Code(code) if looks_like_timestamp_reference(code));
+
             match fragment.kind {
-                InlineFragmentKind::Code(code) => {
+                InlineFragmentKind::Code(code) if is_timestamp_code => {
                     let code_line = fragment.start_line;
                     let mut following = Vec::new();
                     while let Some(next) = fragments.peek() {
@@ -569,6 +572,30 @@ impl ParagraphState {
                         kind,
                         source_id,
                     }));
+                }
+                InlineFragmentKind::Code(code) => {
+                    // Code that doesn't look like a timestamp - collect following text on same line
+                    let code_line = fragment.start_line;
+                    let mut following = Vec::new();
+                    while let Some(next) = fragments.peek() {
+                        if matches!(next.kind, InlineFragmentKind::Code(_)) {
+                            break;
+                        }
+                        let next_line = next.start_line;
+                        if next_line != code_line {
+                            break;
+                        }
+                        following.push(fragments.next().unwrap());
+                    }
+
+                    // Reconstruct as text content with backticks
+                    leftover_text.push(InlineFragment::text(
+                        fragment.start_line,
+                        format!("`{}`", code),
+                    ));
+                    for f in following {
+                        leftover_text.push(f);
+                    }
                 }
                 _ => leftover_text.push(fragment),
             }
@@ -970,6 +997,21 @@ fn is_valid_source_id(value: &str) -> bool {
         }
     }
     true
+}
+
+/// Checks if a code span looks like a timestamp reference.
+/// A timestamp reference contains a time format with `:` and `.` (e.g., `00:01.0` or `a@00:01.0-00:02.0`).
+fn looks_like_timestamp_reference(value: &str) -> bool {
+    let trimmed = value.trim();
+    // Extract the time range part (after @ if present)
+    let range_part = if let Some((_, rest)) = trimmed.split_once('@') {
+        rest.trim()
+    } else {
+        trimmed
+    };
+    // A timestamp range should contain `:` (for time) and `.` (for fractional seconds)
+    // and may contain `-` for ranges
+    range_part.contains(':') && range_part.contains('.')
 }
 
 struct LineMap {
