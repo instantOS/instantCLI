@@ -7,10 +7,11 @@ mod video;
 #[cfg(test)]
 mod tests;
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 use anyhow::Result;
+
+use self::inputs::SourceMap;
 
 use super::super::mode::RenderMode;
 use crate::video::config::VideoConfig;
@@ -86,12 +87,8 @@ impl FfmpegCompiler {
     ) -> Result<FfmpegCompileOutput> {
         let mut args = Vec::new();
 
-        let (source_map, source_order) = self.build_input_source_map(timeline, &audio_source);
-
-        for source in &source_order {
-            args.push("-i".to_string());
-            args.push(source.to_string_lossy().into_owned());
-        }
+        let source_map = SourceMap::build(timeline, &audio_source);
+        args.extend(source_map.input_args());
 
         let total_duration = timeline.total_duration();
 
@@ -113,7 +110,7 @@ impl FfmpegCompiler {
     fn build_filter_complex(
         &self,
         timeline: &Timeline,
-        source_map: &HashMap<PathBuf, usize>,
+        source_map: &SourceMap,
         total_duration: f64,
     ) -> Result<String> {
         let mut filters: Vec<String> = Vec::new();

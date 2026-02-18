@@ -1,66 +1,92 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 
 use crate::video::render::timeline::Timeline;
 
-use super::FfmpegCompiler;
+/// Registry mapping media file paths to FFmpeg input indices.
+///
+/// When FFmpeg processes multiple input files, each is assigned a zero-based
+/// index based on the order of `-i` arguments. This struct provides a clean
+/// API for registering sources and looking up their indices.
+pub struct SourceMap {
+    map: HashMap<PathBuf, usize>,
+    order: Vec<PathBuf>,
+}
 
-impl FfmpegCompiler {
-    /// Collect every media file referenced by the timeline and assign each a
-    /// unique ffmpeg input index (`-i` position).
+impl SourceMap {
+    /// Build a SourceMap from a timeline and global audio source.
     ///
-    /// Returns:
-    /// - `source_map`: file path → ffmpeg input index
-    /// - `source_order`: paths in the order they will appear as `-i` arguments
-    ///
-    /// Audio paths are already embedded in each timeline segment (e.g.
-    /// `VideoSubset::audio_source`), so no separate audio map is needed.
-    pub(super) fn build_input_source_map(
-        &self,
-        timeline: &Timeline,
-        audio_source: &Path,
-    ) -> (HashMap<PathBuf, usize>, Vec<PathBuf>) {
-        let mut source_map: HashMap<PathBuf, usize> = HashMap::new();
-        let mut source_order: Vec<PathBuf> = Vec::new();
+    /// Collects every media file referenced by the timeline and assigns each
+    /// a unique FFmpeg input index. Audio paths embedded in segments are
+    /// included automatically.
+    pub fn build(timeline: &Timeline, audio_source: &Path) -> Self {
+        let mut map: HashMap<PathBuf, usize> = HashMap::new();
+        let mut order: Vec<PathBuf> = Vec::new();
         let mut next_index = 0;
 
         for segment in &timeline.segments {
             if let Some(source) = segment.data.source_path()
-                && !source_map.contains_key(source)
+                && !map.contains_key(source)
             {
-                source_map.insert(source.clone(), next_index);
-                source_order.push(source.clone());
+                map.insert(source.clone(), next_index);
+                order.push(source.clone());
                 next_index += 1;
             }
             if let Some(audio) = segment.data.audio_source()
-                && !source_map.contains_key(audio)
+                && !map.contains_key(audio)
             {
-                source_map.insert(audio.clone(), next_index);
-                source_order.push(audio.clone());
+                map.insert(audio.clone(), next_index);
+                order.push(audio.clone());
                 next_index += 1;
             }
         }
 
-        if !source_map.contains_key(audio_source) {
-            source_map.insert(audio_source.to_path_buf(), next_index);
-            source_order.push(audio_source.to_path_buf());
+        if !map.contains_key(audio_source) {
+            map.insert(audio_source.to_path_buf(), next_index);
+            order.push(audio_source.to_path_buf());
         }
 
-        (source_map, source_order)
+        Self { map, order }
     }
-}
 
-/// Look up the ffmpeg input index for a media file, returning a contextual
-/// error if the file was not registered in the source map.
-pub fn get_ffmpeg_input_index(
-    source_map: &HashMap<PathBuf, usize>,
-    source: &Path,
-    error_prefix: &str,
-) -> Result<usize> {
-    source_map
-        .get(source)
-        .copied()
-        .ok_or_else(|| anyhow!("{error_prefix} {}", source.display()))
+    /// Get the FFmpeg input index for a source file.
+    pub fn index(&self, path: &Path) -> Result<usize> {
+        self.map
+            .get(path)
+            .copied()
+            .ok_or_else(|| anyhow!("No FFmpeg input available for {}", path.display()))
+    }
+
+    /// Get the FFmpeg input index with custom context in error message.
+    ///
+    /// Example: `source_map.index_for(path, "B-roll video")` produces:
+    /// "No FFmpeg input available for B-roll video: /path/to/file.mp4"
+    pub fn index_for(&self, path: &Path, context: &str) -> Result<usize> {
+        self.map.get(path).copied().ok_or_else(|| {
+            anyhow!(
+                "No FFmpeg input available for {}: {}",
+                context,
+                path.display()
+            )
+        })
+    }
+
+    /// Source paths in FFmpeg input order.
+    pub fn paths(&self) -> impl Iterator<Item = &PathBuf> {
+        self.order.iter()
+    }
+
+    /// Generate `-i` argument pairs for FFmpeg command.
+    ///
+    /// Returns a flat vector: `["-i", "/path/1.mp4", "-i", "/path/2.mp4", ...]`
+    pub fn input_args(&self) -> Vec<String> {
+        let mut args = Vec::with_capacity(self.order.len() * 2);
+        for source in &self.order {
+            args.push("-i".to_string());
+            args.push(source.to_string_lossy().into_owned());
+        }
+        args
+    }
 }

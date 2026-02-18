@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 
-use super::FfmpegCompiler;
 use super::util::format_time;
+use super::FfmpegCompiler;
 use crate::video::render::timeline::{Segment, SegmentData};
 
 impl FfmpegCompiler {
@@ -92,31 +92,35 @@ fn collect_music_segment_labels(
         })?;
 
         let label = format!("music_{idx}");
-        push_single_music_filter(filters, segment, *input_index, music_volume, &label);
+        filters.push(build_single_music_filter(
+            segment,
+            *input_index,
+            music_volume,
+            &label,
+        ));
         labels.push(label);
     }
 
     Ok(labels)
 }
 
-fn push_single_music_filter(
-    filters: &mut Vec<String>,
+fn build_single_music_filter(
     segment: &Segment,
     input_index: usize,
     music_volume: f64,
     label: &str,
-) {
+) -> String {
     let duration_str = format_time(segment.duration);
     let delay_ms = ((segment.start_time * 1000.0).round()).max(0.0) as u64;
 
-    filters.push(format!(
+    format!(
         "[{input}:a]atrim=start=0:end={duration},asetpts=PTS-STARTPTS,apad=pad_dur={duration},atrim=duration={duration},aresample=async=1:first_pts=0,adelay={delay}|{delay},volume={volume:.6}[{label}]",
         input = input_index,
         duration = duration_str,
         delay = delay_ms,
         volume = music_volume,
         label = label,
-    ));
+    )
 }
 
 fn mix_music_labels(filters: &mut Vec<String>, labels: Vec<String>) -> Result<String> {
