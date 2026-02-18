@@ -5,135 +5,109 @@ window.addEventListener('load', () => {
     if (!content) return;
 
     // 1. Classification
-    const headings = content.querySelectorAll('h1, h2, h3').length;
-    const paragraphs = content.querySelectorAll('p').length;
-    const codeBlocks = content.querySelectorAll('pre').length;
-    const listItems = content.querySelectorAll('li').length;
-    const blockquotes = content.querySelectorAll('blockquote').length;
-    const figures = content.querySelectorAll('figure').length;
-    const imgElements = content.querySelectorAll('img').length;
+    const counts = {
+        headings: content.querySelectorAll('h1, h2, h3').length,
+        paragraphs: content.querySelectorAll('p').length,
+        codeBlocks: content.querySelectorAll('pre').length,
+        listItems: content.querySelectorAll('li').length,
+        blockquotes: content.querySelectorAll('blockquote').length,
+        figures: content.querySelectorAll('figure').length,
+        images: content.querySelectorAll('img').length,
+    };
     const textLength = content.innerText.length;
-
-    // "Quote" condition: Slide is ONLY a blockquote (no other content outside the blockquote)
-    // Note: Pandoc wraps blockquote text in <p>, so we only count <p> tags NOT inside blockquote
     const paragraphsOutsideBlockquote = content.querySelectorAll('p:not(blockquote p)').length;
-    if (blockquotes > 0 && paragraphsOutsideBlockquote === 0 && headings === 0 && codeBlocks === 0 && listItems === 0 && imgElements === 0) {
+
+    // Helper to check if slide has only specific content types
+    const hasOnly = (types) => types.every(type => counts[type] === 0);
+
+    // "Quote" condition: Slide is ONLY a blockquote
+    if (counts.blockquotes > 0 && paragraphsOutsideBlockquote === 0 && hasOnly(['headings', 'codeBlocks', 'listItems', 'images', 'figures'])) {
         body.classList.add('layout-quote');
     }
 
-    // "Image" condition: Single image/figure only (Pandoc wraps images in <figure> or <p>)
-    const allParagraphsAreImages = paragraphs > 0 && Array.from(content.querySelectorAll('p')).every(p => {
-        const childNodes = Array.from(p.childNodes).filter(n => n.nodeType !== 3 || n.textContent.trim() !== '');
-        return childNodes.length === 1 && childNodes[0].tagName === 'IMG';
-    });
-    // Image layout: single figure with image, OR single img in paragraph, with no other content
-    const isSingleFigure = figures === 1 && paragraphsOutsideBlockquote === 0 && headings === 0 && codeBlocks === 0 && blockquotes === 0 && listItems === 0;
-    const isSingleImageParagraph = imgElements === 1 && figures === 0 && headings === 0 && codeBlocks === 0 && blockquotes === 0 && listItems === 0 && allParagraphsAreImages;
-    if (isSingleFigure || isSingleImageParagraph) {
+    // "Image" condition: Single image/figure only
+    const isSingleFigure = counts.figures === 1 && hasOnly(['headings', 'paragraphs', 'codeBlocks', 'blockquotes', 'listItems']);
+    const isSingleImage = counts.images === 1 && counts.figures === 0 && hasOnly(['headings', 'codeBlocks', 'blockquotes', 'listItems']);
+    if (isSingleFigure || isSingleImage) {
         body.classList.add('layout-image');
     }
 
-    // "Title" condition: ONLY a single heading, nothing else
-    const isSingleHeading = headings === 1 && paragraphs === 0 && codeBlocks === 0 && listItems === 0 && blockquotes === 0 && imgElements === 0;
+    // "Title" condition: ONLY a single heading
+    const isSingleHeading = counts.headings === 1 && hasOnly(['paragraphs', 'codeBlocks', 'listItems', 'blockquotes', 'images', 'figures']);
     if (isSingleHeading) {
         body.classList.add('layout-title');
     }
 
     // "Hero" condition: Only headers or very minimal text, but NO blockquotes
-    if (!isSingleHeading && codeBlocks === 0 && listItems === 0 && blockquotes === 0 && paragraphs <= 1 && headings > 0 && textLength < 200) {
+    if (!isSingleHeading && counts.codeBlocks === 0 && counts.listItems === 0 && counts.blockquotes === 0 && counts.paragraphs <= 1 && counts.headings > 0 && textLength < 200) {
         body.classList.add('layout-hero');
     }
 
     // "Dense" condition: Lots of text or code
-    // Trigger earlier to switch to space-saving layout
-    if (textLength > 500 || (codeBlocks > 0 && textLength > 300)) {
+    if (textLength > 500 || (counts.codeBlocks > 0 && textLength > 300)) {
         body.classList.add('layout-dense');
     }
 
     // 2. Auto-scaling logic
     let currentScale = 100;
     let minScale = 10;
-    let maxScale = 300; // Allow growing up to 3x base size
+    let maxScale = 300;
 
     if (body.classList.contains('layout-title')) {
-        maxScale = 400; // Allow single headings to grow even more
+        maxScale = 400;
     } else if (body.classList.contains('layout-hero')) {
-        maxScale = 250; // Cap hero slightly more to avoid clipping
+        maxScale = 250;
     }
 
-    // For slides with code blocks, allow shrinking more to ensure content fits
-    if (codeBlocks > 0) {
-        minScale = 3; // Allow much smaller text for code-heavy slides
-        // Start with a smaller base size for code-heavy slides
+    if (counts.codeBlocks > 0) {
+        minScale = 3;
         currentScale = 80;
         body.style.fontSize = currentScale + '%';
     }
 
+    // Cache padding calculations
+    const bodyStyle = window.getComputedStyle(body);
+    const paddingVertical = parseFloat(bodyStyle.paddingTop) + parseFloat(bodyStyle.paddingBottom);
+    const paddingHorizontal = parseFloat(bodyStyle.paddingLeft) + parseFloat(bodyStyle.paddingRight);
+
     function checkOverflow() {
-        // Smaller buffer for slides with code blocks to maximize space usage
-        const buffer = codeBlocks > 0 ? 10 : 40;
+        const buffer = counts.codeBlocks > 0 ? 10 : 40;
+        const availableHeight = window.innerHeight - paddingVertical - buffer;
+        const availableWidth = window.innerWidth - paddingHorizontal - buffer;
 
-        // Use window dimensions and compare against content's scroll dimensions
-        // This is more reliable than checking body.scrollHeight which is fixed to 100vh
-        const style = window.getComputedStyle(body);
-        const paddingTop = parseFloat(style.paddingTop);
-        const paddingBottom = parseFloat(style.paddingBottom);
-        const paddingLeft = parseFloat(style.paddingLeft);
-        const paddingRight = parseFloat(style.paddingRight);
-
-        const availableHeight = window.innerHeight - paddingTop - paddingBottom - buffer;
-        const availableWidth = window.innerWidth - paddingLeft - paddingRight - buffer;
-
-        // Vertical overflow
-        if (content.scrollHeight > availableHeight) {
-            return true;
-        }
-
-        // Horizontal overflow
-        if (content.scrollWidth > availableWidth) {
-            return true;
-        }
-
-        return false;
+        return content.scrollHeight > availableHeight || content.scrollWidth > availableWidth;
     }
 
     function checkWordBreaking() {
-        // Check if any heading words are breaking across lines
         const headings = content.querySelectorAll('h1, h2, h3');
         for (const heading of headings) {
-            const words = heading.querySelectorAll('code, span:not(span)');
+            const headingWidth = heading.getBoundingClientRect().width;
             const textNodes = [];
-            
-            // Get all text content, splitting by whitespace
-            const walker = document.createTreeWalker(heading, NodeFilter.SHOW_TEXT, null);
+
+            // Get all text nodes in the heading
+            const walker = document.createTreeWalker(heading, 4, null); // 4 = NodeFilter.SHOW_TEXT
             let node;
             while (node = walker.nextNode()) {
                 if (node.textContent.trim()) {
                     textNodes.push(node);
                 }
             }
-            
+
             for (const textNode of textNodes) {
                 const words = textNode.textContent.trim().split(/\s+/);
-                if (words.length === 0) continue;
-                
-                // Create a range to measure each word
                 const range = document.createRange();
+
                 for (const word of words) {
-                    if (word.length <= 1) continue; // Skip single characters
-                    
-                    // Find the word in the text node
+                    if (word.length <= 1) continue;
+
                     const wordIndex = textNode.textContent.indexOf(word);
                     if (wordIndex === -1) continue;
-                    
+
                     range.setStart(textNode, wordIndex);
                     range.setEnd(textNode, wordIndex + word.length);
-                    
-                    const wordRect = range.getBoundingClientRect();
-                    const headingRect = heading.getBoundingClientRect();
-                    
+
                     // If word is wider than 80% of heading width, it's likely breaking
-                    if (wordRect.width > headingRect.width * 0.8) {
+                    if (range.getBoundingClientRect().width > headingWidth * 0.8) {
                         return true;
                     }
                 }
@@ -142,10 +116,10 @@ window.addEventListener('load', () => {
         return false;
     }
 
-    // Smaller step size for code-heavy slides
-    const stepSize = codeBlocks > 0 ? 2 : 5;
+    // Scale adjustment
+    const stepSize = counts.codeBlocks > 0 ? 2 : 5;
+    let overflow, wordBreaking;
 
-    // Initial check
     if (checkOverflow()) {
         // Shrink mode
         while (checkOverflow() && currentScale > minScale) {
@@ -153,15 +127,18 @@ window.addEventListener('load', () => {
             body.style.fontSize = currentScale + '%';
         }
     } else {
-        // Grow mode
-        // We grow until it overflows or words start breaking, then step back
-        while (!checkOverflow() && !checkWordBreaking() && currentScale < maxScale) {
+        // Grow mode - cache results to avoid redundant calls
+        while (currentScale < maxScale) {
+            overflow = checkOverflow();
+            wordBreaking = checkWordBreaking();
+            if (overflow || wordBreaking) break;
+
             currentScale += stepSize;
             body.style.fontSize = currentScale + '%';
         }
 
-        // If we caused an overflow or word breaking, step back one unit to make it fit again
-        if (checkOverflow() || checkWordBreaking()) {
+        // Step back if we caused overflow or word breaking
+        if (overflow || wordBreaking) {
             currentScale -= stepSize;
             body.style.fontSize = currentScale + '%';
         }
