@@ -30,8 +30,10 @@
   --ctp-crust: #11111b;
 
   /* Fonts */
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  --font-sans:
+    "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", "Consolas", monospace;
 
   --base-size: 100%;
 }
@@ -48,7 +50,11 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, var(--ctp-base) 0%, var(--ctp-mantle) 100%);
+  background: linear-gradient(
+    135deg,
+    var(--ctp-base) 0%,
+    var(--ctp-mantle) 100%
+  );
   color: var(--text-main);
   font-family: var(--font-sans);
   line-height: 1.3;
@@ -111,7 +117,11 @@ h1 {
   font-weight: 800;
   line-height: 1.1;
   /* Catppuccin Mauve to Pink Gradient */
-  background: linear-gradient(to bottom right, var(--ctp-mauve) 20%, var(--ctp-pink) 100%);
+  background: linear-gradient(
+    to bottom right,
+    var(--ctp-mauve) 20%,
+    var(--ctp-pink) 100%
+  );
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -124,7 +134,11 @@ h2 {
   font-weight: 700;
   line-height: 1.2;
   /* Complementary Lavender to Sapphire Gradient */
-  background: linear-gradient(to bottom right, var(--ctp-lavender) 30%, var(--ctp-sapphire) 100%);
+  background: linear-gradient(
+    to bottom right,
+    var(--ctp-lavender) 30%,
+    var(--ctp-sapphire) 100%
+  );
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -432,7 +446,11 @@ h1 code,
 h2 code {
   -webkit-text-fill-color: var(--ctp-crust);
   color: var(--ctp-crust) !important;
-  background: linear-gradient(to bottom right, var(--ctp-mauve) 20%, var(--ctp-pink) 100%) !important;
+  background: linear-gradient(
+    to bottom right,
+    var(--ctp-mauve) 20%,
+    var(--ctp-pink) 100%
+  ) !important;
   border: 1px solid var(--ctp-mauve) !important;
   padding: 0.05em 0.2em !important;
   border-radius: 0.2em !important;
@@ -471,7 +489,11 @@ ol li::marker {
 
 blockquote {
   border-left: 0.2em solid var(--ctp-mauve);
-  background: linear-gradient(90deg, rgba(203, 166, 247, 0.1) 0%, transparent 100%);
+  background: linear-gradient(
+    90deg,
+    rgba(203, 166, 247, 0.1) 0%,
+    transparent 100%
+  );
   padding: 1em 1.5em;
   margin: 1.5em 0;
   font-size: 2.5em;
@@ -543,7 +565,11 @@ body.layout-hero h1 {
   font-size: 8.5em;
   margin-bottom: 0.15em;
   line-height: 1.2;
-  background: linear-gradient(to bottom, var(--ctp-text) 40%, var(--ctp-mauve) 100%);
+  background: linear-gradient(
+    to bottom,
+    var(--ctp-text) 40%,
+    var(--ctp-mauve) 100%
+  );
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -552,7 +578,11 @@ body.layout-hero h1 {
 body.layout-hero h2 {
   font-size: 5.5em;
   margin-bottom: 0.3em;
-  background: linear-gradient(to bottom, var(--ctp-subtext1) 40%, var(--ctp-lavender) 100%);
+  background: linear-gradient(
+    to bottom,
+    var(--ctp-subtext1) 40%,
+    var(--ctp-lavender) 100%
+  );
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -579,7 +609,11 @@ body.layout-title h3 {
   font-size: 11em;
   margin-bottom: 0;
   line-height: 1.1;
-  background: linear-gradient(to bottom, var(--ctp-text) 30%, var(--ctp-mauve) 100%);
+  background: linear-gradient(
+    to bottom,
+    var(--ctp-text) 30%,
+    var(--ctp-mauve) 100%
+  );
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -606,7 +640,11 @@ body.layout-quote blockquote {
   padding: 1.5em 2.5em;
   margin: 0;
   border-left: 0.15em solid var(--ctp-mauve);
-  background: linear-gradient(90deg, rgba(203, 166, 247, 0.1) 0%, transparent 50%);
+  background: linear-gradient(
+    90deg,
+    rgba(203, 166, 247, 0.1) 0%,
+    transparent 50%
+  );
   border-radius: 0 1em 1em 0;
 }
 
@@ -731,7 +769,7 @@ body.layout-dense div.code-window {
     padding-bottom: 20vh;
     padding-left: 6vw;
     padding-right: 6vw;
-    
+
     /* Adjust base size for narrow screens to keep relative units sane */
     --base-size: 85%;
   }
@@ -745,7 +783,7 @@ body.layout-dense div.code-window {
   /* Adjust typography scaling for vertical layout */
   /* Reduced from 6em/3.2em to let JS scaler handle growth if space permits */
   h1 {
-    font-size: 5em; 
+    font-size: 5em;
     line-height: 1.15;
   }
 
@@ -762,7 +800,8 @@ body.layout-dense div.code-window {
     line-height: 1.5;
   }
 
-  ul, ol {
+  ul,
+  ol {
     font-size: 2.8em;
     padding-left: 1.2em;
   }

@@ -30,3 +30,8 @@ format:
     cargo clippy --fix --allow-dirty
     cargo fmt
     find . -name "*.sh" -exec shfmt -w {} \;
+
+# Format slide assets (JS with deno fmt, CSS with prettier)
+format-slides:
+    deno fmt src/video/slides/assets/slide.js
+    prettier --write src/video/slides/assets/slide.css
