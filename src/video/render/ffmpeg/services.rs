@@ -1,8 +1,8 @@
-use std::io::{BufRead, BufReader};
+use std::io::Read;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use indicatif::{ProgressBar, ProgressStyle};
 
 use crate::video::document::MusicDirective;
@@ -39,7 +39,6 @@ impl FfmpegRunner for SystemFfmpegRunner {
             .with_context(|| "Failed to spawn ffmpeg")?;
 
         let stderr = child.stderr.take().expect("stderr was piped");
-        let reader = BufReader::new(stderr);
 
         let pb = if let Some(duration) = options.total_duration {
             let pb = ProgressBar::new((duration * 1000.0) as u64);
@@ -55,31 +54,18 @@ impl FfmpegRunner for SystemFfmpegRunner {
             None
         };
 
-        let mut last_stderr = String::new();
+        let mut last_line = String::new();
         let mut error_lines: Vec<String> = Vec::new();
-
-        for line in reader.lines() {
-            let line = line.context("Failed to read ffmpeg stderr")?;
-            last_stderr = line.clone();
-
-            if options.verbose {
-                eprintln!("{}", line);
-            }
-
-            if line.contains("error") || line.contains("Error") || line.contains("ERROR") {
-                error_lines.push(line.clone());
-            }
-
-            if let Some(ref pb) = pb
-                && let Some(progress) = parse_ffmpeg_progress(&line) {
-                    pb.set_position((progress * 1000.0) as u64);
-                    if let Some(speed) = parse_ffmpeg_speed(&line) {
-                        pb.set_message(format!("{}x", speed));
-                    }
-                }
-        }
+        let result = read_ffmpeg_stderr(
+            stderr,
+            options.verbose,
+            &pb,
+            &mut last_line,
+            &mut error_lines,
+        );
 
         let status = child.wait().context("Failed to wait for ffmpeg")?;
+        result?;
 
         if let Some(pb) = pb {
             pb.finish_with_message("done");
@@ -89,7 +75,7 @@ impl FfmpegRunner for SystemFfmpegRunner {
             let error_msg = if !error_lines.is_empty() {
                 error_lines.join("\n")
             } else {
-                last_stderr
+                last_line
             };
             bail!(
                 "ffmpeg exited with status {:?}: {}",
@@ -100,6 +86,59 @@ impl FfmpegRunner for SystemFfmpegRunner {
 
         Ok(())
     }
+}
+
+fn read_ffmpeg_stderr<R: Read>(
+    mut stderr: R,
+    verbose: bool,
+    pb: &Option<ProgressBar>,
+    last_line: &mut String,
+    error_lines: &mut Vec<String>,
+) -> Result<()> {
+    let mut buffer = [0u8; 4096];
+    let mut accumulated = String::new();
+
+    loop {
+        let bytes_read = stderr
+            .read(&mut buffer)
+            .context("Failed to read ffmpeg stderr")?;
+        if bytes_read == 0 {
+            break;
+        }
+
+        let chunk = String::from_utf8_lossy(&buffer[..bytes_read]);
+        accumulated.push_str(&chunk);
+
+        while let Some(pos) = accumulated.find(|c| c == '\r' || c == '\n') {
+            let line = accumulated[..pos].to_string();
+            accumulated = accumulated[pos + 1..].to_string();
+
+            if line.is_empty() {
+                continue;
+            }
+
+            *last_line = line.clone();
+
+            if verbose {
+                eprintln!("{}", line);
+            }
+
+            if line.contains("error") || line.contains("Error") || line.contains("ERROR") {
+                error_lines.push(line.clone());
+            }
+
+            if let Some(pb) = pb {
+                if let Some(progress) = parse_ffmpeg_progress(&line) {
+                    pb.set_position((progress * 1000.0) as u64);
+                    if let Some(speed) = parse_ffmpeg_speed(&line) {
+                        pb.set_message(format!("{}x", speed));
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
 
 fn parse_ffmpeg_progress(line: &str) -> Option<f64> {
