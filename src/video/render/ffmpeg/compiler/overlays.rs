@@ -1,9 +1,7 @@
-use std::collections::HashMap;
-use std::path::PathBuf;
-
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 
 use super::FfmpegCompiler;
+use super::inputs::SourceMap;
 use crate::video::render::timeline::{Segment, SegmentData, TimeWindow, Transform};
 
 const OVERLAY_FRAME_SCALE: f64 = 0.9;
@@ -99,7 +97,7 @@ impl FfmpegCompiler {
         &self,
         filters: &mut Vec<String>,
         broll_segments: &[&Segment],
-        source_map: &HashMap<PathBuf, usize>,
+        source_map: &SourceMap,
         input_label: &str,
     ) -> Result<String> {
         let mut current_video_label = input_label.to_string();
@@ -115,12 +113,7 @@ impl FfmpegCompiler {
                 continue;
             };
 
-            let input_index = source_map.get(source_video).ok_or_else(|| {
-                anyhow!(
-                    "No ffmpeg input available for B-roll video {}",
-                    source_video.display()
-                )
-            })?;
+            let input_index = source_map.index_for(source_video, "B-roll video")?;
 
             let trimmed_label = format!("broll_trim_{idx}");
             let (scaled_label, output_label, _) = self.build_overlay_label_triplet("broll", idx);
@@ -163,7 +156,7 @@ impl FfmpegCompiler {
         &self,
         filters: &mut Vec<String>,
         overlay_segments: &[&Segment],
-        source_map: &HashMap<PathBuf, usize>,
+        source_map: &SourceMap,
         input_label: &str,
     ) -> Result<String> {
         let mut current_video_label = input_label.to_string();
@@ -177,12 +170,7 @@ impl FfmpegCompiler {
                 continue;
             };
 
-            let input_index = source_map.get(source_image).ok_or_else(|| {
-                anyhow!(
-                    "No ffmpeg input available for overlay image {}",
-                    source_image.display()
-                )
-            })?;
+            let input_index = source_map.index_for(source_image, "overlay image")?;
 
             let (overlay_input, overlay_label, output_label) =
                 self.build_overlay_label_triplet("overlay", idx);

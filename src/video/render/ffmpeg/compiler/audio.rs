@@ -1,10 +1,8 @@
-use std::collections::HashMap;
-use std::path::PathBuf;
+use anyhow::{Result, bail};
 
-use anyhow::{bail, Result};
-
-use super::util::format_time;
 use super::FfmpegCompiler;
+use super::inputs::SourceMap;
+use super::util::format_time;
 use crate::video::render::timeline::{Segment, SegmentData};
 
 impl FfmpegCompiler {
@@ -12,7 +10,7 @@ impl FfmpegCompiler {
         &self,
         filters: &mut Vec<String>,
         music_segments: &[&Segment],
-        source_map: &HashMap<PathBuf, usize>,
+        source_map: &SourceMap,
         has_base_track: bool,
         total_duration: f64,
     ) -> Result<()> {
@@ -58,7 +56,7 @@ impl FfmpegCompiler {
         &self,
         filters: &mut Vec<String>,
         music_segments: &[&Segment],
-        source_map: &HashMap<PathBuf, usize>,
+        source_map: &SourceMap,
     ) -> Result<String> {
         let music_volume = f64::from(self.config.music_volume());
         let labels =
@@ -70,7 +68,7 @@ impl FfmpegCompiler {
 fn collect_music_segment_labels(
     filters: &mut Vec<String>,
     music_segments: &[&Segment],
-    source_map: &HashMap<PathBuf, usize>,
+    source_map: &SourceMap,
     music_volume: f64,
 ) -> Result<Vec<String>> {
     let mut labels = Vec::new();
@@ -84,17 +82,12 @@ fn collect_music_segment_labels(
             continue;
         };
 
-        let input_index = source_map.get(audio_source).ok_or_else(|| {
-            anyhow::anyhow!(
-                "No ffmpeg input available for background music {}",
-                audio_source.display()
-            )
-        })?;
+        let input_index = source_map.index_for(audio_source, "background music")?;
 
         let label = format!("music_{idx}");
         filters.push(build_single_music_filter(
             segment,
-            *input_index,
+            input_index,
             music_volume,
             &label,
         ));

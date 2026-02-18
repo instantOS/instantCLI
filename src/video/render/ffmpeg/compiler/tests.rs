@@ -1,6 +1,6 @@
-use std::collections::HashMap;
 use std::path::PathBuf;
 
+use super::inputs::SourceMap;
 use super::util::escape_ffmpeg_path;
 use super::{FfmpegCompiler, RenderConfig, VideoDimensions};
 use crate::video::config::VideoConfig;
@@ -158,8 +158,7 @@ fn test_filter_complex_includes_subtitles() {
         false,
     ));
 
-    let mut source_map = HashMap::new();
-    source_map.insert(PathBuf::from("video.mp4"), 0);
+    let source_map = SourceMap::build(&timeline, PathBuf::from("audio.mp4").as_path());
     let filter_complex = compiler
         .build_filter_complex(&timeline, &source_map, 5.0)
         .unwrap();

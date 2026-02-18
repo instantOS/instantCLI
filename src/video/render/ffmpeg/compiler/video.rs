@@ -1,10 +1,8 @@
-use std::path::PathBuf;
-
 use anyhow::Result;
 
+use super::FfmpegCompiler;
 use super::inputs::SourceMap;
 use super::util::format_time;
-use super::FfmpegCompiler;
 use crate::video::render::timeline::{Segment, SegmentData};
 
 impl FfmpegCompiler {
