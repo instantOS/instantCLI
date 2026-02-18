@@ -2,7 +2,7 @@ use std::io::Read;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use indicatif::{ProgressBar, ProgressStyle};
 
 use crate::video::document::MusicDirective;
@@ -46,8 +46,9 @@ impl FfmpegRunner for SystemFfmpegRunner {
                 ProgressStyle::default_bar()
                     .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos:>8}/{len:8} ({eta}) {msg}")
                     .unwrap()
-                    .progress_chars("#>-"),
+                    .progress_chars("█▉▊▋▌▍▎▏ "),
             );
+            pb.enable_steady_tick(std::time::Duration::from_millis(100));
             pb.set_message("rendering".to_string());
             Some(pb)
         } else {
