@@ -36,6 +36,7 @@ struct RenderJob<'a> {
     audio_source: PathBuf,
     burn_subtitles: bool,
     dry_run: bool,
+    verbose: bool,
     runner: &'a dyn FfmpegRunner,
 }
 pub(crate) use self::plan::build_timeline_plan;
@@ -169,6 +170,7 @@ fn execute_render(job: RenderJob<'_>) -> Result<Option<PathBuf>> {
         render_config,
         audio_source: job.audio_source,
         runner: job.runner,
+        verbose: job.verbose,
     };
 
     log_event(
@@ -255,6 +257,7 @@ async fn handle_render_with_services(
         audio_source: project.default_source.source.clone(),
         burn_subtitles: args.subtitles,
         dry_run: args.dry_run,
+        verbose: args.verbose,
         runner,
     })
 }

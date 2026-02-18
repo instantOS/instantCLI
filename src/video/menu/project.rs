@@ -355,6 +355,7 @@ async fn run_render_for_project(markdown_path: &Path) -> Result<()> {
         dry_run: render_options.dry_run,
         reels,
         subtitles,
+        verbose: false,
     })
     .await?;
 

@@ -140,6 +140,10 @@ pub struct RenderArgs {
     /// Burn subtitles into the video (works in both normal and reels mode)
     #[arg(long)]
     pub subtitles: bool,
+
+    /// Show raw ffmpeg output instead of progress bar
+    #[arg(long)]
+    pub verbose: bool,
 }
 
 #[derive(Args, Debug, Clone)]

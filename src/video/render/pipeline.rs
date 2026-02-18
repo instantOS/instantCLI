@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 
 use crate::video::render::ffmpeg::compiler::{FfmpegCompiler, RenderConfig, VideoDimensions};
-use crate::video::render::ffmpeg::services::FfmpegRunner;
+use crate::video::render::ffmpeg::services::{FfmpegRunOptions, FfmpegRunner};
 use crate::video::render::timeline::Timeline;
 
 pub(super) struct RenderPipeline<'a> {
@@ -13,6 +13,7 @@ pub(super) struct RenderPipeline<'a> {
     pub(super) render_config: RenderConfig,
     pub(super) audio_source: PathBuf,
     pub(super) runner: &'a dyn FfmpegRunner,
+    pub(super) verbose: bool,
 }
 
 impl<'a> RenderPipeline<'a> {
@@ -25,7 +26,8 @@ impl<'a> RenderPipeline<'a> {
 
     pub(super) fn execute(&self) -> Result<()> {
         let args = self.build_args()?;
-        self.runner.run(&args)
+        let options = FfmpegRunOptions::new(Some(self.timeline.total_duration()), self.verbose);
+        self.runner.run(&args, options)
     }
 
     fn build_args(&self) -> Result<Vec<String>> {
