@@ -109,24 +109,6 @@ impl VideoConfig {
         <Self as DocumentedConfig>::load_from_path_documented(video_config_path()?)
     }
 
-    pub fn load_from_path(path: impl AsRef<Path>) -> Result<Self> {
-        let path = path.as_ref();
-
-        if !path.exists() {
-            let config = Self::default();
-            config.save_to_path(path)?;
-            return Ok(config);
-        }
-
-        let contents = fs::read_to_string(path)
-            .with_context(|| format!("reading video config from {}", path.display()))?;
-        let mut config: Self = toml::from_str(&contents).context("parsing video config")?;
-        if !config.music_volume.is_finite() || config.music_volume < 0.0 {
-            config.music_volume = Self::DEFAULT_MUSIC_VOLUME;
-        }
-        Ok(config)
-    }
-
     pub fn save(&self) -> Result<()> {
         self.save_to_path(video_config_path()?)
     }
