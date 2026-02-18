@@ -164,6 +164,34 @@ impl Timeline {
             })
             .collect()
     }
+
+    pub fn video_segments(&self) -> Vec<&Segment> {
+        self.segments
+            .iter()
+            .filter(|s| matches!(s.data, SegmentData::VideoSubset { .. }))
+            .collect()
+    }
+
+    pub fn overlay_segments(&self) -> Vec<&Segment> {
+        self.segments
+            .iter()
+            .filter(|s| matches!(s.data, SegmentData::Image { .. }))
+            .collect()
+    }
+
+    pub fn music_segments(&self) -> Vec<&Segment> {
+        self.segments
+            .iter()
+            .filter(|s| matches!(s.data, SegmentData::Music { .. }))
+            .collect()
+    }
+
+    pub fn broll_segments(&self) -> Vec<&Segment> {
+        self.segments
+            .iter()
+            .filter(|s| matches!(s.data, SegmentData::Broll { .. }))
+            .collect()
+    }
 }
 
 impl Default for Timeline {

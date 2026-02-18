@@ -17,7 +17,7 @@ use crate::video::config::VideoConfig;
 use crate::video::render::timeline::Timeline;
 use crate::video::support::ffmpeg::PROFILE_H264_AAC_QUALITY_FASTSTART;
 
-use self::util::{categorize_segments, escape_ffmpeg_path};
+use self::util::escape_ffmpeg_path;
 
 #[derive(Debug, Clone)]
 pub struct FfmpegCompileOutput {
@@ -118,8 +118,10 @@ impl FfmpegCompiler {
     ) -> Result<String> {
         let mut filters: Vec<String> = Vec::new();
 
-        let (video_segments, overlay_segments, music_segments, broll_segments) =
-            categorize_segments(timeline);
+        let video_segments = timeline.video_segments();
+        let overlay_segments = timeline.overlay_segments();
+        let music_segments = timeline.music_segments();
+        let broll_segments = timeline.broll_segments();
 
         let has_base_track =
             self.build_base_track_filters(&mut filters, &video_segments, source_map)?;
