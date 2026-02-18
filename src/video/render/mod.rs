@@ -22,6 +22,7 @@ pub(crate) use self::document::load_video_document;
 use self::ffmpeg::services::{FfmpegRunner, SystemFfmpegRunner};
 use self::logging::log_event;
 pub use self::mode::RenderMode;
+use self::ffmpeg::compiler::{RenderConfig, VideoDimensions};
 use self::output::prepare_output_destination;
 use self::pipeline::{RenderPipeline, RenderPipelineParams};
 pub(crate) use self::plan::build_timeline_plan;
@@ -99,7 +100,7 @@ async fn load_render_project(args: &RenderArgs) -> Result<RenderProject> {
 fn build_render_timeline(
     project: &RenderProject,
     render_mode: RenderMode,
-) -> Result<(timeline::Timeline, (u32, u32))> {
+) -> Result<(timeline::Timeline, VideoDimensions)> {
     log_event(
         Level::Info,
         "video.render.probe",
@@ -107,8 +108,9 @@ fn build_render_timeline(
     );
     let (video_width, video_height) = probe_video_dimensions(&project.default_source.source)?;
     let (target_width, target_height) = render_mode.target_dimensions(video_width, video_height);
+    let target_dims = VideoDimensions::new(target_width, target_height);
 
-    let generator = SlideGenerator::new(target_width, target_height)?;
+    let generator = SlideGenerator::new(target_dims.width, target_dims.height)?;
 
     log_event(
         Level::Info,
@@ -124,7 +126,7 @@ fn build_render_timeline(
 
     report_timeline_stats(&stats);
 
-    Ok((nle_timeline, (target_width, target_height)))
+    Ok((nle_timeline, target_dims))
 }
 
 fn execute_render(

@@ -5,7 +5,7 @@ use anyhow::{Result, anyhow};
 use crate::video::document::VideoSource;
 use crate::video::planning::{BrollPlan, StandalonePlan, TimelinePlan, TimelinePlanItem};
 use crate::video::render::ffmpeg::services::{DefaultMusicSourceResolver, MusicSourceResolver};
-use crate::video::render::timeline::{Segment, Timeline};
+use crate::video::render::timeline::{AvSourceRef, Segment, Timeline};
 
 pub(super) trait SlideProvider {
     fn overlay_slide_image(&self, markdown: &str) -> Result<std::path::PathBuf>;
@@ -94,17 +94,17 @@ impl TimelineBuildState {
                     clip_plan.source_id
                 )
             })?;
-        let source_video = source.source.clone();
-        let audio_source = source.audio.clone();
         let duration = clip_plan.time_window.duration();
 
         let segment = Segment::new_video_subset(
             self.current_time,
             duration,
             clip_plan.time_window.start,
-            source_video,
-            audio_source,
-            clip_plan.source_id.clone(),
+            AvSourceRef {
+                video: source.source.clone(),
+                audio: source.audio.clone(),
+                id: clip_plan.source_id.clone(),
+            },
             None,
             false,
         );
@@ -226,9 +226,11 @@ impl TimelineBuildState {
             self.current_time,
             duration,
             0.0,
-            video_path.clone(),
-            video_path,
-            "__slide".to_string(),
+            AvSourceRef {
+                video: video_path.clone(),
+                audio: video_path,
+                id: "__slide".to_string(),
+            },
             None,
             true,
         );

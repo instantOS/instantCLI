@@ -5,7 +5,7 @@ use super::util::escape_ffmpeg_path;
 use super::{FfmpegCompiler, RenderConfig, VideoDimensions};
 use crate::video::config::VideoConfig;
 use crate::video::render::mode::RenderMode;
-use crate::video::render::timeline::{Segment, Timeline};
+use crate::video::render::timeline::{AvSourceRef, Segment, Timeline};
 
 #[test]
 fn compiler_includes_output_path_in_args() {
@@ -34,9 +34,7 @@ fn concat_order_respects_timeline_order() {
         0.0,
         1.0,
         5.0,
-        PathBuf::from("video.mp4"),
-        PathBuf::from("audio.mp4"),
-        "a".to_string(),
+        AvSourceRef { video: PathBuf::from("video.mp4"), audio: PathBuf::from("audio.mp4"), id: "a".to_string() },
         None,
         false,
     ));
@@ -44,9 +42,7 @@ fn concat_order_respects_timeline_order() {
         1.0,
         1.0,
         1.0,
-        PathBuf::from("video.mp4"),
-        PathBuf::from("audio.mp4"),
-        "a".to_string(),
+        AvSourceRef { video: PathBuf::from("video.mp4"), audio: PathBuf::from("audio.mp4"), id: "a".to_string() },
         None,
         false,
     ));
@@ -54,9 +50,7 @@ fn concat_order_respects_timeline_order() {
         2.0,
         1.0,
         3.0,
-        PathBuf::from("video.mp4"),
-        PathBuf::from("audio.mp4"),
-        "a".to_string(),
+        AvSourceRef { video: PathBuf::from("video.mp4"), audio: PathBuf::from("audio.mp4"), id: "a".to_string() },
         None,
         false,
     ));
@@ -143,9 +137,7 @@ fn test_filter_complex_includes_subtitles() {
         0.0,
         0.0,
         5.0,
-        PathBuf::from("video.mp4"),
-        PathBuf::from("audio.mp4"),
-        "a".to_string(),
+        AvSourceRef { video: PathBuf::from("video.mp4"), audio: PathBuf::from("audio.mp4"), id: "a".to_string() },
         None,
         false,
     ));

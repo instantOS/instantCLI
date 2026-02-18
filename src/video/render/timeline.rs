@@ -63,6 +63,14 @@ pub struct Timeline {
     pub has_overlays: bool,
 }
 
+/// Groups the video file, audio file, and source identifier that always travel together.
+#[derive(Debug, Clone)]
+pub struct AvSourceRef {
+    pub video: PathBuf,
+    pub audio: PathBuf,
+    pub id: String,
+}
+
 /// A segment in the timeline with a start time, duration, and data
 #[derive(Debug, Clone)]
 pub struct Segment {
@@ -81,12 +89,8 @@ pub enum SegmentData {
     VideoSubset {
         /// Start time in the source video (in seconds)
         start_time: f64,
-        /// Path to the source video file
-        source_video: PathBuf,
-        /// Path to the audio source for this clip
-        audio_source: PathBuf,
-        /// Source identifier for matching transcript cues
-        source_id: String,
+        /// Video+audio source reference
+        source: AvSourceRef,
         /// Optional transform to apply to this video segment
         transform: Option<Transform>,
         /// If true, no dialogue audio should be played for this segment (e.g., title cards)
@@ -174,9 +178,7 @@ impl Segment {
         start_time: f64,
         duration: f64,
         source_start: f64,
-        source_video: PathBuf,
-        audio_source: PathBuf,
-        source_id: String,
+        source: AvSourceRef,
         transform: Option<Transform>,
         mute_audio: bool,
     ) -> Self {
@@ -185,9 +187,7 @@ impl Segment {
             duration,
             data: SegmentData::VideoSubset {
                 start_time: source_start,
-                source_video,
-                audio_source,
-                source_id,
+                source,
                 transform,
                 mute_audio,
             },
@@ -300,7 +300,7 @@ impl SegmentData {
     /// Get the source path for this segment data (if applicable)
     pub fn source_path(&self) -> Option<&PathBuf> {
         match self {
-            SegmentData::VideoSubset { source_video, .. } => Some(source_video),
+            SegmentData::VideoSubset { source, .. } => Some(&source.video),
             SegmentData::Image { source_image, .. } => Some(source_image),
             SegmentData::Music { audio_source } => Some(audio_source),
             SegmentData::Broll { source_video, .. } => Some(source_video),
@@ -309,7 +309,7 @@ impl SegmentData {
 
     pub fn audio_source(&self) -> Option<&PathBuf> {
         match self {
-            SegmentData::VideoSubset { audio_source, .. } => Some(audio_source),
+            SegmentData::VideoSubset { source, .. } => Some(&source.audio),
             _ => None,
         }
     }
@@ -343,9 +343,7 @@ mod tests {
             0.0,
             10.0,
             5.0,
-            PathBuf::from("test.mp4"),
-            PathBuf::from("test.mp4"),
-            "a".to_string(),
+            AvSourceRef { video: PathBuf::from("test.mp4"), audio: PathBuf::from("test.mp4"), id: "a".to_string() },
             None,
             false,
         );
@@ -361,9 +359,7 @@ mod tests {
             0.0,
             10.0,
             0.0,
-            PathBuf::from("test.mp4"),
-            PathBuf::from("test.mp4"),
-            "a".to_string(),
+            AvSourceRef { video: PathBuf::from("test.mp4"), audio: PathBuf::from("test.mp4"), id: "a".to_string() },
             None,
             false,
         ));
@@ -371,9 +367,7 @@ mod tests {
             10.0,
             5.0,
             10.0,
-            PathBuf::from("test.mp4"),
-            PathBuf::from("test.mp4"),
-            "a".to_string(),
+            AvSourceRef { video: PathBuf::from("test.mp4"), audio: PathBuf::from("test.mp4"), id: "a".to_string() },
             None,
             false,
         ));
@@ -381,9 +375,7 @@ mod tests {
             20.0,
             5.0,
             20.0,
-            PathBuf::from("test.mp4"),
-            PathBuf::from("test.mp4"),
-            "a".to_string(),
+            AvSourceRef { video: PathBuf::from("test.mp4"), audio: PathBuf::from("test.mp4"), id: "a".to_string() },
             None,
             false,
         ));

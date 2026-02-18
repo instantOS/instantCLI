@@ -80,8 +80,7 @@ impl FfmpegCompiler {
     ) -> Result<bool> {
         let SegmentData::VideoSubset {
             start_time,
-            source_video,
-            audio_source,
+            source,
             mute_audio,
             ..
         } = &segment.data
@@ -94,13 +93,13 @@ impl FfmpegCompiler {
 
         let input_index = get_ffmpeg_input_index(
             source_map,
-            source_video,
+            &source.video,
             "No ffmpeg input available for source video",
         )?;
 
         let audio_input_index = get_ffmpeg_input_index(
             source_map,
-            audio_source,
+            &source.audio,
             "No ffmpeg input available for audio source",
         )?;
 
