@@ -423,11 +423,17 @@ code {
   font-size: 0.9em;
 }
 
-/* Fix: Ensure code in gradient headings is visible */
+/* Fix: Ensure code in gradient headings has matching gradient background and dark text */
 h1 code,
 h2 code {
-  -webkit-text-fill-color: var(--ctp-peach);
-  color: var(--ctp-peach);
+  -webkit-text-fill-color: var(--ctp-crust);
+  color: var(--ctp-crust) !important;
+  background: linear-gradient(to bottom right, var(--ctp-mauve) 20%, var(--ctp-pink) 100%) !important;
+  border: 1px solid var(--ctp-mauve) !important;
+  padding: 0.05em 0.2em !important;
+  border-radius: 0.2em !important;
+  box-shadow: 0 0 10px rgba(203, 166, 247, 0.3) !important;
+  font-weight: 600 !important;
 }
 
 /* =========================================
