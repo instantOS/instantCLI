@@ -1,6 +1,7 @@
 use anyhow::Result;
 
 use super::FfmpegCompiler;
+use super::FilterChain;
 use super::inputs::SourceMap;
 use crate::video::render::timeline::{Segment, SegmentData, TimeWindow, Transform};
 
@@ -8,6 +9,11 @@ const OVERLAY_FRAME_SCALE: f64 = 0.9;
 const OVERLAY_FRAME_BORDER_WIDTH: u32 = 4;
 const OVERLAY_FRAME_BORDER_COLOR: &str = "0x89B4FA";
 const OVERLAY_FRAME_BACKGROUND_COLOR: &str = "0x1E1E2E";
+
+struct OverlayPrep {
+    filters: Vec<String>,
+    input_label: String,
+}
 
 impl FfmpegCompiler {
     pub(super) fn build_scaled_overlay_filters(
@@ -56,17 +62,8 @@ impl FfmpegCompiler {
         }
     }
 
-    fn build_overlay_label_triplet(&self, prefix: &str, idx: usize) -> (String, String, String) {
-        (
-            format!("{prefix}_raw_{idx}"),
-            format!("{prefix}_{idx}"),
-            format!("{prefix}_out_{idx}"),
-        )
-    }
-
-    fn build_overlay_chain(
+    fn build_overlay_filter(
         &self,
-        filters: &mut Vec<String>,
         base_label: &str,
         overlay_scaled_label: &str,
         output_label: &str,
@@ -80,7 +77,7 @@ impl FfmpegCompiler {
         let (x_offset, y_offset) =
             self.compute_overlay_position(transform, overlay_width, overlay_height);
 
-        filters.push(format!(
+        format!(
             "[{video}][{overlay}]overlay=x={x}:y={y}:enable='{condition}'[{output}]",
             video = base_label,
             overlay = overlay_scaled_label,
@@ -88,14 +85,85 @@ impl FfmpegCompiler {
             y = y_offset,
             condition = enable_condition,
             output = output_label,
+        )
+    }
+
+    fn build_broll_prep(
+        &self,
+        input_index: usize,
+        source_start: f64,
+        duration: f64,
+        timeline_start: f64,
+        idx: usize,
+    ) -> OverlayPrep {
+        let trimmed_label = format!("broll_trim_{idx}");
+        let trim_end = source_start + duration;
+        let filter = format!(
+            "[{input}:v]trim=start={start}:end={end},setpts=PTS-STARTPTS+{offset}/TB[{out}]",
+            input = input_index,
+            start = source_start,
+            end = trim_end,
+            offset = timeline_start,
+            out = trimmed_label,
+        );
+        OverlayPrep {
+            filters: vec![filter],
+            input_label: trimmed_label,
+        }
+    }
+
+    fn build_image_prep(&self, input_index: usize, idx: usize) -> OverlayPrep {
+        let overlay_input = format!("overlay_raw_{idx}");
+        let filter = format!(
+            "[{input}:v]format=rgba[{output}]",
+            input = input_index,
+            output = overlay_input,
+        );
+        OverlayPrep {
+            filters: vec![filter],
+            input_label: overlay_input,
+        }
+    }
+
+    fn apply_overlay_segment(
+        &self,
+        filters: &mut FilterChain,
+        prep: OverlayPrep,
+        transform: Option<&Transform>,
+        time_window: TimeWindow,
+        current_video_label: &str,
+        prefix: &str,
+        idx: usize,
+    ) -> String {
+        let scaled_label = format!("{prefix}_{idx}");
+        let output_label = format!("{prefix}_out_{idx}");
+
+        let scale_factor = transform
+            .and_then(|t| t.scale)
+            .map(|s| s as f64)
+            .unwrap_or(OVERLAY_FRAME_SCALE);
+
+        filters.extend(prep.filters);
+        filters.push(self.build_scaled_overlay_filters(
+            &prep.input_label,
+            &scaled_label,
+            scale_factor,
+        ));
+        filters.push(self.build_overlay_filter(
+            current_video_label,
+            &scaled_label,
+            &output_label,
+            transform,
+            scale_factor,
+            time_window,
         ));
 
-        output_label.to_string()
+        output_label
     }
 
     pub(super) fn apply_broll_overlays(
         &self,
-        filters: &mut Vec<String>,
+        filters: &mut FilterChain,
         broll_segments: &[&Segment],
         source_map: &SourceMap,
         input_label: &str,
@@ -114,38 +182,22 @@ impl FfmpegCompiler {
             };
 
             let input_index = source_map.index(source_video)?;
+            let prep = self.build_broll_prep(
+                input_index,
+                *source_start,
+                segment.duration,
+                segment.start_time,
+                idx,
+            );
 
-            let trimmed_label = format!("broll_trim_{idx}");
-            let (scaled_label, output_label, _) = self.build_overlay_label_triplet("broll", idx);
-
-            let trim_end = source_start + segment.duration;
-            filters.push(format!(
-                "[{input}:v]trim=start={start}:end={end},setpts=PTS-STARTPTS+{offset}/TB[{out}]",
-                input = input_index,
-                start = source_start,
-                end = trim_end,
-                offset = segment.start_time,
-                out = trimmed_label,
-            ));
-
-            let scale_factor = transform
-                .as_ref()
-                .and_then(|t| t.scale)
-                .map(|s| s as f64)
-                .unwrap_or(OVERLAY_FRAME_SCALE);
-
-            let scaled_broll =
-                self.build_scaled_overlay_filters(&trimmed_label, &scaled_label, scale_factor);
-            filters.push(scaled_broll);
-
-            current_video_label = self.build_overlay_chain(
+            current_video_label = self.apply_overlay_segment(
                 filters,
-                &current_video_label,
-                &scaled_label,
-                &output_label,
+                prep,
                 transform.as_ref(),
-                scale_factor,
                 segment.time_window(),
+                &current_video_label,
+                "broll",
+                idx,
             );
         }
 
@@ -154,7 +206,7 @@ impl FfmpegCompiler {
 
     pub(super) fn apply_overlays(
         &self,
-        filters: &mut Vec<String>,
+        filters: &mut FilterChain,
         overlay_segments: &[&Segment],
         source_map: &SourceMap,
         input_label: &str,
@@ -171,34 +223,16 @@ impl FfmpegCompiler {
             };
 
             let input_index = source_map.index(source_image)?;
+            let prep = self.build_image_prep(input_index, idx);
 
-            let (overlay_input, overlay_label, output_label) =
-                self.build_overlay_label_triplet("overlay", idx);
-
-            filters.push(format!(
-                "[{input}:v]format=rgba[{overlay}]",
-                input = input_index,
-                overlay = overlay_input,
-            ));
-
-            let scale_factor = transform
-                .as_ref()
-                .and_then(|t| t.scale)
-                .map(|s| s as f64)
-                .unwrap_or(OVERLAY_FRAME_SCALE);
-
-            let framed_overlay =
-                self.build_scaled_overlay_filters(&overlay_input, &overlay_label, scale_factor);
-            filters.push(framed_overlay);
-
-            current_video_label = self.build_overlay_chain(
+            current_video_label = self.apply_overlay_segment(
                 filters,
-                &current_video_label,
-                &overlay_label,
-                &output_label,
+                prep,
                 transform.as_ref(),
-                scale_factor,
                 segment.time_window(),
+                &current_video_label,
+                "overlay",
+                idx,
             );
         }
 

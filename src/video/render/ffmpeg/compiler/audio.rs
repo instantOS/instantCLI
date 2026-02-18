@@ -1,6 +1,7 @@
 use anyhow::{Result, bail};
 
 use super::FfmpegCompiler;
+use super::FilterChain;
 use super::inputs::SourceMap;
 use super::util::format_time;
 use crate::video::render::timeline::{Segment, SegmentData};
@@ -8,7 +9,7 @@ use crate::video::render::timeline::{Segment, SegmentData};
 impl FfmpegCompiler {
     pub(super) fn build_audio_mix_filters(
         &self,
-        filters: &mut Vec<String>,
+        filters: &mut FilterChain,
         music_segments: &[&Segment],
         source_map: &SourceMap,
         has_base_track: bool,
@@ -54,7 +55,7 @@ impl FfmpegCompiler {
 
     fn build_music_filters(
         &self,
-        filters: &mut Vec<String>,
+        filters: &mut FilterChain,
         music_segments: &[&Segment],
         source_map: &SourceMap,
     ) -> Result<String> {
@@ -66,7 +67,7 @@ impl FfmpegCompiler {
 }
 
 fn collect_music_segment_labels(
-    filters: &mut Vec<String>,
+    filters: &mut FilterChain,
     music_segments: &[&Segment],
     source_map: &SourceMap,
     music_volume: f64,
@@ -116,7 +117,7 @@ fn build_single_music_filter(
     )
 }
 
-fn mix_music_labels(filters: &mut Vec<String>, labels: Vec<String>) -> Result<String> {
+fn mix_music_labels(filters: &mut FilterChain, labels: Vec<String>) -> Result<String> {
     match labels.as_slice() {
         [] => bail!("No music segments available to build audio filters"),
         [label] => Ok(label.to_string()),

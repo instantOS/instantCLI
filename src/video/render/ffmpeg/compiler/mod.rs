@@ -136,7 +136,7 @@ impl FfmpegCompiler {
         source_map: &SourceMap,
         total_duration: f64,
     ) -> Result<String> {
-        let mut filters: Vec<String> = Vec::new();
+        let mut filters = FilterChain::new();
 
         let video_segments = timeline.video_segments();
         let overlay_segments = timeline.overlay_segments();
@@ -188,6 +188,6 @@ impl FfmpegCompiler {
             total_duration,
         )?;
 
-        Ok(filters.join("; "))
+        Ok(filters.join())
     }
 }

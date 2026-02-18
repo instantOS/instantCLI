@@ -1,9 +1,9 @@
 use anyhow::Result;
 
-use super::inputs::SourceMap;
-use super::util::format_time;
 use super::FfmpegCompiler;
 use super::FilterChain;
+use super::inputs::SourceMap;
+use super::util::format_time;
 use crate::video::render::timeline::{Segment, SegmentData};
 
 struct VideoSubsetFilters {
