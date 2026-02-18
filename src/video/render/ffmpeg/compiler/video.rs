@@ -86,8 +86,8 @@ impl FfmpegCompiler {
         let idx = *concat_count;
         *concat_count += 1;
 
-        let input_index = source_map.index_for(&source.video, "source video")?;
-        let audio_input_index = source_map.index_for(&source.audio, "audio source")?;
+        let input_index = source_map.index(&source.video)?;
+        let audio_input_index = source_map.index(&source.audio)?;
 
         let video_label = format!("v{idx}");
         let audio_label = format!("a{idx}");

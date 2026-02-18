@@ -113,7 +113,7 @@ impl FfmpegCompiler {
                 continue;
             };
 
-            let input_index = source_map.index_for(source_video, "B-roll video")?;
+            let input_index = source_map.index(source_video)?;
 
             let trimmed_label = format!("broll_trim_{idx}");
             let (scaled_label, output_label, _) = self.build_overlay_label_triplet("broll", idx);
@@ -170,7 +170,7 @@ impl FfmpegCompiler {
                 continue;
             };
 
-            let input_index = source_map.index_for(source_image, "overlay image")?;
+            let input_index = source_map.index(source_image)?;
 
             let (overlay_input, overlay_label, output_label) =
                 self.build_overlay_label_triplet("overlay", idx);

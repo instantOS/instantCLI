@@ -59,20 +59,6 @@ impl SourceMap {
             .ok_or_else(|| anyhow!("No FFmpeg input available for {}", path.display()))
     }
 
-    /// Get the FFmpeg input index with custom context in error message.
-    ///
-    /// Example: `source_map.index_for(path, "B-roll video")` produces:
-    /// "No FFmpeg input available for B-roll video: /path/to/file.mp4"
-    pub fn index_for(&self, path: &Path, context: &str) -> Result<usize> {
-        self.map.get(path).copied().ok_or_else(|| {
-            anyhow!(
-                "No FFmpeg input available for {}: {}",
-                context,
-                path.display()
-            )
-        })
-    }
-
     /// Source paths in FFmpeg input order.
     pub fn paths(&self) -> impl Iterator<Item = &PathBuf> {
         self.order.iter()

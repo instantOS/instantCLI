@@ -82,7 +82,7 @@ fn collect_music_segment_labels(
             continue;
         };
 
-        let input_index = source_map.index_for(audio_source, "background music")?;
+        let input_index = source_map.index(audio_source)?;
 
         let label = format!("music_{idx}");
         filters.push(build_single_music_filter(
