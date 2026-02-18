@@ -17,7 +17,7 @@ pub(super) struct RenderPipeline<'a> {
     source_height: u32,
     config: VideoConfig,
     audio_source: PathBuf,
-    audio_map: std::collections::HashMap<String, PathBuf>,
+    audio_by_source_id: std::collections::HashMap<String, PathBuf>,
     subtitle_path: Option<PathBuf>,
     runner: &'a dyn FfmpegRunner,
 }
@@ -30,7 +30,7 @@ pub(super) struct RenderPipelineParams<'a> {
     pub(super) source_height: u32,
     pub(super) config: VideoConfig,
     pub(super) audio_source: PathBuf,
-    pub(super) audio_map: std::collections::HashMap<String, PathBuf>,
+    pub(super) audio_by_source_id: std::collections::HashMap<String, PathBuf>,
     pub(super) subtitle_path: Option<PathBuf>,
     pub(super) runner: &'a dyn FfmpegRunner,
 }
@@ -45,7 +45,7 @@ impl<'a> RenderPipeline<'a> {
             source_height: params.source_height,
             config: params.config,
             audio_source: params.audio_source,
-            audio_map: params.audio_map,
+            audio_by_source_id: params.audio_by_source_id,
             subtitle_path: params.subtitle_path,
             runner: params.runner,
         }
@@ -76,7 +76,7 @@ impl<'a> RenderPipeline<'a> {
                 self.output.clone(),
                 &self.timeline,
                 self.audio_source.clone(),
-                &self.audio_map,
+                &self.audio_by_source_id,
             )?
             .args)
     }

@@ -86,12 +86,12 @@ impl FfmpegCompiler {
         output: PathBuf,
         timeline: &Timeline,
         audio_source: PathBuf,
-        audio_map: &std::collections::HashMap<String, PathBuf>,
+        audio_by_source_id: &std::collections::HashMap<String, PathBuf>,
     ) -> Result<FfmpegCompileOutput> {
         let mut args = Vec::new();
 
         let (source_map, source_order) =
-            self.build_input_source_map(timeline, &audio_source, audio_map);
+            self.build_input_source_map(timeline, &audio_source, audio_by_source_id);
 
         for source in &source_order {
             args.push("-i".to_string());

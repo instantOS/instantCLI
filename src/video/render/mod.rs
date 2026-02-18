@@ -168,7 +168,7 @@ async fn handle_render_with_services(
         source_height: video_height,
         config: video_config,
         audio_source: default_source.source.clone(),
-        audio_map,
+        audio_by_source_id: audio_map,
         subtitle_path,
         runner,
     });
