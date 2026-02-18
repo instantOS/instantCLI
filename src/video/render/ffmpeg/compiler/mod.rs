@@ -110,7 +110,7 @@ impl FfmpegCompiler {
     ) -> Result<FfmpegCompileOutput> {
         let mut args = Vec::new();
 
-        let source_map = SourceMap::build(timeline, &audio_source);
+        let source_map = SourceMap::build(timeline, &audio_source, false);
         args.extend(source_map.input_args());
 
         let total_duration = timeline.total_duration();
@@ -137,7 +137,7 @@ impl FfmpegCompiler {
     ) -> Result<FfmpegCompileOutput> {
         let mut args = Vec::new();
 
-        let source_map = SourceMap::build(timeline, &audio_source);
+        let source_map = SourceMap::build(timeline, &audio_source, true);
         args.extend(source_map.input_args());
 
         let total_duration = timeline.total_duration();

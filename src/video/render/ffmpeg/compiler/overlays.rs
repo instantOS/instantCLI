@@ -182,9 +182,12 @@ impl FfmpegCompiler {
             };
 
             let input_index = source_map.index(source_video)?;
+            let offset = source_map.offset(input_index);
+            let adj_start = source_start - offset;
+
             let prep = self.build_broll_prep(
                 input_index,
-                *source_start,
+                adj_start,
                 segment.duration,
                 segment.start_time,
                 idx,

@@ -114,7 +114,7 @@ fn read_ffmpeg_stderr<R: Read>(
         let chunk = String::from_utf8_lossy(&buffer[..bytes_read]);
         accumulated.push_str(&chunk);
 
-        while let Some(pos) = accumulated.find(|c| c == '\r' || c == '\n') {
+        while let Some(pos) = accumulated.find(['\r', '\n']) {
             let line = accumulated[..pos].to_string();
             accumulated = accumulated[pos + 1..].to_string();
 
@@ -132,12 +132,12 @@ fn read_ffmpeg_stderr<R: Read>(
                 error_lines.push(line.clone());
             }
 
-            if let Some(pb) = pb {
-                if let Some(progress) = parse_ffmpeg_progress(&line) {
-                    pb.set_position((progress * 1000.0) as u64);
-                    if let Some(speed) = parse_ffmpeg_speed(&line) {
-                        pb.set_message(format!("{}x", speed));
-                    }
+            if let Some(pb) = pb
+                && let Some(progress) = parse_ffmpeg_progress(&line)
+            {
+                pb.set_position((progress * 1000.0) as u64);
+                if let Some(speed) = parse_ffmpeg_speed(&line) {
+                    pb.set_message(format!("{}x", speed));
                 }
             }
         }

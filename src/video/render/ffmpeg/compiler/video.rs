@@ -95,24 +95,33 @@ impl FfmpegCompiler {
         let input_index = source_map.index(&source.video)?;
         let audio_input_index = source_map.index(&source.audio)?;
 
+        // Subtract per-input -ss offset so trim times are relative to the
+        // seeked input position. For render (no input seeking), offset is 0.
+        let video_offset = source_map.offset(input_index);
+        let audio_offset = source_map.offset(audio_input_index);
+
         let video_label = format!("v{idx}");
         let audio_label = format!("a{idx}");
-        let end_time = start_time + segment.duration;
+        let adj_start = start_time - video_offset;
+        let adj_end = adj_start + segment.duration;
 
         let trimmed_label = format!("v{idx}_raw");
         let mut filters = Vec::new();
         filters.push(self.build_trimmed_video_filter(
             &trimmed_label,
             input_index,
-            *start_time,
-            end_time,
+            adj_start,
+            adj_end,
         ));
         filters.push(self.build_normalized_video_filter(&trimmed_label, &video_label));
+
+        let audio_adj_start = start_time - audio_offset;
+        let audio_adj_end = audio_adj_start + segment.duration;
         filters.push(self.build_audio_filter(
             *mute_audio,
             audio_input_index,
-            *start_time,
-            end_time,
+            audio_adj_start,
+            audio_adj_end,
             segment.duration,
             &audio_label,
         ));
