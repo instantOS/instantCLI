@@ -72,7 +72,7 @@ window.addEventListener('load', () => {
     function checkOverflow() {
         // Smaller buffer for slides with code blocks to maximize space usage
         const buffer = codeBlocks > 0 ? 10 : 40;
-        
+
         // Use window dimensions and compare against content's scroll dimensions
         // This is more reliable than checking body.scrollHeight which is fixed to 100vh
         const style = window.getComputedStyle(body);
@@ -80,7 +80,7 @@ window.addEventListener('load', () => {
         const paddingBottom = parseFloat(style.paddingBottom);
         const paddingLeft = parseFloat(style.paddingLeft);
         const paddingRight = parseFloat(style.paddingRight);
-        
+
         const availableHeight = window.innerHeight - paddingTop - paddingBottom - buffer;
         const availableWidth = window.innerWidth - paddingLeft - paddingRight - buffer;
 
@@ -97,6 +97,51 @@ window.addEventListener('load', () => {
         return false;
     }
 
+    function checkWordBreaking() {
+        // Check if any heading words are breaking across lines
+        const headings = content.querySelectorAll('h1, h2, h3');
+        for (const heading of headings) {
+            const words = heading.querySelectorAll('code, span:not(span)');
+            const textNodes = [];
+            
+            // Get all text content, splitting by whitespace
+            const walker = document.createTreeWalker(heading, NodeFilter.SHOW_TEXT, null);
+            let node;
+            while (node = walker.nextNode()) {
+                if (node.textContent.trim()) {
+                    textNodes.push(node);
+                }
+            }
+            
+            for (const textNode of textNodes) {
+                const words = textNode.textContent.trim().split(/\s+/);
+                if (words.length === 0) continue;
+                
+                // Create a range to measure each word
+                const range = document.createRange();
+                for (const word of words) {
+                    if (word.length <= 1) continue; // Skip single characters
+                    
+                    // Find the word in the text node
+                    const wordIndex = textNode.textContent.indexOf(word);
+                    if (wordIndex === -1) continue;
+                    
+                    range.setStart(textNode, wordIndex);
+                    range.setEnd(textNode, wordIndex + word.length);
+                    
+                    const wordRect = range.getBoundingClientRect();
+                    const headingRect = heading.getBoundingClientRect();
+                    
+                    // If word is wider than 80% of heading width, it's likely breaking
+                    if (wordRect.width > headingRect.width * 0.8) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
     // Smaller step size for code-heavy slides
     const stepSize = codeBlocks > 0 ? 2 : 5;
 
@@ -109,14 +154,14 @@ window.addEventListener('load', () => {
         }
     } else {
         // Grow mode
-        // We grow until it overflows, then step back
-        while (!checkOverflow() && currentScale < maxScale) {
+        // We grow until it overflows or words start breaking, then step back
+        while (!checkOverflow() && !checkWordBreaking() && currentScale < maxScale) {
             currentScale += stepSize;
             body.style.fontSize = currentScale + '%';
         }
 
-        // If we caused an overflow, step back one unit to make it fit again
-        if (checkOverflow()) {
+        // If we caused an overflow or word breaking, step back one unit to make it fit again
+        if (checkOverflow() || checkWordBreaking()) {
             currentScale -= stepSize;
             body.style.fontSize = currentScale + '%';
         }

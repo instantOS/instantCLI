@@ -100,6 +100,10 @@ h5,
 h6 {
   text-align: center;
   letter-spacing: -0.02em;
+  overflow-wrap: normal;
+  word-wrap: normal;
+  word-break: normal;
+  hyphens: none;
 }
 
 h1 {
