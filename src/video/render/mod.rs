@@ -281,6 +281,13 @@ async fn handle_preview_with_services(
 
     let (nle_timeline, target_dims) = build_render_timeline(&project, render_mode)?;
 
+    // Truncate timeline at seek point so ffmpeg only processes
+    // segments from that point forward (much faster startup)
+    let nle_timeline = match args.seek {
+        Some(seek) => nle_timeline.truncate_before(seek),
+        None => nle_timeline,
+    };
+
     if args.common.precache_slides {
         log_event(
             Level::Success,
@@ -296,28 +303,25 @@ async fn handle_preview_with_services(
     // Use temporary output for preview (will be piped to mpv)
     let output_path = project.project_dir.join("preview_temp.mkv");
 
-    execute_preview_render(
-        RenderJob {
-            timeline: nle_timeline,
-            cues: &project.cues,
-            output_path,
-            render_mode,
-            target_dims,
-            video_config: project.video_config,
-            audio_source,
-            burn_subtitles: args.common.subtitles,
-            dry_run: false, // Always execute for preview
-            verbose: args.common.verbose,
-            runner,
-        },
-        args.seek,
-    )?;
+    execute_preview_render(RenderJob {
+        timeline: nle_timeline,
+        cues: &project.cues,
+        output_path,
+        render_mode,
+        target_dims,
+        video_config: project.video_config,
+        audio_source,
+        burn_subtitles: args.common.subtitles,
+        dry_run: false, // Always execute for preview
+        verbose: args.common.verbose,
+        runner,
+    })?;
 
     Ok(None)
 }
 
 /// Execute a preview render job with real-time mpv playback
-fn execute_preview_render(job: RenderJob<'_>, seek_time: Option<f64>) -> Result<Option<PathBuf>> {
+fn execute_preview_render(job: RenderJob<'_>) -> Result<Option<PathBuf>> {
     // Generate subtitles if needed (same as render)
     let subtitle_path = if job.burn_subtitles {
         let temp_output = job.output_path.with_extension("ass");
@@ -350,9 +354,9 @@ fn execute_preview_render(job: RenderJob<'_>, seek_time: Option<f64>) -> Result<
         "Starting real-time preview with mpv (use arrow keys to seek, q to quit)",
     );
 
-    // Use mpv for real-time playback with seeking support
+    // Use mpv for real-time playback
     let mpv_runner = crate::video::render::ffmpeg::services::MpvPreviewRunner;
-    pipeline.preview_with_seek(&mpv_runner, seek_time)?;
+    pipeline.preview(&mpv_runner)?;
 
     log_event(
         Level::Success,

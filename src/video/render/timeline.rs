@@ -200,6 +200,51 @@ impl Default for Timeline {
     }
 }
 
+impl Timeline {
+    /// Create a new timeline starting from `seek_time`.
+    ///
+    /// - Drops segments that end at or before the seek point
+    /// - Trims the first overlapping segment (shortens duration, advances source start)
+    /// - Shifts all remaining segment start times so the timeline begins at 0
+    pub fn truncate_before(&self, seek_time: f64) -> Timeline {
+        let mut segments = Vec::new();
+
+        for seg in &self.segments {
+            let seg_end = seg.start_time + seg.duration;
+
+            // Drop segments that end at or before the seek point
+            if seg_end <= seek_time {
+                continue;
+            }
+
+            if seg.start_time >= seek_time {
+                // Segment starts at or after seek — keep as-is but shift start_time
+                segments.push(Segment {
+                    start_time: seg.start_time - seek_time,
+                    duration: seg.duration,
+                    data: seg.data.clone(),
+                });
+            } else {
+                // Segment overlaps the seek point — trim the beginning
+                let trim_amount = seek_time - seg.start_time;
+                let new_duration = seg.duration - trim_amount;
+                let new_data = seg.data.advance_start(trim_amount);
+
+                segments.push(Segment {
+                    start_time: 0.0,
+                    duration: new_duration,
+                    data: new_data,
+                });
+            }
+        }
+
+        Timeline {
+            segments,
+            has_overlays: self.has_overlays,
+        }
+    }
+}
+
 impl Segment {
     /// Create a new video subset segment
     pub fn new_video_subset(
@@ -349,6 +394,37 @@ impl SegmentData {
             SegmentData::Image { transform, .. } => transform.as_ref(),
             SegmentData::Music { .. } => None,
             SegmentData::Broll { transform, .. } => transform.as_ref(),
+        }
+    }
+
+    /// Return a copy with the source start time advanced by `amount` seconds.
+    /// For VideoSubset and Broll, this moves the source playback start forward.
+    /// For Image and Music, data is returned unchanged (no seekable source offset).
+    fn advance_start(&self, amount: f64) -> SegmentData {
+        match self {
+            SegmentData::VideoSubset {
+                start_time,
+                source,
+                transform,
+                mute_audio,
+            } => SegmentData::VideoSubset {
+                start_time: start_time + amount,
+                source: source.clone(),
+                transform: transform.clone(),
+                mute_audio: *mute_audio,
+            },
+            SegmentData::Broll {
+                start_time,
+                source_video,
+                source_id,
+                transform,
+            } => SegmentData::Broll {
+                start_time: start_time + amount,
+                source_video: source_video.clone(),
+                source_id: source_id.clone(),
+                transform: transform.clone(),
+            },
+            other => other.clone(),
         }
     }
 }
