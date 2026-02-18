@@ -127,21 +127,21 @@ window.addEventListener('load', () => {
     pres.forEach(pre => {
         const codeElement = pre.querySelector('code');
         if (!codeElement) return;
-        
+
         // Check if any line would overflow with normal padding
         const codeText = codeElement.textContent;
         const lines = codeText.split('\n');
         const containerWidth = pre.clientWidth;
-        
+
         // Create a temporary span to measure text width
         const tempSpan = document.createElement('span');
         tempSpan.style.cssText = 'position: absolute; visibility: hidden; white-space: pre; font-family: inherit; font-size: inherit;';
         tempSpan.textContent = lines.reduce((a, b) => a.length > b.length ? a : b);
         document.body.appendChild(tempSpan);
-        
+
         const longestLineWidth = tempSpan.getBoundingClientRect().width;
         document.body.removeChild(tempSpan);
-        
+
         // If the longest line needs more than ~75% of container width, reduce padding
         if (longestLineWidth > containerWidth * 0.75) {
             pre.classList.add('code-compact');
