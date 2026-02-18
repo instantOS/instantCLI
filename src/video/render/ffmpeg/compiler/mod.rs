@@ -25,6 +25,29 @@ pub struct FfmpegCompileOutput {
     pub args: Vec<String>,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct FilterChain {
+    filters: Vec<String>,
+}
+
+impl FilterChain {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn push(&mut self, filter: String) {
+        self.filters.push(filter);
+    }
+
+    pub fn extend(&mut self, filters: Vec<String>) {
+        self.filters.extend(filters);
+    }
+
+    pub fn join(&self) -> String {
+        self.filters.join("; ")
+    }
+}
+
 /// Video dimensions (width x height in pixels).
 #[derive(Debug, Clone, Copy)]
 pub struct VideoDimensions {

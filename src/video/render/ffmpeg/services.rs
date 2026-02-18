@@ -2,7 +2,7 @@ use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use indicatif::{ProgressBar, ProgressStyle};
 
 use crate::video::document::MusicDirective;
@@ -70,14 +70,13 @@ impl FfmpegRunner for SystemFfmpegRunner {
                 error_lines.push(line.clone());
             }
 
-            if let Some(ref pb) = pb {
-                if let Some(progress) = parse_ffmpeg_progress(&line) {
+            if let Some(ref pb) = pb
+                && let Some(progress) = parse_ffmpeg_progress(&line) {
                     pb.set_position((progress * 1000.0) as u64);
                     if let Some(speed) = parse_ffmpeg_speed(&line) {
                         pb.set_message(format!("{}x", speed));
                     }
                 }
-            }
         }
 
         let status = child.wait().context("Failed to wait for ffmpeg")?;
