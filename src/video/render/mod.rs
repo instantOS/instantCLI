@@ -24,7 +24,7 @@ use self::ffmpeg::services::{FfmpegRunner, SystemFfmpegRunner};
 use self::logging::log_event;
 pub use self::mode::RenderMode;
 use self::output::prepare_output_destination;
-use self::pipeline::{RenderPipeline, RenderPipelineParams};
+use self::pipeline::RenderPipeline;
 
 struct RenderJob<'a> {
     timeline: timeline::Timeline,
@@ -162,14 +162,14 @@ fn execute_render(job: RenderJob<'_>) -> Result<Option<PathBuf>> {
 
     let render_config = RenderConfig::new(job.render_mode, job.video_config, subtitle_path);
 
-    let pipeline = RenderPipeline::new(RenderPipelineParams {
+    let pipeline = RenderPipeline {
         output: job.output_path.clone(),
         timeline: job.timeline,
         dimensions: job.target_dims,
         render_config,
         audio_source: job.audio_source,
         runner: job.runner,
-    });
+    };
 
     log_event(
         Level::Info,

@@ -6,17 +6,7 @@ use crate::video::render::ffmpeg::compiler::{FfmpegCompiler, RenderConfig, Video
 use crate::video::render::ffmpeg::services::FfmpegRunner;
 use crate::video::render::timeline::Timeline;
 
-/// The NLE-based render pipeline
 pub(super) struct RenderPipeline<'a> {
-    output: PathBuf,
-    timeline: Timeline,
-    dimensions: VideoDimensions,
-    render_config: RenderConfig,
-    audio_source: PathBuf,
-    runner: &'a dyn FfmpegRunner,
-}
-
-pub(super) struct RenderPipelineParams<'a> {
     pub(super) output: PathBuf,
     pub(super) timeline: Timeline,
     pub(super) dimensions: VideoDimensions,
@@ -26,17 +16,6 @@ pub(super) struct RenderPipelineParams<'a> {
 }
 
 impl<'a> RenderPipeline<'a> {
-    pub(super) fn new(params: RenderPipelineParams<'a>) -> Self {
-        Self {
-            output: params.output,
-            timeline: params.timeline,
-            dimensions: params.dimensions,
-            render_config: params.render_config,
-            audio_source: params.audio_source,
-            runner: params.runner,
-        }
-    }
-
     pub(super) fn print_command(&self) -> Result<()> {
         let args = self.build_args()?;
         println!("ffmpeg command that would be executed:");
