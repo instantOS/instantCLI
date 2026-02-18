@@ -28,6 +28,7 @@ use super::types::{ConvertAudioChoice, PromptOutcome, TranscriptChoice};
 enum ProjectMenuEntry {
     OpenRendered { path: PathBuf, is_current: bool },
     Render,
+    Preview,
     AddRecording,
     Validate,
     Edit,
@@ -40,6 +41,7 @@ impl std::fmt::Display for ProjectMenuEntry {
         match self {
             ProjectMenuEntry::OpenRendered { .. } => write!(f, "!__open_rendered__"),
             ProjectMenuEntry::Render => write!(f, "!__render__"),
+            ProjectMenuEntry::Preview => write!(f, "!__preview__"),
             ProjectMenuEntry::AddRecording => write!(f, "!__add_recording__"),
             ProjectMenuEntry::Validate => write!(f, "!__validate__"),
             ProjectMenuEntry::Edit => write!(f, "!__edit__"),
@@ -68,6 +70,10 @@ impl FzfSelectable for ProjectMenuEntry {
             ProjectMenuEntry::Render => format!(
                 "{} Render Edited Video",
                 format_icon_colored(NerdFont::PlayCircle, colors::GREEN)
+            ),
+            ProjectMenuEntry::Preview => format!(
+                "{} Preview with ffplay",
+                format_icon_colored(NerdFont::Play, colors::BLUE)
             ),
             ProjectMenuEntry::AddRecording => format!(
                 "{} Add Recording",
@@ -125,6 +131,16 @@ impl FzfSelectable for ProjectMenuEntry {
                 .bullet("Overlay slides and title cards")
                 .bullet("Reels mode output")
                 .bullet("Audio preprocessing caches")
+                .build(),
+            ProjectMenuEntry::Preview => PreviewBuilder::new()
+                .header(NerdFont::Play, "Preview")
+                .text("Preview the video with ffplay instead of rendering.")
+                .blank()
+                .text("Features:")
+                .bullet("Real-time playback without encoding")
+                .bullet("Scrub with arrow keys (←/→ 10s, ↑/↓ 10m)")
+                .bullet("Press q to quit")
+                .bullet("Same filter graph as final render")
                 .build(),
             ProjectMenuEntry::AddRecording => PreviewBuilder::new()
                 .header(NerdFont::SourceMerge, "Add Recording")
@@ -189,6 +205,7 @@ pub async fn open_project_for_path(markdown_path: &Path) -> Result<()> {
 
         entries.extend([
             ProjectMenuEntry::Render,
+            ProjectMenuEntry::Preview,
             ProjectMenuEntry::AddRecording,
             ProjectMenuEntry::Validate,
             ProjectMenuEntry::Edit,
@@ -215,6 +232,9 @@ pub async fn open_project_for_path(markdown_path: &Path) -> Result<()> {
                 }
                 ProjectMenuEntry::Render => {
                     run_render_for_project(markdown_path).await?;
+                }
+                ProjectMenuEntry::Preview => {
+                    run_preview_for_project(markdown_path).await?;
                 }
                 ProjectMenuEntry::AddRecording => {
                     run_add_recording(markdown_path).await?;
@@ -351,11 +371,13 @@ async fn run_render_for_project(markdown_path: &Path) -> Result<()> {
         markdown: markdown_path.to_path_buf(),
         out_file,
         force,
-        precache_slides: render_options.precache_slides,
         dry_run: render_options.dry_run,
-        reels,
-        subtitles,
-        verbose: false,
+        common: crate::video::cli::VideoProcessArgs {
+            precache_slides: render_options.precache_slides,
+            reels,
+            subtitles,
+            verbose: false,
+        },
     })
     .await?;
 
@@ -363,6 +385,32 @@ async fn run_render_for_project(markdown_path: &Path) -> Result<()> {
         let elapsed = start.elapsed();
         show_post_render_menu(&output_path, Some(elapsed))?;
     }
+
+    Ok(())
+}
+
+async fn run_preview_for_project(markdown_path: &Path) -> Result<()> {
+    use crate::video::cli::{PreviewArgs, VideoProcessArgs};
+
+    let render_options = match select_render_options()? {
+        Some(options) => options,
+        None => return Ok(()),
+    };
+
+    let reels = render_options.reels;
+    let subtitles = render_options.subtitles;
+
+    render::handle_preview(PreviewArgs {
+        markdown: markdown_path.to_path_buf(),
+        common: VideoProcessArgs {
+            precache_slides: render_options.precache_slides,
+            reels,
+            subtitles,
+            verbose: false,
+        },
+        seek: None,
+    })
+    .await?;
 
     Ok(())
 }

@@ -12,6 +12,14 @@ pub trait FfmpegRunner {
     fn run(&self, args: &[String], options: FfmpegRunOptions) -> Result<()>;
 }
 
+pub trait PreviewPlayer {
+    fn play(&self, args: &[String]) -> Result<()>;
+    fn play_with_seek(&self, args: &[String], seek_time: Option<f64>) -> Result<()> {
+        let _ = seek_time;
+        self.play(args)
+    }
+}
+
 #[derive(Debug, Default, Clone, Copy)]
 pub struct SystemFfmpegRunner;
 
@@ -191,5 +199,78 @@ impl DefaultMusicSourceResolver {
 impl MusicSourceResolver for DefaultMusicSourceResolver {
     fn resolve(&mut self, directive: &MusicDirective) -> Result<Option<std::path::PathBuf>> {
         self.resolver.resolve(directive)
+    }
+}
+
+/// Preview runner that pipes ffmpeg output to mpv for real-time playback with seeking
+#[derive(Debug, Default, Clone, Copy)]
+pub struct MpvPreviewRunner;
+
+impl MpvPreviewRunner {
+    fn spawn_preview(&self, args: &[String], seek_time: Option<f64>) -> Result<()> {
+        use std::process::Stdio;
+
+        // Use ffmpeg to decode and pipe raw video/audio to mpv
+        // This allows real-time playback while ffmpeg processes the filter graph
+        let mut ffmpeg_cmd = Command::new("ffmpeg");
+        ffmpeg_cmd.args(args);
+
+        // Add -ss as an OUTPUT option (after filter/map args, before -f).
+        // As an output option, ffmpeg still runs the filter graph from the start
+        // but discards encoded frames before the seek point, so mpv's stream
+        // begins at the right timestamp.
+        if let Some(time) = seek_time {
+            ffmpeg_cmd.arg("-ss").arg(time.to_string());
+        }
+
+        ffmpeg_cmd
+            .arg("-f")
+            .arg("matroska") // Pipe as matroska stream
+            .arg("pipe:1") // Output to stdout
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit());
+
+        let mut ffmpeg = ffmpeg_cmd
+            .spawn()
+            .with_context(|| "Failed to spawn ffmpeg for preview")?;
+
+        let stdout = ffmpeg
+            .stdout
+            .take()
+            .with_context(|| "Failed to get ffmpeg stdout")?;
+
+        // Pipe ffmpeg output to mpv
+        let mut mpv = Command::new("mpv")
+            .arg("--force-window=immediate") // Show window immediately
+            .arg("--keep-open=no") // Close when stream ends
+            .arg("--no-terminal") // Don't use terminal for control
+            .arg("-") // Read from stdin
+            .stdin(Stdio::from(stdout))
+            .spawn()
+            .with_context(|| "Failed to spawn mpv. Install mpv for real-time preview.")?;
+
+        // Wait for mpv to finish
+        let mpv_status = mpv.wait().with_context(|| "Failed to wait for mpv")?;
+
+        // Kill ffmpeg if mpv exited early (user quit)
+        let _ = ffmpeg.kill();
+        let _ = ffmpeg.wait();
+
+        if !mpv_status.success() && mpv_status.code() != Some(0) {
+            // mpv returns 0 on normal exit, non-zero on error
+            bail!("mpv exited with status {:?}", mpv_status.code());
+        }
+
+        Ok(())
+    }
+}
+
+impl PreviewPlayer for MpvPreviewRunner {
+    fn play(&self, args: &[String]) -> Result<()> {
+        self.spawn_preview(args, None)
+    }
+
+    fn play_with_seek(&self, args: &[String], seek_time: Option<f64>) -> Result<()> {
+        self.spawn_preview(args, seek_time)
     }
 }

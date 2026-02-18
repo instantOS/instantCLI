@@ -11,6 +11,8 @@ pub enum VideoCommands {
     Transcribe(TranscribeArgs),
     /// Render a video according to edits in a markdown file
     Render(RenderArgs),
+    /// Preview the video with ffplay (allows scrubbing with arrow keys)
+    Preview(PreviewArgs),
     /// Generate a slide image from a markdown file
     Slide(SlideArgs),
     /// Validate and show statistics for a video markdown file
@@ -125,23 +127,44 @@ pub struct RenderArgs {
     #[arg(long)]
     pub force: bool,
 
-    /// Pre-cache slides without rendering the final video
-    #[arg(long = "precache-slides")]
-    pub precache_slides: bool,
-
     /// Show the ffmpeg command that would be executed without running it
     #[arg(long)]
     pub dry_run: bool,
 
-    /// Render in Instagram Reels/TikTok format (9:16 vertical)
+    #[command(flatten)]
+    pub common: VideoProcessArgs,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct PreviewArgs {
+    /// Markdown file describing the edited timeline
+    #[arg(value_hint = ValueHint::FilePath)]
+    pub markdown: PathBuf,
+
+    #[command(flatten)]
+    pub common: VideoProcessArgs,
+
+    /// Seek to specific time in seconds before starting preview
+    #[arg(long, value_name = "SECONDS")]
+    pub seek: Option<f64>,
+}
+
+/// Common arguments for video processing commands (render, preview)
+#[derive(Args, Debug, Clone)]
+pub struct VideoProcessArgs {
+    /// Pre-cache slides without processing
+    #[arg(long = "precache-slides")]
+    pub precache_slides: bool,
+
+    /// Process in Instagram Reels/TikTok format (9:16 vertical)
     #[arg(long)]
     pub reels: bool,
 
-    /// Burn subtitles into the video (works in both normal and reels mode)
+    /// Burn subtitles into the output (works in both normal and reels mode)
     #[arg(long)]
     pub subtitles: bool,
 
-    /// Show raw ffmpeg output instead of progress bar
+    /// Show raw output instead of progress bar
     #[arg(long)]
     pub verbose: bool,
 }

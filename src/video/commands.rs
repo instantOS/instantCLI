@@ -13,6 +13,7 @@ pub async fn handle_video_command(command: VideoCommands, _debug: bool) -> Resul
         VideoCommands::Append(args) => convert::handle_append(args).await,
         VideoCommands::Transcribe(args) => transcribe::handle_transcribe(args),
         VideoCommands::Render(args) => render::handle_render(args).await.map(|_| ()),
+        VideoCommands::Preview(args) => render::handle_preview(args).await.map(|_| ()),
         VideoCommands::Slide(args) => slides::cli::handle_slide(args),
         VideoCommands::Check(args) => check::handle_check(args).await,
         VideoCommands::Preprocess(args) => audio::handle_preprocess(args).await,

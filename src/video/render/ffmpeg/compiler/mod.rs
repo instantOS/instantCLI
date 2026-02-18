@@ -130,6 +130,46 @@ impl FfmpegCompiler {
         Ok(FfmpegCompileOutput { args })
     }
 
+    pub fn compile_preview(
+        &self,
+        timeline: &Timeline,
+        audio_source: PathBuf,
+    ) -> Result<FfmpegCompileOutput> {
+        let mut args = Vec::new();
+
+        let source_map = SourceMap::build(timeline, &audio_source);
+        args.extend(source_map.input_args());
+
+        let total_duration = timeline.total_duration();
+
+        let filter_complex = self.build_filter_complex(timeline, &source_map, total_duration)?;
+        args.push("-filter_complex".to_string());
+        args.push(filter_complex);
+
+        args.push("-map".to_string());
+        args.push("[outv]".to_string());
+        args.push("-map".to_string());
+        args.push("[outa]".to_string());
+
+        // Fast encoding settings for real-time preview
+        args.push("-c:v".to_string());
+        args.push("libx264".to_string());
+        args.push("-preset".to_string());
+        args.push("ultrafast".to_string());
+        args.push("-crf".to_string());
+        args.push("28".to_string());
+        args.push("-c:a".to_string());
+        args.push("aac".to_string());
+        args.push("-b:a".to_string());
+        args.push("128k".to_string());
+        args.push("-pix_fmt".to_string());
+        args.push("yuv420p".to_string());
+
+        // Output format, destination, and seek are set by the runner (MpvPreviewRunner)
+
+        Ok(FfmpegCompileOutput { args })
+    }
+
     fn build_filter_complex(
         &self,
         timeline: &Timeline,

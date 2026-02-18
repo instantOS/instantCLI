@@ -1352,7 +1352,11 @@ mod tests {
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
 
         // Should have 2 blocks: the segment and the text with inline code
-        assert_eq!(document.blocks.len(), 2, "Expected 2 blocks: one for segment, one for text with inline code");
+        assert_eq!(
+            document.blocks.len(),
+            2,
+            "Expected 2 blocks: one for segment, one for text with inline code"
+        );
 
         // First block should be the segment
         match &document.blocks[0] {
@@ -1366,10 +1370,17 @@ mod tests {
         // Second block should be unhandled text with the inline code preserved
         match &document.blocks[1] {
             DocumentBlock::Unhandled(unhandled) => {
-                assert!(unhandled.description.contains("`test`"), "Inline code should be preserved as text, got: {}", unhandled.description);
+                assert!(
+                    unhandled.description.contains("`test`"),
+                    "Inline code should be preserved as text, got: {}",
+                    unhandled.description
+                );
                 assert!(unhandled.description.contains("testing stuff"));
             }
-            other => panic!("Expected Unhandled block for non-timestamp code, got {:?}", other),
+            other => panic!(
+                "Expected Unhandled block for non-timestamp code, got {:?}",
+                other
+            ),
         }
     }
 
@@ -1380,7 +1391,9 @@ mod tests {
         assert!(looks_like_timestamp_reference("a@00:01.0-00:02.0"));
         assert!(looks_like_timestamp_reference("00:01.0"));
         assert!(looks_like_timestamp_reference("01:23:45.678"));
-        assert!(looks_like_timestamp_reference("source_id@01:23:45.678-02:34:56.789"));
+        assert!(looks_like_timestamp_reference(
+            "source_id@01:23:45.678-02:34:56.789"
+        ));
 
         // Invalid timestamp patterns (should be treated as regular code)
         assert!(!looks_like_timestamp_reference("test"));
@@ -1411,7 +1424,11 @@ mod tests {
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
 
         // Should have 3 blocks: text, code block, text
-        assert_eq!(document.blocks.len(), 3, "Expected 3 blocks: text, code block, text");
+        assert_eq!(
+            document.blocks.len(),
+            3,
+            "Expected 3 blocks: text, code block, text"
+        );
 
         // First block should be text
         match &document.blocks[0] {
@@ -1424,9 +1441,18 @@ mod tests {
         // Second block should be the code block
         match &document.blocks[1] {
             DocumentBlock::Unhandled(unhandled) => {
-                assert!(unhandled.description.contains("```bash"), "Code block should have bash language");
-                assert!(unhandled.description.contains("curl -fsSL"), "Code block should contain the curl command");
-                assert!(unhandled.description.contains("```"), "Code block should end with ```");
+                assert!(
+                    unhandled.description.contains("```bash"),
+                    "Code block should have bash language"
+                );
+                assert!(
+                    unhandled.description.contains("curl -fsSL"),
+                    "Code block should contain the curl command"
+                );
+                assert!(
+                    unhandled.description.contains("```"),
+                    "Code block should end with ```"
+                );
             }
             other => panic!("Expected Unhandled block for code block, got {:?}", other),
         }

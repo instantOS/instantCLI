@@ -45,7 +45,7 @@ use self::sources::{find_default_source, validate_timeline_sources};
 use self::subtitles::generate_subtitle_file;
 use self::timeline_builder::{SlideProvider, TimelineStats, build_nle_timeline};
 pub(crate) use self::transcripts::load_transcript_cues;
-use super::cli::RenderArgs;
+use super::cli::{PreviewArgs, RenderArgs};
 use super::config::VideoConfig;
 use super::support::ffmpeg::probe_video_dimensions;
 
@@ -66,6 +66,11 @@ impl SlideProvider for SlideGenerator {
 pub async fn handle_render(args: RenderArgs) -> Result<Option<PathBuf>> {
     let runner = SystemFfmpegRunner;
     handle_render_with_services(args, &runner).await
+}
+
+pub async fn handle_preview(args: PreviewArgs) -> Result<Option<PathBuf>> {
+    let runner = SystemFfmpegRunner;
+    handle_preview_with_services(args, &runner).await
 }
 
 struct RenderProject {
@@ -211,13 +216,13 @@ async fn handle_render_with_services(
 ) -> Result<Option<PathBuf>> {
     let project = load_render_project(&args).await?;
 
-    let render_mode = if args.reels {
+    let render_mode = if args.common.reels {
         RenderMode::Reels
     } else {
         RenderMode::Standard
     };
 
-    let output_path = if args.precache_slides {
+    let output_path = if args.common.precache_slides {
         None
     } else {
         Some(paths::resolve_output_path(
@@ -234,7 +239,7 @@ async fn handle_render_with_services(
 
     let (nle_timeline, target_dims) = build_render_timeline(&project, render_mode)?;
 
-    if args.precache_slides {
+    if args.common.precache_slides {
         log_event(
             Level::Success,
             "video.render.precache_only",
@@ -255,10 +260,140 @@ async fn handle_render_with_services(
         target_dims,
         video_config: project.video_config,
         audio_source: project.default_source.source.clone(),
-        burn_subtitles: args.subtitles,
+        burn_subtitles: args.common.subtitles,
         dry_run: args.dry_run,
-        verbose: args.verbose,
+        verbose: args.common.verbose,
         runner,
+    })
+}
+
+async fn handle_preview_with_services(
+    args: PreviewArgs,
+    runner: &dyn FfmpegRunner,
+) -> Result<Option<PathBuf>> {
+    let project = load_preview_project(&args).await?;
+
+    let render_mode = if args.common.reels {
+        RenderMode::Reels
+    } else {
+        RenderMode::Standard
+    };
+
+    let (nle_timeline, target_dims) = build_render_timeline(&project, render_mode)?;
+
+    if args.common.precache_slides {
+        log_event(
+            Level::Success,
+            "video.render.precache_only",
+            "Prepared slides in cache; skipping preview",
+        );
+        return Ok(None);
+    }
+
+    // Use same audio source as render
+    let audio_source = project.default_source.source.clone();
+
+    // Use temporary output for preview (will be piped to mpv)
+    let output_path = project.project_dir.join("preview_temp.mkv");
+
+    execute_preview_render(
+        RenderJob {
+            timeline: nle_timeline,
+            cues: &project.cues,
+            output_path,
+            render_mode,
+            target_dims,
+            video_config: project.video_config,
+            audio_source,
+            burn_subtitles: args.common.subtitles,
+            dry_run: false, // Always execute for preview
+            verbose: args.common.verbose,
+            runner,
+        },
+        args.seek,
+    )?;
+
+    Ok(None)
+}
+
+/// Execute a preview render job with real-time mpv playback
+fn execute_preview_render(job: RenderJob<'_>, seek_time: Option<f64>) -> Result<Option<PathBuf>> {
+    // Generate subtitles if needed (same as render)
+    let subtitle_path = if job.burn_subtitles {
+        let temp_output = job.output_path.with_extension("ass");
+        Some(generate_subtitle_file(
+            &job.timeline,
+            job.cues,
+            &temp_output,
+            job.target_dims,
+            job.render_mode,
+        )?)
+    } else {
+        None
+    };
+
+    let render_config = RenderConfig::new(job.render_mode, job.video_config, subtitle_path);
+
+    let pipeline = RenderPipeline {
+        output: job.output_path.clone(),
+        timeline: job.timeline,
+        dimensions: job.target_dims,
+        render_config,
+        audio_source: job.audio_source,
+        runner: job.runner,
+        verbose: job.verbose,
+    };
+
+    log_event(
+        Level::Info,
+        "video.render.preview",
+        "Starting real-time preview with mpv (use arrow keys to seek, q to quit)",
+    );
+
+    // Use mpv for real-time playback with seeking support
+    let mpv_runner = crate::video::render::ffmpeg::services::MpvPreviewRunner;
+    pipeline.preview_with_seek(&mpv_runner, seek_time)?;
+
+    log_event(
+        Level::Success,
+        "video.render.preview_done",
+        "Preview finished",
+    );
+
+    Ok(None)
+}
+
+async fn load_preview_project(args: &PreviewArgs) -> Result<RenderProject> {
+    log_event(
+        Level::Info,
+        "video.render.start",
+        "Preparing preview (reading markdown, transcript, and assets)",
+    );
+
+    let markdown_path = canonicalize_existing(&args.markdown)?;
+    let project_dir = markdown_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .to_path_buf();
+
+    let document = load_video_document(&markdown_path)?;
+    let video_config = VideoConfig::load()?;
+    let sources = resolve_video_sources(&document.metadata, &project_dir, &video_config).await?;
+    if sources.is_empty() {
+        bail!("No video sources configured. Add `sources` in front matter before rendering.");
+    }
+    let cues = load_transcript_cues(&sources, &project_dir)?;
+    validate_timeline_sources(&document, &sources, &cues)?;
+    let plan = build_timeline_plan(&document, &cues, &markdown_path)?;
+    let default_source = find_default_source(&document.metadata, &sources)?.clone();
+
+    Ok(RenderProject {
+        sources,
+        cues,
+        plan,
+        default_source,
+        video_config,
+        project_dir,
     })
 }
 
