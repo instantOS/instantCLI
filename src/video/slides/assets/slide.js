@@ -61,13 +61,17 @@ window.addEventListener('load', () => {
         maxScale = 250; // Cap hero slightly more to avoid clipping
     }
 
-    // For dense layouts with code blocks, allow shrinking more to ensure content fits
-    if (body.classList.contains('layout-dense') && codeBlocks > 0) {
-        minScale = 5; // Allow smaller text for code-heavy slides
+    // For slides with code blocks, allow shrinking more to ensure content fits
+    if (codeBlocks > 0) {
+        minScale = 3; // Allow much smaller text for code-heavy slides
+        // Start with a smaller base size for code-heavy slides
+        currentScale = 80;
+        body.style.fontSize = currentScale + '%';
     }
 
     function checkOverflow() {
-        const buffer = 40; // px safety margin
+        // Smaller buffer for slides with code blocks to maximize space usage
+        const buffer = codeBlocks > 0 ? 10 : 40;
         
         // Use window dimensions and compare against content's scroll dimensions
         // This is more reliable than checking body.scrollHeight which is fixed to 100vh
@@ -93,30 +97,62 @@ window.addEventListener('load', () => {
         return false;
     }
 
+    // Smaller step size for code-heavy slides
+    const stepSize = codeBlocks > 0 ? 2 : 5;
+
     // Initial check
     if (checkOverflow()) {
         // Shrink mode
         while (checkOverflow() && currentScale > minScale) {
-            currentScale -= 5;
+            currentScale -= stepSize;
             body.style.fontSize = currentScale + '%';
         }
     } else {
         // Grow mode
         // We grow until it overflows, then step back
         while (!checkOverflow() && currentScale < maxScale) {
-            currentScale += 5;
+            currentScale += stepSize;
             body.style.fontSize = currentScale + '%';
         }
 
         // If we caused an overflow, step back one unit to make it fit again
         if (checkOverflow()) {
-            currentScale -= 5;
+            currentScale -= stepSize;
             body.style.fontSize = currentScale + '%';
         }
     }
 
-    // 3. Code Block Headers
+    // 3. Conditionally reduce padding for code blocks with long lines
     const pres = content.querySelectorAll('pre');
+    pres.forEach(pre => {
+        const codeElement = pre.querySelector('code');
+        if (!codeElement) return;
+        
+        // Check if any line would overflow with normal padding
+        const codeText = codeElement.textContent;
+        const lines = codeText.split('\n');
+        const containerWidth = pre.clientWidth;
+        
+        // Create a temporary span to measure text width
+        const tempSpan = document.createElement('span');
+        tempSpan.style.cssText = 'position: absolute; visibility: hidden; white-space: pre; font-family: inherit; font-size: inherit;';
+        tempSpan.textContent = lines.reduce((a, b) => a.length > b.length ? a : b);
+        document.body.appendChild(tempSpan);
+        
+        const longestLineWidth = tempSpan.getBoundingClientRect().width;
+        document.body.removeChild(tempSpan);
+        
+        // If the longest line needs more than ~75% of container width, reduce padding
+        if (longestLineWidth > containerWidth * 0.75) {
+            pre.classList.add('code-compact');
+        }
+        // If it's really long (>90%), use extra compact padding
+        if (longestLineWidth > containerWidth * 0.90) {
+            pre.classList.add('code-compact-extra');
+        }
+    });
+
+    // 4. Code Block Headers
     pres.forEach(pre => {
         // Determine container (Pandoc's div.sourceCode or we wrap it)
         let container = pre.parentElement;

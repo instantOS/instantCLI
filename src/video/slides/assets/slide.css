@@ -77,7 +77,7 @@ body {
 .content {
   position: relative;
   z-index: 10;
-  width: 75%;
+  width: 85%;
   max-width: 1600px;
   max-height: 100vh;
   display: flex;
@@ -85,6 +85,20 @@ body {
   align-items: stretch;
   justify-content: center;
   text-align: left;
+}
+
+/* When content has code blocks, use full width and allow expansion */
+.content:has(div.sourceCode),
+.content:has(div.code-window) {
+  width: 95%;
+  max-height: none;
+  height: auto;
+}
+
+/* Slides with code blocks - reduce body padding to maximize space */
+body:has(div.sourceCode),
+body:has(div.code-window) {
+  padding: 3rem 1rem;
 }
 
 /* =========================================
@@ -166,7 +180,7 @@ div.code-window {
   width: 100%;
   position: relative;
   box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.3);
-  overflow: hidden;
+  overflow: visible;
   display: flex;
   flex-direction: column;
 }
@@ -198,10 +212,24 @@ pre {
   margin: 0 !important;
   padding: 1.5em 2rem !important;
   width: 100%;
-  overflow-x: hidden;
+  max-width: 100%;
+  overflow: visible;
   white-space: pre-wrap;
   word-wrap: break-word;
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+/* Compact padding for code blocks with long lines - high specificity to override dense layout */
+body pre.code-compact,
+body.layout-dense pre.code-compact {
+  padding: 1em 0.5em !important;
+}
+
+/* Even more compact for very long lines */
+body pre.code-compact-extra,
+body.layout-dense pre.code-compact-extra {
+  padding: 0.75em 0.25em !important;
 }
 
 /* Remove old fake header */
@@ -214,6 +242,10 @@ pre code {
   font-size: 1.1em;
   color: var(--ctp-text);
   line-height: 1.5;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+  word-break: break-all;
 
   /* Reset inline code styles to prevent "box inside box" artifacts */
   background: transparent !important;
@@ -397,6 +429,13 @@ code {
   border-radius: 0.25em;
   border: 1px solid var(--ctp-surface1);
   font-size: 0.9em;
+}
+
+/* Fix: Ensure code in gradient headings is visible */
+h1 code,
+h2 code {
+  -webkit-text-fill-color: var(--ctp-peach);
+  color: var(--ctp-peach);
 }
 
 /* =========================================
@@ -643,9 +682,15 @@ body.layout-dense {
 }
 
 body.layout-dense .content {
-  width: 80%;
+  width: 90%;
   justify-content: center;
   padding-top: 1rem;
+}
+
+/* Dense layout with code blocks - use full width */
+body.layout-dense:has(pre) .content,
+body.layout-dense:has(div.sourceCode) .content {
+  width: 95%;
 }
 
 body.layout-dense h1 {
@@ -662,8 +707,14 @@ body.layout-dense p {
 }
 
 body.layout-dense pre {
-  padding-top: 3rem;
-  margin: 1em 0;
+  padding: 1em 1.5em !important;
+  margin: 0.5em 0;
+}
+
+/* Code blocks in dense layout - reduce margins */
+body.layout-dense div.sourceCode,
+body.layout-dense div.code-window {
+  margin: 0.5em 0;
 }
 
 /* =========================================
