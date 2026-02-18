@@ -165,7 +165,7 @@ impl FfmpegCompiler {
         args.push("-pix_fmt".to_string());
         args.push("yuv420p".to_string());
 
-        // Output format, destination, and seek are set by the runner (MpvPreviewRunner)
+        // Output format and destination are set by the runner (MpvPreviewRunner)
 
         Ok(FfmpegCompileOutput { args })
     }

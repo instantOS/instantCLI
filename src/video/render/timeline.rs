@@ -397,6 +397,15 @@ impl SegmentData {
         }
     }
 
+    /// Get the source start time (position in source file) for this segment.
+    pub fn source_start_time(&self) -> Option<f64> {
+        match self {
+            SegmentData::VideoSubset { start_time, .. } => Some(*start_time),
+            SegmentData::Broll { start_time, .. } => Some(*start_time),
+            _ => None,
+        }
+    }
+
     /// Return a copy with the source start time advanced by `amount` seconds.
     /// For VideoSubset and Broll, this moves the source playback start forward.
     /// For Image and Music, data is returned unchanged (no seekable source offset).
