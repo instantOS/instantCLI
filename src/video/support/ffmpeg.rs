@@ -13,16 +13,6 @@ pub struct EncodingProfile {
     pub movflags: Option<&'static str>,
 }
 
-pub const PROFILE_H264_AAC_QUALITY: EncodingProfile = EncodingProfile {
-    video_codec: "libx264",
-    preset: "medium",
-    crf: "18",
-    audio_codec: "aac",
-    audio_bitrate: "192k",
-    pix_fmt: None,
-    movflags: None,
-};
-
 pub const PROFILE_H264_AAC_QUALITY_FASTSTART: EncodingProfile = EncodingProfile {
     video_codec: "libx264",
     preset: "medium",
