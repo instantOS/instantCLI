@@ -53,14 +53,16 @@ pub async fn handle_render(args: RenderArgs) -> Result<Option<PathBuf>> {
     handle_render_with_services(args, &runner).await
 }
 
-async fn handle_render_with_services(
-    args: RenderArgs,
-    runner: &dyn FfmpegRunner,
-) -> Result<Option<PathBuf>> {
-    let pre_cache_only = args.precache_slides;
-    let dry_run = args.dry_run;
-    let burn_subtitles = args.subtitles;
+struct RenderProject {
+    sources: Vec<crate::video::document::VideoSource>,
+    cues: Vec<crate::video::support::transcript::TranscriptCue>,
+    plan: crate::video::planning::TimelinePlan,
+    default_source: crate::video::document::VideoSource,
+    video_config: VideoConfig,
+    project_dir: PathBuf,
+}
 
+async fn load_render_project(args: &RenderArgs) -> Result<RenderProject> {
     log_event(
         Level::Info,
         "video.render.start",
@@ -68,52 +70,42 @@ async fn handle_render_with_services(
     );
 
     let markdown_path = canonicalize_existing(&args.markdown)?;
-    let project_dir = markdown_path.parent().unwrap_or_else(|| Path::new("."));
+    let project_dir = markdown_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .to_path_buf();
 
     let document = load_video_document(&markdown_path)?;
     let video_config = VideoConfig::load()?;
-    let sources = resolve_video_sources(&document.metadata, project_dir, &video_config).await?;
+    let sources = resolve_video_sources(&document.metadata, &project_dir, &video_config).await?;
     if sources.is_empty() {
         bail!("No video sources configured. Add `sources` in front matter before rendering.");
     }
-    let cues = load_transcript_cues(&sources, project_dir)?;
+    let cues = load_transcript_cues(&sources, &project_dir)?;
     validate_timeline_sources(&document, &sources, &cues)?;
     let plan = build_timeline_plan(&document, &cues, &markdown_path)?;
+    let default_source = find_default_source(&document.metadata, &sources)?.clone();
 
-    let default_source = find_default_source(&document.metadata, &sources)?;
+    Ok(RenderProject {
+        sources,
+        cues,
+        plan,
+        default_source,
+        video_config,
+        project_dir,
+    })
+}
 
-    // Determine render mode from CLI args
-    let render_mode = if args.reels {
-        RenderMode::Reels
-    } else {
-        RenderMode::Standard
-    };
-
-    // Subtitles are now supported in both Standard and Reels modes
-
-    let output_path = if pre_cache_only {
-        None
-    } else {
-        Some(paths::resolve_output_path(
-            args.out_file.as_ref(),
-            &default_source.source,
-            project_dir,
-            render_mode,
-        )?)
-    };
-
-    if let Some(output_path) = &output_path {
-        prepare_output_destination(output_path, &args, &default_source.source)?;
-    }
-
+fn build_render_timeline(
+    project: &RenderProject,
+    render_mode: RenderMode,
+) -> Result<(timeline::Timeline, (u32, u32))> {
     log_event(
         Level::Info,
         "video.render.probe",
         "Probing source video dimensions",
     );
-    let (video_width, video_height) = probe_video_dimensions(&default_source.source)?;
-
-    // Use render mode to determine target dimensions
+    let (video_width, video_height) = probe_video_dimensions(&project.default_source.source)?;
     let (target_width, target_height) = render_mode.target_dimensions(video_width, video_height);
 
     let generator = SlideGenerator::new(target_width, target_height)?;
@@ -123,24 +115,32 @@ async fn handle_render_with_services(
         "video.render.timeline.build",
         "Building render timeline (may generate slides)",
     );
-    let (nle_timeline, stats) = build_nle_timeline(plan, &generator, &sources, project_dir)?;
+    let (nle_timeline, stats) = build_nle_timeline(
+        project.plan.clone(),
+        &generator,
+        &project.sources,
+        &project.project_dir,
+    )?;
 
     report_timeline_stats(&stats);
 
-    if pre_cache_only {
-        log_event(
-            Level::Success,
-            "video.render.precache_only",
-            "Prepared slides in cache; skipping final render",
-        );
-        return Ok(None);
-    }
+    Ok((nle_timeline, (target_width, target_height)))
+}
 
-    let Some(output_path) = output_path else {
-        bail!("Output path is required when not pre-caching");
-    };
+fn execute_render(
+    nle_timeline: timeline::Timeline,
+    cues: &[crate::video::support::transcript::TranscriptCue],
+    output_path: PathBuf,
+    render_mode: RenderMode,
+    target_dims: (u32, u32),
+    video_config: VideoConfig,
+    audio_source: PathBuf,
+    burn_subtitles: bool,
+    dry_run: bool,
+    runner: &dyn FfmpegRunner,
+) -> Result<Option<PathBuf>> {
+    let (target_width, target_height) = target_dims;
 
-    // Generate subtitles if requested
     let subtitle_path = if burn_subtitles {
         log_event(
             Level::Info,
@@ -149,7 +149,7 @@ async fn handle_render_with_services(
         );
         Some(generate_subtitle_file(
             &nle_timeline,
-            &cues,
+            cues,
             &output_path,
             (target_width, target_height),
             render_mode,
@@ -158,7 +158,6 @@ async fn handle_render_with_services(
         None
     };
 
-    // video_config already loaded above for audio preprocessing
     let pipeline = RenderPipeline::new(RenderPipelineParams {
         output: output_path.clone(),
         timeline: nle_timeline,
@@ -166,7 +165,7 @@ async fn handle_render_with_services(
         target_width,
         target_height,
         config: video_config,
-        audio_source: default_source.source.clone(),
+        audio_source,
         subtitle_path,
         runner,
     });
@@ -201,6 +200,62 @@ async fn handle_render_with_services(
     );
 
     Ok(Some(output_path))
+}
+
+async fn handle_render_with_services(
+    args: RenderArgs,
+    runner: &dyn FfmpegRunner,
+) -> Result<Option<PathBuf>> {
+    let project = load_render_project(&args).await?;
+
+    let render_mode = if args.reels {
+        RenderMode::Reels
+    } else {
+        RenderMode::Standard
+    };
+
+    let output_path = if args.precache_slides {
+        None
+    } else {
+        Some(paths::resolve_output_path(
+            args.out_file.as_ref(),
+            &project.default_source.source,
+            &project.project_dir,
+            render_mode,
+        )?)
+    };
+
+    if let Some(output_path) = &output_path {
+        prepare_output_destination(output_path, &args, &project.default_source.source)?;
+    }
+
+    let (nle_timeline, target_dims) = build_render_timeline(&project, render_mode)?;
+
+    if args.precache_slides {
+        log_event(
+            Level::Success,
+            "video.render.precache_only",
+            "Prepared slides in cache; skipping final render",
+        );
+        return Ok(None);
+    }
+
+    let Some(output_path) = output_path else {
+        bail!("Output path is required when not pre-caching");
+    };
+
+    execute_render(
+        nle_timeline,
+        &project.cues,
+        output_path,
+        render_mode,
+        target_dims,
+        project.video_config,
+        project.default_source.source.clone(),
+        args.subtitles,
+        args.dry_run,
+        runner,
+    )
 }
 
 fn report_timeline_stats(stats: &TimelineStats) {
