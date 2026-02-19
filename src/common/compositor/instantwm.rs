@@ -11,7 +11,7 @@ impl ScratchpadProvider for InstantWM {
     fn show(&self, config: &ScratchpadConfig) -> Result<()> {
         let _ = send_instantwm_command("scratchpad-show", &config.name);
 
-        if self.is_window_running(config)? {
+        if is_scratchpad_registered(&config.name)? {
             return Ok(());
         }
 
@@ -24,47 +24,25 @@ impl ScratchpadProvider for InstantWM {
     }
 
     fn toggle(&self, config: &ScratchpadConfig) -> Result<()> {
-        if send_instantwm_command("scratchpad-toggle", &config.name).is_ok() {
-            return Ok(());
+        if is_scratchpad_registered(&config.name)? {
+            send_instantwm_command("scratchpad-toggle", &config.name)?;
+        } else {
+            self.create_and_wait(config)?;
         }
-        self.create_and_wait(config)?;
         Ok(())
     }
 
     fn get_all_windows(&self) -> Result<Vec<ScratchpadWindowInfo>> {
-        send_instantwm_command("scratchpad-status", "all")?;
-
-        let output = Command::new("xprop")
-            .args(["-root", "-notype", "WM_NAME"])
-            .output()
-            .context("Failed to read WM_NAME")?;
-
-        if !output.status.success() {
-            return Ok(Vec::new());
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        parse_all_scratchpads(&stdout)
+        let output = get_scratchpad_status()?;
+        parse_all_scratchpads(&output)
     }
 
     fn is_window_running(&self, config: &ScratchpadConfig) -> Result<bool> {
-        let window_class = config.window_class();
-
-        let output = Command::new("xwininfo")
-            .args(["-tree", "-root"])
-            .output()
-            .context("Failed to execute xwininfo")?;
-
-        if output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            Ok(stdout.contains(&window_class))
-        } else {
-            Ok(false)
-        }
+        is_scratchpad_registered(&config.name)
     }
 
     fn is_visible(&self, config: &ScratchpadConfig) -> Result<bool> {
-        get_scratchpad_status_for_name(&config.name)
+        get_scratchpad_visibility(&config.name)
     }
 
     fn show_unchecked(&self, config: &ScratchpadConfig) -> Result<()> {
@@ -180,30 +158,6 @@ fn focus_window_by_id(window_id: &str) -> Result<()> {
     }
 }
 
-fn is_scratchpad_registered(name: &str) -> Result<bool> {
-    send_instantwm_command("scratchpad-status", name)?;
-
-    for _attempt in 0..3 {
-        if let Ok(output) = Command::new("xprop")
-            .args(["-root", "-notype", "WM_NAME"])
-            .output()
-            && output.status.success()
-        {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            if let Some(captures) = stdout.strip_prefix("WM_NAME = ") {
-                let value = captures.trim().trim_matches('"');
-                let expected_prefix = format!("ipc:scratchpad:{}:", name);
-                if value.starts_with(&expected_prefix) {
-                    return Ok(true);
-                }
-            }
-        }
-        thread::sleep(Duration::from_millis(30));
-    }
-
-    Ok(false)
-}
-
 fn send_instantwm_command(command: &str, args: &str) -> Result<()> {
     let control_string = format!("c;:;{};{}", command, args);
 
@@ -222,56 +176,81 @@ fn send_instantwm_command(command: &str, args: &str) -> Result<()> {
     }
 }
 
-pub fn get_scratchpad_status_for_name(name: &str) -> Result<bool> {
-    send_instantwm_command("scratchpad-status", name)?;
-
-    for _attempt in 0..10 {
-        if let Ok(output) = Command::new("xprop")
+fn read_ipc_response() -> Result<String> {
+    for _ in 0..20 {
+        let output = Command::new("xprop")
             .args(["-root", "-notype", "WM_NAME"])
             .output()
-            && output.status.success()
-        {
+            .context("Failed to read WM_NAME")?;
+
+        if output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout);
-            if let Some(captures) = stdout.strip_prefix("WM_NAME = ") {
-                let value = captures.trim().trim_matches('"');
-                let expected_prefix = format!("ipc:scratchpad:{}:", name);
-                if let Some(status_str) = value.strip_prefix(&expected_prefix) {
-                    return Ok(status_str == "1");
+            if let Some(value) = parse_wm_name(&stdout) {
+                if value.contains("ipc:") {
+                    return Ok(value);
                 }
             }
         }
-        thread::sleep(Duration::from_millis(30));
+        thread::sleep(Duration::from_millis(50));
     }
+    Ok(String::new())
+}
 
+fn parse_wm_name(output: &str) -> Option<String> {
+    let value = output
+        .strip_prefix("WM_NAME = ")
+        .map(|s| s.trim().trim_matches('"'))?;
+
+    if value == "not found." {
+        return None;
+    }
+    Some(value.to_string())
+}
+
+fn get_scratchpad_status() -> Result<String> {
+    send_instantwm_command("scratchpad-status", "all")?;
+    read_ipc_response()
+}
+
+fn is_scratchpad_registered(name: &str) -> Result<bool> {
+    let status = get_scratchpad_status()?;
+    let status = status.strip_prefix("ipc:scratchpads:").unwrap_or(&status);
+    Ok(status.contains(&format!("{}=", name)))
+}
+
+fn get_scratchpad_visibility(name: &str) -> Result<bool> {
+    let status = get_scratchpad_status()?;
+    let status = status.strip_prefix("ipc:scratchpads:").unwrap_or(&status);
+
+    for entry in status.split(',') {
+        let parts: Vec<&str> = entry.splitn(2, '=').collect();
+        if parts.len() == 2 && parts[0] == name {
+            return Ok(parts[1] == "1");
+        }
+    }
     Ok(false)
 }
 
 fn parse_all_scratchpads(output: &str) -> Result<Vec<ScratchpadWindowInfo>> {
     let mut windows = Vec::new();
 
-    if let Some(captures) = output.strip_prefix("WM_NAME = ") {
-        let value = captures.trim().trim_matches('"');
+    let list_part = output.strip_prefix("ipc:scratchpads:").unwrap_or("");
 
-        if value.starts_with("ipc:scratchpads:") {
-            let list_part = value.strip_prefix("ipc:scratchpads:").unwrap_or("");
+    if list_part == "none" || list_part.is_empty() {
+        return Ok(windows);
+    }
 
-            if list_part == "none" {
-                return Ok(windows);
-            }
-
-            for entry in list_part.split(',') {
-                let parts: Vec<&str> = entry.splitn(2, '=').collect();
-                if parts.len() == 2 {
-                    let name = parts[0].to_string();
-                    let visible = parts[1] == "1";
-                    windows.push(ScratchpadWindowInfo {
-                        name: name.clone(),
-                        window_class: format!("scratchpad_{}", name),
-                        title: name,
-                        visible,
-                    });
-                }
-            }
+    for entry in list_part.split(',') {
+        let parts: Vec<&str> = entry.splitn(2, '=').collect();
+        if parts.len() == 2 {
+            let name = parts[0].to_string();
+            let visible = parts[1] == "1";
+            windows.push(ScratchpadWindowInfo {
+                name: name.clone(),
+                window_class: format!("scratchpad_{}", name),
+                title: name,
+                visible,
+            });
         }
     }
 
@@ -284,7 +263,7 @@ mod tests {
 
     #[test]
     fn test_parse_all_scratchpads() {
-        let output = r#"WM_NAME = "ipc:scratchpads:default=1,test=0""#;
+        let output = "ipc:scratchpads:default=1,test=0";
         let windows = parse_all_scratchpads(output).unwrap();
         assert_eq!(windows.len(), 2);
         assert_eq!(windows[0].name, "default");
@@ -295,14 +274,14 @@ mod tests {
 
     #[test]
     fn test_parse_all_scratchpads_none() {
-        let output = r#"WM_NAME = "ipc:scratchpads:none""#;
+        let output = "ipc:scratchpads:none";
         let windows = parse_all_scratchpads(output).unwrap();
         assert!(windows.is_empty());
     }
 
     #[test]
     fn test_parse_all_scratchpads_single() {
-        let output = r#"WM_NAME = "ipc:scratchpads:mymenu=1""#;
+        let output = "ipc:scratchpads:mymenu=1";
         let windows = parse_all_scratchpads(output).unwrap();
         assert_eq!(windows.len(), 1);
         assert_eq!(windows[0].name, "mymenu");
