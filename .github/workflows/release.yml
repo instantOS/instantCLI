@@ -244,6 +244,8 @@ jobs:
     runs-on: self-hosted
     needs: build
     steps:
+      - name: Clean workspace
+        run: sudo rm -rf "$GITHUB_WORKSPACE"/*
       - name: Checkout
         uses: actions/checkout@v4
       - name: Extract version
