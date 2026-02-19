@@ -116,6 +116,10 @@ PY
 
 install -Dm644 "${APPDIR}/ins.desktop" "${APPDIR}/usr/share/applications/ins.desktop"
 
+for desktop_file in desktop/*.desktop; do
+	install -Dm644 "${desktop_file}" "${APPDIR}/usr/share/applications/$(basename "${desktop_file}")"
+done
+
 ICON_URL="https://github.com/instantOS.png"
 download "${ICON_URL}" "${DOWNLOAD_DIR}/instantcli.png"
 install -Dm644 "${DOWNLOAD_DIR}/instantcli.png" "${APPDIR}/instantcli.png"

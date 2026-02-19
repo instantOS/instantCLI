@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Instant Games
+Comment=Game save management and launcher
+Exec=ins game menu --gui
+Icon=applications-games
+Terminal=false
+Categories=Game;
+Keywords=games;saves;backup;sync;launcher;instantos;

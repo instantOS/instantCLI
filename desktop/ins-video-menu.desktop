@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Instant Video
+Comment=Video transcription and editing workflows
+Exec=ins video menu --gui
+Icon=applications-multimedia
+Terminal=false
+Categories=AudioVideo;Video;
+Keywords=video;editing;transcription;render;instantos;
