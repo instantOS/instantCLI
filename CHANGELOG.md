@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.11](https://github.com/instantOS/instantCLI/compare/v0.13.10...v0.13.11) - 2026-02-19
+
+### Fixed
+
+- fix ownership issue
+- fix arm build
+- fix steam deck using wrong path
+- fix more css
+- fix video code block parsing
+- fix timestamp parsing issue
+- fix ffmpeg progress
+
+### Other
+
+- ins video preview
+- init slide format
+- clean up js
+- better wrapping
+- better looking title code blocks
+- better code block scale handling
+- prettier status bar
+- refactor overlay filters
+- use filterchain more
+- init filterchain refactor
+- init better ffmpeg progress bar
+- remove redundant index function
+- remove unused profile
+- use new sourcemap
+- refactor filter thingy
+- cleaner categorization
+- remove redundant struct
+- add renderjob abstraction
+- init render structure refactor
+- refactor render handle
+- remove redundant map
+- document better
+- remove old function
+
 ## [0.13.10](https://github.com/instantOS/instantCLI/compare/v0.13.9...v0.13.10) - 2026-02-17
 
 ### Fixed
