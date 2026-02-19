@@ -69,8 +69,7 @@ pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
         GameCommands::Info { game_name } => handle_info(game_name),
         GameCommands::Menu { game_name, gui } => {
             if gui {
-                let extra: Vec<String> =
-                    game_name.iter().map(|n| n.to_string()).collect();
+                let extra: Vec<String> = game_name.iter().map(|n| n.to_string()).collect();
                 return crate::common::terminal::launch_menu_in_terminal(
                     "game",
                     "Game Menu",

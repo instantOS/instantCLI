@@ -1,4 +1,4 @@
-use super::{create_terminal_process, ScratchpadProvider, ScratchpadWindowInfo};
+use super::{ScratchpadProvider, ScratchpadWindowInfo, create_terminal_process};
 use crate::scratchpad::config::ScratchpadConfig;
 use anyhow::{Context, Result};
 use std::process::Command;
@@ -9,13 +9,13 @@ pub struct InstantWM;
 
 impl ScratchpadProvider for InstantWM {
     fn show(&self, config: &ScratchpadConfig) -> Result<()> {
-        if !self.is_window_running(config)? {
-            self.create_and_wait(config)?;
+        let _ = send_instantwm_command("scratchpad-show", &config.name);
+
+        if self.is_window_running(config)? {
             return Ok(());
         }
-        if !self.is_visible(config)? {
-            send_instantwm_command("scratchpad-show", &config.name)?;
-        }
+
+        self.create_and_wait(config)?;
         Ok(())
     }
 
@@ -24,11 +24,10 @@ impl ScratchpadProvider for InstantWM {
     }
 
     fn toggle(&self, config: &ScratchpadConfig) -> Result<()> {
-        if self.is_window_running(config)? {
-            send_instantwm_command("scratchpad-toggle", &config.name)?;
-        } else {
-            self.create_and_wait(config)?;
+        if send_instantwm_command("scratchpad-toggle", &config.name).is_ok() {
+            return Ok(());
         }
+        self.create_and_wait(config)?;
         Ok(())
     }
 
@@ -112,7 +111,9 @@ impl InstantWM {
         }
 
         if window_seen {
-            Err(anyhow::anyhow!("Window appeared but scratchpad registration failed"))
+            Err(anyhow::anyhow!(
+                "Window appeared but scratchpad registration failed"
+            ))
         } else {
             Err(anyhow::anyhow!("Terminal window did not appear"))
         }
