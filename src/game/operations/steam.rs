@@ -380,7 +380,7 @@ pub fn add_game_to_steam(game_name: &str, _launch_command: &str) -> Result<(bool
         );
     }
 
-    let ins_bin = std::env::current_exe().context("Failed to determine ins binary path")?;
+    let ins_bin = super::resolve_ins_binary();
     let ins_bin_str = ins_bin.to_string_lossy().to_string();
 
     let exe = format!("\"{}\"", ins_bin_str);
@@ -538,7 +538,7 @@ pub fn add_game_menu_to_steam() -> Result<(bool, bool)> {
         );
     }
 
-    let ins_bin = std::env::current_exe().context("Failed to determine ins binary path")?;
+    let ins_bin = super::resolve_ins_binary();
     let ins_bin_str = ins_bin.to_string_lossy().to_string();
 
     let terminal = detect_terminal();
