@@ -41,15 +41,6 @@ impl<'a> RenderPipeline<'a> {
         player.play(&args)
     }
 
-    pub(super) fn preview_with_seek(
-        &self,
-        player: &dyn PreviewPlayer,
-        seek_time: Option<f64>,
-    ) -> Result<()> {
-        let args = self.build_preview_args()?;
-        player.play_with_seek(&args, seek_time)
-    }
-
     fn build_args(&self) -> Result<Vec<String>> {
         let compiler = FfmpegCompiler::new(self.dimensions, self.render_config.clone());
         Ok(compiler

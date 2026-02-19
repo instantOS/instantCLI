@@ -158,7 +158,7 @@ fn test_filter_complex_includes_subtitles() {
         false,
     ));
 
-    let source_map = SourceMap::build(&timeline, PathBuf::from("audio.mp4").as_path());
+    let source_map = SourceMap::build(&timeline, PathBuf::from("audio.mp4").as_path(), false);
     let filter_complex = compiler
         .build_filter_complex(&timeline, &source_map, 5.0)
         .unwrap();

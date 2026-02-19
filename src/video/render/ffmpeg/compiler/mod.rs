@@ -110,7 +110,7 @@ impl FfmpegCompiler {
     ) -> Result<FfmpegCompileOutput> {
         let mut args = Vec::new();
 
-        let source_map = SourceMap::build(timeline, &audio_source);
+        let source_map = SourceMap::build(timeline, &audio_source, false);
         args.extend(source_map.input_args());
 
         let total_duration = timeline.total_duration();
@@ -137,7 +137,7 @@ impl FfmpegCompiler {
     ) -> Result<FfmpegCompileOutput> {
         let mut args = Vec::new();
 
-        let source_map = SourceMap::build(timeline, &audio_source);
+        let source_map = SourceMap::build(timeline, &audio_source, true);
         args.extend(source_map.input_args());
 
         let total_duration = timeline.total_duration();
@@ -165,7 +165,7 @@ impl FfmpegCompiler {
         args.push("-pix_fmt".to_string());
         args.push("yuv420p".to_string());
 
-        // Output format, destination, and seek are set by the runner (MpvPreviewRunner)
+        // Output format and destination are set by the runner (MpvPreviewRunner)
 
         Ok(FfmpegCompileOutput { args })
     }

@@ -14,10 +14,6 @@ pub trait FfmpegRunner {
 
 pub trait PreviewPlayer {
     fn play(&self, args: &[String]) -> Result<()>;
-    fn play_with_seek(&self, args: &[String], seek_time: Option<f64>) -> Result<()> {
-        let _ = seek_time;
-        self.play(args)
-    }
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -118,7 +114,7 @@ fn read_ffmpeg_stderr<R: Read>(
         let chunk = String::from_utf8_lossy(&buffer[..bytes_read]);
         accumulated.push_str(&chunk);
 
-        while let Some(pos) = accumulated.find(|c| c == '\r' || c == '\n') {
+        while let Some(pos) = accumulated.find(['\r', '\n']) {
             let line = accumulated[..pos].to_string();
             accumulated = accumulated[pos + 1..].to_string();
 
@@ -136,12 +132,12 @@ fn read_ffmpeg_stderr<R: Read>(
                 error_lines.push(line.clone());
             }
 
-            if let Some(pb) = pb {
-                if let Some(progress) = parse_ffmpeg_progress(&line) {
-                    pb.set_position((progress * 1000.0) as u64);
-                    if let Some(speed) = parse_ffmpeg_speed(&line) {
-                        pb.set_message(format!("{}x", speed));
-                    }
+            if let Some(pb) = pb
+                && let Some(progress) = parse_ffmpeg_progress(&line)
+            {
+                pb.set_position((progress * 1000.0) as u64);
+                if let Some(speed) = parse_ffmpeg_speed(&line) {
+                    pb.set_message(format!("{}x", speed));
                 }
             }
         }
@@ -206,31 +202,18 @@ impl MusicSourceResolver for DefaultMusicSourceResolver {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct MpvPreviewRunner;
 
-impl MpvPreviewRunner {
-    fn spawn_preview(&self, args: &[String], seek_time: Option<f64>) -> Result<()> {
+impl PreviewPlayer for MpvPreviewRunner {
+    fn play(&self, args: &[String]) -> Result<()> {
         use std::process::Stdio;
 
-        // Use ffmpeg to decode and pipe raw video/audio to mpv
-        // This allows real-time playback while ffmpeg processes the filter graph
-        let mut ffmpeg_cmd = Command::new("ffmpeg");
-        ffmpeg_cmd.args(args);
-
-        // Add -ss as an OUTPUT option (after filter/map args, before -f).
-        // As an output option, ffmpeg still runs the filter graph from the start
-        // but discards encoded frames before the seek point, so mpv's stream
-        // begins at the right timestamp.
-        if let Some(time) = seek_time {
-            ffmpeg_cmd.arg("-ss").arg(time.to_string());
-        }
-
-        ffmpeg_cmd
+        // Use ffmpeg to decode and pipe video/audio to mpv
+        let mut ffmpeg = Command::new("ffmpeg")
+            .args(args)
             .arg("-f")
             .arg("matroska") // Pipe as matroska stream
             .arg("pipe:1") // Output to stdout
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit());
-
-        let mut ffmpeg = ffmpeg_cmd
+            .stderr(Stdio::inherit())
             .spawn()
             .with_context(|| "Failed to spawn ffmpeg for preview")?;
 
@@ -257,20 +240,9 @@ impl MpvPreviewRunner {
         let _ = ffmpeg.wait();
 
         if !mpv_status.success() && mpv_status.code() != Some(0) {
-            // mpv returns 0 on normal exit, non-zero on error
             bail!("mpv exited with status {:?}", mpv_status.code());
         }
 
         Ok(())
-    }
-}
-
-impl PreviewPlayer for MpvPreviewRunner {
-    fn play(&self, args: &[String]) -> Result<()> {
-        self.spawn_preview(args, None)
-    }
-
-    fn play_with_seek(&self, args: &[String], seek_time: Option<f64>) -> Result<()> {
-        self.spawn_preview(args, seek_time)
     }
 }
