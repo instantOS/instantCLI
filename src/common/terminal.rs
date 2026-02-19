@@ -194,6 +194,38 @@ impl TerminalLauncher {
     }
 }
 
+/// Launch a menu subcommand (`ins <module> menu`) in a GUI terminal window.
+///
+/// This is the shared implementation behind `--gui` on menu commands.
+/// `module` is the top-level subcommand name (e.g. "game", "dot", "video").
+/// `extra_args` are any additional CLI arguments forwarded to the menu
+/// (e.g. a game name).
+pub fn launch_menu_in_terminal(
+    module: &str,
+    title: &str,
+    extra_args: &[String],
+    debug: bool,
+) -> Result<()> {
+    let mut args: Vec<String> = vec![];
+
+    if debug {
+        args.push("--debug".to_string());
+    }
+
+    args.push(module.to_string());
+    args.push("menu".to_string());
+    args.extend_from_slice(extra_args);
+
+    let current_exe = std::env::current_exe()?;
+    let exe_str = current_exe.to_string_lossy();
+
+    TerminalLauncher::new(exe_str.as_ref())
+        .class(&format!("ins-{module}"))
+        .title(title)
+        .args(&args)
+        .launch()
+}
+
 /// Run a TUI program (like cfdisk) from within an async context
 ///
 /// Older TUI programs have issues when launched from within tokio's async runtime

@@ -147,7 +147,11 @@ pub enum DotCommands {
         command: PriorityCommands,
     },
     /// Interactive dotfile repository menu
-    Menu,
+    Menu {
+        /// Open the menu in a GUI terminal window
+        #[arg(long = "gui")]
+        gui: bool,
+    },
     /// Open a repository in lazygit (alias for 'repo lazygit')
     Lg {
         /// Repository name (optional, will prompt if not provided)
@@ -629,7 +633,15 @@ pub fn handle_dot_command(
         DotCommands::Priority { command } => {
             handle_priority_command(&mut config, command, config_path)?;
         }
-        DotCommands::Menu => {
+        DotCommands::Menu { gui } => {
+            if *gui {
+                return crate::common::terminal::launch_menu_in_terminal(
+                    "dot",
+                    "Dotfile Menu",
+                    &[],
+                    debug,
+                );
+            }
             super::menu::dot_menu(debug)?;
         }
         DotCommands::Lg { name } => {

@@ -67,7 +67,19 @@ pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
         GameCommands::Exec { command } => handle_exec(command),
         GameCommands::List => handle_list(),
         GameCommands::Info { game_name } => handle_info(game_name),
-        GameCommands::Menu { game_name } => menu::game_menu(game_name),
+        GameCommands::Menu { game_name, gui } => {
+            if gui {
+                let extra: Vec<String> =
+                    game_name.iter().map(|n| n.to_string()).collect();
+                return crate::common::terminal::launch_menu_in_terminal(
+                    "game",
+                    "Game Menu",
+                    &extra,
+                    debug,
+                );
+            }
+            menu::game_menu(game_name)
+        }
         GameCommands::Remove { game_name, force } => handle_remove(game_name, force),
         GameCommands::Backup { game_name } => {
             ensure_restic_available()?;

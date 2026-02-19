@@ -22,7 +22,11 @@ pub enum VideoCommands {
     /// Setup video tools (local preprocessor, Auphonic, WhisperX)
     Setup(SetupArgs),
     /// Interactive video menu (guided workflows)
-    Menu,
+    Menu {
+        /// Open the menu in a GUI terminal window
+        #[arg(long = "gui")]
+        gui: bool,
+    },
 }
 
 #[derive(Args, Debug, Clone)]
