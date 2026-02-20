@@ -169,20 +169,6 @@ pub fn report_backup_skipped(game_name: &str, snapshot_id: &str) {
     );
 }
 
-pub fn report_backup_start(game_name: &str) {
-    emit_with_icon(
-        Level::Info,
-        "game.sync.backup.start",
-        char::from(NerdFont::Upload),
-        format!("{}: Creating backup...", game_name),
-        format!("{}: Creating backup...", game_name.yellow()),
-        Some(serde_json::json!({
-            "game": game_name,
-            "action": "backup_start"
-        })),
-    );
-}
-
 pub fn report_backup_result(game_name: &str, result: &Result<(), anyhow::Error>) {
     match result {
         Ok(_) => {
@@ -213,21 +199,6 @@ pub fn report_backup_result(game_name: &str, result: &Result<(), anyhow::Error>)
             );
         }
     }
-}
-
-pub fn report_restore_start(game_name: &str, snapshot_id: &str) {
-    emit_with_icon(
-        Level::Info,
-        "game.sync.restore.start",
-        char::from(NerdFont::Info),
-        format!("{}: Restoring from snapshot...", game_name),
-        format!("{}: Restoring from snapshot...", game_name.yellow()),
-        Some(serde_json::json!({
-            "game": game_name,
-            "action": "restore_start",
-            "snapshot_id": snapshot_id
-        })),
-    );
 }
 
 pub fn report_restore_result(
@@ -268,27 +239,6 @@ pub fn report_restore_result(
     }
 }
 
-pub fn report_restore_latest_start(game_name: &str, snapshot_id: &str) {
-    emit_with_icon(
-        Level::Info,
-        "game.sync.restore.latest.start",
-        char::from(NerdFont::Info),
-        format!(
-            "{}: No local saves, restoring from latest snapshot...",
-            game_name
-        ),
-        format!(
-            "{}: No local saves, restoring from latest snapshot...",
-            game_name.yellow()
-        ),
-        Some(serde_json::json!({
-            "game": game_name,
-            "action": "restore_latest_start",
-            "snapshot_id": snapshot_id
-        })),
-    );
-}
-
 pub fn report_restore_latest_result(
     game_name: &str,
     snapshot_id: &str,
@@ -325,26 +275,6 @@ pub fn report_restore_latest_result(
             );
         }
     }
-}
-
-pub fn report_initial_backup_start(game_name: &str) {
-    emit_with_icon(
-        Level::Info,
-        "game.sync.initial_backup.start",
-        char::from(NerdFont::Upload),
-        format!(
-            "{}: No snapshots found, creating initial backup...",
-            game_name
-        ),
-        format!(
-            "{}: No snapshots found, creating initial backup...",
-            game_name.yellow()
-        ),
-        Some(serde_json::json!({
-            "game": game_name,
-            "action": "initial_backup_start"
-        })),
-    );
 }
 
 pub fn report_initial_backup_result(game_name: &str, result: &Result<(), anyhow::Error>) {
