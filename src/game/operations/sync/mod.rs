@@ -3,6 +3,7 @@ mod execution;
 mod types;
 mod ui;
 
+use crate::common::progress::create_spinner;
 use crate::game::config::{InstallationsConfig, InstantGameConfig};
 use crate::game::utils::validation;
 use anyhow::{Context, Result};
@@ -67,7 +68,9 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<SyncSum
     for installation in games_to_sync {
         let game_name_plain = installation.game_name.0.clone();
 
+        let spinner = create_spinner(format!("{}: Checking sync status...", game_name_plain));
         let action_result = decision::determine_action(&installation, &game_config, force);
+        spinner.finish_and_clear();
 
         match action_result {
             Ok(action) => match action {
@@ -91,8 +94,10 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<SyncSum
                     total_skipped += 1;
                 }
                 SyncAction::CreateBackup => {
-                    ui::report_backup_start(&game_name_plain);
+                    let spinner =
+                        create_spinner(format!("{}: Creating backup...", game_name_plain));
                     let result = execution::perform_backup(&installation, &game_config);
+                    spinner.finish_and_clear();
                     ui::report_backup_result(&game_name_plain, &result);
                     if result.is_ok() {
                         total_synced += 1;
@@ -101,9 +106,11 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<SyncSum
                     }
                 }
                 SyncAction::RestoreFromSnapshot(snapshot_id) => {
-                    ui::report_restore_start(&game_name_plain, &snapshot_id);
+                    let spinner =
+                        create_spinner(format!("{}: Restoring from snapshot...", game_name_plain));
                     let result =
                         execution::perform_restore(&installation, &game_config, &snapshot_id);
+                    spinner.finish_and_clear();
                     ui::report_restore_result(&game_name_plain, &snapshot_id, &result);
                     if result.is_ok() {
                         total_synced += 1;
@@ -112,9 +119,11 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<SyncSum
                     }
                 }
                 SyncAction::RestoreFromLatest(snapshot_id) => {
-                    ui::report_restore_latest_start(&game_name_plain, &snapshot_id);
+                    let spinner =
+                        create_spinner(format!("{}: Restoring latest backup...", game_name_plain));
                     let result =
                         execution::perform_restore(&installation, &game_config, &snapshot_id);
+                    spinner.finish_and_clear();
                     ui::report_restore_latest_result(&game_name_plain, &snapshot_id, &result);
                     if result.is_ok() {
                         total_synced += 1;
@@ -123,8 +132,10 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<SyncSum
                     }
                 }
                 SyncAction::CreateInitialBackup => {
-                    ui::report_initial_backup_start(&game_name_plain);
+                    let spinner =
+                        create_spinner(format!("{}: Creating initial backup...", game_name_plain));
                     let result = execution::perform_backup(&installation, &game_config);
+                    spinner.finish_and_clear();
                     ui::report_initial_backup_result(&game_name_plain, &result);
                     if result.is_ok() {
                         total_synced += 1;

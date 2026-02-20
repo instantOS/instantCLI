@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Instant Dotfiles
+Comment=Dotfile repository management
+Exec=ins dot menu --gui
+Icon=preferences-other
+Terminal=false
+Categories=System;
+Keywords=dotfiles;configuration;git;repositories;instantos;

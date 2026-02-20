@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Instant Settings
+Comment=Desktop settings and preferences
+Exec=ins settings --gui
+Icon=preferences-system
+Terminal=false
+Categories=Settings;DesktopSettings;
+Keywords=settings;preferences;configuration;instantos;

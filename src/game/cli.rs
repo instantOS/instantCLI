@@ -67,6 +67,9 @@ pub enum GameCommands {
         /// Game name (optional, will prompt if not specified)
         #[arg(add = ArgValueCompleter::new(crate::completions::game_name_completion))]
         game_name: Option<String>,
+        /// Open the menu in a GUI terminal window
+        #[arg(long = "gui")]
+        gui: bool,
     },
     /// Remove a game from tracking
     Remove {
