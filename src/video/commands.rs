@@ -18,6 +18,16 @@ pub async fn handle_video_command(command: VideoCommands, _debug: bool) -> Resul
         VideoCommands::Check(args) => check::handle_check(args).await,
         VideoCommands::Preprocess(args) => audio::handle_preprocess(args).await,
         VideoCommands::Setup(args) => setup::handle_setup(args).await,
-        VideoCommands::Menu => menu::video_menu(_debug).await,
+        VideoCommands::Menu { gui } => {
+            if gui {
+                return crate::common::terminal::launch_menu_in_terminal(
+                    "video",
+                    "Video Menu",
+                    &[],
+                    _debug,
+                );
+            }
+            menu::video_menu(_debug).await
+        }
     }
 }

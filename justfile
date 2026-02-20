@@ -2,6 +2,8 @@ install:
     cargo build
     install ./target/debug/ins ~/.local/bin/
     install ./target/debug/ins ~/.local/bin/i
+    mkdir -p ~/.local/share/applications
+    install -m644 desktop/*.desktop ~/.local/share/applications/
 
 rootinstall:
     cargo build

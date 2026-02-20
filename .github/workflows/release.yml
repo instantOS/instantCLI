@@ -102,11 +102,39 @@ jobs:
     runs-on: self-hosted
     container:
       image: ubuntu:24.04
+    env:
+      CARGO_TERM_COLOR: always
+      DEBIAN_FRONTEND: noninteractive
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential curl ca-certificates pkg-config \
+            gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+            gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf \
+            musl-tools \
+            unzip
+          # Install rustup
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - name: Add Rust cross-compilation targets
+        run: |
+          . "$HOME/.cargo/env"
+          rustup target add \
+            aarch64-unknown-linux-gnu \
+            armv7-unknown-linux-gnueabihf \
+            x86_64-unknown-linux-musl \
+            aarch64-unknown-linux-musl \
+            aarch64-linux-android
+      - name: Install aarch64-linux-musl cross toolchain
+        run: |
+          curl -fsSL https://musl.cc/aarch64-linux-musl-cross.tgz | tar xz -C /opt
+          echo "/opt/aarch64-linux-musl-cross/bin" >> "$GITHUB_PATH"
       - name: Extract version
         id: vars
         run: |
@@ -116,38 +144,34 @@ jobs:
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: cross-compile
       - name: Cross compile for ARM64 Linux
-        uses: houseabsolute/actions-rust-cross@v1
-        with:
-          command: build
-          target: aarch64-unknown-linux-gnu
-          args: "--locked --release --features cross-compile"
-          strip: true
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: cargo build --locked --release --features cross-compile --target aarch64-unknown-linux-gnu
       - name: Cross compile for ARMv7 Linux
-        uses: houseabsolute/actions-rust-cross@v1
-        with:
-          command: build
-          target: armv7-unknown-linux-gnueabihf
-          args: "--locked --release --features cross-compile"
-          strip: true
+        env:
+          CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER: arm-linux-gnueabihf-gcc
+        run: cargo build --locked --release --features cross-compile --target armv7-unknown-linux-gnueabihf
       - name: Cross compile for x86_64 musl
-        uses: houseabsolute/actions-rust-cross@v1
-        with:
-          command: build
-          target: x86_64-unknown-linux-musl
-          args: "--locked --release --features cross-compile"
-          strip: true
+        env:
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
+        run: cargo build --locked --release --features cross-compile --target x86_64-unknown-linux-musl
       - name: Cross compile for aarch64 musl
-        uses: houseabsolute/actions-rust-cross@v1
-        with:
-          command: build
-          target: aarch64-unknown-linux-musl
-          args: "--locked --release --features cross-compile"
-          strip: true
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: aarch64-linux-musl-gcc
+        run: cargo build --locked --release --features cross-compile --target aarch64-unknown-linux-musl
+      - name: Strip cross-compiled binaries
+        run: |
+          aarch64-linux-gnu-strip target/aarch64-unknown-linux-gnu/release/ins
+          arm-linux-gnueabihf-strip target/armv7-unknown-linux-gnueabihf/release/ins
+          strip target/x86_64-unknown-linux-musl/release/ins
+          aarch64-linux-musl-strip target/aarch64-unknown-linux-musl/release/ins
       - name: Install cargo-ndk
         run: cargo install cargo-ndk
-      - name: Add Android target
-        run: rustup target add aarch64-linux-android
       - name: Build for Android
         run: cargo ndk -t aarch64-linux-android build --release --locked --features cross-compile
       - name: Collect cross-compile artifacts
@@ -220,6 +244,8 @@ jobs:
     runs-on: self-hosted
     needs: build
     steps:
+      - name: Clean workspace
+        run: sudo rm -rf "$GITHUB_WORKSPACE"/*
       - name: Checkout
         uses: actions/checkout@v4
       - name: Extract version

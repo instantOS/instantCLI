@@ -39,11 +39,16 @@ PKG_DIR="${WORK_DIR}/ins_${VERSION}_${ARCH}"
 rm -rf "${PKG_DIR}"
 mkdir -p "${PKG_DIR}/DEBIAN" \
 	"${PKG_DIR}/usr/bin" \
-	"${PKG_DIR}/usr/share/doc/ins"
+	"${PKG_DIR}/usr/share/doc/ins" \
+	"${PKG_DIR}/usr/share/applications"
 
 install -Dm755 "${INS_BIN}" "${PKG_DIR}/usr/bin/ins"
 install -Dm644 "LICENSE" "${PKG_DIR}/usr/share/doc/ins/copyright"
 install -Dm644 "README.md" "${PKG_DIR}/usr/share/doc/ins/README.md"
+
+for desktop_file in desktop/*.desktop; do
+	install -Dm644 "${desktop_file}" "${PKG_DIR}/usr/share/applications/$(basename "${desktop_file}")"
+done
 
 cat >"${PKG_DIR}/DEBIAN/control" <<EOF
 Package: ins

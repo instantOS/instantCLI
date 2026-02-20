@@ -104,15 +104,22 @@ impl MenuClient {
             anyhow::bail!("Failed to spawn menu server in scratchpad: {}", error_msg);
         }
 
-        // Wait a moment for server to start
-        std::thread::sleep(Duration::from_millis(1000)); // Slightly longer wait for scratchpad setup
+        // Poll for the server to become available. The scratchpad creation
+        // (terminal spawn + window manager registration) can take several
+        // seconds on some compositors (e.g. instantwm), and only after that
+        // does the inner server process start and bind the socket.
+        let poll_interval = Duration::from_millis(200);
+        let max_wait = Duration::from_secs(10);
+        let start = std::time::Instant::now();
 
-        // Check if server is now running
-        if !self.is_server_running() {
-            anyhow::bail!("Server failed to start after spawning in scratchpad");
+        while start.elapsed() < max_wait {
+            std::thread::sleep(poll_interval);
+            if self.is_server_running() {
+                return Ok(());
+            }
         }
 
-        Ok(())
+        anyhow::bail!("Server failed to start after spawning in scratchpad");
     }
 
     /// Send a request and receive response
