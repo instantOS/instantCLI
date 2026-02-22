@@ -178,6 +178,9 @@ fn try_render_streaming(id: PreviewId, ctx: &PreviewContext) -> Option<Result<()
         PreviewId::Aur => Some(mgr_stream(ctx, render_aur_impl, "AUR Package")),
         PreviewId::Cargo => Some(mgr_stream(ctx, render_cargo_impl, "Cargo Package")),
 
+        // MIME type preview — queries xdg-mime + scans desktop files
+        PreviewId::MimeType => Some(mime::render_mime_type_preview_streaming(ctx)),
+
         // Default app previews — query xdg-mime per MIME type
         PreviewId::DefaultImageViewer => Some(stream_default_app(
             "Image Viewer",
