@@ -12,8 +12,8 @@ jobs:
       image: ubuntu:latest
     if: ${{ github.repository_owner == 'instantOS' }}
     env:
-      CARGO_HOME: /tmp/cargo
-      RUSTUP_HOME: /tmp/rustup
+      CARGO_HOME: /opt/cargo
+      RUSTUP_HOME: /opt/rustup
     permissions:
       contents: write
       id-token: write
@@ -37,6 +37,9 @@ jobs:
         run: release-plz release --git-token "$GITHUB_TOKEN"
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
+      - name: Clean up toolchains
+        if: always()
+        run: rm -rf /opt/cargo /opt/rustup
   release-plz-pr:
     name: Release-plz PR
     runs-on: blacksmith-4vcpu-ubuntu-2404

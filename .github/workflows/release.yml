@@ -105,8 +105,8 @@ jobs:
     env:
       CARGO_TERM_COLOR: always
       DEBIAN_FRONTEND: noninteractive
-      CARGO_HOME: /tmp/cargo
-      RUSTUP_HOME: /tmp/rustup
+      CARGO_HOME: /opt/cargo
+      RUSTUP_HOME: /opt/rustup
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -247,6 +247,9 @@ jobs:
             artifacts/ins-aarch64-unknown-linux-musl-v${{ steps.vars.outputs.version }}.tgz.sha256
             artifacts/ins-aarch64-termux-v${{ steps.vars.outputs.version }}.tgz
             artifacts/ins-aarch64-termux-v${{ steps.vars.outputs.version }}.tgz.sha256
+      - name: Clean up toolchains
+        if: always()
+        run: rm -rf /opt/cargo /opt/rustup /opt/android-ndk-* /opt/aarch64-linux-musl-cross
   pkgbuild:
     name: Build Arch package
     runs-on: self-hosted
