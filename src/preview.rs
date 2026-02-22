@@ -138,6 +138,12 @@ pub fn handle_preview_command(id: PreviewId, key: Option<String>) -> Result<()> 
         lines: env_usize("FZF_PREVIEW_LINES"),
     };
 
+    // Package previews use streaming so the header appears immediately while
+    // the (potentially slow) package manager command runs.
+    if let Some(result) = try_render_streaming(id, &ctx) {
+        return result;
+    }
+
     let output = match render_preview(id, &ctx) {
         Ok(text) => text,
         Err(err) => render_error_preview(id, err),
@@ -145,6 +151,33 @@ pub fn handle_preview_command(id: PreviewId, key: Option<String>) -> Result<()> 
 
     print!("{output}");
     Ok(())
+}
+
+/// Try to render a preview using the streaming path.
+/// Returns `Some(result)` if this preview ID supports streaming, `None` otherwise.
+fn try_render_streaming(id: PreviewId, ctx: &PreviewContext) -> Option<Result<()>> {
+    use package::{
+        render_apt_impl, render_aur_impl, render_cargo_impl, render_dnf_impl, render_flatpak_impl,
+        render_manager_preview_streaming as mgr_stream, render_pacman_impl, render_pkg_impl,
+        render_snap_impl, render_zypper_impl,
+    };
+
+    match id {
+        PreviewId::Package => Some(package::render_package_preview_streaming(ctx)),
+        PreviewId::InstalledPackage => {
+            Some(package::render_installed_package_preview_streaming(ctx))
+        }
+        PreviewId::Apt => Some(mgr_stream(ctx, render_apt_impl, "APT Package")),
+        PreviewId::Dnf => Some(mgr_stream(ctx, render_dnf_impl, "DNF Package")),
+        PreviewId::Zypper => Some(mgr_stream(ctx, render_zypper_impl, "Zypper Package")),
+        PreviewId::Pacman => Some(mgr_stream(ctx, render_pacman_impl, "Pacman Package")),
+        PreviewId::Snap => Some(mgr_stream(ctx, render_snap_impl, "Snap Package")),
+        PreviewId::Pkg => Some(mgr_stream(ctx, render_pkg_impl, "Pkg Package")),
+        PreviewId::Flatpak => Some(mgr_stream(ctx, render_flatpak_impl, "Flatpak Package")),
+        PreviewId::Aur => Some(mgr_stream(ctx, render_aur_impl, "AUR Package")),
+        PreviewId::Cargo => Some(mgr_stream(ctx, render_cargo_impl, "Cargo Package")),
+        _ => None,
+    }
 }
 
 pub(crate) struct PreviewContext {
