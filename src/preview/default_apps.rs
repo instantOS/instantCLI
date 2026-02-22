@@ -5,13 +5,17 @@ use crate::ui::catppuccin::colors;
 use crate::ui::prelude::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 
-pub(crate) fn render_default_app_preview(
+/// Core implementation: renders the default-app preview into the given builder.
+/// The header and static content stream immediately; the per-MIME `xdg-mime`
+/// queries (which spawn subprocesses) arrive afterwards.
+pub(crate) fn render_default_app_impl(
     title: &str,
     icon: NerdFont,
     summary: &str,
     mime_types: &[&str],
-) -> Result<String> {
-    let mut builder = PreviewBuilder::new()
+    builder: PreviewBuilder,
+) -> Result<PreviewBuilder> {
+    let mut builder = builder
         .header(icon, title)
         .subtext(summary)
         .blank()
@@ -35,7 +39,20 @@ pub(crate) fn render_default_app_preview(
         builder = builder.field_indented(mime, &label);
     }
 
-    Ok(builder.build_string())
+    Ok(builder)
+}
+
+/// Collect-mode entry point (returns a String).
+pub(crate) fn render_default_app_preview(
+    title: &str,
+    icon: NerdFont,
+    summary: &str,
+    mime_types: &[&str],
+) -> Result<String> {
+    Ok(
+        render_default_app_impl(title, icon, summary, mime_types, PreviewBuilder::new())?
+            .build_string(),
+    )
 }
 
 pub(crate) fn display_app_name(desktop_id: &str) -> String {

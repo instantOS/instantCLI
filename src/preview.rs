@@ -138,12 +138,122 @@ pub fn handle_preview_command(id: PreviewId, key: Option<String>) -> Result<()> 
         lines: env_usize("FZF_PREVIEW_LINES"),
     };
 
+    // Package previews use streaming so the header appears immediately while
+    // the (potentially slow) package manager command runs.
+    if let Some(result) = try_render_streaming(id, &ctx) {
+        return result;
+    }
+
     let output = match render_preview(id, &ctx) {
         Ok(text) => text,
         Err(err) => render_error_preview(id, err),
     };
 
     print!("{output}");
+    Ok(())
+}
+
+/// Try to render a preview using the streaming path.
+/// Returns `Some(result)` if this preview ID supports streaming, `None` otherwise.
+fn try_render_streaming(id: PreviewId, ctx: &PreviewContext) -> Option<Result<()>> {
+    use package::{
+        render_apt_impl, render_aur_impl, render_cargo_impl, render_dnf_impl, render_flatpak_impl,
+        render_manager_preview_streaming as mgr_stream, render_pacman_impl, render_pkg_impl,
+        render_snap_impl, render_zypper_impl,
+    };
+
+    match id {
+        // Package previews — shell out to package managers which can be slow
+        PreviewId::Package => Some(package::render_package_preview_streaming(ctx)),
+        PreviewId::InstalledPackage => {
+            Some(package::render_installed_package_preview_streaming(ctx))
+        }
+        PreviewId::Apt => Some(mgr_stream(ctx, render_apt_impl, "APT Package")),
+        PreviewId::Dnf => Some(mgr_stream(ctx, render_dnf_impl, "DNF Package")),
+        PreviewId::Zypper => Some(mgr_stream(ctx, render_zypper_impl, "Zypper Package")),
+        PreviewId::Pacman => Some(mgr_stream(ctx, render_pacman_impl, "Pacman Package")),
+        PreviewId::Snap => Some(mgr_stream(ctx, render_snap_impl, "Snap Package")),
+        PreviewId::Pkg => Some(mgr_stream(ctx, render_pkg_impl, "Pkg Package")),
+        PreviewId::Flatpak => Some(mgr_stream(ctx, render_flatpak_impl, "Flatpak Package")),
+        PreviewId::Aur => Some(mgr_stream(ctx, render_aur_impl, "AUR Package")),
+        PreviewId::Cargo => Some(mgr_stream(ctx, render_cargo_impl, "Cargo Package")),
+
+        // MIME type preview — queries xdg-mime + scans desktop files
+        PreviewId::MimeType => Some(mime::render_mime_type_preview_streaming(ctx)),
+
+        // Default app previews — query xdg-mime per MIME type
+        PreviewId::DefaultImageViewer => Some(stream_default_app(
+            "Image Viewer",
+            NerdFont::Image,
+            "Set your default image viewer for photos and pictures.",
+            IMAGE_MIME_TYPES,
+        )),
+        PreviewId::DefaultVideoPlayer => Some(stream_default_app(
+            "Video Player",
+            NerdFont::Video,
+            "Set your default video player for movies and videos.",
+            VIDEO_MIME_TYPES,
+        )),
+        PreviewId::DefaultAudioPlayer => Some(stream_default_app(
+            "Audio Player",
+            NerdFont::Music,
+            "Set your default audio player for music and podcasts.",
+            AUDIO_MIME_TYPES,
+        )),
+        PreviewId::DefaultArchiveManager => Some(stream_default_app(
+            "Archive Manager",
+            NerdFont::Archive,
+            "Set your default archive manager for ZIP, TAR, and other compressed files.",
+            ARCHIVE_MIME_TYPES,
+        )),
+        PreviewId::DefaultBrowser => Some(stream_default_app(
+            "Web Browser",
+            NerdFont::Globe,
+            "Set your default web browser for opening links and HTML files.",
+            BROWSER_MIME_TYPES,
+        )),
+        PreviewId::DefaultTextEditor => Some(stream_default_app(
+            "Text Editor",
+            NerdFont::FileText,
+            "Set your default text editor for opening text files.",
+            TEXT_EDITOR_MIME_TYPES,
+        )),
+        PreviewId::DefaultEmail => Some(stream_default_app(
+            "Email Client",
+            NerdFont::ExternalLink,
+            "Set your default email client for mailto: links.",
+            EMAIL_MIME_TYPES,
+        )),
+        PreviewId::DefaultFileManager => Some(stream_default_app(
+            "File Manager",
+            NerdFont::Folder,
+            "Set your default file manager for browsing folders.",
+            FILE_MANAGER_MIME_TYPES,
+        )),
+        PreviewId::DefaultPdfViewer => Some(stream_default_app(
+            "PDF Viewer",
+            NerdFont::FilePdf,
+            "Set your default PDF viewer for documents.",
+            PDF_VIEWER_MIME_TYPES,
+        )),
+
+        _ => None,
+    }
+}
+
+fn stream_default_app(
+    title: &str,
+    icon: NerdFont,
+    summary: &str,
+    mime_types: &[&str],
+) -> Result<()> {
+    default_apps::render_default_app_impl(
+        title,
+        icon,
+        summary,
+        mime_types,
+        PreviewBuilder::streaming(),
+    )?;
     Ok(())
 }
 
