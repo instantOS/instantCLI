@@ -11,6 +11,9 @@ jobs:
     container:
       image: ubuntu:latest
     if: ${{ github.repository_owner == 'instantOS' }}
+    env:
+      CARGO_HOME: /tmp/cargo
+      RUSTUP_HOME: /tmp/rustup
     permissions:
       contents: write
       id-token: write

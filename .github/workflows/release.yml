@@ -105,6 +105,8 @@ jobs:
     env:
       CARGO_TERM_COLOR: always
       DEBIAN_FRONTEND: noninteractive
+      CARGO_HOME: /tmp/cargo
+      RUSTUP_HOME: /tmp/rustup
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -119,12 +121,10 @@ jobs:
             gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf \
             musl-tools \
             unzip
-          # Install rustup
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
       - name: Add Rust cross-compilation targets
         run: |
-          . "$HOME/.cargo/env"
           rustup target add \
             aarch64-unknown-linux-gnu \
             armv7-unknown-linux-gnueabihf \
@@ -135,6 +135,14 @@ jobs:
         run: |
           curl -fsSL https://musl.cc/aarch64-linux-musl-cross.tgz | tar xz -C /opt
           echo "/opt/aarch64-linux-musl-cross/bin" >> "$GITHUB_PATH"
+      - name: Install Android NDK
+        run: |
+          NDK_VERSION=r27c
+          curl -fsSL "https://dl.google.com/android/repository/android-ndk-${NDK_VERSION}-linux.zip" -o /tmp/ndk.zip
+          unzip -q /tmp/ndk.zip -d /opt
+          rm /tmp/ndk.zip
+          echo "ANDROID_NDK_HOME=/opt/android-ndk-${NDK_VERSION}" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=/opt/android-ndk-${NDK_VERSION}" >> "$GITHUB_ENV"
       - name: Extract version
         id: vars
         run: |
@@ -242,10 +250,18 @@ jobs:
   pkgbuild:
     name: Build Arch package
     runs-on: self-hosted
+    container:
+      image: archlinux:latest
     needs: build
     steps:
-      - name: Clean workspace
-        run: sudo rm -rf "$GITHUB_WORKSPACE"/*
+      - name: Initialise pacman
+        run: |
+          pacman-key --init
+          pacman-key --populate archlinux
+          pacman -Syu --noconfirm
+      - name: Install build dependencies
+        run: |
+          pacman -S --noconfirm --needed base-devel rust pkgconf openssl git pacman-contrib cmake
       - name: Checkout
         uses: actions/checkout@v4
       - name: Extract version
@@ -257,11 +273,20 @@ jobs:
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Sync PKGBUILD version
+        env:
+          VERSION: ${{ steps.vars.outputs.version }}
+        run: |
+          sed -i "s/^pkgver=.*/pkgver=$VERSION/" pkgbuild/ins/PKGBUILD
+          sed -i "s/^pkgrel=.*/pkgrel=1/" pkgbuild/ins/PKGBUILD
+      - name: Create build user
+        run: |
+          useradd -m builder
+          chown -R builder:builder "$PWD"
       - name: Build package
-        uses: 2m/arch-pkgbuild-builder@v1.16
-        with:
-          target: pkgbuild
-          pkgname: pkgbuild/ins
+        run: |
+          cd pkgbuild/ins
+          su builder -c 'makepkg -s --noconfirm'
       - name: Collect package artifacts
         env:
           VERSION: ${{ steps.vars.outputs.version }}
@@ -325,6 +350,8 @@ jobs:
   release:
     name: Publish GitHub release
     runs-on: self-hosted
+    container:
+      image: ubuntu:24.04
     needs:
       - build
       - cross-compile
