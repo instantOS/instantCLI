@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.14](https://github.com/instantOS/instantCLI/compare/v0.13.13...v0.13.14) - 2026-02-23
+
+### Fixed
+
+- fix release (hopefully)
+- fix
+
+### Other
+
+- something is deeply wrong with github
+- make mime preview streaming
+- make package previews streaming
+- init streaming preview generation
+
 ## [0.13.13](https://github.com/instantOS/instantCLI/compare/v0.13.12...v0.13.13) - 2026-02-22
 
 ### Fixed
