@@ -6,6 +6,9 @@
 //! The builder can output:
 //! - Static text via [`PreviewBuilder::build`] for inline previews
 //! - Shell script bodies via [`PreviewBuilder::build_shell_script`] for `preview_command()`
+//! - Streaming output via [`PreviewBuilder::streaming`] for incremental rendering
+
+use std::io::{BufWriter, Stdout, Write};
 
 use serde::{Deserialize, Serialize};
 
@@ -40,17 +43,31 @@ enum PreviewLine {
     Shell(String),
 }
 
+/// Output strategy: collect lines in memory or stream to stdout.
+enum PreviewSink {
+    /// Collect lines for later retrieval via `build_string()` / `build_shell_script()`.
+    Collect(Vec<PreviewLine>),
+    /// Write each line to stdout immediately, flushing after every line so fzf
+    /// can display partial output while expensive operations run.
+    Stream(BufWriter<Stdout>),
+}
+
 /// Builder for creating styled FZF preview text.
 ///
 /// Supports both static previews (rendered at build time) and dynamic shell-based
 /// previews (executed by fzf when the preview is shown).
 ///
+/// # Modes
+///
+/// - **Collect** (`PreviewBuilder::new()`): Lines are buffered and returned via
+///   `build_string()`, `build()`, or `build_shell_script()`.
+/// - **Streaming** (`PreviewBuilder::streaming()`): Lines are written to stdout
+///   immediately. Use this for previews that perform expensive operations (network
+///   calls, slow commands) so fzf can display the header while data loads.
+///
 /// # Example - Static Preview
 ///
 /// ```ignore
-/// use crate::ui::preview::PreviewBuilder;
-/// use crate::ui::nerd_font::NerdFont;
-///
 /// let preview = PreviewBuilder::new()
 ///     .header(NerdFont::User, "John Doe")
 ///     .field("Status", "Active")
@@ -58,36 +75,53 @@ enum PreviewLine {
 ///     .build();
 /// ```
 ///
-/// # Example - Shell Script Preview (for preview_command)
+/// # Example - Streaming Preview
 ///
 /// ```ignore
-/// let script = PreviewBuilder::new()
-///     .header(NerdFont::Image, "Image Viewer")
-///     .subtext("Configure default image viewer")
-///     .blank()
-///     .shell_loop(
-///         "mime",
-///         &["image/png", "image/jpeg", "image/gif"],
-///         r#"echo "  • $mime""#,
-///     )
-///     .build_shell_script();
+/// let mut builder = PreviewBuilder::streaming()
+///     .header(NerdFont::Package, "my-package")
+///     .line(colors::BLUE, None, "APT Package");
+///
+/// // Header is already visible in fzf while this runs:
+/// let info = expensive_network_call()?;
+/// builder = builder.text(&info);
 /// ```
 pub struct PreviewBuilder {
-    lines: Vec<PreviewLine>,
+    sink: PreviewSink,
 }
 
 impl PreviewBuilder {
-    /// Create a new preview builder.
+    /// Create a new preview builder in **collect** mode.
     ///
     /// Starts with a blank line for padding from the preview window border.
     pub fn new() -> Self {
         Self {
-            lines: vec![PreviewLine::Static(String::new())],
+            sink: PreviewSink::Collect(vec![PreviewLine::Static(String::new())]),
+        }
+    }
+
+    /// Create a new preview builder in **streaming** mode.
+    ///
+    /// Each line is written to stdout and flushed immediately, allowing fzf
+    /// to display partial output while expensive operations run.
+    pub fn streaming() -> Self {
+        let mut writer = BufWriter::new(std::io::stdout());
+        // Initial blank line matching new()
+        let _ = writeln!(writer);
+        let _ = writer.flush();
+        Self {
+            sink: PreviewSink::Stream(writer),
         }
     }
 
     fn push_static(&mut self, s: String) {
-        self.lines.push(PreviewLine::Static(s));
+        match &mut self.sink {
+            PreviewSink::Collect(lines) => lines.push(PreviewLine::Static(s)),
+            PreviewSink::Stream(writer) => {
+                let _ = writeln!(writer, "{s}");
+                let _ = writer.flush();
+            }
+        }
     }
 
     /// Add a styled header with icon and title.
@@ -221,8 +255,11 @@ impl PreviewBuilder {
     ///
     /// Only used when building with `build_shell_script()`.
     /// For static builds, this is converted to a placeholder.
+    /// In streaming mode, shell commands are not supported and are ignored.
     pub fn shell(mut self, command: &str) -> Self {
-        self.lines.push(PreviewLine::Shell(command.to_string()));
+        if let PreviewSink::Collect(ref mut lines) = self.sink {
+            lines.push(PreviewLine::Shell(command.to_string()));
+        }
         self
     }
 
@@ -237,10 +274,12 @@ impl PreviewBuilder {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        let item_list: Vec<_> = items.into_iter().map(|s| s.as_ref().to_string()).collect();
-        let items_str = item_list.join(" ");
-        let cmd = format!("for {var} in {items_str}; do\n{body}\ndone");
-        self.lines.push(PreviewLine::Shell(cmd));
+        if let PreviewSink::Collect(ref mut lines) = self.sink {
+            let item_list: Vec<_> = items.into_iter().map(|s| s.as_ref().to_string()).collect();
+            let items_str = item_list.join(" ");
+            let cmd = format!("for {var} in {items_str}; do\n{body}\ndone");
+            lines.push(PreviewLine::Shell(cmd));
+        }
         self
     }
 
@@ -253,19 +292,20 @@ impl PreviewBuilder {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        let types: Vec<_> = mime_types
-            .into_iter()
-            .map(|s| s.as_ref().to_string())
-            .collect();
-        let mime_list = types.join(" ");
+        if let PreviewSink::Collect(ref mut lines) = self.sink {
+            let types: Vec<_> = mime_types
+                .into_iter()
+                .map(|s| s.as_ref().to_string())
+                .collect();
+            let mime_list = types.join(" ");
 
-        let green = hex_to_shell_escape(colors::GREEN);
-        let yellow = hex_to_shell_escape(colors::YELLOW);
-        let subtext = hex_to_shell_escape(colors::SUBTEXT0);
-        let reset = "\\033[0m";
+            let green = hex_to_shell_escape(colors::GREEN);
+            let yellow = hex_to_shell_escape(colors::YELLOW);
+            let subtext = hex_to_shell_escape(colors::SUBTEXT0);
+            let reset = "\\033[0m";
 
-        let cmd = format!(
-            r#"for mime in {mime_list}; do
+            let cmd = format!(
+                r#"for mime in {mime_list}; do
     app=$(xdg-mime query default "$mime" 2>/dev/null)
     if [ -n "$app" ]; then
         name=""
@@ -284,8 +324,9 @@ impl PreviewBuilder {
         echo -e "  {subtext}$mime:{reset} {yellow}(not set){reset}"
     fi
 done"#
-        );
-        self.lines.push(PreviewLine::Shell(cmd));
+            );
+            lines.push(PreviewLine::Shell(cmd));
+        }
         self
     }
 
@@ -296,22 +337,30 @@ done"#
     /// Build the final FzfPreview (static text).
     ///
     /// Shell commands are rendered as placeholders.
+    /// In streaming mode, returns `FzfPreview::None` (output already written).
     pub fn build(self) -> FzfPreview {
-        FzfPreview::Text(self.build_string())
+        match &self.sink {
+            PreviewSink::Stream(_) => FzfPreview::None,
+            PreviewSink::Collect(_) => FzfPreview::Text(self.build_string()),
+        }
     }
 
     /// Build and extract just the text content.
     ///
     /// Shell commands are rendered as placeholders.
+    /// In streaming mode, returns an empty string (output already written).
     pub fn build_string(self) -> String {
-        self.lines
-            .into_iter()
-            .map(|line| match line {
-                PreviewLine::Static(s) => s,
-                PreviewLine::Shell(_) => "(dynamic content)".to_string(),
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
+        match self.sink {
+            PreviewSink::Stream(_) => String::new(),
+            PreviewSink::Collect(lines) => lines
+                .into_iter()
+                .map(|line| match line {
+                    PreviewLine::Static(s) => s,
+                    PreviewLine::Shell(_) => "(dynamic content)".to_string(),
+                })
+                .collect::<Vec<_>>()
+                .join("\n"),
+        }
     }
 
     /// Build a bash-compatible script body for use with `preview_command()`.
@@ -319,31 +368,37 @@ done"#
     /// Static lines are converted to echo statements with proper escaping.
     /// Shell commands are included directly. The preview runner will execute
     /// the returned script with bash and pass the item's key as `$1`.
+    ///
+    /// Not meaningful in streaming mode (returns empty string).
     pub fn build_shell_script(self) -> String {
-        let commands: Vec<String> = self
-            .lines
-            .into_iter()
-            .map(|line| match line {
-                PreviewLine::Static(s) => {
-                    if s.is_empty() {
-                        "echo".to_string()
-                    } else {
-                        // Convert ANSI escapes (\x1b) to shell format (\e)
-                        // Use double quotes for echo - escape $ ` \ " for shell
-                        let shell_escaped = s
-                            .replace('\\', "\\\\") // Escape backslashes
-                            .replace('"', "\\\"") // Escape double quotes
-                            .replace('$', "\\$") // Escape dollar signs
-                            .replace('`', "\\`") // Escape backticks
-                            .replace('\x1b', "\\e"); // Convert ANSI escapes to \e
-                        format!("echo -e \"{shell_escaped}\"")
-                    }
-                }
-                PreviewLine::Shell(cmd) => cmd,
-            })
-            .collect();
+        match self.sink {
+            PreviewSink::Stream(_) => String::new(),
+            PreviewSink::Collect(lines) => {
+                let commands: Vec<String> = lines
+                    .into_iter()
+                    .map(|line| match line {
+                        PreviewLine::Static(s) => {
+                            if s.is_empty() {
+                                "echo".to_string()
+                            } else {
+                                // Convert ANSI escapes (\x1b) to shell format (\e)
+                                // Use double quotes for echo - escape $ ` \ " for shell
+                                let shell_escaped = s
+                                    .replace('\\', "\\\\") // Escape backslashes
+                                    .replace('"', "\\\"") // Escape double quotes
+                                    .replace('$', "\\$") // Escape dollar signs
+                                    .replace('`', "\\`") // Escape backticks
+                                    .replace('\x1b', "\\e"); // Convert ANSI escapes to \e
+                                format!("echo -e \"{shell_escaped}\"")
+                            }
+                        }
+                        PreviewLine::Shell(cmd) => cmd,
+                    })
+                    .collect();
 
-        commands.join("\n")
+                commands.join("\n")
+            }
+        }
     }
 }
 

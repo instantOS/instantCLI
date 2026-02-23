@@ -15,34 +15,24 @@ pub(crate) fn render_mime_type_preview(ctx: &PreviewContext) -> Result<String> {
     let Some(mime_type) = ctx.key() else {
         return Ok(String::new());
     };
+    Ok(render_mime_type_impl(mime_type, PreviewBuilder::new())?.build_string())
+}
 
+pub(crate) fn render_mime_type_preview_streaming(ctx: &PreviewContext) -> Result<()> {
+    let Some(mime_type) = ctx.key() else {
+        return Ok(());
+    };
+    render_mime_type_impl(mime_type, PreviewBuilder::streaming())?;
+    Ok(())
+}
+
+/// Core implementation — the header and static metadata stream immediately,
+/// then the xdg-mime queries and desktop-file scans follow.
+fn render_mime_type_impl(mime_type: &str, builder: PreviewBuilder) -> Result<PreviewBuilder> {
     let category = mime_category(mime_type);
     let extensions = mime_extensions(mime_type);
-    let default = query_default_app(mime_type)
-        .ok()
-        .flatten()
-        .map(|desktop_id| display_app_name(&desktop_id))
-        .unwrap_or_else(|| "(not set)".to_string());
 
-    let app_map = build_mime_to_apps_map().unwrap_or_default();
-    let mut apps = get_apps_for_mime(mime_type, &app_map);
-    let current_default = query_default_app(mime_type).ok().flatten();
-
-    apps.sort();
-    let app_lines: Vec<String> = apps
-        .into_iter()
-        .take(8)
-        .map(|desktop_id| {
-            let label = display_app_name(&desktop_id);
-            if current_default.as_deref() == Some(desktop_id.as_str()) {
-                format!("{label} (current)")
-            } else {
-                label
-            }
-        })
-        .collect();
-
-    let mut builder = PreviewBuilder::new()
+    let mut builder = builder
         .header(NerdFont::File, "MIME Type")
         .subtext("Select a default application for this MIME type.")
         .blank()
@@ -62,6 +52,13 @@ pub(crate) fn render_mime_type_preview(ctx: &PreviewContext) -> Result<String> {
         builder = push_bullets(builder, &extensions);
     }
 
+    // These calls spawn subprocesses / scan desktop files
+    let default = query_default_app(mime_type)
+        .ok()
+        .flatten()
+        .map(|desktop_id| display_app_name(&desktop_id))
+        .unwrap_or_else(|| "(not set)".to_string());
+
     builder = builder
         .blank()
         .line(
@@ -77,13 +74,31 @@ pub(crate) fn render_mime_type_preview(ctx: &PreviewContext) -> Result<String> {
             "Available Applications",
         );
 
+    let app_map = build_mime_to_apps_map().unwrap_or_default();
+    let mut apps = get_apps_for_mime(mime_type, &app_map);
+    let current_default = query_default_app(mime_type).ok().flatten();
+
+    apps.sort();
+    let app_lines: Vec<String> = apps
+        .into_iter()
+        .take(8)
+        .map(|desktop_id| {
+            let label = display_app_name(&desktop_id);
+            if current_default.as_deref() == Some(desktop_id.as_str()) {
+                format!("{label} (current)")
+            } else {
+                label
+            }
+        })
+        .collect();
+
     if app_lines.is_empty() {
         builder = builder.bullet("(none registered)");
     } else {
         builder = push_bullets(builder, &app_lines);
     }
 
-    Ok(builder.build_string())
+    Ok(builder)
 }
 
 fn mime_category(mime_type: &str) -> &'static str {

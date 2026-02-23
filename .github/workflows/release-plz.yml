@@ -36,7 +36,21 @@ jobs:
       - name: Run release-plz
         run: release-plz release --git-token "$GITHUB_TOKEN"
         env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Trigger release workflow
+        if: success()
+        run: |
+          TAG="v$(awk -F '"' '/^version =/ {print $2; exit}' Cargo.toml)"
+          curl -sf \
+            -X POST \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/workflows/release.yml/dispatches" \
+            -d "{\"ref\": \"$TAG\"}" \
+            && echo "Triggered release workflow for $TAG" \
+            || echo "Release workflow dispatch skipped (tag may not exist yet)"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
   release-plz-pr:
     name: Release-plz PR
     runs-on: blacksmith-4vcpu-ubuntu-2404

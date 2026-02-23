@@ -301,6 +301,7 @@ pub fn run_systemd_menu() -> Result<()> {
         let result = builder.select_menu(entries.clone())?;
 
         match result {
+            FzfResult::Selected(SystemdMenuEntry::Back) => break,
             FzfResult::Selected(entry) => {
                 entry.run()?;
             }
