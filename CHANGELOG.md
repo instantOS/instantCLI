@@ -13,6 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - fix release thingy
 
+### Other
+
+- release v0.13.14
+
+## [0.13.15](https://github.com/instantOS/instantCLI/compare/v0.13.14...v0.13.15) - 2026-02-23
+
+### Fixed
+
+- fix release thingy
+
 ## [0.13.14](https://github.com/instantOS/instantCLI/compare/v0.13.13...v0.13.14) - 2026-02-23
 
 ### Fixed
