@@ -91,18 +91,33 @@ pub async fn run(debug: bool) -> Result<()> {
         eprintln!("Failed to apply settings: {}", e);
     }
 
-    // Only run sway setup if running on Sway
-    if matches!(CompositorType::detect(), CompositorType::Sway) {
-        if debug {
-            println!("Running sway setup");
+    // Run sway/i3 setup based on detected compositor
+    match CompositorType::detect() {
+        CompositorType::Sway => {
+            if debug {
+                println!("Running sway setup");
+            }
+            if let Err(e) = handle_setup_command(SetupCommands::Sway)
+                && debug
+            {
+                eprintln!("Sway setup failed: {}", e);
+            }
         }
-        if let Err(e) = handle_setup_command(SetupCommands::Sway)
-            && debug
-        {
-            eprintln!("Sway setup failed: {}", e);
+        CompositorType::I3 => {
+            if debug {
+                println!("Running i3 setup");
+            }
+            if let Err(e) = handle_setup_command(SetupCommands::I3)
+                && debug
+            {
+                eprintln!("i3 setup failed: {}", e);
+            }
         }
-    } else if debug {
-        println!("Not running Sway, skipping sway setup");
+        _ => {
+            if debug {
+                println!("Not running Sway or i3, skipping window manager setup");
+            }
+        }
     }
 
     if crate::common::network::check_internet() {
