@@ -283,11 +283,24 @@ impl Game {
                     builder.field_indented("Dependencies", &install.dependencies.len().to_string());
             }
         } else {
-            builder = builder.blank().separator().blank().line(
-                colors::YELLOW,
-                Some(NerdFont::Warning),
-                "Not set up on this device",
-            );
+            builder = builder
+                .blank()
+                .separator()
+                .blank()
+                .line(
+                    colors::YELLOW,
+                    Some(NerdFont::Warning),
+                    "Not set up on this device",
+                )
+                .blank()
+                .text("This game is registered but hasn't been configured")
+                .text("on this device yet.")
+                .blank()
+                .text("To set up this game, select it from the menu and")
+                .text("choose \"Setup\" to configure the save path. You'll")
+                .text("be prompted to:")
+                .bullet("Locate the game's save data directory")
+                .bullet("Optionally restore from existing backups");
         }
 
         // Game dependencies (from config)
