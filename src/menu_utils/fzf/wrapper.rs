@@ -321,6 +321,10 @@ fn execute_fzf_command(mut cmd: Command, input_text: &str) -> Result<std::proces
     let output = child.wait_with_output();
     crate::menu::server::unregister_menu_process(pid);
 
+    match &output {
+        Err(e) => super::utils::check_fzf_spawn_error_and_exit(e),
+        _ => {}
+    }
     output.map_err(Into::into)
 }
 
@@ -466,7 +470,10 @@ impl FzfWrapper {
                     Ok(FzfResult::Selected(selected_lines[0].to_string()))
                 }
             }
-            Err(e) => Ok(FzfResult::Error(format!("fzf execution failed: {e}"))),
+            Err(e) => {
+                super::utils::check_fzf_spawn_error_and_exit(&e);
+                Ok(FzfResult::Error(format!("fzf execution failed: {e}")))
+            }
         }
     }
 

@@ -1,6 +1,7 @@
 //! Utility functions for FZF wrapper
 
 use crossterm::terminal;
+use std::io::ErrorKind;
 
 /// Get terminal dimensions (columns, rows) using crossterm.
 pub(crate) fn get_terminal_dimensions() -> Option<(u16, u16)> {
@@ -76,6 +77,24 @@ pub(crate) fn check_for_old_fzf_and_exit(stderr: &[u8]) {
         eprintln!("Install mise and then run:");
         eprintln!("  mise use -g fzf@latest\n");
         eprintln!("Error details: {}", stderr_str.trim());
+        eprintln!("{}\n", "=".repeat(70));
+        std::process::exit(1);
+    }
+}
+
+/// Check if spawn error indicates fzf is not installed and exit if so
+pub(crate) fn check_fzf_spawn_error_and_exit(error: &std::io::Error) {
+    if error.kind() == ErrorKind::NotFound {
+        eprintln!("\n{}\n", "=".repeat(70));
+        eprintln!("ERROR: fzf is not installed");
+        eprintln!("{}\n", "=".repeat(70));
+        eprintln!("This program requires fzf to display interactive menus.\n");
+        eprintln!("To install fzf, we recommend using mise:");
+        eprintln!("  https://mise.jdx.dev/\n");
+        eprintln!("Install mise and then run:");
+        eprintln!("  mise use -g fzf@latest\n");
+        eprintln!("Alternatively, install fzf directly:");
+        eprintln!("  https://github.com/junegunn/fzf#installation\n");
         eprintln!("{}\n", "=".repeat(70));
         std::process::exit(1);
     }

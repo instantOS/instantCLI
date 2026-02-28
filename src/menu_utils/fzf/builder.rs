@@ -399,7 +399,10 @@ impl FzfBuilder {
 
                 Ok(FzfResult::Cancelled)
             }
-            Err(e) => Ok(FzfResult::Error(format!("fzf execution failed: {e}"))),
+            Err(e) => {
+                super::utils::check_fzf_spawn_error_and_exit(&e);
+                Ok(FzfResult::Error(format!("fzf execution failed: {e}")))
+            }
         }
     }
 
