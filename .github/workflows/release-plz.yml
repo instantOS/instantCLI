@@ -42,7 +42,9 @@ jobs:
         run: rm -rf /opt/cargo /opt/rustup
   release-plz-pr:
     name: Release-plz PR
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: self-hosted
+    container:
+      image: ubuntu:latest
     if: ${{ github.repository_owner == 'instantOS' }}
     permissions:
       pull-requests: write
