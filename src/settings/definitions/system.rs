@@ -62,7 +62,7 @@ impl Setting for SystemDoctor {
             .icon(NerdFont::ShieldCheck)
             .summary("Run system diagnostics to check for common issues and available fixes.")
             .requirements(vec![&PACMAN_CONTRIB])
-            .search_keywords(&["health"])
+            .search_keywords(&["health", "doctor"])
             .build()
     }
 
