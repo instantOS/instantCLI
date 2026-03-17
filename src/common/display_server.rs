@@ -49,7 +49,15 @@ impl DisplayServer {
 
     /// Check if any Wayland compositor process is running
     fn is_wayland_process_running() -> bool {
-        let wayland_processes = ["sway", "hyprland", "river", "wayfire", "labwc"];
+        let wayland_processes = [
+            "sway",
+            "hyprland",
+            "river",
+            "wayfire",
+            "labwc",
+            "instantwm",
+            "instantwm-wayland",
+        ];
 
         for process in &wayland_processes {
             if Self::is_process_running(process) {
@@ -61,7 +69,15 @@ impl DisplayServer {
 
     /// Check if any X11 window manager process is running
     fn is_x11_process_running() -> bool {
-        let x11_processes = ["i3", "openbox", "awesome", "bspwm", "dwm", "xmonad"];
+        let x11_processes = [
+            "i3",
+            "openbox",
+            "awesome",
+            "bspwm",
+            "dwm",
+            "xmonad",
+            "instantwm",
+        ];
 
         for process in &x11_processes {
             if Self::is_process_running(process) {

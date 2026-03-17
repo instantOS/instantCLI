@@ -142,6 +142,12 @@ impl CompositorType {
                 if CompositorType::is_process_running("gnome-shell") {
                     return CompositorType::Gnome;
                 }
+                if CompositorType::is_process_running("instantwm-wayland") {
+                    return CompositorType::InstantWM;
+                }
+                if CompositorType::is_process_running("instantwm") {
+                    return CompositorType::InstantWM;
+                }
                 CompositorType::Other("wayland".to_string())
             }
             DisplayServer::X11 => {
@@ -220,6 +226,7 @@ impl CompositorType {
     pub fn is_wayland(&self) -> bool {
         match self {
             CompositorType::Sway | CompositorType::Hyprland => true,
+            CompositorType::InstantWM => DisplayServer::detect() == DisplayServer::Wayland,
             CompositorType::KWin => DisplayServer::detect() == DisplayServer::Wayland,
             CompositorType::Gnome => DisplayServer::detect() == DisplayServer::Wayland,
             CompositorType::Other(name) => name.to_lowercase().contains("wayland"),
@@ -248,7 +255,7 @@ impl CompositorType {
             CompositorType::Sway | CompositorType::Hyprland => DisplayServer::Wayland,
             CompositorType::I3 => DisplayServer::X11,
             CompositorType::Dwm => DisplayServer::X11,
-            CompositorType::InstantWM => DisplayServer::X11,
+            CompositorType::InstantWM => DisplayServer::detect(),
             CompositorType::KWin => DisplayServer::detect(),
             CompositorType::Gnome => DisplayServer::detect(),
             CompositorType::Other(name) => {
