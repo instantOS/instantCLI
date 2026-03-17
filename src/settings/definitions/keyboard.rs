@@ -27,6 +27,7 @@ impl KeyboardLayout {
     const KEY_SWAY: StringSettingKey = StringSettingKey::new("language.keyboard.sway", "");
     const KEY_X11: StringSettingKey = StringSettingKey::new("language.keyboard.x11", "");
     const KEY_GNOME: StringSettingKey = StringSettingKey::new("language.keyboard.gnome", "");
+    const KEY_INSTANTWM: StringSettingKey = StringSettingKey::new("language.keyboard.instantwm", "");
 }
 
 impl TtyKeymap {
@@ -384,6 +385,31 @@ fn current_sway_layout_names() -> Option<Vec<String>> {
     if names.is_empty() { None } else { Some(names) }
 }
 
+fn current_instantwm_layouts() -> Option<Vec<String>> {
+    let output = Command::new("instantwmctl")
+        .args(["keyboard", "list"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut layouts = Vec::new();
+    for line in stdout.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let layout = line.trim_start_matches("* ").trim();
+        if let Some(name) = layout.split_whitespace().next() {
+            layouts.push(name.to_string());
+        }
+    }
+
+    if layouts.is_empty() { None } else { Some(layouts) }
+}
+
 fn map_layout_names_to_codes(names: &[String], layouts: &[LayoutChoice]) -> Vec<String> {
     let mut map = HashMap::new();
     for layout in layouts {
@@ -471,7 +497,7 @@ fn ensure_localectl(ctx: &mut SettingsContext, code: &str, message: &str) -> boo
     true
 }
 
-/// Apply keyboard layout(s) via swaymsg, setxkbmap, or gsettings depending on compositor
+/// Apply keyboard layout(s) via swaymsg, setxkbmap, instantwmctl, or gsettings depending on compositor
 fn apply_keyboard_layouts(codes: &[String], compositor: &CompositorType) -> Result<()> {
     let joined = join_layout_codes(codes);
     if joined.is_empty() {
@@ -486,8 +512,17 @@ fn apply_keyboard_layouts(codes: &[String], compositor: &CompositorType) -> Resu
         CompositorType::Gnome => {
             apply_gnome_keyboard_layouts(codes)?;
         }
+        CompositorType::InstantWM => {
+            let mut cmd = Command::new("instantwmctl");
+            cmd.args(["keyboard", "set"]);
+            for code in codes {
+                cmd.arg(code);
+            }
+            cmd.status()
+                .with_context(|| format!("Failed to execute instantwmctl keyboard set for layout '{joined}'"))?;
+        }
         _ if compositor.is_x11() => {
-            let mut command = std::process::Command::new("setxkbmap");
+            let mut command = Command::new("setxkbmap");
             command.arg("-layout").arg(&joined);
             if let Some(options) = current_x11_options() {
                 command.arg("-option").arg(options);
@@ -663,12 +698,13 @@ impl Setting for KeyboardLayout {
         let compositor = CompositorType::detect();
         let is_sway = matches!(compositor, CompositorType::Sway);
         let is_gnome = matches!(compositor, CompositorType::Gnome);
+        let is_instantwm = matches!(compositor, CompositorType::InstantWM);
         let is_x11 = compositor.is_x11();
 
-        if !is_sway && !is_gnome && !is_x11 {
+        if !is_sway && !is_gnome && !is_x11 && !is_instantwm {
             ctx.emit_unsupported(
                 "settings.keyboard.unsupported",
-                "Keyboard layout configuration is currently only supported on Sway, GNOME, and X11 window managers.",
+                "Keyboard layout configuration is currently only supported on Sway, GNOME, InstantWM, and X11 window managers.",
             );
             return Ok(());
         }
@@ -688,6 +724,8 @@ impl Setting for KeyboardLayout {
             Self::KEY_SWAY
         } else if is_gnome {
             Self::KEY_GNOME
+        } else if is_instantwm {
+            Self::KEY_INSTANTWM
         } else {
             Self::KEY_X11
         };
@@ -700,6 +738,8 @@ impl Setting for KeyboardLayout {
                     .unwrap_or_default()
             } else if is_gnome {
                 current_gnome_layouts().unwrap_or_default()
+            } else if is_instantwm {
+                current_instantwm_layouts().unwrap_or_default()
             } else {
                 current_x11_layouts()
             }
@@ -766,9 +806,10 @@ impl Setting for KeyboardLayout {
         let compositor = CompositorType::detect();
         let is_sway = matches!(compositor, CompositorType::Sway);
         let is_gnome = matches!(compositor, CompositorType::Gnome);
+        let is_instantwm = matches!(compositor, CompositorType::InstantWM);
         let is_x11 = compositor.is_x11();
 
-        if !is_sway && !is_gnome && !is_x11 {
+        if !is_sway && !is_gnome && !is_x11 && !is_instantwm {
             return None;
         }
 
@@ -776,6 +817,8 @@ impl Setting for KeyboardLayout {
             Self::KEY_SWAY
         } else if is_gnome {
             Self::KEY_GNOME
+        } else if is_instantwm {
+            Self::KEY_INSTANTWM
         } else {
             Self::KEY_X11
         };
