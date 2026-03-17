@@ -12,10 +12,6 @@ use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::store::{BoolSettingKey, IntSettingKey};
 use crate::ui::prelude::*;
 
-// ============================================================================
-// Natural Scrolling
-// ============================================================================
-
 pub struct NaturalScroll;
 
 impl NaturalScroll {
@@ -28,7 +24,7 @@ impl Setting for NaturalScroll {
             .id("mouse.natural_scroll")
             .title("Natural Scrolling")
             .icon(NerdFont::Mouse)
-            .summary("Reverse the scroll direction to match touchpad/touchscreen behavior.\n\nWhen enabled, scrolling up moves the content up (like pushing paper).\n\nSupports Sway and X11 window managers.")
+            .summary("Reverse the scroll direction to match touchpad/touchscreen behavior.\n\nWhen enabled, scrolling up moves the content up (like pushing paper).\n\nSupports Sway, InstantWM, and X11 window managers.")
             .requires_reapply(true)
             .build()
     }
@@ -181,9 +177,10 @@ impl Setting for MouseSensitivity {
 pub fn apply_natural_scrolling(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
     let compositor = CompositorType::detect();
     let is_sway = matches!(compositor, CompositorType::Sway);
+    let is_instantwm = matches!(compositor, CompositorType::InstantWM);
     let is_x11 = compositor.is_x11();
 
-    if !is_sway && !is_x11 {
+    if !is_sway && !is_x11 && !is_instantwm {
         ctx.emit_unsupported(
             "settings.mouse.natural_scroll.unsupported",
             &format!(
@@ -207,6 +204,34 @@ pub fn apply_natural_scrolling(ctx: &mut SettingsContext, enabled: bool) -> Resu
                 "settings.mouse.natural_scroll.sway_failed",
                 &format!(
                     "Failed to apply natural scrolling in Sway: pointer: {e1}, touchpad: {e2}"
+                ),
+            );
+            return Ok(());
+        }
+
+        ctx.notify(
+            "Natural Scrolling",
+            if enabled {
+                "Natural scrolling enabled"
+            } else {
+                "Natural scrolling disabled"
+            },
+        );
+    } else if is_instantwm {
+        let value = if enabled { "enabled" } else { "disabled" };
+
+        let pointer_result = std::process::Command::new("instantwmctl")
+            .args(["mouse", "natural-scroll", "type:pointer", value])
+            .status();
+        let touchpad_result = std::process::Command::new("instantwmctl")
+            .args(["mouse", "natural-scroll", "type:touchpad", value])
+            .status();
+
+        if let (Err(e1), Err(e2)) = (&pointer_result, &touchpad_result) {
+            ctx.emit_info(
+                "settings.mouse.natural_scroll.instantwm_failed",
+                &format!(
+                    "Failed to apply natural scrolling in instantWM: pointer: {e1}, touchpad: {e2}"
                 ),
             );
             return Ok(());

@@ -27,7 +27,8 @@ impl KeyboardLayout {
     const KEY_SWAY: StringSettingKey = StringSettingKey::new("language.keyboard.sway", "");
     const KEY_X11: StringSettingKey = StringSettingKey::new("language.keyboard.x11", "");
     const KEY_GNOME: StringSettingKey = StringSettingKey::new("language.keyboard.gnome", "");
-    const KEY_INSTANTWM: StringSettingKey = StringSettingKey::new("language.keyboard.instantwm", "");
+    const KEY_INSTANTWM: StringSettingKey =
+        StringSettingKey::new("language.keyboard.instantwm", "");
 }
 
 impl TtyKeymap {
@@ -407,7 +408,11 @@ fn current_instantwm_layouts() -> Option<Vec<String>> {
         }
     }
 
-    if layouts.is_empty() { None } else { Some(layouts) }
+    if layouts.is_empty() {
+        None
+    } else {
+        Some(layouts)
+    }
 }
 
 fn map_layout_names_to_codes(names: &[String], layouts: &[LayoutChoice]) -> Vec<String> {
@@ -518,8 +523,9 @@ fn apply_keyboard_layouts(codes: &[String], compositor: &CompositorType) -> Resu
             for code in codes {
                 cmd.arg(code);
             }
-            cmd.status()
-                .with_context(|| format!("Failed to execute instantwmctl keyboard set for layout '{joined}'"))?;
+            cmd.status().with_context(|| {
+                format!("Failed to execute instantwmctl keyboard set for layout '{joined}'")
+            })?;
         }
         _ if compositor.is_x11() => {
             let mut command = Command::new("setxkbmap");
@@ -685,7 +691,7 @@ impl Setting for KeyboardLayout {
             .id("language.keyboard_layout")
             .title("Keyboard Layout")
             .icon(NerdFont::Keyboard)
-            .summary("Select one or more keyboard layouts for the current desktop session (e.g., us, de, fr).\n\nSupports Sway, GNOME, and X11 window managers. Use the TTY and login screen settings for system-wide layouts.")
+            .summary("Select one or more keyboard layouts for the current desktop session (e.g., us, de, fr).\n\nSupports Sway, GNOME, InstantWM, and X11 window managers. Use the TTY and login screen settings for system-wide layouts.")
             .requires_reapply(true)
             .build()
     }
