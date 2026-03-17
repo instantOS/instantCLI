@@ -2,6 +2,8 @@ use anyhow::Result;
 use colored::{ColoredString, Colorize};
 
 use crate::arch::engine::SystemInfo;
+use crate::common::compositor::CompositorType;
+use crate::common::display_server::DisplayServer;
 use crate::ui::nerd_font::NerdFont;
 
 pub fn detect_single_user() -> Option<String> {
@@ -161,6 +163,16 @@ pub fn print_system_info(info: &SystemInfo) {
             &"Disconnected".bright_red(),
         );
     }
+
+    // Compositor / Window Manager
+    let compositor = CompositorType::detect();
+    let display_server = DisplayServer::detect();
+    let compositor_str = format!("{} ({})", compositor.name(), display_server);
+    print_row(
+        NerdFont::Monitor.to_string().bright_yellow(),
+        "Compositor:",
+        &compositor_str.bright_yellow(),
+    );
 
     println!("  {}", "─".repeat(50).bright_black());
     println!();

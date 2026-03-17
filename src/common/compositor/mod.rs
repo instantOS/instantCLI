@@ -261,7 +261,7 @@ impl CompositorType {
         match self {
             CompositorType::I3 => true,
             CompositorType::Dwm => true,
-            CompositorType::InstantWM => true,
+            CompositorType::InstantWM => DisplayServer::detect() == DisplayServer::X11,
             CompositorType::KWin => DisplayServer::detect() == DisplayServer::X11,
             CompositorType::Gnome => DisplayServer::detect() == DisplayServer::X11,
             CompositorType::Other(name) => name.to_lowercase().contains("x11"),
