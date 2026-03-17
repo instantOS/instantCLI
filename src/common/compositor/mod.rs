@@ -88,7 +88,27 @@ pub enum CompositorType {
 impl CompositorType {
     /// Detect the current window compositor
     pub fn detect() -> Self {
-        // Check environment variables first
+        // Fast path: check for instantWM env var (instantWM sets INSTANTWM=1)
+        if env::var("INSTANTWM").is_ok() {
+            return CompositorType::InstantWM;
+        }
+
+        // Fast path: check for sway socket (sway sets SWAYSOCK)
+        if env::var("SWAYSOCK").is_ok() {
+            return CompositorType::Sway;
+        }
+
+        // Fast path: check i3 socket (i3 sets I3SOCK)
+        if env::var("I3SOCK").is_ok() {
+            return CompositorType::I3;
+        }
+
+        // Fast path: check Hyprland sockets
+        if env::var("HYPRLAND_SOCKET").is_ok() || env::var("HYPRLAND_INSTANCE_SIGNATURE").is_ok() {
+            return CompositorType::Hyprland;
+        }
+
+        // Check XDG_SESSION_DESKTOP
         if let Ok(session) = env::var("XDG_SESSION_DESKTOP") {
             match session.to_lowercase().as_str() {
                 "i3" => return CompositorType::I3,
@@ -102,6 +122,7 @@ impl CompositorType {
             }
         }
 
+        // Check DESKTOP_SESSION
         if let Ok(desktop) = env::var("DESKTOP_SESSION") {
             match desktop.to_lowercase().as_str() {
                 "i3" => return CompositorType::I3,

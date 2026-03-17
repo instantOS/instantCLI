@@ -16,7 +16,36 @@ pub enum DisplayServer {
 impl DisplayServer {
     /// Detect the current display server type
     pub fn detect() -> Self {
-        // Check XDG_SESSION_TYPE first (most reliable)
+        // Fast path: check for instantWM env var first (instantWM sets INSTANTWM=1)
+        if env::var("INSTANTWM").is_ok() {
+            // Check which backend
+            if let Ok(backend) = env::var("INSTANTWM_BACKEND") {
+                if backend.starts_with("wayland") {
+                    return DisplayServer::Wayland;
+                }
+                // x11 or unknown defaults to X11
+                return DisplayServer::X11;
+            }
+            // INSTANTWM is set but no backend info - assume X11 (default)
+            return DisplayServer::X11;
+        }
+
+        // Fast path: check sway env var (sway sets SWAYSOCK)
+        if env::var("SWAYSOCK").is_ok() {
+            return DisplayServer::Wayland;
+        }
+
+        // Fast path: check i3 env var (i3 sets I3SOCK)
+        if env::var("I3SOCK").is_ok() {
+            return DisplayServer::X11;
+        }
+
+        // Fast path: check Hyprland socket
+        if env::var("HYPRLAND_SOCKET").is_ok() || env::var("HYPRLAND_INSTANCE_SIGNATURE").is_ok() {
+            return DisplayServer::Wayland;
+        }
+
+        // Check XDG_SESSION_TYPE (most reliable for session type)
         if let Ok(session_type) = env::var("XDG_SESSION_TYPE") {
             match session_type.to_lowercase().as_str() {
                 "wayland" => return DisplayServer::Wayland,
@@ -35,7 +64,7 @@ impl DisplayServer {
             return DisplayServer::X11;
         }
 
-        // Fallback: check for running processes
+        // Slow fallback: check for running processes
         if Self::is_wayland_process_running() {
             return DisplayServer::Wayland;
         }
