@@ -1,5 +1,6 @@
 use super::{ScratchpadProvider, ScratchpadWindowInfo, create_terminal_process};
 use crate::scratchpad::config::ScratchpadConfig;
+use crate::common::display_server::DisplayServer;
 use anyhow::{Context, Result};
 use std::process::Command;
 use std::thread;
@@ -169,6 +170,13 @@ fn try_register_scratchpad(window_class: &str, name: &str) -> Result<()> {
 }
 
 fn is_window_in_tree(window_class: &str) -> Result<bool> {
+    // Check if we're on Wayland - xwininfo won't work
+    if DisplayServer::detect() == DisplayServer::Wayland {
+        // On Wayland, use instantwmctl window list instead
+        return is_window_in_tree_wayland(window_class);
+    }
+
+    // On X11, use xwininfo
     let output = Command::new("xwininfo")
         .args(["-tree", "-root"])
         .output()
@@ -182,7 +190,29 @@ fn is_window_in_tree(window_class: &str) -> Result<bool> {
     }
 }
 
+/// Check if a window exists using instantwmctl (works on both X11 and Wayland)
+fn is_window_in_tree_wayland(window_class: &str) -> Result<bool> {
+    let output = Command::new("instantwmctl")
+        .args(["window", "list"])
+        .output()
+        .context("Failed to execute instantwmctl window list")?;
+
+    if !output.status.success() {
+        return Ok(false);
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // Match by window title (the terminal window title should contain the class)
+    Ok(stdout.to_lowercase().contains(&window_class.to_lowercase()))
+}
+
 fn find_window_by_class(window_class: &str) -> Result<Option<String>> {
+    // Check if we're on Wayland - xwininfo won't work
+    if DisplayServer::detect() == DisplayServer::Wayland {
+        return find_window_by_class_wayland(window_class);
+    }
+
+    // On X11, use xwininfo
     let output = Command::new("xwininfo")
         .args(["-tree", "-root"])
         .output()
@@ -204,7 +234,46 @@ fn find_window_by_class(window_class: &str) -> Result<Option<String>> {
     Ok(None)
 }
 
+/// Find window by class using instantwmctl (Wayland)
+fn find_window_by_class_wayland(window_class: &str) -> Result<Option<String>> {
+    let output = Command::new("instantwmctl")
+        .args(["window", "list"])
+        .output()
+        .context("Failed to execute instantwmctl window list")?;
+
+    if !output.status.success() {
+        return Ok(None);
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // Parse JSON output to find window by title
+    // The JSON format is: {"windows": [{"id": ..., "title": "...", ...}]}
+    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&stdout) {
+        if let Some(windows) = json.get("windows").and_then(|w| w.as_array()) {
+            for window in windows {
+                if let Some(title) = window.get("title").and_then(|t| t.as_str()) {
+                    if title.to_lowercase().contains(&window_class.to_lowercase()) {
+                        if let Some(id) = window.get("id").and_then(|i| i.as_u64()) {
+                            return Ok(Some(id.to_string()));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(None)
+}
+
 fn focus_window_by_id(window_id: &str) -> Result<()> {
+    // Check if we're on Wayland - wmctrl won't work
+    if DisplayServer::detect() == DisplayServer::Wayland {
+        // On Wayland, we don't need to focus explicitly - instantwmctl scratchpad create
+        // will use the currently focused window
+        return Ok(());
+    }
+
+    // On X11, use wmctrl
     let status = Command::new("wmctrl")
         .args(["-i", "-a", window_id])
         .status()
