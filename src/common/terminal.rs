@@ -220,7 +220,7 @@ pub fn launch_menu_in_terminal(
     let exe_str = current_exe.to_string_lossy();
 
     TerminalLauncher::new(exe_str.as_ref())
-        .class(&format!("ins-{module}"))
+        .class(format!("ins-{module}"))
         .title(title)
         .args(&args)
         .launch()
