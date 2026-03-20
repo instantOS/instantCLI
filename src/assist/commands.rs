@@ -47,12 +47,19 @@ pub enum AssistCommands {
         /// Brightness percentage (0-100)
         value: i64,
     },
+    #[command(hide = true)]
+    /// Set scroll factor (internal use for slider)
+    ScrollFactorSet {
+        /// Scroll factor value (0-300)
+        value: i64,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AssistInternalCommand {
     MouseSet,
     BrightnessSet,
+    ScrollFactorSet,
 }
 
 impl AssistInternalCommand {
@@ -60,6 +67,7 @@ impl AssistInternalCommand {
         match self {
             AssistInternalCommand::MouseSet => "mouse-set",
             AssistInternalCommand::BrightnessSet => "brightness-set",
+            AssistInternalCommand::ScrollFactorSet => "scroll-factor-set",
         }
     }
 }
@@ -85,6 +93,9 @@ pub fn dispatch_assist_command(
         Some(AssistCommands::MouseSet { value }) => super::actions::mouse::set_mouse_speed(value),
         Some(AssistCommands::BrightnessSet { value }) => {
             crate::settings::definitions::brightness::set_brightness(value)
+        }
+        Some(AssistCommands::ScrollFactorSet { value }) => {
+            crate::assist::actions::mouse::set_scroll_factor(value)
         }
         Some(AssistCommands::Run { key_sequence }) => {
             // Check if this is a help request (ends with 'h')

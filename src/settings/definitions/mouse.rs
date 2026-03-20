@@ -5,11 +5,16 @@
 use anyhow::{Context, Result, bail};
 use std::process::Command;
 
+use crate::assist::{AssistInternalCommand, assist_command_argv};
 use crate::common::compositor::{CompositorType, sway};
+use crate::menu::client::MenuClient;
+use crate::menu::protocol::SliderRequest;
+use crate::menu_utils::{FzfPreview, FzfSelectable, MenuCursor, select_one_with_style_at};
 use crate::preview::{PreviewId, preview_command};
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
-use crate::settings::store::{BoolSettingKey, IntSettingKey};
+use crate::settings::store::{BoolSettingKey, IntSettingKey, StringSettingKey};
+use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::prelude::*;
 
 pub struct NaturalScroll;
@@ -95,6 +100,219 @@ impl Setting for SwapButtons {
             return None;
         }
         Some(self.apply_value(ctx, enabled))
+    }
+}
+
+// ============================================================================
+// Tap-to-Click
+// ============================================================================
+
+pub struct TapToClick;
+
+impl TapToClick {
+    const KEY: BoolSettingKey = BoolSettingKey::new("mouse.tap", false);
+}
+
+impl Setting for TapToClick {
+    fn metadata(&self) -> SettingMetadata {
+        SettingMetadata::builder()
+            .id("mouse.tap")
+            .title("Tap-to-Click")
+            .icon(NerdFont::Mouse)
+            .summary("Enable or disable tap-to-click on touchpads.\n\nWhen enabled, tapping on the touchpad surface acts as a mouse click.\n\nSupports InstantWM.")
+            .requires_reapply(true)
+            .build()
+    }
+
+    fn setting_type(&self) -> SettingType {
+        SettingType::Toggle { key: Self::KEY }
+    }
+
+    fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
+        let current = ctx.bool(Self::KEY);
+        let enabled = !current;
+        ctx.set_bool(Self::KEY, enabled);
+        self.apply_value(ctx, enabled)
+    }
+
+    fn apply_value(&self, ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
+        apply_tap_to_click(ctx, enabled)
+    }
+
+    fn restore(&self, ctx: &mut SettingsContext) -> Option<Result<()>> {
+        let enabled = ctx.bool(Self::KEY);
+        if !enabled {
+            return None;
+        }
+        Some(self.apply_value(ctx, enabled))
+    }
+}
+
+// ============================================================================
+// Acceleration Profile
+// ============================================================================
+
+pub struct AccelProfile;
+
+impl AccelProfile {
+    const KEY: StringSettingKey = StringSettingKey::new("mouse.accel_profile", "adaptive");
+}
+
+const ACCEL_PROFILE_OPTIONS: &[AccelProfileChoice] = &[
+    AccelProfileChoice {
+        value: "flat",
+        label: "Flat",
+        description: "Disables pointer acceleration. Move the cursor at a constant speed regardless of movement velocity.",
+    },
+    AccelProfileChoice {
+        value: "adaptive",
+        label: "Adaptive",
+        description: "Applies dynamic acceleration based on movement velocity. Faster movements result in greater cursor displacement.",
+    },
+];
+
+struct AccelProfileChoice {
+    value: &'static str,
+    label: &'static str,
+    description: &'static str,
+}
+
+impl Setting for AccelProfile {
+    fn metadata(&self) -> SettingMetadata {
+        SettingMetadata::builder()
+            .id("mouse.accel_profile")
+            .title("Acceleration Profile")
+            .icon(NerdFont::Mouse)
+            .summary("Choose how pointer acceleration behaves.\n\n\"Flat\" provides constant cursor speed regardless of movement speed.\n\"Adaptive\" applies dynamic acceleration - faster movements result in greater cursor travel.\n\nSupports InstantWM.")
+            .requires_reapply(true)
+            .build()
+    }
+
+    fn setting_type(&self) -> SettingType {
+        SettingType::Choice { key: Self::KEY }
+    }
+
+    fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
+        let current = ctx.string(Self::KEY);
+        let initial_index = ACCEL_PROFILE_OPTIONS
+            .iter()
+            .position(|o| o.value == current)
+            .unwrap_or(1);
+
+        let mut cursor = MenuCursor::new();
+
+        loop {
+            let items = build_accel_profile_items(&ctx.string(Self::KEY));
+            let initial_cursor = cursor.initial_index(&items).or(Some(initial_index));
+            let selection = select_one_with_style_at(items.clone(), initial_cursor)?;
+
+            match selection {
+                Some(display) => {
+                    cursor.update(&display, &items);
+
+                    match display.choice {
+                        Some(choice) => {
+                            ctx.set_string(Self::KEY, choice.value);
+                            apply_accel_profile(ctx, choice.value)?;
+                        }
+                        None => break,
+                    }
+                }
+                None => break,
+            }
+        }
+
+        Ok(())
+    }
+
+    fn restore(&self, ctx: &mut SettingsContext) -> Option<Result<()>> {
+        let compositor = CompositorType::detect();
+        if !matches!(compositor, CompositorType::InstantWM) {
+            return None;
+        }
+
+        let profile = ctx.string(Self::KEY);
+        Some(apply_accel_profile(ctx, &profile))
+    }
+}
+
+// ============================================================================
+// Scroll Factor
+// ============================================================================
+
+pub struct ScrollFactor;
+
+impl ScrollFactor {
+    const KEY: IntSettingKey = IntSettingKey::new("mouse.scroll_factor", 100);
+}
+
+impl Setting for ScrollFactor {
+    fn metadata(&self) -> SettingMetadata {
+        SettingMetadata::builder()
+            .id("mouse.scroll_factor")
+            .title("Scroll Speed")
+            .icon(NerdFont::Mouse)
+            .summary("Adjust the scroll wheel speed multiplier.\n\nValues above 100% increase scroll speed, values below 100% decrease it.\n\nSupports InstantWM.")
+            .requires_reapply(true)
+            .build()
+    }
+
+    fn setting_type(&self) -> SettingType {
+        SettingType::Action
+    }
+
+    fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
+        let initial_value = if ctx.contains(Self::KEY.key) {
+            Some(ctx.int(Self::KEY))
+        } else {
+            None
+        };
+
+        let start_value = initial_value.unwrap_or(100);
+
+        let client = MenuClient::new();
+        client.ensure_server_running()?;
+
+        let args = assist_command_argv(AssistInternalCommand::ScrollFactorSet)?;
+        let request = SliderRequest {
+            min: 0,
+            max: 300,
+            value: Some(start_value),
+            step: Some(5),
+            big_step: Some(25),
+            label: Some("Scroll Speed".to_string()),
+            command: args,
+        };
+
+        if let Some(value) = client.slide(request)? {
+            ctx.set_int(Self::KEY, value);
+            ctx.notify("Scroll Speed", &format!("Scroll factor set to {}%", value));
+        }
+        Ok(())
+    }
+
+    fn restore(&self, ctx: &mut SettingsContext) -> Option<Result<()>> {
+        if !ctx.contains(Self::KEY.key) {
+            return None;
+        }
+
+        let value = ctx.int(Self::KEY);
+        if let Err(e) = apply_scroll_factor(ctx, value) {
+            emit(
+                Level::Warn,
+                "settings.mouse.scroll_factor.restore_failed",
+                &format!("Failed to restore scroll factor: {e}"),
+                None,
+            );
+        } else {
+            emit(
+                Level::Debug,
+                "settings.mouse.scroll_factor.restored",
+                &format!("Restored scroll factor: {}%", value),
+                None,
+            );
+        }
+        Some(Ok(()))
     }
 }
 
@@ -378,4 +596,170 @@ pub fn apply_libinput_property_helper(
     }
 
     Ok(applied)
+}
+
+/// Build the display items list with current selection marked
+fn build_accel_profile_items(current: &str) -> Vec<AccelProfileChoiceDisplay> {
+    let mut items: Vec<AccelProfileChoiceDisplay> = ACCEL_PROFILE_OPTIONS
+        .iter()
+        .map(|choice| AccelProfileChoiceDisplay {
+            choice: Some(choice),
+            is_current: choice.value == current,
+        })
+        .collect();
+
+    items.push(AccelProfileChoiceDisplay {
+        choice: None,
+        is_current: false,
+    });
+
+    items
+}
+
+#[derive(Clone)]
+struct AccelProfileChoiceDisplay {
+    choice: Option<&'static AccelProfileChoice>,
+    is_current: bool,
+}
+
+impl FzfSelectable for AccelProfileChoiceDisplay {
+    fn fzf_display_text(&self) -> String {
+        match self.choice {
+            Some(choice) => {
+                let icon = if self.is_current {
+                    format_icon_colored(NerdFont::CheckSquare, colors::GREEN)
+                } else {
+                    format_icon_colored(NerdFont::Square, colors::OVERLAY1)
+                };
+                format!("{} {}", icon, choice.label)
+            }
+            None => format!("{} Back", format_back_icon()),
+        }
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        match self.choice {
+            Some(choice) => FzfPreview::Text(choice.description.to_string()),
+            None => FzfPreview::Text("Go back to the previous menu".to_string()),
+        }
+    }
+
+    fn fzf_key(&self) -> String {
+        match self.choice {
+            Some(choice) => choice.value.to_string(),
+            None => "__back__".to_string(),
+        }
+    }
+}
+
+/// Apply tap-to-click setting
+fn apply_tap_to_click(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
+    let compositor = CompositorType::detect();
+
+    if !matches!(compositor, CompositorType::InstantWM) {
+        ctx.emit_unsupported(
+            "settings.mouse.tap.unsupported",
+            &format!(
+                "Tap-to-click configuration is not yet supported on {}. Setting saved but not applied.",
+                compositor.name()
+            ),
+        );
+        return Ok(());
+    }
+
+    let value = if enabled { "enabled" } else { "disabled" };
+
+    let pointer_result = Command::new("instantwmctl")
+        .args(["mouse", "tap", value])
+        .status();
+
+    if let Err(e) = &pointer_result {
+        ctx.emit_info(
+            "settings.mouse.tap.instantwm_failed",
+            &format!("Failed to apply tap-to-click in instantWM: {e}"),
+        );
+        return Ok(());
+    }
+
+    ctx.notify(
+        "Tap-to-Click",
+        if enabled {
+            "Tap-to-click enabled"
+        } else {
+            "Tap-to-click disabled"
+        },
+    );
+
+    Ok(())
+}
+
+/// Apply acceleration profile setting
+fn apply_accel_profile(ctx: &mut SettingsContext, profile: &str) -> Result<()> {
+    let compositor = CompositorType::detect();
+
+    if !matches!(compositor, CompositorType::InstantWM) {
+        ctx.emit_unsupported(
+            "settings.mouse.accel_profile.unsupported",
+            &format!(
+                "Acceleration profile configuration is not yet supported on {}. Setting saved but not applied.",
+                compositor.name()
+            ),
+        );
+        return Ok(());
+    }
+
+    let result = Command::new("instantwmctl")
+        .args(["mouse", "accel-profile", profile])
+        .status();
+
+    if let Err(e) = &result {
+        ctx.emit_info(
+            "settings.mouse.accel_profile.instantwm_failed",
+            &format!("Failed to apply acceleration profile in instantWM: {e}"),
+        );
+        return Ok(());
+    }
+
+    let profile_label = if profile == "flat" {
+        "Flat"
+    } else {
+        "Adaptive"
+    };
+    ctx.notify("Acceleration Profile", &format!("Set to {}", profile_label));
+
+    Ok(())
+}
+
+/// Apply scroll factor setting
+pub fn apply_scroll_factor(ctx: &mut SettingsContext, value: i64) -> Result<()> {
+    let compositor = CompositorType::detect();
+
+    if !matches!(compositor, CompositorType::InstantWM) {
+        ctx.emit_unsupported(
+            "settings.mouse.scroll_factor.unsupported",
+            &format!(
+                "Scroll factor configuration is not yet supported on {}. Setting saved but not applied.",
+                compositor.name()
+            ),
+        );
+        return Ok(());
+    }
+
+    let factor = value as f64 / 100.0;
+
+    let result = Command::new("instantwmctl")
+        .args(["mouse", "scroll-factor", &factor.to_string()])
+        .status();
+
+    if let Err(e) = &result {
+        ctx.emit_info(
+            "settings.mouse.scroll_factor.instantwm_failed",
+            &format!("Failed to apply scroll factor in instantWM: {e}"),
+        );
+        return Ok(());
+    }
+
+    ctx.notify("Scroll Speed", &format!("Scroll factor set to {}%", value));
+
+    Ok(())
 }

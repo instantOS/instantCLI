@@ -103,8 +103,13 @@ pub fn category_tree(category: Category) -> Vec<CategoryNode> {
             CategoryNode::setting(&keyboard::LoginScreenLayout),
             CategoryNode::setting(&swap_escape::SwapEscape),
             CategoryNode::setting(&mouse::NaturalScroll),
+            CategoryNode::setting(&mouse::TapToClick),
             CategoryNode::setting(&mouse::SwapButtons),
-            CategoryNode::setting(&mouse::MouseSensitivity),
+            CategoryNode::group("Pointer")
+                .description("Pointer acceleration and scrolling settings.")
+                .child(CategoryNode::setting(&mouse::MouseSensitivity))
+                .child(CategoryNode::setting(&mouse::AccelProfile))
+                .child(CategoryNode::setting(&mouse::ScrollFactor)),
             CategoryNode::setting(&desktop::GamingMouse),
         ],
         Category::Desktop => vec![

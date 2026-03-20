@@ -23,10 +23,16 @@ pub fn run_mouse_speed_slider(initial_value: Option<i64>) -> Result<Option<i64>>
                 .context("Failed to set mouse accel profile to flat")?;
         }
         CompositorType::Gnome => {}
+        CompositorType::InstantWM => {
+            Command::new("instantwmctl")
+                .args(["mouse", "accel-profile", "flat"])
+                .status()
+                .context("Failed to set mouse accel profile to flat")?;
+        }
         _ if compositor.is_x11() => {}
         _ => {
             anyhow::bail!(
-                "Mouse speed adjustment is only supported on Sway, X11, and Gnome. Detected: {}",
+                "Mouse speed adjustment is only supported on Sway, X11, Gnome, and InstantWM. Detected: {}",
                 compositor.name()
             );
         }
@@ -110,9 +116,15 @@ pub fn set_mouse_speed(value: i64) -> Result<()> {
         _ if compositor.is_x11() => {
             set_x11_mouse_speed(speed)?;
         }
+        CompositorType::InstantWM => {
+            Command::new("instantwmctl")
+                .args(["mouse", "speed", "--", &speed.to_string()])
+                .status()
+                .context("Failed to set mouse speed via instantwmctl")?;
+        }
         _ => {
             anyhow::bail!(
-                "Mouse speed adjustment is only supported on Sway, X11, and Gnome. Detected: {}",
+                "Mouse speed adjustment is only supported on Sway, X11, Gnome, and InstantWM. Detected: {}",
                 compositor.name()
             );
         }
@@ -253,4 +265,34 @@ pub fn get_gnome_mouse_speed() -> Result<f64> {
     let speed = output_str.trim().parse::<f64>().unwrap_or(0.0);
 
     Ok(speed)
+}
+
+pub fn set_scroll_factor(value: i64) -> Result<()> {
+    let factor = value as f64 / 100.0;
+
+    let compositor = CompositorType::detect();
+
+    match compositor {
+        CompositorType::InstantWM => {
+            Command::new("instantwmctl")
+                .args(["mouse", "scroll-factor", &factor.to_string()])
+                .status()
+                .context("Failed to set scroll factor via instantwmctl")?;
+        }
+        CompositorType::Sway => {
+            let factor_cmd = format!("input type:pointer scroll_factor {}", factor);
+            Command::new("swaymsg")
+                .arg(&factor_cmd)
+                .output()
+                .context("Failed to set scroll factor")?;
+        }
+        _ => {
+            anyhow::bail!(
+                "Scroll factor adjustment is only supported on Sway and InstantWM. Detected: {}",
+                compositor.name()
+            );
+        }
+    }
+
+    Ok(())
 }
