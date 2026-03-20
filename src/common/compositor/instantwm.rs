@@ -139,12 +139,12 @@ fn get_window_ids() -> Result<Vec<String>> {
     let mut ids = Vec::new();
 
     // Parse JSON output: {"windows": [{"id": 123, ...}, ...]}
-    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&stdout) {
-        if let Some(windows) = json.get("windows").and_then(|w| w.as_array()) {
-            for window in windows {
-                if let Some(id) = window.get("id").and_then(|i| i.as_u64()) {
-                    ids.push(id.to_string());
-                }
+    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&stdout)
+        && let Some(windows) = json.get("windows").and_then(|w| w.as_array())
+    {
+        for window in windows {
+            if let Some(id) = window.get("id").and_then(|i| i.as_u64()) {
+                ids.push(id.to_string());
             }
         }
     }
@@ -282,18 +282,19 @@ fn parse_scratchpad_list(output: &str) -> Result<Vec<ScratchpadWindowInfo>> {
         }
 
         // Remove leading marker (* or space)
-        let (name_with_status, visible) = if let Some(stripped) = line.strip_prefix("* ").or_else(|| line.strip_prefix("  ")) {
-            // Now we have "name (visible)" or "name (hidden)"
-            if let Some((name, status)) = stripped.split_once('(') {
-                let name = name.trim();
-                let visible = status.trim().trim_end_matches(')') == "visible";
-                (name, visible)
+        let (name_with_status, visible) =
+            if let Some(stripped) = line.strip_prefix("* ").or_else(|| line.strip_prefix("  ")) {
+                // Now we have "name (visible)" or "name (hidden)"
+                if let Some((name, status)) = stripped.split_once('(') {
+                    let name = name.trim();
+                    let visible = status.trim().trim_end_matches(')') == "visible";
+                    (name, visible)
+                } else {
+                    (stripped.trim(), false)
+                }
             } else {
-                (stripped.trim(), false)
-            }
-        } else {
-            continue;
-        };
+                continue;
+            };
 
         windows.push(ScratchpadWindowInfo {
             name: name_with_status.to_string(),
