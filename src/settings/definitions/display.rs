@@ -1,11 +1,19 @@
 //! Display settings
 //!
 //! Monitor resolution, refresh rate, and display configuration.
+//!
+//! Provider selection:
+//! - X11 (any WM): uses xrandr directly
+//! - Wayland + Sway: uses swaymsg
+//! - Wayland + instantWM: uses instantwmctl
 
 use anyhow::Result;
 
 use crate::common::compositor::CompositorType;
-use crate::common::display::SwayDisplayProvider;
+use crate::common::display::{
+    InstantWMDisplayProvider, SwayDisplayProvider, XrandrDisplayProvider,
+};
+use crate::common::display_server::DisplayServer;
 use crate::menu_utils::FzfWrapper;
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
@@ -23,7 +31,7 @@ impl Setting for ConfigureDisplay {
             .id("display.configure")
             .title("Display Configuration")
             .icon(NerdFont::Monitor)
-            .summary("Configure display resolution and refresh rate.\n\nSelect a display and choose from available modes.\n\nCurrently only supported on Sway.")
+            .summary("Configure display resolution and refresh rate.\n\nSelect a display and choose from available modes.\n\nSupported on X11 (all WMs), Sway, and InstantWM Wayland.")
             .build()
     }
 
@@ -32,27 +40,66 @@ impl Setting for ConfigureDisplay {
     }
 
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
+        let display_server = DisplayServer::detect();
         let compositor = CompositorType::detect();
-        if !matches!(compositor, CompositorType::Sway) {
+        let is_sway = matches!(compositor, CompositorType::Sway);
+
+        // Determine which provider to use:
+        //   X11 (any WM)               → xrandr
+        //   Wayland + Sway             → swaymsg
+        //   Wayland + instantWM        → instantwmctl
+        //   Wayland + other/unknown    → unsupported
+        let use_xrandr = display_server.is_x11();
+        let use_sway = display_server.is_wayland() && is_sway;
+        let use_instantwm =
+            display_server.is_wayland() && matches!(compositor, CompositorType::InstantWM);
+
+        if !use_xrandr && !use_sway && !use_instantwm {
             ctx.emit_unsupported(
                 "settings.display.configure.unsupported",
                 &format!(
-                    "Display configuration is only supported on Sway. Detected: {}.",
-                    compositor.name()
+                    "Display configuration requires X11, Sway, or InstantWM. Detected: {} on {}.",
+                    compositor.name(),
+                    display_server,
                 ),
             );
             return Ok(());
         }
 
-        // Get outputs
-        let outputs = match SwayDisplayProvider::get_outputs_sync() {
-            Ok(outputs) => outputs,
-            Err(e) => {
-                ctx.emit_failure(
-                    "settings.display.configure.query_failed",
-                    &format!("Failed to query displays: {e}"),
-                );
-                return Ok(());
+        // Query outputs from the appropriate provider
+        let outputs = if use_sway {
+            match SwayDisplayProvider::get_outputs_sync() {
+                Ok(outputs) => outputs,
+                Err(e) => {
+                    ctx.emit_failure(
+                        "settings.display.configure.query_failed",
+                        &format!("Failed to query displays: {e}"),
+                    );
+                    return Ok(());
+                }
+            }
+        } else if use_instantwm {
+            match InstantWMDisplayProvider::get_outputs_sync() {
+                Ok(outputs) => outputs,
+                Err(e) => {
+                    ctx.emit_failure(
+                        "settings.display.configure.query_failed",
+                        &format!("Failed to query displays: {e}"),
+                    );
+                    return Ok(());
+                }
+            }
+        } else {
+            // X11 — xrandr
+            match XrandrDisplayProvider::get_outputs_sync() {
+                Ok(outputs) => outputs,
+                Err(e) => {
+                    ctx.emit_failure(
+                        "settings.display.configure.query_failed",
+                        &format!("Failed to query displays: {e}"),
+                    );
+                    return Ok(());
+                }
             }
         };
 
@@ -128,8 +175,16 @@ impl Setting for ConfigureDisplay {
             None => return Ok(()),
         };
 
-        // Apply the mode
-        if let Err(e) = SwayDisplayProvider::set_output_mode_sync(&output.name, mode) {
+        // Apply the mode via the appropriate provider
+        let result = if use_sway {
+            SwayDisplayProvider::set_output_mode_sync(&output.name, mode)
+        } else if use_instantwm {
+            InstantWMDisplayProvider::set_output_mode_sync(&output.name, mode)
+        } else {
+            XrandrDisplayProvider::set_output_mode_sync(&output.name, mode)
+        };
+
+        if let Err(e) = result {
             ctx.emit_failure(
                 "settings.display.configure.apply_failed",
                 &format!("Failed to apply mode: {e}"),

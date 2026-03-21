@@ -2,9 +2,13 @@
 //!
 //! Shared types for display/monitor configuration across settings and doctor checks.
 
+mod instantwm;
 mod sway;
+mod xrandr;
 
+pub use instantwm::InstantWMDisplayProvider;
 pub use sway::SwayDisplayProvider;
+pub use xrandr::XrandrDisplayProvider;
 
 /// Represents a display mode with resolution and refresh rate
 #[derive(Debug, Clone, PartialEq)]
