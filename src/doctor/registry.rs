@@ -33,6 +33,7 @@ impl CheckRegistry {
         registry.register::<FzfVersionCheck>("fzf-version");
         registry.register::<GitConfigCheck>("git-config");
         registry.register::<ShellCompletionCheck>("shell-completions");
+        registry.register::<ZshHealthCheck>("zsh-health");
         registry.register::<PipewireSessionManagerCheck>("pipewire-session-manager");
         registry.register::<SshAuthSockCheck>("ssh-auth-sock");
 
