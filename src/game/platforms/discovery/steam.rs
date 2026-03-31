@@ -176,13 +176,14 @@ pub fn discover_steam_games() -> Result<Vec<SteamDiscoveredGame>> {
     for candidate in candidates {
         let saves = ludusavi::scan_wine_prefix(&candidate.prefix_path).unwrap_or_default();
         for save in saves {
-            let display_name = if save.game_name.trim().is_empty() {
-                candidate.steam_name.clone()
-            } else {
-                save.game_name.clone()
-            };
+            if !save.game_name.trim().is_empty()
+                && !names_match(&save.game_name, &candidate.steam_name)
+            {
+                continue;
+            }
+
             results.push(SteamDiscoveredGame::new(
-                display_name,
+                candidate.steam_name.clone(),
                 candidate.steam_name.clone(),
                 candidate.app_id,
                 candidate.prefix_path.clone(),
@@ -200,6 +201,27 @@ pub fn discover_steam_games() -> Result<Vec<SteamDiscoveredGame>> {
     results.dedup_by(|a, b| a.unique_key() == b.unique_key());
 
     Ok(results)
+}
+
+fn names_match(ludusavi_name: &str, steam_title: &str) -> bool {
+    let ludusavi_lower = ludusavi_name.to_lowercase();
+    let steam_lower = steam_title.to_lowercase();
+
+    if ludusavi_lower.contains(&steam_lower) || steam_lower.contains(&ludusavi_lower) {
+        return true;
+    }
+
+    let normalize = |s: &str| {
+        s.chars()
+            .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+            .collect::<String>()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .to_lowercase()
+    };
+
+    normalize(ludusavi_name) == normalize(steam_title)
 }
 
 fn collect_steam_prefix_candidates() -> Result<Vec<SteamPrefixCandidate>> {

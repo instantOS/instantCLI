@@ -2,6 +2,7 @@ use std::io::{self, Write};
 
 use anyhow::Result;
 use base64::{Engine as _, engine::general_purpose};
+use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -36,7 +37,14 @@ pub struct MenuSelectionPayload {
 }
 
 pub fn list_discovered_games(sources: &[DiscoverySource]) -> Result<()> {
-    let discovered = load_discovered_games(sources)?;
+    let progress = create_discovery_progress(sources.len());
+    let discovered = load_discovered_games_with_progress(sources, |index, total, message| {
+        progress.set_length(total as u64);
+        progress.set_position(index as u64);
+        progress.set_message(message.to_string());
+    })?;
+    progress.finish_and_clear();
+
     let games_json: Vec<serde_json::Value> = discovered
         .iter()
         .map(|game| {
@@ -166,11 +174,47 @@ pub fn load_discovered_games(sources: &[DiscoverySource]) -> Result<Vec<Discover
 fn load_discovered_games_with_preview(
     sources: &[DiscoverySource],
 ) -> Result<Vec<DiscoveredGameWithPreview>> {
-    let mut discovered = if sources.is_empty() {
-        platform_discovery::discover_all()?
+    load_discovered_games_with_preview_and_progress(sources, |_, _, _| {})
+}
+
+fn load_discovered_games_with_progress<F>(
+    sources: &[DiscoverySource],
+    on_source_start: F,
+) -> Result<Vec<DiscoveredGameRecord>>
+where
+    F: FnMut(usize, usize, &'static str),
+{
+    Ok(
+        load_discovered_games_with_preview_and_progress(sources, on_source_start)?
+            .into_iter()
+            .map(|game| game.record)
+            .collect(),
+    )
+}
+
+fn load_discovered_games_with_preview_and_progress<F>(
+    sources: &[DiscoverySource],
+    on_source_start: F,
+) -> Result<Vec<DiscoveredGameWithPreview>>
+where
+    F: FnMut(usize, usize, &'static str),
+{
+    let default_sources = [
+        DiscoverySource::Switch,
+        DiscoverySource::Ps2,
+        DiscoverySource::Ps1,
+        DiscoverySource::ThreeDs,
+        DiscoverySource::Epic,
+        DiscoverySource::Steam,
+    ];
+    let active_sources = if sources.is_empty() {
+        &default_sources[..]
     } else {
-        platform_discovery::discover_selected(sources)?
+        sources
     };
+
+    let mut discovered =
+        platform_discovery::discover_selected_with_progress(active_sources, on_source_start)?;
     let context = GameCreationContext::load().ok();
 
     let mut records = Vec::with_capacity(discovered.len());
@@ -208,6 +252,19 @@ fn load_discovered_games_with_preview(
     });
 
     Ok(records)
+}
+
+fn create_discovery_progress(source_count: usize) -> ProgressBar {
+    let total = source_count.max(1) as u64;
+    let pb = ProgressBar::new(total);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}")
+            .unwrap()
+            .progress_chars("#>-"),
+    );
+    pb.set_message("Preparing discovery");
+    pb
 }
 
 fn find_existing_game_for_save(

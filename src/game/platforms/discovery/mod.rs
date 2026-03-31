@@ -63,6 +63,17 @@ fn collect_from<T: DiscoveredGame + 'static>(
     Ok(())
 }
 
+fn source_label(source: DiscoverySource) -> &'static str {
+    match source {
+        DiscoverySource::Switch => "Scanning Nintendo Switch saves",
+        DiscoverySource::Ps2 => "Scanning PS2 saves",
+        DiscoverySource::Ps1 => "Scanning PS1 saves",
+        DiscoverySource::ThreeDs => "Scanning 3DS saves",
+        DiscoverySource::Epic => "Scanning Epic Games prefixes",
+        DiscoverySource::Steam => "Scanning Steam Proton prefixes",
+    }
+}
+
 /// Discover all games from all installed platforms.
 ///
 /// Returns an empty Vec if no supported platforms are installed.
@@ -78,9 +89,21 @@ pub fn discover_all() -> Result<Vec<Box<dyn DiscoveredGame>>> {
 }
 
 pub fn discover_selected(sources: &[DiscoverySource]) -> Result<Vec<Box<dyn DiscoveredGame>>> {
-    let mut results = Vec::new();
+    discover_selected_with_progress(sources, |_, _, _| {})
+}
 
-    for source in sources {
+pub fn discover_selected_with_progress<F>(
+    sources: &[DiscoverySource],
+    mut on_source_start: F,
+) -> Result<Vec<Box<dyn DiscoveredGame>>>
+where
+    F: FnMut(usize, usize, &'static str),
+{
+    let mut results = Vec::new();
+    let total = sources.len();
+
+    for (index, source) in sources.iter().copied().enumerate() {
+        on_source_start(index, total, source_label(source));
         match source {
             DiscoverySource::Switch => collect_from(
                 eden::is_eden_installed,

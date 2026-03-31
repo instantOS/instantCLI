@@ -28,6 +28,7 @@ struct WindowsFileEntry {
 #[derive(Debug, Clone)]
 struct UserPaths {
     name: String,
+    win_home: String,
     win_app_data: String,
     win_local_app_data: String,
     win_local_app_data_low: String,
@@ -75,6 +76,7 @@ impl WinePrefixContext {
                             let user_root = drive_c.join("users").join(&name);
                             Some(UserPaths {
                                 name,
+                                win_home: user_root.to_string_lossy().to_string(),
                                 win_app_data: user_root
                                     .join("AppData")
                                     .join("Roaming")
@@ -133,6 +135,7 @@ impl WinePrefixContext {
         let mut expanded = pattern.to_string();
 
         if let Some(user) = user {
+            expanded = expanded.replace("<home>", &user.win_home);
             expanded = expanded.replace("<winAppData>", &user.win_app_data);
             expanded = expanded.replace("<winLocalAppData>", &user.win_local_app_data);
             expanded = expanded.replace("<winLocalAppDataLow>", &user.win_local_app_data_low);
@@ -189,7 +192,8 @@ fn build_windows_manifest(manifest: LudusaviManifest) -> Vec<WindowsGameEntry> {
 }
 
 fn pattern_uses_user_placeholders(pattern: &str) -> bool {
-    pattern.contains("<winAppData>")
+    pattern.contains("<home>")
+        || pattern.contains("<winAppData>")
         || pattern.contains("<winLocalAppData>")
         || pattern.contains("<winLocalAppDataLow>")
         || pattern.contains("<winDocuments>")
@@ -234,17 +238,20 @@ impl PathExistenceCache {
 
         while let Some(candidate) = current {
             if let Some(&exists) = self.entries.get(candidate) {
-                for unresolved_path in unresolved {
-                    self.entries.insert(unresolved_path, exists);
+                if exists {
+                    break;
                 }
-                return exists;
+
+                for unresolved_path in unresolved {
+                    self.entries.insert(unresolved_path, false);
+                }
+                return false;
             }
 
             unresolved.push(candidate.to_path_buf());
             current = candidate.parent();
         }
 
-        let mut nearest_existing_ancestor = 0usize;
         for (index, candidate) in unresolved.iter().enumerate().rev() {
             let exists = candidate.exists();
             self.entries.insert(candidate.clone(), exists);
@@ -255,14 +262,11 @@ impl PathExistenceCache {
                 }
                 return false;
             }
-
-            nearest_existing_ancestor = index;
         }
 
-        self.entries
-            .get(&unresolved[nearest_existing_ancestor])
-            .copied()
-            .unwrap_or(false)
+        let path_exists = path.exists();
+        self.entries.insert(path.to_path_buf(), path_exists);
+        path_exists
     }
 }
 
@@ -400,6 +404,36 @@ mod tests {
     }
 
     #[test]
+    fn home_placeholder_uses_wine_user_home() {
+        let prefix = tempfile::tempdir().unwrap();
+        let user_root = prefix
+            .path()
+            .join("drive_c")
+            .join("users")
+            .join("steamuser");
+        std::fs::create_dir_all(&user_root).unwrap();
+
+        let ctx = WinePrefixContext::new(prefix.path());
+        let entry = WindowsFileEntry {
+            pattern: "<home>/AppData/LocalLow/Game".to_string(),
+            tags: vec![],
+            needs_user: pattern_uses_user_placeholders("<home>/AppData/LocalLow/Game"),
+        };
+
+        let expanded = ctx.expand_paths(&entry);
+        assert_eq!(expanded.len(), 1);
+        assert_eq!(
+            expanded[0],
+            user_root
+                .join("AppData")
+                .join("LocalLow")
+                .join("Game")
+                .display()
+                .to_string()
+        );
+    }
+
+    #[test]
     fn normalize_probe_path_uses_non_glob_base() {
         let path = normalize_probe_path("/tmp/foo/bar/*.sav");
         assert_eq!(path, Path::new("/tmp/foo/bar"));
@@ -425,6 +459,20 @@ mod tests {
         std::fs::create_dir_all(&existing_parent).unwrap();
 
         let mut cache = PathExistenceCache::default();
+        assert!(!cache.exists_path(&missing_child));
+        assert_eq!(cache.entries.get(&existing_parent), Some(&true));
+        assert_eq!(cache.entries.get(&missing_child), Some(&false));
+    }
+
+    #[test]
+    fn cached_existing_ancestor_does_not_make_missing_descendant_exist() {
+        let temp = tempfile::tempdir().unwrap();
+        let existing_parent = temp.path().join("existing");
+        let missing_child = existing_parent.join("child").join("save.dat");
+        std::fs::create_dir_all(&existing_parent).unwrap();
+
+        let mut cache = PathExistenceCache::default();
+        assert!(cache.exists_path(&existing_parent));
         assert!(!cache.exists_path(&missing_child));
         assert_eq!(cache.entries.get(&existing_parent), Some(&true));
         assert_eq!(cache.entries.get(&missing_child), Some(&false));
