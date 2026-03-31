@@ -109,9 +109,6 @@ pub fn load_manifest() -> Result<LudusaviManifest> {
     // Download if not cached
     if !cache_path.exists() {
         download_manifest()?;
-    } else {
-        // Try to update (non-blocking — ignore errors)
-        let _ = download_manifest();
     }
 
     let yaml = fs::read_to_string(&cache_path)

@@ -41,6 +41,36 @@ impl SteamShortcut {
     }
 }
 
+pub fn compute_shortcut_app_id(shortcut: &SteamShortcut) -> u32 {
+    compute_shortcut_app_id_from_values(&shortcut.exe, &shortcut.app_name)
+}
+
+pub fn compute_shortcut_app_id_from_values(exe: &str, app_name: &str) -> u32 {
+    let input = format!("{exe}{app_name}");
+    crc32(input.as_bytes()) | 0x8000_0000
+}
+
+pub fn list_steam_shortcuts() -> Result<Vec<SteamShortcut>> {
+    let userdata_dirs = find_steam_userdata_dirs()?;
+    let mut shortcuts = Vec::new();
+
+    for userdata_dir in &userdata_dirs {
+        let vdf_path = shortcuts_vdf_path(userdata_dir);
+        shortcuts.extend(read_shortcuts_vdf(&vdf_path).unwrap_or_default());
+    }
+
+    shortcuts.sort_by(|a, b| {
+        a.app_name
+            .cmp(&b.app_name)
+            .then_with(|| a.exe.cmp(&b.exe))
+            .then_with(|| a.start_dir.cmp(&b.start_dir))
+    });
+    shortcuts
+        .dedup_by(|a, b| a.app_name == b.app_name && a.exe == b.exe && a.start_dir == b.start_dir);
+
+    Ok(shortcuts)
+}
+
 fn find_steam_userdata_dirs() -> Result<Vec<PathBuf>> {
     let mut dirs = Vec::new();
     let home = dirs::home_dir().ok_or_else(|| anyhow!("Cannot determine home directory"))?;
@@ -321,6 +351,18 @@ fn write_vdf_int(buf: &mut Vec<u8>, name: &str, value: u32) {
     buf.extend_from_slice(name.as_bytes());
     buf.push(0x00);
     buf.extend_from_slice(&value.to_le_bytes());
+}
+
+fn crc32(bytes: &[u8]) -> u32 {
+    let mut crc = 0xffff_ffffu32;
+    for &byte in bytes {
+        crc ^= u32::from(byte);
+        for _ in 0..8 {
+            let mask = (crc & 1).wrapping_neg();
+            crc = (crc >> 1) ^ (0xedb8_8320 & mask);
+        }
+    }
+    !crc
 }
 
 fn is_steam_running() -> bool {
@@ -663,5 +705,11 @@ mod tests {
         let path = Path::new("/tmp/instantcli-test-nonexistent-shortcuts.vdf");
         let result = read_shortcuts_vdf(path).unwrap();
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn shortcut_app_id_is_stable() {
+        let app_id = compute_shortcut_app_id_from_values("\"/usr/bin/test\"", "TestGame");
+        assert_eq!(app_id, 3_815_801_984);
     }
 }

@@ -10,10 +10,43 @@ main() {
 
 	local bin_dir="${TEST_ROOT}/bin"
 	local install_dir="${HOME}/Games/epic/Sable"
+	local steam_root="${HOME}/.local/share/Steam"
+	local steam_prefix="${steam_root}/steamapps/compatdata/12345/pfx"
+	local steam_save_dir="${steam_prefix}/drive_c/users/steamuser/Documents/Test Steam Game"
 	mkdir -p "${bin_dir}" "${install_dir}"
 	export PATH="${bin_dir}:${PATH}"
 
 	touch "${install_dir}/Sable.exe"
+	mkdir -p "${steam_save_dir}" "${steam_root}/steamapps" "${XDG_CACHE_HOME}/instant"
+	echo "save" >"${steam_save_dir}/save1.sav"
+
+	cat >"${XDG_CACHE_HOME}/instant/ludusavi-manifest.yaml" <<'EOF'
+"Test Steam Game":
+  files:
+    "<winDocuments>/Test Steam Game":
+      tags:
+        - save
+      when:
+        - os: windows
+EOF
+
+	cat >"${steam_root}/steamapps/libraryfolders.vdf" <<EOF
+"libraryfolders"
+{
+  "0"
+  {
+    "path" "${steam_root}"
+  }
+}
+EOF
+
+	cat >"${steam_root}/steamapps/appmanifest_12345.acf" <<'EOF'
+"AppState"
+{
+  "appid" "12345"
+  "name" "Test Steam Game"
+}
+EOF
 
 	cat >"${bin_dir}/legendary" <<EOF
 #!/usr/bin/env sh
@@ -48,6 +81,13 @@ EOF
 		.code == "game.discover" and
 		(.data.games | length) == 1 and
 		.data.games[0].platform_short == "Epic"
+	' >/dev/null
+
+	local steam_only_json
+	steam_only_json="$(ins --output json game discover --source steam)"
+	echo "${steam_only_json}" | jq -e '
+		.code == "game.discover" and
+		(.data.games | map(select(.name == "Test Steam Game" and .platform_short == "Steam")) | length) == 1
 	' >/dev/null
 
 	local menu_output

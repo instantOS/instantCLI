@@ -8,6 +8,7 @@ pub mod duckstation;
 pub mod eden;
 pub mod epic;
 pub mod pcsx2;
+pub mod steam;
 
 use std::path::PathBuf;
 
@@ -47,6 +48,7 @@ pub enum DiscoverySource {
     Ps1,
     ThreeDs,
     Epic,
+    Steam,
 }
 
 /// Discover games from a single platform, boxing the results.
@@ -71,6 +73,7 @@ pub fn discover_all() -> Result<Vec<Box<dyn DiscoveredGame>>> {
         DiscoverySource::Ps1,
         DiscoverySource::ThreeDs,
         DiscoverySource::Epic,
+        DiscoverySource::Steam,
     ])
 }
 
@@ -102,6 +105,11 @@ pub fn discover_selected(sources: &[DiscoverySource]) -> Result<Vec<Box<dyn Disc
             DiscoverySource::Epic => collect_from(
                 epic::is_epic_installed,
                 epic::discover_epic_games,
+                &mut results,
+            )?,
+            DiscoverySource::Steam => collect_from(
+                steam::is_steam_installed,
+                steam::discover_steam_games,
                 &mut results,
             )?,
         }

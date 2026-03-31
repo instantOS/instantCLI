@@ -166,6 +166,8 @@ pub enum GameDiscoverySourceArg {
     ThreeDs,
     #[value(name = "epic")]
     Epic,
+    #[value(name = "steam")]
+    Steam,
 }
 
 /// Dependency management commands
