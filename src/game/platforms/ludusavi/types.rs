@@ -13,6 +13,7 @@ pub struct GameEntry {
     #[serde(default)]
     pub files: HashMap<String, FileEntry>,
     #[serde(default)]
+    #[allow(dead_code)]
     pub alias: Option<String>,
 }
 
@@ -31,6 +32,7 @@ pub struct FileConstraint {
     #[serde(default)]
     pub os: Option<String>,
     #[serde(default)]
+    #[allow(dead_code)]
     pub store: Option<String>,
 }
 
@@ -52,11 +54,13 @@ impl DiscoveredWineSave {
     }
 
     /// Returns true if this entry has a 'save' tag
+    #[allow(dead_code)]
     pub fn is_save(&self) -> bool {
         self.tags.iter().any(|t| t == "save")
     }
 
     /// Returns true if this entry has a 'config' tag
+    #[allow(dead_code)]
     pub fn is_config(&self) -> bool {
         self.tags.iter().any(|t| t == "config")
     }

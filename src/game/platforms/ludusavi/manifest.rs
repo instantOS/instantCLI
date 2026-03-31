@@ -2,7 +2,7 @@
 
 use std::fs;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 
@@ -124,6 +124,7 @@ pub fn load_manifest() -> Result<LudusaviManifest> {
 }
 
 /// Check if the manifest is available (cached or downloadable)
+#[allow(dead_code)]
 pub fn is_manifest_available() -> bool {
     load_manifest().is_ok()
 }

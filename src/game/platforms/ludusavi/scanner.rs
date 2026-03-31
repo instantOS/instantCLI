@@ -191,15 +191,10 @@ fn is_windows_constraint(constraints: &[FileConstraint]) -> bool {
 
 /// Check if a path pattern matches any existing paths (glob evaluation)
 fn path_exists(pattern: &str) -> bool {
-    // Handle glob patterns
+    // Handle glob patterns — check if the base directory exists
     if pattern.contains('*') || pattern.contains('?') || pattern.contains('[') {
-        if let Ok(pattern_obj) = Pattern::new(pattern) {
-            // For glob patterns, check if any path matches
-            // We only check the directory portion for existence
-            let base = extract_base_path(pattern);
-            return Path::new(&base).exists();
-        }
-        return false;
+        let base = extract_base_path(pattern);
+        return Path::new(&base).exists();
     }
 
     // Direct path check

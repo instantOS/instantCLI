@@ -146,7 +146,7 @@ fn handle_scan_wine_prefix(prefix: Option<String>, list: bool) -> Result<()> {
                     "{} Enter Wine prefix path (e.g., ~/.wine or ~/Games/prefix):",
                     char::from(NerdFont::Wine)
                 ))
-                .scope(crate::menu_utils::FilePickerScope::DirectoriesOnly)
+                .scope(crate::menu_utils::FilePickerScope::Directories)
                 .picker_hint(format!(
                     "{} Choose a directory containing a drive_c folder",
                     char::from(NerdFont::Info)
@@ -182,7 +182,7 @@ fn handle_scan_wine_prefix(prefix: Option<String>, list: bool) -> Result<()> {
     println!(
         "{} Scanning: {} ({})",
         char::from(NerdFont::Search),
-        tilde_display_string(&TildePath::new(&prefix_path)),
+        tilde_display_string(&TildePath::new(prefix_path.clone())),
         status
     );
 
