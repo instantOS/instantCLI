@@ -1,5 +1,6 @@
 //! Wine prefix scanner: reverse-lookup saves from Ludusavi manifest
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::OnceLock;
 
@@ -208,14 +209,75 @@ fn is_windows_constraint(constraints: &[FileConstraint]) -> bool {
     })
 }
 
-/// Check if a path pattern matches any existing paths (glob evaluation)
-fn path_exists(pattern: &str) -> bool {
-    if pattern.contains('*') || pattern.contains('?') || pattern.contains('[') {
-        let base = extract_base_path(pattern);
-        return Path::new(&base).exists();
+#[derive(Default)]
+struct PathExistenceCache {
+    entries: HashMap<std::path::PathBuf, bool>,
+}
+
+impl PathExistenceCache {
+    fn exists(&mut self, pattern: &str) -> bool {
+        let probe_path = normalize_probe_path(pattern);
+        self.exists_path(&probe_path)
     }
 
-    Path::new(pattern).exists()
+    fn exists_path(&mut self, path: &Path) -> bool {
+        if path.as_os_str().is_empty() {
+            return false;
+        }
+
+        if let Some(&exists) = self.entries.get(path) {
+            return exists;
+        }
+
+        let mut unresolved = Vec::new();
+        let mut current = Some(path);
+
+        while let Some(candidate) = current {
+            if let Some(&exists) = self.entries.get(candidate) {
+                for unresolved_path in unresolved {
+                    self.entries.insert(unresolved_path, exists);
+                }
+                return exists;
+            }
+
+            unresolved.push(candidate.to_path_buf());
+            current = candidate.parent();
+        }
+
+        let mut nearest_existing_ancestor = 0usize;
+        for (index, candidate) in unresolved.iter().enumerate().rev() {
+            let exists = candidate.exists();
+            self.entries.insert(candidate.clone(), exists);
+
+            if !exists {
+                for descendant in unresolved.iter().take(index) {
+                    self.entries.insert(descendant.clone(), false);
+                }
+                return false;
+            }
+
+            nearest_existing_ancestor = index;
+        }
+
+        self.entries
+            .get(&unresolved[nearest_existing_ancestor])
+            .copied()
+            .unwrap_or(false)
+    }
+}
+
+/// Check if a path pattern matches any existing paths (glob evaluation)
+fn path_exists(pattern: &str, cache: &mut PathExistenceCache) -> bool {
+    cache.exists(pattern)
+}
+
+fn normalize_probe_path(pattern: &str) -> std::path::PathBuf {
+    if pattern.contains('*') || pattern.contains('?') || pattern.contains('[') {
+        let base = extract_base_path(pattern);
+        return std::path::PathBuf::from(base);
+    }
+
+    std::path::PathBuf::from(pattern)
 }
 
 /// Extract the base (non-glob) portion of a path pattern
@@ -241,13 +303,14 @@ fn extract_base_path(pattern: &str) -> String {
 pub fn scan_wine_prefix(prefix: &Path) -> Result<Vec<DiscoveredWineSave>> {
     let manifest = load_windows_manifest()?;
     let ctx = WinePrefixContext::new(prefix);
+    let mut path_cache = PathExistenceCache::default();
 
     let mut results = Vec::new();
 
     for entry in manifest {
         for file in &entry.files {
             for expanded_path in ctx.expand_paths(file) {
-                if path_exists(&expanded_path) {
+                if path_exists(&expanded_path, &mut path_cache) {
                     results.push(DiscoveredWineSave::new(
                         entry.game_name.clone(),
                         expanded_path,
@@ -334,5 +397,36 @@ mod tests {
         let expanded = ctx.expand_paths(&entry);
         assert_eq!(expanded.len(), 1);
         assert!(expanded[0].contains("/foo/"));
+    }
+
+    #[test]
+    fn normalize_probe_path_uses_non_glob_base() {
+        let path = normalize_probe_path("/tmp/foo/bar/*.sav");
+        assert_eq!(path, Path::new("/tmp/foo/bar"));
+    }
+
+    #[test]
+    fn missing_ancestor_marks_descendants_missing() {
+        let temp = tempfile::tempdir().unwrap();
+        let missing_parent = temp.path().join("missing");
+        let descendant = missing_parent.join("child").join("save.dat");
+
+        let mut cache = PathExistenceCache::default();
+        assert!(!cache.exists_path(&descendant));
+        assert_eq!(cache.entries.get(&missing_parent), Some(&false));
+        assert_eq!(cache.entries.get(&descendant), Some(&false));
+    }
+
+    #[test]
+    fn existing_ancestor_allows_descendant_probe() {
+        let temp = tempfile::tempdir().unwrap();
+        let existing_parent = temp.path().join("existing");
+        let missing_child = existing_parent.join("child").join("save.dat");
+        std::fs::create_dir_all(&existing_parent).unwrap();
+
+        let mut cache = PathExistenceCache::default();
+        assert!(!cache.exists_path(&missing_child));
+        assert_eq!(cache.entries.get(&existing_parent), Some(&true));
+        assert_eq!(cache.entries.get(&missing_child), Some(&false));
     }
 }
