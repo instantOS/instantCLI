@@ -14,7 +14,7 @@ use regex::Regex;
 use super::DiscoveredGame;
 use crate::common::TildePath;
 use crate::game::operations::steam::{compute_shortcut_app_id, list_steam_shortcuts};
-use crate::game::platforms::ludusavi;
+use crate::game::platforms::ludusavi::{self, DiscoveredWineSave, choose_primary_save};
 use crate::game::utils::path::tilde_display_string;
 use crate::menu::protocol::FzfPreview;
 use crate::ui::nerd_font::NerdFont;
@@ -175,13 +175,15 @@ pub fn discover_steam_games() -> Result<Vec<SteamDiscoveredGame>> {
     let mut results = Vec::new();
     for candidate in candidates {
         let saves = ludusavi::scan_wine_prefix(&candidate.prefix_path).unwrap_or_default();
-        for save in saves {
-            if !save.game_name.trim().is_empty()
-                && !names_match(&save.game_name, &candidate.steam_name)
-            {
-                continue;
-            }
+        let matching_saves: Vec<DiscoveredWineSave> = saves
+            .into_iter()
+            .filter(|save| {
+                save.game_name.trim().is_empty()
+                    || names_match(&save.game_name, &candidate.steam_name)
+            })
+            .collect();
 
+        if let Some(save) = choose_primary_save(matching_saves) {
             results.push(SteamDiscoveredGame::new(
                 candidate.steam_name.clone(),
                 candidate.steam_name.clone(),

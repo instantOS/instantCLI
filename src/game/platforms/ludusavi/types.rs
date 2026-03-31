@@ -1,6 +1,7 @@
 //! Data structures for Ludusavi manifest parsing
 
 use std::collections::HashMap;
+use std::path::Path;
 
 use serde::Deserialize;
 
@@ -63,5 +64,53 @@ impl DiscoveredWineSave {
     #[allow(dead_code)]
     pub fn is_config(&self) -> bool {
         self.tags.iter().any(|t| t == "config")
+    }
+}
+
+pub fn choose_primary_save(mut saves: Vec<DiscoveredWineSave>) -> Option<DiscoveredWineSave> {
+    saves.sort_by_cached_key(|save| {
+        let path = Path::new(&save.save_path);
+        let is_dir = path.is_dir();
+        let depth = path.components().count();
+
+        (
+            !is_dir,
+            !save.is_save(),
+            save.is_config(),
+            depth,
+            save.save_path.len(),
+        )
+    });
+
+    saves.into_iter().next()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn choose_primary_save_prefers_directory_over_config_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let save_dir = temp.path().join("Terraria");
+        std::fs::create_dir_all(&save_dir).unwrap();
+        let config_file = save_dir.join("config.json");
+        std::fs::write(&config_file, "{}").unwrap();
+
+        let selected = choose_primary_save(vec![
+            DiscoveredWineSave::new(
+                "Terraria".to_string(),
+                config_file.display().to_string(),
+                vec!["config".to_string()],
+            ),
+            DiscoveredWineSave::new(
+                "Terraria".to_string(),
+                save_dir.display().to_string(),
+                vec!["save".to_string()],
+            ),
+        ])
+        .unwrap();
+
+        assert_eq!(selected.save_path, save_dir.display().to_string());
     }
 }

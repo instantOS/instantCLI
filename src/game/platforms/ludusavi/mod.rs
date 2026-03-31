@@ -9,4 +9,4 @@ mod scanner;
 pub mod types;
 
 pub use scanner::scan_wine_prefix;
-pub use types::DiscoveredWineSave;
+pub use types::{DiscoveredWineSave, choose_primary_save};

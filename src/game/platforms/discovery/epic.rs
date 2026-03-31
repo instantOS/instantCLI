@@ -17,7 +17,7 @@ use serde::Deserialize;
 
 use super::DiscoveredGame;
 use crate::common::TildePath;
-use crate::game::platforms::ludusavi::{self, DiscoveredWineSave};
+use crate::game::platforms::ludusavi::{self, DiscoveredWineSave, choose_primary_save};
 use crate::game::utils::path::tilde_display_string;
 use crate::menu::protocol::FzfPreview;
 use crate::ui::nerd_font::NerdFont;
@@ -324,7 +324,16 @@ pub fn discover_epic_games() -> Result<Vec<EpicDiscoveredGame>> {
             .filter(|s| names_match(&s.game_name, &game.title))
             .collect();
 
-        if matching_saves.is_empty() {
+        if let Some(save) = choose_primary_save(matching_saves) {
+            results.push(EpicDiscoveredGame::new(
+                save.game_name,
+                game.app_name.clone(),
+                game.install_path.clone(),
+                game.executable.clone(),
+                game.launch_parameters.clone(),
+                PathBuf::from(save.save_path),
+            ));
+        } else {
             // No Ludusavi match — use install path as fallback
             results.push(EpicDiscoveredGame::new(
                 game.title.clone(),
@@ -334,18 +343,6 @@ pub fn discover_epic_games() -> Result<Vec<EpicDiscoveredGame>> {
                 game.launch_parameters.clone(),
                 game.install_path.clone(),
             ));
-        } else {
-            // Create one entry per matching save path
-            for save in matching_saves {
-                results.push(EpicDiscoveredGame::new(
-                    save.game_name.clone(),
-                    game.app_name.clone(),
-                    game.install_path.clone(),
-                    game.executable.clone(),
-                    game.launch_parameters.clone(),
-                    PathBuf::from(save.save_path),
-                ));
-            }
         }
     }
 
