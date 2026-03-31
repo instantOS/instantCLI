@@ -6,6 +6,7 @@
 pub mod azahar;
 pub mod duckstation;
 pub mod eden;
+pub mod epic;
 pub mod pcsx2;
 
 use std::path::PathBuf;
@@ -74,6 +75,11 @@ pub fn discover_all() -> Result<Vec<Box<dyn DiscoveredGame>>> {
     collect_from(
         azahar::is_azahar_installed,
         azahar::discover_azahar_games,
+        &mut results,
+    )?;
+    collect_from(
+        epic::is_epic_installed,
+        epic::discover_epic_games,
         &mut results,
     )?;
     Ok(results)

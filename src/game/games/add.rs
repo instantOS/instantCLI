@@ -219,6 +219,7 @@ impl FzfSelectable for AddMethodItem {
                         "Switch" => format_icon_colored(NerdFont::Gamepad, colors::GREEN),
                         "PS2" | "PS1" => format_icon_colored(NerdFont::Disc, colors::SAPPHIRE),
                         "3DS" => format_icon_colored(NerdFont::Gamepad, colors::YELLOW),
+                        "Epic" => format_icon_colored(NerdFont::Windows, colors::BLUE),
                         _ => format_icon_colored(NerdFont::Gamepad, colors::GREEN),
                     }
                 };
