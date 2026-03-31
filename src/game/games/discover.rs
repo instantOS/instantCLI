@@ -194,6 +194,13 @@ fn load_discovered_games_with_preview() -> Result<Vec<DiscoveredGameWithPreview>
         });
     }
 
+    records.sort_by(|a, b| {
+        a.record
+            .name
+            .to_lowercase()
+            .cmp(&b.record.name.to_lowercase())
+    });
+
     Ok(records)
 }
 
