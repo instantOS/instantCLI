@@ -1,6 +1,6 @@
 use std::ffi::OsString;
 
-use clap::Subcommand;
+use clap::{Subcommand, ValueEnum};
 use clap_complete::engine::ArgValueCompleter;
 
 /// Game save management commands
@@ -35,6 +35,9 @@ pub enum GameCommands {
     },
     /// Discover games available for `ins game add`
     Discover {
+        /// Limit discovery to specific platforms, e.g. `--source ps2 --source epic`
+        #[arg(long = "source", value_enum, value_delimiter = ',')]
+        sources: Vec<GameDiscoverySourceArg>,
         /// Internal: output streaming menu rows for the add flow
         #[arg(long, hide = true)]
         menu: bool,
@@ -149,6 +152,20 @@ pub enum GameCommands {
         #[command(subcommand)]
         debug_command: DebugCommands,
     },
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum GameDiscoverySourceArg {
+    #[value(name = "switch", alias = "eden")]
+    Switch,
+    #[value(name = "ps2", alias = "pcsx2")]
+    Ps2,
+    #[value(name = "ps1", alias = "duckstation")]
+    Ps1,
+    #[value(name = "3ds", alias = "azahar")]
+    ThreeDs,
+    #[value(name = "epic")]
+    Epic,
 }
 
 /// Dependency management commands

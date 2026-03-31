@@ -3,21 +3,21 @@ use std::ffi::OsString;
 use anyhow::Result;
 
 use crate::common::deps::RESTIC;
-use crate::common::package::{ensure_all, InstallResult};
+use crate::common::package::{InstallResult, ensure_all};
 
-use super::cli::{DependencyCommands, GameCommands};
+use super::cli::{DependencyCommands, GameCommands, GameDiscoverySourceArg};
 use super::deps::{
-    add_dependency, install_dependency, list_dependencies as list_game_dependencies,
-    uninstall_dependency, AddDependencyOptions, InstallDependencyOptions,
-    UninstallDependencyOptions,
+    AddDependencyOptions, InstallDependencyOptions, UninstallDependencyOptions, add_dependency,
+    install_dependency, list_dependencies as list_game_dependencies, uninstall_dependency,
 };
 use super::games::AddGameOptions;
+use super::games::{GameManager, remove_game};
 use super::games::{discover, display, selection};
-use super::games::{remove_game, GameManager};
 use super::menu;
 use super::operations::{exec_game_command, launch_game, sync_game_saves};
-use super::repository::manager::InitOptions;
+use super::platforms::discovery::DiscoverySource;
 use super::repository::GameRepositoryManager;
+use super::repository::manager::InitOptions;
 use super::restic::{
     backup_game_saves, handle_restic_command, prune::prune_snapshots, restore_game_saves,
 };
@@ -60,7 +60,7 @@ pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
             save_path,
             create_save_path,
         }),
-        GameCommands::Discover { menu } => handle_discover(menu),
+        GameCommands::Discover { sources, menu } => handle_discover(menu, &map_sources(&sources)),
         GameCommands::Sync { game_name, force } => {
             ensure_restic_available()?;
             handle_sync(game_name, force)
@@ -307,12 +307,26 @@ fn handle_sync(game_name: Option<String>, force: bool) -> Result<()> {
     Ok(())
 }
 
-fn handle_discover(menu: bool) -> Result<()> {
+fn handle_discover(menu: bool, sources: &[DiscoverySource]) -> Result<()> {
     if menu {
-        discover::print_streaming_menu_rows()
+        discover::print_streaming_menu_rows(sources)
     } else {
-        discover::list_discovered_games()
+        discover::list_discovered_games(sources)
     }
+}
+
+fn map_sources(sources: &[GameDiscoverySourceArg]) -> Vec<DiscoverySource> {
+    sources
+        .iter()
+        .copied()
+        .map(|source| match source {
+            GameDiscoverySourceArg::Switch => DiscoverySource::Switch,
+            GameDiscoverySourceArg::Ps2 => DiscoverySource::Ps2,
+            GameDiscoverySourceArg::Ps1 => DiscoverySource::Ps1,
+            GameDiscoverySourceArg::ThreeDs => DiscoverySource::ThreeDs,
+            GameDiscoverySourceArg::Epic => DiscoverySource::Epic,
+        })
+        .collect()
 }
 
 fn handle_launch(game_name: Option<String>) -> Result<()> {

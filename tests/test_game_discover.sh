@@ -42,8 +42,16 @@ EOF
 		(.data.games | map(select(.name == "Sable" and .platform_short == "Epic")) | length) == 1
 	' >/dev/null
 
+	local epic_only_json
+	epic_only_json="$(ins --output json game discover --source epic)"
+	echo "${epic_only_json}" | jq -e '
+		.code == "game.discover" and
+		(.data.games | length) == 1 and
+		.data.games[0].platform_short == "Epic"
+	' >/dev/null
+
 	local menu_output
-	menu_output="$(ins_output game discover --menu)"
+	menu_output="$(ins_output game discover --menu --source epic)"
 	assert_output_contains "${menu_output}" $'manual\tmanual\t'
 	assert_output_contains "${menu_output}" "Sable (Epic)"
 

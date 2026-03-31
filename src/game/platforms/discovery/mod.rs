@@ -40,6 +40,15 @@ impl Clone for Box<dyn DiscoveredGame> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiscoverySource {
+    Switch,
+    Ps2,
+    Ps1,
+    ThreeDs,
+    Epic,
+}
+
 /// Discover games from a single platform, boxing the results.
 fn collect_from<T: DiscoveredGame + 'static>(
     is_installed: fn() -> bool,
@@ -56,31 +65,47 @@ fn collect_from<T: DiscoveredGame + 'static>(
 ///
 /// Returns an empty Vec if no supported platforms are installed.
 pub fn discover_all() -> Result<Vec<Box<dyn DiscoveredGame>>> {
+    discover_selected(&[
+        DiscoverySource::Switch,
+        DiscoverySource::Ps2,
+        DiscoverySource::Ps1,
+        DiscoverySource::ThreeDs,
+        DiscoverySource::Epic,
+    ])
+}
+
+pub fn discover_selected(sources: &[DiscoverySource]) -> Result<Vec<Box<dyn DiscoveredGame>>> {
     let mut results = Vec::new();
-    collect_from(
-        eden::is_eden_installed,
-        eden::discover_eden_games,
-        &mut results,
-    )?;
-    collect_from(
-        pcsx2::is_pcsx2_installed,
-        pcsx2::discover_pcsx2_memcards,
-        &mut results,
-    )?;
-    collect_from(
-        duckstation::is_duckstation_installed,
-        duckstation::discover_duckstation_memcards,
-        &mut results,
-    )?;
-    collect_from(
-        azahar::is_azahar_installed,
-        azahar::discover_azahar_games,
-        &mut results,
-    )?;
-    collect_from(
-        epic::is_epic_installed,
-        epic::discover_epic_games,
-        &mut results,
-    )?;
+
+    for source in sources {
+        match source {
+            DiscoverySource::Switch => collect_from(
+                eden::is_eden_installed,
+                eden::discover_eden_games,
+                &mut results,
+            )?,
+            DiscoverySource::Ps2 => collect_from(
+                pcsx2::is_pcsx2_installed,
+                pcsx2::discover_pcsx2_memcards,
+                &mut results,
+            )?,
+            DiscoverySource::Ps1 => collect_from(
+                duckstation::is_duckstation_installed,
+                duckstation::discover_duckstation_memcards,
+                &mut results,
+            )?,
+            DiscoverySource::ThreeDs => collect_from(
+                azahar::is_azahar_installed,
+                azahar::discover_azahar_games,
+                &mut results,
+            )?,
+            DiscoverySource::Epic => collect_from(
+                epic::is_epic_installed,
+                epic::discover_epic_games,
+                &mut results,
+            )?,
+        }
+    }
+
     Ok(results)
 }

@@ -5,7 +5,7 @@ use base64::{Engine as _, engine::general_purpose};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::game::platforms::discovery::{self as platform_discovery};
+use crate::game::platforms::discovery::{self as platform_discovery, DiscoverySource};
 use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::prelude::{Level, emit};
@@ -35,8 +35,8 @@ pub struct MenuSelectionPayload {
     pub launch_command: Option<String>,
 }
 
-pub fn list_discovered_games() -> Result<()> {
-    let discovered = load_discovered_games()?;
+pub fn list_discovered_games(sources: &[DiscoverySource]) -> Result<()> {
+    let discovered = load_discovered_games(sources)?;
     let games_json: Vec<serde_json::Value> = discovered
         .iter()
         .map(|game| {
@@ -91,7 +91,7 @@ pub fn list_discovered_games() -> Result<()> {
     Ok(())
 }
 
-pub fn print_streaming_menu_rows() -> Result<()> {
+pub fn print_streaming_menu_rows(sources: &[DiscoverySource]) -> Result<()> {
     let mut out = io::BufWriter::new(io::stdout());
 
     writeln!(
@@ -113,7 +113,7 @@ pub fn print_streaming_menu_rows() -> Result<()> {
     )?;
     out.flush()?;
 
-    for game in load_discovered_menu_items()? {
+    for game in load_discovered_menu_items(sources)? {
         writeln!(out, "{}", game)?;
         out.flush()?;
     }
@@ -125,8 +125,8 @@ pub fn streaming_menu_preview_command() -> &'static str {
     "printf '%s' {4} | base64 -d 2>/dev/null"
 }
 
-fn load_discovered_menu_items() -> Result<Vec<String>> {
-    let discovered = load_discovered_games_with_preview()?;
+fn load_discovered_menu_items(sources: &[DiscoverySource]) -> Result<Vec<String>> {
+    let discovered = load_discovered_games_with_preview(sources)?;
     discovered
         .into_iter()
         .map(|game| {
@@ -156,15 +156,21 @@ fn load_discovered_menu_items() -> Result<Vec<String>> {
         .collect()
 }
 
-pub fn load_discovered_games() -> Result<Vec<DiscoveredGameRecord>> {
-    Ok(load_discovered_games_with_preview()?
+pub fn load_discovered_games(sources: &[DiscoverySource]) -> Result<Vec<DiscoveredGameRecord>> {
+    Ok(load_discovered_games_with_preview(sources)?
         .into_iter()
         .map(|game| game.record)
         .collect())
 }
 
-fn load_discovered_games_with_preview() -> Result<Vec<DiscoveredGameWithPreview>> {
-    let mut discovered = platform_discovery::discover_all()?;
+fn load_discovered_games_with_preview(
+    sources: &[DiscoverySource],
+) -> Result<Vec<DiscoveredGameWithPreview>> {
+    let mut discovered = if sources.is_empty() {
+        platform_discovery::discover_all()?
+    } else {
+        platform_discovery::discover_selected(sources)?
+    };
     let context = GameCreationContext::load().ok();
 
     let mut records = Vec::with_capacity(discovered.len());
