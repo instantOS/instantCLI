@@ -1,16 +1,16 @@
+use super::discover::{MenuSelectionPayload, streaming_menu_preview_command};
 use super::manager::GameCreationContext;
 use super::prompts;
 use crate::common::TildePath;
+use crate::common::shell::current_exe_command;
 use crate::game::config::PathContentKind;
-use crate::game::platforms::discovery::{self, DiscoveredGame};
 use crate::game::utils::safeguards::{PathUsage, ensure_safe_path};
-use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header};
-use crate::ui::catppuccin::{colors, format_icon_colored, fzf_mocha_args};
+use crate::menu_utils::{FzfResult, FzfWrapper, Header};
+use crate::ui::catppuccin::fzf_mocha_args;
 use crate::ui::nerd_font::NerdFont;
-use crate::ui::preview::PreviewBuilder;
 use anyhow::{Context, Result, anyhow};
+use base64::{Engine as _, engine::general_purpose};
 use std::fs;
-use std::path::Path;
 
 #[derive(Debug, Default)]
 pub struct AddGameOptions {
@@ -37,44 +37,47 @@ pub(super) struct ResolvedGameDetails {
 
 pub(super) fn maybe_prefill_from_emulators(
     options: AddGameOptions,
-    context: &GameCreationContext,
+    _context: &GameCreationContext,
 ) -> Result<EmulatorPrefillResult> {
-    let discovered = discovery::discover_all()?;
-
-    if discovered.is_empty() {
-        return Ok(EmulatorPrefillResult::Continue(options));
-    }
-
-    let items = classify_discovered_items(discovered, context);
+    let discover_command = format!("{} game discover --menu", current_exe_command());
 
     let result = FzfWrapper::builder()
         .header(Header::fancy("Games"))
         .prompt("Select")
         .args(fzf_mocha_args())
         .responsive_layout()
-        .select_padded(items)?;
+        .args([
+            "--delimiter",
+            "\t",
+            "--with-nth",
+            "3",
+            "--preview",
+            streaming_menu_preview_command(),
+            "--ansi",
+        ])
+        .select_streaming(&discover_command)?;
 
     match result {
-        FzfResult::Selected(AddMethodItem::ManualEntry) => {
-            Ok(EmulatorPrefillResult::Continue(options))
-        }
-        FzfResult::Selected(AddMethodItem::DiscoveredGame(game)) => {
-            if game.is_existing() {
-                let tracked_name = game
-                    .tracked_name()
-                    .unwrap_or(game.display_name())
-                    .to_string();
-                Ok(EmulatorPrefillResult::OpenGameMenu(tracked_name))
-            } else {
-                Ok(EmulatorPrefillResult::Continue(AddGameOptions {
-                    name: Some(game.display_name().to_string()),
-                    description: None,
-                    launch_command: game.build_launch_command(),
-                    save_path: Some(game.save_path().to_string_lossy().to_string()),
-                    create_save_path: false,
-                }))
+        FzfResult::Selected(line) => match parse_discovery_selection(&line)? {
+            SelectedDiscovery::ManualEntry => Ok(EmulatorPrefillResult::Continue(options)),
+            SelectedDiscovery::DiscoveredGame(payload) => {
+                if payload.existing {
+                    let tracked_name = payload
+                        .tracked_name
+                        .or(payload.display_name)
+                        .unwrap_or_else(|| "Unknown Game".to_string());
+                    Ok(EmulatorPrefillResult::OpenGameMenu(tracked_name))
+                } else {
+                    Ok(EmulatorPrefillResult::Continue(AddGameOptions {
+                        name: payload.display_name,
+                        description: None,
+                        launch_command: payload.launch_command,
+                        save_path: payload.save_path,
+                        create_save_path: false,
+                    }))
+                }
             }
-        }
+        },
         FzfResult::Cancelled => Ok(EmulatorPrefillResult::Cancelled),
         _ => Ok(EmulatorPrefillResult::Continue(options)),
     }
@@ -170,99 +173,6 @@ pub(super) fn resolve_add_game_details(
     })
 }
 
-fn find_existing_game_for_save(save_path: &Path, context: &GameCreationContext) -> Option<String> {
-    context
-        .installations
-        .installations
-        .iter()
-        .find(|inst| inst.save_path.as_path() == save_path)
-        .map(|inst| inst.game_name.0.clone())
-}
-
-fn classify_discovered_items(
-    discovered: Vec<Box<dyn DiscoveredGame>>,
-    context: &GameCreationContext,
-) -> Vec<AddMethodItem> {
-    let mut items: Vec<AddMethodItem> = Vec::with_capacity(discovered.len() + 1);
-    items.push(AddMethodItem::ManualEntry);
-
-    for mut game in discovered {
-        if let Some(existing_name) = find_existing_game_for_save(game.save_path(), context) {
-            game.set_existing(existing_name);
-        }
-        items.push(AddMethodItem::DiscoveredGame(game));
-    }
-
-    items
-}
-
-#[derive(Clone)]
-enum AddMethodItem {
-    ManualEntry,
-    DiscoveredGame(Box<dyn DiscoveredGame>),
-}
-
-impl FzfSelectable for AddMethodItem {
-    fn fzf_display_text(&self) -> String {
-        match self {
-            AddMethodItem::ManualEntry => {
-                format!(
-                    "{} Enter a new game manually",
-                    format_icon_colored(NerdFont::Edit, colors::BLUE)
-                )
-            }
-            AddMethodItem::DiscoveredGame(game) => {
-                let icon = if game.is_existing() {
-                    format_icon_colored(NerdFont::Gamepad, colors::MAUVE)
-                } else {
-                    match game.platform_short() {
-                        "Switch" => format_icon_colored(NerdFont::Gamepad, colors::GREEN),
-                        "PS2" | "PS1" => format_icon_colored(NerdFont::Disc, colors::SAPPHIRE),
-                        "3DS" => format_icon_colored(NerdFont::Gamepad, colors::YELLOW),
-                        "Epic" => format_icon_colored(NerdFont::Windows, colors::BLUE),
-                        _ => format_icon_colored(NerdFont::Gamepad, colors::GREEN),
-                    }
-                };
-                let display_name = game.tracked_name().unwrap_or(game.display_name());
-                format!("{} {} ({})", icon, display_name, game.platform_short())
-            }
-        }
-    }
-
-    fn fzf_key(&self) -> String {
-        match self {
-            AddMethodItem::ManualEntry => "manual".to_string(),
-            AddMethodItem::DiscoveredGame(game) => {
-                if game.is_existing() {
-                    format!("existing-{}", game.unique_key())
-                } else {
-                    game.unique_key()
-                }
-            }
-        }
-    }
-
-    fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
-        match self {
-            AddMethodItem::ManualEntry => PreviewBuilder::new()
-                .header(NerdFont::Edit, "Manual Entry")
-                .text("Enter game details manually.")
-                .blank()
-                .text("You will be prompted for:")
-                .bullet("Game name")
-                .bullet("Description (optional)")
-                .bullet("Launch command (optional)")
-                .bullet("Save data path")
-                .build(),
-            AddMethodItem::DiscoveredGame(game) => game.build_preview(),
-        }
-    }
-
-    fn fzf_is_selectable(&self) -> bool {
-        true
-    }
-}
-
 fn some_if_not_empty(value: impl Into<String>) -> Option<String> {
     let text = value.into();
     let trimmed = text.trim();
@@ -270,5 +180,65 @@ fn some_if_not_empty(value: impl Into<String>) -> Option<String> {
         None
     } else {
         Some(trimmed.to_string())
+    }
+}
+
+enum SelectedDiscovery {
+    ManualEntry,
+    DiscoveredGame(MenuSelectionPayload),
+}
+
+fn parse_discovery_selection(line: &str) -> Result<SelectedDiscovery> {
+    let mut fields = line.splitn(5, '\t');
+    let kind = fields.next().unwrap_or_default();
+    let _key = fields.next().unwrap_or_default();
+    let _display = fields.next().unwrap_or_default();
+    let _preview = fields.next().unwrap_or_default();
+    let payload_b64 = fields.next().unwrap_or_default();
+
+    match kind {
+        "manual" => Ok(SelectedDiscovery::ManualEntry),
+        "discovered" => {
+            let payload_json = general_purpose::STANDARD
+                .decode(payload_b64)
+                .context("Failed to decode discovery payload")?;
+            let payload: MenuSelectionPayload = serde_json::from_slice(&payload_json)
+                .context("Failed to parse discovery payload")?;
+            Ok(SelectedDiscovery::DiscoveredGame(payload))
+        }
+        other => Err(anyhow!("Unknown discovery selection kind: {}", other)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_manual_selection() {
+        let selection =
+            parse_discovery_selection("manual\tmanual\tdisplay\tcHJldmlldw==\te30=").unwrap();
+        assert!(matches!(selection, SelectedDiscovery::ManualEntry));
+    }
+
+    #[test]
+    fn parse_discovered_selection_payload() {
+        let payload = MenuSelectionPayload {
+            existing: false,
+            display_name: Some("Sable".to_string()),
+            tracked_name: None,
+            save_path: Some("/games/Sable".to_string()),
+            launch_command: Some("\"/games/Sable/Sable.exe\"".to_string()),
+        };
+        let payload_b64 = general_purpose::STANDARD.encode(serde_json::to_vec(&payload).unwrap());
+        let line = format!("discovered\tsable\tdisplay\tcHJldmlldw==\t{}", payload_b64);
+
+        match parse_discovery_selection(&line).unwrap() {
+            SelectedDiscovery::DiscoveredGame(parsed) => {
+                assert_eq!(parsed.display_name.as_deref(), Some("Sable"));
+                assert_eq!(parsed.save_path.as_deref(), Some("/games/Sable"));
+            }
+            SelectedDiscovery::ManualEntry => panic!("expected discovered selection"),
+        }
     }
 }

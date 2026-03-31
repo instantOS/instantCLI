@@ -33,6 +33,12 @@ pub enum GameCommands {
         #[arg(long)]
         create_save_path: bool,
     },
+    /// Discover games available for `ins game add`
+    Discover {
+        /// Internal: output streaming menu rows for the add flow
+        #[arg(long, hide = true)]
+        menu: bool,
+    },
     /// Sync game saves with restic repository
     Sync {
         /// Game name to sync (optional, syncs all if not specified)

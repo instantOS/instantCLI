@@ -12,7 +12,7 @@ use super::deps::{
 };
 use super::games::AddGameOptions;
 use super::games::{GameManager, remove_game};
-use super::games::{display, selection};
+use super::games::{discover, display, selection};
 use super::menu;
 use super::operations::{exec_game_command, launch_game, sync_game_saves};
 use super::repository::GameRepositoryManager;
@@ -59,6 +59,7 @@ pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
             save_path,
             create_save_path,
         }),
+        GameCommands::Discover { menu } => handle_discover(menu),
         GameCommands::Sync { game_name, force } => {
             ensure_restic_available()?;
             handle_sync(game_name, force)
@@ -129,6 +130,14 @@ fn handle_add(options: AddGameOptions) -> Result<()> {
 fn handle_sync(game_name: Option<String>, force: bool) -> Result<()> {
     let _summary = sync_game_saves(game_name, force)?;
     Ok(())
+}
+
+fn handle_discover(menu: bool) -> Result<()> {
+    if menu {
+        discover::print_streaming_menu_rows()
+    } else {
+        discover::list_discovered_games()
+    }
 }
 
 fn handle_launch(game_name: Option<String>) -> Result<()> {

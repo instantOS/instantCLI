@@ -1,4 +1,5 @@
 pub mod add;
+pub mod discover;
 pub mod display;
 pub mod manager;
 pub mod prompts;
