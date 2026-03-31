@@ -232,9 +232,11 @@ fn create_discovery_progress(source_count: usize) -> ProgressBar {
         ProgressStyle::default_bar()
             .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}")
             .unwrap()
+            .tick_chars("-\\|/")
             .progress_chars("#>-"),
     );
     pb.set_message("Preparing discovery");
+    pb.enable_steady_tick(std::time::Duration::from_millis(100));
     pb
 }
 
