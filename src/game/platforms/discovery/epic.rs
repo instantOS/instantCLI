@@ -257,18 +257,20 @@ fn names_match(ludusavi_name: &str, epic_title: &str) -> bool {
     ludusavi_norm.contains(&epic_norm) || epic_norm.contains(&ludusavi_norm)
 }
 
-/// Discover installed Epic Games via legendary with Ludusavi-based save path detection
-pub fn discover_epic_games() -> Result<Vec<EpicDiscoveredGame>> {
+pub fn stream_discover_epic_games<F>(mut on_game: F) -> Result<()>
+where
+    F: FnMut(EpicDiscoveredGame) -> Result<()>,
+{
     let json_output = match run_legendary_list_installed() {
         Some(output) => output,
-        None => return Ok(Vec::new()),
+        None => return Ok(()),
     };
 
     let games: Vec<LegendaryInstalled> = match serde_json::from_str(&json_output) {
         Ok(g) => g,
         Err(e) => {
             eprintln!("Failed to parse legendary JSON: {e}");
-            return Ok(Vec::new());
+            return Ok(());
         }
     };
 
@@ -277,11 +279,6 @@ pub fn discover_epic_games() -> Result<Vec<EpicDiscoveredGame>> {
         .filter(|g| g.install_path.exists())
         .collect();
 
-    if valid_games.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    // Collect unique wine prefixes from all Epic games
     let mut prefix_to_games: HashMap<PathBuf, Vec<&LegendaryInstalled>> = HashMap::new();
     for game in &valid_games {
         if let Some(prefix) = find_wine_prefix(&game.install_path) {
@@ -289,7 +286,6 @@ pub fn discover_epic_games() -> Result<Vec<EpicDiscoveredGame>> {
         }
     }
 
-    // Scan each prefix once with Ludusavi
     let mut prefix_saves: HashMap<PathBuf, Vec<DiscoveredWineSave>> = HashMap::new();
     for prefix in prefix_to_games.keys() {
         if let Ok(saves) = ludusavi::scan_wine_prefix(prefix) {
@@ -297,21 +293,30 @@ pub fn discover_epic_games() -> Result<Vec<EpicDiscoveredGame>> {
         }
     }
 
-    // Match Ludusavi saves to Epic games by name
-    let mut results = Vec::new();
+    stream_discover_epic_games_into(valid_games, prefix_saves, &mut on_game)
+}
+
+fn stream_discover_epic_games_into<F>(
+    valid_games: Vec<LegendaryInstalled>,
+    prefix_saves: HashMap<PathBuf, Vec<DiscoveredWineSave>>,
+    mut on_game: F,
+) -> Result<()>
+where
+    F: FnMut(EpicDiscoveredGame) -> Result<()>,
+{
     for game in &valid_games {
         let prefix = match find_wine_prefix(&game.install_path) {
             Some(p) => p,
             None => {
                 // Fallback: use install path as save path (old behavior)
-                results.push(EpicDiscoveredGame::new(
+                on_game(EpicDiscoveredGame::new(
                     game.title.clone(),
                     game.app_name.clone(),
                     game.install_path.clone(),
                     game.executable.clone(),
                     game.launch_parameters.clone(),
                     game.install_path.clone(),
-                ));
+                ))?;
                 continue;
             }
         };
@@ -325,34 +330,28 @@ pub fn discover_epic_games() -> Result<Vec<EpicDiscoveredGame>> {
             .collect();
 
         if let Some(save) = choose_primary_save(matching_saves) {
-            results.push(EpicDiscoveredGame::new(
+            on_game(EpicDiscoveredGame::new(
                 save.game_name,
                 game.app_name.clone(),
                 game.install_path.clone(),
                 game.executable.clone(),
                 game.launch_parameters.clone(),
                 PathBuf::from(save.save_path),
-            ));
+            ))?;
         } else {
             // No Ludusavi match — use install path as fallback
-            results.push(EpicDiscoveredGame::new(
+            on_game(EpicDiscoveredGame::new(
                 game.title.clone(),
                 game.app_name.clone(),
                 game.install_path.clone(),
                 game.executable.clone(),
                 game.launch_parameters.clone(),
                 game.install_path.clone(),
-            ));
+            ))?;
         }
     }
 
-    results.sort_by(|a, b| {
-        a.display_name
-            .to_lowercase()
-            .cmp(&b.display_name.to_lowercase())
-    });
-
-    Ok(results)
+    Ok(())
 }
 
 #[cfg(test)]

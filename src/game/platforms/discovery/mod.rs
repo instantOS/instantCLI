@@ -51,15 +51,40 @@ pub enum DiscoverySource {
     Steam,
 }
 
-/// Discover games from a single platform, boxing the results.
-fn collect_from<T: DiscoveredGame + 'static>(
+pub const DEFAULT_DISCOVERY_SOURCES: [DiscoverySource; 6] = [
+    DiscoverySource::Switch,
+    DiscoverySource::Ps2,
+    DiscoverySource::Ps1,
+    DiscoverySource::ThreeDs,
+    DiscoverySource::Epic,
+    DiscoverySource::Steam,
+];
+
+pub fn active_sources(sources: &[DiscoverySource]) -> &[DiscoverySource] {
+    if sources.is_empty() {
+        &DEFAULT_DISCOVERY_SOURCES
+    } else {
+        sources
+    }
+}
+
+fn emit_discovered_games<T, F>(
     is_installed: fn() -> bool,
     discover: fn() -> Result<Vec<T>>,
-    results: &mut Vec<Box<dyn DiscoveredGame>>,
-) -> Result<()> {
-    if is_installed() {
-        results.extend(discover()?.into_iter().map(|g| Box::new(g) as _));
+    mut on_game: F,
+) -> Result<()>
+where
+    T: DiscoveredGame + 'static,
+    F: FnMut(Box<dyn DiscoveredGame>) -> Result<()>,
+{
+    if !is_installed() {
+        return Ok(());
     }
+
+    for game in discover()? {
+        on_game(Box::new(game))?;
+    }
+
     Ok(())
 }
 
@@ -74,69 +99,66 @@ fn source_label(source: DiscoverySource) -> &'static str {
     }
 }
 
-/// Discover all games from all installed platforms.
-///
-/// Returns an empty Vec if no supported platforms are installed.
-pub fn discover_all() -> Result<Vec<Box<dyn DiscoveredGame>>> {
-    discover_selected(&[
-        DiscoverySource::Switch,
-        DiscoverySource::Ps2,
-        DiscoverySource::Ps1,
-        DiscoverySource::ThreeDs,
-        DiscoverySource::Epic,
-        DiscoverySource::Steam,
-    ])
+pub enum DiscoveryEvent {
+    SourceStarted {
+        index: usize,
+        total: usize,
+        label: &'static str,
+    },
+    GameFound(Box<dyn DiscoveredGame>),
 }
 
-pub fn discover_selected(sources: &[DiscoverySource]) -> Result<Vec<Box<dyn DiscoveredGame>>> {
-    discover_selected_with_progress(sources, |_, _, _| {})
-}
-
-pub fn discover_selected_with_progress<F>(
-    sources: &[DiscoverySource],
-    mut on_source_start: F,
-) -> Result<Vec<Box<dyn DiscoveredGame>>>
+pub fn discover_selected_events<F>(sources: &[DiscoverySource], mut on_event: F) -> Result<()>
 where
-    F: FnMut(usize, usize, &'static str),
+    F: FnMut(DiscoveryEvent) -> Result<()>,
 {
-    let mut results = Vec::new();
-    let total = sources.len();
+    let active_sources = active_sources(sources);
+    let total = active_sources.len();
 
-    for (index, source) in sources.iter().copied().enumerate() {
-        on_source_start(index, total, source_label(source));
+    for (index, source) in active_sources.iter().copied().enumerate() {
+        on_event(DiscoveryEvent::SourceStarted {
+            index,
+            total,
+            label: source_label(source),
+        })?;
+
         match source {
-            DiscoverySource::Switch => collect_from(
+            DiscoverySource::Switch => emit_discovered_games(
                 eden::is_eden_installed,
                 eden::discover_eden_games,
-                &mut results,
+                &mut |game| on_event(DiscoveryEvent::GameFound(game)),
             )?,
-            DiscoverySource::Ps2 => collect_from(
+            DiscoverySource::Ps2 => emit_discovered_games(
                 pcsx2::is_pcsx2_installed,
                 pcsx2::discover_pcsx2_memcards,
-                &mut results,
+                &mut |game| on_event(DiscoveryEvent::GameFound(game)),
             )?,
-            DiscoverySource::Ps1 => collect_from(
+            DiscoverySource::Ps1 => emit_discovered_games(
                 duckstation::is_duckstation_installed,
                 duckstation::discover_duckstation_memcards,
-                &mut results,
+                &mut |game| on_event(DiscoveryEvent::GameFound(game)),
             )?,
-            DiscoverySource::ThreeDs => collect_from(
+            DiscoverySource::ThreeDs => emit_discovered_games(
                 azahar::is_azahar_installed,
                 azahar::discover_azahar_games,
-                &mut results,
+                &mut |game| on_event(DiscoveryEvent::GameFound(game)),
             )?,
-            DiscoverySource::Epic => collect_from(
-                epic::is_epic_installed,
-                epic::discover_epic_games,
-                &mut results,
-            )?,
-            DiscoverySource::Steam => collect_from(
-                steam::is_steam_installed,
-                steam::discover_steam_games,
-                &mut results,
-            )?,
+            DiscoverySource::Epic => {
+                if epic::is_epic_installed() {
+                    epic::stream_discover_epic_games(|game| {
+                        on_event(DiscoveryEvent::GameFound(Box::new(game)))
+                    })?;
+                }
+            }
+            DiscoverySource::Steam => {
+                if steam::is_steam_installed() {
+                    steam::stream_discover_steam_games(|game| {
+                        on_event(DiscoveryEvent::GameFound(Box::new(game)))
+                    })?;
+                }
+            }
         }
     }
 
-    Ok(results)
+    Ok(())
 }

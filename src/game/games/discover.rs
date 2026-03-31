@@ -9,11 +9,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use walkdir::WalkDir;
 
-use crate::game::platforms::discovery::{self as platform_discovery, DiscoverySource};
+use crate::game::platforms::discovery::{
+    self as platform_discovery, DiscoveredGame, DiscoveryEvent, DiscoverySource,
+};
 use crate::game::platforms::ludusavi::{self, DiscoveredWineSave, choose_primary_save};
 use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
-use crate::ui::prelude::{Level, emit};
+use crate::ui::prelude::{Level, OutputFormat, emit, get_output_format};
 use crate::ui::preview::{FzfPreview, PreviewBuilder};
 
 use super::manager::GameCreationContext;
@@ -41,76 +43,10 @@ pub struct MenuSelectionPayload {
 }
 
 pub fn list_discovered_games(sources: &[DiscoverySource], scan_path: Option<&str>) -> Result<()> {
-    let discovered = if let Some(scan_path) = scan_path {
-        let progress = create_discovery_progress(1);
-        progress.set_position(0);
-        progress.set_message(format!("Scanning {}", scan_path));
-        let discovered = load_discovered_games_from_path(scan_path)?;
-        progress.finish_and_clear();
-        discovered
-    } else {
-        let progress = create_discovery_progress(sources.len());
-        let discovered = load_discovered_games_with_progress(sources, |index, total, message| {
-            progress.set_length(total as u64);
-            progress.set_position(index as u64);
-            progress.set_message(message.to_string());
-        })?;
-        progress.finish_and_clear();
-        discovered
-    };
-
-    let games_json: Vec<serde_json::Value> = discovered
-        .iter()
-        .map(|game| {
-            json!({
-                "name": game.name,
-                "platform": game.platform,
-                "platform_short": game.platform_short,
-                "unique_key": game.unique_key,
-                "save_path": game.save_path,
-                "game_path": game.game_path,
-                "launch_command": game.launch_command,
-                "existing": game.existing,
-                "tracked_name": game.tracked_name,
-            })
-        })
-        .collect();
-
-    let message = if discovered.is_empty() {
-        "No discoverable games found.".to_string()
-    } else {
-        let mut text = String::from("Discovered Games\n\n");
-        for game in &discovered {
-            text.push_str(&format!(
-                "- {} ({})\n  Save path: {}\n",
-                game.name, game.platform, game.save_path
-            ));
-            if let Some(game_path) = &game.game_path {
-                text.push_str(&format!("  Game path: {}\n", game_path));
-            }
-            if let Some(launch_command) = &game.launch_command {
-                text.push_str(&format!("  Launch command: {}\n", launch_command));
-            }
-            if let Some(tracked_name) = &game.tracked_name {
-                text.push_str(&format!("  Tracked as: {}\n", tracked_name));
-            }
-            text.push('\n');
-        }
-        text.pop();
-        text
-    };
-
-    emit(
-        Level::Info,
-        "game.discover",
-        &message,
-        Some(json!({
-            "count": discovered.len(),
-            "games": games_json,
-        })),
-    );
-
-    Ok(())
+    match get_output_format() {
+        OutputFormat::Json => emit_discovered_games_as_json(sources, scan_path),
+        OutputFormat::Text => emit_discovered_games_as_text(sources, scan_path),
+    }
 }
 
 pub fn print_streaming_menu_rows(
@@ -138,10 +74,39 @@ pub fn print_streaming_menu_rows(
     )?;
     out.flush()?;
 
-    for game in load_discovered_menu_items(sources, scan_path)? {
-        writeln!(out, "{}", game)?;
-        out.flush()?;
-    }
+    stream_discovered_records(
+        sources,
+        scan_path,
+        |_, _, _| Ok(()),
+        |game| {
+            writeln!(
+                out,
+                "{}",
+                encode_menu_row(
+                    "discovered",
+                    &game.record.unique_key,
+                    &discovered_menu_display(
+                        game.record
+                            .tracked_name
+                            .as_deref()
+                            .unwrap_or(game.record.name.as_str()),
+                        &game.record.platform_short,
+                        game.record.existing,
+                    ),
+                    &game.preview_text,
+                    &MenuSelectionPayload {
+                        existing: game.record.existing,
+                        display_name: Some(game.record.name),
+                        tracked_name: game.record.tracked_name,
+                        save_path: Some(game.record.save_path),
+                        launch_command: game.record.launch_command,
+                    },
+                )?
+            )?;
+            out.flush()?;
+            Ok(())
+        },
+    )?;
 
     Ok(())
 }
@@ -150,180 +115,114 @@ pub fn streaming_menu_preview_command() -> &'static str {
     "printf '%s' {4} | base64 -d 2>/dev/null"
 }
 
-fn load_discovered_menu_items(
-    sources: &[DiscoverySource],
-    scan_path: Option<&str>,
-) -> Result<Vec<String>> {
-    let discovered = if let Some(scan_path) = scan_path {
-        load_discovered_games_from_path_with_preview(scan_path)?
-    } else {
-        load_discovered_games_with_preview(sources)?
-    };
-    discovered
-        .into_iter()
-        .map(|game| {
-            let display_name = game
-                .record
-                .tracked_name
-                .as_deref()
-                .unwrap_or(game.record.name.as_str());
-            encode_menu_row(
-                "discovered",
-                &game.record.unique_key,
-                &discovered_menu_display(
-                    display_name,
-                    &game.record.platform_short,
-                    game.record.existing,
-                ),
-                &game.preview_text,
-                &MenuSelectionPayload {
-                    existing: game.record.existing,
-                    display_name: Some(game.record.name),
-                    tracked_name: game.record.tracked_name,
-                    save_path: Some(game.record.save_path),
-                    launch_command: game.record.launch_command,
-                },
-            )
-        })
-        .collect()
-}
-
-pub fn load_discovered_games(sources: &[DiscoverySource]) -> Result<Vec<DiscoveredGameRecord>> {
-    Ok(load_discovered_games_with_preview(sources)?
-        .into_iter()
-        .map(|game| game.record)
-        .collect())
-}
-
-fn load_discovered_games_from_path(scan_path: &str) -> Result<Vec<DiscoveredGameRecord>> {
-    Ok(load_discovered_games_from_path_with_preview(scan_path)?
-        .into_iter()
-        .map(|game| game.record)
-        .collect())
-}
-
 fn load_discovered_games_with_preview(
     sources: &[DiscoverySource],
+    scan_path: Option<&str>,
 ) -> Result<Vec<DiscoveredGameWithPreview>> {
-    load_discovered_games_with_preview_and_progress(sources, |_, _, _| {})
+    let mut records = Vec::new();
+    stream_discovered_records(
+        sources,
+        scan_path,
+        |_, _, _| Ok(()),
+        |game| {
+            records.push(game);
+            Ok(())
+        },
+    )?;
+
+    records.sort_by(|a, b| {
+        a.record
+            .name
+            .to_lowercase()
+            .cmp(&b.record.name.to_lowercase())
+    });
+
+    Ok(records)
 }
 
-fn load_discovered_games_from_path_with_preview(
-    scan_path: &str,
-) -> Result<Vec<DiscoveredGameWithPreview>> {
-    let root = PathBuf::from(expand_scan_path(scan_path)?);
-
-    if let Some(prefix) = find_prefix_root(&root) {
-        return load_generic_prefix_records(&prefix);
-    }
-
-    let mut records = filter_records_to_root(&load_discovered_games_with_preview(&[])?, &root);
-    let known_prefixes: Vec<PathBuf> = records
+fn emit_discovered_games_as_json(
+    sources: &[DiscoverySource],
+    scan_path: Option<&str>,
+) -> Result<()> {
+    let discovered = load_discovered_games_with_preview(sources, scan_path)?;
+    let games_json: Vec<serde_json::Value> = discovered
         .iter()
-        .filter_map(|record| {
-            record
-                .record
-                .game_path
-                .as_deref()
-                .map(PathBuf::from)
-                .filter(|path| path.join("drive_c").is_dir())
+        .map(|game| {
+            json!({
+                "name": game.record.name,
+                "platform": game.record.platform,
+                "platform_short": game.record.platform_short,
+                "unique_key": game.record.unique_key,
+                "save_path": game.record.save_path,
+                "game_path": game.record.game_path,
+                "launch_command": game.record.launch_command,
+                "existing": game.record.existing,
+                "tracked_name": game.record.tracked_name,
+            })
         })
         .collect();
 
-    for prefix in find_prefixes_under_root(&root) {
-        if known_prefixes.iter().any(|known| known == &prefix) {
-            continue;
-        }
-        records.extend(load_generic_prefix_records(&prefix)?);
-    }
+    emit(
+        Level::Info,
+        "game.discover",
+        if discovered.is_empty() {
+            "No discoverable games found."
+        } else {
+            "Discovered games."
+        },
+        Some(json!({
+            "count": discovered.len(),
+            "games": games_json,
+        })),
+    );
 
-    records.sort_by(|a, b| {
-        a.record
-            .name
-            .to_lowercase()
-            .cmp(&b.record.name.to_lowercase())
-            .then_with(|| a.record.save_path.cmp(&b.record.save_path))
-    });
-    records.dedup_by(|a, b| a.record.unique_key == b.record.unique_key);
-
-    Ok(records)
+    Ok(())
 }
 
-fn load_discovered_games_with_progress<F>(
+fn emit_discovered_games_as_text(
     sources: &[DiscoverySource],
-    on_source_start: F,
-) -> Result<Vec<DiscoveredGameRecord>>
-where
-    F: FnMut(usize, usize, &'static str),
-{
-    Ok(
-        load_discovered_games_with_preview_and_progress(sources, on_source_start)?
-            .into_iter()
-            .map(|game| game.record)
-            .collect(),
-    )
-}
+    scan_path: Option<&str>,
+) -> Result<()> {
+    let progress = create_discovery_progress(platform_discovery::active_sources(sources).len());
+    let mut count = 0usize;
 
-fn load_discovered_games_with_preview_and_progress<F>(
-    sources: &[DiscoverySource],
-    on_source_start: F,
-) -> Result<Vec<DiscoveredGameWithPreview>>
-where
-    F: FnMut(usize, usize, &'static str),
-{
-    let default_sources = [
-        DiscoverySource::Switch,
-        DiscoverySource::Ps2,
-        DiscoverySource::Ps1,
-        DiscoverySource::ThreeDs,
-        DiscoverySource::Epic,
-        DiscoverySource::Steam,
-    ];
-    let active_sources = if sources.is_empty() {
-        &default_sources[..]
+    stream_discovered_records(
+        sources,
+        scan_path,
+        |index, total, message| {
+            progress.set_length(total.max(1) as u64);
+            progress.set_position(index as u64);
+            progress.set_message(message.to_string());
+            Ok(())
+        },
+        |game| {
+            count += 1;
+            progress.println(render_discovered_game(&game.record));
+            Ok(())
+        },
+    )?;
+
+    progress.finish_and_clear();
+    if count == 0 {
+        emit(
+            Level::Info,
+            "game.discover",
+            "No discoverable games found.",
+            Some(json!({ "count": 0, "games": [] })),
+        );
     } else {
-        sources
-    };
-
-    let mut discovered =
-        platform_discovery::discover_selected_with_progress(active_sources, on_source_start)?;
-    let context = GameCreationContext::load().ok();
-
-    let mut records = Vec::with_capacity(discovered.len());
-    for mut game in discovered.drain(..) {
-        if let Some(existing_name) = context
-            .as_ref()
-            .and_then(|ctx| find_existing_game_for_save(game.save_path().as_path(), ctx))
-        {
-            game.set_existing(existing_name);
-        }
-
-        records.push(DiscoveredGameWithPreview {
-            preview_text: preview_to_text(game.build_preview()),
-            record: DiscoveredGameRecord {
-                name: game.display_name().to_string(),
-                platform: game.platform_name().to_string(),
-                platform_short: game.platform_short().to_string(),
-                unique_key: game.unique_key(),
-                save_path: game.save_path().to_string_lossy().to_string(),
-                game_path: game
-                    .game_path()
-                    .map(|path| path.to_string_lossy().to_string()),
-                launch_command: game.build_launch_command(),
-                existing: game.is_existing(),
-                tracked_name: game.tracked_name().map(ToOwned::to_owned),
-            },
-        });
+        emit(
+            Level::Info,
+            "game.discover",
+            &format!(
+                "Discovered {count} game{}.",
+                if count == 1 { "" } else { "s" }
+            ),
+            Some(json!({ "count": count })),
+        );
     }
 
-    records.sort_by(|a, b| {
-        a.record
-            .name
-            .to_lowercase()
-            .cmp(&b.record.name.to_lowercase())
-    });
-
-    Ok(records)
+    Ok(())
 }
 
 fn create_discovery_progress(source_count: usize) -> ProgressBar {
@@ -337,6 +236,82 @@ fn create_discovery_progress(source_count: usize) -> ProgressBar {
     );
     pb.set_message("Preparing discovery");
     pb
+}
+
+fn render_discovered_game(game: &DiscoveredGameRecord) -> String {
+    let mut text = format!(
+        "- {} ({})\n  Save path: {}\n",
+        game.name, game.platform, game.save_path
+    );
+    if let Some(game_path) = &game.game_path {
+        text.push_str(&format!("  Game path: {}\n", game_path));
+    }
+    if let Some(launch_command) = &game.launch_command {
+        text.push_str(&format!("  Launch command: {}\n", launch_command));
+    }
+    if let Some(tracked_name) = &game.tracked_name {
+        text.push_str(&format!("  Tracked as: {}\n", tracked_name));
+    }
+    text
+}
+
+fn stream_discovered_records<F, G>(
+    sources: &[DiscoverySource],
+    scan_path: Option<&str>,
+    mut on_progress: F,
+    mut on_game: G,
+) -> Result<()>
+where
+    F: FnMut(usize, usize, &str) -> Result<()>,
+    G: FnMut(DiscoveredGameWithPreview) -> Result<()>,
+{
+    let context = GameCreationContext::load().ok();
+
+    if let Some(scan_path) = scan_path {
+        let root = PathBuf::from(expand_scan_path(scan_path)?);
+        if let Some(prefix) = find_prefix_root(&root) {
+            on_progress(0, 1, &format!("Scanning Wine prefix {}", prefix.display()))?;
+            return stream_generic_prefix_records(&prefix, context.as_ref(), on_game);
+        }
+
+        on_progress(0, 1, &format!("Scanning {}", root.display()))?;
+        let mut known_prefixes = Vec::new();
+
+        platform_discovery::discover_selected_events(sources, |event| match event {
+            DiscoveryEvent::SourceStarted { .. } => Ok(()),
+            DiscoveryEvent::GameFound(game) => {
+                let record = into_record_with_preview(game, context.as_ref());
+                if record_is_under_root(&record.record, &root) {
+                    if let Some(prefix_path) = record_prefix_path(&record.record) {
+                        known_prefixes.push(prefix_path);
+                    }
+                    on_game(record)?;
+                }
+                Ok(())
+            }
+        })?;
+
+        for prefix in find_prefixes_under_root(&root) {
+            if known_prefixes.iter().any(|known| known == &prefix) {
+                continue;
+            }
+            stream_generic_prefix_records(&prefix, context.as_ref(), &mut on_game)?;
+        }
+
+        return Ok(());
+    }
+
+    platform_discovery::discover_selected_events(sources, |event| match event {
+        DiscoveryEvent::SourceStarted {
+            index,
+            total,
+            label,
+            ..
+        } => on_progress(index, total, label),
+        DiscoveryEvent::GameFound(game) => {
+            on_game(into_record_with_preview(game, context.as_ref()))
+        }
+    })
 }
 
 fn expand_scan_path(scan_path: &str) -> Result<String> {
@@ -361,8 +336,14 @@ fn find_prefix_root(path: &Path) -> Option<PathBuf> {
     None
 }
 
-fn load_generic_prefix_records(prefix: &Path) -> Result<Vec<DiscoveredGameWithPreview>> {
-    let context = GameCreationContext::load().ok();
+fn stream_generic_prefix_records<F>(
+    prefix: &Path,
+    context: Option<&GameCreationContext>,
+    mut on_game: F,
+) -> Result<()>
+where
+    F: FnMut(DiscoveredGameWithPreview) -> Result<()>,
+{
     let saves = ludusavi::scan_wine_prefix(prefix)?;
     let mut grouped: BTreeMap<String, Vec<DiscoveredWineSave>> = BTreeMap::new();
 
@@ -373,18 +354,16 @@ fn load_generic_prefix_records(prefix: &Path) -> Result<Vec<DiscoveredGameWithPr
             .push(save);
     }
 
-    let mut records = Vec::new();
     for (game_name, candidates) in grouped {
         let Some(primary_save) = choose_primary_save(candidates) else {
             continue;
         };
 
         let save_path = PathBuf::from(&primary_save.save_path);
-        let existing_name = context
-            .as_ref()
-            .and_then(|ctx| find_existing_game_for_save(save_path.as_path(), ctx));
+        let existing_name =
+            context.and_then(|ctx| find_existing_game_for_save(save_path.as_path(), ctx));
 
-        records.push(DiscoveredGameWithPreview {
+        on_game(DiscoveredGameWithPreview {
             preview_text: preview_to_text(
                 PreviewBuilder::new()
                     .header(NerdFont::Wine, &game_name)
@@ -412,29 +391,51 @@ fn load_generic_prefix_records(prefix: &Path) -> Result<Vec<DiscoveredGameWithPr
                 existing: existing_name.is_some(),
                 tracked_name: existing_name,
             },
-        });
+        })?;
     }
 
-    Ok(records)
+    Ok(())
 }
 
-fn filter_records_to_root(
-    records: &[DiscoveredGameWithPreview],
-    root: &Path,
-) -> Vec<DiscoveredGameWithPreview> {
-    records
-        .iter()
-        .filter(|record| {
-            record
-                .record
-                .game_path
-                .as_deref()
-                .map(Path::new)
-                .is_some_and(|path| path.starts_with(root))
-                || Path::new(&record.record.save_path).starts_with(root)
-        })
-        .cloned()
-        .collect()
+fn record_is_under_root(record: &DiscoveredGameRecord, root: &Path) -> bool {
+    record_prefix_path(record).is_some_and(|path| path.starts_with(root))
+        || Path::new(&record.save_path).starts_with(root)
+}
+
+fn record_prefix_path(record: &DiscoveredGameRecord) -> Option<PathBuf> {
+    record
+        .game_path
+        .as_deref()
+        .map(PathBuf::from)
+        .filter(|path| path.join("drive_c").is_dir())
+}
+
+fn into_record_with_preview(
+    mut game: Box<dyn DiscoveredGame>,
+    context: Option<&GameCreationContext>,
+) -> DiscoveredGameWithPreview {
+    if let Some(existing_name) =
+        context.and_then(|ctx| find_existing_game_for_save(game.save_path().as_path(), ctx))
+    {
+        game.set_existing(existing_name);
+    }
+
+    DiscoveredGameWithPreview {
+        preview_text: preview_to_text(game.build_preview()),
+        record: DiscoveredGameRecord {
+            name: game.display_name().to_string(),
+            platform: game.platform_name().to_string(),
+            platform_short: game.platform_short().to_string(),
+            unique_key: game.unique_key(),
+            save_path: game.save_path().to_string_lossy().to_string(),
+            game_path: game
+                .game_path()
+                .map(|path| path.to_string_lossy().to_string()),
+            launch_command: game.build_launch_command(),
+            existing: game.is_existing(),
+            tracked_name: game.tracked_name().map(ToOwned::to_owned),
+        },
+    }
 }
 
 fn find_prefixes_under_root(root: &Path) -> Vec<PathBuf> {

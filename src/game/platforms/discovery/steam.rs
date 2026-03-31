@@ -166,13 +166,21 @@ pub fn is_steam_installed() -> bool {
     collect_steam_library_roots().is_ok_and(|roots| !roots.is_empty())
 }
 
-pub fn discover_steam_games() -> Result<Vec<SteamDiscoveredGame>> {
+pub fn stream_discover_steam_games<F>(mut on_game: F) -> Result<()>
+where
+    F: FnMut(SteamDiscoveredGame) -> Result<()>,
+{
     let candidates = collect_steam_prefix_candidates()?;
-    if candidates.is_empty() {
-        return Ok(Vec::new());
-    }
+    stream_discover_steam_games_into(candidates, &mut on_game)
+}
 
-    let mut results = Vec::new();
+fn stream_discover_steam_games_into<F>(
+    candidates: Vec<SteamPrefixCandidate>,
+    mut on_game: F,
+) -> Result<()>
+where
+    F: FnMut(SteamDiscoveredGame) -> Result<()>,
+{
     for candidate in candidates {
         let saves = ludusavi::scan_wine_prefix(&candidate.prefix_path).unwrap_or_default();
         let matching_saves: Vec<DiscoveredWineSave> = saves
@@ -184,25 +192,18 @@ pub fn discover_steam_games() -> Result<Vec<SteamDiscoveredGame>> {
             .collect();
 
         if let Some(save) = choose_primary_save(matching_saves) {
-            results.push(SteamDiscoveredGame::new(
+            on_game(SteamDiscoveredGame::new(
                 candidate.steam_name.clone(),
                 candidate.steam_name.clone(),
                 candidate.app_id,
                 candidate.prefix_path.clone(),
                 PathBuf::from(save.save_path),
                 candidate.is_shortcut,
-            ));
+            ))?;
         }
     }
 
-    results.sort_by(|a, b| {
-        a.display_name
-            .to_lowercase()
-            .cmp(&b.display_name.to_lowercase())
-    });
-    results.dedup_by(|a, b| a.unique_key() == b.unique_key());
-
-    Ok(results)
+    Ok(())
 }
 
 fn names_match(ludusavi_name: &str, steam_title: &str) -> bool {
