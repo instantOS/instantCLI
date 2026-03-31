@@ -15,6 +15,7 @@ mod dolphin;
 mod duckstation;
 mod eden;
 mod flatpak;
+pub mod ludusavi;
 mod mgba;
 mod pcsx2;
 mod prompts;

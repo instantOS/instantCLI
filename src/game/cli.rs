@@ -128,6 +128,14 @@ pub enum GameCommands {
         #[arg(long, short)]
         game: Option<String>,
     },
+    /// Scan a Wine prefix for Ludusavi-compatible save games
+    ScanWinePrefix {
+        /// Wine prefix path (optional, prompts if omitted)
+        prefix: Option<String>,
+        /// Print results as a list instead of interactive menu
+        #[arg(long)]
+        list: bool,
+    },
     /// Manage game dependencies
     Deps {
         /// Dependency subcommands

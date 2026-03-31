@@ -3,20 +3,21 @@ use std::ffi::OsString;
 use anyhow::Result;
 
 use crate::common::deps::RESTIC;
-use crate::common::package::{InstallResult, ensure_all};
+use crate::common::package::{ensure_all, InstallResult};
 
 use super::cli::{DependencyCommands, GameCommands};
 use super::deps::{
-    AddDependencyOptions, InstallDependencyOptions, UninstallDependencyOptions, add_dependency,
-    install_dependency, list_dependencies as list_game_dependencies, uninstall_dependency,
+    add_dependency, install_dependency, list_dependencies as list_game_dependencies,
+    uninstall_dependency, AddDependencyOptions, InstallDependencyOptions,
+    UninstallDependencyOptions,
 };
 use super::games::AddGameOptions;
-use super::games::{GameManager, remove_game};
 use super::games::{discover, display, selection};
+use super::games::{remove_game, GameManager};
 use super::menu;
 use super::operations::{exec_game_command, launch_game, sync_game_saves};
-use super::repository::GameRepositoryManager;
 use super::repository::manager::InitOptions;
+use super::repository::GameRepositoryManager;
 use super::restic::{
     backup_game_saves, handle_restic_command, prune::prune_snapshots, restore_game_saves,
 };
@@ -109,9 +110,183 @@ pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
             handle_setup()
         }
         GameCommands::Relocate { path, game } => handle_relocate(game, path),
+        GameCommands::ScanWinePrefix { prefix, list } => handle_scan_wine_prefix(prefix, list),
         GameCommands::Deps { command } => handle_dependency_command(command),
         #[cfg(debug_assertions)]
         GameCommands::Debug { debug_command } => handle_debug(debug_command),
+    }
+}
+
+fn handle_scan_wine_prefix(prefix: Option<String>, list: bool) -> Result<()> {
+    use crate::common::TildePath;
+    use crate::game::platforms::ludusavi;
+    use crate::game::utils::path::{is_valid_wine_prefix, tilde_display_string};
+    use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header};
+    use crate::ui::catppuccin::{colors, format_icon_colored, fzf_mocha_args};
+    use crate::ui::nerd_font::NerdFont;
+    use crate::ui::preview::PreviewBuilder;
+    use std::path::PathBuf;
+
+    // Resolve prefix path
+    let prefix_path: PathBuf = match prefix {
+        Some(p) => {
+            let expanded = shellexpand::full(&p)
+                .map_err(|e| anyhow::anyhow!("Failed to expand path '{}': {}", p, e))?
+                .into_owned();
+            PathBuf::from(expanded)
+        }
+        None => {
+            // Prompt for prefix path
+            let path_input = crate::menu_utils::PathInputBuilder::new()
+                .header(format!(
+                    "{} Choose a Wine prefix to scan",
+                    char::from(NerdFont::Wine)
+                ))
+                .manual_prompt(format!(
+                    "{} Enter Wine prefix path (e.g., ~/.wine or ~/Games/prefix):",
+                    char::from(NerdFont::Wine)
+                ))
+                .scope(crate::menu_utils::FilePickerScope::DirectoriesOnly)
+                .picker_hint(format!(
+                    "{} Choose a directory containing a drive_c folder",
+                    char::from(NerdFont::Info)
+                ))
+                .manual_option_label(format!("{} Type prefix path", char::from(NerdFont::Edit)))
+                .picker_option_label(format!(
+                    "{} Browse for prefix directory",
+                    char::from(NerdFont::FolderOpen)
+                ))
+                .choose()?;
+
+            let tilde = match crate::game::utils::path::path_selection_to_tilde(path_input)? {
+                Some(t) => t,
+                None => return Ok(()),
+            };
+
+            tilde.as_path().to_path_buf()
+        }
+    };
+
+    // Validate it's a wine prefix
+    if !is_valid_wine_prefix(&prefix_path) {
+        println!(
+            "{} '{}' is not a valid Wine prefix (missing drive_c directory).",
+            char::from(NerdFont::Warning),
+            prefix_path.display()
+        );
+        return Ok(());
+    }
+
+    // Show status
+    let status = ludusavi::manifest::manifest_status();
+    println!(
+        "{} Scanning: {} ({})",
+        char::from(NerdFont::Search),
+        tilde_display_string(&TildePath::new(&prefix_path)),
+        status
+    );
+
+    // Run scan
+    let results = ludusavi::scan_wine_prefix(&prefix_path)?;
+
+    if results.is_empty() {
+        println!(
+            "{} No Ludusavi-compatible saves found in this prefix.",
+            char::from(NerdFont::Info)
+        );
+        return Ok(());
+    }
+
+    // List mode: print results
+    if list {
+        println!("\n{} Discovered saves:\n", char::from(NerdFont::Check));
+        for save in &results {
+            let tag_str = if !save.tags.is_empty() {
+                format!(" [{}]", save.tags.join(", "))
+            } else {
+                String::new()
+            };
+            println!(
+                "  {} {}{}",
+                char::from(NerdFont::File),
+                save.game_name,
+                tag_str
+            );
+            println!("    {}", save.save_path);
+        }
+        println!("\n{} total saves found.", results.len());
+        return Ok(());
+    }
+
+    // Interactive mode: fzf menu
+    #[derive(Clone)]
+    struct ScanResultItem {
+        game_name: String,
+        save_path: String,
+        tags: Vec<String>,
+    }
+
+    impl FzfSelectable for ScanResultItem {
+        fn fzf_display_text(&self) -> String {
+            let icon = if self.tags.iter().any(|t| t == "save") {
+                format_icon_colored(NerdFont::File, colors::GREEN)
+            } else if self.tags.iter().any(|t| t == "config") {
+                format_icon_colored(NerdFont::Gear, colors::YELLOW)
+            } else {
+                format_icon_colored(NerdFont::File, colors::SUBTEXT0)
+            };
+            format!("{} {}", icon, self.game_name)
+        }
+
+        fn fzf_key(&self) -> String {
+            format!("{}|{}", self.game_name, self.save_path)
+        }
+
+        fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
+            let tag_str = if self.tags.is_empty() {
+                "none".to_string()
+            } else {
+                self.tags.join(", ")
+            };
+            PreviewBuilder::new()
+                .header(NerdFont::File, &self.game_name)
+                .text(&format!("Save path: {}", self.save_path))
+                .text(&format!("Tags: {}", tag_str))
+                .blank()
+                .subtext("Press Enter to add this game to tracking")
+                .build()
+        }
+    }
+
+    let items: Vec<ScanResultItem> = results
+        .into_iter()
+        .map(|r| ScanResultItem {
+            game_name: r.game_name,
+            save_path: r.save_path,
+            tags: r.tags,
+        })
+        .collect();
+
+    let result = FzfWrapper::builder()
+        .header(Header::fancy("Discovered Saves"))
+        .prompt("Select")
+        .args(fzf_mocha_args())
+        .responsive_layout()
+        .select_padded(items)?;
+
+    match result {
+        FzfResult::Selected(item) => {
+            // Pre-fill add game with discovered details
+            handle_add(AddGameOptions {
+                name: Some(item.game_name),
+                description: None,
+                launch_command: None,
+                save_path: Some(item.save_path),
+                create_save_path: false,
+            })
+        }
+        FzfResult::Cancelled => Ok(()),
+        _ => Ok(()),
     }
 }
 
