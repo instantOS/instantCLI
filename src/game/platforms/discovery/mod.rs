@@ -7,6 +7,7 @@ pub mod azahar;
 pub mod duckstation;
 pub mod eden;
 pub mod epic;
+pub mod faugus;
 pub mod pcsx2;
 pub mod steam;
 
@@ -49,15 +50,17 @@ pub enum DiscoverySource {
     ThreeDs,
     Epic,
     Steam,
+    Faugus,
 }
 
-pub const DEFAULT_DISCOVERY_SOURCES: [DiscoverySource; 6] = [
+pub const DEFAULT_DISCOVERY_SOURCES: [DiscoverySource; 7] = [
     DiscoverySource::Switch,
     DiscoverySource::Ps2,
     DiscoverySource::Ps1,
     DiscoverySource::ThreeDs,
     DiscoverySource::Epic,
     DiscoverySource::Steam,
+    DiscoverySource::Faugus,
 ];
 
 pub fn active_sources(sources: &[DiscoverySource]) -> &[DiscoverySource] {
@@ -96,6 +99,7 @@ fn source_label(source: DiscoverySource) -> &'static str {
         DiscoverySource::ThreeDs => "Scanning 3DS saves",
         DiscoverySource::Epic => "Scanning Epic Games prefixes",
         DiscoverySource::Steam => "Scanning Steam Proton prefixes",
+        DiscoverySource::Faugus => "Scanning Faugus Launcher prefixes",
     }
 }
 
@@ -157,6 +161,11 @@ where
                     })?;
                 }
             }
+            DiscoverySource::Faugus => emit_discovered_games(
+                faugus::is_faugus_installed,
+                faugus::discover_faugus_games,
+                &mut |game| on_event(DiscoveryEvent::GameFound(game)),
+            )?,
         }
     }
 

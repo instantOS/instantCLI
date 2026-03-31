@@ -170,6 +170,8 @@ pub enum GameDiscoverySourceArg {
     Epic,
     #[value(name = "steam")]
     Steam,
+    #[value(name = "faugus")]
+    Faugus,
 }
 
 /// Dependency management commands

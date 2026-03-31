@@ -3,21 +3,22 @@ use std::ffi::OsString;
 use anyhow::Result;
 
 use crate::common::deps::RESTIC;
-use crate::common::package::{InstallResult, ensure_all};
+use crate::common::package::{ensure_all, InstallResult};
 
 use super::cli::{DependencyCommands, GameCommands, GameDiscoverySourceArg};
 use super::deps::{
-    AddDependencyOptions, InstallDependencyOptions, UninstallDependencyOptions, add_dependency,
-    install_dependency, list_dependencies as list_game_dependencies, uninstall_dependency,
+    add_dependency, install_dependency, list_dependencies as list_game_dependencies,
+    uninstall_dependency, AddDependencyOptions, InstallDependencyOptions,
+    UninstallDependencyOptions,
 };
 use super::games::AddGameOptions;
-use super::games::{GameManager, remove_game};
 use super::games::{discover, display, selection};
+use super::games::{remove_game, GameManager};
 use super::menu;
 use super::operations::{exec_game_command, launch_game, sync_game_saves};
 use super::platforms::discovery::DiscoverySource;
-use super::repository::GameRepositoryManager;
 use super::repository::manager::InitOptions;
+use super::repository::GameRepositoryManager;
 use super::restic::{
     backup_game_saves, handle_restic_command, prune::prune_snapshots, restore_game_saves,
 };
@@ -330,6 +331,7 @@ fn map_sources(sources: &[GameDiscoverySourceArg]) -> Vec<DiscoverySource> {
             GameDiscoverySourceArg::ThreeDs => DiscoverySource::ThreeDs,
             GameDiscoverySourceArg::Epic => DiscoverySource::Epic,
             GameDiscoverySourceArg::Steam => DiscoverySource::Steam,
+            GameDiscoverySourceArg::Faugus => DiscoverySource::Faugus,
         })
         .collect()
 }
