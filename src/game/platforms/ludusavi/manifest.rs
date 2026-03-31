@@ -1,10 +1,11 @@
 //! Ludusavi manifest download and caching
 
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
+use indicatif::{ProgressBar, ProgressStyle};
 
 use super::types::LudusaviManifest;
 
@@ -59,7 +60,7 @@ fn download_manifest() -> Result<bool> {
         request = request.header("If-None-Match", etag);
     }
 
-    let response = request
+    let mut response = request
         .send()
         .context("Failed to request Ludusavi manifest")?;
 
@@ -87,13 +88,28 @@ fn download_manifest() -> Result<bool> {
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
 
-    let body = response
-        .bytes()
-        .context("Failed to read Ludusavi manifest body")?;
-
     fs::create_dir_all(cache_path.parent().unwrap())?;
     let mut file = fs::File::create(&cache_path)?;
-    file.write_all(&body)?;
+    let progress = create_download_progress(response.content_length());
+    let mut downloaded = 0u64;
+    let mut buffer = [0u8; 16 * 1024];
+
+    loop {
+        let bytes_read = response
+            .read(&mut buffer)
+            .context("Failed to read Ludusavi manifest body")?;
+        if bytes_read == 0 {
+            break;
+        }
+
+        file.write_all(&buffer[..bytes_read])
+            .context("Failed to write Ludusavi manifest cache")?;
+
+        downloaded += bytes_read as u64;
+        progress.set_position(downloaded);
+    }
+
+    progress.finish_with_message("Download complete");
 
     if let Some(etag) = new_etag {
         let _ = save_etag(&etag);
@@ -102,14 +118,43 @@ fn download_manifest() -> Result<bool> {
     Ok(true)
 }
 
+fn create_download_progress(total_size: Option<u64>) -> ProgressBar {
+    let pb = if let Some(size) = total_size {
+        ProgressBar::new(size)
+    } else {
+        ProgressBar::new_spinner()
+    };
+
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})")
+            .unwrap()
+            .progress_chars("#>-"),
+    );
+
+    pb.set_message("Downloading Ludusavi manifest");
+    pb
+}
+
+fn ensure_manifest_cached(cache_path: &std::path::Path) -> Result<()> {
+    if cache_path.exists() {
+        return Ok(());
+    }
+
+    if tokio::runtime::Handle::try_current().is_ok() {
+        tokio::task::block_in_place(download_manifest)?;
+    } else {
+        download_manifest()?;
+    }
+
+    Ok(())
+}
+
 /// Load the manifest from cache, downloading if needed.
 pub fn load_manifest() -> Result<LudusaviManifest> {
     let cache_path = manifest_cache_path()?;
 
-    // Download if not cached
-    if !cache_path.exists() {
-        download_manifest()?;
-    }
+    ensure_manifest_cached(&cache_path)?;
 
     let yaml = fs::read_to_string(&cache_path)
         .with_context(|| format!("Failed to read cached manifest at {}", cache_path.display()))?;
@@ -156,5 +201,21 @@ pub fn manifest_status() -> String {
         }
     } else {
         "Not cached".to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ensure_manifest_cached_is_noop_when_file_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache_path = dir.path().join("manifest.yaml");
+        fs::write(&cache_path, "dummy").unwrap();
+
+        ensure_manifest_cached(&cache_path).unwrap();
+
+        assert_eq!(fs::read_to_string(&cache_path).unwrap(), "dummy");
     }
 }
