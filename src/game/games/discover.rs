@@ -3,7 +3,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -12,10 +12,10 @@ use walkdir::WalkDir;
 use crate::game::platforms::discovery::{
     self as platform_discovery, DiscoveredGame, DiscoveryEvent, DiscoverySource,
 };
-use crate::game::platforms::ludusavi::{self, choose_primary_save, DiscoveredWineSave};
+use crate::game::platforms::ludusavi::{self, DiscoveredWineSave, choose_primary_save};
 use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
-use crate::ui::prelude::{emit, get_output_format, Level, OutputFormat};
+use crate::ui::prelude::{Level, OutputFormat, emit, get_output_format};
 use crate::ui::preview::{FzfPreview, PreviewBuilder};
 
 use super::manager::GameCreationContext;

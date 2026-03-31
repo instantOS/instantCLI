@@ -186,10 +186,9 @@ fn run_legendary_list_installed() -> Option<String> {
     if let Ok(output) = Command::new("legendary")
         .args(["list-installed", "--json"])
         .output()
+        && output.status.success()
     {
-        if output.status.success() {
-            return Some(String::from_utf8_lossy(&output.stdout).into_owned());
-        }
+        return Some(String::from_utf8_lossy(&output.stdout).into_owned());
     }
 
     if let Ok(output) = Command::new("flatpak")
@@ -200,10 +199,9 @@ fn run_legendary_list_installed() -> Option<String> {
             "--json",
         ])
         .output()
+        && output.status.success()
     {
-        if output.status.success() {
-            return Some(String::from_utf8_lossy(&output.stdout).into_owned());
-        }
+        return Some(String::from_utf8_lossy(&output.stdout).into_owned());
     }
 
     None

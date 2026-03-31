@@ -181,18 +181,18 @@ pub fn manifest_status() -> String {
     if cache_path.exists() {
         match fs::metadata(&cache_path) {
             Ok(meta) => {
-                if let Ok(modified) = meta.modified() {
-                    if let Ok(elapsed) = modified.elapsed() {
-                        let hours = elapsed.as_secs() / 3600;
-                        if hours < 1 {
-                            let mins = elapsed.as_secs() / 60;
-                            return format!("Updated {} min ago", mins);
-                        } else if hours < 24 {
-                            return format!("Updated {}h ago", hours);
-                        } else {
-                            let days = hours / 24;
-                            return format!("Updated {}d ago", days);
-                        }
+                if let Ok(modified) = meta.modified()
+                    && let Ok(elapsed) = modified.elapsed()
+                {
+                    let hours = elapsed.as_secs() / 3600;
+                    if hours < 1 {
+                        let mins = elapsed.as_secs() / 60;
+                        return format!("Updated {} min ago", mins);
+                    } else if hours < 24 {
+                        return format!("Updated {}h ago", hours);
+                    } else {
+                        let days = hours / 24;
+                        return format!("Updated {}d ago", days);
                     }
                 }
                 "Cached".to_string()

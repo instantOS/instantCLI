@@ -435,7 +435,8 @@ impl FzfWrapper {
 
         let escaped_args: Vec<String> = fzf_args.iter().map(|arg| shell_quote(arg)).collect();
         let fzf_cmd = format!("fzf {}", escaped_args.join(" "));
-        let full_command = format!("unset FZF_DEFAULT_OPTS; {input_command} </dev/null | {fzf_cmd}");
+        let full_command =
+            format!("unset FZF_DEFAULT_OPTS; {input_command} </dev/null | {fzf_cmd}");
 
         cmd.arg(&full_command);
 

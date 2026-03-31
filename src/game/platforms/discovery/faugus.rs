@@ -12,7 +12,7 @@ use anyhow::Result;
 
 use super::DiscoveredGame;
 use crate::common::TildePath;
-use crate::game::platforms::ludusavi::{self, choose_primary_save, DiscoveredWineSave};
+use crate::game::platforms::ludusavi::{self, DiscoveredWineSave, choose_primary_save};
 use crate::game::utils::path::tilde_display_string;
 use crate::menu::protocol::FzfPreview;
 use crate::ui::nerd_font::NerdFont;
