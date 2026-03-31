@@ -276,7 +276,7 @@ fn path_exists(pattern: &str, cache: &mut PathExistenceCache) -> bool {
 }
 
 fn normalize_probe_path(pattern: &str) -> std::path::PathBuf {
-    if pattern.contains('*') || pattern.contains('?') || pattern.contains('[') {
+    if pattern.contains('*') || pattern.contains('?') {
         let base = extract_base_path(pattern);
         return std::path::PathBuf::from(base);
     }
@@ -286,7 +286,7 @@ fn normalize_probe_path(pattern: &str) -> std::path::PathBuf {
 
 /// Extract the base (non-glob) portion of a path pattern
 fn extract_base_path(pattern: &str) -> String {
-    let glob_chars = ['*', '?', '['];
+    let glob_chars = ['*', '?'];
     let mut result = pattern.to_string();
 
     for &ch in &glob_chars {
