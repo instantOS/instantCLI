@@ -53,6 +53,8 @@ jobs:
       group: release-plz-${{ github.ref }}
       cancel-in-progress: false
     steps:
+      - name: Install dependencies
+        run: apt-get update && apt-get install -y curl git ca-certificates jq tar build-essential pkg-config libssl-dev cmake libsqlite3-dev
       - name: Checkout repository
         uses: actions/checkout@v5
         with:
@@ -61,6 +63,8 @@ jobs:
           token: ${{ secrets.RELEASE_PLZ_TOKEN }}
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+      - name: Mark workspace safe for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: Run release-plz
         uses: release-plz/action@v0.5
         with:
