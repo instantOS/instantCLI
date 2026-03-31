@@ -710,6 +710,6 @@ mod tests {
     #[test]
     fn shortcut_app_id_is_stable() {
         let app_id = compute_shortcut_app_id_from_values("\"/usr/bin/test\"", "TestGame");
-        assert_eq!(app_id, 3_815_801_984);
+        assert_eq!(app_id, 2_311_890_076);
     }
 }

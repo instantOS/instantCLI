@@ -1,22 +1,63 @@
 //! Wine prefix scanner: reverse-lookup saves from Ludusavi manifest
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
+use std::sync::OnceLock;
 
 use anyhow::Result;
 
 use super::manifest::load_manifest;
-use super::types::{DiscoveredWineSave, FileConstraint};
+use super::types::{DiscoveredWineSave, FileConstraint, LudusaviManifest};
+
+static WINDOWS_MANIFEST: OnceLock<std::result::Result<Vec<WindowsGameEntry>, String>> =
+    OnceLock::new();
+
+#[derive(Debug, Clone)]
+struct WindowsGameEntry {
+    game_name: String,
+    files: Vec<WindowsFileEntry>,
+}
+
+#[derive(Debug, Clone)]
+struct WindowsFileEntry {
+    pattern: String,
+    tags: Vec<String>,
+    needs_user: bool,
+}
+
+#[derive(Debug, Clone)]
+struct UserPaths {
+    name: String,
+    win_app_data: String,
+    win_local_app_data: String,
+    win_local_app_data_low: String,
+    win_documents: String,
+}
 
 /// Placeholder substitution context for a wine prefix
 struct WinePrefixContext {
-    prefix: PathBuf,
-    users: Vec<String>,
+    users: Vec<UserPaths>,
+    home_dir: String,
+    xdg_data: String,
+    xdg_config: String,
+    win_program_data: String,
+    win_dir: String,
 }
 
 impl WinePrefixContext {
-    fn new(prefix: &Path) -> Result<Self> {
+    fn new(prefix: &Path) -> Self {
         let drive_c = prefix.join("drive_c");
         let users_dir = drive_c.join("users");
+        let home_dir = dirs::home_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let xdg_data = std::env::var("XDG_DATA_HOME")
+            .ok()
+            .or_else(|| dirs::data_dir().map(|p| p.to_string_lossy().to_string()))
+            .unwrap_or_else(|| format!("{home_dir}/.local/share"));
+        let xdg_config = std::env::var("XDG_CONFIG_HOME")
+            .ok()
+            .or_else(|| dirs::config_dir().map(|p| p.to_string_lossy().to_string()))
+            .unwrap_or_else(|| format!("{home_dir}/.config"));
 
         let users = if users_dir.is_dir() {
             std::fs::read_dir(&users_dir)
@@ -26,14 +67,33 @@ impl WinePrefixContext {
                         .filter_map(|e| e.ok())
                         .filter(|e| e.file_type().map(|ft| ft.is_dir()).unwrap_or(false))
                         .filter_map(|e| {
-                            let name = e.file_name();
-                            let name_str = name.to_string_lossy();
-                            // Skip special directories
-                            if name_str == "Public" || name_str == "All Users" {
-                                None
-                            } else {
-                                Some(name_str.to_string())
+                            let name = e.file_name().to_string_lossy().to_string();
+                            if name == "Public" || name == "All Users" {
+                                return None;
                             }
+                            let user_root = drive_c.join("users").join(&name);
+                            Some(UserPaths {
+                                name,
+                                win_app_data: user_root
+                                    .join("AppData")
+                                    .join("Roaming")
+                                    .to_string_lossy()
+                                    .to_string(),
+                                win_local_app_data: user_root
+                                    .join("AppData")
+                                    .join("Local")
+                                    .to_string_lossy()
+                                    .to_string(),
+                                win_local_app_data_low: user_root
+                                    .join("AppData")
+                                    .join("LocalLow")
+                                    .to_string_lossy()
+                                    .to_string(),
+                                win_documents: user_root
+                                    .join("Documents")
+                                    .to_string_lossy()
+                                    .to_string(),
+                            })
                         })
                         .collect()
                 })
@@ -42,143 +102,102 @@ impl WinePrefixContext {
             Vec::new()
         };
 
-        Ok(Self {
-            prefix: prefix.to_path_buf(),
+        Self {
             users,
-        })
+            home_dir,
+            xdg_data,
+            xdg_config,
+            win_program_data: drive_c.join("ProgramData").to_string_lossy().to_string(),
+            win_dir: drive_c.join("Windows").to_string_lossy().to_string(),
+        }
     }
 
-    /// Substitute placeholders for a given path pattern
-    /// Returns all expanded paths (one per user for user-specific placeholders)
-    fn expand_paths(&self, pattern: &str) -> Vec<String> {
-        let mut results = Vec::new();
-
-        // Check if pattern uses user-specific placeholders
-        let has_user_placeholder = pattern.contains("<winAppData>")
-            || pattern.contains("<winLocalAppData>")
-            || pattern.contains("<winLocalAppDataLow>")
-            || pattern.contains("<winDocuments>")
-            || pattern.contains("<osUserName>");
-
-        if has_user_placeholder {
+    /// Substitute placeholders for a given path pattern.
+    fn expand_paths(&self, entry: &WindowsFileEntry) -> Vec<String> {
+        if entry.needs_user {
             if self.users.is_empty() {
-                // No users found, skip
-                return results;
+                return Vec::new();
             }
 
-            for user in &self.users {
-                let mut expanded = pattern.to_string();
-                expanded = expanded.replace("<winAppData>", &self.win_app_data(user));
-                expanded = expanded.replace("<winLocalAppData>", &self.win_local_app_data(user));
-                expanded =
-                    expanded.replace("<winLocalAppDataLow>", &self.win_local_app_data_low(user));
-                expanded = expanded.replace("<winDocuments>", &self.win_documents(user));
-                expanded = expanded.replace("<osUserName>", user);
-                expanded = expanded.replace("<home>", &self.home_dir());
-                expanded = expanded.replace("<winProgramData>", &self.win_program_data());
-                expanded = expanded.replace("<winDir>", &self.win_dir());
-                expanded = expanded.replace("<xdgData>", &self.xdg_data());
-                expanded = expanded.replace("<xdgConfig>", &self.xdg_config());
-                results.push(expanded);
-            }
+            self.users
+                .iter()
+                .map(|user| self.expand_pattern_for_user(&entry.pattern, Some(user)))
+                .collect()
         } else {
-            // Non-user-specific placeholders
-            let mut expanded = pattern.to_string();
-            expanded = expanded.replace("<home>", &self.home_dir());
-            expanded = expanded.replace("<winProgramData>", &self.win_program_data());
-            expanded = expanded.replace("<winDir>", &self.win_dir());
-            expanded = expanded.replace("<xdgData>", &self.xdg_data());
-            expanded = expanded.replace("<xdgConfig>", &self.xdg_config());
-            results.push(expanded);
+            vec![self.expand_pattern_for_user(&entry.pattern, None)]
+        }
+    }
+
+    fn expand_pattern_for_user(&self, pattern: &str, user: Option<&UserPaths>) -> String {
+        let mut expanded = pattern.to_string();
+
+        if let Some(user) = user {
+            expanded = expanded.replace("<winAppData>", &user.win_app_data);
+            expanded = expanded.replace("<winLocalAppData>", &user.win_local_app_data);
+            expanded = expanded.replace("<winLocalAppDataLow>", &user.win_local_app_data_low);
+            expanded = expanded.replace("<winDocuments>", &user.win_documents);
+            expanded = expanded.replace("<osUserName>", &user.name);
         }
 
-        results
+        expanded = expanded.replace("<home>", &self.home_dir);
+        expanded = expanded.replace("<winProgramData>", &self.win_program_data);
+        expanded = expanded.replace("<winDir>", &self.win_dir);
+        expanded = expanded.replace("<xdgData>", &self.xdg_data);
+        expanded = expanded.replace("<xdgConfig>", &self.xdg_config);
+        expanded
+    }
+}
+
+fn load_windows_manifest() -> Result<&'static [WindowsGameEntry]> {
+    let result = WINDOWS_MANIFEST.get_or_init(|| match load_manifest() {
+        Ok(manifest) => Ok(build_windows_manifest(manifest)),
+        Err(err) => Err(err.to_string()),
+    });
+
+    match result {
+        Ok(entries) => Ok(entries.as_slice()),
+        Err(err) => Err(anyhow::anyhow!("Failed to load Ludusavi manifest: {}", err)),
+    }
+}
+
+fn build_windows_manifest(manifest: LudusaviManifest) -> Vec<WindowsGameEntry> {
+    let mut entries = Vec::new();
+
+    for (game_name, entry) in manifest {
+        if entry.alias.is_some() || entry.files.is_empty() {
+            continue;
+        }
+
+        let files: Vec<WindowsFileEntry> = entry
+            .files
+            .into_iter()
+            .filter(|(_, file_entry)| is_windows_constraint(&file_entry.when))
+            .map(|(pattern, file_entry)| WindowsFileEntry {
+                needs_user: pattern_uses_user_placeholders(&pattern),
+                pattern,
+                tags: file_entry.tags,
+            })
+            .collect();
+
+        if !files.is_empty() {
+            entries.push(WindowsGameEntry { game_name, files });
+        }
     }
 
-    fn win_app_data(&self, user: &str) -> String {
-        self.prefix
-            .join("drive_c")
-            .join("users")
-            .join(user)
-            .join("AppData")
-            .join("Roaming")
-            .to_string_lossy()
-            .to_string()
-    }
+    entries
+}
 
-    fn win_local_app_data(&self, user: &str) -> String {
-        self.prefix
-            .join("drive_c")
-            .join("users")
-            .join(user)
-            .join("AppData")
-            .join("Local")
-            .to_string_lossy()
-            .to_string()
-    }
-
-    fn win_local_app_data_low(&self, user: &str) -> String {
-        self.prefix
-            .join("drive_c")
-            .join("users")
-            .join(user)
-            .join("AppData")
-            .join("LocalLow")
-            .to_string_lossy()
-            .to_string()
-    }
-
-    fn win_documents(&self, user: &str) -> String {
-        self.prefix
-            .join("drive_c")
-            .join("users")
-            .join(user)
-            .join("Documents")
-            .to_string_lossy()
-            .to_string()
-    }
-
-    fn win_program_data(&self) -> String {
-        self.prefix
-            .join("drive_c")
-            .join("ProgramData")
-            .to_string_lossy()
-            .to_string()
-    }
-
-    fn win_dir(&self) -> String {
-        self.prefix
-            .join("drive_c")
-            .join("Windows")
-            .to_string_lossy()
-            .to_string()
-    }
-
-    fn home_dir(&self) -> String {
-        dirs::home_dir()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_default()
-    }
-
-    fn xdg_data(&self) -> String {
-        std::env::var("XDG_DATA_HOME")
-            .ok()
-            .or_else(|| dirs::data_dir().map(|p| p.to_string_lossy().to_string()))
-            .unwrap_or_else(|| format!("{}/.local/share", self.home_dir()))
-    }
-
-    fn xdg_config(&self) -> String {
-        std::env::var("XDG_CONFIG_HOME")
-            .ok()
-            .or_else(|| dirs::config_dir().map(|p| p.to_string_lossy().to_string()))
-            .unwrap_or_else(|| format!("{}/.config", self.home_dir()))
-    }
+fn pattern_uses_user_placeholders(pattern: &str) -> bool {
+    pattern.contains("<winAppData>")
+        || pattern.contains("<winLocalAppData>")
+        || pattern.contains("<winLocalAppDataLow>")
+        || pattern.contains("<winDocuments>")
+        || pattern.contains("<osUserName>")
 }
 
 /// Check if a file constraint is Windows-relevant
 fn is_windows_constraint(constraints: &[FileConstraint]) -> bool {
     if constraints.is_empty() {
-        // No constraints means it applies everywhere
         return true;
     }
     constraints.iter().any(|c| {
@@ -191,13 +210,11 @@ fn is_windows_constraint(constraints: &[FileConstraint]) -> bool {
 
 /// Check if a path pattern matches any existing paths (glob evaluation)
 fn path_exists(pattern: &str) -> bool {
-    // Handle glob patterns — check if the base directory exists
     if pattern.contains('*') || pattern.contains('?') || pattern.contains('[') {
         let base = extract_base_path(pattern);
         return Path::new(&base).exists();
     }
 
-    // Direct path check
     Path::new(pattern).exists()
 }
 
@@ -206,7 +223,6 @@ fn extract_base_path(pattern: &str) -> String {
     let glob_chars = ['*', '?', '['];
     let mut result = pattern.to_string();
 
-    // Find the first glob character and truncate there
     for &ch in &glob_chars {
         if let Some(pos) = result.find(ch) {
             result.truncate(pos);
@@ -214,7 +230,6 @@ fn extract_base_path(pattern: &str) -> String {
         }
     }
 
-    // Remove trailing separators
     while result.ends_with('/') || result.ends_with('\\') {
         result.pop();
     }
@@ -224,49 +239,25 @@ fn extract_base_path(pattern: &str) -> String {
 
 /// Scan a wine prefix for Ludusavi-compatible save games
 pub fn scan_wine_prefix(prefix: &Path) -> Result<Vec<DiscoveredWineSave>> {
-    let manifest = load_manifest()?;
-    let ctx = WinePrefixContext::new(prefix)?;
+    let manifest = load_windows_manifest()?;
+    let ctx = WinePrefixContext::new(prefix);
 
     let mut results = Vec::new();
 
-    for (game_name, entry) in &manifest {
-        // Skip aliases
-        if entry.alias.is_some() {
-            continue;
-        }
-
-        // Skip entries with no files
-        if entry.files.is_empty() {
-            continue;
-        }
-
-        let mut matched_paths = Vec::new();
-
-        for (file_pattern, file_entry) in &entry.files {
-            // Only consider Windows entries
-            if !is_windows_constraint(&file_entry.when) {
-                continue;
-            }
-
-            // Expand placeholders
-            let expanded = ctx.expand_paths(file_pattern);
-
-            for expanded_path in expanded {
+    for entry in manifest {
+        for file in &entry.files {
+            for expanded_path in ctx.expand_paths(file) {
                 if path_exists(&expanded_path) {
-                    matched_paths.push((expanded_path, file_entry.tags.clone()));
+                    results.push(DiscoveredWineSave::new(
+                        entry.game_name.clone(),
+                        expanded_path,
+                        file.tags.clone(),
+                    ));
                 }
-            }
-        }
-
-        // If any paths matched, add to results
-        if !matched_paths.is_empty() {
-            for (save_path, tags) in matched_paths {
-                results.push(DiscoveredWineSave::new(game_name.clone(), save_path, tags));
             }
         }
     }
 
-    // Deduplicate by game_name + save_path
     results.sort_by(|a, b| {
         a.game_name
             .cmp(&b.game_name)
@@ -275,4 +266,73 @@ pub fn scan_wine_prefix(prefix: &Path) -> Result<Vec<DiscoveredWineSave>> {
     results.dedup_by(|a, b| a.game_name == b.game_name && a.save_path == b.save_path);
 
     Ok(results)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    use crate::game::platforms::ludusavi::types::{FileEntry, GameEntry};
+
+    #[test]
+    fn build_windows_manifest_filters_aliases_and_non_windows_entries() {
+        let mut manifest = HashMap::new();
+        manifest.insert(
+            "Keep Me".to_string(),
+            GameEntry {
+                alias: None,
+                files: HashMap::from([
+                    (
+                        "<winDocuments>/Keep".to_string(),
+                        FileEntry {
+                            tags: vec!["save".to_string()],
+                            when: vec![FileConstraint {
+                                os: Some("windows".to_string()),
+                                store: None,
+                            }],
+                        },
+                    ),
+                    (
+                        "/tmp/linux".to_string(),
+                        FileEntry {
+                            tags: vec![],
+                            when: vec![FileConstraint {
+                                os: Some("linux".to_string()),
+                                store: None,
+                            }],
+                        },
+                    ),
+                ]),
+            },
+        );
+        manifest.insert(
+            "Alias".to_string(),
+            GameEntry {
+                alias: Some("Other".to_string()),
+                files: HashMap::new(),
+            },
+        );
+
+        let filtered = build_windows_manifest(manifest);
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].game_name, "Keep Me");
+        assert_eq!(filtered[0].files.len(), 1);
+        assert!(filtered[0].files[0].needs_user);
+    }
+
+    #[test]
+    fn context_expands_without_recomputing_global_paths() {
+        let prefix = tempfile::tempdir().unwrap();
+        let ctx = WinePrefixContext::new(prefix.path());
+        let entry = WindowsFileEntry {
+            pattern: "<home>/foo/<xdgConfig>".to_string(),
+            tags: vec![],
+            needs_user: false,
+        };
+
+        let expanded = ctx.expand_paths(&entry);
+        assert_eq!(expanded.len(), 1);
+        assert!(expanded[0].contains("/foo/"));
+    }
 }
