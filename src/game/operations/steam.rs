@@ -50,6 +50,14 @@ pub fn compute_shortcut_app_id_from_values(exe: &str, app_name: &str) -> u32 {
     crc32(input.as_bytes()) | 0x8000_0000
 }
 
+fn ins_shortcut_name(game_name: &str) -> String {
+    format!("{game_name} (ins)")
+}
+
+fn matches_game_shortcut_name(app_name: &str, game_name: &str) -> bool {
+    app_name == game_name || app_name == ins_shortcut_name(game_name)
+}
+
 pub fn list_steam_shortcuts() -> Result<Vec<SteamShortcut>> {
     let userdata_dirs = find_steam_userdata_dirs()?;
     let mut shortcuts = Vec::new();
@@ -434,6 +442,7 @@ pub fn add_game_to_steam(game_name: &str, _launch_command: &str) -> Result<(bool
             .unwrap_or_default()
     );
     let launch_options = build_launch_options(game_name);
+    let app_name = ins_shortcut_name(game_name);
 
     let mut added_count = 0;
 
@@ -446,12 +455,14 @@ pub fn add_game_to_steam(game_name: &str, _launch_command: &str) -> Result<(bool
 
         let mut shortcuts = read_shortcuts_vdf(&vdf_path).unwrap_or_default();
 
-        let already_exists = shortcuts.iter().any(|s| s.app_name == game_name);
+        let already_exists = shortcuts
+            .iter()
+            .any(|s| matches_game_shortcut_name(&s.app_name, game_name));
         if already_exists {
             continue;
         }
 
-        let mut shortcut = SteamShortcut::new(game_name, &exe, &start_dir, &launch_options);
+        let mut shortcut = SteamShortcut::new(&app_name, &exe, &start_dir, &launch_options);
         shortcut.tags = vec!["ins-game".to_string()];
         shortcuts.push(shortcut);
 
@@ -483,7 +494,10 @@ pub fn is_game_in_steam(game_name: &str) -> Result<bool> {
     for userdata_dir in &userdata_dirs {
         let vdf_path = shortcuts_vdf_path(userdata_dir);
         let shortcuts = read_shortcuts_vdf(&vdf_path).unwrap_or_default();
-        if shortcuts.iter().any(|s| s.app_name == game_name) {
+        if shortcuts
+            .iter()
+            .any(|s| matches_game_shortcut_name(&s.app_name, game_name))
+        {
             return Ok(true);
         }
     }
@@ -498,7 +512,11 @@ pub fn get_game_shortcut(game_name: &str) -> Result<Option<SteamShortcut>> {
     for userdata_dir in &userdata_dirs {
         let vdf_path = shortcuts_vdf_path(userdata_dir);
         let shortcuts = read_shortcuts_vdf(&vdf_path).unwrap_or_default();
-        if let Some(shortcut) = shortcuts.iter().find(|s| s.app_name == game_name).cloned() {
+        if let Some(shortcut) = shortcuts
+            .iter()
+            .find(|s| matches_game_shortcut_name(&s.app_name, game_name))
+            .cloned()
+        {
             return Ok(Some(shortcut));
         }
     }
@@ -542,7 +560,7 @@ pub fn remove_game_from_steam(game_name: &str) -> Result<(bool, bool)> {
 
         let shortcuts: Vec<SteamShortcut> = shortcuts
             .into_iter()
-            .filter(|s| s.app_name != game_name)
+            .filter(|s| !matches_game_shortcut_name(&s.app_name, game_name))
             .collect();
 
         if shortcuts.len() < initial_len {
@@ -711,5 +729,17 @@ mod tests {
     fn shortcut_app_id_is_stable() {
         let app_id = compute_shortcut_app_id_from_values("\"/usr/bin/test\"", "TestGame");
         assert_eq!(app_id, 2_311_890_076);
+    }
+
+    #[test]
+    fn ins_shortcut_name_is_suffixed() {
+        assert_eq!(ins_shortcut_name("Halo"), "Halo (ins)");
+    }
+
+    #[test]
+    fn matches_legacy_and_suffixed_shortcut_names() {
+        assert!(matches_game_shortcut_name("Halo", "Halo"));
+        assert!(matches_game_shortcut_name("Halo (ins)", "Halo"));
+        assert!(!matches_game_shortcut_name("Halo Infinite", "Halo"));
     }
 }
