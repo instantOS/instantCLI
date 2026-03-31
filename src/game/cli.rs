@@ -35,6 +35,8 @@ pub enum GameCommands {
     },
     /// Discover games available for `ins game add`
     Discover {
+        /// Restrict discovery to a specific Wine prefix path or path inside one
+        path: Option<String>,
         /// Limit discovery to specific platforms, e.g. `--source ps2 --source epic`
         #[arg(long = "source", value_enum, value_delimiter = ',')]
         sources: Vec<GameDiscoverySourceArg>,

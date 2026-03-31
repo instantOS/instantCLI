@@ -1,12 +1,16 @@
+use std::collections::BTreeMap;
 use std::io::{self, Write};
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use base64::{Engine as _, engine::general_purpose};
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use walkdir::WalkDir;
 
 use crate::game::platforms::discovery::{self as platform_discovery, DiscoverySource};
+use crate::game::platforms::ludusavi::{self, DiscoveredWineSave, choose_primary_save};
 use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::prelude::{Level, emit};
@@ -36,14 +40,24 @@ pub struct MenuSelectionPayload {
     pub launch_command: Option<String>,
 }
 
-pub fn list_discovered_games(sources: &[DiscoverySource]) -> Result<()> {
-    let progress = create_discovery_progress(sources.len());
-    let discovered = load_discovered_games_with_progress(sources, |index, total, message| {
-        progress.set_length(total as u64);
-        progress.set_position(index as u64);
-        progress.set_message(message.to_string());
-    })?;
-    progress.finish_and_clear();
+pub fn list_discovered_games(sources: &[DiscoverySource], scan_path: Option<&str>) -> Result<()> {
+    let discovered = if let Some(scan_path) = scan_path {
+        let progress = create_discovery_progress(1);
+        progress.set_position(0);
+        progress.set_message(format!("Scanning {}", scan_path));
+        let discovered = load_discovered_games_from_path(scan_path)?;
+        progress.finish_and_clear();
+        discovered
+    } else {
+        let progress = create_discovery_progress(sources.len());
+        let discovered = load_discovered_games_with_progress(sources, |index, total, message| {
+            progress.set_length(total as u64);
+            progress.set_position(index as u64);
+            progress.set_message(message.to_string());
+        })?;
+        progress.finish_and_clear();
+        discovered
+    };
 
     let games_json: Vec<serde_json::Value> = discovered
         .iter()
@@ -99,7 +113,10 @@ pub fn list_discovered_games(sources: &[DiscoverySource]) -> Result<()> {
     Ok(())
 }
 
-pub fn print_streaming_menu_rows(sources: &[DiscoverySource]) -> Result<()> {
+pub fn print_streaming_menu_rows(
+    sources: &[DiscoverySource],
+    scan_path: Option<&str>,
+) -> Result<()> {
     let mut out = io::BufWriter::new(io::stdout());
 
     writeln!(
@@ -121,7 +138,7 @@ pub fn print_streaming_menu_rows(sources: &[DiscoverySource]) -> Result<()> {
     )?;
     out.flush()?;
 
-    for game in load_discovered_menu_items(sources)? {
+    for game in load_discovered_menu_items(sources, scan_path)? {
         writeln!(out, "{}", game)?;
         out.flush()?;
     }
@@ -133,8 +150,15 @@ pub fn streaming_menu_preview_command() -> &'static str {
     "printf '%s' {4} | base64 -d 2>/dev/null"
 }
 
-fn load_discovered_menu_items(sources: &[DiscoverySource]) -> Result<Vec<String>> {
-    let discovered = load_discovered_games_with_preview(sources)?;
+fn load_discovered_menu_items(
+    sources: &[DiscoverySource],
+    scan_path: Option<&str>,
+) -> Result<Vec<String>> {
+    let discovered = if let Some(scan_path) = scan_path {
+        load_discovered_games_from_path_with_preview(scan_path)?
+    } else {
+        load_discovered_games_with_preview(sources)?
+    };
     discovered
         .into_iter()
         .map(|game| {
@@ -171,10 +195,58 @@ pub fn load_discovered_games(sources: &[DiscoverySource]) -> Result<Vec<Discover
         .collect())
 }
 
+fn load_discovered_games_from_path(scan_path: &str) -> Result<Vec<DiscoveredGameRecord>> {
+    Ok(load_discovered_games_from_path_with_preview(scan_path)?
+        .into_iter()
+        .map(|game| game.record)
+        .collect())
+}
+
 fn load_discovered_games_with_preview(
     sources: &[DiscoverySource],
 ) -> Result<Vec<DiscoveredGameWithPreview>> {
     load_discovered_games_with_preview_and_progress(sources, |_, _, _| {})
+}
+
+fn load_discovered_games_from_path_with_preview(
+    scan_path: &str,
+) -> Result<Vec<DiscoveredGameWithPreview>> {
+    let root = PathBuf::from(expand_scan_path(scan_path)?);
+
+    if let Some(prefix) = find_prefix_root(&root) {
+        return load_generic_prefix_records(&prefix);
+    }
+
+    let mut records = filter_records_to_root(&load_discovered_games_with_preview(&[])?, &root);
+    let known_prefixes: Vec<PathBuf> = records
+        .iter()
+        .filter_map(|record| {
+            record
+                .record
+                .game_path
+                .as_deref()
+                .map(PathBuf::from)
+                .filter(|path| path.join("drive_c").is_dir())
+        })
+        .collect();
+
+    for prefix in find_prefixes_under_root(&root) {
+        if known_prefixes.iter().any(|known| known == &prefix) {
+            continue;
+        }
+        records.extend(load_generic_prefix_records(&prefix)?);
+    }
+
+    records.sort_by(|a, b| {
+        a.record
+            .name
+            .to_lowercase()
+            .cmp(&b.record.name.to_lowercase())
+            .then_with(|| a.record.save_path.cmp(&b.record.save_path))
+    });
+    records.dedup_by(|a, b| a.record.unique_key == b.record.unique_key);
+
+    Ok(records)
 }
 
 fn load_discovered_games_with_progress<F>(
@@ -267,6 +339,124 @@ fn create_discovery_progress(source_count: usize) -> ProgressBar {
     pb
 }
 
+fn expand_scan_path(scan_path: &str) -> Result<String> {
+    shellexpand::full(scan_path)
+        .map_err(|e| anyhow::anyhow!("Failed to expand path '{}': {}", scan_path, e))
+        .map(|value| value.into_owned())
+}
+
+fn find_prefix_root(path: &Path) -> Option<PathBuf> {
+    let mut current = path.to_path_buf();
+
+    loop {
+        if current.join("drive_c").is_dir() {
+            return Some(current);
+        }
+
+        if !current.pop() {
+            break;
+        }
+    }
+
+    None
+}
+
+fn load_generic_prefix_records(prefix: &Path) -> Result<Vec<DiscoveredGameWithPreview>> {
+    let context = GameCreationContext::load().ok();
+    let saves = ludusavi::scan_wine_prefix(prefix)?;
+    let mut grouped: BTreeMap<String, Vec<DiscoveredWineSave>> = BTreeMap::new();
+
+    for save in saves {
+        grouped
+            .entry(save.game_name.clone())
+            .or_default()
+            .push(save);
+    }
+
+    let mut records = Vec::new();
+    for (game_name, candidates) in grouped {
+        let Some(primary_save) = choose_primary_save(candidates) else {
+            continue;
+        };
+
+        let save_path = PathBuf::from(&primary_save.save_path);
+        let existing_name = context
+            .as_ref()
+            .and_then(|ctx| find_existing_game_for_save(save_path.as_path(), ctx));
+
+        records.push(DiscoveredGameWithPreview {
+            preview_text: preview_to_text(
+                PreviewBuilder::new()
+                    .header(NerdFont::Wine, &game_name)
+                    .text("Platform: Wine Prefix")
+                    .blank()
+                    .text("Prefix:")
+                    .bullet(&prefix.to_string_lossy())
+                    .blank()
+                    .text("Save path:")
+                    .bullet(&primary_save.save_path)
+                    .build(),
+            ),
+            record: DiscoveredGameRecord {
+                name: game_name.clone(),
+                platform: "Wine Prefix".to_string(),
+                platform_short: "Wine".to_string(),
+                unique_key: format!(
+                    "wine:{}|{}",
+                    prefix.to_string_lossy(),
+                    primary_save.save_path
+                ),
+                save_path: primary_save.save_path,
+                game_path: Some(prefix.to_string_lossy().to_string()),
+                launch_command: None,
+                existing: existing_name.is_some(),
+                tracked_name: existing_name,
+            },
+        });
+    }
+
+    Ok(records)
+}
+
+fn filter_records_to_root(
+    records: &[DiscoveredGameWithPreview],
+    root: &Path,
+) -> Vec<DiscoveredGameWithPreview> {
+    records
+        .iter()
+        .filter(|record| {
+            record
+                .record
+                .game_path
+                .as_deref()
+                .map(Path::new)
+                .is_some_and(|path| path.starts_with(root))
+                || Path::new(&record.record.save_path).starts_with(root)
+        })
+        .cloned()
+        .collect()
+}
+
+fn find_prefixes_under_root(root: &Path) -> Vec<PathBuf> {
+    let mut prefixes = Vec::new();
+
+    for entry in WalkDir::new(root)
+        .follow_links(false)
+        .into_iter()
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.file_type().is_dir())
+    {
+        let path = entry.path();
+        if path.join("drive_c").is_dir() {
+            prefixes.push(path.to_path_buf());
+        }
+    }
+
+    prefixes.sort();
+    prefixes.dedup();
+    prefixes
+}
+
 fn find_existing_game_for_save(
     save_path: &std::path::Path,
     context: &GameCreationContext,
@@ -352,6 +542,7 @@ fn preview_to_text(preview: FzfPreview) -> String {
     }
 }
 
+#[derive(Clone)]
 struct DiscoveredGameWithPreview {
     record: DiscoveredGameRecord,
     preview_text: String,
@@ -401,5 +592,20 @@ mod tests {
         let home = dirs::home_dir().unwrap();
         let display = tilde_display_string(&TildePath::new(home));
         assert_eq!(display, "~");
+    }
+
+    #[test]
+    fn find_prefix_root_walks_up_to_drive_c() {
+        let prefix = tempfile::tempdir().unwrap();
+        let nested = prefix
+            .path()
+            .join("drive_c")
+            .join("users")
+            .join("steamuser")
+            .join("AppData");
+        std::fs::create_dir_all(&nested).unwrap();
+
+        let resolved = find_prefix_root(&nested).unwrap();
+        assert_eq!(resolved, prefix.path());
     }
 }

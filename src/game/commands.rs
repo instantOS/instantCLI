@@ -60,7 +60,11 @@ pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
             save_path,
             create_save_path,
         }),
-        GameCommands::Discover { sources, menu } => handle_discover(menu, &map_sources(&sources)),
+        GameCommands::Discover {
+            path,
+            sources,
+            menu,
+        } => handle_discover(menu, &map_sources(&sources), path.as_deref()),
         GameCommands::Sync { game_name, force } => {
             ensure_restic_available()?;
             handle_sync(game_name, force)
@@ -307,11 +311,11 @@ fn handle_sync(game_name: Option<String>, force: bool) -> Result<()> {
     Ok(())
 }
 
-fn handle_discover(menu: bool, sources: &[DiscoverySource]) -> Result<()> {
+fn handle_discover(menu: bool, sources: &[DiscoverySource], path: Option<&str>) -> Result<()> {
     if menu {
-        discover::print_streaming_menu_rows(sources)
+        discover::print_streaming_menu_rows(sources, path)
     } else {
-        discover::list_discovered_games(sources)
+        discover::list_discovered_games(sources, path)
     }
 }
 
