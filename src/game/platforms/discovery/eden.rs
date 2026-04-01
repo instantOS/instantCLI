@@ -89,7 +89,11 @@ impl DiscoveredGame for EdenDiscoveredGame {
     }
 
     fn unique_key(&self) -> String {
-        self.title_id.clone()
+        format!(
+            "eden:{}|{}",
+            self.title_id,
+            self.save_path.to_string_lossy()
+        )
     }
 
     fn is_existing(&self) -> bool {

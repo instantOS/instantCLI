@@ -152,11 +152,9 @@ where
                 &mut |game| on_event(DiscoveryEvent::GameFound(game)),
             )?,
             DiscoverySource::Epic => {
-                if epic::is_epic_installed() {
-                    epic::stream_discover_epic_games(|game| {
-                        on_event(DiscoveryEvent::GameFound(Box::new(game)))
-                    })?;
-                }
+                epic::stream_discover_epic_games(|game| {
+                    on_event(DiscoveryEvent::GameFound(Box::new(game)))
+                })?;
             }
             DiscoverySource::Steam => {
                 if steam::is_steam_installed() {

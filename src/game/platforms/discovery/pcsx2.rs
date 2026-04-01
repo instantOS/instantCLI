@@ -93,7 +93,11 @@ impl DiscoveredGame for Pcsx2DiscoveredMemcard {
     }
 
     fn unique_key(&self) -> String {
-        format!("pcsx2-{}", self.display_name)
+        format!(
+            "pcsx2:{}|{}",
+            self.install_type,
+            self.memcard_path.to_string_lossy()
+        )
     }
 
     fn is_existing(&self) -> bool {

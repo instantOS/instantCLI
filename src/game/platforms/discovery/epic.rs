@@ -207,11 +207,6 @@ fn run_legendary_list_installed() -> Option<String> {
     None
 }
 
-/// Check if legendary is available (native or flatpak)
-pub fn is_epic_installed() -> bool {
-    run_legendary_list_installed().is_some()
-}
-
 /// Find the wine prefix root for a given path inside a prefix.
 /// Walks up the directory tree looking for a `drive_c` directory.
 fn find_wine_prefix(path: &Path) -> Option<PathBuf> {

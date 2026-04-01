@@ -93,7 +93,11 @@ impl DiscoveredGame for DuckstationDiscoveredMemcard {
     }
 
     fn unique_key(&self) -> String {
-        format!("duckstation-{}", self.display_name)
+        format!(
+            "duckstation:{}|{}",
+            self.install_type,
+            self.memcard_path.to_string_lossy()
+        )
     }
 
     fn is_existing(&self) -> bool {

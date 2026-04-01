@@ -112,7 +112,12 @@ impl DiscoveredGame for AzaharDiscoveredGame {
     }
 
     fn unique_key(&self) -> String {
-        format!("azahar-{}", self.title_id)
+        format!(
+            "azahar:{}:{}|{}",
+            self.install_type,
+            self.title_id,
+            self.save_path.to_string_lossy()
+        )
     }
 
     fn is_existing(&self) -> bool {
