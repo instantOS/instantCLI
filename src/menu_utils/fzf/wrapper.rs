@@ -398,15 +398,21 @@ impl FzfWrapper {
         }
     }
 
-    pub fn select_streaming(&self, input_command: &str) -> Result<FzfResult<String>> {
-        self.select_streaming_prefilled(input_command, "")
+    pub fn select_streaming<C>(&self, producer: C) -> Result<FzfResult<String>>
+    where
+        C: Into<StreamingCommand>,
+    {
+        self.select_streaming_prefilled(producer, "")
     }
 
-    pub fn select_streaming_prefilled(
+    pub fn select_streaming_prefilled<C>(
         &self,
-        input_command: &str,
+        producer: C,
         initial_input: &str,
-    ) -> Result<FzfResult<String>> {
+    ) -> Result<FzfResult<String>>
+    where
+        C: Into<StreamingCommand>,
+    {
         let mut fzf_args = vec!["--tiebreak=index".to_string()];
 
         if self.multi_select {
@@ -452,12 +458,9 @@ impl FzfWrapper {
         let pid = fzf_child.id();
         let _ = crate::menu::server::register_menu_process(pid);
 
-        let mut producer = Command::new("sh");
+        let mut producer = producer.into().into_command();
         producer
-            .arg("-c")
-            .arg(format!(
-                "unset FZF_DEFAULT_OPTS; {input_command} </dev/null"
-            ))
+            .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
 

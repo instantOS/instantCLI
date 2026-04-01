@@ -43,6 +43,20 @@ pub enum SettingsCommands {
         #[arg(long = "scope")]
         scope: String,
     },
+    /// Internal: Generate package list rows for streaming menus
+    #[command(hide = true)]
+    InternalGeneratePackageList {
+        #[arg(long = "manager")]
+        manager: String,
+        #[arg(long = "mode")]
+        mode: String,
+    },
+    /// Internal: Generate snap search rows for streaming menus
+    #[command(hide = true)]
+    InternalGenerateSnapList {
+        #[arg(short = 'k', long = "keyword")]
+        keyword: Option<String>,
+    },
     #[command(hide = true)]
     InternalApply {
         #[arg(long = "setting-id")]
@@ -74,6 +88,12 @@ pub fn dispatch_settings_command(
         }
         Some(SettingsCommands::InternalGenerateSystemdList { scope }) => {
             super::systemd_list::generate_and_print_list(&scope)
+        }
+        Some(SettingsCommands::InternalGeneratePackageList { manager, mode }) => {
+            super::package_list::generate_and_print_package_list(&manager, &mode)
+        }
+        Some(SettingsCommands::InternalGenerateSnapList { keyword }) => {
+            super::package_list::generate_and_print_snap_list(keyword.as_deref())
         }
         Some(SettingsCommands::InternalApply {
             setting_id,

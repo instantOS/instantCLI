@@ -5,7 +5,9 @@
 use anyhow::{Context, Result};
 
 use crate::common::package::{PackageManager, uninstall_packages};
-use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, select_one_with_style};
+use crate::menu_utils::{
+    FzfResult, FzfSelectable, FzfWrapper, Header, StreamingCommand, select_one_with_style,
+};
 use crate::preview::{PreviewId, preview_command_streaming};
 use crate::settings::context::SettingsContext;
 use crate::settings::deps::FLATPAK;
@@ -99,10 +101,13 @@ fn run_installed_flatpaks_manager() -> Result<()> {
 
     // List installed apps with app_id first for preview compatibility
     // Format: application\tname\tversion\torigin\tsize
-    let list_command = "flatpak list --app --columns=application,name,version,origin,size";
     let preview_cmd = preview_command_streaming(PreviewId::Flatpak);
 
     loop {
+        let list_command = StreamingCommand::new("flatpak")
+            .arg("list")
+            .arg("--app")
+            .arg("--columns=application,name,version,origin,size");
         let result = FzfWrapper::builder()
             .prompt("Select a Flatpak app")
             .header(Header::fancy("Manage Installed Flatpaks"))

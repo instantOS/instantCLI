@@ -3,6 +3,8 @@
 use anyhow::{Context, Result, anyhow};
 use base64::{Engine as _, engine::general_purpose};
 use serde::{Serialize, de::DeserializeOwned};
+use std::ffi::OsStr;
+use std::process::Command;
 
 use crate::ui::catppuccin::{colors, hex_to_ansi_fg};
 
@@ -131,6 +133,10 @@ pub struct DecodedStreamingMenuItem<T> {
     pub payload: T,
 }
 
+pub struct StreamingCommand {
+    command: Command,
+}
+
 impl<T> StreamingMenuItem<T> {
     pub fn new(
         kind: impl Into<String>,
@@ -150,6 +156,38 @@ impl<T> StreamingMenuItem<T> {
     pub fn preview(mut self, preview: FzfPreview) -> Self {
         self.preview = preview;
         self
+    }
+}
+
+impl StreamingCommand {
+    pub fn new(program: impl AsRef<OsStr>) -> Self {
+        Self {
+            command: Command::new(program),
+        }
+    }
+
+    pub fn arg(mut self, arg: impl AsRef<OsStr>) -> Self {
+        self.command.arg(arg);
+        self
+    }
+
+    pub fn args<I, S>(mut self, args: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<OsStr>,
+    {
+        self.command.args(args);
+        self
+    }
+
+    pub(crate) fn into_command(self) -> Command {
+        self.command
+    }
+}
+
+impl From<Command> for StreamingCommand {
+    fn from(command: Command) -> Self {
+        Self { command }
     }
 }
 

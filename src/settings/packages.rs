@@ -6,6 +6,7 @@ use crate::common::distro::OperatingSystem;
 use crate::common::package::{PackageManager, detect_aur_helper, install_package_names};
 use crate::menu_utils::{ConfirmResult, FzfResult, FzfWrapper, Header};
 use crate::preview::{PreviewId, preview_command_streaming};
+use crate::settings::package_list;
 use crate::ui::catppuccin::fzf_mocha_args;
 use anyhow::{Context, Result};
 
@@ -43,7 +44,6 @@ fn run_simple_installer(manager: PackageManager, debug: bool) -> Result<()> {
         anyhow::bail!("{} is not available on this system", manager);
     }
 
-    let list_cmd = manager.list_available_command();
     let preview_id = preview_id_for_manager(manager);
     let preview_cmd = preview_command_streaming(preview_id);
 
@@ -54,7 +54,7 @@ fn run_simple_installer(manager: PackageManager, debug: bool) -> Result<()> {
         .args(fzf_mocha_args())
         .args(["--preview", &preview_cmd, "--ansi"])
         .responsive_layout()
-        .select_streaming(list_cmd)
+        .select_streaming(package_list::available_command(manager))
         .context("Failed to run package selector")?;
 
     handle_install_result(
@@ -94,18 +94,7 @@ pub fn run_snap_installer(debug: bool) -> Result<()> {
     // Build reload command that searches snaps as user types
     // Uses --phony to disable local filtering and rely on snap find results
     // Output format: name\tversion\tpublisher\tsummary
-    let reload_cmd = "snap find '{q}' 2>/dev/null | awk 'NR>1 && !/^Name[[:space:]]+Version/ && !/Provide a search term/ && NF { \
-        name = $1; version = $2; publisher = $3; summary = \"\"; \
-        for(i=5; i<=NF; i++) summary = summary $i \" \"; \
-        print name \"\\t\" version \"\\t\" publisher \"\\t\" summary \
-    }' || true";
-
-    // Load featured snaps on start; search as user types
-    let featured_snaps = "snap find 2>/dev/null | awk 'NR>1 && !/^Name[[:space:]]+Version/ && !/Provide a search term/ && NF { \
-        name = $1; version = $2; publisher = $3; summary = \"\"; \
-        for(i=5; i<=NF; i++) summary = summary $i \" \"; \
-        print name \"\\t\" version \"\\t\" publisher \"\\t\" summary \
-    }'";
+    let reload_cmd = package_list::snap_search_reload_command();
 
     let result = FzfWrapper::builder()
         .multi_select(true)
@@ -125,7 +114,7 @@ pub fn run_snap_installer(debug: bool) -> Result<()> {
             "--ansi",
         ])
         .responsive_layout()
-        .select_streaming(featured_snaps)
+        .select_streaming(package_list::snap_search_command(None))
         .context("Failed to run snap selector")?;
 
     handle_install_result(
@@ -153,25 +142,6 @@ fn run_arch_installer(debug: bool) -> Result<()> {
     }
 
     // Build streaming command: source<TAB>package_name
-    let mut list_cmds = Vec::new();
-    if has_pacman {
-        let cmd = PackageManager::Pacman.list_available_command();
-        list_cmds.push(format!(
-            "{} | sed 's/^/{}\\t/'",
-            cmd,
-            PackageManager::Pacman.as_str()
-        ));
-    }
-    if aur_helper.is_some() {
-        let cmd = PackageManager::Aur.list_available_command();
-        list_cmds.push(format!(
-            "{} | sed 's/^/{}\\t/'",
-            cmd,
-            PackageManager::Aur.as_str()
-        ));
-    }
-    let full_command = format!("{{ {}; }}", list_cmds.join("; "));
-
     let preview_cmd = preview_command_streaming(PreviewId::Package);
 
     let result = FzfWrapper::builder()
@@ -189,7 +159,7 @@ fn run_arch_installer(debug: bool) -> Result<()> {
             "--ansi",
         ])
         .responsive_layout()
-        .select_streaming(&full_command)
+        .select_streaming(package_list::arch_available_command())
         .context("Failed to run package selector")?;
 
     handle_arch_install_result(result, detect_aur_helper(), debug)

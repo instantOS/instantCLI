@@ -12,6 +12,7 @@ pub mod installable_packages;
 pub mod installed_packages_manager;
 pub mod language;
 pub mod network;
+pub mod package_list;
 pub mod packages;
 pub mod printer;
 pub mod restore;

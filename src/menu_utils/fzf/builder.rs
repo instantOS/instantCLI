@@ -536,15 +536,21 @@ impl FzfBuilder {
         cmd
     }
 
-    pub fn select_streaming(self, command: &str) -> Result<FzfResult<String>> {
+    pub fn select_streaming<C>(self, command: C) -> Result<FzfResult<String>>
+    where
+        C: Into<StreamingCommand>,
+    {
         FzfWrapper::from_builder(self).select_streaming(command)
     }
 
-    pub fn select_streaming_prefilled(
+    pub fn select_streaming_prefilled<C>(
         self,
-        command: &str,
+        command: C,
         initial_input: &str,
-    ) -> Result<FzfResult<String>> {
+    ) -> Result<FzfResult<String>>
+    where
+        C: Into<StreamingCommand>,
+    {
         FzfWrapper::from_builder(self).select_streaming_prefilled(command, initial_input)
     }
 

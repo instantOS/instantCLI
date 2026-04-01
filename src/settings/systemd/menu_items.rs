@@ -323,7 +323,6 @@ fn run_services_menu(scope: ServiceScope) -> Result<()> {
         ServiceScope::User => "user",
     };
 
-    let list_cmd = systemd_list::list_command(scope_str);
     let preview_cmd = preview_command_streaming(PreviewId::SystemdService);
 
     let mut selected_service: Option<ServiceItem> = None;
@@ -360,7 +359,7 @@ fn run_services_menu(scope: ServiceScope) -> Result<()> {
                 "--ansi",
             ])
             .responsive_layout()
-            .select_streaming(&list_cmd)?;
+            .select_streaming(systemd_list::list_command(scope_str))?;
 
         match result {
             FzfResult::Selected(line) => {

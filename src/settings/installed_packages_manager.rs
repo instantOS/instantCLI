@@ -8,6 +8,7 @@ use crate::common::distro::OperatingSystem;
 use crate::common::package::{PackageManager, uninstall_packages};
 use crate::menu_utils::{ConfirmResult, FzfResult, FzfWrapper, Header};
 use crate::preview::{PreviewId, preview_command_streaming};
+use crate::settings::package_list;
 use crate::ui::catppuccin::fzf_mocha_args;
 
 enum UninstallResult {
@@ -47,12 +48,6 @@ fn run_uninstaller(manager: PackageManager, debug: bool) -> Result<()> {
     }
 
     loop {
-        let list_cmd = if manager == PackageManager::Snap {
-            "snap list 2>/dev/null | tail -n +2 | awk '{print \"snap\\t\" $1 \"\\t\" $0}'"
-        } else {
-            manager.list_installed_command()
-        };
-
         let preview_cmd = preview_command_streaming(PreviewId::InstalledPackage);
 
         let result = FzfWrapper::builder()
@@ -77,7 +72,7 @@ fn run_uninstaller(manager: PackageManager, debug: bool) -> Result<()> {
                 "--ansi",
             ])
             .responsive_layout()
-            .select_streaming(list_cmd)
+            .select_streaming(package_list::installed_command(manager))
             .context("Failed to run package selector")?;
 
         match handle_uninstall_result(result, manager, debug)? {

@@ -23,7 +23,8 @@ mod wrapper;
 // Re-export public API for backward compatibility
 pub use types::{
     ChecklistAction, ChecklistResult, ConfirmResult, DecodedStreamingMenuItem, FzfResult,
-    FzfSelectable, Header, MenuItem, StreamingMenuItem, streaming_preview_command,
+    FzfSelectable, Header, MenuItem, StreamingCommand, StreamingMenuItem,
+    streaming_preview_command,
 };
 
 // Re-export main user-facing types

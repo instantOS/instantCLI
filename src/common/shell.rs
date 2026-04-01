@@ -3,6 +3,7 @@
 //! This module provides common shell manipulation utilities used across the application.
 
 use std::env;
+use std::path::PathBuf;
 
 /// Escape a string for use in a shell command
 ///
@@ -34,12 +35,19 @@ pub fn shell_quote(s: &str) -> String {
 
 /// Get the current executable path as a shell-quoted command string.
 /// Falls back to "ins" if the path cannot be determined.
+/// Resolve the persistent path to the current `ins` binary.
+///
+/// When running from an AppImage, `std::env::current_exe()` may point into a
+/// temporary FUSE mount. `APPIMAGE` holds the real persistent AppImage path.
+pub fn resolve_current_binary() -> PathBuf {
+    if let Ok(appimage_path) = env::var("APPIMAGE") {
+        return PathBuf::from(appimage_path);
+    }
+    env::current_exe().unwrap_or_else(|_| PathBuf::from("ins"))
+}
+
 pub fn current_exe_command() -> String {
-    let exe = env::current_exe()
-        .ok()
-        .and_then(|path| path.to_str().map(|s| s.to_string()))
-        .unwrap_or_else(|| "ins".to_string());
-    shell_quote(&exe)
+    shell_quote(&resolve_current_binary().to_string_lossy())
 }
 
 #[cfg(test)]

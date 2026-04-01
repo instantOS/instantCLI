@@ -2,11 +2,11 @@ use super::discover::MenuSelectionPayload;
 use super::manager::GameCreationContext;
 use super::prompts;
 use crate::common::TildePath;
-use crate::common::shell::current_exe_command;
+use crate::common::shell::resolve_current_binary;
 use crate::game::config::PathContentKind;
 use crate::game::utils::safeguards::{PathUsage, ensure_safe_path};
 use crate::menu_utils::{
-    DecodedStreamingMenuItem, FzfResult, FzfWrapper, Header, StreamingMenuItem,
+    DecodedStreamingMenuItem, FzfResult, FzfWrapper, Header, StreamingCommand, StreamingMenuItem,
     streaming_preview_command,
 };
 use crate::ui::catppuccin::{colors, format_icon_colored, fzf_mocha_args};
@@ -75,11 +75,13 @@ pub(super) fn maybe_prefill_from_emulators(
     options: AddGameOptions,
     _context: &GameCreationContext,
 ) -> Result<EmulatorPrefillResult> {
-    let discover_command = if options.no_cache {
-        format!("{} game discover --menu --no-cache", current_exe_command())
-    } else {
-        format!("{} game discover --menu", current_exe_command())
-    };
+    let mut discover_command = StreamingCommand::new(resolve_current_binary())
+        .arg("game")
+        .arg("discover")
+        .arg("--menu");
+    if options.no_cache {
+        discover_command = discover_command.arg("--no-cache");
+    }
 
     let result = FzfWrapper::builder()
         .header(Header::fancy("Games"))
@@ -95,7 +97,7 @@ pub(super) fn maybe_prefill_from_emulators(
             streaming_preview_command(),
             "--ansi",
         ])
-        .select_streaming_prefilled(&discover_command, &manual_menu_row()?)?;
+        .select_streaming_prefilled(discover_command, &manual_menu_row()?)?;
 
     match result {
         FzfResult::Selected(line) => match parse_discovery_selection(&line)? {

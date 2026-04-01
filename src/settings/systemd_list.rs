@@ -2,15 +2,16 @@ use anyhow::Result;
 use std::io::{self, Write};
 use std::process::{Command, Stdio};
 
-use crate::common::shell::current_exe_command;
+use crate::common::shell::resolve_current_binary;
 use crate::common::systemd::ServiceScope;
+use crate::menu_utils::StreamingCommand;
 
-pub fn list_command(scope: &str) -> String {
-    let exe = current_exe_command();
-    format!(
-        "{} settings internal-generate-systemd-list --scope {}",
-        exe, scope
-    )
+pub fn list_command(scope: &str) -> StreamingCommand {
+    StreamingCommand::new(resolve_current_binary())
+        .arg("settings")
+        .arg("internal-generate-systemd-list")
+        .arg("--scope")
+        .arg(scope)
 }
 
 pub fn generate_and_print_list(scope: &str) -> Result<()> {

@@ -7,8 +7,8 @@
 use anyhow::{Result, bail};
 
 use crate::common::package::{PackageManager, install_package_names};
-use crate::common::shell::current_exe_command;
-use crate::menu_utils::{ConfirmResult, FzfResult, FzfWrapper, Header};
+use crate::common::shell::resolve_current_binary;
+use crate::menu_utils::{ConfirmResult, FzfResult, FzfWrapper, Header, StreamingCommand};
 use crate::preview::{PreviewId, preview_command_streaming};
 use crate::settings::context::SettingsContext;
 use crate::settings::definitions::installed_flatpaks::{
@@ -49,11 +49,12 @@ impl Setting for InstallFlatpakApps {
 // Commands
 // ============================================================================
 
-/// Build a shell command that generates the flatpak app list.
+/// Build a typed command that generates the flatpak app list.
 /// Uses the internal ins command for fast appstream parsing.
-fn flatpak_list_command() -> String {
-    let exe = current_exe_command();
-    format!("{} settings internal-generate-flatpak-list", exe)
+fn flatpak_list_command() -> StreamingCommand {
+    StreamingCommand::new(resolve_current_binary())
+        .arg("settings")
+        .arg("internal-generate-flatpak-list")
 }
 
 // ============================================================================
@@ -79,7 +80,7 @@ fn select_flatpak_apps() -> Result<Vec<String>> {
             "--ansi",
         ])
         .responsive_layout()
-        .select_streaming(&list_cmd)?;
+        .select_streaming(list_cmd)?;
 
     extract_app_ids(result)
 }
