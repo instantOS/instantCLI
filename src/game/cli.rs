@@ -172,6 +172,8 @@ pub enum GameDiscoverySourceArg {
     Steam,
     #[value(name = "faugus")]
     Faugus,
+    #[value(name = "wine")]
+    Wine,
 }
 
 /// Dependency management commands

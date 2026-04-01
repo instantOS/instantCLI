@@ -331,6 +331,7 @@ fn map_sources(sources: &[GameDiscoverySourceArg]) -> Vec<DiscoverySource> {
             GameDiscoverySourceArg::Epic => DiscoverySource::Epic,
             GameDiscoverySourceArg::Steam => DiscoverySource::Steam,
             GameDiscoverySourceArg::Faugus => DiscoverySource::Faugus,
+            GameDiscoverySourceArg::Wine => DiscoverySource::Wine,
         })
         .collect()
 }

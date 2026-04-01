@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::HashSet;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
@@ -12,7 +12,6 @@ use walkdir::WalkDir;
 use crate::game::platforms::discovery::{
     self as platform_discovery, DiscoveredGame, DiscoveryEvent, DiscoverySource,
 };
-use crate::game::platforms::ludusavi::{self, DiscoveredWineSave, choose_primary_save};
 use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::prelude::{Level, OutputFormat, emit, get_output_format};
@@ -268,12 +267,20 @@ where
     G: FnMut(DiscoveredGameWithPreview) -> Result<()>,
 {
     let context = GameCreationContext::load().ok();
+    let mut seen_save_paths = HashSet::new();
+
+    let mut emit_game = |game: DiscoveredGameWithPreview| {
+        if seen_save_paths.insert(game.record.save_path.clone()) {
+            on_game(game)?;
+        }
+        Ok(())
+    };
 
     if let Some(scan_path) = scan_path {
         let root = PathBuf::from(expand_scan_path(scan_path)?);
         if let Some(prefix) = find_prefix_root(&root) {
             on_progress(0, 1, &format!("Scanning Wine prefix {}", prefix.display()))?;
-            return stream_generic_prefix_records(&prefix, context.as_ref(), on_game);
+            return stream_generic_prefix_records(&prefix, context.as_ref(), emit_game);
         }
 
         on_progress(0, 1, &format!("Scanning {}", root.display()))?;
@@ -287,7 +294,7 @@ where
                     if let Some(prefix_path) = record_prefix_path(&record.record) {
                         known_prefixes.push(prefix_path);
                     }
-                    on_game(record)?;
+                    emit_game(record)?;
                 }
                 Ok(())
             }
@@ -297,7 +304,7 @@ where
             if known_prefixes.iter().any(|known| known == &prefix) {
                 continue;
             }
-            stream_generic_prefix_records(&prefix, context.as_ref(), &mut on_game)?;
+            stream_generic_prefix_records(&prefix, context.as_ref(), &mut emit_game)?;
         }
 
         return Ok(());
@@ -311,7 +318,7 @@ where
             ..
         } => on_progress(index, total, label),
         DiscoveryEvent::GameFound(game) => {
-            on_game(into_record_with_preview(game, context.as_ref()))
+            emit_game(into_record_with_preview(game, context.as_ref()))
         }
     })
 }
@@ -346,54 +353,17 @@ fn stream_generic_prefix_records<F>(
 where
     F: FnMut(DiscoveredGameWithPreview) -> Result<()>,
 {
-    let saves = ludusavi::scan_wine_prefix(prefix)?;
-    let mut grouped: BTreeMap<String, Vec<DiscoveredWineSave>> = BTreeMap::new();
-
-    for save in saves {
-        grouped
-            .entry(save.game_name.clone())
-            .or_default()
-            .push(save);
-    }
-
-    for (game_name, candidates) in grouped {
-        let Some(primary_save) = choose_primary_save(candidates) else {
-            continue;
-        };
-
-        let save_path = PathBuf::from(&primary_save.save_path);
+    for game in crate::game::platforms::discovery::wine::discover_wine_games_in_prefix(prefix)? {
+        let save_path = game.save_path.clone();
         let existing_name =
             context.and_then(|ctx| find_existing_game_for_save(save_path.as_path(), ctx));
 
-        on_game(DiscoveredGameWithPreview {
-            preview_text: preview_to_text(
-                PreviewBuilder::new()
-                    .header(NerdFont::Wine, &game_name)
-                    .text("Platform: Wine Prefix")
-                    .blank()
-                    .text("Prefix:")
-                    .bullet(&prefix.to_string_lossy())
-                    .blank()
-                    .text("Save path:")
-                    .bullet(&primary_save.save_path)
-                    .build(),
-            ),
-            record: DiscoveredGameRecord {
-                name: game_name.clone(),
-                platform: "Wine Prefix".to_string(),
-                platform_short: "Wine".to_string(),
-                unique_key: format!(
-                    "wine:{}|{}",
-                    prefix.to_string_lossy(),
-                    primary_save.save_path
-                ),
-                save_path: primary_save.save_path,
-                game_path: Some(prefix.to_string_lossy().to_string()),
-                launch_command: None,
-                existing: existing_name.is_some(),
-                tracked_name: existing_name,
-            },
-        })?;
+        let mut game = game;
+        if let Some(existing_name) = existing_name {
+            game.set_existing(existing_name);
+        }
+
+        on_game(into_record_with_preview(Box::new(game), context))?;
     }
 
     Ok(())

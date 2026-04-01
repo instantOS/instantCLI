@@ -13,17 +13,27 @@ main() {
 	local steam_root="${HOME}/.local/share/Steam"
 	local steam_prefix="${steam_root}/steamapps/compatdata/12345/pfx"
 	local steam_save_dir="${steam_prefix}/drive_c/users/steamuser/Documents/Test Steam Game"
+	local wine_prefix="${HOME}/.wine"
+	local wine_save_dir="${wine_prefix}/drive_c/users/testuser/Documents/Test Wine Game"
 	mkdir -p "${bin_dir}" "${install_dir}"
 	export PATH="${bin_dir}:${PATH}"
 
 	touch "${install_dir}/Sable.exe"
-	mkdir -p "${steam_save_dir}" "${steam_root}/steamapps" "${XDG_CACHE_HOME}/instant"
+	mkdir -p "${steam_save_dir}" "${wine_save_dir}" "${steam_root}/steamapps" "${XDG_CACHE_HOME}/instant"
 	echo "save" >"${steam_save_dir}/save1.sav"
+	echo "save" >"${wine_save_dir}/profile1.sav"
 
 	cat >"${XDG_CACHE_HOME}/instant/ludusavi-manifest.yaml" <<'EOF'
 "Test Steam Game":
   files:
     "<winDocuments>/Test Steam Game":
+      tags:
+        - save
+      when:
+        - os: windows
+"Test Wine Game":
+  files:
+    "<winDocuments>/Test Wine Game":
       tags:
         - save
       when:
@@ -88,6 +98,13 @@ EOF
 	echo "${steam_only_json}" | jq -e '
 		.code == "game.discover" and
 		(.data.games | map(select(.name == "Test Steam Game" and .platform_short == "Steam")) | length) == 1
+	' >/dev/null
+
+	local wine_only_json
+	wine_only_json="$(ins --output json game discover --source wine)"
+	echo "${wine_only_json}" | jq -e '
+		.code == "game.discover" and
+		(.data.games | map(select(.name == "Test Wine Game" and .platform_short == "Wine")) | length) == 1
 	' >/dev/null
 
 	local menu_output

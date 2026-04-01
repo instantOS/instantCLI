@@ -10,6 +10,7 @@ pub mod epic;
 pub mod faugus;
 pub mod pcsx2;
 pub mod steam;
+pub mod wine;
 
 use std::path::PathBuf;
 
@@ -51,9 +52,10 @@ pub enum DiscoverySource {
     Epic,
     Steam,
     Faugus,
+    Wine,
 }
 
-pub const DEFAULT_DISCOVERY_SOURCES: [DiscoverySource; 7] = [
+pub const DEFAULT_DISCOVERY_SOURCES: [DiscoverySource; 8] = [
     DiscoverySource::Switch,
     DiscoverySource::Ps2,
     DiscoverySource::Ps1,
@@ -61,6 +63,7 @@ pub const DEFAULT_DISCOVERY_SOURCES: [DiscoverySource; 7] = [
     DiscoverySource::Epic,
     DiscoverySource::Steam,
     DiscoverySource::Faugus,
+    DiscoverySource::Wine,
 ];
 
 pub fn active_sources(sources: &[DiscoverySource]) -> &[DiscoverySource] {
@@ -100,6 +103,7 @@ fn source_label(source: DiscoverySource) -> &'static str {
         DiscoverySource::Epic => "Scanning Epic Games prefixes",
         DiscoverySource::Steam => "Scanning Steam Proton prefixes",
         DiscoverySource::Faugus => "Scanning Faugus Launcher prefixes",
+        DiscoverySource::Wine => "Scanning generic Wine prefixes",
     }
 }
 
@@ -164,6 +168,11 @@ where
             DiscoverySource::Faugus => emit_discovered_games(
                 faugus::is_faugus_installed,
                 faugus::discover_faugus_games,
+                &mut |game| on_event(DiscoveryEvent::GameFound(game)),
+            )?,
+            DiscoverySource::Wine => emit_discovered_games(
+                wine::is_wine_installed,
+                wine::discover_wine_games,
                 &mut |game| on_event(DiscoveryEvent::GameFound(game)),
             )?,
         }
