@@ -1,5 +1,9 @@
 //! Core types and traits for the FZF wrapper
 
+use anyhow::{Context, Result, anyhow};
+use base64::{Engine as _, engine::general_purpose};
+use serde::{Serialize, de::DeserializeOwned};
+
 use crate::ui::catppuccin::{colors, hex_to_ansi_fg};
 
 pub use crate::ui::preview::FzfPreview;
@@ -108,6 +112,105 @@ impl FzfSelectable for &str {
 pub enum MenuItem<T: Clone> {
     Entry(T),
     Separator(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct StreamingMenuItem<T> {
+    kind: String,
+    key: String,
+    display: String,
+    preview: FzfPreview,
+    payload: T,
+}
+
+#[derive(Debug, Clone)]
+pub struct DecodedStreamingMenuItem<T> {
+    pub kind: String,
+    pub key: String,
+    pub display: String,
+    pub payload: T,
+}
+
+impl<T> StreamingMenuItem<T> {
+    pub fn new(
+        kind: impl Into<String>,
+        key: impl Into<String>,
+        display: impl Into<String>,
+        payload: T,
+    ) -> Self {
+        Self {
+            kind: kind.into(),
+            key: key.into(),
+            display: display.into(),
+            preview: FzfPreview::None,
+            payload,
+        }
+    }
+
+    pub fn preview(mut self, preview: FzfPreview) -> Self {
+        self.preview = preview;
+        self
+    }
+}
+
+impl<T: Serialize> StreamingMenuItem<T> {
+    pub fn encode(&self) -> Result<String> {
+        let payload_json = serde_json::to_vec(&self.payload)?;
+        let preview_text = match &self.preview {
+            FzfPreview::Text(text) => text.as_bytes(),
+            FzfPreview::Command(command) => command.as_bytes(),
+            FzfPreview::None => &[],
+        };
+
+        Ok(format!(
+            "{}\t{}\t{}\t{}\t{}",
+            sanitize_streaming_field(&self.kind),
+            sanitize_streaming_field(&self.key),
+            sanitize_streaming_field(&self.display),
+            general_purpose::STANDARD.encode(preview_text),
+            general_purpose::STANDARD.encode(payload_json),
+        ))
+    }
+}
+
+impl<T: DeserializeOwned> DecodedStreamingMenuItem<T> {
+    pub fn decode(line: &str) -> Result<Self> {
+        let mut fields = line.splitn(5, '\t');
+        let kind = fields.next().unwrap_or_default().to_string();
+        let key = fields.next().unwrap_or_default().to_string();
+        let display = fields.next().unwrap_or_default().to_string();
+        let _preview_b64 = fields.next().unwrap_or_default();
+        let payload_b64 = fields
+            .next()
+            .ok_or_else(|| anyhow!("Invalid streaming menu row: missing payload field"))?;
+
+        let payload_json = general_purpose::STANDARD
+            .decode(payload_b64)
+            .context("Failed to decode streaming menu payload")?;
+        let payload = serde_json::from_slice(&payload_json)
+            .context("Failed to parse streaming menu payload")?;
+
+        Ok(Self {
+            kind,
+            key,
+            display,
+            payload,
+        })
+    }
+}
+
+pub fn streaming_preview_command() -> &'static str {
+    "printf '%s' {4} | base64 -d 2>/dev/null"
+}
+
+fn sanitize_streaming_field(value: &str) -> String {
+    value
+        .chars()
+        .map(|c| match c {
+            '\t' | '\n' | '\r' => ' ',
+            _ => c,
+        })
+        .collect()
 }
 
 impl<T: Clone> MenuItem<T> {

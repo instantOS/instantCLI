@@ -4,7 +4,6 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use base64::{Engine as _, engine::general_purpose};
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -13,6 +12,7 @@ use walkdir::WalkDir;
 use crate::game::platforms::discovery::{
     self as platform_discovery, DiscoveredGame, DiscoveryEvent, DiscoverySource,
 };
+use crate::menu_utils::StreamingMenuItem;
 use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::prelude::{Level, OutputFormat, emit, get_output_format};
@@ -85,10 +85,10 @@ pub fn print_streaming_menu_rows(
             writeln!(
                 out,
                 "{}",
-                encode_menu_row(
+                StreamingMenuItem::new(
                     "discovered",
-                    &game.record.unique_key,
-                    &discovered_menu_display(
+                    game.record.unique_key.clone(),
+                    discovered_menu_display(
                         game.record
                             .tracked_name
                             .as_deref()
@@ -96,15 +96,16 @@ pub fn print_streaming_menu_rows(
                         &game.record.platform_short,
                         game.record.existing,
                     ),
-                    &game.preview_text,
-                    &MenuSelectionPayload {
+                    MenuSelectionPayload {
                         existing: game.record.existing,
-                        display_name: Some(game.record.name),
-                        tracked_name: game.record.tracked_name,
-                        save_path: Some(game.record.save_path),
-                        launch_command: game.record.launch_command,
+                        display_name: Some(game.record.name.clone()),
+                        tracked_name: game.record.tracked_name.clone(),
+                        save_path: Some(game.record.save_path.clone()),
+                        launch_command: game.record.launch_command.clone(),
                     },
-                )?
+                )
+                .preview(FzfPreview::Text(game.preview_text.clone()))
+                .encode()?
             )?;
             out.flush()?;
             Ok(())
@@ -112,10 +113,6 @@ pub fn print_streaming_menu_rows(
     )?;
 
     Ok(())
-}
-
-pub fn streaming_menu_preview_command() -> &'static str {
-    "printf '%s' {4} | base64 -d 2>/dev/null"
 }
 
 fn load_discovered_games_with_preview(
@@ -665,34 +662,6 @@ fn discovered_menu_display(display_name: &str, platform_short: &str, existing: b
     format!("{icon} {display_name} ({platform_short})")
 }
 
-fn encode_menu_row(
-    kind: &str,
-    key: &str,
-    display: &str,
-    preview: &str,
-    payload: &MenuSelectionPayload,
-) -> Result<String> {
-    let payload_json = serde_json::to_vec(payload)?;
-    Ok(format!(
-        "{}\t{}\t{}\t{}\t{}",
-        sanitize_menu_field(kind),
-        sanitize_menu_field(key),
-        sanitize_menu_field(display),
-        general_purpose::STANDARD.encode(preview.as_bytes()),
-        general_purpose::STANDARD.encode(payload_json),
-    ))
-}
-
-fn sanitize_menu_field(value: &str) -> String {
-    value
-        .chars()
-        .map(|c| match c {
-            '\t' | '\n' | '\r' => ' ',
-            _ => c,
-        })
-        .collect()
-}
-
 fn preview_to_text(preview: FzfPreview) -> String {
     match preview {
         FzfPreview::Text(text) => text,
@@ -710,20 +679,23 @@ struct DiscoveredGameWithPreview {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::menu_utils::{StreamingMenuItem, streaming_preview_command};
 
     #[test]
     fn menu_fields_are_sanitized() {
-        assert_eq!(sanitize_menu_field("a\tb\nc\rd"), "a b c d");
+        let row = StreamingMenuItem::new("a\tb\nc\rd", "key", "display", serde_json::json!({}))
+            .encode()
+            .unwrap();
+        assert!(row.starts_with("a b c d\t"));
     }
 
     #[test]
     fn menu_row_encodes_payload() {
-        let row = encode_menu_row(
+        let row = StreamingMenuItem::new(
             "manual",
             "manual",
             "display",
-            "preview",
-            &MenuSelectionPayload {
+            MenuSelectionPayload {
                 existing: false,
                 display_name: Some("Game".to_string()),
                 tracked_name: None,
@@ -731,6 +703,8 @@ mod tests {
                 launch_command: Some("run".to_string()),
             },
         )
+        .preview(FzfPreview::Text("preview".to_string()))
+        .encode()
         .unwrap();
 
         let fields: Vec<&str> = row.split('\t').collect();
@@ -739,7 +713,7 @@ mod tests {
 
     #[test]
     fn preview_command_is_stable() {
-        assert!(streaming_menu_preview_command().contains("base64 -d"));
+        assert!(streaming_preview_command().contains("base64 -d"));
     }
 
     #[test]

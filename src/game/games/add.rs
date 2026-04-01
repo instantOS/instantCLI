@@ -1,16 +1,18 @@
-use super::discover::{MenuSelectionPayload, streaming_menu_preview_command};
+use super::discover::MenuSelectionPayload;
 use super::manager::GameCreationContext;
 use super::prompts;
 use crate::common::TildePath;
 use crate::common::shell::current_exe_command;
 use crate::game::config::PathContentKind;
 use crate::game::utils::safeguards::{PathUsage, ensure_safe_path};
-use crate::menu_utils::{FzfResult, FzfWrapper, Header};
-use crate::ui::catppuccin::fzf_mocha_args;
+use crate::menu_utils::{
+    DecodedStreamingMenuItem, FzfResult, FzfWrapper, Header, StreamingMenuItem,
+    streaming_preview_command,
+};
+use crate::ui::catppuccin::{colors, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 use anyhow::{Context, Result, anyhow};
-use base64::{Engine as _, engine::general_purpose};
 use std::fs;
 
 #[derive(Debug, Default)]
@@ -50,27 +52,23 @@ fn manual_menu_row() -> Result<String> {
         .bullet("Save data path")
         .build();
 
-    let payload = MenuSelectionPayload {
-        existing: false,
-        display_name: None,
-        tracked_name: None,
-        save_path: None,
-        launch_command: None,
-    };
-
-    let payload_json = serde_json::to_vec(&payload)?;
-    Ok(format!(
-        "{}\t{}\t{}\t{}\t{}",
+    StreamingMenuItem::new(
         "manual",
         "manual",
-        "Enter a new game manually",
-        general_purpose::STANDARD.encode(match preview {
-            crate::menu::protocol::FzfPreview::Text(text) => text.into_bytes(),
-            crate::menu::protocol::FzfPreview::Command(command) => command.into_bytes(),
-            crate::menu::protocol::FzfPreview::None => Vec::new(),
-        }),
-        general_purpose::STANDARD.encode(payload_json),
-    ))
+        format!(
+            "{} Enter a new game manually",
+            format_icon_colored(NerdFont::Edit, colors::BLUE)
+        ),
+        MenuSelectionPayload {
+            existing: false,
+            display_name: None,
+            tracked_name: None,
+            save_path: None,
+            launch_command: None,
+        },
+    )
+    .preview(preview)
+    .encode()
 }
 
 pub(super) fn maybe_prefill_from_emulators(
@@ -94,7 +92,7 @@ pub(super) fn maybe_prefill_from_emulators(
             "--with-nth",
             "3",
             "--preview",
-            streaming_menu_preview_command(),
+            streaming_preview_command(),
             "--ansi",
         ])
         .select_streaming_prefilled(&discover_command, &manual_menu_row()?)?;
@@ -235,23 +233,11 @@ enum SelectedDiscovery {
 }
 
 fn parse_discovery_selection(line: &str) -> Result<SelectedDiscovery> {
-    let mut fields = line.splitn(5, '\t');
-    let kind = fields.next().unwrap_or_default();
-    let _key = fields.next().unwrap_or_default();
-    let _display = fields.next().unwrap_or_default();
-    let _preview = fields.next().unwrap_or_default();
-    let payload_b64 = fields.next().unwrap_or_default();
+    let row = DecodedStreamingMenuItem::<MenuSelectionPayload>::decode(line)?;
 
-    match kind {
+    match row.kind.as_str() {
         "manual" => Ok(SelectedDiscovery::ManualEntry),
-        "discovered" => {
-            let payload_json = general_purpose::STANDARD
-                .decode(payload_b64)
-                .context("Failed to decode discovery payload")?;
-            let payload: MenuSelectionPayload = serde_json::from_slice(&payload_json)
-                .context("Failed to parse discovery payload")?;
-            Ok(SelectedDiscovery::DiscoveredGame(payload))
-        }
+        "discovered" => Ok(SelectedDiscovery::DiscoveredGame(row.payload)),
         other => Err(anyhow!("Unknown discovery selection kind: {}", other)),
     }
 }
@@ -262,22 +248,29 @@ mod tests {
 
     #[test]
     fn parse_manual_selection() {
-        let selection =
-            parse_discovery_selection("manual\tmanual\tdisplay\tcHJldmlldw==\te30=").unwrap();
+        let selection = parse_discovery_selection(&manual_menu_row().unwrap()).unwrap();
         assert!(matches!(selection, SelectedDiscovery::ManualEntry));
     }
 
     #[test]
     fn parse_discovered_selection_payload() {
-        let payload = MenuSelectionPayload {
-            existing: false,
-            display_name: Some("Sable".to_string()),
-            tracked_name: None,
-            save_path: Some("/games/Sable".to_string()),
-            launch_command: Some("\"/games/Sable/Sable.exe\"".to_string()),
-        };
-        let payload_b64 = general_purpose::STANDARD.encode(serde_json::to_vec(&payload).unwrap());
-        let line = format!("discovered\tsable\tdisplay\tcHJldmlldw==\t{}", payload_b64);
+        let line = StreamingMenuItem::new(
+            "discovered",
+            "sable",
+            "display",
+            MenuSelectionPayload {
+                existing: false,
+                display_name: Some("Sable".to_string()),
+                tracked_name: None,
+                save_path: Some("/games/Sable".to_string()),
+                launch_command: Some("\"/games/Sable/Sable.exe\"".to_string()),
+            },
+        )
+        .preview(crate::menu::protocol::FzfPreview::Text(
+            "preview".to_string(),
+        ))
+        .encode()
+        .unwrap();
 
         match parse_discovery_selection(&line).unwrap() {
             SelectedDiscovery::DiscoveredGame(parsed) => {
