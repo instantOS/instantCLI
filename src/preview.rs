@@ -13,7 +13,7 @@ const EMAIL_MIME_TYPES: &[&str] = &["x-scheme-handler/mailto"];
 const FILE_MANAGER_MIME_TYPES: &[&str] = &["inode/directory"];
 const PDF_VIEWER_MIME_TYPES: &[&str] = &["application/pdf"];
 use crate::ui::prelude::NerdFont;
-use crate::ui::preview::PreviewBuilder;
+use crate::ui::preview::{PreviewBuilder, PreviewWriter};
 
 mod appearance;
 mod bluetooth;
@@ -275,13 +275,8 @@ fn stream_default_app(
     summary: &str,
     mime_types: &[&str],
 ) -> Result<()> {
-    default_apps::render_default_app_impl(
-        title,
-        icon,
-        summary,
-        mime_types,
-        PreviewBuilder::streaming(),
-    )?;
+    let mut writer = PreviewWriter::streaming();
+    default_apps::render_default_app_impl(title, icon, summary, mime_types, &mut writer)?;
     Ok(())
 }
 

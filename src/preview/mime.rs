@@ -5,34 +5,36 @@ use anyhow::{Context, Result};
 
 use crate::preview::PreviewContext;
 use crate::preview::default_apps::display_app_name;
-use crate::preview::helpers::push_bullets;
 use crate::settings::defaultapps::{build_mime_to_apps_map, get_apps_for_mime, query_default_app};
 use crate::ui::catppuccin::colors;
 use crate::ui::prelude::NerdFont;
-use crate::ui::preview::PreviewBuilder;
+use crate::ui::preview::PreviewWriter;
 
 pub(crate) fn render_mime_type_preview(ctx: &PreviewContext) -> Result<String> {
     let Some(mime_type) = ctx.key() else {
         return Ok(String::new());
     };
-    Ok(render_mime_type_impl(mime_type, PreviewBuilder::new())?.build_string())
+    let mut preview = PreviewWriter::collect();
+    render_mime_type_impl(mime_type, &mut preview)?;
+    Ok(preview.build_string())
 }
 
 pub(crate) fn render_mime_type_preview_streaming(ctx: &PreviewContext) -> Result<()> {
     let Some(mime_type) = ctx.key() else {
         return Ok(());
     };
-    render_mime_type_impl(mime_type, PreviewBuilder::streaming())?;
+    let mut preview = PreviewWriter::streaming();
+    render_mime_type_impl(mime_type, &mut preview)?;
     Ok(())
 }
 
 /// Core implementation — the header and static metadata stream immediately,
 /// then the xdg-mime queries and desktop-file scans follow.
-fn render_mime_type_impl(mime_type: &str, builder: PreviewBuilder) -> Result<PreviewBuilder> {
+fn render_mime_type_impl(mime_type: &str, preview: &mut PreviewWriter) -> Result<()> {
     let category = mime_category(mime_type);
     let extensions = mime_extensions(mime_type);
 
-    let mut builder = builder
+    preview
         .header(NerdFont::File, "MIME Type")
         .subtext("Select a default application for this MIME type.")
         .blank()
@@ -47,9 +49,11 @@ fn render_mime_type_impl(mime_type: &str, builder: PreviewBuilder) -> Result<Pre
         );
 
     if extensions.is_empty() {
-        builder = builder.bullet("(none registered)");
+        preview.bullet("(none registered)");
     } else {
-        builder = push_bullets(builder, &extensions);
+        for extension in &extensions {
+            preview.bullet(extension);
+        }
     }
 
     // These calls spawn subprocesses / scan desktop files
@@ -59,7 +63,7 @@ fn render_mime_type_impl(mime_type: &str, builder: PreviewBuilder) -> Result<Pre
         .map(|desktop_id| display_app_name(&desktop_id))
         .unwrap_or_else(|| "(not set)".to_string());
 
-    builder = builder
+    preview
         .blank()
         .line(
             colors::TEAL,
@@ -93,12 +97,14 @@ fn render_mime_type_impl(mime_type: &str, builder: PreviewBuilder) -> Result<Pre
         .collect();
 
     if app_lines.is_empty() {
-        builder = builder.bullet("(none registered)");
+        preview.bullet("(none registered)");
     } else {
-        builder = push_bullets(builder, &app_lines);
+        for app in &app_lines {
+            preview.bullet(app);
+        }
     }
 
-    Ok(builder)
+    Ok(())
 }
 
 fn mime_category(mime_type: &str) -> &'static str {

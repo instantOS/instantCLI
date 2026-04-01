@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::{self, Write};
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
@@ -6,6 +7,7 @@ use anyhow::{Context, Result};
 use sha2::{Digest, Sha256};
 
 use super::{PreviewContext, PreviewId};
+use crate::ui::preview::PreviewWriter;
 
 const PREVIEW_CACHE_VERSION: u32 = 1;
 
@@ -48,6 +50,27 @@ pub(super) fn store(id: PreviewId, ctx: &PreviewContext, text: &str) -> Result<(
         return Ok(());
     };
     write_cache(&cache_path, text)
+}
+
+pub(super) fn render_streaming_cached<F>(
+    id: PreviewId,
+    ctx: &PreviewContext,
+    render: F,
+) -> Result<()>
+where
+    F: FnOnce(&mut PreviewWriter) -> Result<()>,
+{
+    if let Some(cached) = get_cached(id, ctx)? {
+        print!("{cached}");
+        io::stdout().flush().context("Failed to flush cached preview")?;
+        return Ok(());
+    }
+
+    let mut preview = PreviewWriter::streaming_cached();
+    render(&mut preview)?;
+    let rendered = preview.build_string();
+    let _ = store(id, ctx, &rendered);
+    Ok(())
 }
 
 fn cache_ttl(id: PreviewId) -> Option<Duration> {

@@ -7,7 +7,7 @@ use crate::common::distro::OperatingSystem;
 use crate::common::package::{PackageManager, detect_aur_helper};
 use crate::ui::catppuccin::colors;
 use crate::ui::nerd_font::NerdFont;
-use crate::ui::preview::PreviewBuilder;
+use crate::ui::preview::PreviewWriter;
 
 use super::{PreviewContext, PreviewId, cache};
 
@@ -18,18 +18,16 @@ fn package_from_context(ctx: &PreviewContext) -> Option<&str> {
 
 /// Build a placeholder preview for when no package is selected.
 fn placeholder_preview(title: &str, subtitle: &str) -> Result<String> {
-    Ok(PreviewBuilder::new()
-        .header(NerdFont::Package, title)
-        .subtext(subtitle)
-        .build_string())
+    let mut preview = PreviewWriter::collect();
+    preview.header(NerdFont::Package, title).subtext(subtitle);
+    Ok(preview.build_string())
 }
 
 // ============================================================================
 // Routing helpers
 // ============================================================================
 
-/// Core routing logic shared by both collect and streaming paths.
-fn render_package_with(ctx: &PreviewContext, builder: PreviewBuilder) -> Result<PreviewBuilder> {
+fn render_package_with(ctx: &PreviewContext, preview: &mut PreviewWriter) -> Result<()> {
     let key = ctx.key().unwrap_or_default();
 
     let (source, package) = if let Some((src, pkg)) = key.split_once('\t') {
@@ -39,85 +37,94 @@ fn render_package_with(ctx: &PreviewContext, builder: PreviewBuilder) -> Result<
     };
 
     if package.is_empty() {
-        return Ok(builder
+        preview
             .header(NerdFont::Package, "Package Info")
-            .subtext("Select a package to see details"));
+            .subtext("Select a package to see details");
+        return Ok(());
     }
 
     if let Some(src) = source {
         if let Ok(manager) = src.parse::<PackageManager>() {
-            return render_for_manager(package, manager, builder);
+            return render_for_manager(package, manager, preview);
         }
-        return Ok(builder
+
+        preview
             .header(NerdFont::Package, package)
             .subtext(&format!("{src} Package"))
             .blank()
-            .subtext("Preview not available for this package type"));
+            .subtext("Preview not available for this package type");
+        return Ok(());
     }
 
     let os = OperatingSystem::detect();
     if let Some(manager) = os.native_package_manager() {
-        render_for_manager(package, manager, builder)
+        render_for_manager(package, manager, preview)
     } else {
-        Ok(builder
+        preview
             .header(NerdFont::Package, package)
-            .subtext("Package manager not available"))
+            .subtext("Package manager not available");
+        Ok(())
     }
 }
 
-/// Core routing logic for installed packages.
-fn render_installed_package_with(
-    ctx: &PreviewContext,
-    builder: PreviewBuilder,
-) -> Result<PreviewBuilder> {
+fn render_installed_package_with(ctx: &PreviewContext, preview: &mut PreviewWriter) -> Result<()> {
     let package = ctx.key().unwrap_or_default();
 
     if package.is_empty() {
-        return Ok(builder
+        preview
             .header(NerdFont::Package, "Package Info")
-            .subtext("Select a package to see details"));
+            .subtext("Select a package to see details");
+        return Ok(());
     }
 
     if package.contains('\t')
         && let Some((src, pkg)) = package.split_once('\t')
     {
         if let Ok(manager) = src.parse::<PackageManager>() {
-            return render_for_manager(pkg, manager, builder);
+            return render_for_manager(pkg, manager, preview);
         }
-        return Ok(builder
+
+        preview
             .header(NerdFont::Package, pkg)
             .subtext(&format!("{src} Package"))
             .blank()
-            .subtext("Preview not available for this package type"));
+            .subtext("Preview not available for this package type");
+        return Ok(());
     }
 
     let os = OperatingSystem::detect();
     if let Some(manager) = os.native_package_manager() {
-        render_for_manager(package, manager, builder)
+        render_for_manager(package, manager, preview)
     } else {
-        Ok(builder
+        preview
             .header(NerdFont::Package, package)
-            .subtext("Package manager not available"))
+            .subtext("Package manager not available");
+        Ok(())
     }
 }
 
-/// Route to the correct per-manager renderer.
 fn render_for_manager(
     package: &str,
     manager: PackageManager,
-    builder: PreviewBuilder,
-) -> Result<PreviewBuilder> {
+    preview: &mut PreviewWriter,
+) -> Result<()> {
     match manager {
-        PackageManager::Apt => render_apt_impl(package, builder),
-        PackageManager::Dnf => render_dnf_impl(package, builder),
-        PackageManager::Zypper => render_zypper_impl(package, builder),
-        PackageManager::Pacman => render_pacman_impl(package, builder),
-        PackageManager::Snap => render_snap_impl(package, builder),
-        PackageManager::Pkg => render_pkg_impl(package, builder),
-        PackageManager::Flatpak => render_flatpak_impl(package, builder),
-        PackageManager::Aur => render_aur_impl(package, builder),
-        PackageManager::Cargo => render_cargo_impl(package, builder),
+        PackageManager::Apt => render_apt_impl(package, preview),
+        PackageManager::Dnf => render_dnf_impl(package, preview),
+        PackageManager::Zypper => render_zypper_impl(package, preview),
+        PackageManager::Pacman => render_pacman_impl(package, preview),
+        PackageManager::Snap => render_snap_impl(package, preview),
+        PackageManager::Pkg => render_pkg_impl(package, preview),
+        PackageManager::Flatpak => render_flatpak_impl(package, preview),
+        PackageManager::Aur => render_aur_impl(package, preview),
+        PackageManager::Cargo => render_cargo_impl(package, preview),
     }
+}
+
+fn collect_preview(render: impl FnOnce(&mut PreviewWriter) -> Result<()>) -> Result<String> {
+    let mut preview = PreviewWriter::collect();
+    render(&mut preview)?;
+    Ok(preview.build_string())
 }
 
 // ============================================================================
@@ -127,119 +134,108 @@ fn render_for_manager(
 /// Render preview for a package (install context).
 /// Key format: "package_name" or "source\tpackage_name" for Arch.
 pub fn render_package_preview(ctx: &PreviewContext) -> Result<String> {
-    Ok(render_package_with(ctx, PreviewBuilder::new())?.build_string())
+    collect_preview(|preview| render_package_with(ctx, preview))
 }
 
 /// Render preview for an installed package (uninstall context).
 pub fn render_installed_package_preview(ctx: &PreviewContext) -> Result<String> {
-    Ok(render_installed_package_with(ctx, PreviewBuilder::new())?.build_string())
+    collect_preview(|preview| render_installed_package_with(ctx, preview))
 }
 
 pub fn render_apt_preview(ctx: &PreviewContext) -> Result<String> {
     match package_from_context(ctx) {
-        Some(pkg) => Ok(render_apt_impl(pkg, PreviewBuilder::new())?.build_string()),
+        Some(pkg) => collect_preview(|preview| render_apt_impl(pkg, preview)),
         None => placeholder_preview("APT Package", "Select a package to see details"),
     }
 }
 
 pub fn render_dnf_preview(ctx: &PreviewContext) -> Result<String> {
     match package_from_context(ctx) {
-        Some(pkg) => Ok(render_dnf_impl(pkg, PreviewBuilder::new())?.build_string()),
+        Some(pkg) => collect_preview(|preview| render_dnf_impl(pkg, preview)),
         None => placeholder_preview("DNF Package", "Select a package to see details"),
     }
 }
 
 pub fn render_zypper_preview(ctx: &PreviewContext) -> Result<String> {
     match package_from_context(ctx) {
-        Some(pkg) => Ok(render_zypper_impl(pkg, PreviewBuilder::new())?.build_string()),
+        Some(pkg) => collect_preview(|preview| render_zypper_impl(pkg, preview)),
         None => placeholder_preview("Zypper Package", "Select a package to see details"),
     }
 }
 
 pub fn render_pacman_preview(ctx: &PreviewContext) -> Result<String> {
     match package_from_context(ctx) {
-        Some(pkg) => Ok(render_pacman_impl(pkg, PreviewBuilder::new())?.build_string()),
+        Some(pkg) => collect_preview(|preview| render_pacman_impl(pkg, preview)),
         None => placeholder_preview("Pacman Package", "Select a package to see details"),
     }
 }
 
 pub fn render_snap_preview(ctx: &PreviewContext) -> Result<String> {
     match package_from_context(ctx) {
-        Some(pkg) => Ok(render_snap_impl(pkg, PreviewBuilder::new())?.build_string()),
+        Some(pkg) => collect_preview(|preview| render_snap_impl(pkg, preview)),
         None => placeholder_preview("Snap Package", "Select a Snap package to see details"),
     }
 }
 
 pub fn render_pkg_preview(ctx: &PreviewContext) -> Result<String> {
     match package_from_context(ctx) {
-        Some(pkg) => Ok(render_pkg_impl(pkg, PreviewBuilder::new())?.build_string()),
+        Some(pkg) => collect_preview(|preview| render_pkg_impl(pkg, preview)),
         None => placeholder_preview("Pkg Package", "Select a package to see details"),
     }
 }
 
 pub fn render_flatpak_preview(ctx: &PreviewContext) -> Result<String> {
     match package_from_context(ctx) {
-        Some(pkg) => Ok(render_flatpak_impl(pkg, PreviewBuilder::new())?.build_string()),
+        Some(pkg) => collect_preview(|preview| render_flatpak_impl(pkg, preview)),
         None => placeholder_preview("Flatpak Package", "Select a Flatpak package to see details"),
     }
 }
 
 pub fn render_aur_preview(ctx: &PreviewContext) -> Result<String> {
     match package_from_context(ctx) {
-        Some(pkg) => Ok(render_aur_impl(pkg, PreviewBuilder::new())?.build_string()),
+        Some(pkg) => collect_preview(|preview| render_aur_impl(pkg, preview)),
         None => placeholder_preview("AUR Package", "Select an AUR package to see details"),
     }
 }
 
 pub fn render_cargo_preview(ctx: &PreviewContext) -> Result<String> {
     match package_from_context(ctx) {
-        Some(pkg) => Ok(render_cargo_impl(pkg, PreviewBuilder::new())?.build_string()),
+        Some(pkg) => collect_preview(|preview| render_cargo_impl(pkg, preview)),
         None => placeholder_preview("Cargo Package", "Select a Cargo package to see details"),
     }
 }
 
 // ============================================================================
 // Streaming entry points — called by handle_preview_command with a streaming
-// builder so the header appears immediately while slow commands run.
+// writer so the header appears immediately while slow commands run.
 // ============================================================================
 
 pub(crate) fn render_package_preview_streaming(ctx: &PreviewContext) -> Result<()> {
-    if let Some(cached) = cache::get_cached(PreviewId::Package, ctx)? {
-        print!("{cached}");
-        return Ok(());
-    }
-
-    let builder = render_package_with(ctx, PreviewBuilder::streaming_cached())?;
-    let rendered = builder.build_string();
-    let _ = cache::store(PreviewId::Package, ctx, &rendered);
-    Ok(())
+    cache::render_streaming_cached(PreviewId::Package, ctx, |preview| {
+        render_package_with(ctx, preview)
+    })
 }
 
 pub(crate) fn render_installed_package_preview_streaming(ctx: &PreviewContext) -> Result<()> {
-    if let Some(cached) = cache::get_cached(PreviewId::InstalledPackage, ctx)? {
-        print!("{cached}");
-        return Ok(());
-    }
-
-    let builder = render_installed_package_with(ctx, PreviewBuilder::streaming_cached())?;
-    let rendered = builder.build_string();
-    let _ = cache::store(PreviewId::InstalledPackage, ctx, &rendered);
-    Ok(())
+    cache::render_streaming_cached(PreviewId::InstalledPackage, ctx, |preview| {
+        render_installed_package_with(ctx, preview)
+    })
 }
 
-/// Streaming entry point for a specific per-manager preview.
 pub(crate) fn render_manager_preview_streaming(
     ctx: &PreviewContext,
-    manager_render: fn(&str, PreviewBuilder) -> Result<PreviewBuilder>,
+    manager_render: fn(&str, &mut PreviewWriter) -> Result<()>,
     placeholder_title: &str,
 ) -> Result<()> {
     let Some(id) = preview_id_for_placeholder(placeholder_title) else {
         match package_from_context(ctx) {
             Some(pkg) => {
-                manager_render(pkg, PreviewBuilder::streaming())?;
+                let mut preview = PreviewWriter::streaming();
+                manager_render(pkg, &mut preview)?;
             }
             None => {
-                PreviewBuilder::streaming()
+                let mut preview = PreviewWriter::streaming();
+                preview
                     .header(NerdFont::Package, placeholder_title)
                     .subtext("Select a package to see details");
             }
@@ -247,24 +243,15 @@ pub(crate) fn render_manager_preview_streaming(
         return Ok(());
     };
 
-    if let Some(cached) = cache::get_cached(id, ctx)? {
-        print!("{cached}");
-        return Ok(());
-    }
-
-    match package_from_context(ctx) {
-        Some(pkg) => {
-            let builder = manager_render(pkg, PreviewBuilder::streaming_cached())?;
-            let rendered = builder.build_string();
-            let _ = cache::store(id, ctx, &rendered);
-        }
+    cache::render_streaming_cached(id, ctx, |preview| match package_from_context(ctx) {
+        Some(pkg) => manager_render(pkg, preview),
         None => {
-            PreviewBuilder::streaming()
+            preview
                 .header(NerdFont::Package, placeholder_title)
                 .subtext("Select a package to see details");
+            Ok(())
         }
-    }
-    Ok(())
+    })
 }
 
 fn preview_id_for_placeholder(title: &str) -> Option<PreviewId> {
@@ -283,14 +270,13 @@ fn preview_id_for_placeholder(title: &str) -> Option<PreviewId> {
 }
 
 // ============================================================================
-// Per-manager implementations (accept a PreviewBuilder, work in any mode)
+// Per-manager implementations
 // ============================================================================
 
-pub(crate) fn render_apt_impl(package: &str, builder: PreviewBuilder) -> Result<PreviewBuilder> {
-    let mut builder =
-        builder
-            .header(NerdFont::Package, package)
-            .line(colors::BLUE, None, "APT Package");
+pub(crate) fn render_apt_impl(package: &str, preview: &mut PreviewWriter) -> Result<()> {
+    preview
+        .header(NerdFont::Package, package)
+        .line(colors::BLUE, None, "APT Package");
 
     let output = cmd!("apt", "show", package)
         .stderr_null()
@@ -298,7 +284,8 @@ pub(crate) fn render_apt_impl(package: &str, builder: PreviewBuilder) -> Result<
         .unwrap_or_default();
 
     if output.is_empty() {
-        return Ok(builder.blank().subtext("No package information available"));
+        preview.blank().subtext("No package information available");
+        return Ok(());
     }
 
     for line in output.lines() {
@@ -306,25 +293,36 @@ pub(crate) fn render_apt_impl(package: &str, builder: PreviewBuilder) -> Result<
             let key = key.trim();
             let value = value.trim();
             match key {
-                "Description" | "Description-en" => builder = builder.text(value),
-                "Version" => builder = builder.field("Version", value),
-                "Section" => builder = builder.field("Section", value),
-                "Maintainer" => builder = builder.field("Maintainer", value),
-                "Homepage" => builder = builder.field("URL", value),
-                "Installed-Size" | "Size" => builder = builder.field("Size", value),
+                "Description" | "Description-en" => {
+                    preview.text(value);
+                }
+                "Version" => {
+                    preview.field("Version", value);
+                }
+                "Section" => {
+                    preview.field("Section", value);
+                }
+                "Maintainer" => {
+                    preview.field("Maintainer", value);
+                }
+                "Homepage" => {
+                    preview.field("URL", value);
+                }
+                "Installed-Size" | "Size" => {
+                    preview.field("Size", value);
+                }
                 _ => {}
             }
         }
     }
 
-    Ok(builder)
+    Ok(())
 }
 
-pub(crate) fn render_dnf_impl(package: &str, builder: PreviewBuilder) -> Result<PreviewBuilder> {
-    let mut builder =
-        builder
-            .header(NerdFont::Package, package)
-            .line(colors::YELLOW, None, "DNF Package");
+pub(crate) fn render_dnf_impl(package: &str, preview: &mut PreviewWriter) -> Result<()> {
+    preview
+        .header(NerdFont::Package, package)
+        .line(colors::YELLOW, None, "DNF Package");
 
     let output = cmd!("dnf", "info", package)
         .stderr_null()
@@ -332,7 +330,8 @@ pub(crate) fn render_dnf_impl(package: &str, builder: PreviewBuilder) -> Result<
         .unwrap_or_default();
 
     if output.is_empty() {
-        return Ok(builder.blank().subtext("No package information available"));
+        preview.blank().subtext("No package information available");
+        return Ok(());
     }
 
     for line in output.lines() {
@@ -340,27 +339,42 @@ pub(crate) fn render_dnf_impl(package: &str, builder: PreviewBuilder) -> Result<
             let key = key.trim();
             let value = value.trim();
             match key {
-                "Summary" | "Description" => builder = builder.text(value),
-                "Version" => builder = builder.field("Version", value),
-                "Release" => builder = builder.field("Release", value),
-                "Architecture" | "Arch" => builder = builder.field("Arch", value),
-                "Size" => builder = builder.field("Size", value),
-                "Repository" | "Repo" => builder = builder.field("Repository", value),
-                "URL" => builder = builder.field("URL", value),
-                "License" => builder = builder.field("License", value),
+                "Summary" | "Description" => {
+                    preview.text(value);
+                }
+                "Version" => {
+                    preview.field("Version", value);
+                }
+                "Release" => {
+                    preview.field("Release", value);
+                }
+                "Architecture" | "Arch" => {
+                    preview.field("Arch", value);
+                }
+                "Size" => {
+                    preview.field("Size", value);
+                }
+                "Repository" | "Repo" => {
+                    preview.field("Repository", value);
+                }
+                "URL" => {
+                    preview.field("URL", value);
+                }
+                "License" => {
+                    preview.field("License", value);
+                }
                 _ => {}
             }
         }
     }
 
-    Ok(builder)
+    Ok(())
 }
 
-pub(crate) fn render_zypper_impl(package: &str, builder: PreviewBuilder) -> Result<PreviewBuilder> {
-    let mut builder =
-        builder
-            .header(NerdFont::Package, package)
-            .line(colors::RED, None, "Zypper Package");
+pub(crate) fn render_zypper_impl(package: &str, preview: &mut PreviewWriter) -> Result<()> {
+    preview
+        .header(NerdFont::Package, package)
+        .line(colors::RED, None, "Zypper Package");
 
     let output = cmd!("zypper", "info", package)
         .stderr_null()
@@ -368,7 +382,8 @@ pub(crate) fn render_zypper_impl(package: &str, builder: PreviewBuilder) -> Resu
         .unwrap_or_default();
 
     if output.is_empty() {
-        return Ok(builder.blank().subtext("No package information available"));
+        preview.blank().subtext("No package information available");
+        return Ok(());
     }
 
     for line in output.lines() {
@@ -376,20 +391,28 @@ pub(crate) fn render_zypper_impl(package: &str, builder: PreviewBuilder) -> Resu
             let key = key.trim();
             let value = value.trim();
             match key {
-                "Summary" | "Description" => builder = builder.text(value),
-                "Version" => builder = builder.field("Version", value),
-                "Repository" => builder = builder.field("Repository", value),
-                "Size" => builder = builder.field("Size", value),
+                "Summary" | "Description" => {
+                    preview.text(value);
+                }
+                "Version" => {
+                    preview.field("Version", value);
+                }
+                "Repository" => {
+                    preview.field("Repository", value);
+                }
+                "Size" => {
+                    preview.field("Size", value);
+                }
                 _ => {}
             }
         }
     }
 
-    Ok(builder)
+    Ok(())
 }
 
-pub(crate) fn render_pacman_impl(package: &str, builder: PreviewBuilder) -> Result<PreviewBuilder> {
-    let mut builder = builder
+pub(crate) fn render_pacman_impl(package: &str, preview: &mut PreviewWriter) -> Result<()> {
+    preview
         .header(NerdFont::Package, package)
         .line(colors::GREEN, None, "Pacman Package")
         .blank();
@@ -400,7 +423,8 @@ pub(crate) fn render_pacman_impl(package: &str, builder: PreviewBuilder) -> Resu
         .unwrap_or_default();
 
     if output.is_empty() {
-        return Ok(builder.subtext("No package information available"));
+        preview.subtext("No package information available");
+        return Ok(());
     }
 
     for line in output.lines() {
@@ -408,27 +432,34 @@ pub(crate) fn render_pacman_impl(package: &str, builder: PreviewBuilder) -> Resu
             let key = key.trim();
             let value = value.trim();
             match key {
-                "Description" => builder = builder.text(value),
-                "Version" => builder = builder.field("Version", value),
-                "Repository" => builder = builder.field("Repository", value),
-                "URL" => builder = builder.field("URL", value),
-                "Licenses" => builder = builder.field("License", value),
-                "Installed Size" | "Download Size" => builder = builder.field(key, value),
+                "Description" => {
+                    preview.text(value);
+                }
+                "Version" => {
+                    preview.field("Version", value);
+                }
+                "Repository" => {
+                    preview.field("Repository", value);
+                }
+                "URL" => {
+                    preview.field("URL", value);
+                }
+                "Licenses" => {
+                    preview.field("License", value);
+                }
+                "Installed Size" | "Download Size" => {
+                    preview.field(key, value);
+                }
                 _ => {}
             }
         }
     }
 
-    Ok(builder)
+    Ok(())
 }
 
-pub(crate) fn render_snap_impl(
-    package_info: &str,
-    builder: PreviewBuilder,
-) -> Result<PreviewBuilder> {
+pub(crate) fn render_snap_impl(package_info: &str, preview: &mut PreviewWriter) -> Result<()> {
     let parts: Vec<&str> = package_info.split('\t').collect();
-
-    // Extract package name from either tab-separated format or plain name
     let name = if parts.len() >= 4 {
         parts[0]
     } else {
@@ -438,19 +469,19 @@ pub(crate) fn render_snap_impl(
             .unwrap_or(package_info)
     };
 
-    let mut builder = builder
+    preview
         .header(NerdFont::Package, name)
         .line(colors::PEACH, None, "Snap Package")
         .blank();
 
-    // Fetch detailed info from snap store (may be slow/network)
     let output = cmd!("snap", "info", name)
         .stderr_null()
         .read()
         .unwrap_or_default();
 
     if output.is_empty() {
-        return Ok(builder.subtext("No package information available"));
+        preview.subtext("No package information available");
+        return Ok(());
     }
 
     let mut description = String::new();
@@ -458,7 +489,6 @@ pub(crate) fn render_snap_impl(
     let mut size = None;
 
     for line in output.lines() {
-        // Check for size in channels section (e.g., "latest/stable: 1.0 (100) 50MB -")
         if line.contains("latest/stable:")
             && !line.starts_with("latest/stable:")
             && let Some(size_match) = line.split_whitespace().nth(3)
@@ -471,7 +501,6 @@ pub(crate) fn render_snap_impl(
             let key = key.trim();
             let value = value.trim();
 
-            // Handle multi-line description
             if key == "description" {
                 in_description = true;
                 if !value.is_empty() {
@@ -483,11 +512,21 @@ pub(crate) fn render_snap_impl(
             in_description = false;
 
             match key {
-                "summary" | "Summary" => builder = builder.text(value),
-                "version" | "Version" => builder = builder.field("Version", value),
-                "publisher" | "Publisher" => builder = builder.field("Publisher", value),
-                "license" | "License" => builder = builder.field("License", value),
-                "store-url" => builder = builder.field("Store URL", value),
+                "summary" | "Summary" => {
+                    preview.text(value);
+                }
+                "version" | "Version" => {
+                    preview.field("Version", value);
+                }
+                "publisher" | "Publisher" => {
+                    preview.field("Publisher", value);
+                }
+                "license" | "License" => {
+                    preview.field("License", value);
+                }
+                "store-url" => {
+                    preview.field("Store URL", value);
+                }
                 _ => {}
             }
         } else if in_description && !line.starts_with("channels:") {
@@ -496,24 +535,21 @@ pub(crate) fn render_snap_impl(
         }
     }
 
-    // Add size if found
     if let Some(s) = size {
-        builder = builder.field("Size", &s);
+        preview.field("Size", &s);
     }
 
-    // Add description if we collected one
     if !description.is_empty() {
-        builder = builder.blank().text(description.trim());
+        preview.blank().text(description.trim());
     }
 
-    Ok(builder)
+    Ok(())
 }
 
-pub(crate) fn render_pkg_impl(package: &str, builder: PreviewBuilder) -> Result<PreviewBuilder> {
-    let mut builder =
-        builder
-            .header(NerdFont::Package, package)
-            .line(colors::TEAL, None, "Pkg Package");
+pub(crate) fn render_pkg_impl(package: &str, preview: &mut PreviewWriter) -> Result<()> {
+    preview
+        .header(NerdFont::Package, package)
+        .line(colors::TEAL, None, "Pkg Package");
 
     let output = cmd!("pkg", "show", package)
         .stderr_null()
@@ -521,7 +557,8 @@ pub(crate) fn render_pkg_impl(package: &str, builder: PreviewBuilder) -> Result<
         .unwrap_or_default();
 
     if output.is_empty() {
-        return Ok(builder.blank().subtext("No package information available"));
+        preview.blank().subtext("No package information available");
+        return Ok(());
     }
 
     for line in output.lines() {
@@ -529,40 +566,46 @@ pub(crate) fn render_pkg_impl(package: &str, builder: PreviewBuilder) -> Result<
             let key = key.trim();
             let value = value.trim();
             match key {
-                "Description" | "Description-en" => builder = builder.text(value),
-                "Version" => builder = builder.field("Version", value),
-                "Section" => builder = builder.field("Section", value),
-                "Maintainer" => builder = builder.field("Maintainer", value),
-                "Homepage" => builder = builder.field("URL", value),
-                "Installed-Size" | "Size" => builder = builder.field("Size", value),
+                "Description" | "Description-en" => {
+                    preview.text(value);
+                }
+                "Version" => {
+                    preview.field("Version", value);
+                }
+                "Section" => {
+                    preview.field("Section", value);
+                }
+                "Maintainer" => {
+                    preview.field("Maintainer", value);
+                }
+                "Homepage" => {
+                    preview.field("URL", value);
+                }
+                "Installed-Size" | "Size" => {
+                    preview.field("Size", value);
+                }
                 _ => {}
             }
         }
     }
 
-    Ok(builder)
+    Ok(())
 }
 
-pub(crate) fn render_flatpak_impl(
-    package_info: &str,
-    builder: PreviewBuilder,
-) -> Result<PreviewBuilder> {
-    // Extract app_id from "app_id\tname\tdescription" format
+pub(crate) fn render_flatpak_impl(package_info: &str, preview: &mut PreviewWriter) -> Result<()> {
     let package = if package_info.contains('\t') {
         package_info.split('\t').next().unwrap_or(package_info)
     } else {
         package_info
     };
 
-    let mut builder = builder
+    preview
         .header(NerdFont::Package, package)
         .line(colors::PINK, None, "Flatpak Package")
         .blank();
 
-    // Try local info first (faster for installed apps)
     let local_output = cmd!("flatpak", "info", package).stderr_null().read().ok();
 
-    // If not installed locally, try remotes (potentially slow/network)
     let output = if local_output.is_some() {
         local_output
     } else {
@@ -588,7 +631,8 @@ pub(crate) fn render_flatpak_impl(
     };
 
     let Some(output) = output.as_deref() else {
-        return Ok(builder.subtext("No package information available"));
+        preview.subtext("No package information available");
+        return Ok(());
     };
 
     for line in output.lines() {
@@ -596,33 +640,55 @@ pub(crate) fn render_flatpak_impl(
             let key = key.trim();
             let value = value.trim();
             match key {
-                "ID" | "Ref" => builder = builder.field("ID", value),
-                "Arch" | "Architecture" => builder = builder.field("Architecture", value),
-                "Branch" => builder = builder.field("Branch", value),
-                "Origin" => builder = builder.field("Origin", value),
-                "Installation" => builder = builder.field("Installation", value),
-                "Installed" => builder = builder.field("Installed", value),
-                "Runtime" => builder = builder.field("Runtime", value),
-                "Version" => builder = builder.field("Version", value),
-                "License" => builder = builder.field("License", value),
-                // Include size fields from remote-info
-                "Download" => builder = builder.field("Download Size", value),
-                "Installed Size" => builder = builder.field("Installed Size", value),
+                "ID" | "Ref" => {
+                    preview.field("ID", value);
+                }
+                "Arch" | "Architecture" => {
+                    preview.field("Architecture", value);
+                }
+                "Branch" => {
+                    preview.field("Branch", value);
+                }
+                "Origin" => {
+                    preview.field("Origin", value);
+                }
+                "Installation" => {
+                    preview.field("Installation", value);
+                }
+                "Installed" => {
+                    preview.field("Installed", value);
+                }
+                "Runtime" => {
+                    preview.field("Runtime", value);
+                }
+                "Version" => {
+                    preview.field("Version", value);
+                }
+                "License" => {
+                    preview.field("License", value);
+                }
+                "Download" => {
+                    preview.field("Download Size", value);
+                }
+                "Installed Size" => {
+                    preview.field("Installed Size", value);
+                }
                 _ => {
                     if line.starts_with("Description:") || line.starts_with("Summary:") {
-                        builder = builder.text(value);
+                        preview.text(value);
                     }
                 }
             }
         }
     }
 
-    Ok(builder)
+    Ok(())
 }
 
-pub(crate) fn render_aur_impl(package: &str, builder: PreviewBuilder) -> Result<PreviewBuilder> {
+pub(crate) fn render_aur_impl(package: &str, preview: &mut PreviewWriter) -> Result<()> {
     let helper = detect_aur_helper().unwrap_or("yay");
-    let mut builder = builder
+
+    preview
         .header(NerdFont::Package, package)
         .line(colors::MAUVE, None, "AUR Package")
         .blank();
@@ -633,7 +699,8 @@ pub(crate) fn render_aur_impl(package: &str, builder: PreviewBuilder) -> Result<
         .unwrap_or_default();
 
     if output.is_empty() {
-        return Ok(builder.subtext("No package information available"));
+        preview.subtext("No package information available");
+        return Ok(());
     }
 
     for line in output.lines() {
@@ -641,25 +708,36 @@ pub(crate) fn render_aur_impl(package: &str, builder: PreviewBuilder) -> Result<
             let key = key.trim();
             let value = value.trim();
             match key {
-                "Description" => builder = builder.text(value),
-                "Version" => builder = builder.field("Version", value),
-                "Repository" => builder = builder.field("Repository", value),
-                "URL" => builder = builder.field("URL", value),
-                "Licenses" => builder = builder.field("License", value),
-                "Installed Size" | "Download Size" => builder = builder.field(key, value),
+                "Description" => {
+                    preview.text(value);
+                }
+                "Version" => {
+                    preview.field("Version", value);
+                }
+                "Repository" => {
+                    preview.field("Repository", value);
+                }
+                "URL" => {
+                    preview.field("URL", value);
+                }
+                "Licenses" => {
+                    preview.field("License", value);
+                }
+                "Installed Size" | "Download Size" => {
+                    preview.field(key, value);
+                }
                 _ => {}
             }
         }
     }
 
-    Ok(builder)
+    Ok(())
 }
 
-pub(crate) fn render_cargo_impl(package: &str, builder: PreviewBuilder) -> Result<PreviewBuilder> {
-    let mut builder =
-        builder
-            .header(NerdFont::Package, package)
-            .line(colors::MAROON, None, "Cargo Package");
+pub(crate) fn render_cargo_impl(package: &str, preview: &mut PreviewWriter) -> Result<()> {
+    preview
+        .header(NerdFont::Package, package)
+        .line(colors::MAROON, None, "Cargo Package");
 
     let output = cmd!("cargo", "show", package)
         .stderr_null()
@@ -667,7 +745,8 @@ pub(crate) fn render_cargo_impl(package: &str, builder: PreviewBuilder) -> Resul
         .unwrap_or_default();
 
     if output.is_empty() {
-        return Ok(builder.blank().subtext("No package information available"));
+        preview.blank().subtext("No package information available");
+        return Ok(());
     }
 
     for line in output.lines() {
@@ -675,17 +754,31 @@ pub(crate) fn render_cargo_impl(package: &str, builder: PreviewBuilder) -> Resul
             let key = key.trim();
             let value = value.trim();
             match key {
-                "name" | "Name" => builder = builder.field("Name", value),
-                "version" | "Version" => builder = builder.field("Version", value),
-                "description" | "Description" => builder = builder.text(value),
-                "homepage" | "Homepage" => builder = builder.field("Homepage", value),
-                "repository" | "Repository" => builder = builder.field("Repository", value),
-                "keywords" | "Keywords" => builder = builder.field("Keywords", value),
-                "license" | "License" => builder = builder.field("License", value),
+                "name" | "Name" => {
+                    preview.field("Name", value);
+                }
+                "version" | "Version" => {
+                    preview.field("Version", value);
+                }
+                "description" | "Description" => {
+                    preview.text(value);
+                }
+                "homepage" | "Homepage" => {
+                    preview.field("Homepage", value);
+                }
+                "repository" | "Repository" => {
+                    preview.field("Repository", value);
+                }
+                "keywords" | "Keywords" => {
+                    preview.field("Keywords", value);
+                }
+                "license" | "License" => {
+                    preview.field("License", value);
+                }
                 _ => {}
             }
         }
     }
 
-    Ok(builder)
+    Ok(())
 }

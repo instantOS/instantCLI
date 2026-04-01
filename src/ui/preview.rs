@@ -92,6 +92,10 @@ pub struct PreviewBuilder {
     sink: PreviewSink,
 }
 
+pub struct PreviewWriter {
+    builder: Option<PreviewBuilder>,
+}
+
 impl PreviewBuilder {
     /// Create a new preview builder in **collect** mode.
     ///
@@ -459,6 +463,139 @@ done"#
                 commands.join("\n")
             }
         }
+    }
+}
+
+impl PreviewWriter {
+    pub fn collect() -> Self {
+        Self {
+            builder: Some(PreviewBuilder::new()),
+        }
+    }
+
+    pub fn streaming() -> Self {
+        Self {
+            builder: Some(PreviewBuilder::streaming()),
+        }
+    }
+
+    pub fn streaming_cached() -> Self {
+        Self {
+            builder: Some(PreviewBuilder::streaming_cached()),
+        }
+    }
+
+    fn map(&mut self, f: impl FnOnce(PreviewBuilder) -> PreviewBuilder) -> &mut Self {
+        let builder = self.builder.take().expect("preview writer already finalized");
+        self.builder = Some(f(builder));
+        self
+    }
+
+    pub fn header(&mut self, icon: NerdFont, title: &str) -> &mut Self {
+        self.map(|builder| builder.header(icon, title))
+    }
+
+    pub fn text(&mut self, content: &str) -> &mut Self {
+        self.map(|builder| builder.text(content))
+    }
+
+    pub fn subtext(&mut self, content: &str) -> &mut Self {
+        self.map(|builder| builder.subtext(content))
+    }
+
+    pub fn field(&mut self, label: &str, value: &str) -> &mut Self {
+        self.map(|builder| builder.field(label, value))
+    }
+
+    pub fn field_indented(&mut self, label: &str, value: &str) -> &mut Self {
+        self.map(|builder| builder.field_indented(label, value))
+    }
+
+    pub fn line(&mut self, color: &str, icon: Option<NerdFont>, content: &str) -> &mut Self {
+        self.map(|builder| builder.line(color, icon, content))
+    }
+
+    pub fn separator(&mut self) -> &mut Self {
+        self.map(PreviewBuilder::separator)
+    }
+
+    pub fn blank(&mut self) -> &mut Self {
+        self.map(PreviewBuilder::blank)
+    }
+
+    pub fn title(&mut self, color: &str, content: &str) -> &mut Self {
+        self.map(|builder| builder.title(color, content))
+    }
+
+    pub fn raw(&mut self, content: &str) -> &mut Self {
+        self.map(|builder| builder.raw(content))
+    }
+
+    pub fn indented_line(
+        &mut self,
+        color: &str,
+        icon: Option<NerdFont>,
+        content: &str,
+    ) -> &mut Self {
+        self.map(|builder| builder.indented_line(color, icon, content))
+    }
+
+    pub fn bullet(&mut self, content: &str) -> &mut Self {
+        self.map(|builder| builder.bullet(content))
+    }
+
+    pub fn bullets<I, S>(&mut self, items: I) -> &mut Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        self.map(|builder| builder.bullets(items))
+    }
+
+    pub fn shell(&mut self, command: &str) -> &mut Self {
+        self.map(|builder| builder.shell(command))
+    }
+
+    pub fn shell_loop<I, S>(&mut self, var: &str, items: I, body: &str) -> &mut Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        self.map(|builder| builder.shell_loop(var, items, body))
+    }
+
+    pub fn mime_defaults<I, S>(&mut self, mime_types: I) -> &mut Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        self.map(|builder| builder.mime_defaults(mime_types))
+    }
+
+    pub fn section<F>(&mut self, render: F) -> anyhow::Result<&mut Self>
+    where
+        F: FnOnce(&mut PreviewWriter) -> anyhow::Result<()>,
+    {
+        render(self)?;
+        Ok(self)
+    }
+
+    pub fn build(mut self) -> FzfPreview {
+        self.builder.take().expect("preview writer already finalized").build()
+    }
+
+    pub fn build_string(mut self) -> String {
+        self.builder
+            .take()
+            .expect("preview writer already finalized")
+            .build_string()
+    }
+
+    pub fn build_shell_script(mut self) -> String {
+        self.builder
+            .take()
+            .expect("preview writer already finalized")
+            .build_shell_script()
     }
 }
 

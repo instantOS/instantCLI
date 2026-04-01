@@ -3,7 +3,7 @@ use anyhow::Result;
 use crate::settings::defaultapps::{get_application_info, query_default_app};
 use crate::ui::catppuccin::colors;
 use crate::ui::prelude::NerdFont;
-use crate::ui::preview::PreviewBuilder;
+use crate::ui::preview::PreviewWriter;
 
 /// Core implementation: renders the default-app preview into the given builder.
 /// The header and static content stream immediately; the per-MIME `xdg-mime`
@@ -13,9 +13,9 @@ pub(crate) fn render_default_app_impl(
     icon: NerdFont,
     summary: &str,
     mime_types: &[&str],
-    builder: PreviewBuilder,
-) -> Result<PreviewBuilder> {
-    let mut builder = builder
+    preview: &mut PreviewWriter,
+) -> Result<()> {
+    preview
         .header(icon, title)
         .subtext(summary)
         .blank()
@@ -36,10 +36,10 @@ pub(crate) fn render_default_app_impl(
             .flatten()
             .map(|desktop_id| display_app_name(&desktop_id))
             .unwrap_or_else(|| "(not set)".to_string());
-        builder = builder.field_indented(mime, &label);
+        preview.field_indented(mime, &label);
     }
 
-    Ok(builder)
+    Ok(())
 }
 
 /// Collect-mode entry point (returns a String).
@@ -49,10 +49,9 @@ pub(crate) fn render_default_app_preview(
     summary: &str,
     mime_types: &[&str],
 ) -> Result<String> {
-    Ok(
-        render_default_app_impl(title, icon, summary, mime_types, PreviewBuilder::new())?
-            .build_string(),
-    )
+    let mut preview = PreviewWriter::collect();
+    render_default_app_impl(title, icon, summary, mime_types, &mut preview)?;
+    Ok(preview.build_string())
 }
 
 pub(crate) fn display_app_name(desktop_id: &str) -> String {
