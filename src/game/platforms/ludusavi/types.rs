@@ -1,6 +1,7 @@
 //! Data structures for Ludusavi manifest parsing
 
 use std::collections::HashMap;
+use std::fs;
 use std::path::Path;
 
 use serde::Deserialize;
@@ -113,20 +114,60 @@ impl DiscoveredWineSave {
     }
 }
 
-pub fn choose_primary_save(mut saves: Vec<DiscoveredWineSave>) -> Option<DiscoveredWineSave> {
-    saves.sort_by_cached_key(|save| {
-        let path = Path::new(&save.save_path);
-        let is_dir = path.is_dir();
-        let depth = path.components().count();
+fn semantic_rank(save: &DiscoveredWineSave) -> (bool, bool, bool, u8, usize, usize) {
+    let path = Path::new(&save.save_path);
+    let is_dir = path.is_dir();
+    let depth = path.components().count();
 
-        (
-            !is_dir,
-            !save.is_save(),
-            save.is_config(),
-            save.store_user_id_match_quality(),
-            depth,
-            save.save_path.len(),
-        )
+    (
+        !is_dir,
+        !save.is_save(),
+        save.is_config(),
+        save.store_user_id_match_quality(),
+        depth,
+        save.save_path.len(),
+    )
+}
+
+fn entry_size(path: &Path) -> u64 {
+    let Ok(metadata) = fs::metadata(path) else {
+        return 0;
+    };
+
+    if metadata.is_file() {
+        return metadata.len();
+    }
+
+    if !metadata.is_dir() {
+        return 0;
+    }
+
+    let Ok(entries) = fs::read_dir(path) else {
+        return 0;
+    };
+
+    entries
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry_size(&entry.path()))
+        .sum()
+}
+
+pub fn choose_primary_save(mut saves: Vec<DiscoveredWineSave>) -> Option<DiscoveredWineSave> {
+    let mut size_cache = HashMap::new();
+    saves.sort_by(|left, right| {
+        let left_rank = semantic_rank(left);
+        let right_rank = semantic_rank(right);
+
+        left_rank.cmp(&right_rank).then_with(|| {
+            let left_size = *size_cache
+                .entry(left.save_path.clone())
+                .or_insert_with(|| entry_size(Path::new(&left.save_path)));
+            let right_size = *size_cache
+                .entry(right.save_path.clone())
+                .or_insert_with(|| entry_size(Path::new(&right.save_path)));
+
+            right_size.cmp(&left_size)
+        })
     });
 
     saves.into_iter().next()
@@ -161,5 +202,35 @@ mod tests {
         .unwrap();
 
         assert_eq!(selected.save_path, save_dir.display().to_string());
+    }
+
+    #[test]
+    fn choose_primary_save_uses_size_only_for_semantic_ties() {
+        let temp = tempfile::tempdir().unwrap();
+        let game_root = temp.path().join("Terraria");
+        let small_dir = game_root.join("slot-a");
+        let large_dir = game_root.join("slot-b");
+        std::fs::create_dir_all(&small_dir).unwrap();
+        std::fs::create_dir_all(&large_dir).unwrap();
+        std::fs::write(small_dir.join("save1.dat"), [0_u8; 4]).unwrap();
+        std::fs::write(large_dir.join("save1.dat"), [0_u8; 64]).unwrap();
+
+        let selected = choose_primary_save(vec![
+            DiscoveredWineSave::new(
+                "Terraria".to_string(),
+                small_dir.display().to_string(),
+                vec!["save".to_string()],
+                false,
+            ),
+            DiscoveredWineSave::new(
+                "Terraria".to_string(),
+                large_dir.display().to_string(),
+                vec!["save".to_string()],
+                false,
+            ),
+        ])
+        .unwrap();
+
+        assert_eq!(selected.save_path, large_dir.display().to_string());
     }
 }
