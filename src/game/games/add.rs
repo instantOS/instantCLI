@@ -1,4 +1,4 @@
-use super::discover::{MenuSelectionPayload, manual_menu_row, streaming_menu_preview_command};
+use super::discover::{MenuSelectionPayload, streaming_menu_preview_command};
 use super::manager::GameCreationContext;
 use super::prompts;
 use crate::common::TildePath;
@@ -8,6 +8,7 @@ use crate::game::utils::safeguards::{PathUsage, ensure_safe_path};
 use crate::menu_utils::{FzfResult, FzfWrapper, Header};
 use crate::ui::catppuccin::fzf_mocha_args;
 use crate::ui::nerd_font::NerdFont;
+use crate::ui::preview::PreviewBuilder;
 use anyhow::{Context, Result, anyhow};
 use base64::{Engine as _, engine::general_purpose};
 use std::fs;
@@ -35,6 +36,41 @@ pub(super) struct ResolvedGameDetails {
     pub(super) launch_command: Option<String>,
     pub(super) save_path: TildePath,
     pub(super) save_path_type: PathContentKind,
+}
+
+fn manual_menu_row() -> Result<String> {
+    let preview = PreviewBuilder::new()
+        .header(NerdFont::Edit, "Manual Entry")
+        .text("Enter game details manually.")
+        .blank()
+        .text("You will be prompted for:")
+        .bullet("Game name")
+        .bullet("Description (optional)")
+        .bullet("Launch command (optional)")
+        .bullet("Save data path")
+        .build();
+
+    let payload = MenuSelectionPayload {
+        existing: false,
+        display_name: None,
+        tracked_name: None,
+        save_path: None,
+        launch_command: None,
+    };
+
+    let payload_json = serde_json::to_vec(&payload)?;
+    Ok(format!(
+        "{}\t{}\t{}\t{}\t{}",
+        "manual",
+        "manual",
+        "Enter a new game manually",
+        general_purpose::STANDARD.encode(match preview {
+            crate::menu::protocol::FzfPreview::Text(text) => text.into_bytes(),
+            crate::menu::protocol::FzfPreview::Command(command) => command.into_bytes(),
+            crate::menu::protocol::FzfPreview::None => Vec::new(),
+        }),
+        general_purpose::STANDARD.encode(payload_json),
+    ))
 }
 
 pub(super) fn maybe_prefill_from_emulators(
@@ -74,14 +110,16 @@ pub(super) fn maybe_prefill_from_emulators(
                         .unwrap_or_else(|| "Unknown Game".to_string());
                     Ok(EmulatorPrefillResult::OpenGameMenu(tracked_name))
                 } else {
-                    Ok(EmulatorPrefillResult::OpenPrefilledAddEditor(AddGameOptions {
-                        name: payload.display_name,
-                        description: None,
-                        launch_command: payload.launch_command,
-                        save_path: payload.save_path,
-                        create_save_path: false,
-                        no_cache: options.no_cache,
-                    }))
+                    Ok(EmulatorPrefillResult::OpenPrefilledAddEditor(
+                        AddGameOptions {
+                            name: payload.display_name,
+                            description: None,
+                            launch_command: payload.launch_command,
+                            save_path: payload.save_path,
+                            create_save_path: false,
+                            no_cache: options.no_cache,
+                        },
+                    ))
                 }
             }
         },

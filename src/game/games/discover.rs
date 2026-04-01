@@ -16,7 +16,7 @@ use crate::game::platforms::discovery::{
 use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::prelude::{Level, OutputFormat, emit, get_output_format};
-use crate::ui::preview::{FzfPreview, PreviewBuilder};
+use crate::ui::preview::FzfPreview;
 
 use super::manager::GameCreationContext;
 
@@ -76,9 +76,6 @@ pub fn print_streaming_menu_rows(
 ) -> Result<()> {
     let mut out = io::BufWriter::new(io::stdout());
 
-    writeln!(out, "{}", manual_menu_row()?)?;
-    out.flush()?;
-
     stream_discovered_records(
         sources,
         scan_path,
@@ -115,22 +112,6 @@ pub fn print_streaming_menu_rows(
     )?;
 
     Ok(())
-}
-
-pub fn manual_menu_row() -> Result<String> {
-    encode_menu_row(
-        "manual",
-        "manual",
-        &manual_menu_display(),
-        &preview_to_text(manual_menu_preview()),
-        &MenuSelectionPayload {
-            existing: false,
-            display_name: None,
-            tracked_name: None,
-            save_path: None,
-            launch_command: None,
-        },
-    )
 }
 
 pub fn streaming_menu_preview_command() -> &'static str {
@@ -337,7 +318,11 @@ where
     };
 
     if let Some(scan_path) = scan_path {
-        let root = PathBuf::from(scan_root.clone().unwrap_or_else(|| PathBuf::from(scan_path)));
+        let root = PathBuf::from(
+            scan_root
+                .clone()
+                .unwrap_or_else(|| PathBuf::from(scan_path)),
+        );
         if let Some(prefix) = find_prefix_root(&root) {
             on_progress(0, 1, &format!("Scanning Wine prefix {}", prefix.display()))?;
             let result = stream_generic_prefix_records(&prefix, context.as_ref(), emit_game);
@@ -495,9 +480,9 @@ fn cached_into_runtime_game(
     cached.record.existing = false;
     cached.record.tracked_name = None;
 
-    if let Some(existing_name) = context.and_then(|ctx| {
-        find_existing_game_for_save(Path::new(&cached.record.save_path), ctx)
-    }) {
+    if let Some(existing_name) = context
+        .and_then(|ctx| find_existing_game_for_save(Path::new(&cached.record.save_path), ctx))
+    {
         cached.record.existing = true;
         cached.record.tracked_name = Some(existing_name);
     }
@@ -663,26 +648,6 @@ fn find_existing_game_for_save(
         .map(|inst| inst.game_name.0.clone())
 }
 
-fn manual_menu_display() -> String {
-    format!(
-        "{} Enter a new game manually",
-        format_icon_colored(NerdFont::Edit, colors::BLUE)
-    )
-}
-
-fn manual_menu_preview() -> FzfPreview {
-    PreviewBuilder::new()
-        .header(NerdFont::Edit, "Manual Entry")
-        .text("Enter game details manually.")
-        .blank()
-        .text("You will be prompted for:")
-        .bullet("Game name")
-        .bullet("Description (optional)")
-        .bullet("Launch command (optional)")
-        .bullet("Save data path")
-        .build()
-}
-
 fn discovered_menu_display(display_name: &str, platform_short: &str, existing: bool) -> String {
     let icon = if existing {
         format_icon_colored(NerdFont::Gamepad, colors::MAUVE)
@@ -745,8 +710,6 @@ struct DiscoveredGameWithPreview {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::TildePath;
-    use crate::game::utils::path::tilde_display_string;
 
     #[test]
     fn menu_fields_are_sanitized() {
@@ -777,15 +740,6 @@ mod tests {
     #[test]
     fn preview_command_is_stable() {
         assert!(streaming_menu_preview_command().contains("base64 -d"));
-    }
-
-    #[test]
-    fn tilde_display_roundtrip_for_manual_preview() {
-        let preview = preview_to_text(manual_menu_preview());
-        assert!(preview.contains("Manual Entry"));
-        let home = dirs::home_dir().unwrap();
-        let display = tilde_display_string(&TildePath::new(home));
-        assert_eq!(display, "~");
     }
 
     #[test]

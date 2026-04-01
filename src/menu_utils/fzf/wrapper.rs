@@ -455,7 +455,9 @@ impl FzfWrapper {
         let mut producer = Command::new("sh");
         producer
             .arg("-c")
-            .arg(format!("unset FZF_DEFAULT_OPTS; {input_command} </dev/null"))
+            .arg(format!(
+                "unset FZF_DEFAULT_OPTS; {input_command} </dev/null"
+            ))
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
 

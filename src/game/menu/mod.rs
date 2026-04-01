@@ -5,9 +5,9 @@ mod state;
 use anyhow::{Context, Result, anyhow};
 
 use crate::common::TildePath;
+use crate::game::GameCommands;
 use crate::game::config::{Game, GameInstallation, PathContentKind};
 use crate::game::config::{InstallationsConfig, InstantGameConfig};
-use crate::game::GameCommands;
 use crate::game::games::AddGameOptions;
 use crate::game::games::GameManager;
 use crate::game::games::selection::{GameMenuEntry, select_game_menu_entry};
@@ -852,13 +852,19 @@ pub fn open_prefilled_add_editor(options: AddGameOptions) -> Result<()> {
         return Err(anyhow!("Discovered game is missing a name"));
     }
 
-    if game_config.games.iter().any(|game| game.name.0 == game_name) {
+    if game_config
+        .games
+        .iter()
+        .any(|game| game.name.0 == game_name)
+    {
         return Err(anyhow!("Game '{}' already exists", game_name));
     }
 
     let mut game = Game::new(game_name.clone());
     game.description = options.description.filter(|value| !value.trim().is_empty());
-    game.launch_command = options.launch_command.filter(|value| !value.trim().is_empty());
+    game.launch_command = options
+        .launch_command
+        .filter(|value| !value.trim().is_empty());
     game_config.games.push(game);
 
     let save_path = options
