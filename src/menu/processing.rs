@@ -89,7 +89,7 @@ impl RequestProcessor {
     /// Handle confirm dialog request
     fn handle_confirm_request(&self, message: String) -> Result<MenuResponse> {
         match FzfWrapper::confirm(&message) {
-            Ok(result) => Ok(MenuResponse::ConfirmResult(result.into())),
+            Ok(result) => Ok(MenuResponse::ConfirmResult(result)),
             Err(e) => Ok(MenuResponse::Error(format!(
                 "Failed to show confirm dialog: {e}"
             ))),

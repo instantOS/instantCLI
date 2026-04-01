@@ -41,24 +41,32 @@ impl GameManager {
         }
 
         if options.name.is_none() {
-            match super::add::maybe_prefill_from_emulators(options, &context)? {
-                super::add::EmulatorPrefillResult::OpenGameMenu(game_name) => {
-                    return crate::game::menu::game_menu(Some(game_name));
-                }
-                super::add::EmulatorPrefillResult::OpenPrefilledAddEditor(new_options) => {
-                    return crate::game::menu::open_prefilled_add_editor(new_options);
-                }
-                super::add::EmulatorPrefillResult::Continue(new_options) => {
-                    let details = super::add::resolve_add_game_details(new_options, &context)?;
-                    return Self::finish_add_game(&mut context, details);
-                }
-                super::add::EmulatorPrefillResult::Cancelled => {
-                    return Ok(());
+            loop {
+                match super::add::maybe_prefill_from_emulators(options.clone(), &context)? {
+                    super::add::EmulatorPrefillResult::OpenGameMenu(game_name) => {
+                        return crate::game::menu::game_menu(Some(game_name));
+                    }
+                    super::add::EmulatorPrefillResult::OpenPrefilledAddEditor(new_options) => {
+                        return crate::game::menu::open_prefilled_add_editor(new_options);
+                    }
+                    super::add::EmulatorPrefillResult::Continue(new_options) => {
+                        let Some(details) =
+                            super::add::resolve_add_game_details(new_options, &context)?
+                        else {
+                            continue;
+                        };
+                        return Self::finish_add_game(&mut context, details);
+                    }
+                    super::add::EmulatorPrefillResult::Cancelled => {
+                        return Ok(());
+                    }
                 }
             }
         }
 
-        let details = super::add::resolve_add_game_details(options, &context)?;
+        let Some(details) = super::add::resolve_add_game_details(options, &context)? else {
+            return Ok(());
+        };
         Self::finish_add_game(&mut context, details)
     }
 

@@ -315,11 +315,9 @@ where
     };
 
     if let Some(scan_path) = scan_path {
-        let root = PathBuf::from(
-            scan_root
-                .clone()
-                .unwrap_or_else(|| PathBuf::from(scan_path)),
-        );
+        let root = scan_root
+            .clone()
+            .unwrap_or_else(|| PathBuf::from(scan_path));
         if let Some(prefix) = find_prefix_root(&root) {
             on_progress(0, 1, &format!("Scanning Wine prefix {}", prefix.display()))?;
             let result = stream_generic_prefix_records(&prefix, context.as_ref(), emit_game);

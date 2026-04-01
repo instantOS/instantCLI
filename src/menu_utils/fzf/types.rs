@@ -203,16 +203,10 @@ impl<T: Serialize> StreamingMenuItem<T> {
         let payload_json = serde_json::to_vec(&self.payload)?;
         let default_preview_arg = self.preview_arg.as_deref().unwrap_or(&self.key);
         let (preview_kind, preview_data) = match &self.preview {
-            FzfPreview::Text(text) => (
-                "T",
-                general_purpose::STANDARD.encode(text.as_bytes()),
-            ),
+            FzfPreview::Text(text) => ("T", general_purpose::STANDARD.encode(text.as_bytes())),
             FzfPreview::Command(command) => {
                 let baked = command.replace("\"$1\"", &shell_quote(default_preview_arg));
-                (
-                    "C",
-                    general_purpose::STANDARD.encode(baked.as_bytes()),
-                )
+                ("C", general_purpose::STANDARD.encode(baked.as_bytes()))
             }
             FzfPreview::None => ("N", String::new()),
         };

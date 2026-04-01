@@ -1,12 +1,12 @@
 use super::discover::MenuSelectionPayload;
 use super::manager::GameCreationContext;
-use super::prompts;
 use crate::common::TildePath;
 use crate::common::shell::resolve_current_binary;
 use crate::game::config::PathContentKind;
 use crate::game::utils::safeguards::{PathUsage, ensure_safe_path};
 use crate::menu_utils::{
-    DecodedStreamingMenuItem, FzfResult, FzfWrapper, Header, StreamingCommand, StreamingMenuItem,
+    DecodedStreamingMenuItem, FilePickerScope, FzfResult, FzfWrapper, Header, PathInputBuilder,
+    PathInputSelection, StreamingCommand, StreamingMenuItem,
 };
 use crate::ui::catppuccin::{colors, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
@@ -14,7 +14,7 @@ use crate::ui::preview::PreviewBuilder;
 use anyhow::{Context, Result, anyhow};
 use std::fs;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct AddGameOptions {
     pub name: Option<String>,
     pub description: Option<String>,
@@ -128,7 +128,7 @@ pub(super) fn maybe_prefill_from_emulators(
 pub(super) fn resolve_add_game_details(
     options: AddGameOptions,
     context: &GameCreationContext,
-) -> Result<ResolvedGameDetails> {
+) -> Result<Option<ResolvedGameDetails>> {
     let interactive_prompts = options.name.is_none();
 
     let AddGameOptions {
@@ -153,18 +153,31 @@ pub(super) fn resolve_add_game_details(
 
             trimmed.to_string()
         }
-        None => prompts::get_game_name(&context.config)?,
+        None => match prompt_manual_game_name(context)? {
+            Some(name) => name,
+            None => return Ok(None),
+        },
     };
 
     let description = match description {
         Some(text) => some_if_not_empty(text),
-        None if interactive_prompts => some_if_not_empty(prompts::get_game_description()?),
+        None if interactive_prompts => {
+            match prompt_optional_text("Enter game description (optional)")? {
+                Some(text) => some_if_not_empty(text),
+                None => return Ok(None),
+            }
+        }
         None => None,
     };
 
     let launch_command = match launch_command {
         Some(command) => some_if_not_empty(command),
-        None if interactive_prompts => some_if_not_empty(prompts::get_launch_command()?),
+        None if interactive_prompts => {
+            match prompt_optional_text("Enter launch command (optional)")? {
+                Some(command) => some_if_not_empty(command),
+                None => return Ok(None),
+            }
+        }
         None => None,
     };
 
@@ -200,20 +213,23 @@ pub(super) fn resolve_add_game_details(
 
             tilde_path
         }
-        None => prompts::get_save_path(&game_name)?,
+        None => match prompt_manual_save_path(&game_name)? {
+            Some(path) => path,
+            None => return Ok(None),
+        },
     };
 
     ensure_safe_path(save_path.as_path(), PathUsage::SaveDirectory)?;
 
     let save_path_type = super::relocate::determine_save_path_type(&save_path)?;
 
-    Ok(ResolvedGameDetails {
+    Ok(Some(ResolvedGameDetails {
         name: game_name,
         description,
         launch_command,
         save_path,
         save_path_type,
-    })
+    }))
 }
 
 fn some_if_not_empty(value: impl Into<String>) -> Option<String> {
@@ -224,6 +240,133 @@ fn some_if_not_empty(value: impl Into<String>) -> Option<String> {
     } else {
         Some(trimmed.to_string())
     }
+}
+
+fn prompt_manual_game_name(context: &GameCreationContext) -> Result<Option<String>> {
+    loop {
+        let result = FzfWrapper::builder()
+            .prompt("Enter game name")
+            .input()
+            .input_result()?;
+
+        let game_name = match result {
+            FzfResult::Selected(name) => name.trim().to_string(),
+            FzfResult::Cancelled => return Ok(None),
+            _ => return Ok(None),
+        };
+
+        if game_name.is_empty() {
+            FzfWrapper::message("Game name cannot be empty.")?;
+            continue;
+        }
+
+        if context.game_exists(&game_name) {
+            FzfWrapper::message(&format!("Game '{}' already exists.", game_name))?;
+            continue;
+        }
+
+        return Ok(Some(game_name));
+    }
+}
+
+fn prompt_optional_text(prompt: &str) -> Result<Option<String>> {
+    match FzfWrapper::builder()
+        .prompt(prompt)
+        .input()
+        .input_result()?
+    {
+        FzfResult::Selected(value) => Ok(Some(value.trim().to_string())),
+        FzfResult::Cancelled => Ok(None),
+        _ => Ok(None),
+    }
+}
+
+fn prompt_manual_save_path(game_name: &str) -> Result<Option<TildePath>> {
+    let selection = PathInputBuilder::new()
+        .header(format!(
+            "{} Choose the save path for '{game_name}'",
+            char::from(NerdFont::Folder)
+        ))
+        .manual_prompt(format!(
+            "{} Enter the save path (e.g., ~/.local/share/{}/saves)",
+            char::from(NerdFont::Edit),
+            game_name.to_lowercase().replace(' ', "-")
+        ))
+        .scope(FilePickerScope::FilesAndDirectories)
+        .picker_hint(format!(
+            "{} Select the file or directory that stores the save data",
+            char::from(NerdFont::Info)
+        ))
+        .manual_option_label(format!("{} Type an exact path", char::from(NerdFont::Edit)))
+        .picker_option_label(format!(
+            "{} Browse and choose a path",
+            char::from(NerdFont::FolderOpen)
+        ))
+        .choose()?;
+
+    let save_path = match selection {
+        PathInputSelection::Manual(input) => {
+            if !super::validation::validate_non_empty(&input, "Save path")? {
+                FzfWrapper::message("Save path cannot be empty.")?;
+                return prompt_manual_save_path(game_name);
+            }
+            TildePath::from_str(&input).map_err(|e| anyhow!("Invalid save path: {}", e))?
+        }
+        PathInputSelection::Picker(path) | PathInputSelection::WinePrefix(path) => {
+            TildePath::new(path)
+        }
+        PathInputSelection::Cancelled => return Ok(None),
+    };
+
+    if let Err(err) = ensure_safe_path(save_path.as_path(), PathUsage::SaveDirectory) {
+        FzfWrapper::message(&err.to_string())?;
+        return prompt_manual_save_path(game_name);
+    }
+
+    let save_path_display = save_path
+        .to_tilde_string()
+        .unwrap_or_else(|_| save_path.as_path().display().to_string());
+
+    match FzfWrapper::builder()
+        .confirm(format!(
+            "{} Are you sure you want to use '{save_path_display}' as the save path for '{game_name}'?\n\n\
+            This path will be used to store and sync save files for this game.",
+            char::from(NerdFont::Question)
+        ))
+        .yes_text("Use This Path")
+        .no_text("Choose Different Path")
+        .confirm_dialog()
+        .map_err(|e| anyhow!("Failed to get path confirmation: {}", e))?
+    {
+        crate::menu_utils::ConfirmResult::Yes => {}
+        crate::menu_utils::ConfirmResult::No | crate::menu_utils::ConfirmResult::Cancelled => {
+            return prompt_manual_save_path(game_name);
+        }
+    }
+
+    if !save_path.as_path().exists() {
+        match FzfWrapper::confirm(&format!(
+            "{} Save path '{}' does not exist. Create it?",
+            char::from(NerdFont::Warning),
+            save_path_display
+        ))
+        .map_err(|e| anyhow!("Failed to get confirmation: {}", e))?
+        {
+            crate::menu_utils::ConfirmResult::Yes => {
+                fs::create_dir_all(save_path.as_path())
+                    .context("Failed to create save directory")?;
+                println!(
+                    "{} Created save directory: {save_path_display}",
+                    char::from(NerdFont::Check)
+                );
+            }
+            crate::menu_utils::ConfirmResult::No | crate::menu_utils::ConfirmResult::Cancelled => {
+                return Ok(None);
+            }
+        }
+    }
+
+    Ok(Some(save_path))
 }
 
 enum SelectedDiscovery {

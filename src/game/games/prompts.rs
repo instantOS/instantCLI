@@ -8,24 +8,6 @@ use crate::menu_utils::{
 use crate::ui::nerd_font::NerdFont;
 use anyhow::{Context, Result, anyhow};
 
-pub(crate) fn get_game_name(config: &crate::game::config::InstantGameConfig) -> Result<String> {
-    let game_name = FzfWrapper::input("Enter game name")
-        .map_err(|e| anyhow!("Failed to get game name input: {}", e))?
-        .trim()
-        .to_string();
-
-    if !validate_non_empty(&game_name, "Game name")? {
-        return Err(anyhow!("Game name cannot be empty"));
-    }
-
-    if config.games.iter().any(|g| g.name.0 == game_name) {
-        eprintln!("Game '{game_name}' already exists!");
-        return Err(anyhow!("Game already exists"));
-    }
-
-    Ok(game_name)
-}
-
 pub(crate) fn get_game_description() -> Result<String> {
     Ok(FzfWrapper::input("Enter game description (optional)")
         .map_err(|e| anyhow!("Failed to get description input: {}", e))?

@@ -126,38 +126,94 @@ fn stream_available(manager: PackageManager) -> Result<()> {
         PackageManager::Pacman => stream_and_print(
             Command::new("pacman").arg("-Slq"),
             |line| Some(line.to_string()),
-            |pkg| print_package_row(manager, &pkg, &pkg, pkg.clone(), preview_command(preview_id)),
+            |pkg| {
+                print_package_row(
+                    manager,
+                    &pkg,
+                    &pkg,
+                    pkg.clone(),
+                    preview_command(preview_id),
+                )
+            },
         ),
         PackageManager::Apt => stream_and_print(
             Command::new("apt-cache").args(["search", "."]),
             |line| line.split_once(' ').map(|(name, _)| name.to_string()),
-            |pkg| print_package_row(manager, &pkg, &pkg, pkg.clone(), preview_command(preview_id)),
+            |pkg| {
+                print_package_row(
+                    manager,
+                    &pkg,
+                    &pkg,
+                    pkg.clone(),
+                    preview_command(preview_id),
+                )
+            },
         ),
         PackageManager::Dnf => stream_and_print(
             Command::new("dnf").args(["list", "available"]),
             parse_dnf_package_name,
-            |pkg| print_package_row(manager, &pkg, &pkg, pkg.clone(), preview_command(preview_id)),
+            |pkg| {
+                print_package_row(
+                    manager,
+                    &pkg,
+                    &pkg,
+                    pkg.clone(),
+                    preview_command(preview_id),
+                )
+            },
         ),
         PackageManager::Zypper => stream_and_print(
             Command::new("zypper").args(["se", "--available-only"]),
             parse_zypper_package_name,
-            |pkg| print_package_row(manager, &pkg, &pkg, pkg.clone(), preview_command(preview_id)),
+            |pkg| {
+                print_package_row(
+                    manager,
+                    &pkg,
+                    &pkg,
+                    pkg.clone(),
+                    preview_command(preview_id),
+                )
+            },
         ),
         PackageManager::Pkg => stream_and_print(
             Command::new("pkg").args(["list-all"]),
             parse_pkg_name,
-            |pkg| print_package_row(manager, &pkg, &pkg, pkg.clone(), preview_command(preview_id)),
+            |pkg| {
+                print_package_row(
+                    manager,
+                    &pkg,
+                    &pkg,
+                    pkg.clone(),
+                    preview_command(preview_id),
+                )
+            },
         ),
         PackageManager::Flatpak => stream_and_print(
             Command::new("flatpak").args(["remote-ls", "--app", "--columns=application"]),
             |line| Some(line.to_string()),
-            |pkg| print_package_row(manager, &pkg, &pkg, pkg.clone(), preview_command(preview_id)),
+            |pkg| {
+                print_package_row(
+                    manager,
+                    &pkg,
+                    &pkg,
+                    pkg.clone(),
+                    preview_command(preview_id),
+                )
+            },
         ),
         PackageManager::Aur => stream_aur_available(),
         PackageManager::Cargo => stream_and_print(
             Command::new("cargo").args(["search", "--limit", "1000", ""]),
             |line| line.split(' ').next().map(|name| name.to_string()),
-            |pkg| print_package_row(manager, &pkg, &pkg, pkg.clone(), preview_command(preview_id)),
+            |pkg| {
+                print_package_row(
+                    manager,
+                    &pkg,
+                    &pkg,
+                    pkg.clone(),
+                    preview_command(preview_id),
+                )
+            },
         ),
         PackageManager::Snap => generate_and_print_snap_list(None),
     }
@@ -277,11 +333,7 @@ fn stream_installed_snaps() -> Result<()> {
     Ok(())
 }
 
-fn stream_and_print<F, P>(
-    command: &mut Command,
-    mut map_line: F,
-    mut print_row: P,
-) -> Result<()>
+fn stream_and_print<F, P>(command: &mut Command, mut map_line: F, mut print_row: P) -> Result<()>
 where
     F: FnMut(&str) -> Option<String>,
     P: FnMut(String) -> Result<()>,

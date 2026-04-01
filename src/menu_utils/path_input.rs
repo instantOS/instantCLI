@@ -251,18 +251,27 @@ impl PathInputBuilder {
         options
     }
 
-    fn prompt_manual_path(&self) -> Result<Option<String>> {
-        let input = FzfWrapper::input(&self.manual_prompt)?;
-        let trimmed = input.trim().to_string();
-        if trimmed.is_empty() {
-            println!(
-                "{} No path entered. Please choose a path.",
-                char::from(NerdFont::Warning)
-            );
-            return Ok(None);
-        }
+    fn prompt_manual_path(&self) -> Result<ManualPathOutcome> {
+        match FzfWrapper::builder()
+            .prompt(&self.manual_prompt)
+            .input()
+            .input_result()?
+        {
+            FzfResult::Selected(input) => {
+                let trimmed = input.trim().to_string();
+                if trimmed.is_empty() {
+                    println!(
+                        "{} No path entered. Please choose a path.",
+                        char::from(NerdFont::Warning)
+                    );
+                    return Ok(ManualPathOutcome::Retry);
+                }
 
-        Ok(Some(trimmed))
+                Ok(ManualPathOutcome::Submitted(trimmed))
+            }
+            FzfResult::Cancelled => Ok(ManualPathOutcome::Cancelled),
+            _ => Ok(ManualPathOutcome::Cancelled),
+        }
     }
 
     pub fn choose(self) -> Result<PathInputSelection> {
@@ -275,13 +284,15 @@ impl PathInputBuilder {
 
             match selection {
                 FzfResult::Selected(option) => match option.choice {
-                    PathInputChoice::Manual => {
-                        if let Some(input) = self.prompt_manual_path()? {
+                    PathInputChoice::Manual => match self.prompt_manual_path()? {
+                        ManualPathOutcome::Submitted(input) => {
                             return Ok(PathInputSelection::Manual(input));
                         }
-
-                        continue;
-                    }
+                        ManualPathOutcome::Retry => continue,
+                        ManualPathOutcome::Cancelled => {
+                            continue;
+                        }
+                    },
                     PathInputChoice::Picker => {
                         match self.run_picker()? {
                             Some(path) => return Ok(PathInputSelection::Picker(path)),
@@ -304,6 +315,12 @@ impl PathInputBuilder {
             }
         }
     }
+}
+
+enum ManualPathOutcome {
+    Submitted(String),
+    Retry,
+    Cancelled,
 }
 
 #[derive(Debug, Clone)]
