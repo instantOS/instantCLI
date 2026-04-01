@@ -7,9 +7,11 @@ use anyhow::{Context, Result, anyhow};
 use crate::common::TildePath;
 use crate::game::config::{Game, GameInstallation, PathContentKind};
 use crate::game::config::{InstallationsConfig, InstantGameConfig};
+use crate::game::GameCommands;
 use crate::game::games::AddGameOptions;
 use crate::game::games::GameManager;
 use crate::game::games::selection::{GameMenuEntry, select_game_menu_entry};
+use crate::game::handle_game_command;
 use crate::game::operations::desktop;
 use crate::game::operations::launch_game;
 use crate::game::operations::steam;
@@ -683,7 +685,17 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
 
         match entry {
             GameMenuEntry::AddGame => {
-                GameManager::add_game(AddGameOptions::default())?;
+                handle_game_command(
+                    GameCommands::Add {
+                        name: None,
+                        description: None,
+                        launch_command: None,
+                        save_path: None,
+                        create_save_path: false,
+                        no_cache: false,
+                    },
+                    crate::ui::is_debug_enabled(),
+                )?;
                 // Return to menu after adding
                 continue;
             }
