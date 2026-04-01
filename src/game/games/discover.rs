@@ -679,7 +679,7 @@ struct DiscoveredGameWithPreview {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::menu_utils::{StreamingMenuItem, streaming_preview_command};
+    use crate::menu_utils::StreamingMenuItem;
 
     #[test]
     fn menu_fields_are_sanitized() {
@@ -709,11 +709,6 @@ mod tests {
 
         let fields: Vec<&str> = row.split('\t').collect();
         assert_eq!(fields.len(), 6);
-    }
-
-    #[test]
-    fn preview_command_is_stable() {
-        assert!(streaming_preview_command().contains("base64 -d"));
     }
 
     #[test]

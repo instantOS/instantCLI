@@ -189,15 +189,15 @@ fn try_render_streaming(id: PreviewId, ctx: &PreviewContext) -> Option<Result<()
         PreviewId::InstalledPackage => {
             Some(package::render_installed_package_preview_streaming(ctx))
         }
-        PreviewId::Apt => Some(mgr_stream(ctx, render_apt_impl, "APT Package")),
-        PreviewId::Dnf => Some(mgr_stream(ctx, render_dnf_impl, "DNF Package")),
-        PreviewId::Zypper => Some(mgr_stream(ctx, render_zypper_impl, "Zypper Package")),
-        PreviewId::Pacman => Some(mgr_stream(ctx, render_pacman_impl, "Pacman Package")),
-        PreviewId::Snap => Some(mgr_stream(ctx, render_snap_impl, "Snap Package")),
-        PreviewId::Pkg => Some(mgr_stream(ctx, render_pkg_impl, "Pkg Package")),
-        PreviewId::Flatpak => Some(mgr_stream(ctx, render_flatpak_impl, "Flatpak Package")),
-        PreviewId::Aur => Some(mgr_stream(ctx, render_aur_impl, "AUR Package")),
-        PreviewId::Cargo => Some(mgr_stream(ctx, render_cargo_impl, "Cargo Package")),
+        PreviewId::Apt => Some(mgr_stream(id, ctx, render_apt_impl)),
+        PreviewId::Dnf => Some(mgr_stream(id, ctx, render_dnf_impl)),
+        PreviewId::Zypper => Some(mgr_stream(id, ctx, render_zypper_impl)),
+        PreviewId::Pacman => Some(mgr_stream(id, ctx, render_pacman_impl)),
+        PreviewId::Snap => Some(mgr_stream(id, ctx, render_snap_impl)),
+        PreviewId::Pkg => Some(mgr_stream(id, ctx, render_pkg_impl)),
+        PreviewId::Flatpak => Some(mgr_stream(id, ctx, render_flatpak_impl)),
+        PreviewId::Aur => Some(mgr_stream(id, ctx, render_aur_impl)),
+        PreviewId::Cargo => Some(mgr_stream(id, ctx, render_cargo_impl)),
 
         // MIME type preview — queries xdg-mime + scans desktop files
         PreviewId::MimeType => Some(mime::render_mime_type_preview_streaming(ctx)),
@@ -357,19 +357,10 @@ fn render_preview(id: PreviewId, ctx: &PreviewContext) -> Result<String> {
         PreviewId::Disk => disks::render_disk_preview(ctx),
         PreviewId::Partition => disks::render_partition_preview(ctx),
         PreviewId::FileSuggestion => file::render_file_suggestion_preview(ctx),
-        PreviewId::Package => package::render_package_preview(ctx),
-        PreviewId::InstalledPackage => package::render_installed_package_preview(ctx),
-        PreviewId::Apt => package::render_apt_preview(ctx),
-        PreviewId::Dnf => package::render_dnf_preview(ctx),
-        PreviewId::Zypper => package::render_zypper_preview(ctx),
-        PreviewId::Pacman => package::render_pacman_preview(ctx),
-        PreviewId::Snap => package::render_snap_preview(ctx),
-        PreviewId::Pkg => package::render_pkg_preview(ctx),
-        PreviewId::Flatpak => package::render_flatpak_preview(ctx),
-        PreviewId::Aur => package::render_aur_preview(ctx),
-        PreviewId::Cargo => package::render_cargo_preview(ctx),
         PreviewId::Setting => render_setting_preview(ctx),
         PreviewId::SystemdService => render_systemd_service_preview(ctx),
+        // Package previews are always handled by try_render_streaming
+        _ => unreachable!("preview {id} should be handled by streaming path"),
     }
 }
 

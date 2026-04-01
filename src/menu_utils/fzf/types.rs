@@ -627,3 +627,13 @@ impl ItemDisplayData {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn preview_command_is_stable() {
+        assert!(streaming_preview_command().contains("base64 -d"));
+    }
+}

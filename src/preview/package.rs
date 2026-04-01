@@ -17,13 +17,6 @@ fn package_from_context(ctx: &PreviewContext) -> Option<&str> {
     ctx.key().filter(|k| !k.is_empty())
 }
 
-/// Build a placeholder preview for when no package is selected.
-fn placeholder_preview(title: &str, subtitle: &str) -> Result<String> {
-    let mut preview = PreviewWriter::collect();
-    preview.header(NerdFont::Package, title).subtext(subtitle);
-    Ok(preview.build_string())
-}
-
 // ============================================================================
 // Routing helpers
 // ============================================================================
@@ -122,90 +115,6 @@ fn render_for_manager(
     }
 }
 
-fn collect_preview(render: impl FnOnce(&mut PreviewWriter) -> Result<()>) -> Result<String> {
-    let mut preview = PreviewWriter::collect();
-    render(&mut preview)?;
-    Ok(preview.build_string())
-}
-
-// ============================================================================
-// Public entry points (collect mode — return String)
-// ============================================================================
-
-/// Render preview for a package (install context).
-/// Key format: "package_name" or "source\tpackage_name" for Arch.
-pub fn render_package_preview(ctx: &PreviewContext) -> Result<String> {
-    collect_preview(|preview| render_package_with(ctx, preview))
-}
-
-/// Render preview for an installed package (uninstall context).
-pub fn render_installed_package_preview(ctx: &PreviewContext) -> Result<String> {
-    collect_preview(|preview| render_installed_package_with(ctx, preview))
-}
-
-pub fn render_apt_preview(ctx: &PreviewContext) -> Result<String> {
-    match package_from_context(ctx) {
-        Some(pkg) => collect_preview(|preview| render_apt_impl(pkg, preview)),
-        None => placeholder_preview("APT Package", "Select a package to see details"),
-    }
-}
-
-pub fn render_dnf_preview(ctx: &PreviewContext) -> Result<String> {
-    match package_from_context(ctx) {
-        Some(pkg) => collect_preview(|preview| render_dnf_impl(pkg, preview)),
-        None => placeholder_preview("DNF Package", "Select a package to see details"),
-    }
-}
-
-pub fn render_zypper_preview(ctx: &PreviewContext) -> Result<String> {
-    match package_from_context(ctx) {
-        Some(pkg) => collect_preview(|preview| render_zypper_impl(pkg, preview)),
-        None => placeholder_preview("Zypper Package", "Select a package to see details"),
-    }
-}
-
-pub fn render_pacman_preview(ctx: &PreviewContext) -> Result<String> {
-    match package_from_context(ctx) {
-        Some(pkg) => collect_preview(|preview| render_pacman_impl(pkg, preview)),
-        None => placeholder_preview("Pacman Package", "Select a package to see details"),
-    }
-}
-
-pub fn render_snap_preview(ctx: &PreviewContext) -> Result<String> {
-    match package_from_context(ctx) {
-        Some(pkg) => collect_preview(|preview| render_snap_impl(pkg, preview)),
-        None => placeholder_preview("Snap Package", "Select a Snap package to see details"),
-    }
-}
-
-pub fn render_pkg_preview(ctx: &PreviewContext) -> Result<String> {
-    match package_from_context(ctx) {
-        Some(pkg) => collect_preview(|preview| render_pkg_impl(pkg, preview)),
-        None => placeholder_preview("Pkg Package", "Select a package to see details"),
-    }
-}
-
-pub fn render_flatpak_preview(ctx: &PreviewContext) -> Result<String> {
-    match package_from_context(ctx) {
-        Some(pkg) => collect_preview(|preview| render_flatpak_impl(pkg, preview)),
-        None => placeholder_preview("Flatpak Package", "Select a Flatpak package to see details"),
-    }
-}
-
-pub fn render_aur_preview(ctx: &PreviewContext) -> Result<String> {
-    match package_from_context(ctx) {
-        Some(pkg) => collect_preview(|preview| render_aur_impl(pkg, preview)),
-        None => placeholder_preview("AUR Package", "Select an AUR package to see details"),
-    }
-}
-
-pub fn render_cargo_preview(ctx: &PreviewContext) -> Result<String> {
-    match package_from_context(ctx) {
-        Some(pkg) => collect_preview(|preview| render_cargo_impl(pkg, preview)),
-        None => placeholder_preview("Cargo Package", "Select a Cargo package to see details"),
-    }
-}
-
 // ============================================================================
 // Streaming entry points — called by handle_preview_command with a streaming
 // writer so the header appears immediately while slow commands run.
@@ -224,50 +133,19 @@ pub(crate) fn render_installed_package_preview_streaming(ctx: &PreviewContext) -
 }
 
 pub(crate) fn render_manager_preview_streaming(
+    id: PreviewId,
     ctx: &PreviewContext,
     manager_render: fn(&str, &mut PreviewWriter) -> Result<()>,
-    placeholder_title: &str,
 ) -> Result<()> {
-    let Some(id) = preview_id_for_placeholder(placeholder_title) else {
-        match package_from_context(ctx) {
-            Some(pkg) => {
-                let mut preview = PreviewWriter::streaming();
-                manager_render(pkg, &mut preview)?;
-            }
-            None => {
-                let mut preview = PreviewWriter::streaming();
-                preview
-                    .header(NerdFont::Package, placeholder_title)
-                    .subtext("Select a package to see details");
-            }
-        }
-        return Ok(());
-    };
-
     cache::render_streaming_cached(id, ctx, |preview| match package_from_context(ctx) {
         Some(pkg) => manager_render(pkg, preview),
         None => {
             preview
-                .header(NerdFont::Package, placeholder_title)
+                .header(NerdFont::Package, &format!("{id}"))
                 .subtext("Select a package to see details");
             Ok(())
         }
     })
-}
-
-fn preview_id_for_placeholder(title: &str) -> Option<PreviewId> {
-    match title {
-        "APT Package" => Some(PreviewId::Apt),
-        "DNF Package" => Some(PreviewId::Dnf),
-        "Zypper Package" => Some(PreviewId::Zypper),
-        "Pacman Package" => Some(PreviewId::Pacman),
-        "Snap Package" => Some(PreviewId::Snap),
-        "Pkg Package" => Some(PreviewId::Pkg),
-        "Flatpak Package" => Some(PreviewId::Flatpak),
-        "AUR Package" => Some(PreviewId::Aur),
-        "Cargo Package" => Some(PreviewId::Cargo),
-        _ => None,
-    }
 }
 
 // ============================================================================
