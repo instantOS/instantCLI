@@ -43,14 +43,21 @@ pub struct DiscoveredWineSave {
     pub game_name: String,
     pub save_path: String,
     pub tags: Vec<String>,
+    pub from_store_user_id: bool,
 }
 
 impl DiscoveredWineSave {
-    pub fn new(game_name: String, save_path: String, tags: Vec<String>) -> Self {
+    pub fn new(
+        game_name: String,
+        save_path: String,
+        tags: Vec<String>,
+        from_store_user_id: bool,
+    ) -> Self {
         Self {
             game_name,
             save_path,
             tags,
+            from_store_user_id,
         }
     }
 
@@ -65,6 +72,45 @@ impl DiscoveredWineSave {
     pub fn is_config(&self) -> bool {
         self.tags.iter().any(|t| t == "config")
     }
+
+    fn store_user_id_match_quality(&self) -> u8 {
+        if !self.from_store_user_id {
+            return 0;
+        }
+
+        let Some(name) = Path::new(&self.save_path)
+            .file_name()
+            .and_then(|x| x.to_str())
+        else {
+            return 2;
+        };
+
+        let lower = name.to_ascii_lowercase();
+        if matches!(
+            lower.as_str(),
+            "cache" | "caches" | "config" | "logs" | "preferences" | "settings" | "temp" | "tmp"
+        ) {
+            return 3;
+        }
+
+        if name.chars().all(|c| c.is_ascii_digit()) {
+            return 0;
+        }
+
+        if name.len() >= 8 && name.chars().all(|c| c.is_ascii_hexdigit()) {
+            return 0;
+        }
+
+        let hex_without_hyphens: String = name.chars().filter(|&c| c != '-').collect();
+        if name.contains('-')
+            && hex_without_hyphens.len() >= 8
+            && hex_without_hyphens.chars().all(|c| c.is_ascii_hexdigit())
+        {
+            return 0;
+        }
+
+        1
+    }
 }
 
 pub fn choose_primary_save(mut saves: Vec<DiscoveredWineSave>) -> Option<DiscoveredWineSave> {
@@ -77,6 +123,7 @@ pub fn choose_primary_save(mut saves: Vec<DiscoveredWineSave>) -> Option<Discove
             !is_dir,
             !save.is_save(),
             save.is_config(),
+            save.store_user_id_match_quality(),
             depth,
             save.save_path.len(),
         )
@@ -102,11 +149,13 @@ mod tests {
                 "Terraria".to_string(),
                 config_file.display().to_string(),
                 vec!["config".to_string()],
+                false,
             ),
             DiscoveredWineSave::new(
                 "Terraria".to_string(),
                 save_dir.display().to_string(),
                 vec!["save".to_string()],
+                false,
             ),
         ])
         .unwrap();

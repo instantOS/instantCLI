@@ -5,12 +5,14 @@ use std::path::Path;
 use std::sync::OnceLock;
 
 use anyhow::Result;
+use glob::glob;
 
 use super::manifest::load_manifest;
 use super::types::{DiscoveredWineSave, FileConstraint, LudusaviManifest, choose_primary_save};
 
 static WINDOWS_MANIFEST: OnceLock<std::result::Result<Vec<WindowsGameEntry>, String>> =
     OnceLock::new();
+const STORE_USER_ID_PLACEHOLDER: &str = "<storeUserId>";
 
 #[derive(Debug, Clone)]
 struct WindowsGameEntry {
@@ -23,6 +25,7 @@ struct WindowsFileEntry {
     pattern: String,
     tags: Vec<String>,
     needs_user: bool,
+    has_store_user_id: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -117,7 +120,7 @@ impl WinePrefixContext {
 
     /// Substitute placeholders for a given path pattern.
     fn expand_paths(&self, entry: &WindowsFileEntry) -> Vec<String> {
-        if entry.needs_user {
+        let expanded = if entry.needs_user {
             if self.users.is_empty() {
                 return Vec::new();
             }
@@ -128,7 +131,12 @@ impl WinePrefixContext {
                 .collect()
         } else {
             vec![self.expand_pattern_for_user(&entry.pattern, None)]
-        }
+        };
+
+        expanded
+            .into_iter()
+            .flat_map(|pattern| expand_dynamic_placeholders(&pattern))
+            .collect()
     }
 
     fn expand_pattern_for_user(&self, pattern: &str, user: Option<&UserPaths>) -> String {
@@ -178,6 +186,7 @@ fn build_windows_manifest(manifest: LudusaviManifest) -> Vec<WindowsGameEntry> {
             .filter(|(_, file_entry)| is_windows_constraint(&file_entry.when))
             .map(|(pattern, file_entry)| WindowsFileEntry {
                 needs_user: pattern_uses_user_placeholders(&pattern),
+                has_store_user_id: pattern.contains(STORE_USER_ID_PLACEHOLDER),
                 pattern,
                 tags: file_entry.tags,
             })
@@ -202,6 +211,14 @@ fn pattern_uses_user_placeholders(pattern: &str) -> bool {
         || pattern.contains("<osUserName>")
 }
 
+fn expand_dynamic_placeholders(pattern: &str) -> Vec<String> {
+    if pattern.contains(STORE_USER_ID_PLACEHOLDER) {
+        return vec![pattern.replace(STORE_USER_ID_PLACEHOLDER, "*")];
+    }
+
+    vec![pattern.to_string()]
+}
+
 /// Check if a file constraint is Windows-relevant
 fn is_windows_constraint(constraints: &[FileConstraint]) -> bool {
     if constraints.is_empty() {
@@ -218,12 +235,21 @@ fn is_windows_constraint(constraints: &[FileConstraint]) -> bool {
 #[derive(Default)]
 struct PathExistenceCache {
     entries: HashMap<std::path::PathBuf, bool>,
+    glob_entries: HashMap<String, Vec<std::path::PathBuf>>,
 }
 
 impl PathExistenceCache {
-    fn exists(&mut self, pattern: &str) -> bool {
-        let probe_path = normalize_probe_path(pattern);
-        self.exists_path(&probe_path)
+    fn matching_paths(&mut self, pattern: &str) -> Vec<std::path::PathBuf> {
+        if has_glob_syntax(pattern) {
+            return self.glob_paths(pattern);
+        }
+
+        let path = std::path::PathBuf::from(pattern);
+        if self.exists_path(&path) {
+            vec![path]
+        } else {
+            Vec::new()
+        }
     }
 
     fn exists_path(&mut self, path: &Path) -> bool {
@@ -270,11 +296,33 @@ impl PathExistenceCache {
         self.entries.insert(path.to_path_buf(), path_exists);
         path_exists
     }
+
+    fn glob_paths(&mut self, pattern: &str) -> Vec<std::path::PathBuf> {
+        if let Some(paths) = self.glob_entries.get(pattern) {
+            return paths.clone();
+        }
+
+        let probe_path = normalize_probe_path(pattern);
+        if !self.exists_path(&probe_path) {
+            self.glob_entries.insert(pattern.to_string(), Vec::new());
+            return Vec::new();
+        }
+
+        let mut matches = glob(pattern)
+            .into_iter()
+            .flatten()
+            .filter_map(|entry| entry.ok())
+            .collect::<Vec<_>>();
+        matches.sort();
+        matches.dedup();
+        self.glob_entries
+            .insert(pattern.to_string(), matches.clone());
+        matches
+    }
 }
 
-/// Check if a path pattern matches any existing paths (glob evaluation)
-fn path_exists(pattern: &str, cache: &mut PathExistenceCache) -> bool {
-    cache.exists(pattern)
+fn has_glob_syntax(pattern: &str) -> bool {
+    pattern.contains('*') || pattern.contains('?') || pattern.contains('[')
 }
 
 fn normalize_probe_path(pattern: &str) -> std::path::PathBuf {
@@ -336,11 +384,12 @@ where
 
         for file in &entry.files {
             for expanded_path in ctx.expand_paths(file) {
-                if path_exists(&expanded_path, &mut path_cache) {
+                for matched_path in path_cache.matching_paths(&expanded_path) {
                     game_results.push(DiscoveredWineSave::new(
                         entry.game_name.clone(),
-                        expanded_path,
+                        matched_path.to_string_lossy().to_string(),
                         file.tags.clone(),
+                        file.has_store_user_id,
                     ));
                 }
             }
@@ -440,6 +489,7 @@ mod tests {
             pattern: "<home>/foo/<xdgConfig>".to_string(),
             tags: vec![],
             needs_user: false,
+            has_store_user_id: false,
         };
 
         let expanded = ctx.expand_paths(&entry);
@@ -462,6 +512,7 @@ mod tests {
             pattern: "<home>/AppData/LocalLow/Game".to_string(),
             tags: vec![],
             needs_user: pattern_uses_user_placeholders("<home>/AppData/LocalLow/Game"),
+            has_store_user_id: false,
         };
 
         let expanded = ctx.expand_paths(&entry);
@@ -475,6 +526,112 @@ mod tests {
                 .display()
                 .to_string()
         );
+    }
+
+    #[test]
+    fn store_user_id_expands_to_direct_children_only() {
+        let prefix = tempfile::tempdir().unwrap();
+        let local_app_data = prefix
+            .path()
+            .join("drive_c")
+            .join("users")
+            .join("benjamin")
+            .join("AppData")
+            .join("Local")
+            .join("Remedy")
+            .join("AlanWake2");
+        std::fs::create_dir_all(local_app_data.join("12345678901234567")).unwrap();
+        std::fs::create_dir_all(local_app_data.join("f4ad40790de54fef9a1c7ea48bd13b12")).unwrap();
+        std::fs::create_dir_all(local_app_data.join("cache")).unwrap();
+
+        let ctx = WinePrefixContext::new(prefix.path());
+        let entry = WindowsFileEntry {
+            pattern: "<winLocalAppData>/Remedy/AlanWake2/<storeUserId>".to_string(),
+            tags: vec!["save".to_string()],
+            needs_user: pattern_uses_user_placeholders(
+                "<winLocalAppData>/Remedy/AlanWake2/<storeUserId>",
+            ),
+            has_store_user_id: true,
+        };
+
+        let expanded = ctx.expand_paths(&entry);
+
+        assert_eq!(
+            expanded,
+            vec![format!("{}/{}", local_app_data.display(), "*")]
+        );
+    }
+
+    #[test]
+    fn globbed_store_user_id_matches_actual_children() {
+        let temp = tempfile::tempdir().unwrap();
+        let aw2_root = temp.path().join("AlanWake2");
+        let profile_dir = aw2_root.join("f4ad40790de54fef9a1c7ea48bd13b12");
+        let cache_dir = aw2_root.join("cache");
+        std::fs::create_dir_all(&profile_dir).unwrap();
+        std::fs::create_dir_all(&cache_dir).unwrap();
+
+        let mut cache = PathExistenceCache::default();
+        let matches = cache.matching_paths(&format!("{}/{}", aw2_root.display(), "*"));
+
+        assert!(matches.contains(&profile_dir));
+        assert!(matches.contains(&cache_dir));
+    }
+
+    #[test]
+    fn choose_primary_save_prefers_save_directory_over_config_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let game_root = temp.path().join("AlanWake2");
+        let save_dir = game_root.join("profile-a");
+        let config_file = game_root.join("renderer.ini");
+        std::fs::create_dir_all(&save_dir).unwrap();
+        std::fs::write(&config_file, "quality=high").unwrap();
+
+        let selected = choose_primary_save(vec![
+            DiscoveredWineSave::new(
+                "Alan Wake II".to_string(),
+                config_file.display().to_string(),
+                vec!["config".to_string()],
+                false,
+            ),
+            DiscoveredWineSave::new(
+                "Alan Wake II".to_string(),
+                save_dir.display().to_string(),
+                vec!["save".to_string()],
+                true,
+            ),
+        ])
+        .unwrap();
+
+        assert_eq!(selected.save_path, save_dir.display().to_string());
+    }
+
+    #[test]
+    fn choose_primary_save_prefers_store_user_id_over_cache_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let game_root = temp.path().join("AlanWake2");
+        let profile_dir = game_root.join("f4ad40790de54fef9a1c7ea48bd13b12");
+        let cache_dir = game_root.join("cache");
+        std::fs::create_dir_all(&profile_dir).unwrap();
+        std::fs::create_dir_all(&cache_dir).unwrap();
+
+        let selected = choose_primary_save(vec![
+            DiscoveredWineSave::new(
+                "Alan Wake II".to_string(),
+                cache_dir.display().to_string(),
+                vec!["save".to_string()],
+                true,
+            ),
+            DiscoveredWineSave::new(
+                "Alan Wake II".to_string(),
+                profile_dir.display().to_string(),
+                vec!["save".to_string()],
+                true,
+            ),
+        ])
+        .unwrap();
+
+        assert_eq!(selected.save_path, profile_dir.display().to_string());
     }
 
     #[test]
