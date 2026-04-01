@@ -1,12 +1,11 @@
 //! FZF wrapper and selection logic
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use base64::{Engine as _, engine::general_purpose};
 use std::collections::HashMap;
-use std::io::Write;
+use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
-
-use crate::common::shell::shell_quote;
+use std::thread;
 
 use super::preview::MixedPreviewContent;
 use super::preview::PreviewStrategy;
@@ -400,6 +399,14 @@ impl FzfWrapper {
     }
 
     pub fn select_streaming(&self, input_command: &str) -> Result<FzfResult<String>> {
+        self.select_streaming_prefilled(input_command, "")
+    }
+
+    pub fn select_streaming_prefilled(
+        &self,
+        input_command: &str,
+        initial_input: &str,
+    ) -> Result<FzfResult<String>> {
         let mut fzf_args = vec!["--tiebreak=index".to_string()];
 
         if self.multi_select {
@@ -430,23 +437,70 @@ impl FzfWrapper {
             fzf_args.push(layout.margin.to_string());
         }
 
-        let mut cmd = Command::new("sh");
-        cmd.arg("-c");
+        let mut fzf = Command::new("fzf");
+        fzf.env_remove("FZF_DEFAULT_OPTS");
+        for arg in fzf_args {
+            fzf.arg(arg);
+        }
 
-        let escaped_args: Vec<String> = fzf_args.iter().map(|arg| shell_quote(arg)).collect();
-        let fzf_cmd = format!("fzf {}", escaped_args.join(" "));
-        let full_command =
-            format!("unset FZF_DEFAULT_OPTS; {input_command} </dev/null | {fzf_cmd}");
+        let mut fzf_child = fzf
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
 
-        cmd.arg(&full_command);
-
-        let child = cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?;
-
-        let pid = child.id();
+        let pid = fzf_child.id();
         let _ = crate::menu::server::register_menu_process(pid);
 
-        let output = child.wait_with_output();
+        let mut producer = Command::new("sh");
+        producer
+            .arg("-c")
+            .arg(format!("unset FZF_DEFAULT_OPTS; {input_command} </dev/null"))
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+
+        let mut producer_child = producer.spawn()?;
+        let mut producer_stdout = producer_child
+            .stdout
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("Failed to capture streaming producer stdout"))?;
+        let mut fzf_stdin = fzf_child
+            .stdin
+            .take()
+            .ok_or_else(|| anyhow!("Failed to capture fzf stdin"))?;
+        let initial = initial_input.to_string();
+
+        let pump = thread::spawn(move || -> Result<()> {
+            if !initial.is_empty() {
+                fzf_stdin.write_all(initial.as_bytes())?;
+                if !initial.ends_with('\n') {
+                    fzf_stdin.write_all(b"\n")?;
+                }
+                fzf_stdin.flush()?;
+            }
+
+            let mut reader = BufReader::new(&mut producer_stdout);
+            let mut line = String::new();
+            loop {
+                line.clear();
+                let bytes = reader.read_line(&mut line)?;
+                if bytes == 0 {
+                    break;
+                }
+
+                if fzf_stdin.write_all(line.as_bytes()).is_err() {
+                    break;
+                }
+            }
+
+            Ok(())
+        });
+
+        let output = fzf_child.wait_with_output();
         crate::menu::server::unregister_menu_process(pid);
+        let _ = producer_child.kill();
+        let _ = producer_child.wait();
+        let _ = pump.join();
 
         match output {
             Ok(result) => {

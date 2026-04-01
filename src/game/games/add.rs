@@ -1,4 +1,4 @@
-use super::discover::{MenuSelectionPayload, streaming_menu_preview_command};
+use super::discover::{MenuSelectionPayload, manual_menu_row, streaming_menu_preview_command};
 use super::manager::GameCreationContext;
 use super::prompts;
 use crate::common::TildePath;
@@ -61,7 +61,7 @@ pub(super) fn maybe_prefill_from_emulators(
             streaming_menu_preview_command(),
             "--ansi",
         ])
-        .select_streaming(&discover_command)?;
+        .select_streaming_prefilled(&discover_command, &manual_menu_row()?)?;
 
     match result {
         FzfResult::Selected(line) => match parse_discovery_selection(&line)? {

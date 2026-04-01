@@ -76,23 +76,7 @@ pub fn print_streaming_menu_rows(
 ) -> Result<()> {
     let mut out = io::BufWriter::new(io::stdout());
 
-    writeln!(
-        out,
-        "{}",
-        encode_menu_row(
-            "manual",
-            "manual",
-            &manual_menu_display(),
-            &preview_to_text(manual_menu_preview()),
-            &MenuSelectionPayload {
-                existing: false,
-                display_name: None,
-                tracked_name: None,
-                save_path: None,
-                launch_command: None,
-            },
-        )?
-    )?;
+    writeln!(out, "{}", manual_menu_row()?)?;
     out.flush()?;
 
     stream_discovered_records(
@@ -131,6 +115,22 @@ pub fn print_streaming_menu_rows(
     )?;
 
     Ok(())
+}
+
+pub fn manual_menu_row() -> Result<String> {
+    encode_menu_row(
+        "manual",
+        "manual",
+        &manual_menu_display(),
+        &preview_to_text(manual_menu_preview()),
+        &MenuSelectionPayload {
+            existing: false,
+            display_name: None,
+            tracked_name: None,
+            save_path: None,
+            launch_command: None,
+        },
+    )
 }
 
 pub fn streaming_menu_preview_command() -> &'static str {

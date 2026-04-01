@@ -540,6 +540,14 @@ impl FzfBuilder {
         FzfWrapper::from_builder(self).select_streaming(command)
     }
 
+    pub fn select_streaming_prefilled(
+        self,
+        command: &str,
+        initial_input: &str,
+    ) -> Result<FzfResult<String>> {
+        FzfWrapper::from_builder(self).select_streaming_prefilled(command, initial_input)
+    }
+
     pub fn input_dialog(self) -> Result<String> {
         if !matches!(self.dialog_type, DialogType::Input) {
             return Err(anyhow::anyhow!("Builder not configured for input"));
