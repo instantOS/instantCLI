@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.17](https://github.com/instantOS/instantCLI/compare/v0.13.16...v0.13.17) - 2026-04-01
+
+### Fixed
+
+- fix CI again
+- fix release-plz
+- fix glob
+- fix streaming fzf input
+- fix ticks
+- fix steam
+- fix instantwm detection
+- fix instantwm scratchpad
+- fix instantwm wayland scratchpad
+- fix?
+- fix changelog
+
+### Other
+
+- fmt
+- add faugus as source
+- better streaming
+- better scan prefix
+- dedupe shiat
+- better progress bar
+- more speed ups
+- rename add to steam
+- speed up ludusavi
+- steam discovery
+- add filter option for discover
+- make epic scanner use ludusavi
+- init ludusavi scanner
+- test discover
+- async game discovery
+- init epic games
+- better instantWM json integration
+- check for corrupted zsh files
+- add x11 support to display settings
+- add instantwmctl pointer settings
+- more instantwm scratchpad improvements
+- add compositor to ins arch info
+- faster compositor detection
+- proper instantwm detection
+- instantwm wallpaper support
+- instantwm wl keyboard layout support
+- new instantWM integration
+- doctor keyword
+- update release-plz to use self-hosted
+- Merge branch 'main' into dev
+
 ## [0.13.16](https://github.com/instantOS/instantCLI/compare/v0.13.15...v0.13.16) - 2026-02-24
 
 ### Other
