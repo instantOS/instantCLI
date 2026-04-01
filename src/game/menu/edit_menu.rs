@@ -259,10 +259,13 @@ fn build_menu_items(state: &EditState) -> Vec<MenuItem> {
 
     // Save Path (only if installation exists)
     if let Some(inst) = installation {
-        let save_path_str = inst
-            .save_path
-            .to_tilde_string()
-            .unwrap_or_else(|_| inst.save_path.as_path().to_string_lossy().to_string());
+        let save_path_str = if inst.save_path.as_path().as_os_str().is_empty() {
+            "<not set>".to_string()
+        } else {
+            inst.save_path
+                .to_tilde_string()
+                .unwrap_or_else(|_| inst.save_path.as_path().to_string_lossy().to_string())
+        };
 
         let save_preview = PreviewBuilder::new()
             .header(NerdFont::Folder, "Save Path")

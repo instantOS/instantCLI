@@ -45,6 +45,9 @@ impl GameManager {
                 super::add::EmulatorPrefillResult::OpenGameMenu(game_name) => {
                     return crate::game::menu::game_menu(Some(game_name));
                 }
+                super::add::EmulatorPrefillResult::OpenPrefilledAddEditor(new_options) => {
+                    return crate::game::menu::open_prefilled_add_editor(new_options);
+                }
                 super::add::EmulatorPrefillResult::Continue(new_options) => {
                     let details = super::add::resolve_add_game_details(new_options, &context)?;
                     return Self::finish_add_game(&mut context, details);

@@ -481,7 +481,7 @@ fn into_record_with_preview(
             game_path: game
                 .game_path()
                 .map(|path| path.to_string_lossy().to_string()),
-            launch_command: None,
+            launch_command: game.build_launch_command(),
             existing: game.is_existing(),
             tracked_name: game.tracked_name().map(ToOwned::to_owned),
         },

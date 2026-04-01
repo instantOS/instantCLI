@@ -25,6 +25,7 @@ pub struct AddGameOptions {
 pub(super) enum EmulatorPrefillResult {
     Continue(AddGameOptions),
     OpenGameMenu(String),
+    OpenPrefilledAddEditor(AddGameOptions),
     Cancelled,
 }
 
@@ -73,7 +74,7 @@ pub(super) fn maybe_prefill_from_emulators(
                         .unwrap_or_else(|| "Unknown Game".to_string());
                     Ok(EmulatorPrefillResult::OpenGameMenu(tracked_name))
                 } else {
-                    Ok(EmulatorPrefillResult::Continue(AddGameOptions {
+                    Ok(EmulatorPrefillResult::OpenPrefilledAddEditor(AddGameOptions {
                         name: payload.display_name,
                         description: None,
                         launch_command: payload.launch_command,

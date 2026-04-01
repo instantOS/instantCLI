@@ -4,6 +4,8 @@ mod state;
 
 use anyhow::{Context, Result, anyhow};
 
+use crate::common::TildePath;
+use crate::game::config::{Game, GameInstallation, PathContentKind};
 use crate::game::config::{InstallationsConfig, InstantGameConfig};
 use crate::game::games::AddGameOptions;
 use crate::game::games::GameManager;
@@ -826,6 +828,53 @@ fn run_edit_menu_for_game(
         installation_index,
     );
     edit_menu::run_edit_menu(game_name, &mut state)
+}
+
+pub fn open_prefilled_add_editor(options: AddGameOptions) -> Result<()> {
+    let mut game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
+    let mut installations =
+        InstallationsConfig::load().context("Failed to load installations configuration")?;
+
+    let game_name = options.name.unwrap_or_default().trim().to_string();
+    if game_name.is_empty() {
+        return Err(anyhow!("Discovered game is missing a name"));
+    }
+
+    if game_config.games.iter().any(|game| game.name.0 == game_name) {
+        return Err(anyhow!("Game '{}' already exists", game_name));
+    }
+
+    let mut game = Game::new(game_name.clone());
+    game.description = options.description.filter(|value| !value.trim().is_empty());
+    game.launch_command = options.launch_command.filter(|value| !value.trim().is_empty());
+    game_config.games.push(game);
+
+    let save_path = options
+        .save_path
+        .filter(|value| !value.trim().is_empty())
+        .map(|path| {
+            TildePath::from_str(path.trim()).map_err(|e| anyhow!("Invalid save path: {}", e))
+        })
+        .transpose()?
+        .unwrap_or_else(|| TildePath::new(std::path::PathBuf::new()));
+
+    let save_path_type = if save_path.as_path().exists() {
+        std::fs::metadata(save_path.as_path())
+            .map(PathContentKind::from)
+            .context("Failed to inspect discovered save path")?
+    } else {
+        PathContentKind::Directory
+    };
+
+    let installation = GameInstallation::with_kind(game_name.clone(), save_path, save_path_type);
+    installations.installations.push(installation);
+
+    let game_index = game_config.games.len() - 1;
+    let installation_index = Some(installations.installations.len() - 1);
+    let mut state = EditState::new(game_config, installations, game_index, installation_index);
+    state.mark_dirty();
+
+    edit_menu::run_edit_menu(&game_name, &mut state)
 }
 
 /// Show menu when game manager is not initialized

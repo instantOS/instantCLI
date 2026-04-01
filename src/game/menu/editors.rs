@@ -439,7 +439,11 @@ pub fn edit_save_path(state: &mut EditState) -> Result<bool> {
         .ok_or_else(|| anyhow!("No installation found for this game on this device"))?;
 
     let current_path = &installation.save_path;
-    let current_path_str = tilde_display_string(current_path);
+    let current_path_str = if current_path.as_path().as_os_str().is_empty() {
+        "<not set>".to_string()
+    } else {
+        tilde_display_string(current_path)
+    };
 
     let path_selection = PathInputBuilder::new()
         .header(format!(
