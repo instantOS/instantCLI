@@ -12,8 +12,8 @@ use crate::menu_utils::{FzfPreview, FzfSelectable};
 use crate::settings::context::SettingsContext;
 use crate::settings::store::StringSettingKey;
 use crate::ui::catppuccin::{colors, format_icon};
-use crate::ui::preview::PreviewBuilder;
 use crate::ui::prelude::NerdFont;
+use crate::ui::preview::PreviewBuilder;
 use serde_json::Value;
 use which::which;
 

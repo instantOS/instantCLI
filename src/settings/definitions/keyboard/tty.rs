@@ -1,6 +1,6 @@
 //! TTY keymap setting
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 
 use crate::arch::annotations::{KeymapAnnotationProvider, annotate_list};
 use crate::menu_utils::{FzfResult, FzfWrapper};

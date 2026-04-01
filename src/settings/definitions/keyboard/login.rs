@@ -1,6 +1,6 @@
 //! Login screen keyboard layout setting
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 
 use crate::menu_utils::{FzfResult, FzfWrapper};
 use crate::preview::{PreviewId, preview_command};

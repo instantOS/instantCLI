@@ -4,21 +4,19 @@ use anyhow::Result;
 use std::collections::{HashMap, HashSet};
 
 use crate::common::compositor::CompositorType;
-use crate::menu_utils::{
-    FzfPreview, FzfResult, FzfSelectable, FzfWrapper, select_one_with_style,
-};
+use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper, select_one_with_style};
 use crate::preview::{PreviewId, preview_command};
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::ui::catppuccin::{colors, format_icon, format_icon_colored};
-use crate::ui::preview::PreviewBuilder;
 use crate::ui::prelude::NerdFont;
-use crate::ui::{emit, Level};
+use crate::ui::preview::PreviewBuilder;
+use crate::ui::{Level, emit};
 
 use super::common::{
-    apply_keyboard_layouts, current_gnome_layouts, current_instantwm_layouts,
-    current_sway_layout_names, current_x11_layouts, join_layout_codes, map_layout_names_to_codes,
-    parse_xkb_layouts, split_layout_codes, LayoutChoice, KeyboardLayoutKeys,
+    KeyboardLayoutKeys, LayoutChoice, apply_keyboard_layouts, current_gnome_layouts,
+    current_instantwm_layouts, current_sway_layout_names, current_x11_layouts, join_layout_codes,
+    map_layout_names_to_codes, parse_xkb_layouts, split_layout_codes,
 };
 
 pub struct KeyboardLayout;
