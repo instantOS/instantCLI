@@ -170,11 +170,13 @@ where
                 faugus::discover_faugus_games,
                 &mut |game| on_event(DiscoveryEvent::GameFound(game)),
             )?,
-            DiscoverySource::Wine => emit_discovered_games(
-                wine::is_wine_installed,
-                wine::discover_wine_games,
-                &mut |game| on_event(DiscoveryEvent::GameFound(game)),
-            )?,
+            DiscoverySource::Wine => {
+                if wine::is_wine_installed() {
+                    wine::stream_discover_wine_games(|game| {
+                        on_event(DiscoveryEvent::GameFound(Box::new(game)))
+                    })?;
+                }
+            }
         }
     }
 

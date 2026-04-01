@@ -11,7 +11,9 @@ use anyhow::Result;
 
 use super::DiscoveredGame;
 use crate::common::TildePath;
-use crate::game::platforms::ludusavi::{self, DiscoveredWineSave, choose_primary_save};
+use crate::game::platforms::ludusavi::{
+    DiscoveredWineSave, choose_primary_save, stream_wine_prefix_games,
+};
 use crate::game::utils::path::{is_valid_wine_prefix, tilde_display_string};
 use crate::menu::protocol::FzfPreview;
 use crate::ui::nerd_font::NerdFont;
@@ -134,34 +136,54 @@ pub fn is_wine_installed() -> bool {
 }
 
 pub fn discover_wine_games() -> Result<Vec<WineDiscoveredGame>> {
-    let Some(home) = dirs::home_dir() else {
-        return Ok(Vec::new());
-    };
-
     let mut results = Vec::new();
-    for prefix in collect_generic_wine_prefixes_from_home(&home) {
-        results.extend(discover_wine_games_in_prefix(&prefix)?);
-    }
-
-    results.sort_by(|a, b| {
-        a.display_name
-            .to_lowercase()
-            .cmp(&b.display_name.to_lowercase())
-            .then_with(|| a.save_path.cmp(&b.save_path))
-    });
-
+    stream_discover_wine_games(|game| {
+        results.push(game);
+        Ok(())
+    })?;
     Ok(results)
 }
 
-pub fn discover_wine_games_in_prefix(prefix: &Path) -> Result<Vec<WineDiscoveredGame>> {
-    let saves = ludusavi::scan_wine_prefix(prefix)?;
-    Ok(discovered_games_from_saves(prefix, saves))
+pub fn stream_discover_wine_games<F>(mut on_game: F) -> Result<()>
+where
+    F: FnMut(WineDiscoveredGame) -> Result<()>,
+{
+    let Some(home) = dirs::home_dir() else {
+        return Ok(());
+    };
+
+    for prefix in collect_generic_wine_prefixes_from_home(&home) {
+        stream_discover_wine_games_in_prefix(&prefix, &mut on_game)?;
+    }
+
+    Ok(())
 }
 
-fn discovered_games_from_saves(
+pub fn discover_wine_games_in_prefix(prefix: &Path) -> Result<Vec<WineDiscoveredGame>> {
+    let mut results = Vec::new();
+    stream_discover_wine_games_in_prefix(prefix, |game| {
+        results.push(game);
+        Ok(())
+    })?;
+    Ok(results)
+}
+
+pub fn stream_discover_wine_games_in_prefix<F>(prefix: &Path, mut on_game: F) -> Result<()>
+where
+    F: FnMut(WineDiscoveredGame) -> Result<()>,
+{
+    stream_wine_prefix_games(prefix, |game_saves| {
+        if let Some(game) = discovered_game_from_saves(prefix, game_saves) {
+            on_game(game)?;
+        }
+        Ok(())
+    })
+}
+
+fn discovered_game_from_saves(
     prefix: &Path,
     saves: Vec<DiscoveredWineSave>,
-) -> Vec<WineDiscoveredGame> {
+) -> Option<WineDiscoveredGame> {
     let mut grouped: BTreeMap<String, Vec<DiscoveredWineSave>> = BTreeMap::new();
 
     for save in saves {
@@ -170,8 +192,6 @@ fn discovered_games_from_saves(
             .or_default()
             .push(save);
     }
-
-    let mut results = Vec::new();
 
     for (game_name, candidates) in grouped {
         let Some(primary_save) = choose_primary_save(candidates) else {
@@ -184,14 +204,14 @@ fn discovered_games_from_saves(
             game_name
         };
 
-        results.push(WineDiscoveredGame::new(
+        return Some(WineDiscoveredGame::new(
             display_name,
             prefix.to_path_buf(),
             PathBuf::from(primary_save.save_path),
         ));
     }
 
-    results
+    None
 }
 
 fn collect_generic_wine_prefixes_from_home(home: &Path) -> Vec<PathBuf> {

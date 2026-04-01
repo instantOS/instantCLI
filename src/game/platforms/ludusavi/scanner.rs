@@ -188,6 +188,8 @@ fn build_windows_manifest(manifest: LudusaviManifest) -> Vec<WindowsGameEntry> {
         }
     }
 
+    entries.sort_by(|a, b| a.game_name.cmp(&b.game_name));
+
     entries
 }
 
@@ -305,25 +307,11 @@ fn extract_base_path(pattern: &str) -> String {
 
 /// Scan a wine prefix for Ludusavi-compatible save games
 pub fn scan_wine_prefix(prefix: &Path) -> Result<Vec<DiscoveredWineSave>> {
-    let manifest = load_windows_manifest()?;
-    let ctx = WinePrefixContext::new(prefix);
-    let mut path_cache = PathExistenceCache::default();
-
     let mut results = Vec::new();
-
-    for entry in manifest {
-        for file in &entry.files {
-            for expanded_path in ctx.expand_paths(file) {
-                if path_exists(&expanded_path, &mut path_cache) {
-                    results.push(DiscoveredWineSave::new(
-                        entry.game_name.clone(),
-                        expanded_path,
-                        file.tags.clone(),
-                    ));
-                }
-            }
-        }
-    }
+    stream_wine_prefix_games(prefix, |game_saves| {
+        results.extend(game_saves);
+        Ok(())
+    })?;
 
     results.sort_by(|a, b| {
         a.game_name
@@ -333,6 +321,41 @@ pub fn scan_wine_prefix(prefix: &Path) -> Result<Vec<DiscoveredWineSave>> {
     results.dedup_by(|a, b| a.game_name == b.game_name && a.save_path == b.save_path);
 
     Ok(results)
+}
+
+pub fn stream_wine_prefix_games<F>(prefix: &Path, mut on_game: F) -> Result<()>
+where
+    F: FnMut(Vec<DiscoveredWineSave>) -> Result<()>,
+{
+    let manifest = load_windows_manifest()?;
+    let ctx = WinePrefixContext::new(prefix);
+    let mut path_cache = PathExistenceCache::default();
+
+    for entry in manifest {
+        let mut game_results = Vec::new();
+
+        for file in &entry.files {
+            for expanded_path in ctx.expand_paths(file) {
+                if path_exists(&expanded_path, &mut path_cache) {
+                    game_results.push(DiscoveredWineSave::new(
+                        entry.game_name.clone(),
+                        expanded_path,
+                        file.tags.clone(),
+                    ));
+                }
+            }
+        }
+
+        if game_results.is_empty() {
+            continue;
+        }
+
+        game_results.sort_by(|a, b| a.save_path.cmp(&b.save_path));
+        game_results.dedup_by(|a, b| a.save_path == b.save_path);
+        on_game(game_results)?;
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

@@ -8,5 +8,5 @@ pub mod manifest;
 mod scanner;
 pub mod types;
 
-pub use scanner::scan_wine_prefix;
+pub use scanner::{scan_wine_prefix, stream_wine_prefix_games};
 pub use types::{DiscoveredWineSave, choose_primary_save};

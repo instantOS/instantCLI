@@ -353,18 +353,22 @@ fn stream_generic_prefix_records<F>(
 where
     F: FnMut(DiscoveredGameWithPreview) -> Result<()>,
 {
-    for game in crate::game::platforms::discovery::wine::discover_wine_games_in_prefix(prefix)? {
-        let save_path = game.save_path.clone();
-        let existing_name =
-            context.and_then(|ctx| find_existing_game_for_save(save_path.as_path(), ctx));
+    crate::game::platforms::discovery::wine::stream_discover_wine_games_in_prefix(
+        prefix,
+        |game| {
+            let save_path = game.save_path.clone();
+            let existing_name =
+                context.and_then(|ctx| find_existing_game_for_save(save_path.as_path(), ctx));
 
-        let mut game = game;
-        if let Some(existing_name) = existing_name {
-            game.set_existing(existing_name);
-        }
+            let mut game = game;
+            if let Some(existing_name) = existing_name {
+                game.set_existing(existing_name);
+            }
 
-        on_game(into_record_with_preview(Box::new(game), context))?;
-    }
+            on_game(into_record_with_preview(Box::new(game), context))?;
+            Ok(())
+        },
+    )?;
 
     Ok(())
 }
