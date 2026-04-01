@@ -19,6 +19,7 @@ pub struct AddGameOptions {
     pub launch_command: Option<String>,
     pub save_path: Option<String>,
     pub create_save_path: bool,
+    pub no_cache: bool,
 }
 
 pub(super) enum EmulatorPrefillResult {
@@ -39,7 +40,11 @@ pub(super) fn maybe_prefill_from_emulators(
     options: AddGameOptions,
     _context: &GameCreationContext,
 ) -> Result<EmulatorPrefillResult> {
-    let discover_command = format!("{} game discover --menu", current_exe_command());
+    let discover_command = if options.no_cache {
+        format!("{} game discover --menu --no-cache", current_exe_command())
+    } else {
+        format!("{} game discover --menu", current_exe_command())
+    };
 
     let result = FzfWrapper::builder()
         .header(Header::fancy("Games"))
@@ -74,6 +79,7 @@ pub(super) fn maybe_prefill_from_emulators(
                         launch_command: payload.launch_command,
                         save_path: payload.save_path,
                         create_save_path: false,
+                        no_cache: options.no_cache,
                     }))
                 }
             }
@@ -95,6 +101,7 @@ pub(super) fn resolve_add_game_details(
         launch_command,
         save_path,
         create_save_path,
+        no_cache: _,
     } = options;
 
     let game_name = match name {

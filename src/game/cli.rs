@@ -32,6 +32,9 @@ pub enum GameCommands {
         /// Create save path automatically when using --save-path
         #[arg(long)]
         create_save_path: bool,
+        /// Disable the discovered-games cache for this run
+        #[arg(long)]
+        no_cache: bool,
     },
     /// Discover games available for `ins game add`
     Discover {
@@ -43,6 +46,9 @@ pub enum GameCommands {
         /// Internal: output streaming menu rows for the add flow
         #[arg(long, hide = true)]
         menu: bool,
+        /// Disable the discovered-games cache for this run
+        #[arg(long)]
+        no_cache: bool,
     },
     /// Sync game saves with restic repository
     Sync {

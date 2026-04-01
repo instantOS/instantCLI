@@ -1,8 +1,9 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use base64::{Engine as _, engine::general_purpose};
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
@@ -19,7 +20,11 @@ use crate::ui::preview::{FzfPreview, PreviewBuilder};
 
 use super::manager::GameCreationContext;
 
-#[derive(Debug, Clone, Serialize)]
+const DISCOVERY_CACHE_VERSION: u32 = 1;
+const DISCOVERY_CACHE_FILE: &str = "game-discovery-cache.json";
+const DISCOVERY_CACHE_MAX_BYTES: u64 = 4 * 1024 * 1024;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiscoveredGameRecord {
     pub name: String,
     pub platform: String,
@@ -41,16 +46,33 @@ pub struct MenuSelectionPayload {
     pub launch_command: Option<String>,
 }
 
-pub fn list_discovered_games(sources: &[DiscoverySource], scan_path: Option<&str>) -> Result<()> {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CachedDiscoveredGame {
+    record: DiscoveredGameRecord,
+    preview_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct DiscoveryCacheFile {
+    version: u32,
+    entries: Vec<CachedDiscoveredGame>,
+}
+
+pub fn list_discovered_games(
+    sources: &[DiscoverySource],
+    scan_path: Option<&str>,
+    use_cache: bool,
+) -> Result<()> {
     match get_output_format() {
-        OutputFormat::Json => emit_discovered_games_as_json(sources, scan_path),
-        OutputFormat::Text => emit_discovered_games_as_text(sources, scan_path),
+        OutputFormat::Json => emit_discovered_games_as_json(sources, scan_path, use_cache),
+        OutputFormat::Text => emit_discovered_games_as_text(sources, scan_path, use_cache),
     }
 }
 
 pub fn print_streaming_menu_rows(
     sources: &[DiscoverySource],
     scan_path: Option<&str>,
+    use_cache: bool,
 ) -> Result<()> {
     let mut out = io::BufWriter::new(io::stdout());
 
@@ -76,6 +98,7 @@ pub fn print_streaming_menu_rows(
     stream_discovered_records(
         sources,
         scan_path,
+        use_cache,
         |_, _, _| Ok(()),
         |game| {
             writeln!(
@@ -117,11 +140,13 @@ pub fn streaming_menu_preview_command() -> &'static str {
 fn load_discovered_games_with_preview(
     sources: &[DiscoverySource],
     scan_path: Option<&str>,
+    use_cache: bool,
 ) -> Result<Vec<DiscoveredGameWithPreview>> {
     let mut records = Vec::new();
     stream_discovered_records(
         sources,
         scan_path,
+        use_cache,
         |_, _, _| Ok(()),
         |game| {
             records.push(game);
@@ -142,8 +167,9 @@ fn load_discovered_games_with_preview(
 fn emit_discovered_games_as_json(
     sources: &[DiscoverySource],
     scan_path: Option<&str>,
+    use_cache: bool,
 ) -> Result<()> {
-    let discovered = load_discovered_games_with_preview(sources, scan_path)?;
+    let discovered = load_discovered_games_with_preview(sources, scan_path, use_cache)?;
     let games_json: Vec<serde_json::Value> = discovered
         .iter()
         .map(|game| {
@@ -181,6 +207,7 @@ fn emit_discovered_games_as_json(
 fn emit_discovered_games_as_text(
     sources: &[DiscoverySource],
     scan_path: Option<&str>,
+    use_cache: bool,
 ) -> Result<()> {
     let progress = create_discovery_progress(platform_discovery::active_sources(sources).len());
     let mut count = 0usize;
@@ -188,6 +215,7 @@ fn emit_discovered_games_as_text(
     stream_discovered_records(
         sources,
         scan_path,
+        use_cache,
         |index, total, message| {
             progress.set_length(total.max(1) as u64);
             progress.set_position(index as u64);
@@ -259,6 +287,7 @@ fn render_discovered_game(game: &DiscoveredGameRecord) -> String {
 fn stream_discovered_records<F, G>(
     sources: &[DiscoverySource],
     scan_path: Option<&str>,
+    use_cache: bool,
     mut on_progress: F,
     mut on_game: G,
 ) -> Result<()>
@@ -268,25 +297,60 @@ where
 {
     let context = GameCreationContext::load().ok();
     let mut seen_save_paths = HashSet::new();
+    let scan_root = scan_path
+        .map(expand_scan_path)
+        .transpose()?
+        .map(PathBuf::from);
+    let mut cache_entries = if use_cache {
+        load_valid_cached_entries()?
+            .into_iter()
+            .map(|entry| (entry.record.save_path.clone(), entry))
+            .collect()
+    } else {
+        HashMap::new()
+    };
+
+    if use_cache {
+        let cached_snapshot: Vec<_> = cache_entries.values().cloned().collect();
+        for cached in cached_snapshot {
+            let runtime_game = cached_into_runtime_game(cached, context.as_ref());
+            if cached_record_matches_request(&runtime_game.record, sources, scan_root.as_deref())
+                && seen_save_paths.insert(runtime_game.record.save_path.clone())
+            {
+                on_game(runtime_game)?;
+            }
+        }
+    }
 
     let mut emit_game = |game: DiscoveredGameWithPreview| {
         if seen_save_paths.insert(game.record.save_path.clone()) {
+            cache_entries.insert(
+                game.record.save_path.clone(),
+                CachedDiscoveredGame {
+                    record: game.record.clone(),
+                    preview_text: game.preview_text.clone(),
+                },
+            );
             on_game(game)?;
         }
         Ok(())
     };
 
     if let Some(scan_path) = scan_path {
-        let root = PathBuf::from(expand_scan_path(scan_path)?);
+        let root = PathBuf::from(scan_root.clone().unwrap_or_else(|| PathBuf::from(scan_path)));
         if let Some(prefix) = find_prefix_root(&root) {
             on_progress(0, 1, &format!("Scanning Wine prefix {}", prefix.display()))?;
-            return stream_generic_prefix_records(&prefix, context.as_ref(), emit_game);
+            let result = stream_generic_prefix_records(&prefix, context.as_ref(), emit_game);
+            if use_cache {
+                save_discovery_cache(cache_entries.into_values().collect())?;
+            }
+            return result;
         }
 
         on_progress(0, 1, &format!("Scanning {}", root.display()))?;
         let mut known_prefixes = Vec::new();
 
-        platform_discovery::discover_selected_events(sources, |event| match event {
+        let result = platform_discovery::discover_selected_events(sources, |event| match event {
             DiscoveryEvent::SourceStarted { .. } => Ok(()),
             DiscoveryEvent::GameFound(game) => {
                 let record = into_record_with_preview(game, context.as_ref());
@@ -298,7 +362,8 @@ where
                 }
                 Ok(())
             }
-        })?;
+        });
+        result?;
 
         for prefix in find_prefixes_under_root(&root) {
             if known_prefixes.iter().any(|known| known == &prefix) {
@@ -307,10 +372,13 @@ where
             stream_generic_prefix_records(&prefix, context.as_ref(), &mut emit_game)?;
         }
 
+        if use_cache {
+            save_discovery_cache(cache_entries.into_values().collect())?;
+        }
         return Ok(());
     }
 
-    platform_discovery::discover_selected_events(sources, |event| match event {
+    let result = platform_discovery::discover_selected_events(sources, |event| match event {
         DiscoveryEvent::SourceStarted {
             index,
             total,
@@ -320,7 +388,13 @@ where
         DiscoveryEvent::GameFound(game) => {
             emit_game(into_record_with_preview(game, context.as_ref()))
         }
-    })
+    });
+
+    result?;
+    if use_cache {
+        save_discovery_cache(cache_entries.into_values().collect())?;
+    }
+    Ok(())
 }
 
 fn expand_scan_path(scan_path: &str) -> Result<String> {
@@ -411,6 +485,149 @@ fn into_record_with_preview(
             existing: game.is_existing(),
             tracked_name: game.tracked_name().map(ToOwned::to_owned),
         },
+    }
+}
+
+fn cached_into_runtime_game(
+    mut cached: CachedDiscoveredGame,
+    context: Option<&GameCreationContext>,
+) -> DiscoveredGameWithPreview {
+    cached.record.existing = false;
+    cached.record.tracked_name = None;
+
+    if let Some(existing_name) = context.and_then(|ctx| {
+        find_existing_game_for_save(Path::new(&cached.record.save_path), ctx)
+    }) {
+        cached.record.existing = true;
+        cached.record.tracked_name = Some(existing_name);
+    }
+
+    DiscoveredGameWithPreview {
+        record: cached.record,
+        preview_text: cached.preview_text,
+    }
+}
+
+fn discovery_cache_path() -> Result<PathBuf> {
+    let mut path = dirs::cache_dir().context("Unable to resolve cache directory")?;
+    path.push("instant");
+    fs::create_dir_all(&path).context("Failed to create discovery cache directory")?;
+    Ok(path.join(DISCOVERY_CACHE_FILE))
+}
+
+fn clear_discovery_cache_path(path: &Path) {
+    let _ = fs::remove_file(path);
+}
+
+fn read_cache_file(path: &Path) -> Result<Option<DiscoveryCacheFile>> {
+    let metadata = match fs::metadata(path) {
+        Ok(metadata) => metadata,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(err).context("Failed to stat discovery cache"),
+    };
+
+    if metadata.len() > DISCOVERY_CACHE_MAX_BYTES {
+        clear_discovery_cache_path(path);
+        return Ok(None);
+    }
+
+    let bytes = match fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(err).context("Failed to read discovery cache"),
+    };
+
+    let cache = match serde_json::from_slice::<DiscoveryCacheFile>(&bytes) {
+        Ok(cache) if cache.version == DISCOVERY_CACHE_VERSION => cache,
+        Ok(_) | Err(_) => {
+            clear_discovery_cache_path(path);
+            return Ok(None);
+        }
+    };
+
+    Ok(Some(cache))
+}
+
+fn save_discovery_cache(entries: Vec<CachedDiscoveredGame>) -> Result<()> {
+    let path = discovery_cache_path()?;
+    let cache = DiscoveryCacheFile {
+        version: DISCOVERY_CACHE_VERSION,
+        entries,
+    };
+    let bytes = serde_json::to_vec(&cache).context("Failed to serialize discovery cache")?;
+
+    if bytes.len() as u64 > DISCOVERY_CACHE_MAX_BYTES {
+        clear_discovery_cache_path(&path);
+        return Ok(());
+    }
+
+    fs::write(&path, bytes).context("Failed to write discovery cache")?;
+    Ok(())
+}
+
+fn is_cached_record_valid(record: &DiscoveredGameRecord) -> bool {
+    if !Path::new(&record.save_path).exists() {
+        return false;
+    }
+
+    record
+        .game_path
+        .as_deref()
+        .is_none_or(|path| Path::new(path).exists())
+}
+
+fn load_valid_cached_entries() -> Result<Vec<CachedDiscoveredGame>> {
+    let path = discovery_cache_path()?;
+    let Some(cache) = read_cache_file(&path)? else {
+        return Ok(Vec::new());
+    };
+
+    let mut valid_entries = Vec::new();
+    let mut changed = false;
+
+    for entry in cache.entries {
+        if is_cached_record_valid(&entry.record) {
+            valid_entries.push(entry);
+        } else {
+            changed = true;
+        }
+    }
+
+    if changed {
+        save_discovery_cache(valid_entries.clone())?;
+    }
+
+    Ok(valid_entries)
+}
+
+fn cached_record_matches_request(
+    record: &DiscoveredGameRecord,
+    sources: &[DiscoverySource],
+    scan_root: Option<&Path>,
+) -> bool {
+    if !sources.is_empty() {
+        let source_matches = sources
+            .iter()
+            .copied()
+            .any(|source| record_matches_source(record, source));
+        if !source_matches {
+            return false;
+        }
+    }
+
+    scan_root.is_none_or(|root| record_is_under_root(record, root))
+}
+
+fn record_matches_source(record: &DiscoveredGameRecord, source: DiscoverySource) -> bool {
+    match source {
+        DiscoverySource::Switch => record.platform_short == "Switch",
+        DiscoverySource::Ps2 => record.platform_short == "PS2",
+        DiscoverySource::Ps1 => record.platform_short == "PS1",
+        DiscoverySource::ThreeDs => record.platform_short == "3DS",
+        DiscoverySource::Epic => record.platform_short == "Epic",
+        DiscoverySource::Steam => record.platform_short == "Steam",
+        DiscoverySource::Faugus => record.platform_short == "Faugus",
+        DiscoverySource::Wine => record.platform_short == "Wine",
     }
 }
 
@@ -584,5 +801,60 @@ mod tests {
 
         let resolved = find_prefix_root(&nested).unwrap();
         assert_eq!(resolved, prefix.path());
+    }
+
+    #[test]
+    fn invalid_cache_file_is_removed() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("game-discovery-cache.json");
+        std::fs::write(&path, b"{not json").unwrap();
+
+        let loaded = read_cache_file(&path).unwrap();
+
+        assert!(loaded.is_none());
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn stale_cached_record_is_invalid() {
+        let record = DiscoveredGameRecord {
+            name: "Game".to_string(),
+            platform: "Wine".to_string(),
+            platform_short: "Wine".to_string(),
+            unique_key: "wine:test".to_string(),
+            save_path: "/definitely/missing".to_string(),
+            game_path: None,
+            launch_command: None,
+            existing: false,
+            tracked_name: None,
+        };
+
+        assert!(!is_cached_record_valid(&record));
+    }
+
+    #[test]
+    fn cached_record_respects_source_filter() {
+        let record = DiscoveredGameRecord {
+            name: "Sable".to_string(),
+            platform: "Epic Games".to_string(),
+            platform_short: "Epic".to_string(),
+            unique_key: "epic:test".to_string(),
+            save_path: "/tmp/save".to_string(),
+            game_path: None,
+            launch_command: None,
+            existing: false,
+            tracked_name: None,
+        };
+
+        assert!(cached_record_matches_request(
+            &record,
+            &[DiscoverySource::Epic],
+            None
+        ));
+        assert!(!cached_record_matches_request(
+            &record,
+            &[DiscoverySource::Steam],
+            None
+        ));
     }
 }
