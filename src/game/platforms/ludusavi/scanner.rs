@@ -7,7 +7,7 @@ use std::sync::OnceLock;
 use anyhow::Result;
 
 use super::manifest::load_manifest;
-use super::types::{DiscoveredWineSave, FileConstraint, LudusaviManifest};
+use super::types::{DiscoveredWineSave, FileConstraint, LudusaviManifest, choose_primary_save};
 
 static WINDOWS_MANIFEST: OnceLock<std::result::Result<Vec<WindowsGameEntry>, String>> =
     OnceLock::new();
@@ -356,6 +356,27 @@ where
     }
 
     Ok(())
+}
+
+pub fn scan_primary_wine_prefix_saves(prefix: &Path) -> Result<Vec<DiscoveredWineSave>> {
+    let mut results = Vec::new();
+    stream_primary_wine_prefix_saves(prefix, |save| {
+        results.push(save);
+        Ok(())
+    })?;
+    Ok(results)
+}
+
+pub fn stream_primary_wine_prefix_saves<F>(prefix: &Path, mut on_save: F) -> Result<()>
+where
+    F: FnMut(DiscoveredWineSave) -> Result<()>,
+{
+    stream_wine_prefix_games(prefix, |game_saves| {
+        if let Some(primary_save) = choose_primary_save(game_saves) {
+            on_save(primary_save)?;
+        }
+        Ok(())
+    })
 }
 
 #[cfg(test)]

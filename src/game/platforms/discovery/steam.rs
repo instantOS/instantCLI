@@ -14,7 +14,9 @@ use regex::Regex;
 use super::DiscoveredGame;
 use crate::common::TildePath;
 use crate::game::operations::steam::{compute_shortcut_app_id, list_steam_shortcuts};
-use crate::game::platforms::ludusavi::{self, DiscoveredWineSave, choose_primary_save};
+use crate::game::platforms::ludusavi::{
+    DiscoveredWineSave, choose_primary_save, scan_primary_wine_prefix_saves,
+};
 use crate::game::utils::path::tilde_display_string;
 use crate::menu::protocol::FzfPreview;
 use crate::ui::nerd_font::NerdFont;
@@ -182,7 +184,7 @@ where
     F: FnMut(SteamDiscoveredGame) -> Result<()>,
 {
     for candidate in candidates {
-        let saves = ludusavi::scan_wine_prefix(&candidate.prefix_path).unwrap_or_default();
+        let saves = scan_primary_wine_prefix_saves(&candidate.prefix_path).unwrap_or_default();
         let matching_saves: Vec<DiscoveredWineSave> = saves
             .into_iter()
             .filter(|save| {

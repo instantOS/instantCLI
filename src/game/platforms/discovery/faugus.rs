@@ -4,7 +4,6 @@
 //! Faugus Launcher, then runs the Ludusavi manifest scanner to resolve
 //! actual save paths for games installed in each prefix.
 
-use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -12,7 +11,7 @@ use anyhow::Result;
 
 use super::DiscoveredGame;
 use crate::common::TildePath;
-use crate::game::platforms::ludusavi::{self, DiscoveredWineSave, choose_primary_save};
+use crate::game::platforms::ludusavi::scan_primary_wine_prefix_saves;
 use crate::game::utils::path::tilde_display_string;
 use crate::menu::protocol::FzfPreview;
 use crate::ui::nerd_font::NerdFont;
@@ -175,37 +174,24 @@ pub fn discover_faugus_games() -> Result<Vec<FaugusDiscoveredGame>> {
 }
 
 fn scan_prefix(prefix: &Path, prefix_name: &str) -> Vec<FaugusDiscoveredGame> {
-    let saves = match ludusavi::scan_wine_prefix(prefix) {
+    let saves = match scan_primary_wine_prefix_saves(prefix) {
         Ok(saves) => saves,
         Err(_) => return Vec::new(),
     };
 
-    let mut grouped: BTreeMap<String, Vec<DiscoveredWineSave>> = BTreeMap::new();
-
-    for save in saves {
-        grouped
-            .entry(save.game_name.clone())
-            .or_default()
-            .push(save);
-    }
-
     let mut results = Vec::new();
 
-    for (game_name, candidates) in grouped {
-        let Some(primary_save) = choose_primary_save(candidates) else {
-            continue;
-        };
-
-        let display_name = if game_name.trim().is_empty() {
+    for save in saves {
+        let display_name = if save.game_name.trim().is_empty() {
             format!("Unknown ({})", prefix_name)
         } else {
-            game_name
+            save.game_name
         };
 
         results.push(FaugusDiscoveredGame::new(
             display_name,
             prefix.to_path_buf(),
-            PathBuf::from(primary_save.save_path),
+            PathBuf::from(save.save_path),
         ));
     }
 

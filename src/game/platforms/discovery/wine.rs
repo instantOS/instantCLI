@@ -3,7 +3,6 @@
 //! Scans a bounded set of likely prefix locations and runs the Ludusavi
 //! scanner against each valid Wine prefix without recursive walking.
 
-use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -11,9 +10,7 @@ use anyhow::Result;
 
 use super::DiscoveredGame;
 use crate::common::TildePath;
-use crate::game::platforms::ludusavi::{
-    DiscoveredWineSave, choose_primary_save, stream_wine_prefix_games,
-};
+use crate::game::platforms::ludusavi::stream_primary_wine_prefix_saves;
 use crate::game::utils::path::{is_valid_wine_prefix, tilde_display_string};
 use crate::menu::protocol::FzfPreview;
 use crate::ui::nerd_font::NerdFont;
@@ -172,46 +169,20 @@ pub fn stream_discover_wine_games_in_prefix<F>(prefix: &Path, mut on_game: F) ->
 where
     F: FnMut(WineDiscoveredGame) -> Result<()>,
 {
-    stream_wine_prefix_games(prefix, |game_saves| {
-        if let Some(game) = discovered_game_from_saves(prefix, game_saves) {
-            on_game(game)?;
-        }
-        Ok(())
-    })
-}
-
-fn discovered_game_from_saves(
-    prefix: &Path,
-    saves: Vec<DiscoveredWineSave>,
-) -> Option<WineDiscoveredGame> {
-    let mut grouped: BTreeMap<String, Vec<DiscoveredWineSave>> = BTreeMap::new();
-
-    for save in saves {
-        grouped
-            .entry(save.game_name.clone())
-            .or_default()
-            .push(save);
-    }
-
-    for (game_name, candidates) in grouped {
-        let Some(primary_save) = choose_primary_save(candidates) else {
-            continue;
-        };
-
-        let display_name = if game_name.trim().is_empty() {
+    stream_primary_wine_prefix_saves(prefix, |save| {
+        let display_name = if save.game_name.trim().is_empty() {
             "Unknown Wine Game".to_string()
         } else {
-            game_name
+            save.game_name
         };
 
-        return Some(WineDiscoveredGame::new(
+        on_game(WineDiscoveredGame::new(
             display_name,
             prefix.to_path_buf(),
-            PathBuf::from(primary_save.save_path),
-        ));
-    }
-
-    None
+            PathBuf::from(save.save_path),
+        ))?;
+        Ok(())
+    })
 }
 
 fn collect_generic_wine_prefixes_from_home(home: &Path) -> Vec<PathBuf> {

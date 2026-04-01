@@ -17,7 +17,9 @@ use serde::Deserialize;
 
 use super::DiscoveredGame;
 use crate::common::TildePath;
-use crate::game::platforms::ludusavi::{self, DiscoveredWineSave, choose_primary_save};
+use crate::game::platforms::ludusavi::{
+    DiscoveredWineSave, choose_primary_save, scan_primary_wine_prefix_saves,
+};
 use crate::game::utils::path::tilde_display_string;
 use crate::menu::protocol::FzfPreview;
 use crate::ui::nerd_font::NerdFont;
@@ -281,7 +283,7 @@ where
 
     let mut prefix_saves: HashMap<PathBuf, Vec<DiscoveredWineSave>> = HashMap::new();
     for prefix in prefix_to_games.keys() {
-        if let Ok(saves) = ludusavi::scan_wine_prefix(prefix) {
+        if let Ok(saves) = scan_primary_wine_prefix_saves(prefix) {
             prefix_saves.insert(prefix.clone(), saves);
         }
     }
