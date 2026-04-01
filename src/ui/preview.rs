@@ -50,6 +50,8 @@ enum PreviewSink {
     /// Write each line to stdout immediately, flushing after every line so fzf
     /// can display partial output while expensive operations run.
     Stream(BufWriter<Stdout>),
+    /// Stream to stdout while also retaining lines for later caching.
+    StreamAndCollect(BufWriter<Stdout>, Vec<PreviewLine>),
 }
 
 /// Builder for creating styled FZF preview text.
@@ -114,12 +116,28 @@ impl PreviewBuilder {
         }
     }
 
+    /// Create a preview builder that streams immediately and also retains the
+    /// rendered content so callers can cache it afterward.
+    pub fn streaming_cached() -> Self {
+        let mut writer = BufWriter::new(std::io::stdout());
+        let _ = writeln!(writer);
+        let _ = writer.flush();
+        Self {
+            sink: PreviewSink::StreamAndCollect(writer, vec![PreviewLine::Static(String::new())]),
+        }
+    }
+
     fn push_static(&mut self, s: String) {
         match &mut self.sink {
             PreviewSink::Collect(lines) => lines.push(PreviewLine::Static(s)),
             PreviewSink::Stream(writer) => {
                 let _ = writeln!(writer, "{s}");
                 let _ = writer.flush();
+            }
+            PreviewSink::StreamAndCollect(writer, lines) => {
+                let _ = writeln!(writer, "{s}");
+                let _ = writer.flush();
+                lines.push(PreviewLine::Static(s));
             }
         }
     }
@@ -257,8 +275,11 @@ impl PreviewBuilder {
     /// For static builds, this is converted to a placeholder.
     /// In streaming mode, shell commands are not supported and are ignored.
     pub fn shell(mut self, command: &str) -> Self {
-        if let PreviewSink::Collect(ref mut lines) = self.sink {
-            lines.push(PreviewLine::Shell(command.to_string()));
+        match &mut self.sink {
+            PreviewSink::Collect(lines) | PreviewSink::StreamAndCollect(_, lines) => {
+                lines.push(PreviewLine::Shell(command.to_string()));
+            }
+            PreviewSink::Stream(_) => {}
         }
         self
     }
@@ -274,11 +295,14 @@ impl PreviewBuilder {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        if let PreviewSink::Collect(ref mut lines) = self.sink {
-            let item_list: Vec<_> = items.into_iter().map(|s| s.as_ref().to_string()).collect();
-            let items_str = item_list.join(" ");
-            let cmd = format!("for {var} in {items_str}; do\n{body}\ndone");
-            lines.push(PreviewLine::Shell(cmd));
+        match &mut self.sink {
+            PreviewSink::Collect(lines) | PreviewSink::StreamAndCollect(_, lines) => {
+                let item_list: Vec<_> = items.into_iter().map(|s| s.as_ref().to_string()).collect();
+                let items_str = item_list.join(" ");
+                let cmd = format!("for {var} in {items_str}; do\n{body}\ndone");
+                lines.push(PreviewLine::Shell(cmd));
+            }
+            PreviewSink::Stream(_) => {}
         }
         self
     }
@@ -292,20 +316,21 @@ impl PreviewBuilder {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        if let PreviewSink::Collect(ref mut lines) = self.sink {
-            let types: Vec<_> = mime_types
-                .into_iter()
-                .map(|s| s.as_ref().to_string())
-                .collect();
-            let mime_list = types.join(" ");
+        match &mut self.sink {
+            PreviewSink::Collect(lines) | PreviewSink::StreamAndCollect(_, lines) => {
+                let types: Vec<_> = mime_types
+                    .into_iter()
+                    .map(|s| s.as_ref().to_string())
+                    .collect();
+                let mime_list = types.join(" ");
 
-            let green = hex_to_shell_escape(colors::GREEN);
-            let yellow = hex_to_shell_escape(colors::YELLOW);
-            let subtext = hex_to_shell_escape(colors::SUBTEXT0);
-            let reset = "\\033[0m";
+                let green = hex_to_shell_escape(colors::GREEN);
+                let yellow = hex_to_shell_escape(colors::YELLOW);
+                let subtext = hex_to_shell_escape(colors::SUBTEXT0);
+                let reset = "\\033[0m";
 
-            let cmd = format!(
-                r#"for mime in {mime_list}; do
+                let cmd = format!(
+                    r#"for mime in {mime_list}; do
     app=$(xdg-mime query default "$mime" 2>/dev/null)
     if [ -n "$app" ]; then
         name=""
@@ -324,8 +349,10 @@ impl PreviewBuilder {
         echo -e "  {subtext}$mime:{reset} {yellow}(not set){reset}"
     fi
 done"#
-            );
-            lines.push(PreviewLine::Shell(cmd));
+                );
+                lines.push(PreviewLine::Shell(cmd));
+            }
+            PreviewSink::Stream(_) => {}
         }
         self
     }
@@ -341,7 +368,9 @@ done"#
     pub fn build(self) -> FzfPreview {
         match &self.sink {
             PreviewSink::Stream(_) => FzfPreview::None,
-            PreviewSink::Collect(_) => FzfPreview::Text(self.build_string()),
+            PreviewSink::Collect(_) | PreviewSink::StreamAndCollect(_, _) => {
+                FzfPreview::Text(self.build_string())
+            }
         }
     }
 
@@ -353,6 +382,14 @@ done"#
         match self.sink {
             PreviewSink::Stream(_) => String::new(),
             PreviewSink::Collect(lines) => lines
+                .into_iter()
+                .map(|line| match line {
+                    PreviewLine::Static(s) => s,
+                    PreviewLine::Shell(_) => "(dynamic content)".to_string(),
+                })
+                .collect::<Vec<_>>()
+                .join("\n"),
+            PreviewSink::StreamAndCollect(_, lines) => lines
                 .into_iter()
                 .map(|line| match line {
                     PreviewLine::Static(s) => s,
@@ -389,6 +426,29 @@ done"#
                                     .replace('$', "\\$") // Escape dollar signs
                                     .replace('`', "\\`") // Escape backticks
                                     .replace('\x1b', "\\e"); // Convert ANSI escapes to \e
+                                format!("echo -e \"{shell_escaped}\"")
+                            }
+                        }
+                        PreviewLine::Shell(cmd) => cmd,
+                    })
+                    .collect();
+
+                commands.join("\n")
+            }
+            PreviewSink::StreamAndCollect(_, lines) => {
+                let commands: Vec<String> = lines
+                    .into_iter()
+                    .map(|line| match line {
+                        PreviewLine::Static(s) => {
+                            if s.is_empty() {
+                                "echo".to_string()
+                            } else {
+                                let shell_escaped = s
+                                    .replace('\\', "\\\\")
+                                    .replace('"', "\\\"")
+                                    .replace('$', "\\$")
+                                    .replace('`', "\\`")
+                                    .replace('\x1b', "\\e");
                                 format!("echo -e \"{shell_escaped}\"")
                             }
                         }

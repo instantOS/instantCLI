@@ -9,7 +9,7 @@ use crate::ui::catppuccin::colors;
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 
-use super::PreviewContext;
+use super::{PreviewContext, PreviewId, cache};
 
 /// Helper to extract package from context, returning None for empty.
 fn package_from_context(ctx: &PreviewContext) -> Option<&str> {
@@ -204,12 +204,26 @@ pub fn render_cargo_preview(ctx: &PreviewContext) -> Result<String> {
 // ============================================================================
 
 pub(crate) fn render_package_preview_streaming(ctx: &PreviewContext) -> Result<()> {
-    render_package_with(ctx, PreviewBuilder::streaming())?;
+    if let Some(cached) = cache::get_cached(PreviewId::Package, ctx)? {
+        print!("{cached}");
+        return Ok(());
+    }
+
+    let builder = render_package_with(ctx, PreviewBuilder::streaming_cached())?;
+    let rendered = builder.build_string();
+    let _ = cache::store(PreviewId::Package, ctx, &rendered);
     Ok(())
 }
 
 pub(crate) fn render_installed_package_preview_streaming(ctx: &PreviewContext) -> Result<()> {
-    render_installed_package_with(ctx, PreviewBuilder::streaming())?;
+    if let Some(cached) = cache::get_cached(PreviewId::InstalledPackage, ctx)? {
+        print!("{cached}");
+        return Ok(());
+    }
+
+    let builder = render_installed_package_with(ctx, PreviewBuilder::streaming_cached())?;
+    let rendered = builder.build_string();
+    let _ = cache::store(PreviewId::InstalledPackage, ctx, &rendered);
     Ok(())
 }
 
@@ -219,9 +233,30 @@ pub(crate) fn render_manager_preview_streaming(
     manager_render: fn(&str, PreviewBuilder) -> Result<PreviewBuilder>,
     placeholder_title: &str,
 ) -> Result<()> {
+    let Some(id) = preview_id_for_placeholder(placeholder_title) else {
+        match package_from_context(ctx) {
+            Some(pkg) => {
+                manager_render(pkg, PreviewBuilder::streaming())?;
+            }
+            None => {
+                PreviewBuilder::streaming()
+                    .header(NerdFont::Package, placeholder_title)
+                    .subtext("Select a package to see details");
+            }
+        }
+        return Ok(());
+    };
+
+    if let Some(cached) = cache::get_cached(id, ctx)? {
+        print!("{cached}");
+        return Ok(());
+    }
+
     match package_from_context(ctx) {
         Some(pkg) => {
-            manager_render(pkg, PreviewBuilder::streaming())?;
+            let builder = manager_render(pkg, PreviewBuilder::streaming_cached())?;
+            let rendered = builder.build_string();
+            let _ = cache::store(id, ctx, &rendered);
         }
         None => {
             PreviewBuilder::streaming()
@@ -230,6 +265,21 @@ pub(crate) fn render_manager_preview_streaming(
         }
     }
     Ok(())
+}
+
+fn preview_id_for_placeholder(title: &str) -> Option<PreviewId> {
+    match title {
+        "APT Package" => Some(PreviewId::Apt),
+        "DNF Package" => Some(PreviewId::Dnf),
+        "Zypper Package" => Some(PreviewId::Zypper),
+        "Pacman Package" => Some(PreviewId::Pacman),
+        "Snap Package" => Some(PreviewId::Snap),
+        "Pkg Package" => Some(PreviewId::Pkg),
+        "Flatpak Package" => Some(PreviewId::Flatpak),
+        "AUR Package" => Some(PreviewId::Aur),
+        "Cargo Package" => Some(PreviewId::Cargo),
+        _ => None,
+    }
 }
 
 // ============================================================================

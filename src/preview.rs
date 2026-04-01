@@ -17,6 +17,7 @@ use crate::ui::preview::PreviewBuilder;
 
 mod appearance;
 mod bluetooth;
+mod cache;
 mod default_apps;
 mod disks;
 mod file;
@@ -138,6 +139,15 @@ pub fn handle_preview_command(id: PreviewId, key: Option<String>) -> Result<()> 
         lines: env_usize("FZF_PREVIEW_LINES"),
     };
 
+    if should_use_collect_preview_cache(id, &ctx) {
+        let output = match cache::get_or_render(id, &ctx, || render_preview(id, &ctx)) {
+            Ok(text) => text,
+            Err(err) => render_error_preview(id, err),
+        };
+        print!("{output}");
+        return Ok(());
+    }
+
     // Package previews use streaming so the header appears immediately while
     // the (potentially slow) package manager command runs.
     if let Some(result) = try_render_streaming(id, &ctx) {
@@ -151,6 +161,24 @@ pub fn handle_preview_command(id: PreviewId, key: Option<String>) -> Result<()> 
 
     print!("{output}");
     Ok(())
+}
+
+fn should_use_collect_preview_cache(id: PreviewId, ctx: &PreviewContext) -> bool {
+    ctx.key().is_some()
+        && !matches!(
+            id,
+            PreviewId::Package
+                | PreviewId::InstalledPackage
+                | PreviewId::Apt
+                | PreviewId::Dnf
+                | PreviewId::Zypper
+                | PreviewId::Pacman
+                | PreviewId::Snap
+                | PreviewId::Pkg
+                | PreviewId::Flatpak
+                | PreviewId::Aur
+                | PreviewId::Cargo
+        )
 }
 
 /// Try to render a preview using the streaming path.
