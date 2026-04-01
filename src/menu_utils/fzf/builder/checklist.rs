@@ -1,8 +1,8 @@
 use anyhow::{Result, anyhow};
 use std::collections::HashMap;
-use std::io::Write;
-use std::process::{Command, Output, Stdio};
+use std::process::Output;
 
+use super::shared::{FzfCommandOptions, run_fzf_with_input};
 use super::{ChecklistEntry, DialogType, FzfBuilder};
 use crate::menu_utils::fzf::preview::PreviewUtils;
 use crate::menu_utils::fzf::types::{
@@ -135,34 +135,21 @@ impl FzfBuilder {
         action_map: &HashMap<String, ChecklistAction>,
         cursor: Option<usize>,
     ) -> Result<ChecklistSelection> {
-        let mut cmd = Command::new("fzf");
-        cmd.env_remove("FZF_DEFAULT_OPTS");
+        let mut cmd = self.base_fzf_command();
         cmd.arg("--ansi");
         cmd.arg("--tiebreak=index");
         cmd.arg("--layout=reverse");
         cmd.arg("--print-query");
-
-        if let Some(prompt) = &self.prompt {
-            cmd.arg("--prompt").arg(format!("{prompt} > "));
-        }
-
-        if let Some(header) = &self.header {
-            cmd.arg("--header").arg(header.to_fzf_string());
-        }
-
-        for arg in &self.additional_args {
-            cmd.arg(arg);
-        }
-
-        if let Some(index) = cursor {
-            cmd.arg("--bind").arg(format!("load:pos({})", index + 1));
-        }
-
-        if self.responsive_layout {
-            let layout = super::super::utils::get_responsive_layout();
-            cmd.arg(layout.preview_window);
-            cmd.arg("--margin").arg(layout.margin);
-        }
+        self.apply_fzf_command_options(
+            &mut cmd,
+            FzfCommandOptions {
+                prompt_suffix: Some(" > "),
+                header: self.default_header_text(),
+                include_additional_args: true,
+                cursor,
+                responsive_layout: true,
+            },
+        );
 
         let preview_strategy = PreviewUtils::analyze_preview_strategy(entries)?;
         let display_data: Vec<ItemDisplayData> = entries
@@ -177,21 +164,7 @@ impl FzfBuilder {
         let input_text =
             configure_preview_and_input(&mut cmd, preview_strategy, &display_data, false);
 
-        let mut child = cmd
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
-
-        let pid = child.id();
-        let _ = crate::menu::server::register_menu_process(pid);
-
-        if let Some(stdin) = child.stdin.as_mut() {
-            stdin.write_all(input_text.as_bytes())?;
-        }
-
-        let output = child.wait_with_output()?;
-        crate::menu::server::unregister_menu_process(pid);
+        let output = run_fzf_with_input(cmd, input_text.as_bytes())?;
 
         self.parse_checklist_output(output, key_to_index, action_map)
     }

@@ -1,13 +1,13 @@
 use anyhow::{Result, anyhow};
-use std::io::Write;
 use std::process::{Command, Stdio};
 
 use crate::ui::catppuccin::{colors, hex_to_ansi_bg, hex_to_ansi_fg};
 use crate::ui::nerd_font::NerdFont;
 
+use super::shared::{FzfCommandOptions, build_padded_item, run_fzf_with_input};
 use super::{ConfirmOption, DialogType, FzfBuilder};
 use crate::menu_utils::fzf::types::{ConfirmResult, FzfResult, Header};
-use crate::menu_utils::fzf::utils::{extract_icon_padding, get_terminal_dimensions};
+use crate::menu_utils::fzf::utils::get_terminal_dimensions;
 use crate::menu_utils::fzf::wrapper::{FzfWrapper, check_fzf_exit};
 
 impl FzfBuilder {
@@ -21,13 +21,18 @@ impl FzfBuilder {
     }
 
     pub(super) fn execute_input_result(self) -> Result<FzfResult<String>> {
-        let mut cmd = Command::new("fzf");
-        cmd.env_remove("FZF_DEFAULT_OPTS");
+        let mut cmd = self.base_fzf_command();
         cmd.arg("--print-query").arg("--no-info");
-
-        if let Some(prompt) = &self.prompt {
-            cmd.arg("--prompt").arg(format!("{prompt} "));
-        }
+        self.apply_fzf_command_options(
+            &mut cmd,
+            FzfCommandOptions {
+                prompt_suffix: Some(" "),
+                header: None,
+                include_additional_args: true,
+                cursor: None,
+                responsive_layout: false,
+            },
+        );
 
         if let Some(query) = &self.initial_query {
             cmd.arg("-q").arg(query);
@@ -37,25 +42,7 @@ impl FzfBuilder {
             cmd.arg("--ghost").arg(ghost);
         }
 
-        for arg in &self.additional_args {
-            cmd.arg(arg);
-        }
-
-        let mut child = cmd
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
-
-        let pid = child.id();
-        let _ = crate::menu::server::register_menu_process(pid);
-
-        if let Some(stdin) = child.stdin.as_mut() {
-            stdin.write_all(b"")?;
-        }
-
-        let output = child.wait_with_output()?;
-        crate::menu::server::unregister_menu_process(pid);
+        let output = run_fzf_with_input(cmd, b"")?;
 
         if let Some(cancelled) = check_fzf_exit(&output) {
             return Ok(cancelled);
@@ -203,42 +190,28 @@ impl FzfBuilder {
             return Ok(());
         };
 
-        let mut cmd = Command::new("fzf");
-        cmd.env_remove("FZF_DEFAULT_OPTS");
+        let mut cmd = self.base_fzf_command();
         cmd.arg("--layout").arg("reverse");
         cmd.arg("--wrap");
         cmd.arg("--read0");
         cmd.arg("--ansi");
         cmd.arg("--highlight-line");
 
-        let header_text = Self::format_message_header(title.as_deref(), self.header.as_ref());
-        if !header_text.is_empty() {
-            cmd.arg("--header").arg(header_text);
-        }
-
         cmd.arg("--no-input");
-
-        for arg in &self.additional_args {
-            cmd.arg(arg);
-        }
+        let header_text = Self::format_message_header(title.as_deref(), self.header.as_ref());
+        self.apply_fzf_command_options(
+            &mut cmd,
+            FzfCommandOptions {
+                prompt_suffix: None,
+                header: (!header_text.is_empty()).then_some(header_text),
+                include_additional_args: true,
+                cursor: None,
+                responsive_layout: false,
+            },
+        );
 
         let ok_styled = Self::format_styled_button(&ok_text, colors::GREEN, NerdFont::Check);
-
-        let mut child = cmd
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
-
-        let pid = child.id();
-        let _ = crate::menu::server::register_menu_process(pid);
-
-        if let Some(stdin) = child.stdin.as_mut() {
-            stdin.write_all(ok_styled.as_bytes())?;
-        }
-
-        let output = child.wait_with_output()?;
-        crate::menu::server::unregister_menu_process(pid);
+        let output = run_fzf_with_input(cmd, ok_styled.as_bytes())?;
 
         if check_fzf_exit::<()>(&output).is_some() {
             return Ok(());
@@ -255,9 +228,7 @@ impl FzfBuilder {
         let icon = char::from(icon);
         let display_line = format!("{bg}{fg}   {icon}   {reset}  {text}");
 
-        let (top_padding, bottom_with_shadow) = extract_icon_padding(&display_line);
-
-        format!("{top_padding}\n  {display_line}\n{bottom_with_shadow}")
+        build_padded_item(&display_line)
     }
 
     fn format_message_header(title: Option<&str>, message: Option<&Header>) -> String {

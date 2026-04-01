@@ -1,12 +1,12 @@
 use anyhow::Result;
 use std::io::Write;
-use std::process::{Command, Stdio};
+use std::process::Command;
 
 use crate::common::shell::shell_quote;
 
 use super::FzfBuilder;
+use super::shared::{FzfCommandOptions, build_padded_item, run_fzf_with_input};
 use crate::menu_utils::fzf::types::{FzfPreview, FzfResult, FzfSelectable, InitialCursor};
-use crate::menu_utils::fzf::utils::extract_icon_padding;
 use crate::menu_utils::fzf::wrapper::check_fzf_exit;
 
 impl FzfBuilder {
@@ -29,23 +29,9 @@ impl FzfBuilder {
             None
         };
 
-        let mut cmd = self.configure_padded_cmd(preview_dir.as_deref(), has_keywords);
+        let cmd = self.configure_padded_cmd(preview_dir.as_deref(), has_keywords);
 
-        let mut child = cmd
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
-
-        let pid = child.id();
-        let _ = crate::menu::server::register_menu_process(pid);
-
-        if let Some(stdin) = child.stdin.as_mut() {
-            stdin.write_all(input_text.as_bytes())?;
-        }
-
-        let output = child.wait_with_output();
-        crate::menu::server::unregister_menu_process(pid);
+        let output = run_fzf_with_input(cmd, input_text.as_bytes());
 
         if let Some(dir) = preview_dir.as_ref() {
             let _ = std::fs::remove_dir_all(dir);
@@ -76,10 +62,7 @@ impl FzfBuilder {
 
                 Ok(FzfResult::Cancelled)
             }
-            Err(e) => {
-                super::super::utils::check_fzf_spawn_error_and_exit(&e);
-                Ok(FzfResult::Error(format!("fzf execution failed: {e}")))
-            }
+            Err(e) => Ok(FzfResult::Error(e.to_string())),
         }
     }
 
@@ -94,7 +77,6 @@ impl FzfBuilder {
 
         for item in items {
             let display = item.fzf_display_text();
-            let (top_padding, bottom_with_shadow) = extract_icon_padding(&display);
             let keywords = item.fzf_search_keywords().join(" ");
 
             let middle_line = if keywords.is_empty() {
@@ -105,7 +87,7 @@ impl FzfBuilder {
                 format!("  {display}{EXTRA_WIDE_PADDING}\x1f{keywords}")
             };
 
-            let padded_item = format!("{top_padding}\n{middle_line}\n{bottom_with_shadow}");
+            let padded_item = build_padded_item(&middle_line);
             input_lines.push(padded_item);
         }
 
@@ -144,8 +126,7 @@ impl FzfBuilder {
         preview_dir: Option<&std::path::Path>,
         has_keywords: bool,
     ) -> Command {
-        let mut cmd = Command::new("fzf");
-        cmd.env_remove("FZF_DEFAULT_OPTS");
+        let mut cmd = self.base_fzf_command();
 
         cmd.arg("--read0");
         cmd.arg("--ansi");
@@ -168,26 +149,20 @@ impl FzfBuilder {
             cmd.arg("--preview").arg(&preview_cmd);
         }
 
-        if let Some(prompt) = &self.prompt {
-            cmd.arg("--prompt").arg(format!("{prompt} > "));
-        }
-        if let Some(header) = &self.header {
-            cmd.arg("--header").arg(header.to_fzf_string());
-        }
-
-        if let Some(InitialCursor::Index(index)) = self.initial_cursor {
-            cmd.arg("--bind").arg(format!("load:pos({})", index + 1));
-        }
-
-        for arg in &self.additional_args {
-            cmd.arg(arg);
-        }
-
-        if self.responsive_layout {
-            let layout = super::super::utils::get_responsive_layout();
-            cmd.arg(layout.preview_window);
-            cmd.arg("--margin").arg(layout.margin);
-        }
+        let cursor = match self.initial_cursor {
+            Some(InitialCursor::Index(index)) => Some(index),
+            None => None,
+        };
+        self.apply_fzf_command_options(
+            &mut cmd,
+            FzfCommandOptions {
+                prompt_suffix: Some(" > "),
+                header: self.default_header_text(),
+                include_additional_args: true,
+                cursor,
+                responsive_layout: true,
+            },
+        );
 
         cmd
     }

@@ -3,6 +3,7 @@
 mod checklist;
 mod dialogs;
 mod padded;
+mod shared;
 
 use anyhow::{self, Result};
 use serde::de::DeserializeOwned;
