@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result, anyhow};
 use base64::{Engine as _, engine::general_purpose};
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::ffi::OsStr;
 use std::process::Command;
 
@@ -122,6 +122,7 @@ pub struct StreamingMenuItem<T> {
     key: String,
     display: String,
     preview: FzfPreview,
+    preview_arg: Option<String>,
     payload: T,
 }
 
@@ -149,12 +150,18 @@ impl<T> StreamingMenuItem<T> {
             key: key.into(),
             display: display.into(),
             preview: FzfPreview::None,
+            preview_arg: None,
             payload,
         }
     }
 
     pub fn preview(mut self, preview: FzfPreview) -> Self {
         self.preview = preview;
+        self
+    }
+
+    pub fn preview_arg(mut self, preview_arg: impl Into<String>) -> Self {
+        self.preview_arg = Some(preview_arg.into());
         self
     }
 }
@@ -194,29 +201,53 @@ impl From<Command> for StreamingCommand {
 impl<T: Serialize> StreamingMenuItem<T> {
     pub fn encode(&self) -> Result<String> {
         let payload_json = serde_json::to_vec(&self.payload)?;
-        let preview_text = match &self.preview {
-            FzfPreview::Text(text) => text.as_bytes(),
-            FzfPreview::Command(command) => command.as_bytes(),
-            FzfPreview::None => &[],
+        let default_preview_arg = self.preview_arg.as_deref().unwrap_or(&self.key);
+        let (preview_kind, preview_data) = match &self.preview {
+            FzfPreview::Text(text) => (
+                "T",
+                general_purpose::STANDARD.encode(text.as_bytes()),
+            ),
+            FzfPreview::Command(command) => {
+                let baked = command.replace("\"$1\"", &shell_quote(default_preview_arg));
+                (
+                    "C",
+                    general_purpose::STANDARD.encode(baked.as_bytes()),
+                )
+            }
+            FzfPreview::None => ("N", String::new()),
         };
 
         Ok(format!(
-            "{}\t{}\t{}\t{}\t{}",
+            "{}\t{}\t{}\t{}\t{}\t{}",
             sanitize_streaming_field(&self.kind),
             sanitize_streaming_field(&self.key),
             sanitize_streaming_field(&self.display),
-            general_purpose::STANDARD.encode(preview_text),
+            preview_kind,
+            preview_data,
             general_purpose::STANDARD.encode(payload_json),
         ))
     }
 }
 
+fn shell_quote(s: &str) -> String {
+    if s.is_empty() {
+        return "''".to_string();
+    }
+    if s.chars()
+        .all(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | '=' | '/' | '.' | ':' | ','))
+    {
+        return s.to_string();
+    }
+    format!("'{}'", s.replace('\'', r"'\''"))
+}
+
 impl<T: DeserializeOwned> DecodedStreamingMenuItem<T> {
     pub fn decode(line: &str) -> Result<Self> {
-        let mut fields = line.splitn(5, '\t');
+        let mut fields = line.splitn(6, '\t');
         let kind = fields.next().unwrap_or_default().to_string();
         let key = fields.next().unwrap_or_default().to_string();
         let display = fields.next().unwrap_or_default().to_string();
+        let _preview_kind = fields.next().unwrap_or_default();
         let _preview_b64 = fields.next().unwrap_or_default();
         let payload_b64 = fields
             .next()
@@ -238,7 +269,7 @@ impl<T: DeserializeOwned> DecodedStreamingMenuItem<T> {
 }
 
 pub fn streaming_preview_command() -> &'static str {
-    "printf '%s' {4} | base64 -d 2>/dev/null"
+    "type=$(printf '%s' {4}); content=$(printf '%s' {5} | base64 -d 2>/dev/null); if [ \"$type\" = C ]; then eval \"$content\"; elif [ \"$type\" = T ]; then printf '%s' \"$content\"; fi"
 }
 
 fn sanitize_streaming_field(value: &str) -> String {
@@ -325,7 +356,7 @@ pub enum ChecklistResult<T> {
 }
 
 /// Result type for confirmation dialogs
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ConfirmResult {
     Yes,
     No,

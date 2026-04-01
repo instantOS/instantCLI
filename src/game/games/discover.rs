@@ -708,7 +708,7 @@ mod tests {
         .unwrap();
 
         let fields: Vec<&str> = row.split('\t').collect();
-        assert_eq!(fields.len(), 5);
+        assert_eq!(fields.len(), 6);
     }
 
     #[test]

@@ -6,9 +6,8 @@ use anyhow::{Context, Result};
 
 use crate::common::distro::OperatingSystem;
 use crate::common::package::{PackageManager, uninstall_packages};
-use crate::menu_utils::{ConfirmResult, FzfResult, FzfWrapper, Header};
-use crate::preview::{PreviewId, preview_command_streaming};
-use crate::settings::package_list;
+use crate::menu_utils::{ConfirmResult, DecodedStreamingMenuItem, FzfResult, FzfWrapper, Header};
+use crate::settings::package_list::{self, PackageSelectionPayload};
 use crate::ui::catppuccin::fzf_mocha_args;
 
 enum UninstallResult {
@@ -48,8 +47,6 @@ fn run_uninstaller(manager: PackageManager, debug: bool) -> Result<()> {
     }
 
     loop {
-        let preview_cmd = preview_command_streaming(PreviewId::InstalledPackage);
-
         let result = FzfWrapper::builder()
             .multi_select(true)
             .prompt("Select packages")
@@ -58,21 +55,8 @@ fn run_uninstaller(manager: PackageManager, debug: bool) -> Result<()> {
                 manager.display_name()
             )))
             .args(fzf_mocha_args())
-            .args([
-                "--delimiter",
-                "\t",
-                "--with-nth",
-                if manager == PackageManager::Snap {
-                    "2"
-                } else {
-                    "1"
-                },
-                "--preview",
-                &preview_cmd,
-                "--ansi",
-            ])
             .responsive_layout()
-            .select_streaming(package_list::installed_command(manager))
+            .select_encoded_streaming(package_list::installed_command(manager))
             .context("Failed to run package selector")?;
 
         match handle_uninstall_result(result, manager, debug)? {
@@ -87,22 +71,15 @@ fn run_uninstaller(manager: PackageManager, debug: bool) -> Result<()> {
 
 /// Handle the uninstall result.
 fn handle_uninstall_result(
-    result: FzfResult<String>,
+    result: FzfResult<DecodedStreamingMenuItem<PackageSelectionPayload>>,
     manager: PackageManager,
     debug: bool,
 ) -> Result<UninstallResult> {
     match result {
-        FzfResult::MultiSelected(lines) if !lines.is_empty() => {
-            let packages: Vec<String> = lines
+        FzfResult::MultiSelected(rows) if !rows.is_empty() => {
+            let packages: Vec<String> = rows
                 .into_iter()
-                .map(|l| {
-                    if l.starts_with("snap\t")
-                        && let Some((_, rest)) = l.split_once('\t')
-                    {
-                        return rest.split_whitespace().next().unwrap_or(rest).to_string();
-                    }
-                    l.split_whitespace().next().unwrap_or(&l).to_string()
-                })
+                .map(|row| row.payload.package)
                 .filter(|s| !s.is_empty())
                 .collect();
 
@@ -133,16 +110,8 @@ fn handle_uninstall_result(
             println!("✓ Package uninstallation completed successfully!");
             Ok(UninstallResult::Uninstalled)
         }
-        FzfResult::Selected(line) => {
-            let name = if line.starts_with("snap\t") {
-                if let Some((_, rest)) = line.split_once('\t') {
-                    rest.split_whitespace().next().unwrap_or(rest).to_string()
-                } else {
-                    line.split_whitespace().next().unwrap_or(&line).to_string()
-                }
-            } else {
-                line.split_whitespace().next().unwrap_or(&line).to_string()
-            };
+        FzfResult::Selected(row) => {
+            let name = row.payload.package;
 
             if debug {
                 println!("Selected package: {}", name);

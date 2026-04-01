@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 use super::{PreviewContext, PreviewId};
 use crate::ui::preview::PreviewWriter;
 
-const PREVIEW_CACHE_VERSION: u32 = 1;
+const PREVIEW_CACHE_VERSION: u32 = 3;
 
 pub(super) fn get_or_render<F>(id: PreviewId, ctx: &PreviewContext, render: F) -> Result<String>
 where
@@ -62,13 +62,15 @@ where
 {
     if let Some(cached) = get_cached(id, ctx)? {
         print!("{cached}");
-        io::stdout().flush().context("Failed to flush cached preview")?;
+        io::stdout()
+            .flush()
+            .context("Failed to flush cached preview")?;
         return Ok(());
     }
 
     let mut preview = PreviewWriter::streaming_cached();
     render(&mut preview)?;
-    let rendered = preview.build_string();
+    let rendered = normalize_streaming_capture(preview.build_string());
     let _ = store(id, ctx, &rendered);
     Ok(())
 }
@@ -99,12 +101,31 @@ fn cache_path(id: PreviewId, ctx: &PreviewContext) -> Result<Option<PathBuf>> {
     hasher.update(id.to_string().as_bytes());
     hasher.update([0]);
     hasher.update(key.as_bytes());
-    hasher.update([0]);
-    hasher.update(ctx.columns.unwrap_or_default().to_le_bytes());
-    hasher.update(ctx.lines.unwrap_or_default().to_le_bytes());
+    if cache_depends_on_dimensions(id) {
+        hasher.update([0]);
+        hasher.update(ctx.columns.unwrap_or_default().to_le_bytes());
+        hasher.update(ctx.lines.unwrap_or_default().to_le_bytes());
+    }
     let digest = format!("{:x}", hasher.finalize());
 
     Ok(Some(preview_cache_dir()?.join(format!("{digest}.txt"))))
+}
+
+fn cache_depends_on_dimensions(id: PreviewId) -> bool {
+    !matches!(
+        id,
+        PreviewId::Package
+            | PreviewId::InstalledPackage
+            | PreviewId::Apt
+            | PreviewId::Dnf
+            | PreviewId::Zypper
+            | PreviewId::Pacman
+            | PreviewId::Snap
+            | PreviewId::Pkg
+            | PreviewId::Flatpak
+            | PreviewId::Aur
+            | PreviewId::Cargo
+    )
 }
 
 fn preview_cache_dir() -> Result<PathBuf> {
@@ -139,6 +160,13 @@ fn read_fresh_cache(path: &PathBuf, ttl: Duration) -> Result<Option<String>> {
 
 fn write_cache(path: &PathBuf, text: &str) -> Result<()> {
     fs::write(path, text).context("Failed to write preview cache file")
+}
+
+fn normalize_streaming_capture(mut text: String) -> String {
+    if !text.is_empty() && !text.ends_with('\n') {
+        text.push('\n');
+    }
+    text
 }
 
 fn is_stale(modified: SystemTime, ttl: Duration) -> bool {
@@ -180,5 +208,24 @@ mod tests {
         unsafe {
             std::env::remove_var("INS_PREVIEW_CACHE_DIR");
         }
+    }
+
+    #[test]
+    fn flatpak_cache_key_ignores_dimensions() {
+        let ctx_a = PreviewContext {
+            key: Some("flathub|org.mozilla.firefox".to_string()),
+            columns: Some(80),
+            lines: Some(24),
+        };
+        let ctx_b = PreviewContext {
+            key: Some("flathub|org.mozilla.firefox".to_string()),
+            columns: Some(120),
+            lines: Some(40),
+        };
+
+        let path_a = cache_path(PreviewId::Flatpak, &ctx_a).unwrap().unwrap();
+        let path_b = cache_path(PreviewId::Flatpak, &ctx_b).unwrap().unwrap();
+
+        assert_eq!(path_a, path_b);
     }
 }

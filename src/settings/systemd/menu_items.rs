@@ -4,9 +4,11 @@ use anyhow::{Context, Result};
 
 use crate::common::shell::shell_quote;
 use crate::common::systemd::{ServiceScope, SystemdManager};
-use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper, Header, MenuItem};
-use crate::preview::{PreviewId, preview_command_streaming};
+use crate::menu_utils::{
+    DecodedStreamingMenuItem, FzfPreview, FzfResult, FzfSelectable, FzfWrapper, Header, MenuItem,
+};
 use crate::settings::systemd_list;
+use crate::settings::systemd_list::SystemdServiceSelectionPayload;
 use crate::ui::catppuccin::{colors, format_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::prelude::PreviewBuilder;
@@ -323,8 +325,6 @@ fn run_services_menu(scope: ServiceScope) -> Result<()> {
         ServiceScope::User => "user",
     };
 
-    let preview_cmd = preview_command_streaming(PreviewId::SystemdService);
-
     let mut selected_service: Option<ServiceItem> = None;
 
     loop {
@@ -349,24 +349,11 @@ fn run_services_menu(scope: ServiceScope) -> Result<()> {
             .header(Header::fancy(title))
             .prompt("Select service")
             .args(crate::ui::catppuccin::fzf_mocha_args())
-            .args([
-                "--delimiter",
-                "\t",
-                "--with-nth",
-                "2",
-                "--preview",
-                &preview_cmd,
-                "--ansi",
-            ])
             .responsive_layout()
-            .select_streaming(systemd_list::list_command(scope_str))?;
+            .select_encoded_streaming(systemd_list::list_command(scope_str))?;
 
         match result {
-            FzfResult::Selected(line) => {
-                if let Some(service) = parse_service_from_line(&line, scope) {
-                    selected_service = Some(service);
-                }
-            }
+            FzfResult::Selected(row) => selected_service = decode_service(row),
             _ => break,
         }
     }
@@ -374,32 +361,21 @@ fn run_services_menu(scope: ServiceScope) -> Result<()> {
     Ok(())
 }
 
-fn parse_service_from_line(line: &str, scope: ServiceScope) -> Option<ServiceItem> {
-    let parts: Vec<&str> = line.split('\t').collect();
-    if parts.is_empty() {
-        return None;
-    }
-
-    let key = parts[0];
-    let key_parts: Vec<&str> = key.splitn(2, ':').collect();
-    let name = key_parts.first()?.to_string();
-    let description = parts.get(2).unwrap_or(&"").to_string();
-
-    let scope_args: Vec<&str> = match scope {
-        ServiceScope::System => vec![],
-        ServiceScope::User => vec!["--user"],
+fn decode_service(
+    row: DecodedStreamingMenuItem<SystemdServiceSelectionPayload>,
+) -> Option<ServiceItem> {
+    let scope = match row.payload.scope.as_str() {
+        "user" => ServiceScope::User,
+        _ => ServiceScope::System,
     };
 
-    let active = Command::new("systemctl")
-        .args(["is-active", &name])
-        .args(&scope_args)
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_else(|_| "unknown".to_string());
-
-    let enabled = get_service_enabled_state(&name, scope);
-
-    Some(ServiceItem::new(name, description, active, enabled, scope))
+    Some(ServiceItem::new(
+        row.payload.name,
+        row.payload.description,
+        row.payload.active,
+        row.payload.enabled,
+        scope,
+    ))
 }
 
 fn get_service_enabled_state(name: &str, scope: ServiceScope) -> String {

@@ -5,12 +5,13 @@
 use anyhow::{Context, Result};
 
 use crate::common::package::{PackageManager, uninstall_packages};
+use crate::common::shell::resolve_current_binary;
 use crate::menu_utils::{
     FzfResult, FzfSelectable, FzfWrapper, Header, StreamingCommand, select_one_with_style,
 };
-use crate::preview::{PreviewId, preview_command_streaming};
 use crate::settings::context::SettingsContext;
 use crate::settings::deps::FLATPAK;
+use crate::settings::flatpak_list::FlatpakSelectionPayload;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::ui::catppuccin::fzf_mocha_args;
 use crate::ui::prelude::*;
@@ -99,33 +100,19 @@ impl Setting for ManageInstalledFlatpaks {
 fn run_installed_flatpaks_manager() -> Result<()> {
     println!("Starting installed Flatpak manager...");
 
-    // List installed apps with app_id first for preview compatibility
-    // Format: application\tname\tversion\torigin\tsize
-    let preview_cmd = preview_command_streaming(PreviewId::Flatpak);
-
     loop {
-        let list_command = StreamingCommand::new("flatpak")
-            .arg("list")
-            .arg("--app")
-            .arg("--columns=application,name,version,origin,size");
+        let list_command = StreamingCommand::new(resolve_current_binary())
+            .arg("settings")
+            .arg("internal-generate-installed-flatpak-list");
         let result = FzfWrapper::builder()
             .prompt("Select a Flatpak app")
             .header(Header::fancy("Manage Installed Flatpaks"))
             .args(fzf_mocha_args())
-            .args([
-                "--delimiter",
-                "\t",
-                "--with-nth",
-                "2,3..", // Show name and remaining fields, hide app_id from display
-                "--preview",
-                &preview_cmd,
-                "--ansi",
-            ])
             .responsive_layout()
-            .select_streaming(list_command)?;
+            .select_encoded_streaming::<FlatpakSelectionPayload, _>(list_command)?;
 
         let app_id = match result {
-            FzfResult::Selected(line) => line.split('\t').next().unwrap_or(&line).to_string(),
+            FzfResult::Selected(row) => row.payload.app_id,
             FzfResult::Cancelled => {
                 println!("App selection cancelled.");
                 return Ok(());

@@ -116,13 +116,6 @@ pub fn preview_command(id: PreviewId) -> String {
     format!("{exe} preview --id {id} --key \"$1\"")
 }
 
-/// Preview command for streaming fzf menus.
-/// Uses fzf's {} placeholder instead of $1 for the key.
-pub fn preview_command_streaming(id: PreviewId) -> String {
-    let exe = current_exe_command();
-    format!("{exe} preview --id {id} --key {{}}")
-}
-
 /// Preview command for a specific setting by ID.
 pub fn preview_command_for_setting(setting_id: &str) -> String {
     let exe = current_exe_command();

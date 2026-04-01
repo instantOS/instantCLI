@@ -36,6 +36,9 @@ pub enum SettingsCommands {
         #[arg(short = 'k', long = "keyword")]
         keyword: Option<String>,
     },
+    /// Internal: Generate installed Flatpak app rows for streaming menus
+    #[command(hide = true)]
+    InternalGenerateInstalledFlatpakList,
     /// Internal: Generate systemd service list for streaming menu
     #[command(hide = true)]
     InternalGenerateSystemdList {
@@ -85,6 +88,9 @@ pub fn dispatch_settings_command(
         }) => list_settings(categories_only, category_filter.as_deref()),
         Some(SettingsCommands::InternalGenerateFlatpakList { keyword }) => {
             super::flatpak_list::generate_and_print_list(keyword.as_deref())
+        }
+        Some(SettingsCommands::InternalGenerateInstalledFlatpakList) => {
+            super::flatpak_list::generate_and_print_installed_list()
         }
         Some(SettingsCommands::InternalGenerateSystemdList { scope }) => {
             super::systemd_list::generate_and_print_list(&scope)

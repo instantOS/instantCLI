@@ -444,24 +444,10 @@ pub fn handle_gui_request(command: &MenuCommands) -> Result<i32> {
                 io::stdin()
                     .read_to_string(&mut buffer)
                     .map_err(|e| anyhow::anyhow!("Failed to read from stdin: {}", e))?;
-                buffer
-                    .lines()
-                    .map(|s| SerializableMenuItem {
-                        display_text: s.to_string(),
-                        preview: FzfPreview::None,
-                        metadata: None,
-                    })
-                    .collect()
+                plain_choice_items_from_input(&buffer)
             } else {
                 // Split space-separated items from command line
-                items
-                    .split(' ')
-                    .map(|s| SerializableMenuItem {
-                        display_text: s.to_string(),
-                        preview: FzfPreview::None,
-                        metadata: None,
-                    })
-                    .collect()
+                items.split(' ').map(SerializableMenuItem::plain).collect()
             };
 
             match client.choice(prompt.clone(), item_list, *multi) {

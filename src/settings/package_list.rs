@@ -3,10 +3,18 @@ use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, anyhow, bail};
 use duct::cmd;
+use serde::{Deserialize, Serialize};
 
 use crate::common::package::{PackageManager, detect_aur_helper};
 use crate::common::shell::{current_exe_command, resolve_current_binary};
-use crate::menu_utils::StreamingCommand;
+use crate::menu_utils::{FzfPreview, StreamingCommand, StreamingMenuItem};
+use crate::preview::{PreviewId, preview_command};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PackageSelectionPayload {
+    pub manager: String,
+    pub package: String,
+}
 
 pub fn available_command(manager: PackageManager) -> StreamingCommand {
     StreamingCommand::new(resolve_current_binary())
@@ -100,41 +108,56 @@ pub fn generate_and_print_snap_list(keyword: Option<&str>) -> Result<()> {
         let version = fields[1];
         let publisher = fields[2];
         let summary = fields.iter().skip(4).copied().collect::<Vec<_>>().join(" ");
-        println!("{name}\t{version}\t{publisher}\t{summary}");
+        print_package_row(
+            PackageManager::Snap,
+            name,
+            name,
+            format!("{name}\t{version}\t{publisher}\t{summary}"),
+            preview_command(PreviewId::Snap),
+        )?;
     }
 
     Ok(())
 }
 
 fn stream_available(manager: PackageManager) -> Result<()> {
+    let preview_id = preview_id_for_manager(manager);
     match manager {
-        PackageManager::Pacman => stream_lines(Command::new("pacman").arg("-Slq"), |line| {
-            Some(line.to_string())
-        }),
-        PackageManager::Apt => {
-            stream_lines(Command::new("apt-cache").args(["search", "."]), |line| {
-                line.split_once(' ').map(|(name, _)| name.to_string())
-            })
-        }
-        PackageManager::Dnf => stream_lines(
+        PackageManager::Pacman => stream_and_print(
+            Command::new("pacman").arg("-Slq"),
+            |line| Some(line.to_string()),
+            |pkg| print_package_row(manager, &pkg, &pkg, pkg.clone(), preview_command(preview_id)),
+        ),
+        PackageManager::Apt => stream_and_print(
+            Command::new("apt-cache").args(["search", "."]),
+            |line| line.split_once(' ').map(|(name, _)| name.to_string()),
+            |pkg| print_package_row(manager, &pkg, &pkg, pkg.clone(), preview_command(preview_id)),
+        ),
+        PackageManager::Dnf => stream_and_print(
             Command::new("dnf").args(["list", "available"]),
             parse_dnf_package_name,
+            |pkg| print_package_row(manager, &pkg, &pkg, pkg.clone(), preview_command(preview_id)),
         ),
-        PackageManager::Zypper => stream_lines(
+        PackageManager::Zypper => stream_and_print(
             Command::new("zypper").args(["se", "--available-only"]),
             parse_zypper_package_name,
+            |pkg| print_package_row(manager, &pkg, &pkg, pkg.clone(), preview_command(preview_id)),
         ),
-        PackageManager::Pkg => stream_lines(Command::new("pkg").args(["list-all"]), |line| {
-            parse_pkg_name(line)
-        }),
-        PackageManager::Flatpak => stream_lines(
+        PackageManager::Pkg => stream_and_print(
+            Command::new("pkg").args(["list-all"]),
+            parse_pkg_name,
+            |pkg| print_package_row(manager, &pkg, &pkg, pkg.clone(), preview_command(preview_id)),
+        ),
+        PackageManager::Flatpak => stream_and_print(
             Command::new("flatpak").args(["remote-ls", "--app", "--columns=application"]),
             |line| Some(line.to_string()),
+            |pkg| print_package_row(manager, &pkg, &pkg, pkg.clone(), preview_command(preview_id)),
         ),
         PackageManager::Aur => stream_aur_available(),
-        PackageManager::Cargo => stream_lines(
+        PackageManager::Cargo => stream_and_print(
             Command::new("cargo").args(["search", "--limit", "1000", ""]),
             |line| line.split(' ').next().map(|name| name.to_string()),
+            |pkg| print_package_row(manager, &pkg, &pkg, pkg.clone(), preview_command(preview_id)),
         ),
         PackageManager::Snap => generate_and_print_snap_list(None),
     }
@@ -142,43 +165,56 @@ fn stream_available(manager: PackageManager) -> Result<()> {
 
 fn stream_installed(manager: PackageManager) -> Result<()> {
     match manager {
-        PackageManager::Pacman => stream_lines(Command::new("pacman").arg("-Qq"), |line| {
-            Some(line.to_string())
-        }),
-        PackageManager::Apt => stream_lines(
+        PackageManager::Pacman => stream_and_print(
+            Command::new("pacman").arg("-Qq"),
+            |line| Some(line.to_string()),
+            |pkg| print_installed_package_row(manager, &pkg, &pkg),
+        ),
+        PackageManager::Apt => stream_and_print(
             Command::new("dpkg-query").args(["-W", "-f=${Package}\\n"]),
             |line| Some(line.to_string()),
+            |pkg| print_installed_package_row(manager, &pkg, &pkg),
         ),
-        PackageManager::Dnf => stream_lines(
+        PackageManager::Dnf => stream_and_print(
             Command::new("dnf").args(["list", "installed"]),
             parse_dnf_package_name,
+            |pkg| print_installed_package_row(manager, &pkg, &pkg),
         ),
-        PackageManager::Zypper => stream_lines(
+        PackageManager::Zypper => stream_and_print(
             Command::new("zypper").args(["se", "--installed-only"]),
             parse_zypper_package_name,
+            |pkg| print_installed_package_row(manager, &pkg, &pkg),
         ),
-        PackageManager::Pkg => {
-            stream_lines(Command::new("pkg").arg("list-installed"), parse_pkg_name)
-        }
-        PackageManager::Flatpak => stream_lines(
+        PackageManager::Pkg => stream_and_print(
+            Command::new("pkg").arg("list-installed"),
+            parse_pkg_name,
+            |pkg| print_installed_package_row(manager, &pkg, &pkg),
+        ),
+        PackageManager::Flatpak => stream_and_print(
             Command::new("flatpak").args(["list", "--app", "--columns=application"]),
             |line| Some(line.to_string()),
+            |pkg| print_installed_package_row(manager, &pkg, &pkg),
         ),
-        PackageManager::Aur => stream_lines(Command::new("pacman").arg("-Qm"), |line| {
-            Some(line.to_string())
-        }),
-        PackageManager::Cargo => stream_lines(
+        PackageManager::Aur => stream_and_print(
+            Command::new("pacman").arg("-Qm"),
+            |line| Some(line.to_string()),
+            |pkg| print_installed_package_row(manager, &pkg, &pkg),
+        ),
+        PackageManager::Cargo => stream_and_print(
             Command::new("cargo").args(["install", "--list"]),
             parse_cargo_installed_name,
+            |pkg| print_installed_package_row(manager, &pkg, &pkg),
         ),
         PackageManager::Snap => stream_installed_snaps(),
     }
 }
 
 fn stream_arch_available() -> Result<()> {
-    stream_lines(Command::new("pacman").arg("-Slq"), |line| {
-        Some(format!("{}\t{}", PackageManager::Pacman.as_str(), line))
-    })?;
+    stream_and_print(
+        Command::new("pacman").arg("-Slq"),
+        |line| Some(line.to_string()),
+        |pkg| print_arch_package_row(PackageManager::Pacman, pkg),
+    )?;
 
     if detect_aur_helper().is_some() {
         stream_aur_available_with_prefix()?;
@@ -192,20 +228,26 @@ fn stream_aur_available() -> Result<()> {
 }
 
 fn stream_aur_available_with_prefix() -> Result<()> {
-    stream_aur_packages(Some(PackageManager::Aur.as_str()))
+    stream_aur_packages(Some(PackageManager::Aur))
 }
 
-fn stream_aur_packages(prefix: Option<&str>) -> Result<()> {
+fn stream_aur_packages(prefix: Option<PackageManager>) -> Result<()> {
     let output = cmd!("curl", "-sL", "https://aur.archlinux.org/packages.gz")
         .pipe(cmd!("gunzip"))
         .read()
         .context("Failed to fetch AUR package list")?;
 
     for line in output.lines().filter(|line| !line.trim().is_empty()) {
-        if let Some(prefix) = prefix {
-            println!("{prefix}\t{line}");
+        if let Some(manager) = prefix {
+            print_arch_package_row(manager, line.to_string())?;
         } else {
-            println!("{line}");
+            print_package_row(
+                PackageManager::Aur,
+                line,
+                line,
+                line.to_string(),
+                preview_command(PreviewId::Aur),
+            )?;
         }
     }
 
@@ -228,16 +270,21 @@ fn stream_installed_snaps() -> Result<()> {
         }
         let name = line.split_whitespace().next().unwrap_or_default();
         if !name.is_empty() {
-            println!("snap\t{name}\t{line}");
+            print_installed_package_row(PackageManager::Snap, name, line)?;
         }
     }
 
     Ok(())
 }
 
-fn stream_lines<F>(command: &mut Command, mut map_line: F) -> Result<()>
+fn stream_and_print<F, P>(
+    command: &mut Command,
+    mut map_line: F,
+    mut print_row: P,
+) -> Result<()>
 where
     F: FnMut(&str) -> Option<String>,
+    P: FnMut(String) -> Result<()>,
 {
     let mut child = command
         .stdout(Stdio::piped())
@@ -248,7 +295,6 @@ where
         .take()
         .ok_or_else(|| anyhow!("Failed to capture package list stdout"))?;
     let reader = BufReader::new(stdout);
-    let mut out = io::BufWriter::new(io::stdout());
 
     for line in reader.lines() {
         let line = line?;
@@ -259,11 +305,70 @@ where
         if let Some(mapped) = map_line(line)
             && !mapped.trim().is_empty()
         {
-            writeln!(out, "{mapped}")?;
+            print_row(mapped)?;
         }
     }
 
     child.wait()?;
+    Ok(())
+}
+
+fn preview_id_for_manager(manager: PackageManager) -> PreviewId {
+    match manager {
+        PackageManager::Apt => PreviewId::Apt,
+        PackageManager::Dnf => PreviewId::Dnf,
+        PackageManager::Zypper => PreviewId::Zypper,
+        PackageManager::Pacman => PreviewId::Pacman,
+        PackageManager::Snap => PreviewId::Snap,
+        PackageManager::Pkg => PreviewId::Pkg,
+        PackageManager::Flatpak => PreviewId::Flatpak,
+        PackageManager::Aur => PreviewId::Aur,
+        PackageManager::Cargo => PreviewId::Cargo,
+    }
+}
+
+fn print_installed_package_row(
+    manager: PackageManager,
+    package: &str,
+    display: &str,
+) -> Result<()> {
+    print_package_row(
+        manager,
+        package,
+        format!("{}\t{}", manager.as_str(), package),
+        display.to_string(),
+        preview_command(PreviewId::InstalledPackage),
+    )
+}
+
+fn print_arch_package_row(manager: PackageManager, package: String) -> Result<()> {
+    let preview_arg = format!("{}\t{}", manager.as_str(), package);
+    print_package_row(
+        manager,
+        &package.clone(),
+        preview_arg,
+        package,
+        preview_command(PreviewId::Package),
+    )
+}
+
+fn print_package_row(
+    manager: PackageManager,
+    key: &str,
+    preview_arg: impl Into<String>,
+    display: String,
+    preview_command: String,
+) -> Result<()> {
+    let payload = PackageSelectionPayload {
+        manager: manager.as_str().to_string(),
+        package: key.to_string(),
+    };
+    let row = StreamingMenuItem::new("package", key, display, payload)
+        .preview(FzfPreview::Command(preview_command))
+        .preview_arg(preview_arg)
+        .encode()?;
+    let mut out = io::BufWriter::new(io::stdout());
+    writeln!(out, "{row}")?;
     out.flush()?;
     Ok(())
 }

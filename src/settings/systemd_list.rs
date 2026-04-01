@@ -1,10 +1,21 @@
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
 use std::io::{self, Write};
 use std::process::{Command, Stdio};
 
 use crate::common::shell::resolve_current_binary;
 use crate::common::systemd::ServiceScope;
-use crate::menu_utils::StreamingCommand;
+use crate::menu_utils::{FzfPreview, StreamingCommand, StreamingMenuItem};
+use crate::preview::{PreviewId, preview_command};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SystemdServiceSelectionPayload {
+    pub name: String,
+    pub description: String,
+    pub active: String,
+    pub enabled: String,
+    pub scope: String,
+}
 
 pub fn list_command(scope: &str) -> StreamingCommand {
     StreamingCommand::new(resolve_current_binary())
@@ -87,8 +98,24 @@ fn stream_services(scope: ServiceScope) -> Result<()> {
         let enabled = get_service_enabled_state_cached(&name, scope, &mut enabled_cache);
         let display = format_display(&name, &active, &enabled, &description);
         let key = format!("{}:{}", name, scope_str);
+        let row = StreamingMenuItem::new(
+            "systemd-service",
+            &key,
+            display,
+            SystemdServiceSelectionPayload {
+                name,
+                description,
+                active,
+                enabled,
+                scope: scope_str.to_string(),
+            },
+        )
+        .preview(FzfPreview::Command(preview_command(
+            PreviewId::SystemdService,
+        )))
+        .encode()?;
 
-        writeln!(handle, "{}\t{}\t{}", key, display, description)?;
+        writeln!(handle, "{row}")?;
     }
 
     Ok(())

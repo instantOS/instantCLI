@@ -5,10 +5,22 @@
 //! Outputs apps incrementally for streaming fzf integration.
 
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
+use std::io::{self, Write};
 use std::path::PathBuf;
 use std::process::Command;
+
+use crate::menu_utils::{FzfPreview, StreamingMenuItem};
+use crate::preview::{PreviewId, preview_command};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FlatpakSelectionPayload {
+    pub app_id: String,
+    pub remote: Option<String>,
+    pub installation: Option<String>,
+}
 
 /// Generate and print the flatpak app list to stdout
 /// If keyword is provided, only matching apps are printed
@@ -20,7 +32,15 @@ pub fn generate_and_print_list(keyword: Option<&str>) -> Result<()> {
     let mut printed_ids: HashSet<String> = HashSet::new();
 
     for path in get_appstream_paths() {
-        parse_and_print_streaming(&path, keyword_lower.as_deref(), &mut printed_ids)?;
+        let remote = appstream_remote_name(&path);
+        let installation = appstream_installation(&path);
+        parse_and_print_streaming(
+            &path,
+            installation.as_deref(),
+            remote.as_deref(),
+            keyword_lower.as_deref(),
+            &mut printed_ids,
+        )?;
     }
 
     if printed_ids.is_empty() {
@@ -31,9 +51,45 @@ pub fn generate_and_print_list(keyword: Option<&str>) -> Result<()> {
     Ok(())
 }
 
+pub fn generate_and_print_installed_list() -> Result<()> {
+    let output = Command::new("flatpak")
+        .args([
+            "list",
+            "--app",
+            "--columns=application,name,version,origin,size",
+        ])
+        .output()?;
+
+    if !output.status.success() {
+        return Ok(());
+    }
+
+    for line in String::from_utf8_lossy(&output.stdout).lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let mut parts = line.split('\t');
+        let id = parts.next().unwrap_or_default();
+        let name = parts.next().unwrap_or_default();
+        let version = parts.next().unwrap_or_default();
+        let origin = parts.next().unwrap_or_default();
+        let size = parts.next().unwrap_or_default();
+        let tail = [version, origin, size]
+            .into_iter()
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>()
+            .join("\t");
+        print_flatpak_row(id, name, &tail, Some(origin), None)?;
+    }
+
+    Ok(())
+}
+
 /// Parse appstream file and print matching apps incrementally
 fn parse_and_print_streaming(
     path: &PathBuf,
+    installation: Option<&str>,
+    remote: Option<&str>,
     keyword: Option<&str>,
     printed_ids: &mut HashSet<String>,
 ) -> Result<()> {
@@ -59,6 +115,8 @@ fn parse_and_print_streaming(
                     &current_id,
                     &current_name,
                     &current_summary,
+                    installation,
+                    remote,
                     keyword,
                     printed_ids,
                 );
@@ -102,6 +160,8 @@ fn parse_and_print_streaming(
                     &current_id,
                     &current_name,
                     &current_summary,
+                    installation,
+                    remote,
                     keyword,
                     printed_ids,
                 );
@@ -137,6 +197,8 @@ fn parse_and_print_streaming(
             &current_id,
             &current_name,
             &current_summary,
+            installation,
+            remote,
             keyword,
             printed_ids,
         );
@@ -150,6 +212,8 @@ fn print_app_if_matches(
     id: &str,
     name: &str,
     summary: &str,
+    installation: Option<&str>,
+    remote: Option<&str>,
     keyword: Option<&str>,
     printed_ids: &mut HashSet<String>,
 ) {
@@ -169,7 +233,7 @@ fn print_app_if_matches(
     }
 
     printed_ids.insert(id.to_string());
-    println!("{}\t{}\t{}", id, name, summary);
+    let _ = print_flatpak_row(id, name, summary, remote, installation);
 }
 
 /// Extract text content between XML tags
@@ -231,6 +295,24 @@ fn find_appstream_files(base_dir: &PathBuf) -> Vec<PathBuf> {
     files
 }
 
+fn appstream_remote_name(path: &PathBuf) -> Option<String> {
+    let active = path.parent()?;
+    let arch = active.parent()?;
+    let remote = arch.parent()?;
+    remote.file_name()?.to_str().map(|s| s.to_string())
+}
+
+fn appstream_installation(path: &PathBuf) -> Option<String> {
+    let path = path.to_string_lossy();
+    if path.contains("/var/lib/flatpak/appstream/") {
+        Some("system".to_string())
+    } else if path.contains("/flatpak/appstream/") {
+        Some("user".to_string())
+    } else {
+        None
+    }
+}
+
 /// Fallback to flatpak remote-ls command
 fn fallback_to_remote_ls(keyword: Option<&str>) -> Result<()> {
     let output = Command::new("flatpak")
@@ -257,7 +339,7 @@ fn fallback_to_remote_ls(keyword: Option<&str>) -> Result<()> {
                 }
             }
 
-            println!("{}\t{}\t{}", id, name, summary);
+            print_flatpak_row(id, name, summary, None, None)?;
         }
         Ok(())
     } else {
@@ -265,5 +347,48 @@ fn fallback_to_remote_ls(keyword: Option<&str>) -> Result<()> {
             "flatpak remote-ls failed: {}",
             String::from_utf8_lossy(&output.stderr)
         ))
+    }
+}
+
+fn print_flatpak_row(
+    id: &str,
+    name: &str,
+    summary: &str,
+    remote: Option<&str>,
+    installation: Option<&str>,
+) -> Result<()> {
+    let display = if summary.is_empty() {
+        name.to_string()
+    } else {
+        format!("{name}\t{summary}")
+    };
+
+    let row = StreamingMenuItem::new(
+        "flatpak",
+        id,
+        display,
+        FlatpakSelectionPayload {
+            app_id: id.to_string(),
+            remote: remote.map(str::to_string),
+            installation: installation.map(str::to_string),
+        },
+    )
+    .preview(FzfPreview::Command(preview_command(PreviewId::Flatpak)))
+    .preview_arg(flatpak_preview_arg(id, remote, installation))
+    .encode()?;
+
+    let mut out = io::BufWriter::new(io::stdout());
+    writeln!(out, "{row}")?;
+    out.flush()?;
+    Ok(())
+}
+
+fn flatpak_preview_arg(app_id: &str, remote: Option<&str>, installation: Option<&str>) -> String {
+    match (installation, remote) {
+        (Some(installation), Some(remote)) if !installation.is_empty() && !remote.is_empty() => {
+            format!("{installation}|{remote}|{app_id}")
+        }
+        (None, Some(remote)) if !remote.is_empty() => format!("{remote}|{app_id}"),
+        _ => app_id.to_string(),
     }
 }

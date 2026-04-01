@@ -2,6 +2,7 @@
 
 use anyhow::Result;
 use duct::cmd;
+use std::collections::HashSet;
 
 use crate::common::distro::OperatingSystem;
 use crate::common::package::{PackageManager, detect_aur_helper};
@@ -593,11 +594,7 @@ pub(crate) fn render_pkg_impl(package: &str, preview: &mut PreviewWriter) -> Res
 }
 
 pub(crate) fn render_flatpak_impl(package_info: &str, preview: &mut PreviewWriter) -> Result<()> {
-    let package = if package_info.contains('\t') {
-        package_info.split('\t').next().unwrap_or(package_info)
-    } else {
-        package_info
-    };
+    let (installation_hint, remote_hint, package) = parse_flatpak_preview_arg(package_info);
 
     preview
         .header(NerdFont::Package, package)
@@ -608,21 +605,25 @@ pub(crate) fn render_flatpak_impl(package_info: &str, preview: &mut PreviewWrite
 
     let output = if local_output.is_some() {
         local_output
+    } else if let Some(remote) = remote_hint {
+        flatpak_remote_info(package, remote, installation_hint)
     } else {
         let remotes_output = cmd!("flatpak", "remotes", "--columns=name")
             .stderr_null()
             .read()
             .unwrap_or_default();
 
-        let remotes: Vec<&str> = remotes_output.lines().collect();
+        let mut seen = HashSet::new();
+        let remotes: Vec<&str> = remotes_output
+            .lines()
+            .map(str::trim)
+            .filter(|remote| !remote.is_empty())
+            .filter(|remote| seen.insert((*remote).to_string()))
+            .collect();
 
         let mut remote_output = None;
         for remote in &remotes {
-            if let Ok(output) = cmd!("flatpak", "remote-info", remote.trim(), package)
-                .stderr_null()
-                .read()
-                && !output.is_empty()
-            {
+            if let Some(output) = flatpak_remote_info(package, remote.trim(), None) {
                 remote_output = Some(output);
                 break;
             }
@@ -683,6 +684,70 @@ pub(crate) fn render_flatpak_impl(package_info: &str, preview: &mut PreviewWrite
     }
 
     Ok(())
+}
+
+fn parse_flatpak_preview_arg(arg: &str) -> (Option<&str>, Option<&str>, &str) {
+    let mut parts = arg.splitn(3, '|');
+    let first = parts.next().unwrap_or_default();
+    let second = parts.next();
+    let third = parts.next();
+
+    if let (Some(remote), Some(package)) = (second, third)
+        && !first.is_empty()
+        && !remote.is_empty()
+        && !package.is_empty()
+    {
+        return (Some(first), Some(remote), package);
+    }
+
+    if let Some(package) = second
+        && !first.is_empty()
+        && !package.is_empty()
+    {
+        return (None, Some(first), package);
+    }
+
+    if let Some((remote, package)) = arg.split_once('\t')
+        && !remote.is_empty()
+        && !package.is_empty()
+    {
+        return (None, Some(remote), package);
+    }
+
+    (None, None, arg)
+}
+
+fn flatpak_remote_info(
+    package: &str,
+    remote: &str,
+    installation_hint: Option<&str>,
+) -> Option<String> {
+    for scope in flatpak_scope_candidates(installation_hint) {
+        let mut command = std::process::Command::new("flatpak");
+        command.arg("remote-info");
+        if let Some(scope) = scope {
+            command.arg(format!("--{scope}"));
+        }
+        command.arg(remote).arg(package);
+
+        let output = command.output().ok()?;
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            if !stdout.trim().is_empty() {
+                return Some(stdout);
+            }
+        }
+    }
+
+    None
+}
+
+fn flatpak_scope_candidates(installation_hint: Option<&str>) -> [Option<&str>; 3] {
+    match installation_hint {
+        Some("user") => [Some("user"), Some("system"), None],
+        Some("system") => [Some("system"), Some("user"), None],
+        _ => [Some("user"), Some("system"), None],
+    }
 }
 
 pub(crate) fn render_aur_impl(package: &str, preview: &mut PreviewWriter) -> Result<()> {

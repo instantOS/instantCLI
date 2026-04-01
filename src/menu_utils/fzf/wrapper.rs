@@ -2,6 +2,7 @@
 
 use anyhow::{Result, anyhow};
 use base64::{Engine as _, engine::general_purpose};
+use serde::de::DeserializeOwned;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
@@ -372,6 +373,38 @@ fn parse_fzf_output<T: Clone>(
     }
 }
 
+fn parse_encoded_streaming_output<T: DeserializeOwned>(
+    result: std::process::Output,
+    multi_select: bool,
+) -> Result<FzfResult<DecodedStreamingMenuItem<T>>> {
+    if let Some(cancelled) = check_fzf_exit(&result) {
+        return Ok(cancelled);
+    }
+
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    let selected_lines: Vec<&str> = stdout
+        .trim_end()
+        .split('\n')
+        .filter(|line| !line.is_empty())
+        .collect();
+
+    if selected_lines.is_empty() {
+        return Ok(FzfResult::Cancelled);
+    }
+
+    if multi_select {
+        let items = selected_lines
+            .into_iter()
+            .map(DecodedStreamingMenuItem::decode)
+            .collect::<Result<Vec<_>>>()?;
+        Ok(FzfResult::MultiSelected(items))
+    } else {
+        Ok(FzfResult::Selected(DecodedStreamingMenuItem::decode(
+            selected_lines[0],
+        )?))
+    }
+}
+
 pub struct FzfWrapper {
     pub(crate) multi_select: bool,
     pub(crate) prompt: Option<String>,
@@ -398,54 +431,54 @@ impl FzfWrapper {
         }
     }
 
-    pub fn select_streaming<C>(&self, producer: C) -> Result<FzfResult<String>>
-    where
-        C: Into<StreamingCommand>,
-    {
-        self.select_streaming_prefilled(producer, "")
-    }
-
-    pub fn select_streaming_prefilled<C>(
+    pub fn select_encoded_streaming_prefilled<T, C>(
         &self,
         producer: C,
         initial_input: &str,
-    ) -> Result<FzfResult<String>>
+    ) -> Result<FzfResult<DecodedStreamingMenuItem<T>>>
+    where
+        T: DeserializeOwned,
+        C: Into<StreamingCommand>,
+    {
+        let output = self.execute_streaming_command(
+            producer,
+            initial_input,
+            &[
+                "--delimiter",
+                "\t",
+                "--with-nth",
+                "3",
+                "--preview",
+                streaming_preview_command(),
+                "--ansi",
+            ],
+        )?;
+        parse_encoded_streaming_output(output, self.multi_select)
+    }
+
+    pub fn select_encoded_streaming<T, C>(
+        &self,
+        producer: C,
+    ) -> Result<FzfResult<DecodedStreamingMenuItem<T>>>
+    where
+        T: DeserializeOwned,
+        C: Into<StreamingCommand>,
+    {
+        self.select_encoded_streaming_prefilled(producer, "")
+    }
+
+    fn execute_streaming_command<C>(
+        &self,
+        producer: C,
+        initial_input: &str,
+        base_args: &[&str],
+    ) -> Result<std::process::Output>
     where
         C: Into<StreamingCommand>,
     {
-        let mut fzf_args = vec!["--tiebreak=index".to_string()];
-
-        if self.multi_select {
-            fzf_args.push("--multi".to_string());
-        }
-
-        if let Some(prompt) = &self.prompt {
-            fzf_args.push("--prompt".to_string());
-            fzf_args.push(format!("{} > ", prompt));
-        }
-
-        if let Some(header) = &self.header {
-            fzf_args.push("--header".to_string());
-            fzf_args.push(header.clone());
-        }
-
-        fzf_args.extend(self.additional_args.clone());
-
-        if let Some(InitialCursor::Index(idx)) = self.initial_cursor {
-            fzf_args.push("--bind".to_string());
-            fzf_args.push(format!("load:pos({})", idx + 1));
-        }
-
-        if self.responsive_layout {
-            let layout = super::utils::get_responsive_layout();
-            fzf_args.push(layout.preview_window.to_string());
-            fzf_args.push("--margin".to_string());
-            fzf_args.push(layout.margin.to_string());
-        }
-
         let mut fzf = Command::new("fzf");
         fzf.env_remove("FZF_DEFAULT_OPTS");
-        for arg in fzf_args {
+        for arg in self.streaming_fzf_args(base_args) {
             fzf.arg(arg);
         }
 
@@ -508,32 +541,47 @@ impl FzfWrapper {
         let _ = pump.join();
 
         match output {
-            Ok(result) => {
-                if let Some(cancelled) = check_fzf_exit(&result) {
-                    return Ok(cancelled);
-                }
-
-                let stdout = String::from_utf8_lossy(&result.stdout);
-                let selected_lines: Vec<&str> = stdout
-                    .trim_end()
-                    .split('\n')
-                    .filter(|line| !line.is_empty())
-                    .collect();
-
-                if selected_lines.is_empty() {
-                    Ok(FzfResult::Cancelled)
-                } else if self.multi_select {
-                    let items: Vec<String> = selected_lines.iter().map(|s| s.to_string()).collect();
-                    Ok(FzfResult::MultiSelected(items))
-                } else {
-                    Ok(FzfResult::Selected(selected_lines[0].to_string()))
-                }
-            }
+            Ok(result) => Ok(result),
             Err(e) => {
                 super::utils::check_fzf_spawn_error_and_exit(&e);
-                Ok(FzfResult::Error(format!("fzf execution failed: {e}")))
+                Err(anyhow!("fzf execution failed: {e}"))
             }
         }
+    }
+
+    fn streaming_fzf_args(&self, base_args: &[&str]) -> Vec<String> {
+        let mut fzf_args = vec!["--tiebreak=index".to_string()];
+        fzf_args.extend(base_args.iter().map(|arg| (*arg).to_string()));
+
+        if self.multi_select {
+            fzf_args.push("--multi".to_string());
+        }
+
+        if let Some(prompt) = &self.prompt {
+            fzf_args.push("--prompt".to_string());
+            fzf_args.push(format!("{} > ", prompt));
+        }
+
+        if let Some(header) = &self.header {
+            fzf_args.push("--header".to_string());
+            fzf_args.push(header.clone());
+        }
+
+        fzf_args.extend(self.additional_args.clone());
+
+        if let Some(InitialCursor::Index(idx)) = self.initial_cursor {
+            fzf_args.push("--bind".to_string());
+            fzf_args.push(format!("load:pos({})", idx + 1));
+        }
+
+        if self.responsive_layout {
+            let layout = super::utils::get_responsive_layout();
+            fzf_args.push(layout.preview_window.to_string());
+            fzf_args.push("--margin".to_string());
+            fzf_args.push(layout.margin.to_string());
+        }
+
+        fzf_args
     }
 
     pub fn select<T: FzfSelectable + Clone>(&self, items: Vec<T>) -> Result<FzfResult<T>> {

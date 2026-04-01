@@ -8,13 +8,15 @@ use anyhow::{Result, bail};
 
 use crate::common::package::{PackageManager, install_package_names};
 use crate::common::shell::resolve_current_binary;
-use crate::menu_utils::{ConfirmResult, FzfResult, FzfWrapper, Header, StreamingCommand};
-use crate::preview::{PreviewId, preview_command_streaming};
+use crate::menu_utils::{
+    ConfirmResult, DecodedStreamingMenuItem, FzfResult, FzfWrapper, Header, StreamingCommand,
+};
 use crate::settings::context::SettingsContext;
 use crate::settings::definitions::installed_flatpaks::{
     is_flatpak_installed, show_flatpak_action_menu,
 };
 use crate::settings::deps::FLATPAK;
+use crate::settings::flatpak_list::FlatpakSelectionPayload;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::ui::catppuccin::fzf_mocha_args;
 use crate::ui::prelude::*;
@@ -62,7 +64,6 @@ fn flatpak_list_command() -> StreamingCommand {
 // ============================================================================
 
 fn select_flatpak_apps() -> Result<Vec<String>> {
-    let preview_cmd = preview_command_streaming(PreviewId::Flatpak);
     let list_cmd = flatpak_list_command();
 
     let result = FzfWrapper::builder()
@@ -70,34 +71,23 @@ fn select_flatpak_apps() -> Result<Vec<String>> {
         .prompt("Select packages")
         .header(Header::fancy("Install Flatpak Apps"))
         .args(fzf_mocha_args())
-        .args([
-            "--delimiter",
-            "\t",
-            "--with-nth",
-            "2",
-            "--preview",
-            &preview_cmd,
-            "--ansi",
-        ])
         .responsive_layout()
-        .select_streaming(list_cmd)?;
+        .select_encoded_streaming(list_cmd)?;
 
     extract_app_ids(result)
 }
 
-fn extract_app_ids(result: FzfResult<String>) -> Result<Vec<String>> {
-    let lines = match result {
-        FzfResult::MultiSelected(lines) => lines,
-        FzfResult::Selected(line) => vec![line],
+fn extract_app_ids(
+    result: FzfResult<DecodedStreamingMenuItem<FlatpakSelectionPayload>>,
+) -> Result<Vec<String>> {
+    let rows = match result {
+        FzfResult::MultiSelected(rows) => rows,
+        FzfResult::Selected(row) => vec![row],
         FzfResult::Cancelled => return Ok(vec![]),
         FzfResult::Error(err) => bail!("App selection failed: {}", err),
     };
 
-    // Extract app_id from "app_id\tname\tdescription" format
-    Ok(lines
-        .into_iter()
-        .map(|line| line.split('\t').next().unwrap_or(&line).to_string())
-        .collect())
+    Ok(rows.into_iter().map(|row| row.payload.app_id).collect())
 }
 
 // ============================================================================

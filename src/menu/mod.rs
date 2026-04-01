@@ -1,5 +1,5 @@
 use crate::menu_utils::{
-    ConfirmResult, FilePickerResult, FilePickerScope, FzfPreview, FzfWrapper, MenuWrapper,
+    ConfirmResult, FilePickerResult, FilePickerScope, FzfWrapper, MenuWrapper,
 };
 use anyhow::{Context, Result, anyhow};
 use clap::ValueEnum;
@@ -207,24 +207,10 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
                     io::stdin()
                         .read_to_string(&mut buffer)
                         .map_err(|e| anyhow::anyhow!("Failed to read from stdin: {}", e))?;
-                    buffer
-                        .lines()
-                        .map(|s| SerializableMenuItem {
-                            display_text: s.to_string(),
-                            preview: FzfPreview::None,
-                            metadata: None,
-                        })
-                        .collect()
+                    protocol::plain_choice_items_from_input(&buffer)
                 } else {
                     // Split space-separated items from command line
-                    items
-                        .split(' ')
-                        .map(|s| SerializableMenuItem {
-                            display_text: s.to_string(),
-                            preview: FzfPreview::None,
-                            metadata: None,
-                        })
-                        .collect()
+                    items.split(' ').map(SerializableMenuItem::plain).collect()
                 };
 
                 match FzfWrapper::builder()

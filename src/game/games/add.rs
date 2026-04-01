@@ -7,7 +7,6 @@ use crate::game::config::PathContentKind;
 use crate::game::utils::safeguards::{PathUsage, ensure_safe_path};
 use crate::menu_utils::{
     DecodedStreamingMenuItem, FzfResult, FzfWrapper, Header, StreamingCommand, StreamingMenuItem,
-    streaming_preview_command,
 };
 use crate::ui::catppuccin::{colors, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
@@ -41,17 +40,23 @@ pub(super) struct ResolvedGameDetails {
 }
 
 fn manual_menu_row() -> Result<String> {
-    let preview = PreviewBuilder::new()
-        .header(NerdFont::Edit, "Manual Entry")
-        .text("Enter game details manually.")
-        .blank()
-        .text("You will be prompted for:")
-        .bullet("Game name")
-        .bullet("Description (optional)")
-        .bullet("Launch command (optional)")
-        .bullet("Save data path")
-        .build();
+    manual_menu_item()
+        .preview(
+            PreviewBuilder::new()
+                .header(NerdFont::Edit, "Manual Entry")
+                .text("Enter game details manually.")
+                .blank()
+                .text("You will be prompted for:")
+                .bullet("Game name")
+                .bullet("Description (optional)")
+                .bullet("Launch command (optional)")
+                .bullet("Save data path")
+                .build(),
+        )
+        .encode()
+}
 
+fn manual_menu_item() -> StreamingMenuItem<MenuSelectionPayload> {
     StreamingMenuItem::new(
         "manual",
         "manual",
@@ -67,8 +72,6 @@ fn manual_menu_row() -> Result<String> {
             launch_command: None,
         },
     )
-    .preview(preview)
-    .encode()
 }
 
 pub(super) fn maybe_prefill_from_emulators(
@@ -88,19 +91,13 @@ pub(super) fn maybe_prefill_from_emulators(
         .prompt("Select")
         .args(fzf_mocha_args())
         .responsive_layout()
-        .args([
-            "--delimiter",
-            "\t",
-            "--with-nth",
-            "3",
-            "--preview",
-            streaming_preview_command(),
-            "--ansi",
-        ])
-        .select_streaming_prefilled(discover_command, &manual_menu_row()?)?;
+        .select_encoded_streaming_prefilled::<MenuSelectionPayload, _>(
+            discover_command,
+            &manual_menu_row()?,
+        )?;
 
     match result {
-        FzfResult::Selected(line) => match parse_discovery_selection(&line)? {
+        FzfResult::Selected(row) => match parse_discovery_selection(row)? {
             SelectedDiscovery::ManualEntry => Ok(EmulatorPrefillResult::Continue(options)),
             SelectedDiscovery::DiscoveredGame(payload) => {
                 if payload.existing {
@@ -234,9 +231,9 @@ enum SelectedDiscovery {
     DiscoveredGame(MenuSelectionPayload),
 }
 
-fn parse_discovery_selection(line: &str) -> Result<SelectedDiscovery> {
-    let row = DecodedStreamingMenuItem::<MenuSelectionPayload>::decode(line)?;
-
+fn parse_discovery_selection(
+    row: DecodedStreamingMenuItem<MenuSelectionPayload>,
+) -> Result<SelectedDiscovery> {
     match row.kind.as_str() {
         "manual" => Ok(SelectedDiscovery::ManualEntry),
         "discovered" => Ok(SelectedDiscovery::DiscoveredGame(row.payload)),
@@ -250,7 +247,11 @@ mod tests {
 
     #[test]
     fn parse_manual_selection() {
-        let selection = parse_discovery_selection(&manual_menu_row().unwrap()).unwrap();
+        let selection = parse_discovery_selection(
+            DecodedStreamingMenuItem::<MenuSelectionPayload>::decode(&manual_menu_row().unwrap())
+                .unwrap(),
+        )
+        .unwrap();
         assert!(matches!(selection, SelectedDiscovery::ManualEntry));
     }
 
@@ -274,7 +275,11 @@ mod tests {
         .encode()
         .unwrap();
 
-        match parse_discovery_selection(&line).unwrap() {
+        match parse_discovery_selection(
+            DecodedStreamingMenuItem::<MenuSelectionPayload>::decode(&line).unwrap(),
+        )
+        .unwrap()
+        {
             SelectedDiscovery::DiscoveredGame(parsed) => {
                 assert_eq!(parsed.display_name.as_deref(), Some("Sable"));
                 assert_eq!(parsed.save_path.as_deref(), Some("/games/Sable"));

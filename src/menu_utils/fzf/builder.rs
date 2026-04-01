@@ -1,6 +1,7 @@
 //! Builder pattern for FZF dialogs
 
 use anyhow::{self, Result};
+use serde::de::DeserializeOwned;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
@@ -536,22 +537,27 @@ impl FzfBuilder {
         cmd
     }
 
-    pub fn select_streaming<C>(self, command: C) -> Result<FzfResult<String>>
+    pub fn select_encoded_streaming<T, C>(
+        self,
+        command: C,
+    ) -> Result<FzfResult<DecodedStreamingMenuItem<T>>>
     where
+        T: DeserializeOwned,
         C: Into<StreamingCommand>,
     {
-        FzfWrapper::from_builder(self).select_streaming(command)
+        FzfWrapper::from_builder(self).select_encoded_streaming(command)
     }
 
-    pub fn select_streaming_prefilled<C>(
+    pub fn select_encoded_streaming_prefilled<T, C>(
         self,
         command: C,
         initial_input: &str,
-    ) -> Result<FzfResult<String>>
+    ) -> Result<FzfResult<DecodedStreamingMenuItem<T>>>
     where
+        T: DeserializeOwned,
         C: Into<StreamingCommand>,
     {
-        FzfWrapper::from_builder(self).select_streaming_prefilled(command, initial_input)
+        FzfWrapper::from_builder(self).select_encoded_streaming_prefilled(command, initial_input)
     }
 
     pub fn input_dialog(self) -> Result<String> {

@@ -4,9 +4,8 @@
 
 use crate::common::distro::OperatingSystem;
 use crate::common::package::{PackageManager, detect_aur_helper, install_package_names};
-use crate::menu_utils::{ConfirmResult, FzfResult, FzfWrapper, Header};
-use crate::preview::{PreviewId, preview_command_streaming};
-use crate::settings::package_list;
+use crate::menu_utils::{ConfirmResult, DecodedStreamingMenuItem, FzfResult, FzfWrapper, Header};
+use crate::settings::package_list::{self, PackageSelectionPayload};
 use crate::ui::catppuccin::fzf_mocha_args;
 use anyhow::{Context, Result};
 
@@ -44,17 +43,13 @@ fn run_simple_installer(manager: PackageManager, debug: bool) -> Result<()> {
         anyhow::bail!("{} is not available on this system", manager);
     }
 
-    let preview_id = preview_id_for_manager(manager);
-    let preview_cmd = preview_command_streaming(preview_id);
-
     let result = FzfWrapper::builder()
         .multi_select(true)
         .prompt("Select packages")
         .header(Header::fancy("Install Packages"))
         .args(fzf_mocha_args())
-        .args(["--preview", &preview_cmd, "--ansi"])
         .responsive_layout()
-        .select_streaming(package_list::available_command(manager))
+        .select_encoded_streaming(package_list::available_command(manager))
         .context("Failed to run package selector")?;
 
     handle_install_result(
@@ -62,21 +57,6 @@ fn run_simple_installer(manager: PackageManager, debug: bool) -> Result<()> {
         |packages| install_package_names(manager, packages),
         debug,
     )
-}
-
-/// Map a PackageManager to its corresponding PreviewId.
-fn preview_id_for_manager(manager: PackageManager) -> PreviewId {
-    match manager {
-        PackageManager::Apt => PreviewId::Apt,
-        PackageManager::Dnf => PreviewId::Dnf,
-        PackageManager::Zypper => PreviewId::Zypper,
-        PackageManager::Pacman => PreviewId::Pacman,
-        PackageManager::Snap => PreviewId::Snap,
-        PackageManager::Pkg => PreviewId::Pkg,
-        PackageManager::Flatpak => PreviewId::Flatpak,
-        PackageManager::Aur => PreviewId::Aur,
-        PackageManager::Cargo => PreviewId::Cargo,
-    }
 }
 
 /// Run the interactive Snap installer.
@@ -89,8 +69,6 @@ pub fn run_snap_installer(debug: bool) -> Result<()> {
         anyhow::bail!("Snap is not available on this system");
     }
 
-    let preview_cmd = preview_command_streaming(PreviewId::Snap);
-
     // Build reload command that searches snaps as user types
     // Uses --phony to disable local filtering and rely on snap find results
     // Output format: name\tversion\tpublisher\tsummary
@@ -102,19 +80,12 @@ pub fn run_snap_installer(debug: bool) -> Result<()> {
         .header(Header::fancy("Type to search Snap Store"))
         .args(fzf_mocha_args())
         .args([
-            "--delimiter",
-            "\t",
-            "--with-nth",
-            "1",
-            "--preview",
-            &preview_cmd,
             "--bind",
             &format!("change:reload:{}", reload_cmd),
             "--phony",
-            "--ansi",
         ])
         .responsive_layout()
-        .select_streaming(package_list::snap_search_command(None))
+        .select_encoded_streaming(package_list::snap_search_command(None))
         .context("Failed to run snap selector")?;
 
     handle_install_result(
@@ -141,25 +112,13 @@ fn run_arch_installer(debug: bool) -> Result<()> {
         anyhow::bail!("Neither pacman nor an AUR helper is available on this system");
     }
 
-    // Build streaming command: source<TAB>package_name
-    let preview_cmd = preview_command_streaming(PreviewId::Package);
-
     let result = FzfWrapper::builder()
         .multi_select(true)
         .prompt("Select packages")
         .header(Header::fancy("Install Packages"))
         .args(fzf_mocha_args())
-        .args([
-            "--delimiter",
-            "\t",
-            "--with-nth",
-            "2",
-            "--preview",
-            &preview_cmd,
-            "--ansi",
-        ])
         .responsive_layout()
-        .select_streaming(package_list::arch_available_command())
+        .select_encoded_streaming(package_list::arch_available_command())
         .context("Failed to run package selector")?;
 
     handle_arch_install_result(result, detect_aur_helper(), debug)
@@ -167,13 +126,13 @@ fn run_arch_installer(debug: bool) -> Result<()> {
 
 /// Handle Arch install result, splitting packages by source.
 fn handle_arch_install_result(
-    result: FzfResult<String>,
+    result: FzfResult<DecodedStreamingMenuItem<PackageSelectionPayload>>,
     aur_helper: Option<&str>,
     debug: bool,
 ) -> Result<()> {
     match result {
-        FzfResult::MultiSelected(lines) if !lines.is_empty() => {
-            let (repo_pkgs, aur_pkgs) = parse_arch_selections(&lines);
+        FzfResult::MultiSelected(rows) if !rows.is_empty() => {
+            let (repo_pkgs, aur_pkgs) = parse_arch_selections(&rows);
 
             if debug {
                 println!("Repo packages: {:?}", repo_pkgs);
@@ -211,10 +170,9 @@ fn handle_arch_install_result(
             println!("✓ Package installation completed successfully!");
             Ok(())
         }
-        FzfResult::Selected(line) => {
-            let (source_str, name) = line
-                .split_once('\t')
-                .unwrap_or((PackageManager::Pacman.as_str(), &line));
+        FzfResult::Selected(row) => {
+            let source_str = row.payload.manager.as_str();
+            let name = row.payload.package.as_str();
 
             if debug {
                 println!("Selected: {} ({})", name, source_str);
@@ -243,19 +201,17 @@ fn handle_arch_install_result(
 }
 
 /// Parse Arch selections into (repo_packages, aur_packages).
-fn parse_arch_selections(lines: &[String]) -> (Vec<String>, Vec<String>) {
+fn parse_arch_selections(
+    rows: &[DecodedStreamingMenuItem<PackageSelectionPayload>],
+) -> (Vec<String>, Vec<String>) {
     let mut repo = Vec::new();
     let mut aur = Vec::new();
 
-    for line in lines {
-        if let Some((source_str, name)) = line.split_once('\t') {
-            if source_str == PackageManager::Aur.as_str() {
-                aur.push(name.to_string());
-            } else {
-                repo.push(name.to_string());
-            }
+    for row in rows {
+        if row.payload.manager == PackageManager::Aur.as_str() {
+            aur.push(row.payload.package.clone());
         } else {
-            repo.push(line.clone());
+            repo.push(row.payload.package.clone());
         }
     }
 
@@ -268,7 +224,7 @@ fn parse_arch_selections(lines: &[String]) -> (Vec<String>, Vec<String>) {
 
 /// Handle install result for simple (non-Arch) package managers.
 pub(crate) fn handle_install_result<F>(
-    result: FzfResult<String>,
+    result: FzfResult<DecodedStreamingMenuItem<PackageSelectionPayload>>,
     install_fn: F,
     debug: bool,
 ) -> Result<()>
@@ -276,16 +232,10 @@ where
     F: FnOnce(&[&str]) -> Result<()>,
 {
     match result {
-        FzfResult::MultiSelected(lines) if !lines.is_empty() => {
-            let packages: Vec<String> = lines
+        FzfResult::MultiSelected(rows) if !rows.is_empty() => {
+            let packages: Vec<String> = rows
                 .into_iter()
-                .map(|l| {
-                    if let Some((_, rest)) = l.split_once('\t') {
-                        rest.split_whitespace().next().unwrap_or(rest).to_string()
-                    } else {
-                        l.split_whitespace().next().unwrap_or(&l).to_string()
-                    }
-                })
+                .map(|row| row.payload.package)
                 .filter(|s| !s.is_empty())
                 .collect();
 
@@ -315,12 +265,8 @@ where
             println!("✓ Package installation completed successfully!");
             Ok(())
         }
-        FzfResult::Selected(line) => {
-            let name = if let Some((_, rest)) = line.split_once('\t') {
-                rest.split_whitespace().next().unwrap_or(rest).to_string()
-            } else {
-                line.split_whitespace().next().unwrap_or(&line).to_string()
-            };
+        FzfResult::Selected(row) => {
+            let name = row.payload.package;
 
             if debug {
                 println!("Selected package: {}", name);

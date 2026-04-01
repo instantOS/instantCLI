@@ -49,7 +49,7 @@ pub struct SerializableMenuItem {
 }
 
 /// Re-export types from menu wrapper for use in protocol
-pub use crate::menu_utils::{FilePickerScope, FzfPreview};
+pub use crate::menu_utils::{ConfirmResult, FilePickerScope, FzfPreview};
 
 impl FzfSelectable for SerializableMenuItem {
     fn fzf_display_text(&self) -> String {
@@ -150,17 +150,6 @@ pub enum MenuResponse {
     MessageResult,
 }
 
-/// Confirmation dialog result
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum ConfirmResult {
-    /// User confirmed
-    Yes,
-    /// User declined
-    No,
-    /// User cancelled
-    Cancelled,
-}
-
 /// Message envelope for requests
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MenuMessage {
@@ -242,17 +231,6 @@ pub fn generate_request_id() -> String {
     format!("req_{timestamp}_{random}")
 }
 
-/// Convert FZF confirmation result to protocol result
-impl From<crate::menu_utils::ConfirmResult> for ConfirmResult {
-    fn from(result: crate::menu_utils::ConfirmResult) -> Self {
-        match result {
-            crate::menu_utils::ConfirmResult::Yes => ConfirmResult::Yes,
-            crate::menu_utils::ConfirmResult::No => ConfirmResult::No,
-            crate::menu_utils::ConfirmResult::Cancelled => ConfirmResult::Cancelled,
-        }
-    }
-}
-
 /// Convert protocol confirmation result to exit code
 impl From<ConfirmResult> for i32 {
     fn from(result: ConfirmResult) -> Self {
@@ -260,6 +238,20 @@ impl From<ConfirmResult> for i32 {
             ConfirmResult::Yes => 0,       // Yes
             ConfirmResult::No => 1,        // No
             ConfirmResult::Cancelled => 2, // Cancelled
+        }
+    }
+}
+
+pub fn plain_choice_items_from_input(input: &str) -> Vec<SerializableMenuItem> {
+    input.lines().map(SerializableMenuItem::plain).collect()
+}
+
+impl SerializableMenuItem {
+    pub fn plain(display_text: impl Into<String>) -> Self {
+        Self {
+            display_text: display_text.into(),
+            preview: FzfPreview::None,
+            metadata: None,
         }
     }
 }

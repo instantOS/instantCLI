@@ -486,7 +486,10 @@ impl PreviewWriter {
     }
 
     fn map(&mut self, f: impl FnOnce(PreviewBuilder) -> PreviewBuilder) -> &mut Self {
-        let builder = self.builder.take().expect("preview writer already finalized");
+        let builder = self
+            .builder
+            .take()
+            .expect("preview writer already finalized");
         self.builder = Some(f(builder));
         self
     }
@@ -581,7 +584,10 @@ impl PreviewWriter {
     }
 
     pub fn build(mut self) -> FzfPreview {
-        self.builder.take().expect("preview writer already finalized").build()
+        self.builder
+            .take()
+            .expect("preview writer already finalized")
+            .build()
     }
 
     pub fn build_string(mut self) -> String {
