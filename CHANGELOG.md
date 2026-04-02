@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.18](https://github.com/instantOS/instantCLI/compare/v0.13.17...v0.13.18) - 2026-04-02
+
+### Fixed
+
+- fix duplicate entry
+- fix keys
+
+### Other
+
+- dedupe fzf builder
+- refactor fzf builder
+- refactor keyboard
+- better `ins game` ux
+- remove dead code
+- improve streaming and fzf api
+- proper streaming preview
+- add preview cache
+- cleaner streaming model
+- cleaner streaming API
+- add prefilled streaming option
+- better add UX
+- more interactive game adding experience
+- add cache to `ins game discover`
+- file size tiebreaker
+- better userId expansion
+- unify more wine streaming
+- make wine discovery streaming
+- init wine discovery
+
 ## [0.13.17](https://github.com/instantOS/instantCLI/compare/v0.13.16...v0.13.17) - 2026-04-01
 
 ### Fixed
