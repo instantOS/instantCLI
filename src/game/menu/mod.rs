@@ -3,8 +3,12 @@ mod editors;
 mod state;
 
 use anyhow::{Context, Result, anyhow};
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use crate::common::TildePath;
+use crate::common::shell::shell_quote;
+use crate::common::terminal::TerminalLauncher;
 use crate::game::GameCommands;
 use crate::game::config::{Game, GameInstallation, PathContentKind};
 use crate::game::config::{InstallationsConfig, InstantGameConfig};
@@ -33,6 +37,7 @@ use state::EditState;
 enum GameAction {
     Launch,
     Edit,
+    OpenSaveDirectory,
     Setup,
     Move,
     Checkpoint,
@@ -46,6 +51,7 @@ impl std::fmt::Display for GameAction {
         match self {
             GameAction::Launch => write!(f, "launch"),
             GameAction::Edit => write!(f, "edit"),
+            GameAction::OpenSaveDirectory => write!(f, "open-save-directory"),
             GameAction::Setup => write!(f, "setup"),
             GameAction::Move => write!(f, "move"),
             GameAction::Checkpoint => write!(f, "checkpoint"),
@@ -62,6 +68,46 @@ struct GameActionItem {
     action: GameAction,
     preview: FzfPreview,
     keywords: Vec<&'static str>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SaveDirectoryOpenMethod {
+    Yazi,
+    Terminal,
+    XdgOpen,
+    Back,
+}
+
+impl std::fmt::Display for SaveDirectoryOpenMethod {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SaveDirectoryOpenMethod::Yazi => write!(f, "yazi"),
+            SaveDirectoryOpenMethod::Terminal => write!(f, "terminal"),
+            SaveDirectoryOpenMethod::XdgOpen => write!(f, "xdg-open"),
+            SaveDirectoryOpenMethod::Back => write!(f, "back"),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct SaveDirectoryOpenItem {
+    display: String,
+    method: SaveDirectoryOpenMethod,
+    preview: FzfPreview,
+}
+
+impl FzfSelectable for SaveDirectoryOpenItem {
+    fn fzf_display_text(&self) -> String {
+        self.display.clone()
+    }
+
+    fn fzf_key(&self) -> String {
+        self.method.to_string()
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        self.preview.clone()
+    }
 }
 
 impl FzfSelectable for GameActionItem {
@@ -228,6 +274,28 @@ fn build_action_menu(game_name: &str, state: &GameState) -> Vec<GameActionItem> 
 
     // Move option - only show if game has a save path configured
     if !state.needs_setup {
+        if let Some(path) = &state.save_path {
+            actions.push(GameActionItem {
+                display: format!(
+                    "{} Open Save Directory",
+                    format_icon_colored(NerdFont::FolderOpen, colors::GREEN)
+                ),
+                action: GameAction::OpenSaveDirectory,
+                preview: PreviewBuilder::new()
+                    .header(NerdFont::FolderOpen, "Open Save Directory")
+                    .text(&format!("Open the save location for '{}'.", game_name))
+                    .blank()
+                    .field("Configured path", path)
+                    .blank()
+                    .text("Choose how to open it:")
+                    .bullet("yazi file manager")
+                    .bullet("Terminal window in that directory")
+                    .bullet("Default desktop application via xdg-open")
+                    .build(),
+                keywords: vec!["folder", "browse", "explore", "files"],
+            });
+        }
+
         if let Some(path) = &state.save_path {
             actions.push(GameActionItem {
                 display: format!(
@@ -469,6 +537,10 @@ fn handle_action(
                 Ok(ActionResult::Stay)
             }
         }
+        GameAction::OpenSaveDirectory => {
+            handle_open_save_directory_action(game_name, state)?;
+            Ok(ActionResult::Stay)
+        }
         GameAction::Setup => {
             setup::setup_uninstalled_games()?;
             if exit_after {
@@ -640,6 +712,133 @@ fn handle_checkpoint_action(game_name: &str) -> Result<()> {
 
     // Restore the selected snapshot
     restic::restore_game_saves(Some(game_name.to_string()), Some(snapshot_id), false)
+}
+
+fn handle_open_save_directory_action(game_name: &str, state: &GameState) -> Result<()> {
+    let Some(installation) = state
+        .installations
+        .installations
+        .iter()
+        .find(|install| install.game_name.0 == game_name)
+    else {
+        FzfWrapper::message("No installation is configured for this game on this device.")?;
+        return Ok(());
+    };
+
+    let target_dir = save_directory_target(installation);
+    let target_display = target_dir.display().to_string();
+
+    let items = vec![
+        SaveDirectoryOpenItem {
+            display: format!(
+                "{} Open in yazi",
+                format_icon_colored(NerdFont::FolderOpen, colors::SAPPHIRE)
+            ),
+            method: SaveDirectoryOpenMethod::Yazi,
+            preview: PreviewBuilder::new()
+                .header(NerdFont::FolderOpen, "Open in yazi")
+                .text("Open the save directory in the yazi file manager.")
+                .blank()
+                .field("Directory", &target_display)
+                .build(),
+        },
+        SaveDirectoryOpenItem {
+            display: format!(
+                "{} Open terminal here",
+                format_icon_colored(NerdFont::Terminal, colors::GREEN)
+            ),
+            method: SaveDirectoryOpenMethod::Terminal,
+            preview: PreviewBuilder::new()
+                .header(NerdFont::Terminal, "Open Terminal")
+                .text("Open a terminal window in the save directory.")
+                .blank()
+                .field("Directory", &target_display)
+                .build(),
+        },
+        SaveDirectoryOpenItem {
+            display: format!(
+                "{} Open with xdg-open",
+                format_icon_colored(NerdFont::Folder, colors::YELLOW)
+            ),
+            method: SaveDirectoryOpenMethod::XdgOpen,
+            preview: PreviewBuilder::new()
+                .header(NerdFont::Folder, "Open with xdg-open")
+                .text("Open the save directory with the desktop default application.")
+                .blank()
+                .field("Directory", &target_display)
+                .build(),
+        },
+        SaveDirectoryOpenItem {
+            display: format!("{} Back", format_back_icon()),
+            method: SaveDirectoryOpenMethod::Back,
+            preview: PreviewBuilder::new()
+                .header(NerdFont::ArrowLeft, "Back")
+                .text("Return to the game action menu.")
+                .build(),
+        },
+    ];
+
+    let selection = FzfWrapper::builder()
+        .header(Header::fancy(&format!(
+            "Open Save Directory: {}",
+            game_name
+        )))
+        .prompt("Open with")
+        .args(fzf_mocha_args())
+        .responsive_layout()
+        .select_padded(items)?;
+
+    let method = match selection {
+        FzfResult::Selected(item) => item.method,
+        _ => SaveDirectoryOpenMethod::Back,
+    };
+
+    match method {
+        SaveDirectoryOpenMethod::Yazi => open_directory_in_yazi(&target_dir),
+        SaveDirectoryOpenMethod::Terminal => open_directory_in_terminal(&target_dir),
+        SaveDirectoryOpenMethod::XdgOpen => open_directory_with_xdg_open(&target_dir),
+        SaveDirectoryOpenMethod::Back => Ok(()),
+    }
+}
+
+fn save_directory_target(installation: &GameInstallation) -> PathBuf {
+    let save_path = installation.save_path.as_path();
+    match installation.save_path_type {
+        PathContentKind::File => save_path
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| save_path.to_path_buf()),
+        _ => save_path.to_path_buf(),
+    }
+}
+
+fn open_directory_in_yazi(path: &Path) -> Result<()> {
+    TerminalLauncher::new("yazi")
+        .arg(path.to_string_lossy().to_string())
+        .title("Save Directory")
+        .launch()
+}
+
+fn open_directory_in_terminal(path: &Path) -> Result<()> {
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "sh".to_string());
+    let command = format!(
+        "cd {} && exec {}",
+        shell_quote(&path.to_string_lossy()),
+        shell_quote(&shell)
+    );
+
+    TerminalLauncher::new(&shell)
+        .args(["-lc".to_string(), command])
+        .title("Save Directory")
+        .launch()
+}
+
+fn open_directory_with_xdg_open(path: &Path) -> Result<()> {
+    Command::new("xdg-open")
+        .arg(path)
+        .spawn()
+        .context("Failed to open save directory with xdg-open")?;
+    Ok(())
 }
 
 /// Main entry point for the game menu
@@ -962,5 +1161,38 @@ fn show_uninitialized_menu() -> Result<()> {
             Ok(())
         }
         _ => Ok(()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn save_directory_target_uses_parent_for_file_paths() {
+        let installation = GameInstallation::with_kind(
+            "Test Game",
+            TildePath::new(PathBuf::from("/tmp/game/saves/slot1.sav")),
+            PathContentKind::File,
+        );
+
+        assert_eq!(
+            save_directory_target(&installation),
+            PathBuf::from("/tmp/game/saves")
+        );
+    }
+
+    #[test]
+    fn save_directory_target_keeps_directory_paths() {
+        let installation = GameInstallation::with_kind(
+            "Test Game",
+            TildePath::new(PathBuf::from("/tmp/game/saves")),
+            PathContentKind::Directory,
+        );
+
+        assert_eq!(
+            save_directory_target(&installation),
+            PathBuf::from("/tmp/game/saves")
+        );
     }
 }
