@@ -1,8 +1,10 @@
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use std::path::Path;
 
 use crate::common::TildePath;
-use crate::menu_utils::PathInputSelection;
+use crate::game::utils::safeguards::{PathUsage, ensure_safe_path};
+use crate::menu_utils::{ConfirmResult, FzfWrapper, PathInputSelection};
+use crate::ui::nerd_font::NerdFont;
 
 /// Convert a TildePath to a display string, falling back to absolute path if tilde conversion fails
 pub fn tilde_display_string(tilde: &TildePath) -> String {
@@ -29,6 +31,62 @@ pub fn path_selection_to_tilde(selection: PathInputSelection) -> Result<Option<T
             Ok(Some(TildePath::new(path)))
         }
         PathInputSelection::Cancelled => Ok(None),
+    }
+}
+
+pub fn prompt_for_save_path<F>(game_name: &str, mut select_path: F) -> Result<Option<TildePath>>
+where
+    F: FnMut() -> Result<Option<TildePath>>,
+{
+    loop {
+        let Some(save_path) = select_path()? else {
+            return Ok(None);
+        };
+
+        if let Err(err) = ensure_safe_path(save_path.as_path(), PathUsage::SaveDirectory) {
+            FzfWrapper::message(&err.to_string())?;
+            continue;
+        }
+
+        let save_path_display = tilde_display_string(&save_path);
+
+        match FzfWrapper::builder()
+            .confirm(format!(
+                "{} Are you sure you want to use '{save_path_display}' as the save path for '{game_name}'?\n\nThis path will be used to store and sync save files for this game.",
+                char::from(NerdFont::Question)
+            ))
+            .yes_text("Use This Path")
+            .no_text("Choose Different Path")
+            .confirm_dialog()
+            .map_err(|e| anyhow!("Failed to get path confirmation: {}", e))?
+        {
+            ConfirmResult::Yes => {}
+            ConfirmResult::No => continue,
+            ConfirmResult::Cancelled => return Ok(None),
+        }
+
+        if !save_path.as_path().exists() {
+            match FzfWrapper::confirm(&format!(
+                "{} Save path '{}' does not exist. Create it?",
+                char::from(NerdFont::Warning),
+                save_path_display
+            ))
+            .map_err(|e| anyhow!("Failed to get confirmation: {}", e))?
+            {
+                ConfirmResult::Yes => {
+                    std::fs::create_dir_all(save_path.as_path())
+                        .context("Failed to create save directory")?;
+                    println!(
+                        "{} Created save directory: {save_path_display}",
+                        char::from(NerdFont::Check)
+                    );
+                }
+                ConfirmResult::No => continue,
+                ConfirmResult::Cancelled => return Ok(None),
+            }
+        }
+
+        return Ok(Some(save_path));
     }
 }
 

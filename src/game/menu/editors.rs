@@ -2,8 +2,9 @@ use anyhow::{Result, anyhow};
 
 use crate::game::launch_command::LaunchCommand;
 use crate::game::platforms::LaunchCommandBuilderContext;
-use crate::game::utils::path::{path_selection_to_tilde, tilde_display_string};
-use crate::game::utils::safeguards::{PathUsage, ensure_safe_path};
+use crate::game::utils::path::{
+    path_selection_to_tilde, prompt_for_save_path, tilde_display_string,
+};
 use crate::menu::protocol::FzfPreview;
 use crate::menu_utils::{
     FilePickerScope, FzfResult, FzfSelectable, FzfWrapper, Header, PathInputBuilder,
@@ -480,43 +481,40 @@ pub fn edit_save_path(state: &mut EditState) -> Result<bool> {
         tilde_display_string(current_path)
     };
 
-    let mut path_builder = PathInputBuilder::new()
-        .header(format!(
-            "{} Choose new save path\nCurrent: {}",
-            char::from(NerdFont::Folder),
-            current_path_str
-        ))
-        .manual_prompt(format!(
-            "{} Enter the new save path:",
-            char::from(NerdFont::Edit)
-        ))
-        .scope(FilePickerScope::FilesAndDirectories)
-        .picker_hint(format!(
-            "{} Select the file or directory to use for save data",
-            char::from(NerdFont::Info)
-        ))
-        .manual_option_label(format!("{} Type an exact path", char::from(NerdFont::Edit)))
-        .picker_option_label(format!(
-            "{} Browse and choose a path",
-            char::from(NerdFont::FolderOpen)
-        ));
+    match prompt_for_save_path(&state.game().name.0, || {
+        let mut path_builder = PathInputBuilder::new()
+            .header(format!(
+                "{} Choose new save path\nCurrent: {}",
+                char::from(NerdFont::Folder),
+                current_path_str
+            ))
+            .manual_prompt(format!(
+                "{} Enter the new save path:",
+                char::from(NerdFont::Edit)
+            ))
+            .scope(FilePickerScope::FilesAndDirectories)
+            .picker_hint(format!(
+                "{} Select the file or directory to use for save data",
+                char::from(NerdFont::Info)
+            ))
+            .manual_option_label(format!("{} Type an exact path", char::from(NerdFont::Edit)))
+            .picker_option_label(format!(
+                "{} Browse and choose a path",
+                char::from(NerdFont::FolderOpen)
+            ));
 
-    if !current_path.as_path().as_os_str().is_empty() {
-        path_builder = path_builder.start_path(current_path.as_path());
-    }
+        if !current_path.as_path().as_os_str().is_empty() {
+            path_builder = path_builder.start_path(current_path.as_path());
+        }
 
-    let path_selection = path_builder.choose()?;
-
-    match path_selection_to_tilde(path_selection)? {
+        let path_selection = path_builder.choose()?;
+        path_selection_to_tilde(path_selection)
+    })? {
         Some(new_path) => {
             if new_path.as_path() == current_path.as_path() {
                 FzfWrapper::message("Save path unchanged.")?;
                 Ok(false)
             } else {
-                if let Err(err) = ensure_safe_path(new_path.as_path(), PathUsage::SaveDirectory) {
-                    FzfWrapper::message(&format!("{}", err))?;
-                    return Ok(false);
-                }
                 state.installation_mut().unwrap().save_path = new_path;
                 FzfWrapper::message("Save path updated")?;
                 Ok(true)

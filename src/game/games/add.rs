@@ -3,6 +3,7 @@ use super::manager::GameCreationContext;
 use crate::common::TildePath;
 use crate::common::shell::resolve_current_binary;
 use crate::game::config::PathContentKind;
+use crate::game::utils::path::prompt_for_save_path;
 use crate::game::utils::safeguards::{PathUsage, ensure_safe_path};
 use crate::menu_utils::{
     DecodedStreamingMenuItem, FilePickerScope, FzfResult, FzfWrapper, Header, PathInputBuilder,
@@ -301,91 +302,46 @@ fn prompt_optional_text(prompt: &str) -> Result<Option<String>> {
 }
 
 fn prompt_manual_save_path(game_name: &str) -> Result<Option<TildePath>> {
-    let selection = PathInputBuilder::new()
-        .header(format!(
-            "{} Choose the save path for '{game_name}'",
-            char::from(NerdFont::Folder)
-        ))
-        .manual_prompt(format!(
-            "{} Enter the save path (e.g., ~/.local/share/{}/saves)",
-            char::from(NerdFont::Edit),
-            game_name.to_lowercase().replace(' ', "-")
-        ))
-        .scope(FilePickerScope::FilesAndDirectories)
-        .picker_hint(format!(
-            "{} Select the file or directory that stores the save data",
-            char::from(NerdFont::Info)
-        ))
-        .manual_option_label(format!("{} Type an exact path", char::from(NerdFont::Edit)))
-        .picker_option_label(format!(
-            "{} Browse and choose a path",
-            char::from(NerdFont::FolderOpen)
-        ))
-        .choose()?;
+    prompt_for_save_path(game_name, || {
+        let selection = PathInputBuilder::new()
+            .header(format!(
+                "{} Choose the save path for '{game_name}'",
+                char::from(NerdFont::Folder)
+            ))
+            .manual_prompt(format!(
+                "{} Enter the save path (e.g., ~/.local/share/{}/saves)",
+                char::from(NerdFont::Edit),
+                game_name.to_lowercase().replace(' ', "-")
+            ))
+            .scope(FilePickerScope::FilesAndDirectories)
+            .picker_hint(format!(
+                "{} Select the file or directory that stores the save data",
+                char::from(NerdFont::Info)
+            ))
+            .manual_option_label(format!("{} Type an exact path", char::from(NerdFont::Edit)))
+            .picker_option_label(format!(
+                "{} Browse and choose a path",
+                char::from(NerdFont::FolderOpen)
+            ))
+            .choose()?;
 
-    let save_path = match selection {
-        PathInputSelection::Manual(input) => {
-            if !super::validation::validate_non_empty(&input, "Save path")? {
-                FzfWrapper::message("Save path cannot be empty.")?;
-                return prompt_manual_save_path(game_name);
+        match selection {
+            PathInputSelection::Manual(input) => {
+                if !super::validation::validate_non_empty(&input, "Save path")? {
+                    FzfWrapper::message("Save path cannot be empty.")?;
+                    Ok(None)
+                } else {
+                    TildePath::from_str(&input)
+                        .map(Some)
+                        .map_err(|e| anyhow!("Invalid save path: {}", e))
+                }
             }
-            TildePath::from_str(&input).map_err(|e| anyhow!("Invalid save path: {}", e))?
-        }
-        PathInputSelection::Picker(path) | PathInputSelection::WinePrefix(path) => {
-            TildePath::new(path)
-        }
-        PathInputSelection::Cancelled => return Ok(None),
-    };
-
-    if let Err(err) = ensure_safe_path(save_path.as_path(), PathUsage::SaveDirectory) {
-        FzfWrapper::message(&err.to_string())?;
-        return prompt_manual_save_path(game_name);
-    }
-
-    let save_path_display = save_path
-        .to_tilde_string()
-        .unwrap_or_else(|_| save_path.as_path().display().to_string());
-
-    match FzfWrapper::builder()
-        .confirm(format!(
-            "{} Are you sure you want to use '{save_path_display}' as the save path for '{game_name}'?\n\n\
-            This path will be used to store and sync save files for this game.",
-            char::from(NerdFont::Question)
-        ))
-        .yes_text("Use This Path")
-        .no_text("Choose Different Path")
-        .confirm_dialog()
-        .map_err(|e| anyhow!("Failed to get path confirmation: {}", e))?
-    {
-        crate::menu_utils::ConfirmResult::Yes => {}
-        crate::menu_utils::ConfirmResult::No | crate::menu_utils::ConfirmResult::Cancelled => {
-            return prompt_manual_save_path(game_name);
-        }
-    }
-
-    if !save_path.as_path().exists() {
-        match FzfWrapper::confirm(&format!(
-            "{} Save path '{}' does not exist. Create it?",
-            char::from(NerdFont::Warning),
-            save_path_display
-        ))
-        .map_err(|e| anyhow!("Failed to get confirmation: {}", e))?
-        {
-            crate::menu_utils::ConfirmResult::Yes => {
-                fs::create_dir_all(save_path.as_path())
-                    .context("Failed to create save directory")?;
-                println!(
-                    "{} Created save directory: {save_path_display}",
-                    char::from(NerdFont::Check)
-                );
+            PathInputSelection::Picker(path) | PathInputSelection::WinePrefix(path) => {
+                Ok(Some(TildePath::new(path)))
             }
-            crate::menu_utils::ConfirmResult::No | crate::menu_utils::ConfirmResult::Cancelled => {
-                return Ok(None);
-            }
+            PathInputSelection::Cancelled => Ok(None),
         }
-    }
-
-    Ok(Some(save_path))
+    })
 }
 
 enum SelectedDiscovery {

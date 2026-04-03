@@ -4,9 +4,9 @@ use std::path::Path;
 
 use crate::common::TildePath;
 use crate::game::utils::path::{
-    is_valid_wine_prefix, is_wine_prefix_path, path_selection_to_tilde, tilde_display_string,
+    is_valid_wine_prefix, is_wine_prefix_path, path_selection_to_tilde, prompt_for_save_path,
+    tilde_display_string,
 };
-use crate::game::utils::safeguards::{PathUsage, ensure_safe_path};
 use crate::menu::protocol;
 use crate::menu_utils::{
     FilePickerScope, FzfResult, FzfSelectable, FzfWrapper, PathInputBuilder, PathInputSelection,
@@ -80,80 +80,70 @@ pub(super) fn prompt_manual_save_path(
     original_save_path: Option<&str>,
     enable_wine_prefix: bool,
 ) -> Result<Option<SelectedSavePath>> {
-    let prompt = format!(
-        "{} Enter the save path for '{}' (e.g., ~/.local/share/{}/saves):",
-        char::from(NerdFont::Edit),
-        game_name,
-        game_name.to_lowercase().replace(' ', "-")
-    );
+    let tilde_path = prompt_for_save_path(game_name, || {
+        let prompt = format!(
+            "{} Enter the save path for '{}' (e.g., ~/.local/share/{}/saves):",
+            char::from(NerdFont::Edit),
+            game_name,
+            game_name.to_lowercase().replace(' ', "-")
+        );
 
-    let mut path_builder = PathInputBuilder::new()
-        .header(format!(
-            "{} Choose the save path for '{game_name}'",
-            char::from(NerdFont::Folder)
-        ))
-        .manual_prompt(prompt)
-        .scope(FilePickerScope::FilesAndDirectories)
-        .picker_hint(format!(
-            "{} Select the file or directory to use for {game_name} save data",
-            char::from(NerdFont::Info)
-        ))
-        .manual_option_label(format!("{} Type an exact path", char::from(NerdFont::Edit)))
-        .picker_option_label(format!(
-            "{} Browse and choose a path",
-            char::from(NerdFont::FolderOpen)
-        ));
+        let mut path_builder = PathInputBuilder::new()
+            .header(format!(
+                "{} Choose the save path for '{game_name}'",
+                char::from(NerdFont::Folder)
+            ))
+            .manual_prompt(prompt)
+            .scope(FilePickerScope::FilesAndDirectories)
+            .picker_hint(format!(
+                "{} Select the file or directory to use for {game_name} save data",
+                char::from(NerdFont::Info)
+            ))
+            .manual_option_label(format!("{} Type an exact path", char::from(NerdFont::Edit)))
+            .picker_option_label(format!(
+                "{} Browse and choose a path",
+                char::from(NerdFont::FolderOpen)
+            ));
 
-    if enable_wine_prefix {
-        path_builder = path_builder.wine_prefix_option_label(format!(
-            "{} Select a Wine prefix",
-            char::from(NerdFont::Wine)
-        ));
-    }
+        if enable_wine_prefix {
+            path_builder = path_builder.wine_prefix_option_label(format!(
+                "{} Select a Wine prefix",
+                char::from(NerdFont::Wine)
+            ));
+        }
 
-    let path_selection = path_builder.choose()?;
+        let path_selection = path_builder.choose()?;
 
-    let tilde_path = match path_selection {
-        PathInputSelection::Manual(input) => {
-            if input.trim().is_empty() {
-                println!("Empty path provided. Setup cancelled.");
-                return Ok(None);
+        match path_selection {
+            PathInputSelection::Manual(input) => {
+                if input.trim().is_empty() {
+                    FzfWrapper::message("Save path cannot be empty.")?;
+                    Ok(None)
+                } else {
+                    path_selection_to_tilde(PathInputSelection::Manual(input))
+                }
             }
-            path_selection_to_tilde(PathInputSelection::Manual(input))?
-        }
-        PathInputSelection::Picker(path) => {
-            let final_path = if let Some(original) = original_save_path {
-                handle_differently_named_folders(&path, original)?.unwrap_or(path)
-            } else {
-                path
-            };
-            Some(TildePath::new(final_path))
-        }
-        PathInputSelection::WinePrefix(prefix_path) => {
-            if !is_valid_wine_prefix(&prefix_path) {
-                println!(
-                    "{} Selected path is not a valid Wine prefix (missing drive_c directory).",
-                    char::from(NerdFont::Warning)
-                );
-                return Ok(None);
+            PathInputSelection::Picker(path) => {
+                let final_path = if let Some(original) = original_save_path {
+                    handle_differently_named_folders(&path, original)?.unwrap_or(path)
+                } else {
+                    path
+                };
+                Ok(Some(TildePath::new(final_path)))
             }
-            Some(TildePath::new(prefix_path))
+            PathInputSelection::WinePrefix(prefix_path) => {
+                if !is_valid_wine_prefix(&prefix_path) {
+                    FzfWrapper::message(
+                        "Selected path is not a valid Wine prefix (missing drive_c directory).",
+                    )?;
+                    Ok(None)
+                } else {
+                    Ok(Some(TildePath::new(prefix_path)))
+                }
+            }
+            PathInputSelection::Cancelled => Ok(None),
         }
-        PathInputSelection::Cancelled => {
-            println!(
-                "{} No path selected. Setup cancelled.",
-                char::from(NerdFont::Warning)
-            );
-            return Ok(None);
-        }
-    };
-
-    if let Some(ref tilde) = tilde_path
-        && let Err(err) = ensure_safe_path(tilde.as_path(), PathUsage::SaveDirectory)
-    {
-        println!("{} {}", char::from(NerdFont::CrossCircle), err);
-        return prompt_manual_save_path(game_name, original_save_path, enable_wine_prefix);
-    }
+    })?;
 
     Ok(tilde_path.map(|tilde| SelectedSavePath {
         display_path: tilde_display_string(&tilde),
