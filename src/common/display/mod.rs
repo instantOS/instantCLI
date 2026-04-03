@@ -34,22 +34,33 @@ impl DisplayMode {
 
     /// Format for swaymsg command (e.g., "1920x1080@60.008Hz")
     pub fn to_swaymsg_format(&self) -> String {
-        format!("{}x{}@{:.3}Hz", self.width, self.height, self.refresh_hz())
+        format!("{}x{}@{}Hz", self.width, self.height, self.refresh_label())
     }
 
     /// Format for Hyprland monitor rules (e.g., "1920x1080@60.008")
     pub fn to_hyprland_format(&self) -> String {
-        format!("{}x{}@{:.3}", self.width, self.height, self.refresh_hz())
+        format!("{}x{}@{}", self.width, self.height, self.refresh_label())
     }
 
-    /// Human-readable display format (e.g., "1920x1080 @ 60Hz")
+    /// Human-readable display format (e.g., "1920x1080 @ 59.94Hz")
     pub fn display_format(&self) -> String {
         format!(
-            "{}x{} @ {:.0}Hz",
+            "{}x{} @ {}Hz",
             self.width,
             self.height,
-            self.refresh_hz()
+            self.refresh_label()
         )
+    }
+
+    fn refresh_label(&self) -> String {
+        let mut label = format!("{:.3}", self.refresh_hz());
+        while label.contains('.') && label.ends_with('0') {
+            label.pop();
+        }
+        if label.ends_with('.') {
+            label.pop();
+        }
+        label
     }
 }
 
