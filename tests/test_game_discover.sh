@@ -9,21 +9,42 @@ main() {
 	trap cleanup_test_env EXIT
 
 	local bin_dir="${TEST_ROOT}/bin"
-	local install_dir="${HOME}/Games/epic/Sable"
+	local epic_prefix="${HOME}/legendary"
+	local install_dir="${epic_prefix}/drive_c/Program Files/Sable"
+	local epic_save_dir="${epic_prefix}/drive_c/users/testuser/Documents/Sable"
+	local epic_extra_save_dir="${epic_prefix}/drive_c/users/testuser/Documents/Bonus Epic Save"
+	local unmatched_install_dir="${epic_prefix}/drive_c/Program Files/NoSaveGame"
 	local steam_root="${HOME}/.local/share/Steam"
 	local steam_prefix="${steam_root}/steamapps/compatdata/12345/pfx"
 	local steam_save_dir="${steam_prefix}/drive_c/users/steamuser/Documents/Test Steam Game"
 	local wine_prefix="${HOME}/.wine"
 	local wine_save_dir="${wine_prefix}/drive_c/users/testuser/Documents/Test Wine Game"
-	mkdir -p "${bin_dir}" "${install_dir}"
+	mkdir -p "${bin_dir}" "${install_dir}" "${unmatched_install_dir}"
 	export PATH="${bin_dir}:${PATH}"
 
 	touch "${install_dir}/Sable.exe"
-	mkdir -p "${steam_save_dir}" "${wine_save_dir}" "${steam_root}/steamapps" "${XDG_CACHE_HOME}/instant"
+	touch "${unmatched_install_dir}/NoSaveGame.exe"
+	mkdir -p "${epic_save_dir}" "${epic_extra_save_dir}" "${steam_save_dir}" "${wine_save_dir}" "${steam_root}/steamapps" "${XDG_CACHE_HOME}/instant"
+	echo "save" >"${epic_save_dir}/slot1.sav"
+	echo "save" >"${epic_extra_save_dir}/profile1.sav"
 	echo "save" >"${steam_save_dir}/save1.sav"
 	echo "save" >"${wine_save_dir}/profile1.sav"
 
 	cat >"${XDG_CACHE_HOME}/instant/ludusavi-manifest.yaml" <<'EOF'
+"Sable":
+  files:
+    "<winDocuments>/Sable":
+      tags:
+        - save
+      when:
+        - os: windows
+"Bonus Epic Save":
+  files:
+    "<winDocuments>/Bonus Epic Save":
+      tags:
+        - save
+      when:
+        - os: windows
 "Test Steam Game":
   files:
     "<winDocuments>/Test Steam Game":
@@ -69,6 +90,13 @@ if [ "\${1:-}" = "list-installed" ] && [ "\${2:-}" = "--json" ]; then
   "title": "Sable",
   "executable": "Sable.exe",
   "launch_parameters": ""
+},
+{
+  "app_name": "nosavegame",
+  "install_path": "${unmatched_install_dir}",
+  "title": "NoSaveGame",
+  "executable": "NoSaveGame.exe",
+  "launch_parameters": ""
 }]
 JSON
 else
@@ -82,15 +110,18 @@ EOF
 	echo "${discover_json}" | jq -e '
 		.code == "game.discover" and
 		(.data.count | tonumber) >= 1 and
-		(.data.games | map(select(.name == "Sable" and .platform_short == "Epic")) | length) == 1
+		(.data.games | map(select(.name == "Sable" and .platform_short == "Epic" and .save_path == "'"${epic_save_dir}"'")) | length) == 1 and
+		(.data.games | map(select(.name == "Bonus Epic Save" and .platform_short == "Epic" and .save_path == "'"${epic_extra_save_dir}"'")) | length) == 1 and
+		(.data.games | map(select(.name == "NoSaveGame" and .platform_short == "Epic")) | length) == 0
 	' >/dev/null
 
 	local epic_only_json
 	epic_only_json="$(ins --output json game discover --source epic)"
 	echo "${epic_only_json}" | jq -e '
 		.code == "game.discover" and
-		(.data.games | length) == 1 and
-		.data.games[0].platform_short == "Epic"
+		(.data.games | length) == 2 and
+		(.data.games | map(select(.name == "Sable" and .platform_short == "Epic" and .save_path == "'"${epic_save_dir}"'")) | length) == 1 and
+		(.data.games | map(select(.name == "Bonus Epic Save" and .platform_short == "Epic" and .save_path == "'"${epic_extra_save_dir}"'")) | length) == 1
 	' >/dev/null
 
 	local steam_only_json

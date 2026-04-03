@@ -2,13 +2,12 @@
 //!
 //! Scans `legendary list-installed --json` to discover installed Epic Games
 //! titles. For each game, detects its Wine prefix and runs the Ludusavi
-//! manifest scanner to find accurate save paths instead of using the
-//! entire install directory.
+//! manifest scanner to find accurate save paths.
 //!
 //! Junkstore uses legendary under the hood, so this discovery method covers
 //! both setups.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -17,9 +16,7 @@ use serde::Deserialize;
 
 use super::DiscoveredGame;
 use crate::common::TildePath;
-use crate::game::platforms::ludusavi::{
-    DiscoveredWineSave, choose_primary_save, scan_primary_wine_prefix_saves,
-};
+use crate::game::platforms::ludusavi::{DiscoveredWineSave, scan_primary_wine_prefix_saves};
 use crate::game::utils::path::tilde_display_string;
 use crate::menu::protocol::FzfPreview;
 use crate::ui::nerd_font::NerdFont;
@@ -29,10 +26,11 @@ use crate::ui::preview::PreviewBuilder;
 #[derive(Debug, Clone)]
 pub struct EpicDiscoveredGame {
     pub display_name: String,
-    pub app_name: String,
-    pub install_path: PathBuf,
-    pub executable: String,
-    pub launch_parameters: String,
+    pub prefix_path: PathBuf,
+    pub app_name: Option<String>,
+    pub install_path: Option<PathBuf>,
+    pub executable: Option<String>,
+    pub launch_parameters: Option<String>,
     pub save_path: PathBuf,
     pub is_existing: bool,
     pub tracked_name: Option<String>,
@@ -41,14 +39,16 @@ pub struct EpicDiscoveredGame {
 impl EpicDiscoveredGame {
     pub fn new(
         display_name: String,
-        app_name: String,
-        install_path: PathBuf,
-        executable: String,
-        launch_parameters: String,
+        prefix_path: PathBuf,
+        app_name: Option<String>,
+        install_path: Option<PathBuf>,
+        executable: Option<String>,
+        launch_parameters: Option<String>,
         save_path: PathBuf,
     ) -> Self {
         Self {
             display_name,
+            prefix_path,
             app_name,
             install_path,
             executable,
@@ -61,7 +61,11 @@ impl EpicDiscoveredGame {
 
     /// Full path to the game executable
     pub fn exe_path(&self) -> PathBuf {
-        self.install_path.join(&self.executable)
+        self.install_path
+            .as_ref()
+            .zip(self.executable.as_ref())
+            .map(|(install_path, executable)| install_path.join(executable))
+            .unwrap_or_else(|| self.prefix_path.clone())
     }
 }
 
@@ -75,7 +79,7 @@ impl DiscoveredGame for EpicDiscoveredGame {
     }
 
     fn game_path(&self) -> Option<&PathBuf> {
-        Some(&self.install_path)
+        self.install_path.as_ref()
     }
 
     fn platform_name(&self) -> &'static str {
@@ -87,7 +91,15 @@ impl DiscoveredGame for EpicDiscoveredGame {
     }
 
     fn unique_key(&self) -> String {
-        format!("{}|{}", self.app_name, self.save_path.to_string_lossy())
+        if let Some(app_name) = &self.app_name {
+            format!("{app_name}|{}", self.save_path.to_string_lossy())
+        } else {
+            format!(
+                "epic-prefix:{}|{}",
+                self.prefix_path.to_string_lossy(),
+                self.save_path.to_string_lossy()
+            )
+        }
     }
 
     fn is_existing(&self) -> bool {
@@ -104,10 +116,8 @@ impl DiscoveredGame for EpicDiscoveredGame {
     }
 
     fn build_preview(&self) -> FzfPreview {
-        let install_display = tilde_display_string(&TildePath::new(self.install_path.clone()));
         let save_display = tilde_display_string(&TildePath::new(self.save_path.clone()));
-        let exe_path = self.exe_path();
-        let exe_display = tilde_display_string(&TildePath::new(exe_path));
+        let prefix_display = tilde_display_string(&TildePath::new(self.prefix_path.clone()));
         let header_name = self.tracked_name.as_deref().unwrap_or(&self.display_name);
 
         let mut builder = PreviewBuilder::new()
@@ -119,25 +129,42 @@ impl DiscoveredGame for EpicDiscoveredGame {
                 },
                 header_name,
             )
-            .text(&format!("Platform: {}", self.platform_name()))
-            .text(&format!("App ID: {}", self.app_name))
+            .text(&format!("Platform: {}", self.platform_name()));
+
+        if let Some(app_name) = &self.app_name {
+            builder = builder.text(&format!("App ID: {app_name}"));
+        }
+
+        builder = builder
             .blank()
             .separator()
             .blank()
-            .text("Install path:")
-            .bullet(&install_display)
+            .text("Epic prefix:")
+            .bullet(&prefix_display)
             .blank()
             .text("Save path:")
-            .bullet(&save_display)
-            .blank()
-            .text("Executable:")
-            .bullet(&exe_display);
+            .bullet(&save_display);
 
-        if !self.launch_parameters.is_empty() {
+        if let Some(install_path) = &self.install_path {
+            let install_display = tilde_display_string(&TildePath::new(install_path.clone()));
+            builder = builder
+                .blank()
+                .text("Install path:")
+                .bullet(&install_display);
+        }
+
+        if self.install_path.is_some() && self.executable.is_some() {
+            let exe_display = tilde_display_string(&TildePath::new(self.exe_path()));
+            builder = builder.blank().text("Executable:").bullet(&exe_display);
+        }
+
+        if let Some(launch_parameters) = &self.launch_parameters
+            && !launch_parameters.is_empty()
+        {
             builder = builder
                 .blank()
                 .text("Launch parameters:")
-                .bullet(&self.launch_parameters);
+                .bullet(launch_parameters);
         }
 
         builder = builder.blank().separator().blank();
@@ -208,7 +235,8 @@ fn find_wine_prefix(path: &Path) -> Option<PathBuf> {
 }
 
 /// Check if a Ludusavi game name matches an Epic game title.
-/// Uses case-insensitive substring matching in both directions.
+/// Uses case-insensitive matching with normalization so compact launcher
+/// titles like `RollerCoasterTycoon3` still match manifest names.
 fn names_match(ludusavi_name: &str, epic_title: &str) -> bool {
     let ludusavi_lower = ludusavi_name.to_lowercase();
     let epic_lower = epic_title.to_lowercase();
@@ -218,14 +246,10 @@ fn names_match(ludusavi_name: &str, epic_title: &str) -> bool {
         return true;
     }
 
-    // Normalize: remove common suffixes/punctuation and try again
     let normalize = |s: &str| {
         s.chars()
-            .filter(|c| c.is_alphanumeric() || *c == ' ')
+            .filter(|c| c.is_alphanumeric())
             .collect::<String>()
-            .split_whitespace()
-            .collect::<Vec<&str>>()
-            .join(" ")
             .to_lowercase()
     };
 
@@ -271,61 +295,52 @@ where
         }
     }
 
-    stream_discover_epic_games_into(valid_games, prefix_saves, &mut on_game)
+    stream_discover_epic_games_into(prefix_to_games, prefix_saves, &mut on_game)
 }
 
 fn stream_discover_epic_games_into<F>(
-    valid_games: Vec<LegendaryInstalled>,
+    prefix_to_games: HashMap<PathBuf, Vec<&LegendaryInstalled>>,
     prefix_saves: HashMap<PathBuf, Vec<DiscoveredWineSave>>,
     mut on_game: F,
 ) -> Result<()>
 where
     F: FnMut(EpicDiscoveredGame) -> Result<()>,
 {
-    for game in &valid_games {
-        let prefix = match find_wine_prefix(&game.install_path) {
-            Some(p) => p,
-            None => {
-                // Fallback: use install path as save path (old behavior)
-                on_game(EpicDiscoveredGame::new(
-                    game.title.clone(),
-                    game.app_name.clone(),
-                    game.install_path.clone(),
-                    game.executable.clone(),
-                    game.launch_parameters.clone(),
-                    game.install_path.clone(),
-                ))?;
-                continue;
-            }
+    for (prefix, games) in prefix_to_games {
+        let Some(saves) = prefix_saves.get(&prefix) else {
+            continue;
         };
 
-        let saves = prefix_saves.get(&prefix).cloned().unwrap_or_default();
+        let mut matched_app_names = HashSet::new();
 
-        // Find matching saves for this game
-        let matching_saves: Vec<_> = saves
-            .into_iter()
-            .filter(|s| names_match(&s.game_name, &game.title))
-            .collect();
+        for save in saves {
+            let matched_game = games.iter().find(|game| {
+                !matched_app_names.contains(&game.app_name)
+                    && names_match(&save.game_name, &game.title)
+            });
 
-        if let Some(save) = choose_primary_save(matching_saves) {
-            on_game(EpicDiscoveredGame::new(
-                save.game_name,
-                game.app_name.clone(),
-                game.install_path.clone(),
-                game.executable.clone(),
-                game.launch_parameters.clone(),
-                PathBuf::from(save.save_path),
-            ))?;
-        } else {
-            // No Ludusavi match — use install path as fallback
-            on_game(EpicDiscoveredGame::new(
-                game.title.clone(),
-                game.app_name.clone(),
-                game.install_path.clone(),
-                game.executable.clone(),
-                game.launch_parameters.clone(),
-                game.install_path.clone(),
-            ))?;
+            if let Some(game) = matched_game {
+                matched_app_names.insert(game.app_name.clone());
+                on_game(EpicDiscoveredGame::new(
+                    game.title.clone(),
+                    prefix.clone(),
+                    Some(game.app_name.clone()),
+                    Some(game.install_path.clone()),
+                    Some(game.executable.clone()),
+                    Some(game.launch_parameters.clone()),
+                    PathBuf::from(&save.save_path),
+                ))?;
+            } else {
+                on_game(EpicDiscoveredGame::new(
+                    save.game_name.clone(),
+                    prefix.clone(),
+                    None,
+                    None,
+                    None,
+                    None,
+                    PathBuf::from(&save.save_path),
+                ))?;
+            }
         }
     }
 
@@ -397,6 +412,18 @@ mod tests {
     fn names_match_case_insensitive() {
         assert!(names_match("cyberpunk 2077", "CYBERPUNK 2077"));
         assert!(names_match("HADES", "hades"));
+    }
+
+    #[test]
+    fn names_match_collapses_spacing_and_punctuation() {
+        assert!(names_match(
+            "RollerCoaster Tycoon 3",
+            "RollerCoasterTycoon3"
+        ));
+        assert!(names_match(
+            "The Witcher 3: Wild Hunt",
+            "TheWitcher3WildHunt"
+        ));
     }
 
     #[test]
