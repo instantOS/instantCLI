@@ -23,6 +23,9 @@ pub trait DiscoveredGame: std::fmt::Debug {
     fn display_name(&self) -> &str;
     fn save_path(&self) -> &PathBuf;
     fn game_path(&self) -> Option<&PathBuf>;
+    fn prefix_path(&self) -> Option<&PathBuf> {
+        None
+    }
     fn platform_name(&self) -> &'static str;
     fn platform_short(&self) -> &'static str;
     fn unique_key(&self) -> String;

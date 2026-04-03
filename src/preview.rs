@@ -136,6 +136,7 @@ pub struct GameSavePreviewPayload {
     pub platform_short: String,
     pub save_path: String,
     pub game_path: Option<String>,
+    pub prefix_path: Option<String>,
     pub existing: bool,
     pub tracked_name: Option<String>,
 }

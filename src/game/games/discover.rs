@@ -33,6 +33,7 @@ pub struct DiscoveredGameRecord {
     pub unique_key: String,
     pub save_path: String,
     pub game_path: Option<String>,
+    pub prefix_path: Option<String>,
     pub existing: bool,
     pub tracked_name: Option<String>,
 }
@@ -249,6 +250,9 @@ fn render_discovered_game(game: &DiscoveredGameRecord) -> String {
     );
     if let Some(game_path) = &game.game_path {
         text.push_str(&format!("  Game path: {}\n", game_path));
+    }
+    if let Some(prefix_path) = &game.prefix_path {
+        text.push_str(&format!("  Prefix path: {}\n", prefix_path));
     }
     if let Some(tracked_name) = &game.tracked_name {
         text.push_str(&format!("  Tracked as: {}\n", tracked_name));
@@ -474,7 +478,7 @@ fn record_is_under_root(record: &DiscoveredGameRecord, root: &Path) -> bool {
 
 fn record_prefix_path(record: &DiscoveredGameRecord) -> Option<PathBuf> {
     record
-        .game_path
+        .prefix_path
         .as_deref()
         .map(PathBuf::from)
         .filter(|path| path.join("drive_c").is_dir())
@@ -500,6 +504,9 @@ fn into_record_with_preview(
             save_path: game.save_path().to_string_lossy().to_string(),
             game_path: game
                 .game_path()
+                .map(|path| path.to_string_lossy().to_string()),
+            prefix_path: game
+                .prefix_path()
                 .map(|path| path.to_string_lossy().to_string()),
             existing: game.is_existing(),
             tracked_name: game.tracked_name().map(ToOwned::to_owned),
@@ -597,6 +604,10 @@ fn is_cached_record_valid(record: &DiscoveredGameRecord) -> bool {
         .game_path
         .as_deref()
         .is_none_or(|path| Path::new(path).exists())
+        && record
+            .prefix_path
+            .as_deref()
+            .is_none_or(|path| Path::new(path).exists())
 }
 
 fn load_valid_cached_entries() -> Result<Vec<CachedDiscoveredGame>> {
@@ -733,6 +744,7 @@ fn discovered_menu_preview(record: &DiscoveredGameRecord) -> FzfPreview {
         platform_short: record.platform_short.clone(),
         save_path: record.save_path.clone(),
         game_path: record.game_path.clone(),
+        prefix_path: record.prefix_path.clone(),
         existing: record.existing,
         tracked_name: record.tracked_name.clone(),
     }))
@@ -835,6 +847,7 @@ mod tests {
             unique_key: "wine:test".to_string(),
             save_path: "/definitely/missing".to_string(),
             game_path: None,
+            prefix_path: None,
             existing: false,
             tracked_name: None,
         };
@@ -851,6 +864,7 @@ mod tests {
             unique_key: "epic:test".to_string(),
             save_path: "/tmp/save".to_string(),
             game_path: None,
+            prefix_path: None,
             existing: false,
             tracked_name: None,
         };
@@ -865,6 +879,51 @@ mod tests {
             &[DiscoverySource::Steam],
             None
         ));
+    }
+
+    #[test]
+    fn render_discovered_game_uses_prefix_path_label() {
+        let record = DiscoveredGameRecord {
+            name: "Under the Waves".to_string(),
+            platform: "Wine Prefix".to_string(),
+            platform_short: "Wine".to_string(),
+            unique_key: "wine:test".to_string(),
+            save_path: "/tmp/save".to_string(),
+            game_path: None,
+            prefix_path: Some("/tmp/prefix".to_string()),
+            existing: false,
+            tracked_name: None,
+        };
+
+        let rendered = render_discovered_game(&record);
+
+        assert!(rendered.contains("Save path: /tmp/save"));
+        assert!(rendered.contains("Prefix path: /tmp/prefix"));
+        assert!(!rendered.contains("Game path:"));
+    }
+
+    #[test]
+    fn record_prefix_path_prefers_prefix_field() {
+        let temp = tempfile::tempdir().unwrap();
+        let prefix = temp.path().join("prefix");
+        std::fs::create_dir_all(prefix.join("drive_c")).unwrap();
+        let install = temp.path().join("install");
+
+        let record = DiscoveredGameRecord {
+            name: "Game".to_string(),
+            platform: "Wine Prefix".to_string(),
+            platform_short: "Wine".to_string(),
+            unique_key: "wine:test".to_string(),
+            save_path: "/tmp/save".to_string(),
+            game_path: Some(install.to_string_lossy().to_string()),
+            prefix_path: Some(prefix.to_string_lossy().to_string()),
+            existing: false,
+            tracked_name: None,
+        };
+
+        let resolved = record_prefix_path(&record);
+
+        assert_eq!(resolved, Some(prefix));
     }
 
     #[test]

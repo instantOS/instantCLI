@@ -82,6 +82,10 @@ impl DiscoveredGame for EpicDiscoveredGame {
         self.install_path.as_ref()
     }
 
+    fn prefix_path(&self) -> Option<&PathBuf> {
+        Some(&self.prefix_path)
+    }
+
     fn platform_name(&self) -> &'static str {
         "Epic Games"
     }

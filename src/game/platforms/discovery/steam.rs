@@ -66,6 +66,10 @@ impl DiscoveredGame for SteamDiscoveredGame {
     }
 
     fn game_path(&self) -> Option<&PathBuf> {
+        None
+    }
+
+    fn prefix_path(&self) -> Option<&PathBuf> {
         Some(&self.prefix_path)
     }
 

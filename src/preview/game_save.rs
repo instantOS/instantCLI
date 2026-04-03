@@ -43,6 +43,10 @@ fn render_game_save_preview_impl(ctx: &PreviewContext, writer: &mut PreviewWrite
         writer.field("Game path", game_path);
     }
 
+    if let Some(prefix_path) = &payload.prefix_path {
+        writer.field("Prefix path", prefix_path);
+    }
+
     if payload.existing {
         writer.line(
             colors::GREEN,
