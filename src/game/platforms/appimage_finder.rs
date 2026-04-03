@@ -8,7 +8,7 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 
-/// Search for an AppImage by full path patterns, matching filenames case-insensitively.
+/// Search for AppImages by full path patterns, matching filenames case-insensitively.
 ///
 /// Takes full path patterns (e.g., `~/AppImages/eden.appimage`) and will match
 /// the filename part case-insensitively while preserving the directory structure.
@@ -17,8 +17,7 @@ use anyhow::{Context, Result};
 /// * `search_paths` - List of full path patterns to check
 ///
 /// # Returns
-/// * `Some(PathBuf)` - Full path to the found AppImage
-/// * `None` - No matching AppImage found
+/// * `Vec<PathBuf>` - Full paths to matching AppImages
 ///
 /// # Example
 /// ```rust
@@ -26,9 +25,11 @@ use anyhow::{Context, Result};
 ///     "~/AppImages/eden.appimage",
 ///     "~/.local/bin/eden.appimage",
 /// ];
-/// let found = find_appimage_by_paths(paths);
+/// let found = find_appimages_by_paths(paths);
 /// ```
-pub fn find_appimage_by_paths(search_paths: &[&str]) -> Option<PathBuf> {
+pub fn find_appimages_by_paths(search_paths: &[&str]) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+
     for search_path in search_paths {
         // Expand tilde if present
         let expanded = shellexpand::tilde(search_path);
@@ -62,13 +63,18 @@ pub fn find_appimage_by_paths(search_paths: &[&str]) -> Option<PathBuf> {
             if file_name_str.to_lowercase() == expected_lower {
                 let found_path = dir_path.join(&file_name);
                 if found_path.is_file() {
-                    return Some(found_path);
+                    found.push(found_path);
                 }
             }
         }
     }
 
-    None
+    found
+}
+
+/// Search for the first matching AppImage by full path patterns.
+pub fn find_appimage_by_paths(search_paths: &[&str]) -> Option<PathBuf> {
+    find_appimages_by_paths(search_paths).into_iter().next()
 }
 
 /// Find all AppImages in a directory with case-insensitive matching.

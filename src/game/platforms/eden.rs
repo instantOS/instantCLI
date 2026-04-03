@@ -10,12 +10,14 @@ use crate::game::launch_command::{
     EmulatorLaunchCommand, EmulatorLauncher, EmulatorOptions, EmulatorPlatform, LaunchCommand,
     LaunchCommandKind,
 };
-use crate::game::platforms::appimage_finder::find_appimage_by_paths;
+use crate::game::platforms::appimage_finder::{find_appimage_by_paths, find_appimages_by_paths};
 use crate::game::platforms::discovery::eden::collect_configured_rom_files;
+use crate::menu::protocol::FzfPreview;
 use crate::menu_utils::{
-    ConfirmResult, FilePickerScope, FzfWrapper, PathInputBuilder, PathInputSelection,
+    FilePickerScope, FzfResult, FzfSelectable, FzfWrapper, PathInputBuilder, PathInputSelection,
 };
 use crate::ui::nerd_font::NerdFont;
+use crate::ui::preview::PreviewBuilder;
 
 use super::prompts::{
     FileSelectionPrompt, ask_fullscreen, confirm_value, select_file_with_validation,
@@ -63,23 +65,14 @@ impl EdenBuilder {
     }
 
     pub(crate) fn find_or_select_eden() -> Result<Option<PathBuf>> {
-        // Try to find Eden in common locations using case-insensitive matching
-        if let Some(path) = Self::find_eden_noninteractive() {
-            // Found Eden, ask if user wants to use it
-            match FzfWrapper::builder()
-                .confirm(format!(
-                    "{} Found Eden at:\n{}\n\nUse this?",
-                    char::from(NerdFont::Check),
-                    path.display()
-                ))
-                .yes_text("Use This")
-                .no_text("Choose Different")
-                .confirm_dialog()?
-            {
-                ConfirmResult::Yes => return Ok(Some(path)),
-                ConfirmResult::No => {}
-                ConfirmResult::Cancelled => return Ok(None),
+        match Self::find_detected_eden_paths().as_slice() {
+            [path] => return Ok(Some(path.clone())),
+            paths if !paths.is_empty() => {
+                if let Some(path) = Self::select_detected_eden_path(paths)? {
+                    return Ok(Some(path));
+                }
             }
+            _ => {}
         }
 
         // Not found or user wants different, let them select
@@ -132,6 +125,55 @@ impl EdenBuilder {
 
     pub(crate) fn find_eden_noninteractive() -> Option<PathBuf> {
         find_appimage_by_paths(EDEN_SEARCH_PATHS)
+    }
+
+    fn find_detected_eden_paths() -> Vec<PathBuf> {
+        find_appimages_by_paths(EDEN_SEARCH_PATHS)
+    }
+
+    fn select_detected_eden_path(paths: &[PathBuf]) -> Result<Option<PathBuf>> {
+        #[derive(Clone)]
+        struct EdenPathItem {
+            path: PathBuf,
+        }
+
+        impl FzfSelectable for EdenPathItem {
+            fn fzf_display_text(&self) -> String {
+                format!("{} {}", char::from(NerdFont::Check), self.path.display())
+            }
+
+            fn fzf_key(&self) -> String {
+                self.path.to_string_lossy().into_owned()
+            }
+
+            fn fzf_preview(&self) -> FzfPreview {
+                PreviewBuilder::new()
+                    .header(NerdFont::Gamepad, "Detected Eden AppImage")
+                    .text("Multiple Eden AppImages were found.")
+                    .blank()
+                    .field("Path", &self.path.display().to_string())
+                    .build()
+            }
+        }
+
+        let items: Vec<EdenPathItem> = paths
+            .iter()
+            .cloned()
+            .map(|path| EdenPathItem { path })
+            .collect();
+
+        match FzfWrapper::builder()
+            .header(format!(
+                "{} Select Eden AppImage",
+                char::from(NerdFont::Gamepad)
+            ))
+            .prompt("Eden")
+            .select(items)?
+        {
+            FzfResult::Selected(item) => Ok(Some(item.path)),
+            FzfResult::Cancelled => Ok(None),
+            _ => Ok(None),
+        }
     }
 
     fn select_game_file() -> Result<Option<PathBuf>> {
