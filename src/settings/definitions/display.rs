@@ -47,7 +47,10 @@ impl FzfSelectable for ModeMenuItem {
     }
 
     fn fzf_key(&self) -> String {
-        self.mode.display_format()
+        format!(
+            "{}x{}@{}",
+            self.mode.width, self.mode.height, self.mode.refresh
+        )
     }
 
     fn fzf_preview(&self) -> FzfPreview {
@@ -144,6 +147,7 @@ fn render_mode_comparison_ascii(candidate: &DisplayMode, current: &DisplayMode) 
         candidate.display_format()
     ));
     lines.push(format!("  {:<14} {}", "current", current.display_format()));
+    lines.push(String::new());
     for row in canvas {
         let mut line: String = row.into_iter().collect();
         while line.ends_with(' ') {
@@ -214,7 +218,9 @@ fn compare_pixels(delta_pixels: i128) -> String {
 }
 
 fn compare_refresh(delta_refresh: i128) -> String {
-    if delta_refresh == 0 {
+    const NOISE_THRESHOLD_MILLIHZ: i128 = 10;
+
+    if delta_refresh.abs() < NOISE_THRESHOLD_MILLIHZ {
         return "Same refresh rate as current".to_string();
     }
 

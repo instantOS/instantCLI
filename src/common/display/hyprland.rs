@@ -24,13 +24,14 @@ impl HyprlandDisplayProvider {
                 continue;
             }
 
-            let current_mode = current_mode(&monitor).unwrap_or_else(|| {
-                available_modes.first().cloned().unwrap_or(DisplayMode {
-                    width: 0,
-                    height: 0,
-                    refresh: 0,
-                })
-            });
+            let current_mode =
+                normalized_current_mode(&monitor, &available_modes).unwrap_or_else(|| {
+                    available_modes.first().cloned().unwrap_or(DisplayMode {
+                        width: 0,
+                        height: 0,
+                        refresh: 0,
+                    })
+                });
 
             outputs.push(OutputInfo {
                 name: monitor.name,
@@ -176,6 +177,20 @@ fn current_mode(monitor: &HyprlandMonitor) -> Option<DisplayMode> {
     })
 }
 
+fn normalized_current_mode(
+    monitor: &HyprlandMonitor,
+    available_modes: &[DisplayMode],
+) -> Option<DisplayMode> {
+    let current = current_mode(monitor)?;
+
+    available_modes
+        .iter()
+        .filter(|mode| mode.width == current.width && mode.height == current.height)
+        .min_by_key(|mode| mode.refresh.abs_diff(current.refresh))
+        .cloned()
+        .or(Some(current))
+}
+
 fn parse_available_modes(modes: &[String]) -> Vec<DisplayMode> {
     let mut parsed: Vec<DisplayMode> = modes
         .iter()
@@ -221,7 +236,9 @@ fn trim_float(value: f64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_mode_string, trim_float};
+    use super::{
+        DisplayMode, HyprlandMonitor, normalized_current_mode, parse_mode_string, trim_float,
+    };
 
     #[test]
     fn parses_hyprland_mode_string() {
@@ -236,5 +253,44 @@ mod tests {
         assert_eq!(trim_float(1.0), "1");
         assert_eq!(trim_float(1.25), "1.25");
         assert_eq!(trim_float(59.94), "59.94");
+    }
+
+    #[test]
+    fn snaps_current_mode_to_nearest_advertised_refresh() {
+        let monitor = HyprlandMonitor {
+            name: "HDMI-A-2".to_string(),
+            make: "Test".to_string(),
+            model: "Panel".to_string(),
+            width: 1920,
+            height: 1080,
+            refresh_rate: 59.939,
+            x: 0,
+            y: 0,
+            scale: 1.0,
+            transform: 0,
+            disabled: false,
+            mirror_of: None,
+            vrr: Some(false),
+            available_modes: Vec::new(),
+            color_management_preset: None,
+            sdr_brightness: None,
+            sdr_saturation: None,
+        };
+
+        let available = vec![
+            DisplayMode {
+                width: 1920,
+                height: 1080,
+                refresh: 60_000,
+            },
+            DisplayMode {
+                width: 1920,
+                height: 1080,
+                refresh: 59_940,
+            },
+        ];
+
+        let snapped = normalized_current_mode(&monitor, &available).unwrap();
+        assert_eq!(snapped.refresh, 59_940);
     }
 }
