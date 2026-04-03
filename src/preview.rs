@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::ValueEnum;
+use serde::{Deserialize, Serialize};
 use std::env;
 
 use crate::common::shell::{current_exe_command, shell_quote};
@@ -21,6 +22,7 @@ mod cache;
 mod default_apps;
 mod disks;
 mod file;
+mod game_save;
 mod helpers;
 mod keyboard;
 mod mime;
@@ -102,6 +104,8 @@ pub enum PreviewId {
     Setting,
     #[value(name = "systemd-service")]
     SystemdService,
+    #[value(name = "game-save")]
+    GameSave,
 }
 
 impl std::fmt::Display for PreviewId {
@@ -123,6 +127,23 @@ pub fn preview_command_for_setting(setting_id: &str) -> String {
         "{exe} preview --id setting --key {}",
         shell_quote(setting_id)
     )
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GameSavePreviewPayload {
+    pub name: String,
+    pub platform: String,
+    pub platform_short: String,
+    pub save_path: String,
+    pub game_path: Option<String>,
+    pub existing: bool,
+    pub tracked_name: Option<String>,
+}
+
+pub fn preview_command_for_game_save(payload: &GameSavePreviewPayload) -> String {
+    let exe = current_exe_command();
+    let key = serde_json::to_string(payload).unwrap_or_default();
+    format!("{exe} preview --id game-save --key {}", shell_quote(&key))
 }
 
 pub fn handle_preview_command(id: PreviewId, key: Option<String>) -> Result<()> {
@@ -171,6 +192,7 @@ fn should_use_collect_preview_cache(id: PreviewId, ctx: &PreviewContext) -> bool
                 | PreviewId::Flatpak
                 | PreviewId::Aur
                 | PreviewId::Cargo
+                | PreviewId::GameSave
         )
 }
 
@@ -257,6 +279,7 @@ fn try_render_streaming(id: PreviewId, ctx: &PreviewContext) -> Option<Result<()
             "Set your default PDF viewer for documents.",
             PDF_VIEWER_MIME_TYPES,
         )),
+        PreviewId::GameSave => Some(game_save::render_game_save_preview_streaming(ctx)),
 
         _ => None,
     }
@@ -359,6 +382,7 @@ fn render_preview(id: PreviewId, ctx: &PreviewContext) -> Result<String> {
         PreviewId::FileSuggestion => file::render_file_suggestion_preview(ctx),
         PreviewId::Setting => render_setting_preview(ctx),
         PreviewId::SystemdService => render_systemd_service_preview(ctx),
+        PreviewId::GameSave => game_save::render_game_save_preview(ctx),
         // Package previews are always handled by try_render_streaming
         _ => unreachable!("preview {id} should be handled by streaming path"),
     }

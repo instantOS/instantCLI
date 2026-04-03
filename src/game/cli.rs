@@ -33,6 +33,9 @@ pub enum GameCommands {
         #[arg(long)]
         create_save_path: bool,
         /// Disable the discovered-games cache for this run
+        ///
+        /// Cache file: `$XDG_CACHE_HOME/instant/game-discovery-cache.json`
+        /// (usually `~/.cache/instant/game-discovery-cache.json`)
         #[arg(long)]
         no_cache: bool,
     },
@@ -47,6 +50,9 @@ pub enum GameCommands {
         #[arg(long, hide = true)]
         menu: bool,
         /// Disable the discovered-games cache for this run
+        ///
+        /// Cache file: `$XDG_CACHE_HOME/instant/game-discovery-cache.json`
+        /// (usually `~/.cache/instant/game-discovery-cache.json`)
         #[arg(long)]
         no_cache: bool,
     },

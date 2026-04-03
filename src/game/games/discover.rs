@@ -13,6 +13,7 @@ use crate::game::platforms::discovery::{
     self as platform_discovery, DiscoveredGame, DiscoveryEvent, DiscoverySource,
 };
 use crate::menu_utils::StreamingMenuItem;
+use crate::preview::{GameSavePreviewPayload, preview_command_for_game_save};
 use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::prelude::{Level, OutputFormat, emit, get_output_format};
@@ -101,7 +102,7 @@ pub fn print_streaming_menu_rows(
                         save_path: Some(game.record.save_path.clone()),
                     },
                 )
-                .preview(FzfPreview::Text(game.preview_text.clone()))
+                .preview(discovered_menu_preview(&game.record))
                 .encode()?
             )?;
             out.flush()?;
@@ -677,6 +678,18 @@ fn preview_to_text(preview: FzfPreview) -> String {
         FzfPreview::Command(command) => command,
         FzfPreview::None => String::new(),
     }
+}
+
+fn discovered_menu_preview(record: &DiscoveredGameRecord) -> FzfPreview {
+    FzfPreview::Command(preview_command_for_game_save(&GameSavePreviewPayload {
+        name: record.name.clone(),
+        platform: record.platform.clone(),
+        platform_short: record.platform_short.clone(),
+        save_path: record.save_path.clone(),
+        game_path: record.game_path.clone(),
+        existing: record.existing,
+        tracked_name: record.tracked_name.clone(),
+    }))
 }
 
 #[derive(Clone)]
