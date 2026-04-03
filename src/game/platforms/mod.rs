@@ -26,7 +26,9 @@ mod validation;
 use anyhow::Result;
 use std::path::{Path, PathBuf};
 
-use crate::game::launch_command::{GamescopeOptions, LaunchCommand};
+use crate::game::launch_command::{
+    EmulatorPlatform, GamescopeOptions, LaunchCommand, LaunchCommandKind,
+};
 use crate::game::utils::path::is_valid_wine_prefix;
 use crate::menu::protocol::FzfPreview;
 use crate::menu_utils::{
@@ -62,39 +64,64 @@ pub struct LaunchCommandBuilderPreset {
 
 #[derive(Debug, Clone)]
 pub enum BuilderPresetData {
+    None,
     WinePrefix(PathBuf),
     SteamAppId(u32),
 }
 
 impl LaunchCommandBuilderContext {
-    pub fn from_game(game_name: Option<&str>, save_path: Option<&Path>) -> Self {
-        let mut presets = Vec::new();
+    pub fn from_game(
+        game_name: Option<&str>,
+        save_path: Option<&Path>,
+        existing_launch_command: Option<&LaunchCommand>,
+    ) -> Self {
+        let mut context = Self {
+            game_name: game_name.map(str::to_string),
+            save_path: save_path.map(Path::to_path_buf),
+            presets: Vec::new(),
+        };
+
+        if let Some(command) = existing_launch_command {
+            context.add_presets_from_launch_command(command);
+        }
 
         if let Some(path) = save_path {
             if let Some((app_id, prefix)) = infer_steam_prefix(path) {
-                presets.push(LaunchCommandBuilderPreset {
+                context.push_preset(LaunchCommandBuilderPreset {
                     launcher: LauncherType::Steam,
                     reason: format!("save path is inside Steam compatdata app ID {}", app_id),
                     data: BuilderPresetData::SteamAppId(app_id),
                 });
-                presets.push(LaunchCommandBuilderPreset {
+                context.push_preset(LaunchCommandBuilderPreset {
                     launcher: LauncherType::UmuRun,
                     reason: "save path is inside a Proton prefix".to_string(),
                     data: BuilderPresetData::WinePrefix(prefix),
                 });
             } else if let Some(prefix) = infer_wine_prefix(path) {
-                presets.push(LaunchCommandBuilderPreset {
+                context.push_preset(LaunchCommandBuilderPreset {
                     launcher: LauncherType::UmuRun,
                     reason: "save path is inside a Wine prefix".to_string(),
                     data: BuilderPresetData::WinePrefix(prefix),
                 });
+            } else if is_eden_save_path(path) {
+                context.push_preset(LaunchCommandBuilderPreset {
+                    launcher: LauncherType::Eden,
+                    reason: "save path matches the Eden NAND save layout".to_string(),
+                    data: BuilderPresetData::None,
+                });
             }
         }
 
-        Self {
-            game_name: game_name.map(str::to_string),
-            save_path: save_path.map(Path::to_path_buf),
-            presets,
+        context
+    }
+
+    fn push_preset(&mut self, preset: LaunchCommandBuilderPreset) {
+        if self
+            .presets
+            .iter()
+            .all(|existing| existing.launcher != preset.launcher)
+        {
+            self.presets.push(preset);
         }
     }
 
@@ -106,6 +133,45 @@ impl LaunchCommandBuilderContext {
         self.presets
             .iter()
             .find(|preset| preset.launcher == launcher)
+    }
+
+    fn add_presets_from_launch_command(&mut self, command: &LaunchCommand) {
+        match &command.kind {
+            LaunchCommandKind::Steam(steam) => {
+                self.push_preset(LaunchCommandBuilderPreset {
+                    launcher: LauncherType::Steam,
+                    reason: format!(
+                        "current launch command already uses Steam app ID {}",
+                        steam.app_id
+                    ),
+                    data: BuilderPresetData::SteamAppId(steam.app_id),
+                });
+            }
+            LaunchCommandKind::Wine(wine) => {
+                self.push_preset(LaunchCommandBuilderPreset {
+                    launcher: LauncherType::UmuRun,
+                    reason: "current launch command already uses Wine/umu-run".to_string(),
+                    data: wine
+                        .prefix
+                        .clone()
+                        .map(BuilderPresetData::WinePrefix)
+                        .unwrap_or(BuilderPresetData::None),
+                });
+            }
+            LaunchCommandKind::Emulator(emulator) => {
+                if let Some(launcher) = launcher_type_for_emulator(emulator.platform) {
+                    self.push_preset(LaunchCommandBuilderPreset {
+                        launcher,
+                        reason: format!(
+                            "current launch command already uses {}",
+                            launcher_recommendation_label(launcher)
+                        ),
+                        data: BuilderPresetData::None,
+                    });
+                }
+            }
+            LaunchCommandKind::Manual { .. } => {}
+        }
     }
 }
 
@@ -167,6 +233,7 @@ fn build_launcher_items(context: Option<&LaunchCommandBuilderContext>) -> Vec<La
     let recommended_launcher = context.and_then(LaunchCommandBuilderContext::recommended_launcher);
     let wine_preset = context.and_then(|context| context.preset_for(LauncherType::UmuRun));
     let steam_preset = context.and_then(|context| context.preset_for(LauncherType::Steam));
+    let eden_preset = context.and_then(|context| context.preset_for(LauncherType::Eden));
 
     let recommended_wine_prefix = wine_preset.and_then(|preset| match &preset.data {
         BuilderPresetData::WinePrefix(path) => Some(path.display().to_string()),
@@ -277,8 +344,13 @@ fn build_launcher_items(context: Option<&LaunchCommandBuilderContext>) -> Vec<La
         LauncherItem {
             launcher: LauncherType::Eden,
             display: format!(
-                "{} Eden (Switch Emulator)",
-                format_icon_colored(NerdFont::Gamepad, colors::GREEN)
+                "{} Eden (Switch Emulator){}",
+                format_icon_colored(NerdFont::Gamepad, colors::GREEN),
+                if recommended_launcher == Some(LauncherType::Eden) {
+                    " [recommended]"
+                } else {
+                    ""
+                }
             ),
             preview: PreviewBuilder::new()
                 .header(NerdFont::Gamepad, "Eden")
@@ -296,6 +368,13 @@ fn build_launcher_items(context: Option<&LaunchCommandBuilderContext>) -> Vec<La
                 .bullet(".nsp - Nintendo Submission Package")
                 .bullet(".xci - NX Card Image")
                 .bullet(".nca - Nintendo Content Archive")
+                .blank()
+                .field(
+                    "Reason",
+                    eden_preset
+                        .map(|preset| preset.reason.as_str())
+                        .unwrap_or("<none>"),
+                )
                 .build(),
         },
         LauncherItem {
@@ -551,6 +630,112 @@ fn infer_steam_prefix(path: &Path) -> Option<(u32, PathBuf)> {
     }
 
     None
+}
+
+fn is_eden_save_path(path: &Path) -> bool {
+    path.ancestors().any(|ancestor| {
+        ancestor
+            .strip_prefix(Path::new("/"))
+            .ok()
+            .map(is_eden_save_suffix)
+            .unwrap_or_else(|| is_eden_save_suffix(ancestor))
+    })
+}
+
+fn is_eden_save_suffix(path: &Path) -> bool {
+    let components: Vec<_> = path
+        .components()
+        .map(|component| component.as_os_str().to_string_lossy().into_owned())
+        .collect();
+
+    components.len() >= 7
+        && components[components.len() - 7..]
+            == [
+                ".local".to_string(),
+                "share".to_string(),
+                "eden".to_string(),
+                "nand".to_string(),
+                "user".to_string(),
+                "save".to_string(),
+                "0000000000000000".to_string(),
+            ]
+}
+
+fn launcher_type_for_emulator(platform: EmulatorPlatform) -> Option<LauncherType> {
+    match platform {
+        EmulatorPlatform::Dolphin => Some(LauncherType::DolphinFlatpak),
+        EmulatorPlatform::Eden => Some(LauncherType::Eden),
+        EmulatorPlatform::Azahar => Some(LauncherType::AzaharFlatpak),
+        EmulatorPlatform::Mgba => Some(LauncherType::MgbaQt),
+        EmulatorPlatform::Pcsx2 => Some(LauncherType::Pcsx2Flatpak),
+        EmulatorPlatform::DuckStation => Some(LauncherType::DuckStation),
+    }
+}
+
+fn launcher_recommendation_label(launcher: LauncherType) -> &'static str {
+    match launcher {
+        LauncherType::Manual => "manual entry",
+        LauncherType::UmuRun => "Wine / umu-run",
+        LauncherType::Steam => "Steam",
+        LauncherType::Eden => "Eden",
+        LauncherType::DolphinFlatpak => "Dolphin",
+        LauncherType::Pcsx2Flatpak => "PCSX2",
+        LauncherType::AzaharFlatpak => "Azahar",
+        LauncherType::MgbaQt => "mGBA-Qt",
+        LauncherType::DuckStation => "DuckStation",
+        LauncherType::Back => "back",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::game::launch_command::{
+        EmulatorLaunchCommand, EmulatorLauncher, EmulatorOptions, SteamLaunchCommand,
+    };
+
+    #[test]
+    fn recommends_eden_from_existing_launch_command() {
+        let command = LaunchCommand {
+            wrappers: Default::default(),
+            kind: LaunchCommandKind::Emulator(EmulatorLaunchCommand {
+                platform: EmulatorPlatform::Eden,
+                launcher: EmulatorLauncher::AppImage {
+                    path: PathBuf::from("~/AppImages/eden.AppImage"),
+                },
+                game: PathBuf::from("/games/Test.xci"),
+                options: EmulatorOptions::default(),
+            }),
+        };
+
+        let context = LaunchCommandBuilderContext::from_game(None, None, Some(&command));
+
+        assert_eq!(context.recommended_launcher(), Some(LauncherType::Eden));
+    }
+
+    #[test]
+    fn recommends_eden_from_save_path_layout() {
+        let save_path =
+            Path::new("/home/test/.local/share/eden/nand/user/save/0000000000000000/abcdef");
+
+        let context = LaunchCommandBuilderContext::from_game(None, Some(save_path), None);
+
+        assert_eq!(context.recommended_launcher(), Some(LauncherType::Eden));
+    }
+
+    #[test]
+    fn existing_launch_command_takes_priority_over_save_path_inference() {
+        let command = LaunchCommand {
+            wrappers: Default::default(),
+            kind: LaunchCommandKind::Steam(SteamLaunchCommand { app_id: 12345 }),
+        };
+        let save_path =
+            Path::new("/home/test/.local/share/eden/nand/user/save/0000000000000000/abcdef");
+
+        let context = LaunchCommandBuilderContext::from_game(None, Some(save_path), Some(&command));
+
+        assert_eq!(context.recommended_launcher(), Some(LauncherType::Steam));
+    }
 }
 
 /// Prompt user to manually enter a launch command

@@ -318,6 +318,11 @@ fn edit_game_launch_command(state: &mut EditState) -> Result<bool> {
         state
             .installation()
             .map(|install| install.save_path.as_path()),
+        state.game().launch_command.as_ref().or_else(|| {
+            state
+                .installation()
+                .and_then(|install| install.launch_command.as_ref())
+        }),
     );
 
     match select_launch_command_input_method(current, other)? {
@@ -402,6 +407,10 @@ fn edit_installation_launch_command(state: &mut EditState) -> Result<bool> {
         state
             .installation()
             .map(|install| install.save_path.as_path()),
+        state
+            .installation()
+            .and_then(|install| install.launch_command.as_ref())
+            .or_else(|| state.game().launch_command.as_ref()),
     );
 
     match select_launch_command_input_method(current, other)? {

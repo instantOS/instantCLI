@@ -419,6 +419,16 @@ fn handle_action(
                 let context = LaunchCommandBuilderContext::from_game(
                     Some(game_name),
                     installation.map(|install| install.save_path.as_path()),
+                    installation
+                        .and_then(|install| install.launch_command.as_ref())
+                        .or_else(|| {
+                            state
+                                .game_config
+                                .games
+                                .iter()
+                                .find(|game| game.name.0 == game_name)
+                                .and_then(|game| game.launch_command.as_ref())
+                        }),
                 );
 
                 match crate::game::platforms::build_launch_command_with_context(Some(&context))? {
