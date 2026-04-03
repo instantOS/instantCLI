@@ -89,6 +89,10 @@ pub(super) fn run_fzf_with_input(mut cmd: Command, input: &[u8]) -> Result<Outpu
 }
 
 pub(super) fn build_padded_item(display_line: &str) -> String {
-    let (top_padding, bottom_with_shadow) = extract_icon_padding(display_line);
-    format!("{top_padding}\n  {display_line}\n{bottom_with_shadow}")
+    build_padded_item_from_lines(display_line, &format!("  {display_line}"))
+}
+
+pub(super) fn build_padded_item_from_lines(icon_source: &str, middle_line: &str) -> String {
+    let (top_padding, bottom_with_shadow) = extract_icon_padding(icon_source);
+    format!("{top_padding}\n{middle_line}\n{bottom_with_shadow}")
 }

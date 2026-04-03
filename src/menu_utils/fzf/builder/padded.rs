@@ -5,7 +5,7 @@ use std::process::Command;
 use crate::common::shell::shell_quote;
 
 use super::FzfBuilder;
-use super::shared::{FzfCommandOptions, build_padded_item, run_fzf_with_input};
+use super::shared::{FzfCommandOptions, build_padded_item_from_lines, run_fzf_with_input};
 use crate::menu_utils::fzf::types::{FzfPreview, FzfResult, FzfSelectable, InitialCursor};
 use crate::menu_utils::fzf::wrapper::check_fzf_exit;
 
@@ -87,7 +87,7 @@ impl FzfBuilder {
                 format!("  {display}{EXTRA_WIDE_PADDING}\x1f{keywords}")
             };
 
-            let padded_item = build_padded_item(&middle_line);
+            let padded_item = build_padded_item_from_lines(&display, &middle_line);
             input_lines.push(padded_item);
         }
 
