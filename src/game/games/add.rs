@@ -27,6 +27,10 @@ pub struct AddGameOptions {
 pub(super) enum EmulatorPrefillResult {
     Continue(AddGameOptions),
     OpenGameMenu(String),
+    SetupTrackedGame {
+        game_name: String,
+        discovered_save_path: Option<String>,
+    },
     OpenPrefilledAddEditor(AddGameOptions),
     Cancelled,
 }
@@ -75,7 +79,7 @@ fn manual_menu_item() -> StreamingMenuItem<MenuSelectionPayload> {
 
 pub(super) fn maybe_prefill_from_emulators(
     options: AddGameOptions,
-    _context: &GameCreationContext,
+    context: &GameCreationContext,
 ) -> Result<EmulatorPrefillResult> {
     let mut discover_command = StreamingCommand::new(resolve_current_binary())
         .arg("game")
@@ -99,28 +103,44 @@ pub(super) fn maybe_prefill_from_emulators(
         FzfResult::Selected(row) => match parse_discovery_selection(row)? {
             SelectedDiscovery::ManualEntry => Ok(EmulatorPrefillResult::Continue(options)),
             SelectedDiscovery::DiscoveredGame(payload) => {
-                if payload.existing {
-                    let tracked_name = payload
-                        .tracked_name
-                        .or(payload.display_name)
-                        .unwrap_or_else(|| "Unknown Game".to_string());
-                    Ok(EmulatorPrefillResult::OpenGameMenu(tracked_name))
-                } else {
-                    Ok(EmulatorPrefillResult::OpenPrefilledAddEditor(
-                        AddGameOptions {
-                            name: payload.display_name,
-                            description: None,
-                            launch_command: None,
-                            save_path: payload.save_path,
-                            create_save_path: false,
-                            no_cache: options.no_cache,
-                        },
-                    ))
-                }
+                resolve_discovered_selection(payload, context, options.no_cache)
             }
         },
         FzfResult::Cancelled => Ok(EmulatorPrefillResult::Cancelled),
         _ => Ok(EmulatorPrefillResult::Continue(options)),
+    }
+}
+
+fn resolve_discovered_selection(
+    payload: MenuSelectionPayload,
+    context: &GameCreationContext,
+    no_cache: bool,
+) -> Result<EmulatorPrefillResult> {
+    if payload.existing {
+        let tracked_name = payload
+            .tracked_name
+            .or(payload.display_name)
+            .unwrap_or_else(|| "Unknown Game".to_string());
+
+        if context.installation_exists(&tracked_name) {
+            Ok(EmulatorPrefillResult::OpenGameMenu(tracked_name))
+        } else {
+            Ok(EmulatorPrefillResult::SetupTrackedGame {
+                game_name: tracked_name,
+                discovered_save_path: payload.save_path,
+            })
+        }
+    } else {
+        Ok(EmulatorPrefillResult::OpenPrefilledAddEditor(
+            AddGameOptions {
+                name: payload.display_name,
+                description: None,
+                launch_command: None,
+                save_path: payload.save_path,
+                create_save_path: false,
+                no_cache,
+            },
+        ))
     }
 }
 
@@ -386,6 +406,9 @@ fn parse_discovery_selection(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::TildePath;
+    use crate::game::config::{Game, GameInstallation, InstallationsConfig, InstantGameConfig};
+    use std::path::PathBuf;
 
     #[test]
     fn parse_manual_selection() {
@@ -427,5 +450,66 @@ mod tests {
             }
             SelectedDiscovery::ManualEntry => panic!("expected discovered selection"),
         }
+    }
+
+    fn make_context(with_installation: bool) -> GameCreationContext {
+        let mut installations = Vec::new();
+        if with_installation {
+            installations.push(GameInstallation::with_kind(
+                "Sable",
+                TildePath::new(PathBuf::from("/tmp/save")),
+                crate::game::config::PathContentKind::Directory,
+            ));
+        }
+
+        GameCreationContext {
+            config: InstantGameConfig {
+                repo: TildePath::new(PathBuf::from("/tmp/repo")),
+                repo_password: "instantgamepassword".to_string(),
+                games: vec![Game::new("Sable")],
+                retention_policy: Default::default(),
+            },
+            installations: InstallationsConfig { installations },
+        }
+    }
+
+    #[test]
+    fn existing_discovered_game_opens_menu_when_installation_exists() {
+        let result = resolve_discovered_selection(
+            MenuSelectionPayload {
+                existing: true,
+                display_name: Some("Sable".to_string()),
+                tracked_name: Some("Sable".to_string()),
+                save_path: Some("/games/Sable".to_string()),
+            },
+            &make_context(true),
+            false,
+        )
+        .unwrap();
+
+        assert!(matches!(result, EmulatorPrefillResult::OpenGameMenu(name) if name == "Sable"));
+    }
+
+    #[test]
+    fn existing_discovered_game_without_installation_triggers_setup() {
+        let result = resolve_discovered_selection(
+            MenuSelectionPayload {
+                existing: true,
+                display_name: Some("Sable".to_string()),
+                tracked_name: Some("Sable".to_string()),
+                save_path: Some("/games/Sable".to_string()),
+            },
+            &make_context(false),
+            false,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            result,
+            EmulatorPrefillResult::SetupTrackedGame {
+                game_name,
+                discovered_save_path
+            } if game_name == "Sable" && discovered_save_path.as_deref() == Some("/games/Sable")
+        ));
     }
 }

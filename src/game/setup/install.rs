@@ -36,6 +36,22 @@ pub(super) fn setup_single_game(
     installations: &mut InstallationsConfig,
     snapshot_context: Option<&SnapshotOverview>,
 ) -> Result<SetupStepOutcome> {
+    setup_single_game_with_discovered_path(
+        game_name,
+        game_config,
+        installations,
+        snapshot_context,
+        None,
+    )
+}
+
+pub(super) fn setup_single_game_with_discovered_path(
+    game_name: &str,
+    game_config: &InstantGameConfig,
+    installations: &mut InstallationsConfig,
+    snapshot_context: Option<&SnapshotOverview>,
+    discovered_save_path: Option<&str>,
+) -> Result<SetupStepOutcome> {
     emit(
         Level::Info,
         "game.setup.start",
@@ -47,9 +63,11 @@ pub(super) fn setup_single_game(
     );
 
     let snapshot_selection = gather_snapshot_selection(game_name, game_config, snapshot_context)?;
-    snapshot_selection.announce(game_name);
+    snapshot_selection.announce(game_name, discovered_save_path);
 
-    let outcome = match snapshot_selection.select_path(game_name)? {
+    let selected_path = snapshot_selection.select_path(game_name, discovered_save_path)?;
+
+    let outcome = match selected_path {
         Some(selected_path) => finalize_game_setup(
             game_name,
             selected_path,
@@ -82,7 +100,7 @@ struct SnapshotSelection {
 }
 
 impl SnapshotSelection {
-    fn announce(&self, game_name: &str) {
+    fn announce(&self, game_name: &str, discovered_save_path: Option<&str>) {
         if self.snapshot_count == 0 {
             emit(
                 Level::Warn,
@@ -93,15 +111,7 @@ impl SnapshotSelection {
                 ),
                 None,
             );
-            emit(
-                Level::Info,
-                "game.setup.hint.add",
-                &format!(
-                    "{} You'll be prompted to choose a save path manually.",
-                    char::from(NerdFont::Info)
-                ),
-                None,
-            );
+            emit_discovered_or_manual_hint(discovered_save_path, "game.setup.hint.add");
         } else if self.unique_paths.is_empty() {
             emit(
                 Level::Warn,
@@ -112,15 +122,7 @@ impl SnapshotSelection {
                 ),
                 None,
             );
-            emit(
-                Level::Info,
-                "game.setup.hint.manual",
-                &format!(
-                    "{} You'll be prompted to choose a save path manually.",
-                    char::from(NerdFont::Info)
-                ),
-                None,
-            );
+            emit_discovered_or_manual_hint(discovered_save_path, "game.setup.hint.manual");
         } else {
             println!(
                 "\nFound {} unique save path(s) from different devices/snapshots:",
@@ -129,8 +131,18 @@ impl SnapshotSelection {
         }
     }
 
-    fn select_path(&self, game_name: &str) -> Result<Option<SelectedSavePath>> {
+    fn select_path(
+        &self,
+        game_name: &str,
+        discovered_save_path: Option<&str>,
+    ) -> Result<Option<SelectedSavePath>> {
         if self.unique_paths.is_empty() {
+            if let Some(discovered_save_path) = discovered_save_path {
+                return Ok(Some(SelectedSavePath {
+                    display_path: discovered_save_path.to_string(),
+                    snapshot_path: None,
+                }));
+            }
             prompt_manual_save_path(game_name, None, false)
         } else {
             choose_installation_path(game_name, &self.unique_paths, None)
@@ -150,6 +162,30 @@ impl SnapshotSelection {
             }
         }
         None
+    }
+}
+
+fn emit_discovered_or_manual_hint(discovered_save_path: Option<&str>, manual_code: &str) {
+    if let Some(path) = discovered_save_path {
+        emit(
+            Level::Info,
+            "game.setup.hint.discovered_path",
+            &format!(
+                "{} Using discovered save path: {path}",
+                char::from(NerdFont::Info)
+            ),
+            None,
+        );
+    } else {
+        emit(
+            Level::Info,
+            manual_code,
+            &format!(
+                "{} You'll be prompted to choose a save path manually.",
+                char::from(NerdFont::Info)
+            ),
+            None,
+        );
     }
 }
 

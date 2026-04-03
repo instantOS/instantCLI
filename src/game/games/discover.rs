@@ -404,8 +404,8 @@ where
         prefix,
         |game| {
             let save_path = game.save_path.clone();
-            let existing_name =
-                context.and_then(|ctx| find_existing_game_for_save(save_path.as_path(), ctx));
+            let existing_name = context
+                .and_then(|ctx| find_existing_game(&game.display_name, save_path.as_path(), ctx));
 
             let mut game = game;
             if let Some(existing_name) = existing_name {
@@ -437,8 +437,8 @@ fn into_record_with_preview(
     mut game: Box<dyn DiscoveredGame>,
     context: Option<&GameCreationContext>,
 ) -> DiscoveredGameWithPreview {
-    if let Some(existing_name) =
-        context.and_then(|ctx| find_existing_game_for_save(game.save_path().as_path(), ctx))
+    if let Some(existing_name) = context
+        .and_then(|ctx| find_existing_game(game.display_name(), game.save_path().as_path(), ctx))
     {
         game.set_existing(existing_name);
     }
@@ -467,9 +467,13 @@ fn cached_into_runtime_game(
     cached.record.existing = false;
     cached.record.tracked_name = None;
 
-    if let Some(existing_name) = context
-        .and_then(|ctx| find_existing_game_for_save(Path::new(&cached.record.save_path), ctx))
-    {
+    if let Some(existing_name) = context.and_then(|ctx| {
+        find_existing_game(
+            &cached.record.name,
+            Path::new(&cached.record.save_path),
+            ctx,
+        )
+    }) {
         cached.record.existing = true;
         cached.record.tracked_name = Some(existing_name);
     }
@@ -623,6 +627,21 @@ fn find_prefixes_under_root(root: &Path) -> Vec<PathBuf> {
     prefixes
 }
 
+fn find_existing_game(
+    discovered_name: &str,
+    save_path: &std::path::Path,
+    context: &GameCreationContext,
+) -> Option<String> {
+    find_existing_game_for_save(save_path, context).or_else(|| {
+        context
+            .config
+            .games
+            .iter()
+            .find(|game| game.name.0 == discovered_name)
+            .map(|game| game.name.0.clone())
+    })
+}
+
 fn find_existing_game_for_save(
     save_path: &std::path::Path,
     context: &GameCreationContext,
@@ -669,7 +688,10 @@ struct DiscoveredGameWithPreview {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::TildePath;
+    use crate::game::config::{Game, GameInstallation, InstallationsConfig, InstantGameConfig};
     use crate::menu_utils::StreamingMenuItem;
+    use std::path::PathBuf;
 
     #[test]
     fn menu_fields_are_sanitized() {
@@ -766,5 +788,35 @@ mod tests {
             &[DiscoverySource::Steam],
             None
         ));
+    }
+
+    #[test]
+    fn existing_game_detection_falls_back_to_name_match() {
+        let context = GameCreationContext {
+            config: InstantGameConfig {
+                repo: TildePath::new(PathBuf::from("/tmp/repo")),
+                repo_password: "instantgamepassword".to_string(),
+                games: vec![Game::new("STALKER Shadow of Chornobyl  (7.41 GB)")],
+                retention_policy: Default::default(),
+            },
+            installations: InstallationsConfig {
+                installations: vec![GameInstallation::with_kind(
+                    "Different Game",
+                    TildePath::new(PathBuf::from("/tmp/other-save")),
+                    crate::game::config::PathContentKind::Directory,
+                )],
+            },
+        };
+
+        let existing = find_existing_game(
+            "STALKER Shadow of Chornobyl  (7.41 GB)",
+            Path::new("/tmp/discovered-save"),
+            &context,
+        );
+
+        assert_eq!(
+            existing.as_deref(),
+            Some("STALKER Shadow of Chornobyl  (7.41 GB)")
+        );
     }
 }

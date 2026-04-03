@@ -66,6 +66,49 @@ pub fn setup_uninstalled_games() -> Result<()> {
     Ok(())
 }
 
+pub fn setup_tracked_game(game_name: &str, discovered_save_path: Option<&str>) -> Result<()> {
+    let game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
+    let mut installations =
+        InstallationsConfig::load().context("Failed to load installations configuration")?;
+
+    if !validate_game_manager_initialized()? {
+        return Ok(());
+    }
+
+    if !game_config
+        .games
+        .iter()
+        .any(|game| game.name.0 == game_name)
+    {
+        return Err(anyhow!("Game '{}' not found in games.toml", game_name));
+    }
+
+    if installations
+        .installations
+        .iter()
+        .any(|inst| inst.game_name.0 == game_name)
+    {
+        return crate::game::menu::game_menu(Some(game_name.to_string()));
+    }
+
+    let snapshot_overview = restic::collect_snapshot_overview(&game_config)?;
+    let snapshot = snapshot_overview.get(game_name);
+
+    install::setup_single_game_with_discovered_path(
+        game_name,
+        &game_config,
+        &mut installations,
+        snapshot,
+        if snapshot.is_none() {
+            discovered_save_path
+        } else {
+            None
+        },
+    )?;
+
+    Ok(())
+}
+
 #[derive(Clone)]
 struct SetupCandidate {
     name: String,

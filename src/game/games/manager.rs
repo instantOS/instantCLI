@@ -22,6 +22,13 @@ impl GameCreationContext {
         self.config.games.iter().any(|g| g.name.0 == name)
     }
 
+    pub(super) fn installation_exists(&self, name: &str) -> bool {
+        self.installations
+            .installations
+            .iter()
+            .any(|inst| inst.game_name.0 == name)
+    }
+
     pub(super) fn save(&self) -> Result<()> {
         self.config.save()?;
         self.installations.save()?;
@@ -46,6 +53,15 @@ impl GameManager {
                 match super::add::maybe_prefill_from_emulators(options.clone(), &context)? {
                     super::add::EmulatorPrefillResult::OpenGameMenu(game_name) => {
                         return crate::game::menu::game_menu(Some(game_name));
+                    }
+                    super::add::EmulatorPrefillResult::SetupTrackedGame {
+                        game_name,
+                        discovered_save_path,
+                    } => {
+                        return crate::game::setup::setup_tracked_game(
+                            &game_name,
+                            discovered_save_path.as_deref(),
+                        );
                     }
                     super::add::EmulatorPrefillResult::OpenPrefilledAddEditor(new_options) => {
                         return crate::game::menu::open_prefilled_add_editor(new_options);
