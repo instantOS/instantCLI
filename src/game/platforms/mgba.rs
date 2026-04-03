@@ -6,11 +6,15 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
+use crate::game::launch_command::{
+    EmulatorLaunchCommand, EmulatorLauncher, EmulatorOptions, EmulatorPlatform, LaunchCommand,
+    LaunchCommandKind,
+};
 use crate::menu_utils::FzfWrapper;
 use crate::ui::nerd_font::NerdFont;
 
 use super::prompts::{
-    FileSelectionPrompt, ask_fullscreen, confirm_command, select_file_with_validation,
+    FileSelectionPrompt, ask_fullscreen, confirm_value, select_file_with_validation,
 };
 
 use super::validation::{MGBA_EXTENSIONS, format_valid_extensions, validate_game_file};
@@ -22,7 +26,7 @@ pub struct MgbaBuilder;
 
 impl MgbaBuilder {
     /// Build an mGBA-Qt launch command interactively
-    pub fn build_command() -> Result<Option<String>> {
+    pub fn build_command() -> Result<Option<LaunchCommand>> {
         // Step 1: Check if mGBA-Qt is installed
         if !Self::check_mgba_installed() {
             FzfWrapper::message(&format!(
@@ -47,14 +51,10 @@ impl MgbaBuilder {
         let fullscreen = ask_fullscreen()?;
 
         // Build the command
-        let command = Self::format_command(&game_file, fullscreen);
+        let command = Self::build_launch_command(&game_file, fullscreen);
 
         // Show preview and confirm
-        if confirm_command(&command)? {
-            Ok(Some(command))
-        } else {
-            Ok(None)
-        }
+        confirm_value(command)
     }
 
     fn check_mgba_installed() -> bool {
@@ -78,17 +78,21 @@ impl MgbaBuilder {
         )
     }
 
-    fn format_command(game_file: &Path, fullscreen: bool) -> String {
-        let game_str = game_file.to_string_lossy();
-
-        let mut parts = vec![MGBA_COMMAND.to_string()];
-
-        if fullscreen {
-            parts.push("-f".to_string());
+    fn build_launch_command(game_file: &Path, fullscreen: bool) -> LaunchCommand {
+        let _ = MGBA_COMMAND;
+        LaunchCommand {
+            wrappers: Default::default(),
+            kind: LaunchCommandKind::Emulator(EmulatorLaunchCommand {
+                platform: EmulatorPlatform::Mgba,
+                launcher: EmulatorLauncher::Native {
+                    command: MGBA_COMMAND,
+                },
+                game: game_file.to_path_buf(),
+                options: EmulatorOptions {
+                    fullscreen,
+                    batch_mode: false,
+                },
+            }),
         }
-
-        parts.push(format!("\"{}\"", game_str));
-
-        parts.join(" ")
     }
 }

@@ -50,34 +50,62 @@ pub use umu::UmuBuilder;
 pub struct LaunchCommandBuilderContext {
     pub game_name: Option<String>,
     pub save_path: Option<PathBuf>,
-    pub recommended_launcher: Option<LauncherType>,
-    pub recommended_wine_prefix: Option<PathBuf>,
-    pub recommended_steam_app_id: Option<u32>,
+    pub presets: Vec<LaunchCommandBuilderPreset>,
+}
+
+#[derive(Debug, Clone)]
+pub struct LaunchCommandBuilderPreset {
+    pub launcher: LauncherType,
+    pub reason: String,
+    pub data: BuilderPresetData,
+}
+
+#[derive(Debug, Clone)]
+pub enum BuilderPresetData {
+    WinePrefix(PathBuf),
+    SteamAppId(u32),
 }
 
 impl LaunchCommandBuilderContext {
     pub fn from_game(game_name: Option<&str>, save_path: Option<&Path>) -> Self {
-        let mut context = Self {
-            game_name: game_name.map(str::to_string),
-            save_path: save_path.map(Path::to_path_buf),
-            ..Default::default()
-        };
+        let mut presets = Vec::new();
 
         if let Some(path) = save_path {
             if let Some((app_id, prefix)) = infer_steam_prefix(path) {
-                context.recommended_launcher = Some(LauncherType::Steam);
-                context.recommended_steam_app_id = Some(app_id);
-                context.recommended_wine_prefix = Some(prefix);
-                return context;
-            }
-
-            if let Some(prefix) = infer_wine_prefix(path) {
-                context.recommended_launcher = Some(LauncherType::UmuRun);
-                context.recommended_wine_prefix = Some(prefix);
+                presets.push(LaunchCommandBuilderPreset {
+                    launcher: LauncherType::Steam,
+                    reason: format!("save path is inside Steam compatdata app ID {}", app_id),
+                    data: BuilderPresetData::SteamAppId(app_id),
+                });
+                presets.push(LaunchCommandBuilderPreset {
+                    launcher: LauncherType::UmuRun,
+                    reason: "save path is inside a Proton prefix".to_string(),
+                    data: BuilderPresetData::WinePrefix(prefix),
+                });
+            } else if let Some(prefix) = infer_wine_prefix(path) {
+                presets.push(LaunchCommandBuilderPreset {
+                    launcher: LauncherType::UmuRun,
+                    reason: "save path is inside a Wine prefix".to_string(),
+                    data: BuilderPresetData::WinePrefix(prefix),
+                });
             }
         }
 
-        context
+        Self {
+            game_name: game_name.map(str::to_string),
+            save_path: save_path.map(Path::to_path_buf),
+            presets,
+        }
+    }
+
+    fn recommended_launcher(&self) -> Option<LauncherType> {
+        self.presets.first().map(|preset| preset.launcher)
+    }
+
+    fn preset_for(&self, launcher: LauncherType) -> Option<&LaunchCommandBuilderPreset> {
+        self.presets
+            .iter()
+            .find(|preset| preset.launcher == launcher)
     }
 }
 
@@ -136,11 +164,18 @@ impl FzfSelectable for LauncherItem {
 
 /// Build launcher selection menu items
 fn build_launcher_items(context: Option<&LaunchCommandBuilderContext>) -> Vec<LauncherItem> {
-    let recommended_launcher = context.and_then(|context| context.recommended_launcher);
-    let recommended_wine_prefix = context
-        .and_then(|context| context.recommended_wine_prefix.as_ref())
-        .map(|path| path.display().to_string());
-    let recommended_steam_app_id = context.and_then(|context| context.recommended_steam_app_id);
+    let recommended_launcher = context.and_then(LaunchCommandBuilderContext::recommended_launcher);
+    let wine_preset = context.and_then(|context| context.preset_for(LauncherType::UmuRun));
+    let steam_preset = context.and_then(|context| context.preset_for(LauncherType::Steam));
+
+    let recommended_wine_prefix = wine_preset.and_then(|preset| match &preset.data {
+        BuilderPresetData::WinePrefix(path) => Some(path.display().to_string()),
+        _ => None,
+    });
+    let recommended_steam_app_id = steam_preset.and_then(|preset| match preset.data {
+        BuilderPresetData::SteamAppId(app_id) => Some(app_id),
+        _ => None,
+    });
 
     vec![
         LauncherItem {
@@ -197,6 +232,12 @@ fn build_launcher_items(context: Option<&LaunchCommandBuilderContext>) -> Vec<La
                         .as_deref()
                         .unwrap_or("<none inferred>"),
                 )
+                .field(
+                    "Reason",
+                    wine_preset
+                        .map(|preset| preset.reason.as_str())
+                        .unwrap_or("<none>"),
+                )
                 .blank()
                 .subtext("Requires: umu-launcher for the umu-run mode")
                 .build(),
@@ -224,6 +265,12 @@ fn build_launcher_items(context: Option<&LaunchCommandBuilderContext>) -> Vec<La
                     &recommended_steam_app_id
                         .map(|app_id| app_id.to_string())
                         .unwrap_or_else(|| "<none inferred>".to_string()),
+                )
+                .field(
+                    "Reason",
+                    steam_preset
+                        .map(|preset| preset.reason.as_str())
+                        .unwrap_or("<none>"),
                 )
                 .build(),
         },
@@ -402,7 +449,7 @@ pub fn select_launcher_type(
     context: Option<&LaunchCommandBuilderContext>,
 ) -> Result<Option<LauncherType>> {
     let items = build_launcher_items(context);
-    let recommended = context.and_then(|context| context.recommended_launcher);
+    let recommended = context.and_then(LaunchCommandBuilderContext::recommended_launcher);
     let initial_index =
         recommended.and_then(|launcher| items.iter().position(|item| item.launcher == launcher));
 
@@ -447,23 +494,26 @@ pub fn build_launch_command_with_context(
 
     let command = match launcher_type {
         LauncherType::Manual => prompt_manual_command(),
-        LauncherType::UmuRun => UmuBuilder::build_command(
-            context.and_then(|ctx| ctx.recommended_wine_prefix.as_deref()),
-        ),
-        LauncherType::Steam => {
-            SteamBuilder::build_command(context.and_then(|ctx| ctx.recommended_steam_app_id))
-        }
+        LauncherType::UmuRun => UmuBuilder::build_command(context.and_then(|ctx| {
+            ctx.preset_for(LauncherType::UmuRun)
+                .and_then(|preset| match &preset.data {
+                    BuilderPresetData::WinePrefix(path) => Some(path.as_path()),
+                    _ => None,
+                })
+        })),
+        LauncherType::Steam => SteamBuilder::build_command(context.and_then(|ctx| {
+            ctx.preset_for(LauncherType::Steam)
+                .and_then(|preset| match preset.data {
+                    BuilderPresetData::SteamAppId(app_id) => Some(app_id),
+                    _ => None,
+                })
+        })),
         LauncherType::Eden => EdenBuilder::build_command(),
-        LauncherType::DolphinFlatpak => DolphinBuilder::build_command()
-            .map(|command| command.map(LaunchCommand::from_shell_or_manual)),
-        LauncherType::Pcsx2Flatpak => Pcsx2Builder::build_command()
-            .map(|command| command.map(LaunchCommand::from_shell_or_manual)),
-        LauncherType::AzaharFlatpak => AzaharBuilder::build_command()
-            .map(|command| command.map(LaunchCommand::from_shell_or_manual)),
-        LauncherType::MgbaQt => MgbaBuilder::build_command()
-            .map(|command| command.map(LaunchCommand::from_shell_or_manual)),
-        LauncherType::DuckStation => DuckStationBuilder::build_command()
-            .map(|command| command.map(LaunchCommand::from_shell_or_manual)),
+        LauncherType::DolphinFlatpak => DolphinBuilder::build_command(),
+        LauncherType::Pcsx2Flatpak => Pcsx2Builder::build_command(),
+        LauncherType::AzaharFlatpak => AzaharBuilder::build_command(),
+        LauncherType::MgbaQt => MgbaBuilder::build_command(),
+        LauncherType::DuckStation => DuckStationBuilder::build_command(),
         LauncherType::Back => Ok(None),
     }?;
 

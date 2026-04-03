@@ -5,12 +5,16 @@
 use anyhow::Result;
 use std::path::{Path, PathBuf};
 
+use crate::game::launch_command::{
+    EmulatorLaunchCommand, EmulatorLauncher, EmulatorOptions, EmulatorPlatform, LaunchCommand,
+    LaunchCommandKind,
+};
 use crate::menu_utils::{ConfirmResult, FzfWrapper};
 use crate::ui::nerd_font::NerdFont;
 
 use super::flatpak::is_flatpak_app_installed;
 use super::prompts::{
-    FileSelectionPrompt, ask_fullscreen, confirm_command, select_file_with_validation,
+    FileSelectionPrompt, ask_fullscreen, confirm_value, select_file_with_validation,
 };
 use super::validation::{DOLPHIN_EXTENSIONS, format_valid_extensions, validate_game_file};
 
@@ -21,7 +25,7 @@ pub struct DolphinBuilder;
 
 impl DolphinBuilder {
     /// Build a Dolphin Flatpak launch command interactively
-    pub fn build_command() -> Result<Option<String>> {
+    pub fn build_command() -> Result<Option<LaunchCommand>> {
         // Step 1: Check if Dolphin Flatpak is installed
         if !Self::check_dolphin_installed()? {
             FzfWrapper::message(&format!(
@@ -52,14 +56,10 @@ impl DolphinBuilder {
         };
 
         // Build the command
-        let command = Self::format_command(&game_file, batch_mode, fullscreen);
+        let command = Self::build_launch_command(&game_file, batch_mode, fullscreen);
 
         // Show preview and confirm
-        if confirm_command(&command)? {
-            Ok(Some(command))
-        } else {
-            Ok(None)
-        }
+        confirm_value(command)
     }
 
     fn check_dolphin_installed() -> Result<bool> {
@@ -100,24 +100,21 @@ impl DolphinBuilder {
         }
     }
 
-    fn format_command(game_file: &Path, batch_mode: bool, fullscreen: bool) -> String {
-        let game_str = game_file.to_string_lossy();
-
-        let mut parts = vec!["flatpak".to_string(), "run".to_string()];
-
-        parts.push(DOLPHIN_FLATPAK_ID.to_string());
-
-        if batch_mode {
-            parts.push("-b".to_string());
+    fn build_launch_command(game_file: &Path, batch_mode: bool, fullscreen: bool) -> LaunchCommand {
+        let _ = DOLPHIN_FLATPAK_ID;
+        LaunchCommand {
+            wrappers: Default::default(),
+            kind: LaunchCommandKind::Emulator(EmulatorLaunchCommand {
+                platform: EmulatorPlatform::Dolphin,
+                launcher: EmulatorLauncher::Flatpak {
+                    app_id: DOLPHIN_FLATPAK_ID,
+                },
+                game: game_file.to_path_buf(),
+                options: EmulatorOptions {
+                    batch_mode,
+                    fullscreen,
+                },
+            }),
         }
-
-        if fullscreen {
-            parts.push("-f".to_string());
-        }
-
-        parts.push("-e".to_string());
-        parts.push(format!("\"{}\"", game_str));
-
-        parts.join(" ")
     }
 }

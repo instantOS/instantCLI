@@ -6,7 +6,10 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
-use crate::game::launch_command::{EdenLaunchCommand, LaunchCommand, LaunchCommandKind};
+use crate::game::launch_command::{
+    EmulatorLaunchCommand, EmulatorLauncher, EmulatorOptions, EmulatorPlatform, LaunchCommand,
+    LaunchCommandKind,
+};
 use crate::game::platforms::appimage_finder::find_appimage_by_paths;
 use crate::menu_utils::{
     ConfirmResult, FilePickerScope, FzfWrapper, PathInputBuilder, PathInputSelection,
@@ -14,7 +17,7 @@ use crate::menu_utils::{
 use crate::ui::nerd_font::NerdFont;
 
 use super::prompts::{
-    FileSelectionPrompt, ask_fullscreen, confirm_command, select_file_with_validation,
+    FileSelectionPrompt, ask_fullscreen, confirm_value, select_file_with_validation,
 };
 use super::validation::{EDEN_EXTENSIONS, format_valid_extensions, validate_game_file};
 
@@ -55,11 +58,7 @@ impl EdenBuilder {
         let command = Self::build_launch_command(&eden_path, &game_file, fullscreen);
 
         // Show preview and confirm
-        if confirm_command(&command)? {
-            Ok(Some(command))
-        } else {
-            Ok(None)
-        }
+        confirm_value(command)
     }
 
     pub(crate) fn find_or_select_eden() -> Result<Option<PathBuf>> {
@@ -147,10 +146,16 @@ impl EdenBuilder {
     fn build_launch_command(eden_path: &Path, game_file: &Path, fullscreen: bool) -> LaunchCommand {
         LaunchCommand {
             wrappers: Default::default(),
-            kind: LaunchCommandKind::Eden(EdenLaunchCommand {
-                appimage: eden_path.to_path_buf(),
+            kind: LaunchCommandKind::Emulator(EmulatorLaunchCommand {
+                platform: EmulatorPlatform::Eden,
+                launcher: EmulatorLauncher::AppImage {
+                    path: eden_path.to_path_buf(),
+                },
                 game: game_file.to_path_buf(),
-                fullscreen,
+                options: EmulatorOptions {
+                    fullscreen,
+                    batch_mode: false,
+                },
             }),
         }
     }

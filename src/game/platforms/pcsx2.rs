@@ -7,13 +7,17 @@
 use anyhow::Result;
 use std::path::{Path, PathBuf};
 
+use crate::game::launch_command::{
+    EmulatorLaunchCommand, EmulatorLauncher, EmulatorOptions, EmulatorPlatform, LaunchCommand,
+    LaunchCommandKind,
+};
 use crate::menu_utils::{ConfirmResult, FzfWrapper};
 use crate::ui::nerd_font::NerdFont;
 
 use super::appimage_finder::find_appimage_by_paths;
 use super::flatpak::is_flatpak_app_installed;
 use super::prompts::{
-    FileSelectionPrompt, ask_fullscreen, confirm_command, select_file_with_validation,
+    FileSelectionPrompt, ask_fullscreen, confirm_value, select_file_with_validation,
 };
 use super::validation::{PCSX2_EXTENSIONS, format_valid_extensions, validate_game_file};
 
@@ -36,7 +40,7 @@ pub struct Pcsx2Builder;
 impl Pcsx2Builder {
     /// Build a PCSX2 launch command interactively
     /// Prefers EmuDeck AppImage if found, falls back to Flatpak
-    pub fn build_command() -> Result<Option<String>> {
+    pub fn build_command() -> Result<Option<LaunchCommand>> {
         // Step 1: Detect installation type (AppImage preferred over Flatpak)
         let install_type = Self::detect_install_type()?;
 
@@ -70,14 +74,10 @@ impl Pcsx2Builder {
 
                 // Build the command
                 let command =
-                    Self::format_command(&install_type, &game_file, batch_mode, fullscreen);
+                    Self::build_launch_command(&install_type, &game_file, batch_mode, fullscreen);
 
                 // Show preview and confirm
-                if confirm_command(&command)? {
-                    Ok(Some(command))
-                } else {
-                    Ok(None)
-                }
+                confirm_value(command)
             }
         }
     }
@@ -132,41 +132,31 @@ impl Pcsx2Builder {
         }
     }
 
-    fn format_command(
+    fn build_launch_command(
         install_type: &Pcsx2InstallType,
         game_file: &Path,
         batch_mode: bool,
         fullscreen: bool,
-    ) -> String {
-        let game_str = game_file.to_string_lossy();
-
-        let mut parts = Vec::new();
-
-        match install_type {
-            Pcsx2InstallType::AppImage(path) => {
-                // AppImage command format
-                parts.push(format!("\"{}\"", path.display()));
-            }
-            Pcsx2InstallType::Flatpak => {
-                // Flatpak command format
-                parts.push("flatpak".to_string());
-                parts.push("run".to_string());
-                parts.push(PCSX2_FLATPAK_ID.to_string());
-            }
+    ) -> LaunchCommand {
+        let _ = PCSX2_FLATPAK_ID;
+        LaunchCommand {
+            wrappers: Default::default(),
+            kind: LaunchCommandKind::Emulator(EmulatorLaunchCommand {
+                platform: EmulatorPlatform::Pcsx2,
+                launcher: match install_type {
+                    Pcsx2InstallType::AppImage(path) => {
+                        EmulatorLauncher::AppImage { path: path.clone() }
+                    }
+                    Pcsx2InstallType::Flatpak => EmulatorLauncher::Flatpak {
+                        app_id: PCSX2_FLATPAK_ID,
+                    },
+                },
+                game: game_file.to_path_buf(),
+                options: EmulatorOptions {
+                    batch_mode,
+                    fullscreen,
+                },
+            }),
         }
-
-        if batch_mode {
-            parts.push("-batch".to_string());
-        }
-
-        if fullscreen {
-            parts.push("-fullscreen".to_string());
-        }
-
-        // Use -- to signal end of options (in case filename starts with -)
-        parts.push("--".to_string());
-        parts.push(format!("\"{}\"", game_str));
-
-        parts.join(" ")
     }
 }

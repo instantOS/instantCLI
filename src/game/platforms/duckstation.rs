@@ -10,6 +10,10 @@ use std::process::Command;
 
 use anyhow::{Context, Result};
 
+use crate::game::launch_command::{
+    EmulatorLaunchCommand, EmulatorLauncher, EmulatorOptions, EmulatorPlatform, LaunchCommand,
+    LaunchCommandKind,
+};
 use crate::game::platforms::appimage_finder::find_appimage_by_paths;
 use crate::menu_utils::{
     ConfirmResult, FilePickerScope, FzfWrapper, PathInputBuilder, PathInputSelection,
@@ -17,7 +21,7 @@ use crate::menu_utils::{
 use crate::ui::nerd_font::NerdFont;
 
 use super::prompts::{
-    FileSelectionPrompt, ask_fullscreen, confirm_command, select_file_with_validation,
+    FileSelectionPrompt, ask_fullscreen, confirm_value, select_file_with_validation,
 };
 use super::validation::{DUCKSTATION_EXTENSIONS, format_valid_extensions, validate_game_file};
 
@@ -42,7 +46,7 @@ pub struct DuckStationBuilder;
 
 impl DuckStationBuilder {
     /// Build a DuckStation launch command interactively
-    pub fn build_command() -> Result<Option<String>> {
+    pub fn build_command() -> Result<Option<LaunchCommand>> {
         // Step 1: Find or download DuckStation AppImage
         let duckstation_path = match Self::find_or_download_duckstation()? {
             Some(p) => p,
@@ -62,14 +66,11 @@ impl DuckStationBuilder {
         let batch_mode = Self::ask_batch_mode()?;
 
         // Build the command
-        let command = Self::format_command(&duckstation_path, &game_file, fullscreen, batch_mode);
+        let command =
+            Self::build_launch_command(&duckstation_path, &game_file, fullscreen, batch_mode);
 
         // Show preview and confirm
-        if confirm_command(&command)? {
-            Ok(Some(command))
-        } else {
-            Ok(None)
-        }
+        confirm_value(command)
     }
 
     fn find_or_download_duckstation() -> Result<Option<PathBuf>> {
@@ -285,28 +286,25 @@ impl DuckStationBuilder {
         }
     }
 
-    fn format_command(
+    fn build_launch_command(
         duckstation_path: &Path,
         game_file: &Path,
         fullscreen: bool,
         batch_mode: bool,
-    ) -> String {
-        let duckstation_str = duckstation_path.to_string_lossy();
-        let game_str = game_file.to_string_lossy();
-
-        let mut parts = vec![format!("\"{}\"", duckstation_str)];
-
-        if batch_mode {
-            parts.push("-batch".to_string());
+    ) -> LaunchCommand {
+        LaunchCommand {
+            wrappers: Default::default(),
+            kind: LaunchCommandKind::Emulator(EmulatorLaunchCommand {
+                platform: EmulatorPlatform::DuckStation,
+                launcher: EmulatorLauncher::AppImage {
+                    path: duckstation_path.to_path_buf(),
+                },
+                game: game_file.to_path_buf(),
+                options: EmulatorOptions {
+                    fullscreen,
+                    batch_mode,
+                },
+            }),
         }
-
-        if fullscreen {
-            parts.push("-fullscreen".to_string());
-        }
-
-        parts.push("--".to_string());
-        parts.push(format!("\"{}\"", game_str));
-
-        parts.join(" ")
     }
 }

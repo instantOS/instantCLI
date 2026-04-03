@@ -100,3 +100,14 @@ pub(super) fn confirm_command(command: &impl std::fmt::Display) -> Result<bool> 
         _ => Ok(false),
     }
 }
+
+pub(super) fn confirm_value<T>(value: T) -> Result<Option<T>>
+where
+    T: std::fmt::Display,
+{
+    if confirm_command(&value)? {
+        Ok(Some(value))
+    } else {
+        Ok(None)
+    }
+}
