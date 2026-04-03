@@ -1,4 +1,5 @@
 pub mod add;
+mod add_discovery;
 pub mod discover;
 pub mod display;
 pub mod manager;

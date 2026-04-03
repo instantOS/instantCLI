@@ -1,4 +1,5 @@
 use super::add::{AddGameOptions, ResolvedGameDetails};
+use super::add_discovery::{EmulatorPrefillResult, maybe_prefill_from_emulators};
 use crate::game::config::{Game, GameInstallation, InstallationsConfig, InstantGameConfig};
 use crate::game::launch_command::LaunchCommand;
 use crate::game::utils::path::tilde_display_string;
@@ -50,11 +51,11 @@ impl GameManager {
 
         if options.name.is_none() {
             loop {
-                match super::add::maybe_prefill_from_emulators(options.clone(), &context)? {
-                    super::add::EmulatorPrefillResult::OpenGameMenu(game_name) => {
+                match maybe_prefill_from_emulators(options.clone(), &context)? {
+                    EmulatorPrefillResult::OpenGameMenu(game_name) => {
                         return crate::game::menu::game_menu(Some(game_name));
                     }
-                    super::add::EmulatorPrefillResult::SetupTrackedGame {
+                    EmulatorPrefillResult::SetupTrackedGame {
                         game_name,
                         discovered_save_path,
                     } => {
@@ -63,10 +64,10 @@ impl GameManager {
                             discovered_save_path.as_deref(),
                         );
                     }
-                    super::add::EmulatorPrefillResult::OpenPrefilledAddEditor(new_options) => {
+                    EmulatorPrefillResult::OpenPrefilledAddEditor(new_options) => {
                         return crate::game::menu::open_prefilled_add_editor(new_options);
                     }
-                    super::add::EmulatorPrefillResult::Continue(new_options) => {
+                    EmulatorPrefillResult::Continue(new_options) => {
                         let Some(details) =
                             super::add::resolve_add_game_details(new_options, &context)?
                         else {
@@ -74,7 +75,7 @@ impl GameManager {
                         };
                         return Self::finish_add_game(&mut context, details);
                     }
-                    super::add::EmulatorPrefillResult::Cancelled => {
+                    EmulatorPrefillResult::Cancelled => {
                         return Ok(());
                     }
                 }
