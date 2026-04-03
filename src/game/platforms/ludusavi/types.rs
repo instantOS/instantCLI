@@ -153,6 +153,11 @@ fn entry_size(path: &Path) -> u64 {
 }
 
 pub fn choose_primary_save(mut saves: Vec<DiscoveredWineSave>) -> Option<DiscoveredWineSave> {
+    saves.retain(DiscoveredWineSave::is_save);
+    if saves.is_empty() {
+        return None;
+    }
+
     let mut size_cache = HashMap::new();
     saves.sort_by(|left, right| {
         let left_rank = semantic_rank(left);
@@ -232,5 +237,21 @@ mod tests {
         .unwrap();
 
         assert_eq!(selected.save_path, large_dir.display().to_string());
+    }
+
+    #[test]
+    fn choose_primary_save_ignores_config_only_matches() {
+        let temp = tempfile::tempdir().unwrap();
+        let config_file = temp.path().join("ACU.ini");
+        std::fs::write(&config_file, "{}").unwrap();
+
+        let selected = choose_primary_save(vec![DiscoveredWineSave::new(
+            "Assassin's Creed Unity".to_string(),
+            config_file.display().to_string(),
+            vec!["config".to_string()],
+            false,
+        )]);
+
+        assert!(selected.is_none());
     }
 }

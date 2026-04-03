@@ -46,6 +46,7 @@ struct WinePrefixContext {
     xdg_config: String,
     win_program_data: String,
     win_dir: String,
+    root_candidates: Vec<String>,
 }
 
 impl WinePrefixContext {
@@ -115,6 +116,7 @@ impl WinePrefixContext {
             xdg_config,
             win_program_data: drive_c.join("ProgramData").to_string_lossy().to_string(),
             win_dir: drive_c.join("Windows").to_string_lossy().to_string(),
+            root_candidates: collect_root_candidates(&drive_c),
         }
     }
 
@@ -135,6 +137,7 @@ impl WinePrefixContext {
 
         expanded
             .into_iter()
+            .flat_map(|pattern| expand_root_placeholders(&pattern, &self.root_candidates))
             .flat_map(|pattern| expand_dynamic_placeholders(&pattern))
             .collect()
     }
@@ -158,6 +161,36 @@ impl WinePrefixContext {
         expanded = expanded.replace("<xdgConfig>", &self.xdg_config);
         expanded
     }
+}
+
+fn collect_root_candidates(drive_c: &Path) -> Vec<String> {
+    let candidates = [
+        drive_c
+            .join("Program Files (x86)")
+            .join("Ubisoft")
+            .join("Ubisoft Game Launcher"),
+        drive_c
+            .join("Program Files (x86)")
+            .join("Ubisoft")
+            .join("Ubisoft Connect"),
+        drive_c
+            .join("Program Files")
+            .join("Ubisoft")
+            .join("Ubisoft Game Launcher"),
+        drive_c
+            .join("Program Files")
+            .join("Ubisoft")
+            .join("Ubisoft Connect"),
+    ];
+
+    let mut roots: Vec<String> = candidates
+        .into_iter()
+        .filter(|path| path.is_dir())
+        .map(|path| path.to_string_lossy().to_string())
+        .collect();
+    roots.sort();
+    roots.dedup();
+    roots
 }
 
 fn load_windows_manifest() -> Result<&'static [WindowsGameEntry]> {
@@ -217,6 +250,21 @@ fn expand_dynamic_placeholders(pattern: &str) -> Vec<String> {
     }
 
     vec![pattern.to_string()]
+}
+
+fn expand_root_placeholders(pattern: &str, root_candidates: &[String]) -> Vec<String> {
+    if !pattern.contains("<root>") {
+        return vec![pattern.to_string()];
+    }
+
+    if root_candidates.is_empty() {
+        return Vec::new();
+    }
+
+    root_candidates
+        .iter()
+        .map(|root| pattern.replace("<root>", root))
+        .collect()
 }
 
 /// Check if a file constraint is Windows-relevant
@@ -559,6 +607,33 @@ mod tests {
         assert_eq!(
             expanded,
             vec![format!("{}/{}", local_app_data.display(), "*")]
+        );
+    }
+
+    #[test]
+    fn root_placeholder_expands_to_known_ubisoft_launcher_roots() {
+        let prefix = tempfile::tempdir().unwrap();
+        let ubisoft_root = prefix
+            .path()
+            .join("drive_c")
+            .join("Program Files (x86)")
+            .join("Ubisoft")
+            .join("Ubisoft Game Launcher");
+        std::fs::create_dir_all(&ubisoft_root).unwrap();
+
+        let ctx = WinePrefixContext::new(prefix.path());
+        let entry = WindowsFileEntry {
+            pattern: "<root>/savegames/<storeUserId>/857".to_string(),
+            tags: vec!["save".to_string()],
+            needs_user: false,
+            has_store_user_id: true,
+        };
+
+        let expanded = ctx.expand_paths(&entry);
+
+        assert_eq!(
+            expanded,
+            vec![format!("{}/savegames/*/857", ubisoft_root.display())]
         );
     }
 
