@@ -14,14 +14,13 @@ use crate::game::launch_command::{
     EmulatorLaunchCommand, EmulatorLauncher, EmulatorOptions, EmulatorPlatform, LaunchCommand,
     LaunchCommandKind,
 };
-use crate::game::platforms::appimage_finder::find_appimage_by_paths;
-use crate::menu_utils::{
-    ConfirmResult, FilePickerScope, FzfWrapper, PathInputBuilder, PathInputSelection,
-};
+use crate::game::platforms::appimage_finder::find_appimages_by_paths;
+use crate::menu_utils::{ConfirmResult, FzfWrapper};
 use crate::ui::nerd_font::NerdFont;
 
 use super::prompts::{
-    FileSelectionPrompt, ask_fullscreen, confirm_value, select_file_with_validation,
+    AppImageSelectionPrompt, FileSelectionPrompt, ask_fullscreen, confirm_value,
+    select_appimage_manually, select_detected_appimage, select_file_with_validation,
 };
 use super::validation::{DUCKSTATION_EXTENSIONS, format_valid_extensions, validate_game_file};
 
@@ -74,23 +73,12 @@ impl DuckStationBuilder {
     }
 
     fn find_or_download_duckstation() -> Result<Option<PathBuf>> {
-        // Try to find DuckStation in common locations using case-insensitive matching
-        if let Some(path) = find_appimage_by_paths(DUCKSTATION_SEARCH_PATHS) {
-            // Found DuckStation, ask if user wants to use it
-            match FzfWrapper::builder()
-                .confirm(format!(
-                    "{} Found DuckStation at:\n{}\n\nUse this?",
-                    char::from(NerdFont::Check),
-                    path.display()
-                ))
-                .yes_text("Use This")
-                .no_text("Choose Different")
-                .confirm_dialog()?
-            {
-                ConfirmResult::Yes => return Ok(Some(path)),
-                ConfirmResult::No => {}
-                ConfirmResult::Cancelled => return Ok(None),
-            }
+        if let Some(path) = select_detected_appimage(
+            &find_appimages_by_paths(DUCKSTATION_SEARCH_PATHS),
+            NerdFont::Disc,
+            "DuckStation",
+        )? {
+            return Ok(Some(path));
         }
 
         // Not found, offer to download or select manually
@@ -205,51 +193,15 @@ impl DuckStationBuilder {
     }
 
     fn select_duckstation_manually() -> Result<Option<PathBuf>> {
-        let selection = PathInputBuilder::new()
-            .header(format!(
-                "{} Select DuckStation AppImage",
-                char::from(NerdFont::Disc)
-            ))
-            .scope(FilePickerScope::Files)
-            .picker_hint(format!(
+        select_appimage_manually(AppImageSelectionPrompt::new(
+            format!("{} Select DuckStation AppImage", char::from(NerdFont::Disc)),
+            format!(
                 "{} Select the DuckStation AppImage file (e.g., {})",
                 char::from(NerdFont::Info),
                 DEFAULT_DUCKSTATION_PATH
-            ))
-            .manual_option_label(format!("{} Type AppImage path", char::from(NerdFont::Edit)))
-            .picker_option_label(format!(
-                "{} Browse for AppImage",
-                char::from(NerdFont::FolderOpen)
-            ))
-            .choose()?;
-
-        match selection {
-            PathInputSelection::Manual(input) => {
-                let path = PathBuf::from(shellexpand::tilde(&input).into_owned());
-                if !path.exists() {
-                    FzfWrapper::message(&format!(
-                        "{} DuckStation AppImage not found at: {}",
-                        char::from(NerdFont::CrossCircle),
-                        path.display()
-                    ))?;
-                    return Ok(None);
-                }
-                Ok(Some(path))
-            }
-            PathInputSelection::Picker(path) => {
-                if !path.exists() {
-                    FzfWrapper::message(&format!(
-                        "{} File not found: {}",
-                        char::from(NerdFont::CrossCircle),
-                        path.display()
-                    ))?;
-                    return Ok(None);
-                }
-                Ok(Some(path))
-            }
-            PathInputSelection::WinePrefix(_) => Ok(None),
-            PathInputSelection::Cancelled => Ok(None),
-        }
+            ),
+            "DuckStation AppImage not found at: {}".to_string(),
+        ))
     }
 
     fn select_game_file() -> Result<Option<PathBuf>> {

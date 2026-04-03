@@ -72,11 +72,6 @@ pub fn find_appimages_by_paths(search_paths: &[&str]) -> Vec<PathBuf> {
     found
 }
 
-/// Search for the first matching AppImage by full path patterns.
-pub fn find_appimage_by_paths(search_paths: &[&str]) -> Option<PathBuf> {
-    find_appimages_by_paths(search_paths).into_iter().next()
-}
-
 /// Find all AppImages in a directory with case-insensitive matching.
 ///
 /// Searches for any files ending in `.appimage` or `.AppImage` (case-insensitive)

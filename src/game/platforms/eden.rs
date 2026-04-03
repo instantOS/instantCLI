@@ -10,17 +10,13 @@ use crate::game::launch_command::{
     EmulatorLaunchCommand, EmulatorLauncher, EmulatorOptions, EmulatorPlatform, LaunchCommand,
     LaunchCommandKind,
 };
-use crate::game::platforms::appimage_finder::{find_appimage_by_paths, find_appimages_by_paths};
+use crate::game::platforms::appimage_finder::find_appimages_by_paths;
 use crate::game::platforms::discovery::eden::collect_configured_rom_files;
-use crate::menu::protocol::FzfPreview;
-use crate::menu_utils::{
-    FilePickerScope, FzfResult, FzfSelectable, FzfWrapper, PathInputBuilder, PathInputSelection,
-};
 use crate::ui::nerd_font::NerdFont;
-use crate::ui::preview::PreviewBuilder;
 
 use super::prompts::{
-    FileSelectionPrompt, ask_fullscreen, confirm_value, select_file_with_validation,
+    AppImageSelectionPrompt, FileSelectionPrompt, ask_fullscreen, confirm_value,
+    select_appimage_manually, select_detected_appimage, select_file_with_validation,
 };
 use super::validation::{EDEN_EXTENSIONS, format_valid_extensions, validate_game_file};
 
@@ -65,115 +61,23 @@ impl EdenBuilder {
     }
 
     pub(crate) fn find_or_select_eden() -> Result<Option<PathBuf>> {
-        match Self::find_detected_eden_paths().as_slice() {
-            [path] => return Ok(Some(path.clone())),
-            paths if !paths.is_empty() => {
-                if let Some(path) = Self::select_detected_eden_path(paths)? {
-                    return Ok(Some(path));
-                }
-            }
-            _ => {}
+        if let Some(path) = select_detected_appimage(
+            &find_appimages_by_paths(EDEN_SEARCH_PATHS),
+            NerdFont::Gamepad,
+            "Eden",
+        )? {
+            return Ok(Some(path));
         }
 
-        // Not found or user wants different, let them select
-        let selection = PathInputBuilder::new()
-            .header(format!(
-                "{} Select Eden AppImage",
-                char::from(NerdFont::Gamepad)
-            ))
-            .scope(FilePickerScope::Files)
-            .picker_hint(format!(
+        select_appimage_manually(AppImageSelectionPrompt::new(
+            format!("{} Select Eden AppImage", char::from(NerdFont::Gamepad)),
+            format!(
                 "{} Select the Eden AppImage file (e.g., {})",
                 char::from(NerdFont::Info),
                 DEFAULT_EDEN_PATH
-            ))
-            .manual_option_label(format!("{} Type AppImage path", char::from(NerdFont::Edit)))
-            .picker_option_label(format!(
-                "{} Browse for AppImage",
-                char::from(NerdFont::FolderOpen)
-            ))
-            .choose()?;
-
-        match selection {
-            PathInputSelection::Manual(input) => {
-                let path = PathBuf::from(shellexpand::tilde(&input).into_owned());
-                if !path.exists() {
-                    FzfWrapper::message(&format!(
-                        "{} Eden AppImage not found at: {}",
-                        char::from(NerdFont::CrossCircle),
-                        path.display()
-                    ))?;
-                    return Ok(None);
-                }
-                Ok(Some(path))
-            }
-            PathInputSelection::Picker(path) => {
-                if !path.exists() {
-                    FzfWrapper::message(&format!(
-                        "{} File not found: {}",
-                        char::from(NerdFont::CrossCircle),
-                        path.display()
-                    ))?;
-                    return Ok(None);
-                }
-                Ok(Some(path))
-            }
-            PathInputSelection::WinePrefix(_) => Ok(None),
-            PathInputSelection::Cancelled => Ok(None),
-        }
-    }
-
-    pub(crate) fn find_eden_noninteractive() -> Option<PathBuf> {
-        find_appimage_by_paths(EDEN_SEARCH_PATHS)
-    }
-
-    fn find_detected_eden_paths() -> Vec<PathBuf> {
-        find_appimages_by_paths(EDEN_SEARCH_PATHS)
-    }
-
-    fn select_detected_eden_path(paths: &[PathBuf]) -> Result<Option<PathBuf>> {
-        #[derive(Clone)]
-        struct EdenPathItem {
-            path: PathBuf,
-        }
-
-        impl FzfSelectable for EdenPathItem {
-            fn fzf_display_text(&self) -> String {
-                format!("{} {}", char::from(NerdFont::Check), self.path.display())
-            }
-
-            fn fzf_key(&self) -> String {
-                self.path.to_string_lossy().into_owned()
-            }
-
-            fn fzf_preview(&self) -> FzfPreview {
-                PreviewBuilder::new()
-                    .header(NerdFont::Gamepad, "Detected Eden AppImage")
-                    .text("Multiple Eden AppImages were found.")
-                    .blank()
-                    .field("Path", &self.path.display().to_string())
-                    .build()
-            }
-        }
-
-        let items: Vec<EdenPathItem> = paths
-            .iter()
-            .cloned()
-            .map(|path| EdenPathItem { path })
-            .collect();
-
-        match FzfWrapper::builder()
-            .header(format!(
-                "{} Select Eden AppImage",
-                char::from(NerdFont::Gamepad)
-            ))
-            .prompt("Eden")
-            .select(items)?
-        {
-            FzfResult::Selected(item) => Ok(Some(item.path)),
-            FzfResult::Cancelled => Ok(None),
-            _ => Ok(None),
-        }
+            ),
+            "Eden AppImage not found at: {}".to_string(),
+        ))
     }
 
     fn select_game_file() -> Result<Option<PathBuf>> {

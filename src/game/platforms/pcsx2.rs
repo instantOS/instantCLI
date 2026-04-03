@@ -14,7 +14,7 @@ use crate::game::launch_command::{
 use crate::menu_utils::{ConfirmResult, FzfWrapper};
 use crate::ui::nerd_font::NerdFont;
 
-use super::appimage_finder::find_appimage_by_paths;
+use super::appimage_finder::find_appimages_by_paths;
 use super::flatpak::is_flatpak_app_installed;
 use super::prompts::{
     FileSelectionPrompt, ask_fullscreen, confirm_value, select_file_with_validation,
@@ -86,7 +86,10 @@ impl Pcsx2Builder {
     /// Returns AppImage path if found, otherwise checks for Flatpak
     fn detect_install_type() -> Result<Option<Pcsx2InstallType>> {
         // First, try to find the EmuDeck AppImage
-        if let Some(appimage_path) = find_appimage_by_paths(EMUDECK_APP_IMAGE_PATHS) {
+        if let Some(appimage_path) = find_appimages_by_paths(EMUDECK_APP_IMAGE_PATHS)
+            .into_iter()
+            .next()
+        {
             return Ok(Some(Pcsx2InstallType::AppImage(appimage_path)));
         }
 
