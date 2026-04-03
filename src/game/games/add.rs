@@ -226,8 +226,3 @@ fn prompt_manual_save_path(game_name: &str) -> Result<Option<TildePath>> {
         }
     })
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-}

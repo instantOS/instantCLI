@@ -2,10 +2,12 @@
 //!
 //! Shared types for display/monitor configuration across settings and doctor checks.
 
+mod hyprland;
 mod instantwm;
 mod sway;
 mod xrandr;
 
+pub use hyprland::HyprlandDisplayProvider;
 pub use instantwm::InstantWMDisplayProvider;
 pub use sway::SwayDisplayProvider;
 pub use xrandr::XrandrDisplayProvider;
@@ -33,6 +35,11 @@ impl DisplayMode {
     /// Format for swaymsg command (e.g., "1920x1080@60.008Hz")
     pub fn to_swaymsg_format(&self) -> String {
         format!("{}x{}@{:.3}Hz", self.width, self.height, self.refresh_hz())
+    }
+
+    /// Format for Hyprland monitor rules (e.g., "1920x1080@60.008")
+    pub fn to_hyprland_format(&self) -> String {
+        format!("{}x{}@{:.3}", self.width, self.height, self.refresh_hz())
     }
 
     /// Human-readable display format (e.g., "1920x1080 @ 60Hz")
