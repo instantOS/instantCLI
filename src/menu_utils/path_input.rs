@@ -206,6 +206,32 @@ impl PathInputBuilder {
         }
     }
 
+    fn run_picker_at(&self, path: &Path) -> Result<Option<PathBuf>> {
+        let mut picker = MenuWrapper::file_picker().scope(self.scope);
+
+        if path.is_dir() {
+            picker = picker.start_dir(path.to_path_buf());
+        } else {
+            picker = picker.start_path(path.to_path_buf());
+
+            if let Some(parent) = path.parent() {
+                picker = picker.start_dir(parent.to_path_buf());
+            }
+        }
+
+        if let Some(hint) = &self.picker_hint {
+            picker = picker.hint(hint.clone());
+        }
+
+        match picker.pick_one() {
+            Ok(path) => Ok(path),
+            Err(err) => {
+                eprintln!("Failed to launch file picker: {err}");
+                Ok(None)
+            }
+        }
+    }
+
     fn suggestion_preview_for(&self, path: &Path) -> FzfPreview {
         match &self.suggestion_preview_fn {
             Some(f) => f(path),
@@ -260,6 +286,10 @@ impl PathInputBuilder {
         }
 
         options
+    }
+
+    fn should_open_picker_for_suggestion(&self, path: &Path) -> bool {
+        self.scope == FilePickerScope::Files && path.is_dir()
     }
 
     fn prompt_manual_path(&self) -> Result<ManualPathOutcome> {
@@ -317,6 +347,13 @@ impl PathInputBuilder {
                         }
                     }
                     PathInputChoice::Suggestion(path) => {
+                        if self.should_open_picker_for_suggestion(&path) {
+                            match self.run_picker_at(&path)? {
+                                Some(selected) => return Ok(PathInputSelection::Picker(selected)),
+                                None => continue,
+                            }
+                        }
+
                         return Ok(PathInputSelection::Picker(path));
                     }
                 },
@@ -387,6 +424,32 @@ fn preview_suggestion(_path: &Path) -> FzfPreview {
     // Use async command-based preview for rich file type detection
     // The path is passed as the fzf key ($1) to the preview command
     FzfPreview::Command(preview_command(PreviewId::FileSuggestion))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn file_scope_directory_suggestion_opens_picker() {
+        let builder = PathInputBuilder::new().scope(FilePickerScope::Files);
+
+        assert!(builder.should_open_picker_for_suggestion(Path::new("/tmp")));
+    }
+
+    #[test]
+    fn file_scope_file_suggestion_returns_directly() {
+        let builder = PathInputBuilder::new().scope(FilePickerScope::Files);
+
+        assert!(!builder.should_open_picker_for_suggestion(Path::new("/tmp/game.exe")));
+    }
+
+    #[test]
+    fn directory_scope_directory_suggestion_returns_directly() {
+        let builder = PathInputBuilder::new().scope(FilePickerScope::Directories);
+
+        assert!(!builder.should_open_picker_for_suggestion(Path::new("/tmp")));
+    }
 }
 
 impl PathInputSelection {
