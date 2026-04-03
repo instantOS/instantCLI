@@ -314,11 +314,35 @@ where
             .unwrap_or_else(|| PathBuf::from(scan_path));
         if let Some(prefix) = find_prefix_root(&root) {
             on_progress(0, 1, &format!("Scanning Wine prefix {}", prefix.display()))?;
-            let result = stream_generic_prefix_records(&prefix, context.as_ref(), emit_game);
+            let result =
+                stream_generic_prefix_records(&prefix, Some(&root), context.as_ref(), emit_game);
             if use_cache {
                 save_discovery_cache(cache_entries.into_values().collect())?;
             }
             return result;
+        }
+
+        let nested_prefixes = find_prefixes_under_root(&root);
+        if !nested_prefixes.is_empty() {
+            let total = nested_prefixes.len();
+            for (index, prefix) in nested_prefixes.into_iter().enumerate() {
+                on_progress(
+                    index,
+                    total,
+                    &format!("Scanning Wine prefix {}", prefix.display()),
+                )?;
+                stream_generic_prefix_records(
+                    &prefix,
+                    Some(&root),
+                    context.as_ref(),
+                    &mut emit_game,
+                )?;
+            }
+
+            if use_cache {
+                save_discovery_cache(cache_entries.into_values().collect())?;
+            }
+            return Ok(());
         }
 
         on_progress(0, 1, &format!("Scanning {}", root.display()))?;
@@ -343,7 +367,7 @@ where
             if known_prefixes.iter().any(|known| known == &prefix) {
                 continue;
             }
-            stream_generic_prefix_records(&prefix, context.as_ref(), &mut emit_game)?;
+            stream_generic_prefix_records(&prefix, Some(&root), context.as_ref(), &mut emit_game)?;
         }
 
         if use_cache {
@@ -374,7 +398,17 @@ where
 fn expand_scan_path(scan_path: &str) -> Result<String> {
     shellexpand::full(scan_path)
         .map_err(|e| anyhow::anyhow!("Failed to expand path '{}': {}", scan_path, e))
-        .map(|value| value.into_owned())
+        .and_then(|value| {
+            let expanded = value.into_owned();
+            let path = PathBuf::from(&expanded);
+            let absolute = if path.is_absolute() {
+                path
+            } else {
+                std::env::current_dir()?.join(path)
+            };
+            let normalized = std::fs::canonicalize(&absolute).unwrap_or(absolute);
+            Ok(normalized.to_string_lossy().to_string())
+        })
 }
 
 fn find_prefix_root(path: &Path) -> Option<PathBuf> {
@@ -395,20 +429,32 @@ fn find_prefix_root(path: &Path) -> Option<PathBuf> {
 
 fn stream_generic_prefix_records<F>(
     prefix: &Path,
+    scan_root: Option<&Path>,
     context: Option<&GameCreationContext>,
     mut on_game: F,
 ) -> Result<()>
 where
     F: FnMut(DiscoveredGameWithPreview) -> Result<()>,
 {
-    crate::game::platforms::discovery::wine::stream_discover_wine_games_in_prefix(
+    crate::game::platforms::ludusavi::stream_primary_wine_prefix_saves_with_scan_root(
         prefix,
-        |game| {
-            let save_path = game.save_path.clone();
-            let existing_name = context
-                .and_then(|ctx| find_existing_game(&game.display_name, save_path.as_path(), ctx));
+        scan_root,
+        |save| {
+            let display_name = if save.game_name.trim().is_empty() {
+                "Unknown Wine Game".to_string()
+            } else {
+                save.game_name
+            };
+            let save_path = PathBuf::from(save.save_path);
+            let existing_name =
+                context.and_then(|ctx| find_existing_game(&display_name, save_path.as_path(), ctx));
 
-            let mut game = game;
+            let mut game = crate::game::platforms::discovery::wine::WineDiscoveredGame::new(
+                display_name,
+                prefix.to_path_buf(),
+                save_path,
+            );
+
             if let Some(existing_name) = existing_name {
                 game.set_existing(existing_name);
             }
@@ -748,6 +794,24 @@ mod tests {
 
         let resolved = find_prefix_root(&nested).unwrap();
         assert_eq!(resolved, prefix.path());
+    }
+
+    #[test]
+    fn expand_scan_path_makes_relative_paths_absolute() {
+        let original_dir = std::env::current_dir().unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        std::env::set_current_dir(temp.path()).unwrap();
+
+        let expanded = expand_scan_path(".").unwrap();
+
+        std::env::set_current_dir(original_dir).unwrap();
+        assert_eq!(
+            expanded,
+            std::fs::canonicalize(temp.path())
+                .unwrap()
+                .to_string_lossy()
+                .to_string()
+        );
     }
 
     #[test]

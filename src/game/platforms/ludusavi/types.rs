@@ -5,6 +5,7 @@ use std::fs;
 use std::path::Path;
 
 use serde::Deserialize;
+use serde_yaml::Value;
 
 /// Root manifest structure: game_name -> GameEntry
 pub type LudusaviManifest = HashMap<String, GameEntry>;
@@ -17,6 +18,8 @@ pub struct GameEntry {
     #[serde(default)]
     #[allow(dead_code)]
     pub alias: Option<String>,
+    #[serde(default, rename = "installDir")]
+    pub install_dir: HashMap<String, Value>,
 }
 
 /// A file/directory entry with constraints and tags
