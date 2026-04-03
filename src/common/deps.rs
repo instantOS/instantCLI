@@ -75,6 +75,16 @@ pub static RESTIC: Dependency = Dependency {
     tests: &[InstallTest::WhichSucceeds("restic")],
 };
 
+pub static UMU_LAUNCHER: Dependency = Dependency {
+    name: "umu-launcher",
+    packages: &[
+        PackageDefinition::new("umu-launcher", PackageManager::Pacman),
+        PackageDefinition::new("umu-launcher", PackageManager::Dnf),
+        PackageDefinition::new("umu-launcher", PackageManager::Aur),
+    ],
+    tests: &[InstallTest::WhichSucceeds("umu-run")],
+};
+
 // =============================================================================
 // Doctor Checks
 // =============================================================================

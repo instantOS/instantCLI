@@ -5,8 +5,10 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
 
+use crate::common::package::{InstallResult, ensure_all};
 use crate::game::config::{Game, GameInstallation, InstallationsConfig, InstantGameConfig};
 use crate::game::launch_command::LaunchCommand;
+use crate::game::platforms::deps::dependencies_for_launch_command;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
 
 use super::sync::sync_game_saves;
@@ -194,6 +196,17 @@ fn select_launchable_game(launchables: &[LaunchableGame]) -> Result<Option<Launc
 
 fn run_launch_command(game: &LaunchableGame) -> Result<()> {
     println!("Running launch command for {}", game.name);
+
+    match ensure_all(dependencies_for_launch_command(&game.effective_command))? {
+        InstallResult::Installed | InstallResult::AlreadyInstalled => {}
+        InstallResult::Declined => return Err(anyhow!("umu-launcher installation cancelled")),
+        InstallResult::NotAvailable { hint, .. } => {
+            return Err(anyhow!("umu-launcher is not available: {}", hint));
+        }
+        InstallResult::Failed { reason } => {
+            return Err(anyhow!("umu-launcher installation failed: {}", reason));
+        }
+    }
 
     let status = Command::new("sh")
         .arg("-c")

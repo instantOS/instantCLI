@@ -4,8 +4,9 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 
+use crate::common::package::{InstallResult, ensure_all};
 use crate::game::launch_command::{
     LaunchCommand, LaunchCommandKind, ProtonSelection, WineLaunchCommand, WineRunner,
 };
@@ -44,6 +45,19 @@ impl UmuBuilder {
             Some(runner) => runner,
             None => return Ok(None),
         };
+
+        if matches!(runner, WineRunner::UmuRun) {
+            match ensure_all(super::deps::dependencies_for_wine_runner(runner))? {
+                InstallResult::Installed | InstallResult::AlreadyInstalled => {}
+                InstallResult::Declined => return Ok(None),
+                InstallResult::NotAvailable { hint, .. } => {
+                    return Err(anyhow!("umu-launcher is not available: {}", hint));
+                }
+                InstallResult::Failed { reason } => {
+                    return Err(anyhow!("umu-launcher installation failed: {}", reason));
+                }
+            }
+        }
 
         // Step 1: Select Wine prefix
         let wine_prefix = match Self::select_wine_prefix(prefix_hint, executable_hint)? {

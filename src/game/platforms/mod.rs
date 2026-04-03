@@ -10,6 +10,7 @@
 
 pub(crate) mod appimage_finder;
 mod azahar;
+pub(crate) mod deps;
 pub mod discovery;
 mod dolphin;
 mod duckstation;
