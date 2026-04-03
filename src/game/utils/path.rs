@@ -34,7 +34,11 @@ pub fn path_selection_to_tilde(selection: PathInputSelection) -> Result<Option<T
     }
 }
 
-pub fn prompt_for_save_path<F>(game_name: &str, mut select_path: F) -> Result<Option<TildePath>>
+pub fn prompt_for_save_path<F>(
+    game_name: &str,
+    current_path: Option<&TildePath>,
+    mut select_path: F,
+) -> Result<Option<TildePath>>
 where
     F: FnMut() -> Result<Option<TildePath>>,
 {
@@ -46,6 +50,13 @@ where
         if let Err(err) = ensure_safe_path(save_path.as_path(), PathUsage::SaveDirectory) {
             FzfWrapper::message(&err.to_string())?;
             continue;
+        }
+
+        // If the path is the same as the current one, just return it without confirmation
+        if let Some(current) = current_path {
+            if current == &save_path {
+                return Ok(Some(save_path));
+            }
         }
 
         let save_path_display = tilde_display_string(&save_path);

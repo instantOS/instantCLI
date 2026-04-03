@@ -80,6 +80,7 @@ pub fn run_edit_menu(game_name: &str, state: &mut EditState) -> Result<()> {
         let mut builder = FzfWrapper::builder()
             .header(Header::fancy(&format!("Editing: {}", game_name)))
             .prompt("Select property to edit")
+            .responsive_layout()
             .args(fzf_mocha_args());
 
         if let Some(index) = cursor.initial_index(&menu_items) {
@@ -181,6 +182,7 @@ fn confirm_discard_changes() -> Result<bool> {
         .confirm("You have unsaved changes. Exit without saving?")
         .yes_text("Exit Without Saving")
         .no_text("Go Back")
+        .responsive_layout()
         .confirm_dialog()?;
 
     Ok(result == ConfirmResult::Yes)

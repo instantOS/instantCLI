@@ -20,7 +20,7 @@ pub(crate) fn get_launch_command() -> Result<String> {
 }
 
 pub(crate) fn get_save_path(game_name: &str) -> Result<TildePath> {
-    prompt_for_save_path(game_name, || {
+    prompt_for_save_path(game_name, None, || {
         let selection = PathInputBuilder::new()
             .header(format!(
                 "{} Choose the save path for '{game_name}'",

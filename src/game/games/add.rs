@@ -185,7 +185,7 @@ fn prompt_optional_text(prompt: &str) -> Result<Option<String>> {
 }
 
 fn prompt_manual_save_path(game_name: &str) -> Result<Option<TildePath>> {
-    prompt_for_save_path(game_name, || {
+    prompt_for_save_path(game_name, None, || {
         let selection = PathInputBuilder::new()
             .header(format!(
                 "{} Choose the save path for '{game_name}'",

@@ -285,6 +285,8 @@ pub fn edit_launch_command(state: &mut EditState) -> Result<bool> {
 
     let selection = FzfWrapper::builder()
         .header("Choose which launch command to edit")
+        .args(crate::ui::catppuccin::fzf_mocha_args())
+        .responsive_layout()
         .select(options)?;
 
     match selection {
@@ -490,7 +492,7 @@ pub fn edit_save_path(state: &mut EditState) -> Result<bool> {
         tilde_display_string(current_path)
     };
 
-    match prompt_for_save_path(&state.game().name.0, || {
+    match prompt_for_save_path(&state.game().name.0, Some(current_path), || {
         let mut path_builder = PathInputBuilder::new()
             .header(format!(
                 "{} Choose new save path\nCurrent: {}",
@@ -525,6 +527,7 @@ pub fn edit_save_path(state: &mut EditState) -> Result<bool> {
                 Ok(false)
             } else {
                 state.installation_mut().unwrap().save_path = new_path;
+                state.mark_dirty();
                 FzfWrapper::message("Save path updated")?;
                 Ok(true)
             }

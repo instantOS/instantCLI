@@ -80,7 +80,7 @@ pub(super) fn prompt_manual_save_path(
     original_save_path: Option<&str>,
     enable_wine_prefix: bool,
 ) -> Result<Option<SelectedSavePath>> {
-    let tilde_path = prompt_for_save_path(game_name, || {
+    let tilde_path = prompt_for_save_path(game_name, None, || {
         let prompt = format!(
             "{} Enter the save path for '{}' (e.g., ~/.local/share/{}/saves):",
             char::from(NerdFont::Edit),
