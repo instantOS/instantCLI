@@ -33,8 +33,8 @@ use crate::game::launch_command::{
 use crate::game::utils::path::is_valid_wine_prefix;
 use crate::menu::protocol::FzfPreview;
 use crate::menu_utils::{
-    ConfirmResult, FzfResult, FzfSelectable, FzfWrapper, Header, TextEditOutcome, TextEditPrompt,
-    prompt_text_edit,
+    ChecklistResult, FzfResult, FzfSelectable, FzfWrapper, Header, MenuWrapper, TextEditOutcome,
+    TextEditPrompt, prompt_text_edit,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
@@ -194,6 +194,7 @@ impl LaunchCommandBuilderContext {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LauncherType {
     Manual,
+    Executable,
     UmuRun,
     Steam,
     Eden,
@@ -209,6 +210,7 @@ impl std::fmt::Display for LauncherType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             LauncherType::Manual => write!(f, "manual"),
+            LauncherType::Executable => write!(f, "executable"),
             LauncherType::UmuRun => write!(f, "umu-run"),
             LauncherType::Steam => write!(f, "steam"),
             LauncherType::Eden => write!(f, "eden"),
@@ -280,6 +282,28 @@ fn build_launcher_items(context: Option<&LaunchCommandBuilderContext>) -> Vec<La
                 .bullet("flatpak run com.valvesoftware.Steam")
                 .bullet("./my-game-launcher.sh")
                 .bullet("/usr/games/my-emulator game.rom")
+                .build(),
+        },
+        LauncherItem {
+            launcher: LauncherType::Executable,
+            display: format!(
+                "{} Binary / Script",
+                format_icon_colored(NerdFont::Code, colors::TEAL)
+            ),
+            preview: PreviewBuilder::new()
+                .header(NerdFont::Code, "Binary / Script")
+                .text("Select a script or binary from your system.")
+                .blank()
+                .text("Open a file picker to choose a game")
+                .text("executable or launcher script.")
+                .blank()
+                .separator()
+                .blank()
+                .text("Use this for:")
+                .bullet("Native Linux binaries")
+                .bullet("Shell scripts (.sh)")
+                .bullet("Python scripts (.py)")
+                .bullet("AppImages (manual selection)")
                 .build(),
         },
         LauncherItem {
@@ -588,6 +612,7 @@ pub fn build_launch_command_with_context(
 
     let command = match launcher_type {
         LauncherType::Manual => prompt_manual_command(),
+        LauncherType::Executable => prompt_executable_command(context),
         LauncherType::UmuRun => UmuBuilder::build_command(context),
         LauncherType::Steam => SteamBuilder::build_command(context.and_then(|ctx| {
             ctx.preset_for(LauncherType::Steam)
@@ -684,6 +709,7 @@ fn launcher_type_for_emulator(platform: EmulatorPlatform) -> Option<LauncherType
 fn launcher_recommendation_label(launcher: LauncherType) -> &'static str {
     match launcher {
         LauncherType::Manual => "manual entry",
+        LauncherType::Executable => "binary / script",
         LauncherType::UmuRun => "Wine / umu-run",
         LauncherType::Steam => "Steam",
         LauncherType::Eden => "Eden",
@@ -767,45 +793,99 @@ fn prompt_manual_command() -> Result<Option<LaunchCommand>> {
     }
 }
 
+/// Prompt user to select an executable file
+fn prompt_executable_command(
+    context: Option<&LaunchCommandBuilderContext>,
+) -> Result<Option<LaunchCommand>> {
+    let mut builder = MenuWrapper::file_picker()
+        .hint("Select a binary or script to launch the game")
+        .show_hidden(false);
+
+    if let Some(context) = context {
+        if let Some(executable_path) = &context.executable_path {
+            builder = builder.start_path(executable_path);
+        } else if let Some(save_path) = &context.save_path {
+            if let Some(parent) = save_path.parent() {
+                builder = builder.start_dir(parent);
+            }
+        }
+    }
+
+    match builder.pick_one()? {
+        Some(path) => {
+            let command = format!("'{}'", path.display());
+            Ok(Some(LaunchCommand::from_shell_or_manual(command)))
+        }
+        None => Ok(None),
+    }
+}
+
 fn apply_launch_wrappers(mut command: LaunchCommand) -> Result<LaunchCommand> {
-    command.wrappers.gamemode = ask_enable_gamemode()?;
-    command.wrappers.gamescope = ask_gamescope_options()?;
+    let selected = ask_launch_wrappers()?;
+
+    command.wrappers.gamemode = selected.contains(&LaunchWrapperOption::Gamemode);
+
+    if selected.contains(&LaunchWrapperOption::Gamescope) {
+        command.wrappers.gamescope = Some(ask_gamescope_flags()?);
+    }
+
     Ok(command)
 }
 
-fn ask_enable_gamemode() -> Result<bool> {
-    match FzfWrapper::builder()
-        .confirm(format!(
-            "{} Wrap the launch with gamemoderun?",
-            char::from(NerdFont::Performance)
-        ))
-        .yes_text("Use gamemode")
-        .no_text("No gamemode")
-        .confirm_dialog()?
-    {
-        ConfirmResult::Yes => Ok(true),
-        ConfirmResult::No | ConfirmResult::Cancelled => Ok(false),
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LaunchWrapperOption {
+    Gamemode,
+    Gamescope,
+}
+
+impl FzfSelectable for LaunchWrapperOption {
+    fn fzf_display_text(&self) -> String {
+        match self {
+            Self::Gamemode => format!(
+                "{} Gamemode (gamemoderun)",
+                char::from(NerdFont::Performance)
+            ),
+            Self::Gamescope => format!(
+                "{} Gamescope (micro-compositor)",
+                char::from(NerdFont::Desktop)
+            ),
+        }
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        match self {
+            Self::Gamemode => PreviewBuilder::new()
+                .header(NerdFont::Performance, "Gamemode")
+                .line(colors::GREEN, Some(NerdFont::Performance), "Enable GameMode")
+                .text("GameMode is a daemon/library combo for Linux that allows games to request a set of optimizations be temporarily applied to the host OS and/or a game process.")
+                .build(),
+            Self::Gamescope => PreviewBuilder::new()
+                .header(NerdFont::Desktop, "Gamescope")
+                .line(colors::PEACH, Some(NerdFont::Desktop), "Enable Gamescope")
+                .text("Gamescope is a micro-compositor that provides features like upscaling, resolution control, and better performance for games.")
+                .build(),
+        }
     }
 }
 
-fn ask_gamescope_options() -> Result<Option<GamescopeOptions>> {
-    let enabled = match FzfWrapper::builder()
-        .confirm(format!(
-            "{} Wrap the launch with gamescope?",
-            char::from(NerdFont::Desktop)
-        ))
-        .yes_text("Use gamescope")
-        .no_text("No gamescope")
-        .confirm_dialog()?
+fn ask_launch_wrappers() -> Result<Vec<LaunchWrapperOption>> {
+    let items = vec![
+        LaunchWrapperOption::Gamemode,
+        LaunchWrapperOption::Gamescope,
+    ];
+
+    match FzfWrapper::builder()
+        .prompt("Launch Options")
+        .header("Enter on item toggles it | Enter on Continue confirms")
+        .checklist("Continue")
+        .checklist_dialog(items)?
     {
-        ConfirmResult::Yes => true,
-        ConfirmResult::No | ConfirmResult::Cancelled => false,
-    };
-
-    if !enabled {
-        return Ok(None);
+        ChecklistResult::Confirmed(selected) => Ok(selected),
+        _ => Ok(Vec::new()),
     }
+}
 
+fn ask_gamescope_flags() -> Result<GamescopeOptions> {
     let prompt = TextEditPrompt::new("Gamescope options", Some(""))
         .header("Enter optional gamescope flags")
         .ghost("Example: -f -W 1280 -H 720");
@@ -818,5 +898,5 @@ fn ask_gamescope_options() -> Result<Option<GamescopeOptions>> {
         _ => Vec::new(),
     };
 
-    Ok(Some(GamescopeOptions { options }))
+    Ok(GamescopeOptions { options })
 }
