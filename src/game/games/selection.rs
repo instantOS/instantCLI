@@ -221,7 +221,7 @@ impl Game {
     fn generate_preview_text(
         &self,
         description: &Option<String>,
-        launch_command: &Option<String>,
+        launch_command: &Option<crate::game::launch_command::LaunchCommand>,
         installation: Option<&crate::game::config::GameInstallation>,
     ) -> String {
         use crate::ui::catppuccin::colors;
@@ -238,7 +238,7 @@ impl Game {
 
         // Launch command
         if let Some(command) = launch_command {
-            builder = builder.field("Launch", command);
+            builder = builder.field("Launch", &command.to_string());
         }
 
         // Installation section

@@ -88,7 +88,7 @@ pub(super) fn ask_fullscreen() -> Result<bool> {
     }
 }
 
-pub(super) fn confirm_command(command: &str) -> Result<bool> {
+pub(super) fn confirm_command(command: &impl std::fmt::Display) -> Result<bool> {
     let message = format!(
         "{} Generated Launch Command:\n\n{}\n\nUse this command?",
         char::from(NerdFont::Rocket),

@@ -45,7 +45,7 @@ pub fn list_games() -> Result<()> {
                 text.push_str(&format!("    Description: {}\n", desc));
             }
             if let Some(cmd) = &game.launch_command {
-                text.push_str(&format!("    Launch command: {}\n", cmd.blue()));
+                text.push_str(&format!("    Launch command: {}\n", cmd.to_string().blue()));
             }
             text.push('\n');
         }
@@ -153,7 +153,10 @@ fn collect_game_details(
     Some(GameDetails {
         name: game.name.0.clone(),
         description: game.description.clone(),
-        launch_command: game.launch_command.clone(),
+        launch_command: game
+            .launch_command
+            .clone()
+            .map(|command| command.to_string()),
         installation: installation_details,
         dependencies,
     })

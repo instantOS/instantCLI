@@ -1,5 +1,6 @@
 use super::add::{AddGameOptions, ResolvedGameDetails};
 use crate::game::config::{Game, GameInstallation, InstallationsConfig, InstantGameConfig};
+use crate::game::launch_command::LaunchCommand;
 use crate::game::utils::path::tilde_display_string;
 use anyhow::{Context, Result};
 
@@ -79,7 +80,7 @@ impl GameManager {
             game.description = Some(description.clone());
         }
         if let Some(command) = &details.launch_command {
-            game.launch_command = Some(command.clone());
+            game.launch_command = Some(LaunchCommand::from_shell_or_manual(command.clone()));
         }
 
         context.config.games.push(game);

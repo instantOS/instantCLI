@@ -223,12 +223,12 @@ fn build_menu_items(state: &EditState) -> Vec<MenuItem> {
     ));
 
     // Launch Command
-    let game_cmd = game.launch_command.as_deref();
-    let inst_cmd = installation.and_then(|i| i.launch_command.as_deref());
+    let game_cmd = game.launch_command.as_ref().map(ToString::to_string);
+    let inst_cmd = installation.and_then(|i| i.launch_command.as_ref().map(ToString::to_string));
 
-    let (effective_cmd, cmd_source) = if let Some(cmd) = inst_cmd {
+    let (effective_cmd, cmd_source) = if let Some(cmd) = inst_cmd.as_deref() {
         (cmd, "installations.toml (device-specific override)")
-    } else if let Some(cmd) = game_cmd {
+    } else if let Some(cmd) = game_cmd.as_deref() {
         (cmd, "games.toml (shared)")
     } else {
         ("<not set>", "not configured")
@@ -241,8 +241,11 @@ fn build_menu_items(state: &EditState) -> Vec<MenuItem> {
         .blank()
         .separator()
         .blank()
-        .field("games.toml", game_cmd.unwrap_or("<not set>"))
-        .field("installations.toml", inst_cmd.unwrap_or("<not set>"))
+        .field("games.toml", game_cmd.as_deref().unwrap_or("<not set>"))
+        .field(
+            "installations.toml",
+            inst_cmd.as_deref().unwrap_or("<not set>"),
+        )
         .blank()
         .subtext("The installation-specific command overrides the shared command if both are set.")
         .build_string();

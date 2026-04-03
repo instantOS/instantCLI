@@ -6,6 +6,7 @@ use std::time::Duration;
 use anyhow::{Context, Result, anyhow};
 
 use crate::game::config::{Game, GameInstallation, InstallationsConfig, InstantGameConfig};
+use crate::game::launch_command::LaunchCommand;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
 
 use super::sync::sync_game_saves;
@@ -68,9 +69,9 @@ pub fn launch_game(game_name: Option<String>) -> Result<()> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct LaunchableGame {
     name: String,
-    effective_command: String,
-    game_command: Option<String>,
-    installation_command: Option<String>,
+    effective_command: LaunchCommand,
+    game_command: Option<LaunchCommand>,
+    installation_command: Option<LaunchCommand>,
     source: LaunchCommandSource,
 }
 
@@ -196,7 +197,7 @@ fn run_launch_command(game: &LaunchableGame) -> Result<()> {
 
     let status = Command::new("sh")
         .arg("-c")
-        .arg(&game.effective_command)
+        .arg(game.effective_command.to_string())
         .status()
         .with_context(|| {
             format!(
@@ -232,7 +233,7 @@ mod tests {
 
     fn game(name: &str, launch_command: Option<&str>) -> Game {
         let mut g = Game::new(name);
-        g.launch_command = launch_command.map(|cmd| cmd.to_string());
+        g.launch_command = launch_command.map(LaunchCommand::from_shell_or_manual);
         g
     }
 
@@ -242,7 +243,7 @@ mod tests {
             TildePath::new(PathBuf::from("/tmp/instantcli-tests")),
             crate::game::config::PathContentKind::Directory,
         );
-        inst.launch_command = launch_command.map(|cmd| cmd.to_string());
+        inst.launch_command = launch_command.map(LaunchCommand::from_shell_or_manual);
         inst
     }
 
@@ -255,13 +256,19 @@ mod tests {
 
         assert_eq!(launchables.len(), 1);
         let launchable = &launchables[0];
-        assert_eq!(launchable.effective_command, "install_cmd");
+        assert_eq!(
+            launchable.effective_command,
+            LaunchCommand::from_shell_or_manual("install_cmd")
+        );
         assert_eq!(launchable.source, LaunchCommandSource::Installation);
         assert_eq!(
-            launchable.installation_command.as_deref(),
-            Some("install_cmd")
+            launchable.installation_command,
+            Some(LaunchCommand::from_shell_or_manual("install_cmd"))
         );
-        assert_eq!(launchable.game_command.as_deref(), Some("game_cmd"));
+        assert_eq!(
+            launchable.game_command,
+            Some(LaunchCommand::from_shell_or_manual("game_cmd"))
+        );
     }
 
     #[test]
@@ -273,10 +280,16 @@ mod tests {
 
         assert_eq!(launchables.len(), 1);
         let launchable = &launchables[0];
-        assert_eq!(launchable.effective_command, "game_cmd");
+        assert_eq!(
+            launchable.effective_command,
+            LaunchCommand::from_shell_or_manual("game_cmd")
+        );
         assert_eq!(launchable.source, LaunchCommandSource::GameConfig);
         assert_eq!(launchable.installation_command, None);
-        assert_eq!(launchable.game_command.as_deref(), Some("game_cmd"));
+        assert_eq!(
+            launchable.game_command,
+            Some(LaunchCommand::from_shell_or_manual("game_cmd"))
+        );
     }
 
     #[test]

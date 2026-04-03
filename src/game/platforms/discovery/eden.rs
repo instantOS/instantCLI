@@ -157,7 +157,9 @@ impl DiscoveredGame for EdenDiscoveredGame {
             EdenBuilder::find_or_select_eden()
                 .ok()
                 .flatten()
-                .map(|eden_path| EdenBuilder::format_command_simple(&eden_path, game_file))
+                .map(|eden_path| {
+                    EdenBuilder::format_command_simple(&eden_path, game_file).to_string()
+                })
         })
     }
 

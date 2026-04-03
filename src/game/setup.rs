@@ -9,6 +9,7 @@ use crate::game::deps::manager::{InstallDependencyOptions, install_dependency};
 use crate::game::games::prompts;
 use crate::game::games::validation::validate_game_manager_initialized;
 use crate::game::games::{AddGameOptions, GameManager};
+use crate::game::launch_command::LaunchCommand;
 use crate::game::utils::path::tilde_display_string;
 use crate::menu::protocol;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
@@ -523,7 +524,9 @@ fn ensure_game_entry(
     }
 
     if !launch_command.trim().is_empty() {
-        game.launch_command = Some(launch_command.trim().to_string());
+        game.launch_command = Some(LaunchCommand::from_shell_or_manual(
+            launch_command.trim().to_string(),
+        ));
     }
 
     game_config.games.push(game);
@@ -629,7 +632,7 @@ impl<'a> SetupPreview<'a> {
             }
         }
 
-        if let Some(cmd) = game.launch_command.as_deref() {
+        if let Some(cmd) = game.launch_command.as_ref().map(ToString::to_string) {
             let trimmed = cmd.trim();
             if !trimmed.is_empty() {
                 details.push(format!("Launch command: {}", trimmed));

@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
+use crate::game::launch_command::{EdenLaunchCommand, LaunchCommand, LaunchCommandKind};
 use crate::game::platforms::appimage_finder::find_appimage_by_paths;
 use crate::menu_utils::{
     ConfirmResult, FilePickerScope, FzfWrapper, PathInputBuilder, PathInputSelection,
@@ -34,7 +35,7 @@ pub struct EdenBuilder;
 
 impl EdenBuilder {
     /// Build an Eden launch command interactively
-    pub fn build_command() -> Result<Option<String>> {
+    pub fn build_command() -> Result<Option<LaunchCommand>> {
         // Step 1: Find or select Eden AppImage
         let eden_path = match Self::find_or_select_eden()? {
             Some(p) => p,
@@ -51,7 +52,7 @@ impl EdenBuilder {
         let fullscreen = ask_fullscreen()?;
 
         // Build the command
-        let command = Self::format_command(&eden_path, &game_file, fullscreen);
+        let command = Self::build_launch_command(&eden_path, &game_file, fullscreen);
 
         // Show preview and confirm
         if confirm_command(&command)? {
@@ -143,26 +144,20 @@ impl EdenBuilder {
         )
     }
 
-    fn format_command(eden_path: &Path, game_file: &Path, fullscreen: bool) -> String {
-        let eden_str = eden_path.to_string_lossy();
-        let game_str = game_file.to_string_lossy();
-
-        let mut parts = vec![format!("\"{}\"", eden_str)];
-
-        if fullscreen {
-            parts.push("-f".to_string());
+    fn build_launch_command(eden_path: &Path, game_file: &Path, fullscreen: bool) -> LaunchCommand {
+        LaunchCommand {
+            wrappers: Default::default(),
+            kind: LaunchCommandKind::Eden(EdenLaunchCommand {
+                appimage: eden_path.to_path_buf(),
+                game: game_file.to_path_buf(),
+                fullscreen,
+            }),
         }
-
-        parts.push(format!("-g \"{}\"", game_str));
-
-        parts.join(" ")
     }
 
     /// Format a simple Eden command without fullscreen flag.
     /// Used by the discovery prefill to avoid code duplication.
-    pub(crate) fn format_command_simple(eden_path: &Path, game_file: &Path) -> String {
-        let eden_str = eden_path.to_string_lossy();
-        let game_str = game_file.to_string_lossy();
-        format!("\"{}\" -g \"{}\"", eden_str, game_str)
+    pub(crate) fn format_command_simple(eden_path: &Path, game_file: &Path) -> LaunchCommand {
+        Self::build_launch_command(eden_path, game_file, false)
     }
 }

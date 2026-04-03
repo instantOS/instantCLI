@@ -19,14 +19,19 @@ pub mod ludusavi;
 mod mgba;
 mod pcsx2;
 mod prompts;
+mod steam_launcher;
 mod umu;
 mod validation;
 
 use anyhow::Result;
+use std::path::{Path, PathBuf};
 
+use crate::game::launch_command::{GamescopeOptions, LaunchCommand};
+use crate::game::utils::path::is_valid_wine_prefix;
 use crate::menu::protocol::FzfPreview;
 use crate::menu_utils::{
-    FzfResult, FzfSelectable, FzfWrapper, Header, TextEditOutcome, TextEditPrompt, prompt_text_edit,
+    ConfirmResult, FzfResult, FzfSelectable, FzfWrapper, Header, TextEditOutcome, TextEditPrompt,
+    prompt_text_edit,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
@@ -38,13 +43,50 @@ pub use duckstation::DuckStationBuilder;
 pub use eden::EdenBuilder;
 pub use mgba::MgbaBuilder;
 pub use pcsx2::Pcsx2Builder;
+pub use steam_launcher::SteamBuilder;
 pub use umu::UmuBuilder;
+
+#[derive(Debug, Clone, Default)]
+pub struct LaunchCommandBuilderContext {
+    pub game_name: Option<String>,
+    pub save_path: Option<PathBuf>,
+    pub recommended_launcher: Option<LauncherType>,
+    pub recommended_wine_prefix: Option<PathBuf>,
+    pub recommended_steam_app_id: Option<u32>,
+}
+
+impl LaunchCommandBuilderContext {
+    pub fn from_game(game_name: Option<&str>, save_path: Option<&Path>) -> Self {
+        let mut context = Self {
+            game_name: game_name.map(str::to_string),
+            save_path: save_path.map(Path::to_path_buf),
+            ..Default::default()
+        };
+
+        if let Some(path) = save_path {
+            if let Some((app_id, prefix)) = infer_steam_prefix(path) {
+                context.recommended_launcher = Some(LauncherType::Steam);
+                context.recommended_steam_app_id = Some(app_id);
+                context.recommended_wine_prefix = Some(prefix);
+                return context;
+            }
+
+            if let Some(prefix) = infer_wine_prefix(path) {
+                context.recommended_launcher = Some(LauncherType::UmuRun);
+                context.recommended_wine_prefix = Some(prefix);
+            }
+        }
+
+        context
+    }
+}
 
 /// Launcher type selection
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LauncherType {
     Manual,
     UmuRun,
+    Steam,
     Eden,
     DolphinFlatpak,
     Pcsx2Flatpak,
@@ -59,6 +101,7 @@ impl std::fmt::Display for LauncherType {
         match self {
             LauncherType::Manual => write!(f, "manual"),
             LauncherType::UmuRun => write!(f, "umu-run"),
+            LauncherType::Steam => write!(f, "steam"),
             LauncherType::Eden => write!(f, "eden"),
             LauncherType::DolphinFlatpak => write!(f, "dolphin-flatpak"),
             LauncherType::Pcsx2Flatpak => write!(f, "pcsx2-flatpak"),
@@ -92,7 +135,13 @@ impl FzfSelectable for LauncherItem {
 }
 
 /// Build launcher selection menu items
-fn build_launcher_items() -> Vec<LauncherItem> {
+fn build_launcher_items(context: Option<&LaunchCommandBuilderContext>) -> Vec<LauncherItem> {
+    let recommended_launcher = context.and_then(|context| context.recommended_launcher);
+    let recommended_wine_prefix = context
+        .and_then(|context| context.recommended_wine_prefix.as_ref())
+        .map(|path| path.display().to_string());
+    let recommended_steam_app_id = context.and_then(|context| context.recommended_steam_app_id);
+
     vec![
         LauncherItem {
             launcher: LauncherType::Manual,
@@ -119,24 +168,63 @@ fn build_launcher_items() -> Vec<LauncherItem> {
         LauncherItem {
             launcher: LauncherType::UmuRun,
             display: format!(
-                "{} umu-run (Wine/Proton)",
-                format_icon_colored(NerdFont::Wine, colors::MAUVE)
+                "{} Wine / umu-run{}",
+                format_icon_colored(NerdFont::Wine, colors::MAUVE),
+                if recommended_launcher == Some(LauncherType::UmuRun) {
+                    " [recommended]"
+                } else {
+                    ""
+                }
             ),
             preview: PreviewBuilder::new()
-                .header(NerdFont::Wine, "umu-run")
-                .text("Unified launcher for Windows games on Linux.")
+                .header(NerdFont::Wine, "Wine / umu-run")
+                .text("Typed Windows launcher variant.")
                 .blank()
-                .text("Run Windows executables (.exe) using Proton")
-                .text("without requiring Steam.")
+                .text("Run Windows executables (.exe) using umu-run")
+                .text("or plain wine with a known prefix and executable.")
                 .blank()
                 .separator()
                 .blank()
                 .text("Configuration:")
                 .bullet("Wine prefix directory")
-                .bullet("Proton version (auto-downloads if needed)")
+                .bullet("Runner: umu-run or wine")
+                .bullet("Proton version for umu-run")
                 .bullet("Windows executable path")
                 .blank()
-                .subtext("Requires: umu-launcher package")
+                .field(
+                    "Recommended prefix",
+                    recommended_wine_prefix
+                        .as_deref()
+                        .unwrap_or("<none inferred>"),
+                )
+                .blank()
+                .subtext("Requires: umu-launcher for the umu-run mode")
+                .build(),
+        },
+        LauncherItem {
+            launcher: LauncherType::Steam,
+            display: format!(
+                "{} Steam{}",
+                format_icon_colored(NerdFont::Steam, colors::SAPPHIRE),
+                if recommended_launcher == Some(LauncherType::Steam) {
+                    " [recommended]"
+                } else {
+                    ""
+                }
+            ),
+            preview: PreviewBuilder::new()
+                .header(NerdFont::Steam, "Steam")
+                .text("Native Steam launch command variant.")
+                .blank()
+                .text("Uses a typed Steam app ID and serializes to")
+                .text("a standard `steam://rungameid/...` command.")
+                .blank()
+                .field(
+                    "Detected app ID",
+                    &recommended_steam_app_id
+                        .map(|app_id| app_id.to_string())
+                        .unwrap_or_else(|| "<none inferred>".to_string()),
+                )
                 .build(),
         },
         LauncherItem {
@@ -310,15 +398,25 @@ fn build_launcher_items() -> Vec<LauncherItem> {
 }
 
 /// Interactive launcher type selection
-pub fn select_launcher_type() -> Result<Option<LauncherType>> {
-    let items = build_launcher_items();
+pub fn select_launcher_type(
+    context: Option<&LaunchCommandBuilderContext>,
+) -> Result<Option<LauncherType>> {
+    let items = build_launcher_items(context);
+    let recommended = context.and_then(|context| context.recommended_launcher);
+    let initial_index =
+        recommended.and_then(|launcher| items.iter().position(|item| item.launcher == launcher));
 
-    let result = FzfWrapper::builder()
+    let mut builder = FzfWrapper::builder()
         .header(Header::fancy("Select Launcher Type"))
         .prompt("Launcher")
         .args(fzf_mocha_args())
-        .responsive_layout()
-        .select_padded(items)?;
+        .responsive_layout();
+
+    if let Some(index) = initial_index {
+        builder = builder.initial_index(index);
+    }
+
+    let result = builder.select_padded(items)?;
 
     match result {
         FzfResult::Selected(item) => {
@@ -334,28 +432,79 @@ pub fn select_launcher_type() -> Result<Option<LauncherType>> {
 }
 
 /// Main entry point for the launch command builder
-/// Returns the built command string if successful
-pub fn build_launch_command() -> Result<Option<String>> {
-    let launcher_type = match select_launcher_type()? {
+/// Returns the typed launch command if successful
+pub fn build_launch_command() -> Result<Option<LaunchCommand>> {
+    build_launch_command_with_context(None)
+}
+
+pub fn build_launch_command_with_context(
+    context: Option<&LaunchCommandBuilderContext>,
+) -> Result<Option<LaunchCommand>> {
+    let launcher_type = match select_launcher_type(context)? {
         Some(t) => t,
         None => return Ok(None),
     };
 
-    match launcher_type {
+    let command = match launcher_type {
         LauncherType::Manual => prompt_manual_command(),
-        LauncherType::UmuRun => UmuBuilder::build_command(),
+        LauncherType::UmuRun => UmuBuilder::build_command(
+            context.and_then(|ctx| ctx.recommended_wine_prefix.as_deref()),
+        ),
+        LauncherType::Steam => {
+            SteamBuilder::build_command(context.and_then(|ctx| ctx.recommended_steam_app_id))
+        }
         LauncherType::Eden => EdenBuilder::build_command(),
-        LauncherType::DolphinFlatpak => DolphinBuilder::build_command(),
-        LauncherType::Pcsx2Flatpak => Pcsx2Builder::build_command(),
-        LauncherType::AzaharFlatpak => AzaharBuilder::build_command(),
-        LauncherType::MgbaQt => MgbaBuilder::build_command(),
-        LauncherType::DuckStation => DuckStationBuilder::build_command(),
+        LauncherType::DolphinFlatpak => DolphinBuilder::build_command()
+            .map(|command| command.map(LaunchCommand::from_shell_or_manual)),
+        LauncherType::Pcsx2Flatpak => Pcsx2Builder::build_command()
+            .map(|command| command.map(LaunchCommand::from_shell_or_manual)),
+        LauncherType::AzaharFlatpak => AzaharBuilder::build_command()
+            .map(|command| command.map(LaunchCommand::from_shell_or_manual)),
+        LauncherType::MgbaQt => MgbaBuilder::build_command()
+            .map(|command| command.map(LaunchCommand::from_shell_or_manual)),
+        LauncherType::DuckStation => DuckStationBuilder::build_command()
+            .map(|command| command.map(LaunchCommand::from_shell_or_manual)),
         LauncherType::Back => Ok(None),
+    }?;
+
+    command.map(apply_launch_wrappers).transpose()
+}
+
+fn infer_wine_prefix(path: &Path) -> Option<PathBuf> {
+    path.ancestors()
+        .find(|ancestor| is_valid_wine_prefix(ancestor))
+        .map(Path::to_path_buf)
+}
+
+fn infer_steam_prefix(path: &Path) -> Option<(u32, PathBuf)> {
+    for ancestor in path.ancestors() {
+        if ancestor.file_name().and_then(|part| part.to_str()) != Some("pfx") {
+            continue;
+        }
+
+        let app_id = ancestor
+            .parent()?
+            .file_name()?
+            .to_str()?
+            .parse::<u32>()
+            .ok()?;
+
+        if ancestor
+            .parent()?
+            .parent()?
+            .file_name()
+            .and_then(|part| part.to_str())
+            == Some("compatdata")
+        {
+            return Some((app_id, ancestor.to_path_buf()));
+        }
     }
+
+    None
 }
 
 /// Prompt user to manually enter a launch command
-fn prompt_manual_command() -> Result<Option<String>> {
+fn prompt_manual_command() -> Result<Option<LaunchCommand>> {
     let prompt = TextEditPrompt::new("Launch command", None)
         .header("Enter the launch command")
         .ghost("e.g., flatpak run com.valvesoftware.Steam -applaunch 12345");
@@ -365,9 +514,65 @@ fn prompt_manual_command() -> Result<Option<String>> {
             if command.trim().is_empty() {
                 Ok(None)
             } else {
-                Ok(Some(command.trim().to_string()))
+                Ok(Some(LaunchCommand::from_shell_or_manual(
+                    command.trim().to_string(),
+                )))
             }
         }
         _ => Ok(None),
     }
+}
+
+fn apply_launch_wrappers(mut command: LaunchCommand) -> Result<LaunchCommand> {
+    command.wrappers.gamemode = ask_enable_gamemode()?;
+    command.wrappers.gamescope = ask_gamescope_options()?;
+    Ok(command)
+}
+
+fn ask_enable_gamemode() -> Result<bool> {
+    match FzfWrapper::builder()
+        .confirm(format!(
+            "{} Wrap the launch with gamemoderun?",
+            char::from(NerdFont::Performance)
+        ))
+        .yes_text("Use gamemode")
+        .no_text("No gamemode")
+        .confirm_dialog()?
+    {
+        ConfirmResult::Yes => Ok(true),
+        ConfirmResult::No | ConfirmResult::Cancelled => Ok(false),
+    }
+}
+
+fn ask_gamescope_options() -> Result<Option<GamescopeOptions>> {
+    let enabled = match FzfWrapper::builder()
+        .confirm(format!(
+            "{} Wrap the launch with gamescope?",
+            char::from(NerdFont::Desktop)
+        ))
+        .yes_text("Use gamescope")
+        .no_text("No gamescope")
+        .confirm_dialog()?
+    {
+        ConfirmResult::Yes => true,
+        ConfirmResult::No | ConfirmResult::Cancelled => false,
+    };
+
+    if !enabled {
+        return Ok(None);
+    }
+
+    let prompt = TextEditPrompt::new("Gamescope options", Some(""))
+        .header("Enter optional gamescope flags")
+        .ghost("Example: -f -W 1280 -H 720");
+
+    let options = match prompt_text_edit(prompt)? {
+        TextEditOutcome::Updated(Some(raw)) => match shell_words::split(raw.trim()) {
+            Ok(options) => options,
+            Err(_) => Vec::new(),
+        },
+        _ => Vec::new(),
+    };
+
+    Ok(Some(GamescopeOptions { options }))
 }

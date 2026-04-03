@@ -4,6 +4,7 @@ pub mod commands;
 pub mod config;
 pub mod deps;
 pub mod games;
+pub mod launch_command;
 pub mod menu;
 pub mod operations;
 pub mod platforms;

@@ -39,10 +39,14 @@ pub fn remove_game(game_name: Option<String>, force: bool) -> Result<()> {
              Game: {}\n\
              Description: {}\n\
              Launch command: {}\n\n\
-             This will remove the game from your configuration and save path mapping.",
+            This will remove the game from your configuration and save path mapping.",
             game.name.0,
             game.description.as_deref().unwrap_or("None"),
-            game.launch_command.as_deref().unwrap_or("None")
+            game.launch_command
+                .as_ref()
+                .map(ToString::to_string)
+                .as_deref()
+                .unwrap_or("None")
         ))
         .yes_text("Remove Game")
         .no_text("Keep Game")

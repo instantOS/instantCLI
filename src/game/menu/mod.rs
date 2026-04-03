@@ -12,10 +12,12 @@ use crate::game::games::AddGameOptions;
 use crate::game::games::GameManager;
 use crate::game::games::selection::{GameMenuEntry, select_game_menu_entry};
 use crate::game::handle_game_command;
+use crate::game::launch_command::LaunchCommand;
 use crate::game::operations::desktop;
 use crate::game::operations::launch_game;
 use crate::game::operations::steam;
 use crate::game::operations::sync::sync_game_saves;
+use crate::game::platforms::LaunchCommandBuilderContext;
 use crate::game::restic;
 use crate::game::setup;
 use crate::menu::protocol::FzfPreview;
@@ -116,7 +118,7 @@ impl GameState {
         });
 
         // Installation command takes precedence over game command
-        let launch_command = inst_cmd.or(game_cmd);
+        let launch_command = inst_cmd.or(game_cmd).map(|command| command.to_string());
 
         Ok(Self {
             game_config,
@@ -409,7 +411,17 @@ fn handle_action(
         GameAction::Launch => {
             if state.launch_command.is_none() {
                 // Show builder menu directly to let user choose manual or builder
-                match crate::game::platforms::build_launch_command()? {
+                let installation = state
+                    .installations
+                    .installations
+                    .iter()
+                    .find(|install| install.game_name.0 == game_name);
+                let context = LaunchCommandBuilderContext::from_game(
+                    Some(game_name),
+                    installation.map(|install| install.save_path.as_path()),
+                );
+
+                match crate::game::platforms::build_launch_command_with_context(Some(&context))? {
                     Some(command) => {
                         // Save to game config
                         let mut game_config = state.game_config.clone();
@@ -864,7 +876,8 @@ pub fn open_prefilled_add_editor(options: AddGameOptions) -> Result<()> {
     game.description = options.description.filter(|value| !value.trim().is_empty());
     game.launch_command = options
         .launch_command
-        .filter(|value| !value.trim().is_empty());
+        .filter(|value| !value.trim().is_empty())
+        .map(LaunchCommand::from_shell_or_manual);
     game_config.games.push(game);
 
     let save_path = options

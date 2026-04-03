@@ -1,5 +1,7 @@
 use anyhow::{Result, anyhow};
 
+use crate::game::launch_command::LaunchCommand;
+use crate::game::platforms::LaunchCommandBuilderContext;
 use crate::game::utils::path::{path_selection_to_tilde, tilde_display_string};
 use crate::game::utils::safeguards::{PathUsage, ensure_safe_path};
 use crate::menu::protocol::FzfPreview;
@@ -208,10 +210,14 @@ pub fn edit_description(state: &mut EditState) -> Result<bool> {
 
 /// Edit launch command (shows submenu for shared vs installation override)
 pub fn edit_launch_command(state: &mut EditState) -> Result<bool> {
-    let game_cmd = state.game().launch_command.as_deref();
+    let game_cmd = state
+        .game()
+        .launch_command
+        .as_ref()
+        .map(ToString::to_string);
     let inst_cmd = state
         .installation()
-        .and_then(|i| i.launch_command.as_deref());
+        .and_then(|i| i.launch_command.as_ref().map(ToString::to_string));
 
     // Build submenu
     #[derive(Debug, Clone)]
@@ -246,11 +252,11 @@ pub fn edit_launch_command(state: &mut EditState) -> Result<bool> {
         display: format!(
             "{} Edit shared command (games.toml): {}",
             char::from(NerdFont::Edit),
-            game_cmd.unwrap_or("<not set>")
+            game_cmd.as_deref().unwrap_or("<not set>")
         ),
         preview: format!(
             "Edit the launch command in games.toml\n\nCurrent value: {}\n\nThis command is shared across all devices.",
-            game_cmd.unwrap_or("<not set>")
+            game_cmd.as_deref().unwrap_or("<not set>")
         ),
         target: LaunchCommandTarget::GameConfig,
     }];
@@ -260,11 +266,11 @@ pub fn edit_launch_command(state: &mut EditState) -> Result<bool> {
             display: format!(
                 "{} Edit device-specific override (installations.toml): {}",
                 char::from(NerdFont::Desktop),
-                inst_cmd.unwrap_or("<not set>")
+                inst_cmd.as_deref().unwrap_or("<not set>")
             ),
             preview: format!(
                 "Edit the launch command override in installations.toml\n\nCurrent value: {}\n\nThis command is device-specific and overrides the shared command.",
-                inst_cmd.unwrap_or("<not set>")
+                inst_cmd.as_deref().unwrap_or("<not set>")
             ),
             target: LaunchCommandTarget::Installation,
         });
@@ -292,28 +298,42 @@ pub fn edit_launch_command(state: &mut EditState) -> Result<bool> {
 
 /// Edit the shared launch command in games.toml
 fn edit_game_launch_command(state: &mut EditState) -> Result<bool> {
-    let current_owned = state.game().launch_command.clone();
+    let current_owned = state
+        .game()
+        .launch_command
+        .as_ref()
+        .map(ToString::to_string);
     let current = current_owned.as_deref();
 
-    let inst_cmd_owned = state.installation().and_then(|i| i.launch_command.clone());
+    let inst_cmd_owned = state
+        .installation()
+        .and_then(|i| i.launch_command.as_ref().map(ToString::to_string));
     let other = inst_cmd_owned.as_deref().map(|cmd| OtherCommandInfo {
         command: cmd,
         source_label: "device-specific override",
     });
+    let context = LaunchCommandBuilderContext::from_game(
+        Some(&state.game().name.0),
+        state
+            .installation()
+            .map(|install| install.save_path.as_path()),
+    );
 
     match select_launch_command_input_method(current, other)? {
-        LaunchCommandInputMethod::Build => match crate::game::platforms::build_launch_command()? {
-            Some(command) => {
-                state.game_mut().launch_command = Some(command.clone());
-                FzfWrapper::message(&format!(
-                    "{} Launch command set in games.toml:\n\n{}",
-                    char::from(NerdFont::Check),
-                    command
-                ))?;
-                Ok(true)
+        LaunchCommandInputMethod::Build => {
+            match crate::game::platforms::build_launch_command_with_context(Some(&context))? {
+                Some(command) => {
+                    state.game_mut().launch_command = Some(command.clone());
+                    FzfWrapper::message(&format!(
+                        "{} Launch command set in games.toml:\n\n{}",
+                        char::from(NerdFont::Check),
+                        command
+                    ))?;
+                    Ok(true)
+                }
+                None => Ok(false),
             }
-            None => Ok(false),
-        },
+        }
         LaunchCommandInputMethod::CopyFromOther => {
             let source = inst_cmd_owned.as_deref();
             let header = format!(
@@ -326,7 +346,9 @@ fn edit_game_launch_command(state: &mut EditState) -> Result<bool> {
                     .ghost("Leave empty to cancel"),
                 None,
                 "Launch command",
-                |value| state.game_mut().launch_command = value,
+                |value| {
+                    state.game_mut().launch_command = value.map(LaunchCommand::from_shell_or_manual)
+                },
             )
             .suffix("in games.toml")
             .run()
@@ -362,30 +384,42 @@ fn edit_installation_launch_command(state: &mut EditState) -> Result<bool> {
 
     let current_owned = state
         .installation()
-        .and_then(|install| install.launch_command.clone());
+        .and_then(|install| install.launch_command.as_ref().map(ToString::to_string));
     let current = current_owned.as_deref();
 
-    let game_cmd_owned = state.game().launch_command.clone();
+    let game_cmd_owned = state
+        .game()
+        .launch_command
+        .as_ref()
+        .map(ToString::to_string);
     let other = game_cmd_owned.as_deref().map(|cmd| OtherCommandInfo {
         command: cmd,
         source_label: "shared command",
     });
+    let context = LaunchCommandBuilderContext::from_game(
+        Some(&state.game().name.0),
+        state
+            .installation()
+            .map(|install| install.save_path.as_path()),
+    );
 
     match select_launch_command_input_method(current, other)? {
-        LaunchCommandInputMethod::Build => match crate::game::platforms::build_launch_command()? {
-            Some(command) => {
-                if let Some(installation) = state.installation_mut() {
-                    installation.launch_command = Some(command.clone());
+        LaunchCommandInputMethod::Build => {
+            match crate::game::platforms::build_launch_command_with_context(Some(&context))? {
+                Some(command) => {
+                    if let Some(installation) = state.installation_mut() {
+                        installation.launch_command = Some(command.clone());
+                    }
+                    FzfWrapper::message(&format!(
+                        "{} Launch command override set in installations.toml:\n\n{}",
+                        char::from(NerdFont::Check),
+                        command
+                    ))?;
+                    Ok(true)
                 }
-                FzfWrapper::message(&format!(
-                    "{} Launch command override set in installations.toml:\n\n{}",
-                    char::from(NerdFont::Check),
-                    command
-                ))?;
-                Ok(true)
+                None => Ok(false),
             }
-            None => Ok(false),
-        },
+        }
         LaunchCommandInputMethod::CopyFromOther => {
             let source = game_cmd_owned.as_deref();
             let header = format!(
@@ -400,7 +434,8 @@ fn edit_installation_launch_command(state: &mut EditState) -> Result<bool> {
                 "Launch command override",
                 |value| {
                     if let Some(installation) = state.installation_mut() {
-                        installation.launch_command = value;
+                        installation.launch_command =
+                            value.map(LaunchCommand::from_shell_or_manual);
                     }
                 },
             )

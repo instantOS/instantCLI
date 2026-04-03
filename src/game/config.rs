@@ -8,6 +8,7 @@ use std::{
 use crate::common::TildePath;
 use crate::common::config::DocumentedConfig;
 use crate::common::paths;
+use crate::game::launch_command::LaunchCommand;
 
 /// Describes what kind of filesystem element a tracked path represents
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -129,7 +130,7 @@ impl From<&str> for GameName {
 pub struct Game {
     pub name: GameName,
     pub description: Option<String>,
-    pub launch_command: Option<String>,
+    pub launch_command: Option<LaunchCommand>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dependencies: Vec<GameDependency>,
 }
@@ -165,7 +166,7 @@ pub struct GameInstallation {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub checkpoint_time: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub launch_command: Option<String>,
+    pub launch_command: Option<LaunchCommand>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dependencies: Vec<InstalledDependency>,
 }

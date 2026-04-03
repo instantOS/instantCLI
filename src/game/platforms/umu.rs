@@ -6,6 +6,9 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
+use crate::game::launch_command::{
+    LaunchCommand, LaunchCommandKind, ProtonSelection, WineLaunchCommand, WineRunner,
+};
 use crate::menu_utils::{
     ConfirmResult, FilePickerResult, FilePickerScope, FzfWrapper, MenuWrapper, PathInputBuilder,
     PathInputSelection,
@@ -17,50 +20,29 @@ use super::prompts::{
 };
 use super::validation::{WINDOWS_EXTENSIONS, validate_game_file};
 
-/// Proton version selection
-#[derive(Debug, Clone)]
-pub enum ProtonPath {
-    /// Use latest GE-Proton (auto-download)
-    GeProtonLatest,
-    /// Use latest UMU-Proton (default)
-    UmuProtonLatest,
-    /// Custom path to Proton installation
-    Custom(PathBuf),
-}
-
-impl ProtonPath {
-    fn to_env_value(&self) -> String {
-        match self {
-            ProtonPath::GeProtonLatest => "GE-Proton".to_string(),
-            ProtonPath::UmuProtonLatest => String::new(), // Empty = default UMU-Proton
-            ProtonPath::Custom(path) => path.to_string_lossy().to_string(),
-        }
-    }
-
-    fn display_name(&self) -> &str {
-        match self {
-            ProtonPath::GeProtonLatest => "GE-Proton (latest)",
-            ProtonPath::UmuProtonLatest => "UMU-Proton (default)",
-            ProtonPath::Custom(_) => "Custom path",
-        }
-    }
-}
-
 pub struct UmuBuilder;
 
 impl UmuBuilder {
-    /// Build an umu-run launch command interactively
-    pub fn build_command() -> Result<Option<String>> {
+    /// Build a Wine/umu-run launch command interactively
+    pub fn build_command(prefix_hint: Option<&Path>) -> Result<Option<LaunchCommand>> {
+        let runner = match Self::select_runner()? {
+            Some(runner) => runner,
+            None => return Ok(None),
+        };
+
         // Step 1: Select Wine prefix
-        let wine_prefix = match Self::select_wine_prefix()? {
+        let wine_prefix = match Self::select_wine_prefix(prefix_hint)? {
             Some(p) => p,
             None => return Ok(None),
         };
 
-        // Step 2: Select Proton version
-        let proton_path = match Self::select_proton_version()? {
-            Some(p) => p,
-            None => return Ok(None),
+        let proton_path = if matches!(runner, WineRunner::UmuRun) {
+            match Self::select_proton_version()? {
+                Some(p) => p,
+                None => return Ok(None),
+            }
+        } else {
+            ProtonSelection::UmuProtonLatest
         };
 
         // Step 3: Select executable
@@ -73,7 +55,13 @@ impl UmuBuilder {
         let fullscreen = ask_fullscreen()?;
 
         // Build the command
-        let command = Self::format_command(&wine_prefix, &proton_path, &executable, fullscreen);
+        let command = Self::build_launch_command(
+            runner,
+            Some(wine_prefix),
+            proton_path,
+            &executable,
+            fullscreen,
+        );
 
         // Show preview and confirm
         let confirmed = confirm_command(&command)?;
@@ -84,12 +72,65 @@ impl UmuBuilder {
         }
     }
 
-    fn select_wine_prefix() -> Result<Option<PathBuf>> {
+    fn select_runner() -> Result<Option<WineRunner>> {
+        let options = vec![
+            format!("{} umu-run (recommended)", format_icon(NerdFont::Check)),
+            format!("{} wine", format_icon(NerdFont::Wine)),
+            format!("{} Cancel", format_icon(NerdFont::Cross)),
+        ];
+
+        match FzfWrapper::builder()
+            .header(crate::menu_utils::Header::fancy("Select Wine Runner"))
+            .prompt("Runner")
+            .args(crate::ui::catppuccin::fzf_mocha_args())
+            .responsive_layout()
+            .select_padded(options)?
+        {
+            crate::menu_utils::FzfResult::Selected(item) if item.contains("umu-run") => {
+                Ok(Some(WineRunner::UmuRun))
+            }
+            crate::menu_utils::FzfResult::Selected(item) if item.contains("wine") => {
+                Ok(Some(WineRunner::Wine))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    fn select_wine_prefix(prefix_hint: Option<&Path>) -> Result<Option<PathBuf>> {
+        if let Some(prefix_hint) = prefix_hint {
+            match FzfWrapper::builder()
+                .confirm(format!(
+                    "{} Detected Wine/Proton prefix:\n{}\n\nUse this prefix?",
+                    char::from(NerdFont::Check),
+                    prefix_hint.display()
+                ))
+                .yes_text("Use detected prefix")
+                .no_text("Choose different")
+                .confirm_dialog()?
+            {
+                ConfirmResult::Yes => return Ok(Some(prefix_hint.to_path_buf())),
+                ConfirmResult::Cancelled => return Ok(None),
+                ConfirmResult::No => {}
+            }
+        }
+
+        let header = prefix_hint
+            .map(|path| {
+                format!(
+                    "{} Select Wine Prefix Directory\nDetected from save path: {}",
+                    char::from(NerdFont::Wine),
+                    path.display()
+                )
+            })
+            .unwrap_or_else(|| {
+                format!(
+                    "{} Select Wine Prefix Directory",
+                    char::from(NerdFont::Wine)
+                )
+            });
+
         let selection = PathInputBuilder::new()
-            .header(format!(
-                "{} Select Wine Prefix Directory",
-                char::from(NerdFont::Wine)
-            ))
+            .header(header)
             .scope(FilePickerScope::Directories)
             .picker_hint(format!(
                 "{} Choose or create a Wine prefix directory",
@@ -103,6 +144,19 @@ impl UmuBuilder {
                 "{} Browse for prefix directory",
                 char::from(NerdFont::FolderOpen)
             ))
+            .manual_prompt(
+                prefix_hint
+                    .map(|path| {
+                        format!(
+                            "{} Enter the prefix path [{}]:",
+                            char::from(NerdFont::Edit),
+                            path.display()
+                        )
+                    })
+                    .unwrap_or_else(|| {
+                        format!("{} Enter the prefix path:", char::from(NerdFont::Edit))
+                    }),
+            )
             .wine_prefix_option_label(format!(
                 "{} Select from Wine prefixes",
                 char::from(NerdFont::Wine)
@@ -133,7 +187,7 @@ impl UmuBuilder {
         }
     }
 
-    fn select_proton_version() -> Result<Option<ProtonPath>> {
+    fn select_proton_version() -> Result<Option<ProtonSelection>> {
         let options = vec![
             format!(
                 "{} UMU-Proton (default, recommended)",
@@ -154,16 +208,16 @@ impl UmuBuilder {
         match result {
             crate::menu_utils::FzfResult::Selected(item) => {
                 if item.contains("UMU-Proton") {
-                    Ok(Some(ProtonPath::UmuProtonLatest))
+                    Ok(Some(ProtonSelection::UmuProtonLatest))
                 } else if item.contains("GE-Proton") {
-                    Ok(Some(ProtonPath::GeProtonLatest))
+                    Ok(Some(ProtonSelection::GeProtonLatest))
                 } else if item.contains("Custom") {
                     // Select custom proton path
                     let result = MenuWrapper::file_picker()
                         .scope(FilePickerScope::Directories)
                         .pick()?;
                     match result {
-                        FilePickerResult::Selected(path) => Ok(Some(ProtonPath::Custom(path))),
+                        FilePickerResult::Selected(path) => Ok(Some(ProtonSelection::Custom(path))),
                         _ => Ok(None),
                     }
                 } else {
@@ -193,31 +247,22 @@ impl UmuBuilder {
         )
     }
 
-    fn format_command(
-        wine_prefix: &Path,
-        proton_path: &ProtonPath,
+    fn build_launch_command(
+        runner: WineRunner,
+        wine_prefix: Option<PathBuf>,
+        proton_path: ProtonSelection,
         executable: &Path,
         _fullscreen: bool,
-    ) -> String {
-        let prefix_str = wine_prefix.to_string_lossy();
-        let exe_str = executable.to_string_lossy();
-
-        let proton_env = proton_path.to_env_value();
-
-        let mut parts = Vec::new();
-
-        // WINEPREFIX
-        parts.push(format!("WINEPREFIX=\"{}\"", prefix_str));
-
-        // PROTONPATH (only if not default)
-        if !proton_env.is_empty() {
-            parts.push(format!("PROTONPATH=\"{}\"", proton_env));
+    ) -> LaunchCommand {
+        LaunchCommand {
+            wrappers: Default::default(),
+            kind: LaunchCommandKind::Wine(WineLaunchCommand {
+                runner,
+                prefix: wine_prefix,
+                proton: proton_path,
+                executable: executable.to_path_buf(),
+            }),
         }
-
-        // The command
-        parts.push(format!("umu-run \"{}\"", exe_str));
-
-        parts.join(" ")
     }
 }
 
