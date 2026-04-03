@@ -11,6 +11,7 @@ use crate::game::launch_command::{
     LaunchCommandKind,
 };
 use crate::game::platforms::appimage_finder::find_appimage_by_paths;
+use crate::game::platforms::discovery::eden::collect_configured_rom_files;
 use crate::menu_utils::{
     ConfirmResult, FilePickerScope, FzfWrapper, PathInputBuilder, PathInputSelection,
 };
@@ -142,7 +143,8 @@ impl EdenBuilder {
                     char::from(NerdFont::Info),
                     format_valid_extensions(EDEN_EXTENSIONS)
                 ),
-            ),
+            )
+            .suggested_paths(collect_configured_rom_files()),
             |path| validate_game_file(path, "Eden", EDEN_EXTENSIONS),
         )
     }

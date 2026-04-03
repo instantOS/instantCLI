@@ -275,7 +275,7 @@ fn is_valid_title_id(s: &str) -> bool {
 // ---------------------------------------------------------------------------
 
 /// Collect all ROM file paths from Eden's config (recent files + game dirs).
-fn collect_rom_files(config_path: &Path) -> Vec<PathBuf> {
+pub(crate) fn collect_rom_files(config_path: &Path) -> Vec<PathBuf> {
     let config_content = match fs::read_to_string(config_path) {
         Ok(content) => content,
         Err(_) => return Vec::new(),
@@ -303,6 +303,12 @@ fn collect_rom_files(config_path: &Path) -> Vec<PathBuf> {
     }
 
     files
+}
+
+/// Collect all ROM files known to Eden from its config.
+pub(crate) fn collect_configured_rom_files() -> Vec<PathBuf> {
+    let config_path = PathBuf::from(shellexpand::tilde(EDEN_CONFIG_PATH).into_owned());
+    collect_rom_files(&config_path)
 }
 
 /// Parse the `Paths\recentFiles=` line from Eden's config.

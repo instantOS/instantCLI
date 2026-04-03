@@ -12,6 +12,7 @@ pub(super) struct FileSelectionPrompt {
     pub picker_hint: String,
     pub manual_option_label: String,
     pub picker_option_label: String,
+    pub suggested_paths: Vec<PathBuf>,
 }
 
 impl FileSelectionPrompt {
@@ -24,6 +25,7 @@ impl FileSelectionPrompt {
                 "{} Browse for game file",
                 char::from(NerdFont::FolderOpen)
             ),
+            suggested_paths: Vec::new(),
         }
     }
 
@@ -38,7 +40,17 @@ impl FileSelectionPrompt {
             picker_hint,
             manual_option_label,
             picker_option_label,
+            suggested_paths: Vec::new(),
         }
+    }
+
+    pub(super) fn suggested_paths<I, P>(mut self, paths: I) -> Self
+    where
+        I: IntoIterator<Item = P>,
+        P: Into<PathBuf>,
+    {
+        self.suggested_paths = paths.into_iter().map(Into::into).collect();
+        self
     }
 }
 
@@ -55,6 +67,7 @@ where
         .picker_hint(prompt.picker_hint)
         .manual_option_label(prompt.manual_option_label)
         .picker_option_label(prompt.picker_option_label)
+        .suggested_paths(prompt.suggested_paths)
         .choose()?;
 
     match selection {
