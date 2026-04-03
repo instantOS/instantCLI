@@ -29,7 +29,6 @@ pub struct SteamDiscoveredGame {
     pub app_id: u32,
     pub prefix_path: PathBuf,
     pub save_path: PathBuf,
-    pub launch_command: Option<String>,
     pub is_shortcut: bool,
     pub is_existing: bool,
     pub tracked_name: Option<String>,
@@ -50,7 +49,6 @@ impl SteamDiscoveredGame {
             app_id,
             prefix_path,
             save_path,
-            launch_command: Some(format!("steam steam://rungameid/{}", app_id)),
             is_shortcut,
             is_existing: false,
             tracked_name: None,
@@ -132,10 +130,6 @@ impl DiscoveredGame for SteamDiscoveredGame {
             .text("Save path:")
             .bullet(&save_display);
 
-        if let Some(command) = &self.launch_command {
-            builder = builder.blank().text("Launch command:").bullet(command);
-        }
-
         builder = builder.blank().separator().blank();
 
         if self.is_existing {
@@ -145,10 +139,6 @@ impl DiscoveredGame for SteamDiscoveredGame {
         }
 
         builder.build()
-    }
-
-    fn build_launch_command(&self) -> Option<String> {
-        self.launch_command.clone()
     }
 
     fn clone_box(&self) -> Box<dyn DiscoveredGame> {

@@ -63,7 +63,7 @@ impl EdenBuilder {
 
     pub(crate) fn find_or_select_eden() -> Result<Option<PathBuf>> {
         // Try to find Eden in common locations using case-insensitive matching
-        if let Some(path) = find_appimage_by_paths(EDEN_SEARCH_PATHS) {
+        if let Some(path) = Self::find_eden_noninteractive() {
             // Found Eden, ask if user wants to use it
             match FzfWrapper::builder()
                 .confirm(format!(
@@ -127,6 +127,10 @@ impl EdenBuilder {
             PathInputSelection::WinePrefix(_) => Ok(None),
             PathInputSelection::Cancelled => Ok(None),
         }
+    }
+
+    pub(crate) fn find_eden_noninteractive() -> Option<PathBuf> {
+        find_appimage_by_paths(EDEN_SEARCH_PATHS)
     }
 
     fn select_game_file() -> Result<Option<PathBuf>> {

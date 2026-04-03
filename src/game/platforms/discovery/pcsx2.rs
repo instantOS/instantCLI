@@ -146,10 +146,6 @@ impl DiscoveredGame for Pcsx2DiscoveredMemcard {
         builder.build()
     }
 
-    fn build_launch_command(&self) -> Option<String> {
-        get_pcsx2_launch_command(self.install_type)
-    }
-
     fn clone_box(&self) -> Box<dyn DiscoveredGame> {
         Box::new(self.clone())
     }
@@ -253,24 +249,6 @@ fn display_name_from_path(path: &Path) -> Option<String> {
 
 /// Get the appropriate PCSX2 launch command for a given installation type.
 /// This is used when pre-filling the launch command in the add game flow.
-pub fn get_pcsx2_launch_command(install_type: Pcsx2InstallType) -> Option<String> {
-    match install_type {
-        Pcsx2InstallType::Flatpak => Some(format!("flatpak run {}", PCSX2_FLATPAK_ID)),
-        Pcsx2InstallType::Native => {
-            // Try to find EmuDeck AppImage first
-            let emudeck_paths = &["~/emulation/tools/launchers/pcsx2-qt.appimage"];
-            if let Some(path) =
-                crate::game::platforms::appimage_finder::find_appimage_by_paths(emudeck_paths)
-            {
-                Some(format!("\"{}\"", path.display()))
-            } else {
-                // Fall back to system pcsx2 command
-                Some("pcsx2-qt".to_string())
-            }
-        }
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------

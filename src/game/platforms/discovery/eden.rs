@@ -151,18 +151,6 @@ impl DiscoveredGame for EdenDiscoveredGame {
         builder.build()
     }
 
-    fn build_launch_command(&self) -> Option<String> {
-        use crate::game::platforms::EdenBuilder;
-        self.game_path.as_ref().and_then(|game_file| {
-            EdenBuilder::find_or_select_eden()
-                .ok()
-                .flatten()
-                .map(|eden_path| {
-                    EdenBuilder::format_command_simple(&eden_path, game_file).to_string()
-                })
-        })
-    }
-
     fn clone_box(&self) -> Box<dyn DiscoveredGame> {
         Box::new(self.clone())
     }

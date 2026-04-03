@@ -146,10 +146,6 @@ impl DiscoveredGame for DuckstationDiscoveredMemcard {
         builder.build()
     }
 
-    fn build_launch_command(&self) -> Option<String> {
-        get_duckstation_launch_command(self.install_type)
-    }
-
     fn clone_box(&self) -> Box<dyn DiscoveredGame> {
         Box::new(self.clone())
     }
@@ -254,35 +250,6 @@ fn display_name_from_path(path: &Path) -> Option<String> {
 
 /// Get the appropriate DuckStation launch command for a given installation type.
 /// This is used when pre-filling the launch command in the add game flow.
-pub fn get_duckstation_launch_command(install_type: DuckstationInstallType) -> Option<String> {
-    match install_type {
-        DuckstationInstallType::Flatpak => Some(format!("flatpak run {}", DUCKSTATION_FLATPAK_ID)),
-        DuckstationInstallType::Native => {
-            // Try to find EmuDeck AppImage first
-            let emudeck_paths = &["~/emulation/tools/launchers/duckstation.appimage"];
-            if let Some(path) =
-                crate::game::platforms::appimage_finder::find_appimage_by_paths(emudeck_paths)
-            {
-                Some(format!("\"{}\"", path.display()))
-            } else {
-                // Try common AppImage locations
-                let appimage_paths = &[
-                    "~/AppImages/DuckStation-x64.AppImage",
-                    "~/AppImages/duckstation.appimage",
-                ];
-                if let Some(path) =
-                    crate::game::platforms::appimage_finder::find_appimage_by_paths(appimage_paths)
-                {
-                    Some(format!("\"{}\"", path.display()))
-                } else {
-                    // Fall back to system command
-                    Some("duckstation-qt".to_string())
-                }
-            }
-        }
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------

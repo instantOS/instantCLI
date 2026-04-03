@@ -32,7 +32,6 @@ pub struct DiscoveredGameRecord {
     pub unique_key: String,
     pub save_path: String,
     pub game_path: Option<String>,
-    pub launch_command: Option<String>,
     pub existing: bool,
     pub tracked_name: Option<String>,
 }
@@ -43,7 +42,6 @@ pub struct MenuSelectionPayload {
     pub display_name: Option<String>,
     pub tracked_name: Option<String>,
     pub save_path: Option<String>,
-    pub launch_command: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -101,7 +99,6 @@ pub fn print_streaming_menu_rows(
                         display_name: Some(game.record.name.clone()),
                         tracked_name: game.record.tracked_name.clone(),
                         save_path: Some(game.record.save_path.clone()),
-                        launch_command: game.record.launch_command.clone(),
                     },
                 )
                 .preview(FzfPreview::Text(game.preview_text.clone()))
@@ -158,7 +155,6 @@ fn emit_discovered_games_as_json(
                 "unique_key": game.record.unique_key,
                 "save_path": game.record.save_path,
                 "game_path": game.record.game_path,
-                "launch_command": game.record.launch_command,
                 "existing": game.record.existing,
                 "tracked_name": game.record.tracked_name,
             })
@@ -252,9 +248,6 @@ fn render_discovered_game(game: &DiscoveredGameRecord) -> String {
     );
     if let Some(game_path) = &game.game_path {
         text.push_str(&format!("  Game path: {}\n", game_path));
-    }
-    if let Some(launch_command) = &game.launch_command {
-        text.push_str(&format!("  Launch command: {}\n", launch_command));
     }
     if let Some(tracked_name) = &game.tracked_name {
         text.push_str(&format!("  Tracked as: {}\n", tracked_name));
@@ -461,7 +454,6 @@ fn into_record_with_preview(
             game_path: game
                 .game_path()
                 .map(|path| path.to_string_lossy().to_string()),
-            launch_command: game.build_launch_command(),
             existing: game.is_existing(),
             tracked_name: game.tracked_name().map(ToOwned::to_owned),
         },
@@ -698,7 +690,6 @@ mod tests {
                 display_name: Some("Game".to_string()),
                 tracked_name: None,
                 save_path: Some("/tmp/save".to_string()),
-                launch_command: Some("run".to_string()),
             },
         )
         .preview(FzfPreview::Text("preview".to_string()))
@@ -745,7 +736,6 @@ mod tests {
             unique_key: "wine:test".to_string(),
             save_path: "/definitely/missing".to_string(),
             game_path: None,
-            launch_command: None,
             existing: false,
             tracked_name: None,
         };
@@ -762,7 +752,6 @@ mod tests {
             unique_key: "epic:test".to_string(),
             save_path: "/tmp/save".to_string(),
             game_path: None,
-            launch_command: None,
             existing: false,
             tracked_name: None,
         };

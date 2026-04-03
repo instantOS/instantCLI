@@ -176,10 +176,6 @@ impl DiscoveredGame for AzaharDiscoveredGame {
         builder.build()
     }
 
-    fn build_launch_command(&self) -> Option<String> {
-        get_azahar_launch_command(self.install_type)
-    }
-
     fn clone_box(&self) -> Box<dyn DiscoveredGame> {
         Box::new(self.clone())
     }
@@ -274,14 +270,6 @@ fn discover_from_installation(
         .collect();
 
     Ok(results)
-}
-
-/// Get the Azahar launch command for a given installation type.
-pub fn get_azahar_launch_command(install_type: AzaharInstallType) -> Option<String> {
-    match install_type {
-        AzaharInstallType::Flatpak => Some(format!("flatpak run {}", AZAHAR_FLATPAK_ID)),
-        AzaharInstallType::Native => Some("azahar".to_string()),
-    }
 }
 
 /// Scan Azahar's SDMC directory structure and return a map of title ID → (save path, modified time).

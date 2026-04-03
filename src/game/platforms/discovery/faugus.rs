@@ -120,10 +120,6 @@ impl DiscoveredGame for FaugusDiscoveredGame {
         builder.build()
     }
 
-    fn build_launch_command(&self) -> Option<String> {
-        None
-    }
-
     fn clone_box(&self) -> Box<dyn DiscoveredGame> {
         Box::new(self.clone())
     }

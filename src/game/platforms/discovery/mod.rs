@@ -33,7 +33,6 @@ pub trait DiscoveredGame: std::fmt::Debug {
     fn set_existing(&mut self, tracked_name: String);
 
     fn build_preview(&self) -> FzfPreview;
-    fn build_launch_command(&self) -> Option<String>;
     fn clone_box(&self) -> Box<dyn DiscoveredGame>;
 }
 

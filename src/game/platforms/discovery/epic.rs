@@ -151,23 +151,6 @@ impl DiscoveredGame for EpicDiscoveredGame {
         builder.build()
     }
 
-    fn build_launch_command(&self) -> Option<String> {
-        // Epic Games are Windows executables. We pre-fill the launch command
-        // and let the existing add flow decide whether to wrap it with umu-run.
-        let exe = self.exe_path();
-        if exe.exists() {
-            let exe_str = exe.to_string_lossy();
-            let params = if self.launch_parameters.is_empty() {
-                String::new()
-            } else {
-                format!(" {}", self.launch_parameters)
-            };
-            Some(format!("\"{}\"{}", exe_str, params))
-        } else {
-            None
-        }
-    }
-
     fn clone_box(&self) -> Box<dyn DiscoveredGame> {
         Box::new(self.clone())
     }

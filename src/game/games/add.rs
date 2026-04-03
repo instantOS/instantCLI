@@ -69,7 +69,6 @@ fn manual_menu_item() -> StreamingMenuItem<MenuSelectionPayload> {
             display_name: None,
             tracked_name: None,
             save_path: None,
-            launch_command: None,
         },
     )
 }
@@ -111,7 +110,7 @@ pub(super) fn maybe_prefill_from_emulators(
                         AddGameOptions {
                             name: payload.display_name,
                             description: None,
-                            launch_command: payload.launch_command,
+                            launch_command: None,
                             save_path: payload.save_path,
                             create_save_path: false,
                             no_cache: options.no_cache,
@@ -409,7 +408,6 @@ mod tests {
                 display_name: Some("Sable".to_string()),
                 tracked_name: None,
                 save_path: Some("/games/Sable".to_string()),
-                launch_command: Some("\"/games/Sable/Sable.exe\"".to_string()),
             },
         )
         .preview(crate::menu::protocol::FzfPreview::Text(
