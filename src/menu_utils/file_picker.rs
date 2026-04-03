@@ -87,6 +87,7 @@ pub enum FilePickerResult {
 
 pub struct FilePickerBuilder {
     start_dir: Option<PathBuf>,
+    start_path: Option<PathBuf>,
     scope: FilePickerScope,
     multi: bool,
     custom_hint: Option<String>,
@@ -97,6 +98,7 @@ impl FilePickerBuilder {
     pub fn new() -> Self {
         Self {
             start_dir: None,
+            start_path: None,
             scope: FilePickerScope::Files,
             multi: false,
             custom_hint: None,
@@ -106,6 +108,11 @@ impl FilePickerBuilder {
 
     pub fn start_dir<P: Into<PathBuf>>(mut self, dir: P) -> Self {
         self.start_dir = Some(dir.into());
+        self
+    }
+
+    pub fn start_path<P: Into<PathBuf>>(mut self, path: P) -> Self {
+        self.start_path = Some(path.into());
         self
     }
 
@@ -313,9 +320,20 @@ impl FilePickerBuilder {
 
         let launch_target = if let Some(selection) = initial_selection {
             Some(selection.to_path_buf())
+        } else if let Some(path) = &self.start_path {
+            Some(path.clone())
         } else {
             self.start_dir.clone()
         };
+
+        if current_dir.is_none()
+            && let Some(path) = &self.start_path
+        {
+            current_dir = path
+                .is_dir()
+                .then(|| path.clone())
+                .or_else(|| path.parent().map(|parent| parent.to_path_buf()));
+        }
 
         if let Some(target) = &launch_target {
             cmd.arg(target);

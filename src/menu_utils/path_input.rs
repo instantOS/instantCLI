@@ -77,6 +77,7 @@ pub struct PathInputBuilder {
     manual_prompt: String,
     scope: FilePickerScope,
     start_dir: Option<PathBuf>,
+    start_path: Option<PathBuf>,
     picker_hint: Option<String>,
     manual_option_label: String,
     picker_option_label: String,
@@ -97,6 +98,7 @@ impl PathInputBuilder {
             manual_prompt: format!("{manual_icon} Enter the path:"),
             scope: FilePickerScope::FilesAndDirectories,
             start_dir: dirs::home_dir(),
+            start_path: None,
             picker_hint: None,
             manual_option_label: format!("{manual_icon} Enter a specific path"),
             picker_option_label: format!("{picker_icon} Browse with the picker"),
@@ -123,6 +125,11 @@ impl PathInputBuilder {
 
     pub fn start_dir<P: Into<PathBuf>>(mut self, dir: P) -> Self {
         self.start_dir = Some(dir.into());
+        self
+    }
+
+    pub fn start_path<P: Into<PathBuf>>(mut self, path: P) -> Self {
+        self.start_path = Some(path.into());
         self
     }
 
@@ -180,6 +187,10 @@ impl PathInputBuilder {
 
         if let Some(dir) = &self.start_dir {
             picker = picker.start_dir(dir.clone());
+        }
+
+        if let Some(path) = &self.start_path {
+            picker = picker.start_path(path.clone());
         }
 
         if let Some(hint) = &self.picker_hint {

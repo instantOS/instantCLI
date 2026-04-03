@@ -480,7 +480,7 @@ pub fn edit_save_path(state: &mut EditState) -> Result<bool> {
         tilde_display_string(current_path)
     };
 
-    let path_selection = PathInputBuilder::new()
+    let mut path_builder = PathInputBuilder::new()
         .header(format!(
             "{} Choose new save path\nCurrent: {}",
             char::from(NerdFont::Folder),
@@ -499,8 +499,13 @@ pub fn edit_save_path(state: &mut EditState) -> Result<bool> {
         .picker_option_label(format!(
             "{} Browse and choose a path",
             char::from(NerdFont::FolderOpen)
-        ))
-        .choose()?;
+        ));
+
+    if !current_path.as_path().as_os_str().is_empty() {
+        path_builder = path_builder.start_path(current_path.as_path());
+    }
+
+    let path_selection = path_builder.choose()?;
 
     match path_selection_to_tilde(path_selection)? {
         Some(new_path) => {
