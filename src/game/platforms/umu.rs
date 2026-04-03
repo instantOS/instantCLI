@@ -15,6 +15,7 @@ use crate::menu_utils::{
 };
 use crate::ui::nerd_font::NerdFont;
 
+use super::LaunchCommandBuilderContext;
 use super::prompts::{
     FileSelectionPrompt, ask_fullscreen, confirm_command, select_file_with_validation,
 };
@@ -24,14 +25,28 @@ pub struct UmuBuilder;
 
 impl UmuBuilder {
     /// Build a Wine/umu-run launch command interactively
-    pub fn build_command(prefix_hint: Option<&Path>) -> Result<Option<LaunchCommand>> {
+    pub fn build_command(
+        context: Option<&LaunchCommandBuilderContext>,
+    ) -> Result<Option<LaunchCommand>> {
+        let prefix_hint = context
+            .and_then(|ctx| {
+                ctx.presets
+                    .iter()
+                    .find(|preset| preset.launcher == super::LauncherType::UmuRun)
+            })
+            .and_then(|preset| match &preset.data {
+                super::BuilderPresetData::WinePrefix(path) => Some(path.as_path()),
+                _ => None,
+            });
+        let executable_hint = context.and_then(|ctx| ctx.executable_path.as_deref());
+
         let runner = match Self::select_runner()? {
             Some(runner) => runner,
             None => return Ok(None),
         };
 
         // Step 1: Select Wine prefix
-        let wine_prefix = match Self::select_wine_prefix(prefix_hint)? {
+        let wine_prefix = match Self::select_wine_prefix(prefix_hint, executable_hint)? {
             Some(p) => p,
             None => return Ok(None),
         };
@@ -46,7 +61,7 @@ impl UmuBuilder {
         };
 
         // Step 3: Select executable
-        let executable = match Self::select_executable()? {
+        let executable = match Self::select_executable(Some(&wine_prefix), executable_hint)? {
             Some(e) => e,
             None => return Ok(None),
         };
@@ -96,7 +111,10 @@ impl UmuBuilder {
         }
     }
 
-    fn select_wine_prefix(prefix_hint: Option<&Path>) -> Result<Option<PathBuf>> {
+    fn select_wine_prefix(
+        prefix_hint: Option<&Path>,
+        executable_hint: Option<&Path>,
+    ) -> Result<Option<PathBuf>> {
         if let Some(prefix_hint) = prefix_hint {
             match FzfWrapper::builder()
                 .confirm(format!(
@@ -129,9 +147,13 @@ impl UmuBuilder {
                 )
             });
 
-        let selection = PathInputBuilder::new()
+        let mut builder = PathInputBuilder::new()
             .header(header)
             .scope(FilePickerScope::Directories)
+            .start_dir(
+                Self::prefix_picker_start_dir(prefix_hint, executable_hint)
+                    .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"))),
+            )
             .picker_hint(format!(
                 "{} Choose or create a Wine prefix directory",
                 char::from(NerdFont::Info)
@@ -160,8 +182,13 @@ impl UmuBuilder {
             .wine_prefix_option_label(format!(
                 "{} Select from Wine prefixes",
                 char::from(NerdFont::Wine)
-            ))
-            .choose()?;
+            ));
+
+        if let Some(prefix_hint) = prefix_hint {
+            builder = builder.start_path(prefix_hint.to_path_buf());
+        }
+
+        let selection = builder.choose()?;
 
         match selection {
             PathInputSelection::Manual(input) => {
@@ -228,23 +255,109 @@ impl UmuBuilder {
         }
     }
 
-    fn select_executable() -> Result<Option<PathBuf>> {
-        select_file_with_validation(
-            FileSelectionPrompt::new(
-                format!(
-                    "{} Select Windows Executable",
-                    char::from(NerdFont::Windows)
-                ),
-                format!(
-                    "{} Select the .exe file to run ({})",
-                    char::from(NerdFont::Info),
-                    super::validation::format_valid_extensions(WINDOWS_EXTENSIONS)
-                ),
-                format!("{} Type executable path", char::from(NerdFont::Edit)),
-                format!("{} Browse for executable", char::from(NerdFont::FolderOpen)),
+    fn select_executable(
+        prefix_hint: Option<&Path>,
+        executable_hint: Option<&Path>,
+    ) -> Result<Option<PathBuf>> {
+        let mut prompt = FileSelectionPrompt::new(
+            format!(
+                "{} Select Windows Executable",
+                char::from(NerdFont::Windows)
             ),
-            |path| validate_game_file(path, "umu-run", WINDOWS_EXTENSIONS),
+            format!(
+                "{} Select the .exe file to run ({})",
+                char::from(NerdFont::Info),
+                super::validation::format_valid_extensions(WINDOWS_EXTENSIONS)
+            ),
+            format!("{} Type executable path", char::from(NerdFont::Edit)),
+            format!("{} Browse for executable", char::from(NerdFont::FolderOpen)),
         )
+        .suggested_paths(Self::executable_suggestions(prefix_hint, executable_hint));
+
+        if let Some(start_dir) = Self::executable_picker_start_dir(prefix_hint, executable_hint) {
+            prompt = prompt.start_dir(start_dir);
+        }
+
+        if let Some(executable_hint) = executable_hint {
+            prompt = prompt.start_path(executable_hint.to_path_buf());
+        }
+
+        select_file_with_validation(prompt, |path| {
+            validate_game_file(path, "umu-run", WINDOWS_EXTENSIONS)
+        })
+    }
+
+    fn prefix_picker_start_dir(
+        prefix_hint: Option<&Path>,
+        executable_hint: Option<&Path>,
+    ) -> Option<PathBuf> {
+        executable_hint
+            .and_then(|path| path.parent().map(Path::to_path_buf))
+            .or_else(|| prefix_hint.and_then(|path| path.parent().map(Path::to_path_buf)))
+            .or_else(|| prefix_hint.map(Path::to_path_buf))
+    }
+
+    fn executable_picker_start_dir(
+        prefix_hint: Option<&Path>,
+        executable_hint: Option<&Path>,
+    ) -> Option<PathBuf> {
+        executable_hint
+            .and_then(|path| {
+                if path.is_dir() {
+                    Some(path.to_path_buf())
+                } else {
+                    path.parent().map(Path::to_path_buf)
+                }
+            })
+            .or_else(|| {
+                Self::executable_suggestions(prefix_hint, executable_hint)
+                    .into_iter()
+                    .find(|path| path.is_dir())
+            })
+    }
+
+    fn executable_suggestions(
+        prefix_hint: Option<&Path>,
+        executable_hint: Option<&Path>,
+    ) -> Vec<PathBuf> {
+        let mut candidates = Vec::new();
+
+        if let Some(executable_hint) = executable_hint {
+            candidates.push(executable_hint.to_path_buf());
+            if let Some(parent) = executable_hint.parent() {
+                candidates.push(parent.to_path_buf());
+            }
+        }
+
+        if let Some(prefix_hint) = prefix_hint {
+            let drive_c = prefix_hint.join("drive_c");
+            candidates.push(drive_c.join("Games"));
+            candidates.push(drive_c.join("Program Files (x86)"));
+            candidates.push(drive_c.join("Program Files"));
+            candidates.push(drive_c.clone());
+
+            if matches!(
+                prefix_hint.file_name().and_then(|name| name.to_str()),
+                Some("prefix" | "pfx")
+            ) && let Some(parent) = prefix_hint.parent()
+            {
+                candidates.push(parent.to_path_buf());
+            }
+        }
+
+        let mut deduped = Vec::new();
+        for candidate in candidates {
+            if deduped
+                .iter()
+                .any(|existing: &PathBuf| existing == &candidate)
+            {
+                continue;
+            }
+            if candidate.exists() {
+                deduped.push(candidate);
+            }
+        }
+        deduped
     }
 
     fn build_launch_command(
@@ -268,4 +381,42 @@ impl UmuBuilder {
 
 fn format_icon(icon: NerdFont) -> String {
     format!("{}", char::from(icon))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn executable_suggestions_prioritize_existing_game_adjacent_locations() {
+        let temp = tempfile::tempdir().unwrap();
+        let game_root = temp.path().join("MyGame");
+        let prefix = game_root.join("prefix");
+        let exe = game_root.join("Game.exe");
+
+        std::fs::create_dir_all(prefix.join("drive_c").join("Games")).unwrap();
+        std::fs::create_dir_all(prefix.join("drive_c").join("Program Files")).unwrap();
+        std::fs::write(&exe, b"").unwrap();
+
+        let suggestions = UmuBuilder::executable_suggestions(Some(&prefix), Some(&exe));
+
+        assert_eq!(suggestions.first(), Some(&exe));
+        assert!(suggestions.contains(&game_root));
+        assert!(suggestions.contains(&prefix.join("drive_c").join("Games")));
+    }
+
+    #[test]
+    fn prefix_picker_start_dir_prefers_executable_parent() {
+        let temp = tempfile::tempdir().unwrap();
+        let game_root = temp.path().join("MyGame");
+        let prefix = game_root.join("prefix");
+        let exe = game_root.join("Game.exe");
+
+        std::fs::create_dir_all(&prefix).unwrap();
+        std::fs::write(&exe, b"").unwrap();
+
+        let start_dir = UmuBuilder::prefix_picker_start_dir(Some(&prefix), Some(&exe));
+
+        assert_eq!(start_dir, Some(game_root));
+    }
 }

@@ -52,6 +52,7 @@ pub use umu::UmuBuilder;
 pub struct LaunchCommandBuilderContext {
     pub game_name: Option<String>,
     pub save_path: Option<PathBuf>,
+    pub executable_path: Option<PathBuf>,
     pub presets: Vec<LaunchCommandBuilderPreset>,
 }
 
@@ -78,6 +79,7 @@ impl LaunchCommandBuilderContext {
         let mut context = Self {
             game_name: game_name.map(str::to_string),
             save_path: save_path.map(Path::to_path_buf),
+            executable_path: None,
             presets: Vec::new(),
         };
 
@@ -148,6 +150,8 @@ impl LaunchCommandBuilderContext {
                 });
             }
             LaunchCommandKind::Wine(wine) => {
+                self.executable_path = Some(wine.executable.clone());
+
                 self.push_preset(LaunchCommandBuilderPreset {
                     launcher: LauncherType::UmuRun,
                     reason: "current launch command already uses Wine/umu-run".to_string(),
@@ -157,6 +161,16 @@ impl LaunchCommandBuilderContext {
                         .map(BuilderPresetData::WinePrefix)
                         .unwrap_or(BuilderPresetData::None),
                 });
+
+                if wine.prefix.is_none()
+                    && let Some(prefix) = infer_wine_prefix(&wine.executable)
+                {
+                    self.push_preset(LaunchCommandBuilderPreset {
+                        launcher: LauncherType::UmuRun,
+                        reason: "current Wine executable is inside a Wine prefix".to_string(),
+                        data: BuilderPresetData::WinePrefix(prefix),
+                    });
+                }
             }
             LaunchCommandKind::Emulator(emulator) => {
                 if let Some(launcher) = launcher_type_for_emulator(emulator.platform) {
@@ -573,13 +587,7 @@ pub fn build_launch_command_with_context(
 
     let command = match launcher_type {
         LauncherType::Manual => prompt_manual_command(),
-        LauncherType::UmuRun => UmuBuilder::build_command(context.and_then(|ctx| {
-            ctx.preset_for(LauncherType::UmuRun)
-                .and_then(|preset| match &preset.data {
-                    BuilderPresetData::WinePrefix(path) => Some(path.as_path()),
-                    _ => None,
-                })
-        })),
+        LauncherType::UmuRun => UmuBuilder::build_command(context),
         LauncherType::Steam => SteamBuilder::build_command(context.and_then(|ctx| {
             ctx.preset_for(LauncherType::Steam)
                 .and_then(|preset| match preset.data {

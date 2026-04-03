@@ -15,6 +15,8 @@ pub(super) struct FileSelectionPrompt {
     pub picker_hint: String,
     pub manual_option_label: String,
     pub picker_option_label: String,
+    pub start_dir: Option<PathBuf>,
+    pub start_path: Option<PathBuf>,
     pub suggested_paths: Vec<PathBuf>,
 }
 
@@ -34,6 +36,8 @@ impl FileSelectionPrompt {
                 "{} Browse for game file",
                 char::from(NerdFont::FolderOpen)
             ),
+            start_dir: None,
+            start_path: None,
             suggested_paths: Vec::new(),
         }
     }
@@ -49,8 +53,20 @@ impl FileSelectionPrompt {
             picker_hint,
             manual_option_label,
             picker_option_label,
+            start_dir: None,
+            start_path: None,
             suggested_paths: Vec::new(),
         }
+    }
+
+    pub(super) fn start_dir<P: Into<PathBuf>>(mut self, path: P) -> Self {
+        self.start_dir = Some(path.into());
+        self
+    }
+
+    pub(super) fn start_path<P: Into<PathBuf>>(mut self, path: P) -> Self {
+        self.start_path = Some(path.into());
+        self
     }
 
     pub(super) fn suggested_paths<I, P>(mut self, paths: I) -> Self
@@ -80,14 +96,23 @@ pub(super) fn select_file_with_validation<F>(
 where
     F: Fn(&Path) -> Result<(), String>,
 {
-    let selection = PathInputBuilder::new()
+    let mut builder = PathInputBuilder::new()
         .header(prompt.header)
         .scope(FilePickerScope::Files)
         .picker_hint(prompt.picker_hint)
         .manual_option_label(prompt.manual_option_label)
         .picker_option_label(prompt.picker_option_label)
-        .suggested_paths(prompt.suggested_paths)
-        .choose()?;
+        .suggested_paths(prompt.suggested_paths);
+
+    if let Some(start_dir) = prompt.start_dir {
+        builder = builder.start_dir(start_dir);
+    }
+
+    if let Some(start_path) = prompt.start_path {
+        builder = builder.start_path(start_path);
+    }
+
+    let selection = builder.choose()?;
 
     match selection {
         PathInputSelection::Manual(input) => {
