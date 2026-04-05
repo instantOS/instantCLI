@@ -585,6 +585,26 @@ impl FzfWrapper {
     }
 
     pub fn select<T: FzfSelectable + Clone>(&self, items: Vec<T>) -> Result<FzfResult<T>> {
+        #[cfg(test)]
+        if let Some(resp) = crate::menu_utils::mock::pop_mock() {
+            return match resp {
+                crate::menu_utils::mock::MockResponse::SelectIndex(i) => Ok(FzfResult::Selected(
+                    items.into_iter().nth(i)
+                        .unwrap_or_else(|| panic!("MockResponse::SelectIndex({i}) out of bounds"))
+                )),
+                crate::menu_utils::mock::MockResponse::MultiSelectIndices(indices) => {
+                    Ok(FzfResult::MultiSelected(
+                        indices.into_iter()
+                            .map(|i| items.iter().nth(i)
+                                .unwrap_or_else(|| panic!("MockResponse::MultiSelectIndices({i}) out of bounds"))
+                                .clone())
+                            .collect()
+                    ))
+                }
+                crate::menu_utils::mock::MockResponse::CancelSelection => Ok(FzfResult::Cancelled),
+                other => panic!("Mock: expected select response, got {other:?}"),
+            };
+        }
         if items.is_empty() {
             return Ok(FzfResult::Cancelled);
         }
@@ -685,5 +705,30 @@ impl FzfWrapper {
             ChecklistResult::Cancelled => Ok(None),
             ChecklistResult::Action(_) => Ok(None),
         }
+    }
+}
+
+#[cfg(test)]
+mod mock_tests {
+    use super::*;
+    use crate::menu_utils::MockQueue;
+
+    #[test]
+    fn test_mock_select_returns_canned_item() {
+        let _guard = MockQueue::new().select_index(1).guard();
+        let items = vec!["alpha".to_string(), "beta".to_string(), "gamma".to_string()];
+        let result = FzfWrapper::builder().select(items).unwrap();
+        match result {
+            FzfResult::Selected(s) => assert_eq!(s, "beta"),
+            other => panic!("Expected Selected, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_mock_select_cancel() {
+        let _guard = MockQueue::new().cancel_selection().guard();
+        let items = vec!["alpha".to_string()];
+        let result = FzfWrapper::builder().select(items).unwrap();
+        assert_eq!(result, FzfResult::Cancelled);
     }
 }

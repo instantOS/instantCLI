@@ -11,6 +11,18 @@ use crate::menu_utils::fzf::wrapper::check_fzf_exit;
 
 impl FzfBuilder {
     pub fn select_padded<T: FzfSelectable + Clone>(self, items: Vec<T>) -> Result<FzfResult<T>> {
+        #[cfg(test)]
+        if let Some(resp) = crate::menu_utils::mock::pop_mock() {
+            return match resp {
+                crate::menu_utils::mock::MockResponse::SelectIndex(i) => Ok(FzfResult::Selected(
+                    items.into_iter().nth(i)
+                        .unwrap_or_else(|| panic!("MockResponse::SelectIndex({i}) out of bounds"))
+                )),
+                crate::menu_utils::mock::MockResponse::CancelSelection => Ok(FzfResult::Cancelled),
+                other => panic!("Mock: expected select response, got {other:?}"),
+            };
+        }
+
         if items.is_empty() {
             return Ok(FzfResult::Cancelled);
         }
@@ -165,5 +177,23 @@ impl FzfBuilder {
         );
 
         cmd
+    }
+}
+
+#[cfg(test)]
+mod mock_tests {
+    use crate::menu_utils::MockQueue;
+
+    #[test]
+    fn test_mock_select_padded_returns_canned_item() {
+        let _guard = MockQueue::new().select_index(0).guard();
+        let items = vec!["first".to_string(), "second".to_string()];
+        let result = crate::menu_utils::FzfWrapper::builder()
+            .select_padded(items)
+            .unwrap();
+        match result {
+            crate::menu_utils::FzfResult::Selected(s) => assert_eq!(s, "first"),
+            other => panic!("Expected Selected, got {other:?}"),
+        }
     }
 }

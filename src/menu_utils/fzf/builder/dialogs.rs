@@ -21,6 +21,15 @@ impl FzfBuilder {
     }
 
     pub(super) fn execute_input_result(self) -> Result<FzfResult<String>> {
+        #[cfg(test)]
+        if let Some(resp) = crate::menu_utils::mock::pop_mock() {
+            return match resp {
+                crate::menu_utils::mock::MockResponse::InputString(s) => Ok(FzfResult::Selected(s)),
+                crate::menu_utils::mock::MockResponse::InputCancelled => Ok(FzfResult::Cancelled),
+                other => panic!("Mock: expected input response, got {other:?}"),
+            };
+        }
+
         let mut cmd = self.base_fzf_command();
         cmd.arg("--print-query").arg("--no-info");
         self.apply_fzf_command_options(
@@ -59,6 +68,18 @@ impl FzfBuilder {
     }
 
     pub(super) fn execute_password(self, confirm: bool) -> Result<FzfResult<String>> {
+        #[cfg(test)]
+        if let Some(resp) = crate::menu_utils::mock::pop_mock() {
+            return match resp {
+                crate::menu_utils::mock::MockResponse::PasswordString(s) => {
+                    let _ = confirm;
+                    Ok(FzfResult::Selected(s))
+                }
+                crate::menu_utils::mock::MockResponse::PasswordCancelled => Ok(FzfResult::Cancelled),
+                other => panic!("Mock: expected password response, got {other:?}"),
+            };
+        }
+
         loop {
             let header_str = self.header.as_ref().map(|h| h.to_fzf_string());
             let pass1 = self.run_password_prompt(self.prompt.as_deref(), header_str.as_deref())?;
@@ -152,6 +173,16 @@ impl FzfBuilder {
     }
 
     pub(super) fn execute_confirm(mut self) -> Result<ConfirmResult> {
+        #[cfg(test)]
+        if let Some(resp) = crate::menu_utils::mock::pop_mock() {
+            return match resp {
+                crate::menu_utils::mock::MockResponse::ConfirmYes => Ok(ConfirmResult::Yes),
+                crate::menu_utils::mock::MockResponse::ConfirmNo => Ok(ConfirmResult::No),
+                crate::menu_utils::mock::MockResponse::ConfirmCancelled => Ok(ConfirmResult::Cancelled),
+                other => panic!("Mock: expected confirm response, got {other:?}"),
+            };
+        }
+
         let (yes_text, no_text) = if let DialogType::Confirmation {
             ref yes_text,
             ref no_text,
@@ -180,6 +211,14 @@ impl FzfBuilder {
     }
 
     pub(super) fn execute_message(self) -> Result<()> {
+        #[cfg(test)]
+        if let Some(resp) = crate::menu_utils::mock::pop_mock() {
+            return match resp {
+                crate::menu_utils::mock::MockResponse::MessageAck => Ok(()),
+                other => panic!("Mock: expected message response, got {other:?}"),
+            };
+        }
+
         let (ok_text, title) = if let DialogType::Message {
             ref ok_text,
             ref title,
@@ -294,5 +333,64 @@ impl FzfBuilder {
         }
 
         output_lines
+    }
+}
+
+#[cfg(test)]
+mod mock_tests {
+    use crate::menu_utils::MockQueue;
+
+    #[test]
+    fn test_mock_input_returns_canned_string() {
+        let _guard = MockQueue::new().input_string("hello world").guard();
+        let result = crate::menu_utils::FzfWrapper::builder()
+            .prompt("test")
+            .input()
+            .input_dialog()
+            .unwrap();
+        assert_eq!(result, "hello world");
+    }
+
+    #[test]
+    fn test_mock_confirm_yes() {
+        let _guard = MockQueue::new().confirm_yes().guard();
+        let result = crate::menu_utils::FzfWrapper::builder()
+            .confirm("Continue?")
+            .confirm_dialog()
+            .unwrap();
+        assert_eq!(result, crate::menu_utils::ConfirmResult::Yes);
+    }
+
+    #[test]
+    fn test_mock_confirm_no() {
+        let _guard = MockQueue::new().confirm_no().guard();
+        let result = crate::menu_utils::FzfWrapper::builder()
+            .confirm("Continue?")
+            .confirm_dialog()
+            .unwrap();
+        assert_eq!(result, crate::menu_utils::ConfirmResult::No);
+    }
+
+    #[test]
+    fn test_mock_message_ack() {
+        let _guard = MockQueue::new().message_ack().guard();
+        let result = crate::menu_utils::FzfWrapper::builder()
+            .message("Hello!")
+            .message_dialog();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_mock_password() {
+        let _guard = MockQueue::new().password("secret123").guard();
+        let result = crate::menu_utils::FzfWrapper::builder()
+            .prompt("Password")
+            .password()
+            .password_dialog()
+            .unwrap();
+        match result {
+            crate::menu_utils::FzfResult::Selected(s) => assert_eq!(s, "secret123"),
+            other => panic!("Expected Selected, got {other:?}"),
+        }
     }
 }

@@ -16,6 +16,30 @@ impl FzfBuilder {
         self,
         items: Vec<T>,
     ) -> Result<ChecklistResult<T>> {
+        #[cfg(test)]
+        if let Some(resp) = crate::menu_utils::mock::pop_mock() {
+            return match resp {
+                crate::menu_utils::mock::MockResponse::ChecklistConfirm(indices) => {
+                    let selected: Vec<T> = indices.into_iter()
+                        .map(|i| items.iter().nth(i)
+                            .unwrap_or_else(|| panic!("MockResponse::ChecklistConfirm({i}) out of bounds"))
+                            .clone())
+                        .collect();
+                    Ok(ChecklistResult::Confirmed(selected))
+                }
+                crate::menu_utils::mock::MockResponse::ChecklistAction(key) => {
+                    Ok(ChecklistResult::Action(
+                        self.checklist_actions.iter()
+                            .find(|a| a.key == key)
+                            .cloned()
+                            .unwrap_or_else(|| panic!("MockResponse::ChecklistAction key '{key}' not found"))
+                    ))
+                }
+                crate::menu_utils::mock::MockResponse::ChecklistCancelled => Ok(ChecklistResult::Cancelled),
+                other => panic!("Mock: expected checklist response, got {other:?}"),
+            };
+        }
+
         if items.is_empty() {
             return Ok(ChecklistResult::Cancelled);
         }
@@ -210,5 +234,26 @@ impl FzfBuilder {
         }
 
         Ok(ChecklistSelection::NotFound)
+    }
+}
+
+#[cfg(test)]
+mod mock_tests {
+    use crate::menu_utils::MockQueue;
+
+    #[test]
+    fn test_mock_checklist_confirm_with_indices() {
+        let _guard = MockQueue::new().checklist_confirm(vec![0, 2]).guard();
+        let items = vec!["alpha".to_string(), "beta".to_string(), "gamma".to_string()];
+        let result = crate::menu_utils::FzfWrapper::builder()
+            .checklist("Confirm")
+            .checklist_dialog(items)
+            .unwrap();
+        match result {
+            crate::menu_utils::ChecklistResult::Confirmed(selected) => {
+                assert_eq!(selected, vec!["alpha", "gamma"]);
+            }
+            other => panic!("Expected Confirmed, got {other:?}"),
+        }
     }
 }
