@@ -75,7 +75,9 @@ impl FzfBuilder {
                     let _ = confirm;
                     Ok(FzfResult::Selected(s))
                 }
-                crate::menu_utils::mock::MockResponse::PasswordCancelled => Ok(FzfResult::Cancelled),
+                crate::menu_utils::mock::MockResponse::PasswordCancelled => {
+                    Ok(FzfResult::Cancelled)
+                }
                 other => panic!("Mock: expected password response, got {other:?}"),
             };
         }
@@ -178,7 +180,9 @@ impl FzfBuilder {
             return match resp {
                 crate::menu_utils::mock::MockResponse::ConfirmYes => Ok(ConfirmResult::Yes),
                 crate::menu_utils::mock::MockResponse::ConfirmNo => Ok(ConfirmResult::No),
-                crate::menu_utils::mock::MockResponse::ConfirmCancelled => Ok(ConfirmResult::Cancelled),
+                crate::menu_utils::mock::MockResponse::ConfirmCancelled => {
+                    Ok(ConfirmResult::Cancelled)
+                }
                 other => panic!("Mock: expected confirm response, got {other:?}"),
             };
         }

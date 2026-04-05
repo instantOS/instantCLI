@@ -15,8 +15,10 @@ impl FzfBuilder {
         if let Some(resp) = crate::menu_utils::mock::pop_mock() {
             return match resp {
                 crate::menu_utils::mock::MockResponse::SelectIndex(i) => Ok(FzfResult::Selected(
-                    items.into_iter().nth(i)
-                        .unwrap_or_else(|| panic!("MockResponse::SelectIndex({i}) out of bounds"))
+                    items
+                        .into_iter()
+                        .nth(i)
+                        .unwrap_or_else(|| panic!("MockResponse::SelectIndex({i}) out of bounds")),
                 )),
                 crate::menu_utils::mock::MockResponse::CancelSelection => Ok(FzfResult::Cancelled),
                 other => panic!("Mock: expected select response, got {other:?}"),

@@ -589,16 +589,27 @@ impl FzfWrapper {
         if let Some(resp) = crate::menu_utils::mock::pop_mock() {
             return match resp {
                 crate::menu_utils::mock::MockResponse::SelectIndex(i) => Ok(FzfResult::Selected(
-                    items.into_iter().nth(i)
-                        .unwrap_or_else(|| panic!("MockResponse::SelectIndex({i}) out of bounds"))
+                    items
+                        .into_iter()
+                        .nth(i)
+                        .unwrap_or_else(|| panic!("MockResponse::SelectIndex({i}) out of bounds")),
                 )),
                 crate::menu_utils::mock::MockResponse::MultiSelectIndices(indices) => {
                     Ok(FzfResult::MultiSelected(
-                        indices.into_iter()
-                            .map(|i| items.iter().nth(i)
-                                .unwrap_or_else(|| panic!("MockResponse::MultiSelectIndices({i}) out of bounds"))
-                                .clone())
-                            .collect()
+                        indices
+                            .into_iter()
+                            .map(|i| {
+                                items
+                                    .iter()
+                                    .nth(i)
+                                    .unwrap_or_else(|| {
+                                        panic!(
+                                            "MockResponse::MultiSelectIndices({i}) out of bounds"
+                                        )
+                                    })
+                                    .clone()
+                            })
+                            .collect(),
                     ))
                 }
                 crate::menu_utils::mock::MockResponse::CancelSelection => Ok(FzfResult::Cancelled),

@@ -20,22 +20,34 @@ impl FzfBuilder {
         if let Some(resp) = crate::menu_utils::mock::pop_mock() {
             return match resp {
                 crate::menu_utils::mock::MockResponse::ChecklistConfirm(indices) => {
-                    let selected: Vec<T> = indices.into_iter()
-                        .map(|i| items.iter().nth(i)
-                            .unwrap_or_else(|| panic!("MockResponse::ChecklistConfirm({i}) out of bounds"))
-                            .clone())
+                    let selected: Vec<T> = indices
+                        .into_iter()
+                        .map(|i| {
+                            items
+                                .iter()
+                                .nth(i)
+                                .unwrap_or_else(|| {
+                                    panic!("MockResponse::ChecklistConfirm({i}) out of bounds")
+                                })
+                                .clone()
+                        })
                         .collect();
                     Ok(ChecklistResult::Confirmed(selected))
                 }
                 crate::menu_utils::mock::MockResponse::ChecklistAction(key) => {
                     Ok(ChecklistResult::Action(
-                        self.checklist_actions.iter()
+                        self.checklist_actions
+                            .iter()
                             .find(|a| a.key == key)
                             .cloned()
-                            .unwrap_or_else(|| panic!("MockResponse::ChecklistAction key '{key}' not found"))
+                            .unwrap_or_else(|| {
+                                panic!("MockResponse::ChecklistAction key '{key}' not found")
+                            }),
                     ))
                 }
-                crate::menu_utils::mock::MockResponse::ChecklistCancelled => Ok(ChecklistResult::Cancelled),
+                crate::menu_utils::mock::MockResponse::ChecklistCancelled => {
+                    Ok(ChecklistResult::Cancelled)
+                }
                 other => panic!("Mock: expected checklist response, got {other:?}"),
             };
         }

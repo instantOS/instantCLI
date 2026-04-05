@@ -137,6 +137,20 @@ impl FilePickerBuilder {
     }
 
     pub fn pick(self) -> Result<FilePickerResult> {
+        #[cfg(test)]
+        if let Some(resp) = crate::menu_utils::mock::pop_mock() {
+            use crate::menu_utils::mock::MockResponse;
+            return match resp {
+                MockResponse::FilePickerSelected(path) => {
+                    Ok(FilePickerResult::Selected(PathBuf::from(path)))
+                }
+                MockResponse::FilePickerMultiSelected(paths) => Ok(
+                    FilePickerResult::MultiSelected(paths.into_iter().map(PathBuf::from).collect()),
+                ),
+                MockResponse::FilePickerCancelled => Ok(FilePickerResult::Cancelled),
+                other => panic!("Mock: expected file picker response, got {other:?}"),
+            };
+        }
         self.run_yazi()
     }
 
@@ -364,5 +378,63 @@ pub struct MenuWrapper;
 impl MenuWrapper {
     pub fn file_picker() -> FilePickerBuilder {
         FilePickerBuilder::new()
+    }
+}
+
+#[cfg(test)]
+mod mock_tests {
+    use super::*;
+    use crate::menu_utils::MockQueue;
+
+    #[test]
+    fn test_mock_file_picker_returns_canned_path() {
+        let _guard = MockQueue::new().file_picker("/home/user/.bashrc").guard();
+        let result = MenuWrapper::file_picker().pick().unwrap();
+        match result {
+            FilePickerResult::Selected(path) => {
+                assert_eq!(path, PathBuf::from("/home/user/.bashrc"));
+            }
+            other => panic!("Expected Selected, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_mock_file_picker_pick_one() {
+        let _guard = MockQueue::new().file_picker("/home/user/docs").guard();
+        let result = MenuWrapper::file_picker().pick_one().unwrap();
+        assert_eq!(result, Some(PathBuf::from("/home/user/docs")));
+    }
+
+    #[test]
+    fn test_mock_file_picker_multi() {
+        let _guard = MockQueue::new()
+            .file_picker_multi(vec!["/a.txt".into(), "/b.txt".into()])
+            .guard();
+        let result = MenuWrapper::file_picker().multi(true).pick().unwrap();
+        match result {
+            FilePickerResult::MultiSelected(paths) => {
+                assert_eq!(paths.len(), 2);
+                assert_eq!(paths[0], PathBuf::from("/a.txt"));
+                assert_eq!(paths[1], PathBuf::from("/b.txt"));
+            }
+            other => panic!("Expected MultiSelected, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_mock_file_picker_cancelled() {
+        let _guard = MockQueue::new().file_picker_cancelled().guard();
+        let result = MenuWrapper::file_picker().pick().unwrap();
+        match result {
+            FilePickerResult::Cancelled => {}
+            other => panic!("Expected Cancelled, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_mock_file_picker_pick_one_cancelled() {
+        let _guard = MockQueue::new().file_picker_cancelled().guard();
+        let result = MenuWrapper::file_picker().pick_one().unwrap();
+        assert_eq!(result, None);
     }
 }

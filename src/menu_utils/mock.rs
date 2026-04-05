@@ -66,6 +66,11 @@ pub(crate) enum MockResponse {
     ChecklistConfirm(Vec<usize>),
     ChecklistAction(String),
     ChecklistCancelled,
+
+    // File picker
+    FilePickerSelected(String),
+    FilePickerMultiSelected(Vec<String>),
+    FilePickerCancelled,
 }
 
 // ---------------------------------------------------------------------------
@@ -169,6 +174,25 @@ impl MockQueue {
 
     pub fn checklist_cancelled(mut self) -> Self {
         self.responses.push_back(MockResponse::ChecklistCancelled);
+        self
+    }
+
+    // -- File picker --
+
+    pub fn file_picker(mut self, path: impl Into<String>) -> Self {
+        self.responses
+            .push_back(MockResponse::FilePickerSelected(path.into()));
+        self
+    }
+
+    pub fn file_picker_multi(mut self, paths: Vec<String>) -> Self {
+        self.responses
+            .push_back(MockResponse::FilePickerMultiSelected(paths));
+        self
+    }
+
+    pub fn file_picker_cancelled(mut self) -> Self {
+        self.responses.push_back(MockResponse::FilePickerCancelled);
         self
     }
 
