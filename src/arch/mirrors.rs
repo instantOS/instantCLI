@@ -239,6 +239,60 @@ fn uncomment_servers(content: &str) -> String {
     mirrorlist
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_uncomment_servers_basic() {
+        let input = "#Server = https://mirror.example.com/$repo/os/$arch\n## This is a comment\n";
+        let result = uncomment_servers(input);
+        assert!(result.contains("Server = https://mirror.example.com/$repo/os/$arch"));
+        assert!(result.contains("## This is a comment"));
+    }
+
+    #[test]
+    fn test_uncomment_servers_preserves_already_uncommented() {
+        let input = "Server = https://mirror.example.com/$repo/os/$arch\n";
+        let result = uncomment_servers(input);
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn test_uncomment_servers_ignores_regular_comments() {
+        let input = "## Arch Linux mirrorlist\n## Commented out by Pacman\n";
+        let result = uncomment_servers(input);
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn test_uncomment_servers_mixed_content() {
+        let input = "\
+## Arch Linux mirrorlist
+
+## Germany
+#Server = https://mirror.de/$repo/os/$arch
+## France
+#Server = https://mirror.fr/$repo/os/$arch
+Server = https://already.active/$repo/os/$arch
+";
+        let result = uncomment_servers(input);
+        assert!(result.contains("Server = https://mirror.de/$repo/os/$arch"));
+        assert!(result.contains("Server = https://mirror.fr/$repo/os/$arch"));
+        assert!(result.contains("Server = https://already.active/$repo/os/$arch"));
+        assert!(result.contains("## Germany"));
+        assert!(result.contains("## France"));
+    }
+
+    #[test]
+    fn test_uncomment_servers_empty() {
+        let result = uncomment_servers("");
+        // empty string has no lines, so output is empty
+        assert_eq!(result, "");
+    }
+
+}
+
 // ============================================================================
 // Data Provider
 // ============================================================================

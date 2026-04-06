@@ -198,3 +198,183 @@ pub struct DiskAnalysis {
     /// Dual boot feasibility for this disk
     pub feasibility: DualBootFeasibility,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_size_bytes() {
+        assert_eq!(format_size(0), "0 B");
+        assert_eq!(format_size(512), "512 B");
+        assert_eq!(format_size(1000), "1000 B");
+    }
+
+    #[test]
+    fn test_format_size_kb() {
+        assert_eq!(format_size(1024), "1.0 KB");
+        assert_eq!(format_size(1536), "1.5 KB");
+        assert_eq!(format_size(1024 * 10), "10.0 KB");
+    }
+
+    #[test]
+    fn test_format_size_mb() {
+        assert_eq!(format_size(1024 * 1024), "1.0 MB");
+        assert_eq!(format_size(260 * 1024 * 1024), "260.0 MB");
+        assert_eq!(format_size(500 * 1024 * 1024 + 512 * 1024), "500.5 MB");
+    }
+
+    #[test]
+    fn test_format_size_gb() {
+        assert_eq!(format_size(1024 * 1024 * 1024), "1.0 GB");
+        assert_eq!(format_size(10 * 1024 * 1024 * 1024), "10.0 GB");
+        assert_eq!(format_size(256 * 1024 * 1024 * 1024), "256.0 GB");
+    }
+
+    #[test]
+    fn test_format_size_tb() {
+        assert_eq!(format_size(1024u64 * 1024 * 1024 * 1024), "1.0 TB");
+        assert_eq!(format_size(2 * 1024u64 * 1024 * 1024 * 1024), "2.0 TB");
+    }
+
+    #[test]
+    fn test_has_sufficient_free_space_true() {
+        let disk = DiskInfo {
+            device: "/dev/sda".into(),
+            size_bytes: 500 * 1024 * 1024 * 1024,
+            partition_table: PartitionTableType::GPT,
+            partitions: vec![],
+            unpartitioned_space_bytes: 0,
+            max_contiguous_free_space_bytes: crate::arch::dualboot::MIN_LINUX_SIZE,
+        };
+        assert!(disk.has_sufficient_free_space());
+    }
+
+    #[test]
+    fn test_has_sufficient_free_space_false() {
+        let disk = DiskInfo {
+            device: "/dev/sda".into(),
+            size_bytes: 500 * 1024 * 1024 * 1024,
+            partition_table: PartitionTableType::GPT,
+            partitions: vec![],
+            unpartitioned_space_bytes: 0,
+            max_contiguous_free_space_bytes: 1024,
+        };
+        assert!(!disk.has_sufficient_free_space());
+    }
+
+    fn make_esp(size_bytes: u64) -> PartitionInfo {
+        PartitionInfo {
+            device: "/dev/sda1".into(),
+            size_bytes,
+            filesystem: Some(FilesystemInfo {
+                fs_type: "vfat".into(),
+                uuid: None,
+                label: None,
+            }),
+            detected_os: None,
+            resize_info: None,
+            mount_point: Some("/boot".into()),
+            is_efi: true,
+            partition_type: Some("C12A7328-F81F-11D2-BA4B-00A0C93EC93B".into()),
+        }
+    }
+
+    #[test]
+    fn test_find_reusable_esp_found() {
+        let disk = DiskInfo {
+            device: "/dev/sda".into(),
+            size_bytes: 500 * 1024 * 1024 * 1024,
+            partition_table: PartitionTableType::GPT,
+            partitions: vec![make_esp(MIN_ESP_SIZE)],
+            unpartitioned_space_bytes: 0,
+            max_contiguous_free_space_bytes: 0,
+        };
+        let esp = disk.find_reusable_esp().unwrap();
+        assert_eq!(esp.size_bytes, MIN_ESP_SIZE);
+        assert!(esp.is_efi);
+    }
+
+    #[test]
+    fn test_find_reusable_esp_too_small() {
+        let disk = DiskInfo {
+            device: "/dev/sda".into(),
+            size_bytes: 500 * 1024 * 1024 * 1024,
+            partition_table: PartitionTableType::GPT,
+            partitions: vec![make_esp(100 * 1024 * 1024)], // 100 MB, below 260 MB minimum
+            unpartitioned_space_bytes: 0,
+            max_contiguous_free_space_bytes: 0,
+        };
+        assert!(disk.find_reusable_esp().is_none());
+    }
+
+    #[test]
+    fn test_find_reusable_esp_no_efi_partitions() {
+        let non_efi = PartitionInfo {
+            device: "/dev/sda1".into(),
+            size_bytes: MIN_ESP_SIZE,
+            filesystem: None,
+            detected_os: None,
+            resize_info: None,
+            mount_point: None,
+            is_efi: false,
+            partition_type: None,
+        };
+        let disk = DiskInfo {
+            device: "/dev/sda".into(),
+            size_bytes: 500 * 1024 * 1024 * 1024,
+            partition_table: PartitionTableType::GPT,
+            partitions: vec![non_efi],
+            unpartitioned_space_bytes: 0,
+            max_contiguous_free_space_bytes: 0,
+        };
+        assert!(disk.find_reusable_esp().is_none());
+    }
+
+    #[test]
+    fn test_find_reusable_esp_first_match_wins() {
+        let small_efi = {
+            let mut p = make_esp(100 * 1024 * 1024);
+            p.device = "/dev/sda1".into();
+            p
+        };
+        let large_efi = {
+            let mut p = make_esp(MIN_ESP_SIZE);
+            p.device = "/dev/sda2".into();
+            p
+        };
+        let disk = DiskInfo {
+            device: "/dev/sda".into(),
+            size_bytes: 500 * 1024 * 1024 * 1024,
+            partition_table: PartitionTableType::GPT,
+            partitions: vec![small_efi, large_efi],
+            unpartitioned_space_bytes: 0,
+            max_contiguous_free_space_bytes: 0,
+        };
+        let esp = disk.find_reusable_esp().unwrap();
+        assert_eq!(esp.device, "/dev/sda2");
+    }
+
+    #[test]
+    fn test_resize_info_min_size_human() {
+        let info = ResizeInfo {
+            can_shrink: true,
+            min_size_bytes: Some(10 * 1024 * 1024 * 1024),
+            reason: None,
+            prerequisites: vec![],
+        };
+        assert_eq!(info.min_size_human(), Some("10.0 GB".to_string()));
+    }
+
+    #[test]
+    fn test_resize_info_min_size_human_none() {
+        let info = ResizeInfo {
+            can_shrink: false,
+            min_size_bytes: None,
+            reason: Some("Filesystem not supported".into()),
+            prerequisites: vec![],
+        };
+        assert!(info.min_size_human().is_none());
+    }
+
+}
