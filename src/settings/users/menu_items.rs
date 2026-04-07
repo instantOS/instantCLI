@@ -226,7 +226,8 @@ impl FzfSelectable for UserActionItem {
                     .blank();
 
                 if *no_sudo_configured {
-                    builder = builder.subtext("Neither sudo nor wheel group is allowed to use sudo.");
+                    builder =
+                        builder.subtext("Neither sudo nor wheel group is allowed to use sudo.");
                 } else {
                     builder = builder
                         .subtext("Adds or removes the user from the sudo group.")
@@ -237,7 +238,10 @@ impl FzfSelectable for UserActionItem {
                     builder = builder.blank().line(
                         colors::YELLOW,
                         Some(NerdFont::Warning),
-                        &format!("{} group is not allowed to use sudo on this system.", group_label),
+                        &format!(
+                            "{} group is not allowed to use sudo on this system.",
+                            group_label
+                        ),
                     );
                 }
 

@@ -231,7 +231,10 @@ fn scan_sudoers_contents_for_group(
         // Check for %group (case-insensitive comparison)
         if stripped.starts_with('%') {
             let group_tag = format!("%{}", group);
-            if stripped.to_lowercase().starts_with(&group_tag.to_lowercase()) {
+            if stripped
+                .to_lowercase()
+                .starts_with(&group_tag.to_lowercase())
+            {
                 return true;
             }
         }

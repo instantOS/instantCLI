@@ -820,6 +820,13 @@ mod tests {
     #[test]
     fn context_expands_without_recomputing_global_paths() {
         let prefix = tempfile::tempdir().unwrap();
+        let user_root = prefix
+            .path()
+            .join("drive_c")
+            .join("users")
+            .join("steamuser");
+        std::fs::create_dir_all(&user_root).unwrap();
+
         let ctx = WinePrefixContext::new(prefix.path(), None);
         let game = test_windows_game("<home>/foo/<xdgConfig>", &[]);
 

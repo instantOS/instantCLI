@@ -9,8 +9,8 @@ use super::menu_items::{
     GroupActionItem, GroupItem, GroupMenuItem, ManageMenuItem, UserActionItem,
 };
 use super::system::{
-    WheelSudoStatus, get_all_system_groups, get_system_users_with_home, get_user_info,
-    get_sudo_group, group_exists, wheel_sudo_status,
+    WheelSudoStatus, get_all_system_groups, get_sudo_group, get_system_users_with_home,
+    get_user_info, group_exists, wheel_sudo_status,
 };
 use super::utils::{
     add_user_to_group, change_user_shell, create_group, create_user, delete_user,
@@ -127,7 +127,10 @@ fn handle_user(ctx: &mut SettingsContext, username: &str) -> Result<()> {
         };
 
         let sudo_group = get_sudo_group()?;
-        let has_sudo_group = sudo_group.as_ref().map(|g| user_info.groups.iter().any(|group| group == g)).unwrap_or(false);
+        let has_sudo_group = sudo_group
+            .as_ref()
+            .map(|g| user_info.groups.iter().any(|group| group == g))
+            .unwrap_or(false);
         let wheel_warning = matches!(wheel_sudo_status(), WheelSudoStatus::Denied);
         let no_sudo_configured = sudo_group.is_none();
 
@@ -166,8 +169,19 @@ fn handle_user(ctx: &mut SettingsContext, username: &str) -> Result<()> {
             Some(UserActionItem::ManageGroups { .. }) => {
                 manage_user_groups(ctx, username)?;
             }
-            Some(UserActionItem::ToggleSudo { enabled, sudo_group, no_sudo_configured, .. }) => {
-                toggle_user_sudo(ctx, username, enabled, sudo_group.clone(), no_sudo_configured)?;
+            Some(UserActionItem::ToggleSudo {
+                enabled,
+                sudo_group,
+                no_sudo_configured,
+                ..
+            }) => {
+                toggle_user_sudo(
+                    ctx,
+                    username,
+                    enabled,
+                    sudo_group.clone(),
+                    no_sudo_configured,
+                )?;
             }
             Some(UserActionItem::DeleteUser { .. }) => {
                 if confirm_delete_user(ctx, username)? {
@@ -241,7 +255,10 @@ fn toggle_user_sudo(
     if matches!(wheel_sudo_status(), WheelSudoStatus::Denied) {
         ctx.emit_info(
             "settings.users.sudo",
-            &format!("Warning: {} group is not allowed to use sudo on this system.", group),
+            &format!(
+                "Warning: {} group is not allowed to use sudo on this system.",
+                group
+            ),
         );
     }
 
