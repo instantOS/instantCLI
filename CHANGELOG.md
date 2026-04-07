@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.19](https://github.com/instantOS/instantCLI/compare/v0.13.18...v0.13.19) - 2026-04-03
+
+### Fixed
+
+- fix icon formatting
+
+### Other
+
+- Merge branch 'main' into dev
+- share more appimage logic
+- better finder
+- recommend eden paths
+- better launcher recommendations
+- unify more selection logic
+- handle existing games better
+- better start path
+- less side effects in discovery
+- refactor launch command builder
+- better command builder
+
 ## [0.13.18](https://github.com/instantOS/instantCLI/compare/v0.13.17...v0.13.18) - 2026-04-02
 
 ### Fixed
