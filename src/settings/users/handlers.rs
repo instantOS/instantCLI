@@ -10,7 +10,7 @@ use super::menu_items::{
 };
 use super::system::{
     WheelSudoStatus, get_all_system_groups, get_system_users_with_home, get_user_info,
-    group_exists, wheel_sudo_status,
+    get_sudo_group, group_exists, wheel_sudo_status,
 };
 use super::utils::{
     add_user_to_group, change_user_shell, create_group, create_user, delete_user,
@@ -18,8 +18,6 @@ use super::utils::{
     select_shell, set_user_password, validate_group_name, validate_username,
 };
 use crate::menu_utils::select_one_with_style;
-
-const WHEEL_GROUP: &str = "wheel";
 
 pub fn manage_users(ctx: &mut SettingsContext) -> Result<()> {
     loop {
@@ -128,8 +126,10 @@ fn handle_user(ctx: &mut SettingsContext, username: &str) -> Result<()> {
             }
         };
 
-        let has_wheel = user_info.groups.iter().any(|group| group == WHEEL_GROUP);
+        let sudo_group = get_sudo_group()?;
+        let has_sudo_group = sudo_group.as_ref().map(|g| user_info.groups.iter().any(|group| group == g)).unwrap_or(false);
         let wheel_warning = matches!(wheel_sudo_status(), WheelSudoStatus::Denied);
+        let no_sudo_configured = sudo_group.is_none();
 
         let actions = vec![
             UserActionItem::ChangeShell {
@@ -141,8 +141,10 @@ fn handle_user(ctx: &mut SettingsContext, username: &str) -> Result<()> {
                 primary_group: user_info.primary_group.clone(),
             },
             UserActionItem::ToggleSudo {
-                enabled: has_wheel,
+                enabled: has_sudo_group,
                 wheel_warning,
+                sudo_group: sudo_group.clone(),
+                no_sudo_configured,
             },
             UserActionItem::DeleteUser {
                 username: username.to_string(),
@@ -164,8 +166,8 @@ fn handle_user(ctx: &mut SettingsContext, username: &str) -> Result<()> {
             Some(UserActionItem::ManageGroups { .. }) => {
                 manage_user_groups(ctx, username)?;
             }
-            Some(UserActionItem::ToggleSudo { enabled, .. }) => {
-                toggle_user_sudo(ctx, username, enabled)?;
+            Some(UserActionItem::ToggleSudo { enabled, sudo_group, no_sudo_configured, .. }) => {
+                toggle_user_sudo(ctx, username, enabled, sudo_group.clone(), no_sudo_configured)?;
             }
             Some(UserActionItem::DeleteUser { .. }) => {
                 if confirm_delete_user(ctx, username)? {
@@ -188,11 +190,23 @@ fn toggle_user_sudo(
     ctx: &mut SettingsContext,
     username: &str,
     currently_enabled: bool,
+    sudo_group: Option<String>,
+    no_sudo_configured: bool,
 ) -> Result<()> {
-    if !group_exists(WHEEL_GROUP)? {
+    if no_sudo_configured {
         ctx.emit_info(
             "settings.users.sudo",
-            "Wheel group not found on this system.",
+            "Neither sudo nor wheel group is allowed to use sudo on this system.",
+        );
+        return Ok(());
+    }
+
+    let group = sudo_group.as_ref().unwrap();
+
+    if !group_exists(group)? {
+        ctx.emit_info(
+            "settings.users.sudo",
+            &format!("{} group not found on this system.", group),
         );
         return Ok(());
     }
@@ -211,23 +225,23 @@ fn toggle_user_sudo(
                 return Ok(());
             }
         }
-        remove_user_from_group(ctx, username, WHEEL_GROUP)?;
+        remove_user_from_group(ctx, username, group)?;
         ctx.emit_success(
             "settings.users.sudo",
-            &format!("Removed {} from wheel group.", username),
+            &format!("Removed {} from {} group.", username, group),
         );
     } else {
-        add_user_to_group(ctx, username, WHEEL_GROUP)?;
+        add_user_to_group(ctx, username, group)?;
         ctx.emit_success(
             "settings.users.sudo",
-            &format!("Added {} to wheel group.", username),
+            &format!("Added {} to {} group.", username, group),
         );
     }
 
     if matches!(wheel_sudo_status(), WheelSudoStatus::Denied) {
         ctx.emit_info(
             "settings.users.sudo",
-            "Warning: wheel group is not allowed to use sudo on this system.",
+            &format!("Warning: {} group is not allowed to use sudo on this system.", group),
         );
     }
 

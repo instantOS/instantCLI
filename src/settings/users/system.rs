@@ -19,11 +19,23 @@ pub(super) enum WheelSudoStatus {
 }
 
 pub(super) fn wheel_sudo_status() -> WheelSudoStatus {
-    match sudoers_allows_wheel() {
+    match sudoers_allows_group("wheel") {
         Ok(true) => WheelSudoStatus::Allowed,
         Ok(false) => WheelSudoStatus::Denied,
         Err(_) => WheelSudoStatus::Unknown,
     }
+}
+
+/// Returns the sudo group to use based on sudoers configuration.
+/// Priority: %sudo > %wheel
+pub(super) fn get_sudo_group() -> Result<Option<String>> {
+    if sudoers_allows_group("sudo")? {
+        return Ok(Some("sudo".to_string()));
+    }
+    if sudoers_allows_group("wheel")? {
+        return Ok(Some("wheel".to_string()));
+    }
+    Ok(None)
 }
 
 /// Get information about a system user
@@ -156,7 +168,7 @@ pub(super) fn get_all_system_groups() -> Result<Vec<String>> {
     Ok(groups)
 }
 
-fn sudoers_allows_wheel() -> Result<bool> {
+fn sudoers_allows_group(group: &str) -> Result<bool> {
     let mut queue = VecDeque::new();
     let mut visited = HashSet::new();
     queue.push_back(PathBuf::from(SUDOERS_PATH));
@@ -176,7 +188,7 @@ fn sudoers_allows_wheel() -> Result<bool> {
             }
         };
 
-        if scan_sudoers_contents(&path, &contents, &mut queue) {
+        if scan_sudoers_contents_for_group(&path, &contents, &mut queue, group) {
             return Ok(true);
         }
     }
@@ -184,10 +196,11 @@ fn sudoers_allows_wheel() -> Result<bool> {
     Ok(false)
 }
 
-fn scan_sudoers_contents(
+fn scan_sudoers_contents_for_group(
     current_path: &Path,
     contents: &str,
     queue: &mut VecDeque<PathBuf>,
+    group: &str,
 ) -> bool {
     for line in contents.lines() {
         let trimmed = line.trim();
@@ -215,8 +228,12 @@ fn scan_sudoers_contents(
             continue;
         }
 
-        if stripped.starts_with("%wheel") {
-            return true;
+        // Check for %group (case-insensitive comparison)
+        if stripped.starts_with('%') {
+            let group_tag = format!("%{}", group);
+            if stripped.to_lowercase().starts_with(&group_tag.to_lowercase()) {
+                return true;
+            }
         }
     }
 
