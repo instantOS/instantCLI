@@ -10,6 +10,7 @@ pub mod render;
 pub mod slides;
 pub mod subtitles;
 pub mod support;
+pub mod transcript_language;
 
 pub use cli::VideoCommands;
 pub use commands::handle_video_command;

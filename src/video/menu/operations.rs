@@ -9,6 +9,7 @@ use super::file_selection::{select_markdown_file, select_output_path};
 use super::prompts::{
     confirm_toggle, default_slide_output_name, prompt_optional, prompt_with_default,
     select_output_choice, select_preprocess_backend_choice, select_transcribe_mode,
+    select_transcript_language,
 };
 use super::types::{
     DEFAULT_TRANSCRIBE_COMPUTE_TYPE, DEFAULT_TRANSCRIBE_DEVICE, DEFAULT_TRANSCRIBE_VAD_METHOD,
@@ -23,6 +24,11 @@ pub async fn run_transcribe() -> Result<()> {
     )?
     else {
         return Ok(());
+    };
+
+    let language = match select_transcript_language()? {
+        Some(lang) => lang,
+        None => return Ok(()),
     };
 
     let mode = match select_transcribe_mode()? {
@@ -65,6 +71,7 @@ pub async fn run_transcribe() -> Result<()> {
         model,
         vad_method,
         force: false,
+        language,
     })
 }
 

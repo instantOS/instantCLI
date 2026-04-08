@@ -13,7 +13,9 @@ use super::file_selection::{
     select_video_file_with_suggestions,
 };
 use super::project::open_project_for_path;
-use super::prompts::{confirm_action, select_convert_audio_choice, select_output_choice};
+use super::prompts::{
+    confirm_action, select_convert_audio_choice, select_output_choice, select_transcript_language,
+};
 use super::types::{ConvertAudioChoice, OutputChoice};
 
 #[derive(Debug, Clone)]
@@ -154,6 +156,11 @@ pub async fn run_new_project() -> Result<()> {
 
 /// Create a single markdown file with multiple video sources.
 async fn create_multi_source_project(videos: Vec<PathBuf>) -> Result<()> {
+    let language = match select_transcript_language()? {
+        Some(lang) => lang,
+        None => return Ok(()),
+    };
+
     let audio_choice = match select_convert_audio_choice()? {
         Some(choice) => choice,
         None => return Ok(()),
@@ -212,6 +219,7 @@ async fn create_multi_source_project(videos: Vec<PathBuf>) -> Result<()> {
         force,
         no_preprocess,
         preprocessor: preprocessor.clone(),
+        language,
     })
     .await?;
 
@@ -224,6 +232,7 @@ async fn create_multi_source_project(videos: Vec<PathBuf>) -> Result<()> {
             force: false,
             no_preprocess,
             preprocessor: preprocessor.clone(),
+            language,
         })
         .await?;
     }

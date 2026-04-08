@@ -181,7 +181,10 @@ impl AudioPreprocessor for LocalPreprocessor {
         let input_hash = compute_file_hash(input)?;
 
         let directories = VideoDirectories::new()?;
-        let cache_paths = directories.cache_paths(&input_hash);
+        let cache_paths = directories.cache_paths(
+            &input_hash,
+            crate::video::transcript_language::TranscriptLanguage::En,
+        );
         cache_paths.ensure_directories()?;
 
         let cache_dir = cache_paths.transcript_dir();

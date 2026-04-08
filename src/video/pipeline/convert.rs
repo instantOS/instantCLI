@@ -14,6 +14,7 @@ use crate::video::document::markdown::{build_markdown, format_timestamp, render_
 use crate::video::document::{VideoMetadata, VideoSource, parse_video_document};
 use crate::video::support::transcript::{TranscriptCue, parse_whisper_json};
 use crate::video::support::utils::{canonicalize_existing, compute_file_hash};
+use crate::video::transcript_language::TranscriptLanguage;
 
 pub async fn handle_convert(args: ConvertArgs) -> Result<()> {
     emit(
@@ -26,7 +27,7 @@ pub async fn handle_convert(args: ConvertArgs) -> Result<()> {
     let video_hash = compute_file_hash(&video_path)?;
 
     let directories = VideoDirectories::new()?;
-    let cache_paths = directories.cache_paths(&video_hash);
+    let cache_paths = directories.cache_paths(&video_hash, args.language);
     cache_paths.ensure_directories()?;
 
     let output_path = determine_output_path(args.out_file.clone(), &video_path)?;
@@ -143,7 +144,7 @@ async fn prepare_video_and_transcript(args: &AppendArgs) -> Result<VideoAppendIn
     let video_hash = compute_file_hash(&video_path)?;
 
     let directories = VideoDirectories::new()?;
-    let cache_paths = directories.cache_paths(&video_hash);
+    let cache_paths = directories.cache_paths(&video_hash, args.language);
     cache_paths.ensure_directories()?;
 
     let transcript_path = ensure_transcript(
@@ -158,6 +159,7 @@ async fn prepare_video_and_transcript(args: &AppendArgs) -> Result<VideoAppendIn
             force: args.force,
             no_preprocess: args.no_preprocess,
             preprocessor: args.preprocessor.clone(),
+            language: args.language,
         },
     )
     .await?;
@@ -284,6 +286,7 @@ async fn ensure_transcript(
         model: None,
         vad_method: "silero".to_string(),
         force: false,
+        language: args.language,
     })?;
 
     // If we transcribed processed audio, relocate transcript to video's cache
@@ -292,6 +295,7 @@ async fn ensure_transcript(
         &audio_source,
         directories,
         &cached_transcript_path,
+        args.language,
     )?;
 
     if !cached_transcript_path.exists() {
@@ -362,13 +366,14 @@ fn relocate_transcript_if_needed(
     audio_source: &Path,
     directories: &VideoDirectories,
     cached_transcript_path: &Path,
+    language: TranscriptLanguage,
 ) -> Result<()> {
     if audio_source == video_path {
         return Ok(());
     }
 
     let audio_hash = compute_file_hash(audio_source)?;
-    let audio_cache_paths = directories.cache_paths(&audio_hash);
+    let audio_cache_paths = directories.cache_paths(&audio_hash, language);
     let generated_transcript = audio_cache_paths.transcript_cache_path();
 
     if generated_transcript.exists() {

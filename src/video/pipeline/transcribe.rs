@@ -23,7 +23,7 @@ pub fn handle_transcribe(args: TranscribeArgs) -> Result<()> {
     let video_hash = compute_file_hash(&video_path)?;
 
     let directories = VideoDirectories::new()?;
-    let cache_paths = directories.cache_paths(&video_hash);
+    let cache_paths = directories.cache_paths(&video_hash, args.language);
     cache_paths.ensure_directories()?;
 
     let transcript_path = cache_paths.transcript_cache_path().to_path_buf();
@@ -62,6 +62,26 @@ pub fn handle_transcribe(args: TranscribeArgs) -> Result<()> {
 
     run_result?;
 
+    // WhisperX writes `{input_stem}.json`; German (and other non-default names) use a different cache filename.
+    let whisper_json = hashed_video_path.with_extension("json");
+    if whisper_json != transcript_path && whisper_json.exists() {
+        if transcript_path.exists() {
+            fs::remove_file(&transcript_path).with_context(|| {
+                format!(
+                    "Failed to remove stale transcript at {}",
+                    transcript_path.display()
+                )
+            })?;
+        }
+        fs::rename(&whisper_json, &transcript_path).with_context(|| {
+            format!(
+                "Failed to move WhisperX output {} to {}",
+                whisper_json.display(),
+                transcript_path.display()
+            )
+        })?;
+    }
+
     if !transcript_path.exists() {
         anyhow::bail!(
             "WhisperX did not produce the expected transcript at {}",
@@ -83,9 +103,14 @@ fn run_whisperx(hashed_video: &Path, output_dir: &Path, args: &TranscribeArgs) -
     let hashed_video = hashed_video.to_string_lossy();
     let output_dir = output_dir.to_string_lossy();
 
+    let language = args.language.whisper_code();
+    let align_model = args.language.align_model();
+
     let mut whisper_args: Vec<&str> = vec![
         "whisperx",
         &hashed_video,
+        "--language",
+        language,
         "--output_format",
         "json",
         "--output_dir",
@@ -97,7 +122,7 @@ fn run_whisperx(hashed_video: &Path, output_dir: &Path, args: &TranscribeArgs) -
         "--device",
         &args.device,
         "--align_model",
-        "WAV2VEC2_ASR_LARGE_LV60K_960H",
+        align_model,
         "--batch_size",
         "4",
         "--segment_resolution",
