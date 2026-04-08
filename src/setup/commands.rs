@@ -290,10 +290,7 @@ fn generate_instantwm_config() -> Result<String> {
 
     let mut content = String::new();
 
-    writeln!(
-        content,
-        "# instantWM config for instantCLI assists"
-    )?;
+    writeln!(content, "# instantWM config for instantCLI assists")?;
     writeln!(
         content,
         "# This file is managed by instantCLI. Manual edits may be overwritten."
@@ -303,22 +300,10 @@ fn generate_instantwm_config() -> Result<String> {
         content,
         "# To enter assist mode, add this keybind to your config.toml:"
     )?;
-    writeln!(
-        content,
-        "#     [[keybinds]]"
-    )?;
-    writeln!(
-        content,
-        "#     modifiers = [\"Super\"]"
-    )?;
-    writeln!(
-        content,
-        "#     key = \"a\""
-    )?;
-    writeln!(
-        content,
-        "#     action = {{ set_mode = \"instantassist\" }}"
-    )?;
+    writeln!(content, "#     [[keybinds]]")?;
+    writeln!(content, "#     modifiers = [\"Super\"]")?;
+    writeln!(content, "#     key = \"a\"")?;
+    writeln!(content, "#     action = {{ set_mode = \"instantassist\" }}")?;
     writeln!(content)?;
 
     generate_instantwm_modes(
