@@ -18,6 +18,7 @@ const INTEGRATION_MARKER_END: &str = "# END instantCLI integration";
 pub enum WindowManager {
     Sway,
     I3,
+    InstantWM,
 }
 
 impl WindowManager {
@@ -26,6 +27,7 @@ impl WindowManager {
         match self {
             WindowManager::Sway => "sway",
             WindowManager::I3 => "i3",
+            WindowManager::InstantWM => "instantwm",
         }
     }
 
@@ -34,6 +36,7 @@ impl WindowManager {
         match self {
             WindowManager::Sway => "Sway",
             WindowManager::I3 => "i3",
+            WindowManager::InstantWM => "instantWM",
         }
     }
 
@@ -42,6 +45,7 @@ impl WindowManager {
         match self {
             WindowManager::Sway => "swaymsg",
             WindowManager::I3 => "i3-msg",
+            WindowManager::InstantWM => "instantwmctl",
         }
     }
 
@@ -49,7 +53,8 @@ impl WindowManager {
     pub fn supports_cursor_theme(&self) -> bool {
         match self {
             WindowManager::Sway => true,
-            WindowManager::I3 => false, // X11 uses XCURSOR_THEME env var
+            WindowManager::I3 => false,
+            WindowManager::InstantWM => false,
         }
     }
 }
@@ -74,10 +79,18 @@ impl WmConfigManager {
             .unwrap_or_else(|| PathBuf::from("~/.config"))
             .join(wm.config_dir_name());
 
+        let (config_path, main_config_path) = match wm {
+            WindowManager::InstantWM => (
+                config_dir.join("assist.toml"),
+                config_dir.join("config.toml"),
+            ),
+            _ => (config_dir.join("instant"), config_dir.join("config")),
+        };
+
         Self {
             wm,
-            config_path: config_dir.join("instant"),
-            main_config_path: config_dir.join("config"),
+            config_path,
+            main_config_path,
         }
     }
 
@@ -152,11 +165,37 @@ impl WmConfigManager {
         let content = fs::read_to_string(&self.main_config_path)
             .with_context(|| format!("Failed to read {}", self.main_config_path.display()))?;
 
+        match self.wm {
+            WindowManager::InstantWM => self.ensure_toml_include(&content),
+            _ => self.ensure_sway_include(&content),
+        }
+    }
+
+    fn ensure_toml_include(&self, content: &str) -> Result<bool> {
+        let filename = self
+            .config_path
+            .file_name()
+            .map(|f| f.to_string_lossy().to_string())
+            .unwrap_or_else(|| "assist.toml".to_string());
+
+        if content.contains(&filename) {
+            return Ok(false);
+        }
+
+        let include_entry = format!("\n[[includes]]\nfile = \"{}\"\n", filename);
+        let new_content = format!("{}{}", content, include_entry);
+
+        fs::write(&self.main_config_path, new_content)
+            .with_context(|| format!("Failed to write {}", self.main_config_path.display()))?;
+
+        Ok(true)
+    }
+
+    fn ensure_sway_include(&self, content: &str) -> Result<bool> {
         if content.contains(INTEGRATION_MARKER_START) {
             return Ok(false);
         }
 
-        // Build include line with tilde notation
         let home_dir = dirs::home_dir().context("Unable to determine home directory")?;
         let relative_path = self
             .config_path
@@ -181,17 +220,22 @@ impl WmConfigManager {
 
     /// Reload WM configuration.
     pub fn reload(&self) -> Result<()> {
-        let cmd = self.wm.reload_command();
-        let status = std::process::Command::new(cmd)
-            .arg("reload")
-            .status()
-            .with_context(|| format!("Failed to run {} reload", cmd))?;
+        match self.wm {
+            WindowManager::InstantWM => crate::common::compositor::instantwm::reload_config(),
+            _ => {
+                let cmd = self.wm.reload_command();
+                let status = std::process::Command::new(cmd)
+                    .arg("reload")
+                    .status()
+                    .with_context(|| format!("Failed to run {} reload", cmd))?;
 
-        if !status.success() {
-            anyhow::bail!("{} reload returned non-zero exit code", cmd);
+                if !status.success() {
+                    anyhow::bail!("{} reload returned non-zero exit code", cmd);
+                }
+
+                Ok(())
+            }
         }
-
-        Ok(())
     }
 
     /// Reload WM configuration only if the config has changed.
