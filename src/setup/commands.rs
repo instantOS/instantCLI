@@ -68,12 +68,53 @@ fn setup_instantwm() -> Result<()> {
     validate_compositor(&WindowManager::InstantWM);
     let wm = WindowManager::InstantWM;
     let manager = WmConfigManager::new(wm);
+    ensure_main_config_exists(&manager)?;
     let config_changed = write_instantwm_config_if_changed(&manager)?;
     let include_added = ensure_main_config_include(&manager, &wm)?;
     report_status(&wm, config_changed, include_added, &manager);
     if config_changed || include_added {
         maybe_reload_wm(&manager, &wm);
     }
+    Ok(())
+}
+
+fn ensure_main_config_exists(manager: &WmConfigManager) -> Result<()> {
+    let main_config = manager.main_config_path();
+    if main_config.exists() {
+        return Ok(());
+    }
+
+    let output = std::process::Command::new("instantwmctl")
+        .args(["config", "default"])
+        .output()
+        .context("Failed to run instantwmctl config default")?;
+
+    if !output.status.success() {
+        anyhow::bail!(
+            "instantwmctl config default failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+
+    if let Some(parent) = main_config.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("Failed to create directory {}", parent.display()))?;
+    }
+
+    std::fs::write(main_config, &output.stdout)
+        .with_context(|| format!("Failed to write {}", main_config.display()))?;
+
+    emit(
+        Level::Info,
+        "setup.instantwm.config_created",
+        &format!(
+            "{} Created default config at {}",
+            char::from(NerdFont::Check),
+            main_config.display()
+        ),
+        None,
+    );
+
     Ok(())
 }
 
