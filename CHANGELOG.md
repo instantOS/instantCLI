@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.22](https://github.com/instantOS/instantCLI/compare/v0.13.21...v0.13.22) - 2026-04-10
+
+### Other
+
+- Merge pull request #130 from instantOS/release-plz-2026-04-09T18-23-28Z
+- Merge branch 'main' of github.com:instantOS/instantCLI
+- add vendored deps to appimage
+
 ## [0.13.21](https://github.com/instantOS/instantCLI/compare/v0.13.20...v0.13.21) - 2026-04-09
 
 ### Fixed
