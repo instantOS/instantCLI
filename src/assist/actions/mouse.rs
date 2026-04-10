@@ -1,23 +1,11 @@
 use crate::assist::{AssistInternalCommand, assist_command_argv};
 use crate::common::compositor::CompositorType;
+use crate::common::instantwmctl;
 use crate::menu::client::MenuClient;
 use crate::menu::protocol::SliderRequest;
 use anyhow::{Context, Result};
 use serde_json::Value;
 use std::process::Command;
-
-fn run_instantwmctl(args: &[&str], context: &str) -> Result<()> {
-    let status = Command::new("instantwmctl")
-        .args(args)
-        .status()
-        .with_context(|| format!("Failed to launch instantwmctl for {context}"))?;
-
-    if status.success() {
-        Ok(())
-    } else {
-        anyhow::bail!("instantwmctl failed for {context} with status {status}");
-    }
-}
 
 pub fn mouse_speed_slider() -> Result<()> {
     run_mouse_speed_slider(None)?;
@@ -37,11 +25,8 @@ pub fn run_mouse_speed_slider(initial_value: Option<i64>) -> Result<Option<i64>>
         }
         CompositorType::Gnome => {}
         CompositorType::InstantWM => {
-            run_instantwmctl(
-                &["mouse", "accel-profile", "flat"],
-                "setting mouse accel profile to flat",
-            )
-            .context("Failed to set mouse accel profile to flat")?;
+            instantwmctl::run(["mouse", "accel-profile", "flat"])
+                .context("Failed to set mouse accel profile to flat")?;
         }
         _ if compositor.is_x11() => {}
         _ => {
@@ -132,11 +117,8 @@ pub fn set_mouse_speed(value: i64) -> Result<()> {
         }
         CompositorType::InstantWM => {
             let speed_arg = speed.to_string();
-            run_instantwmctl(
-                &["mouse", "speed", "--", &speed_arg],
-                "setting mouse speed",
-            )
-            .context("Failed to set mouse speed via instantwmctl")?;
+            instantwmctl::run(["mouse", "speed", "--", speed_arg.as_str()])
+                .context("Failed to set mouse speed via instantwmctl")?;
         }
         _ => {
             anyhow::bail!(
@@ -291,11 +273,8 @@ pub fn set_scroll_factor(value: i64) -> Result<()> {
     match compositor {
         CompositorType::InstantWM => {
             let factor_arg = factor.to_string();
-            run_instantwmctl(
-                &["mouse", "scroll-factor", &factor_arg],
-                "setting scroll factor",
-            )
-            .context("Failed to set scroll factor via instantwmctl")?;
+            instantwmctl::run(["mouse", "scroll-factor", factor_arg.as_str()])
+                .context("Failed to set scroll factor via instantwmctl")?;
         }
         CompositorType::Sway => {
             let factor_cmd = format!("input type:pointer scroll_factor {}", factor);

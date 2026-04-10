@@ -8,6 +8,7 @@ use std::io::Write;
 
 use crate::common::compositor::CompositorType;
 use crate::common::compositor::config::{WindowManager, WmConfigManager};
+use crate::common::instantwmctl;
 use crate::ui::prelude::*;
 
 #[derive(Subcommand, Debug, Clone)]
@@ -84,17 +85,7 @@ fn ensure_main_config_exists(manager: &WmConfigManager) -> Result<()> {
         return Ok(());
     }
 
-    let output = std::process::Command::new("instantwmctl")
-        .args(["config", "default"])
-        .output()
-        .context("Failed to run instantwmctl config default")?;
-
-    if !output.status.success() {
-        anyhow::bail!(
-            "instantwmctl config default failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
-    }
+    let output = instantwmctl::output(["config", "default"])?;
 
     if let Some(parent) = main_config.parent() {
         std::fs::create_dir_all(parent)

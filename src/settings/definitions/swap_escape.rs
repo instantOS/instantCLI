@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use regex;
 
 use crate::common::compositor::{CompositorType, sway};
+use crate::common::instantwmctl;
 use crate::menu_utils::FzfWrapper;
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
@@ -226,12 +227,10 @@ fn apply_kwin_swap_escape(ctx: &mut SettingsContext, enabled: bool, verbose: boo
 
 fn apply_instantwm_swap_escape(ctx: &mut SettingsContext, enabled: bool, verbose: bool) {
     let arg = if enabled { "true" } else { "false" };
-    let result = std::process::Command::new("instantwmctl")
-        .args(["keyboard", "swap-escape", arg])
-        .status();
+    let result = instantwmctl::run(["keyboard", "swap-escape", arg]);
 
     match result {
-        Ok(status) if status.success() => {
+        Ok(()) => {
             if verbose {
                 ctx.notify(
                     "Swap Escape/Caps Lock",
@@ -243,14 +242,9 @@ fn apply_instantwm_swap_escape(ctx: &mut SettingsContext, enabled: bool, verbose
                 );
             }
         }
-        Ok(_) => {
-            if verbose {
-                let _ = FzfWrapper::message("instantwmctl command failed to apply the setting.");
-            }
-        }
         Err(e) => {
             if verbose {
-                let message = format!("Failed to execute instantwmctl: {e}");
+                let message = format!("Failed to apply the instantwmctl setting: {e}");
                 let _ = FzfWrapper::message(&message);
             }
         }

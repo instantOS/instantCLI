@@ -7,6 +7,7 @@ use std::process::Command;
 
 use crate::assist::{AssistInternalCommand, assist_command_argv};
 use crate::common::compositor::{CompositorType, sway};
+use crate::common::instantwmctl;
 use crate::menu::client::MenuClient;
 use crate::menu::protocol::SliderRequest;
 use crate::menu_utils::{FzfPreview, FzfSelectable, MenuCursor, select_one_with_style_at};
@@ -16,19 +17,6 @@ use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::store::{BoolSettingKey, IntSettingKey, StringSettingKey};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::prelude::*;
-
-fn run_instantwmctl(args: &[&str], context: &str) -> Result<()> {
-    let status = Command::new("instantwmctl")
-        .args(args)
-        .status()
-        .with_context(|| format!("Failed to launch instantwmctl for {context}"))?;
-
-    if status.success() {
-        Ok(())
-    } else {
-        bail!("instantwmctl failed for {context} with status {status}");
-    }
-}
 
 pub struct NaturalScroll;
 
@@ -451,26 +439,20 @@ pub fn apply_natural_scrolling(ctx: &mut SettingsContext, enabled: bool) -> Resu
     } else if is_instantwm {
         let value = if enabled { "enabled" } else { "disabled" };
 
-        let pointer_result = run_instantwmctl(
-            &[
-                "mouse",
-                "natural-scroll",
-                value,
-                "--identifier",
-                "type:pointer",
-            ],
-            "natural scrolling for pointer devices",
-        );
-        let touchpad_result = run_instantwmctl(
-            &[
-                "mouse",
-                "natural-scroll",
-                value,
-                "--identifier",
-                "type:touchpad",
-            ],
-            "natural scrolling for touchpad devices",
-        );
+        let pointer_result = instantwmctl::run([
+            "mouse",
+            "natural-scroll",
+            value,
+            "--identifier",
+            "type:pointer",
+        ]);
+        let touchpad_result = instantwmctl::run([
+            "mouse",
+            "natural-scroll",
+            value,
+            "--identifier",
+            "type:touchpad",
+        ]);
 
         if let (Err(e1), Err(e2)) = (&pointer_result, &touchpad_result) {
             ctx.emit_info(
@@ -696,7 +678,7 @@ fn apply_tap_to_click(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
 
     let value = if enabled { "enabled" } else { "disabled" };
 
-    let pointer_result = run_instantwmctl(&["mouse", "tap", value], "tap-to-click");
+    let pointer_result = instantwmctl::run(["mouse", "tap", value]);
 
     if let Err(e) = &pointer_result {
         ctx.emit_info(
@@ -733,7 +715,7 @@ fn apply_accel_profile(ctx: &mut SettingsContext, profile: &str) -> Result<()> {
         return Ok(());
     }
 
-    let result = run_instantwmctl(&["mouse", "accel-profile", profile], "acceleration profile");
+    let result = instantwmctl::run(["mouse", "accel-profile", profile]);
 
     if let Err(e) = &result {
         ctx.emit_info(
@@ -771,10 +753,7 @@ pub fn apply_scroll_factor(ctx: &mut SettingsContext, value: i64) -> Result<()> 
     let factor = value as f64 / 100.0;
 
     let factor_arg = factor.to_string();
-    let result = run_instantwmctl(
-        &["mouse", "scroll-factor", &factor_arg],
-        "scroll factor",
-    );
+    let result = instantwmctl::run(["mouse", "scroll-factor", factor_arg.as_str()]);
 
     if let Err(e) = &result {
         ctx.emit_info(

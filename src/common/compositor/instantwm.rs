@@ -1,9 +1,9 @@
 use super::{ScratchpadProvider, ScratchpadWindowInfo, create_terminal_process};
+use crate::common::instantwmctl;
 use crate::scratchpad::config::ScratchpadConfig;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use serde::Deserialize;
 use std::collections::HashSet;
-use std::process::Command;
 use std::thread;
 use std::time::Duration;
 
@@ -23,7 +23,7 @@ struct InstantWmWindowInfo {
 impl ScratchpadProvider for InstantWM {
     fn show(&self, config: &ScratchpadConfig) -> Result<()> {
         if is_scratchpad_registered(&config.name)? {
-            instantwmctl(&["scratchpad", "show", &config.name])?;
+            instantwmctl::run(["scratchpad", "show", config.name.as_str()])?;
         } else {
             self.create_and_wait(config, ScratchpadStatus::Shown)?;
         }
@@ -31,12 +31,12 @@ impl ScratchpadProvider for InstantWM {
     }
 
     fn hide(&self, config: &ScratchpadConfig) -> Result<()> {
-        instantwmctl(&["scratchpad", "hide", &config.name])
+        instantwmctl::run(["scratchpad", "hide", config.name.as_str()])
     }
 
     fn toggle(&self, config: &ScratchpadConfig) -> Result<()> {
         if is_scratchpad_registered(&config.name)? {
-            instantwmctl(&["scratchpad", "toggle", &config.name])?;
+            instantwmctl::run(["scratchpad", "toggle", config.name.as_str()])?;
         } else {
             self.create_and_wait(config, ScratchpadStatus::Shown)?;
         }
@@ -65,11 +65,11 @@ impl ScratchpadProvider for InstantWM {
     }
 
     fn show_unchecked(&self, config: &ScratchpadConfig) -> Result<()> {
-        instantwmctl(&["scratchpad", "show", &config.name])
+        instantwmctl::run(["scratchpad", "show", config.name.as_str()])
     }
 
     fn hide_unchecked(&self, config: &ScratchpadConfig) -> Result<()> {
-        instantwmctl(&["scratchpad", "hide", &config.name])
+        instantwmctl::run(["scratchpad", "hide", config.name.as_str()])
     }
 
     fn supports_scratchpad(&self) -> bool {
@@ -104,7 +104,7 @@ impl InstantWM {
                     if !matches!(initial_status, ScratchpadStatus::Shown) || scratchpad.visible {
                         return Ok(());
                     }
-                    instantwmctl(&["scratchpad", "show", &config.name])?;
+                    instantwmctl::run(["scratchpad", "show", config.name.as_str()])?;
                     thread::sleep(Duration::from_millis(30));
                     if get_scratchpad_info(&config.name)?.is_some_and(|sp| sp.visible) {
                         return Ok(());
@@ -154,59 +154,19 @@ fn find_new_window(before: &[u64], after: &[u64]) -> Option<u64> {
 
 fn create_scratchpad(window_id: u64, name: &str, status: ScratchpadStatus) -> Result<()> {
     let window_id = window_id.to_string();
-    instantwmctl(&[
+    instantwmctl::run([
         "scratchpad",
         "create",
         name,
         "--window-id",
-        &window_id,
+        window_id.as_str(),
         "--status",
         status.as_cli_arg(),
     ])
 }
 
-fn instantwmctl(args: &[&str]) -> Result<()> {
-    let output = Command::new("instantwmctl")
-        .args(args)
-        .output()
-        .context("Failed to execute instantwmctl")?;
-
-    if output.status.success() {
-        Ok(())
-    } else {
-        anyhow::bail!(
-            "instantwmctl {} failed: {}",
-            args.join(" "),
-            String::from_utf8_lossy(&output.stderr).trim()
-        )
-    }
-}
-
-fn instantwmctl_json_output<T: for<'de> Deserialize<'de>>(args: &[&str]) -> Result<T> {
-    let output = Command::new("instantwmctl")
-        .arg("--json")
-        .args(args)
-        .output()
-        .context("Failed to execute instantwmctl")?;
-
-    if !output.status.success() {
-        anyhow::bail!(
-            "instantwmctl --json {} failed: {}",
-            args.join(" "),
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
-    }
-
-    serde_json::from_slice(&output.stdout).with_context(|| {
-        format!(
-            "Failed to parse instantwmctl --json {} output",
-            args.join(" ")
-        )
-    })
-}
-
 fn get_window_ids() -> Result<Vec<u64>> {
-    let windows: Vec<InstantWmWindowInfo> = instantwmctl_json_output(&["window", "list"])?;
+    let windows: Vec<InstantWmWindowInfo> = instantwmctl::json(["window", "list"])?;
     Ok(windows.into_iter().map(|window| window.id).collect())
 }
 
@@ -215,7 +175,7 @@ fn get_scratchpad_list(name: Option<&str>) -> Result<Vec<InstantWmScratchpadInfo
     if let Some(name) = name {
         args.push(name);
     }
-    instantwmctl_json_output(&args)
+    instantwmctl::json(args)
 }
 
 fn get_scratchpad_info(name: &str) -> Result<Option<InstantWmScratchpadInfo>> {
@@ -227,27 +187,16 @@ fn is_scratchpad_registered(name: &str) -> Result<bool> {
 }
 
 pub fn reload_config() -> Result<()> {
-    instantwmctl(&["reload"])
+    instantwmctl::run(["reload"])
 }
 
 pub fn set_mode(mode_name: &str) -> Result<()> {
-    instantwmctl(&["mode", "set", mode_name])
+    instantwmctl::run(["mode", "set", mode_name])
 }
 
 pub fn list_modes() -> Result<String> {
-    let output = Command::new("instantwmctl")
-        .args(["mode", "list"])
-        .output()
-        .context("Failed to execute instantwmctl")?;
-
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
-    } else {
-        anyhow::bail!(
-            "instantwmctl mode list failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )
-    }
+    let output = instantwmctl::output(["mode", "list"])?;
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
 pub fn get_current_mode() -> Result<String> {
