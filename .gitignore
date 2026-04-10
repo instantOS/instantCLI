@@ -37,6 +37,7 @@ someone.md
 *.jpg
 
 insvideodata/*
+*.video.md
 
 *.mp3
 *.m4a
@@ -44,3 +45,5 @@ empty.img
 test.img
 *.wav
 *.mkv
+
+

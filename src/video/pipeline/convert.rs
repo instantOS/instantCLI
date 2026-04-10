@@ -511,9 +511,6 @@ fn copy_transcript(src: &Path, dest: &Path) -> Result<()> {
     if src == dest {
         return Ok(());
     }
-    if dest.exists() {
-        return Ok(());
-    }
     if let Some(parent) = dest.parent() {
         fs::create_dir_all(parent).with_context(|| {
             format!("Failed to create transcript directory {}", parent.display())

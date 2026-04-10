@@ -126,7 +126,7 @@ fn run_whisperx(hashed_video: &Path, output_dir: &Path, args: &TranscribeArgs) -
         "--batch_size",
         "4",
         "--segment_resolution",
-        "chunk",
+        "sentence",
         "--beam_size",
         "5",
         "--patience",
