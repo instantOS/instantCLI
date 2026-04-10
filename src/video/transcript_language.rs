@@ -19,7 +19,7 @@ impl TranscriptLanguage {
     pub const fn align_model(self) -> &'static str {
         match self {
             Self::En => "WAV2VEC2_ASR_LARGE_LV60K_960H",
-            Self::De => "VOXPOPULI_ASR_BASE_10K_DE",
+            Self::De => "jonatasgrosman/wav2vec2-large-xlsr-53-german",
         }
     }
 

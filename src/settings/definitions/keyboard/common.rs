@@ -8,6 +8,7 @@ use std::process::Command;
 use anyhow::{Context, Result, bail};
 
 use crate::common::compositor::{CompositorType, sway};
+use crate::common::instantwmctl;
 use crate::menu_utils::{FzfPreview, FzfSelectable};
 use crate::settings::context::SettingsContext;
 use crate::settings::store::StringSettingKey;
@@ -257,13 +258,7 @@ pub fn current_sway_layout_names() -> Option<Vec<String>> {
 }
 
 pub fn current_instantwm_layouts() -> Option<Vec<String>> {
-    let output = Command::new("instantwmctl")
-        .args(["keyboard", "list"])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
+    let output = instantwmctl::output(["keyboard", "list"]).ok()?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let mut layouts = Vec::new();
@@ -388,12 +383,9 @@ pub fn apply_keyboard_layouts(codes: &[String], compositor: &CompositorType) -> 
             apply_gnome_keyboard_layouts(codes)?;
         }
         CompositorType::InstantWM => {
-            let mut cmd = Command::new("instantwmctl");
-            cmd.args(["keyboard", "set"]);
-            for code in codes {
-                cmd.arg(code);
-            }
-            cmd.status().with_context(|| {
+            let mut args = vec!["keyboard".to_string(), "set".to_string()];
+            args.extend(codes.iter().cloned());
+            instantwmctl::run(args).with_context(|| {
                 format!("Failed to execute instantwmctl keyboard set for layout '{joined}'")
             })?;
         }

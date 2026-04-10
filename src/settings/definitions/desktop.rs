@@ -3,13 +3,13 @@
 //! Window layout and other desktop settings.
 
 use anyhow::Result;
-use std::process::Command;
 
 use crate::common::audio::{
     AudioDefaults, AudioSourceInfo, default_source_names, list_audio_sources_short, pactl_defaults,
 };
 use crate::common::compositor::CompositorType;
 use crate::common::display::SwayDisplayProvider;
+use crate::common::instantwmctl;
 use crate::menu::client::MenuClient;
 use crate::menu::protocol::SliderRequest;
 use crate::menu_utils::{
@@ -94,27 +94,14 @@ fn apply_window_layout(ctx: &mut SettingsContext, layout: &str) -> Result<()> {
         return Ok(());
     }
 
-    let status = Command::new("instantwmctl")
-        .args(["layout", layout])
-        .status();
-
-    match status {
-        Ok(exit) if exit.success() => {
+    match instantwmctl::run(["layout", layout]) {
+        Ok(()) => {
             ctx.notify("Window Layout", &format!("Set to: {layout}"));
-        }
-        Ok(exit) => {
-            ctx.emit_failure(
-                "settings.desktop.layout.apply_failed",
-                &format!(
-                    "Failed to apply layout '{layout}' (exit code {}).",
-                    exit.code().unwrap_or(-1)
-                ),
-            );
         }
         Err(err) => {
             ctx.emit_failure(
-                "settings.desktop.layout.apply_error",
-                &format!("Failed to run instantwmctl: {err}"),
+                "settings.desktop.layout.apply_failed",
+                &format!("Failed to apply layout '{layout}': {err}"),
             );
         }
     }

@@ -4,8 +4,8 @@
 //! when running instantWM on the Wayland backend.
 
 use super::{DisplayMode, OutputInfo};
+use crate::common::instantwmctl;
 use anyhow::{Context, Result};
-use std::process::Command;
 
 /// instantWM Wayland display provider using instantwmctl.
 pub struct InstantWMDisplayProvider;
@@ -14,32 +14,18 @@ impl InstantWMDisplayProvider {
     /// Get all connected outputs with their modes via instantwmctl
     pub fn get_outputs_sync() -> Result<Vec<OutputInfo>> {
         // Get available modes
-        let modes_output = Command::new("instantwmctl")
-            .args(["monitor", "modes", "--json"])
-            .output()
+        let modes_output = instantwmctl::output(["monitor", "modes", "--json"])
             .context("Failed to execute instantwmctl monitor modes")?;
-
-        if !modes_output.status.success() {
-            let stderr = String::from_utf8_lossy(&modes_output.stderr);
-            anyhow::bail!("instantwmctl monitor modes failed: {}", stderr);
-        }
 
         let modes_stdout = String::from_utf8_lossy(&modes_output.stdout);
         let display_modes: Vec<serde_json::Value> = serde_json::from_str(&modes_stdout)
             .context("Failed to parse instantwmctl monitor modes JSON")?;
 
         // Get current monitor state
-        let list_output = Command::new("instantwmctl")
-            .args(["monitor", "list", "--json"])
-            .output()
-            .context("Failed to execute instantwmctl monitor list")?;
-
-        let monitors: Vec<serde_json::Value> = if list_output.status.success() {
-            let list_stdout = String::from_utf8_lossy(&list_output.stdout);
-            serde_json::from_str(&list_stdout).unwrap_or_default()
-        } else {
-            Vec::new()
-        };
+        let monitors: Vec<serde_json::Value> = instantwmctl::output(["monitor", "list", "--json"])
+            .ok()
+            .and_then(|output| serde_json::from_slice(&output.stdout).ok())
+            .unwrap_or_default();
 
         let mut outputs = Vec::new();
 
@@ -112,27 +98,16 @@ impl InstantWMDisplayProvider {
         let resolution = format!("{}x{}", mode.width, mode.height);
         let rate = mode.refresh_hz() as f32;
 
-        let status = Command::new("instantwmctl")
-            .args([
-                "monitor",
-                "set",
-                output_name,
-                "--res",
-                &resolution,
-                "--rate",
-                &rate.to_string(),
-            ])
-            .status()
-            .context("Failed to execute instantwmctl")?;
-
-        if !status.success() {
-            anyhow::bail!(
-                "Failed to set mode for {} via instantwmctl (exit code: {})",
-                output_name,
-                status.code().unwrap_or(-1)
-            );
-        }
-
-        Ok(())
+        let rate = rate.to_string();
+        instantwmctl::run([
+            "monitor",
+            "set",
+            output_name,
+            "--res",
+            resolution.as_str(),
+            "--rate",
+            rate.as_str(),
+        ])
+        .with_context(|| format!("Failed to set mode for {} via instantwmctl", output_name))
     }
 }
