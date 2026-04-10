@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.21](https://github.com/instantOS/instantCLI/compare/v0.13.20...v0.13.21) - 2026-04-09
+
+### Fixed
+
+- fix test
+- fix sudo settings on non-wheel systems
+
+### Other
+
+- add swap escape setting for instantwm
+- init german support for `ins video`
+- create instantwm config if not present
+- init instantwm setup support
+
 ## [0.13.20](https://github.com/instantOS/instantCLI/compare/v0.13.19...v0.13.20) - 2026-04-07
 
 ### Fixed
