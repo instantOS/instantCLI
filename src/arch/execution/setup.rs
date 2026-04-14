@@ -1,4 +1,4 @@
-use super::CommandExecutor;
+use super::CommandRunner;
 use anyhow::{Context, Result};
 use std::process::Command;
 
@@ -16,7 +16,7 @@ const INSTANTOS_DOTFILES_REPO: &str = "https://github.com/instantOS/dotfiles";
 /// It only installs instantOS-specific packages and configuration, not standard Arch packages.
 pub async fn setup_instantos(
     context: &InstallContext,
-    executor: &CommandExecutor,
+    executor: &dyn CommandRunner,
     override_user: Option<String>,
 ) -> Result<()> {
     println!("Setting up instantOS...");
@@ -27,7 +27,7 @@ pub async fn setup_instantos(
         // Enable multilib for 32-bit support (Steam, Wine, etc.)
         // This is idempotent - only enables if not already enabled
         println!("Enabling multilib repository...");
-        crate::common::pacman::enable_multilib(executor.dry_run).await?;
+        crate::common::pacman::enable_multilib(executor.dry_run()).await?;
 
         // Set up instantOS repository and install instantOS packages
         setup_instant_repo(executor).await?;
@@ -77,9 +77,9 @@ pub async fn setup_instantos(
 /// Note: This does NOT enable multilib. For fresh installations, multilib is enabled
 /// during the Config step. For `ins arch setup` on existing systems, users already
 /// have their own multilib configuration.
-pub async fn setup_instant_repo(executor: &CommandExecutor) -> Result<()> {
+pub async fn setup_instant_repo(executor: &dyn CommandRunner) -> Result<()> {
     println!("Setting up instantOS repository...");
-    crate::common::pacman::setup_instant_repo(executor.dry_run).await?;
+    crate::common::pacman::setup_instant_repo(executor.dry_run()).await?;
 
     // Update repositories to include [instant]
     println!("Updating repositories...");
@@ -94,7 +94,7 @@ pub async fn setup_instant_repo(executor: &CommandExecutor) -> Result<()> {
 ///
 /// These are the only packages installed by `ins arch setup` on existing systems.
 /// For fresh installations, standard packages are installed separately in the Config step.
-fn install_instant_packages(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+fn install_instant_packages(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
     let packages = crate::arch::execution::packages::build_instant_package_plan(context);
     if packages.is_empty() {
         println!("Minimal mode enabled, skipping instantOS packages.");
@@ -106,7 +106,7 @@ fn install_instant_packages(context: &InstallContext, executor: &CommandExecutor
     Ok(())
 }
 
-fn setup_user_dotfiles(username: &str, executor: &CommandExecutor) -> Result<()> {
+fn setup_user_dotfiles(username: &str, executor: &dyn CommandRunner) -> Result<()> {
     println!("Setting up dotfiles for user: {}", username);
 
     // Check if dotfiles repo already exists
@@ -151,7 +151,7 @@ fn setup_user_dotfiles(username: &str, executor: &CommandExecutor) -> Result<()>
     Ok(())
 }
 
-fn setup_wallpaper(username: &str, executor: &CommandExecutor) -> Result<()> {
+fn setup_wallpaper(username: &str, executor: &dyn CommandRunner) -> Result<()> {
     println!("Setting up wallpaper for user: {}", username);
 
     // Run `ins wallpaper random` as the user
@@ -164,7 +164,7 @@ fn setup_wallpaper(username: &str, executor: &CommandExecutor) -> Result<()> {
     Ok(())
 }
 
-fn enable_services(executor: &CommandExecutor, context: &InstallContext) -> Result<()> {
+fn enable_services(executor: &dyn CommandRunner, context: &InstallContext) -> Result<()> {
     println!("Enabling services...");
 
     let mut services = vec!["NetworkManager", "sshd"];
@@ -186,7 +186,7 @@ fn enable_services(executor: &CommandExecutor, context: &InstallContext) -> Resu
     }
 
     // Check if other display managers are enabled
-    // We check this directly via Command because CommandExecutor errors on failure (non-zero exit),
+    // We check this directly via Command because the executor errors on failure (non-zero exit),
     // and systemctl is-enabled returns non-zero if disabled.
     let mut other_dm_enabled = false;
 
@@ -227,10 +227,10 @@ fn enable_services(executor: &CommandExecutor, context: &InstallContext) -> Resu
     Ok(())
 }
 
-fn update_os_release(executor: &CommandExecutor) -> Result<()> {
+fn update_os_release(executor: &dyn CommandRunner) -> Result<()> {
     println!("Updating /etc/os-release...");
 
-    if executor.dry_run {
+    if executor.dry_run() {
         println!("[DRY RUN] Update /etc/os-release with instantOS values");
         return Ok(());
     }
@@ -293,14 +293,14 @@ fn update_os_release(executor: &CommandExecutor) -> Result<()> {
     Ok(())
 }
 
-fn configure_lightdm_autologin(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+fn configure_lightdm_autologin(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
     println!("Configuring LightDM autologin...");
 
     let username = context
         .get_answer(&QuestionId::Username)
         .context("Username not set for autologin")?;
 
-    if executor.dry_run {
+    if executor.dry_run() {
         println!("[DRY RUN] Enable autologin for user: {}", username);
         return Ok(());
     }
@@ -350,10 +350,10 @@ fn update_lightdm_conf(content: &str, username: &str) -> String {
     new_lines.join("\n")
 }
 
-fn setup_backlight_udev_rule(executor: &CommandExecutor) -> Result<()> {
+fn setup_backlight_udev_rule(executor: &dyn CommandRunner) -> Result<()> {
     println!("Configuring backlight udev rules...");
 
-    if executor.dry_run {
+    if executor.dry_run() {
         println!("[DRY RUN] Create /etc/udev/rules.d/90-backlight.rules");
         return Ok(());
     }

@@ -1,4 +1,4 @@
-use super::CommandExecutor;
+use super::CommandRunner;
 use crate::arch::engine::{InstallContext, QuestionId};
 use crate::arch::mkinitcpio::MkinitcpioConfig;
 use anyhow::{Context, Result};
@@ -17,7 +17,7 @@ pub const SYSTEM_GROUPS: &[&str] = &["nobody"];
 ///
 /// This is called by both `configure_users` during fresh install and
 /// `setup_instantos` during `ins arch setup`.
-pub fn ensure_groups_exist(executor: &CommandExecutor) -> Result<()> {
+pub fn ensure_groups_exist(executor: &dyn CommandRunner) -> Result<()> {
     // Ensure user groups exist
     for group in USER_GROUPS {
         let mut cmd = Command::new("groupadd");
@@ -38,7 +38,7 @@ pub fn ensure_groups_exist(executor: &CommandExecutor) -> Result<()> {
 /// Add an existing user to the standard user groups.
 ///
 /// This is used by `ins arch setup` to add an existing user to the required groups.
-pub fn add_user_to_groups(username: &str, executor: &CommandExecutor) -> Result<()> {
+pub fn add_user_to_groups(username: &str, executor: &dyn CommandRunner) -> Result<()> {
     println!(
         "Adding user {} to groups: {}",
         username,
@@ -50,13 +50,13 @@ pub fn add_user_to_groups(username: &str, executor: &CommandExecutor) -> Result<
     Ok(())
 }
 
-pub async fn install_config(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+pub async fn install_config(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
     println!("Configuring system (inside chroot)...");
 
     // Enable multilib for 32-bit support (needed for lib32-vulkan-* GPU drivers)
     // This runs before package installation so lib32 packages can be installed.
     println!("Enabling multilib repository...");
-    crate::common::pacman::enable_multilib(executor.dry_run).await?;
+    crate::common::pacman::enable_multilib(executor.dry_run()).await?;
 
     // Update repos after enabling multilib
     sync_repos(executor)?;
@@ -76,10 +76,10 @@ pub async fn install_config(context: &InstallContext, executor: &CommandExecutor
 }
 
 /// Configure global environment variables
-pub fn configure_environment(executor: &CommandExecutor) -> Result<()> {
+pub fn configure_environment(executor: &dyn CommandRunner) -> Result<()> {
     println!("Configuring global environment variables...");
 
-    if executor.dry_run {
+    if executor.dry_run() {
         println!("[DRY RUN] Creating /etc/profile.d/instantos.sh");
         return Ok(());
     }
@@ -113,7 +113,7 @@ export _JAVA_AWT_WM_NONREPARENTING=1
     Ok(())
 }
 
-fn sync_repos(executor: &CommandExecutor) -> Result<()> {
+fn sync_repos(executor: &dyn CommandRunner) -> Result<()> {
     println!("Updating package databases...");
     let mut cmd = Command::new("pacman");
     cmd.arg("-Sy");
@@ -121,7 +121,7 @@ fn sync_repos(executor: &CommandExecutor) -> Result<()> {
     Ok(())
 }
 
-fn install_standard_packages(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+fn install_standard_packages(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
     println!("Installing standard packages...");
     let packages = crate::arch::execution::packages::build_standard_package_plan(context)?;
     let package_refs: Vec<&str> = packages.iter().map(|s| s.as_str()).collect();
@@ -129,9 +129,9 @@ fn install_standard_packages(context: &InstallContext, executor: &CommandExecuto
     Ok(())
 }
 
-async fn configure_pacman_target(executor: &CommandExecutor) -> Result<()> {
+async fn configure_pacman_target(executor: &dyn CommandRunner) -> Result<()> {
     println!("Configuring target pacman settings...");
-    crate::common::pacman::configure_pacman_settings(Some("/etc/pacman.conf"), executor.dry_run)
+    crate::common::pacman::configure_pacman_settings(Some("/etc/pacman.conf"), executor.dry_run())
         .await?;
     Ok(())
 }
@@ -154,7 +154,7 @@ pub fn config_package_list(context: &InstallContext) -> Vec<String> {
     packages
 }
 
-fn configure_mkinitcpio(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+fn configure_mkinitcpio(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
     let use_encryption = context.get_answer_bool(QuestionId::UseEncryption);
     let use_plymouth = context.get_answer_bool(QuestionId::UsePlymouth);
 
@@ -169,7 +169,7 @@ fn configure_mkinitcpio(context: &InstallContext, executor: &CommandExecutor) ->
         println!("Configuring mkinitcpio for Plymouth...");
     }
 
-    if executor.dry_run {
+    if executor.dry_run() {
         if use_plymouth && !context.get_answer_bool(QuestionId::MinimalMode) {
             println!("[DRY RUN] Adding 'plymouth' to HOOKS in /etc/mkinitcpio.conf");
         }
@@ -236,14 +236,14 @@ fn configure_mkinitcpio(context: &InstallContext, executor: &CommandExecutor) ->
     Ok(())
 }
 
-fn configure_vconsole(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+fn configure_vconsole(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
     let keymap = context
         .get_answer(&QuestionId::Keymap)
         .context("Keymap not selected")?;
 
     println!("Setting console keymap to {}", keymap);
 
-    if executor.dry_run {
+    if executor.dry_run() {
         println!("[DRY RUN] echo 'KEYMAP={}' > /etc/vconsole.conf", keymap);
     } else {
         std::fs::write("/etc/vconsole.conf", format!("KEYMAP={}\n", keymap))?;
@@ -252,7 +252,7 @@ fn configure_vconsole(context: &InstallContext, executor: &CommandExecutor) -> R
     Ok(())
 }
 
-fn configure_timezone(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+fn configure_timezone(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
     let timezone = context
         .get_answer(&QuestionId::Timezone)
         .context("Timezone not selected")?;
@@ -279,7 +279,7 @@ fn configure_timezone(context: &InstallContext, executor: &CommandExecutor) -> R
         let source = format!("/usr/share/zoneinfo/{}", timezone);
         let target = "/etc/localtime";
 
-        if executor.dry_run {
+        if executor.dry_run() {
             println!("[DRY RUN] ln -sf {} {}", source, target);
         } else {
             // Remove existing link/file if it exists to avoid error
@@ -298,14 +298,14 @@ fn configure_timezone(context: &InstallContext, executor: &CommandExecutor) -> R
     Ok(())
 }
 
-fn configure_locale(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+fn configure_locale(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
     let locale = context
         .get_answer(&QuestionId::Locale)
         .context("Locale not selected")?;
 
     println!("Setting locale to {}", locale);
 
-    if executor.dry_run {
+    if executor.dry_run() {
         println!("[DRY RUN] Uncommenting {} in /etc/locale.gen", locale);
         println!("[DRY RUN] locale-gen");
         // Extract just the LANG part, e.g., "en_US.UTF-8" from "en_US.UTF-8 UTF-8"
@@ -357,14 +357,14 @@ fn configure_locale(context: &InstallContext, executor: &CommandExecutor) -> Res
     Ok(())
 }
 
-fn configure_network(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+fn configure_network(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
     let hostname = context
         .get_answer(&QuestionId::Hostname)
         .context("Hostname not set")?;
 
     println!("Setting hostname to {}", hostname);
 
-    if executor.dry_run {
+    if executor.dry_run() {
         println!("[DRY RUN] echo '{}' > /etc/hostname", hostname);
         println!("[DRY RUN] Writing /etc/hosts");
     } else {
@@ -380,7 +380,7 @@ fn configure_network(context: &InstallContext, executor: &CommandExecutor) -> Re
     Ok(())
 }
 
-fn configure_users(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+fn configure_users(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
     let username = context
         .get_answer(&QuestionId::Username)
         .context("Username not set")?;
@@ -400,7 +400,7 @@ fn configure_users(context: &InstallContext, executor: &CommandExecutor) -> Resu
     ensure_groups_exist(executor)?;
 
     // Check if user already exists (idempotent)
-    let user_exists = if executor.dry_run {
+    let user_exists = if executor.dry_run() {
         false // In dry-run, always show what would happen
     } else {
         Command::new("id")
@@ -447,11 +447,11 @@ fn configure_users(context: &InstallContext, executor: &CommandExecutor) -> Resu
     Ok(())
 }
 
-pub fn configure_sudo(_context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+pub fn configure_sudo(_context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
     println!("Configuring sudoers...");
     // Uncomment %wheel ALL=(ALL:ALL) ALL
 
-    if executor.dry_run {
+    if executor.dry_run() {
         println!("[DRY RUN] Uncommenting %wheel in /etc/sudoers");
         println!("[DRY RUN] Adding 'Defaults env_reset,pwfeedback' to /etc/sudoers");
     } else {
@@ -486,7 +486,7 @@ pub fn configure_sudo(_context: &InstallContext, executor: &CommandExecutor) -> 
     Ok(())
 }
 
-pub fn configure_plymouth(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+pub fn configure_plymouth(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
     if !context.get_answer_bool(QuestionId::UsePlymouth)
         || context.get_answer_bool(QuestionId::MinimalMode)
     {
@@ -495,7 +495,7 @@ pub fn configure_plymouth(context: &InstallContext, executor: &CommandExecutor) 
 
     println!("Configuring Plymouth...");
 
-    if executor.dry_run {
+    if executor.dry_run() {
         println!("[DRY RUN] Setting Plymouth theme to instantos");
         println!("[DRY RUN] plymouth-set-default-theme -R instantos");
         return Ok(());
@@ -541,4 +541,41 @@ pub fn configure_plymouth(context: &InstallContext, executor: &CommandExecutor) 
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::arch::execution::mock::MockRunner;
+
+    #[test]
+    fn test_ensure_groups_exist_commands() {
+        let mock = MockRunner::new();
+        super::ensure_groups_exist(&mock).unwrap();
+
+        let log = mock.command_log();
+        // Should have groupadd commands for each user group + system groups
+        assert!(log.iter().all(|c| c.contains("groupadd") && c.contains("-f")));
+        // USER_GROUPS: wheel, video, docker, sys, rfkill
+        assert!(log.iter().any(|c| c.contains("wheel")));
+        assert!(log.iter().any(|c| c.contains("video")));
+        assert!(log.iter().any(|c| c.contains("docker")));
+        assert!(log.iter().any(|c| c.contains("sys")));
+        assert!(log.iter().any(|c| c.contains("rfkill")));
+        // SYSTEM_GROUPS: nobody
+        assert!(log.iter().any(|c| c.contains("nobody")));
+        // Total: 5 user groups + 1 system group = 6
+        assert_eq!(log.len(), 6);
+    }
+
+    #[test]
+    fn test_add_user_to_groups_commands() {
+        let mock = MockRunner::new();
+        super::add_user_to_groups("testuser", &mock).unwrap();
+
+        let log = mock.command_log();
+        assert_eq!(log.len(), 1);
+        assert!(log[0].contains("usermod"));
+        assert!(log[0].contains("-aG"));
+        assert!(log[0].contains("testuser"));
+    }
 }

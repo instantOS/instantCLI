@@ -5,13 +5,13 @@ mod mount;
 mod probe;
 mod util;
 
-use super::CommandExecutor;
+use super::CommandRunner;
 use crate::arch::engine::{BootMode, InstallContext, QuestionId};
 use anyhow::{Context, Result};
 
 pub use util::get_part_path;
 
-pub fn prepare_disk(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+pub fn prepare_disk(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
     let disk_path = context
         .get_answer(&QuestionId::Disk)
         .context("No disk selected")?;

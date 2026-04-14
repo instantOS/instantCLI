@@ -1,10 +1,10 @@
 use super::util::get_part_path;
 use crate::arch::engine::{InstallContext, QuestionId};
-use crate::arch::execution::CommandExecutor;
+use crate::arch::execution::CommandRunner;
 use anyhow::{Context, Result};
 use std::process::Command;
 
-pub fn partition_uefi_luks(disk: &str, executor: &CommandExecutor) -> Result<()> {
+pub fn partition_uefi_luks(disk: &str, executor: &dyn CommandRunner) -> Result<()> {
     println!("Partitioning for UEFI with Encryption...");
 
     let script = "label: gpt\n\
@@ -13,7 +13,7 @@ pub fn partition_uefi_luks(disk: &str, executor: &CommandExecutor) -> Result<()>
 
     executor.run_with_input(Command::new("sfdisk").arg(disk), script)?;
 
-    if !executor.dry_run {
+    if !executor.dry_run() {
         executor.run(Command::new("udevadm").arg("settle"))?;
         std::thread::sleep(std::time::Duration::from_secs(2));
     }
@@ -21,7 +21,7 @@ pub fn partition_uefi_luks(disk: &str, executor: &CommandExecutor) -> Result<()>
     Ok(())
 }
 
-pub fn partition_bios_luks(disk: &str, executor: &CommandExecutor) -> Result<()> {
+pub fn partition_bios_luks(disk: &str, executor: &dyn CommandRunner) -> Result<()> {
     println!("Partitioning for BIOS with Encryption...");
 
     let script = "label: dos\n\
@@ -30,7 +30,7 @@ pub fn partition_bios_luks(disk: &str, executor: &CommandExecutor) -> Result<()>
 
     executor.run_with_input(Command::new("sfdisk").arg(disk), script)?;
 
-    if !executor.dry_run {
+    if !executor.dry_run() {
         executor.run(Command::new("udevadm").arg("settle"))?;
         std::thread::sleep(std::time::Duration::from_secs(2));
     }
@@ -41,7 +41,7 @@ pub fn partition_bios_luks(disk: &str, executor: &CommandExecutor) -> Result<()>
 pub fn format_luks(
     context: &InstallContext,
     disk: &str,
-    executor: &CommandExecutor,
+    executor: &dyn CommandRunner,
     is_uefi: bool,
     swap_size_gb: u64,
 ) -> Result<()> {
@@ -65,7 +65,7 @@ pub fn format_luks(
     cmd.arg("-q").arg("luksFormat").arg(&p2).arg("-");
     executor.run_with_input(&mut cmd, password)?;
 
-    if !executor.dry_run {
+    if !executor.dry_run() {
         executor.run(Command::new("udevadm").arg("settle"))?;
         std::thread::sleep(std::time::Duration::from_secs(2));
     }
@@ -89,7 +89,7 @@ pub fn format_luks(
 
     executor.run(Command::new("lvcreate").args(["-l", "100%FREE", "instantOS", "-n", "root"]))?;
 
-    if !executor.dry_run {
+    if !executor.dry_run() {
         executor.run(Command::new("udevadm").arg("settle"))?;
         executor.run(Command::new("vgchange").args(["-ay", "instantOS"]))?;
     }
@@ -101,7 +101,7 @@ pub fn format_luks(
     Ok(())
 }
 
-pub fn mount_luks(executor: &CommandExecutor, disk: &str) -> Result<()> {
+pub fn mount_luks(executor: &dyn CommandRunner, disk: &str) -> Result<()> {
     println!("Mounting LVM volumes...");
 
     executor.run(Command::new("mount").args(["/dev/instantOS/root", "/mnt"]))?;

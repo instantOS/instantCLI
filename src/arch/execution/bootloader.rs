@@ -1,11 +1,11 @@
-use super::CommandExecutor;
+use super::CommandRunner;
 use crate::arch::engine::{BootMode, InstallContext, QuestionId};
 use anyhow::{Context, Result};
 use std::process::Command;
 
 pub async fn install_bootloader(
     context: &InstallContext,
-    executor: &CommandExecutor,
+    executor: &dyn CommandRunner,
 ) -> Result<()> {
     println!("Installing bootloader (inside chroot)...");
 
@@ -33,7 +33,7 @@ pub fn bootloader_package_list(context: &InstallContext) -> Vec<String> {
     packages
 }
 
-fn install_grub_uefi(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+fn install_grub_uefi(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
     println!("Detected UEFI mode. Installing GRUB for UEFI...");
 
     // Determine the appropriate target based on UEFI mode
@@ -64,7 +64,7 @@ fn install_grub_uefi(context: &InstallContext, executor: &CommandExecutor) -> Re
     Ok(())
 }
 
-fn install_grub_bios(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+fn install_grub_bios(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
     println!("Detected BIOS mode. Installing GRUB for BIOS...");
 
     // disk is now just the device path (e.g., "/dev/sda")
@@ -83,7 +83,7 @@ fn install_grub_bios(context: &InstallContext, executor: &CommandExecutor) -> Re
     Ok(())
 }
 
-fn configure_grub(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+fn configure_grub(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
     println!("Generating GRUB configuration...");
 
     if context.get_answer_bool(QuestionId::UseEncryption) {
@@ -109,8 +109,8 @@ fn configure_grub(context: &InstallContext, executor: &CommandExecutor) -> Resul
     Ok(())
 }
 
-fn configure_grub_encryption(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
-    if executor.dry_run {
+fn configure_grub_encryption(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
+    if executor.dry_run() {
         println!("[DRY RUN] Adding 'rd.luks.name=...=cryptlvm' to GRUB_CMDLINE_LINUX");
         println!("[DRY RUN] Setting GRUB_ENABLE_CRYPTODISK=y in /etc/default/grub");
         return Ok(());
@@ -185,8 +185,8 @@ fn set_grub_cryptodisk_enabled(content: &str) -> String {
     new_content
 }
 
-fn configure_grub_plymouth(_context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
-    if executor.dry_run {
+fn configure_grub_plymouth(_context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
+    if executor.dry_run() {
         println!("[DRY RUN] Adding 'splash quiet' to GRUB_CMDLINE_LINUX");
         return Ok(());
     }
@@ -204,7 +204,7 @@ fn configure_grub_plymouth(_context: &InstallContext, executor: &CommandExecutor
     Ok(())
 }
 
-pub fn configure_grub_theme(_context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+pub fn configure_grub_theme(_context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
     let grub_default = "/etc/default/grub";
 
     if !std::path::Path::new(grub_default).exists() {
@@ -212,7 +212,7 @@ pub fn configure_grub_theme(_context: &InstallContext, executor: &CommandExecuto
         return Ok(());
     }
 
-    if executor.dry_run {
+    if executor.dry_run() {
         println!("[DRY RUN] Setting GRUB_THEME in /etc/default/grub");
         return Ok(());
     }
