@@ -1,6 +1,6 @@
 [package]
 name = "ins"
-version = "0.13.18"
+version = "0.13.21"
 edition = "2024"
 description = "Instant CLI - command-line utilities"
 license = "GPL-2.0-only"
@@ -9,7 +9,8 @@ repository = "https://github.com/instantOS/instantCLI"
 
 [features]
 default = []
-cross-compile = ["reqwest/native-tls-vendored", "git2/vendored-openssl", "rusqlite/bundled"]
+vendored = ["git2/vendored-libgit2", "git2/vendored-openssl", "reqwest/native-tls-vendored", "rusqlite/bundled"]
+cross-compile = ["vendored"]
 
 [profile.upload]
 inherits = "dev"

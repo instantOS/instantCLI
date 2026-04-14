@@ -7,6 +7,7 @@ use std::process::Command;
 
 use crate::assist::{AssistInternalCommand, assist_command_argv};
 use crate::common::compositor::{CompositorType, sway};
+use crate::common::instantwmctl;
 use crate::menu::client::MenuClient;
 use crate::menu::protocol::SliderRequest;
 use crate::menu_utils::{FzfPreview, FzfSelectable, MenuCursor, select_one_with_style_at};
@@ -74,7 +75,7 @@ impl Setting for SwapButtons {
             .id("mouse.swap_buttons")
             .title("Swap Mouse Buttons")
             .icon(NerdFont::Mouse)
-            .summary("Swap left and right mouse buttons for left-handed use.\n\nWhen enabled, the right button becomes the primary click.\n\nCurrently only supported on X11.")
+            .summary("Swap left and right mouse buttons for left-handed use.\n\nWhen enabled, the right button becomes the primary click.\n\nSupports InstantWM and X11.")
             .requires_reapply(true)
             .build()
     }
@@ -438,12 +439,20 @@ pub fn apply_natural_scrolling(ctx: &mut SettingsContext, enabled: bool) -> Resu
     } else if is_instantwm {
         let value = if enabled { "enabled" } else { "disabled" };
 
-        let pointer_result = std::process::Command::new("instantwmctl")
-            .args(["mouse", "natural-scroll", "type:pointer", value])
-            .status();
-        let touchpad_result = std::process::Command::new("instantwmctl")
-            .args(["mouse", "natural-scroll", "type:touchpad", value])
-            .status();
+        let pointer_result = instantwmctl::run([
+            "mouse",
+            "natural-scroll",
+            value,
+            "--identifier",
+            "type:pointer",
+        ]);
+        let touchpad_result = instantwmctl::run([
+            "mouse",
+            "natural-scroll",
+            value,
+            "--identifier",
+            "type:touchpad",
+        ]);
 
         if let (Err(e1), Err(e2)) = (&pointer_result, &touchpad_result) {
             ctx.emit_info(
@@ -494,8 +503,10 @@ pub fn apply_natural_scrolling(ctx: &mut SettingsContext, enabled: bool) -> Resu
 /// Apply swap buttons setting (shared by both apply and restore)
 pub fn apply_swap_buttons(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
     let compositor = CompositorType::detect();
+    let is_instantwm = matches!(compositor, CompositorType::InstantWM);
+    let is_x11 = compositor.is_x11();
 
-    if !compositor.is_x11() {
+    if !is_x11 && !is_instantwm {
         ctx.emit_unsupported(
             "settings.mouse.swap_buttons.unsupported",
             &format!(
@@ -506,14 +517,26 @@ pub fn apply_swap_buttons(ctx: &mut SettingsContext, enabled: bool) -> Result<()
         return Ok(());
     }
 
-    let value = if enabled { "1" } else { "0" };
-    let applied = apply_libinput_property_helper(
-        "libinput Left Handed Enabled",
-        value,
-        "settings.mouse.swap_buttons.device_failed",
-    )?;
+    if is_instantwm {
+        let value = if enabled { "enabled" } else { "disabled" };
 
-    if applied > 0 {
+        let pointer_result = std::process::Command::new("instantwmctl")
+            .args(["mouse", "left-handed", "type:pointer", value])
+            .status();
+        let touchpad_result = std::process::Command::new("instantwmctl")
+            .args(["mouse", "left-handed", "type:touchpad", value])
+            .status();
+
+        if let (Err(e1), Err(e2)) = (&pointer_result, &touchpad_result) {
+            ctx.emit_info(
+                "settings.mouse.swap_buttons.instantwm_failed",
+                &format!(
+                    "Failed to apply swap mouse buttons in instantWM: pointer: {e1}, touchpad: {e2}"
+                ),
+            );
+            return Ok(());
+        }
+
         ctx.notify(
             "Swap Mouse Buttons",
             if enabled {
@@ -523,10 +546,28 @@ pub fn apply_swap_buttons(ctx: &mut SettingsContext, enabled: bool) -> Result<()
             },
         );
     } else {
-        ctx.emit_info(
-            "settings.mouse.swap_buttons.no_devices",
-            "No devices found that support button swapping.",
-        );
+        let value = if enabled { "1" } else { "0" };
+        let applied = apply_libinput_property_helper(
+            "libinput Left Handed Enabled",
+            value,
+            "settings.mouse.swap_buttons.device_failed",
+        )?;
+
+        if applied > 0 {
+            ctx.notify(
+                "Swap Mouse Buttons",
+                if enabled {
+                    "Mouse buttons swapped (left-handed mode)"
+                } else {
+                    "Mouse buttons normal (right-handed mode)"
+                },
+            );
+        } else {
+            ctx.emit_info(
+                "settings.mouse.swap_buttons.no_devices",
+                "No devices found that support button swapping.",
+            );
+        }
     }
 
     Ok(())
@@ -669,9 +710,7 @@ fn apply_tap_to_click(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
 
     let value = if enabled { "enabled" } else { "disabled" };
 
-    let pointer_result = Command::new("instantwmctl")
-        .args(["mouse", "tap", value])
-        .status();
+    let pointer_result = instantwmctl::run(["mouse", "tap", value]);
 
     if let Err(e) = &pointer_result {
         ctx.emit_info(
@@ -708,9 +747,7 @@ fn apply_accel_profile(ctx: &mut SettingsContext, profile: &str) -> Result<()> {
         return Ok(());
     }
 
-    let result = Command::new("instantwmctl")
-        .args(["mouse", "accel-profile", profile])
-        .status();
+    let result = instantwmctl::run(["mouse", "accel-profile", profile]);
 
     if let Err(e) = &result {
         ctx.emit_info(
@@ -747,9 +784,8 @@ pub fn apply_scroll_factor(ctx: &mut SettingsContext, value: i64) -> Result<()> 
 
     let factor = value as f64 / 100.0;
 
-    let result = Command::new("instantwmctl")
-        .args(["mouse", "scroll-factor", &factor.to_string()])
-        .status();
+    let factor_arg = factor.to_string();
+    let result = instantwmctl::run(["mouse", "scroll-factor", factor_arg.as_str()]);
 
     if let Err(e) = &result {
         ctx.emit_info(

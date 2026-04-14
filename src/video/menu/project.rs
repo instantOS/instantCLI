@@ -13,6 +13,7 @@ use crate::video::document::parse_video_document;
 use crate::video::pipeline::{check, convert};
 use crate::video::render;
 use crate::video::render::paths::resolve_output_path;
+use crate::video::transcript_language::TranscriptLanguage;
 
 use super::file_selection::{
     discover_video_file_suggestions, discover_video_suggestions, select_markdown_file,
@@ -20,7 +21,7 @@ use super::file_selection::{
 };
 use super::prompts::{
     confirm_action, prompt_optional_path, select_convert_audio_choice, select_render_options,
-    select_transcript_choice,
+    select_transcript_choice, select_transcript_language,
 };
 use super::types::{ConvertAudioChoice, PromptOutcome, TranscriptChoice};
 
@@ -272,14 +273,21 @@ async fn run_add_recording(markdown_path: &Path) -> Result<()> {
         None => return Ok(()),
     };
 
-    let transcript_path = match transcript_choice {
-        TranscriptChoice::Auto => None,
+    let (transcript_path, language) = match transcript_choice {
+        TranscriptChoice::Auto => {
+            let lang = match select_transcript_language()? {
+                Some(lang) => lang,
+                None => return Ok(()),
+            };
+            (None, lang)
+        }
         TranscriptChoice::Provide => {
             use super::file_selection::select_transcript_file;
-            match select_transcript_file()? {
-                Some(path) => Some(path),
+            let path = match select_transcript_file()? {
+                Some(path) => path,
                 None => return Ok(()),
-            }
+            };
+            (Some(path), TranscriptLanguage::En)
         }
     };
 
@@ -302,6 +310,7 @@ async fn run_add_recording(markdown_path: &Path) -> Result<()> {
         force: false,
         no_preprocess,
         preprocessor,
+        language,
     })
     .await
 }
@@ -435,7 +444,10 @@ fn run_clear_cache(markdown_path: &Path) -> Result<()> {
     let mut cleared_count = 0;
     for source in &doc.metadata.sources {
         if let Ok(hash) = compute_file_hash(&source.source) {
-            let cache_paths = directories.cache_paths(&hash);
+            let cache_paths = directories.cache_paths(
+                &hash,
+                crate::video::transcript_language::TranscriptLanguage::En,
+            );
             let transcript_dir = cache_paths.transcript_dir();
 
             if transcript_dir.exists() {

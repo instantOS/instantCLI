@@ -9,6 +9,8 @@ use crate::ui::catppuccin::{colors, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 
+use crate::video::transcript_language::TranscriptLanguage;
+
 use super::types::{
     ChoiceItem, ConvertAudioChoice, OutputChoice, PreprocessBackendChoice, PromptOutcome,
     RenderOptions, RenderToggle, ToggleItem, TranscribeMode, TranscriptChoice,
@@ -171,6 +173,41 @@ pub fn select_convert_audio_choice() -> Result<Option<ConvertAudioChoice>> {
     ];
 
     select_choice("Audio preprocessing", "Select", items)
+}
+
+pub fn select_transcript_language() -> Result<Option<TranscriptLanguage>> {
+    let items = vec![
+        ChoiceItem::new(
+            "en",
+            format!(
+                "{} English",
+                format_icon_colored(NerdFont::Language, colors::GREEN)
+            ),
+            TranscriptLanguage::En,
+            PreviewBuilder::new()
+                .header(NerdFont::Language, "English")
+                .text("WhisperX: --language en with English wav2vec2 alignment.")
+                .blank()
+                .text("Best for English speech; default cache file name.")
+                .build(),
+        ),
+        ChoiceItem::new(
+            "de",
+            format!(
+                "{} German (Deutsch)",
+                format_icon_colored(NerdFont::Language, colors::SAPPHIRE)
+            ),
+            TranscriptLanguage::De,
+            PreviewBuilder::new()
+                .header(NerdFont::Language, "German")
+                .text("WhisperX: --language de with German VoxPopuli alignment.")
+                .blank()
+                .text("Use for German dialogue. Prefer a larger Whisper model if quality is low.")
+                .build(),
+        ),
+    ];
+
+    select_choice("Spoken language", "Select", items)
 }
 
 pub fn select_transcribe_mode() -> Result<Option<TranscribeMode>> {

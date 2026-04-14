@@ -29,7 +29,7 @@ mkdir -p "${BIN_DIR}" \
 	"${APPDIR}/usr/share/doc/ins" \
 	"${DOWNLOAD_DIR}"
 
-cargo build --release --locked
+cargo build --release --locked --features vendored
 install -Dm755 "target/release/ins" "${BIN_DIR}/ins"
 
 download() {

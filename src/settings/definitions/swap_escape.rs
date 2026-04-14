@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use regex;
 
 use crate::common::compositor::{CompositorType, sway};
+use crate::common::instantwmctl;
 use crate::menu_utils::FzfWrapper;
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
@@ -224,6 +225,32 @@ fn apply_kwin_swap_escape(ctx: &mut SettingsContext, enabled: bool, verbose: boo
     Ok(())
 }
 
+fn apply_instantwm_swap_escape(ctx: &mut SettingsContext, enabled: bool, verbose: bool) {
+    let arg = if enabled { "true" } else { "false" };
+    let result = instantwmctl::run(["keyboard", "swap-escape", arg]);
+
+    match result {
+        Ok(()) => {
+            if verbose {
+                ctx.notify(
+                    "Swap Escape/Caps Lock",
+                    if enabled {
+                        "Escape and Caps Lock keys swapped"
+                    } else {
+                        "Escape and Caps Lock keys restored to normal"
+                    },
+                );
+            }
+        }
+        Err(e) => {
+            if verbose {
+                let message = format!("Failed to apply the instantwmctl setting: {e}");
+                let _ = FzfWrapper::message(&message);
+            }
+        }
+    }
+}
+
 /// Apply swap escape setting for X11 compositor
 fn apply_x11_swap_escape(ctx: &mut SettingsContext, enabled: bool, verbose: bool) {
     let result = if enabled {
@@ -276,6 +303,7 @@ fn apply_swap_escape_setting_impl(
         CompositorType::Sway => apply_sway_swap_escape(ctx, enabled, verbose),
         CompositorType::Gnome => apply_gnome_swap_escape(ctx, enabled, verbose),
         CompositorType::KWin => apply_kwin_swap_escape(ctx, enabled, verbose)?,
+        CompositorType::InstantWM => apply_instantwm_swap_escape(ctx, enabled, verbose),
         _ if compositor.is_x11() => apply_x11_swap_escape(ctx, enabled, verbose),
         _ => {
             if verbose {
@@ -307,7 +335,7 @@ impl Setting for SwapEscape {
             .id("desktop.swap_escape")
             .title("Swap Escape and Caps Lock")
             .icon(NerdFont::Keyboard)
-            .summary("Swap the Escape and Caps Lock keys.\n\nWhen enabled, pressing Caps Lock will produce Escape and vice versa.\n\nSupports Sway, GNOME, KWin/KDE, and X11 window managers.")
+            .summary("Swap the Escape and Caps Lock keys.\n\nWhen enabled, pressing Caps Lock will produce Escape and vice versa.\n\nSupports instantWM, Sway, GNOME, KWin/KDE, and X11 window managers.")
             .requires_reapply(true)
             .build()
     }

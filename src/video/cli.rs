@@ -1,6 +1,8 @@
 use clap::{Args, Subcommand, ValueHint};
 use std::path::PathBuf;
 
+use crate::video::transcript_language::TranscriptLanguage;
+
 #[derive(Subcommand, Debug, Clone)]
 pub enum VideoCommands {
     /// Convert a timestamped transcript into editable video markdown
@@ -61,6 +63,10 @@ pub struct ConvertArgs {
     /// Override preprocessor type (local, auphonic, none)
     #[arg(long)]
     pub preprocessor: Option<String>,
+
+    /// Transcription language for WhisperX (speech recognition and word alignment)
+    #[arg(long, value_enum, default_value_t = TranscriptLanguage::En)]
+    pub language: TranscriptLanguage,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -88,6 +94,10 @@ pub struct AppendArgs {
     /// Override preprocessor type (local, auphonic, none)
     #[arg(long)]
     pub preprocessor: Option<String>,
+
+    /// Transcription language for WhisperX (speech recognition and word alignment)
+    #[arg(long, value_enum, default_value_t = TranscriptLanguage::En)]
+    pub language: TranscriptLanguage,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -115,6 +125,10 @@ pub struct TranscribeArgs {
     /// Re-generate transcript even if cached
     #[arg(long)]
     pub force: bool,
+
+    /// Transcription language for WhisperX (speech recognition and word alignment)
+    #[arg(long, value_enum, default_value_t = TranscriptLanguage::En)]
+    pub language: TranscriptLanguage,
 }
 
 #[derive(Args, Debug, Clone)]

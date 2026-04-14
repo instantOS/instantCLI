@@ -8,6 +8,7 @@ use std::io::Write;
 
 use crate::common::compositor::CompositorType;
 use crate::common::compositor::config::{WindowManager, WmConfigManager};
+use crate::common::instantwmctl;
 use crate::ui::prelude::*;
 
 #[derive(Subcommand, Debug, Clone)]
@@ -28,6 +29,14 @@ pub enum SetupCommands {
     /// - Adds an include to your main i3 config
     /// - Reloads i3 to apply changes
     I3,
+
+    /// Set up instantWM window manager integration
+    ///
+    /// This command:
+    /// - Exports assist keybinds to ~/.config/instantwm/assist.toml
+    /// - Adds an include to your config.toml if not present
+    /// - Reloads instantWM to apply changes
+    InstantWM,
 }
 
 /// Handle setup command dispatch
@@ -35,8 +44,13 @@ pub fn handle_setup_command(command: SetupCommands) -> Result<()> {
     let wm = match command {
         SetupCommands::Sway => WindowManager::Sway,
         SetupCommands::I3 => WindowManager::I3,
+        SetupCommands::InstantWM => WindowManager::InstantWM,
     };
-    setup_wm(wm)
+
+    match &command {
+        SetupCommands::InstantWM => setup_instantwm(),
+        _ => setup_wm(wm),
+    }
 }
 
 fn setup_wm(wm: WindowManager) -> Result<()> {
@@ -51,11 +65,56 @@ fn setup_wm(wm: WindowManager) -> Result<()> {
     Ok(())
 }
 
+fn setup_instantwm() -> Result<()> {
+    validate_compositor(&WindowManager::InstantWM);
+    let wm = WindowManager::InstantWM;
+    let manager = WmConfigManager::new(wm);
+    ensure_main_config_exists(&manager)?;
+    let config_changed = write_instantwm_config_if_changed(&manager)?;
+    let include_added = ensure_main_config_include(&manager, &wm)?;
+    report_status(&wm, config_changed, include_added, &manager);
+    if config_changed || include_added {
+        maybe_reload_wm(&manager, &wm);
+    }
+    Ok(())
+}
+
+fn ensure_main_config_exists(manager: &WmConfigManager) -> Result<()> {
+    let main_config = manager.main_config_path();
+    if main_config.exists() {
+        return Ok(());
+    }
+
+    let output = instantwmctl::output(["config", "default"])?;
+
+    if let Some(parent) = main_config.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("Failed to create directory {}", parent.display()))?;
+    }
+
+    std::fs::write(main_config, &output.stdout)
+        .with_context(|| format!("Failed to write {}", main_config.display()))?;
+
+    emit(
+        Level::Info,
+        "setup.instantwm.config_created",
+        &format!(
+            "{} Created default config at {}",
+            char::from(NerdFont::Check),
+            main_config.display()
+        ),
+        None,
+    );
+
+    Ok(())
+}
+
 fn validate_compositor(wm: &WindowManager) {
     let compositor = CompositorType::detect();
     let expected_compositor = match wm {
         WindowManager::Sway => CompositorType::Sway,
         WindowManager::I3 => CompositorType::I3,
+        WindowManager::InstantWM => CompositorType::InstantWM,
     };
 
     if compositor != expected_compositor {
@@ -75,6 +134,17 @@ fn validate_compositor(wm: &WindowManager) {
 
 fn write_config_if_changed(manager: &WmConfigManager) -> Result<bool> {
     let expected_content = generate_sway_config()?;
+    let disk_hash = manager.hash_config().unwrap_or(0);
+    let expected_hash = hash_string(&expected_content);
+    let changed = disk_hash != expected_hash;
+    if changed {
+        manager.write_full_config(&expected_content)?;
+    }
+    Ok(changed)
+}
+
+fn write_instantwm_config_if_changed(manager: &WmConfigManager) -> Result<bool> {
+    let expected_content = generate_instantwm_config()?;
     let disk_hash = manager.hash_config().unwrap_or(0);
     let expected_hash = hash_string(&expected_content);
     let changed = disk_hash != expected_hash;
@@ -203,6 +273,116 @@ pub(crate) fn generate_sway_config() -> Result<String> {
     writeln!(content, "# --- END assist ---")?;
 
     Ok(content)
+}
+
+/// Generate the full instantWM assist config content (TOML format).
+fn generate_instantwm_config() -> Result<String> {
+    use std::fmt::Write;
+
+    let mut content = String::new();
+
+    writeln!(content, "# instantWM config for instantCLI assists")?;
+    writeln!(
+        content,
+        "# This file is managed by instantCLI. Manual edits may be overwritten."
+    )?;
+    writeln!(content)?;
+    writeln!(
+        content,
+        "# To enter assist mode, add this keybind to your config.toml:"
+    )?;
+    writeln!(content, "#     [[keybinds]]")?;
+    writeln!(content, "#     modifiers = [\"Super\"]")?;
+    writeln!(content, "#     key = \"a\"")?;
+    writeln!(content, "#     action = {{ set_mode = \"instantassist\" }}")?;
+    writeln!(content)?;
+
+    generate_instantwm_modes(
+        &mut content,
+        crate::assist::registry::ASSISTS,
+        "instantassist",
+        "",
+    )?;
+
+    writeln!(content, "# End of instantCLI assists config")?;
+
+    Ok(content)
+}
+
+fn generate_instantwm_modes<W: std::fmt::Write>(
+    output: &mut W,
+    entries: &[crate::assist::registry::AssistEntry],
+    mode_name: &str,
+    prefix: &str,
+) -> Result<()> {
+    writeln!(output, "[modes.{}]", mode_name)?;
+
+    let description = if prefix.is_empty() {
+        "instantassist mode".to_string()
+    } else {
+        let group = crate::assist::registry::find_group_entries(prefix)
+            .and_then(|entries| entries.first())
+            .map(|e| e.description());
+        format!("{} submode", group.unwrap_or(mode_name))
+    };
+    writeln!(output, "description = \"{}\"", description)?;
+    writeln!(output, "keybinds = [")?;
+
+    writeln!(
+        output,
+        "  {{ modifiers = [], key = \"Escape\", action = {{ set_mode = \"default\" }} }},"
+    )?;
+    writeln!(
+        output,
+        "  {{ modifiers = [], key = \"Return\", action = {{ set_mode = \"default\" }} }},"
+    )?;
+
+    if !prefix.is_empty() {
+        let help_cmd = format!("{}h", prefix);
+        writeln!(
+            output,
+            "  {{ modifiers = [], key = \"h\", action = {{ spawn = [\"ins\", \"assist\", \"run\", \"{}\"] }} }},",
+            help_cmd
+        )?;
+    }
+
+    for entry in entries {
+        match entry {
+            crate::assist::registry::AssistEntry::Action(action) => {
+                if !prefix.is_empty() && action.key == 'h' {
+                    continue;
+                }
+
+                let key_sequence = format!("{}{}", prefix, action.key);
+                writeln!(
+                    output,
+                    "  {{ modifiers = [], key = \"{}\", action = {{ spawn = [\"ins\", \"assist\", \"run\", \"{}\"] }} }},",
+                    action.key, key_sequence
+                )?;
+            }
+            crate::assist::registry::AssistEntry::Group(group) => {
+                let sub_mode_name = format!("{}_{}", mode_name, group.key);
+                writeln!(
+                    output,
+                    "  {{ modifiers = [], key = \"{}\", action = {{ set_mode = \"{}\" }} }},",
+                    group.key, sub_mode_name
+                )?;
+            }
+        }
+    }
+
+    writeln!(output, "]")?;
+    writeln!(output)?;
+
+    for entry in entries {
+        if let crate::assist::registry::AssistEntry::Group(group) = entry {
+            let sub_mode_name = format!("{}_{}", mode_name, group.key);
+            let new_prefix = format!("{}{}", prefix, group.key);
+            generate_instantwm_modes(output, group.children, &sub_mode_name, &new_prefix)?;
+        }
+    }
+
+    Ok(())
 }
 
 /// Hash a string for comparison.

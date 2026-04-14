@@ -7,6 +7,7 @@ pub mod display_server;
 pub mod distro;
 pub mod git;
 pub mod instantwm;
+pub mod instantwmctl;
 pub mod network;
 pub mod package;
 pub mod pacman;

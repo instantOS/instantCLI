@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use crate::common::config::DocumentedConfig;
 use crate::common::paths;
 use crate::documented_config;
+use crate::video::transcript_language::TranscriptLanguage;
 
 pub use super::audio::PreprocessorType;
 
@@ -48,11 +49,12 @@ impl VideoDirectories {
         })
     }
 
-    pub fn cache_paths(&self, video_hash: &str) -> VideoCachePaths {
+    pub fn cache_paths(&self, video_hash: &str, language: TranscriptLanguage) -> VideoCachePaths {
         let data_dir = self.data_root.join(video_hash);
         let transcript_dir = self.cache_root.join(video_hash);
         VideoCachePaths {
             video_hash: video_hash.to_string(),
+            language,
             data_dir,
             transcript_dir,
             transcript_cache_path: PathBuf::new(),
@@ -68,6 +70,7 @@ impl VideoDirectories {
 /// - `transcript_dir/`: Contains cached transcripts and processed audio
 pub struct VideoCachePaths {
     video_hash: String,
+    language: TranscriptLanguage,
     data_dir: PathBuf,
     transcript_dir: PathBuf,
     transcript_cache_path: PathBuf,
@@ -152,7 +155,7 @@ impl VideoCachePaths {
     fn resolve(mut self) -> Self {
         self.transcript_cache_path = self
             .transcript_dir
-            .join(format!("{}.json", self.video_hash));
+            .join(self.language.transcript_json_filename(&self.video_hash));
         self
     }
 

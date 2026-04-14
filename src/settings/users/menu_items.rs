@@ -93,6 +93,8 @@ pub(super) enum UserActionItem {
     ToggleSudo {
         enabled: bool,
         wheel_warning: bool,
+        sudo_group: Option<String>,
+        no_sudo_configured: bool,
     },
     DeleteUser {
         username: String,
@@ -189,7 +191,10 @@ impl FzfSelectable for UserActionItem {
             UserActionItem::ToggleSudo {
                 enabled,
                 wheel_warning,
+                sudo_group,
+                no_sudo_configured,
             } => {
+                let group_label = sudo_group.as_deref().unwrap_or("none");
                 let (status_color, status_icon, action_color, action_icon, action_label) =
                     if *enabled {
                         (
@@ -218,15 +223,25 @@ impl FzfSelectable for UserActionItem {
                     )
                     .blank()
                     .line(action_color, Some(action_icon), action_label)
-                    .blank()
-                    .subtext("Adds or removes the user from the wheel group.")
-                    .field("Group", "wheel");
+                    .blank();
+
+                if *no_sudo_configured {
+                    builder =
+                        builder.subtext("Neither sudo nor wheel group is allowed to use sudo.");
+                } else {
+                    builder = builder
+                        .subtext("Adds or removes the user from the sudo group.")
+                        .field("Group", group_label);
+                }
 
                 if *wheel_warning {
                     builder = builder.blank().line(
                         colors::YELLOW,
                         Some(NerdFont::Warning),
-                        "Wheel group is not allowed to use sudo on this system.",
+                        &format!(
+                            "{} group is not allowed to use sudo on this system.",
+                            group_label
+                        ),
                     );
                 }
 
