@@ -1,9 +1,9 @@
-use super::CommandExecutor;
+use super::CommandRunner;
 use crate::arch::engine::InstallContext;
 use anyhow::Result;
 use std::process::Command;
 
-pub fn generate_fstab(_context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+pub fn generate_fstab(_context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
     println!("Generating fstab...");
 
     let output_opt = executor.run_with_output(Command::new("genfstab").arg("-U").arg("/mnt"))?;

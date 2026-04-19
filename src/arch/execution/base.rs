@@ -1,13 +1,13 @@
-use super::CommandExecutor;
+use super::CommandRunner;
 use crate::arch::engine::{InstallContext, QuestionId};
 use anyhow::{Context, Result};
 
-pub async fn install_base(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+pub async fn install_base(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
     println!("Setting up mirrors...");
     setup_mirrors(context, executor).await?;
 
     println!("Configuring pacman settings...");
-    crate::common::pacman::configure_pacman_settings(None, executor.dry_run).await?;
+    crate::common::pacman::configure_pacman_settings(None, executor.dry_run()).await?;
 
     println!("Installing base system...");
     run_pacstrap(context, executor)?;
@@ -15,11 +15,11 @@ pub async fn install_base(context: &InstallContext, executor: &CommandExecutor) 
     Ok(())
 }
 
-async fn setup_mirrors(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+async fn setup_mirrors(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
     // Check if a region was selected (question may have been skipped if fetch failed)
     let region_name = context.get_answer(&QuestionId::MirrorRegion);
 
-    if executor.dry_run {
+    if executor.dry_run() {
         match region_name {
             Some(region) => {
                 println!("[DRY RUN] Fetching mirrorlist for region: {}", region);
@@ -70,7 +70,7 @@ async fn fetch_fallback_mirrorlist() -> Result<String> {
     crate::arch::mirrors::fetch_mirrorlist("").await
 }
 
-fn run_pacstrap(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+fn run_pacstrap(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
     // Get selected kernel or default to "linux"
     let kernel = context
         .get_answer(&QuestionId::Kernel)

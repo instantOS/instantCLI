@@ -7,7 +7,7 @@ use crate::arch::dualboot::{DisksKey, PartitionTableType};
 use crate::arch::engine::{
     DualBootPartitionPaths, DualBootPartitions, EspNeedsFormat, InstallContext, QuestionId,
 };
-use crate::arch::execution::CommandExecutor;
+use crate::arch::execution::CommandRunner;
 use anyhow::{Context, Result};
 use std::process::Command;
 
@@ -17,7 +17,7 @@ struct ResizePlan {
 
 pub fn prepare_dualboot_disk(
     context: &InstallContext,
-    executor: &CommandExecutor,
+    executor: &dyn CommandRunner,
     disk_path: &str,
     mut swap_size_gb: u64,
 ) -> Result<()> {
@@ -101,7 +101,7 @@ pub fn prepare_dualboot_disk(
     let preferred_region = if let Some(ref partition_path) = resized_partition {
         match find_next_free_region(disk_path, disk_info.size_bytes, partition_path) {
             Ok(Some(region)) => Some(region),
-            Ok(None) if executor.dry_run => resize_plan.map(|plan| plan.preferred_region),
+            Ok(None) if executor.dry_run() => resize_plan.map(|plan| plan.preferred_region),
             Ok(None) => {
                 if auto_resize_selected {
                     anyhow::bail!("No free region found after resizing {}", partition_path);
@@ -182,7 +182,7 @@ pub fn prepare_dualboot_disk(
 }
 
 fn auto_resize_partition(
-    executor: &CommandExecutor,
+    executor: &dyn CommandRunner,
     disk_info: &crate::arch::dualboot::DiskInfo,
     disk_path: &str,
     partition_path: &str,
@@ -321,7 +321,7 @@ fn auto_resize_partition(
         &script,
     )?;
 
-    if !executor.dry_run {
+    if !executor.dry_run() {
         executor.run(Command::new("udevadm").arg("settle"))?;
         std::thread::sleep(std::time::Duration::from_secs(2));
     }
@@ -372,7 +372,7 @@ fn find_next_free_region(
 fn create_esp_partition(
     disk_path: &str,
     disk_info: &crate::arch::dualboot::DiskInfo,
-    executor: &CommandExecutor,
+    executor: &dyn CommandRunner,
 ) -> Result<String> {
     let partitions_before = get_current_partitions(disk_path)?;
 
@@ -404,7 +404,7 @@ fn create_esp_partition(
         &script,
     )?;
 
-    if !executor.dry_run {
+    if !executor.dry_run() {
         executor.run(Command::new("udevadm").arg("settle"))?;
         std::thread::sleep(std::time::Duration::from_secs(2));
     }
@@ -428,7 +428,7 @@ fn create_dualboot_partitions(
     disk_path: &str,
     swap_size_gb: u64,
     disk_size_bytes: u64,
-    executor: &CommandExecutor,
+    executor: &dyn CommandRunner,
     preferred_region: Option<FreeRegion>,
 ) -> Result<(String, String)> {
     println!("Creating partitions in free space (optimal placement)...");
@@ -512,7 +512,7 @@ fn create_dualboot_partitions(
         &script,
     )?;
 
-    if !executor.dry_run {
+    if !executor.dry_run() {
         executor.run(Command::new("udevadm").arg("settle"))?;
         std::thread::sleep(std::time::Duration::from_secs(2));
     }

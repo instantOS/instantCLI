@@ -226,8 +226,9 @@ fn apply_kwin_swap_escape(ctx: &mut SettingsContext, enabled: bool, verbose: boo
 }
 
 fn apply_instantwm_swap_escape(ctx: &mut SettingsContext, enabled: bool, verbose: bool) {
-    let arg = if enabled { "true" } else { "false" };
-    let result = instantwmctl::run(["keyboard", "swap-escape", arg]);
+    let flag = if enabled { "--enabled" } else { "--enabled" };
+    let value = if enabled { "true" } else { "false" };
+    let result = instantwmctl::run(["keyboard", "swap-escape", flag, value]);
 
     match result {
         Ok(()) => {

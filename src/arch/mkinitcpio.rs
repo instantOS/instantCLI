@@ -183,6 +183,46 @@ impl MkinitcpioConfig {
 mod tests {
     use super::*;
 
+    // ── Parse ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_parentheses() {
+        let config = MkinitcpioConfig::parse("HOOKS=(base udev)").unwrap();
+        assert_eq!(config.hooks, vec!["base", "udev"]);
+    }
+
+    #[test]
+    fn test_parse_double_quotes() {
+        let config = MkinitcpioConfig::parse("HOOKS=\"base udev\"").unwrap();
+        assert_eq!(config.hooks, vec!["base", "udev"]);
+    }
+
+    #[test]
+    fn test_parse_single_quotes() {
+        let config = MkinitcpioConfig::parse("HOOKS='base udev'").unwrap();
+        assert_eq!(config.hooks, vec!["base", "udev"]);
+    }
+
+    #[test]
+    fn test_parse_no_hooks_line() {
+        let config = MkinitcpioConfig::parse("# no hooks here").unwrap();
+        assert!(config.hooks.is_empty());
+        assert!(config.hooks_line_idx.is_none());
+    }
+
+    #[test]
+    fn test_parse_multiline_content() {
+        let content = "MODULES=()\nBINARIES=()\nFILES=()\nHOOKS=(base udev block encrypt filesystems)\n";
+        let config = MkinitcpioConfig::parse(content).unwrap();
+        assert_eq!(
+            config.hooks,
+            vec!["base", "udev", "block", "encrypt", "filesystems"]
+        );
+        assert_eq!(config.hooks_line_idx, Some(3));
+    }
+
+    // ── Serialization ───────────────────────────────────────────────────
+
     #[test]
     fn test_serialization() {
         let content = "HOOKS=(base udev)";
@@ -194,5 +234,175 @@ mod tests {
         let mut config_quotes = MkinitcpioConfig::parse(content_quotes).unwrap();
         config_quotes.ensure_hook("test");
         assert_eq!(config_quotes.to_string(), "HOOKS=\"base udev test\"");
+    }
+
+    #[test]
+    fn test_to_string_preserves_surrounding_lines() {
+        let content = "MODULES=()\nHOOKS=(base udev)\nCOMPRESSION=zstd";
+        let mut config = MkinitcpioConfig::parse(content).unwrap();
+        config.ensure_hook("keyboard");
+        let result = config.to_string();
+        assert!(result.contains("MODULES=()"));
+        assert!(result.contains("HOOKS=(base udev keyboard)"));
+        assert!(result.contains("COMPRESSION=zstd"));
+    }
+
+    #[test]
+    fn test_to_string_appends_when_no_hooks_line() {
+        let content = "MODULES=()";
+        let mut config = MkinitcpioConfig::parse(content).unwrap();
+        config.ensure_hook("base");
+        let result = config.to_string();
+        assert!(result.contains("HOOKS=(base)"));
+    }
+
+    #[test]
+    fn test_preserves_quote_style() {
+        let content = "HOOKS='base udev'";
+        let mut config = MkinitcpioConfig::parse(content).unwrap();
+        config.ensure_hook("keyboard");
+        assert_eq!(config.to_string(), "HOOKS='base udev keyboard'");
+    }
+
+    // ── ensure_hook ─────────────────────────────────────────────────────
+
+    #[test]
+    fn test_ensure_hook_adds_new() {
+        let mut config = MkinitcpioConfig::parse("HOOKS=(base)").unwrap();
+        config.ensure_hook("udev");
+        assert_eq!(config.hooks, vec!["base", "udev"]);
+    }
+
+    #[test]
+    fn test_ensure_hook_idempotent() {
+        let mut config = MkinitcpioConfig::parse("HOOKS=(base udev)").unwrap();
+        config.ensure_hook("udev");
+        assert_eq!(config.hooks, vec!["base", "udev"]);
+    }
+
+    // ── remove_hook ─────────────────────────────────────────────────────
+
+    #[test]
+    fn test_remove_hook_existing() {
+        let mut config = MkinitcpioConfig::parse("HOOKS=(base udev block)").unwrap();
+        config.remove_hook("udev");
+        assert_eq!(config.hooks, vec!["base", "block"]);
+    }
+
+    #[test]
+    fn test_remove_hook_nonexistent_is_noop() {
+        let mut config = MkinitcpioConfig::parse("HOOKS=(base udev)").unwrap();
+        config.remove_hook("filesystems");
+        assert_eq!(config.hooks, vec!["base", "udev"]);
+    }
+
+    // ── replace_hook ────────────────────────────────────────────────────
+
+    #[test]
+    fn test_replace_hook_existing() {
+        let mut config = MkinitcpioConfig::parse("HOOKS=(base udev)").unwrap();
+        config.replace_hook("udev", "systemd");
+        assert_eq!(config.hooks, vec!["base", "systemd"]);
+    }
+
+    #[test]
+    fn test_replace_hook_nonexistent_is_noop() {
+        let mut config = MkinitcpioConfig::parse("HOOKS=(base)").unwrap();
+        config.replace_hook("udev", "systemd");
+        assert_eq!(config.hooks, vec!["base"]);
+    }
+
+    #[test]
+    fn test_replace_hook_replaces_all_occurrences() {
+        let mut config = MkinitcpioConfig::parse("HOOKS=(base udev base)").unwrap();
+        config.replace_hook("base", "core");
+        assert_eq!(config.hooks, vec!["core", "udev", "core"]);
+    }
+
+    // ── contains_hook ───────────────────────────────────────────────────
+
+    #[test]
+    fn test_contains_hook_true() {
+        let config = MkinitcpioConfig::parse("HOOKS=(base udev)").unwrap();
+        assert!(config.contains_hook("base"));
+        assert!(config.contains_hook("udev"));
+    }
+
+    #[test]
+    fn test_contains_hook_false() {
+        let config = MkinitcpioConfig::parse("HOOKS=(base udev)").unwrap();
+        assert!(!config.contains_hook("filesystems"));
+    }
+
+    // ── ensure_hook_position ────────────────────────────────────────────
+
+    #[test]
+    fn test_ensure_hook_position_already_correct() {
+        let mut config = MkinitcpioConfig::parse("HOOKS=(base udev block filesystems)").unwrap();
+        config.ensure_hook_position("block", &["udev"], &["filesystems"]);
+        assert_eq!(config.hooks, vec!["base", "udev", "block", "filesystems"]);
+    }
+
+    #[test]
+    fn test_ensure_hook_position_moves_after_anchor() {
+        // block is before udev, should be moved after it
+        let mut config = MkinitcpioConfig::parse("HOOKS=(block base udev filesystems)").unwrap();
+        config.ensure_hook_position("block", &["udev"], &["filesystems"]);
+        let idx_block = config.hooks.iter().position(|h| h == "block").unwrap();
+        let idx_udev = config.hooks.iter().position(|h| h == "udev").unwrap();
+        assert!(idx_block > idx_udev, "block should be after udev");
+    }
+
+    #[test]
+    fn test_ensure_hook_position_moves_before_anchor() {
+        // filesystems is after block, but should be before it
+        let mut config =
+            MkinitcpioConfig::parse("HOOKS=(base udev filesystems block)").unwrap();
+        config.ensure_hook_position("filesystems", &["udev"], &["block"]);
+        let idx_fs = config.hooks.iter().position(|h| h == "filesystems").unwrap();
+        let idx_block = config.hooks.iter().position(|h| h == "block").unwrap();
+        assert!(idx_fs < idx_block, "filesystems should be before block");
+    }
+
+    #[test]
+    fn test_ensure_hook_position_adds_if_missing() {
+        let mut config = MkinitcpioConfig::parse("HOOKS=(base udev filesystems)").unwrap();
+        config.ensure_hook_position("block", &["udev"], &["filesystems"]);
+        assert!(config.contains_hook("block"));
+        let idx_block = config.hooks.iter().position(|h| h == "block").unwrap();
+        let idx_udev = config.hooks.iter().position(|h| h == "udev").unwrap();
+        let idx_fs = config.hooks.iter().position(|h| h == "filesystems").unwrap();
+        assert!(idx_block > idx_udev);
+        assert!(idx_block < idx_fs);
+    }
+
+    #[test]
+    fn test_ensure_hook_position_no_anchors_inserts_at_start() {
+        let mut config = MkinitcpioConfig::parse("HOOKS=(filesystems)").unwrap();
+        config.ensure_hook_position("base", &[], &["filesystems"]);
+        assert_eq!(config.hooks[0], "base");
+    }
+
+    #[test]
+    fn test_ensure_hook_position_no_before_anchor_inserts_at_end() {
+        let mut config = MkinitcpioConfig::parse("HOOKS=(base udev)").unwrap();
+        config.ensure_hook_position("filesystems", &["udev"], &[]);
+        assert_eq!(config.hooks[config.hooks.len() - 1], "filesystems");
+    }
+
+    // ── insertion_bounds / target helpers (via ensure_hook_position) ────
+
+    #[test]
+    fn test_ensure_hook_position_encryption_typical() {
+        // Real-world case: encrypt hook must be after block, before filesystems
+        let mut config =
+            MkinitcpioConfig::parse("HOOKS=(base udev block filesystems keyboard)").unwrap();
+        config.ensure_hook_position("encrypt", &["block"], &["filesystems"]);
+        let hooks = &config.hooks;
+        let idx_encrypt = hooks.iter().position(|h| h == "encrypt").unwrap();
+        let idx_block = hooks.iter().position(|h| h == "block").unwrap();
+        let idx_fs = hooks.iter().position(|h| h == "filesystems").unwrap();
+        assert!(idx_encrypt > idx_block);
+        assert!(idx_encrypt < idx_fs);
     }
 }

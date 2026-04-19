@@ -1,8 +1,8 @@
-use super::CommandExecutor;
+use super::CommandRunner;
 use crate::arch::engine::{InstallContext, QuestionId};
 use anyhow::{Context, Result};
 
-pub async fn install_post(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+pub async fn install_post(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
     println!("Running post-installation setup (inside chroot)...");
 
     let username = context

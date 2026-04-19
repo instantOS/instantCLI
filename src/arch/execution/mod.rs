@@ -38,6 +38,22 @@ pub fn is_chroot() -> bool {
     root_meta.dev() != proc_root_meta.dev() || root_meta.ino() != proc_root_meta.ino()
 }
 
+/// Abstraction over command execution, used to make the execution layer testable.
+pub trait CommandRunner {
+    fn dry_run(&self) -> bool;
+    fn run(&self, command: &mut std::process::Command) -> anyhow::Result<()>;
+    fn run_with_input(
+        &self,
+        command: &mut std::process::Command,
+        input: &str,
+    ) -> anyhow::Result<()>;
+    fn run_with_output(
+        &self,
+        command: &mut std::process::Command,
+    ) -> anyhow::Result<Option<std::process::Output>>;
+    fn log(&self, message: &str);
+}
+
 pub struct CommandExecutor {
     pub dry_run: bool,
     pub log_file: Option<PathBuf>,
@@ -231,6 +247,35 @@ impl CommandExecutor {
     }
 }
 
+impl CommandRunner for CommandExecutor {
+    fn dry_run(&self) -> bool {
+        self.dry_run
+    }
+
+    fn run(&self, command: &mut std::process::Command) -> anyhow::Result<()> {
+        CommandExecutor::run(self, command)
+    }
+
+    fn run_with_input(
+        &self,
+        command: &mut std::process::Command,
+        input: &str,
+    ) -> anyhow::Result<()> {
+        CommandExecutor::run_with_input(self, command, input)
+    }
+
+    fn run_with_output(
+        &self,
+        command: &mut std::process::Command,
+    ) -> anyhow::Result<Option<std::process::Output>> {
+        CommandExecutor::run_with_output(self, command)
+    }
+
+    fn log(&self, message: &str) {
+        CommandExecutor::log(self, message);
+    }
+}
+
 pub async fn execute_installation(
     config_path: PathBuf,
     step: Option<String>,
@@ -345,7 +390,7 @@ pub async fn execute_installation(
 async fn execute_step(
     step: InstallStep,
     context: &crate::arch::engine::InstallContext,
-    executor: &CommandExecutor,
+    executor: &dyn CommandRunner,
     config_path: &std::path::Path,
 ) -> Result<()> {
     let in_chroot = is_chroot();
@@ -358,14 +403,14 @@ async fn execute_step(
     });
 
     // Check if already complete
-    if state.is_complete(step) && !executor.dry_run {
+    if state.is_complete(step) && !executor.dry_run() {
         println!("Step {:?} is already complete. Skipping.", step);
         return Ok(());
     }
 
     // Check dependencies
     if let Err(missing) = state.check_dependencies(step) {
-        if executor.dry_run {
+        if executor.dry_run() {
             println!(
                 "Warning: Missing dependencies for {:?}: {:?}. Proceeding (Dry Run).",
                 step, missing
@@ -375,7 +420,7 @@ async fn execute_step(
         }
     }
 
-    if requires_chroot && !in_chroot && !executor.dry_run {
+    if requires_chroot && !in_chroot && !executor.dry_run() {
         println!(
             "Step {:?} requires chroot, setting up and entering...",
             step
@@ -398,7 +443,7 @@ async fn execute_step(
             .arg("--questions-file")
             .arg(paths::CONFIG_FILE);
 
-        if executor.dry_run {
+        if executor.dry_run() {
             // Pass dry-run flag if we are dry-running
             cmd.arg("--dry-run");
         }
@@ -406,7 +451,7 @@ async fn execute_step(
         executor.run(&mut cmd)?;
 
         // Collect logs from chroot
-        if !executor.dry_run {
+        if !executor.dry_run() {
             let chroot_log = paths::chroot_path(paths::LOG_FILE);
             if chroot_log.exists()
                 && let Ok(content) = std::fs::read_to_string(&chroot_log)
@@ -451,7 +496,7 @@ async fn execute_step(
         }
     }
 
-    if !executor.dry_run {
+    if !executor.dry_run() {
         state.mark_complete(step);
         if let Err(e) = state.save() {
             println!("Warning: Failed to save install state: {}", e);
@@ -469,14 +514,14 @@ async fn execute_step(
     Ok(())
 }
 
-fn setup_chroot(executor: &CommandExecutor, config_path: &std::path::Path) -> Result<()> {
+fn setup_chroot(executor: &dyn CommandRunner, config_path: &std::path::Path) -> Result<()> {
     println!("Setting up chroot environment...");
 
     // Copy binary
     let current_exe = std::env::current_exe()?;
     let target_bin = paths::chroot_path("/usr/bin/ins-install");
 
-    if executor.dry_run {
+    if executor.dry_run() {
         println!("[DRY RUN] cp {:?} {:?}", current_exe, target_bin);
     } else {
         // Ensure chroot root and /usr/bin exist to avoid 'No such file or directory'
@@ -509,7 +554,7 @@ fn setup_chroot(executor: &CommandExecutor, config_path: &std::path::Path) -> Re
 
     // Copy config
     let target_config = paths::chroot_path(paths::CONFIG_FILE);
-    if executor.dry_run {
+    if executor.dry_run() {
         println!("[DRY RUN] cp {:?} {:?}", config_path, target_config);
     } else {
         // Ensure directory exists
@@ -525,7 +570,7 @@ fn setup_chroot(executor: &CommandExecutor, config_path: &std::path::Path) -> Re
     let state_file = paths::STATE_FILE;
     let target_state = paths::chroot_path(paths::STATE_FILE);
     if std::path::Path::new(state_file).exists() {
-        if executor.dry_run {
+        if executor.dry_run() {
             println!("[DRY RUN] cp {} {:?}", state_file, target_state);
         } else {
             // Ensure directory exists (should be same as config but good to be safe)
@@ -539,4 +584,70 @@ fn setup_chroot(executor: &CommandExecutor, config_path: &std::path::Path) -> Re
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+pub mod mock {
+    use std::cell::RefCell;
+    use std::process::{Command, Output};
+
+    use super::CommandRunner;
+
+    /// A mock command runner that records commands without executing them.
+    /// Used for testing execution logic without side effects.
+    pub struct MockRunner {
+        pub commands: RefCell<Vec<String>>,
+    }
+
+    impl MockRunner {
+        pub fn new() -> Self {
+            Self {
+                commands: RefCell::new(Vec::new()),
+            }
+        }
+
+        pub fn command_log(&self) -> Vec<String> {
+            self.commands.borrow().clone()
+        }
+    }
+
+    impl CommandRunner for MockRunner {
+        fn dry_run(&self) -> bool {
+            false
+        }
+
+        fn run(&self, command: &mut Command) -> anyhow::Result<()> {
+            self.commands.borrow_mut().push(format_command(command));
+            Ok(())
+        }
+
+        fn run_with_input(
+            &self,
+            command: &mut Command,
+            input: &str,
+        ) -> anyhow::Result<()> {
+            self.commands
+                .borrow_mut()
+                .push(format!("{} <<< '{}'", format_command(command), input));
+            Ok(())
+        }
+
+        fn run_with_output(
+            &self,
+            command: &mut Command,
+        ) -> anyhow::Result<Option<Output>> {
+            self.commands.borrow_mut().push(format_command(command));
+            Ok(None)
+        }
+
+        fn log(&self, _message: &str) {
+            // no-op in tests
+        }
+    }
+
+    fn format_command(command: &Command) -> String {
+        let program = command.get_program().to_string_lossy();
+        let args: Vec<_> = command.get_args().map(|a| a.to_string_lossy()).collect();
+        format!("{} {}", program, args.join(" "))
+    }
 }

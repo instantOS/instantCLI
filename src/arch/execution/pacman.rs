@@ -5,7 +5,7 @@ use std::process::Command;
 use std::thread;
 use std::time::Duration;
 
-use super::CommandExecutor;
+use super::CommandRunner;
 
 fn shuffle_mirrors() -> Result<()> {
     let path = Path::new("/etc/pacman.d/mirrorlist");
@@ -44,7 +44,7 @@ fn shuffle_mirrors() -> Result<()> {
 }
 
 /// Installs packages using pacman with a retry mechanism similar to `pacloop`
-pub fn install(packages: &[&str], executor: &CommandExecutor) -> Result<()> {
+pub fn install(packages: &[&str], executor: &dyn CommandRunner) -> Result<()> {
     if packages.is_empty() {
         return Ok(());
     }
@@ -152,7 +152,7 @@ pub fn install(packages: &[&str], executor: &CommandExecutor) -> Result<()> {
 }
 
 /// Wrapper for pacstrap with retry logic
-pub fn pacstrap(mount_point: &str, packages: &[&str], executor: &CommandExecutor) -> Result<()> {
+pub fn pacstrap(mount_point: &str, packages: &[&str], executor: &dyn CommandRunner) -> Result<()> {
     if packages.is_empty() {
         return Ok(());
     }

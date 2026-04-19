@@ -1,13 +1,13 @@
 use crate::arch::engine::{
     BootMode, DualBootPartitions, EspNeedsFormat, InstallContext, QuestionId,
 };
-use crate::arch::execution::CommandExecutor;
+use crate::arch::execution::CommandRunner;
 use anyhow::{Context, Result};
 use std::process::Command;
 
 pub fn format_and_mount_partitions(
     context: &InstallContext,
-    executor: &CommandExecutor,
+    executor: &dyn CommandRunner,
 ) -> Result<()> {
     println!("Formatting and mounting partitions...");
 
