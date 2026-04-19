@@ -35,6 +35,16 @@ pub enum AssistCommands {
         #[arg(long, default_value = "sway")]
         format: String,
     },
+    /// Adjust volume directly (+, -, mute, or absolute percentage)
+    Volume {
+        /// Action: "+", "-", "mute", or a number (0-100)
+        action: String,
+    },
+    /// Adjust brightness directly (+, -, or absolute percentage)
+    Bright {
+        /// Action: "+", "-", or a number (0-100)
+        action: String,
+    },
     #[command(hide = true)]
     /// Set mouse speed (internal use for slider)
     MouseSet {
@@ -97,6 +107,8 @@ pub fn dispatch_assist_command(
         Some(AssistCommands::ScrollFactorSet { value }) => {
             crate::assist::actions::mouse::set_scroll_factor(value)
         }
+        Some(AssistCommands::Volume { action }) => super::actions::system::volume_direct(&action),
+        Some(AssistCommands::Bright { action }) => super::actions::system::brightness_direct(&action),
         Some(AssistCommands::Run { key_sequence }) => {
             // Check if this is a help request (ends with 'h')
             if key_sequence.ends_with('h') && key_sequence.len() > 1 {
