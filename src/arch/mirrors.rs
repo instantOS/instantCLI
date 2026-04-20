@@ -290,7 +290,6 @@ Server = https://already.active/$repo/os/$arch
         // empty string has no lines, so output is empty
         assert_eq!(result, "");
     }
-
 }
 
 // ============================================================================

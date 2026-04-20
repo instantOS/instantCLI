@@ -29,12 +29,30 @@ pub(super) fn wheel_sudo_status() -> WheelSudoStatus {
 /// Returns the sudo group to use based on sudoers configuration.
 /// Priority: %sudo > %wheel
 pub(super) fn get_sudo_group() -> Result<Option<String>> {
-    if sudoers_allows_group("sudo")? {
+    let sudo_allowed = sudoers_allows_group("sudo");
+    if matches!(sudo_allowed, Ok(true)) {
         return Ok(Some("sudo".to_string()));
     }
-    if sudoers_allows_group("wheel")? {
+
+    let wheel_allowed = sudoers_allows_group("wheel");
+    if matches!(wheel_allowed, Ok(true)) {
         return Ok(Some("wheel".to_string()));
     }
+
+    if sudo_allowed.is_err() || wheel_allowed.is_err() {
+        return get_existing_sudo_group();
+    }
+
+    Ok(None)
+}
+
+fn get_existing_sudo_group() -> Result<Option<String>> {
+    for group in ["sudo", "wheel"] {
+        if group_exists(group)? {
+            return Ok(Some(group.to_string()));
+        }
+    }
+
     Ok(None)
 }
 
