@@ -129,7 +129,11 @@ fn get_user_groups(username: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Get all system users with home directories in /home/
+/// Get all regular (non-system) users with valid home directories.
+///
+/// Identifies regular users by UID range (1000–59999) and excludes the
+/// `nobody` user. This correctly handles users whose home directory is
+/// outside `/home/` (e.g. created with `--home /mnt/volume/user`).
 pub(super) fn get_system_users_with_home() -> Result<Vec<String>> {
     let output = Command::new("getent")
         .arg("passwd")
@@ -147,8 +151,15 @@ pub(super) fn get_system_users_with_home() -> Result<Vec<String>> {
             let fields: Vec<&str> = line.split(':').collect();
             if fields.len() >= 7 {
                 let username = fields[0];
+                let uid: u32 = fields[2].parse().ok()?;
                 let home = fields[5];
-                if home.starts_with("/home/") {
+                // Regular users have UIDs in the 1000–59999 range and a
+                // non-empty home directory that exists on disk.
+                if uid >= 1000
+                    && uid < 60000
+                    && !home.is_empty()
+                    && Path::new(home).is_dir()
+                {
                     return Some(username.to_string());
                 }
             }
