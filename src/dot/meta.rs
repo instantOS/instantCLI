@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use git2::{Repository, Signature};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -11,9 +10,10 @@ use crate::ui::prelude::*;
 
 /// Validate that the given path is a git repository
 fn ensure_git_repo(repo_path: &Path) -> Result<()> {
-    Repository::open(repo_path)
-        .map(|_| ())
-        .with_context(|| format!("Not a git repository: {}", repo_path.display()))
+    if !crate::common::git::is_git_repo(repo_path) {
+        anyhow::bail!("Not a git repository: {}", repo_path.display());
+    }
+    Ok(())
 }
 
 use crate::dot::types::RepoMetaData;
@@ -528,7 +528,7 @@ fn handle_existing_git_repo(
     name: Option<&str>,
     non_interactive: bool,
 ) -> Result<Option<InitOutcome>> {
-    if Repository::open(current_dir).is_err() {
+    if !crate::common::git::is_git_repo(current_dir) {
         return Ok(None);
     }
 
@@ -603,7 +603,7 @@ pub fn create_local_repo(
         }
     };
 
-    let repo = Repository::init(&repo_path).with_context(|| {
+    crate::common::git::init_repo(&repo_path).with_context(|| {
         cleanup_on_error();
         format!("creating git repository at {}", repo_path.display())
     })?;
@@ -627,50 +627,10 @@ pub fn create_local_repo(
         format!("creating {}", gitkeep_path.display())
     })?;
 
-    let mut index = repo.index().with_context(|| {
-        cleanup_on_error();
-        "opening git index"
-    })?;
-    index
-        .add_path(Path::new("instantdots.toml"))
-        .with_context(|| {
-            cleanup_on_error();
-            "adding instantdots.toml to index"
-        })?;
-    index
-        .add_path(Path::new("dots/.gitkeep"))
-        .with_context(|| {
-            cleanup_on_error();
-            "adding dots/.gitkeep to index"
-        })?;
-    index.write().with_context(|| {
-        cleanup_on_error();
-        "writing git index"
-    })?;
-    let tree_id = index.write_tree().with_context(|| {
-        cleanup_on_error();
-        "writing git tree"
-    })?;
-    let tree = repo.find_tree(tree_id).with_context(|| {
-        cleanup_on_error();
-        "loading git tree"
-    })?;
-
-    let signature = repo
-        .signature()
-        .or_else(|_| Signature::now("instantCLI", "instant@localhost"))
-        .with_context(|| {
-            cleanup_on_error();
-            "creating git signature"
-        })?;
-
-    repo.commit(
-        Some("HEAD"),
-        &signature,
-        &signature,
+    crate::common::git::add_and_commit(
+        &repo_path,
+        &["instantdots.toml", "dots/.gitkeep"],
         "Initial instantCLI dotfile commit",
-        &tree,
-        &[],
     )
     .with_context(|| {
         cleanup_on_error();

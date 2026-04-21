@@ -35,9 +35,8 @@ impl GitHubRepoSelectItem {
         if !self.cloned {
             return None;
         }
-        let repo = git2::Repository::open(&self.local_path).ok()?;
-        let branch = crate::common::git::current_branch(&repo).ok()?;
-        let status = crate::common::git::get_repo_status(&repo).ok()?;
+        let branch = crate::common::git::current_branch(&self.local_path).ok()?;
+        let status = crate::common::git::get_repo_status(&self.local_path).ok()?;
         Some(LocalRepoInfo {
             branch,
             clean: status.working_dir_clean,

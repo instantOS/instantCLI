@@ -78,12 +78,13 @@ fn pull_existing(repo: &GitHubRepo, target_dir: &Path) -> Result<()> {
         repo.name
     ));
 
-    let mut git_repo = git2::Repository::open(target_dir)
-        .context("Directory exists but is not a git repository")?;
+    if !git::is_git_repo(target_dir) {
+        anyhow::bail!("Directory exists but is not a git repository");
+    }
 
-    let branch = git::current_branch(&git_repo).unwrap_or_else(|_| repo.default_branch.clone());
+    let branch = git::current_branch(target_dir).unwrap_or_else(|_| repo.default_branch.clone());
 
-    let result = git::fetch_branch(&mut git_repo, &branch);
+    let result = git::fetch_branch(target_dir, &branch);
 
     match result {
         Ok(()) => {

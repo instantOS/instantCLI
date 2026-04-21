@@ -3,7 +3,6 @@ use crate::common::git;
 use crate::dot::config::DotfileConfig;
 use anyhow::{Context, Result};
 use colored::Colorize;
-use git2::Repository;
 use std::{path::Path, path::PathBuf};
 
 /// Represents a single dotfile directory within a repository
@@ -159,8 +158,7 @@ impl DotfileRepo {
 
     pub fn get_checked_out_branch(&self, cfg: &DotfileConfig) -> Result<String> {
         let target = self.local_path(cfg)?;
-        let repo = Repository::open(&target).context("Failed to open git repository")?;
-        git::current_branch(&repo).context("Failed to get current branch")
+        git::current_branch(&target).context("Failed to get current branch")
     }
 
     /// Get subdirs that are enabled in config but not in metadata's dots_dirs.
@@ -215,15 +213,13 @@ impl DotfileRepo {
             // fetch the branch and checkout
             let pb = common::progress::create_spinner(format!("Fetching branch {branch}..."));
 
-            let mut repo =
-                Repository::open(&target).context("Failed to open git repository for fetch")?;
-            git::fetch_branch(&mut repo, branch).context("Failed to fetch branch")?;
+            git::fetch_branch(&target, branch).context("Failed to fetch branch")?;
 
             common::progress::finish_spinner_with_success(pb, format!("Fetched branch {branch}"));
 
             let pb = common::progress::create_spinner(format!("Checking out {branch}..."));
 
-            git::checkout_branch(&mut repo, branch).context("Failed to checkout branch")?;
+            git::checkout_branch(&target, branch).context("Failed to checkout branch")?;
 
             common::progress::finish_spinner_with_success(pb, format!("Checked out {branch}"));
         }
@@ -248,13 +244,10 @@ impl DotfileRepo {
         // pull latest
         let pb = common::progress::create_spinner(format!("Updating {}...", self.name));
 
-        let mut repo =
-            Repository::open(&target).context("Failed to open git repository for pull")?;
-
         if is_read_only {
-            git::clean_and_pull(&mut repo).context("Failed to pull latest changes")?;
+            git::clean_and_pull(&target).context("Failed to pull latest changes")?;
         } else {
-            git::fetch_and_fast_forward(&mut repo)
+            git::fetch_and_fast_forward(&target)
                 .context("Failed to fast-forward to latest changes")?;
         }
 

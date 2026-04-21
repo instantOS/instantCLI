@@ -150,7 +150,6 @@ fn install_live_iso_dependencies() -> Result<()> {
     let dependencies = &[
         &crate::common::deps::FZF,
         &crate::common::deps::GIT,
-        &crate::common::deps::LIBGIT2,
         &crate::common::deps::GUM,
         &crate::common::deps::CFDISK,
     ];

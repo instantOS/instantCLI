@@ -80,10 +80,7 @@ fn run_pacstrap(context: &InstallContext, executor: &dyn CommandRunner) -> Resul
     let use_plymouth = context.get_answer_bool(QuestionId::UsePlymouth);
     let minimal_mode = context.get_answer_bool(QuestionId::MinimalMode);
 
-    // NOTE: libgit2 is required for /usr/bin/ins inside the chroot. The host ISO has it,
-    // but pacstrap's base set does not. Install it up front to avoid chroot-time failures
-    // like: "libgit2.so.1.9: cannot open shared object file".
-    let mut packages: Vec<String> = vec!["base", "linux-firmware", "libgit2"]
+    let mut packages: Vec<String> = vec!["base", "linux-firmware"]
         .into_iter()
         .map(String::from)
         .collect();

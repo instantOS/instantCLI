@@ -5,7 +5,6 @@ use crate::dev::package::Package;
 use crate::ui::prelude::*;
 use anyhow::{Context, Result};
 use duct::cmd;
-use git2::Repository;
 use std::path::PathBuf;
 
 pub struct PackageRepo {
@@ -32,19 +31,11 @@ impl PackageRepo {
 
     pub fn ensure_updated(&self) -> Result<()> {
         if self.path.exists() {
-            // Repository exists, pull latest changes
-            let mut repo =
-                Repository::open(&self.path).context("Failed to open package repository")?;
-
-            // Check if there are local changes by examining the repository status
-            let has_local_changes = self.has_local_changes(&repo)?;
-
-            if has_local_changes {
+            if git::has_local_changes(&self.path)? {
                 self.handle_local_changes()?;
             }
 
-            // Pull latest changes
-            git::clean_and_pull(&mut repo).context("Failed to pull latest changes")?;
+            git::clean_and_pull(&self.path).context("Failed to pull latest changes")?;
         } else {
             // Clone repository
             git::clone_repo(&self.url, &self.path, Some("main"), Some(3))
@@ -52,15 +43,6 @@ impl PackageRepo {
         }
 
         Ok(())
-    }
-
-    fn has_local_changes(&self, repo: &Repository) -> Result<bool> {
-        // Check if there are uncommitted changes
-        let statuses = repo
-            .statuses(None)
-            .context("Failed to get repository status")?;
-
-        Ok(!statuses.is_empty())
     }
 
     fn handle_local_changes(&self) -> Result<()> {
@@ -80,14 +62,7 @@ impl PackageRepo {
             None,
         );
 
-        let mut repo =
-            Repository::open(&self.path).context("Failed to open repository for stashing")?;
-
-        // Use git2 to stash changes
-        let signature = repo.signature().context("Failed to get git signature")?;
-
-        repo.stash_save(&signature, "Auto-stash by instantCLI", None)
-            .context("Failed to stash changes")?;
+        git::stash_local_changes(&self.path, "Auto-stash by instantCLI")?;
 
         Ok(())
     }

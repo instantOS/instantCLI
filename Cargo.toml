@@ -9,7 +9,7 @@ repository = "https://github.com/instantOS/instantCLI"
 
 [features]
 default = []
-vendored = ["git2/vendored-libgit2", "git2/vendored-openssl", "reqwest/native-tls-vendored", "rusqlite/bundled"]
+vendored = ["reqwest/native-tls-vendored", "rusqlite/bundled"]
 cross-compile = ["vendored"]
 
 [profile.upload]
@@ -44,7 +44,6 @@ comfy-table = "7.2.1"            # Formatted tables for doctor command output
 regex = "1.10.0"
 reqwest = { version = "0.12.23", features = ["blocking", "json", "multipart", "stream"] }  # For GitHub API calls and Imgur uploads
 serde_json = "1.0.145"             # For JSON parsing
-git2 = "0.20.3"                 # For native git operations
 duct = "1.1.0"                  # For non-git shell commands (makepkg, etc.)
 tempfile = "3.23.0"            # For temporary files
 rand = "0.8.5"                    # For request ID generation
