@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.24](https://github.com/instantOS/instantCLI/compare/v0.13.23...v0.13.24) - 2026-04-20
+
+### Fixed
+
+- fix wheel permission error
+- fix swapescape for instantwm
+
+### Other
+
+- make ins arch more testable
+- more tests
+
 ## [0.13.23](https://github.com/instantOS/instantCLI/compare/v0.13.22...v0.13.23) - 2026-04-11
 
 ### Fixed
