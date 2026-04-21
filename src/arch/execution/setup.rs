@@ -293,7 +293,10 @@ fn update_os_release(executor: &dyn CommandRunner) -> Result<()> {
     Ok(())
 }
 
-fn configure_lightdm_autologin(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
+fn configure_lightdm_autologin(
+    context: &InstallContext,
+    executor: &dyn CommandRunner,
+) -> Result<()> {
     println!("Configuring LightDM autologin...");
 
     let username = context

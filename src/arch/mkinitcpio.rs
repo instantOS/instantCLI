@@ -212,7 +212,8 @@ mod tests {
 
     #[test]
     fn test_parse_multiline_content() {
-        let content = "MODULES=()\nBINARIES=()\nFILES=()\nHOOKS=(base udev block encrypt filesystems)\n";
+        let content =
+            "MODULES=()\nBINARIES=()\nFILES=()\nHOOKS=(base udev block encrypt filesystems)\n";
         let config = MkinitcpioConfig::parse(content).unwrap();
         assert_eq!(
             config.hooks,
@@ -356,10 +357,13 @@ mod tests {
     #[test]
     fn test_ensure_hook_position_moves_before_anchor() {
         // filesystems is after block, but should be before it
-        let mut config =
-            MkinitcpioConfig::parse("HOOKS=(base udev filesystems block)").unwrap();
+        let mut config = MkinitcpioConfig::parse("HOOKS=(base udev filesystems block)").unwrap();
         config.ensure_hook_position("filesystems", &["udev"], &["block"]);
-        let idx_fs = config.hooks.iter().position(|h| h == "filesystems").unwrap();
+        let idx_fs = config
+            .hooks
+            .iter()
+            .position(|h| h == "filesystems")
+            .unwrap();
         let idx_block = config.hooks.iter().position(|h| h == "block").unwrap();
         assert!(idx_fs < idx_block, "filesystems should be before block");
     }
@@ -371,7 +375,11 @@ mod tests {
         assert!(config.contains_hook("block"));
         let idx_block = config.hooks.iter().position(|h| h == "block").unwrap();
         let idx_udev = config.hooks.iter().position(|h| h == "udev").unwrap();
-        let idx_fs = config.hooks.iter().position(|h| h == "filesystems").unwrap();
+        let idx_fs = config
+            .hooks
+            .iter()
+            .position(|h| h == "filesystems")
+            .unwrap();
         assert!(idx_block > idx_udev);
         assert!(idx_block < idx_fs);
     }

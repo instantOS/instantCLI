@@ -29,12 +29,30 @@ pub(super) fn wheel_sudo_status() -> WheelSudoStatus {
 /// Returns the sudo group to use based on sudoers configuration.
 /// Priority: %sudo > %wheel
 pub(super) fn get_sudo_group() -> Result<Option<String>> {
-    if sudoers_allows_group("sudo")? {
+    let sudo_allowed = sudoers_allows_group("sudo");
+    if matches!(sudo_allowed, Ok(true)) {
         return Ok(Some("sudo".to_string()));
     }
-    if sudoers_allows_group("wheel")? {
+
+    let wheel_allowed = sudoers_allows_group("wheel");
+    if matches!(wheel_allowed, Ok(true)) {
         return Ok(Some("wheel".to_string()));
     }
+
+    if sudo_allowed.is_err() || wheel_allowed.is_err() {
+        return get_existing_sudo_group();
+    }
+
+    Ok(None)
+}
+
+fn get_existing_sudo_group() -> Result<Option<String>> {
+    for group in ["sudo", "wheel"] {
+        if group_exists(group)? {
+            return Ok(Some(group.to_string()));
+        }
+    }
+
     Ok(None)
 }
 
@@ -111,7 +129,11 @@ fn get_user_groups(username: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Get all system users with home directories in /home/
+/// Get all regular (non-system) users with valid home directories.
+///
+/// Identifies regular users by UID range (1000–59999) and excludes the
+/// `nobody` user. This correctly handles users whose home directory is
+/// outside `/home/` (e.g. created with `--home /mnt/volume/user`).
 pub(super) fn get_system_users_with_home() -> Result<Vec<String>> {
     let output = Command::new("getent")
         .arg("passwd")
@@ -129,8 +151,15 @@ pub(super) fn get_system_users_with_home() -> Result<Vec<String>> {
             let fields: Vec<&str> = line.split(':').collect();
             if fields.len() >= 7 {
                 let username = fields[0];
+                let uid: u32 = fields[2].parse().ok()?;
                 let home = fields[5];
-                if home.starts_with("/home/") {
+                // Regular users have UIDs in the 1000–59999 range and a
+                // non-empty home directory that exists on disk.
+                if uid >= 1000
+                    && uid < 60000
+                    && !home.is_empty()
+                    && Path::new(home).is_dir()
+                {
                     return Some(username.to_string());
                 }
             }

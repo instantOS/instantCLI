@@ -162,9 +162,7 @@ mod tests {
 
     #[test]
     fn test_is_efi_partition_gpt_guid_lowercase() {
-        assert!(is_efi_partition(
-            "c12a7328-f81f-11d2-ba4b-00a0c93ec93b"
-        ));
+        assert!(is_efi_partition("c12a7328-f81f-11d2-ba4b-00a0c93ec93b"));
     }
 
     #[test]
@@ -215,10 +213,7 @@ mod tests {
         );
         let p = parse_partition(&json, noop_detect_os, noop_resize_info).unwrap();
         assert!(p.is_efi);
-        assert_eq!(
-            p.detected_os.as_ref().unwrap().name,
-            "EFI System Partition"
-        );
+        assert_eq!(p.detected_os.as_ref().unwrap().name, "EFI System Partition");
     }
 
     #[test]
@@ -240,18 +235,14 @@ mod tests {
 
     #[test]
     fn test_parse_partition_empty_mountpoint_treated_as_none() {
-        let json = make_json(
-            r#"{"name": "sda1", "size": 1000, "mountpoint": ""}"#,
-        );
+        let json = make_json(r#"{"name": "sda1", "size": 1000, "mountpoint": ""}"#);
         let p = parse_partition(&json, noop_detect_os, noop_resize_info).unwrap();
         assert!(p.mount_point.is_none());
     }
 
     #[test]
     fn test_parse_partition_empty_fstype_treated_as_none() {
-        let json = make_json(
-            r#"{"name": "sda1", "size": 1000, "fstype": ""}"#,
-        );
+        let json = make_json(r#"{"name": "sda1", "size": 1000, "fstype": ""}"#);
         let p = parse_partition(&json, noop_detect_os, noop_resize_info).unwrap();
         assert!(p.filesystem.is_none());
     }
@@ -269,9 +260,7 @@ mod tests {
 
     #[test]
     fn test_parse_partition_detect_os_called_for_non_efi() {
-        let json = make_json(
-            r#"{"name": "sda2", "size": 1000, "fstype": "ntfs"}"#,
-        );
+        let json = make_json(r#"{"name": "sda2", "size": 1000, "fstype": "ntfs"}"#);
         let detect_os = |_fs: &Option<_>, _mount: &Option<String>| {
             Some(crate::arch::dualboot::types::DetectedOS {
                 os_type: crate::arch::dualboot::types::OSType::Windows,

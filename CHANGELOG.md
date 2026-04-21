@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.23](https://github.com/instantOS/instantCLI/compare/v0.13.22...v0.13.23) - 2026-04-11
+
+### Fixed
+
+- fix whisperx
+- fix instantwmctl natural scrolling
+
+### Other
+
+- Merge branch 'dev' of github.com:instantOS/instantCLI into dev
+- consolidate instantwm helper
+
 ## [0.13.22](https://github.com/instantOS/instantCLI/compare/v0.13.21...v0.13.22) - 2026-04-10
 
 ### Other

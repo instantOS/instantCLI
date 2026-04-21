@@ -621,21 +621,14 @@ pub mod mock {
             Ok(())
         }
 
-        fn run_with_input(
-            &self,
-            command: &mut Command,
-            input: &str,
-        ) -> anyhow::Result<()> {
+        fn run_with_input(&self, command: &mut Command, input: &str) -> anyhow::Result<()> {
             self.commands
                 .borrow_mut()
                 .push(format!("{} <<< '{}'", format_command(command), input));
             Ok(())
         }
 
-        fn run_with_output(
-            &self,
-            command: &mut Command,
-        ) -> anyhow::Result<Option<Output>> {
+        fn run_with_output(&self, command: &mut Command) -> anyhow::Result<Option<Output>> {
             self.commands.borrow_mut().push(format_command(command));
             Ok(None)
         }

@@ -82,7 +82,7 @@ sudo pacman -Sy git fzf restic sqlite --needed
 #### Ubuntu
 
 ```bash
-sudo apt update; sudo apt install -y git fzf restic libsqlite3-dev sqlite3
+sudo apt update; sudo apt install -y git fzf restic sqlite3 pkg-config libssl-dev libgit2-dev libsqlite3-dev
 ```
 
 ## Dotfile Management

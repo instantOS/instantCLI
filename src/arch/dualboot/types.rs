@@ -376,5 +376,4 @@ mod tests {
         };
         assert!(info.min_size_human().is_none());
     }
-
 }
