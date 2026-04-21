@@ -2,17 +2,126 @@
 //!
 //! System administration, updates, and firmware settings.
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use duct::cmd;
+use std::process::Command;
 
 use crate::arch::dualboot::types::format_size;
 use crate::common::distro::OperatingSystem;
-use crate::menu_utils::FzfWrapper;
+use crate::menu_utils::{FzfWrapper, TextEditOutcome, TextEditPrompt, prompt_text_edit};
 use crate::settings::context::SettingsContext;
 use crate::settings::deps::{FASTFETCH, GNOME_FIRMWARE, PACMAN_CONTRIB, TOPGRADE};
-use crate::settings::setting::{Setting, SettingMetadata, SettingType};
+use crate::settings::setting::{Setting, SettingMetadata, SettingState, SettingType};
 use crate::settings::store::{BoolSettingKey, PACMAN_AUTOCLEAN_KEY};
 use crate::ui::prelude::*;
+
+// ============================================================================
+// Hostname
+// ============================================================================
+
+pub struct Hostname;
+
+impl Setting for Hostname {
+    fn metadata(&self) -> SettingMetadata {
+        SettingMetadata::builder()
+            .id("system.hostname")
+            .title("Hostname")
+            .icon(NerdFont::Tag)
+            .summary("Set the system hostname via hostnamectl.\n\nThe hostname identifies this machine on the network.")
+            .search_keywords(&["name", "computer", "machine"])
+            .build()
+    }
+
+    fn setting_type(&self) -> SettingType {
+        SettingType::Action
+    }
+
+    fn get_display_state(&self, _ctx: &SettingsContext) -> SettingState {
+        let current = current_hostname().unwrap_or_default();
+        SettingState::Choice {
+            current_label: current.unwrap_or_else(|| "Not set".to_string()),
+        }
+    }
+
+    fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
+        configure_hostname(ctx)
+    }
+}
+
+fn current_hostname() -> Result<Option<String>> {
+    let output = Command::new("hostnamectl")
+        .args(["hostname"])
+        .output()
+        .context("running hostnamectl hostname")?;
+
+    if !output.status.success() {
+        return Ok(None);
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .to_string()
+        .into())
+}
+
+fn validate_hostname(name: &str) -> Result<()> {
+    if name.is_empty() {
+        bail!("hostname cannot be empty");
+    }
+    if name.len() > 63 {
+        bail!("hostname must be 63 characters or fewer");
+    }
+    if name.starts_with('-') || name.ends_with('-') {
+        bail!("hostname cannot start or end with a hyphen");
+    }
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-')
+    {
+        bail!("hostname may only contain ASCII letters, digits, and hyphens");
+    }
+    Ok(())
+}
+
+fn configure_hostname(ctx: &mut SettingsContext) -> Result<()> {
+    if which::which("hostnamectl").is_err() {
+        ctx.emit_unsupported(
+            "settings.hostname.no_systemd",
+            "Hostname configuration requires systemd (hostnamectl not found).",
+        );
+        return Ok(());
+    }
+
+    let current = current_hostname()?.unwrap_or_default();
+
+    let outcome = prompt_text_edit(
+        TextEditPrompt::new("Hostname", if current.is_empty() { None } else { Some(&current) })
+            .header("Enter the new hostname for this machine")
+            .ghost("e.g. my-laptop"),
+    )?;
+
+    match outcome {
+        TextEditOutcome::Updated(Some(ref new_hostname)) => {
+            if let Err(e) = validate_hostname(new_hostname) {
+                ctx.emit_failure("settings.hostname.invalid", &format!("Invalid hostname: {e}"));
+                return Ok(());
+            }
+
+            ctx.run_command_as_root("hostnamectl", ["set-hostname", new_hostname.as_str()])?;
+            ctx.emit_success(
+                "settings.hostname.updated",
+                &format!("Hostname set to {new_hostname}."),
+            );
+            ctx.notify("Hostname", &format!("Hostname changed to {new_hostname}."));
+        }
+        TextEditOutcome::Unchanged => {
+            ctx.emit_info("settings.hostname.unchanged", "Hostname unchanged.");
+        }
+        TextEditOutcome::Updated(None) | TextEditOutcome::Cancelled => {}
+    }
+
+    Ok(())
+}
 
 // ============================================================================
 // About System (uses shell command with read, can't use macro)
