@@ -108,7 +108,9 @@ pub fn dispatch_assist_command(
             crate::assist::actions::mouse::set_scroll_factor(value)
         }
         Some(AssistCommands::Volume { action }) => super::actions::system::volume_direct(&action),
-        Some(AssistCommands::Bright { action }) => super::actions::system::brightness_direct(&action),
+        Some(AssistCommands::Bright { action }) => {
+            super::actions::system::brightness_direct(&action)
+        }
         Some(AssistCommands::Run { key_sequence }) => {
             // Check if this is a help request (ends with 'h')
             if key_sequence.ends_with('h') && key_sequence.len() > 1 {
