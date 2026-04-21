@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.25](https://github.com/instantOS/instantCLI/compare/v0.13.24...v0.13.25) - 2026-04-21
+
+### Fixed
+
+- fix users with other home dirs
+
+### Other
+
+- handle cloudinit in hostname settings
+- add hostname settings
+- fmt
+
 ## [0.13.24](https://github.com/instantOS/instantCLI/compare/v0.13.23...v0.13.24) - 2026-04-20
 
 ### Fixed
