@@ -4,6 +4,7 @@
 
 use anyhow::{Context, Result, bail};
 use duct::cmd;
+use std::path::Path;
 use std::process::Command;
 
 use crate::arch::dualboot::types::format_size;
@@ -74,10 +75,7 @@ fn validate_hostname(name: &str) -> Result<()> {
     if name.starts_with('-') || name.ends_with('-') {
         bail!("hostname cannot start or end with a hyphen");
     }
-    if !name
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-')
-    {
+    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
         bail!("hostname may only contain ASCII letters, digits, and hyphens");
     }
     Ok(())
@@ -95,19 +93,30 @@ fn configure_hostname(ctx: &mut SettingsContext) -> Result<()> {
     let current = current_hostname()?.unwrap_or_default();
 
     let outcome = prompt_text_edit(
-        TextEditPrompt::new("Hostname", if current.is_empty() { None } else { Some(&current) })
-            .header("Enter the new hostname for this machine")
-            .ghost("e.g. my-laptop"),
+        TextEditPrompt::new(
+            "Hostname",
+            if current.is_empty() {
+                None
+            } else {
+                Some(&current)
+            },
+        )
+        .header("Enter the new hostname for this machine")
+        .ghost("e.g. my-laptop"),
     )?;
 
     match outcome {
         TextEditOutcome::Updated(Some(ref new_hostname)) => {
             if let Err(e) = validate_hostname(new_hostname) {
-                ctx.emit_failure("settings.hostname.invalid", &format!("Invalid hostname: {e}"));
+                ctx.emit_failure(
+                    "settings.hostname.invalid",
+                    &format!("Invalid hostname: {e}"),
+                );
                 return Ok(());
             }
 
             ctx.run_command_as_root("hostnamectl", ["set-hostname", new_hostname.as_str()])?;
+            handle_cloudinit_hostname(ctx)?;
             ctx.emit_success(
                 "settings.hostname.updated",
                 &format!("Hostname set to {new_hostname}."),
@@ -118,6 +127,63 @@ fn configure_hostname(ctx: &mut SettingsContext) -> Result<()> {
             ctx.emit_info("settings.hostname.unchanged", "Hostname unchanged.");
         }
         TextEditOutcome::Updated(None) | TextEditOutcome::Cancelled => {}
+    }
+
+    Ok(())
+}
+
+const CLOUDINIT_CFG: &str = "/etc/cloud/cloud.cfg";
+const CLOUDINIT_DROPIN: &str = "/etc/cloud/cloud.cfg.d/99-preserve-hostname.cfg";
+
+/// Check if cloud-init manages the hostname and offer to disable that.
+fn handle_cloudinit_hostname(ctx: &mut SettingsContext) -> Result<()> {
+    if !Path::new(CLOUDINIT_CFG).exists() {
+        return Ok(());
+    }
+
+    // Already preserved via drop-in?
+    if Path::new(CLOUDINIT_DROPIN).exists() {
+        if let Ok(content) = std::fs::read_to_string(CLOUDINIT_DROPIN) {
+            if content.contains("preserve_hostname: true") {
+                return Ok(());
+            }
+        }
+    }
+
+    // Check main config
+    if let Ok(content) = std::fs::read_to_string(CLOUDINIT_CFG) {
+        if content
+            .lines()
+            .any(|l| l.trim() == "preserve_hostname: true")
+        {
+            return Ok(());
+        }
+    }
+
+    let result = FzfWrapper::builder()
+        .confirm(
+            "cloud-init detected.\n\n\
+             cloud-init may overwrite the hostname on next boot.\n\
+             Write preserve_hostname: true to prevent this?",
+        )
+        .yes_text("Preserve hostname")
+        .no_text("Skip")
+        .confirm_dialog()?;
+
+    if matches!(result, crate::menu_utils::ConfirmResult::Yes) {
+        ctx.run_command_as_root(
+            "sh",
+            [
+                "-c",
+                &format!(
+                    "mkdir -p /etc/cloud/cloud.cfg.d && echo 'preserve_hostname: true' > {CLOUDINIT_DROPIN}"
+                ),
+            ],
+        )?;
+        ctx.emit_success(
+            "settings.hostname.cloudinit",
+            "cloud-init hostname preservation enabled.",
+        );
     }
 
     Ok(())
