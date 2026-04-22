@@ -7,7 +7,7 @@ use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 
-use crate::common::compositor::{CompositorType, sway};
+use crate::common::compositor::{CompositorType, niri, sway};
 use crate::common::instantwmctl;
 use crate::menu_utils::{FzfPreview, FzfSelectable};
 use crate::settings::context::SettingsContext;
@@ -23,6 +23,7 @@ pub struct KeyboardLayoutKeys {
     pub x11: StringSettingKey,
     pub gnome: StringSettingKey,
     pub instantwm: StringSettingKey,
+    pub niri: StringSettingKey,
 }
 
 impl KeyboardLayoutKeys {
@@ -32,6 +33,7 @@ impl KeyboardLayoutKeys {
             x11: StringSettingKey::new("language.keyboard.x11", ""),
             gnome: StringSettingKey::new("language.keyboard.gnome", ""),
             instantwm: StringSettingKey::new("language.keyboard.instantwm", ""),
+            niri: StringSettingKey::new("language.keyboard.niri", ""),
         }
     }
 }
@@ -280,19 +282,29 @@ pub fn current_instantwm_layouts() -> Option<Vec<String>> {
     }
 }
 
+pub fn current_niri_layouts() -> Option<Vec<String>> {
+    niri::current_keyboard_layout_codes().ok()
+}
+
 pub fn map_layout_names_to_codes(names: &[String], layouts: &[LayoutChoice]) -> Vec<String> {
     let mut map = HashMap::new();
+    let mut normalized_map = HashMap::new();
     for layout in layouts {
         map.insert(layout.name.clone(), layout.code.clone());
+        normalized_map.insert(layout.name.to_lowercase(), layout.code.clone());
     }
 
     let mut result = Vec::new();
     let mut seen = HashSet::new();
     for name in names {
-        if let Some(code) = map.get(name)
+        let code = map
+            .get(name)
+            .cloned()
+            .or_else(|| normalized_map.get(&name.to_lowercase()).cloned());
+        if let Some(code) = code
             && seen.insert(code.clone())
         {
-            result.push(code.clone());
+            result.push(code);
         }
     }
 
@@ -367,7 +379,7 @@ pub fn ensure_localectl(ctx: &mut SettingsContext, code: &str, message: &str) ->
     true
 }
 
-/// Apply keyboard layout(s) via swaymsg, setxkbmap, instantwmctl, or gsettings depending on compositor
+/// Apply keyboard layout(s) via swaymsg, niri msg, setxkbmap, instantwmctl, or gsettings depending on compositor
 pub fn apply_keyboard_layouts(codes: &[String], compositor: &CompositorType) -> Result<()> {
     let joined = join_layout_codes(codes);
     if joined.is_empty() {
@@ -381,6 +393,10 @@ pub fn apply_keyboard_layouts(codes: &[String], compositor: &CompositorType) -> 
         }
         CompositorType::Gnome => {
             apply_gnome_keyboard_layouts(codes)?;
+        }
+        CompositorType::Niri => {
+            niri::set_keyboard_layouts(codes)
+                .with_context(|| format!("Failed to update niri keyboard layouts to '{joined}'"))?;
         }
         CompositorType::InstantWM => {
             let mut args = vec!["keyboard".to_string(), "set".to_string()];

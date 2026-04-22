@@ -155,11 +155,7 @@ pub(super) fn get_system_users_with_home() -> Result<Vec<String>> {
                 let home = fields[5];
                 // Regular users have UIDs in the 1000–59999 range and a
                 // non-empty home directory that exists on disk.
-                if uid >= 1000
-                    && uid < 60000
-                    && !home.is_empty()
-                    && Path::new(home).is_dir()
-                {
+                if uid >= 1000 && uid < 60000 && !home.is_empty() && Path::new(home).is_dir() {
                     return Some(username.to_string());
                 }
             }
