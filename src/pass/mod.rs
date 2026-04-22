@@ -20,6 +20,9 @@ use crate::common::requirements::InstallTest;
 use crate::menu::client::MenuClient;
 use crate::menu::protocol::{FzfPreview, SerializableMenuItem};
 use crate::menu_utils::{ConfirmResult, FzfResult, FzfWrapper};
+use crate::ui::catppuccin::colors;
+use crate::ui::nerd_font::NerdFont;
+use crate::ui::preview::PreviewBuilder;
 
 static PASS_DEP: Dependency = Dependency {
     name: "pass",
@@ -153,25 +156,39 @@ impl PassEntry {
         self.secret_path.as_deref().or(self.otp_path.as_deref())
     }
 
-    fn preview_text(&self) -> String {
-        let mut lines = vec![
-            format!("Entry: {}", self.display_name),
-            format!("Type: {}", self.kind_label()),
-            format!("Primary action: {}", self.primary_action_label()),
-        ];
+    fn preview(&self) -> FzfPreview {
+        let mut builder = PreviewBuilder::new()
+            .header(NerdFont::Key, &self.display_name)
+            .field("Type", self.kind_label())
+            .field("Primary action", self.primary_action_label());
 
-        if self.has_otp() && self.has_secret() {
-            lines.push("OTP companion is available via `ins pass otp <entry>`.".to_string());
-        }
-
-        if self.should_offer_export() {
-            lines.push(
-                "Large or file-like entry: you will be offered export instead of clipboard."
-                    .to_string(),
+        if self.has_secret() {
+            builder = builder.line(
+                colors::GREEN,
+                Some(NerdFont::Check),
+                "Password data available",
             );
         }
 
-        lines.join("\n")
+        if self.has_otp() {
+            builder = builder.line(colors::TEAL, Some(NerdFont::Clock), "OTP support available");
+        }
+
+        if self.has_otp() && self.has_secret() {
+            builder = builder
+                .blank()
+                .subtext("Use `ins pass otp <entry>` to copy the OTP code directly.");
+        }
+
+        if self.should_offer_export() {
+            builder = builder.blank().line(
+                colors::YELLOW,
+                Some(NerdFont::Warning),
+                "Large or file-like entry: export will be offered instead of clipboard.",
+            );
+        }
+
+        builder.build()
     }
 
     fn should_offer_export(&self) -> bool {
@@ -309,17 +326,38 @@ fn prepare_menu_items(entries: &[PassEntry]) -> Vec<SerializableMenuItem> {
     items.push(action_item(
         "Create password",
         "add-password",
-        "Insert a password manually. Empty input is rejected and a confirmation step is shown.",
+        PreviewBuilder::new()
+            .header(NerdFont::Plus, "Create Password")
+            .text("Insert a password manually into the pass store.")
+            .blank()
+            .bullet("Prompts for an entry name")
+            .bullet("Requires password confirmation")
+            .bullet("Overwrites only after confirmation")
+            .build(),
     ));
     items.push(action_item(
         "Generate password",
         "generate-password",
-        "Create a new pass entry with a generated password. Default length is 20 characters.",
+        PreviewBuilder::new()
+            .header(NerdFont::Refresh, "Generate Password")
+            .text("Create a new pass entry with a generated password.")
+            .blank()
+            .field("Default length", "20 characters")
+            .bullet("Prompts for an entry name")
+            .bullet("Uses `pass generate -f` after overwrite confirmation")
+            .build(),
     ));
     items.push(action_item(
         "Create OTP entry",
         "add-otp",
-        "Store an otpauth:// URI using pass-otp. If the base password exists, this becomes a companion OTP entry.",
+        PreviewBuilder::new()
+            .header(NerdFont::Clock, "Create OTP Entry")
+            .text("Store an `otpauth://` URI using pass-otp.")
+            .blank()
+            .bullet("Prompts for an entry name")
+            .bullet("Validates the URI prefix")
+            .bullet("Pairs with an existing password entry when names match")
+            .build(),
     ));
 
     for (index, entry) in entries.iter().enumerate() {
@@ -335,7 +373,7 @@ fn prepare_menu_items(entries: &[PassEntry]) -> Vec<SerializableMenuItem> {
 
         items.push(SerializableMenuItem {
             display_text: label,
-            preview: FzfPreview::Text(entry.preview_text()),
+            preview: entry.preview(),
             metadata: Some(metadata),
         });
     }
@@ -343,14 +381,14 @@ fn prepare_menu_items(entries: &[PassEntry]) -> Vec<SerializableMenuItem> {
     items
 }
 
-fn action_item(display_text: &str, action: &str, preview: &str) -> SerializableMenuItem {
+fn action_item(display_text: &str, action: &str, preview: FzfPreview) -> SerializableMenuItem {
     let mut metadata = HashMap::new();
     metadata.insert("kind".to_string(), "action".to_string());
     metadata.insert("action".to_string(), action.to_string());
 
     SerializableMenuItem {
         display_text: display_text.to_string(),
-        preview: FzfPreview::Text(preview.to_string()),
+        preview,
         metadata: Some(metadata),
     }
 }
@@ -580,7 +618,10 @@ fn choose_delete_mode(entry: &PassEntry) -> Result<DeleteMode> {
                 }
 
                 fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
-                    crate::menu::protocol::FzfPreview::Text(self.preview.to_string())
+                    PreviewBuilder::new()
+                        .header(NerdFont::Trash, self.label)
+                        .text(self.preview)
+                        .build()
                 }
 
                 fn fzf_key(&self) -> String {
@@ -679,7 +720,7 @@ impl crate::menu_utils::FzfSelectable for PassEntry {
     }
 
     fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
-        crate::menu::protocol::FzfPreview::Text(self.preview_text())
+        self.preview()
     }
 
     fn fzf_key(&self) -> String {
