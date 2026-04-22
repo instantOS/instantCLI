@@ -1,7 +1,11 @@
 use anyhow::Result;
-use duct::cmd;
+use std::process::Command;
 
 pub fn open_password_manager() -> Result<()> {
-    cmd!("instantpass").run()?;
+    let current_exe = std::env::current_exe()?;
+    let status = Command::new(current_exe).arg("pass").status()?;
+    if !status.success() {
+        anyhow::bail!("`ins pass` exited with status {status}");
+    }
     Ok(())
 }
