@@ -9,6 +9,7 @@ use crate::assist::registry::{self, AssistEntry};
 use crate::doctor::registry::REGISTRY;
 use crate::dot::config::DotfileConfig;
 use crate::game::config::InstantGameConfig;
+use crate::pass;
 use crate::settings::setting::Category;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -147,6 +148,11 @@ pub fn repo_name_completion(current: &OsStr) -> Vec<CompletionCandidate> {
     let names = config.repos.into_iter().map(|repo| repo.name).collect();
 
     sort_and_filter(names, &prefix)
+}
+
+pub fn pass_entry_completion(current: &OsStr) -> Vec<CompletionCandidate> {
+    let prefix = lossy_prefix(current);
+    sort_and_filter(pass::pass_entry_names(), &prefix)
 }
 
 pub fn check_name_completion(current: &OsStr) -> Vec<CompletionCandidate> {

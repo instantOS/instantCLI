@@ -14,6 +14,7 @@ mod game;
 mod launch;
 mod menu;
 mod menu_utils;
+mod pass;
 mod preview;
 mod restic;
 mod scratchpad;
@@ -50,6 +51,7 @@ use crate::debug::DebugCommands;
 use crate::dev::DevCommands;
 use crate::doctor::DoctorCommands;
 use crate::dot::commands::DotCommands;
+use crate::pass::PassCommands;
 use crate::scratchpad::ScratchpadCommand;
 use crate::settings::SettingsCommands;
 use crate::welcome::WelcomeCommands;
@@ -131,6 +133,14 @@ enum Commands {
         /// List available applications instead of launching
         #[arg(long)]
         list: bool,
+    },
+    /// Password-store integration backed by `pass`
+    Pass {
+        /// List available entries instead of opening the interactive picker
+        #[arg(long)]
+        list: bool,
+        #[command(subcommand)]
+        command: Option<PassCommands>,
     },
     /// Quick assist actions
     Assist {
@@ -266,6 +276,10 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
         }
         Some(Commands::Launch { list }) => {
             let exit_code = launch::handle_launch_command(*list).await?;
+            std::process::exit(exit_code);
+        }
+        Some(Commands::Pass { list, command }) => {
+            let exit_code = pass::handle_pass_command(*list, command.clone())?;
             std::process::exit(exit_code);
         }
         Some(Commands::Assist {
