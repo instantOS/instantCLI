@@ -15,66 +15,25 @@ use crate::common::display_server::DisplayServer;
 use crate::common::package::{Dependency, InstallResult, ensure_all};
 use crate::menu_utils::{ConfirmResult, FzfResult, FzfWrapper};
 
-use super::types::{GPG_DEP, PASS_DEP, PASS_OTP_DEP, PassEntry};
+use super::types::{EXPORT_THRESHOLD_BYTES, PASS_OTP_DEP, PassEntry};
+use crate::assist::deps::{GPG, PASS};
 
 pub(super) fn prompt_password_with_confirmation(prompt: &str) -> Result<String> {
-    let first = match FzfWrapper::builder()
+    let password = match FzfWrapper::builder()
         .prompt(prompt)
         .password()
+        .with_confirmation()
         .password_dialog()?
     {
         FzfResult::Selected(value) => value,
         _ => bail!("Password entry cancelled"),
     };
 
-    if first.is_empty() {
+    if password.is_empty() {
         bail!("Password cannot be empty");
     }
 
-    let second = match FzfWrapper::builder()
-        .prompt("Confirm password")
-        .password()
-        .password_dialog()?
-    {
-        FzfResult::Selected(value) => value,
-        _ => bail!("Password confirmation cancelled"),
-    };
-
-    if first != second {
-        bail!("Passwords do not match");
-    }
-
-    Ok(first)
-}
-
-pub(super) fn prompt_text_value_prefilled(
-    prompt: &str,
-    header: Option<&str>,
-    current: &str,
-    allow_empty: bool,
-    ghost: Option<&str>,
-) -> Result<Option<String>> {
-    let mut builder = FzfWrapper::builder().input().prompt(prompt).query(current);
-
-    if let Some(header) = header {
-        builder = builder.header(header);
-    }
-
-    if let Some(ghost) = ghost {
-        builder = builder.ghost(ghost);
-    }
-
-    match builder.input_result()? {
-        FzfResult::Selected(value) => {
-            let trimmed = value.trim().to_string();
-            if trimmed.is_empty() && !allow_empty {
-                Ok(None)
-            } else {
-                Ok(Some(trimmed))
-            }
-        }
-        _ => Ok(None),
-    }
+    Ok(password)
 }
 
 pub(super) fn prompt_text_value(
@@ -82,15 +41,18 @@ pub(super) fn prompt_text_value(
     header: Option<&str>,
     allow_empty: bool,
     ghost: Option<&str>,
+    initial: Option<&str>,
 ) -> Result<Option<String>> {
     let mut builder = FzfWrapper::builder().input().prompt(prompt);
 
     if let Some(header) = header {
         builder = builder.header(header);
     }
-
     if let Some(ghost) = ghost {
         builder = builder.ghost(ghost);
+    }
+    if let Some(initial) = initial {
+        builder = builder.query(initial);
     }
 
     match builder.input_result()? {
@@ -118,6 +80,7 @@ pub(super) fn resolve_entry_name(
             Some(header),
             false,
             Some(prefix.unwrap_or("examples/github or email/work")),
+            None,
         )?
         .ok_or_else(|| anyhow!("Entry creation cancelled"))
         .and_then(|value| sanitize_entry_name(&value))
@@ -183,7 +146,7 @@ pub(super) fn should_export_output(entry: &PassEntry, output: &[u8]) -> bool {
         return true;
     }
 
-    if output.len() > 100 * 1024 {
+    if output.len() > EXPORT_THRESHOLD_BYTES {
         return true;
     }
 
@@ -219,6 +182,7 @@ pub(super) fn prompt_export_destination(
         Some("Enter the destination file path"),
         false,
         Some(suggested),
+        None,
     )?
     .ok_or_else(|| anyhow!("Export cancelled"))?;
 
@@ -250,11 +214,11 @@ pub(super) fn write_export_file(destination: &Path, output: &[u8]) -> Result<()>
 }
 
 pub(super) fn ensure_core_dependencies() -> Result<()> {
-    ensure_dependencies(&[&PASS_DEP, &GPG_DEP], "pass")
+    ensure_dependencies(&[&PASS, &GPG], "pass")
 }
 
 pub(super) fn ensure_clipboard_dependencies() -> Result<()> {
-    let mut deps: Vec<&'static Dependency> = vec![&PASS_DEP, &GPG_DEP];
+    let mut deps: Vec<&'static Dependency> = vec![&PASS, &GPG];
     match DisplayServer::detect() {
         DisplayServer::Wayland => deps.push(&WL_CLIPBOARD),
         DisplayServer::X11 => deps.push(&XCLIP),
@@ -265,7 +229,7 @@ pub(super) fn ensure_clipboard_dependencies() -> Result<()> {
 }
 
 pub(super) fn ensure_otp_dependency() -> Result<()> {
-    ensure_dependencies(&[&PASS_DEP, &GPG_DEP, &PASS_OTP_DEP], "pass-otp")
+    ensure_dependencies(&[&PASS, &GPG, &PASS_OTP_DEP], "pass-otp")
 }
 
 fn ensure_dependencies(deps: &[&'static Dependency], label: &str) -> Result<()> {

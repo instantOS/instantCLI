@@ -37,7 +37,7 @@ pub enum PassCommands {
         ))]
         name: Option<String>,
         /// Generated password length
-        #[arg(long, default_value_t = 20)]
+        #[arg(long, default_value_t = types::DEFAULT_PASSWORD_LENGTH)]
         length: usize,
     },
     /// Delete a pass entry

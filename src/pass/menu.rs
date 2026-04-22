@@ -164,7 +164,7 @@ pub(super) fn run_add_menu(current_prefix: Option<&str>) -> Result<()> {
                 insert_password_entry_with_prefix(None, current_prefix)?;
             }
             AddMenuAction::GeneratePassword => {
-                generate_password_entry_with_prefix(None, current_prefix, 20)?;
+                generate_password_entry_with_prefix(None, current_prefix, DEFAULT_PASSWORD_LENGTH)?;
             }
             AddMenuAction::AddOtp => {
                 ensure_otp_dependency()?;
@@ -303,7 +303,7 @@ pub(super) fn run_edit_action_menu(entry: &PassEntry) -> Result<()> {
                             .secret_key
                             .clone()
                             .unwrap_or(current_entry.display_name.clone());
-                        generate_password_entry(Some(key), 20)?;
+                        generate_password_entry(Some(key), DEFAULT_PASSWORD_LENGTH)?;
                     }
                     EditAction::EditOtp => {
                         ensure_otp_dependency()?;

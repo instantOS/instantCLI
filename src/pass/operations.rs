@@ -73,6 +73,7 @@ pub(super) fn insert_otp_entry_with_prefix(
         Some("Paste an otpauth:// URI"),
         false,
         Some("otpauth://totp/example?secret=..."),
+        None,
     )?
     .ok_or_else(|| anyhow!("OTP creation cancelled"))?;
 
@@ -372,11 +373,11 @@ pub(super) fn resolve_entry_by_name(
 }
 
 pub(super) fn rename_entry_interactive(entry: &PassEntry) -> Result<()> {
-    let new_name = prompt_text_value_prefilled(
+    let new_name = prompt_text_value(
         "New entry name",
         Some("Rename pass entry"),
-        &entry.display_name,
         false,
+        Some(&entry.display_name),
         Some(&entry.display_name),
     )?
     .ok_or_else(|| anyhow!("Rename cancelled"))?;
@@ -410,6 +411,7 @@ pub(super) fn upsert_otp_entry_interactive(entry: &PassEntry) -> Result<()> {
         }),
         false,
         Some("otpauth://totp/example?secret=..."),
+        None,
     )?
     .ok_or_else(|| anyhow!("OTP edit cancelled"))?;
 

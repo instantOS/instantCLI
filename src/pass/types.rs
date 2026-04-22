@@ -4,6 +4,12 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Result, anyhow};
 
+/// Default length for generated passwords.
+pub(super) const DEFAULT_PASSWORD_LENGTH: usize = 20;
+
+/// Entries larger than this threshold (in bytes) will be offered for file export instead of clipboard.
+pub(super) const EXPORT_THRESHOLD_BYTES: usize = 100 * 1024;
+
 use crate::common::package::{Dependency, PackageDefinition, PackageManager};
 use crate::common::requirements::InstallTest;
 use crate::menu::protocol::FzfPreview;
@@ -11,26 +17,6 @@ use crate::menu_utils::FzfSelectable;
 use crate::ui::catppuccin::colors;
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
-
-pub(super) static PASS_DEP: Dependency = Dependency {
-    name: "pass",
-    packages: &[
-        PackageDefinition::new("pass", PackageManager::Pacman),
-        PackageDefinition::new("pass", PackageManager::Apt),
-        PackageDefinition::new("pass", PackageManager::Dnf),
-    ],
-    tests: &[InstallTest::WhichSucceeds("pass")],
-};
-
-pub(super) static GPG_DEP: Dependency = Dependency {
-    name: "gpg",
-    packages: &[
-        PackageDefinition::new("gnupg", PackageManager::Pacman),
-        PackageDefinition::new("gnupg", PackageManager::Apt),
-        PackageDefinition::new("gnupg2", PackageManager::Dnf),
-    ],
-    tests: &[InstallTest::WhichSucceeds("gpg")],
-};
 
 pub(super) static PASS_OTP_DEP: Dependency = Dependency {
     name: "pass-otp",
@@ -132,7 +118,7 @@ impl PassEntry {
             || self
                 .primary_file_path()
                 .and_then(|path| fs::metadata(path).ok())
-                .map(|metadata| metadata.len() > 100 * 1024)
+                .map(|metadata| metadata.len() as usize > EXPORT_THRESHOLD_BYTES)
                 .unwrap_or(false)
     }
 }
