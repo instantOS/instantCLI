@@ -41,6 +41,7 @@ impl MenuTransport {
 }
 
 /// Menu client for communicating with the menu server
+#[derive(Clone)]
 pub struct MenuClient {
     socket_path: String,
     transport: MenuTransport,
