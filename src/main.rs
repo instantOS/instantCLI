@@ -139,6 +139,9 @@ enum Commands {
         /// List available entries instead of opening the interactive picker
         #[arg(long)]
         list: bool,
+        /// Open the pass menu using the instantmenu server
+        #[arg(long = "gui")]
+        gui: bool,
         #[command(subcommand)]
         command: Option<PassCommands>,
     },
@@ -278,8 +281,8 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
             let exit_code = launch::handle_launch_command(*list).await?;
             std::process::exit(exit_code);
         }
-        Some(Commands::Pass { list, command }) => {
-            let exit_code = pass::handle_pass_command(*list, command.clone())?;
+        Some(Commands::Pass { list, gui, command }) => {
+            let exit_code = pass::handle_pass_command(*gui, cli.debug, *list, command.clone())?;
             std::process::exit(exit_code);
         }
         Some(Commands::Assist {

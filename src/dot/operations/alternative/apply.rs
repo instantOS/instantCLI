@@ -192,7 +192,9 @@ pub fn add_to_destination(
         }
 
         let repo_root = config.repos_path().join(&dest.repo_name);
-        if let Some(ignore_file) = crate::dot::insignore::match_repo_path(&repo_root, relative, false)? {
+        if let Some(ignore_file) =
+            crate::dot::insignore::match_repo_path(&repo_root, relative, false)?
+        {
             println!(
                 "{}",
                 crate::dot::insignore::format_skip_message(target_path, &ignore_file)

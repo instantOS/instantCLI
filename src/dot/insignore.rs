@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use std::path::{Path, PathBuf};
 
@@ -13,7 +13,11 @@ pub fn match_home_path_at(home: &Path, path: &Path) -> Result<Option<PathBuf>> {
     match_ignore_chain(home, path)
 }
 
-pub fn match_repo_path(repo_root: &Path, target_relative_path: &Path, is_dir: bool) -> Result<Option<PathBuf>> {
+pub fn match_repo_path(
+    repo_root: &Path,
+    target_relative_path: &Path,
+    is_dir: bool,
+) -> Result<Option<PathBuf>> {
     let ignore_file = repo_root.join(IGNORE_FILE_NAME);
     if !ignore_file.exists() {
         return Ok(None);
@@ -103,9 +107,10 @@ fn ancestor_dirs(root: &Path, path: &Path, is_dir: bool) -> Vec<PathBuf> {
 
 fn build_matcher(base_dir: &Path, ignore_file: &Path) -> Result<Gitignore> {
     let mut builder = GitignoreBuilder::new(base_dir);
-    builder
-        .add(ignore_file)
-        .with_context(|| format!("Failed to read {}", ignore_file.display()))?;
+    if let Some(err) = builder.add(ignore_file) {
+        return Err(anyhow!(err))
+            .with_context(|| format!("Failed to read {}", ignore_file.display()));
+    }
     builder
         .build()
         .with_context(|| format!("Failed to parse {}", ignore_file.display()))
@@ -125,7 +130,8 @@ mod tests {
         fs::write(home.path().join(".insignore"), ".claude/settings.json\n").unwrap();
         fs::write(home.path().join(".claude/settings.json"), "{}").unwrap();
 
-        let matched = match_home_path_at(home.path(), &home.path().join(".claude/settings.json")).unwrap();
+        let matched =
+            match_home_path_at(home.path(), &home.path().join(".claude/settings.json")).unwrap();
         assert_eq!(matched, Some(home.path().join(".insignore")));
     }
 
@@ -149,7 +155,8 @@ mod tests {
         fs::write(home.path().join(".claude/.insignore"), "!settings.json\n").unwrap();
         fs::write(home.path().join(".claude/settings.json"), "{}").unwrap();
 
-        let matched = match_home_path_at(home.path(), &home.path().join(".claude/settings.json")).unwrap();
+        let matched =
+            match_home_path_at(home.path(), &home.path().join(".claude/settings.json")).unwrap();
         assert_eq!(matched, None);
     }
 
@@ -158,7 +165,8 @@ mod tests {
         let repo = tempdir().unwrap();
         fs::write(repo.path().join(".insignore"), ".claude/settings.json\n").unwrap();
 
-        let matched = match_repo_path(repo.path(), Path::new(".claude/settings.json"), false).unwrap();
+        let matched =
+            match_repo_path(repo.path(), Path::new(".claude/settings.json"), false).unwrap();
         assert_eq!(matched, Some(repo.path().join(".insignore")));
     }
 }
