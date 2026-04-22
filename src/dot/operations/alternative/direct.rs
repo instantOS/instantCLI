@@ -162,7 +162,10 @@ pub(crate) fn handle_create_direct(
 
     // Copy file to destination
     let db = Database::new(config.database_path().to_path_buf())?;
-    add_to_destination(config, &db, path, dest)?;
+    let added = add_to_destination(config, &db, path, dest, false)?;
+    if !added {
+        return Ok(());
+    }
 
     // Set override if multiple sources now exist
     let sources = sources::list_sources_for_target(config, path)?;

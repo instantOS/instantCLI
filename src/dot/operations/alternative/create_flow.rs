@@ -20,10 +20,10 @@ use super::flow::{Flow, emit_cancelled, message_and_continue, message_and_done};
 use super::picker::{CreateMenuItem, SourceOption};
 
 /// Pick a destination and add a file there (shared by `add --choose` and `alternative --create`).
-pub fn pick_destination_and_add(config: &DotfileConfig, path: &Path) -> Result<bool> {
+pub fn pick_destination_and_add(config: &DotfileConfig, path: &Path, force: bool) -> Result<bool> {
     let display = to_display_path(path);
     let existing = sources::list_sources_for_target(config, path)?;
-    match run_create_flow(path, &display, &existing)? {
+    match run_create_flow(path, &display, &existing, force)? {
         Flow::Done => Ok(true),
         _ => Ok(false),
     }
@@ -34,6 +34,7 @@ pub(crate) fn run_create_flow(
     path: &Path,
     display: &str,
     existing: &[DotfileSource],
+    force: bool,
 ) -> Result<Flow> {
     let mut cursor = MenuCursor::new();
 
@@ -81,7 +82,7 @@ pub(crate) fn run_create_flow(
         match builder.select(menu.clone())? {
             FzfResult::Selected(CreateMenuItem::Destination(item)) => {
                 cursor.update(&CreateMenuItem::Destination(item.clone()), &menu);
-                match add_file_to_destination(&config, path, display, &item)? {
+                match add_file_to_destination(&config, path, display, &item, force)? {
                     Flow::Continue => continue,
                     other => return Ok(other),
                 }
@@ -125,6 +126,7 @@ fn add_file_to_destination(
     path: &Path,
     display: &str,
     item: &SourceOption,
+    force: bool,
 ) -> Result<Flow> {
     // Already exists at this destination
     if item.exists {
@@ -143,10 +145,19 @@ fn add_file_to_destination(
     };
 
     // Copy the file
-    if let Err(e) = add_to_destination(config, &db, path, &item.source) {
+    let added = match add_to_destination(config, &db, path, &item.source, force) {
+        Ok(added) => added,
+        Err(e) => {
+            return message_and_continue(&format!(
+                "Failed to add '{}' to {} / {}:\n\n{}",
+                display, item.source.repo_name, item.source.subdir_name, e
+            ));
+        }
+    };
+    if !added {
         return message_and_continue(&format!(
-            "Failed to add '{}' to {} / {}:\n\n{}",
-            display, item.source.repo_name, item.source.subdir_name, e
+            "'{}' was skipped because it is ignored.\n\nUse '--force' to add it anyway.",
+            display
         ));
     }
 

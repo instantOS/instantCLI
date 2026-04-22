@@ -167,7 +167,8 @@ pub fn add_to_destination(
     db: &Database,
     target_path: &Path,
     dest: &DotfileSource,
-) -> Result<()> {
+    force: bool,
+) -> Result<bool> {
     // Ensure the target file exists before attempting to copy
     if !target_path.exists() {
         anyhow::bail!(
@@ -180,6 +181,26 @@ pub fn add_to_destination(
     let relative = target_path
         .strip_prefix(sources::home_dir())
         .unwrap_or(target_path);
+
+    if !force {
+        if let Some(ignore_file) = crate::dot::insignore::match_home_path(target_path)? {
+            println!(
+                "{}",
+                crate::dot::insignore::format_skip_message(target_path, &ignore_file)
+            );
+            return Ok(false);
+        }
+
+        let repo_root = config.repos_path().join(&dest.repo_name);
+        if let Some(ignore_file) = crate::dot::insignore::match_repo_path(&repo_root, relative, false)? {
+            println!(
+                "{}",
+                crate::dot::insignore::format_skip_message(target_path, &ignore_file)
+            );
+            return Ok(false);
+        }
+    }
+
     let dest_path = dest.source_path.join(relative);
 
     if let Some(parent) = dest_path.parent() {
@@ -213,5 +234,5 @@ pub fn add_to_destination(
         ),
         None,
     );
-    Ok(())
+    Ok(true)
 }
