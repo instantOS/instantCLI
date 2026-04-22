@@ -12,6 +12,12 @@ mod tests;
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum PassCommands {
+    /// Interactive pass menu (browse, copy, edit passwords)
+    Menu {
+        /// Open the menu in a GUI terminal window
+        #[arg(long = "gui")]
+        gui: bool,
+    },
     /// Insert a password or OTP entry
     Add {
         /// Entry name (optional, prompts if omitted)
@@ -61,13 +67,13 @@ pub enum PassCommands {
         path: Option<String>,
     },
 }
-use utils::{ensure_core_dependencies, ensure_password_store_dir, load_entries};
+use menu::{interactive_pass_menu, interactive_pass_menu_server};
 use operations::{
-    copy_otp_flow, delete_entry_flow, export_entry_flow, generate_password_entry,
-    insert_otp_entry, insert_password_entry,
+    copy_otp_flow, delete_entry_flow, export_entry_flow, generate_password_entry, insert_otp_entry,
+    insert_password_entry,
 };
-use menu::interactive_pass_menu;
 use utils::ensure_otp_dependency;
+use utils::{ensure_core_dependencies, ensure_password_store_dir, load_entries};
 
 pub fn pass_entry_names() -> Vec<String> {
     let Ok(store_dir) = utils::password_store_dir() else {
@@ -82,8 +88,20 @@ pub fn pass_entry_names() -> Vec<String> {
         .collect()
 }
 
-pub fn handle_pass_command(list_only: bool, command: Option<PassCommands>) -> Result<i32> {
+pub fn handle_pass_command(
+    gui: bool,
+    debug: bool,
+    list_only: bool,
+    command: Option<PassCommands>,
+) -> Result<i32> {
     match command {
+        Some(PassCommands::Menu { gui: menu_gui }) => {
+            if menu_gui {
+                crate::common::terminal::launch_menu_in_terminal("pass", "Pass", &[], debug)?;
+                return Ok(0);
+            }
+            interactive_pass_menu()
+        }
         Some(PassCommands::Add { name, otp }) => {
             ensure_core_dependencies()?;
             if otp {
@@ -123,6 +141,7 @@ pub fn handle_pass_command(list_only: bool, command: Option<PassCommands>) -> Re
             }
             Ok(0)
         }
+        None if gui => interactive_pass_menu_server(),
         None => interactive_pass_menu(),
     }
 }

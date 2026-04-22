@@ -64,7 +64,7 @@ pub(super) fn build_local_browser_items(
     Ok(items)
 }
 
-fn build_browser_menu_items(
+pub(super) fn build_browser_menu_items(
     entries: &[PassEntry],
     path: &[String],
     include_edit: bool,

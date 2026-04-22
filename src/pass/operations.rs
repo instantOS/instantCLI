@@ -60,7 +60,10 @@ pub(super) fn insert_otp_entry(name: Option<String>) -> Result<()> {
     insert_otp_entry_with_prefix(name, None)
 }
 
-pub(super) fn insert_otp_entry_with_prefix(name: Option<String>, prefix: Option<&str>) -> Result<()> {
+pub(super) fn insert_otp_entry_with_prefix(
+    name: Option<String>,
+    prefix: Option<&str>,
+) -> Result<()> {
     let raw_name = resolve_entry_name(name, prefix, "New OTP entry")?;
     let entry_name = normalize_otp_name(&raw_name);
     maybe_confirm_overwrite(&entry_name)?;

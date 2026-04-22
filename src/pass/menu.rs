@@ -14,6 +14,72 @@ use super::utils::*;
 pub(super) fn interactive_pass_menu() -> Result<i32> {
     ensure_core_dependencies()?;
 
+    let store_dir = ensure_password_store_dir()?;
+    let mut path: Vec<String> = Vec::new();
+    let mut cursor = MenuCursor::new();
+
+    loop {
+        let mut entries = load_entries(&store_dir)?;
+        sort_entries_by_frecency(&mut entries)?;
+        let browser_items = build_browser_menu_items(&entries, &path, true)?;
+
+        let title = if path.is_empty() {
+            "Pass".to_string()
+        } else {
+            format!("Pass / {}", path.join("/"))
+        };
+
+        let mut builder = FzfWrapper::builder()
+            .header(Header::fancy(&title))
+            .prompt("Select")
+            .args(fzf_mocha_args())
+            .responsive_layout();
+
+        if let Some(index) = cursor.initial_index(&browser_items) {
+            builder = builder.initial_index(index);
+        }
+
+        match builder.select(browser_items.clone())? {
+            FzfResult::Selected(item) => {
+                cursor.update(&item, &browser_items);
+                match item.kind {
+                    BrowserItemKind::Folder(folder) => {
+                        path = path_segments(&folder);
+                    }
+                    BrowserItemKind::Entry(key) => {
+                        let entry = resolve_entry_by_name(&entries, &key, false)?;
+                        copy_primary_entry(&entry)?;
+                        record_frecency(&entry.display_name)?;
+                    }
+                    BrowserItemKind::Add => {
+                        run_add_menu(path_prefix(&path).as_deref())?;
+                    }
+                    BrowserItemKind::Edit => {
+                        run_edit_browser(path_prefix(&path).as_deref())?;
+                    }
+                    BrowserItemKind::Back => {
+                        if path.is_empty() {
+                            return Ok(1);
+                        }
+                        path.pop();
+                    }
+                    BrowserItemKind::Close => return Ok(0),
+                }
+            }
+            FzfResult::Cancelled => {
+                if path.is_empty() {
+                    return Ok(1);
+                }
+                path.pop();
+            }
+            _ => return Ok(1),
+        }
+    }
+}
+
+pub(super) fn interactive_pass_menu_server() -> Result<i32> {
+    ensure_core_dependencies()?;
+
     let client = MenuClient::new();
     let server_client = client.clone();
     let server_ready = std::thread::spawn(move || server_client.ensure_server_running());

@@ -15,7 +15,7 @@ use crate::common::display_server::DisplayServer;
 use crate::common::package::{Dependency, InstallResult, ensure_all};
 use crate::menu_utils::{ConfirmResult, FzfResult, FzfWrapper};
 
-use super::types::{PassEntry, PASS_DEP, GPG_DEP, PASS_OTP_DEP};
+use super::types::{GPG_DEP, PASS_DEP, PASS_OTP_DEP, PassEntry};
 
 pub(super) fn prompt_password_with_confirmation(prompt: &str) -> Result<String> {
     let first = match FzfWrapper::builder()
