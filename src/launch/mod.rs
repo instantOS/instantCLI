@@ -100,6 +100,7 @@ fn prepare_menu_items(launch_items: &[LaunchItem]) -> Vec<SerializableMenuItem> 
         metadata.insert("index".to_string(), index.to_string());
 
         menu_items.push(SerializableMenuItem {
+            key: None,
             display_text: item.to_string(),
             preview: FzfPreview::None,
             metadata: Some(metadata),

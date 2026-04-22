@@ -1,5 +1,8 @@
 use super::types::PassEntry;
+use super::types::{BrowserItemKind, BrowserMenuItem};
 use super::utils::{first_secret_line, normalize_otp_name, sanitize_entry_name};
+use crate::menu::protocol::FzfPreview;
+use crate::menu_utils::FzfSelectable;
 
 #[test]
 fn normalizes_otp_names() {
@@ -39,4 +42,16 @@ fn sanitizes_bad_entry_names() {
     assert!(sanitize_entry_name("../foo").is_err());
     assert!(sanitize_entry_name("foo\nbar").is_err());
     assert_eq!(sanitize_entry_name("/work/github/").unwrap(), "work/github");
+}
+
+#[test]
+fn browser_items_use_plain_selection_keys() {
+    let item = BrowserMenuItem {
+        key: "folder:mail".to_string(),
+        display: "\u{1b}[35m\u{1b}[0m mail".to_string(),
+        preview: FzfPreview::None,
+        kind: BrowserItemKind::Folder("mail".to_string()),
+    };
+
+    assert_eq!(item.fzf_key(), "folder:mail");
 }

@@ -146,6 +146,7 @@ pub(super) enum AddMenuAction {
 
 #[derive(Debug, Clone)]
 pub(super) struct AddMenuItem {
+    pub key: &'static str,
     pub display: String,
     pub preview: FzfPreview,
     pub action: AddMenuAction,
@@ -166,6 +167,7 @@ pub(super) enum EditAction {
 
 #[derive(Debug, Clone)]
 pub(super) struct EditActionItem {
+    pub key: &'static str,
     pub display: String,
     pub preview: FzfPreview,
     pub action: EditAction,
@@ -183,6 +185,7 @@ pub(super) enum BrowserItemKind {
 
 #[derive(Debug, Clone)]
 pub(super) struct BrowserMenuItem {
+    pub key: String,
     pub display: String,
     pub preview: FzfPreview,
     pub kind: BrowserItemKind,
@@ -208,7 +211,7 @@ impl FzfSelectable for AddMenuItem {
     }
 
     fn fzf_key(&self) -> String {
-        self.display.clone()
+        self.key.to_string()
     }
 
     fn fzf_preview(&self) -> FzfPreview {
@@ -222,7 +225,7 @@ impl FzfSelectable for EditActionItem {
     }
 
     fn fzf_key(&self) -> String {
-        self.display.clone()
+        self.key.to_string()
     }
 
     fn fzf_preview(&self) -> FzfPreview {
@@ -236,7 +239,7 @@ impl FzfSelectable for BrowserMenuItem {
     }
 
     fn fzf_key(&self) -> String {
-        self.display.clone()
+        self.key.clone()
     }
 
     fn fzf_preview(&self) -> FzfPreview {

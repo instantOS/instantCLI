@@ -325,6 +325,7 @@ pub(super) fn run_edit_action_menu(entry: &PassEntry) -> Result<()> {
 fn build_add_menu_items() -> Vec<AddMenuItem> {
     vec![
         AddMenuItem {
+            key: "add-password",
             display: format!(
                 "{} Add Password",
                 format_icon_colored(NerdFont::Plus, colors::GREEN)
@@ -339,6 +340,7 @@ fn build_add_menu_items() -> Vec<AddMenuItem> {
             action: AddMenuAction::AddPassword,
         },
         AddMenuItem {
+            key: "generate-password",
             display: format!(
                 "{} Generate Password",
                 format_icon_colored(NerdFont::Refresh, colors::TEAL)
@@ -353,6 +355,7 @@ fn build_add_menu_items() -> Vec<AddMenuItem> {
             action: AddMenuAction::GeneratePassword,
         },
         AddMenuItem {
+            key: "add-otp",
             display: format!(
                 "{} Add OTP",
                 format_icon_colored(NerdFont::Clock, colors::SAPPHIRE)
@@ -367,6 +370,7 @@ fn build_add_menu_items() -> Vec<AddMenuItem> {
             action: AddMenuAction::AddOtp,
         },
         AddMenuItem {
+            key: "back",
             display: format!("{} Back", format_back_icon()),
             preview: PreviewBuilder::new()
                 .header(NerdFont::ArrowLeft, "Back")
@@ -382,6 +386,7 @@ fn build_edit_action_items(entry: &PassEntry) -> Vec<EditActionItem> {
 
     if entry.has_secret() {
         items.push(EditActionItem {
+            key: "copy-password",
             display: format!(
                 "{} Copy Password",
                 format_icon_colored(NerdFont::Clipboard, colors::GREEN)
@@ -396,6 +401,7 @@ fn build_edit_action_items(entry: &PassEntry) -> Vec<EditActionItem> {
 
     if entry.has_otp() {
         items.push(EditActionItem {
+            key: "copy-otp",
             display: format!(
                 "{} Copy OTP",
                 format_icon_colored(NerdFont::Clock, colors::TEAL)
@@ -409,6 +415,7 @@ fn build_edit_action_items(entry: &PassEntry) -> Vec<EditActionItem> {
     }
 
     items.push(EditActionItem {
+        key: "export",
         display: format!(
             "{} Export",
             format_icon_colored(NerdFont::Upload, colors::LAVENDER)
@@ -421,6 +428,7 @@ fn build_edit_action_items(entry: &PassEntry) -> Vec<EditActionItem> {
     });
 
     items.push(EditActionItem {
+        key: "rename",
         display: format!(
             "{} Rename",
             format_icon_colored(NerdFont::Edit, colors::BLUE)
@@ -433,6 +441,7 @@ fn build_edit_action_items(entry: &PassEntry) -> Vec<EditActionItem> {
     });
 
     items.push(EditActionItem {
+        key: "edit-password",
         display: format!(
             "{} {} Password",
             format_icon_colored(NerdFont::Key, colors::PEACH),
@@ -453,6 +462,7 @@ fn build_edit_action_items(entry: &PassEntry) -> Vec<EditActionItem> {
     });
 
     items.push(EditActionItem {
+        key: "generate-password",
         display: format!(
             "{} {} Password",
             format_icon_colored(NerdFont::Refresh, colors::SAPPHIRE),
@@ -470,6 +480,7 @@ fn build_edit_action_items(entry: &PassEntry) -> Vec<EditActionItem> {
     });
 
     items.push(EditActionItem {
+        key: "edit-otp",
         display: format!(
             "{} {} OTP",
             format_icon_colored(NerdFont::Clock, colors::TEAL),
@@ -490,6 +501,7 @@ fn build_edit_action_items(entry: &PassEntry) -> Vec<EditActionItem> {
     });
 
     items.push(EditActionItem {
+        key: "delete",
         display: format!(
             "{} Delete",
             format_icon_colored(NerdFont::Trash, colors::RED)
@@ -502,6 +514,7 @@ fn build_edit_action_items(entry: &PassEntry) -> Vec<EditActionItem> {
     });
 
     items.push(EditActionItem {
+        key: "back",
         display: format!("{} Back", format_back_icon()),
         preview: PreviewBuilder::new()
             .header(NerdFont::ArrowLeft, "Back")

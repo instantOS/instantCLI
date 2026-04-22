@@ -43,6 +43,7 @@ pub(super) fn build_browser_items(
             }
 
             SerializableMenuItem {
+                key: Some(item.key),
                 display_text: item.display,
                 preview: item.preview,
                 metadata: Some(metadata),
@@ -82,6 +83,7 @@ pub(super) fn build_browser_menu_items(
 
     if path.is_empty() {
         items.push(BrowserMenuItem {
+            key: "add".to_string(),
             display: format!("{} Add", format_icon_colored(NerdFont::Plus, colors::GREEN)),
             preview: PreviewBuilder::new()
                 .header(NerdFont::Plus, "Add Entry")
@@ -91,6 +93,7 @@ pub(super) fn build_browser_menu_items(
         });
         if include_edit {
             items.push(BrowserMenuItem {
+                key: "edit".to_string(),
                 display: format!("{} Edit", format_icon_colored(NerdFont::Edit, colors::BLUE)),
                 preview: PreviewBuilder::new()
                     .header(NerdFont::Edit, "Edit Entries")
@@ -100,6 +103,7 @@ pub(super) fn build_browser_menu_items(
             });
         }
         items.push(BrowserMenuItem {
+            key: "close".to_string(),
             display: format!("{} Close", format_back_icon()),
             preview: PreviewBuilder::new()
                 .header(NerdFont::Cross, "Close")
@@ -109,6 +113,7 @@ pub(super) fn build_browser_menu_items(
         });
     } else {
         items.push(BrowserMenuItem {
+            key: "add".to_string(),
             display: format!("{} Add", format_icon_colored(NerdFont::Plus, colors::GREEN)),
             preview: PreviewBuilder::new()
                 .header(NerdFont::Plus, "Add Entry")
@@ -118,6 +123,7 @@ pub(super) fn build_browser_menu_items(
         });
         if include_edit {
             items.push(BrowserMenuItem {
+                key: "edit".to_string(),
                 display: format!("{} Edit", format_icon_colored(NerdFont::Edit, colors::BLUE)),
                 preview: PreviewBuilder::new()
                     .header(NerdFont::Edit, "Edit Entries")
@@ -127,6 +133,7 @@ pub(super) fn build_browser_menu_items(
             });
         }
         items.push(BrowserMenuItem {
+            key: "back".to_string(),
             display: format!("{} Back", format_back_icon()),
             preview: PreviewBuilder::new()
                 .header(NerdFont::ArrowLeft, "Back")
@@ -195,6 +202,7 @@ fn append_tree_browser_items(
         };
 
         items.push(BrowserMenuItem {
+            key: format!("folder:{folder_path}"),
             display: format_tree_line(prefix, connector, &folder_path, name, true),
             preview: PreviewBuilder::new()
                 .header(NerdFont::Folder, name)
@@ -224,6 +232,7 @@ fn append_tree_browser_items(
             .cloned()
             .unwrap_or_else(|| entry.display_name.clone());
         items.push(BrowserMenuItem {
+            key: format!("entry:{}", entry.display_name),
             display: format_tree_line(prefix, connector, &entry.display_name, &leaf, false),
             preview: entry.preview(),
             kind: BrowserItemKind::Entry(entry.display_name.clone()),
