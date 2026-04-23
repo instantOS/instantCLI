@@ -80,7 +80,9 @@ pub(super) fn insert_otp_entry_with_prefix(
 }
 
 pub(super) fn copy_primary_entry(entry: &PassEntry) -> Result<()> {
-    if entry.has_secret() {
+    if entry.is_file_entry() {
+        export_entry(entry, None)
+    } else if entry.has_secret() {
         copy_password_entry(entry)
     } else {
         copy_otp_entry(entry)
@@ -166,6 +168,12 @@ pub(super) fn export_entry_flow(name: Option<String>, path: Option<String>) -> R
     let entries = load_entries(&store_dir)?;
     let entry = select_entry(name, &entries, false)?.ok_or_else(|| anyhow!("Export cancelled"))?;
 
+    export_entry(&entry, path)?;
+    record_frecency(&entry.display_name)?;
+    Ok(())
+}
+
+pub(super) fn export_entry(entry: &PassEntry, path: Option<String>) -> Result<()> {
     let key = entry.primary_key()?.to_string();
     let output = run_pass_stdout(["show", &key])?;
     let destination = prompt_export_destination(&entry.display_name, path)?;
@@ -179,7 +187,6 @@ pub(super) fn export_entry_flow(name: Option<String>, path: Option<String>) -> R
             destination.display()
         ),
     );
-    record_frecency(&entry.display_name)?;
     Ok(())
 }
 
@@ -360,6 +367,10 @@ pub(super) fn pass_edit_editor() -> &'static str {
     "nvim --clean"
 }
 
+pub(super) fn pass_edit_was_unchanged(status: std::process::ExitStatus) -> bool {
+    status.code() == Some(1)
+}
+
 pub(super) fn edit_password_entry(entry: &PassEntry) -> Result<()> {
     let key = entry
         .secret_key
@@ -375,14 +386,21 @@ pub(super) fn edit_password_entry(entry: &PassEntry) -> Result<()> {
         .status()
         .with_context(|| format!("Failed to launch `pass edit` for '{key}'"))?;
 
+    if status.success() {
+        maybe_notify(
+            "Pass",
+            &format!("Updated password for {}", entry.display_name),
+        );
+        return Ok(());
+    }
+
+    if pass_edit_was_unchanged(status) {
+        return Ok(());
+    }
+
     if !status.success() {
         bail!("`pass edit` failed for '{key}' with status {status}");
     }
-
-    maybe_notify(
-        "Pass",
-        &format!("Updated password for {}", entry.display_name),
-    );
     Ok(())
 }
 

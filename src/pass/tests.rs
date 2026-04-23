@@ -1,5 +1,7 @@
 use super::browser::{build_browser_menu_items, build_quick_access_items};
-use super::operations::{otp_command_args, pass_edit_editor, resolve_entry_by_name};
+use super::operations::{
+    otp_command_args, pass_edit_editor, pass_edit_was_unchanged, resolve_entry_by_name,
+};
 use super::types::PassEntry;
 use super::types::{BrowserItemKind, BrowserMenuItem};
 use super::utils::{first_secret_line, load_entries, normalize_otp_name, sanitize_entry_name};
@@ -31,6 +33,20 @@ fn otp_entry_reports_otp_primary_action() {
 
     assert_eq!(entry.kind_label(), "otp");
     assert_eq!(entry.primary_action_label(), "Copy OTP code");
+}
+
+#[test]
+fn file_entry_reports_export_primary_action() {
+    let entry = PassEntry {
+        display_name: "docs/contract.file".to_string(),
+        secret_key: Some("docs/contract.file".to_string()),
+        otp_key: None,
+        secret_path: None,
+        otp_path: None,
+    };
+
+    assert!(entry.is_file_entry());
+    assert_eq!(entry.primary_action_label(), "Export file");
 }
 
 #[test]
@@ -100,6 +116,29 @@ fn tree_browser_root_shows_folder_nodes() {
 }
 
 #[test]
+fn tree_browser_uses_distinct_icon_for_file_entries() {
+    let entries = vec![PassEntry {
+        display_name: "docs/contract.file".to_string(),
+        secret_key: Some("docs/contract.file".to_string()),
+        otp_key: None,
+        secret_path: None,
+        otp_path: None,
+    }];
+
+    let items = build_browser_menu_items(&entries, &["docs".to_string()]).unwrap();
+    let file_item = items
+        .iter()
+        .find(|item| matches!(item.kind, BrowserItemKind::Entry(ref key) if key == "docs/contract.file"))
+        .unwrap();
+
+    assert!(
+        file_item
+            .display
+            .contains(char::from(crate::ui::nerd_font::NerdFont::File))
+    );
+}
+
+#[test]
 fn load_entries_keeps_standalone_otp_suffix_visible() {
     let temp = tempfile::tempdir().unwrap();
     fs::write(temp.path().join("paypal.otp.gpg"), b"otp").unwrap();
@@ -161,4 +200,18 @@ fn otp_command_uses_plain_pass_otp_invocation() {
 #[test]
 fn password_edit_uses_clean_nvim() {
     assert_eq!(pass_edit_editor(), "nvim --clean");
+}
+
+#[test]
+fn unchanged_pass_edit_exit_is_treated_as_noop() {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        assert!(pass_edit_was_unchanged(std::process::ExitStatus::from_raw(
+            1 << 8
+        )));
+        assert!(!pass_edit_was_unchanged(
+            std::process::ExitStatus::from_raw(0)
+        ));
+    }
 }

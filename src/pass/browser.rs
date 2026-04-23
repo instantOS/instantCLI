@@ -249,6 +249,8 @@ fn format_tree_line(
     let tree = format!("{tree_color}{prefix}{connector}{reset}");
     let icon = if folder {
         format_icon_colored(NerdFont::Folder, colors::MAUVE)
+    } else if full_path.ends_with(".file") {
+        format_icon_colored(NerdFont::File, colors::LAVENDER)
     } else if full_path.ends_with(".otp") {
         format_icon_colored(NerdFont::Clock, colors::TEAL)
     } else {

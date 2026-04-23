@@ -42,6 +42,10 @@ pub(super) struct PassEntry {
 }
 
 impl PassEntry {
+    pub fn is_file_entry(&self) -> bool {
+        self.display_name.ends_with(".file")
+    }
+
     pub fn kind_label(&self) -> &'static str {
         match (self.secret_key.is_some(), self.otp_key.is_some()) {
             (true, true) => "password + otp",
@@ -52,7 +56,9 @@ impl PassEntry {
     }
 
     pub fn primary_action_label(&self) -> &'static str {
-        if self.secret_key.is_some() {
+        if self.is_file_entry() {
+            "Export file"
+        } else if self.secret_key.is_some() {
             "Copy password"
         } else {
             "Copy OTP code"
@@ -79,8 +85,14 @@ impl PassEntry {
     }
 
     pub fn preview(&self) -> FzfPreview {
+        let header_icon = if self.is_file_entry() {
+            NerdFont::File
+        } else {
+            NerdFont::Key
+        };
+
         let mut builder = PreviewBuilder::new()
-            .header(NerdFont::Key, &self.display_name)
+            .header(header_icon, &self.display_name)
             .field("Type", self.kind_label())
             .field("Primary action", self.primary_action_label());
 
