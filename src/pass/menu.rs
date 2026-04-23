@@ -12,6 +12,107 @@ use super::types::*;
 use super::utils::*;
 
 pub(super) fn interactive_pass_menu() -> Result<i32> {
+    interactive_pass_quick_access()
+}
+
+pub(super) fn interactive_pass_quick_access() -> Result<i32> {
+    ensure_core_dependencies()?;
+
+    let store_dir = ensure_password_store_dir()?;
+    let mut cursor = MenuCursor::new();
+
+    loop {
+        let mut entries = load_entries(&store_dir)?;
+        sort_entries_by_frecency(&mut entries)?;
+        let quick_access_items = build_quick_access_items(&entries);
+
+        let mut builder = FzfWrapper::builder()
+            .header(Header::fancy("Pass"))
+            .prompt("Copy")
+            .args(fzf_mocha_args())
+            .responsive_layout();
+
+        if let Some(index) = cursor.initial_index(&quick_access_items) {
+            builder = builder.initial_index(index);
+        }
+
+        match builder.select(quick_access_items.clone())? {
+            FzfResult::Selected(item) => {
+                cursor.update(&item, &quick_access_items);
+                match item.kind {
+                    BrowserItemKind::Entry(key) => {
+                        let entry = resolve_entry_by_name(&entries, &key, false)?;
+                        copy_primary_entry(&entry)?;
+                        record_frecency(&entry.display_name)?;
+                    }
+                    BrowserItemKind::Menu => {
+                        interactive_pass_tree_menu()?;
+                    }
+                    BrowserItemKind::Close => return Ok(0),
+                    BrowserItemKind::Folder(_)
+                    | BrowserItemKind::Add
+                    | BrowserItemKind::Edit
+                    | BrowserItemKind::Back => {}
+                }
+            }
+            FzfResult::Cancelled => return Ok(1),
+            _ => return Ok(1),
+        }
+    }
+}
+
+pub(super) fn interactive_pass_menu_server() -> Result<i32> {
+    interactive_pass_quick_access_server()
+}
+
+pub(super) fn interactive_pass_quick_access_server() -> Result<i32> {
+    ensure_core_dependencies()?;
+
+    let client = MenuClient::new();
+    let server_client = client.clone();
+    let server_ready = std::thread::spawn(move || server_client.ensure_server_running());
+
+    server_ready
+        .join()
+        .map_err(|_| anyhow!("menu server thread panicked"))??;
+
+    let store_dir = ensure_password_store_dir()?;
+
+    loop {
+        let mut entries = load_entries(&store_dir)?;
+        sort_entries_by_frecency(&mut entries)?;
+        let menu_items = build_quick_access_menu_items(&entries);
+
+        let selected = client.choice("Pass".to_string(), menu_items, false)?;
+        if selected.is_empty() {
+            return Ok(1);
+        }
+
+        let metadata = selected[0]
+            .metadata
+            .as_ref()
+            .ok_or_else(|| anyhow!("Selected menu item missing metadata"))?;
+
+        match metadata.get("kind").map(String::as_str) {
+            Some("entry") => {
+                let key = metadata
+                    .get("key")
+                    .ok_or_else(|| anyhow!("Entry item missing key metadata"))?;
+                let entry = resolve_entry_by_name(&entries, key, false)?;
+                copy_primary_entry(&entry)?;
+                record_frecency(&entry.display_name)?;
+            }
+            Some("menu") => {
+                interactive_pass_tree_menu_server()?;
+            }
+            Some("close") => return Ok(0),
+            Some("folder" | "add" | "edit" | "back") => {}
+            other => bail!("Unknown menu item kind: {:?}", other),
+        }
+    }
+}
+
+pub(super) fn interactive_pass_tree_menu() -> Result<i32> {
     ensure_core_dependencies()?;
 
     let store_dir = ensure_password_store_dir()?;
@@ -19,14 +120,13 @@ pub(super) fn interactive_pass_menu() -> Result<i32> {
     let mut cursor = MenuCursor::new();
 
     loop {
-        let mut entries = load_entries(&store_dir)?;
-        sort_entries_by_frecency(&mut entries)?;
+        let entries = load_entries(&store_dir)?;
         let browser_items = build_browser_menu_items(&entries, &path, true)?;
 
         let title = if path.is_empty() {
-            "Pass".to_string()
+            "Pass Menu".to_string()
         } else {
-            format!("Pass / {}", path.join("/"))
+            format!("Pass Menu / {}", path.join("/"))
         };
 
         let mut builder = FzfWrapper::builder()
@@ -64,6 +164,7 @@ pub(super) fn interactive_pass_menu() -> Result<i32> {
                         path.pop();
                     }
                     BrowserItemKind::Close => return Ok(0),
+                    BrowserItemKind::Menu => {}
                 }
             }
             FzfResult::Cancelled => {
@@ -77,7 +178,7 @@ pub(super) fn interactive_pass_menu() -> Result<i32> {
     }
 }
 
-pub(super) fn interactive_pass_menu_server() -> Result<i32> {
+pub(super) fn interactive_pass_tree_menu_server() -> Result<i32> {
     ensure_core_dependencies()?;
 
     let client = MenuClient::new();
@@ -92,14 +193,13 @@ pub(super) fn interactive_pass_menu_server() -> Result<i32> {
     let mut path: Vec<String> = Vec::new();
 
     loop {
-        let mut entries = load_entries(&store_dir)?;
-        sort_entries_by_frecency(&mut entries)?;
+        let entries = load_entries(&store_dir)?;
         let menu_items = build_browser_items(&entries, &path, true)?;
 
         let prompt = if path.is_empty() {
-            "Pass".to_string()
+            "Pass Menu".to_string()
         } else {
-            format!("Pass / {}", path.join("/"))
+            format!("Pass Menu / {}", path.join("/"))
         };
 
         let selected = client.choice(prompt, menu_items, false)?;
@@ -144,6 +244,7 @@ pub(super) fn interactive_pass_menu_server() -> Result<i32> {
                 path.pop();
             }
             Some("close") => return Ok(0),
+            Some("menu") => {}
             other => bail!("Unknown menu item kind: {:?}", other),
         }
     }
@@ -221,7 +322,7 @@ pub(super) fn run_edit_browser(initial_prefix: Option<&str>) -> Result<()> {
                     }
                     BrowserItemKind::Close => return Ok(()),
                     BrowserItemKind::Add => run_add_menu(path_prefix(&path).as_deref())?,
-                    BrowserItemKind::Edit => {}
+                    BrowserItemKind::Edit | BrowserItemKind::Menu => {}
                 }
             }
             FzfResult::Cancelled => {

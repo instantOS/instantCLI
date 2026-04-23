@@ -1,3 +1,4 @@
+use super::browser::{build_browser_menu_items, build_quick_access_items};
 use super::types::PassEntry;
 use super::types::{BrowserItemKind, BrowserMenuItem};
 use super::utils::{first_secret_line, normalize_otp_name, sanitize_entry_name};
@@ -54,4 +55,49 @@ fn browser_items_use_plain_selection_keys() {
     };
 
     assert_eq!(item.fzf_key(), "folder:mail");
+}
+
+#[test]
+fn quick_access_items_are_flat_and_include_tree_menu_entry() {
+    let entries = vec![
+        PassEntry {
+            display_name: "mail/work".to_string(),
+            secret_key: Some("mail/work".to_string()),
+            otp_key: None,
+            secret_path: None,
+            otp_path: None,
+        },
+        PassEntry {
+            display_name: "servers/prod/root".to_string(),
+            secret_key: Some("servers/prod/root".to_string()),
+            otp_key: None,
+            secret_path: None,
+            otp_path: None,
+        },
+    ];
+
+    let items = build_quick_access_items(&entries);
+
+    assert_eq!(items.len(), 3);
+    assert_eq!(items[0].fzf_display_text(), "mail/work");
+    assert_eq!(items[1].fzf_display_text(), "servers/prod/root");
+    assert!(matches!(items[2].kind, BrowserItemKind::Menu));
+}
+
+#[test]
+fn tree_browser_root_shows_folder_nodes() {
+    let entries = vec![PassEntry {
+        display_name: "mail/work".to_string(),
+        secret_key: Some("mail/work".to_string()),
+        otp_key: None,
+        secret_path: None,
+        otp_path: None,
+    }];
+
+    let items = build_browser_menu_items(&entries, &[], true).unwrap();
+
+    assert!(
+        items.iter()
+            .any(|item| matches!(item.kind, BrowserItemKind::Folder(ref path) if path == "mail"))
+    );
 }

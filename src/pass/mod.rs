@@ -67,7 +67,9 @@ pub enum PassCommands {
         path: Option<String>,
     },
 }
-use menu::{interactive_pass_menu, interactive_pass_menu_server};
+use menu::{
+    interactive_pass_menu, interactive_pass_menu_server, interactive_pass_tree_menu,
+};
 use operations::{
     copy_otp_flow, delete_entry_flow, export_entry_flow, generate_password_entry, insert_otp_entry,
     insert_password_entry,
@@ -100,7 +102,7 @@ pub fn handle_pass_command(
                 crate::common::terminal::launch_menu_in_terminal("pass", "Pass", &[], debug)?;
                 return Ok(0);
             }
-            interactive_pass_menu()
+            interactive_pass_tree_menu()
         }
         Some(PassCommands::Add { name, otp }) => {
             ensure_core_dependencies()?;

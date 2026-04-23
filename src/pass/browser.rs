@@ -28,6 +28,9 @@ pub(super) fn build_browser_items(
                     metadata.insert("kind".to_string(), "entry".to_string());
                     metadata.insert("key".to_string(), key.clone());
                 }
+                BrowserItemKind::Menu => {
+                    metadata.insert("kind".to_string(), "menu".to_string());
+                }
                 BrowserItemKind::Add => {
                     metadata.insert("kind".to_string(), "add".to_string());
                 }
@@ -77,6 +80,21 @@ fn make_add_item(preview_text: &str) -> BrowserMenuItem {
     }
 }
 
+fn make_menu_item() -> BrowserMenuItem {
+    BrowserMenuItem {
+        key: "menu".to_string(),
+        display: format!(
+            "{} Browse tree menu",
+            format_icon_colored(NerdFont::FolderOpen, colors::SAPPHIRE)
+        ),
+        preview: PreviewBuilder::new()
+            .header(NerdFont::FolderOpen, "Browse Pass Tree")
+            .text("Open `ins pass menu` for hierarchical browsing and exploration.")
+            .build(),
+        kind: BrowserItemKind::Menu,
+    }
+}
+
 fn make_edit_item(preview_text: &str) -> BrowserMenuItem {
     BrowserMenuItem {
         key: "edit".to_string(),
@@ -87,6 +105,63 @@ fn make_edit_item(preview_text: &str) -> BrowserMenuItem {
             .build(),
         kind: BrowserItemKind::Edit,
     }
+}
+
+pub(super) fn build_quick_access_items(entries: &[PassEntry]) -> Vec<BrowserMenuItem> {
+    let mut items: Vec<_> = entries
+        .iter()
+        .cloned()
+        .map(|entry| BrowserMenuItem {
+            key: format!("entry:{}", entry.display_name),
+            display: entry.display_name.clone(),
+            preview: entry.preview(),
+            kind: BrowserItemKind::Entry(entry.display_name),
+        })
+        .collect();
+
+    items.push(make_menu_item());
+    items
+}
+
+pub(super) fn build_quick_access_menu_items(entries: &[PassEntry]) -> Vec<SerializableMenuItem> {
+    build_quick_access_items(entries)
+        .into_iter()
+        .map(|item| {
+            let mut metadata = HashMap::new();
+            match &item.kind {
+                BrowserItemKind::Entry(key) => {
+                    metadata.insert("kind".to_string(), "entry".to_string());
+                    metadata.insert("key".to_string(), key.clone());
+                }
+                BrowserItemKind::Menu => {
+                    metadata.insert("kind".to_string(), "menu".to_string());
+                }
+                BrowserItemKind::Folder(folder) => {
+                    metadata.insert("kind".to_string(), "folder".to_string());
+                    metadata.insert("path".to_string(), folder.clone());
+                }
+                BrowserItemKind::Add => {
+                    metadata.insert("kind".to_string(), "add".to_string());
+                }
+                BrowserItemKind::Edit => {
+                    metadata.insert("kind".to_string(), "edit".to_string());
+                }
+                BrowserItemKind::Back => {
+                    metadata.insert("kind".to_string(), "back".to_string());
+                }
+                BrowserItemKind::Close => {
+                    metadata.insert("kind".to_string(), "close".to_string());
+                }
+            }
+
+            SerializableMenuItem {
+                key: Some(item.key),
+                display_text: item.display,
+                preview: item.preview,
+                metadata: Some(metadata),
+            }
+        })
+        .collect()
 }
 
 pub(super) fn build_browser_menu_items(

@@ -177,6 +177,7 @@ pub(super) struct EditActionItem {
 pub(super) enum BrowserItemKind {
     Folder(String),
     Entry(String),
+    Menu,
     Add,
     Edit,
     Back,
