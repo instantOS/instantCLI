@@ -130,7 +130,7 @@ pub(super) fn copy_otp_entry(entry: &PassEntry) -> Result<()> {
     ensure_otp_dependency()?;
 
     let otp_key = resolve_otp_key(entry)?;
-    let output = run_pass_stdout(["otp", "code", &otp_key])?;
+    let output = run_pass_stdout(otp_command_args(&otp_key))?;
     let code = String::from_utf8(output)
         .context("OTP output is not valid UTF-8")?
         .trim()
@@ -146,6 +146,10 @@ pub(super) fn copy_otp_entry(entry: &PassEntry) -> Result<()> {
         &format!("Copied OTP code for {}", entry.display_name),
     );
     Ok(())
+}
+
+pub(super) fn otp_command_args(key: &str) -> [&str; 2] {
+    ["otp", key]
 }
 
 pub(super) fn copy_otp_flow(name: Option<String>) -> Result<()> {

@@ -1,5 +1,5 @@
 use super::browser::{build_browser_menu_items, build_quick_access_items};
-use super::operations::resolve_entry_by_name;
+use super::operations::{otp_command_args, resolve_entry_by_name};
 use super::types::PassEntry;
 use super::types::{BrowserItemKind, BrowserMenuItem};
 use super::utils::{first_secret_line, load_entries, normalize_otp_name, sanitize_entry_name};
@@ -151,4 +151,9 @@ fn resolve_entry_by_name_prefers_exact_otp_match() {
 
     assert_eq!(resolved.display_name, "paypal.otp");
     assert_eq!(resolved.kind_label(), "otp");
+}
+
+#[test]
+fn otp_command_uses_plain_pass_otp_invocation() {
+    assert_eq!(otp_command_args("paypal.otp"), ["otp", "paypal.otp"]);
 }
