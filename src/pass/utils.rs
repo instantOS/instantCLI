@@ -8,14 +8,13 @@ use fre::args::SortMethod;
 use fre::store::{FrecencyStore, read_store, write_store};
 use walkdir::WalkDir;
 
+use super::types::{EXPORT_THRESHOLD_BYTES, PASS_OTP_DEP, PassEntry};
+use crate::assist::deps::{GPG, PASS};
 use crate::assist::deps::{LIBNOTIFY, WL_CLIPBOARD, XCLIP};
 use crate::assist::utils::{copy_to_clipboard, show_notification};
 use crate::common::display_server::DisplayServer;
 use crate::common::package::{Dependency, InstallResult, ensure_all};
 use crate::menu_utils::{ConfirmResult, FzfResult, FzfWrapper};
-
-use super::types::{EXPORT_THRESHOLD_BYTES, PASS_OTP_DEP, PassEntry};
-use crate::assist::deps::{GPG, PASS};
 
 pub(super) fn prompt_password_with_confirmation(prompt: &str) -> Result<String> {
     let password = match FzfWrapper::builder()
@@ -122,12 +121,6 @@ pub(super) fn resolve_otp_key(entry: &PassEntry) -> Result<String> {
     entry
         .otp_key
         .clone()
-        .or_else(|| {
-            entry
-                .secret_key
-                .as_ref()
-                .map(|secret| format!("{secret}.otp"))
-        })
         .ok_or_else(|| anyhow!("Entry '{}' has no OTP data", entry.display_name))
 }
 

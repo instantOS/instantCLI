@@ -103,7 +103,8 @@ pub(super) fn interactive_pass_quick_access_server() -> Result<i32> {
                 record_frecency(&entry.display_name)?;
             }
             Some("menu") => {
-                interactive_pass_tree_menu_server()?;
+                crate::common::terminal::launch_menu_in_terminal("pass", "Pass", &[], false)?;
+                return Ok(0);
             }
             Some("close") => return Ok(0),
             Some("folder" | "add" | "edit" | "back") => {}
@@ -174,78 +175,6 @@ pub(super) fn interactive_pass_tree_menu() -> Result<i32> {
                 path.pop();
             }
             _ => return Ok(1),
-        }
-    }
-}
-
-pub(super) fn interactive_pass_tree_menu_server() -> Result<i32> {
-    ensure_core_dependencies()?;
-
-    let client = MenuClient::new();
-    let server_client = client.clone();
-    let server_ready = std::thread::spawn(move || server_client.ensure_server_running());
-
-    server_ready
-        .join()
-        .map_err(|_| anyhow!("menu server thread panicked"))??;
-
-    let store_dir = ensure_password_store_dir()?;
-    let mut path: Vec<String> = Vec::new();
-
-    loop {
-        let entries = load_entries(&store_dir)?;
-        let menu_items = build_browser_items(&entries, &path, true)?;
-
-        let prompt = if path.is_empty() {
-            "Pass Menu".to_string()
-        } else {
-            format!("Pass Menu / {}", path.join("/"))
-        };
-
-        let selected = client.choice(prompt, menu_items, false)?;
-        if selected.is_empty() {
-            if path.is_empty() {
-                return Ok(1);
-            }
-            path.pop();
-            continue;
-        }
-
-        let metadata = selected[0]
-            .metadata
-            .as_ref()
-            .ok_or_else(|| anyhow!("Selected menu item missing metadata"))?;
-
-        match metadata.get("kind").map(String::as_str) {
-            Some("folder") => {
-                let folder = metadata
-                    .get("path")
-                    .ok_or_else(|| anyhow!("Folder item missing path metadata"))?;
-                path = path_segments(folder);
-            }
-            Some("entry") => {
-                let key = metadata
-                    .get("key")
-                    .ok_or_else(|| anyhow!("Entry item missing key metadata"))?;
-                let entry = resolve_entry_by_name(&entries, key, false)?;
-                copy_primary_entry(&entry)?;
-                record_frecency(&entry.display_name)?;
-            }
-            Some("add") => {
-                run_add_menu(path_prefix(&path).as_deref())?;
-            }
-            Some("edit") => {
-                run_edit_browser(path_prefix(&path).as_deref())?;
-            }
-            Some("back") => {
-                if path.is_empty() {
-                    return Ok(1);
-                }
-                path.pop();
-            }
-            Some("close") => return Ok(0),
-            Some("menu") => {}
-            other => bail!("Unknown menu item kind: {:?}", other),
         }
     }
 }
