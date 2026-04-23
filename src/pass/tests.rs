@@ -1,5 +1,5 @@
 use super::browser::{build_browser_menu_items, build_quick_access_items};
-use super::operations::{otp_command_args, resolve_entry_by_name};
+use super::operations::{otp_command_args, pass_edit_editor, resolve_entry_by_name};
 use super::types::PassEntry;
 use super::types::{BrowserItemKind, BrowserMenuItem};
 use super::utils::{first_secret_line, load_entries, normalize_otp_name, sanitize_entry_name};
@@ -90,7 +90,7 @@ fn tree_browser_root_shows_folder_nodes() {
         otp_path: None,
     }];
 
-    let items = build_browser_menu_items(&entries, &[], true).unwrap();
+    let items = build_browser_menu_items(&entries, &[]).unwrap();
 
     assert!(
         items
@@ -156,4 +156,9 @@ fn resolve_entry_by_name_prefers_exact_otp_match() {
 #[test]
 fn otp_command_uses_plain_pass_otp_invocation() {
     assert_eq!(otp_command_args("paypal.otp"), ["otp", "paypal.otp"]);
+}
+
+#[test]
+fn password_edit_uses_clean_nvim() {
+    assert_eq!(pass_edit_editor(), "nvim --clean");
 }

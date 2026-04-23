@@ -356,6 +356,36 @@ pub(super) fn move_pass_entry(from: &str, to: &str) -> Result<()> {
     run_pass_status(["mv", "-f", from, to])
 }
 
+pub(super) fn pass_edit_editor() -> &'static str {
+    "nvim --clean"
+}
+
+pub(super) fn edit_password_entry(entry: &PassEntry) -> Result<()> {
+    let key = entry
+        .secret_key
+        .as_deref()
+        .ok_or_else(|| anyhow!("Entry '{}' has no password data", entry.display_name))?;
+
+    let status = Command::new("pass")
+        .args(["edit", key])
+        .env("EDITOR", pass_edit_editor())
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .with_context(|| format!("Failed to launch `pass edit` for '{key}'"))?;
+
+    if !status.success() {
+        bail!("`pass edit` failed for '{key}' with status {status}");
+    }
+
+    maybe_notify(
+        "Pass",
+        &format!("Updated password for {}", entry.display_name),
+    );
+    Ok(())
+}
+
 pub(super) fn insert_password(key: &str, password: &str) -> Result<()> {
     maybe_confirm_overwrite(key)?;
 

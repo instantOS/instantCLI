@@ -172,7 +172,6 @@ pub(super) enum BrowserItemKind {
     Entry(String),
     Menu,
     Add,
-    Edit,
     Back,
     Close,
 }

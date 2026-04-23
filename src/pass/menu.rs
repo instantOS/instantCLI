@@ -49,10 +49,7 @@ pub(super) fn interactive_pass_quick_access() -> Result<i32> {
                         interactive_pass_tree_menu()?;
                     }
                     BrowserItemKind::Close => return Ok(0),
-                    BrowserItemKind::Folder(_)
-                    | BrowserItemKind::Add
-                    | BrowserItemKind::Edit
-                    | BrowserItemKind::Back => {}
+                    BrowserItemKind::Folder(_) | BrowserItemKind::Add | BrowserItemKind::Back => {}
                 }
             }
             FzfResult::Cancelled => return Ok(1),
@@ -114,69 +111,8 @@ pub(super) fn interactive_pass_quick_access_server() -> Result<i32> {
 }
 
 pub(super) fn interactive_pass_tree_menu() -> Result<i32> {
-    ensure_core_dependencies()?;
-
-    let store_dir = ensure_password_store_dir()?;
-    let mut path: Vec<String> = Vec::new();
-    let mut cursor = MenuCursor::new();
-
-    loop {
-        let entries = load_entries(&store_dir)?;
-        let browser_items = build_browser_menu_items(&entries, &path, true)?;
-
-        let title = if path.is_empty() {
-            "Pass Menu".to_string()
-        } else {
-            format!("Pass Menu / {}", path.join("/"))
-        };
-
-        let mut builder = FzfWrapper::builder()
-            .header(Header::fancy(&title))
-            .prompt("Select")
-            .args(fzf_mocha_args())
-            .responsive_layout();
-
-        if let Some(index) = cursor.initial_index(&browser_items) {
-            builder = builder.initial_index(index);
-        }
-
-        match builder.select(browser_items.clone())? {
-            FzfResult::Selected(item) => {
-                cursor.update(&item, &browser_items);
-                match item.kind {
-                    BrowserItemKind::Folder(folder) => {
-                        path = path_segments(&folder);
-                    }
-                    BrowserItemKind::Entry(key) => {
-                        let entry = resolve_entry_by_name(&entries, &key, false)?;
-                        copy_primary_entry(&entry)?;
-                        record_frecency(&entry.display_name)?;
-                    }
-                    BrowserItemKind::Add => {
-                        run_add_menu(path_prefix(&path).as_deref())?;
-                    }
-                    BrowserItemKind::Edit => {
-                        run_edit_browser(path_prefix(&path).as_deref())?;
-                    }
-                    BrowserItemKind::Back => {
-                        if path.is_empty() {
-                            return Ok(1);
-                        }
-                        path.pop();
-                    }
-                    BrowserItemKind::Close => return Ok(0),
-                    BrowserItemKind::Menu => {}
-                }
-            }
-            FzfResult::Cancelled => {
-                if path.is_empty() {
-                    return Ok(1);
-                }
-                path.pop();
-            }
-            _ => return Ok(1),
-        }
-    }
+    run_edit_browser(None)?;
+    Ok(0)
 }
 
 pub(super) fn run_add_menu(current_prefix: Option<&str>) -> Result<()> {
@@ -216,12 +152,12 @@ pub(super) fn run_edit_browser(initial_prefix: Option<&str>) -> Result<()> {
     loop {
         let mut entries = load_entries(&store_dir)?;
         sort_entries_by_frecency(&mut entries)?;
-        let browser_items = build_local_browser_items(&entries, &path, false)?;
+        let browser_items = build_browser_menu_items(&entries, &path)?;
 
         let title = if path.is_empty() {
-            "Edit Pass Entry".to_string()
+            "Edit Passwords".to_string()
         } else {
-            format!("Edit Pass Entry / {}", path.join("/"))
+            format!("Edit Passwords / {}", path.join("/"))
         };
 
         let mut builder = FzfWrapper::builder()
@@ -251,7 +187,7 @@ pub(super) fn run_edit_browser(initial_prefix: Option<&str>) -> Result<()> {
                     }
                     BrowserItemKind::Close => return Ok(()),
                     BrowserItemKind::Add => run_add_menu(path_prefix(&path).as_deref())?,
-                    BrowserItemKind::Edit | BrowserItemKind::Menu => {}
+                    BrowserItemKind::Menu => {}
                 }
             }
             FzfResult::Cancelled => {
@@ -310,16 +246,7 @@ pub(super) fn run_edit_action_menu(entry: &PassEntry) -> Result<()> {
                         rename_entry_interactive(&current_entry)?;
                     }
                     EditAction::EditPassword => {
-                        let password = prompt_password_with_confirmation("New password")?;
-                        let key = current_entry
-                            .secret_key
-                            .clone()
-                            .unwrap_or(current_entry.display_name.clone());
-                        insert_password(&key, &password)?;
-                        maybe_notify(
-                            "Pass",
-                            &format!("Updated password for {}", current_entry.display_name),
-                        );
+                        edit_password_entry(&current_entry)?;
                     }
                     EditAction::GeneratePassword => {
                         let key = current_entry
@@ -472,7 +399,7 @@ fn build_edit_action_items(entry: &PassEntry) -> Vec<EditActionItem> {
             ),
             preview: PreviewBuilder::new()
                 .header(NerdFont::Key, "Edit Password")
-                .text("Replace the password entry content.")
+                .text("Open the entry in `pass edit` using `nvim --clean`.")
                 .build(),
             action: EditAction::EditPassword,
         });

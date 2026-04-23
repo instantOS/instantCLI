@@ -9,65 +9,6 @@ use crate::ui::preview::PreviewBuilder;
 
 use super::types::{BrowserItemKind, BrowserMenuItem, EntryTreeNode, PassEntry};
 
-pub(super) fn build_browser_items(
-    entries: &[PassEntry],
-    path: &[String],
-    include_edit: bool,
-) -> Result<Vec<SerializableMenuItem>> {
-    let items = build_browser_menu_items(entries, path, include_edit)?;
-    Ok(items
-        .into_iter()
-        .map(|item| {
-            let mut metadata = HashMap::new();
-            match &item.kind {
-                BrowserItemKind::Folder(folder) => {
-                    metadata.insert("kind".to_string(), "folder".to_string());
-                    metadata.insert("path".to_string(), folder.clone());
-                }
-                BrowserItemKind::Entry(key) => {
-                    metadata.insert("kind".to_string(), "entry".to_string());
-                    metadata.insert("key".to_string(), key.clone());
-                }
-                BrowserItemKind::Menu => {
-                    metadata.insert("kind".to_string(), "menu".to_string());
-                }
-                BrowserItemKind::Add => {
-                    metadata.insert("kind".to_string(), "add".to_string());
-                }
-                BrowserItemKind::Edit => {
-                    metadata.insert("kind".to_string(), "edit".to_string());
-                }
-                BrowserItemKind::Back => {
-                    metadata.insert("kind".to_string(), "back".to_string());
-                }
-                BrowserItemKind::Close => {
-                    metadata.insert("kind".to_string(), "close".to_string());
-                }
-            }
-
-            SerializableMenuItem {
-                key: Some(item.key),
-                display_text: item.display,
-                preview: item.preview,
-                metadata: Some(metadata),
-            }
-        })
-        .collect())
-}
-
-pub(super) fn build_local_browser_items(
-    entries: &[PassEntry],
-    path: &[String],
-    include_add: bool,
-) -> Result<Vec<BrowserMenuItem>> {
-    let mut items = build_browser_menu_items(entries, path, false)?;
-    items.retain(|item| !matches!(item.kind, BrowserItemKind::Edit));
-    if !include_add {
-        items.retain(|item| !matches!(item.kind, BrowserItemKind::Add));
-    }
-    Ok(items)
-}
-
 fn make_add_item(preview_text: &str) -> BrowserMenuItem {
     BrowserMenuItem {
         key: "add".to_string(),
@@ -84,26 +25,14 @@ fn make_menu_item() -> BrowserMenuItem {
     BrowserMenuItem {
         key: "menu".to_string(),
         display: format!(
-            "{} Browse tree menu",
-            format_icon_colored(NerdFont::FolderOpen, colors::SAPPHIRE)
+            "{} Edit Passwords",
+            format_icon_colored(NerdFont::Edit, colors::BLUE)
         ),
         preview: PreviewBuilder::new()
-            .header(NerdFont::FolderOpen, "Browse Pass Tree")
-            .text("Open `ins pass menu` for hierarchical browsing and exploration.")
+            .header(NerdFont::Edit, "Edit Passwords")
+            .text("Open `ins pass menu` for hierarchical password and OTP editing.")
             .build(),
         kind: BrowserItemKind::Menu,
-    }
-}
-
-fn make_edit_item(preview_text: &str) -> BrowserMenuItem {
-    BrowserMenuItem {
-        key: "edit".to_string(),
-        display: format!("{} Edit", format_icon_colored(NerdFont::Edit, colors::BLUE)),
-        preview: PreviewBuilder::new()
-            .header(NerdFont::Edit, "Edit Entries")
-            .text(preview_text)
-            .build(),
-        kind: BrowserItemKind::Edit,
     }
 }
 
@@ -143,9 +72,6 @@ pub(super) fn build_quick_access_menu_items(entries: &[PassEntry]) -> Vec<Serial
                 BrowserItemKind::Add => {
                     metadata.insert("kind".to_string(), "add".to_string());
                 }
-                BrowserItemKind::Edit => {
-                    metadata.insert("kind".to_string(), "edit".to_string());
-                }
                 BrowserItemKind::Back => {
                     metadata.insert("kind".to_string(), "back".to_string());
                 }
@@ -167,7 +93,6 @@ pub(super) fn build_quick_access_menu_items(entries: &[PassEntry]) -> Vec<Serial
 pub(super) fn build_browser_menu_items(
     entries: &[PassEntry],
     path: &[String],
-    include_edit: bool,
 ) -> Result<Vec<BrowserMenuItem>> {
     let tree = build_entry_tree(entries);
     let node = tree_node_for_path(&tree, path).ok_or_else(|| anyhow!("Invalid pass tree path"))?;
@@ -183,11 +108,6 @@ pub(super) fn build_browser_menu_items(
         items.push(make_add_item(
             "Open the add menu for new passwords and OTP entries.",
         ));
-        if include_edit {
-            items.push(make_edit_item(
-                "Browse entries and open the dedicated edit action menu.",
-            ));
-        }
         items.push(BrowserMenuItem {
             key: "close".to_string(),
             display: format!("{} Close", format_back_icon()),
@@ -201,11 +121,6 @@ pub(super) fn build_browser_menu_items(
         items.push(make_add_item(
             "Open the add menu inside the current folder.",
         ));
-        if include_edit {
-            items.push(make_edit_item(
-                "Browse entries below the current folder and open the edit action menu.",
-            ));
-        }
         items.push(BrowserMenuItem {
             key: "back".to_string(),
             display: format!("{} Back", format_back_icon()),
