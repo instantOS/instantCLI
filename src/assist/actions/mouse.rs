@@ -1,5 +1,5 @@
 use crate::assist::{AssistInternalCommand, assist_command_argv};
-use crate::common::compositor::CompositorType;
+use crate::common::compositor::{CompositorType, niri};
 use crate::common::instantwmctl;
 use crate::menu::client::MenuClient;
 use crate::menu::protocol::SliderRequest;
@@ -28,10 +28,11 @@ pub fn run_mouse_speed_slider(initial_value: Option<i64>) -> Result<Option<i64>>
             instantwmctl::run(["mouse", "accel-profile", "flat"])
                 .context("Failed to set mouse accel profile to flat")?;
         }
+        CompositorType::Niri => {}
         _ if compositor.is_x11() => {}
         _ => {
             anyhow::bail!(
-                "Mouse speed adjustment is only supported on Sway, X11, Gnome, and InstantWM. Detected: {}",
+                "Mouse speed adjustment is only supported on Sway, X11, GNOME, InstantWM, and niri. Detected: {}",
                 compositor.name()
             );
         }
@@ -44,6 +45,7 @@ pub fn run_mouse_speed_slider(initial_value: Option<i64>) -> Result<Option<i64>>
         let current_speed = match compositor {
             CompositorType::Sway => get_sway_mouse_speed().unwrap_or(0.0),
             CompositorType::Gnome => get_gnome_mouse_speed().unwrap_or(0.0),
+            CompositorType::Niri => niri::current_mouse_speed().unwrap_or(0.0),
             _ if compositor.is_x11() => get_x11_mouse_speed().unwrap_or(0.0),
             _ => 0.0,
         };
@@ -120,9 +122,12 @@ pub fn set_mouse_speed(value: i64) -> Result<()> {
             instantwmctl::run(["mouse", "speed", "--", speed_arg.as_str()])
                 .context("Failed to set mouse speed via instantwmctl")?;
         }
+        CompositorType::Niri => {
+            niri::set_mouse_speed(speed).context("Failed to set mouse speed via niri")?;
+        }
         _ => {
             anyhow::bail!(
-                "Mouse speed adjustment is only supported on Sway, X11, Gnome, and InstantWM. Detected: {}",
+                "Mouse speed adjustment is only supported on Sway, X11, GNOME, InstantWM, and niri. Detected: {}",
                 compositor.name()
             );
         }

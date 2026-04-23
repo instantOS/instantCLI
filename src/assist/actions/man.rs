@@ -34,6 +34,7 @@ pub fn search_man_pages() -> Result<()> {
     let items: Vec<SerializableMenuItem> = pages
         .into_iter()
         .map(|page| SerializableMenuItem {
+            key: None,
             display_text: page.clone(),
             // Use bat for pretty man page preview with colors and syntax highlighting
             // Falls back to plain man output if bat is unavailable

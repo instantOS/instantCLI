@@ -147,19 +147,31 @@ pub fn add_dotfile(
     path: &str,
     add_all: bool,
     choose: bool,
+    force: bool,
     debug: bool,
 ) -> Result<()> {
     let all_dotfiles = get_all_dotfiles(config, db)?;
     let target_path = resolve_dotfile_path(path)?;
     let home = PathBuf::from(shellexpand::tilde("~").to_string());
 
-    // Handle --choose flag for single files
-    if choose && target_path.is_file() {
-        return add_with_destination_picker(config, db, &target_path);
-    }
-
     // Get tracked dotfiles within the specified path
     let tracked_dotfiles = filter_dotfiles_by_path(&all_dotfiles, &target_path);
+
+    // Handle --choose flag for single files
+    if choose && target_path.is_file() {
+        if tracked_dotfiles.is_empty()
+            && !force
+            && let Some(ignore_file) = crate::dot::insignore::match_home_path(&target_path)?
+        {
+            println!(
+                "{}",
+                crate::dot::insignore::format_skip_message(&target_path, &ignore_file)
+            );
+            return Ok(());
+        }
+
+        return add_with_destination_picker(config, db, &target_path, force);
+    }
 
     let mut stats = DirectoryAddStats::new();
 
@@ -171,13 +183,22 @@ pub fn add_dotfile(
     // Handle untracked files
     if add_all {
         // Scan for untracked files and add them
-        let (_, untracked_files) = scan_and_categorize_files(&target_path, &all_dotfiles);
-        add_untracked_files(&untracked_files, config, db, &mut stats, debug)?;
+        let (_, untracked_files) = scan_and_categorize_files(&target_path, &all_dotfiles, force)?;
+        add_untracked_files(&untracked_files, config, db, &mut stats, force, debug)?;
     } else if target_path.is_file() && tracked_dotfiles.is_empty() {
+        if !force && let Some(ignore_file) = crate::dot::insignore::match_home_path(&target_path)? {
+            println!(
+                "{}",
+                crate::dot::insignore::format_skip_message(&target_path, &ignore_file)
+            );
+            return Ok(());
+        }
+
         // Single untracked file - prompt to add it
-        let repo_path = add_new_file(config, db, &target_path)?;
-        stats.added_count += 1;
-        stats.modified_repos.insert(repo_path);
+        if let Some(repo_path) = add_new_file(config, db, &target_path, force)? {
+            stats.added_count += 1;
+            stats.modified_repos.insert(repo_path);
+        }
     } else if tracked_dotfiles.is_empty() {
         // Directory with no tracked files
         let relative_dir = target_path.strip_prefix(&home).unwrap_or(&target_path);
@@ -207,13 +228,19 @@ fn add_with_destination_picker(
     config: &DotfileConfig,
     _db: &Database,
     target_path: &Path,
+    force: bool,
 ) -> Result<()> {
-    super::alternative::pick_destination_and_add(config, target_path)?;
+    super::alternative::pick_destination_and_add(config, target_path, force)?;
     Ok(())
 }
 
 /// Add a new untracked file and return the repo path
-fn add_new_file(config: &DotfileConfig, db: &Database, full_path: &Path) -> Result<PathBuf> {
+fn add_new_file(
+    config: &DotfileConfig,
+    db: &Database,
+    full_path: &Path,
+    force: bool,
+) -> Result<Option<PathBuf>> {
     use super::alternative::add_to_destination;
     use crate::dot::override_config::DotfileSource;
 
@@ -237,16 +264,19 @@ fn add_new_file(config: &DotfileConfig, db: &Database, full_path: &Path) -> Resu
     };
 
     // Use shared add function
-    add_to_destination(config, db, full_path, &dest)?;
-
-    Ok(repo_base)
+    if add_to_destination(config, db, full_path, &dest, force)? {
+        Ok(Some(repo_base))
+    } else {
+        Ok(None)
+    }
 }
 
 /// Scan directory and categorize files as tracked or untracked
 fn scan_and_categorize_files(
     dir_path: &Path,
     all_dotfiles: &HashMap<PathBuf, Dotfile>,
-) -> (Vec<PathBuf>, Vec<PathBuf>) {
+    force: bool,
+) -> Result<(Vec<PathBuf>, Vec<PathBuf>)> {
     let mut tracked_files = Vec::new();
     let mut untracked_files = Vec::new();
 
@@ -263,13 +293,20 @@ fn scan_and_categorize_files(
 
             if all_dotfiles.contains_key(file_path) {
                 tracked_files.push(file_path.to_path_buf());
+            } else if !force
+                && let Some(ignore_file) = crate::dot::insignore::match_home_path(file_path)?
+            {
+                println!(
+                    "{}",
+                    crate::dot::insignore::format_skip_message(file_path, &ignore_file)
+                );
             } else {
                 untracked_files.push(file_path.to_path_buf());
             }
         }
     }
 
-    (tracked_files, untracked_files)
+    Ok((tracked_files, untracked_files))
 }
 
 /// Update a single tracked dotfile and return whether it was updated or unchanged
@@ -367,6 +404,7 @@ fn add_untracked_files(
     config: &DotfileConfig,
     db: &Database,
     stats: &mut DirectoryAddStats,
+    force: bool,
     _debug: bool,
 ) -> Result<()> {
     if file_paths.is_empty() {
@@ -380,9 +418,10 @@ fn add_untracked_files(
     );
 
     for file_path in file_paths {
-        let repo_path = add_new_file(config, db, file_path)?;
-        stats.added_count += 1;
-        stats.modified_repos.insert(repo_path);
+        if let Some(repo_path) = add_new_file(config, db, file_path, force)? {
+            stats.added_count += 1;
+            stats.modified_repos.insert(repo_path);
+        }
     }
 
     Ok(())

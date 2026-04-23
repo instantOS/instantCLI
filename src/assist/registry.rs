@@ -132,7 +132,7 @@ pub const ASSISTS: &[AssistEntry] = &[
         key: 'p',
         description: "Password Manager: Open password manager",
         icon: NerdFont::ClosedLockWithKey,
-        dependencies: &[&INSTANTPASS],
+        dependencies: &[&PASS, &GPG],
         execute: actions::password::open_password_manager,
     }),
     AssistEntry::Action(AssistAction {

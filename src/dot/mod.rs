@@ -5,6 +5,7 @@ pub mod db;
 pub mod dotfile;
 pub mod dotfilerepo;
 pub mod git;
+pub mod insignore;
 pub mod menu;
 pub mod meta;
 pub mod override_config;
