@@ -638,11 +638,6 @@ impl FzfSelectable for EnhancedSnapshot {
         format!("{date} ({host}){comparison_indicator}")
     }
 
-    fn fzf_key(&self) -> String {
-        // Use the display text as the key since that's what fzf passes to the preview script
-        self.fzf_display_text()
-    }
-
     fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
         build_snapshot_preview(
             &self.snapshot,

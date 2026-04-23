@@ -36,10 +36,6 @@ impl FzfSelectable for RepoActionItem {
         self.display.clone()
     }
 
-    fn fzf_key(&self) -> String {
-        self.display.clone()
-    }
-
     fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
         crate::menu::protocol::FzfPreview::Text(self.preview.clone())
     }

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::SystemTime;
 
-use crate::menu_utils::FzfSelectable;
+use crate::menu_utils::{FzfSelectable, default_fzf_key};
 
 /// Serializable menu item with rich preview support
 ///
@@ -64,7 +64,9 @@ impl FzfSelectable for SerializableMenuItem {
     }
 
     fn fzf_key(&self) -> String {
-        self.key.clone().unwrap_or_else(|| self.fzf_display_text())
+        self.key
+            .clone()
+            .unwrap_or_else(|| default_fzf_key(&self.display_text))
     }
 }
 
@@ -416,6 +418,18 @@ mod tests {
         };
 
         assert_eq!(item.fzf_key(), "pass:add");
+    }
+
+    #[test]
+    fn test_menu_item_fallback_key_strips_ansi() {
+        let item = SerializableMenuItem {
+            key: None,
+            display_text: "\u{1b}[32mAdd\u{1b}[0m".to_string(),
+            preview: FzfPreview::None,
+            metadata: None,
+        };
+
+        assert_eq!(item.fzf_key(), "Add");
     }
 
     #[test]

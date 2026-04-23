@@ -15,27 +15,49 @@ const RESET: &str = "\x1b[0m";
 /// Strip ANSI escape codes from a string for use as a stable key.
 fn strip_ansi_escape_codes(s: &str) -> String {
     let mut result = String::new();
-    let mut chars = s.chars().peekable();
+    let mut chars = s.chars();
 
     while let Some(c) = chars.next() {
-        if c == '\x1b' {
-            // Skip the '[' that starts most ANSI sequences
-            if chars.peek() == Some(&'[') {
-                chars.next();
-            }
-            // Skip until we reach a letter (the end of the escape sequence)
-            while let Some(&next) = chars.peek() {
-                if next.is_ascii_alphabetic() {
-                    break;
-                }
-                chars.next();
-            }
-        } else {
+        if c != '\x1b' {
             result.push(c);
+            continue;
+        }
+
+        match chars.next() {
+            Some('[') => {
+                for next in chars.by_ref() {
+                    if ('@'..='~').contains(&next) {
+                        break;
+                    }
+                }
+            }
+            Some(']') => {
+                let iter = chars.by_ref();
+                while let Some(next) = iter.next() {
+                    match next {
+                        '\x07' => break,
+                        '\x1b' => {
+                            if matches!(iter.next(), Some('\\')) {
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            Some(_) | None => {}
         }
     }
 
     result
+}
+
+/// Default fzf key fallback for display text.
+///
+/// This is intentionally a fallback only. Item types that need stronger
+/// identity than their rendered label should implement `fzf_key()` directly.
+pub fn default_fzf_key(display_text: &str) -> String {
+    strip_ansi_escape_codes(display_text)
 }
 
 /// Trait for types that can be displayed in FZF selection menus.
@@ -64,7 +86,7 @@ pub trait FzfSelectable {
 
     /// Unique key for identifying this item (defaults to display text with ANSI stripped).
     fn fzf_key(&self) -> String {
-        strip_ansi_escape_codes(&self.fzf_display_text())
+        default_fzf_key(&self.fzf_display_text())
     }
 
     /// Optional: provide initial checked state for checklists.
@@ -629,5 +651,23 @@ mod tests {
     #[test]
     fn preview_command_is_stable() {
         assert!(streaming_preview_command().contains("base64 -d"));
+    }
+
+    #[test]
+    fn default_fzf_key_strips_csi_sequences() {
+        let display = "\x1b[32mAdd\x1b[0m";
+        assert_eq!(default_fzf_key(display), "Add");
+    }
+
+    #[test]
+    fn default_fzf_key_strips_osc_sequences() {
+        let display = "\x1b]8;;https://example.com\x1b\\Open\x1b]8;;\x1b\\";
+        assert_eq!(default_fzf_key(display), "Open");
+    }
+
+    #[test]
+    fn default_fzf_key_preserves_plain_text() {
+        let display = "Plain item";
+        assert_eq!(default_fzf_key(display), "Plain item");
     }
 }

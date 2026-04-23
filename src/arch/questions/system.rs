@@ -37,10 +37,6 @@ impl FzfSelectable for MirrorRegionOption {
             ])
             .build()
     }
-
-    fn fzf_key(&self) -> String {
-        self.name.clone()
-    }
 }
 
 #[derive(Clone)]
@@ -55,10 +51,6 @@ impl FzfSelectable for TimezoneOption {
 
     fn fzf_preview(&self) -> FzfPreview {
         FzfPreview::Command(preview_command(PreviewId::Timezone))
-    }
-
-    fn fzf_key(&self) -> String {
-        self.value.clone()
     }
 }
 
@@ -207,10 +199,6 @@ impl FzfSelectable for KernelOption {
 
     fn fzf_preview(&self) -> FzfPreview {
         self.preview()
-    }
-
-    fn fzf_key(&self) -> String {
-        self.label().to_string()
     }
 }
 

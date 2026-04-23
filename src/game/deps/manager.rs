@@ -771,8 +771,4 @@ impl FzfSelectable for InstallPathOption {
     fn fzf_display_text(&self) -> String {
         self.label.clone()
     }
-
-    fn fzf_key(&self) -> String {
-        self.label.clone()
-    }
 }

@@ -87,10 +87,6 @@ impl FzfSelectable for PauseMenuItem {
     fn fzf_preview(&self) -> FzfPreview {
         self.preview()
     }
-
-    fn fzf_key(&self) -> String {
-        self.to_string()
-    }
 }
 
 #[derive(Clone)]
@@ -162,10 +158,6 @@ impl FzfSelectable for FinalReviewItem {
 
     fn fzf_preview(&self) -> FzfPreview {
         FzfPreview::None
-    }
-
-    fn fzf_key(&self) -> String {
-        self.to_string()
     }
 }
 

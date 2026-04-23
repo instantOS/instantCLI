@@ -17,10 +17,6 @@ impl FzfSelectable for RepoSelectionItem {
         self.name.clone()
     }
 
-    fn fzf_key(&self) -> String {
-        self.name.clone()
-    }
-
     fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
         crate::menu::protocol::FzfPreview::Text(self.preview.clone())
     }

@@ -43,10 +43,6 @@ impl FzfSelectable for ExistingAnswersOption {
     fn fzf_preview(&self) -> FzfPreview {
         self.preview.clone()
     }
-
-    fn fzf_key(&self) -> String {
-        self.label.clone()
-    }
 }
 
 fn build_existing_answers_preview(

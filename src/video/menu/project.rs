@@ -96,10 +96,6 @@ impl FzfSelectable for ProjectMenuEntry {
         }
     }
 
-    fn fzf_key(&self) -> String {
-        self.to_string()
-    }
-
     fn fzf_preview(&self) -> FzfPreview {
         match self {
             ProjectMenuEntry::OpenRendered {
@@ -666,10 +662,6 @@ impl FzfSelectable for PostRenderAction {
             ),
             PostRenderAction::Done => format!("{} Back", format_back_icon()),
         }
-    }
-
-    fn fzf_key(&self) -> String {
-        self.to_string()
     }
 
     fn fzf_preview(&self) -> FzfPreview {
