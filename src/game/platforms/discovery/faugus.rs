@@ -11,7 +11,7 @@ use anyhow::Result;
 
 use super::DiscoveredGame;
 use crate::common::TildePath;
-use crate::game::platforms::ludusavi::scan_primary_wine_prefix_saves;
+use crate::game::platforms::ludusavi::collect_primary_wine_prefix_saves;
 use crate::game::utils::path::tilde_display_string;
 use crate::menu::protocol::FzfPreview;
 use crate::ui::nerd_font::NerdFont;
@@ -174,10 +174,7 @@ pub fn discover_faugus_games() -> Result<Vec<FaugusDiscoveredGame>> {
 }
 
 fn scan_prefix(prefix: &Path, prefix_name: &str) -> Vec<FaugusDiscoveredGame> {
-    let saves = match scan_primary_wine_prefix_saves(prefix) {
-        Ok(saves) => saves,
-        Err(_) => return Vec::new(),
-    };
+    let saves = collect_primary_wine_prefix_saves(prefix);
 
     let mut results = Vec::new();
 

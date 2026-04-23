@@ -588,61 +588,14 @@ fn extract_base_path(pattern: &str) -> String {
     result
 }
 
-/// Scan a wine prefix for Ludusavi-compatible save games
-pub fn scan_wine_prefix(prefix: &Path) -> Result<Vec<DiscoveredWineSave>> {
-    let mut results = Vec::new();
-    stream_wine_prefix_games(prefix, |game_saves| {
-        results.extend(game_saves);
-        Ok(())
-    })?;
-
-    results.sort_by(|a, b| {
-        a.game_name
-            .cmp(&b.game_name)
-            .then_with(|| a.save_path.cmp(&b.save_path))
-    });
-    results.dedup_by(|a, b| a.game_name == b.game_name && a.save_path == b.save_path);
-
-    Ok(results)
-}
-
-pub fn stream_wine_prefix_games<F>(prefix: &Path, mut on_game: F) -> Result<()>
-where
-    F: FnMut(Vec<DiscoveredWineSave>) -> Result<()>,
-{
-    let manifest = load_windows_manifest()?;
-    let ctx = WinePrefixContext::new(prefix, None);
-    let mut path_cache = PathExistenceCache::default();
-
-    for entry in manifest {
-        let mut game_results = Vec::new();
-
-        for file in &entry.files {
-            for expanded_path in ctx.expand_paths(entry, file) {
-                for matched_path in path_cache.matching_paths(&expanded_path) {
-                    game_results.push(DiscoveredWineSave::new(
-                        entry.game_name.clone(),
-                        matched_path.to_string_lossy().to_string(),
-                        file.tags.clone(),
-                        file.has_store_user_id,
-                    ));
-                }
-            }
-        }
-
-        if game_results.is_empty() {
-            continue;
-        }
-
-        game_results.sort_by(|a, b| a.save_path.cmp(&b.save_path));
-        game_results.dedup_by(|a, b| a.save_path == b.save_path);
-        on_game(game_results)?;
-    }
-
-    Ok(())
-}
-
-pub fn stream_wine_prefix_games_with_scan_root<F>(
+/// Scan a wine prefix for Ludusavi-compatible save games, streaming results per game.
+///
+/// Each invocation of `on_game` receives all saves discovered for one game entry
+/// from the Ludusavi manifest.
+///
+/// When `scan_root` is `Some`, only scan manifest entries whose install dirs
+/// match paths under that root. Falls back to all entries if no matches are found.
+pub fn stream_wine_prefix_saves<F>(
     prefix: &Path,
     scan_root: Option<&Path>,
     mut on_game: F,
@@ -653,14 +606,19 @@ where
     let manifest = load_windows_manifest()?;
     let ctx = WinePrefixContext::new(prefix, scan_root);
     let mut path_cache = PathExistenceCache::default();
-    let focused_entries: Vec<&WindowsGameEntry> = manifest
-        .iter()
-        .filter(|entry| should_focus_entry(entry, &ctx.base_directories))
-        .collect();
-    let entries: Vec<&WindowsGameEntry> = if focused_entries.is_empty() {
-        manifest.iter().collect()
+
+    let entries: Vec<&WindowsGameEntry> = if let Some(root) = scan_root {
+        let focused: Vec<&WindowsGameEntry> = manifest
+            .iter()
+            .filter(|entry| should_focus_entry(entry, &ctx.base_directories))
+            .collect();
+        if focused.is_empty() {
+            manifest.iter().collect()
+        } else {
+            focused
+        }
     } else {
-        focused_entries
+        manifest.iter().collect()
     };
 
     for entry in entries {
@@ -691,42 +649,42 @@ where
     Ok(())
 }
 
-pub fn scan_primary_wine_prefix_saves(prefix: &Path) -> Result<Vec<DiscoveredWineSave>> {
+/// Collect the primary save per game from a wine prefix into a Vec.
+pub fn collect_primary_wine_prefix_saves(prefix: &Path) -> Vec<DiscoveredWineSave> {
     let mut results = Vec::new();
-    stream_primary_wine_prefix_saves(prefix, |save| {
-        results.push(save);
-        Ok(())
-    })?;
-    Ok(results)
-}
-
-pub fn stream_primary_wine_prefix_saves<F>(prefix: &Path, mut on_save: F) -> Result<()>
-where
-    F: FnMut(DiscoveredWineSave) -> Result<()>,
-{
-    stream_primary_wine_prefix_saves_with_scan_root(prefix, None, |game_saves| on_save(game_saves))
-}
-
-pub fn stream_primary_wine_prefix_saves_with_scan_root<F>(
-    prefix: &Path,
-    scan_root: Option<&Path>,
-    mut on_save: F,
-) -> Result<()>
-where
-    F: FnMut(DiscoveredWineSave) -> Result<()>,
-{
-    stream_wine_prefix_games_with_scan_root(prefix, scan_root, |game_saves| {
-        if let Some(primary_save) = choose_primary_save(game_saves) {
-            on_save(primary_save)?;
+    let _ = stream_wine_prefix_saves(prefix, None, |game_saves| {
+        if let Some(primary) = choose_primary_save(game_saves) {
+            results.push(primary);
         }
         Ok(())
-    })
+    });
+    results
+}
+
+/// Collect all saves from a wine prefix into a sorted, deduplicated Vec.
+pub fn collect_wine_prefix_saves(prefix: &Path) -> Result<Vec<DiscoveredWineSave>> {
+    let mut results = Vec::new();
+    stream_wine_prefix_saves(prefix, None, |game_saves| {
+        results.extend(game_saves);
+        Ok(())
+    })?;
+
+    results.sort_by(|a, b| {
+        a.game_name
+            .cmp(&b.game_name)
+            .then_with(|| a.save_path.cmp(&b.save_path))
+    });
+    results.dedup_by(|a, b| a.game_name == b.game_name && a.save_path == b.save_path);
+
+    Ok(results)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::collections::HashMap;
+
+    use crate::game::platforms::ludusavi::choose_primary_save;
 
     use crate::game::platforms::ludusavi::types::{FileEntry, GameEntry};
 
