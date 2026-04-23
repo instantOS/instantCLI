@@ -67,9 +67,7 @@ pub enum PassCommands {
         path: Option<String>,
     },
 }
-use menu::{
-    interactive_pass_menu, interactive_pass_menu_server, interactive_pass_tree_menu,
-};
+use menu::{interactive_pass_menu, interactive_pass_menu_server, interactive_pass_tree_menu};
 use operations::{
     copy_otp_flow, delete_entry_flow, export_entry_flow, generate_password_entry, insert_otp_entry,
     insert_password_entry,

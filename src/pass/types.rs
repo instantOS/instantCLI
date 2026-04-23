@@ -96,12 +96,6 @@ impl PassEntry {
             builder = builder.line(colors::TEAL, Some(NerdFont::Clock), "OTP support available");
         }
 
-        if self.has_otp() && self.has_secret() {
-            builder = builder
-                .blank()
-                .subtext("Use `ins pass otp <entry>` to copy the OTP code directly.");
-        }
-
         if self.should_offer_export() {
             builder = builder.blank().line(
                 colors::YELLOW,
@@ -127,7 +121,6 @@ impl PassEntry {
 pub(super) enum DeleteMode {
     Secret,
     Otp,
-    Both,
 }
 
 #[derive(Default, Clone)]

@@ -2,9 +2,7 @@ use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, anyhow, bail};
 
-use crate::menu_utils::{ConfirmResult, FzfResult, FzfSelectable, FzfWrapper};
-use crate::ui::nerd_font::NerdFont;
-use crate::ui::preview::PreviewBuilder;
+use crate::menu_utils::{ConfirmResult, FzfResult, FzfWrapper};
 
 use super::types::{DeleteMode, PassEntry};
 use super::utils::*;
@@ -132,7 +130,7 @@ pub(super) fn copy_otp_entry(entry: &PassEntry) -> Result<()> {
     ensure_otp_dependency()?;
 
     let otp_key = resolve_otp_key(entry)?;
-    let output = run_pass_stdout(["otp", &otp_key])?;
+    let output = run_pass_stdout(["otp", "code", &otp_key])?;
     let code = String::from_utf8(output)
         .context("OTP output is not valid UTF-8")?
         .trim()
@@ -189,11 +187,7 @@ pub(super) fn delete_entry_flow(name: Option<String>) -> Result<()> {
     let mode = choose_delete_mode(&entry)?;
     let confirm_message = match mode {
         DeleteMode::Secret => format!("Delete password entry '{}'?", entry.display_name),
-        DeleteMode::Otp => format!("Delete OTP companion for '{}'?", entry.display_name),
-        DeleteMode::Both => format!(
-            "Delete password entry '{}' and its OTP companion?",
-            entry.display_name
-        ),
+        DeleteMode::Otp => format!("Delete OTP entry '{}'?", entry.display_name),
     };
 
     if !matches!(FzfWrapper::confirm(&confirm_message)?, ConfirmResult::Yes) {
@@ -212,14 +206,6 @@ pub(super) fn delete_entry_flow(name: Option<String>) -> Result<()> {
             let key = resolve_otp_key(&entry)?;
             remove_pass_entry(&key)?;
         }
-        DeleteMode::Both => {
-            if let Some(key) = entry.secret_key.as_deref() {
-                remove_pass_entry(key)?;
-            }
-            if let Some(key) = entry.otp_key.as_deref() {
-                remove_pass_entry(key)?;
-            }
-        }
     }
 
     maybe_notify("Pass", &format!("Deleted '{}'", entry.display_name));
@@ -230,58 +216,10 @@ fn choose_delete_mode(entry: &PassEntry) -> Result<DeleteMode> {
     match (entry.has_secret(), entry.has_otp()) {
         (true, false) => Ok(DeleteMode::Secret),
         (false, true) => Ok(DeleteMode::Otp),
-        (true, true) => {
-            #[derive(Clone)]
-            struct DeleteChoice {
-                label: &'static str,
-                mode: DeleteMode,
-                preview: &'static str,
-            }
-
-            impl FzfSelectable for DeleteChoice {
-                fn fzf_display_text(&self) -> String {
-                    self.label.to_string()
-                }
-
-                fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
-                    PreviewBuilder::new()
-                        .header(NerdFont::Trash, self.label)
-                        .text(self.preview)
-                        .build()
-                }
-
-                fn fzf_key(&self) -> String {
-                    self.label.to_string()
-                }
-            }
-
-            let choices = vec![
-                DeleteChoice {
-                    label: "Delete password only",
-                    mode: DeleteMode::Secret,
-                    preview: "Remove the main password entry and keep the OTP companion.",
-                },
-                DeleteChoice {
-                    label: "Delete OTP only",
-                    mode: DeleteMode::Otp,
-                    preview: "Remove only the OTP companion entry.",
-                },
-                DeleteChoice {
-                    label: "Delete both",
-                    mode: DeleteMode::Both,
-                    preview: "Remove both the password entry and the OTP companion.",
-                },
-            ];
-
-            match FzfWrapper::builder()
-                .prompt("Delete mode")
-                .header("Choose what to remove")
-                .select(choices)?
-            {
-                FzfResult::Selected(choice) => Ok(choice.mode),
-                _ => Err(anyhow!("Delete cancelled")),
-            }
-        }
+        (true, true) => bail!(
+            "Entry '{}' unexpectedly contains both password and OTP data",
+            entry.display_name
+        ),
         (false, false) => bail!("Entry '{}' has nothing to delete", entry.display_name),
     }
 }
@@ -336,18 +274,20 @@ pub(super) fn resolve_entry_by_name(
     name: &str,
     otp_required: bool,
 ) -> Result<PassEntry> {
-    let normalized = name.trim().trim_end_matches(".otp");
+    let exact = name.trim();
 
     entries
         .iter()
-        .find(|entry| {
-            let matches_name = entry.display_name == normalized
-                || entry.secret_key.as_deref() == Some(name.trim())
-                || entry.otp_key.as_deref() == Some(name.trim());
-            matches_name && (!otp_required || entry.has_otp())
+        .find(|entry| entry.display_name == exact && (!otp_required || entry.has_otp()))
+        .or_else(|| {
+            entries.iter().find(|entry| {
+                let matches_name = entry.secret_key.as_deref() == Some(exact)
+                    || entry.otp_key.as_deref() == Some(exact);
+                matches_name && (!otp_required || entry.has_otp())
+            })
         })
         .cloned()
-        .ok_or_else(|| anyhow!("No pass entry matched '{}'", name.trim()))
+        .ok_or_else(|| anyhow!("No pass entry matched '{}'", exact))
 }
 
 pub(super) fn rename_entry_interactive(entry: &PassEntry) -> Result<()> {
@@ -367,9 +307,9 @@ pub(super) fn rename_entry_interactive(entry: &PassEntry) -> Result<()> {
 
     if let Some(secret_key) = &entry.secret_key {
         move_pass_entry(secret_key, &new_name)?;
-    }
-    if let Some(otp_key) = &entry.otp_key {
-        move_pass_entry(otp_key, &normalize_otp_name(&new_name))?;
+    } else if let Some(otp_key) = &entry.otp_key {
+        let target = normalize_otp_name(&new_name);
+        move_pass_entry(otp_key, &target)?;
     }
 
     maybe_notify(

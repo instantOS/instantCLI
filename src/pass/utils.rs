@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -280,7 +279,7 @@ pub(super) fn password_store_dir() -> Result<PathBuf> {
 }
 
 pub(super) fn load_entries(store_dir: &Path) -> Result<Vec<PassEntry>> {
-    let mut grouped: BTreeMap<String, PassEntry> = BTreeMap::new();
+    let mut entries = Vec::new();
 
     for entry in WalkDir::new(store_dir).follow_links(false) {
         let entry = match entry {
@@ -305,33 +304,24 @@ pub(super) fn load_entries(store_dir: &Path) -> Result<Vec<PassEntry>> {
             .with_context(|| format!("Failed to strip store prefix from {}", path.display()))?;
         let relative = relative.to_string_lossy().replace('\\', "/");
         let without_ext = relative.strip_suffix(".gpg").unwrap_or(&relative);
+        let key = without_ext.to_string();
+        let is_otp = key.ends_with(".otp");
 
-        let (display_name, is_otp) = match without_ext.strip_suffix(".otp") {
-            Some(base) => (base.to_string(), true),
-            None => (without_ext.to_string(), false),
-        };
-
-        let grouped_entry = grouped
-            .entry(display_name.clone())
-            .or_insert_with(|| PassEntry {
-                display_name,
-                secret_key: None,
-                otp_key: None,
-                secret_path: None,
-                otp_path: None,
-            });
-
-        if is_otp {
-            grouped_entry.otp_key = Some(without_ext.to_string());
-            grouped_entry.otp_path = Some(path.to_path_buf());
-        } else {
-            grouped_entry.secret_key = Some(without_ext.to_string());
-            grouped_entry.secret_path = Some(path.to_path_buf());
-        }
+        entries.push(PassEntry {
+            display_name: key.clone(),
+            secret_key: (!is_otp).then_some(key.clone()),
+            otp_key: is_otp.then_some(key),
+            secret_path: (!is_otp).then_some(path.to_path_buf()),
+            otp_path: is_otp.then_some(path.to_path_buf()),
+        });
     }
 
-    let mut entries: Vec<_> = grouped.into_values().collect();
-    entries.sort_by_key(|entry| entry.display_name.to_lowercase());
+    entries.sort_by(|left, right| {
+        left.display_name
+            .to_lowercase()
+            .cmp(&right.display_name.to_lowercase())
+            .then_with(|| left.display_name.cmp(&right.display_name))
+    });
     Ok(entries)
 }
 

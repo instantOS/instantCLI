@@ -341,14 +341,7 @@ pub(super) fn run_edit_action_menu(entry: &PassEntry) -> Result<()> {
 
     loop {
         let refreshed_entries = load_entries(&ensure_password_store_dir()?)?;
-        let current_entry = resolve_entry_by_name(&refreshed_entries, &entry.display_name, false)
-            .or_else(|_| {
-                resolve_entry_by_name(
-                    &refreshed_entries,
-                    entry.secret_key.as_deref().unwrap_or(&entry.display_name),
-                    false,
-                )
-            });
+        let current_entry = resolve_entry_by_name(&refreshed_entries, &entry.display_name, false);
 
         let current_entry = match current_entry {
             Ok(entry) => entry,
@@ -463,7 +456,7 @@ fn build_add_menu_items() -> Vec<AddMenuItem> {
             ),
             preview: PreviewBuilder::new()
                 .header(NerdFont::Clock, "Add OTP")
-                .text("Create or replace an OTP companion using pass-otp.")
+                .text("Create a standalone OTP entry using pass-otp.")
                 .blank()
                 .bullet("Prompts for a name")
                 .bullet("Accepts only `otpauth://` URIs")
@@ -536,70 +529,53 @@ fn build_edit_action_items(entry: &PassEntry) -> Vec<EditActionItem> {
         ),
         preview: PreviewBuilder::new()
             .header(NerdFont::Edit, "Rename Entry")
-            .text("Rename the password entry and its OTP companion together when present.")
+            .text("Rename the selected pass entry.")
             .build(),
         action: EditAction::Rename,
     });
 
-    items.push(EditActionItem {
-        key: "edit-password",
-        display: format!(
-            "{} {} Password",
-            format_icon_colored(NerdFont::Key, colors::PEACH),
-            if entry.has_secret() { "Edit" } else { "Create" }
-        ),
-        preview: PreviewBuilder::new()
-            .header(
-                NerdFont::Key,
-                if entry.has_secret() {
-                    "Edit Password"
-                } else {
-                    "Create Password"
-                },
-            )
-            .text("Replace or create the password entry content.")
-            .build(),
-        action: EditAction::EditPassword,
-    });
+    if entry.has_secret() {
+        items.push(EditActionItem {
+            key: "edit-password",
+            display: format!(
+                "{} Edit Password",
+                format_icon_colored(NerdFont::Key, colors::PEACH)
+            ),
+            preview: PreviewBuilder::new()
+                .header(NerdFont::Key, "Edit Password")
+                .text("Replace the password entry content.")
+                .build(),
+            action: EditAction::EditPassword,
+        });
 
-    items.push(EditActionItem {
-        key: "generate-password",
-        display: format!(
-            "{} {} Password",
-            format_icon_colored(NerdFont::Refresh, colors::SAPPHIRE),
-            if entry.has_secret() {
-                "Generate"
-            } else {
-                "Generate New"
-            }
-        ),
-        preview: PreviewBuilder::new()
-            .header(NerdFont::Refresh, "Generate Password")
-            .text("Generate a fresh password into the password entry.")
-            .build(),
-        action: EditAction::GeneratePassword,
-    });
+        items.push(EditActionItem {
+            key: "generate-password",
+            display: format!(
+                "{} Generate Password",
+                format_icon_colored(NerdFont::Refresh, colors::SAPPHIRE)
+            ),
+            preview: PreviewBuilder::new()
+                .header(NerdFont::Refresh, "Generate Password")
+                .text("Generate a fresh password into this entry.")
+                .build(),
+            action: EditAction::GeneratePassword,
+        });
+    }
 
-    items.push(EditActionItem {
-        key: "edit-otp",
-        display: format!(
-            "{} {} OTP",
-            format_icon_colored(NerdFont::Clock, colors::TEAL),
-            if entry.has_otp() { "Edit" } else { "Create" }
-        ),
-        preview: PreviewBuilder::new()
-            .header(
-                NerdFont::Clock,
-                if entry.has_otp() {
-                    "Edit OTP"
-                } else {
-                    "Create OTP"
-                },
-            )
-            .text("Replace or create the OTP companion entry.")
-            .build(),
-        action: EditAction::EditOtp,
-    });
+    if entry.has_otp() {
+        items.push(EditActionItem {
+            key: "edit-otp",
+            display: format!(
+                "{} Edit OTP",
+                format_icon_colored(NerdFont::Clock, colors::TEAL)
+            ),
+            preview: PreviewBuilder::new()
+                .header(NerdFont::Clock, "Edit OTP")
+                .text("Replace the stored OTP URI for this entry.")
+                .build(),
+            action: EditAction::EditOtp,
+        });
+    }
 
     items.push(EditActionItem {
         key: "delete",
@@ -609,7 +585,7 @@ fn build_edit_action_items(entry: &PassEntry) -> Vec<EditActionItem> {
         ),
         preview: PreviewBuilder::new()
             .header(NerdFont::Trash, "Delete Entry")
-            .text("Remove the password entry, OTP companion, or both with confirmation.")
+            .text("Remove the selected pass entry with confirmation.")
             .build(),
         action: EditAction::Delete,
     });
