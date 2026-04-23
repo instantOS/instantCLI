@@ -40,14 +40,8 @@ pub(super) fn generate_password_entry_with_prefix(
     let entry_name = resolve_entry_name(name, prefix, "Generated pass entry")?;
     maybe_confirm_overwrite(&entry_name)?;
 
-    let status = Command::new("pass")
-        .args(["generate", "-f", &entry_name, &length.to_string()])
-        .status()
-        .with_context(|| format!("Failed to run `pass generate` for '{entry_name}'"))?;
-
-    if !status.success() {
-        bail!("`pass generate` failed for '{entry_name}'");
-    }
+    let len = length.to_string();
+    run_pass_status(["generate", "-f", &entry_name, &len])?;
 
     maybe_notify(
         "Pass",
@@ -81,14 +75,7 @@ pub(super) fn insert_otp_entry_with_prefix(
         bail!("OTP entries must start with `otpauth://`");
     }
 
-    let status = Command::new("pass")
-        .args(["otp", "insert", "-f", &entry_name, &otp_uri])
-        .status()
-        .with_context(|| format!("Failed to store OTP entry '{entry_name}'"))?;
-
-    if !status.success() {
-        bail!("`pass otp insert` failed for '{entry_name}'");
-    }
+    run_pass_status(["otp", "insert", "-f", &entry_name, &otp_uri])?;
 
     maybe_notify("Pass", &format!("Stored OTP entry for {raw_name}"));
     Ok(())
@@ -300,16 +287,7 @@ fn choose_delete_mode(entry: &PassEntry) -> Result<DeleteMode> {
 }
 
 pub(super) fn remove_pass_entry(key: &str) -> Result<()> {
-    let status = Command::new("pass")
-        .args(["rm", "-f", key])
-        .status()
-        .with_context(|| format!("Failed to delete pass entry '{key}'"))?;
-
-    if !status.success() {
-        bail!("`pass rm` failed for '{key}'");
-    }
-
-    Ok(())
+    run_pass_status(["rm", "-f", key])
 }
 
 pub(super) fn select_entry(
@@ -424,30 +402,14 @@ pub(super) fn upsert_otp_entry_interactive(entry: &PassEntry) -> Result<()> {
         .clone()
         .unwrap_or_else(|| normalize_otp_name(&entry.display_name));
 
-    let status = Command::new("pass")
-        .args(["otp", "insert", "-f", &key, &otp_uri])
-        .status()
-        .with_context(|| format!("Failed to update OTP entry '{key}'"))?;
-
-    if !status.success() {
-        bail!("`pass otp insert` failed for '{key}'");
-    }
+    run_pass_status(["otp", "insert", "-f", &key, &otp_uri])?;
 
     maybe_notify("Pass", &format!("Updated OTP for {}", entry.display_name));
     Ok(())
 }
 
 pub(super) fn move_pass_entry(from: &str, to: &str) -> Result<()> {
-    let status = Command::new("pass")
-        .args(["mv", "-f", from, to])
-        .status()
-        .with_context(|| format!("Failed to rename pass entry '{}' to '{}'", from, to))?;
-
-    if !status.success() {
-        bail!("`pass mv` failed for '{}' -> '{}'", from, to);
-    }
-
-    Ok(())
+    run_pass_status(["mv", "-f", from, to])
 }
 
 pub(super) fn insert_password(key: &str, password: &str) -> Result<()> {

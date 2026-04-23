@@ -133,12 +133,13 @@ pub(super) fn resolve_otp_key(entry: &PassEntry) -> Result<String> {
 }
 
 pub(super) fn first_secret_line(output: &[u8]) -> Option<String> {
-    String::from_utf8(output.to_vec())
+    std::str::from_utf8(output)
         .ok()?
         .lines()
         .next()
-        .map(|line| line.trim_end().to_string())
+        .map(|line| line.trim_end())
         .filter(|line| !line.is_empty())
+        .map(|line| line.to_string())
 }
 
 pub(super) fn should_export_output(entry: &PassEntry, output: &[u8]) -> bool {
@@ -379,22 +380,32 @@ fn frecency_store_path() -> Result<PathBuf> {
     Ok(cache_dir.join("pass_frecency_store.json"))
 }
 
-pub(super) fn run_pass_stdout<const N: usize>(args: [&str; N]) -> Result<Vec<u8>> {
+fn run_pass_output<const N: usize>(args: [&str; N]) -> Result<std::process::Output> {
+    let display_cmd = args.join(" ");
     let output = Command::new("pass")
         .args(args)
         .output()
-        .with_context(|| format!("Failed to run `pass {}`", args.join(" ")))?;
+        .with_context(|| format!("Failed to run `pass {display_cmd}`"))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         if stderr.is_empty() {
-            bail!("`pass {}` failed", args.join(" "));
+            bail!("`pass {display_cmd}` failed");
         } else {
-            bail!("`pass {}` failed: {}", args.join(" "), stderr);
+            bail!("`pass {display_cmd}` failed: {stderr}");
         }
     }
 
-    Ok(output.stdout)
+    Ok(output)
+}
+
+pub(super) fn run_pass_stdout<const N: usize>(args: [&str; N]) -> Result<Vec<u8>> {
+    Ok(run_pass_output(args)?.stdout)
+}
+
+pub(super) fn run_pass_status<const N: usize>(args: [&str; N]) -> Result<()> {
+    run_pass_output(args)?;
+    Ok(())
 }
 
 pub(super) fn copy_secret_to_clipboard(data: &[u8]) -> Result<()> {

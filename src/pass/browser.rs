@@ -65,6 +65,30 @@ pub(super) fn build_local_browser_items(
     Ok(items)
 }
 
+fn make_add_item(preview_text: &str) -> BrowserMenuItem {
+    BrowserMenuItem {
+        key: "add".to_string(),
+        display: format!("{} Add", format_icon_colored(NerdFont::Plus, colors::GREEN)),
+        preview: PreviewBuilder::new()
+            .header(NerdFont::Plus, "Add Entry")
+            .text(preview_text)
+            .build(),
+        kind: BrowserItemKind::Add,
+    }
+}
+
+fn make_edit_item(preview_text: &str) -> BrowserMenuItem {
+    BrowserMenuItem {
+        key: "edit".to_string(),
+        display: format!("{} Edit", format_icon_colored(NerdFont::Edit, colors::BLUE)),
+        preview: PreviewBuilder::new()
+            .header(NerdFont::Edit, "Edit Entries")
+            .text(preview_text)
+            .build(),
+        kind: BrowserItemKind::Edit,
+    }
+}
+
 pub(super) fn build_browser_menu_items(
     entries: &[PassEntry],
     path: &[String],
@@ -78,29 +102,16 @@ pub(super) fn build_browser_menu_items(
         node,
         path_prefix(path).as_deref().unwrap_or(""),
         "",
-        true,
     );
 
     if path.is_empty() {
-        items.push(BrowserMenuItem {
-            key: "add".to_string(),
-            display: format!("{} Add", format_icon_colored(NerdFont::Plus, colors::GREEN)),
-            preview: PreviewBuilder::new()
-                .header(NerdFont::Plus, "Add Entry")
-                .text("Open the add menu for new passwords and OTP entries.")
-                .build(),
-            kind: BrowserItemKind::Add,
-        });
+        items.push(make_add_item(
+            "Open the add menu for new passwords and OTP entries.",
+        ));
         if include_edit {
-            items.push(BrowserMenuItem {
-                key: "edit".to_string(),
-                display: format!("{} Edit", format_icon_colored(NerdFont::Edit, colors::BLUE)),
-                preview: PreviewBuilder::new()
-                    .header(NerdFont::Edit, "Edit Entries")
-                    .text("Browse entries and open the dedicated edit action menu.")
-                    .build(),
-                kind: BrowserItemKind::Edit,
-            });
+            items.push(make_edit_item(
+                "Browse entries and open the dedicated edit action menu.",
+            ));
         }
         items.push(BrowserMenuItem {
             key: "close".to_string(),
@@ -112,25 +123,13 @@ pub(super) fn build_browser_menu_items(
             kind: BrowserItemKind::Close,
         });
     } else {
-        items.push(BrowserMenuItem {
-            key: "add".to_string(),
-            display: format!("{} Add", format_icon_colored(NerdFont::Plus, colors::GREEN)),
-            preview: PreviewBuilder::new()
-                .header(NerdFont::Plus, "Add Entry")
-                .text("Open the add menu inside the current folder.")
-                .build(),
-            kind: BrowserItemKind::Add,
-        });
+        items.push(make_add_item(
+            "Open the add menu inside the current folder.",
+        ));
         if include_edit {
-            items.push(BrowserMenuItem {
-                key: "edit".to_string(),
-                display: format!("{} Edit", format_icon_colored(NerdFont::Edit, colors::BLUE)),
-                preview: PreviewBuilder::new()
-                    .header(NerdFont::Edit, "Edit Entries")
-                    .text("Browse entries below the current folder and open the edit action menu.")
-                    .build(),
-                kind: BrowserItemKind::Edit,
-            });
+            items.push(make_edit_item(
+                "Browse entries below the current folder and open the edit action menu.",
+            ));
         }
         items.push(BrowserMenuItem {
             key: "back".to_string(),
@@ -183,7 +182,6 @@ fn append_tree_browser_items(
     node: &EntryTreeNode,
     base_path: &str,
     prefix: &str,
-    _is_root: bool,
 ) {
     let folder_count = node.folders.len();
     let entry_count = node.entries.len();
@@ -219,7 +217,6 @@ fn append_tree_browser_items(
             child,
             &folder_path,
             &format!("{prefix}{child_prefix}"),
-            false,
         );
     }
 
