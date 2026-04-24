@@ -1,5 +1,7 @@
 use anyhow::{Context, Result, anyhow};
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 const IGNORE_FILE_NAME: &str = ".insignore";
@@ -23,7 +25,7 @@ pub fn match_repo_path(
         return Ok(None);
     }
 
-    let matcher = build_matcher(repo_root, &ignore_file)?;
+    let matcher = build_matcher(repo_root, &ignore_file, true)?;
     let matched = matcher.matched_path_or_any_parents(target_relative_path, is_dir);
 
     if matched.is_ignore() {
@@ -62,7 +64,7 @@ fn match_ignore_chain(root: &Path, path: &Path) -> Result<Option<PathBuf>> {
             continue;
         }
 
-        let matcher = build_matcher(&dir, &ignore_file)?;
+        let matcher = build_matcher(&dir, &ignore_file, dir == root)?;
         let relative_path = path.strip_prefix(&dir).unwrap_or(path);
         let matched = matcher.matched_path_or_any_parents(relative_path, is_dir);
 
@@ -105,15 +107,39 @@ fn ancestor_dirs(root: &Path, path: &Path, is_dir: bool) -> Vec<PathBuf> {
     dirs
 }
 
-fn build_matcher(base_dir: &Path, ignore_file: &Path) -> Result<Gitignore> {
+fn build_matcher(base_dir: &Path, ignore_file: &Path, allow_home_tilde: bool) -> Result<Gitignore> {
     let mut builder = GitignoreBuilder::new(base_dir);
-    if let Some(err) = builder.add(ignore_file) {
-        return Err(anyhow!(err))
-            .with_context(|| format!("Failed to read {}", ignore_file.display()));
+
+    let file = File::open(ignore_file)
+        .with_context(|| format!("Failed to read {}", ignore_file.display()))?;
+    for line in BufReader::new(file).lines() {
+        let line = line.with_context(|| format!("Failed to read {}", ignore_file.display()))?;
+        let normalized = normalize_root_tilde_pattern(&line, allow_home_tilde);
+        builder
+            .add_line(Some(ignore_file.to_path_buf()), &normalized)
+            .map_err(|err| anyhow!(err))
+            .with_context(|| format!("Failed to parse {}", ignore_file.display()))?;
     }
+
     builder
         .build()
         .with_context(|| format!("Failed to parse {}", ignore_file.display()))
+}
+
+fn normalize_root_tilde_pattern(line: &str, allow_home_tilde: bool) -> String {
+    if !allow_home_tilde {
+        return line.to_string();
+    }
+
+    if let Some(rest) = line.strip_prefix("~/") {
+        return format!("/{}", rest);
+    }
+
+    if let Some(rest) = line.strip_prefix("!~/") {
+        return format!("!/{}", rest);
+    }
+
+    line.to_string()
 }
 
 #[cfg(test)]
@@ -168,5 +194,24 @@ mod tests {
         let matched =
             match_repo_path(repo.path(), Path::new(".claude/settings.json"), false).unwrap();
         assert_eq!(matched, Some(repo.path().join(".insignore")));
+    }
+
+    #[test]
+    fn matches_repo_root_insignore_with_tilde_prefix() {
+        let repo = tempdir().unwrap();
+        fs::write(repo.path().join(".insignore"), "~/tester.txt\n").unwrap();
+
+        let matched = match_repo_path(repo.path(), Path::new("tester.txt"), false).unwrap();
+        assert_eq!(matched, Some(repo.path().join(".insignore")));
+    }
+
+    #[test]
+    fn root_home_insignore_whitelist_with_tilde_prefix() {
+        let home = tempdir().unwrap();
+        fs::write(home.path().join(".insignore"), "*.txt\n!~/tester.txt\n").unwrap();
+        fs::write(home.path().join("tester.txt"), "ok").unwrap();
+
+        let matched = match_home_path_at(home.path(), &home.path().join("tester.txt")).unwrap();
+        assert_eq!(matched, None);
     }
 }
