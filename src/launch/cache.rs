@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use fre::args::SortMethod;
 use fre::store::{FrecencyStore, read_store, write_store};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -201,6 +201,11 @@ impl LaunchCache {
             // Load frecency store and resort the items
             let frecency_store = read_store(&frecency_store_path).unwrap_or_default();
             let sorted_items = frecency_store.sorted(fre::args::SortMethod::Frecent);
+            let frecency_rank: HashMap<_, _> = sorted_items
+                .iter()
+                .enumerate()
+                .map(|(index, item)| (item.item.as_str(), index))
+                .collect();
 
             let frequent_keys: std::collections::HashSet<_> =
                 sorted_items.iter().map(|item| &item.item).collect();
@@ -216,14 +221,8 @@ impl LaunchCache {
 
                 match (a_is_frequent, b_is_frequent) {
                     (true, true) => {
-                        let a_index = sorted_items
-                            .iter()
-                            .position(|item| item.item == a_key)
-                            .unwrap_or(0);
-                        let b_index = sorted_items
-                            .iter()
-                            .position(|item| item.item == b_key)
-                            .unwrap_or(0);
+                        let a_index = frecency_rank.get(a_key.as_str()).copied().unwrap_or(0);
+                        let b_index = frecency_rank.get(b_key.as_str()).copied().unwrap_or(0);
                         a_index.cmp(&b_index)
                     }
                     (true, false) => std::cmp::Ordering::Less,
@@ -406,6 +405,11 @@ impl LaunchCache {
     fn sort_by_frecency_launch_items(&mut self, items: &mut [LaunchItem]) -> Result<()> {
         let frecency_store = self.get_frecency_store()?;
         let sorted_items = frecency_store.sorted(SortMethod::Frecent);
+        let frecency_rank: HashMap<_, _> = sorted_items
+            .iter()
+            .enumerate()
+            .map(|(index, item)| (item.item.as_str(), index))
+            .collect();
 
         let frequent_keys: std::collections::HashSet<_> =
             sorted_items.iter().map(|item| &item.item).collect();
@@ -419,14 +423,8 @@ impl LaunchCache {
 
             match (a_is_frequent, b_is_frequent) {
                 (true, true) => {
-                    let a_index = sorted_items
-                        .iter()
-                        .position(|item| item.item == a_key)
-                        .unwrap_or(0);
-                    let b_index = sorted_items
-                        .iter()
-                        .position(|item| item.item == b_key)
-                        .unwrap_or(0);
+                    let a_index = frecency_rank.get(a_key.as_str()).copied().unwrap_or(0);
+                    let b_index = frecency_rank.get(b_key.as_str()).copied().unwrap_or(0);
                     a_index.cmp(&b_index)
                 }
                 (true, false) => std::cmp::Ordering::Less,

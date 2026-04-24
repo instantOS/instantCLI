@@ -38,6 +38,9 @@ pub enum DotCommands {
         /// Choose which repository/subdirectory to add the file to
         #[arg(long)]
         choose: bool,
+        /// Override .insignore rules when adding files
+        #[arg(short, long)]
+        force: bool,
     },
     /// Pull updates for all configured repos and apply changes
     Update {
@@ -554,8 +557,13 @@ pub fn handle_dot_command(
         DotCommands::Apply => {
             super::apply_all(&config, &db)?;
         }
-        DotCommands::Add { path, all, choose } => {
-            super::add_dotfile(&config, &db, path, *all, *choose, debug)?;
+        DotCommands::Add {
+            path,
+            all,
+            choose,
+            force,
+        } => {
+            super::add_dotfile(&config, &db, path, *all, *choose, *force, debug)?;
         }
         DotCommands::Update { no_apply } => {
             super::update_all(&config, debug, &db, !*no_apply)?;

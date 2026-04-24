@@ -41,10 +41,6 @@ impl FzfSelectable for DevMenuEntry {
         }
     }
 
-    fn fzf_key(&self) -> String {
-        self.to_string()
-    }
-
     fn fzf_preview(&self) -> FzfPreview {
         match self {
             DevMenuEntry::Clone => PreviewBuilder::new()

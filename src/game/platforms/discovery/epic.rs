@@ -16,7 +16,7 @@ use serde::Deserialize;
 
 use super::DiscoveredGame;
 use crate::common::TildePath;
-use crate::game::platforms::ludusavi::{DiscoveredWineSave, scan_primary_wine_prefix_saves};
+use crate::game::platforms::ludusavi::{DiscoveredWineSave, collect_primary_wine_prefix_saves};
 use crate::game::utils::path::tilde_display_string;
 use crate::menu::protocol::FzfPreview;
 use crate::ui::nerd_font::NerdFont;
@@ -294,9 +294,7 @@ where
 
     let mut prefix_saves: HashMap<PathBuf, Vec<DiscoveredWineSave>> = HashMap::new();
     for prefix in prefix_to_games.keys() {
-        if let Ok(saves) = scan_primary_wine_prefix_saves(prefix) {
-            prefix_saves.insert(prefix.clone(), saves);
-        }
+        prefix_saves.insert(prefix.clone(), collect_primary_wine_prefix_saves(prefix));
     }
 
     stream_discover_epic_games_into(prefix_to_games, prefix_saves, &mut on_game)
@@ -459,5 +457,67 @@ mod tests {
 
         let prefix = find_wine_prefix(&game_dir);
         assert!(prefix.is_none());
+    }
+
+    #[test]
+    fn emits_unmatched_saves_in_epic_prefix_without_install_metadata() {
+        let prefix = PathBuf::from("/prefix");
+        let install_path = PathBuf::from("/prefix/drive_c/Program Files/Sable");
+        let game = LegendaryInstalled {
+            app_name: "sable-app".to_string(),
+            install_path: install_path.clone(),
+            title: "Sable".to_string(),
+            executable: "Sable.exe".to_string(),
+            launch_parameters: String::new(),
+        };
+
+        let mut prefix_to_games = HashMap::new();
+        prefix_to_games.insert(prefix.clone(), vec![&game]);
+
+        let mut prefix_saves = HashMap::new();
+        prefix_saves.insert(
+            prefix.clone(),
+            vec![
+                DiscoveredWineSave::new(
+                    "Sable".to_string(),
+                    "/prefix/drive_c/users/test/Documents/Sable".to_string(),
+                    vec!["save".to_string()],
+                    false,
+                ),
+                DiscoveredWineSave::new(
+                    "Bonus Epic Save".to_string(),
+                    "/prefix/drive_c/users/test/Documents/Bonus Epic Save".to_string(),
+                    vec!["save".to_string()],
+                    false,
+                ),
+            ],
+        );
+
+        let mut discovered = Vec::new();
+        stream_discover_epic_games_into(prefix_to_games, prefix_saves, |game| {
+            discovered.push(game);
+            Ok(())
+        })
+        .unwrap();
+
+        assert_eq!(discovered.len(), 2);
+
+        let sable = discovered
+            .iter()
+            .find(|game| game.display_name == "Sable")
+            .unwrap();
+        assert_eq!(sable.app_name.as_deref(), Some("sable-app"));
+        assert_eq!(sable.install_path.as_ref(), Some(&install_path));
+
+        let unmatched = discovered
+            .iter()
+            .find(|game| game.display_name == "Bonus Epic Save")
+            .unwrap();
+        assert!(unmatched.app_name.is_none());
+        assert!(unmatched.install_path.is_none());
+        assert_eq!(
+            unmatched.save_path,
+            PathBuf::from("/prefix/drive_c/users/test/Documents/Bonus Epic Save")
+        );
     }
 }

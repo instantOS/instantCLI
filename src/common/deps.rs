@@ -28,15 +28,6 @@ pub static GIT: Dependency = Dependency {
     tests: &[InstallTest::WhichSucceeds("git")],
 };
 
-pub static LIBGIT2: Dependency = Dependency {
-    name: "libgit2",
-    packages: &[
-        PackageDefinition::new("libgit2", PackageManager::Pacman),
-        PackageDefinition::new("libgit2-dev", PackageManager::Apt),
-    ],
-    tests: &[InstallTest::FileExists("/usr/lib/libgit2.so")],
-};
-
 pub static GUM: Dependency = Dependency {
     name: "gum",
     packages: &[PackageDefinition::new("gum", PackageManager::Pacman)],

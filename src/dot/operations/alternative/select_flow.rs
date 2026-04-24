@@ -218,7 +218,7 @@ fn run_source_selection_menu(
             FzfResult::Selected(MenuItem::CreateAlternative) => {
                 cursor.update(&MenuItem::CreateAlternative, &menu);
                 let sources = sources::list_sources_for_target(&config, path)?;
-                match run_create_flow(path, display, &sources)? {
+                match run_create_flow(path, display, &sources, false)? {
                     Flow::Continue => continue,
                     other => return Ok(other),
                 }

@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::Subcommand;
 use std::collections::HashMap;
 
@@ -25,13 +25,11 @@ pub async fn handle_launch_command(list_only: bool) -> Result<i32> {
     // Initialize cache
     let mut cache = LaunchCache::new()?;
 
-    // Get launch items (desktop apps + PATH executables)
-    let launch_items = cache.get_launch_items().await?;
-
     if list_only {
+        let launch_items = cache.get_launch_items().await?;
         handle_list_mode(&launch_items)
     } else {
-        handle_interactive_mode(&mut cache, launch_items).await
+        handle_interactive_mode(&mut cache).await
     }
 }
 
@@ -43,20 +41,16 @@ fn handle_list_mode(launch_items: &[LaunchItem]) -> Result<i32> {
     Ok(0)
 }
 
-async fn handle_interactive_mode(
-    cache: &mut LaunchCache,
-    launch_items: Vec<LaunchItem>,
-) -> Result<i32> {
-    let (item_lookup, menu_items) = prepare_menu_items(&launch_items);
-
-    // Use GUI menu to select application
+async fn handle_interactive_mode(cache: &mut LaunchCache) -> Result<i32> {
     let client = client::MenuClient::new();
+    let server_client = client.clone();
+    let server_ready = tokio::task::spawn_blocking(move || server_client.ensure_server_running());
+    let launch_items = cache.get_launch_items().await?;
+    let menu_items = prepare_menu_items(&launch_items);
 
-    // Show the scratchpad first for immediate feedback
-    client.show()?;
-
-    // Ensure server is running
-    client.ensure_server_running()?;
+    server_ready
+        .await
+        .context("menu server startup task failed")??;
 
     // Show choice menu
     match client.choice("Launch application:".to_string(), menu_items, false) {
@@ -69,13 +63,15 @@ async fn handle_interactive_mode(
                     .as_ref()
                     .ok_or_else(|| anyhow::anyhow!("Selection metadata missing"))?;
 
-                let key = selected_metadata
-                    .get("key")
-                    .ok_or_else(|| anyhow::anyhow!("Selection key missing"))?;
+                let index = selected_metadata
+                    .get("index")
+                    .ok_or_else(|| anyhow::anyhow!("Selection index missing"))?
+                    .parse::<usize>()
+                    .context("Selection index is invalid")?;
 
-                let launch_item = item_lookup
-                    .get(key)
-                    .ok_or_else(|| anyhow::anyhow!("Launch item not found for key: {}", key))?;
+                let launch_item = launch_items
+                    .get(index)
+                    .ok_or_else(|| anyhow::anyhow!("Launch item index out of bounds: {index}"))?;
 
                 // Execute the selected item
                 execute::execute_launch_item(launch_item).await?;
@@ -95,26 +91,21 @@ async fn handle_interactive_mode(
     }
 }
 
-fn prepare_menu_items(
-    launch_items: &[LaunchItem],
-) -> (HashMap<String, LaunchItem>, Vec<SerializableMenuItem>) {
-    let mut item_lookup: HashMap<String, LaunchItem> = HashMap::with_capacity(launch_items.len());
+fn prepare_menu_items(launch_items: &[LaunchItem]) -> Vec<SerializableMenuItem> {
     let mut menu_items = Vec::with_capacity(launch_items.len());
 
-    for item in launch_items {
-        let key = item.metadata_key();
-        item_lookup.insert(key.clone(), item.clone());
-
+    for (index, item) in launch_items.iter().enumerate() {
         let mut metadata = HashMap::new();
         metadata.insert("type".to_string(), item.metadata_type().to_string());
-        metadata.insert("key".to_string(), key);
+        metadata.insert("index".to_string(), index.to_string());
 
         menu_items.push(SerializableMenuItem {
+            key: None,
             display_text: item.to_string(),
             preview: FzfPreview::None,
             metadata: Some(metadata),
         });
     }
 
-    (item_lookup, menu_items)
+    menu_items
 }

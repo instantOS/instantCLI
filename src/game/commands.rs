@@ -194,7 +194,7 @@ fn handle_scan_wine_prefix(prefix: Option<String>, list: bool) -> Result<()> {
     );
 
     // Run scan
-    let results = ludusavi::scan_wine_prefix(&prefix_path)?;
+    let results = ludusavi::collect_wine_prefix_saves(&prefix_path)?;
 
     if results.is_empty() {
         println!(

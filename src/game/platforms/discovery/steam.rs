@@ -15,7 +15,7 @@ use super::DiscoveredGame;
 use crate::common::TildePath;
 use crate::game::operations::steam::{compute_shortcut_app_id, list_steam_shortcuts};
 use crate::game::platforms::ludusavi::{
-    DiscoveredWineSave, choose_primary_save, scan_primary_wine_prefix_saves,
+    DiscoveredWineSave, choose_primary_save, collect_primary_wine_prefix_saves,
 };
 use crate::game::utils::path::tilde_display_string;
 use crate::menu::protocol::FzfPreview;
@@ -178,7 +178,7 @@ where
     F: FnMut(SteamDiscoveredGame) -> Result<()>,
 {
     for candidate in candidates {
-        let saves = scan_primary_wine_prefix_saves(&candidate.prefix_path).unwrap_or_default();
+        let saves = collect_primary_wine_prefix_saves(&candidate.prefix_path);
         let matching_saves: Vec<DiscoveredWineSave> = saves
             .into_iter()
             .filter(|save| {

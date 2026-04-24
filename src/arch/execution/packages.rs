@@ -64,7 +64,6 @@ fn collect_extended_packages(context: &InstallContext) -> Result<Vec<String>> {
         "vim",
         "nano",
         "git",
-        "libgit2",
         "fzf",
         "gum",
         "base-devel",

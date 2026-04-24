@@ -14,6 +14,7 @@ pub use file_picker::{FilePickerResult, FilePickerScope, MenuWrapper};
 pub use fzf::{
     ChecklistAction, ChecklistResult, ConfirmResult, DecodedStreamingMenuItem, FzfResult,
     FzfSelectable, FzfWrapper, Header, MenuItem, StreamingCommand, StreamingMenuItem,
+    default_fzf_key,
 };
 pub use keychord::{KeyChord, KeyChordAction, KeyChordChild, KeyChordNode};
 pub use path_input::{PathInputBuilder, PathInputSelection};

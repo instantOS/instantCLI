@@ -5,7 +5,6 @@ use crate::dot::db::DotFileType;
 use crate::dot::dotfilerepo as repo_mod;
 use crate::dot::get_all_dotfiles;
 use anyhow::{Context, Result};
-use git2::Repository;
 use std::path::PathBuf;
 
 /// Get the dotfile directory name for a dotfile
@@ -53,7 +52,7 @@ pub fn add_repo(config: &mut DotfileConfig, repo: config::Repo, debug: bool) -> 
 
     let mut skip_clone = false;
     if target.exists() {
-        if Repository::open(&target).is_ok() {
+        if crate::common::git::is_git_repo(&target) {
             if debug {
                 eprintln!(
                     "Destination '{}' already exists and is a git repository. Skipping clone.",
@@ -89,14 +88,12 @@ pub fn add_repo(config: &mut DotfileConfig, repo: config::Repo, debug: bool) -> 
         common::progress::finish_spinner_with_success(pb, format!("Cloned {}", clone_url));
     } else if let Some(branch) = repo.branch.as_deref() {
         // If we reused an existing repo, try to ensure the correct branch is checked out
-        if let Ok(mut repo_instance) = Repository::open(&target) {
-            if let Err(e) = git::checkout_branch(&mut repo_instance, branch) {
-                if debug {
-                    eprintln!("Warning: Failed to checkout branch '{}': {}", branch, e);
-                }
-            } else if debug {
-                eprintln!("Checked out branch '{}'", branch);
+        if let Err(e) = git::checkout_branch(&target, branch) {
+            if debug {
+                eprintln!("Warning: Failed to checkout branch '{}': {}", branch, e);
             }
+        } else if debug {
+            eprintln!("Checked out branch '{}'", branch);
         }
     }
 

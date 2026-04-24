@@ -68,10 +68,6 @@ impl FzfSelectable for VideoMenuEntry {
         }
     }
 
-    fn fzf_key(&self) -> String {
-        self.to_string()
-    }
-
     fn fzf_preview(&self) -> FzfPreview {
         match self {
             VideoMenuEntry::NewProject => PreviewBuilder::new()

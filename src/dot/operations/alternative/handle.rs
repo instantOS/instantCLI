@@ -78,7 +78,7 @@ fn handle_file(config: &DotfileConfig, path: &Path, display: &str, action: Actio
         }
         Action::Create => {
             let sources = sources::list_sources_for_target(config, path)?;
-            run_create_flow(path, display, &sources)?;
+            run_create_flow(path, display, &sources, false)?;
             Ok(())
         }
         Action::Select => {

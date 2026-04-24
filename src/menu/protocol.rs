@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::SystemTime;
 
-use crate::menu_utils::FzfSelectable;
+use crate::menu_utils::{FzfSelectable, default_fzf_key};
 
 /// Serializable menu item with rich preview support
 ///
@@ -40,6 +40,9 @@ use crate::menu_utils::FzfSelectable;
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SerializableMenuItem {
+    /// Stable selection key separate from the rendered label
+    #[serde(default)]
+    pub key: Option<String>,
     /// Text that appears in the fzf selection list
     pub display_text: String,
     /// Preview content shown in the preview window
@@ -61,7 +64,9 @@ impl FzfSelectable for SerializableMenuItem {
     }
 
     fn fzf_key(&self) -> String {
-        self.fzf_display_text()
+        self.key
+            .clone()
+            .unwrap_or_else(|| default_fzf_key(&self.display_text))
     }
 }
 
@@ -249,6 +254,7 @@ pub fn plain_choice_items_from_input(input: &str) -> Vec<SerializableMenuItem> {
 impl SerializableMenuItem {
     pub fn plain(display_text: impl Into<String>) -> Self {
         Self {
+            key: None,
             display_text: display_text.into(),
             preview: FzfPreview::None,
             metadata: None,
@@ -310,6 +316,7 @@ mod tests {
     #[test]
     fn test_serializable_menu_item_creation() {
         let item = SerializableMenuItem {
+            key: None,
             display_text: "Test Item".to_string(),
             preview: FzfPreview::Text("Preview content".to_string()),
             metadata: None,
@@ -328,11 +335,13 @@ mod tests {
     fn test_rich_choice_request_serialization() {
         let items = vec![
             SerializableMenuItem {
+                key: None,
                 display_text: "Option 1".to_string(),
                 preview: FzfPreview::Text("First option".to_string()),
                 metadata: None,
             },
             SerializableMenuItem {
+                key: None,
                 display_text: "Option 2".to_string(),
                 preview: FzfPreview::Command("echo 'Second option'".to_string()),
                 metadata: None,
@@ -357,6 +366,7 @@ mod tests {
     #[test]
     fn test_choice_response_serialization() {
         let items = vec![SerializableMenuItem {
+            key: None,
             display_text: "Selected Item".to_string(),
             preview: FzfPreview::None,
             metadata: None,
@@ -379,6 +389,7 @@ mod tests {
         metadata.insert("type".to_string(), "config".to_string());
 
         let item = SerializableMenuItem {
+            key: None,
             display_text: "Config File".to_string(),
             preview: FzfPreview::Command("cat /path/to/file".to_string()),
             metadata: Some(metadata),
@@ -395,6 +406,30 @@ mod tests {
         let metadata = item.metadata.unwrap();
         assert_eq!(metadata.get("file"), Some(&"/path/to/file".to_string()));
         assert_eq!(metadata.get("type"), Some(&"config".to_string()));
+    }
+
+    #[test]
+    fn test_menu_item_prefers_explicit_key() {
+        let item = SerializableMenuItem {
+            key: Some("pass:add".to_string()),
+            display_text: "\u{1b}[32mAdd\u{1b}[0m".to_string(),
+            preview: FzfPreview::None,
+            metadata: None,
+        };
+
+        assert_eq!(item.fzf_key(), "pass:add");
+    }
+
+    #[test]
+    fn test_menu_item_fallback_key_strips_ansi() {
+        let item = SerializableMenuItem {
+            key: None,
+            display_text: "\u{1b}[32mAdd\u{1b}[0m".to_string(),
+            preview: FzfPreview::None,
+            metadata: None,
+        };
+
+        assert_eq!(item.fzf_key(), "Add");
     }
 
     #[test]

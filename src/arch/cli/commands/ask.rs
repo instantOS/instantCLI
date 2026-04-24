@@ -43,10 +43,6 @@ impl FzfSelectable for ExistingAnswersOption {
     fn fzf_preview(&self) -> FzfPreview {
         self.preview.clone()
     }
-
-    fn fzf_key(&self) -> String {
-        self.label.clone()
-    }
 }
 
 fn build_existing_answers_preview(
@@ -150,7 +146,6 @@ fn install_live_iso_dependencies() -> Result<()> {
     let dependencies = &[
         &crate::common::deps::FZF,
         &crate::common::deps::GIT,
-        &crate::common::deps::LIBGIT2,
         &crate::common::deps::GUM,
         &crate::common::deps::CFDISK,
     ];
