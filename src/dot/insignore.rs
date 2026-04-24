@@ -35,6 +35,16 @@ pub fn match_repo_path(
     }
 }
 
+pub fn match_repo_target_path(repo_root: &Path, target_path: &Path) -> Result<Option<PathBuf>> {
+    let home = PathBuf::from(shellexpand::tilde("~").to_string());
+    let relative = match target_path.strip_prefix(&home) {
+        Ok(relative) => relative,
+        Err(_) if target_path.is_absolute() => return Ok(None),
+        Err(_) => target_path,
+    };
+    match_repo_path(repo_root, relative, target_path.is_dir())
+}
+
 pub fn format_skip_message(path: &Path, ignore_file: &Path) -> String {
     let home = PathBuf::from(shellexpand::tilde("~").to_string());
     let display_path = path
@@ -144,7 +154,7 @@ fn normalize_root_tilde_pattern(line: &str, allow_home_tilde: bool) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{match_home_path_at, match_repo_path};
+    use super::{match_home_path_at, match_repo_path, match_repo_target_path};
     use std::fs;
     use std::path::Path;
     use tempfile::tempdir;
@@ -194,6 +204,15 @@ mod tests {
         let matched =
             match_repo_path(repo.path(), Path::new(".claude/settings.json"), false).unwrap();
         assert_eq!(matched, Some(repo.path().join(".insignore")));
+    }
+
+    #[test]
+    fn repo_target_path_outside_home_does_not_match() {
+        let repo = tempdir().unwrap();
+        fs::write(repo.path().join(".insignore"), "~/tester.txt\n").unwrap();
+
+        let matched = match_repo_target_path(repo.path(), Path::new("/tmp/tester.txt")).unwrap();
+        assert_eq!(matched, None);
     }
 
     #[test]

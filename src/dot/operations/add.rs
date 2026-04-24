@@ -248,6 +248,10 @@ fn add_new_file(
     let repo_config = select_repo(config, db)?;
     let dotfile_repo = DotfileRepo::new(config, repo_config.name.clone())?;
 
+    if !force && is_path_ignored_by_repo(config, &repo_config.name, full_path)? {
+        return Ok(None);
+    }
+
     // dots_dir selection
     let chosen_dir = select_dots_dir(&dotfile_repo)?;
 
@@ -269,6 +273,26 @@ fn add_new_file(
     } else {
         Ok(None)
     }
+}
+
+fn is_path_ignored_by_repo(
+    config: &DotfileConfig,
+    repo_name: &str,
+    target_path: &Path,
+) -> Result<bool> {
+    let repo_root = config.repos_path().join(repo_name);
+
+    if let Some(ignore_file) =
+        crate::dot::insignore::match_repo_target_path(&repo_root, target_path)?
+    {
+        println!(
+            "{}",
+            crate::dot::insignore::format_skip_message(target_path, &ignore_file)
+        );
+        return Ok(true);
+    }
+
+    Ok(false)
 }
 
 /// Scan directory and categorize files as tracked or untracked

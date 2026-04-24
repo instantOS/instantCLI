@@ -178,10 +178,6 @@ pub fn add_to_destination(
         );
     }
 
-    let relative = target_path
-        .strip_prefix(sources::home_dir())
-        .unwrap_or(target_path);
-
     if !force {
         if let Some(ignore_file) = crate::dot::insignore::match_home_path(target_path)? {
             println!(
@@ -193,7 +189,7 @@ pub fn add_to_destination(
 
         let repo_root = config.repos_path().join(&dest.repo_name);
         if let Some(ignore_file) =
-            crate::dot::insignore::match_repo_path(&repo_root, relative, false)?
+            crate::dot::insignore::match_repo_target_path(&repo_root, target_path)?
         {
             println!(
                 "{}",
@@ -202,6 +198,10 @@ pub fn add_to_destination(
             return Ok(false);
         }
     }
+
+    let relative = target_path
+        .strip_prefix(sources::home_dir())
+        .unwrap_or(target_path);
 
     let dest_path = dest.source_path.join(relative);
 
