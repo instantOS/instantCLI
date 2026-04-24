@@ -14,7 +14,7 @@ use crate::game::platforms::discovery::{
 };
 use crate::game::platforms::ludusavi::choose_primary_save;
 use crate::menu_utils::StreamingMenuItem;
-use crate::preview::{GameSavePreviewPayload, preview_command_for_game_save};
+use crate::preview::GameSavePreviewPayload;
 use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::prelude::{Level, OutputFormat, emit, get_output_format};
@@ -739,16 +739,19 @@ fn preview_to_text(preview: FzfPreview) -> String {
 }
 
 fn discovered_menu_preview(record: &DiscoveredGameRecord) -> FzfPreview {
-    FzfPreview::Command(preview_command_for_game_save(&GameSavePreviewPayload {
-        name: record.name.clone(),
-        platform: record.platform.clone(),
-        platform_short: record.platform_short.clone(),
-        save_path: record.save_path.clone(),
-        game_path: record.game_path.clone(),
-        prefix_path: record.prefix_path.clone(),
-        existing: record.existing,
-        tracked_name: record.tracked_name.clone(),
-    }))
+    FzfPreview::Command(
+        GameSavePreviewPayload {
+            name: record.name.clone(),
+            platform: record.platform.clone(),
+            platform_short: record.platform_short.clone(),
+            save_path: record.save_path.clone(),
+            game_path: record.game_path.clone(),
+            prefix_path: record.prefix_path.clone(),
+            existing: record.existing,
+            tracked_name: record.tracked_name.clone(),
+        }
+        .preview_command(),
+    )
 }
 
 #[derive(Clone)]

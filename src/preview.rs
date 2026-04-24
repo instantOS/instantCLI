@@ -141,10 +141,12 @@ pub struct GameSavePreviewPayload {
     pub tracked_name: Option<String>,
 }
 
-pub fn preview_command_for_game_save(payload: &GameSavePreviewPayload) -> String {
-    let exe = current_exe_command();
-    let key = serde_json::to_string(payload).unwrap_or_default();
-    format!("{exe} preview --id game-save --key {}", shell_quote(&key))
+impl GameSavePreviewPayload {
+    pub fn preview_command(&self) -> String {
+        let exe = current_exe_command();
+        let key = serde_json::to_string(self).unwrap_or_default();
+        format!("{exe} preview --id game-save --key {}", shell_quote(&key))
+    }
 }
 
 pub fn handle_preview_command(id: PreviewId, key: Option<String>) -> Result<()> {
