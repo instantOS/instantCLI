@@ -1,4 +1,3 @@
-use crate::arch::dualboot::feasibility::{check_disk_dualboot_feasibility, is_dualboot_feasible};
 use crate::arch::engine::{InstallContext, Question, QuestionId, QuestionResult};
 use crate::menu::slide::run_slider;
 use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, SliderConfig};
@@ -130,7 +129,7 @@ impl Question for DualBootPartitionQuestion {
             .find(|d| d.device == *disk_path)
             .context("Selected disk not found")?;
 
-        let feasibility = check_disk_dualboot_feasibility(disk_info);
+        let feasibility = disk_info.check_disk_dualboot_feasibility();
 
         if !feasibility.feasible {
             let reason = feasibility
@@ -142,7 +141,7 @@ impl Question for DualBootPartitionQuestion {
         let shrinkable_partitions: Vec<crate::arch::dualboot::PartitionInfo> = disk_info
             .partitions
             .iter()
-            .filter(|p| is_dualboot_feasible(p))
+            .filter(|p| p.is_dualboot_feasible())
             .cloned()
             .collect();
 

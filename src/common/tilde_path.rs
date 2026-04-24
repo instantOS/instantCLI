@@ -41,6 +41,12 @@ impl TildePath {
 
         Ok(self.0.to_string_lossy().to_string())
     }
+
+    /// Convert to a display string, falling back to absolute path if tilde conversion fails
+    pub fn display_string(&self) -> String {
+        self.to_tilde_string()
+            .unwrap_or_else(|_| self.as_path().to_string_lossy().to_string())
+    }
 }
 
 impl From<TildePath> for PathBuf {

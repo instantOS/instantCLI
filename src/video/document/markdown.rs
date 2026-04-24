@@ -33,7 +33,7 @@ pub fn build_markdown(cues: &[TranscriptCue], metadata: &VideoMetadata) -> Strin
         previous_end = cue.end;
     }
 
-    let front_matter = render_frontmatter(metadata);
+    let front_matter = metadata.render_frontmatter();
 
     if lines.is_empty() {
         front_matter
@@ -61,31 +61,33 @@ fn insert_silence_lines(
     }
 }
 
-pub fn render_frontmatter(metadata: &VideoMetadata) -> String {
-    let timestamp = Utc::now().to_rfc3339();
-    let default_source = yaml_quote(metadata.default_source.as_deref().unwrap_or("a"));
-    let mut source_lines = Vec::new();
-    for source in &metadata.sources {
-        let source_id = yaml_quote(&source.id);
-        let video_source = yaml_quote(&source.source.to_string_lossy());
-        let transcript_source = yaml_quote(&source.transcript.to_string_lossy());
-        let video_hash = yaml_quote(source.hash.as_deref().unwrap_or(""));
-        source_lines.push(format!(
-            "- id: {source_id}\n  hash: {video_hash}\n  name: {name}\n  source: {video_source}\n  transcript: {transcript_source}",
-            name = yaml_quote(source.name.as_deref().unwrap_or("")),
-        ));
-    }
-    if source_lines.is_empty() {
-        return format!(
-            "---\ndefault_source: {default_source}\nsources: []\ngenerated_at: '{timestamp}'\n---"
-        );
-    }
+impl VideoMetadata {
+    pub fn render_frontmatter(&self) -> String {
+        let timestamp = Utc::now().to_rfc3339();
+        let default_source = yaml_quote(self.default_source.as_deref().unwrap_or("a"));
+        let mut source_lines = Vec::new();
+        for source in &self.sources {
+            let source_id = yaml_quote(&source.id);
+            let video_source = yaml_quote(&source.source.to_string_lossy());
+            let transcript_source = yaml_quote(&source.transcript.to_string_lossy());
+            let video_hash = yaml_quote(source.hash.as_deref().unwrap_or(""));
+            source_lines.push(format!(
+                "- id: {source_id}\n  hash: {video_hash}\n  name: {name}\n  source: {video_source}\n  transcript: {transcript_source}",
+                name = yaml_quote(source.name.as_deref().unwrap_or("")),
+            ));
+        }
+        if source_lines.is_empty() {
+            return format!(
+                "---\ndefault_source: {default_source}\nsources: []\ngenerated_at: '{timestamp}'\n---"
+            );
+        }
 
-    let sources_block = source_lines.join("\n");
-    format!(
-        "---\ndefault_source: {default_source}\nsources:\n{sources}\ngenerated_at: '{timestamp}'\n---",
-        sources = sources_block,
-    )
+        let sources_block = source_lines.join("\n");
+        format!(
+            "---\ndefault_source: {default_source}\nsources:\n{sources}\ngenerated_at: '{timestamp}'\n---",
+            sources = sources_block,
+        )
+    }
 }
 
 fn yaml_quote(value: &str) -> String {

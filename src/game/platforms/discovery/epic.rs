@@ -17,7 +17,6 @@ use serde::Deserialize;
 use super::DiscoveredGame;
 use crate::common::TildePath;
 use crate::game::platforms::ludusavi::{DiscoveredWineSave, collect_primary_wine_prefix_saves};
-use crate::game::utils::path::tilde_display_string;
 use crate::menu::protocol::FzfPreview;
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -120,8 +119,8 @@ impl DiscoveredGame for EpicDiscoveredGame {
     }
 
     fn build_preview(&self) -> FzfPreview {
-        let save_display = tilde_display_string(&TildePath::new(self.save_path.clone()));
-        let prefix_display = tilde_display_string(&TildePath::new(self.prefix_path.clone()));
+        let save_display = TildePath::new(self.save_path.clone()).display_string();
+        let prefix_display = TildePath::new(self.prefix_path.clone()).display_string();
         let header_name = self.tracked_name.as_deref().unwrap_or(&self.display_name);
 
         let mut builder = PreviewBuilder::new()
@@ -150,7 +149,7 @@ impl DiscoveredGame for EpicDiscoveredGame {
             .bullet(&save_display);
 
         if let Some(install_path) = &self.install_path {
-            let install_display = tilde_display_string(&TildePath::new(install_path.clone()));
+            let install_display = TildePath::new(install_path.clone()).display_string();
             builder = builder
                 .blank()
                 .text("Install path:")
@@ -158,7 +157,7 @@ impl DiscoveredGame for EpicDiscoveredGame {
         }
 
         if self.install_path.is_some() && self.executable.is_some() {
-            let exe_display = tilde_display_string(&TildePath::new(self.exe_path()));
+            let exe_display = TildePath::new(self.exe_path()).display_string();
             builder = builder.blank().text("Executable:").bullet(&exe_display);
         }
 

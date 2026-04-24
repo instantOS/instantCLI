@@ -2,7 +2,6 @@ use super::add::{AddGameOptions, ResolvedGameDetails};
 use super::add_discovery::{EmulatorPrefillResult, maybe_prefill_from_emulators};
 use crate::game::config::{Game, GameInstallation, InstallationsConfig, InstantGameConfig};
 use crate::game::launch_command::LaunchCommand;
-use crate::game::utils::path::tilde_display_string;
 use anyhow::{Context, Result};
 
 pub(super) struct GameCreationContext {
@@ -113,7 +112,7 @@ impl GameManager {
 
         context.save()?;
 
-        let save_path_display = tilde_display_string(&details.save_path);
+        let save_path_display = details.save_path.display_string();
 
         println!("✓ Game '{}' added successfully!", details.name);
         println!(
@@ -149,7 +148,7 @@ impl GameManager {
 
         context.save()?;
 
-        let path_display = tilde_display_string(&new_path);
+        let path_display = new_path.display_string();
 
         println!("✓ Save path for '{game_name}' relocated successfully!");
         println!("New save path: {}", path_display);

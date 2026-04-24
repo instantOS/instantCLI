@@ -10,7 +10,7 @@ use crate::video::audio::{PreprocessorType, create_preprocessor, parse_preproces
 use crate::video::cli::{AppendArgs, ConvertArgs, TranscribeArgs};
 use crate::video::config::{VideoCachePaths, VideoConfig, VideoDirectories};
 use crate::video::document::frontmatter::split_frontmatter;
-use crate::video::document::markdown::{build_markdown, format_timestamp, render_frontmatter};
+use crate::video::document::markdown::{build_markdown, format_timestamp};
 use crate::video::document::{VideoMetadata, VideoSource, parse_video_document};
 use crate::video::support::transcript::{TranscriptCue, parse_whisper_json};
 use crate::video::support::utils::{canonicalize_existing, compute_file_hash};
@@ -242,7 +242,7 @@ fn build_appended_markdown(
     new_body.push_str(&appended_text);
     new_body.push('\n');
 
-    let front = render_frontmatter(metadata);
+    let front = metadata.render_frontmatter();
     Ok(format!("{front}\n{new_body}"))
 }
 

@@ -10,7 +10,6 @@ use crate::game::games::prompts;
 use crate::game::games::validation::validate_game_manager_initialized;
 use crate::game::games::{AddGameOptions, GameManager};
 use crate::game::launch_command::LaunchCommand;
-use crate::game::utils::path::tilde_display_string;
 use crate::menu::protocol;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
 use crate::ui::nerd_font::NerdFont;
@@ -696,7 +695,7 @@ impl<'a> SetupPreview<'a> {
         info.push(format!(
             "{} Existing save path: {}",
             char::from(NerdFont::Folder),
-            tilde_display_string(&installation.save_path)
+            installation.save_path.display_string()
         ));
 
         if let Some(checkpoint) = installation.nearest_checkpoint.as_deref() {

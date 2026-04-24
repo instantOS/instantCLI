@@ -3,7 +3,7 @@ use super::types::{
     WineRunner,
 };
 
-pub fn to_shell_command(command: &LaunchCommand) -> String {
+pub(super) fn render_to_shell_command(command: &LaunchCommand) -> String {
     let env_assignments = env_assignments(command);
     let raw_command = raw_shell_command(command);
 

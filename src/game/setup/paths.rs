@@ -5,7 +5,6 @@ use std::path::Path;
 use crate::common::TildePath;
 use crate::game::utils::path::{
     is_valid_wine_prefix, is_wine_prefix_path, path_selection_to_tilde, prompt_for_save_path,
-    tilde_display_string,
 };
 use crate::menu::protocol;
 use crate::menu_utils::{
@@ -146,7 +145,7 @@ pub(super) fn prompt_manual_save_path(
     })?;
 
     Ok(tilde_path.map(|tilde| SelectedSavePath {
-        display_path: tilde_display_string(&tilde),
+        display_path: tilde.display_string(),
         snapshot_path: None,
     }))
 }

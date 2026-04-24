@@ -518,7 +518,7 @@ fn diagnose_alignment_failure(
 mod tests {
     use super::*;
     use crate::video::document::parse_video_document;
-    use crate::video::planning::{TimelinePlanItem, plan_timeline};
+    use crate::video::planning::TimelinePlanItem;
     use crate::video::support::transcript::TranscriptCue;
 
     use std::path::Path;
@@ -532,7 +532,7 @@ mod tests {
     fn includes_music_blocks_in_plan() {
         let markdown = "```music\ntrack.mp3\n```\n`a@00:00:00.000-00:00:01.000` line";
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
-        let plan = plan_timeline(&document).unwrap();
+        let plan = document.plan_timeline().unwrap();
 
         assert!(matches!(
             plan.items.first(),
@@ -555,7 +555,7 @@ mod tests {
         );
 
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
-        let plan = plan_timeline(&document).unwrap();
+        let plan = document.plan_timeline().unwrap();
 
         let clips: Vec<_> = plan
             .items
@@ -584,7 +584,7 @@ mod tests {
         );
 
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
-        let plan = plan_timeline(&document).unwrap();
+        let plan = document.plan_timeline().unwrap();
 
         let clips: Vec<_> = plan
             .items
@@ -617,7 +617,7 @@ mod tests {
         );
 
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
-        let plan = plan_timeline(&document).unwrap();
+        let plan = document.plan_timeline().unwrap();
 
         let pauses: Vec<_> = plan
             .items
@@ -639,7 +639,7 @@ mod tests {
     fn aligns_dialogue_segments_with_subtitles() {
         let markdown = "`a@00:00:00.0-00:00:01.2` first\n`a@00:00:01.2-00:00:02.3` second\n";
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
-        let mut plan = plan_timeline(&document).unwrap();
+        let mut plan = document.plan_timeline().unwrap();
 
         let cues = vec![
             TranscriptCue {
@@ -684,7 +684,7 @@ mod tests {
     fn aligns_using_time_overlap_not_text() {
         let markdown = "`a@00:00:00.0-00:00:01.0` hello\n`a@00:00:01.0-00:00:02.0` world\n";
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
-        let mut plan = plan_timeline(&document).unwrap();
+        let mut plan = document.plan_timeline().unwrap();
 
         let cues = vec![
             TranscriptCue {
@@ -731,7 +731,7 @@ mod tests {
     fn padding_never_overlaps_neighbor_cues() {
         let markdown = "`a@00:00:01.0-00:00:02.0` mid\n";
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
-        let mut plan = plan_timeline(&document).unwrap();
+        let mut plan = document.plan_timeline().unwrap();
 
         // Cues are tightly packed with a 20ms gap.
         let cues = vec![
@@ -785,7 +785,7 @@ mod tests {
         // We should error rather than align both clips to identical cue bounds.
         let markdown = "`a@00:00:00.0-00:00:00.5` first\n`a@00:00:00.4-00:00:00.9` second\n";
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
-        let mut plan = plan_timeline(&document).unwrap();
+        let mut plan = document.plan_timeline().unwrap();
 
         let cues = vec![TranscriptCue {
             start: Duration::from_millis(0),
@@ -816,7 +816,7 @@ mod tests {
         );
 
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
-        let mut plan = plan_timeline(&document).unwrap();
+        let mut plan = document.plan_timeline().unwrap();
 
         let cues = vec![
             TranscriptCue {
@@ -912,7 +912,7 @@ mod tests {
     fn redistributes_silence_segments_across_actual_gap() {
         let markdown = "`a@00:00:00.0-00:00:01.2` intro\n`a@00:00:01.2-00:00:03.8` SILENCE\n`a@00:00:03.8-00:00:06.8` SILENCE\n`a@00:00:06.8-00:00:08.0` outro\n";
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
-        let mut plan = plan_timeline(&document).unwrap();
+        let mut plan = document.plan_timeline().unwrap();
 
         let cues = vec![
             TranscriptCue {
@@ -967,7 +967,7 @@ mod tests {
     fn does_not_stretch_silence_when_gap_is_huge() {
         let markdown = "`a@00:00:00.0-00:00:01.0` intro\n`a@00:00:01.0-00:00:02.0` SILENCE\n`a@00:00:02.0-00:00:03.0` SILENCE\n`a@00:00:50.0-00:00:51.0` outro\n";
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
-        let mut plan = plan_timeline(&document).unwrap();
+        let mut plan = document.plan_timeline().unwrap();
 
         let cues = vec![
             TranscriptCue {
@@ -1034,7 +1034,7 @@ mod tests {
         );
 
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
-        let plan = plan_timeline(&document).unwrap();
+        let plan = document.plan_timeline().unwrap();
 
         let clips: Vec<_> = plan
             .items
@@ -1084,7 +1084,7 @@ mod tests {
         );
 
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
-        let plan = plan_timeline(&document).unwrap();
+        let plan = document.plan_timeline().unwrap();
 
         let clips: Vec<_> = plan
             .items

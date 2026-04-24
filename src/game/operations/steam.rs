@@ -39,10 +39,10 @@ impl SteamShortcut {
             tags: Vec::new(),
         }
     }
-}
 
-pub fn compute_shortcut_app_id(shortcut: &SteamShortcut) -> u32 {
-    compute_shortcut_app_id_from_values(&shortcut.exe, &shortcut.app_name)
+    pub fn compute_app_id(&self) -> u32 {
+        compute_shortcut_app_id_from_values(&self.exe, &self.app_name)
+    }
 }
 
 pub fn compute_shortcut_app_id_from_values(exe: &str, app_name: &str) -> u32 {

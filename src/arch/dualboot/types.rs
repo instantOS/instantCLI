@@ -1,5 +1,6 @@
 //! Core data structures for dual boot detection
 
+use colored::Colorize;
 use serde::{Deserialize, Serialize};
 
 /// Format bytes as human-readable size
@@ -24,6 +25,9 @@ pub fn format_size(bytes: u64) -> String {
 
 /// Minimum ESP size for dual boot (260 MB recommended for multi-OS)
 pub const MIN_ESP_SIZE: u64 = 260 * 1024 * 1024;
+
+/// Minimum size for a partition to be considered a valid shrink candidate (2 GB)
+const MIN_SHRINK_CANDIDATE_SIZE: u64 = 2 * 1024 * 1024 * 1024;
 
 /// Information about a physical disk
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -59,6 +63,120 @@ impl DiskInfo {
         self.partitions
             .iter()
             .find(|p| p.is_efi && p.size_bytes >= MIN_ESP_SIZE)
+    }
+
+    /// Check if dual boot is feasible on this disk
+    pub fn check_disk_dualboot_feasibility(&self) -> DualBootFeasibility {
+        let feasible_partitions: Vec<String> = self
+            .partitions
+            .iter()
+            .filter(|p| p.is_dualboot_feasible())
+            .map(|p| p.device.clone())
+            .collect();
+
+        // Check if we have enough unpartitioned space
+        // We check CONTIGUOUS space to ensure we can actually create the partition
+        let free_space_bytes = self.max_contiguous_free_space_bytes;
+        let has_unpartitioned_space = free_space_bytes >= crate::arch::dualboot::MIN_LINUX_SIZE;
+
+        if feasible_partitions.is_empty() {
+            if has_unpartitioned_space {
+                return DualBootFeasibility {
+                    feasible: true,
+                    feasible_partitions: vec![], // No specific partition to resize, but disk is feasible
+                    reason: Some(format!(
+                        "Unpartitioned space available: {}",
+                        format_size(free_space_bytes)
+                    )),
+                };
+            }
+
+            // Check if there are any partitions at all
+            if self.partitions.is_empty() {
+                // If empty partitions AND not enough space (checked above), then disk is too small
+                DualBootFeasibility {
+                    feasible: false,
+                    feasible_partitions: vec![],
+                    reason: Some(format!(
+                        "Disk too small or full (Largest free region: {})",
+                        format_size(self.max_contiguous_free_space_bytes)
+                    )),
+                }
+            } else {
+                // Check if there are shrinkable partitions but not enough space
+                let shrinkable: Vec<_> = self
+                    .partitions
+                    .iter()
+                    .filter(|p| {
+                        !p.is_efi
+                            && p.resize_info
+                                .as_ref()
+                                .map(|r| r.can_shrink)
+                                .unwrap_or(false)
+                    })
+                    .collect();
+
+                // Filter out partitions that are way too small (e.g. < 2GB) to be relevant candidates
+                // This prevents misleading messages like "shrinkable partitions found" when only a tiny /boot exists
+                let valid_candidates: Vec<_> = shrinkable
+                    .iter()
+                    .filter(|p| p.size_bytes >= MIN_SHRINK_CANDIDATE_SIZE)
+                    .collect();
+
+                if valid_candidates.is_empty() {
+                    DualBootFeasibility {
+                        feasible: false,
+                        feasible_partitions: vec![],
+                        reason: Some(
+                            "No suitable partitions found (too small or not shrinkable)"
+                                .to_string(),
+                        ),
+                    }
+                } else {
+                    DualBootFeasibility {
+                        feasible: false,
+                        feasible_partitions: vec![],
+                        reason: Some(format!(
+                            "Shrinkable partitions found, but none have enough free space for Linux (need {})",
+                            format_size(crate::arch::dualboot::MIN_LINUX_SIZE)
+                        )),
+                    }
+                }
+            }
+        } else {
+            DualBootFeasibility {
+                feasible: true,
+                feasible_partitions,
+                reason: None,
+            }
+        }
+    }
+
+    /// Display this disk with its partitions
+    pub fn display_disk(&self) {
+        // Disk header
+        println!(
+            "  {} {} {} ({})",
+            crate::ui::nerd_font::NerdFont::HardDrive
+                .to_string()
+                .bright_cyan(),
+            self.device.bold(),
+            format!("[{}]", self.partition_table).dimmed(),
+            self.size_human().bright_white()
+        );
+        println!("  {}", "─".repeat(60).bright_black());
+
+        if self.partitions.is_empty() {
+            println!(
+                "    {} {}",
+                crate::ui::nerd_font::NerdFont::Bullet.to_string().dimmed(),
+                "No partitions".dimmed()
+            );
+        } else {
+            for partition in &self.partitions {
+                display_partition_row(partition);
+            }
+        }
     }
 }
 
@@ -106,6 +224,45 @@ impl PartitionInfo {
     pub fn size_human(&self) -> String {
         format_size(self.size_bytes)
     }
+
+    /// Check if a partition is feasible for dual boot installation
+    pub fn is_dualboot_feasible(&self) -> bool {
+        // Cannot resize EFI partitions
+        if self.is_efi {
+            return false;
+        }
+
+        if !is_supported_auto_resize_fs(self) {
+            return false;
+        }
+
+        // Must be shrinkable
+        let resize_info = match self.resize_info.as_ref() {
+            Some(info) => info,
+            None => return false,
+        };
+
+        let can_shrink = resize_info.can_shrink;
+
+        if !can_shrink {
+            return false;
+        }
+
+        // Must have enough space
+        let min_existing = match resize_info.min_size_bytes {
+            Some(min) => min,
+            None => return false,
+        };
+
+        self.size_bytes.saturating_sub(min_existing) >= crate::arch::dualboot::MIN_LINUX_SIZE
+    }
+}
+
+fn is_supported_auto_resize_fs(partition: &PartitionInfo) -> bool {
+    matches!(
+        partition.filesystem.as_ref().map(|fs| fs.fs_type.as_str()),
+        Some("ntfs") | Some("ext4") | Some("ext3") | Some("ext2")
+    )
 }
 
 /// Filesystem information
@@ -197,6 +354,127 @@ pub struct DiskAnalysis {
     pub disk: DiskInfo,
     /// Dual boot feasibility for this disk
     pub feasibility: DualBootFeasibility,
+}
+
+/// Display a single partition as a row
+fn display_partition_row(partition: &PartitionInfo) {
+    let name = partition
+        .device
+        .strip_prefix("/dev/")
+        .unwrap_or(&partition.device);
+
+    let fs_type = partition
+        .filesystem
+        .as_ref()
+        .map(|f| f.fs_type.as_str())
+        .unwrap_or("-");
+
+    let type_str = match &partition.partition_type {
+        Some(pt) => format!("{} [{}]", fs_type, pt),
+        None => fs_type.to_string(),
+    };
+
+    let (os_icon, os_text) = if partition.is_efi {
+        (
+            crate::ui::nerd_font::NerdFont::Efi.to_string(),
+            "EFI System Partition".cyan().to_string(),
+        )
+    } else {
+        match &partition.detected_os {
+            Some(os) => {
+                let icon = match os.os_type {
+                    OSType::Windows => crate::ui::nerd_font::NerdFont::Desktop,
+                    OSType::Linux => crate::ui::nerd_font::NerdFont::Terminal,
+                    OSType::MacOS => crate::ui::nerd_font::NerdFont::Desktop,
+                    OSType::Unknown => crate::ui::nerd_font::NerdFont::Question,
+                };
+                let text = match os.os_type {
+                    OSType::Windows => os.name.blue(),
+                    OSType::Linux => os.name.green(),
+                    OSType::MacOS => os.name.magenta(),
+                    OSType::Unknown => os.name.white(),
+                };
+                (icon.to_string(), text.to_string())
+            }
+            None => ("".to_string(), "-".dimmed().to_string()),
+        }
+    };
+
+    let resize_text = match &partition.resize_info {
+        Some(info) if partition.is_efi => {
+            let reason = info
+                .reason
+                .as_ref()
+                .cloned()
+                .unwrap_or_else(|| "Reuse for dual boot".to_string());
+            format!(
+                "{} {}",
+                crate::ui::nerd_font::NerdFont::Check.to_string().green(),
+                reason.green()
+            )
+        }
+        Some(info) if info.can_shrink => {
+            if let Some(min) = info.min_size_human() {
+                format!(
+                    "{} min: {}",
+                    crate::ui::nerd_font::NerdFont::Check.to_string().green(),
+                    min
+                )
+            } else {
+                format!(
+                    "{} shrinkable",
+                    crate::ui::nerd_font::NerdFont::Check.to_string().green()
+                )
+            }
+        }
+        Some(info) => {
+            let reason = info
+                .reason
+                .as_ref()
+                .cloned()
+                .unwrap_or_else(|| "Not shrinkable".to_string());
+            format!(
+                "{} {}",
+                crate::ui::nerd_font::NerdFont::Cross.to_string().red(),
+                reason.dimmed()
+            )
+        }
+        None => "-".dimmed().to_string(),
+    };
+
+    println!(
+        "    {} {:<14} {:>10}  {:<12}  {} {}",
+        crate::ui::nerd_font::NerdFont::Bullet.to_string().dimmed(),
+        name,
+        partition.size_human().bright_white(),
+        type_str.cyan(),
+        os_icon,
+        os_text
+    );
+
+    if let Some(info) = &partition.resize_info {
+        if info.can_shrink || info.reason.is_some() {
+            println!(
+                "      {} {}",
+                crate::ui::nerd_font::NerdFont::ArrowSubItem
+                    .to_string()
+                    .dimmed(),
+                resize_text
+            );
+        }
+
+        if !info.prerequisites.is_empty() {
+            for prereq in &info.prerequisites {
+                println!(
+                    "        {} {}",
+                    crate::ui::nerd_font::NerdFont::ArrowPointer
+                        .to_string()
+                        .dimmed(),
+                    prereq.yellow()
+                );
+            }
+        }
+    }
 }
 
 #[cfg(test)]

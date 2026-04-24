@@ -1,5 +1,4 @@
 use crate::game::config::{InstallationsConfig, InstantGameConfig, PathContentKind};
-use crate::game::utils::path::tilde_display_string;
 use crate::game::utils::save_files::{
     format_file_size, format_system_time_for_display, get_save_directory_info,
 };
@@ -111,7 +110,7 @@ fn collect_game_details(
         .find(|inst| inst.game_name.0 == game_name);
 
     let installation_details = installation.map(|install| {
-        let path_display = tilde_display_string(&install.save_path);
+        let path_display = install.save_path.display_string();
 
         match get_save_directory_info(install.save_path.as_path()) {
             Ok(info) => InstallationDetails {

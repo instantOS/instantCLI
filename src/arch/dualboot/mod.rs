@@ -1,6 +1,5 @@
 // New modular structure
 pub mod detection;
-pub mod feasibility;
 pub mod os_detection;
 pub mod parsing;
 pub mod resize;
@@ -18,9 +17,7 @@ pub use detection::{analyze_all_disks, detect_disks};
 pub use display::display_disks;
 
 // From types module
-pub use types::{
-    DiskInfo, DualBootFeasibility, OSType, PartitionInfo, PartitionTableType, format_size,
-};
+pub use types::{DiskInfo, DualBootFeasibility, PartitionInfo, PartitionTableType, format_size};
 
 // From verification module
 pub use verification::{ResizeStatus, ResizeVerifier};

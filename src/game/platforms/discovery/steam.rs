@@ -13,11 +13,10 @@ use regex::Regex;
 
 use super::DiscoveredGame;
 use crate::common::TildePath;
-use crate::game::operations::steam::{compute_shortcut_app_id, list_steam_shortcuts};
+use crate::game::operations::steam::list_steam_shortcuts;
 use crate::game::platforms::ludusavi::{
     DiscoveredWineSave, choose_primary_save, collect_primary_wine_prefix_saves,
 };
-use crate::game::utils::path::tilde_display_string;
 use crate::menu::protocol::FzfPreview;
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -99,8 +98,8 @@ impl DiscoveredGame for SteamDiscoveredGame {
     }
 
     fn build_preview(&self) -> FzfPreview {
-        let prefix_display = tilde_display_string(&TildePath::new(self.prefix_path.clone()));
-        let save_display = tilde_display_string(&TildePath::new(self.save_path.clone()));
+        let prefix_display = TildePath::new(self.prefix_path.clone()).display_string();
+        let save_display = TildePath::new(self.save_path.clone()).display_string();
         let header_name = self.tracked_name.as_deref().unwrap_or(&self.display_name);
 
         let mut builder = PreviewBuilder::new()
@@ -367,7 +366,7 @@ fn collect_shortcut_names() -> Result<HashMap<u32, String>> {
     let shortcuts = list_steam_shortcuts()?;
     let mut names = HashMap::new();
     for shortcut in shortcuts {
-        let app_id = compute_shortcut_app_id(&shortcut);
+        let app_id = shortcut.compute_app_id();
         names.entry(app_id).or_insert(shortcut.app_name);
     }
     Ok(names)

@@ -127,7 +127,7 @@ pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
 fn handle_scan_wine_prefix(prefix: Option<String>, list: bool) -> Result<()> {
     use crate::common::TildePath;
     use crate::game::platforms::ludusavi;
-    use crate::game::utils::path::{is_valid_wine_prefix, tilde_display_string};
+    use crate::game::utils::path::is_valid_wine_prefix;
     use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header};
     use crate::ui::catppuccin::{colors, format_icon_colored, fzf_mocha_args};
     use crate::ui::nerd_font::NerdFont;
@@ -189,7 +189,7 @@ fn handle_scan_wine_prefix(prefix: Option<String>, list: bool) -> Result<()> {
     println!(
         "{} Scanning: {} ({})",
         char::from(NerdFont::Search),
-        tilde_display_string(&TildePath::new(prefix_path.clone())),
+        TildePath::new(prefix_path.clone()).display_string(),
         status
     );
 

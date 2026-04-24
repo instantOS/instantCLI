@@ -107,41 +107,38 @@ impl DesktopLoader {
     }
 }
 
-/// Execute a desktop application
-pub fn execute_desktop_app(details: &DesktopAppDetails) -> Result<()> {
-    if details.no_display {
-        return Err(anyhow::anyhow!("Application is marked as not displayable"));
+impl DesktopAppDetails {
+    /// Execute a desktop application
+    pub fn execute(&self) -> Result<()> {
+        if self.no_display {
+            return Err(anyhow::anyhow!("Application is marked as not displayable"));
+        }
+
+        let exec_cmd = expand_exec_field_codes(&self.exec)?;
+
+        let parts: Vec<&str> = exec_cmd.split_whitespace().collect();
+        if parts.is_empty() {
+            return Err(anyhow::anyhow!("Empty Exec command"));
+        }
+
+        let mut cmd = std::process::Command::new(parts[0]);
+
+        for arg in &parts[1..] {
+            cmd.arg(arg);
+        }
+
+        if self.terminal {
+            crate::common::terminal::wrap_with_terminal(&mut cmd)?;
+        }
+
+        cmd.stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .stdin(std::process::Stdio::null())
+            .spawn()
+            .map_err(|e| anyhow::anyhow!("Failed to launch desktop app: {}", e))?;
+
+        Ok(())
     }
-
-    // Parse and expand field codes in Exec string
-    let exec_cmd = expand_exec_field_codes(&details.exec)?;
-
-    // Split into command and arguments
-    let parts: Vec<&str> = exec_cmd.split_whitespace().collect();
-    if parts.is_empty() {
-        return Err(anyhow::anyhow!("Empty Exec command"));
-    }
-
-    let mut cmd = std::process::Command::new(parts[0]);
-
-    // Add remaining arguments
-    for arg in &parts[1..] {
-        cmd.arg(arg);
-    }
-
-    // Handle terminal execution
-    if details.terminal {
-        wrap_with_terminal(&mut cmd)?;
-    }
-
-    // Execute in background
-    cmd.stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .stdin(std::process::Stdio::null())
-        .spawn()
-        .map_err(|e| anyhow::anyhow!("Failed to launch desktop app: {}", e))?;
-
-    Ok(())
 }
 
 /// Expand field codes in Exec string
@@ -173,9 +170,4 @@ fn expand_exec_field_codes(exec: &str) -> Result<String> {
     expanded = expanded.trim().to_string();
 
     Ok(expanded)
-}
-
-/// Wrap command with terminal
-fn wrap_with_terminal(cmd: &mut std::process::Command) -> Result<()> {
-    crate::common::terminal::wrap_with_terminal(cmd)
 }

@@ -2,7 +2,6 @@ use anyhow::{Context, Result, anyhow};
 use std::path::{Path, PathBuf};
 
 use crate::common::TildePath;
-use crate::game::utils::path::tilde_display_string;
 
 /// Represents how a path will be used so that error messages can be contextualized.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,7 +65,7 @@ pub fn ensure_safe_path(path: &Path, usage: PathUsage) -> Result<()> {
                 .map(|canonical| blocked.matches(canonical))
                 .unwrap_or(false)
         {
-            let display_path = tilde_display_string(&TildePath::new(normalized.clone()));
+            let display_path = TildePath::new(normalized.clone()).display_string();
             return Err(anyhow!(
                 "The {} path '{}' is not allowed because it resolves to {}.",
                 usage.context(),

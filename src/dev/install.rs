@@ -68,47 +68,48 @@ impl PackageRepo {
     }
 }
 
-pub fn build_and_install_package(package: &Package, debug: bool) -> Result<()> {
-    if debug {
-        let message = format!(
-            "{} Building package: {}",
-            char::from(NerdFont::Bug),
-            package.name
+impl Package {
+    pub fn build_and_install(&self, debug: bool) -> Result<()> {
+        if debug {
+            let message = format!(
+                "{} Building package: {}",
+                char::from(NerdFont::Bug),
+                self.name
+            );
+            emit(Level::Debug, "dev.install.build.start", &message, None);
+        }
+
+        let build_message = format!(
+            "{} Building and installing {}... (This may be interactive)",
+            char::from(NerdFont::Info),
+            self.name
         );
-        emit(Level::Debug, "dev.install.build.start", &message, None);
+        emit(
+            Level::Info,
+            "dev.install.build.install",
+            &build_message,
+            None,
+        );
+
+        cmd!("makepkg", "-si")
+            .dir(&self.path)
+            .run()
+            .context("Failed to build and install package")?;
+
+        let success_message = format!(
+            "{} Successfully installed {}",
+            char::from(NerdFont::Check),
+            self.name
+        );
+        emit(
+            Level::Success,
+            "dev.install.success",
+            &success_message,
+            None,
+        );
+
+        Ok(())
     }
-
-    let build_message = format!(
-        "{} Building and installing {}... (This may be interactive)",
-        char::from(NerdFont::Info),
-        package.name
-    );
-    emit(
-        Level::Info,
-        "dev.install.build.install",
-        &build_message,
-        None,
-    );
-
-    // Build and install package (interactive - no spinner)
-    cmd!("makepkg", "-si")
-        .dir(&package.path)
-        .run()
-        .context("Failed to build and install package")?;
-
-    let success_message = format!(
-        "{} Successfully installed {}",
-        char::from(NerdFont::Check),
-        package.name
-    );
-    emit(
-        Level::Success,
-        "dev.install.success",
-        &success_message,
-        None,
-    );
-
-    Ok(())
 }
 
 pub async fn handle_install(debug: bool) -> Result<()> {
@@ -191,7 +192,7 @@ pub async fn handle_install(debug: bool) -> Result<()> {
     }
 
     // Build and install package
-    build_and_install_package(&selected_package, debug)?;
+    selected_package.build_and_install(debug)?;
 
     Ok(())
 }

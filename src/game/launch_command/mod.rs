@@ -27,7 +27,7 @@ impl LaunchCommand {
     }
 
     pub fn to_shell_command(&self) -> String {
-        render::to_shell_command(self)
+        render::render_to_shell_command(self)
     }
 }
 

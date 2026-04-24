@@ -3,7 +3,6 @@
 //! This module provides functionality to detect existing operating systems,
 //! partition layouts, and resize feasibility for dual boot configurations.
 
-use crate::arch::dualboot::feasibility;
 use crate::arch::dualboot::os_detection::detect_os_from_info;
 use crate::arch::dualboot::parsing;
 use crate::arch::dualboot::types::format_size;
@@ -119,7 +118,7 @@ pub fn analyze_all_disks() -> Result<Vec<DiskAnalysis>> {
     let results = disks
         .into_iter()
         .map(|disk| {
-            let feasibility = feasibility::check_disk_dualboot_feasibility(&disk);
+            let feasibility = disk.check_disk_dualboot_feasibility();
             DiskAnalysis { disk, feasibility }
         })
         .collect();

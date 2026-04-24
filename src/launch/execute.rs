@@ -9,7 +9,7 @@ pub async fn execute_launch_item(item: &LaunchItem) -> Result<()> {
             // For desktop apps, we need to load details first
             let mut loader = crate::launch::desktop::DesktopLoader::new();
             let details = loader.get_desktop_details(desktop_id).await?;
-            crate::launch::desktop::execute_desktop_app(&details)?;
+            details.execute()?;
         }
         LaunchItem::PathExecutable(name) => {
             // For path executables, execute directly

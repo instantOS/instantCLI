@@ -7,7 +7,6 @@ use sudo::RunningAs;
 use crate::menu_utils::FzfWrapper;
 use crate::ui::prelude::*;
 
-use super::sources;
 use super::store::{
     BoolSettingKey, IntSettingKey, OptionalStringSettingKey, SettingsStore, StringSettingKey,
 };
@@ -61,7 +60,7 @@ impl SettingsContext {
     }
 
     pub fn bool(&self, key: BoolSettingKey) -> bool {
-        if let Some(source) = sources::source_for(&key) {
+        if let Some(source) = key.source() {
             match source.current() {
                 Ok(value) => value,
                 Err(err) => {
@@ -86,7 +85,7 @@ impl SettingsContext {
     pub fn set_bool(&mut self, key: BoolSettingKey, value: bool) {
         // If this key has an external source, apply to the external system
         // and do NOT persist to settings.toml (external system is source of truth)
-        if let Some(source) = sources::source_for(&key) {
+        if let Some(source) = key.source() {
             if let Err(err) = source.apply(value) {
                 emit(
                     Level::Warn,
@@ -111,7 +110,7 @@ impl SettingsContext {
     }
 
     pub fn string(&self, key: StringSettingKey) -> String {
-        if let Some(source) = sources::string_source_for(&key) {
+        if let Some(source) = key.source() {
             match source.current() {
                 Ok(value) => value,
                 Err(err) => {
@@ -136,7 +135,7 @@ impl SettingsContext {
     pub fn set_string(&mut self, key: StringSettingKey, value: &str) {
         // If this key has an external source, apply to the external system
         // and do NOT persist to settings.toml (external system is source of truth)
-        if let Some(source) = sources::string_source_for(&key) {
+        if let Some(source) = key.source() {
             if let Err(err) = source.apply(value) {
                 emit(
                     Level::Warn,
@@ -198,7 +197,7 @@ impl SettingsContext {
     /// Refresh and return the current value from an external source.
     /// Does NOT write to the store - external systems are the source of truth.
     pub fn refresh_bool_source(&mut self, key: BoolSettingKey) -> Result<bool> {
-        if let Some(source) = sources::source_for(&key) {
+        if let Some(source) = key.source() {
             match source.current() {
                 Ok(value) => Ok(value),
                 Err(err) => {
@@ -223,7 +222,7 @@ impl SettingsContext {
     /// Refresh and return the current value from an external source.
     /// Does NOT write to the store - external systems are the source of truth.
     pub fn refresh_string_source(&mut self, key: StringSettingKey) -> Result<String> {
-        if let Some(source) = sources::string_source_for(&key) {
+        if let Some(source) = key.source() {
             match source.current() {
                 Ok(value) => Ok(value),
                 Err(err) => {

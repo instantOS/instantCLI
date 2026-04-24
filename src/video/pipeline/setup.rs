@@ -274,7 +274,7 @@ async fn check_and_emit_account_type(client: &Client, api_key: &str) {
     );
     match auphonic::get_user_info(client, api_key).await {
         Ok(user_info) => {
-            if auphonic::is_free_account(&user_info) {
+            if user_info.is_free_account() {
                 emit(
                     Level::Warn,
                     "video.setup.auphonic",
