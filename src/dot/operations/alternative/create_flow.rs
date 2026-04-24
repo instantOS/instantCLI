@@ -37,10 +37,47 @@ pub(crate) fn run_create_flow(
     force: bool,
 ) -> Result<Flow> {
     let mut cursor = MenuCursor::new();
+    let mut warned_ignored_repos = HashSet::new();
 
     loop {
         let config = DotfileConfig::load(None)?;
-        let destinations = get_destinations(&config);
+        let destinations: Vec<DotfileSource> = get_destinations(&config)
+            .into_iter()
+            .filter(|dest| {
+                if force {
+                    return true;
+                }
+
+                let repo_root = config.repos_path().join(&dest.repo_name);
+                match crate::dot::insignore::match_repo_target_path(&repo_root, path) {
+                    Ok(Some(ignore_file)) => {
+                        if warned_ignored_repos.insert(dest.repo_name.clone()) {
+                            println!(
+                                "{}",
+                                crate::dot::insignore::format_repo_skip_message(
+                                    &dest.repo_name,
+                                    path,
+                                    &ignore_file
+                                )
+                            );
+                        }
+                        false
+                    }
+                    Ok(None) => true,
+                    Err(err) => {
+                        if warned_ignored_repos.insert(dest.repo_name.clone()) {
+                            eprintln!(
+                                "{} Failed to evaluate .insignore for repository '{}': {}",
+                                char::from(NerdFont::Warning).to_string().yellow(),
+                                dest.repo_name,
+                                err
+                            );
+                        }
+                        false
+                    }
+                }
+            })
+            .collect();
 
         // Build menu
         let mut menu: Vec<CreateMenuItem> = destinations

@@ -60,6 +60,22 @@ pub fn format_skip_message(path: &Path, ignore_file: &Path) -> String {
     )
 }
 
+pub fn format_repo_skip_message(repo_name: &str, path: &Path, ignore_file: &Path) -> String {
+    let home = PathBuf::from(shellexpand::tilde("~").to_string());
+    let display_path = path
+        .strip_prefix(&home)
+        .map(|p| format!("~/{}", p.display()))
+        .unwrap_or_else(|_| path.display().to_string());
+
+    format!(
+        "{} Skipping repository '{}' for {} (ignored by {})",
+        char::from(crate::ui::nerd_font::NerdFont::ArrowRight),
+        repo_name,
+        display_path,
+        ignore_file.display()
+    )
+}
+
 fn match_ignore_chain(root: &Path, path: &Path) -> Result<Option<PathBuf>> {
     if !path.starts_with(root) {
         return Ok(None);

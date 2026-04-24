@@ -38,17 +38,9 @@ impl DirectoryAddStats {
 }
 
 /// Prompt the user to select one of the configured repositories
-fn select_repo(config: &DotfileConfig, db: &Database) -> Result<config::Repo> {
+fn select_repo(config: &DotfileConfig, db: &Database, target_path: &Path) -> Result<config::Repo> {
     if config.repos.is_empty() {
         return Err(anyhow::anyhow!("No repositories configured"));
-    }
-
-    if config.repos.len() == 1 {
-        let repo = &config.repos[0];
-        if !repo.read_only {
-            return Ok(repo.clone());
-        }
-        // If the only repo is read-only, fall through to filtering logic which will return error
     }
 
     let items: Vec<RepoMenuItem> = config
@@ -63,7 +55,30 @@ fn select_repo(config: &DotfileConfig, db: &Database) -> Result<config::Repo> {
                 );
                 false
             } else {
-                true
+                let repo_root = config.repos_path().join(&r.name);
+                match crate::dot::insignore::match_repo_target_path(&repo_root, target_path) {
+                    Ok(Some(ignore_file)) => {
+                        println!(
+                            "{}",
+                            crate::dot::insignore::format_repo_skip_message(
+                                &r.name,
+                                target_path,
+                                &ignore_file
+                            )
+                        );
+                        false
+                    }
+                    Ok(None) => true,
+                    Err(err) => {
+                        eprintln!(
+                            "{} Failed to evaluate .insignore for repository '{}': {}",
+                            char::from(NerdFont::Warning).to_string().yellow(),
+                            r.name,
+                            err
+                        );
+                        false
+                    }
+                }
             }
         })
         .map(|repo| RepoMenuItem {
@@ -73,7 +88,9 @@ fn select_repo(config: &DotfileConfig, db: &Database) -> Result<config::Repo> {
         .collect();
 
     if items.is_empty() {
-        return Err(anyhow::anyhow!("No writable repositories configured"));
+        return Err(anyhow::anyhow!(
+            "No writable repositories available for this path"
+        ));
     }
 
     match FzfWrapper::builder()
@@ -245,7 +262,7 @@ fn add_new_file(
     use crate::dot::override_config::DotfileSource;
 
     // Repository selection
-    let repo_config = select_repo(config, db)?;
+    let repo_config = select_repo(config, db, full_path)?;
     let dotfile_repo = DotfileRepo::new(config, repo_config.name.clone())?;
 
     if !force && is_path_ignored_by_repo(config, &repo_config.name, full_path)? {
