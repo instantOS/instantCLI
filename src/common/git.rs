@@ -63,6 +63,20 @@ fn remote_exists(repo_path: &Path, remote: &str) -> Result<bool> {
     Ok(exists)
 }
 
+fn list_remotes(repo_path: &Path) -> Result<Vec<String>> {
+    let (ok, remotes) = run_git_status(repo_path, &["remote"])?;
+    if !ok {
+        return Ok(Vec::new());
+    }
+
+    Ok(remotes
+        .lines()
+        .map(str::trim)
+        .filter(|remote| !remote.is_empty())
+        .map(ToOwned::to_owned)
+        .collect())
+}
+
 fn remote_for_branch(repo_path: &Path, branch: &str) -> Result<Option<String>> {
     if let Some(remote) = branch_upstream_remote(repo_path, branch)? {
         if remote_exists(repo_path, &remote)? {
@@ -182,6 +196,30 @@ pub fn checkout_branch(repo_path: &Path, branch: &str) -> Result<()> {
 fn has_upstream(repo_path: &Path) -> Result<bool> {
     let (has_upstream, _) = run_git_status(repo_path, &["rev-parse", "--abbrev-ref", "@{u}"])?;
     Ok(has_upstream)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DefaultPushReadiness {
+    Ready,
+    NoRemote,
+    NoUpstream { branch: String },
+}
+
+pub fn default_push_readiness(repo_path: &Path) -> Result<DefaultPushReadiness> {
+    if list_remotes(repo_path)?.is_empty() {
+        return Ok(DefaultPushReadiness::NoRemote);
+    }
+
+    let push_default =
+        git_config_value(repo_path, "push.default")?.unwrap_or_else(|| "simple".to_string());
+
+    if matches!(push_default.as_str(), "simple" | "upstream") && !has_upstream(repo_path)? {
+        return Ok(DefaultPushReadiness::NoUpstream {
+            branch: current_branch(repo_path)?,
+        });
+    }
+
+    Ok(DefaultPushReadiness::Ready)
 }
 
 fn ahead_behind(repo_path: &Path) -> Result<Option<(usize, usize)>> {
@@ -798,6 +836,86 @@ mod tests {
         assert!(!clone.join("ignored.log").exists());
         assert!(!clone.join("untracked.txt").exists());
         assert_eq!(fs::read_to_string(clone.join("tracked.txt"))?, "tracked");
+        Ok(())
+    }
+
+    #[test]
+    fn default_push_readiness_reports_no_remote_for_local_repo() -> Result<()> {
+        let temp = TempDir::new()?;
+        let repo = temp.path().join("repo");
+
+        init_repo_with_commit(&repo)?;
+
+        assert_eq!(
+            default_push_readiness(&repo)?,
+            DefaultPushReadiness::NoRemote
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn default_push_readiness_reports_no_upstream_for_simple_push() -> Result<()> {
+        let temp = TempDir::new()?;
+        let remote = temp.path().join("remote");
+        let work = temp.path().join("work");
+
+        fs::create_dir_all(&remote)?;
+        let output = Command::new("git")
+            .args(["init", "--bare"])
+            .arg(&remote)
+            .output()
+            .context("Failed to init bare remote")?;
+        if !output.status.success() {
+            anyhow::bail!(
+                "Failed to init bare remote: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+        }
+
+        init_repo_with_commit(&work)?;
+        git(
+            &work,
+            &["remote", "add", "origin", remote.to_str().unwrap()],
+        )?;
+        git(&work, &["branch", "-M", "main"])?;
+
+        assert_eq!(
+            default_push_readiness(&work)?,
+            DefaultPushReadiness::NoUpstream {
+                branch: "main".to_string()
+            }
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn default_push_readiness_allows_current_push_without_upstream() -> Result<()> {
+        let temp = TempDir::new()?;
+        let remote = temp.path().join("remote");
+        let work = temp.path().join("work");
+
+        fs::create_dir_all(&remote)?;
+        let output = Command::new("git")
+            .args(["init", "--bare"])
+            .arg(&remote)
+            .output()
+            .context("Failed to init bare remote")?;
+        if !output.status.success() {
+            anyhow::bail!(
+                "Failed to init bare remote: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+        }
+
+        init_repo_with_commit(&work)?;
+        git(
+            &work,
+            &["remote", "add", "origin", remote.to_str().unwrap()],
+        )?;
+        git(&work, &["branch", "-M", "main"])?;
+        git(&work, &["config", "push.default", "current"])?;
+
+        assert_eq!(default_push_readiness(&work)?, DefaultPushReadiness::Ready);
         Ok(())
     }
 
