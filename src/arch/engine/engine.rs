@@ -309,7 +309,7 @@ impl QuestionEngine {
                     // Check for fatal provider errors before asking
                     if let Some(error_msg) = self.questions[idx].fatal_error_message(&self.context)
                     {
-                        self.show_fatal_error_and_exit(&error_msg)?;
+                        self.show_fatal_error_and_exit(&error_msg);
                     }
 
                     loop {
@@ -359,13 +359,12 @@ impl QuestionEngine {
     }
 
     /// Show a fatal error message and exit the installer
-    fn show_fatal_error_and_exit(&self, message: &str) -> Result<()> {
+    fn show_fatal_error_and_exit(&self, message: &str) -> ! {
         let full_message = format!(
             "{} Fatal Error\n\n{}\n\nThe installation cannot continue.",
             NerdFont::CrossCircle,
             message
         );
-        // Show fatal error dialog
         let _ = FzfWrapper::message(&full_message);
         std::process::exit(1);
     }
