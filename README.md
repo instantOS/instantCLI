@@ -3,29 +3,18 @@
 [![License: GPL v2](https://img.shields.io/badge/License-GPL%20v2-blue.svg)](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html)
 [![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=flat&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 
-A powerful, Rust-based command-line tool for managing dotfiles, game saves,
-system diagnostics, and instantOS configurations. InstantCLI provides a
-decentralized approach to dotfile management that respects user modifications
-while enabling easy theme and configuration switching.
+# DOCS LIVE AT [instantos.io/docs/ins](https://instantos.io/docs/ins.html)
+
+A powerful, Rust-based command-line tool for managing dotfiles,
+system diagnostics, WM keychords, game saves and much more.
 
 ## Features
 
-### **Dotfile Management**
-- **Multi-repository support** with priority-based overlaying
-- **Smart modification detection** using hashes to protect user changes
-- **Subdirectory management** for organizing different configuration sets like themes
-
-### **Game Save Management**
-- Centralized game save backup and restore
-- Support for popular free cloud storage services
-- Automatic save location detection
-
-### **Application Launcher**
-- Launch desktop applications
-- Fuzzy finding
-- Frecency (Higher ranking for frequently and recently used apps)
-- Based on reusing Terminal windows using scratchpads
-
+- dotfile management
+- system diagnostics
+- WM keychord management
+- game save management
+- video editing (yes, I know it's random)
 
 ## Installation
 
@@ -83,30 +72,6 @@ sudo pacman -Sy git fzf restic sqlite --needed
 
 ```bash
 sudo apt update; sudo apt install -y git fzf restic sqlite3 pkg-config libssl-dev libgit2-dev libsqlite3-dev
-```
-
-## Dotfile Management
-
-### Dotfile Structure
-
-`ins` expects dotfile repositories to have a specific structure:
-
-```
-your-dotfiles-repo/
-├── instantdots.toml          # Repository metadata
-├── dots/                     # Main dotfiles directory
-│   ├── .config/
-│   │   ├── kitty/
-│   │   │   └── kitty.conf
-│   │   └── nvim/
-│   │       └── init.vim
-│   └── .bashrc
-├── mytheme/                   # Optional: theme-specific configs
-│   └── .config/
-│       └── kitty/
-│           └── theme.conf
-└── myothertheme/              # Optional: theme-specific configs
-    └── ...
 ```
 
 ## Development
