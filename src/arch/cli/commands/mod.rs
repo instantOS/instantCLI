@@ -64,12 +64,12 @@ pub async fn handle_arch_command(command: ArchCommands, debug: bool) -> Result<(
 
 fn build_questions() -> Vec<Box<dyn Question>> {
     use crate::arch::questions::{
-        BooleanQuestion, DiskQuestion, DualBootEspWarning, DualBootPartitionQuestion,
-        DualBootSizeQuestion, EncryptionPasswordQuestion, EspPartitionValidator, HostnameQuestion,
-        KernelQuestion, KeymapQuestion, LocaleQuestion, MirrorRegionQuestion,
-        PartitionSelectorQuestion, PartitioningMethodQuestion, PasswordQuestion,
-        ResizeInstructionsQuestion, RunCfdiskQuestion, TimezoneQuestion, UsernameQuestion,
-        VirtualBoxWarning, WeakPasswordWarning,
+        BooleanQuestion, DesktopEnvironmentQuestion, DiskQuestion, DualBootEspWarning,
+        DualBootPartitionQuestion, DualBootSizeQuestion, EncryptionPasswordQuestion,
+        EspPartitionValidator, HostnameQuestion, KernelQuestion, KeymapQuestion, LocaleQuestion,
+        MirrorRegionQuestion, PartitionSelectorQuestion, PartitioningMethodQuestion,
+        PasswordQuestion, ResizeInstructionsQuestion, RunCfdiskQuestion, TimezoneQuestion,
+        UsernameQuestion, VirtualBoxWarning, WeakPasswordWarning,
     };
 
     vec![
@@ -144,6 +144,7 @@ fn build_questions() -> Vec<Box<dyn Question>> {
         Box::new(TimezoneQuestion),
         Box::new(LocaleQuestion),
         Box::new(KernelQuestion),
+        Box::new(DesktopEnvironmentQuestion),
         Box::new(
             BooleanQuestion::new(
                 crate::arch::engine::QuestionId::UsePlymouth,
@@ -160,6 +161,10 @@ fn build_questions() -> Vec<Box<dyn Question>> {
                 crate::ui::nerd_font::NerdFont::User,
             )
             .optional()
+            .should_ask(|context| {
+                crate::arch::config::DesktopEnvironment::from_context(context)
+                    .requires_display_manager()
+            })
             .dynamic_default(|context| {
                 context.get_answer_bool(crate::arch::engine::QuestionId::UseEncryption)
             }),

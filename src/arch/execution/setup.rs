@@ -168,6 +168,7 @@ fn enable_services(executor: &dyn CommandRunner, context: &InstallContext) -> Re
     println!("Enabling services...");
 
     let mut services = vec!["NetworkManager", "sshd"];
+    let desktop = crate::arch::config::DesktopEnvironment::from_context(context);
 
     // Enable VM-specific services
     if let Some(vm_type) = &context.system_info.vm_type {
@@ -205,8 +206,12 @@ fn enable_services(executor: &dyn CommandRunner, context: &InstallContext) -> Re
         }
     }
 
-    if !other_dm_enabled && !context.get_answer_bool(QuestionId::MinimalMode) {
+    if !other_dm_enabled
+        && !context.get_answer_bool(QuestionId::MinimalMode)
+        && desktop.requires_display_manager()
+    {
         services.push("lightdm");
+        configure_lightdm_session(context, executor)?;
 
         // Handle Autologin
         let enable_autologin = context.get_answer_bool(QuestionId::Autologin);
@@ -214,8 +219,12 @@ fn enable_services(executor: &dyn CommandRunner, context: &InstallContext) -> Re
         if enable_autologin {
             configure_lightdm_autologin(context, executor)?;
         }
-    } else {
+    } else if other_dm_enabled {
         println!("Skipping lightdm setup because another display manager is enabled.");
+    } else if context.get_answer_bool(QuestionId::MinimalMode) {
+        println!("Skipping lightdm setup because minimal mode is enabled.");
+    } else {
+        println!("Skipping lightdm setup because no graphical desktop was selected.");
     }
 
     for service in services {
@@ -293,6 +302,44 @@ fn update_os_release(executor: &dyn CommandRunner) -> Result<()> {
     Ok(())
 }
 
+fn configure_lightdm_session(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
+    let desktop = crate::arch::config::DesktopEnvironment::from_context(context);
+    let Some(session_name) = desktop.session_name() else {
+        return Ok(());
+    };
+
+    println!("Configuring LightDM default session to {}...", session_name);
+
+    if executor.dry_run() {
+        println!(
+            "[DRY RUN] Set LightDM user-session and autologin-session to {}",
+            session_name
+        );
+        return Ok(());
+    }
+
+    let config_path = "/etc/lightdm/lightdm.conf";
+    if !std::path::Path::new(config_path).exists() {
+        println!(
+            "Warning: {} not found, cannot configure LightDM defaults",
+            config_path
+        );
+        return Ok(());
+    }
+
+    let content = std::fs::read_to_string(config_path)?;
+    let new_content = update_lightdm_conf_session(&content, session_name);
+
+    if content != new_content {
+        std::fs::write(config_path, new_content)?;
+        println!("Updated lightdm.conf with default session settings");
+    } else {
+        println!("lightdm.conf already configured for the selected session");
+    }
+
+    Ok(())
+}
+
 fn configure_lightdm_autologin(
     context: &InstallContext,
     executor: &dyn CommandRunner,
@@ -302,9 +349,17 @@ fn configure_lightdm_autologin(
     let username = context
         .get_answer(&QuestionId::Username)
         .context("Username not set for autologin")?;
+    let session_name =
+        crate::arch::config::DesktopEnvironment::from_context(context).session_name();
 
     if executor.dry_run() {
         println!("[DRY RUN] Enable autologin for user: {}", username);
+        if let Some(session_name) = session_name {
+            println!(
+                "[DRY RUN] Set LightDM autologin-session to {}",
+                session_name
+            );
+        }
         return Ok(());
     }
 
@@ -317,9 +372,8 @@ fn configure_lightdm_autologin(
         return Ok(());
     }
 
-    // Enable autologin-user
     let content = std::fs::read_to_string(config_path)?;
-    let new_content = update_lightdm_conf(&content, username);
+    let new_content = update_lightdm_conf_autologin(&content, username, session_name);
 
     if content != new_content {
         std::fs::write(config_path, new_content)?;
@@ -331,7 +385,30 @@ fn configure_lightdm_autologin(
     Ok(())
 }
 
-fn update_lightdm_conf(content: &str, username: &str) -> String {
+fn update_lightdm_conf_session(content: &str, session_name: &str) -> String {
+    let mut new_lines = Vec::new();
+
+    for line in content.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("user-session=") || trimmed.starts_with("#user-session=") {
+            new_lines.push(format!("user-session={}", session_name));
+        } else if trimmed.starts_with("autologin-session=")
+            || trimmed.starts_with("#autologin-session=")
+        {
+            new_lines.push(format!("autologin-session={}", session_name));
+        } else {
+            new_lines.push(line.to_string());
+        }
+    }
+
+    new_lines.join("\n")
+}
+
+fn update_lightdm_conf_autologin(
+    content: &str,
+    username: &str,
+    session_name: Option<&str>,
+) -> String {
     let mut new_lines = Vec::new();
 
     for line in content.lines() {
@@ -345,6 +422,11 @@ fn update_lightdm_conf(content: &str, username: &str) -> String {
             || trimmed.starts_with("#autologin-user-timeout=")
         {
             new_lines.push("autologin-user-timeout=0".to_string());
+        } else if let Some(session_name) = session_name
+            && (trimmed.starts_with("autologin-session=")
+                || trimmed.starts_with("#autologin-session="))
+        {
+            new_lines.push(format!("autologin-session={}", session_name));
         } else {
             new_lines.push(line.to_string());
         }
@@ -395,22 +477,41 @@ mod tests {
 #autologin-guest=false
 #autologin-user=
 #autologin-user-timeout=0
+#autologin-session=
 "#;
         let expected = r#"
 [Seat:*]
 #autologin-guest=false
 autologin-user=testuser
 autologin-user-timeout=0
+autologin-session=sway
 "#;
-        let result = update_lightdm_conf(input, "testuser");
+        let result = update_lightdm_conf_autologin(input, "testuser", Some("sway"));
         assert_eq!(result.trim(), expected.trim());
     }
 
     #[test]
     fn test_update_lightdm_conf_already_set() {
-        let input = "autologin-user=olduser\nautologin-user-timeout=5";
-        let expected = "autologin-user=newuser\nautologin-user-timeout=0";
-        let result = update_lightdm_conf(input, "newuser");
+        let input = "autologin-user=olduser\nautologin-user-timeout=5\nautologin-session=hyprland";
+        let expected =
+            "autologin-user=newuser\nautologin-user-timeout=0\nautologin-session=instantwm";
+        let result = update_lightdm_conf_autologin(input, "newuser", Some("instantwm"));
         assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_update_lightdm_conf_session() {
+        let input = r#"
+[Seat:*]
+#user-session=default
+#autologin-session=
+"#;
+        let expected = r#"
+[Seat:*]
+user-session=niri
+autologin-session=niri
+"#;
+        let result = update_lightdm_conf_session(input, "niri");
+        assert_eq!(result.trim(), expected.trim());
     }
 }

@@ -1,4 +1,5 @@
 use crate::arch::annotations::AnnotatedValue;
+use crate::arch::config::DesktopEnvironment;
 use crate::arch::engine::{DataKey, InstallContext, Question, QuestionId, QuestionResult};
 use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper};
 use crate::preview::{PreviewId, preview_command};
@@ -199,6 +200,127 @@ impl FzfSelectable for KernelOption {
 
     fn fzf_preview(&self) -> FzfPreview {
         self.preview()
+    }
+}
+
+fn add_desktop_environment_disclaimer(builder: PreviewBuilder) -> PreviewBuilder {
+    builder
+        .blank()
+        .separator()
+        .blank()
+        .subtext(
+            "These desktop environments are not mutually exclusive and can be installed next to each other at any time.",
+        )
+}
+
+fn desktop_environment_preview(environment: DesktopEnvironment) -> FzfPreview {
+    let builder = match environment {
+        DesktopEnvironment::Sway => PreviewBuilder::new()
+            .header(NerdFont::Desktop, "Sway")
+            .subtext("Keyboard-driven wlroots compositor with an i3-like workflow.")
+            .blank()
+            .line(colors::TEAL, None, "Good fit for")
+            .bullets([
+                "Stable tiling Wayland setups",
+                "Users who want predictable, scriptable behavior",
+            ]),
+        DesktopEnvironment::Niri => PreviewBuilder::new()
+            .header(NerdFont::Desktop, "niri")
+            .subtext("Scrollable-tiling Wayland compositor with a column-based workflow.")
+            .blank()
+            .line(colors::TEAL, None, "Good fit for")
+            .bullets([
+                "Large or multiple monitors",
+                "Users who want dynamic workspaces without manual layout juggling",
+            ]),
+        DesktopEnvironment::InstantWM => PreviewBuilder::new()
+            .header(NerdFont::Desktop, "instantWM")
+            .subtext("The instantOS compositor/window-manager stack.")
+            .blank()
+            .line(colors::YELLOW, None, "Status")
+            .bullet("instantWM is in the middle of a rewrite and currently very experimental.")
+            .blank()
+            .line(colors::TEAL, None, "Good fit for")
+            .bullets([
+                "Testing the latest instantOS desktop work",
+                "Users comfortable with rough edges",
+            ]),
+        DesktopEnvironment::Hyprland => PreviewBuilder::new()
+            .header(NerdFont::Desktop, "Hyprland")
+            .subtext("Animated dynamic-tiling Wayland compositor with a more visual style.")
+            .blank()
+            .line(colors::TEAL, None, "Good fit for")
+            .bullets([
+                "Users who want polished motion and eye candy",
+                "Flexible tiling with a more opinionated feel",
+            ]),
+        DesktopEnvironment::Tty => PreviewBuilder::new()
+            .header(NerdFont::Terminal, "None / TTY")
+            .subtext("Install without a graphical desktop session as the default.")
+            .blank()
+            .line(colors::TEAL, None, "What happens")
+            .bullets([
+                "No default LightDM desktop session is configured",
+                "The system boots to a text login and shell-first workflow",
+            ]),
+    };
+
+    add_desktop_environment_disclaimer(builder).build()
+}
+
+impl FzfSelectable for DesktopEnvironment {
+    fn fzf_display_text(&self) -> String {
+        self.label().to_string()
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        desktop_environment_preview(*self)
+    }
+
+    fn fzf_key(&self) -> String {
+        self.answer_value().to_string()
+    }
+}
+
+pub struct DesktopEnvironmentQuestion;
+
+#[async_trait::async_trait]
+impl Question for DesktopEnvironmentQuestion {
+    fn id(&self) -> QuestionId {
+        QuestionId::DesktopEnvironment
+    }
+
+    fn is_optional(&self) -> bool {
+        true
+    }
+
+    async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
+        let options = vec![
+            DesktopEnvironment::Sway,
+            DesktopEnvironment::Niri,
+            DesktopEnvironment::InstantWM,
+            DesktopEnvironment::Hyprland,
+            DesktopEnvironment::Tty,
+        ];
+
+        let result = FzfWrapper::builder()
+            .header(format!("{} Select Desktop Environment", NerdFont::Desktop))
+            .select(options)?;
+
+        match result {
+            crate::menu_utils::FzfResult::Selected(environment) => Ok(QuestionResult::Answer(
+                environment.answer_value().to_string(),
+            )),
+            crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
+            _ => Ok(QuestionResult::Cancelled),
+        }
+    }
+
+    fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
+        match answer {
+            "sway" | "niri" | "instantwm" | "hyprland" | "none/tty" => Ok(()),
+            _ => Err("You must select a desktop environment.".to_string()),
+        }
     }
 }
 
