@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Result, bail};
 
 use crate::arch::cli::DEFAULT_QUESTIONS_FILE;
 use crate::arch::engine::{
@@ -118,8 +118,13 @@ fn prompt_existing_answers(
     }
 }
 
-enum ExistingAnswersOutcome {
-    Proceed(Option<InstallContext>),
+pub(super) enum AskOutcome {
+    Completed,
+    Cancelled,
+}
+
+enum ExistingContextOutcome {
+    Continue(Option<InstallContext>),
     Cancelled,
 }
 
@@ -127,13 +132,12 @@ fn resolve_config_path(output_config: Option<std::path::PathBuf>) -> std::path::
     output_config.unwrap_or_else(|| std::path::PathBuf::from(DEFAULT_QUESTIONS_FILE))
 }
 
-fn ensure_internet(system_info: &SystemInfo) -> Result<bool> {
+fn ensure_internet(system_info: &SystemInfo) -> Result<()> {
     if system_info.internet_connected {
-        return Ok(true);
+        return Ok(());
     }
 
-    eprintln!("Error: No internet connection detected. Arch installation requires internet.");
-    Ok(false)
+    bail!("No internet connection detected. Arch installation requires internet.");
 }
 
 fn install_live_iso_dependencies() -> Result<()> {
@@ -169,11 +173,8 @@ fn install_live_iso_dependencies() -> Result<()> {
         println!("Installing {} missing packages...", missing_packages.len());
 
         let executor = crate::arch::execution::CommandExecutor::new(false, None);
-        if let Err(e) = crate::arch::execution::pacman::install(&missing_packages, &executor) {
-            eprintln!("Warning: Failed to install some packages: {}", e);
-        } else {
-            println!("Successfully installed {} packages", missing_packages.len());
-        }
+        crate::arch::execution::pacman::install(&missing_packages, &executor)?;
+        println!("Successfully installed {} packages", missing_packages.len());
     }
 
     Ok(())
@@ -193,15 +194,15 @@ fn print_system_checks(system_info: &SystemInfo) {
 fn load_existing_context(
     config_path: &std::path::Path,
     system_info: &SystemInfo,
-) -> Result<ExistingAnswersOutcome> {
+) -> Result<ExistingContextOutcome> {
     if !config_path.exists() {
-        return Ok(ExistingAnswersOutcome::Proceed(None));
+        return Ok(ExistingContextOutcome::Continue(None));
     }
 
     match InstallContext::load(config_path) {
         Ok(mut context) => {
             if context.answers.is_empty() {
-                return Ok(ExistingAnswersOutcome::Proceed(None));
+                return Ok(ExistingContextOutcome::Continue(None));
             }
 
             context.system_info = system_info.clone();
@@ -209,13 +210,13 @@ fn load_existing_context(
             let answers_count = context.answers.len();
             match prompt_existing_answers(&summary, config_path, answers_count)? {
                 Some(ExistingAnswersChoice::UseExisting) => {
-                    Ok(ExistingAnswersOutcome::Proceed(Some(context)))
+                    Ok(ExistingContextOutcome::Continue(Some(context)))
                 }
                 Some(ExistingAnswersChoice::StartOver) => {
                     std::fs::remove_file(config_path)?;
-                    Ok(ExistingAnswersOutcome::Proceed(None))
+                    Ok(ExistingContextOutcome::Continue(None))
                 }
-                None => Ok(ExistingAnswersOutcome::Cancelled),
+                None => Ok(ExistingContextOutcome::Cancelled),
             }
         }
         Err(err) => {
@@ -223,7 +224,7 @@ fn load_existing_context(
                 "Existing configuration could not be read and will be ignored:\n{}",
                 err
             ));
-            Ok(ExistingAnswersOutcome::Proceed(None))
+            Ok(ExistingContextOutcome::Continue(None))
         }
     }
 }
@@ -305,7 +306,7 @@ async fn run_single_question(
 async fn run_full_wizard(
     output_config: Option<std::path::PathBuf>,
     questions: Vec<Box<dyn crate::arch::engine::Question>>,
-) -> Result<()> {
+) -> Result<AskOutcome> {
     // Installation requires root privileges
     ensure_root()?;
 
@@ -316,16 +317,13 @@ async fn run_full_wizard(
     // Perform system checks
     let system_info = SystemInfo::detect();
 
-    if !ensure_internet(&system_info)? {
-        return Ok(());
-    }
-
+    ensure_internet(&system_info)?;
     install_live_iso_dependencies()?;
     print_system_checks(&system_info);
 
     let existing_context = match load_existing_context(&config_path, &system_info)? {
-        ExistingAnswersOutcome::Proceed(context) => context,
-        ExistingAnswersOutcome::Cancelled => return Ok(()),
+        ExistingContextOutcome::Continue(context) => context,
+        ExistingContextOutcome::Cancelled => return Ok(AskOutcome::Cancelled),
     };
 
     let engine = build_question_engine(questions, system_info, existing_context);
@@ -338,7 +336,7 @@ async fn run_full_wizard(
     print_completion_summary(&context);
     save_config(&context, &config_path)?;
 
-    Ok(())
+    Ok(AskOutcome::Completed)
 }
 
 /// Handle the Ask command - either ask a single question or run the full questionnaire
@@ -346,10 +344,42 @@ pub(super) async fn handle_ask_command(
     id: Option<crate::arch::engine::QuestionId>,
     output_config: Option<std::path::PathBuf>,
     questions: Vec<Box<dyn crate::arch::engine::Question>>,
-) -> Result<()> {
+) -> Result<AskOutcome> {
     if let Some(id) = id {
-        return run_single_question(id, questions).await;
+        run_single_question(id, questions).await?;
+        return Ok(AskOutcome::Completed);
     }
 
     run_full_wizard(output_config, questions).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ensure_internet;
+    use crate::arch::engine::SystemInfo;
+
+    #[test]
+    fn ensure_internet_errors_when_offline() {
+        let system_info = SystemInfo {
+            internet_connected: false,
+            ..SystemInfo::default()
+        };
+
+        let error = ensure_internet(&system_info).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("No internet connection detected"),
+        );
+    }
+
+    #[test]
+    fn ensure_internet_passes_when_online() {
+        let system_info = SystemInfo {
+            internet_connected: true,
+            ..SystemInfo::default()
+        };
+
+        ensure_internet(&system_info).unwrap();
+    }
 }

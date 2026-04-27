@@ -12,6 +12,7 @@ pub enum QuestionId {
     Timezone,
     Locale,
     Kernel,
+    DesktopEnvironment,
     UseEncryption,
     EncryptionPassword,
     UsePlymouth,

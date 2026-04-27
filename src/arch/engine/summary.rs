@@ -137,6 +137,14 @@ pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary 
         .cloned()
         .unwrap_or_else(|| "linux (default)".to_string());
 
+    let desktop_label = if minimal_mode {
+        "Skipped (minimal mode)".to_string()
+    } else {
+        crate::arch::config::DesktopEnvironment::from_context(context)
+            .label()
+            .to_string()
+    };
+
     let use_plymouth = context.get_answer_bool(QuestionId::UsePlymouth);
     let plymouth_label = if minimal_mode {
         "Disabled (minimal mode)".to_string()
@@ -276,6 +284,7 @@ pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary 
         .blank()
         .line(colors::TEAL, Some(NerdFont::Sliders), "System Options")
         .field_indented("Kernel", &kernel)
+        .field_indented("Desktop", &desktop_label)
         .field_indented("Profile", &profile)
         .field_indented("Plymouth", &plymouth_label)
         .field_indented("Autologin", &autologin_label)

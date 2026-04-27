@@ -74,12 +74,17 @@ fn collect_extended_packages(context: &InstallContext) -> Result<Vec<String>> {
     // Standard Arch desktop packages
     // Note: instantOS packages are installed separately via build_instant_package_plan()
     if !minimal_mode {
-        packages.extend(strings(&[
-            "sway",
-            "xorg-xwayland",
-            "lightdm",
-            "lightdm-gtk-greeter",
-        ]));
+        let desktop = crate::arch::config::DesktopEnvironment::from_context(context);
+
+        if desktop.requires_display_manager() {
+            packages.extend(strings(&[
+                "xorg-xwayland",
+                "lightdm",
+                "lightdm-gtk-greeter",
+            ]));
+        }
+
+        packages.extend(strings(desktop.package_names()));
     }
 
     // GPU packages (after multilib is enabled)
@@ -123,4 +128,46 @@ fn collect_extended_packages(context: &InstallContext) -> Result<Vec<String>> {
     }
 
     Ok(packages)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_standard_package_plan;
+    use crate::arch::config::DesktopEnvironment;
+    use crate::arch::engine::{BootMode, InstallContext, QuestionId};
+
+    fn base_context() -> InstallContext {
+        let mut context = InstallContext::new();
+        context.system_info.boot_mode = BootMode::UEFI64;
+        context.set_answer(QuestionId::Kernel, "linux".to_string());
+        context.set_answer(
+            QuestionId::DesktopEnvironment,
+            DesktopEnvironment::Tty.answer_value().to_string(),
+        );
+        context
+    }
+
+    #[test]
+    fn tty_selection_skips_display_manager_packages() {
+        let context = base_context();
+        let packages = build_standard_package_plan(&context).unwrap();
+
+        assert!(!packages.iter().any(|pkg| pkg == "lightdm"));
+        assert!(!packages.iter().any(|pkg| pkg == "sway"));
+        assert!(!packages.iter().any(|pkg| pkg == "xorg-xwayland"));
+    }
+
+    #[test]
+    fn hyprland_selection_adds_hyprland_and_lightdm() {
+        let mut context = base_context();
+        context.set_answer(
+            QuestionId::DesktopEnvironment,
+            DesktopEnvironment::Hyprland.answer_value().to_string(),
+        );
+
+        let packages = build_standard_package_plan(&context).unwrap();
+
+        assert!(packages.iter().any(|pkg| pkg == "hyprland"));
+        assert!(packages.iter().any(|pkg| pkg == "lightdm"));
+    }
 }
