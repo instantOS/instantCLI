@@ -3,7 +3,8 @@ use colored::Colorize;
 
 use crate::arch::cli::{ArchCommands, DEFAULT_QUESTIONS_FILE};
 
-use super::handle_arch_command;
+use super::ask::{AskOutcome, handle_ask_command};
+use super::{build_questions, handle_arch_command};
 
 /// Handle the Install command - orchestrates the full installation process
 pub(super) async fn handle_install_command(debug: bool) -> Result<()> {
@@ -43,14 +44,11 @@ pub(super) async fn handle_install_command(debug: bool) -> Result<()> {
     state.save()?;
 
     // 1. Ask questions
-    Box::pin(handle_arch_command(
-        ArchCommands::Ask {
-            id: None,
-            output_config: None,
-        },
-        debug,
-    ))
-    .await?;
+    let questions = build_questions();
+    match Box::pin(handle_ask_command(None, None, questions)).await? {
+        AskOutcome::Completed => {}
+        AskOutcome::Cancelled => return Ok(()),
+    }
 
     // 2. Execute
     let exec_result = Box::pin(handle_arch_command(

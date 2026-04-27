@@ -13,7 +13,7 @@ use crate::arch::cli::{ArchCommands, DualbootCommands};
 use crate::arch::engine::Question;
 use crate::common::distro::OperatingSystem;
 
-use self::ask::handle_ask_command;
+use self::ask::{AskOutcome, handle_ask_command};
 use self::dualboot::handle_dualboot_info;
 use self::exec::handle_exec_command;
 use self::finished::handle_finished_command;
@@ -44,7 +44,9 @@ pub async fn handle_arch_command(command: ArchCommands, debug: bool) -> Result<(
             Ok(())
         }
         ArchCommands::Ask { id, output_config } => {
-            handle_ask_command(id, output_config, questions).await
+            match handle_ask_command(id, output_config, questions).await? {
+                AskOutcome::Completed | AskOutcome::Cancelled => Ok(()),
+            }
         }
         ArchCommands::Install => handle_install_command(debug).await,
         ArchCommands::Exec {
@@ -62,7 +64,7 @@ pub async fn handle_arch_command(command: ArchCommands, debug: bool) -> Result<(
     }
 }
 
-fn build_questions() -> Vec<Box<dyn Question>> {
+pub(super) fn build_questions() -> Vec<Box<dyn Question>> {
     use crate::arch::questions::{
         BooleanQuestion, DesktopEnvironmentQuestion, DiskQuestion, DualBootEspWarning,
         DualBootPartitionQuestion, DualBootSizeQuestion, EncryptionPasswordQuestion,
