@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.26](https://github.com/instantOS/instantCLI/compare/v0.13.25...v0.13.26) - 2026-04-24
+
+### Fixed
+
+- fix pass gui handling
+- fix extra otp noise
+- fix OTP behavior
+- fix key issues with ins pass
+
+### Other
+
+- Merge pull request #134 from instantOS/release-plz-2026-04-21T17-40-57Z
+- Merge branch 'dev'
+- add better ins pass file filtering
+- better edit thingy
+- separate pass and pass menu
+- better default fzf key implementation
+- clean up pass
+- make wine discovery more readable
+- Merge branch 'dev' of github.com:instantOS/instantCLI into dev
+- desloppify pass menu
+- better pass CLI
+- add ignore dep
+- init ins dot insignore feature
+- password edit menu
+- prettier pass preview
+- init `ins pass`
+- speed up `ins launch`
+- add more niri support
+
 ## [0.13.25](https://github.com/instantOS/instantCLI/compare/v0.13.24...v0.13.25) - 2026-04-21
 
 ### Fixed
