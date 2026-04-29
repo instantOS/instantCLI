@@ -349,11 +349,30 @@ impl FilePickerBuilder {
                 .or_else(|| path.parent().map(|parent| parent.to_path_buf()));
         }
 
+        // Only pass a launch target if it actually exists on disk; otherwise
+        // yazi may refuse to start (especially on platforms like Termux where
+        // hardcoded Linux paths from configs do not exist).
+        let launch_target = launch_target.filter(|p| p.exists());
+
+        // Drop `current_dir` if the path does not exist or is not a directory.
+        // On Termux/Android, a stale path can cause `spawn()` to fail with
+        // ENOENT, which surfaces as a generic "Failed to launch Yazi file
+        // picker" error. Fall back to the process's existing cwd in that case.
+        let current_dir = current_dir.and_then(|p| {
+            if p.is_dir() {
+                Some(p)
+            } else {
+                p.parent()
+                    .filter(|parent| parent.is_dir())
+                    .map(|parent| parent.to_path_buf())
+            }
+        });
+
         if let Some(target) = &launch_target {
             cmd.arg(target);
         }
 
-        if let Some(dir) = current_dir {
+        if let Some(dir) = &current_dir {
             cmd.current_dir(dir);
         }
 
@@ -362,7 +381,16 @@ impl FilePickerBuilder {
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
             .spawn()
-            .context("Failed to launch Yazi file picker")?;
+            .with_context(|| {
+                format!(
+                    "Failed to launch Yazi file picker (binary: {}, cwd: {})",
+                    yazi_path.display(),
+                    current_dir
+                        .as_deref()
+                        .map(|d| d.display().to_string())
+                        .unwrap_or_else(|| "<inherited>".to_string())
+                )
+            })?;
 
         let pid = child.id();
         let _ = crate::menu::server::register_menu_process(pid);

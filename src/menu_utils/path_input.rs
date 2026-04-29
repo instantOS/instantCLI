@@ -200,7 +200,7 @@ impl PathInputBuilder {
         match picker.pick_one() {
             Ok(path) => Ok(path),
             Err(err) => {
-                eprintln!("Failed to launch file picker: {err}");
+                eprintln!("Failed to launch file picker: {err:#}");
                 Ok(None) // Signal to retry by returning None
             }
         }
@@ -226,7 +226,7 @@ impl PathInputBuilder {
         match picker.pick_one() {
             Ok(path) => Ok(path),
             Err(err) => {
-                eprintln!("Failed to launch file picker: {err}");
+                eprintln!("Failed to launch file picker: {err:#}");
                 Ok(None)
             }
         }
