@@ -4,9 +4,14 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::common::deps::FZF;
-use crate::common::package::{Dependency, InstallResult, PackageDefinition, PackageManager, ensure_all};
+use crate::common::package::{
+    Dependency, InstallResult, PackageDefinition, PackageManager, ensure_all,
+};
 use crate::common::requirements::InstallTest;
-use crate::menu_utils::{FzfResult, FzfWrapper, Header, MenuCursor};
+use crate::menu_utils::{
+    FilePickerScope, FzfResult, FzfWrapper, Header, MenuCursor, PathInputBuilder,
+    PathInputSelection, TextEditOutcome, TextEditPrompt, prompt_text_edit,
+};
 use crate::ui::catppuccin::fzf_mocha_args;
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::prelude::{Level, emit};
@@ -28,8 +33,12 @@ static FCLONES_DEP: Dependency = Dependency {
 
 pub fn handle_resolvething_command(command: ResolvethingCommands, debug: bool) -> Result<()> {
     match command {
-        ResolvethingCommands::Duplicates { path, no_auto } => resolve_duplicates(path.as_deref(), no_auto),
-        ResolvethingCommands::Conflicts { path, types } => resolve_conflicts(path.as_deref(), &types),
+        ResolvethingCommands::Duplicates { path, no_auto } => {
+            resolve_duplicates(path.as_deref(), no_auto)
+        }
+        ResolvethingCommands::Conflicts { path, types } => {
+            resolve_conflicts(path.as_deref(), &types)
+        }
         ResolvethingCommands::All {
             path,
             no_auto,
@@ -254,14 +263,119 @@ pub fn edit_config() -> Result<()> {
     Ok(())
 }
 
+pub fn configure_working_directory() -> Result<()> {
+    let mut config = resolved_config()?;
+    let current = config.resolve_working_directory(None).ok();
+
+    let mut builder = PathInputBuilder::new()
+        .header(format!(
+            "{} Choose a working directory for resolvething",
+            char::from(NerdFont::Folder)
+        ))
+        .manual_prompt(format!(
+            "{} Enter the directory to scan for duplicates and conflicts",
+            char::from(NerdFont::Edit)
+        ))
+        .scope(FilePickerScope::Directories)
+        .picker_hint(format!(
+            "{} Select the root directory Syncthing writes into",
+            char::from(NerdFont::Info)
+        ))
+        .manual_option_label(format!(
+            "{} Type an exact directory",
+            char::from(NerdFont::Edit)
+        ))
+        .picker_option_label(format!(
+            "{} Browse and choose a directory",
+            char::from(NerdFont::FolderOpen)
+        ));
+
+    if let Some(current) = current {
+        builder = builder.start_dir(current);
+    }
+
+    let selection = builder.choose()?;
+    let chosen = match selection {
+        PathInputSelection::Manual(input) => super::config::expand_path(&input)?,
+        PathInputSelection::Picker(path) | PathInputSelection::WinePrefix(path) => path,
+        PathInputSelection::Cancelled => return Ok(()),
+    };
+
+    config.working_directory = chosen.clone();
+    config.save()?;
+
+    emit(
+        Level::Success,
+        "resolvething.config.working_directory",
+        &format!(
+            "{} Working directory set to {}",
+            char::from(NerdFont::Check),
+            format_path(&chosen)
+        ),
+        None,
+    );
+
+    Ok(())
+}
+
+pub fn configure_conflict_types() -> Result<()> {
+    let mut config = resolved_config()?;
+    let current = if config.conflict_file_types.is_empty() {
+        None
+    } else {
+        Some(config.conflict_file_types.join(", "))
+    };
+
+    let outcome = prompt_text_edit(
+        TextEditPrompt::new("Conflict Types", current.as_deref())
+            .header("Enter comma-separated conflict file extensions")
+            .ghost("e.g. md,json,txt"),
+    )?;
+
+    match outcome {
+        TextEditOutcome::Updated(Some(value)) => {
+            let parsed = config.normalized_conflict_types(
+                &value
+                    .split(',')
+                    .map(|item| item.to_string())
+                    .collect::<Vec<_>>(),
+            );
+            if parsed.is_empty() {
+                FzfWrapper::message("Please enter at least one file extension.")?;
+                return Ok(());
+            }
+            config.conflict_file_types = parsed.clone();
+            config.save()?;
+            emit(
+                Level::Success,
+                "resolvething.config.conflict_types",
+                &format!(
+                    "{} Conflict file types set to {}",
+                    char::from(NerdFont::Check),
+                    parsed.join(", ")
+                ),
+                None,
+            );
+        }
+        TextEditOutcome::Updated(None) => {
+            FzfWrapper::message("Conflict file types cannot be empty.")?;
+        }
+        TextEditOutcome::Unchanged | TextEditOutcome::Cancelled => {}
+    }
+
+    Ok(())
+}
+
 pub fn sync_conflict_regex() -> Regex {
-    Regex::new(r".*\.sync-conflict-[A-Z0-9-]*(\..*)?$")
-        .expect("invalid Syncthing conflict regex")
+    Regex::new(r".*\.sync-conflict-[A-Z0-9-]*(\..*)?$").expect("invalid Syncthing conflict regex")
 }
 
 pub fn sync_conflict_regex_for_type(file_type: &str) -> Regex {
-    Regex::new(&format!(r".*\.sync-conflict-[A-Z0-9-]*\.{}$", regex::escape(file_type)))
-        .expect("invalid Syncthing conflict regex for type")
+    Regex::new(&format!(
+        r".*\.sync-conflict-[A-Z0-9-]*\.{}$",
+        regex::escape(file_type)
+    ))
+    .expect("invalid Syncthing conflict regex for type")
 }
 
 pub fn sync_conflict_replace_regex_for_type(file_type: &str) -> Regex {
@@ -306,7 +420,8 @@ fn plain_editor_command(configured_editor: Option<&str>) -> Result<Command> {
         .or_else(|| std::env::var("EDITOR").ok())
         .unwrap_or_else(|| "nvim".to_string());
 
-    let parts = shell_words::split(&raw).with_context(|| format!("parsing editor command '{raw}'"))?;
+    let parts =
+        shell_words::split(&raw).with_context(|| format!("parsing editor command '{raw}'"))?;
     let Some((program, args)) = parts.split_first() else {
         bail!("Editor command is empty");
     };

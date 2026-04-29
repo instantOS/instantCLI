@@ -55,8 +55,12 @@ pub struct DuplicateEntry {
 
 impl DuplicateEntry {
     pub fn new(path: PathBuf) -> Self {
-        let file_name = path.file_name().and_then(|name| name.to_str()).unwrap_or_default();
-        let file_type = if crate::resolvething::commands::sync_conflict_regex().is_match(file_name) {
+        let file_name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default();
+        let file_type = if crate::resolvething::commands::sync_conflict_regex().is_match(file_name)
+        {
             DuplicateFileType::SyncthingConflict
         } else if file_name.ends_with(".orig") {
             DuplicateFileType::Orig
@@ -124,7 +128,6 @@ impl DuplicateGroup {
         }
         Ok(removed)
     }
-
 }
 
 #[derive(Debug, Clone)]

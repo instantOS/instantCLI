@@ -8,7 +8,9 @@ use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::{FzfPreview, PreviewBuilder};
 
-use super::commands::{editor_command, sync_conflict_regex_for_type, sync_conflict_replace_regex_for_type, trash_path};
+use super::commands::{
+    editor_command, sync_conflict_regex_for_type, sync_conflict_replace_regex_for_type, trash_path,
+};
 use super::config::format_path;
 
 const MAX_FILE_SIZE: u64 = 1_000_000;
@@ -140,7 +142,10 @@ pub fn scan_conflicts(directory: &Path, file_types: &[String]) -> Result<Vec<Con
         let regex = sync_conflict_regex_for_type(file_type);
         let replace_regex = sync_conflict_replace_regex_for_type(file_type);
 
-        for entry in WalkDir::new(directory).into_iter().filter_map(|entry| entry.ok()) {
+        for entry in WalkDir::new(directory)
+            .into_iter()
+            .filter_map(|entry| entry.ok())
+        {
             if entry
                 .path()
                 .components()

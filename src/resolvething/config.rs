@@ -7,6 +7,7 @@ use crate::common::paths;
 use crate::documented_config;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ResolvethingConfig {
     pub working_directory: PathBuf,
     pub conflict_file_types: Vec<String>,
