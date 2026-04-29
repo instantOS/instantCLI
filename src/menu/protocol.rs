@@ -217,8 +217,13 @@ pub fn default_socket_path() -> String {
     if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
         format!("{runtime_dir}/insmenu.sock")
     } else {
-        // Fallback to /tmp if XDG_RUNTIME_DIR is not set
-        "/tmp/insmenu.sock".to_string()
+        // Fallback to the platform's temp dir if XDG_RUNTIME_DIR is not set.
+        // `std::env::temp_dir()` honors $TMPDIR, which on Termux points to
+        // $PREFIX/tmp instead of /tmp.
+        std::env::temp_dir()
+            .join("insmenu.sock")
+            .to_string_lossy()
+            .into_owned()
     }
 }
 

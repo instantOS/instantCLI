@@ -395,16 +395,79 @@ pub fn trash_path(path: &Path) -> Result<()> {
     }
 
     if which::which("gio").is_ok() {
-        let status = Command::new("gio").arg("trash").arg(path).status()?;
-        if status.success() {
+        let output = Command::new("gio").arg("trash").arg(path).output()?;
+        if output.status.success() {
             return Ok(());
+        }
+        // On Termux/Android, gio refuses with
+        //   "Trashing on system internal mounts is not supported"
+        // because Android storage isn't a freedesktop-compatible mount. Fall
+        // through to the manual XDG trash implementation in that case.
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if !stderr.contains("system internal mount") {
+            eprintln!("gio trash failed: {}", stderr.trim());
         }
     }
 
-    bail!(
-        "Unable to move {} to trash. Install `trash` or ensure `gio` is available.",
-        path.display()
-    )
+    manual_trash(path).with_context(|| {
+        format!(
+            "Unable to move {} to trash. Install `trash` or ensure `gio` is available.",
+            path.display()
+        )
+    })
+}
+
+/// Move `path` into `$XDG_DATA_HOME/Trash/files`, creating the directory if
+/// needed. This is a minimal fallback used when neither `trash` nor `gio`
+/// can handle the move (e.g. on Termux, where Android storage is rejected by
+/// gio as a "system internal mount").
+fn manual_trash(path: &Path) -> Result<()> {
+    let trash_dir = dirs::data_dir()
+        .unwrap_or_else(std::env::temp_dir)
+        .join("Trash")
+        .join("files");
+    std::fs::create_dir_all(&trash_dir).with_context(|| {
+        format!(
+            "Failed to create fallback trash directory at {}",
+            trash_dir.display()
+        )
+    })?;
+
+    let file_name = path.file_name().ok_or_else(|| {
+        anyhow::anyhow!("Cannot trash path without a file name: {}", path.display())
+    })?;
+    let mut target = trash_dir.join(file_name);
+    if target.exists() {
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        target = trash_dir.join(format!("{}.{}", file_name.to_string_lossy(), ts));
+    }
+
+    if std::fs::rename(path, &target).is_ok() {
+        return Ok(());
+    }
+
+    // Fallback for cross-filesystem moves (e.g. between /sdcard and Termux
+    // home): copy then delete. Directories are not supported via copy because
+    // we don't want to pull in a recursive-copy dependency for an edge case.
+    if path.is_dir() {
+        bail!(
+            "Cannot trash directory {} across filesystems; install `trash` or remove it manually",
+            path.display()
+        );
+    }
+    std::fs::copy(path, &target).with_context(|| {
+        format!(
+            "Failed to copy {} into fallback trash at {}",
+            path.display(),
+            target.display()
+        )
+    })?;
+    std::fs::remove_file(path)
+        .with_context(|| format!("Failed to remove {} after copying to trash", path.display()))?;
+    Ok(())
 }
 
 pub fn editor_command(configured_editor: Option<&str>) -> Result<Command> {

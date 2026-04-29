@@ -24,8 +24,12 @@ impl LaunchCache {
         let cache_dir = if let Some(cache_dir) = dirs::cache_dir() {
             cache_dir.join(env!("CARGO_BIN_NAME"))
         } else {
-            PathBuf::from(env::var("HOME").unwrap_or_else(|_| "/tmp".to_string()))
-                .join(format!(".cache/{}", env!("CARGO_BIN_NAME")))
+            // Fall back to $HOME/.cache; if HOME is unset use the platform
+            // temp dir (Termux exposes $PREFIX/tmp via $TMPDIR rather than /tmp).
+            let base = env::var_os("HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(env::temp_dir);
+            base.join(format!(".cache/{}", env!("CARGO_BIN_NAME")))
         };
 
         // Ensure cache directory exists

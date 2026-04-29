@@ -356,8 +356,10 @@ pub(super) fn record_frecency(item: &str) -> Result<()> {
 }
 
 fn frecency_store_path() -> Result<PathBuf> {
+    // Use the platform's temp dir as a fallback so Termux (which exposes
+    // $PREFIX/tmp via $TMPDIR rather than /tmp) gets a writable location.
     let cache_dir = dirs::cache_dir()
-        .unwrap_or_else(|| PathBuf::from("/tmp"))
+        .unwrap_or_else(std::env::temp_dir)
         .join(env!("CARGO_BIN_NAME"));
     fs::create_dir_all(&cache_dir).context("Failed to create cache directory for pass")?;
     Ok(cache_dir.join("pass_frecency_store.json"))

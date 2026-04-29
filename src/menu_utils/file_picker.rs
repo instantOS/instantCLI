@@ -13,7 +13,9 @@ const YAZI_INIT_LUA: &str = include_str!("yazi_init.lua");
 const YAZI_CACHE_SUBDIR: &str = "ins/menu/yazi";
 
 fn yazi_config_dir() -> PathBuf {
-    let mut base = cache_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
+    // Honor $TMPDIR via std::env::temp_dir() so platforms like Termux
+    // (which use $PREFIX/tmp instead of /tmp) get a writable fallback.
+    let mut base = cache_dir().unwrap_or_else(std::env::temp_dir);
     for segment in YAZI_CACHE_SUBDIR.split('/') {
         base.push(segment);
     }
