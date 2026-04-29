@@ -16,6 +16,7 @@ mod menu;
 mod menu_utils;
 mod pass;
 mod preview;
+mod resolvething;
 mod restic;
 mod scratchpad;
 mod self_update;
@@ -52,6 +53,7 @@ use crate::dev::DevCommands;
 use crate::doctor::DoctorCommands;
 use crate::dot::commands::DotCommands;
 use crate::pass::PassCommands;
+use crate::resolvething::ResolvethingCommands;
 use crate::scratchpad::ScratchpadCommand;
 use crate::settings::SettingsCommands;
 use crate::welcome::WelcomeCommands;
@@ -114,6 +116,11 @@ enum Commands {
     Game {
         #[command(subcommand)]
         command: game::GameCommands,
+    },
+    /// Resolve duplicate files and Syncthing conflicts
+    Resolvething {
+        #[command(subcommand)]
+        command: ResolvethingCommands,
     },
     /// System diagnostics and fixes
     Doctor {
@@ -263,6 +270,12 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
             execute_with_error_handling(
                 game::handle_game_command(command.clone(), cli.debug),
                 "Error handling game command",
+            )?;
+        }
+        Some(Commands::Resolvething { command }) => {
+            execute_with_error_handling(
+                resolvething::handle_resolvething_command(command.clone(), cli.debug),
+                "Error handling resolvething command",
             )?;
         }
         Some(Commands::Dot { command }) => {
