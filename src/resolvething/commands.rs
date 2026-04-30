@@ -17,11 +17,9 @@ use crate::ui::nerd_font::NerdFont;
 use crate::ui::prelude::{Level, emit};
 
 use super::cli::{ConfigCommands, ResolvethingCommands};
-use super::config::{ResolvethingConfig, ResolvedScanDir, ScanDir, format_path};
+use super::config::{ResolvedScanDir, ResolvethingConfig, ScanDir, format_path};
 use super::conflicts::{ConflictChoice, ConflictResolution, scan_conflicts};
-use super::duplicates::{
-    DuplicateChoice, DuplicateGroup, GroupPlan, SkipReason, scan_duplicates,
-};
+use super::duplicates::{DuplicateChoice, DuplicateGroup, GroupPlan, SkipReason, scan_duplicates};
 use super::menu::resolvething_menu;
 
 static FCLONES_DEP: Dependency = Dependency {
@@ -39,17 +37,18 @@ pub fn handle_resolvething_command(command: ResolvethingCommands, debug: bool) -
             dir,
             no_auto,
             show_ignored,
+            dry_run,
         } => {
             let scan_dirs = resolve_scan_dirs(dir.as_deref())?;
             for scan_dir in &scan_dirs {
-                resolve_duplicates(scan_dir, no_auto, show_ignored)?;
+                resolve_duplicates(scan_dir, no_auto, show_ignored, dry_run)?;
             }
             Ok(())
         }
-        ResolvethingCommands::Conflicts { dir } => {
+        ResolvethingCommands::Conflicts { dir, dry_run } => {
             let scan_dirs = resolve_scan_dirs(dir.as_deref())?;
             for scan_dir in &scan_dirs {
-                resolve_conflicts(scan_dir)?;
+                resolve_conflicts(scan_dir, dry_run)?;
             }
             Ok(())
         }
@@ -57,11 +56,12 @@ pub fn handle_resolvething_command(command: ResolvethingCommands, debug: bool) -
             dir,
             no_auto,
             show_ignored,
+            dry_run,
         } => {
             let scan_dirs = resolve_scan_dirs(dir.as_deref())?;
             for scan_dir in &scan_dirs {
-                resolve_duplicates(scan_dir, no_auto, show_ignored)?;
-                resolve_conflicts(scan_dir)?;
+                resolve_duplicates(scan_dir, no_auto, show_ignored, dry_run)?;
+                resolve_conflicts(scan_dir, dry_run)?;
             }
             Ok(())
         }
@@ -105,6 +105,7 @@ pub fn resolve_duplicates(
     scan_dir: &ResolvedScanDir,
     no_auto: bool,
     show_ignored: bool,
+    dry_run: bool,
 ) -> Result<()> {
     ensure_duplicate_dependencies()?;
 
@@ -137,26 +138,57 @@ pub fn resolve_duplicates(
         match group.plan(no_auto) {
             GroupPlan::Auto(action) => {
                 auto_resolved += 1;
-                for path in &action.trash {
+                for path in &action.keep {
                     emit(
                         Level::Info,
-                        "resolvething.duplicates.auto",
+                        "resolvething.duplicates.auto.keep",
                         &format!(
-                            "{} Trashing duplicate {}",
-                            char::from(NerdFont::Trash),
+                            "{} Keeping {}",
+                            char::from(NerdFont::Check),
                             format_path(path)
                         ),
                         None,
                     );
                 }
-                removed_files += group.keep_paths(&action.keep)?;
+                for path in &action.trash {
+                    emit(
+                        Level::Info,
+                        "resolvething.duplicates.auto",
+                        &format!(
+                            "{} {} duplicate {}",
+                            char::from(NerdFont::Trash),
+                            if dry_run { "Would trash" } else { "Trashing" },
+                            format_path(path)
+                        ),
+                        None,
+                    );
+                }
+                if !dry_run {
+                    removed_files += group.keep_paths(&action.keep)?;
+                } else {
+                    removed_files += action.trash.len();
+                }
             }
             GroupPlan::Manual => {
-                let keep = select_duplicate_keep(group, index + 1, groups.len(), &mut cursor)?;
-                if let Some(keep_path) = keep {
-                    removed_files += group.keep_paths(&[keep_path])?;
-                } else {
+                if dry_run {
+                    emit(
+                        Level::Info,
+                        "resolvething.duplicates.manual.dry_run",
+                        &format!(
+                            "{} Would prompt for manual selection ({} files)",
+                            char::from(NerdFont::Info),
+                            group.files.len()
+                        ),
+                        None,
+                    );
                     skipped += 1;
+                } else {
+                    let keep = select_duplicate_keep(group, index + 1, groups.len(), &mut cursor)?;
+                    if let Some(keep_path) = keep {
+                        removed_files += group.keep_paths(&[keep_path])?;
+                    } else {
+                        skipped += 1;
+                    }
                 }
             }
             GroupPlan::Skip(SkipReason::IgnoredFolder) => {
@@ -201,19 +233,26 @@ pub fn resolve_duplicates(
         ""
     };
 
+    let dry_run_suffix = if dry_run { " [dry run]" } else { "" };
     emit(
         Level::Success,
         "resolvething.duplicates.complete",
         &format!(
-            "{} {}: {} groups, {} auto-resolved, {} skipped, {} ignored{}, {} files trashed",
+            "{} {}{}: {} groups, {} auto-resolved, {} skipped, {} ignored{}, {} files {}",
             char::from(NerdFont::Check),
             format_path(&scan_dir.path),
+            dry_run_suffix,
             groups.len(),
             auto_resolved,
             skipped,
             ignored_groups.len(),
             ignored_hint,
-            removed_files
+            removed_files,
+            if dry_run {
+                "would be trashed"
+            } else {
+                "trashed"
+            },
         ),
         None,
     );
@@ -221,9 +260,14 @@ pub fn resolve_duplicates(
     Ok(())
 }
 
-pub fn resolve_conflicts(scan_dir: &ResolvedScanDir) -> Result<()> {
-    ensure_menu_dependencies()?;
-    let config = resolved_config()?;
+pub fn resolve_conflicts(scan_dir: &ResolvedScanDir, dry_run: bool) -> Result<()> {
+    let config = if dry_run {
+        // Config is only needed for the editor command; skip fzf dep check in dry-run mode
+        resolved_config()?
+    } else {
+        ensure_menu_dependencies()?;
+        resolved_config()?
+    };
 
     if !scan_dir.path.exists() {
         bail!("Scan directory does not exist: {}", scan_dir.path.display());
@@ -243,6 +287,34 @@ pub fn resolve_conflicts(scan_dir: &ResolvedScanDir) -> Result<()> {
             ),
             None,
         );
+        return Ok(());
+    }
+
+    if dry_run {
+        emit(
+            Level::Info,
+            "resolvething.conflicts.dry_run",
+            &format!(
+                "{} {} conflict(s) would need resolution in {} [dry run]:",
+                char::from(NerdFont::Info),
+                conflicts.len(),
+                format_path(&scan_dir.path)
+            ),
+            None,
+        );
+        for conflict in &conflicts {
+            emit(
+                Level::Info,
+                "resolvething.conflicts.dry_run.item",
+                &format!(
+                    "  {} {}  vs  {}",
+                    char::from(NerdFont::GitCompare),
+                    format_path(&conflict.modified),
+                    format_path(&conflict.original),
+                ),
+                None,
+            );
+        }
         return Ok(());
     }
 
@@ -365,11 +437,7 @@ pub fn add_scan_directory() -> Result<bool> {
         PathInputSelection::Cancelled => return Ok(false),
     };
 
-    if config
-        .scan_dirs
-        .iter()
-        .any(|entry| entry.path == chosen)
-    {
+    if config.scan_dirs.iter().any(|entry| entry.path == chosen) {
         FzfWrapper::message(&format!(
             "{} is already configured as a scan directory.",
             format_path(&chosen)

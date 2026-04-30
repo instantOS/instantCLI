@@ -10,8 +10,8 @@ use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::{FzfPreview, PreviewBuilder};
 
 use super::commands::{
-    editor_command, sync_conflict_regex, sync_conflict_regex_for_type,
-    sync_conflict_replace_regex, sync_conflict_replace_regex_for_type, trash_path,
+    editor_command, sync_conflict_regex, sync_conflict_regex_for_type, sync_conflict_replace_regex,
+    sync_conflict_replace_regex_for_type, trash_path,
 };
 use super::config::format_path;
 

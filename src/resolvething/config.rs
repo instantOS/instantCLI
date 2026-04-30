@@ -100,11 +100,10 @@ impl ResolvethingConfig {
     /// exactly; otherwise extensions default to empty (all text files).
     pub fn resolved_scan_dir_for_override(&self, raw: &str) -> Result<ResolvedScanDir> {
         let path = expand_path(raw)?;
-        if let Some((index, entry)) = self
-            .scan_dirs
-            .iter()
-            .enumerate()
-            .find(|(_, e)| expand_path(&e.path.to_string_lossy()).ok().as_deref() == Some(&path))
+        if let Some((index, entry)) =
+            self.scan_dirs.iter().enumerate().find(|(_, e)| {
+                expand_path(&e.path.to_string_lossy()).ok().as_deref() == Some(&path)
+            })
         {
             return Ok(ResolvedScanDir {
                 path,

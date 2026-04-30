@@ -341,10 +341,7 @@ fn fs_mtime_lookup(path: &Path) -> Option<SystemTime> {
 /// Pick the entry whose mtime is most recent. Falls back to the
 /// lexicographically largest path when mtimes are unavailable, which works
 /// well for Syncthing's `~YYYYMMDD-HHMMSS` version filename convention.
-fn pick_latest(
-    files: &[DuplicateEntry],
-    mtime: &dyn Fn(&Path) -> Option<SystemTime>,
-) -> PathBuf {
+fn pick_latest(files: &[DuplicateEntry], mtime: &dyn Fn(&Path) -> Option<SystemTime>) -> PathBuf {
     debug_assert!(!files.is_empty());
     let mut best: &DuplicateEntry = &files[0];
     let mut best_mtime: Option<SystemTime> = mtime(&best.path);
@@ -517,10 +514,7 @@ mod tests {
 
     #[test]
     fn mixed_inside_outside_ignored_group_is_skipped() {
-        let g = group(&[
-            "/dir/note.md",
-            "/dir/.stversions/note~20240101-000000.md",
-        ]);
+        let g = group(&["/dir/note.md", "/dir/.stversions/note~20240101-000000.md"]);
         assert!(matches!(
             g.plan(false),
             GroupPlan::Skip(SkipReason::IgnoredFolder)
@@ -535,10 +529,7 @@ mod tests {
 
     #[test]
     fn no_auto_still_auto_resolves_conflict_files() {
-        let g = group(&[
-            "/dir/a.md",
-            "/dir/a.sync-conflict-20240101-AAA.md",
-        ]);
+        let g = group(&["/dir/a.md", "/dir/a.sync-conflict-20240101-AAA.md"]);
         let action = auto(g.plan(true));
         assert_eq!(action.keep, vec![PathBuf::from("/dir/a.md")]);
     }

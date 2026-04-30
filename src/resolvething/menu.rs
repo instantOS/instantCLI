@@ -2,9 +2,7 @@ use anyhow::Result;
 use std::path::PathBuf;
 use std::process::Command;
 
-use crate::menu_utils::{
-    ConfirmResult, FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor,
-};
+use crate::menu_utils::{ConfirmResult, FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::{FzfPreview, PreviewBuilder};
@@ -26,7 +24,11 @@ enum ActionResult {
 /// few global actions modeled on `ins game menu`.
 #[derive(Debug, Clone)]
 enum TopEntry {
-    ScanDir { index: usize, resolved: ResolvedScanDir, status: ScanDirStatus },
+    ScanDir {
+        index: usize,
+        resolved: ResolvedScanDir,
+        status: ScanDirStatus,
+    },
     ResolveAll,
     AddScanDir,
     EditConfig,
@@ -69,7 +71,9 @@ struct ActionItem {
 impl FzfSelectable for TopItem {
     fn fzf_display_text(&self) -> String {
         match &self.entry {
-            TopEntry::ScanDir { resolved, status, .. } => {
+            TopEntry::ScanDir {
+                resolved, status, ..
+            } => {
                 let dup = status
                     .duplicate_count
                     .map(|c| c.to_string())
@@ -78,7 +82,11 @@ impl FzfSelectable for TopItem {
                     .conflict_count
                     .map(|c| c.to_string())
                     .unwrap_or_else(|| "?".to_string());
-                let icon_color = if status.exists { colors::TEAL } else { colors::RED };
+                let icon_color = if status.exists {
+                    colors::TEAL
+                } else {
+                    colors::RED
+                };
                 format!(
                     "{} {}  [dups: {}, conflicts: {}]",
                     format_icon_colored(NerdFont::Folder, icon_color),
@@ -205,14 +213,14 @@ pub fn resolvething_menu(debug: bool) -> Result<()> {
             TopEntry::ResolveAll => {
                 let dirs = config.resolved_scan_dirs()?;
                 for dir in &dirs {
-                    if let Err(error) = resolve_duplicates(dir, false, true) {
+                    if let Err(error) = resolve_duplicates(dir, false, true, false) {
                         FzfWrapper::message(&format!(
                             "Failed to resolve duplicates in {}: {}",
                             dir.display_path(),
                             error
                         ))?;
                     }
-                    if let Err(error) = resolve_conflicts(dir) {
+                    if let Err(error) = resolve_conflicts(dir, false) {
                         FzfWrapper::message(&format!(
                             "Failed to resolve conflicts in {}: {}",
                             dir.display_path(),
@@ -318,22 +326,22 @@ fn handle_scan_dir_action(
 ) -> Result<ActionResult> {
     match action {
         ScanDirAction::ResolveEverything => {
-            if let Err(error) = resolve_duplicates(resolved, false, true) {
+            if let Err(error) = resolve_duplicates(resolved, false, true, false) {
                 FzfWrapper::message(&format!("Duplicate resolution failed: {}", error))?;
             }
-            if let Err(error) = resolve_conflicts(resolved) {
+            if let Err(error) = resolve_conflicts(resolved, false) {
                 FzfWrapper::message(&format!("Conflict resolution failed: {}", error))?;
             }
             Ok(ActionResult::Stay)
         }
         ScanDirAction::ResolveDuplicates => {
-            if let Err(error) = resolve_duplicates(resolved, false, true) {
+            if let Err(error) = resolve_duplicates(resolved, false, true, false) {
                 FzfWrapper::message(&format!("Duplicate resolution failed: {}", error))?;
             }
             Ok(ActionResult::Stay)
         }
         ScanDirAction::ResolveConflicts => {
-            if let Err(error) = resolve_conflicts(resolved) {
+            if let Err(error) = resolve_conflicts(resolved, false) {
                 FzfWrapper::message(&format!("Conflict resolution failed: {}", error))?;
             }
             Ok(ActionResult::Stay)
@@ -435,7 +443,9 @@ fn compute_status(resolved: &ResolvedScanDir) -> ScanDirStatus {
 
 fn build_top_preview(entry: &TopEntry, config: &ResolvethingConfig) -> String {
     match entry {
-        TopEntry::ScanDir { resolved, status, .. } => {
+        TopEntry::ScanDir {
+            resolved, status, ..
+        } => {
             let dup = status
                 .duplicate_count
                 .map(|c| c.to_string())
