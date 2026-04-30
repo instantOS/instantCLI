@@ -1,113 +1,160 @@
 use anyhow::Result;
+use std::path::PathBuf;
 use std::process::Command;
 
-use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
+use crate::menu_utils::{
+    ConfirmResult, FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor,
+};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::{FzfPreview, PreviewBuilder};
 
 use super::commands::{
-    configure_conflict_types, configure_working_directory, resolve_conflicts, resolve_duplicates,
-    resolved_config, show_config_path,
+    add_scan_directory, change_scan_directory_path, configure_scan_directory_extensions,
+    edit_config, remove_scan_directory, resolve_conflicts, resolve_duplicates, resolved_config,
 };
-use super::config::{ResolvethingConfig, format_path};
+use super::config::{ResolvedScanDir, ResolvethingConfig, format_path};
 
-#[derive(Debug, Clone)]
-struct MenuStatus {
-    config: ResolvethingConfig,
-    directory: std::path::PathBuf,
-    duplicate_count: Option<usize>,
-    conflict_count: Option<usize>,
-    warnings: Vec<String>,
+/// Outcome of an inner action: keep loop, leave to outer, or exit menu.
+enum ActionResult {
+    Stay,
+    Back,
+    Exit,
 }
 
+/// Top-level menu entry: each configured scan_dir is its own entry, plus a
+/// few global actions modeled on `ins game menu`.
 #[derive(Debug, Clone)]
-enum MenuEntry {
+enum TopEntry {
+    ScanDir { index: usize, resolved: ResolvedScanDir, status: ScanDirStatus },
     ResolveAll,
-    ResolveDuplicates,
-    ResolveConflicts,
-    ConfigureWorkingDirectory,
-    ConfigureConflictTypes,
+    AddScanDir,
     EditConfig,
-    OpenWorkingDirectory,
-    ShowConfigPath,
     Close,
 }
 
+/// Inner per-scan-dir action menu entry.
+#[derive(Debug, Clone)]
+enum ScanDirAction {
+    ResolveEverything,
+    ResolveDuplicates,
+    ResolveConflicts,
+    OpenDirectory,
+    EditExtensions,
+    ChangePath,
+    Remove,
+    Back,
+}
+
+#[derive(Debug, Clone)]
+struct ScanDirStatus {
+    duplicate_count: Option<usize>,
+    conflict_count: Option<usize>,
+    warnings: Vec<String>,
+    exists: bool,
+}
+
 #[derive(Clone)]
-struct MenuItem {
-    entry: MenuEntry,
+struct TopItem {
+    entry: TopEntry,
     preview: String,
 }
 
-impl FzfSelectable for MenuEntry {
+#[derive(Clone)]
+struct ActionItem {
+    action: ScanDirAction,
+    preview: String,
+}
+
+impl FzfSelectable for TopItem {
     fn fzf_display_text(&self) -> String {
-        match self {
-            Self::ResolveAll => format!(
-                "{} Resolve Everything",
+        match &self.entry {
+            TopEntry::ScanDir { resolved, status, .. } => {
+                let dup = status
+                    .duplicate_count
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| "?".to_string());
+                let cnf = status
+                    .conflict_count
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| "?".to_string());
+                let icon_color = if status.exists { colors::TEAL } else { colors::RED };
+                format!(
+                    "{} {}  [dups: {}, conflicts: {}]",
+                    format_icon_colored(NerdFont::Folder, icon_color),
+                    resolved.display_path(),
+                    dup,
+                    cnf,
+                )
+            }
+            TopEntry::ResolveAll => format!(
+                "{} Resolve All Scan Dirs",
                 format_icon_colored(NerdFont::Sync, colors::GREEN)
             ),
-            Self::ResolveDuplicates => format!(
-                "{} Resolve Duplicates",
-                format_icon_colored(NerdFont::File, colors::MAUVE)
+            TopEntry::AddScanDir => format!(
+                "{} Add Scan Directory",
+                format_icon_colored(NerdFont::Plus, colors::MAUVE)
             ),
-            Self::ResolveConflicts => format!(
-                "{} Resolve Conflicts",
-                format_icon_colored(NerdFont::GitCompare, colors::PEACH)
-            ),
-            Self::ConfigureWorkingDirectory => format!(
-                "{} Set Working Directory",
-                format_icon_colored(NerdFont::Folder, colors::TEAL)
-            ),
-            Self::ConfigureConflictTypes => format!(
-                "{} Set Conflict Types",
-                format_icon_colored(NerdFont::Edit, colors::YELLOW)
-            ),
-            Self::EditConfig => format!(
-                "{} Edit Config",
+            TopEntry::EditConfig => format!(
+                "{} Edit Config File",
                 format_icon_colored(NerdFont::Edit, colors::BLUE)
             ),
-            Self::OpenWorkingDirectory => format!(
-                "{} Open Working Directory",
-                format_icon_colored(NerdFont::FolderOpen, colors::TEAL)
-            ),
-            Self::ShowConfigPath => format!(
-                "{} Show Config Path",
-                format_icon_colored(NerdFont::FileConfig, colors::YELLOW)
-            ),
-            Self::Close => format!("{} Close Menu", format_back_icon()),
+            TopEntry::Close => format!("{} Close Menu", format_back_icon()),
         }
     }
 
     fn fzf_key(&self) -> String {
-        match self {
-            Self::ResolveAll => "!__all__".to_string(),
-            Self::ResolveDuplicates => "!__duplicates__".to_string(),
-            Self::ResolveConflicts => "!__conflicts__".to_string(),
-            Self::ConfigureWorkingDirectory => "!__configure_working_directory__".to_string(),
-            Self::ConfigureConflictTypes => "!__configure_conflict_types__".to_string(),
-            Self::EditConfig => "!__edit_config__".to_string(),
-            Self::OpenWorkingDirectory => "!__open_dir__".to_string(),
-            Self::ShowConfigPath => "!__config_path__".to_string(),
-            Self::Close => "!__close__".to_string(),
+        match &self.entry {
+            TopEntry::ScanDir { index, .. } => format!("scan_dir:{}", index),
+            TopEntry::ResolveAll => "!__resolve_all__".to_string(),
+            TopEntry::AddScanDir => "!__add_scan_dir__".to_string(),
+            TopEntry::EditConfig => "!__edit_config__".to_string(),
+            TopEntry::Close => "!__close__".to_string(),
         }
     }
 
     fn fzf_preview(&self) -> FzfPreview {
-        PreviewBuilder::new()
-            .header(NerdFont::Info, "Resolvething")
-            .text("Preview is prepared when the menu opens.")
-            .build()
+        FzfPreview::Text(self.preview.clone())
     }
 }
 
-impl FzfSelectable for MenuItem {
+impl FzfSelectable for ActionItem {
     fn fzf_display_text(&self) -> String {
-        self.entry.fzf_display_text()
+        match self.action {
+            ScanDirAction::ResolveEverything => format!(
+                "{} Resolve Everything",
+                format_icon_colored(NerdFont::Sync, colors::GREEN)
+            ),
+            ScanDirAction::ResolveDuplicates => format!(
+                "{} Resolve Duplicates",
+                format_icon_colored(NerdFont::File, colors::MAUVE)
+            ),
+            ScanDirAction::ResolveConflicts => format!(
+                "{} Resolve Conflicts",
+                format_icon_colored(NerdFont::GitCompare, colors::PEACH)
+            ),
+            ScanDirAction::OpenDirectory => format!(
+                "{} Open Directory",
+                format_icon_colored(NerdFont::FolderOpen, colors::TEAL)
+            ),
+            ScanDirAction::EditExtensions => format!(
+                "{} Edit Extensions",
+                format_icon_colored(NerdFont::Edit, colors::YELLOW)
+            ),
+            ScanDirAction::ChangePath => format!(
+                "{} Change Path",
+                format_icon_colored(NerdFont::Folder, colors::BLUE)
+            ),
+            ScanDirAction::Remove => format!(
+                "{} Remove Scan Directory",
+                format_icon_colored(NerdFont::Trash, colors::RED)
+            ),
+            ScanDirAction::Back => format!("{} Back", format_back_icon()),
+        }
     }
 
     fn fzf_key(&self) -> String {
-        self.entry.fzf_key()
+        format!("{:?}", self.action)
     }
 
     fn fzf_preview(&self) -> FzfPreview {
@@ -120,105 +167,244 @@ pub fn resolvething_menu(debug: bool) -> Result<()> {
     let mut cursor = MenuCursor::new();
 
     loop {
-        let selected = match select_menu_entry(&mut cursor)? {
-            Some(entry) => entry,
-            None => return Ok(()),
+        let config = resolved_config()?;
+        let entries = build_top_entries(&config);
+        let items: Vec<TopItem> = entries
+            .iter()
+            .map(|entry| TopItem {
+                entry: entry.clone(),
+                preview: build_top_preview(entry, &config),
+            })
+            .collect();
+
+        let mut builder = FzfWrapper::builder()
+            .header(Header::fancy("Resolvething"))
+            .prompt("Select")
+            .args(fzf_mocha_args())
+            .responsive_layout();
+
+        if let Some(index) = cursor.initial_index(&items) {
+            builder = builder.initial_index(index);
+        }
+
+        let selected = match builder.select(items.clone())? {
+            FzfResult::Selected(item) => {
+                cursor.update(&item, &items);
+                item.entry
+            }
+            FzfResult::Cancelled => return Ok(()),
+            _ => return Ok(()),
         };
 
         match selected {
-            MenuEntry::ResolveAll => {
-                resolve_duplicates(None, false)?;
-                resolve_conflicts(None, &[])?;
+            TopEntry::ScanDir { index, .. } => {
+                if matches!(run_scan_dir_menu(index)?, ActionResult::Exit) {
+                    return Ok(());
+                }
             }
-            MenuEntry::ResolveDuplicates => {
-                resolve_duplicates(None, false)?;
+            TopEntry::ResolveAll => {
+                let dirs = config.resolved_scan_dirs()?;
+                for dir in &dirs {
+                    if let Err(error) = resolve_duplicates(dir, false) {
+                        FzfWrapper::message(&format!(
+                            "Failed to resolve duplicates in {}: {}",
+                            dir.display_path(),
+                            error
+                        ))?;
+                    }
+                    if let Err(error) = resolve_conflicts(dir) {
+                        FzfWrapper::message(&format!(
+                            "Failed to resolve conflicts in {}: {}",
+                            dir.display_path(),
+                            error
+                        ))?;
+                    }
+                }
             }
-            MenuEntry::ResolveConflicts => {
-                resolve_conflicts(None, &[])?;
+            TopEntry::AddScanDir => {
+                add_scan_directory()?;
             }
-            MenuEntry::ConfigureWorkingDirectory => {
-                configure_working_directory()?;
+            TopEntry::EditConfig => {
+                edit_config()?;
             }
-            MenuEntry::ConfigureConflictTypes => {
-                configure_conflict_types()?;
-            }
-            MenuEntry::EditConfig => {
-                super::commands::edit_config()?;
-            }
-            MenuEntry::OpenWorkingDirectory => {
-                open_working_directory()?;
-            }
-            MenuEntry::ShowConfigPath => {
-                crate::menu_utils::FzfWrapper::message(&show_config_path()?)?;
-            }
-            MenuEntry::Close => return Ok(()),
+            TopEntry::Close => return Ok(()),
         }
     }
 }
 
-fn select_menu_entry(cursor: &mut MenuCursor) -> Result<Option<MenuEntry>> {
-    let entries = vec![
-        MenuEntry::ResolveAll,
-        MenuEntry::ResolveDuplicates,
-        MenuEntry::ResolveConflicts,
-        MenuEntry::ConfigureWorkingDirectory,
-        MenuEntry::ConfigureConflictTypes,
-        MenuEntry::EditConfig,
-        MenuEntry::OpenWorkingDirectory,
-        MenuEntry::ShowConfigPath,
-        MenuEntry::Close,
-    ];
-
-    let status = menu_status().ok();
-    let menu_items: Vec<MenuItem> = entries
+fn build_top_entries(config: &ResolvethingConfig) -> Vec<TopEntry> {
+    let mut entries: Vec<TopEntry> = config
+        .scan_dirs
         .iter()
-        .map(|entry| MenuItem {
-            entry: entry.clone(),
-            preview: build_preview(entry, status.as_ref()),
+        .enumerate()
+        .map(|(index, _)| {
+            let resolved = config
+                .resolved_scan_dir(index)
+                .unwrap_or_else(|_| ResolvedScanDir {
+                    path: config.scan_dirs[index].path.clone(),
+                    extensions: config.scan_dirs[index].normalized_extensions(),
+                    source_index: Some(index),
+                });
+            let status = compute_status(&resolved);
+            TopEntry::ScanDir {
+                index,
+                resolved,
+                status,
+            }
         })
         .collect();
 
-    let mut builder = FzfWrapper::builder()
-        .header(Header::fancy("Resolvething"))
-        .prompt("Select")
-        .args(fzf_mocha_args())
-        .responsive_layout();
-
-    if let Some(index) = cursor.initial_index(&entries) {
-        builder = builder.initial_index(index);
+    if !config.scan_dirs.is_empty() {
+        entries.push(TopEntry::ResolveAll);
     }
+    entries.push(TopEntry::AddScanDir);
+    entries.push(TopEntry::EditConfig);
+    entries.push(TopEntry::Close);
+    entries
+}
 
-    match builder.select(menu_items)? {
-        FzfResult::Selected(item) => {
-            cursor.update(&item.entry, &entries);
-            Ok(Some(item.entry))
+fn run_scan_dir_menu(index: usize) -> Result<ActionResult> {
+    let mut cursor = MenuCursor::new();
+    loop {
+        let config = resolved_config()?;
+        let Some(entry) = config.scan_dirs.get(index).cloned() else {
+            // Removed or shifted: bounce back to the outer menu.
+            return Ok(ActionResult::Back);
+        };
+        let resolved = config
+            .resolved_scan_dir(index)
+            .unwrap_or_else(|_| ResolvedScanDir {
+                path: entry.path.clone(),
+                extensions: entry.normalized_extensions(),
+                source_index: Some(index),
+            });
+        let status = compute_status(&resolved);
+        let actions = build_actions(&resolved, &status);
+
+        let mut builder = FzfWrapper::builder()
+            .header(Header::fancy(&format!(
+                "Scan Dir: {}",
+                resolved.display_path()
+            )))
+            .prompt("Action")
+            .args(fzf_mocha_args())
+            .responsive_layout();
+
+        if let Some(idx) = cursor.initial_index(&actions) {
+            builder = builder.initial_index(idx);
         }
-        FzfResult::Cancelled => Ok(None),
-        _ => Ok(None),
+
+        let result = match builder.select(actions.clone())? {
+            FzfResult::Selected(item) => {
+                cursor.update(&item, &actions);
+                handle_scan_dir_action(item.action, index, &resolved)?
+            }
+            FzfResult::Cancelled => ActionResult::Back,
+            _ => ActionResult::Exit,
+        };
+
+        match result {
+            ActionResult::Stay => continue,
+            ActionResult::Back => return Ok(ActionResult::Stay),
+            ActionResult::Exit => return Ok(ActionResult::Exit),
+        }
     }
 }
 
-fn menu_status() -> Result<MenuStatus> {
-    let config = resolved_config()?;
-    let directory = config.resolve_working_directory(None)?;
+fn handle_scan_dir_action(
+    action: ScanDirAction,
+    index: usize,
+    resolved: &ResolvedScanDir,
+) -> Result<ActionResult> {
+    match action {
+        ScanDirAction::ResolveEverything => {
+            if let Err(error) = resolve_duplicates(resolved, false) {
+                FzfWrapper::message(&format!("Duplicate resolution failed: {}", error))?;
+            }
+            if let Err(error) = resolve_conflicts(resolved) {
+                FzfWrapper::message(&format!("Conflict resolution failed: {}", error))?;
+            }
+            Ok(ActionResult::Stay)
+        }
+        ScanDirAction::ResolveDuplicates => {
+            if let Err(error) = resolve_duplicates(resolved, false) {
+                FzfWrapper::message(&format!("Duplicate resolution failed: {}", error))?;
+            }
+            Ok(ActionResult::Stay)
+        }
+        ScanDirAction::ResolveConflicts => {
+            if let Err(error) = resolve_conflicts(resolved) {
+                FzfWrapper::message(&format!("Conflict resolution failed: {}", error))?;
+            }
+            Ok(ActionResult::Stay)
+        }
+        ScanDirAction::OpenDirectory => {
+            open_directory(&resolved.path)?;
+            Ok(ActionResult::Stay)
+        }
+        ScanDirAction::EditExtensions => {
+            configure_scan_directory_extensions(index)?;
+            Ok(ActionResult::Stay)
+        }
+        ScanDirAction::ChangePath => {
+            change_scan_directory_path(index)?;
+            Ok(ActionResult::Stay)
+        }
+        ScanDirAction::Remove => {
+            let confirm = FzfWrapper::confirm(&format!(
+                "Remove {} from configured scan directories?",
+                resolved.display_path()
+            ))?;
+            if matches!(confirm, ConfirmResult::Yes) {
+                remove_scan_directory(index)?;
+                Ok(ActionResult::Back)
+            } else {
+                Ok(ActionResult::Stay)
+            }
+        }
+        ScanDirAction::Back => Ok(ActionResult::Back),
+    }
+}
+
+fn build_actions(resolved: &ResolvedScanDir, status: &ScanDirStatus) -> Vec<ActionItem> {
+    let entries = vec![
+        ScanDirAction::ResolveEverything,
+        ScanDirAction::ResolveDuplicates,
+        ScanDirAction::ResolveConflicts,
+        ScanDirAction::OpenDirectory,
+        ScanDirAction::EditExtensions,
+        ScanDirAction::ChangePath,
+        ScanDirAction::Remove,
+        ScanDirAction::Back,
+    ];
+
+    entries
+        .into_iter()
+        .map(|action| ActionItem {
+            preview: build_action_preview(&action, resolved, status),
+            action,
+        })
+        .collect()
+}
+
+fn compute_status(resolved: &ResolvedScanDir) -> ScanDirStatus {
     let mut warnings = Vec::new();
 
-    if !directory.exists() {
+    if !resolved.path.exists() {
         warnings.push(format!(
-            "Working directory does not exist: {}",
-            format_path(&directory)
+            "Scan directory does not exist: {}",
+            resolved.display_path()
         ));
-        return Ok(MenuStatus {
-            config,
-            directory,
+        return ScanDirStatus {
             duplicate_count: None,
             conflict_count: None,
             warnings,
-        });
+            exists: false,
+        };
     }
 
     let duplicate_count = if which::which("fclones").is_ok() {
-        match super::duplicates::scan_duplicates(&directory) {
+        match super::duplicates::scan_duplicates(&resolved.path) {
             Ok(groups) => Some(groups.len()),
             Err(error) => {
                 warnings.push(format!("Duplicate scan unavailable: {}", error));
@@ -230,98 +416,139 @@ fn menu_status() -> Result<MenuStatus> {
         None
     };
 
-    let conflict_count = match super::conflicts::scan_conflicts(
-        &directory,
-        &config.normalized_conflict_types(&[]),
-    ) {
-        Ok(conflicts) => Some(conflicts.len()),
-        Err(error) => {
-            warnings.push(format!("Conflict scan unavailable: {}", error));
-            None
-        }
-    };
+    let conflict_count =
+        match super::conflicts::scan_conflicts(&resolved.path, &resolved.extensions) {
+            Ok(conflicts) => Some(conflicts.len()),
+            Err(error) => {
+                warnings.push(format!("Conflict scan unavailable: {}", error));
+                None
+            }
+        };
 
-    Ok(MenuStatus {
-        config,
-        directory,
+    ScanDirStatus {
         duplicate_count,
         conflict_count,
         warnings,
-    })
+        exists: true,
+    }
 }
 
-fn build_preview(entry: &MenuEntry, status: Option<&MenuStatus>) -> String {
-    let Some(status) = status else {
-        return PreviewBuilder::new()
-            .header(NerdFont::Warning, "Resolvething")
-            .text("Unable to load resolvething configuration.")
-            .build_string();
-    };
-
-    let working_dir = format_path(&status.directory);
-    let config_path = show_config_path().unwrap_or_else(|_| "<unavailable>".to_string());
-    let duplicate_count = status
-        .duplicate_count
-        .map(|count| count.to_string())
-        .unwrap_or_else(|| "unavailable".to_string());
-    let conflict_count = status
-        .conflict_count
-        .map(|count| count.to_string())
-        .unwrap_or_else(|| "unavailable".to_string());
-
-    let mut builder = match entry {
-        MenuEntry::ResolveAll => PreviewBuilder::new()
-            .header(NerdFont::Sync, "Resolve Everything")
-            .field("Working Directory", &working_dir)
-            .field("Duplicate Groups", &duplicate_count)
-            .field("Conflicts", &conflict_count)
+fn build_top_preview(entry: &TopEntry, config: &ResolvethingConfig) -> String {
+    match entry {
+        TopEntry::ScanDir { resolved, status, .. } => {
+            let dup = status
+                .duplicate_count
+                .map(|c| c.to_string())
+                .unwrap_or_else(|| "unavailable".to_string());
+            let cnf = status
+                .conflict_count
+                .map(|c| c.to_string())
+                .unwrap_or_else(|| "unavailable".to_string());
+            let mut builder = PreviewBuilder::new()
+                .header(NerdFont::Folder, "Scan Directory")
+                .field("Path", &resolved.display_path())
+                .field("Extensions", &resolved.extensions_label())
+                .field("Duplicate Groups", &dup)
+                .field("Conflicts", &cnf);
+            for warning in &status.warnings {
+                builder = builder
+                    .blank()
+                    .line(colors::YELLOW, Some(NerdFont::Warning), warning);
+            }
+            builder.build_string()
+        }
+        TopEntry::ResolveAll => PreviewBuilder::new()
+            .header(NerdFont::Sync, "Resolve All Scan Dirs")
+            .text(&format!(
+                "Resolve duplicates then conflicts for all {} configured directories.",
+                config.scan_dirs.len()
+            ))
+            .build_string(),
+        TopEntry::AddScanDir => PreviewBuilder::new()
+            .header(NerdFont::Plus, "Add Scan Directory")
+            .text("Add another directory to the resolvething scan list.")
             .blank()
-            .text("Runs duplicate cleanup first, then opens conflict resolution."),
-        MenuEntry::ResolveDuplicates => PreviewBuilder::new()
-            .header(NerdFont::File, "Resolve Duplicates")
-            .field("Working Directory", &working_dir)
-            .field("Duplicate Groups", &duplicate_count)
-            .blank()
-            .text("Each duplicate group uses file previews and lets you keep one copy."),
-        MenuEntry::ResolveConflicts => PreviewBuilder::new()
-            .header(NerdFont::GitCompare, "Resolve Conflicts")
-            .field("Working Directory", &working_dir)
-            .field(
-                "Conflict Types",
-                &status.config.conflict_file_types.join(", "),
-            )
-            .field("Conflicts", &conflict_count)
-            .blank()
-            .text("Opens your diff editor, then trashes the conflict copy when resolved."),
-        MenuEntry::ConfigureWorkingDirectory => PreviewBuilder::new()
-            .header(NerdFont::Folder, "Set Working Directory")
-            .field("Current", &working_dir)
-            .blank()
-            .text("Choose the directory resolvething should scan by default.")
-            .text("This uses the same file-picker flow as other ins menus."),
-        MenuEntry::ConfigureConflictTypes => PreviewBuilder::new()
-            .header(NerdFont::Edit, "Set Conflict Types")
-            .field("Current", &status.config.conflict_file_types.join(", "))
-            .blank()
-            .text("Edit the list of file extensions treated as mergeable conflicts."),
-        MenuEntry::EditConfig => PreviewBuilder::new()
-            .header(NerdFont::Edit, "Edit Config")
-            .field("Config File", &config_path)
-            .blank()
-            .text("Adjust the working directory, conflict file types, or editor command."),
-        MenuEntry::OpenWorkingDirectory => PreviewBuilder::new()
-            .header(NerdFont::FolderOpen, "Open Working Directory")
-            .field("Directory", &working_dir)
-            .blank()
-            .text("Tries xdg-open first and falls back to printing the path."),
-        MenuEntry::ShowConfigPath => PreviewBuilder::new()
-            .header(NerdFont::FileConfig, "Config Path")
-            .field("Path", &config_path)
-            .blank()
-            .text("Use this if you want to edit the file outside the menu."),
-        MenuEntry::Close => PreviewBuilder::new()
+            .text("New entries default to scanning every plain text file;")
+            .text("you can pin them to specific extensions afterwards.")
+            .build_string(),
+        TopEntry::EditConfig => {
+            let path = ResolvethingConfig::config_path()
+                .map(|p| format_path(&p))
+                .unwrap_or_else(|_| "<unavailable>".to_string());
+            PreviewBuilder::new()
+                .header(NerdFont::Edit, "Edit Config File")
+                .field("File", &path)
+                .blank()
+                .text("Open the config file in your editor for direct edits.")
+                .build_string()
+        }
+        TopEntry::Close => PreviewBuilder::new()
             .header(NerdFont::Cross, "Close Menu")
-            .text("Exit the resolvething menu."),
+            .text("Exit the resolvething menu.")
+            .build_string(),
+    }
+}
+
+fn build_action_preview(
+    action: &ScanDirAction,
+    resolved: &ResolvedScanDir,
+    status: &ScanDirStatus,
+) -> String {
+    let dup = status
+        .duplicate_count
+        .map(|c| c.to_string())
+        .unwrap_or_else(|| "unavailable".to_string());
+    let cnf = status
+        .conflict_count
+        .map(|c| c.to_string())
+        .unwrap_or_else(|| "unavailable".to_string());
+
+    let mut builder = match action {
+        ScanDirAction::ResolveEverything => PreviewBuilder::new()
+            .header(NerdFont::Sync, "Resolve Everything")
+            .field("Path", &resolved.display_path())
+            .field("Duplicate Groups", &dup)
+            .field("Conflicts", &cnf)
+            .blank()
+            .text("Run duplicate cleanup first, then open conflict resolution."),
+        ScanDirAction::ResolveDuplicates => PreviewBuilder::new()
+            .header(NerdFont::File, "Resolve Duplicates")
+            .field("Path", &resolved.display_path())
+            .field("Duplicate Groups", &dup)
+            .blank()
+            .text("Conflict-file dupes are auto-cleaned (even in .stversions).")
+            .text("Other duplicate groups prompt for which copy to keep."),
+        ScanDirAction::ResolveConflicts => PreviewBuilder::new()
+            .header(NerdFont::GitCompare, "Resolve Conflicts")
+            .field("Path", &resolved.display_path())
+            .field("Extensions", &resolved.extensions_label())
+            .field("Conflicts", &cnf)
+            .blank()
+            .text("Open each conflict in your diff editor."),
+        ScanDirAction::OpenDirectory => PreviewBuilder::new()
+            .header(NerdFont::FolderOpen, "Open Directory")
+            .field("Path", &resolved.display_path())
+            .blank()
+            .text("Try xdg-open, fall back to printing the path."),
+        ScanDirAction::EditExtensions => PreviewBuilder::new()
+            .header(NerdFont::Edit, "Edit Extensions")
+            .field("Current", &resolved.extensions_label())
+            .blank()
+            .text("Comma-separated list of extensions to treat as conflicts.")
+            .text("Empty = scan every plain text file."),
+        ScanDirAction::ChangePath => PreviewBuilder::new()
+            .header(NerdFont::Folder, "Change Path")
+            .field("Current", &resolved.display_path())
+            .blank()
+            .text("Pick a new directory for this scan entry."),
+        ScanDirAction::Remove => PreviewBuilder::new()
+            .header(NerdFont::Trash, "Remove Scan Directory")
+            .field("Path", &resolved.display_path())
+            .blank()
+            .text("Drop this entry from the configured scan list."),
+        ScanDirAction::Back => PreviewBuilder::new()
+            .header(NerdFont::Cross, "Back")
+            .text("Return to the top resolvething menu."),
     };
 
     if !status.warnings.is_empty() {
@@ -334,15 +561,11 @@ fn build_preview(entry: &MenuEntry, status: Option<&MenuStatus>) -> String {
     builder.build_string()
 }
 
-fn open_working_directory() -> Result<()> {
-    let config = resolved_config()?;
-    let path = config.resolve_working_directory(None)?;
-
+fn open_directory(path: &PathBuf) -> Result<()> {
     if which::which("xdg-open").is_ok() {
-        let _ = Command::new("xdg-open").arg(&path).spawn();
+        let _ = Command::new("xdg-open").arg(path).spawn();
     } else {
-        println!("{}", format_path(&path));
+        println!("{}", format_path(path));
     }
-
     Ok(())
 }

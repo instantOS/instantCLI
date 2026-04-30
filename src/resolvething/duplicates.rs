@@ -10,6 +10,8 @@ use crate::ui::preview::{FzfPreview, PreviewBuilder};
 use super::commands::trash_path;
 use super::config::format_path;
 
+const IGNORED_DIR_SEGMENTS: &[&str] = &[".stversions"];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DuplicateFileType {
     Regular,
@@ -72,11 +74,38 @@ impl DuplicateEntry {
 
         Self { path, file_type }
     }
+
+    pub fn is_in_ignored_dir(&self) -> bool {
+        path_in_ignored_dir(&self.path)
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct DuplicateGroup {
     pub files: Vec<DuplicateEntry>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AutoResolution {
+    pub keep: Vec<PathBuf>,
+    pub trash: Vec<PathBuf>,
+}
+
+/// What to do with a duplicate group:
+/// - `Auto` means we can act without prompting the user.
+/// - `Manual` means the user must pick which file to keep.
+/// - `Skip` means we deliberately leave the group untouched (e.g., it lives
+///   entirely in an ignored folder and contains no conflict files).
+#[derive(Debug, Clone)]
+pub enum GroupPlan {
+    Auto(AutoResolution),
+    Manual,
+    Skip(SkipReason),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum SkipReason {
+    IgnoredFolder,
 }
 
 impl DuplicateGroup {
@@ -86,42 +115,99 @@ impl DuplicateGroup {
         }
     }
 
-    pub fn auto_keep_choice(&self) -> Option<&DuplicateEntry> {
-        let regular: Vec<_> = self
+    /// Compute what to do with this group. Conflict-file dedup runs even in
+    /// ignored folders; for non-conflict groups in ignored folders we skip.
+    pub fn plan(&self, no_auto: bool) -> GroupPlan {
+        if self.files.len() < 2 {
+            return GroupPlan::Skip(SkipReason::IgnoredFolder);
+        }
+
+        let conflicts: Vec<&DuplicateEntry> = self
             .files
             .iter()
-            .filter(|file| file.file_type == DuplicateFileType::Regular)
+            .filter(|f| f.file_type == DuplicateFileType::SyncthingConflict)
             .collect();
-        let conflicts: Vec<_> = self
+        let non_conflicts: Vec<&DuplicateEntry> = self
             .files
             .iter()
-            .filter(|file| file.file_type == DuplicateFileType::SyncthingConflict)
-            .collect();
-        let tmps: Vec<_> = self
-            .files
-            .iter()
-            .filter(|file| file.file_type == DuplicateFileType::Tmp)
+            .filter(|f| f.file_type != DuplicateFileType::SyncthingConflict)
             .collect();
 
-        if self.files.is_empty() {
-            None
-        } else if regular.len() == 1 && regular.len() < self.files.len() {
-            regular.first().copied()
-        } else if conflicts.len() == 1 && tmps.len() + conflicts.len() == self.files.len() {
-            conflicts.first().copied()
-        } else if tmps.len() == self.files.len() {
-            tmps.first().copied()
-        } else if conflicts.len() == self.files.len() {
-            conflicts.first().copied()
-        } else {
-            None
+        // Mixed group: keep all non-conflict files, trash all conflicts.
+        // This always runs automatically, regardless of `no_auto`, and even
+        // inside ignored folders.
+        if !conflicts.is_empty() && !non_conflicts.is_empty() {
+            return GroupPlan::Auto(AutoResolution {
+                keep: non_conflicts.iter().map(|e| e.path.clone()).collect(),
+                trash: conflicts.iter().map(|e| e.path.clone()).collect(),
+            });
         }
+
+        // All-conflict group: keep one (lexicographically first), trash rest.
+        // Also always automatic, including inside ignored folders.
+        if !conflicts.is_empty() && non_conflicts.is_empty() {
+            let mut sorted: Vec<&DuplicateEntry> = conflicts.clone();
+            sorted.sort_by(|a, b| a.path.cmp(&b.path));
+            let keep = sorted[0].path.clone();
+            let trash: Vec<PathBuf> = sorted[1..].iter().map(|e| e.path.clone()).collect();
+            return GroupPlan::Auto(AutoResolution {
+                keep: vec![keep],
+                trash,
+            });
+        }
+
+        // No conflict files. If any path lives in an ignored folder, skip.
+        if self.files.iter().any(DuplicateEntry::is_in_ignored_dir) {
+            return GroupPlan::Skip(SkipReason::IgnoredFolder);
+        }
+
+        if no_auto {
+            return GroupPlan::Manual;
+        }
+
+        // Existing tmp/orig auto rules.
+        let regular: Vec<&DuplicateEntry> = self
+            .files
+            .iter()
+            .filter(|f| f.file_type == DuplicateFileType::Regular)
+            .collect();
+        let tmps: Vec<&DuplicateEntry> = self
+            .files
+            .iter()
+            .filter(|f| f.file_type == DuplicateFileType::Tmp)
+            .collect();
+
+        if regular.len() == 1 && regular.len() < self.files.len() {
+            let keep = regular[0].path.clone();
+            let trash = self
+                .files
+                .iter()
+                .filter(|f| f.path != keep)
+                .map(|f| f.path.clone())
+                .collect();
+            return GroupPlan::Auto(AutoResolution {
+                keep: vec![keep],
+                trash,
+            });
+        }
+
+        if tmps.len() == self.files.len() {
+            let keep = tmps[0].path.clone();
+            let trash = tmps[1..].iter().map(|e| e.path.clone()).collect();
+            return GroupPlan::Auto(AutoResolution {
+                keep: vec![keep],
+                trash,
+            });
+        }
+
+        GroupPlan::Manual
     }
 
-    pub fn keep_only(&self, keep: &Path) -> Result<usize> {
+    /// Trash every file in this group except the ones in `keep`.
+    pub fn keep_paths(&self, keep: &[PathBuf]) -> Result<usize> {
         let mut removed = 0;
         for file in &self.files {
-            if file.path != keep {
+            if !keep.iter().any(|k| k == &file.path) {
                 trash_path(&file.path)?;
                 removed += 1;
             }
@@ -169,6 +255,10 @@ impl crate::menu_utils::FzfSelectable for DuplicateChoice {
     }
 }
 
+/// Scan for duplicates inside `directory`. We include normally-ignored
+/// folders (e.g. `.stversions`) so that conflict-file duplicates can be
+/// auto-resolved even there; pure non-conflict groups inside ignored
+/// folders are skipped by `DuplicateGroup::plan`.
 pub fn scan_duplicates(directory: &Path) -> Result<Vec<DuplicateGroup>> {
     let output = Command::new("fclones")
         .arg("group")
@@ -177,8 +267,6 @@ pub fn scan_duplicates(directory: &Path) -> Result<Vec<DuplicateGroup>> {
         .arg("--format")
         .arg("fdupes")
         .arg("--cache")
-        .arg("--exclude")
-        .arg("**/.stversions/**")
         .output()
         .with_context(|| format!("running fclones in {}", directory.display()))?;
 
@@ -207,4 +295,10 @@ pub fn scan_duplicates(directory: &Path) -> Result<Vec<DuplicateGroup>> {
     }
 
     Ok(groups)
+}
+
+pub fn path_in_ignored_dir(path: &Path) -> bool {
+    path.components()
+        .filter_map(|c| c.as_os_str().to_str())
+        .any(|seg| IGNORED_DIR_SEGMENTS.contains(&seg))
 }

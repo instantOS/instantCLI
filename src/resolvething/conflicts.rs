@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use regex::Regex;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use walkdir::WalkDir;
@@ -9,7 +10,8 @@ use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::{FzfPreview, PreviewBuilder};
 
 use super::commands::{
-    editor_command, sync_conflict_regex_for_type, sync_conflict_replace_regex_for_type, trash_path,
+    editor_command, sync_conflict_regex, sync_conflict_regex_for_type,
+    sync_conflict_replace_regex, sync_conflict_replace_regex_for_type, trash_path,
 };
 use super::config::format_path;
 
@@ -135,50 +137,69 @@ impl FzfSelectable for ConflictChoice {
     }
 }
 
+/// Scan for conflict files. If `file_types` is empty, every Syncthing
+/// conflict file with text-like content is considered (the validity check
+/// applied later filters out binary/oversized payloads). Otherwise, only
+/// conflicts whose final extension is in the list are returned.
 pub fn scan_conflicts(directory: &Path, file_types: &[String]) -> Result<Vec<Conflict>> {
     let mut conflicts = Vec::new();
 
-    for file_type in file_types {
-        let regex = sync_conflict_regex_for_type(file_type);
-        let replace_regex = sync_conflict_replace_regex_for_type(file_type);
-
-        for entry in WalkDir::new(directory)
-            .into_iter()
-            .filter_map(|entry| entry.ok())
-        {
-            if entry
-                .path()
-                .components()
-                .filter_map(|component| component.as_os_str().to_str())
-                .any(|segment| segment == STVERSIONS_DIR)
-            {
-                continue;
-            }
-
-            if !entry.file_type().is_file() {
-                continue;
-            }
-
-            let path_str = entry
-                .path()
-                .to_str()
-                .context("encountered non-UTF-8 file path while scanning conflicts")?;
-
-            if regex.is_match(path_str) {
-                let original = replace_regex
-                    .replace_all(path_str, &format!(".{file_type}"))
-                    .to_string();
-                conflicts.push(Conflict {
-                    original: PathBuf::from(original),
-                    modified: PathBuf::from(path_str),
-                });
-            }
+    if file_types.is_empty() {
+        let regex = sync_conflict_regex();
+        let replace_regex = sync_conflict_replace_regex();
+        scan_walk(directory, &regex, &replace_regex, "", &mut conflicts)?;
+    } else {
+        for file_type in file_types {
+            let regex = sync_conflict_regex_for_type(file_type);
+            let replace_regex = sync_conflict_replace_regex_for_type(file_type);
+            let suffix = format!(".{file_type}");
+            scan_walk(directory, &regex, &replace_regex, &suffix, &mut conflicts)?;
         }
     }
 
     conflicts.sort_by(|a, b| a.modified.cmp(&b.modified));
     conflicts.dedup_by(|a, b| a.modified == b.modified);
     Ok(conflicts)
+}
+
+fn scan_walk(
+    directory: &Path,
+    regex: &Regex,
+    replace_regex: &Regex,
+    suffix: &str,
+    conflicts: &mut Vec<Conflict>,
+) -> Result<()> {
+    for entry in WalkDir::new(directory)
+        .into_iter()
+        .filter_map(|entry| entry.ok())
+    {
+        if entry
+            .path()
+            .components()
+            .filter_map(|component| component.as_os_str().to_str())
+            .any(|segment| segment == STVERSIONS_DIR)
+        {
+            continue;
+        }
+
+        if !entry.file_type().is_file() {
+            continue;
+        }
+
+        let path_str = entry
+            .path()
+            .to_str()
+            .context("encountered non-UTF-8 file path while scanning conflicts")?;
+
+        if regex.is_match(path_str) {
+            let original = replace_regex.replace_all(path_str, suffix).to_string();
+            conflicts.push(Conflict {
+                original: PathBuf::from(original),
+                modified: PathBuf::from(path_str),
+            });
+        }
+    }
+    Ok(())
 }
 
 fn file_is_valid(path: &Path) -> bool {

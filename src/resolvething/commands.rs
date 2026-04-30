@@ -17,9 +17,11 @@ use crate::ui::nerd_font::NerdFont;
 use crate::ui::prelude::{Level, emit};
 
 use super::cli::{ConfigCommands, ResolvethingCommands};
-use super::config::{ResolvethingConfig, format_path};
+use super::config::{ResolvethingConfig, ResolvedScanDir, ScanDir, format_path};
 use super::conflicts::{ConflictChoice, ConflictResolution, scan_conflicts};
-use super::duplicates::{DuplicateChoice, DuplicateGroup, scan_duplicates};
+use super::duplicates::{
+    DuplicateChoice, DuplicateGroup, GroupPlan, SkipReason, scan_duplicates,
+};
 use super::menu::resolvething_menu;
 
 static FCLONES_DEP: Dependency = Dependency {
@@ -33,19 +35,27 @@ static FCLONES_DEP: Dependency = Dependency {
 
 pub fn handle_resolvething_command(command: ResolvethingCommands, debug: bool) -> Result<()> {
     match command {
-        ResolvethingCommands::Duplicates { path, no_auto } => {
-            resolve_duplicates(path.as_deref(), no_auto)
+        ResolvethingCommands::Duplicates { dir, no_auto } => {
+            let scan_dirs = resolve_scan_dirs(dir.as_deref())?;
+            for scan_dir in &scan_dirs {
+                resolve_duplicates(scan_dir, no_auto)?;
+            }
+            Ok(())
         }
-        ResolvethingCommands::Conflicts { path, types } => {
-            resolve_conflicts(path.as_deref(), &types)
+        ResolvethingCommands::Conflicts { dir } => {
+            let scan_dirs = resolve_scan_dirs(dir.as_deref())?;
+            for scan_dir in &scan_dirs {
+                resolve_conflicts(scan_dir)?;
+            }
+            Ok(())
         }
-        ResolvethingCommands::All {
-            path,
-            no_auto,
-            types,
-        } => {
-            resolve_duplicates(path.as_deref(), no_auto)?;
-            resolve_conflicts(path.as_deref(), &types)
+        ResolvethingCommands::All { dir, no_auto } => {
+            let scan_dirs = resolve_scan_dirs(dir.as_deref())?;
+            for scan_dir in &scan_dirs {
+                resolve_duplicates(scan_dir, no_auto)?;
+                resolve_conflicts(scan_dir)?;
+            }
+            Ok(())
         }
         ResolvethingCommands::Menu { gui } => {
             if gui {
@@ -60,26 +70,37 @@ pub fn handle_resolvething_command(command: ResolvethingCommands, debug: bool) -
             resolvething_menu(debug)
         }
         ResolvethingCommands::Config { command } => match command.unwrap_or(ConfigCommands::Show) {
-            ConfigCommands::Path => {
-                println!("{}", show_config_path()?);
-                Ok(())
-            }
             ConfigCommands::Show => show_config(),
             ConfigCommands::Edit => edit_config(),
         },
     }
 }
 
-pub fn resolve_duplicates(path_override: Option<&str>, no_auto: bool) -> Result<()> {
-    ensure_duplicate_dependencies()?;
+/// Resolve which scan dirs to operate on for a CLI invocation.
+pub fn resolve_scan_dirs(dir_override: Option<&str>) -> Result<Vec<ResolvedScanDir>> {
     let config = resolved_config()?;
-    let directory = config.resolve_working_directory(path_override)?;
+    if let Some(raw) = dir_override {
+        let resolved = config.resolved_scan_dir_for_override(raw)?;
+        return Ok(vec![resolved]);
+    }
+    let resolved = config.resolved_scan_dirs()?;
+    if resolved.is_empty() {
+        bail!(
+            "No scan directories configured. Add one with `ins resolvething menu` or edit {}",
+            ResolvethingConfig::config_path()?.display()
+        );
+    }
+    Ok(resolved)
+}
 
-    if !directory.exists() {
-        bail!("Working directory does not exist: {}", directory.display());
+pub fn resolve_duplicates(scan_dir: &ResolvedScanDir, no_auto: bool) -> Result<()> {
+    ensure_duplicate_dependencies()?;
+
+    if !scan_dir.path.exists() {
+        bail!("Scan directory does not exist: {}", scan_dir.path.display());
     }
 
-    let groups = scan_duplicates(&directory)?;
+    let groups = scan_duplicates(&scan_dir.path)?;
     if groups.is_empty() {
         emit(
             Level::Success,
@@ -87,7 +108,7 @@ pub fn resolve_duplicates(path_override: Option<&str>, no_auto: bool) -> Result<
             &format!(
                 "{} No duplicate groups found in {}",
                 char::from(NerdFont::Check),
-                format_path(&directory)
+                format_path(&scan_dir.path)
             ),
             None,
         );
@@ -97,37 +118,38 @@ pub fn resolve_duplicates(path_override: Option<&str>, no_auto: bool) -> Result<
     let mut removed_files = 0usize;
     let mut auto_resolved = 0usize;
     let mut skipped = 0usize;
+    let mut ignored = 0usize;
     let mut cursor = MenuCursor::new();
 
     for (index, group) in groups.iter().enumerate() {
-        let keep = if !no_auto {
-            group.auto_keep_choice().map(|entry| entry.path.clone())
-        } else {
-            None
-        };
-
-        let keep = match keep {
-            Some(path) => {
+        match group.plan(no_auto) {
+            GroupPlan::Auto(action) => {
                 auto_resolved += 1;
-                emit(
-                    Level::Info,
-                    "resolvething.duplicates.auto",
-                    &format!(
-                        "{} Auto-keeping {}",
-                        char::from(NerdFont::Check),
-                        format_path(&path)
-                    ),
-                    None,
-                );
-                Some(path)
+                for path in &action.trash {
+                    emit(
+                        Level::Info,
+                        "resolvething.duplicates.auto",
+                        &format!(
+                            "{} Trashing duplicate {}",
+                            char::from(NerdFont::Trash),
+                            format_path(path)
+                        ),
+                        None,
+                    );
+                }
+                removed_files += group.keep_paths(&action.keep)?;
             }
-            None => select_duplicate_keep(group, index + 1, groups.len(), &mut cursor)?,
-        };
-
-        if let Some(keep_path) = keep {
-            removed_files += group.keep_only(&keep_path)?;
-        } else {
-            skipped += 1;
+            GroupPlan::Manual => {
+                let keep = select_duplicate_keep(group, index + 1, groups.len(), &mut cursor)?;
+                if let Some(keep_path) = keep {
+                    removed_files += group.keep_paths(&[keep_path])?;
+                } else {
+                    skipped += 1;
+                }
+            }
+            GroupPlan::Skip(SkipReason::IgnoredFolder) => {
+                ignored += 1;
+            }
         }
     }
 
@@ -135,11 +157,13 @@ pub fn resolve_duplicates(path_override: Option<&str>, no_auto: bool) -> Result<
         Level::Success,
         "resolvething.duplicates.complete",
         &format!(
-            "{} Duplicate cleanup finished: {} groups, {} auto-resolved, {} skipped, {} files trashed",
+            "{} {}: {} groups, {} auto-resolved, {} skipped, {} ignored, {} files trashed",
             char::from(NerdFont::Check),
+            format_path(&scan_dir.path),
             groups.len(),
             auto_resolved,
             skipped,
+            ignored,
             removed_files
         ),
         None,
@@ -148,20 +172,15 @@ pub fn resolve_duplicates(path_override: Option<&str>, no_auto: bool) -> Result<
     Ok(())
 }
 
-pub fn resolve_conflicts(path_override: Option<&str>, type_overrides: &[String]) -> Result<()> {
+pub fn resolve_conflicts(scan_dir: &ResolvedScanDir) -> Result<()> {
     ensure_menu_dependencies()?;
     let config = resolved_config()?;
-    let directory = config.resolve_working_directory(path_override)?;
-    let types = config.normalized_conflict_types(type_overrides);
 
-    if !directory.exists() {
-        bail!("Working directory does not exist: {}", directory.display());
-    }
-    if types.is_empty() {
-        bail!("No conflict file types configured");
+    if !scan_dir.path.exists() {
+        bail!("Scan directory does not exist: {}", scan_dir.path.display());
     }
 
-    let mut conflicts = scan_conflicts(&directory, &types)?;
+    let mut conflicts = scan_conflicts(&scan_dir.path, &scan_dir.extensions)?;
     conflicts.retain(|conflict| conflict.is_valid());
 
     if conflicts.is_empty() {
@@ -171,7 +190,7 @@ pub fn resolve_conflicts(path_override: Option<&str>, type_overrides: &[String])
             &format!(
                 "{} No resolvable Syncthing conflicts found in {}",
                 char::from(NerdFont::Check),
-                format_path(&directory)
+                format_path(&scan_dir.path)
             ),
             None,
         );
@@ -184,13 +203,13 @@ pub fn resolve_conflicts(path_override: Option<&str>, type_overrides: &[String])
     let mut cursor = MenuCursor::new();
 
     loop {
-        conflicts = scan_conflicts(&directory, &types)?;
+        conflicts = scan_conflicts(&scan_dir.path, &scan_dir.extensions)?;
         conflicts.retain(|conflict| conflict.is_valid());
         if conflicts.is_empty() {
             break;
         }
 
-        let choice = select_conflict_choice(&conflicts, &mut cursor)?;
+        let choice = select_conflict_choice(&conflicts, &scan_dir.path, &mut cursor)?;
         let Some(choice) = choice else {
             break;
         };
@@ -220,8 +239,9 @@ pub fn resolve_conflicts(path_override: Option<&str>, type_overrides: &[String])
         Level::Success,
         "resolvething.conflicts.complete",
         &format!(
-            "{} Conflict cleanup finished: {} resolved, {} unresolved, {} skipped",
+            "{} {}: {} resolved, {} unresolved, {} skipped",
             char::from(NerdFont::Check),
+            format_path(&scan_dir.path),
             resolved,
             unresolved,
             skipped
@@ -238,10 +258,6 @@ pub fn resolved_config() -> Result<ResolvethingConfig> {
         config.save()?;
     }
     Ok(config)
-}
-
-pub fn show_config_path() -> Result<String> {
-    Ok(ResolvethingConfig::config_path()?.display().to_string())
 }
 
 pub fn show_config() -> Result<()> {
@@ -263,22 +279,21 @@ pub fn edit_config() -> Result<()> {
     Ok(())
 }
 
-pub fn configure_working_directory() -> Result<()> {
+pub fn add_scan_directory() -> Result<bool> {
     let mut config = resolved_config()?;
-    let current = config.resolve_working_directory(None).ok();
 
     let mut builder = PathInputBuilder::new()
         .header(format!(
-            "{} Choose a working directory for resolvething",
+            "{} Add a scan directory",
             char::from(NerdFont::Folder)
         ))
         .manual_prompt(format!(
-            "{} Enter the directory to scan for duplicates and conflicts",
+            "{} Enter the directory to scan",
             char::from(NerdFont::Edit)
         ))
         .scope(FilePickerScope::Directories)
         .picker_hint(format!(
-            "{} Select the root directory Syncthing writes into",
+            "{} Pick a directory Syncthing writes into",
             char::from(NerdFont::Info)
         ))
         .manual_option_label(format!(
@@ -290,84 +305,179 @@ pub fn configure_working_directory() -> Result<()> {
             char::from(NerdFont::FolderOpen)
         ));
 
-    if let Some(current) = current {
-        builder = builder.start_dir(current);
+    if let Some(home) = dirs::home_dir() {
+        builder = builder.start_dir(home);
     }
 
     let selection = builder.choose()?;
     let chosen = match selection {
         PathInputSelection::Manual(input) => super::config::expand_path(&input)?,
         PathInputSelection::Picker(path) | PathInputSelection::WinePrefix(path) => path,
-        PathInputSelection::Cancelled => return Ok(()),
+        PathInputSelection::Cancelled => return Ok(false),
     };
 
-    config.working_directory = chosen.clone();
+    if config
+        .scan_dirs
+        .iter()
+        .any(|entry| entry.path == chosen)
+    {
+        FzfWrapper::message(&format!(
+            "{} is already configured as a scan directory.",
+            format_path(&chosen)
+        ))?;
+        return Ok(false);
+    }
+
+    config.scan_dirs.push(ScanDir::new(chosen.clone()));
     config.save()?;
 
     emit(
         Level::Success,
-        "resolvething.config.working_directory",
+        "resolvething.config.scan_dir_added",
         &format!(
-            "{} Working directory set to {}",
+            "{} Added scan directory {}",
             char::from(NerdFont::Check),
             format_path(&chosen)
         ),
         None,
     );
 
-    Ok(())
+    Ok(true)
 }
 
-pub fn configure_conflict_types() -> Result<()> {
+pub fn remove_scan_directory(index: usize) -> Result<bool> {
     let mut config = resolved_config()?;
-    let current = if config.conflict_file_types.is_empty() {
+    if index >= config.scan_dirs.len() {
+        return Ok(false);
+    }
+    let removed = config.scan_dirs.remove(index);
+    config.save()?;
+    emit(
+        Level::Success,
+        "resolvething.config.scan_dir_removed",
+        &format!(
+            "{} Removed scan directory {}",
+            char::from(NerdFont::Check),
+            format_path(&removed.path)
+        ),
+        None,
+    );
+    Ok(true)
+}
+
+pub fn change_scan_directory_path(index: usize) -> Result<bool> {
+    let mut config = resolved_config()?;
+    let current = config
+        .scan_dirs
+        .get(index)
+        .map(|entry| entry.path.clone())
+        .ok_or_else(|| anyhow::anyhow!("scan_dir index {} out of range", index))?;
+
+    let builder = PathInputBuilder::new()
+        .header(format!(
+            "{} Change scan directory path",
+            char::from(NerdFont::Folder)
+        ))
+        .manual_prompt(format!(
+            "{} Enter the new directory",
+            char::from(NerdFont::Edit)
+        ))
+        .scope(FilePickerScope::Directories)
+        .start_dir(current.clone())
+        .manual_option_label(format!(
+            "{} Type an exact directory",
+            char::from(NerdFont::Edit)
+        ))
+        .picker_option_label(format!(
+            "{} Browse and choose a directory",
+            char::from(NerdFont::FolderOpen)
+        ));
+
+    let selection = builder.choose()?;
+    let chosen = match selection {
+        PathInputSelection::Manual(input) => super::config::expand_path(&input)?,
+        PathInputSelection::Picker(path) | PathInputSelection::WinePrefix(path) => path,
+        PathInputSelection::Cancelled => return Ok(false),
+    };
+
+    config.scan_dirs[index].path = chosen.clone();
+    config.save()?;
+
+    emit(
+        Level::Success,
+        "resolvething.config.scan_dir_path",
+        &format!(
+            "{} Scan directory updated to {}",
+            char::from(NerdFont::Check),
+            format_path(&chosen)
+        ),
+        None,
+    );
+
+    Ok(true)
+}
+
+pub fn configure_scan_directory_extensions(index: usize) -> Result<bool> {
+    let mut config = resolved_config()?;
+    let entry = config
+        .scan_dirs
+        .get(index)
+        .ok_or_else(|| anyhow::anyhow!("scan_dir index {} out of range", index))?;
+
+    let current = if entry.extensions.is_empty() {
         None
     } else {
-        Some(config.conflict_file_types.join(", "))
+        Some(entry.extensions.join(", "))
     };
 
     let outcome = prompt_text_edit(
-        TextEditPrompt::new("Conflict Types", current.as_deref())
-            .header("Enter comma-separated conflict file extensions")
+        TextEditPrompt::new("Conflict Extensions", current.as_deref())
+            .header(format!(
+                "Conflict file extensions for {}\nLeave empty to scan every plain text file.",
+                format_path(&entry.path)
+            ))
             .ghost("e.g. md,json,txt"),
     )?;
 
     match outcome {
-        TextEditOutcome::Updated(Some(value)) => {
-            let parsed = config.normalized_conflict_types(
-                &value
-                    .split(',')
-                    .map(|item| item.to_string())
-                    .collect::<Vec<_>>(),
-            );
-            if parsed.is_empty() {
-                FzfWrapper::message("Please enter at least one file extension.")?;
-                return Ok(());
-            }
-            config.conflict_file_types = parsed.clone();
+        TextEditOutcome::Updated(value) => {
+            let raw: Vec<String> = value
+                .as_deref()
+                .unwrap_or("")
+                .split(',')
+                .map(|item| item.to_string())
+                .collect();
+            let parsed = super::config::normalize_extensions(&raw);
+            config.scan_dirs[index].extensions = parsed.clone();
             config.save()?;
+            let label = if parsed.is_empty() {
+                "all plain text files".to_string()
+            } else {
+                parsed.join(", ")
+            };
             emit(
                 Level::Success,
-                "resolvething.config.conflict_types",
+                "resolvething.config.scan_dir_extensions",
                 &format!(
-                    "{} Conflict file types set to {}",
+                    "{} Conflict extensions for {} set to {}",
                     char::from(NerdFont::Check),
-                    parsed.join(", ")
+                    format_path(&config.scan_dirs[index].path),
+                    label
                 ),
                 None,
             );
+            Ok(true)
         }
-        TextEditOutcome::Updated(None) => {
-            FzfWrapper::message("Conflict file types cannot be empty.")?;
-        }
-        TextEditOutcome::Unchanged | TextEditOutcome::Cancelled => {}
+        TextEditOutcome::Unchanged | TextEditOutcome::Cancelled => Ok(false),
     }
-
-    Ok(())
 }
 
 pub fn sync_conflict_regex() -> Regex {
     Regex::new(r".*\.sync-conflict-[A-Z0-9-]*(\..*)?$").expect("invalid Syncthing conflict regex")
+}
+
+pub fn sync_conflict_replace_regex() -> Regex {
+    Regex::new(r"\.sync-conflict-[A-Z0-9-]*").expect("invalid Syncthing conflict replacement regex")
 }
 
 pub fn sync_conflict_regex_for_type(file_type: &str) -> Regex {
@@ -551,6 +661,7 @@ fn select_duplicate_keep(
 
 fn select_conflict_choice(
     conflicts: &[super::conflicts::Conflict],
+    scan_dir: &Path,
     cursor: &mut MenuCursor,
 ) -> Result<Option<ConflictChoice>> {
     let mut entries = Vec::with_capacity(conflicts.len() + 2);
@@ -559,7 +670,10 @@ fn select_conflict_choice(
     entries.push(ConflictChoice::Close);
 
     let mut builder = FzfWrapper::builder()
-        .header(Header::fancy("Syncthing Conflicts"))
+        .header(Header::fancy(&format!(
+            "Syncthing Conflicts: {}",
+            format_path(scan_dir)
+        )))
         .prompt("Resolve")
         .args(fzf_mocha_args())
         .responsive_layout();
