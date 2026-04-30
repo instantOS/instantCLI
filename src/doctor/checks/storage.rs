@@ -208,6 +208,121 @@ impl DoctorCheck for PacmanStaleDownloadsCheck {
 }
 
 #[derive(Default)]
+pub struct TrashBinSizeCheck;
+
+impl TrashBinSizeCheck {
+    const THRESHOLD_GB: u64 = 5;
+    const THRESHOLD_BYTES: u64 = 5 * 1024 * 1024 * 1024; // 5 GB
+
+    fn get_trash_dir() -> Result<std::path::PathBuf> {
+        let home_dir = dirs::home_dir()
+            .ok_or_else(|| anyhow::anyhow!("Could not determine home directory"))?;
+        Ok(home_dir.join(".local").join("share").join("Trash"))
+    }
+}
+
+#[async_trait]
+impl DoctorCheck for TrashBinSizeCheck {
+    fn name(&self) -> &'static str {
+        "Trash Bin Size"
+    }
+
+    fn id(&self) -> &'static str {
+        "trash-size"
+    }
+
+    fn check_privilege_level(&self) -> PrivilegeLevel {
+        PrivilegeLevel::User
+    }
+
+    fn fix_privilege_level(&self) -> PrivilegeLevel {
+        PrivilegeLevel::User
+    }
+
+    async fn execute(&self) -> CheckStatus {
+        let trash_dir = match Self::get_trash_dir() {
+            Ok(dir) => dir,
+            Err(e) => {
+                return CheckStatus::Fail {
+                    message: format!("Could not determine trash directory: {}", e),
+                    fixable: false,
+                };
+            }
+        };
+
+        if !trash_dir.exists() {
+            return CheckStatus::Pass("Trash directory does not exist".to_string());
+        }
+
+        match calculate_dir_size(&trash_dir.to_string_lossy()).await {
+            Ok(size) => {
+                let size_gb = size as f64 / (1024.0 * 1024.0 * 1024.0);
+                if size < Self::THRESHOLD_BYTES {
+                    CheckStatus::Pass(format!(
+                        "Trash bin size: {:.2} GB (below {} GB threshold)",
+                        size_gb,
+                        Self::THRESHOLD_GB
+                    ))
+                } else {
+                    CheckStatus::Warning {
+                        message: format!(
+                            "Trash bin size: {:.2} GB (exceeds {} GB threshold)",
+                            size_gb,
+                            Self::THRESHOLD_GB
+                        ),
+                        fixable: true,
+                    }
+                }
+            }
+            Err(e) => CheckStatus::Fail {
+                message: format!("Could not calculate trash bin size: {}", e),
+                fixable: false,
+            },
+        }
+    }
+
+    fn fix_message(&self) -> Option<String> {
+        Some("Empty the trash bin".to_string())
+    }
+
+    async fn fix(&self) -> Result<()> {
+        let trash_dir = Self::get_trash_dir()?;
+
+        // Use trash-empty if available, otherwise manual deletion
+        if which::which("trash-empty").is_ok() {
+            let status = TokioCommand::new("trash-empty").status().await?;
+            if status.success() {
+                println!("Trash bin emptied using trash-empty.");
+                return Ok(());
+            }
+        }
+
+        // Manual deletion of files and info subdirectories
+        let subdirs = ["files", "info"];
+        let mut removed_any = false;
+
+        for subdir in subdirs {
+            let path = trash_dir.join(subdir);
+            if path.exists() {
+                // We want to empty the directory, not remove it, but removing and recreating is simpler
+                // and follows how most trash managers work.
+                tokio::fs::remove_dir_all(&path).await?;
+                tokio::fs::create_dir_all(&path).await?;
+                removed_any = true;
+            }
+        }
+
+        if removed_any {
+            println!("Trash bin emptied manually.");
+        } else {
+            println!("Trash bin was already empty.");
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Default)]
 pub struct SmartHealthCheck;
 
 #[async_trait]

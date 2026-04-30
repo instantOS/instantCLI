@@ -33,7 +33,8 @@ pub use nerdfont::NerdFontCheck;
 pub use network::{InstantRepoCheck, InternetCheck};
 pub use security::{FaillockCheck, PolkitAgentCheck, SshAuthSockCheck};
 pub use storage::{
-    PacmanCacheCheck, PacmanDbSyncCheck, PacmanStaleDownloadsCheck, SmartHealthCheck, YayCacheCheck,
+    PacmanCacheCheck, PacmanDbSyncCheck, PacmanStaleDownloadsCheck, SmartHealthCheck,
+    TrashBinSizeCheck, YayCacheCheck,
 };
 pub use system::{PendingUpdatesCheck, SwapCheck};
 pub use tools::{BatCheck, FzfVersionCheck, GitConfigCheck};
