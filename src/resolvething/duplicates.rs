@@ -8,10 +8,13 @@ use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::{FzfPreview, PreviewBuilder};
 
-use super::commands::trash_path;
 use super::config::format_path;
+use super::utils::{STVERSIONS_DIR, trash_path};
 
-const IGNORED_DIR_SEGMENTS: &[&str] = &[".stversions"];
+/// Directories whose path components mark a file as "ignored" for deduplication.
+/// Built from the shared [`STVERSIONS_DIR`] constant so there is a single
+/// authoritative spelling of the directory name.
+const IGNORED_DIR_SEGMENTS: &[&str] = &[STVERSIONS_DIR];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DuplicateFileType {
@@ -62,8 +65,7 @@ impl DuplicateEntry {
             .file_name()
             .and_then(|name| name.to_str())
             .unwrap_or_default();
-        let file_type = if crate::resolvething::commands::sync_conflict_regex().is_match(file_name)
-        {
+        let file_type = if super::utils::SYNC_CONFLICT_REGEX.is_match(file_name) {
             DuplicateFileType::SyncthingConflict
         } else if file_name.ends_with(".orig") {
             DuplicateFileType::Orig
@@ -239,17 +241,26 @@ impl DuplicateGroup {
             };
             return match live_group.plan_with(no_auto, mtime) {
                 GroupPlan::Auto(mut action) => {
+                    // Preserve the latest version snapshot alongside the
+                    // auto-chosen live file. Without this, `keep_paths` would
+                    // trash it because it is not in `action.keep`.
+                    action.keep.push(latest_version);
                     action.trash.extend(version_trash);
                     GroupPlan::Auto(action)
                 }
                 // User must pick which live file to keep; the latest version
                 // snapshot is preserved automatically via auto_keep.
-                GroupPlan::Manual { .. } => GroupPlan::Manual {
-                    auto_keep: vec![latest_version],
+                // Merge with any inner auto_keep (always empty today, but
+                // correct by construction for future changes).
+                GroupPlan::Manual { auto_keep: inner } => GroupPlan::Manual {
+                    auto_keep: std::iter::once(latest_version).chain(inner).collect(),
                 },
-                // Skip(Singleton) can't occur: live_entries.len() >= 2.
-                // Skip(IgnoredFolder) can't occur: live files are not in ignored dirs.
-                other => other,
+                // Skip(Singleton): unreachable — live_entries.len() >= 2.
+                // Skip(IgnoredFolder): unreachable — live entries are never in
+                //   ignored dirs, so any_in_ignored is false for live_group.
+                GroupPlan::Skip(_) => {
+                    unreachable!("live_group cannot produce Skip in mixed-group branch")
+                }
             };
         }
 
@@ -389,7 +400,7 @@ pub fn scan_duplicates(directory: &Path) -> Result<Vec<DuplicateGroup>> {
     Ok(groups)
 }
 
-pub fn path_in_ignored_dir(path: &Path) -> bool {
+fn path_in_ignored_dir(path: &Path) -> bool {
     path.components()
         .filter_map(|c| c.as_os_str().to_str())
         .any(|seg| IGNORED_DIR_SEGMENTS.contains(&seg))
@@ -647,8 +658,9 @@ mod tests {
         );
     }
 
-    /// 2 live + 2 versions, auto-resolvable live subset: auto-trash the older
-    /// live duplicate and the older version snapshot.
+    /// 2 live + 2 versions, auto-resolvable live subset: keep the single
+    /// regular live file and the latest version snapshot; trash the orig and
+    /// the older version.
     #[test]
     fn mixed_multiple_live_multiple_versions_auto_resolvable() {
         let g = group(&[
@@ -657,21 +669,24 @@ mod tests {
             "/dir/.stversions/note~20240101-000000.md",
             "/dir/.stversions/note~20240202-000000.md",
         ]);
-        // note.md is Regular, note.md.orig is Orig → auto keeps the single regular.
+        // note.md is Regular, note.md.orig is Orig → auto-resolution of the
+        // live subset keeps note.md. The latest version (lexicographically
+        // note~20240202) is also added to keep; the older one is trashed.
         let action = auto(g.plan_with(false, &|_| None));
         assert!(action.keep.contains(&PathBuf::from("/dir/note.md")));
-        // Both version files are in trash (the older one explicitly, the latest
-        // one because the live file already preserves this content... wait —
-        // the latest version goes to auto_keep in Manual but here it's Auto).
-        // In the Auto path version_trash is appended; latest_version is NOT
-        // added to keep because the live auto-resolution already chose a keeper.
+        assert!(
+            action
+                .keep
+                .contains(&PathBuf::from("/dir/.stversions/note~20240202-000000.md"))
+        );
+        assert_eq!(action.keep.len(), 2);
         assert!(action.trash.contains(&PathBuf::from("/dir/note.md.orig")));
-        // At least the older version file is trashed.
         assert!(
             action
                 .trash
                 .contains(&PathBuf::from("/dir/.stversions/note~20240101-000000.md"))
         );
+        assert_eq!(action.trash.len(), 2);
     }
 
     /// 2 live + 1 version, manual live subset: returns Manual with the version

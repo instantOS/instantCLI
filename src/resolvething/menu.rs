@@ -1,5 +1,5 @@
 use anyhow::Result;
-use std::path::PathBuf;
+use std::path::Path;
 use std::process::Command;
 
 use crate::menu_utils::{ConfirmResult, FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
@@ -12,12 +12,13 @@ use super::commands::{
     edit_config, remove_scan_directory, resolve_conflicts, resolve_duplicates, resolved_config,
 };
 use super::config::{ResolvedScanDir, ResolvethingConfig, format_path};
+use super::duplicates::GroupPlan;
 
-/// Outcome of an inner action: keep loop, leave to outer, or exit menu.
+/// Outcome of an inner action: keep the inner loop running or return to the
+/// outer menu.
 enum ActionResult {
     Stay,
     Back,
-    Exit,
 }
 
 /// Top-level menu entry: each configured scan_dir is its own entry, plus a
@@ -173,10 +174,21 @@ impl FzfSelectable for ActionItem {
 pub fn resolvething_menu(debug: bool) -> Result<()> {
     let _ = debug;
     let mut cursor = MenuCursor::new();
+    // Statuses are computed once per "dirty" cycle (initial render + after any
+    // resolve action) instead of on every loop iteration, avoiding a full
+    // fclones scan on every menu navigation.
+    let mut cached_statuses: Vec<ScanDirStatus> = Vec::new();
+    let mut statuses_dirty = true;
 
     loop {
         let config = resolved_config()?;
-        let entries = build_top_entries(&config);
+
+        if statuses_dirty || cached_statuses.len() != config.scan_dirs.len() {
+            cached_statuses = compute_all_statuses(&config);
+            statuses_dirty = false;
+        }
+
+        let entries = build_top_entries(&config, &cached_statuses);
         let items: Vec<TopItem> = entries
             .iter()
             .map(|entry| TopItem {
@@ -200,14 +212,14 @@ pub fn resolvething_menu(debug: bool) -> Result<()> {
                 cursor.update(&item, &items);
                 item.entry
             }
-            FzfResult::Cancelled => return Ok(()),
             _ => return Ok(()),
         };
 
         match selected {
             TopEntry::ScanDir { index, .. } => {
-                if matches!(run_scan_dir_menu(index)?, ActionResult::Exit) {
-                    return Ok(());
+                let (_, did_resolve) = run_scan_dir_menu(index)?;
+                if did_resolve {
+                    statuses_dirty = true;
                 }
             }
             TopEntry::ResolveAll => {
@@ -228,9 +240,12 @@ pub fn resolvething_menu(debug: bool) -> Result<()> {
                         ))?;
                     }
                 }
+                statuses_dirty = true;
             }
             TopEntry::AddScanDir => {
-                add_scan_directory()?;
+                if add_scan_directory()? {
+                    statuses_dirty = true;
+                }
             }
             TopEntry::EditConfig => {
                 edit_config()?;
@@ -240,20 +255,22 @@ pub fn resolvething_menu(debug: bool) -> Result<()> {
     }
 }
 
-fn build_top_entries(config: &ResolvethingConfig) -> Vec<TopEntry> {
+/// Build top-level menu entries using pre-computed statuses. Statuses are
+/// indexed by position in `config.scan_dirs`; out-of-range indices fall back
+/// to a placeholder "unavailable" status.
+fn build_top_entries(config: &ResolvethingConfig, statuses: &[ScanDirStatus]) -> Vec<TopEntry> {
     let mut entries: Vec<TopEntry> = config
         .scan_dirs
         .iter()
         .enumerate()
         .map(|(index, _)| {
-            let resolved = config
-                .resolved_scan_dir(index)
-                .unwrap_or_else(|_| ResolvedScanDir {
-                    path: config.scan_dirs[index].path.clone(),
-                    extensions: config.scan_dirs[index].normalized_extensions(),
-                    source_index: Some(index),
-                });
-            let status = compute_status(&resolved);
+            let resolved = config.resolved_scan_dir_or_fallback(index);
+            let status = statuses.get(index).cloned().unwrap_or(ScanDirStatus {
+                duplicate_count: None,
+                conflict_count: None,
+                warnings: vec!["Status unavailable".to_string()],
+                exists: false,
+            });
             TopEntry::ScanDir {
                 index,
                 resolved,
@@ -271,23 +288,46 @@ fn build_top_entries(config: &ResolvethingConfig) -> Vec<TopEntry> {
     entries
 }
 
-fn run_scan_dir_menu(index: usize) -> Result<ActionResult> {
+/// Compute statuses for all configured scan directories up front so the menu
+/// loop does not need to re-run fclones on every redraw.
+fn compute_all_statuses(config: &ResolvethingConfig) -> Vec<ScanDirStatus> {
+    (0..config.scan_dirs.len())
+        .map(|i| {
+            config
+                .resolved_scan_dir(i)
+                .map(|r| compute_status(&r))
+                .unwrap_or(ScanDirStatus {
+                    duplicate_count: None,
+                    conflict_count: None,
+                    warnings: vec!["Failed to resolve scan dir path".to_string()],
+                    exists: false,
+                })
+        })
+        .collect()
+}
+
+/// Returns `(ActionResult, did_resolve)` where `did_resolve` signals to the
+/// outer menu that statuses should be invalidated.
+fn run_scan_dir_menu(index: usize) -> Result<(ActionResult, bool)> {
     let mut cursor = MenuCursor::new();
+    let mut cached_status: Option<ScanDirStatus> = None;
+    let mut status_dirty = true;
+    let mut did_resolve = false;
+
     loop {
         let config = resolved_config()?;
-        let Some(entry) = config.scan_dirs.get(index).cloned() else {
+        if config.scan_dirs.get(index).is_none() {
             // Removed or shifted: bounce back to the outer menu.
-            return Ok(ActionResult::Back);
-        };
-        let resolved = config
-            .resolved_scan_dir(index)
-            .unwrap_or_else(|_| ResolvedScanDir {
-                path: entry.path.clone(),
-                extensions: entry.normalized_extensions(),
-                source_index: Some(index),
-            });
-        let status = compute_status(&resolved);
-        let actions = build_actions(&resolved, &status);
+            return Ok((ActionResult::Back, did_resolve));
+        }
+        let resolved = config.resolved_scan_dir_or_fallback(index);
+
+        if status_dirty || cached_status.is_none() {
+            cached_status = Some(compute_status(&resolved));
+            status_dirty = false;
+        }
+        let status = cached_status.as_ref().unwrap();
+        let actions = build_actions(&resolved, status);
 
         let mut builder = FzfWrapper::builder()
             .header(Header::fancy(&format!(
@@ -302,19 +342,33 @@ fn run_scan_dir_menu(index: usize) -> Result<ActionResult> {
             builder = builder.initial_index(idx);
         }
 
-        let result = match builder.select(actions.clone())? {
+        let selected_action = match builder.select(actions.clone())? {
             FzfResult::Selected(item) => {
                 cursor.update(&item, &actions);
-                handle_scan_dir_action(item.action, index, &resolved)?
+                item.action
             }
-            FzfResult::Cancelled => ActionResult::Back,
-            _ => ActionResult::Exit,
+            _ => ScanDirAction::Back,
         };
+
+        // Mark statuses dirty before executing resolve actions so the next
+        // render reflects the updated duplicate/conflict counts.
+        let changes_status = matches!(
+            selected_action,
+            ScanDirAction::ResolveEverything
+                | ScanDirAction::ResolveDuplicates
+                | ScanDirAction::ResolveConflicts
+        );
+
+        let result = handle_scan_dir_action(selected_action, index, &resolved)?;
+
+        if changes_status {
+            status_dirty = true;
+            did_resolve = true;
+        }
 
         match result {
             ActionResult::Stay => continue,
-            ActionResult::Back => return Ok(ActionResult::Stay),
-            ActionResult::Exit => return Ok(ActionResult::Exit),
+            ActionResult::Back => return Ok((ActionResult::Stay, did_resolve)),
         }
     }
 }
@@ -413,7 +467,17 @@ fn compute_status(resolved: &ResolvedScanDir) -> ScanDirStatus {
 
     let duplicate_count = if which::which("fclones").is_ok() {
         match super::duplicates::scan_duplicates(&resolved.path) {
-            Ok(groups) => Some(groups.len()),
+            Ok(groups) => {
+                // Count only groups that require user action (Auto or Manual),
+                // not Skip groups. Raw fclones output includes ignored-folder
+                // and singleton groups that the planner will never act on, so
+                // showing them as "duplicates" is misleading.
+                let actionable = groups
+                    .iter()
+                    .filter(|g| !matches!(g.plan(false), GroupPlan::Skip(_)))
+                    .count();
+                Some(actionable)
+            }
             Err(error) => {
                 warnings.push(format!("Duplicate scan unavailable: {}", error));
                 None
@@ -571,7 +635,7 @@ fn build_action_preview(
     builder.build_string()
 }
 
-fn open_directory(path: &PathBuf) -> Result<()> {
+fn open_directory(path: &Path) -> Result<()> {
     if which::which("xdg-open").is_ok() {
         let _ = Command::new("xdg-open").arg(path).spawn();
     } else {

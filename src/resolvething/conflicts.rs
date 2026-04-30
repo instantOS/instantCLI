@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use regex::Regex;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use walkdir::WalkDir;
@@ -9,14 +10,13 @@ use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::{FzfPreview, PreviewBuilder};
 
-use super::commands::{
-    editor_command, sync_conflict_regex, sync_conflict_regex_for_type, sync_conflict_replace_regex,
-    sync_conflict_replace_regex_for_type, trash_path,
-};
 use super::config::format_path;
+use super::utils::{
+    STVERSIONS_DIR, SYNC_CONFLICT_REGEX, SYNC_CONFLICT_REPLACE_REGEX, editor_command,
+    sync_conflict_regex_for_type, sync_conflict_replace_regex_for_type, trash_path,
+};
 
 const MAX_FILE_SIZE: u64 = 1_000_000;
-const STVERSIONS_DIR: &str = ".stversions";
 
 #[derive(Debug, Clone)]
 pub struct Conflict {
@@ -145,9 +145,13 @@ pub fn scan_conflicts(directory: &Path, file_types: &[String]) -> Result<Vec<Con
     let mut conflicts = Vec::new();
 
     if file_types.is_empty() {
-        let regex = sync_conflict_regex();
-        let replace_regex = sync_conflict_replace_regex();
-        scan_walk(directory, &regex, &replace_regex, "", &mut conflicts)?;
+        scan_walk(
+            directory,
+            &SYNC_CONFLICT_REGEX,
+            &SYNC_CONFLICT_REPLACE_REGEX,
+            "",
+            &mut conflicts,
+        )?;
     } else {
         for file_type in file_types {
             let regex = sync_conflict_regex_for_type(file_type);
@@ -186,10 +190,12 @@ fn scan_walk(
             continue;
         }
 
-        let path_str = entry
-            .path()
-            .to_str()
-            .context("encountered non-UTF-8 file path while scanning conflicts")?;
+        // Skip files whose paths are not valid UTF-8 rather than aborting the
+        // entire scan. Non-UTF-8 filenames cannot be Syncthing conflict files
+        // (Syncthing itself requires UTF-8 paths), so nothing is lost.
+        let Some(path_str) = entry.path().to_str() else {
+            continue;
+        };
 
         if regex.is_match(path_str) {
             let original = replace_regex.replace_all(path_str, suffix).to_string();
@@ -203,18 +209,43 @@ fn scan_walk(
 }
 
 fn file_is_valid(path: &Path) -> bool {
-    path.exists()
-        && path.is_file()
-        && std::fs::metadata(path)
-            .ok()
-            .map(|meta| meta.len() < MAX_FILE_SIZE)
-            .unwrap_or(false)
-        && std::fs::read(path)
-            .ok()
-            .map(|content| !content.contains(&0))
-            .unwrap_or(false)
+    if !path.exists() || !path.is_file() {
+        return false;
+    }
+    let Ok(meta) = std::fs::metadata(path) else {
+        return false;
+    };
+    if meta.len() >= MAX_FILE_SIZE {
+        return false;
+    }
+    // Stream through the file in chunks to detect NUL bytes without loading
+    // the entire content into memory.
+    let Ok(file) = std::fs::File::open(path) else {
+        return false;
+    };
+    let mut reader = std::io::BufReader::new(file);
+    let mut buf = [0u8; 8192];
+    loop {
+        match reader.read(&mut buf) {
+            Ok(0) => return true,
+            Ok(n) => {
+                if buf[..n].contains(&0) {
+                    return false;
+                }
+            }
+            Err(_) => return false,
+        }
+    }
 }
 
+/// Returns `Ok(true)` when both files have identical content, `Ok(false)` when
+/// they differ, and `Err` when either file cannot be read. Propagating errors
+/// (rather than silently treating unreadable files as equal) prevents the
+/// conflict resolution logic from discarding a file that it cannot verify.
 fn files_equal(a: &Path, b: &Path) -> Result<bool> {
-    Ok(std::fs::read_to_string(a).ok() == std::fs::read_to_string(b).ok())
+    let content_a =
+        std::fs::read_to_string(a).with_context(|| format!("reading {}", a.display()))?;
+    let content_b =
+        std::fs::read_to_string(b).with_context(|| format!("reading {}", b.display()))?;
+    Ok(content_a == content_b)
 }

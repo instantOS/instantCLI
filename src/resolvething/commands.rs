@@ -1,7 +1,5 @@
 use anyhow::{Context, Result, bail};
-use regex::Regex;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use crate::common::deps::FZF;
 use crate::common::package::{
@@ -21,6 +19,7 @@ use super::config::{ResolvedScanDir, ResolvethingConfig, ScanDir, format_path};
 use super::conflicts::{ConflictChoice, ConflictResolution, scan_conflicts};
 use super::duplicates::{DuplicateChoice, DuplicateGroup, GroupPlan, SkipReason, scan_duplicates};
 use super::menu::resolvething_menu;
+use super::utils::plain_editor_command;
 
 static FCLONES_DEP: Dependency = Dependency {
     name: "fclones",
@@ -328,10 +327,16 @@ pub fn resolve_conflicts(scan_dir: &ResolvedScanDir, dry_run: bool) -> Result<()
     let mut unresolved = 0usize;
     let mut skipped = 0usize;
     let mut cursor = MenuCursor::new();
+    // `conflicts` is already populated from the initial scan above; skip the
+    // redundant first re-scan by gating the loop's own scan on a flag.
+    let mut first_iteration = true;
 
     loop {
-        conflicts = scan_conflicts(&scan_dir.path, &scan_dir.extensions)?;
-        conflicts.retain(|conflict| conflict.is_valid());
+        if !first_iteration {
+            conflicts = scan_conflicts(&scan_dir.path, &scan_dir.extensions)?;
+            conflicts.retain(|conflict| conflict.is_valid());
+        }
+        first_iteration = false;
         if conflicts.is_empty() {
             break;
         }
@@ -380,11 +385,7 @@ pub fn resolve_conflicts(scan_dir: &ResolvedScanDir, dry_run: bool) -> Result<()
 }
 
 pub fn resolved_config() -> Result<ResolvethingConfig> {
-    let config = ResolvethingConfig::load()?;
-    if !ResolvethingConfig::config_path()?.exists() {
-        config.save()?;
-    }
-    Ok(config)
+    ResolvethingConfig::load()
 }
 
 pub fn show_config() -> Result<()> {
@@ -595,154 +596,24 @@ pub fn configure_scan_directory_extensions(index: usize) -> Result<bool> {
     }
 }
 
-pub fn sync_conflict_regex() -> Regex {
-    Regex::new(r".*\.sync-conflict-[A-Z0-9-]*(\..*)?$").expect("invalid Syncthing conflict regex")
-}
-
-pub fn sync_conflict_replace_regex() -> Regex {
-    Regex::new(r"\.sync-conflict-[A-Z0-9-]*").expect("invalid Syncthing conflict replacement regex")
-}
-
-pub fn sync_conflict_regex_for_type(file_type: &str) -> Regex {
-    Regex::new(&format!(
-        r".*\.sync-conflict-[A-Z0-9-]*\.{}$",
-        regex::escape(file_type)
-    ))
-    .expect("invalid Syncthing conflict regex for type")
-}
-
-pub fn sync_conflict_replace_regex_for_type(file_type: &str) -> Regex {
-    Regex::new(&format!(
-        r"\.sync-conflict-[A-Z0-9-]*\.{}$",
-        regex::escape(file_type)
-    ))
-    .expect("invalid Syncthing conflict replacement regex")
-}
-
-pub fn trash_path(path: &Path) -> Result<()> {
-    if which::which("trash").is_ok() {
-        let status = Command::new("trash").arg(path).status()?;
-        if status.success() {
-            return Ok(());
-        }
+fn check_install_result(result: InstallResult, declined_msg: &str) -> Result<()> {
+    match result {
+        InstallResult::Installed | InstallResult::AlreadyInstalled => Ok(()),
+        InstallResult::Declined => bail!("{}", declined_msg),
+        InstallResult::NotAvailable { hint, .. } => bail!("missing dependency: {hint}"),
+        InstallResult::Failed { reason } => bail!("dependency installation failed: {reason}"),
     }
-
-    if which::which("gio").is_ok() {
-        let output = Command::new("gio").arg("trash").arg(path).output()?;
-        if output.status.success() {
-            return Ok(());
-        }
-        // On Termux/Android, gio refuses with
-        //   "Trashing on system internal mounts is not supported"
-        // because Android storage isn't a freedesktop-compatible mount. Fall
-        // through to the manual XDG trash implementation in that case.
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        if !stderr.contains("system internal mount") {
-            eprintln!("gio trash failed: {}", stderr.trim());
-        }
-    }
-
-    manual_trash(path).with_context(|| {
-        format!(
-            "Unable to move {} to trash. Install `trash` or ensure `gio` is available.",
-            path.display()
-        )
-    })
-}
-
-/// Move `path` into `$XDG_DATA_HOME/Trash/files`, creating the directory if
-/// needed. This is a minimal fallback used when neither `trash` nor `gio`
-/// can handle the move (e.g. on Termux, where Android storage is rejected by
-/// gio as a "system internal mount").
-fn manual_trash(path: &Path) -> Result<()> {
-    let trash_dir = dirs::data_dir()
-        .unwrap_or_else(std::env::temp_dir)
-        .join("Trash")
-        .join("files");
-    std::fs::create_dir_all(&trash_dir).with_context(|| {
-        format!(
-            "Failed to create fallback trash directory at {}",
-            trash_dir.display()
-        )
-    })?;
-
-    let file_name = path.file_name().ok_or_else(|| {
-        anyhow::anyhow!("Cannot trash path without a file name: {}", path.display())
-    })?;
-    let mut target = trash_dir.join(file_name);
-    if target.exists() {
-        let ts = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis())
-            .unwrap_or(0);
-        target = trash_dir.join(format!("{}.{}", file_name.to_string_lossy(), ts));
-    }
-
-    if std::fs::rename(path, &target).is_ok() {
-        return Ok(());
-    }
-
-    // Fallback for cross-filesystem moves (e.g. between /sdcard and Termux
-    // home): copy then delete. Directories are not supported via copy because
-    // we don't want to pull in a recursive-copy dependency for an edge case.
-    if path.is_dir() {
-        bail!(
-            "Cannot trash directory {} across filesystems; install `trash` or remove it manually",
-            path.display()
-        );
-    }
-    std::fs::copy(path, &target).with_context(|| {
-        format!(
-            "Failed to copy {} into fallback trash at {}",
-            path.display(),
-            target.display()
-        )
-    })?;
-    std::fs::remove_file(path)
-        .with_context(|| format!("Failed to remove {} after copying to trash", path.display()))?;
-    Ok(())
-}
-
-pub fn editor_command(configured_editor: Option<&str>) -> Result<Command> {
-    let mut command = plain_editor_command(configured_editor)?;
-    command.arg("-d");
-    Ok(command)
-}
-
-fn plain_editor_command(configured_editor: Option<&str>) -> Result<Command> {
-    let raw = configured_editor
-        .filter(|value| !value.trim().is_empty())
-        .map(str::to_string)
-        .or_else(|| std::env::var("EDITOR").ok())
-        .unwrap_or_else(|| "nvim".to_string());
-
-    let parts =
-        shell_words::split(&raw).with_context(|| format!("parsing editor command '{raw}'"))?;
-    let Some((program, args)) = parts.split_first() else {
-        bail!("Editor command is empty");
-    };
-
-    let mut command = Command::new(program);
-    command.args(args);
-    Ok(command)
 }
 
 fn ensure_duplicate_dependencies() -> Result<()> {
-    match ensure_all(&[&FZF, &FCLONES_DEP])? {
-        InstallResult::Installed | InstallResult::AlreadyInstalled => Ok(()),
-        InstallResult::Declined => bail!("dependency installation cancelled"),
-        InstallResult::NotAvailable { hint, .. } => bail!("missing dependency: {hint}"),
-        InstallResult::Failed { reason } => bail!("dependency installation failed: {reason}"),
-    }
+    check_install_result(
+        ensure_all(&[&FZF, &FCLONES_DEP])?,
+        "dependency installation cancelled",
+    )
 }
 
 fn ensure_menu_dependencies() -> Result<()> {
-    match ensure_all(&[&FZF])? {
-        InstallResult::Installed | InstallResult::AlreadyInstalled => Ok(()),
-        InstallResult::Declined => bail!("fzf installation cancelled"),
-        InstallResult::NotAvailable { hint, .. } => bail!("missing dependency: {hint}"),
-        InstallResult::Failed { reason } => bail!("dependency installation failed: {reason}"),
-    }
+    check_install_result(ensure_all(&[&FZF])?, "fzf installation cancelled")
 }
 
 fn select_duplicate_keep(
@@ -777,7 +648,6 @@ fn select_duplicate_keep(
                 DuplicateChoice::Skip => Ok(None),
             }
         }
-        FzfResult::Cancelled => Ok(None),
         _ => Ok(None),
     }
 }
@@ -810,7 +680,6 @@ fn select_conflict_choice(
             cursor.update(&choice, &entries);
             Ok(Some(choice))
         }
-        FzfResult::Cancelled => Ok(None),
         _ => Ok(None),
     }
 }

@@ -84,7 +84,21 @@ impl ResolvethingConfig {
         Ok(ResolvedScanDir {
             path: expand_path(&entry.path.to_string_lossy())?,
             extensions: entry.normalized_extensions(),
-            source_index: Some(index),
+        })
+    }
+
+    /// Like [`resolved_scan_dir`] but falls back to the raw (un-expanded) path
+    /// if shell expansion fails, so the caller always gets a usable value.
+    ///
+    /// # Panics
+    /// Panics if `index >= self.scan_dirs.len()`.
+    pub fn resolved_scan_dir_or_fallback(&self, index: usize) -> ResolvedScanDir {
+        self.resolved_scan_dir(index).unwrap_or_else(|_| {
+            let entry = &self.scan_dirs[index];
+            ResolvedScanDir {
+                path: entry.path.clone(),
+                extensions: entry.normalized_extensions(),
+            }
         })
     }
 
@@ -100,7 +114,7 @@ impl ResolvethingConfig {
     /// exactly; otherwise extensions default to empty (all text files).
     pub fn resolved_scan_dir_for_override(&self, raw: &str) -> Result<ResolvedScanDir> {
         let path = expand_path(raw)?;
-        if let Some((index, entry)) =
+        if let Some((_, entry)) =
             self.scan_dirs.iter().enumerate().find(|(_, e)| {
                 expand_path(&e.path.to_string_lossy()).ok().as_deref() == Some(&path)
             })
@@ -108,13 +122,11 @@ impl ResolvethingConfig {
             return Ok(ResolvedScanDir {
                 path,
                 extensions: entry.normalized_extensions(),
-                source_index: Some(index),
             });
         }
         Ok(ResolvedScanDir {
             path,
             extensions: Vec::new(),
-            source_index: None,
         })
     }
 }
@@ -124,10 +136,6 @@ impl ResolvethingConfig {
 pub struct ResolvedScanDir {
     pub path: PathBuf,
     pub extensions: Vec<String>,
-    /// Index into `ResolvethingConfig.scan_dirs` if this entry came from
-    /// configuration; `None` for ad-hoc overrides.
-    #[allow(dead_code)]
-    pub source_index: Option<usize>,
 }
 
 impl ResolvedScanDir {
