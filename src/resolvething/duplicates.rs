@@ -1,6 +1,7 @@
 use anyhow::{Context, Result, bail};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::SystemTime;
 
 use crate::preview::{self, PreviewId};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
@@ -116,8 +117,18 @@ impl DuplicateGroup {
     }
 
     /// Compute what to do with this group. Conflict-file dedup runs even in
-    /// ignored folders; for non-conflict groups in ignored folders we skip.
+    /// ignored folders; pure-version-file groups inside `.stversions` keep
+    /// only the latest copy.
     pub fn plan(&self, no_auto: bool) -> GroupPlan {
+        self.plan_with(no_auto, &fs_mtime_lookup)
+    }
+
+    /// Like [`plan`], but uses an injectable mtime lookup (used by tests).
+    pub fn plan_with(
+        &self,
+        no_auto: bool,
+        mtime: &dyn Fn(&Path) -> Option<SystemTime>,
+    ) -> GroupPlan {
         if self.files.len() < 2 {
             return GroupPlan::Skip(SkipReason::IgnoredFolder);
         }
@@ -156,8 +167,30 @@ impl DuplicateGroup {
             });
         }
 
-        // No conflict files. If any path lives in an ignored folder, skip.
-        if self.files.iter().any(DuplicateEntry::is_in_ignored_dir) {
+        // No conflict files past this point.
+        let all_in_ignored = self.files.iter().all(DuplicateEntry::is_in_ignored_dir);
+        let any_in_ignored = self.files.iter().any(DuplicateEntry::is_in_ignored_dir);
+
+        // Pure version-file group inside `.stversions`: keep the latest copy,
+        // trash the rest. These are just snapshots of the same content; one
+        // archived copy is enough.
+        if all_in_ignored {
+            let keep = pick_latest(&self.files, mtime);
+            let trash: Vec<PathBuf> = self
+                .files
+                .iter()
+                .filter(|f| f.path != keep)
+                .map(|f| f.path.clone())
+                .collect();
+            return GroupPlan::Auto(AutoResolution {
+                keep: vec![keep],
+                trash,
+            });
+        }
+
+        // Mixed inside/outside ignored folder with no conflicts: skip to be
+        // safe (the active live file may legitimately match a stored version).
+        if any_in_ignored {
             return GroupPlan::Skip(SkipReason::IgnoredFolder);
         }
 
@@ -303,6 +336,36 @@ pub fn path_in_ignored_dir(path: &Path) -> bool {
         .any(|seg| IGNORED_DIR_SEGMENTS.contains(&seg))
 }
 
+fn fs_mtime_lookup(path: &Path) -> Option<SystemTime> {
+    std::fs::metadata(path).ok().and_then(|m| m.modified().ok())
+}
+
+/// Pick the entry whose mtime is most recent. Falls back to the
+/// lexicographically largest path when mtimes are unavailable, which works
+/// well for Syncthing's `~YYYYMMDD-HHMMSS` version filename convention.
+fn pick_latest(
+    files: &[DuplicateEntry],
+    mtime: &dyn Fn(&Path) -> Option<SystemTime>,
+) -> PathBuf {
+    debug_assert!(!files.is_empty());
+    let mut best: &DuplicateEntry = &files[0];
+    let mut best_mtime: Option<SystemTime> = mtime(&best.path);
+    for entry in &files[1..] {
+        let candidate_mtime = mtime(&entry.path);
+        let take = match (candidate_mtime, best_mtime) {
+            (Some(c), Some(b)) => c > b,
+            (Some(_), None) => true,
+            (None, Some(_)) => false,
+            (None, None) => entry.path > best.path,
+        };
+        if take {
+            best = entry;
+            best_mtime = candidate_mtime;
+        }
+    }
+    best.path.clone()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -387,8 +450,62 @@ mod tests {
     }
 
     #[test]
-    fn non_conflict_group_in_ignored_folder_is_skipped() {
-        let g = group(&["/dir/.stversions/a.md", "/dir/.stversions/b.md"]);
+    fn pure_stversions_group_keeps_latest_version_by_mtime() {
+        use std::time::{Duration, UNIX_EPOCH};
+        let g = group(&[
+            "/dir/.stversions/a~20240101-000000.md",
+            "/dir/.stversions/a~20240202-000000.md",
+            "/dir/.stversions/a~20240303-000000.md",
+        ]);
+        let mtimes = |p: &Path| match p.to_str().unwrap() {
+            "/dir/.stversions/a~20240101-000000.md" => {
+                Some(UNIX_EPOCH + Duration::from_secs(1_700_000_000))
+            }
+            "/dir/.stversions/a~20240202-000000.md" => {
+                Some(UNIX_EPOCH + Duration::from_secs(1_710_000_000))
+            }
+            "/dir/.stversions/a~20240303-000000.md" => {
+                Some(UNIX_EPOCH + Duration::from_secs(1_720_000_000))
+            }
+            _ => None,
+        };
+        let action = match g.plan_with(false, &mtimes) {
+            GroupPlan::Auto(a) => a,
+            other => panic!("expected Auto, got {:?}", other),
+        };
+        assert_eq!(
+            action.keep,
+            vec![PathBuf::from("/dir/.stversions/a~20240303-000000.md")]
+        );
+        assert_eq!(action.trash.len(), 2);
+    }
+
+    #[test]
+    fn pure_stversions_group_falls_back_to_path_order_without_mtimes() {
+        let g = group(&[
+            "/dir/.stversions/a~20240202-000000.md",
+            "/dir/.stversions/a~20240101-000000.md",
+            "/dir/.stversions/a~20240303-000000.md",
+        ]);
+        let action = match g.plan_with(false, &|_| None) {
+            GroupPlan::Auto(a) => a,
+            other => panic!("expected Auto, got {:?}", other),
+        };
+        // Without mtimes, the latest path lexicographically wins. With ISO
+        // timestamps in the filename this matches the latest version.
+        assert_eq!(
+            action.keep,
+            vec![PathBuf::from("/dir/.stversions/a~20240303-000000.md")]
+        );
+        assert_eq!(action.trash.len(), 2);
+    }
+
+    #[test]
+    fn mixed_inside_outside_ignored_group_is_skipped() {
+        let g = group(&[
+            "/dir/note.md",
+            "/dir/.stversions/note~20240101-000000.md",
+        ]);
         assert!(matches!(
             g.plan(false),
             GroupPlan::Skip(SkipReason::IgnoredFolder)
