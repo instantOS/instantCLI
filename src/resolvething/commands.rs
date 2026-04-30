@@ -169,7 +169,7 @@ pub fn resolve_duplicates(
                     removed_files += action.trash.len();
                 }
             }
-            GroupPlan::Manual => {
+            GroupPlan::Manual { auto_keep } => {
                 if dry_run {
                     emit(
                         Level::Info,
@@ -185,7 +185,9 @@ pub fn resolve_duplicates(
                 } else {
                     let keep = select_duplicate_keep(group, index + 1, groups.len(), &mut cursor)?;
                     if let Some(keep_path) = keep {
-                        removed_files += group.keep_paths(&[keep_path])?;
+                        let mut keep_list = vec![keep_path];
+                        keep_list.extend(auto_keep);
+                        removed_files += group.keep_paths(&keep_list)?;
                     } else {
                         skipped += 1;
                     }
