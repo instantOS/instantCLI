@@ -137,7 +137,7 @@ pub fn resolve_duplicates(
         match group.plan(no_auto) {
             GroupPlan::Auto(action) => {
                 auto_resolved += 1;
-                for path in &action.keep {
+                for path in action.keep() {
                     emit(
                         Level::Info,
                         "resolvething.duplicates.auto.keep",
@@ -149,7 +149,7 @@ pub fn resolve_duplicates(
                         None,
                     );
                 }
-                for path in &action.trash {
+                for path in action.trash() {
                     emit(
                         Level::Info,
                         "resolvething.duplicates.auto",
@@ -163,9 +163,9 @@ pub fn resolve_duplicates(
                     );
                 }
                 if !dry_run {
-                    removed_files += group.keep_paths(&action.keep)?;
+                    removed_files += group.apply_resolution(&action)?;
                 } else {
-                    removed_files += action.trash.len();
+                    removed_files += action.trash_count();
                 }
             }
             GroupPlan::Manual { auto_keep } => {
@@ -186,7 +186,8 @@ pub fn resolve_duplicates(
                     if let Some(keep_path) = keep {
                         let mut keep_list = vec![keep_path];
                         keep_list.extend(auto_keep);
-                        removed_files += group.keep_paths(&keep_list)?;
+                        let resolution = group.resolution_for_keep(keep_list)?;
+                        removed_files += group.apply_resolution(&resolution)?;
                     } else {
                         skipped += 1;
                     }

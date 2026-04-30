@@ -90,8 +90,22 @@ pub struct DuplicateGroup {
 
 #[derive(Debug, Clone)]
 pub struct AutoResolution {
-    pub keep: Vec<PathBuf>,
-    pub trash: Vec<PathBuf>,
+    keep: Vec<PathBuf>,
+    trash: Vec<PathBuf>,
+}
+
+impl AutoResolution {
+    pub fn keep(&self) -> &[PathBuf] {
+        &self.keep
+    }
+
+    pub fn trash(&self) -> &[PathBuf] {
+        &self.trash
+    }
+
+    pub fn trash_count(&self) -> usize {
+        self.trash.len()
+    }
 }
 
 /// What to do with a duplicate group:
@@ -188,16 +202,7 @@ impl DuplicateGroup {
             } else {
                 pick_latest(&self.files, mtime)
             };
-            let trash: Vec<PathBuf> = self
-                .files
-                .iter()
-                .filter(|f| f.path != keep)
-                .map(|f| f.path.clone())
-                .collect();
-            return GroupPlan::Auto(AutoResolution {
-                keep: vec![keep],
-                trash,
-            });
+            return GroupPlan::Auto(self.resolution_for_keep_infallible(vec![keep]));
         }
 
         // No conflict files past this point.
@@ -209,16 +214,7 @@ impl DuplicateGroup {
         // archived copy is enough.
         if all_in_ignored {
             let keep = pick_latest(&self.files, mtime);
-            let trash: Vec<PathBuf> = self
-                .files
-                .iter()
-                .filter(|f| f.path != keep)
-                .map(|f| f.path.clone())
-                .collect();
-            return GroupPlan::Auto(AutoResolution {
-                keep: vec![keep],
-                trash,
-            });
+            return GroupPlan::Auto(self.resolution_for_keep_infallible(vec![keep]));
         }
 
         // Mixed inside/outside ignored folder with no conflicts.
@@ -253,10 +249,10 @@ impl DuplicateGroup {
                 }
                 // Multiple redundant version snapshots: trash all but the latest.
                 // The live file is the unambiguous keeper.
-                return GroupPlan::Auto(AutoResolution {
-                    keep: vec![live_entries[0].path.clone(), latest_version],
-                    trash: version_trash,
-                });
+                return GroupPlan::Auto(self.resolution_for_keep_infallible(vec![
+                    live_entries[0].path.clone(),
+                    latest_version,
+                ]));
             }
 
             // Multiple live files: apply normal dedup logic to the live subset,
@@ -265,13 +261,17 @@ impl DuplicateGroup {
                 files: live_entries,
             };
             return match live_group.plan_with(no_auto, mtime) {
-                GroupPlan::Auto(mut action) => {
+                GroupPlan::Auto(action) => {
                     // Preserve the latest version snapshot alongside the
-                    // auto-chosen live file. Without this, `keep_paths` would
-                    // trash it because it is not in `action.keep`.
-                    action.keep.push(latest_version);
-                    action.trash.extend(version_trash);
-                    GroupPlan::Auto(action)
+                    // auto-chosen live file. Otherwise resolving the full
+                    // group by keep-set would trash the version snapshot.
+                    let keep = action
+                        .keep()
+                        .iter()
+                        .cloned()
+                        .chain(std::iter::once(latest_version))
+                        .collect();
+                    GroupPlan::Auto(self.resolution_for_keep_infallible(keep))
                 }
                 // User must pick which live file to keep; the latest version
                 // snapshot is preserved automatically via auto_keep.
@@ -307,40 +307,71 @@ impl DuplicateGroup {
 
         if regular.len() == 1 && regular.len() < self.files.len() {
             let keep = regular[0].path.clone();
-            let trash = self
-                .files
-                .iter()
-                .filter(|f| f.path != keep)
-                .map(|f| f.path.clone())
-                .collect();
-            return GroupPlan::Auto(AutoResolution {
-                keep: vec![keep],
-                trash,
-            });
+            return GroupPlan::Auto(self.resolution_for_keep_infallible(vec![keep]));
         }
 
         if tmps.len() == self.files.len() {
             let keep = tmps[0].path.clone();
-            let trash = tmps[1..].iter().map(|e| e.path.clone()).collect();
-            return GroupPlan::Auto(AutoResolution {
-                keep: vec![keep],
-                trash,
-            });
+            return GroupPlan::Auto(self.resolution_for_keep_infallible(vec![keep]));
         }
 
         GroupPlan::Manual { auto_keep: vec![] }
     }
 
-    /// Trash every file in this group except the ones in `keep`.
-    pub fn keep_paths(&self, keep: &[PathBuf]) -> Result<usize> {
-        let mut removed = 0;
-        for file in &self.files {
-            if !keep.iter().any(|k| k == &file.path) {
-                trash_path(&file.path)?;
-                removed += 1;
+    pub fn resolution_for_keep(&self, keep: Vec<PathBuf>) -> Result<AutoResolution> {
+        if keep.is_empty() {
+            bail!("refusing to resolve duplicate group without a file to keep");
+        }
+
+        let mut unique_keep = Vec::new();
+        for path in keep {
+            if !unique_keep.iter().any(|existing| existing == &path) {
+                unique_keep.push(path);
             }
         }
-        Ok(removed)
+
+        for path in &unique_keep {
+            if !self.files.iter().any(|file| file.path == *path) {
+                bail!(
+                    "refusing to resolve duplicate group with unknown keep path: {}",
+                    path.display()
+                );
+            }
+        }
+
+        let trash: Vec<PathBuf> = self
+            .files
+            .iter()
+            .filter(|file| !unique_keep.iter().any(|keep| keep == &file.path))
+            .map(|file| file.path.clone())
+            .collect();
+
+        if trash.is_empty() {
+            bail!("refusing to resolve duplicate group without any file to trash");
+        }
+
+        Ok(AutoResolution {
+            keep: unique_keep,
+            trash,
+        })
+    }
+
+    fn resolution_for_keep_infallible(&self, keep: Vec<PathBuf>) -> AutoResolution {
+        self.resolution_for_keep(keep).expect(
+            "duplicate resolution planner must keep group paths and trash at least one file",
+        )
+    }
+
+    pub fn apply_resolution(&self, resolution: &AutoResolution) -> Result<usize> {
+        let validated = self.resolution_for_keep(resolution.keep.clone())?;
+        if validated.trash != resolution.trash {
+            bail!("refusing to resolve duplicate group with inconsistent trash plan");
+        }
+
+        for path in &validated.trash {
+            trash_path(path)?;
+        }
+        Ok(validated.trash.len())
     }
 }
 
@@ -489,19 +520,19 @@ mod tests {
         };
         let action = auto(g.plan_with(false, &mtimes));
         // Latest non-conflict file is kept.
-        assert_eq!(action.keep, vec![PathBuf::from("/dir/copy.md")]);
+        assert_eq!(action.keep(), vec![PathBuf::from("/dir/copy.md")]);
         // All others (including the older non-conflict and both conflicts)
         // are trashed.
-        assert_eq!(action.trash.len(), 3);
-        assert!(action.trash.contains(&PathBuf::from("/dir/note.md")));
+        assert_eq!(action.trash().len(), 3);
+        assert!(action.trash().contains(&PathBuf::from("/dir/note.md")));
         assert!(
             action
-                .trash
+                .trash()
                 .contains(&PathBuf::from("/dir/note.sync-conflict-20240101-AAA.md"))
         );
         assert!(
             action
-                .trash
+                .trash()
                 .contains(&PathBuf::from("/dir/note.sync-conflict-20240202-BBB.md"))
         );
     }
@@ -523,12 +554,12 @@ mod tests {
             _ => None,
         };
         let action = auto(g.plan_with(false, &mtimes));
-        assert_eq!(action.keep.len(), 1);
+        assert_eq!(action.keep().len(), 1);
         assert_eq!(
-            action.keep[0],
+            action.keep()[0],
             PathBuf::from("/dir/note.sync-conflict-20240202-BBB.md")
         );
-        assert_eq!(action.trash.len(), 1);
+        assert_eq!(action.trash().len(), 1);
     }
 
     #[test]
@@ -538,9 +569,12 @@ mod tests {
             "/dir/.stversions/note.sync-conflict-20240101-AAA.md",
         ]);
         let action = auto(g.plan(false));
-        assert_eq!(action.keep, vec![PathBuf::from("/dir/.stversions/note.md")]);
         assert_eq!(
-            action.trash,
+            action.keep(),
+            vec![PathBuf::from("/dir/.stversions/note.md")]
+        );
+        assert_eq!(
+            action.trash(),
             vec![PathBuf::from(
                 "/dir/.stversions/note.sync-conflict-20240101-AAA.md"
             )]
@@ -554,8 +588,8 @@ mod tests {
             "/dir/.stversions/a.sync-conflict-20240202-BBB.md",
         ]);
         let action = auto(g.plan(false));
-        assert_eq!(action.keep.len(), 1);
-        assert_eq!(action.trash.len(), 1);
+        assert_eq!(action.keep().len(), 1);
+        assert_eq!(action.trash().len(), 1);
     }
 
     #[test]
@@ -583,10 +617,10 @@ mod tests {
             other => panic!("expected Auto, got {:?}", other),
         };
         assert_eq!(
-            action.keep,
+            action.keep(),
             vec![PathBuf::from("/dir/.stversions/a~20240303-000000.md")]
         );
-        assert_eq!(action.trash.len(), 2);
+        assert_eq!(action.trash().len(), 2);
     }
 
     #[test]
@@ -603,10 +637,10 @@ mod tests {
         // Without mtimes, the latest path lexicographically wins. With ISO
         // timestamps in the filename this matches the latest version.
         assert_eq!(
-            action.keep,
+            action.keep(),
             vec![PathBuf::from("/dir/.stversions/a~20240303-000000.md")]
         );
-        assert_eq!(action.trash.len(), 2);
+        assert_eq!(action.trash().len(), 2);
     }
 
     #[test]
@@ -628,15 +662,49 @@ mod tests {
     fn no_auto_still_auto_resolves_conflict_files() {
         let g = group(&["/dir/a.md", "/dir/a.sync-conflict-20240101-AAA.md"]);
         let action = auto(g.plan(true));
-        assert_eq!(action.keep, vec![PathBuf::from("/dir/a.md")]);
+        assert_eq!(action.keep(), vec![PathBuf::from("/dir/a.md")]);
     }
 
     #[test]
     fn single_regular_in_mixed_orig_tmp_group_is_auto() {
         let g = group(&["/dir/a.md", "/dir/a.md.orig", "/dir/a.md.tmp"]);
         let action = auto(g.plan(false));
-        assert_eq!(action.keep, vec![PathBuf::from("/dir/a.md")]);
-        assert_eq!(action.trash.len(), 2);
+        assert_eq!(action.keep(), vec![PathBuf::from("/dir/a.md")]);
+        assert_eq!(action.trash().len(), 2);
+    }
+
+    #[test]
+    fn resolution_requires_at_least_one_keeper() {
+        let g = group(&["/dir/a.md", "/dir/b.md"]);
+        assert!(g.resolution_for_keep(vec![]).is_err());
+    }
+
+    #[test]
+    fn resolution_rejects_unknown_keeper() {
+        let g = group(&["/dir/a.md", "/dir/b.md"]);
+        assert!(
+            g.resolution_for_keep(vec![PathBuf::from("/dir/missing.md")])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn resolution_rejects_noop_keep_set() {
+        let g = group(&["/dir/a.md", "/dir/b.md"]);
+        assert!(
+            g.resolution_for_keep(vec![PathBuf::from("/dir/a.md"), PathBuf::from("/dir/b.md")])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn apply_resolution_rejects_inconsistent_trash_plan() {
+        let g = group(&["/dir/a.md", "/dir/b.md"]);
+        let resolution = AutoResolution {
+            keep: vec![PathBuf::from("/dir/a.md")],
+            trash: vec![PathBuf::from("/dir/a.md")],
+        };
+        assert!(g.apply_resolution(&resolution).is_err());
     }
 
     // --- Mixed live + .stversions cases ---
@@ -670,15 +738,15 @@ mod tests {
             _ => Some(UNIX_EPOCH + Duration::from_secs(300)),
         };
         let action = auto(g.plan_with(false, &mtimes));
-        assert!(action.keep.contains(&PathBuf::from("/dir/note.md")));
+        assert!(action.keep().contains(&PathBuf::from("/dir/note.md")));
         assert!(
             action
-                .keep
+                .keep()
                 .contains(&PathBuf::from("/dir/.stversions/note~20240202-000000.md"))
         );
-        assert_eq!(action.keep.len(), 2);
+        assert_eq!(action.keep().len(), 2);
         assert_eq!(
-            action.trash,
+            action.trash(),
             vec![PathBuf::from("/dir/.stversions/note~20240101-000000.md")]
         );
     }
@@ -698,20 +766,20 @@ mod tests {
         // live subset keeps note.md. The latest version (lexicographically
         // note~20240202) is also added to keep; the older one is trashed.
         let action = auto(g.plan_with(false, &|_| None));
-        assert!(action.keep.contains(&PathBuf::from("/dir/note.md")));
+        assert!(action.keep().contains(&PathBuf::from("/dir/note.md")));
         assert!(
             action
-                .keep
+                .keep()
                 .contains(&PathBuf::from("/dir/.stversions/note~20240202-000000.md"))
         );
-        assert_eq!(action.keep.len(), 2);
-        assert!(action.trash.contains(&PathBuf::from("/dir/note.md.orig")));
+        assert_eq!(action.keep().len(), 2);
+        assert!(action.trash().contains(&PathBuf::from("/dir/note.md.orig")));
         assert!(
             action
-                .trash
+                .trash()
                 .contains(&PathBuf::from("/dir/.stversions/note~20240101-000000.md"))
         );
-        assert_eq!(action.trash.len(), 2);
+        assert_eq!(action.trash().len(), 2);
     }
 
     /// 2 live + 1 version, manual live subset: returns Manual with the version
