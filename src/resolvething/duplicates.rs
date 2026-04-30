@@ -106,7 +106,13 @@ pub enum GroupPlan {
 
 #[derive(Debug, Clone, Copy)]
 pub enum SkipReason {
+    /// The group lives inside an ignored directory (e.g. `.stversions`) and
+    /// contains no conflict files, so it is left untouched deliberately.
     IgnoredFolder,
+    /// The group contains fewer than 2 files — nothing to deduplicate.
+    /// This should never occur with well-formed fclones output, but is
+    /// handled defensively.
+    Singleton,
 }
 
 impl DuplicateGroup {
@@ -130,7 +136,7 @@ impl DuplicateGroup {
         mtime: &dyn Fn(&Path) -> Option<SystemTime>,
     ) -> GroupPlan {
         if self.files.len() < 2 {
-            return GroupPlan::Skip(SkipReason::IgnoredFolder);
+            return GroupPlan::Skip(SkipReason::Singleton);
         }
 
         let has_conflict = self

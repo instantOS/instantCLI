@@ -194,6 +194,10 @@ pub fn resolve_duplicates(
             GroupPlan::Skip(SkipReason::IgnoredFolder) => {
                 ignored_groups.push(group);
             }
+            GroupPlan::Skip(SkipReason::Singleton) => {
+                // Degenerate group with fewer than 2 files — nothing to do.
+                // Not counted in any summary bucket; not shown in --show-ignored.
+            }
         }
     }
 
