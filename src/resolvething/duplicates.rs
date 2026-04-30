@@ -133,34 +133,32 @@ impl DuplicateGroup {
             return GroupPlan::Skip(SkipReason::IgnoredFolder);
         }
 
-        let conflicts: Vec<&DuplicateEntry> = self
+        let has_conflict = self
             .files
             .iter()
-            .filter(|f| f.file_type == DuplicateFileType::SyncthingConflict)
-            .collect();
-        let non_conflicts: Vec<&DuplicateEntry> = self
+            .any(|f| f.file_type == DuplicateFileType::SyncthingConflict);
+        let non_conflicts: Vec<DuplicateEntry> = self
             .files
             .iter()
             .filter(|f| f.file_type != DuplicateFileType::SyncthingConflict)
+            .cloned()
             .collect();
 
-        // Mixed group: keep all non-conflict files, trash all conflicts.
-        // This always runs automatically, regardless of `no_auto`, and even
-        // inside ignored folders.
-        if !conflicts.is_empty() && !non_conflicts.is_empty() {
-            return GroupPlan::Auto(AutoResolution {
-                keep: non_conflicts.iter().map(|e| e.path.clone()).collect(),
-                trash: conflicts.iter().map(|e| e.path.clone()).collect(),
-            });
-        }
-
-        // All-conflict group: keep one (lexicographically first), trash rest.
-        // Also always automatic, including inside ignored folders.
-        if !conflicts.is_empty() && non_conflicts.is_empty() {
-            let mut sorted: Vec<&DuplicateEntry> = conflicts.clone();
-            sorted.sort_by(|a, b| a.path.cmp(&b.path));
-            let keep = sorted[0].path.clone();
-            let trash: Vec<PathBuf> = sorted[1..].iter().map(|e| e.path.clone()).collect();
+        // Whenever a conflict file is in the group we always act
+        // automatically (even inside ignored folders): keep exactly one
+        // file. Prefer a non-conflict file; otherwise the latest conflict.
+        if has_conflict {
+            let keep = if !non_conflicts.is_empty() {
+                pick_latest(&non_conflicts, mtime)
+            } else {
+                pick_latest(&self.files, mtime)
+            };
+            let trash: Vec<PathBuf> = self
+                .files
+                .iter()
+                .filter(|f| f.path != keep)
+                .map(|f| f.path.clone())
+                .collect();
             return GroupPlan::Auto(AutoResolution {
                 keep: vec![keep],
                 trash,
@@ -382,44 +380,61 @@ mod tests {
     }
 
     #[test]
-    fn mixed_group_keeps_all_non_conflict_files_and_trashes_conflicts() {
+    fn mixed_group_keeps_one_non_conflict_and_trashes_others() {
+        use std::time::{Duration, UNIX_EPOCH};
         let g = group(&[
             "/dir/note.md",
             "/dir/note.sync-conflict-20240101-AAA.md",
             "/dir/copy.md",
             "/dir/note.sync-conflict-20240202-BBB.md",
         ]);
-        let action = auto(g.plan(false));
-        assert_eq!(
-            action.keep,
-            vec![
-                PathBuf::from("/dir/note.md"),
-                PathBuf::from("/dir/copy.md"),
-            ]
+        let mtimes = |p: &Path| match p.to_str().unwrap() {
+            "/dir/note.md" => Some(UNIX_EPOCH + Duration::from_secs(100)),
+            "/dir/copy.md" => Some(UNIX_EPOCH + Duration::from_secs(200)),
+            _ => Some(UNIX_EPOCH + Duration::from_secs(50)),
+        };
+        let action = auto(g.plan_with(false, &mtimes));
+        // Latest non-conflict file is kept.
+        assert_eq!(action.keep, vec![PathBuf::from("/dir/copy.md")]);
+        // All others (including the older non-conflict and both conflicts)
+        // are trashed.
+        assert_eq!(action.trash.len(), 3);
+        assert!(action.trash.contains(&PathBuf::from("/dir/note.md")));
+        assert!(
+            action
+                .trash
+                .contains(&PathBuf::from("/dir/note.sync-conflict-20240101-AAA.md"))
         );
-        assert_eq!(
-            action.trash,
-            vec![
-                PathBuf::from("/dir/note.sync-conflict-20240101-AAA.md"),
-                PathBuf::from("/dir/note.sync-conflict-20240202-BBB.md"),
-            ]
+        assert!(
+            action
+                .trash
+                .contains(&PathBuf::from("/dir/note.sync-conflict-20240202-BBB.md"))
         );
     }
 
     #[test]
-    fn all_conflict_group_keeps_one_trashes_rest() {
+    fn all_conflict_group_keeps_latest_trashes_rest() {
+        use std::time::{Duration, UNIX_EPOCH};
         let g = group(&[
             "/dir/note.sync-conflict-20240202-BBB.md",
             "/dir/note.sync-conflict-20240101-AAA.md",
         ]);
-        let action = auto(g.plan(false));
+        let mtimes = |p: &Path| match p.to_str().unwrap() {
+            "/dir/note.sync-conflict-20240101-AAA.md" => {
+                Some(UNIX_EPOCH + Duration::from_secs(100))
+            }
+            "/dir/note.sync-conflict-20240202-BBB.md" => {
+                Some(UNIX_EPOCH + Duration::from_secs(200))
+            }
+            _ => None,
+        };
+        let action = auto(g.plan_with(false, &mtimes));
         assert_eq!(action.keep.len(), 1);
-        assert_eq!(action.trash.len(), 1);
-        // Lexicographic first kept.
         assert_eq!(
             action.keep[0],
-            PathBuf::from("/dir/note.sync-conflict-20240101-AAA.md")
+            PathBuf::from("/dir/note.sync-conflict-20240202-BBB.md")
         );
+        assert_eq!(action.trash.len(), 1);
     }
 
     #[test]
