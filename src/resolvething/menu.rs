@@ -205,7 +205,7 @@ pub fn resolvething_menu(debug: bool) -> Result<()> {
             TopEntry::ResolveAll => {
                 let dirs = config.resolved_scan_dirs()?;
                 for dir in &dirs {
-                    if let Err(error) = resolve_duplicates(dir, false) {
+                    if let Err(error) = resolve_duplicates(dir, false, true) {
                         FzfWrapper::message(&format!(
                             "Failed to resolve duplicates in {}: {}",
                             dir.display_path(),
@@ -318,7 +318,7 @@ fn handle_scan_dir_action(
 ) -> Result<ActionResult> {
     match action {
         ScanDirAction::ResolveEverything => {
-            if let Err(error) = resolve_duplicates(resolved, false) {
+            if let Err(error) = resolve_duplicates(resolved, false, true) {
                 FzfWrapper::message(&format!("Duplicate resolution failed: {}", error))?;
             }
             if let Err(error) = resolve_conflicts(resolved) {
@@ -327,7 +327,7 @@ fn handle_scan_dir_action(
             Ok(ActionResult::Stay)
         }
         ScanDirAction::ResolveDuplicates => {
-            if let Err(error) = resolve_duplicates(resolved, false) {
+            if let Err(error) = resolve_duplicates(resolved, false, true) {
                 FzfWrapper::message(&format!("Duplicate resolution failed: {}", error))?;
             }
             Ok(ActionResult::Stay)

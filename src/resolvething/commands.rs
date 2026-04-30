@@ -35,10 +35,14 @@ static FCLONES_DEP: Dependency = Dependency {
 
 pub fn handle_resolvething_command(command: ResolvethingCommands, debug: bool) -> Result<()> {
     match command {
-        ResolvethingCommands::Duplicates { dir, no_auto } => {
+        ResolvethingCommands::Duplicates {
+            dir,
+            no_auto,
+            show_ignored,
+        } => {
             let scan_dirs = resolve_scan_dirs(dir.as_deref())?;
             for scan_dir in &scan_dirs {
-                resolve_duplicates(scan_dir, no_auto)?;
+                resolve_duplicates(scan_dir, no_auto, show_ignored)?;
             }
             Ok(())
         }
@@ -49,10 +53,14 @@ pub fn handle_resolvething_command(command: ResolvethingCommands, debug: bool) -
             }
             Ok(())
         }
-        ResolvethingCommands::All { dir, no_auto } => {
+        ResolvethingCommands::All {
+            dir,
+            no_auto,
+            show_ignored,
+        } => {
             let scan_dirs = resolve_scan_dirs(dir.as_deref())?;
             for scan_dir in &scan_dirs {
-                resolve_duplicates(scan_dir, no_auto)?;
+                resolve_duplicates(scan_dir, no_auto, show_ignored)?;
                 resolve_conflicts(scan_dir)?;
             }
             Ok(())
@@ -93,7 +101,11 @@ pub fn resolve_scan_dirs(dir_override: Option<&str>) -> Result<Vec<ResolvedScanD
     Ok(resolved)
 }
 
-pub fn resolve_duplicates(scan_dir: &ResolvedScanDir, no_auto: bool) -> Result<()> {
+pub fn resolve_duplicates(
+    scan_dir: &ResolvedScanDir,
+    no_auto: bool,
+    show_ignored: bool,
+) -> Result<()> {
     ensure_duplicate_dependencies()?;
 
     if !scan_dir.path.exists() {
@@ -118,7 +130,7 @@ pub fn resolve_duplicates(scan_dir: &ResolvedScanDir, no_auto: bool) -> Result<(
     let mut removed_files = 0usize;
     let mut auto_resolved = 0usize;
     let mut skipped = 0usize;
-    let mut ignored = 0usize;
+    let mut ignored_groups: Vec<&DuplicateGroup> = Vec::new();
     let mut cursor = MenuCursor::new();
 
     for (index, group) in groups.iter().enumerate() {
@@ -148,22 +160,59 @@ pub fn resolve_duplicates(scan_dir: &ResolvedScanDir, no_auto: bool) -> Result<(
                 }
             }
             GroupPlan::Skip(SkipReason::IgnoredFolder) => {
-                ignored += 1;
+                ignored_groups.push(group);
             }
         }
     }
+
+    if show_ignored && !ignored_groups.is_empty() {
+        emit(
+            Level::Info,
+            "resolvething.duplicates.ignored.header",
+            &format!(
+                "{} {} ignored duplicate group(s) in {}:",
+                char::from(NerdFont::Info),
+                ignored_groups.len(),
+                format_path(&scan_dir.path)
+            ),
+            None,
+        );
+        for (i, group) in ignored_groups.iter().enumerate() {
+            emit(
+                Level::Info,
+                "resolvething.duplicates.ignored.group",
+                &format!("  Group {}:", i + 1),
+                None,
+            );
+            for entry in &group.files {
+                emit(
+                    Level::Info,
+                    "resolvething.duplicates.ignored.file",
+                    &format!("    - {}", format_path(&entry.path)),
+                    None,
+                );
+            }
+        }
+    }
+
+    let ignored_hint = if !show_ignored && !ignored_groups.is_empty() {
+        " (re-run with --show-ignored to list them)"
+    } else {
+        ""
+    };
 
     emit(
         Level::Success,
         "resolvething.duplicates.complete",
         &format!(
-            "{} {}: {} groups, {} auto-resolved, {} skipped, {} ignored, {} files trashed",
+            "{} {}: {} groups, {} auto-resolved, {} skipped, {} ignored{}, {} files trashed",
             char::from(NerdFont::Check),
             format_path(&scan_dir.path),
             groups.len(),
             auto_resolved,
             skipped,
-            ignored,
+            ignored_groups.len(),
+            ignored_hint,
             removed_files
         ),
         None,

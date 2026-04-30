@@ -302,3 +302,120 @@ pub fn path_in_ignored_dir(path: &Path) -> bool {
         .filter_map(|c| c.as_os_str().to_str())
         .any(|seg| IGNORED_DIR_SEGMENTS.contains(&seg))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn group(paths: &[&str]) -> DuplicateGroup {
+        DuplicateGroup::new(paths.iter().map(PathBuf::from).collect())
+    }
+
+    fn auto(plan: GroupPlan) -> AutoResolution {
+        match plan {
+            GroupPlan::Auto(a) => a,
+            other => panic!("expected Auto plan, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn mixed_group_keeps_all_non_conflict_files_and_trashes_conflicts() {
+        let g = group(&[
+            "/dir/note.md",
+            "/dir/note.sync-conflict-20240101-AAA.md",
+            "/dir/copy.md",
+            "/dir/note.sync-conflict-20240202-BBB.md",
+        ]);
+        let action = auto(g.plan(false));
+        assert_eq!(
+            action.keep,
+            vec![
+                PathBuf::from("/dir/note.md"),
+                PathBuf::from("/dir/copy.md"),
+            ]
+        );
+        assert_eq!(
+            action.trash,
+            vec![
+                PathBuf::from("/dir/note.sync-conflict-20240101-AAA.md"),
+                PathBuf::from("/dir/note.sync-conflict-20240202-BBB.md"),
+            ]
+        );
+    }
+
+    #[test]
+    fn all_conflict_group_keeps_one_trashes_rest() {
+        let g = group(&[
+            "/dir/note.sync-conflict-20240202-BBB.md",
+            "/dir/note.sync-conflict-20240101-AAA.md",
+        ]);
+        let action = auto(g.plan(false));
+        assert_eq!(action.keep.len(), 1);
+        assert_eq!(action.trash.len(), 1);
+        // Lexicographic first kept.
+        assert_eq!(
+            action.keep[0],
+            PathBuf::from("/dir/note.sync-conflict-20240101-AAA.md")
+        );
+    }
+
+    #[test]
+    fn mixed_group_in_ignored_folder_still_auto_resolves_conflicts() {
+        let g = group(&[
+            "/dir/.stversions/note.md",
+            "/dir/.stversions/note.sync-conflict-20240101-AAA.md",
+        ]);
+        let action = auto(g.plan(false));
+        assert_eq!(action.keep, vec![PathBuf::from("/dir/.stversions/note.md")]);
+        assert_eq!(
+            action.trash,
+            vec![PathBuf::from(
+                "/dir/.stversions/note.sync-conflict-20240101-AAA.md"
+            )]
+        );
+    }
+
+    #[test]
+    fn all_conflict_group_in_ignored_folder_keeps_one() {
+        let g = group(&[
+            "/dir/.stversions/a.sync-conflict-20240101-AAA.md",
+            "/dir/.stversions/a.sync-conflict-20240202-BBB.md",
+        ]);
+        let action = auto(g.plan(false));
+        assert_eq!(action.keep.len(), 1);
+        assert_eq!(action.trash.len(), 1);
+    }
+
+    #[test]
+    fn non_conflict_group_in_ignored_folder_is_skipped() {
+        let g = group(&["/dir/.stversions/a.md", "/dir/.stversions/b.md"]);
+        assert!(matches!(
+            g.plan(false),
+            GroupPlan::Skip(SkipReason::IgnoredFolder)
+        ));
+    }
+
+    #[test]
+    fn no_auto_forces_manual_for_regular_groups() {
+        let g = group(&["/dir/a.md", "/dir/b.md"]);
+        assert!(matches!(g.plan(true), GroupPlan::Manual));
+    }
+
+    #[test]
+    fn no_auto_still_auto_resolves_conflict_files() {
+        let g = group(&[
+            "/dir/a.md",
+            "/dir/a.sync-conflict-20240101-AAA.md",
+        ]);
+        let action = auto(g.plan(true));
+        assert_eq!(action.keep, vec![PathBuf::from("/dir/a.md")]);
+    }
+
+    #[test]
+    fn single_regular_in_mixed_orig_tmp_group_is_auto() {
+        let g = group(&["/dir/a.md", "/dir/a.md.orig", "/dir/a.md.tmp"]);
+        let action = auto(g.plan(false));
+        assert_eq!(action.keep, vec![PathBuf::from("/dir/a.md")]);
+        assert_eq!(action.trash.len(), 2);
+    }
+}

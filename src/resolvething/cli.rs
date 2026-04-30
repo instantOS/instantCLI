@@ -11,6 +11,9 @@ pub enum ResolvethingCommands {
         /// Force interactive selection even when a safe automatic choice exists
         #[arg(long)]
         no_auto: bool,
+        /// List the duplicate groups that were skipped (e.g. inside ignored folders)
+        #[arg(long)]
+        show_ignored: bool,
     },
     /// Resolve Syncthing conflict files across configured scan directories
     Conflicts {
@@ -26,6 +29,9 @@ pub enum ResolvethingCommands {
         /// Force interactive selection even when a safe automatic choice exists
         #[arg(long)]
         no_auto: bool,
+        /// List the duplicate groups that were skipped (e.g. inside ignored folders)
+        #[arg(long)]
+        show_ignored: bool,
     },
     /// Interactive resolvething menu
     Menu {
