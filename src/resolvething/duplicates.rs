@@ -126,6 +126,31 @@ impl DuplicateGroup {
         }
     }
 
+    /// Lightweight check for whether this group requires any action, without
+    /// building the full `AutoResolution`/`Manual` plan. Used by status
+    /// computation to count actionable groups cheaply.
+    pub fn is_actionable(&self) -> bool {
+        if self.files.len() < 2 {
+            return false;
+        }
+        if self
+            .files
+            .iter()
+            .any(|f| f.file_type == DuplicateFileType::SyncthingConflict)
+        {
+            return true;
+        }
+        let all_in_ignored = self.files.iter().all(DuplicateEntry::is_in_ignored_dir);
+        let any_in_ignored = self.files.iter().any(DuplicateEntry::is_in_ignored_dir);
+        if all_in_ignored {
+            return true;
+        }
+        if any_in_ignored {
+            return self.files.iter().filter(|f| f.is_in_ignored_dir()).count() > 1;
+        }
+        true
+    }
+
     /// Compute what to do with this group. Conflict-file dedup runs even in
     /// ignored folders; pure-version-file groups inside `.stversions` keep
     /// only the latest copy.

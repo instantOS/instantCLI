@@ -12,7 +12,6 @@ use super::commands::{
     edit_config, remove_scan_directory, resolve_conflicts, resolve_duplicates, resolved_config,
 };
 use super::config::{ResolvedScanDir, ResolvethingConfig, format_path};
-use super::duplicates::GroupPlan;
 
 /// Outcome of an inner action: keep the inner loop running or return to the
 /// outer menu.
@@ -57,6 +56,14 @@ struct ScanDirStatus {
     exists: bool,
 }
 
+impl ScanDirStatus {
+    fn display_count(count: Option<usize>, fallback: &str) -> String {
+        count
+            .map(|c| c.to_string())
+            .unwrap_or_else(|| fallback.to_string())
+    }
+}
+
 #[derive(Clone)]
 struct TopItem {
     entry: TopEntry,
@@ -75,14 +82,8 @@ impl FzfSelectable for TopItem {
             TopEntry::ScanDir {
                 resolved, status, ..
             } => {
-                let dup = status
-                    .duplicate_count
-                    .map(|c| c.to_string())
-                    .unwrap_or_else(|| "?".to_string());
-                let cnf = status
-                    .conflict_count
-                    .map(|c| c.to_string())
-                    .unwrap_or_else(|| "?".to_string());
+                let dup = ScanDirStatus::display_count(status.duplicate_count, "?");
+                let cnf = ScanDirStatus::display_count(status.conflict_count, "?");
                 let icon_color = if status.exists {
                     colors::TEAL
                 } else {
@@ -373,6 +374,25 @@ fn run_scan_dir_menu(index: usize) -> Result<(ActionResult, bool)> {
     }
 }
 
+enum ResolveKind {
+    Duplicates,
+    Conflicts,
+}
+
+fn try_resolve(resolved: &ResolvedScanDir, kind: ResolveKind) {
+    let result = match kind {
+        ResolveKind::Duplicates => resolve_duplicates(resolved, false, true, false),
+        ResolveKind::Conflicts => resolve_conflicts(resolved, false),
+    };
+    if let Err(error) = result {
+        let label = match kind {
+            ResolveKind::Duplicates => "Duplicate",
+            ResolveKind::Conflicts => "Conflict",
+        };
+        let _ = FzfWrapper::message(&format!("{} resolution failed: {}", label, error));
+    }
+}
+
 fn handle_scan_dir_action(
     action: ScanDirAction,
     index: usize,
@@ -380,24 +400,16 @@ fn handle_scan_dir_action(
 ) -> Result<ActionResult> {
     match action {
         ScanDirAction::ResolveEverything => {
-            if let Err(error) = resolve_duplicates(resolved, false, true, false) {
-                FzfWrapper::message(&format!("Duplicate resolution failed: {}", error))?;
-            }
-            if let Err(error) = resolve_conflicts(resolved, false) {
-                FzfWrapper::message(&format!("Conflict resolution failed: {}", error))?;
-            }
+            try_resolve(resolved, ResolveKind::Duplicates);
+            try_resolve(resolved, ResolveKind::Conflicts);
             Ok(ActionResult::Stay)
         }
         ScanDirAction::ResolveDuplicates => {
-            if let Err(error) = resolve_duplicates(resolved, false, true, false) {
-                FzfWrapper::message(&format!("Duplicate resolution failed: {}", error))?;
-            }
+            try_resolve(resolved, ResolveKind::Duplicates);
             Ok(ActionResult::Stay)
         }
         ScanDirAction::ResolveConflicts => {
-            if let Err(error) = resolve_conflicts(resolved, false) {
-                FzfWrapper::message(&format!("Conflict resolution failed: {}", error))?;
-            }
+            try_resolve(resolved, ResolveKind::Conflicts);
             Ok(ActionResult::Stay)
         }
         ScanDirAction::OpenDirectory => {
@@ -472,10 +484,7 @@ fn compute_status(resolved: &ResolvedScanDir) -> ScanDirStatus {
                 // not Skip groups. Raw fclones output includes ignored-folder
                 // and singleton groups that the planner will never act on, so
                 // showing them as "duplicates" is misleading.
-                let actionable = groups
-                    .iter()
-                    .filter(|g| !matches!(g.plan(false), GroupPlan::Skip(_)))
-                    .count();
+                let actionable = groups.iter().filter(|g| g.is_actionable()).count();
                 Some(actionable)
             }
             Err(error) => {
@@ -510,14 +519,8 @@ fn build_top_preview(entry: &TopEntry, config: &ResolvethingConfig) -> String {
         TopEntry::ScanDir {
             resolved, status, ..
         } => {
-            let dup = status
-                .duplicate_count
-                .map(|c| c.to_string())
-                .unwrap_or_else(|| "unavailable".to_string());
-            let cnf = status
-                .conflict_count
-                .map(|c| c.to_string())
-                .unwrap_or_else(|| "unavailable".to_string());
+            let dup = ScanDirStatus::display_count(status.duplicate_count, "unavailable");
+            let cnf = ScanDirStatus::display_count(status.conflict_count, "unavailable");
             let mut builder = PreviewBuilder::new()
                 .header(NerdFont::Folder, "Scan Directory")
                 .field("Path", &resolved.display_path())
@@ -568,14 +571,8 @@ fn build_action_preview(
     resolved: &ResolvedScanDir,
     status: &ScanDirStatus,
 ) -> String {
-    let dup = status
-        .duplicate_count
-        .map(|c| c.to_string())
-        .unwrap_or_else(|| "unavailable".to_string());
-    let cnf = status
-        .conflict_count
-        .map(|c| c.to_string())
-        .unwrap_or_else(|| "unavailable".to_string());
+    let dup = ScanDirStatus::display_count(status.duplicate_count, "unavailable");
+    let cnf = ScanDirStatus::display_count(status.conflict_count, "unavailable");
 
     let mut builder = match action {
         ScanDirAction::ResolveEverything => PreviewBuilder::new()

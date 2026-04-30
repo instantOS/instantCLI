@@ -266,14 +266,6 @@ pub fn resolve_duplicates(
 }
 
 pub fn resolve_conflicts(scan_dir: &ResolvedScanDir, dry_run: bool) -> Result<()> {
-    let config = if dry_run {
-        // Config is only needed for the editor command; skip fzf dep check in dry-run mode
-        resolved_config()?
-    } else {
-        ensure_menu_dependencies()?;
-        resolved_config()?
-    };
-
     if !scan_dir.path.exists() {
         bail!("Scan directory does not exist: {}", scan_dir.path.display());
     }
@@ -323,20 +315,15 @@ pub fn resolve_conflicts(scan_dir: &ResolvedScanDir, dry_run: bool) -> Result<()
         return Ok(());
     }
 
+    ensure_menu_dependencies()?;
+    let config = resolved_config()?;
+
     let mut resolved = 0usize;
     let mut unresolved = 0usize;
     let mut skipped = 0usize;
     let mut cursor = MenuCursor::new();
-    // `conflicts` is already populated from the initial scan above; skip the
-    // redundant first re-scan by gating the loop's own scan on a flag.
-    let mut first_iteration = true;
 
     loop {
-        if !first_iteration {
-            conflicts = scan_conflicts(&scan_dir.path, &scan_dir.extensions)?;
-            conflicts.retain(|conflict| conflict.is_valid());
-        }
-        first_iteration = false;
         if conflicts.is_empty() {
             break;
         }
@@ -348,23 +335,28 @@ pub fn resolve_conflicts(scan_dir: &ResolvedScanDir, dry_run: bool) -> Result<()
 
         match choice {
             ConflictChoice::Resolve(conflict) => {
-                match conflict.resolve(config.editor_command.as_deref())? {
-                    ConflictResolution::Resolved => resolved += 1,
-                    ConflictResolution::Unresolved => unresolved += 1,
-                    ConflictResolution::SkippedInvalid => skipped += 1,
-                }
+                tally_resolution(
+                    conflict.resolve(config.editor_command.as_deref())?,
+                    &mut resolved,
+                    &mut unresolved,
+                    &mut skipped,
+                );
             }
             ConflictChoice::ResolveAll => {
                 for conflict in conflicts.clone() {
-                    match conflict.resolve(config.editor_command.as_deref())? {
-                        ConflictResolution::Resolved => resolved += 1,
-                        ConflictResolution::Unresolved => unresolved += 1,
-                        ConflictResolution::SkippedInvalid => skipped += 1,
-                    }
+                    tally_resolution(
+                        conflict.resolve(config.editor_command.as_deref())?,
+                        &mut resolved,
+                        &mut unresolved,
+                        &mut skipped,
+                    );
                 }
             }
             ConflictChoice::Close => break,
         }
+
+        conflicts = scan_conflicts(&scan_dir.path, &scan_dir.extensions)?;
+        conflicts.retain(|conflict| conflict.is_valid());
     }
 
     emit(
@@ -575,7 +567,7 @@ pub fn configure_scan_directory_extensions(index: usize) -> Result<bool> {
             config.scan_dirs[index].extensions = parsed.clone();
             config.save()?;
             let label = if parsed.is_empty() {
-                "all plain text files".to_string()
+                "all text files".to_string()
             } else {
                 parsed.join(", ")
             };
@@ -593,6 +585,19 @@ pub fn configure_scan_directory_extensions(index: usize) -> Result<bool> {
             Ok(true)
         }
         TextEditOutcome::Unchanged | TextEditOutcome::Cancelled => Ok(false),
+    }
+}
+
+fn tally_resolution(
+    resolution: ConflictResolution,
+    resolved: &mut usize,
+    unresolved: &mut usize,
+    skipped: &mut usize,
+) {
+    match resolution {
+        ConflictResolution::Resolved => *resolved += 1,
+        ConflictResolution::Unresolved => *unresolved += 1,
+        ConflictResolution::SkippedInvalid => *skipped += 1,
     }
 }
 
