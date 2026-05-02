@@ -127,9 +127,7 @@ pub async fn run(debug: bool) -> Result<()> {
         crate::dot::commands::handle_dot_command(
             &DotCommands::Update {
                 no_apply: false,
-                include_root: false,
-                home: None,
-                root_only: false,
+                root_flags: Default::default(),
             },
             None,
             debug,

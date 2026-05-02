@@ -118,6 +118,7 @@ fn setup_dotfiles(debug: bool) -> Result<()> {
                 read_only: true,
                 force_write: false,
                 debug,
+                root_flags: &Default::default(),
             },
         )?;
     }

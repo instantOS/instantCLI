@@ -46,7 +46,7 @@ pub fn reset_modified(
         if !root_only && dotfile.is_root {
             continue;
         }
-        
+
         if !dotfile.is_target_unmodified(db)? {
             dotfile.reset(db)?;
             let relative_path = crate::dot::display_path(&dotfile.target_path, dotfile.is_root);
@@ -66,7 +66,7 @@ pub fn reset_modified(
             .into_iter()
             .filter(|d| d.is_root)
             .collect();
-            
+
         if !root_files.is_empty() {
             let home_dir = std::path::PathBuf::from(shellexpand::tilde("~").to_string());
             let home_dir_str = home_dir.to_string_lossy();
@@ -80,7 +80,7 @@ pub fn reset_modified(
                 ),
                 None,
             );
-            
+
             let status = std::process::Command::new("sudo")
                 .arg("ins")
                 .arg("dot")
@@ -90,7 +90,7 @@ pub fn reset_modified(
                 .arg("--home")
                 .arg(home_dir_str.as_ref())
                 .status();
-                
+
             if let Err(e) = status {
                 emit(
                     Level::Warn,

@@ -26,9 +26,25 @@ pub fn status_all(
     let unit_index = crate::dot::units::build_unit_index(&all_dotfiles, &units, db)?;
 
     if let Some(path_str) = path {
-        show_single_file_status(path_str, &all_dotfiles, cfg, db, show_sources, &unit_index, include_root)?;
+        show_single_file_status(
+            path_str,
+            &all_dotfiles,
+            cfg,
+            db,
+            show_sources,
+            &unit_index,
+            include_root,
+        )?;
     } else {
-        show_status_summary(&all_dotfiles, cfg, db, show_all, show_sources, &unit_index, include_root)?;
+        show_status_summary(
+            &all_dotfiles,
+            cfg,
+            db,
+            show_all,
+            show_sources,
+            &unit_index,
+            include_root,
+        )?;
     }
 
     Ok(())

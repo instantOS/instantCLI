@@ -127,7 +127,7 @@ fn enable_subdirectory(
     );
 
     // Apply to pick up new dotfiles
-    apply_all_repos(config, db)?;
+    apply_all_repos(config, db, false, false)?;
 
     Ok(())
 }

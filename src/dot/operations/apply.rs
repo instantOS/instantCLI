@@ -37,7 +37,12 @@ impl ApplyStats {
 }
 
 /// Apply all dotfiles from configured repositories
-pub fn apply_all(config: &DotfileConfig, db: &Database, include_root: bool, root_only: bool) -> Result<()> {
+pub fn apply_all(
+    config: &DotfileConfig,
+    db: &Database,
+    include_root: bool,
+    root_only: bool,
+) -> Result<()> {
     let all_dotfiles = get_all_dotfiles(config, db, include_root || root_only)?;
 
     if all_dotfiles.is_empty() {
@@ -95,7 +100,7 @@ pub fn apply_all(config: &DotfileConfig, db: &Database, include_root: bool, root
                 ),
                 None,
             );
-            
+
             let status = std::process::Command::new("sudo")
                 .arg("ins")
                 .arg("dot")
@@ -104,7 +109,7 @@ pub fn apply_all(config: &DotfileConfig, db: &Database, include_root: bool, root
                 .arg("--home")
                 .arg(home_dir_str.as_ref())
                 .status();
-                
+
             if let Err(e) = status {
                 emit(
                     Level::Warn,
