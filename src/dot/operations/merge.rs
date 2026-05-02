@@ -249,8 +249,8 @@ pub fn merge_dotfile(
     path: &str,
     verbose: bool,
 ) -> Result<()> {
-    let all_dotfiles = get_all_dotfiles(config, db)?;
-    let target_path = resolve_dotfile_path(path)?;
+    let all_dotfiles = get_all_dotfiles(config, db, false)?;
+    let target_path = resolve_dotfile_path(path, false)?;
     let home = PathBuf::from(shellexpand::tilde("~").to_string());
 
     let dotfiles_in_path = filter_dotfiles_by_path(&all_dotfiles, &target_path);

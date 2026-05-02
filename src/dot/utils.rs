@@ -7,31 +7,14 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
-/// Resolve a path argument to an absolute path in the home directory
-///
-/// This function handles path resolution similar to git:
-/// - If path starts with '~', expand it to home directory
-/// - If path is absolute, validate it's within home directory
-/// - If path is relative, resolve it relative to current working directory,
-///   then validate it's within home directory
-///
-/// Important: This function does NOT canonicalize symlinks because dotfile tracking
-/// should work with the user-specified path (which may be a symlink), not the resolved target.
-///
-/// Returns the resolved absolute path if valid, or an error if:
-/// - The path doesn't exist
-/// - The path is outside the home directory
-pub fn resolve_dotfile_path(path: &str) -> Result<PathBuf> {
+pub fn resolve_dotfile_path(path: &str, allow_root: bool) -> Result<PathBuf> {
     let home = PathBuf::from(shellexpand::tilde("~").to_string());
 
     let resolved_path = if path.starts_with('~') {
-        // Expand tilde to home directory
         PathBuf::from(shellexpand::tilde(path).into_owned())
     } else if Path::new(path).is_absolute() {
-        // Use absolute path as-is
         PathBuf::from(path)
     } else {
-        // For relative paths, prefer the current working directory and fall back to the home directory
         let current_dir = std::env::current_dir()
             .map_err(|e| anyhow::anyhow!("Failed to get current directory: {}", e))?;
         let candidate = current_dir.join(path);
@@ -42,10 +25,8 @@ pub fn resolve_dotfile_path(path: &str) -> Result<PathBuf> {
         }
     };
 
-    // Normalize the path by removing redundant components (like ./, ../) but DON'T resolve symlinks
     let normalized_path = normalize_path(&resolved_path)?;
 
-    // Validate that the path exists
     if !normalized_path.exists() {
         return Err(anyhow::anyhow!(
             "Path '{}' does not exist",
@@ -53,8 +34,16 @@ pub fn resolve_dotfile_path(path: &str) -> Result<PathBuf> {
         ));
     }
 
-    // Validate that the path is within the home directory
-    // For this check, we need to resolve any symlinks in the parent directories to ensure safety
+    if allow_root {
+        if !normalized_path.starts_with(&home) && !normalized_path.is_absolute() {
+            return Err(anyhow::anyhow!(
+                "Path '{}' is outside allowed directories",
+                normalized_path.display()
+            ));
+        }
+        return Ok(normalized_path);
+    }
+
     let real_path = normalized_path
         .canonicalize()
         .map_err(|e| anyhow::anyhow!("Failed to validate path '{}': {}", path, e))?;
@@ -74,7 +63,6 @@ pub fn resolve_dotfile_path(path: &str) -> Result<PathBuf> {
     Ok(normalized_path)
 }
 
-/// Normalize a path by removing redundant components without resolving symlinks
 fn normalize_path(path: &Path) -> Result<PathBuf> {
     use std::path::Component;
 
@@ -82,11 +70,8 @@ fn normalize_path(path: &Path) -> Result<PathBuf> {
 
     for component in path.components() {
         match component {
-            Component::CurDir => {
-                // Skip current directory components
-            }
+            Component::CurDir => {}
             Component::ParentDir => {
-                // Go up one directory if possible
                 if !result.pop() {
                     return Err(anyhow::anyhow!(
                         "Path '{}' attempts to go above root",
@@ -103,15 +88,16 @@ fn normalize_path(path: &Path) -> Result<PathBuf> {
     Ok(result)
 }
 
-/// Get all active dotfile directories from all repositories
-pub fn get_active_dotfile_dirs(config: &DotfileConfig, db: &Database) -> Result<Vec<PathBuf>> {
+pub fn get_active_dotfile_dirs(config: &DotfileConfig, db: &Database) -> Result<Vec<DotfileDir>> {
     let repo_manager = DotfileRepositoryManager::new(config, db);
     repo_manager.get_active_dotfile_dirs()
 }
 
-/// Helper function to scan a directory for dotfiles
-/// Should only be run within a dotfile subdir, NOT the home directory
-pub fn scan_directory_for_dotfiles(dir_path: &Path, home_path: &Path) -> Result<Vec<Dotfile>> {
+pub fn scan_directory_for_dotfiles(
+    dir_path: &Path,
+    target_prefix: &Path,
+    is_root: bool,
+) -> Result<Vec<Dotfile>> {
     let mut dotfiles = Vec::new();
 
     for entry in WalkDir::new(dir_path)
@@ -134,11 +120,12 @@ pub fn scan_directory_for_dotfiles(dir_path: &Path, home_path: &Path) -> Result<
                     )
                 })?
                 .to_path_buf();
-            let target_path = home_path.join(relative_path);
+            let target_path = target_prefix.join(relative_path);
 
             dotfiles.push(Dotfile {
                 source_path,
                 target_path,
+                is_root,
             });
         }
     }
@@ -146,19 +133,11 @@ pub fn scan_directory_for_dotfiles(dir_path: &Path, home_path: &Path) -> Result<
     Ok(dotfiles)
 }
 
-/// Helper function to merge dotfiles with earlier repos overriding later ones
-///
-/// This provides a unified priority system where "higher in the list = higher priority".
-/// The first repository in the config has the highest priority (P1), and later repos
-/// are overridden by earlier ones.
 pub fn merge_dotfiles(dotfiles_list: Vec<Vec<Dotfile>>) -> HashMap<PathBuf, Dotfile> {
     let mut filemap = HashMap::new();
 
-    // Iterate in order - earlier repos override later ones
-    // Since we use or_insert (first wins), we iterate in priority order (high to low)
     for dotfiles in dotfiles_list.into_iter() {
         for dotfile in dotfiles {
-            // Only insert if key doesn't exist (earlier repos win)
             filemap
                 .entry(dotfile.target_path.clone())
                 .or_insert(dotfile);
@@ -168,28 +147,34 @@ pub fn merge_dotfiles(dotfiles_list: Vec<Vec<Dotfile>>) -> HashMap<PathBuf, Dotf
     filemap
 }
 
-/// Get all dotfiles from all active repositories
 pub fn get_all_dotfiles(
     config: &DotfileConfig,
     db: &Database,
+    include_root: bool,
 ) -> Result<HashMap<PathBuf, Dotfile>> {
-    let active_dirs = get_active_dotfile_dirs(config, db)?;
+    let repo_manager = DotfileRepositoryManager::new(config, db);
+    let active_dirs = repo_manager.get_active_dotfile_dirs()?;
     let home_path = PathBuf::from(shellexpand::tilde("~").to_string());
 
-    // Scan each directory for dotfiles
     let mut all_dotfiles = Vec::new();
-    for dir_path in active_dirs {
-        let dotfiles = scan_directory_for_dotfiles(&dir_path, &home_path)?;
+    for dir in active_dirs {
+        let target_prefix = if dir.is_root {
+            Path::new("/")
+        } else {
+            &home_path
+        };
+        let dotfiles = scan_directory_for_dotfiles(&dir.path, target_prefix, dir.is_root)?;
         all_dotfiles.push(dotfiles);
     }
 
-    // Merge with proper override behavior
     let mut merged = merge_dotfiles(all_dotfiles);
 
-    // Filter out ignored paths
+    if !include_root {
+        merged.retain(|_, dotfile| !dotfile.is_root);
+    }
+
     merged.retain(|target_path, _| !config.is_path_ignored(target_path));
 
-    // Apply user-defined source overrides
     if let Ok(overrides) = crate::dot::override_config::OverrideConfig::load() {
         let _ = crate::dot::override_config::apply_overrides(&mut merged, &overrides, config);
     }
@@ -197,10 +182,6 @@ pub fn get_all_dotfiles(
     Ok(merged)
 }
 
-/// Filter dotfiles to only those within a specific directory path
-///
-/// This is a common operation used by many commands (reset, diff, status, add)
-/// to work on a subset of tracked dotfiles.
 pub fn filter_dotfiles_by_path<'a>(
     all_dotfiles: &'a HashMap<PathBuf, Dotfile>,
     path: &Path,
@@ -210,3 +191,18 @@ pub fn filter_dotfiles_by_path<'a>(
         .filter(|dotfile| dotfile.target_path.starts_with(path))
         .collect()
 }
+
+pub fn display_path(path: &Path, is_root: bool) -> String {
+    if is_root {
+        path.display().to_string()
+    } else {
+        let home = PathBuf::from(shellexpand::tilde("~").to_string());
+        if let Ok(relative) = path.strip_prefix(&home) {
+            format!("~/{}", relative.display())
+        } else {
+            path.display().to_string()
+        }
+    }
+}
+
+use crate::dot::dotfilerepo::DotfileDir;

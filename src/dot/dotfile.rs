@@ -31,6 +31,7 @@ fn invalidate_cache(path: &Path) {
 pub struct Dotfile {
     pub source_path: PathBuf,
     pub target_path: PathBuf,
+    pub is_root: bool,
 }
 
 impl Dotfile {
@@ -297,6 +298,7 @@ mod tests {
         let dotfile = Dotfile {
             source_path: repo_path.join("test.txt"),
             target_path: target_path.join("test.txt"),
+            is_root: false,
         };
 
         // Register the source file hash first
@@ -332,6 +334,7 @@ mod tests {
         let dotfile = Dotfile {
             source_path: repo_path.join("test.txt"),
             target_path: target_path.join("test.txt"),
+            is_root: false,
         };
 
         // 1. Compute hash of source (populates cache with "initial")

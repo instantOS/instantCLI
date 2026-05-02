@@ -165,10 +165,11 @@ pub fn add_dotfile(
     add_all: bool,
     choose: bool,
     force: bool,
+    include_root: bool,
     debug: bool,
 ) -> Result<()> {
-    let all_dotfiles = get_all_dotfiles(config, db)?;
-    let target_path = resolve_dotfile_path(path)?;
+    let all_dotfiles = get_all_dotfiles(config, db, include_root)?;
+    let target_path = resolve_dotfile_path(path, include_root)?;
     let home = PathBuf::from(shellexpand::tilde("~").to_string());
 
     // Get tracked dotfiles within the specified path

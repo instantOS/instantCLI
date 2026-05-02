@@ -142,7 +142,7 @@ pub fn add_repo(config: &mut DotfileConfig, repo: config::Repo, debug: bool) -> 
     // Initialize database with source file hashes to prevent false "modified" status
     // when identical files already exist in the home directory
     if let Ok(db) = crate::dot::db::Database::new(config.database_path().to_path_buf())
-        && let Ok(dotfiles) = get_all_dotfiles(config, &db)
+        && let Ok(dotfiles) = get_all_dotfiles(config, &db, false)
     {
         for (_, dotfile) in dotfiles {
             // Only register hashes for dotfiles from this repository
@@ -175,6 +175,7 @@ pub fn update_all(
     debug: bool,
     db: &crate::dot::db::Database,
     should_apply: bool,
+    include_root: bool,
 ) -> Result<()> {
     let repos = cfg.repos.clone();
     if repos.is_empty() {
@@ -200,7 +201,7 @@ pub fn update_all(
     }
 
     if should_apply {
-        crate::dot::operations::apply_all(cfg, db)?;
+        crate::dot::operations::apply_all(cfg, db, include_root, false)?;
     }
 
     if any_failed {

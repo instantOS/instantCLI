@@ -48,6 +48,7 @@ pub fn set_alternative(
     let dotfile = Dotfile {
         source_path: source.source.source_path.clone(),
         target_path: target_path.to_path_buf(),
+        is_root: false,
     };
     dotfile.reset(&db)?;
 
@@ -103,6 +104,7 @@ pub fn remove_override(
     let dotfile = Dotfile {
         source_path: default_source.source_path.clone(),
         target_path: target_path.to_path_buf(),
+        is_root: false,
     };
     dotfile.reset(&db)?;
 
@@ -212,6 +214,7 @@ pub fn add_to_destination(
     let dotfile = Dotfile {
         source_path: dest_path.clone(),
         target_path: target_path.to_path_buf(),
+        is_root: false,
     };
     dotfile.create_source_from_target(db)?;
 

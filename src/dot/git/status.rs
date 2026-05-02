@@ -67,8 +67,9 @@ pub fn show_single_file_status(
     db: &crate::dot::db::Database,
     _show_sources: bool,
     unit_index: &UnitIndex,
+    include_root: bool,
 ) -> Result<()> {
-    let target_path = crate::dot::resolve_dotfile_path(path_str)?;
+    let target_path = crate::dot::resolve_dotfile_path(path_str, include_root)?;
     let home = dirs::home_dir().context("Failed to get home directory")?;
 
     if target_path.is_dir() {
@@ -109,9 +110,9 @@ pub fn show_single_file_status(
                         let status = get_dotfile_status(dotfile, db, unit_index);
                         let repo_name = get_repo_name_for_dotfile(dotfile, cfg);
                         let dotfile_dir = get_dotfile_dir_name(dotfile, cfg);
-                        let relative_path = path.strip_prefix(&home).unwrap_or(path);
+                        let path_display = crate::dot::display_path(path, dotfile.is_root);
                         serde_json::json!({
-                            "path": format!("~/{}", relative_path.display()),
+                            "path": path_display,
                             "status": status,
                             "source": dotfile.source_path.display().to_string(),
                             "repo": repo_name.as_str(),
@@ -135,16 +136,14 @@ pub fn show_single_file_status(
                 );
             }
             OutputFormat::Text => {
-                let relative_dir = target_path.strip_prefix(&home).unwrap_or(&target_path);
-                let tilde_dir = format!("~/{}", relative_dir.display());
-                println!("{}", tilde_dir.bold());
+                let dir_display = crate::dot::display_path(&target_path, false);
+                println!("{}", dir_display.bold());
 
                 for (path, dotfile) in matching {
                     let status = get_dotfile_status(dotfile, db, unit_index);
                     let repo_name = get_repo_name_for_dotfile(dotfile, cfg);
                     let dotfile_dir = get_dotfile_dir_name(dotfile, cfg);
-                    let relative_path = path.strip_prefix(&home).unwrap_or(path);
-                    let tilde_path = format!("~/{}", relative_path.display());
+                    let path_display = crate::dot::display_path(path, dotfile.is_root);
 
                     let override_indicator = if let Ok(overrides) =
                         crate::dot::override_config::OverrideConfig::load()
@@ -158,7 +157,7 @@ pub fn show_single_file_status(
                         ""
                     };
 
-                    println!("  {} -> {}", tilde_path, status);
+                    println!("  {} -> {}", path_display, status);
                     println!("    Source: {}", dotfile.source_path.display());
                     println!("    Repo: {repo_name} ({dotfile_dir}){override_indicator}");
                 }
@@ -286,6 +285,7 @@ pub fn show_status_summary(
     show_all: bool,
     show_sources: bool,
     unit_index: &UnitIndex,
+    include_root: bool,
 ) -> Result<()> {
     let home = dirs::home_dir().context("Failed to get home directory")?;
 

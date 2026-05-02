@@ -11,8 +11,9 @@ pub fn diff_all(
     cfg: &DotfileConfig,
     path: Option<&str>,
     db: &crate::dot::db::Database,
+    include_root: bool,
 ) -> Result<()> {
-    let all_dotfiles = crate::dot::get_all_dotfiles(cfg, db)?;
+    let all_dotfiles = crate::dot::get_all_dotfiles(cfg, db, include_root)?;
 
     if let Some(path_str) = path {
         show_path_diff(path_str, &all_dotfiles, cfg, db)?;
@@ -29,7 +30,7 @@ pub fn show_path_diff(
     cfg: &DotfileConfig,
     db: &crate::dot::db::Database,
 ) -> Result<()> {
-    let target_path = crate::dot::resolve_dotfile_path(path_str)?;
+    let target_path = crate::dot::resolve_dotfile_path(path_str, false)?;
 
     if target_path.is_dir() {
         diff_directory(target_path.as_path(), all_dotfiles, cfg, db)

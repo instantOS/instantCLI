@@ -10,19 +10,18 @@ use std::{path::Path, path::PathBuf};
 pub struct DotfileDir {
     pub path: PathBuf,
     pub is_active: bool,
+    pub is_root: bool,
 }
 
 impl DotfileDir {
-    pub fn new(name: &str, repo_path: &Path, is_active: bool) -> Result<Self> {
+    pub fn new(name: &str, repo_path: &Path, is_active: bool, is_root: bool) -> Result<Self> {
         let path = repo_path.join(name);
 
-        // Create directory if it doesn't exist (git doesn't track empty directories)
         if !path.exists() {
             std::fs::create_dir_all(&path).with_context(|| {
                 format!("Failed to create dotfile directory '{}'", path.display())
             })?;
 
-            // Notify user about created directory
             crate::ui::emit(
                 crate::ui::Level::Success,
                 "dot.repo.directory_created",
@@ -35,14 +34,29 @@ impl DotfileDir {
             );
         }
 
-        Ok(DotfileDir { path, is_active })
+        Ok(DotfileDir {
+            path,
+            is_active,
+            is_root,
+        })
     }
 
-    /// Create a DotfileDir without creating the directory if it doesn't exist.
-    /// Used for discovery where we only want to include directories that exist.
-    pub fn new_no_create(name: &str, repo_path: &Path, is_active: bool) -> Result<Self> {
+    pub fn new_no_create(
+        name: &str,
+        repo_path: &Path,
+        is_active: bool,
+        is_root: bool,
+    ) -> Result<Self> {
         let path = repo_path.join(name);
-        Ok(DotfileDir { path, is_active })
+        Ok(DotfileDir {
+            path,
+            is_active,
+            is_root,
+        })
+    }
+
+    pub fn is_root_dir(&self) -> bool {
+        self.is_root
     }
 }
 
@@ -126,8 +140,6 @@ impl DotfileRepo {
         let mut dotfile_dirs = Vec::new();
         let mut added_subdirs = std::collections::HashSet::new();
 
-        // Phase 1: Active subdirs in priority order
-        // Include if in metadata OR if the directory exists on disk
         for subdir_name in active_subdirs {
             let in_metadata = available_subdirs.contains(subdir_name);
             let subdir_path = repo_path.join(subdir_name);
@@ -135,16 +147,19 @@ impl DotfileRepo {
 
             if in_metadata || exists_on_disk {
                 let is_active = true;
-                let dotfile_dir = DotfileDir::new_no_create(subdir_name, repo_path, is_active)?;
+                let is_root = subdir_name.ends_with("_root");
+                let dotfile_dir =
+                    DotfileDir::new_no_create(subdir_name, repo_path, is_active, is_root)?;
                 dotfile_dirs.push(dotfile_dir);
                 added_subdirs.insert(subdir_name.clone());
             }
         }
 
-        // Phase 2: Inactive subdirs from metadata (not active, but tracked)
         for subdir_name in available_subdirs {
             if !added_subdirs.contains(subdir_name) {
-                let dotfile_dir = DotfileDir::new_no_create(subdir_name, repo_path, false)?;
+                let is_root = subdir_name.ends_with("_root");
+                let dotfile_dir =
+                    DotfileDir::new_no_create(subdir_name, repo_path, false, is_root)?;
                 dotfile_dirs.push(dotfile_dir);
             }
         }
