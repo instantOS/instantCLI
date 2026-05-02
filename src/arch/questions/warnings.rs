@@ -11,6 +11,10 @@ impl Question for LowRamWarning {
         QuestionId::LowRamWarning
     }
 
+    fn is_info_only(&self) -> bool {
+        true
+    }
+
     fn should_ask(&self, context: &InstallContext) -> bool {
         // Show warning if RAM is detected and less than 1GB
         context.system_info.total_ram_gb.is_some_and(|ram| ram < 1)
@@ -36,6 +40,10 @@ pub struct VirtualBoxWarning;
 impl Question for VirtualBoxWarning {
     fn id(&self) -> QuestionId {
         QuestionId::VirtualBoxWarning
+    }
+
+    fn is_info_only(&self) -> bool {
+        true
     }
 
     fn should_ask(&self, context: &InstallContext) -> bool {
@@ -66,6 +74,10 @@ impl Question for WeakPasswordWarning {
         QuestionId::WeakPasswordWarning
     }
 
+    fn is_info_only(&self) -> bool {
+        true
+    }
+
     fn should_ask(&self, context: &InstallContext) -> bool {
         if !context.get_answer_bool(QuestionId::UseEncryption) {
             return false;
@@ -94,6 +106,10 @@ pub struct DualBootEspWarning;
 impl Question for DualBootEspWarning {
     fn id(&self) -> QuestionId {
         QuestionId::DualBootEspWarning
+    }
+
+    fn is_info_only(&self) -> bool {
+        true
     }
 
     fn should_ask(&self, context: &InstallContext) -> bool {
