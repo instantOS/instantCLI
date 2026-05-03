@@ -19,7 +19,12 @@ pub fn list_sources_for_target(
     target_path: &Path,
 ) -> Result<Vec<DotfileSource>> {
     let home = home_dir();
-    let relative_path = target_path.strip_prefix(&home).unwrap_or(target_path);
+    let is_home = target_path.starts_with(&home);
+    let relative_path = if is_home {
+        target_path.strip_prefix(&home).unwrap_or(target_path)
+    } else {
+        target_path.strip_prefix("/").unwrap_or(target_path)
+    };
     let mut sources = Vec::new();
 
     for repo_config in &config.repos {
@@ -33,6 +38,9 @@ pub fn list_sources_for_target(
         };
 
         for dotfile_dir in dotfile_repo.active_dotfile_dirs() {
+            if dotfile_dir.is_root == is_home {
+                continue;
+            }
             let source_path = dotfile_dir.path.join(relative_path);
             if source_path.exists() {
                 let subdir_name = dotfile_dir
@@ -89,7 +97,11 @@ pub fn list_sources_by_target_in_dir(
                     Ok(rel) => rel,
                     Err(_) => continue,
                 };
-                let target_path = home.join(relative_path);
+                let target_path = if dotfile_dir.is_root {
+                    std::path::Path::new("/").join(relative_path)
+                } else {
+                    home.join(relative_path)
+                };
 
                 if !target_path.starts_with(dir_path) {
                     continue;

@@ -368,6 +368,7 @@ pub fn handle_add_repo(config: &mut DotfileConfig, db: &Database, debug: bool) -
         branch,
         read_only: false,
         force_write: false,
+        root_flags: Default::default(),
     });
 
     crate::dot::repo::commands::handle_repo_command(config, db, &clone_args, debug)?;

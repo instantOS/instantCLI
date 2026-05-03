@@ -118,6 +118,7 @@ fn setup_dotfiles(debug: bool) -> Result<()> {
                 read_only: true,
                 force_write: false,
                 debug,
+                root_flags: &Default::default(),
             },
         )?;
     }
@@ -128,7 +129,7 @@ fn setup_dotfiles(debug: bool) -> Result<()> {
     // If we skipped cloning, we should probably apply.
 
     if config.repos.iter().any(|r| r.name == repo_name) {
-        crate::dot::apply_all(&config, &db)?;
+        crate::dot::apply_all(&config, &db, false, false)?;
     }
 
     Ok(())

@@ -291,7 +291,10 @@ impl QuestionEngine {
     fn handle_go_back(&self, mut index: usize) -> usize {
         if index > 0 {
             index -= 1;
-            while index > 0 && !self.questions[index].should_ask(&self.context) {
+            while index > 0
+                && (!self.questions[index].should_ask(&self.context)
+                    || self.questions[index].is_info_only())
+            {
                 index -= 1;
             }
         }

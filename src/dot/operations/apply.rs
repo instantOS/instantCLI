@@ -37,8 +37,13 @@ impl ApplyStats {
 }
 
 /// Apply all dotfiles from configured repositories
-pub fn apply_all(config: &DotfileConfig, db: &Database) -> Result<()> {
-    let all_dotfiles = get_all_dotfiles(config, db)?;
+pub fn apply_all(
+    config: &DotfileConfig,
+    db: &Database,
+    include_root: bool,
+    root_only: bool,
+) -> Result<()> {
+    let all_dotfiles = get_all_dotfiles(config, db, include_root || root_only)?;
 
     if all_dotfiles.is_empty() {
         emit(
@@ -50,21 +55,92 @@ pub fn apply_all(config: &DotfileConfig, db: &Database) -> Result<()> {
         return Ok(());
     }
 
-    // Get unit definitions and find which units have modified files
-    let units = get_all_units(config, db)?;
-    let modified_units = get_modified_units(&all_dotfiles, &units, db)?;
+    let home_dotfiles: Vec<_> = all_dotfiles.values().filter(|d| !d.is_root).collect();
+    let root_dotfiles: Vec<_> = all_dotfiles.values().filter(|d| d.is_root).collect();
 
     let mut stats = ApplyStats::default();
 
-    // Apply each dotfile
-    for dotfile in all_dotfiles.values() {
-        let action = determine_and_apply_action(dotfile, &units, &modified_units, &mut stats, db)?;
-        emit_action_result(&action, dotfile);
-        record_action(&action, dotfile, &mut stats);
+    if !root_only {
+        for dotfile in &home_dotfiles {
+            let action = determine_and_apply_action(
+                dotfile,
+                &get_all_units(config, db)?,
+                &get_modified_units(&all_dotfiles, &get_all_units(config, db)?, db)?,
+                &mut stats,
+                db,
+            )?;
+            emit_action_result(&action, dotfile);
+            record_action(&action, dotfile, &mut stats);
+        }
+    }
+
+    if !root_dotfiles.is_empty() && (include_root || root_only) {
+        if root_only {
+            for dotfile in &root_dotfiles {
+                let action = determine_and_apply_action(
+                    dotfile,
+                    &get_all_units(config, db)?,
+                    &get_modified_units(&all_dotfiles, &get_all_units(config, db)?, db)?,
+                    &mut stats,
+                    db,
+                )?;
+                emit_action_result(&action, dotfile);
+                record_action(&action, dotfile, &mut stats);
+            }
+        } else {
+            let home_dir = std::path::PathBuf::from(shellexpand::tilde("~").to_string());
+            let home_dir_str = home_dir.to_string_lossy();
+            emit(
+                Level::Info,
+                "dot.apply.root_files",
+                &format!(
+                    "{} Applying {} root dotfile(s) (requires sudo)",
+                    char::from(NerdFont::ShieldCheck),
+                    root_dotfiles.len()
+                ),
+                None,
+            );
+
+            let status = std::process::Command::new("sudo")
+                .arg("ins")
+                .arg("dot")
+                .arg("apply")
+                .arg("--root-only")
+                .arg("--home")
+                .arg(home_dir_str.as_ref())
+                .status();
+
+            if let Err(e) = status {
+                emit(
+                    Level::Warn,
+                    "dot.apply.root_failed",
+                    &format!(
+                        "{} Failed to spawn sudo for root dotfiles: {}",
+                        char::from(NerdFont::Warning),
+                        e
+                    ),
+                    None,
+                );
+            } else if let Ok(s) = status {
+                if !s.success() {
+                    emit(
+                        Level::Warn,
+                        "dot.apply.root_failed",
+                        &format!(
+                            "{} Applying root dotfiles failed or was cancelled",
+                            char::from(NerdFont::Warning)
+                        ),
+                        None,
+                    );
+                }
+            }
+        }
     }
 
     db.cleanup_hashes(config.hash_cleanup_days)?;
-    print_apply_summary(&stats);
+    if !root_only || (root_only && !root_dotfiles.is_empty()) {
+        print_apply_summary(&stats);
+    }
 
     Ok(())
 }
@@ -142,12 +218,7 @@ fn apply_single_dotfile(dotfile: &Dotfile, db: &Database) -> Result<ApplyAction>
 
 /// Emit user-visible output for an action
 fn emit_action_result(action: &ApplyAction, dotfile: &Dotfile) {
-    let home = PathBuf::from(shellexpand::tilde("~").to_string());
-    let relative_path = dotfile
-        .target_path
-        .strip_prefix(&home)
-        .unwrap_or(&dotfile.target_path);
-    let path_str = format!("~/{}", relative_path.display());
+    let path_str = crate::dot::display_path(&dotfile.target_path, dotfile.is_root);
 
     match action {
         ApplyAction::Created => {
@@ -194,12 +265,7 @@ fn emit_action_result(action: &ApplyAction, dotfile: &Dotfile) {
 
 /// Record action results into stats
 fn record_action(action: &ApplyAction, dotfile: &Dotfile, stats: &mut ApplyStats) {
-    let home = PathBuf::from(shellexpand::tilde("~").to_string());
-    let relative_path = dotfile
-        .target_path
-        .strip_prefix(&home)
-        .unwrap_or(&dotfile.target_path);
-    let path_str = format!("~/{}", relative_path.display());
+    let path_str = crate::dot::display_path(&dotfile.target_path, dotfile.is_root);
 
     match action {
         ApplyAction::Created => stats.created.push(path_str),

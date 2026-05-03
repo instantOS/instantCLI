@@ -109,13 +109,21 @@ fn select_repo(config: &DotfileConfig, db: &Database, target_path: &Path) -> Res
 }
 
 /// Prompt the user to select one of the repo's configured `dots_dirs`
-fn select_dots_dir(dotfile_repo: &DotfileRepo) -> Result<DotfileDir> {
-    let dirs = &dotfile_repo.dotfile_dirs;
+fn select_dots_dir(dotfile_repo: &DotfileRepo, target_path: &Path) -> Result<DotfileDir> {
+    let home = crate::dot::sources::home_dir();
+    let is_root_target = !target_path.starts_with(&home);
+    let dirs: Vec<_> = dotfile_repo
+        .dotfile_dirs
+        .iter()
+        .filter(|d| d.is_root == is_root_target)
+        .cloned()
+        .collect();
 
     if dirs.is_empty() {
         return Err(anyhow::anyhow!(
-            "Repository '{}' has no configured dots_dirs",
-            dotfile_repo.name
+            "Repository '{}' has no configured dots_dirs for {} paths",
+            dotfile_repo.name,
+            if is_root_target { "root" } else { "home" }
         ));
     }
 
@@ -124,8 +132,7 @@ fn select_dots_dir(dotfile_repo: &DotfileRepo) -> Result<DotfileDir> {
     }
 
     let items: Vec<DotsDirSelectItem> = dirs
-        .iter()
-        .cloned()
+        .into_iter()
         .map(|dots_dir| DotsDirSelectItem {
             dots_dir,
             repo_name: dotfile_repo.name.clone(),
@@ -165,10 +172,11 @@ pub fn add_dotfile(
     add_all: bool,
     choose: bool,
     force: bool,
+    include_root: bool,
     debug: bool,
 ) -> Result<()> {
-    let all_dotfiles = get_all_dotfiles(config, db)?;
-    let target_path = resolve_dotfile_path(path)?;
+    let all_dotfiles = get_all_dotfiles(config, db, include_root)?;
+    let target_path = resolve_dotfile_path(path, include_root)?;
     let home = PathBuf::from(shellexpand::tilde("~").to_string());
 
     // Get tracked dotfiles within the specified path
@@ -270,7 +278,7 @@ fn add_new_file(
     }
 
     // dots_dir selection
-    let chosen_dir = select_dots_dir(&dotfile_repo)?;
+    let chosen_dir = select_dots_dir(&dotfile_repo, full_path)?;
 
     // Build destination info
     let repo_base = dotfile_repo.local_path(config)?;

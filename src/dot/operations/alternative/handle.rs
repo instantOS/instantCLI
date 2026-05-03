@@ -37,7 +37,7 @@ pub fn handle_alternative(config: &DotfileConfig, opts: AlternativeOptions<'_>) 
         opts.repo,
         opts.subdir,
     );
-    let target_path = resolve_dotfile_path(opts.path)?;
+    let target_path = resolve_dotfile_path(opts.path, true)?;
     let display_path = to_display_path(&target_path);
 
     if target_path.is_dir() {

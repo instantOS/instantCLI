@@ -41,9 +41,15 @@ pub(crate) fn run_create_flow(
 
     loop {
         let config = DotfileConfig::load(None)?;
+        let is_root_target = !path.starts_with(crate::dot::sources::home_dir());
         let destinations: Vec<DotfileSource> = get_destinations(&config)
             .into_iter()
             .filter(|dest| {
+                let is_root_dest = dest.subdir_name.ends_with("_root");
+                if is_root_target != is_root_dest {
+                    return false;
+                }
+
                 if force {
                     return true;
                 }
@@ -131,7 +137,7 @@ pub(crate) fn run_create_flow(
                     },
                     &menu,
                 );
-                if create_new_subdir(&config, &repo_name)? {
+                if create_new_subdir(&config, &repo_name, is_root_target)? {
                     continue;
                 }
                 return Ok(Flow::Cancelled);
@@ -247,10 +253,14 @@ fn add_file_to_destination(
     ))
 }
 
-fn create_new_subdir(config: &DotfileConfig, repo_name: &str) -> Result<bool> {
+fn create_new_subdir(
+    config: &DotfileConfig,
+    repo_name: &str,
+    is_root_target: bool,
+) -> Result<bool> {
     use crate::dot::dotfilerepo::DotfileRepo;
 
-    let new_dir = match FzfWrapper::builder()
+    let mut new_dir = match FzfWrapper::builder()
         .prompt("New dotfile directory name: ")
         .args(fzf_mocha_args())
         .input()
@@ -259,6 +269,10 @@ fn create_new_subdir(config: &DotfileConfig, repo_name: &str) -> Result<bool> {
         FzfResult::Selected(s) if !s.trim().is_empty() => s.trim().to_string(),
         _ => return Ok(false),
     };
+
+    if is_root_target && !new_dir.ends_with("_root") {
+        new_dir.push_str("_root");
+    }
 
     let dotfile_repo = DotfileRepo::new(config, repo_name.to_string())?;
     let local_path = dotfile_repo.local_path(config)?;

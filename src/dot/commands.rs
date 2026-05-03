@@ -7,6 +7,19 @@ use super::db::Database;
 use super::repo::cli::{CloneArgs, RepoCommands};
 use crate::ui::prelude::*;
 
+#[derive(clap::Args, Debug, Clone, Default)]
+pub struct RootFlags {
+    /// Include root dotfiles (files in /)
+    #[arg(long)]
+    pub include_root: bool,
+    /// Internal flag: only process root dotfiles
+    #[arg(long, hide = true)]
+    pub root_only: bool,
+    /// Internal flag: override home directory
+    #[arg(long, hide = true)]
+    pub home: Option<String>,
+}
+
 #[derive(Subcommand, Debug)]
 pub enum DotCommands {
     /// Repository management commands
@@ -16,20 +29,24 @@ pub enum DotCommands {
     },
     /// Clone a new repository (alias for 'repo clone')
     Clone(CloneArgs),
-    /// Reset modified dotfiles to their original state in the given path
     Reset {
         /// Path to reset (relative to ~)
         #[arg(value_hint = ValueHint::AnyPath)]
         path: String,
+        #[command(flatten)]
+        root_flags: RootFlags,
     },
     /// Apply dotfiles
-    Apply,
+    Apply {
+        #[command(flatten)]
+        root_flags: RootFlags,
+    },
     /// Add or update dotfiles
     ///
     /// For a single file: If tracked, update the source file. If untracked, prompt to add it.
     /// For a directory: Update all tracked files. Use --all to also add untracked files.
     Add {
-        /// Path to add or update (relative to ~)
+        /// Path to add or update (relative to ~ or absolute path for root dotfiles)
         #[arg(value_hint = ValueHint::AnyPath)]
         path: String,
         /// Recursively add all files in directory, including untracked ones
@@ -42,13 +59,13 @@ pub enum DotCommands {
         #[arg(short, long)]
         force: bool,
     },
-    /// Pull updates for all configured repos and apply changes
     Update {
         /// Do not apply dotfiles after updating
         #[arg(long)]
         no_apply: bool,
+        #[command(flatten)]
+        root_flags: RootFlags,
     },
-    /// Check dotfile status
     Status {
         /// Optional path to a dotfile (target path, e.g. ~/.config/kitty/kitty.conf)
         #[arg(value_hint = ValueHint::AnyPath)]
@@ -59,6 +76,8 @@ pub enum DotCommands {
         /// Show which repository/subdirectory each dotfile comes from
         #[arg(long)]
         show_sources: bool,
+        #[command(flatten)]
+        root_flags: RootFlags,
     },
     /// Initialize the current git repo or bootstrap a default dotfile repo when outside git
     Init {
@@ -68,11 +87,12 @@ pub enum DotCommands {
         #[arg(long)]
         non_interactive: bool,
     },
-    /// Show differences between modified dotfiles and their source
     Diff {
         /// Optional path to a dotfile (target path, e.g. ~/.config/kitty/kitty.conf)
         #[arg(value_hint = ValueHint::AnyPath)]
         path: Option<String>,
+        #[command(flatten)]
+        root_flags: RootFlags,
     },
     /// Merge a modified dotfile with its source using nvim diff
     Merge {
@@ -535,6 +555,25 @@ pub fn handle_dot_command(
     config_path: Option<&str>,
     debug: bool,
 ) -> Result<()> {
+    let home_override = match command {
+        DotCommands::Reset { root_flags, .. }
+        | DotCommands::Apply { root_flags, .. }
+        | DotCommands::Update { root_flags, .. }
+        | DotCommands::Status { root_flags, .. }
+        | DotCommands::Diff { root_flags, .. } => root_flags.home.as_deref(),
+        DotCommands::Clone(args) => args.root_flags.home.as_deref(),
+        DotCommands::Repo {
+            command: RepoCommands::Clone(args),
+        } => args.root_flags.home.as_deref(),
+        _ => None,
+    };
+
+    if let Some(home_path) = home_override {
+        unsafe {
+            std::env::set_var("HOME", home_path);
+        }
+    }
+
     let mut config = DotfileConfig::load(config_path)?;
     config.ensure_directories()?;
     let db = Database::new(config.database_path().to_path_buf())?;
@@ -551,11 +590,19 @@ pub fn handle_dot_command(
                 debug,
             )?;
         }
-        DotCommands::Reset { path } => {
-            super::reset_modified(&config, &db, path)?;
+        DotCommands::Reset {
+            path, root_flags, ..
+        } => {
+            super::reset_modified(
+                &config,
+                &db,
+                path,
+                root_flags.include_root,
+                root_flags.root_only,
+            )?;
         }
-        DotCommands::Apply => {
-            super::apply_all(&config, &db)?;
+        DotCommands::Apply { root_flags, .. } => {
+            super::apply_all(&config, &db, root_flags.include_root, root_flags.root_only)?;
         }
         DotCommands::Add {
             path,
@@ -563,17 +610,43 @@ pub fn handle_dot_command(
             choose,
             force,
         } => {
-            super::add_dotfile(&config, &db, path, *all, *choose, *force, debug)?;
+            // Auto-detect root path handling is inside add_dotfile.
+            // include_root parameter is removed from CLI args for add.
+            // We pass true here to allow adding root files, since Add should handle both automatically.
+            super::add_dotfile(
+                &config, &db, path, *all, *choose, *force,
+                true, // include_root = true allows absolute paths outside home
+                debug,
+            )?;
         }
-        DotCommands::Update { no_apply } => {
-            super::update_all(&config, debug, &db, !*no_apply)?;
+        DotCommands::Update {
+            no_apply,
+            root_flags,
+            ..
+        } => {
+            // update_all might not accept root_only, let's just pass include_root to it.
+            // If root_only is true, maybe we just run apply_all?
+            if root_flags.root_only {
+                super::apply_all(&config, &db, root_flags.include_root, root_flags.root_only)?;
+            } else {
+                super::update_all(&config, debug, &db, !*no_apply, root_flags.include_root)?;
+            }
         }
         DotCommands::Status {
             path,
             all,
             show_sources,
+            root_flags,
+            ..
         } => {
-            super::status_all(&config, path.as_deref(), &db, *all, *show_sources)?;
+            super::status_all(
+                &config,
+                path.as_deref(),
+                &db,
+                *all,
+                *show_sources,
+                root_flags.include_root,
+            )?;
         }
         DotCommands::Init {
             name,
@@ -583,8 +656,10 @@ pub fn handle_dot_command(
                 .map_err(|e| anyhow::anyhow!("Unable to determine current directory: {}", e))?;
             super::meta::handle_init_command(&mut config, &cwd, name.as_deref(), *non_interactive)?;
         }
-        DotCommands::Diff { path } => {
-            super::diff_all(&config, path.as_deref(), &db)?;
+        DotCommands::Diff {
+            path, root_flags, ..
+        } => {
+            super::diff_all(&config, path.as_deref(), &db, root_flags.include_root)?;
         }
         DotCommands::Merge { path, verbose } => {
             super::operations::merge::merge_dotfile(&config, &db, path, *verbose)?;
@@ -605,7 +680,7 @@ pub fn handle_dot_command(
             let pulled_commits = super::git_pull_all(&config, args, debug)?;
             if pulled_commits {
                 println!();
-                super::status_all(&config, None, &db, false, false)?;
+                super::status_all(&config, None, &db, false, false, false)?;
                 println!(
                     "\n{} New commits were pulled. Use {} to apply the changes.",
                     char::from(NerdFont::Info).to_string().blue(),
