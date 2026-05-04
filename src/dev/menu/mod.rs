@@ -17,6 +17,16 @@ pub async fn dev_menu(debug: bool) -> Result<()> {
 
         match entry {
             DevMenuEntry::Clone => super::handle_clone_internal(debug).await?,
+            DevMenuEntry::Chroot => super::chroot::handle_chroot(
+                super::chroot::ChrootOptions {
+                    disk: None,
+                    root: None,
+                    mountpoint: std::path::PathBuf::from("/mnt/instantos"),
+                    shell: "/bin/bash".to_string(),
+                    keep_mounted: false,
+                },
+                debug,
+            )?,
             DevMenuEntry::Install => super::handle_install(debug).await?,
             DevMenuEntry::Setup => super::setup::handle_setup(debug).await?,
             DevMenuEntry::CloseMenu => return Ok(()),
@@ -27,6 +37,7 @@ pub async fn dev_menu(debug: bool) -> Result<()> {
 fn select_dev_menu_entry(cursor: &mut MenuCursor) -> Result<Option<DevMenuEntry>> {
     let entries = vec![
         DevMenuEntry::Clone,
+        DevMenuEntry::Chroot,
         DevMenuEntry::Install,
         DevMenuEntry::Setup,
         DevMenuEntry::CloseMenu,

@@ -6,6 +6,7 @@ use crate::ui::preview::PreviewBuilder;
 #[derive(Debug, Clone)]
 pub enum DevMenuEntry {
     Clone,
+    Chroot,
     Install,
     Setup,
     CloseMenu,
@@ -15,6 +16,7 @@ impl std::fmt::Display for DevMenuEntry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             DevMenuEntry::Clone => write!(f, "!__clone__"),
+            DevMenuEntry::Chroot => write!(f, "!__chroot__"),
             DevMenuEntry::Install => write!(f, "!__install__"),
             DevMenuEntry::Setup => write!(f, "!__setup__"),
             DevMenuEntry::CloseMenu => write!(f, "!__close_menu__"),
@@ -28,6 +30,10 @@ impl FzfSelectable for DevMenuEntry {
             DevMenuEntry::Clone => format!(
                 "{} Clone Repository",
                 format_icon_colored(NerdFont::GitBranch, colors::GREEN)
+            ),
+            DevMenuEntry::Chroot => format!(
+                "{} Mount installed instantOS",
+                format_icon_colored(NerdFont::Terminal, colors::TEAL)
             ),
             DevMenuEntry::Install => format!(
                 "{} Install Package",
@@ -51,6 +57,18 @@ impl FzfSelectable for DevMenuEntry {
                 .bullet("Fetch available repos from GitHub")
                 .bullet("Let you pick one with fuzzy search")
                 .bullet("Clone it into ~/workspace/<name>")
+                .build(),
+            DevMenuEntry::Chroot => PreviewBuilder::new()
+                .header(NerdFont::Terminal, "Mount installed instantOS")
+                .text("Find an installed instantOS system from a live disk.")
+                .blank()
+                .text("This will:")
+                .bullet("Scan disks for instantOS roots")
+                .bullet("Unlock LUKS installs when detected")
+                .bullet("Mount the target at /mnt/instantos")
+                .bullet("Enter it with arch-chroot")
+                .blank()
+                .subtext("Unmounts and closes mappings after the shell exits.")
                 .build(),
             DevMenuEntry::Install => PreviewBuilder::new()
                 .header(NerdFont::Package, "Install Package")
