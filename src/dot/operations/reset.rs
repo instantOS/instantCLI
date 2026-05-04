@@ -1,3 +1,4 @@
+use crate::common::home_dir;
 use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
 use crate::dot::utils::{filter_dotfiles_by_path, get_all_dotfiles, resolve_dotfile_path};
@@ -16,7 +17,7 @@ pub fn reset_modified(
 ) -> Result<()> {
     let all_dotfiles = get_all_dotfiles(config, db, include_root || root_only)?;
     let target_path = resolve_dotfile_path(path, include_root)?;
-    let home = PathBuf::from(shellexpand::tilde("~").to_string());
+    let home = home_dir();
 
     // Filter to dotfiles within the specified path
     let dotfiles_in_path = filter_dotfiles_by_path(&all_dotfiles, &target_path);
@@ -68,7 +69,7 @@ pub fn reset_modified(
             .collect();
 
         if !root_files.is_empty() {
-            let home_dir = std::path::PathBuf::from(shellexpand::tilde("~").to_string());
+            let home_dir = home_dir();
             let home_dir_str = home_dir.to_string_lossy();
             emit(
                 Level::Info,

@@ -6,9 +6,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
-pub fn home_dir() -> PathBuf {
-    PathBuf::from(shellexpand::tilde("~").to_string())
-}
+pub use crate::common::home_dir;
 
 pub fn default_source_for(sources: &[DotfileSource]) -> Option<DotfileSource> {
     sources.first().cloned()

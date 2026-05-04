@@ -3,6 +3,11 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use shellexpand;
 use std::path::{Path, PathBuf};
 
+/// Returns the user's home directory as a PathBuf
+pub fn home_dir() -> PathBuf {
+    PathBuf::from(shellexpand::tilde("~").to_string())
+}
+
 /// A PathBuf that automatically handles tilde expansion/compression
 #[derive(Debug, Clone, PartialEq)]
 pub struct TildePath(PathBuf);

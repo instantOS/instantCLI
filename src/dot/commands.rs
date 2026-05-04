@@ -250,20 +250,7 @@ fn handle_ignore_command(
 ) -> Result<()> {
     match command {
         IgnoreCommands::Add { path } => {
-            let normalized_path = if path.starts_with('~') {
-                path.clone()
-            } else if path.starts_with('/') {
-                let home = shellexpand::tilde("~").to_string();
-                if path.starts_with(&home) {
-                    format!("~{}", path.strip_prefix(&home).unwrap_or(path))
-                } else {
-                    return Err(anyhow::anyhow!(
-                        "Path must be within home directory. Use ~ or relative paths."
-                    ));
-                }
-            } else {
-                format!("~/{}", path.trim_start_matches('/'))
-            };
+            let normalized_path = crate::dot::utils::normalize_path_to_tilde(path);
 
             config.add_ignored_path(normalized_path.clone(), config_path)?;
             emit(
@@ -281,20 +268,14 @@ fn handle_ignore_command(
             );
         }
         IgnoreCommands::Remove { path } => {
-            let normalized_path = if path.starts_with('~') {
-                path.clone()
-            } else if path.starts_with('/') {
-                let home = shellexpand::tilde("~").to_string();
-                if path.starts_with(&home) {
-                    format!("~{}", path.strip_prefix(&home).unwrap_or(path))
-                } else {
-                    return Err(anyhow::anyhow!(
-                        "Path must be within home directory. Use ~ or relative paths."
-                    ));
-                }
-            } else {
-                format!("~/{}", path.trim_start_matches('/'))
-            };
+            let normalized_path = crate::dot::utils::normalize_path_to_tilde(path);
+
+            // Validate that absolute paths are under home
+            if path.starts_with('/') && !normalized_path.starts_with('~') {
+                return Err(anyhow::anyhow!(
+                    "Path must be within home directory. Use ~ or relative paths."
+                ));
+            }
 
             config.remove_ignored_path(&normalized_path, config_path)?;
             emit(

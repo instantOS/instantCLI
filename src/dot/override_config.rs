@@ -3,6 +3,7 @@
 //! Allows users to manually specify which repository/subdirectory a dotfile
 //! should be sourced from, overriding the default priority-based resolution.
 
+use crate::common::home_dir;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -143,7 +144,7 @@ pub fn apply_overrides(
     overrides: &OverrideConfig,
     config: &DotfileConfig,
 ) -> Result<()> {
-    let home = PathBuf::from(shellexpand::tilde("~").to_string());
+    let home = home_dir();
     let lookup = overrides.build_lookup_map();
     let mut active_subdirs_by_repo: HashMap<String, HashSet<String>> = HashMap::new();
 

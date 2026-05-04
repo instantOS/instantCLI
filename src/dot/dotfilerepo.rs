@@ -1,5 +1,6 @@
 use crate::common;
 use crate::common::git;
+use crate::common::home_dir;
 use crate::dot::config::DotfileConfig;
 use anyhow::{Context, Result};
 use colored::Colorize;
@@ -199,7 +200,7 @@ impl DotfileRepo {
     /// Convert a target path (in home directory) to source path (in repo)
     #[allow(dead_code)]
     pub fn target_to_source(&self, target_path: &Path) -> Result<Option<PathBuf>> {
-        let home = std::path::PathBuf::from(shellexpand::tilde("~").to_string());
+        let home = home_dir();
         let relative = target_path.strip_prefix(&home).unwrap_or(target_path);
 
         // Try to find the source path in active dotfile directories

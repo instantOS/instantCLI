@@ -1,5 +1,6 @@
 #[cfg(test)]
 mod tests {
+    use crate::common::home_dir;
     use crate::dot::resolve_dotfile_path;
 
     use std::fs;
@@ -15,7 +16,7 @@ mod tests {
 
     #[test]
     fn test_resolve_dotfile_path_absolute_path() {
-        let home = PathBuf::from(shellexpand::tilde("~").to_string());
+        let home = home_dir();
         let test_file = home.join("test_resolve_absolute.txt");
 
         fs::write(&test_file, "test content").unwrap();
@@ -37,7 +38,7 @@ mod tests {
 
     #[test]
     fn test_resolve_dotfile_path_nonexistent() {
-        let home = PathBuf::from(shellexpand::tilde("~").to_string());
+        let home = home_dir();
         let nonexistent = home.join("nonexistent_file.txt");
 
         let result = resolve_dotfile_path(nonexistent.to_str().unwrap(), false);

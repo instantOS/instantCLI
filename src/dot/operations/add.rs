@@ -1,3 +1,4 @@
+use crate::common::home_dir;
 use crate::dot::config::{self, DotfileConfig};
 use crate::dot::db::Database;
 use crate::dot::dotfile::Dotfile;
@@ -177,7 +178,7 @@ pub fn add_dotfile(
 ) -> Result<()> {
     let all_dotfiles = get_all_dotfiles(config, db, include_root)?;
     let target_path = resolve_dotfile_path(path, include_root)?;
-    let home = PathBuf::from(shellexpand::tilde("~").to_string());
+    let home = home_dir();
 
     // Get tracked dotfiles within the specified path
     let tracked_dotfiles = filter_dotfiles_by_path(&all_dotfiles, &target_path);
@@ -371,7 +372,7 @@ fn update_single_dotfile(dotfile: &Dotfile, config: &DotfileConfig, db: &Databas
     let new_source_hash = Dotfile::compute_hash(&dotfile.source_path)?;
     let has_changes = old_source_hash.as_ref() != Some(&new_source_hash);
 
-    let home = PathBuf::from(shellexpand::tilde("~").to_string());
+    let home = home_dir();
     let relative_path = dotfile
         .target_path
         .strip_prefix(&home)

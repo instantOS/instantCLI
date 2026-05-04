@@ -1,3 +1,4 @@
+use crate::common::home_dir;
 use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
 use crate::dot::dotfile::Dotfile;
@@ -88,7 +89,7 @@ pub fn apply_all(
                 record_action(&action, dotfile, &mut stats);
             }
         } else {
-            let home_dir = std::path::PathBuf::from(shellexpand::tilde("~").to_string());
+            let home_dir = home_dir();
             let home_dir_str = home_dir.to_string_lossy();
             emit(
                 Level::Info,

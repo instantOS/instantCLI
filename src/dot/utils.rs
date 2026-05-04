@@ -1,3 +1,4 @@
+use crate::common::home_dir;
 use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
 use crate::dot::dotfile::Dotfile;
@@ -7,8 +8,31 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
+/// Normalize a path to use tilde notation (~/...)
+/// - If path starts with ~, return as-is
+/// - If path is an absolute path under home, convert to ~...
+/// - Otherwise, prepend ~/ to make it relative to home
+pub fn normalize_path_to_tilde(path: &str) -> String {
+    if path.starts_with('~') {
+        path.to_string()
+    } else if path.starts_with('/') {
+        let home_str = home_dir().to_string_lossy().into_owned();
+        if let Some(stripped) = path.strip_prefix(&home_str) {
+            if stripped.is_empty() {
+                "~".to_string()
+            } else {
+                format!("~/{}", stripped)
+            }
+        } else {
+            path.to_string()
+        }
+    } else {
+        format!("~/{}", path.trim_start_matches('/'))
+    }
+}
+
 pub fn resolve_dotfile_path(path: &str, allow_root: bool) -> Result<PathBuf> {
-    let home = PathBuf::from(shellexpand::tilde("~").to_string());
+    let home = home_dir();
 
     let resolved_path = if path.starts_with('~') {
         PathBuf::from(shellexpand::tilde(path).into_owned())
@@ -154,7 +178,7 @@ pub fn get_all_dotfiles(
 ) -> Result<HashMap<PathBuf, Dotfile>> {
     let repo_manager = DotfileRepositoryManager::new(config, db);
     let active_dirs = repo_manager.get_active_dotfile_dirs()?;
-    let home_path = PathBuf::from(shellexpand::tilde("~").to_string());
+    let home_path = home_dir();
 
     let mut all_dotfiles = Vec::new();
     for dir in active_dirs {
@@ -196,7 +220,7 @@ pub fn display_path(path: &Path, is_root: bool) -> String {
     if is_root {
         path.display().to_string()
     } else {
-        let home = PathBuf::from(shellexpand::tilde("~").to_string());
+        let home = home_dir();
         if let Ok(relative) = path.strip_prefix(&home) {
             format!("~/{}", relative.display())
         } else {

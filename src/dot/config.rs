@@ -1,3 +1,4 @@
+use crate::common::home_dir;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -316,7 +317,7 @@ impl DotfileConfig {
 
     /// Check if a path should be ignored
     pub fn is_path_ignored(&self, path: &Path) -> bool {
-        let home = PathBuf::from(shellexpand::tilde("~").to_string());
+        let home = home_dir();
 
         for ignored in &self.ignored_paths {
             let ignored_path = if ignored.starts_with('~') {

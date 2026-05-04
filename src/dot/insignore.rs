@@ -1,3 +1,4 @@
+use crate::common::home_dir;
 use anyhow::{Context, Result, anyhow};
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use std::fs::File;
@@ -7,7 +8,7 @@ use std::path::{Path, PathBuf};
 const IGNORE_FILE_NAME: &str = ".insignore";
 
 pub fn match_home_path(path: &Path) -> Result<Option<PathBuf>> {
-    let home = PathBuf::from(shellexpand::tilde("~").to_string());
+    let home = home_dir();
     match_home_path_at(&home, path)
 }
 
@@ -36,7 +37,7 @@ pub fn match_repo_path(
 }
 
 pub fn match_repo_target_path(repo_root: &Path, target_path: &Path) -> Result<Option<PathBuf>> {
-    let home = PathBuf::from(shellexpand::tilde("~").to_string());
+    let home = home_dir();
     let relative = match target_path.strip_prefix(&home) {
         Ok(relative) => relative,
         Err(_) if target_path.is_absolute() => return Ok(None),
@@ -46,7 +47,7 @@ pub fn match_repo_target_path(repo_root: &Path, target_path: &Path) -> Result<Op
 }
 
 pub fn format_skip_message(path: &Path, ignore_file: &Path) -> String {
-    let home = PathBuf::from(shellexpand::tilde("~").to_string());
+    let home = home_dir();
     let display_path = path
         .strip_prefix(&home)
         .map(|p| format!("~/{}", p.display()))
@@ -61,7 +62,7 @@ pub fn format_skip_message(path: &Path, ignore_file: &Path) -> String {
 }
 
 pub fn format_repo_skip_message(repo_name: &str, path: &Path, ignore_file: &Path) -> String {
-    let home = PathBuf::from(shellexpand::tilde("~").to_string());
+    let home = home_dir();
     let display_path = path
         .strip_prefix(&home)
         .map(|p| format!("~/{}", p.display()))
