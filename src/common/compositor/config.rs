@@ -99,6 +99,11 @@ impl WmConfigManager {
         &self.config_path
     }
 
+    /// Get the window manager type.
+    pub fn wm(&self) -> WindowManager {
+        self.wm
+    }
+
     /// Get the path to the main WM config file.
     pub fn main_config_path(&self) -> &PathBuf {
         &self.main_config_path

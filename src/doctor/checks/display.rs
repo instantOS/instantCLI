@@ -147,7 +147,7 @@ impl DoctorCheck for SwaySetupCheck {
             return CheckStatus::Skipped("Sway config not found".to_string());
         }
 
-        let expected = match crate::setup::generate_sway_config() {
+        let expected = match crate::setup::generate_wm_config(WindowManager::Sway) {
             Ok(content) => content,
             Err(e) => {
                 return CheckStatus::Fail {

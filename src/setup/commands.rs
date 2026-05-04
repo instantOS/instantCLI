@@ -140,7 +140,7 @@ fn compositor_matches_wm(wm: &WindowManager, compositor: &CompositorType) -> boo
 }
 
 fn write_config_if_changed(manager: &WmConfigManager) -> Result<bool> {
-    let expected_content = generate_sway_config()?;
+    let expected_content = generate_wm_config(manager.wm())?;
     let disk_hash = manager.hash_config().unwrap_or(0);
     let expected_hash = hash_string(&expected_content);
     let changed = disk_hash != expected_hash;
@@ -263,28 +263,30 @@ fn maybe_reload_wm(manager: &WmConfigManager, wm: &WindowManager, compositor: &C
     }
 }
 
-/// Generate the full sway config content.
-pub(crate) fn generate_sway_config() -> Result<String> {
+/// Generate the full WM config content (sway/i3).
+pub(crate) fn generate_wm_config(wm: WindowManager) -> Result<String> {
     use std::fmt::Write;
 
     let mut content = String::new();
 
     // Header
-    writeln!(content, "# instantCLI sway configuration")?;
+    writeln!(content, "# instantCLI {} configuration", wm.name())?;
     writeln!(
         content,
         "# This file is managed by instantCLI. Manual edits may be overwritten."
     )?;
     writeln!(content)?;
 
-    // Cursor theme section
-    if let Ok(theme) = get_current_cursor_theme()
-        && !theme.is_empty()
-    {
-        writeln!(content, "# --- BEGIN cursor_theme ---")?;
-        writeln!(content, "seat * xcursor_theme {}", theme)?;
-        writeln!(content, "# --- END cursor_theme ---")?;
-        writeln!(content)?;
+    // Cursor theme section (sway-only, i3 doesn't support this)
+    if wm == WindowManager::Sway {
+        if let Ok(theme) = get_current_cursor_theme()
+            && !theme.is_empty()
+        {
+            writeln!(content, "# --- BEGIN cursor_theme ---")?;
+            writeln!(content, "seat * xcursor_theme {}", theme)?;
+            writeln!(content, "# --- END cursor_theme ---")?;
+            writeln!(content)?;
+        }
     }
 
     // Assist keybinds section

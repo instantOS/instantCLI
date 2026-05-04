@@ -5,5 +5,5 @@
 
 mod commands;
 
-pub(crate) use commands::generate_sway_config;
+pub(crate) use commands::generate_wm_config;
 pub use commands::{SetupCommands, handle_setup_command};

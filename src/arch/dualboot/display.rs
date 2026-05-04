@@ -100,19 +100,11 @@ pub fn display_partition_row(partition: &PartitionInfo) {
                 .as_ref()
                 .cloned()
                 .unwrap_or_else(|| "Reuse for dual boot".to_string());
-            format!(
-                "{} {}",
-                NerdFont::Check.to_string().green(),
-                reason.green()
-            )
+            format!("{} {}", NerdFont::Check.to_string().green(), reason.green())
         }
         Some(info) if info.can_shrink => {
             if let Some(min) = info.min_size_human() {
-                format!(
-                    "{} min: {}",
-                    NerdFont::Check.to_string().green(),
-                    min
-                )
+                format!("{} min: {}", NerdFont::Check.to_string().green(), min)
             } else {
                 format!("{} shrinkable", NerdFont::Check.to_string().green())
             }
@@ -123,11 +115,7 @@ pub fn display_partition_row(partition: &PartitionInfo) {
                 .as_ref()
                 .cloned()
                 .unwrap_or_else(|| "Not shrinkable".to_string());
-            format!(
-                "{} {}",
-                NerdFont::Cross.to_string().red(),
-                reason.dimmed()
-            )
+            format!("{} {}", NerdFont::Cross.to_string().red(), reason.dimmed())
         }
         None => "-".dimmed().to_string(),
     };
