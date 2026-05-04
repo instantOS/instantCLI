@@ -339,9 +339,9 @@ fn scan_disk_for_candidates(
             report.push(format!(
                 "Found Linux filesystem partition {root}; probing as plaintext root."
             ));
-            if let Some(evidence) = probe_instantos_device(&root, report)? {
+            if let Some((root_device, evidence)) = probe_block_device(child, report)? {
                 candidates.push(ChrootCandidate {
-                    root_device: root,
+                    root_device,
                     disk: Some(disk.path()),
                     fs_type: child.fstype.clone(),
                     size_bytes: child.size,
@@ -430,9 +430,9 @@ fn scan_luks_partition(
     let mut candidates = Vec::new();
 
     for root in roots {
-        if let Some(evidence) = probe_instantos_device(&root.path(), report)? {
+        if let Some((root_device, evidence)) = probe_block_device(&root, report)? {
             candidates.push(ChrootCandidate {
-                root_device: root.path(),
+                root_device,
                 disk: Some(disk.path()),
                 fs_type: root.fstype.clone(),
                 size_bytes: root.size,
@@ -570,6 +570,33 @@ fn choose_boot_mount_relative(root: &Path) -> &'static str {
     } else {
         "boot"
     }
+}
+
+fn probe_block_device(
+    device: &BlockDevice,
+    report: &mut ScanReport,
+) -> Result<Option<(String, Vec<String>)>> {
+    let paths = probe_paths_for_device(device);
+    if paths.len() > 1 {
+        report.push(format!(
+            "Considering device paths for {}: {}.",
+            device.name,
+            paths.join(", ")
+        ));
+    }
+
+    for path in paths {
+        if !Path::new(&path).exists() {
+            report.push(format!("Skipping {path}: device node does not exist."));
+            continue;
+        }
+
+        if let Some(evidence) = probe_instantos_device(&path, report)? {
+            return Ok(Some((path, evidence)));
+        }
+    }
+
+    Ok(None)
 }
 
 fn probe_instantos_device(device: &str, report: &mut ScanReport) -> Result<Option<Vec<String>>> {
@@ -851,6 +878,27 @@ fn looks_like_root_device(device: &BlockDevice) -> bool {
         || label == "root"
 }
 
+fn probe_paths_for_device(device: &BlockDevice) -> Vec<String> {
+    let mut paths = Vec::new();
+    push_unique(&mut paths, device.path());
+
+    if device.device_type == "lvm" && !device.name.starts_with("mapper/") {
+        push_unique(&mut paths, format!("/dev/mapper/{}", device.name));
+
+        if let Some((vg, lv)) = device.name.split_once('-') {
+            push_unique(&mut paths, format!("/dev/{vg}/{lv}"));
+        }
+    }
+
+    paths
+}
+
+fn push_unique(paths: &mut Vec<String>, path: String) {
+    if !paths.contains(&path) {
+        paths.push(path);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -922,6 +970,27 @@ mod tests {
         let roots = find_likely_root_devices(&tree.blockdevices);
         assert_eq!(roots.len(), 1);
         assert_eq!(roots[0].path(), "/dev/mapper/instantOS-root");
+    }
+
+    #[test]
+    fn expands_plain_lvm_names_to_mapper_paths() {
+        let tree = parse_tree(
+            r#"{
+              "blockdevices": [
+                {"name": "instantOS-root", "type": "lvm", "fstype": "ext4", "size": 123}
+              ]
+            }"#,
+        );
+
+        let paths = probe_paths_for_device(&tree.blockdevices[0]);
+        assert_eq!(
+            paths,
+            vec![
+                "/dev/instantOS-root".to_string(),
+                "/dev/mapper/instantOS-root".to_string(),
+                "/dev/instantOS/root".to_string(),
+            ]
+        );
     }
 
     #[test]
