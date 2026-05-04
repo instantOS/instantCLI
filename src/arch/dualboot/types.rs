@@ -1,6 +1,5 @@
 //! Core data structures for dual boot detection
 
-use colored::Colorize;
 use serde::{Deserialize, Serialize};
 
 /// Format bytes as human-readable size
@@ -148,33 +147,6 @@ impl DiskInfo {
                 feasible: true,
                 feasible_partitions,
                 reason: None,
-            }
-        }
-    }
-
-    /// Display this disk with its partitions
-    pub fn display_disk(&self) {
-        // Disk header
-        println!(
-            "  {} {} {} ({})",
-            crate::ui::nerd_font::NerdFont::HardDrive
-                .to_string()
-                .bright_cyan(),
-            self.device.bold(),
-            format!("[{}]", self.partition_table).dimmed(),
-            self.size_human().bright_white()
-        );
-        println!("  {}", "─".repeat(60).bright_black());
-
-        if self.partitions.is_empty() {
-            println!(
-                "    {} {}",
-                crate::ui::nerd_font::NerdFont::Bullet.to_string().dimmed(),
-                "No partitions".dimmed()
-            );
-        } else {
-            for partition in &self.partitions {
-                display_partition_row(partition);
             }
         }
     }
@@ -354,127 +326,6 @@ pub struct DiskAnalysis {
     pub disk: DiskInfo,
     /// Dual boot feasibility for this disk
     pub feasibility: DualBootFeasibility,
-}
-
-/// Display a single partition as a row
-fn display_partition_row(partition: &PartitionInfo) {
-    let name = partition
-        .device
-        .strip_prefix("/dev/")
-        .unwrap_or(&partition.device);
-
-    let fs_type = partition
-        .filesystem
-        .as_ref()
-        .map(|f| f.fs_type.as_str())
-        .unwrap_or("-");
-
-    let type_str = match &partition.partition_type {
-        Some(pt) => format!("{} [{}]", fs_type, pt),
-        None => fs_type.to_string(),
-    };
-
-    let (os_icon, os_text) = if partition.is_efi {
-        (
-            crate::ui::nerd_font::NerdFont::Efi.to_string(),
-            "EFI System Partition".cyan().to_string(),
-        )
-    } else {
-        match &partition.detected_os {
-            Some(os) => {
-                let icon = match os.os_type {
-                    OSType::Windows => crate::ui::nerd_font::NerdFont::Desktop,
-                    OSType::Linux => crate::ui::nerd_font::NerdFont::Terminal,
-                    OSType::MacOS => crate::ui::nerd_font::NerdFont::Desktop,
-                    OSType::Unknown => crate::ui::nerd_font::NerdFont::Question,
-                };
-                let text = match os.os_type {
-                    OSType::Windows => os.name.blue(),
-                    OSType::Linux => os.name.green(),
-                    OSType::MacOS => os.name.magenta(),
-                    OSType::Unknown => os.name.white(),
-                };
-                (icon.to_string(), text.to_string())
-            }
-            None => ("".to_string(), "-".dimmed().to_string()),
-        }
-    };
-
-    let resize_text = match &partition.resize_info {
-        Some(info) if partition.is_efi => {
-            let reason = info
-                .reason
-                .as_ref()
-                .cloned()
-                .unwrap_or_else(|| "Reuse for dual boot".to_string());
-            format!(
-                "{} {}",
-                crate::ui::nerd_font::NerdFont::Check.to_string().green(),
-                reason.green()
-            )
-        }
-        Some(info) if info.can_shrink => {
-            if let Some(min) = info.min_size_human() {
-                format!(
-                    "{} min: {}",
-                    crate::ui::nerd_font::NerdFont::Check.to_string().green(),
-                    min
-                )
-            } else {
-                format!(
-                    "{} shrinkable",
-                    crate::ui::nerd_font::NerdFont::Check.to_string().green()
-                )
-            }
-        }
-        Some(info) => {
-            let reason = info
-                .reason
-                .as_ref()
-                .cloned()
-                .unwrap_or_else(|| "Not shrinkable".to_string());
-            format!(
-                "{} {}",
-                crate::ui::nerd_font::NerdFont::Cross.to_string().red(),
-                reason.dimmed()
-            )
-        }
-        None => "-".dimmed().to_string(),
-    };
-
-    println!(
-        "    {} {:<14} {:>10}  {:<12}  {} {}",
-        crate::ui::nerd_font::NerdFont::Bullet.to_string().dimmed(),
-        name,
-        partition.size_human().bright_white(),
-        type_str.cyan(),
-        os_icon,
-        os_text
-    );
-
-    if let Some(info) = &partition.resize_info {
-        if info.can_shrink || info.reason.is_some() {
-            println!(
-                "      {} {}",
-                crate::ui::nerd_font::NerdFont::ArrowSubItem
-                    .to_string()
-                    .dimmed(),
-                resize_text
-            );
-        }
-
-        if !info.prerequisites.is_empty() {
-            for prereq in &info.prerequisites {
-                println!(
-                    "        {} {}",
-                    crate::ui::nerd_font::NerdFont::ArrowPointer
-                        .to_string()
-                        .dimmed(),
-                    prereq.yellow()
-                );
-            }
-        }
-    }
 }
 
 #[cfg(test)]
