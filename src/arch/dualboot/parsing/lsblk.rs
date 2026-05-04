@@ -1,6 +1,7 @@
 //! lsblk JSON parsing for partition detection
 
 use crate::arch::dualboot::types::*;
+use crate::common::blockdev::is_efi_partition_type;
 use serde_json::Value;
 use std::process::Command;
 
@@ -58,7 +59,7 @@ where
     // Check if this is an EFI System Partition
     // MBR: 0xef, GPT: C12A7328-F81F-11D2-BA4B-00A0C93EC93B (case insensitive)
     let parttype = value.get("parttype").and_then(|v| v.as_str()).unwrap_or("");
-    let is_efi = is_efi_partition(parttype);
+    let is_efi = is_efi_partition_type(parttype);
 
     // Detect OS based on filesystem type and mount point
     let detected_os = if is_efi {
@@ -100,20 +101,6 @@ where
     })
 }
 
-/// Check if partition type indicates EFI System Partition
-pub fn is_efi_partition(parttype: &str) -> bool {
-    let pt = parttype.to_lowercase();
-    // MBR type 0xef or ef
-    if pt == "0xef" || pt == "ef" {
-        return true;
-    }
-    // GPT GUID for EFI System Partition (case insensitive comparison)
-    if pt == "c12a7328-f81f-11d2-ba4b-00a0c93ec93b" {
-        return true;
-    }
-    false
-}
-
 fn detect_bitlocker(device_path: &str) -> bool {
     let output = Command::new("blkid")
         .args(["-o", "value", "-s", "TYPE", device_path])
@@ -151,44 +138,6 @@ mod tests {
 
     fn make_json(json_str: &str) -> serde_json::Value {
         serde_json::from_str(json_str).unwrap()
-    }
-
-    // ── is_efi_partition ────────────────────────────────────────────────
-
-    #[test]
-    fn test_is_efi_partition_gpt_guid() {
-        assert!(is_efi_partition("C12A7328-F81F-11D2-BA4B-00A0C93EC93B"));
-    }
-
-    #[test]
-    fn test_is_efi_partition_gpt_guid_lowercase() {
-        assert!(is_efi_partition("c12a7328-f81f-11d2-ba4b-00a0c93ec93b"));
-    }
-
-    #[test]
-    fn test_is_efi_partition_mbr_0xef() {
-        assert!(is_efi_partition("0xef"));
-    }
-
-    #[test]
-    fn test_is_efi_partition_mbr_ef() {
-        assert!(is_efi_partition("ef"));
-    }
-
-    #[test]
-    fn test_is_efi_partition_mbr_uppercase() {
-        assert!(is_efi_partition("0xEF"));
-    }
-
-    #[test]
-    fn test_is_efi_partition_not_efi() {
-        assert!(!is_efi_partition("0x83"));
-        assert!(!is_efi_partition("0fc63daf-8483-4772-8e79-3d69d8477de4"));
-    }
-
-    #[test]
-    fn test_is_efi_partition_empty() {
-        assert!(!is_efi_partition(""));
     }
 
     // ── parse_partition ─────────────────────────────────────────────────

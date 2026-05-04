@@ -5,8 +5,9 @@ use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail};
 use clap::Args;
-use serde::Deserialize;
 
+use crate::common::blockdev::{BlockDevice, load_lsblk};
+use crate::common::commands::{ensure_commands, run_interactive_status, run_status};
 use crate::menu_utils::{ConfirmResult, FzfPreview, FzfResult, FzfSelectable, FzfWrapper, Header};
 use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
@@ -108,61 +109,6 @@ impl FzfSelectable for ChrootCandidate {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
-struct LsblkOutput {
-    blockdevices: Vec<BlockDevice>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct BlockDevice {
-    name: String,
-    #[serde(rename = "type")]
-    device_type: String,
-    #[serde(default)]
-    size: Option<u64>,
-    #[serde(default)]
-    fstype: Option<String>,
-    #[serde(default)]
-    parttype: Option<String>,
-    #[serde(default)]
-    children: Vec<BlockDevice>,
-}
-
-impl BlockDevice {
-    fn path(&self) -> String {
-        if self.name.starts_with("/dev/") {
-            self.name.clone()
-        } else {
-            format!("/dev/{}", self.name)
-        }
-    }
-
-    fn is_disk(&self) -> bool {
-        self.device_type == "disk"
-    }
-
-    fn is_partition(&self) -> bool {
-        self.device_type == "part"
-    }
-
-    fn is_luks(&self) -> bool {
-        self.fstype
-            .as_deref()
-            .is_some_and(|fs| fs.eq_ignore_ascii_case("crypto_LUKS"))
-    }
-
-    fn is_linux_root_fs(&self) -> bool {
-        self.fstype.as_deref().is_some_and(is_linux_root_fs)
-    }
-
-    fn is_efi(&self) -> bool {
-        self.fstype
-            .as_deref()
-            .is_some_and(|fs| fs.eq_ignore_ascii_case("vfat"))
-            || self.parttype.as_deref().is_some_and(is_efi_partition_type)
-    }
-}
-
 #[derive(Debug, Default)]
 struct MountSession {
     mountpoint: PathBuf,
@@ -222,7 +168,7 @@ impl Drop for MountSession {
 }
 
 pub fn handle_chroot(options: ChrootOptions, debug: bool) -> Result<()> {
-    ensure_tools(&["lsblk", "findmnt", "mount", "umount", "arch-chroot"])?;
+    ensure_commands(&["lsblk", "findmnt", "mount", "umount", "arch-chroot"])?;
     ensure_mountpoint_available(&options.mountpoint)?;
 
     let mut candidate = if let Some(root) = options.root.as_deref() {
@@ -233,7 +179,7 @@ pub fn handle_chroot(options: ChrootOptions, debug: bool) -> Result<()> {
     };
 
     if candidate.encrypted || !candidate.opened_mappers.is_empty() {
-        ensure_tools(&["cryptsetup"])?;
+        ensure_commands(&["cryptsetup"])?;
     }
 
     println!("Selected root: {}", candidate.root_device);
@@ -363,7 +309,7 @@ fn scan_luks_partition(
     boot_device: Option<String>,
     debug: bool,
 ) -> Result<Vec<ChrootCandidate>> {
-    ensure_tools(&["cryptsetup"])?;
+    ensure_commands(&["cryptsetup"])?;
     let luks_path = luks.path();
     let mapper_name = mapper_name_for_luks(&luks.name);
     let mapper_path = format!("/dev/mapper/{mapper_name}");
@@ -639,86 +585,6 @@ fn ensure_mountpoint_available(mountpoint: &Path) -> Result<()> {
     Ok(())
 }
 
-fn ensure_tools(tools: &[&str]) -> Result<()> {
-    let mut missing = Vec::new();
-    for tool in tools {
-        if !command_exists(tool) {
-            missing.push(*tool);
-        }
-    }
-
-    if !missing.is_empty() {
-        bail!("Missing required tools: {}", missing.join(", "));
-    }
-
-    Ok(())
-}
-
-fn command_exists(tool: &str) -> bool {
-    Command::new("sh")
-        .arg("-c")
-        .arg(format!("command -v {} >/dev/null 2>&1", shell_escape(tool)))
-        .status()
-        .is_ok_and(|status| status.success())
-}
-
-fn shell_escape(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "'\"'\"'"))
-}
-
-fn load_lsblk() -> Result<LsblkOutput> {
-    let output = Command::new("lsblk")
-        .args([
-            "-J",
-            "-b",
-            "-o",
-            "NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT,PARTTYPE",
-        ])
-        .output()
-        .context("Failed to run lsblk")?;
-
-    if !output.status.success() {
-        bail!("lsblk failed: {}", String::from_utf8_lossy(&output.stderr));
-    }
-
-    serde_json::from_slice(&output.stdout).context("Failed to parse lsblk JSON")
-}
-
-fn run_status(command: &mut Command) -> Result<()> {
-    let program = command.get_program().to_string_lossy().to_string();
-    let args = command
-        .get_args()
-        .map(|arg| arg.to_string_lossy().to_string())
-        .collect::<Vec<_>>();
-    let output = command
-        .output()
-        .with_context(|| format!("Failed to execute {program}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("{} {} failed: {}", program, args.join(" "), stderr.trim());
-    }
-
-    Ok(())
-}
-
-fn run_interactive_status(command: &mut Command) -> Result<()> {
-    let program = command.get_program().to_string_lossy().to_string();
-    let args = command
-        .get_args()
-        .map(|arg| arg.to_string_lossy().to_string())
-        .collect::<Vec<_>>();
-    let status = command
-        .status()
-        .with_context(|| format!("Failed to execute {program}"))?;
-
-    if !status.success() {
-        bail!("{} {} exited with {}", program, args.join(" "), status);
-    }
-
-    Ok(())
-}
-
 fn open_luks(device: &str, mapper_name: &str, password: &str) -> Result<()> {
     let mut child = Command::new("cryptsetup")
         .arg("open")
@@ -776,21 +642,6 @@ fn blkid_type(device: &str) -> Result<Option<String>> {
     Ok((!fs.is_empty()).then_some(fs))
 }
 
-fn is_linux_root_fs(fs: &str) -> bool {
-    matches!(
-        fs.to_ascii_lowercase().as_str(),
-        "ext2" | "ext3" | "ext4" | "btrfs" | "xfs"
-    )
-}
-
-fn is_efi_partition_type(parttype: &str) -> bool {
-    let normalized = parttype.to_ascii_lowercase();
-    matches!(
-        normalized.as_str(),
-        "0xef" | "ef" | "c12a7328-f81f-11d2-ba4b-00a0c93ec93b"
-    )
-}
-
 fn find_boot_device(disk: &BlockDevice) -> Option<String> {
     disk.children
         .iter()
@@ -840,6 +691,7 @@ fn collect_linux_children_for_path(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::blockdev::LsblkOutput;
     use tempfile::TempDir;
 
     fn parse_tree(json: &str) -> LsblkOutput {

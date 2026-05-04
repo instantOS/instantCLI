@@ -9,56 +9,31 @@ use crate::arch::dualboot::types::format_size;
 use crate::arch::dualboot::types::{
     DiskAnalysis, DiskInfo, MIN_ESP_SIZE, PartitionTableType, ResizeInfo,
 };
-use anyhow::{Context, Result};
-use serde_json::Value;
-use std::process::Command;
+use anyhow::Result;
 
 /// Detect all disks and their partitions
 pub fn detect_disks() -> Result<Vec<DiskInfo>> {
-    let output = Command::new("lsblk")
-        .args([
-            "-J",
-            "-b",
-            "-o",
-            "NAME,SIZE,TYPE,FSTYPE,UUID,LABEL,MOUNTPOINT,PTTYPE,PARTTYPE",
-        ])
-        .output()
-        .context("Failed to run lsblk")?;
-
-    if !output.status.success() {
-        anyhow::bail!("lsblk failed: {}", String::from_utf8_lossy(&output.stderr));
-    }
-
-    let json: Value =
-        serde_json::from_slice(&output.stdout).context("Failed to parse lsblk JSON output")?;
-
-    let blockdevices = json
-        .get("blockdevices")
-        .and_then(|v| v.as_array())
-        .ok_or_else(|| anyhow::anyhow!("No blockdevices in lsblk output"))?;
+    let lsblk = crate::common::blockdev::load_lsblk()?;
 
     let mut disks = Vec::new();
 
-    for device in blockdevices {
-        let device_type = device.get("type").and_then(|v| v.as_str()).unwrap_or("");
-
-        // Only process disk devices, skip loop, rom, etc.
-        if device_type != "disk" {
+    for device in &lsblk.blockdevices {
+        if !device.is_disk() {
             continue;
         }
 
-        let name = device.get("name").and_then(|v| v.as_str()).unwrap_or("");
-
-        // Skip loop devices
-        if name.starts_with("loop") {
+        if device.name.starts_with("loop") {
             continue;
         }
 
-        let size_bytes = device.get("size").and_then(|v| v.as_u64()).unwrap_or(0);
-
-        let pttype = device.get("pttype").and_then(|v| v.as_str()).unwrap_or("");
-
-        let partition_table = match pttype.to_lowercase().as_str() {
+        let size_bytes = device.size.unwrap_or(0);
+        let partition_table = match device
+            .pttype
+            .as_deref()
+            .unwrap_or("")
+            .to_lowercase()
+            .as_str()
+        {
             "gpt" => PartitionTableType::GPT,
             "dos" | "mbr" => PartitionTableType::MBR,
             _ => PartitionTableType::Unknown,
@@ -66,14 +41,12 @@ pub fn detect_disks() -> Result<Vec<DiskInfo>> {
 
         let mut partitions = Vec::new();
 
-        if let Some(children) = device.get("children").and_then(|v| v.as_array()) {
-            for child in children {
-                // Use the new parse_partition signature with closures for OS detection and EFI resize
-                if let Some(partition) =
-                    parsing::parse_partition(child, detect_os_from_info, get_efi_resize_info)
-                {
-                    partitions.push(partition);
-                }
+        for child in &device.children {
+            let child_value = child.to_json_value();
+            if let Some(partition) =
+                parsing::parse_partition(&child_value, detect_os_from_info, get_efi_resize_info)
+            {
+                partitions.push(partition);
             }
         }
 
@@ -81,7 +54,7 @@ pub fn detect_disks() -> Result<Vec<DiskInfo>> {
         let unpartitioned_space_bytes = size_bytes.saturating_sub(total_partition_size);
 
         // Calculate largest contiguous free space using sfdisk
-        let device_path = format!("/dev/{}", name);
+        let device_path = device.path();
         let max_contiguous_free_space_bytes =
             get_largest_free_region(&device_path, Some(size_bytes)).unwrap_or(0);
 
@@ -163,6 +136,7 @@ fn get_efi_resize_info(size_bytes: u64) -> ResizeInfo {
 #[cfg(test)]
 mod tests {
     use std::io::Write;
+    use std::process::Command;
 
     use super::*;
 

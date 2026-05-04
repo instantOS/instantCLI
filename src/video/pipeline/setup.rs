@@ -2,6 +2,7 @@ use anyhow::Result;
 use duct::cmd;
 use reqwest::Client;
 
+use crate::common::commands::command_exists;
 use crate::menu_utils::FzfWrapper;
 use crate::ui::prelude::{Level, emit};
 
@@ -42,8 +43,8 @@ pub async fn handle_setup(args: SetupArgs) -> Result<()> {
 }
 
 fn video_tools_ready() -> Result<bool> {
-    let local_ready = check_command_exists("uvx")
-        && check_command_exists("ffmpeg")
+    let local_ready = command_exists("uvx")
+        && command_exists("ffmpeg")
         && cmd!("uvx", "ffmpeg-normalize", "--version").run().is_ok()
         && cmd!(
             "uvx",
@@ -61,8 +62,7 @@ fn video_tools_ready() -> Result<bool> {
         .run()
         .is_ok();
 
-    let whisper_ready =
-        check_command_exists("uv") && cmd!("uvx", "whisperx", "--version").run().is_ok();
+    let whisper_ready = command_exists("uv") && cmd!("uvx", "whisperx", "--version").run().is_ok();
 
     let config = VideoConfig::load()?;
     let auphonic_ready = config.auphonic_api_key.is_some();
@@ -79,7 +79,7 @@ fn setup_local_preprocessor(_force: bool) -> Result<()> {
     );
 
     // Check required dependencies
-    if !check_command_exists("uvx") {
+    if !command_exists("uvx") {
         emit(
             Level::Warn,
             "video.setup.local",
@@ -89,7 +89,7 @@ fn setup_local_preprocessor(_force: bool) -> Result<()> {
         return Ok(());
     }
 
-    if !check_command_exists("ffmpeg") {
+    if !command_exists("ffmpeg") {
         emit(
             Level::Warn,
             "video.setup.local",
@@ -111,10 +111,6 @@ fn setup_local_preprocessor(_force: bool) -> Result<()> {
     );
 
     Ok(())
-}
-
-fn check_command_exists(command: &str) -> bool {
-    cmd!("which", command).run().is_ok()
 }
 
 fn check_deepfilternet() {
@@ -363,7 +359,7 @@ fn setup_whisperx(_force: bool) -> Result<()> {
     );
 
     // Check if uv is installed
-    if !check_command_exists("uv") {
+    if !command_exists("uv") {
         emit(
             Level::Warn,
             "video.setup.whisperx",

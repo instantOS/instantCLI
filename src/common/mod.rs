@@ -1,4 +1,6 @@
 pub mod audio;
+pub mod blockdev;
+pub mod commands;
 pub mod compositor;
 pub mod config;
 pub mod deps;
