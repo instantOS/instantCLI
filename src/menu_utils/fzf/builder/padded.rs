@@ -5,7 +5,10 @@ use std::process::Command;
 use crate::common::shell::shell_quote;
 
 use super::FzfBuilder;
-use super::shared::{FzfCommandOptions, build_padded_item_from_lines, run_fzf_with_input};
+use super::shared::{
+    FzfCommandOptions, apply_fzf_command_options, base_fzf_command, build_padded_item_from_lines,
+    default_header_text, run_fzf_with_input,
+};
 use crate::menu_utils::fzf::types::{FzfPreview, FzfResult, FzfSelectable, InitialCursor};
 use crate::menu_utils::fzf::wrapper::check_fzf_exit;
 
@@ -33,17 +36,17 @@ impl FzfBuilder {
             .iter()
             .any(|item| !item.fzf_search_keywords().is_empty());
 
-        let input_text = Self::prepare_padded_input(&items);
+        let input_text = prepare_padded_input(&items);
         let has_preview = items
             .iter()
             .any(|item| !matches!(item.fzf_preview(), FzfPreview::None));
         let preview_dir = if has_preview {
-            Some(Self::prepare_padded_previews(&items)?)
+            Some(prepare_padded_previews(&items)?)
         } else {
             None
         };
 
-        let cmd = self.configure_padded_cmd(preview_dir.as_deref(), has_keywords);
+        let cmd = configure_padded_cmd(&self, preview_dir.as_deref(), has_keywords);
 
         let output = run_fzf_with_input(cmd, input_text.as_bytes());
 
@@ -79,107 +82,108 @@ impl FzfBuilder {
             Err(e) => Ok(FzfResult::Error(e.to_string())),
         }
     }
+}
 
-    fn prepare_padded_input<T: FzfSelectable>(items: &[T]) -> String {
-        let mut input_lines = Vec::new();
-        const HIDDEN_PADDING: &str = "                                                                                                    ";
-        const EXTRA_WIDE_PADDING: &str = "                                                                                                                                                                                                                                                                    ";
+fn prepare_padded_input<T: FzfSelectable>(items: &[T]) -> String {
+    let mut input_lines = Vec::new();
+    const HIDDEN_PADDING: &str = "                                                                                                    ";
+    const EXTRA_WIDE_PADDING: &str = "                                                                                                                                                                                                                                                                    ";
 
-        let has_previews = items
-            .iter()
-            .any(|item| !matches!(item.fzf_preview(), FzfPreview::None));
+    let has_previews = items
+        .iter()
+        .any(|item| !matches!(item.fzf_preview(), FzfPreview::None));
 
-        for item in items {
-            let display = item.fzf_display_text();
-            let keywords = item.fzf_search_keywords().join(" ");
+    for item in items {
+        let display = item.fzf_display_text();
+        let keywords = item.fzf_search_keywords().join(" ");
 
-            let middle_line = if keywords.is_empty() {
-                format!("  {display}")
-            } else if has_previews {
-                format!("  {display}{HIDDEN_PADDING}\x1f{keywords}")
-            } else {
-                format!("  {display}{EXTRA_WIDE_PADDING}\x1f{keywords}")
-            };
-
-            let padded_item = build_padded_item_from_lines(&display, &middle_line);
-            input_lines.push(padded_item);
-        }
-
-        input_lines.join("\0")
-    }
-
-    fn prepare_padded_previews<T: FzfSelectable>(items: &[T]) -> Result<std::path::PathBuf> {
-        let preview_dir = std::env::temp_dir().join(format!("fzf_preview_{}", std::process::id()));
-        std::fs::create_dir_all(&preview_dir)?;
-
-        for (idx, item) in items.iter().enumerate() {
-            match item.fzf_preview() {
-                FzfPreview::Text(preview) => {
-                    let preview_path = preview_dir.join(format!("{}.txt", idx));
-                    if let Ok(mut file) = std::fs::File::create(&preview_path) {
-                        let _ = file.write_all(preview.as_bytes());
-                    }
-                }
-                FzfPreview::Command(cmd) => {
-                    let preview_path = preview_dir.join(format!("{}.sh", idx));
-                    if let Ok(mut file) = std::fs::File::create(&preview_path) {
-                        let key = shell_quote(&item.fzf_key());
-                        let script = format!("set -- {key}\n{cmd}");
-                        let _ = file.write_all(script.as_bytes());
-                    }
-                }
-                FzfPreview::None => {}
-            }
-        }
-
-        Ok(preview_dir)
-    }
-
-    fn configure_padded_cmd(
-        &self,
-        preview_dir: Option<&std::path::Path>,
-        has_keywords: bool,
-    ) -> Command {
-        let mut cmd = self.base_fzf_command();
-
-        cmd.arg("--read0");
-        cmd.arg("--ansi");
-        cmd.arg("--highlight-line");
-        cmd.arg("--layout=reverse");
-        cmd.arg("--tiebreak=index");
-        cmd.arg("--info=inline-right");
-
-        if has_keywords {
-            cmd.arg("--delimiter=\x1f").arg("--no-hscroll");
-        }
-
-        cmd.arg("--bind").arg("enter:become(echo {n})");
-
-        if let Some(dir) = preview_dir {
-            let preview_cmd = format!(
-                "if [ -f {dir}/{{n}}.sh ]; then bash {dir}/{{n}}.sh; elif [ -f {dir}/{{n}}.txt ]; then cat {dir}/{{n}}.txt; fi",
-                dir = dir.display()
-            );
-            cmd.arg("--preview").arg(&preview_cmd);
-        }
-
-        let cursor = match self.initial_cursor {
-            Some(InitialCursor::Index(index)) => Some(index),
-            None => None,
+        let middle_line = if keywords.is_empty() {
+            format!("  {display}")
+        } else if has_previews {
+            format!("  {display}{HIDDEN_PADDING}\x1f{keywords}")
+        } else {
+            format!("  {display}{EXTRA_WIDE_PADDING}\x1f{keywords}")
         };
-        self.apply_fzf_command_options(
-            &mut cmd,
-            FzfCommandOptions {
-                prompt_suffix: Some(" > "),
-                header: self.default_header_text(),
-                include_additional_args: true,
-                cursor,
-                responsive_layout: true,
-            },
-        );
 
-        cmd
+        let padded_item = build_padded_item_from_lines(&display, &middle_line);
+        input_lines.push(padded_item);
     }
+
+    input_lines.join("\0")
+}
+
+fn prepare_padded_previews<T: FzfSelectable>(items: &[T]) -> Result<std::path::PathBuf> {
+    let preview_dir = std::env::temp_dir().join(format!("fzf_preview_{}", std::process::id()));
+    std::fs::create_dir_all(&preview_dir)?;
+
+    for (idx, item) in items.iter().enumerate() {
+        match item.fzf_preview() {
+            FzfPreview::Text(preview) => {
+                let preview_path = preview_dir.join(format!("{}.txt", idx));
+                if let Ok(mut file) = std::fs::File::create(&preview_path) {
+                    let _ = file.write_all(preview.as_bytes());
+                }
+            }
+            FzfPreview::Command(cmd) => {
+                let preview_path = preview_dir.join(format!("{}.sh", idx));
+                if let Ok(mut file) = std::fs::File::create(&preview_path) {
+                    let key = shell_quote(&item.fzf_key());
+                    let script = format!("set -- {key}\n{cmd}");
+                    let _ = file.write_all(script.as_bytes());
+                }
+            }
+            FzfPreview::None => {}
+        }
+    }
+
+    Ok(preview_dir)
+}
+
+fn configure_padded_cmd(
+    builder: &FzfBuilder,
+    preview_dir: Option<&std::path::Path>,
+    has_keywords: bool,
+) -> Command {
+    let mut cmd = base_fzf_command();
+
+    cmd.arg("--read0");
+    cmd.arg("--ansi");
+    cmd.arg("--highlight-line");
+    cmd.arg("--layout=reverse");
+    cmd.arg("--tiebreak=index");
+    cmd.arg("--info=inline-right");
+
+    if has_keywords {
+        cmd.arg("--delimiter=\x1f").arg("--no-hscroll");
+    }
+
+    cmd.arg("--bind").arg("enter:become(echo {n})");
+
+    if let Some(dir) = preview_dir {
+        let preview_cmd = format!(
+            "if [ -f {dir}/{{n}}.sh ]; then bash {dir}/{{n}}.sh; elif [ -f {dir}/{{n}}.txt ]; then cat {dir}/{{n}}.txt; fi",
+            dir = dir.display()
+        );
+        cmd.arg("--preview").arg(&preview_cmd);
+    }
+
+    let cursor = match builder.shared.initial_cursor {
+        Some(InitialCursor::Index(index)) => Some(index),
+        None => None,
+    };
+    apply_fzf_command_options(
+        &mut cmd,
+        &builder.shared,
+        FzfCommandOptions {
+            prompt_suffix: Some(" > "),
+            header: default_header_text(&builder.shared),
+            include_additional_args: true,
+            cursor,
+            responsive_layout: true,
+        },
+    );
+
+    cmd
 }
 
 #[cfg(test)]

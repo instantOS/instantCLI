@@ -291,8 +291,8 @@ fn handle_empty_input(default_repo: &str) -> Result<AddRepoInputResult> {
 fn prompt_optional_name(url: &str) -> Result<Option<String>> {
     let default_name = extract_repo_name(url);
     match FzfWrapper::builder()
-        .input()
         .prompt("Repository name (optional)")
+        .input()
         .ghost(&default_name)
         .input_result()?
     {
@@ -306,8 +306,8 @@ fn prompt_optional_name(url: &str) -> Result<Option<String>> {
 /// Prompt for optional branch name
 fn prompt_optional_branch() -> Result<Option<String>> {
     match FzfWrapper::builder()
-        .input()
         .prompt("Branch (optional)")
+        .input()
         .input_result()?
     {
         FzfResult::Selected(s) if !s.is_empty() => Ok(Some(s)),
@@ -326,8 +326,8 @@ pub fn handle_add_repo(config: &mut DotfileConfig, db: &Database, debug: bool) -
     // Loop for URL input (allows retrying)
     let url = loop {
         match FzfWrapper::builder()
-            .input()
             .prompt("Repository URL or name")
+            .input()
             .ghost(DEFAULT_REPO)
             .input_result()?
         {

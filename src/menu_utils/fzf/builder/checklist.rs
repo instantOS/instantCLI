@@ -1,9 +1,12 @@
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use std::collections::HashMap;
 use std::process::Output;
 
-use super::shared::{FzfCommandOptions, run_fzf_with_input};
-use super::{ChecklistEntry, DialogType, FzfBuilder};
+use super::shared::{
+    FzfCommandOptions, apply_fzf_command_options, base_fzf_command, default_header_text,
+    run_fzf_with_input,
+};
+use super::{ChecklistBuilder, ChecklistEntry};
 use crate::menu_utils::fzf::preview::PreviewUtils;
 use crate::menu_utils::fzf::types::{
     ChecklistAction, ChecklistConfirm, ChecklistItem, ChecklistResult, ChecklistSelection,
@@ -11,8 +14,8 @@ use crate::menu_utils::fzf::types::{
 };
 use crate::menu_utils::fzf::wrapper::{FzfWrapper, check_fzf_exit, configure_preview_and_input};
 
-impl FzfBuilder {
-    pub(super) fn execute_checklist<T: FzfSelectable + Clone>(
+impl ChecklistBuilder {
+    pub fn checklist_dialog<T: FzfSelectable + Clone>(
         self,
         items: Vec<T>,
     ) -> Result<ChecklistResult<T>> {
@@ -36,7 +39,7 @@ impl FzfBuilder {
                 }
                 crate::menu_utils::mock::MockResponse::ChecklistAction(key) => {
                     Ok(ChecklistResult::Action(
-                        self.checklist_actions
+                        self.actions
                             .iter()
                             .find(|a| a.key == key)
                             .cloned()
@@ -56,19 +59,14 @@ impl FzfBuilder {
             return Ok(ChecklistResult::Cancelled);
         }
 
-        let (confirm_text, allow_empty) = match &self.dialog_type {
-            DialogType::Checklist {
-                confirm_text,
-                allow_empty,
-            } => (confirm_text.clone(), *allow_empty),
-            _ => return Err(anyhow!("Not a checklist dialog")),
-        };
+        let confirm_text = self.confirm_text.clone();
+        let allow_empty = self.allow_empty;
 
         let mut checklist_items: Vec<ChecklistItem<T>> =
             items.into_iter().map(ChecklistItem::new).collect();
         let confirm_item = ChecklistConfirm::new(&confirm_text);
 
-        let action_items = self.checklist_actions.clone();
+        let action_items = self.actions.clone();
         let mut action_map: HashMap<String, ChecklistAction> = HashMap::new();
         for action in &action_items {
             action_map.insert(action.fzf_key(), action.clone());
@@ -171,16 +169,17 @@ impl FzfBuilder {
         action_map: &HashMap<String, ChecklistAction>,
         cursor: Option<usize>,
     ) -> Result<ChecklistSelection> {
-        let mut cmd = self.base_fzf_command();
+        let mut cmd = base_fzf_command();
         cmd.arg("--ansi");
         cmd.arg("--tiebreak=index");
         cmd.arg("--layout=reverse");
         cmd.arg("--print-query");
-        self.apply_fzf_command_options(
+        apply_fzf_command_options(
             &mut cmd,
+            &self.shared,
             FzfCommandOptions {
                 prompt_suffix: Some(" > "),
-                header: self.default_header_text(),
+                header: default_header_text(&self.shared),
                 include_additional_args: true,
                 cursor,
                 responsive_layout: true,
@@ -202,51 +201,50 @@ impl FzfBuilder {
 
         let output = run_fzf_with_input(cmd, input_text.as_bytes())?;
 
-        self.parse_checklist_output(output, key_to_index, action_map)
+        parse_checklist_output(output, key_to_index, action_map)
+    }
+}
+
+fn parse_checklist_output(
+    result: Output,
+    key_to_index: &HashMap<String, usize>,
+    action_map: &HashMap<String, ChecklistAction>,
+) -> Result<ChecklistSelection> {
+    let exit_code = result.status.code();
+
+    if exit_code != Some(1) && check_fzf_exit::<()>(&result).is_some() {
+        return Ok(ChecklistSelection::Cancelled);
     }
 
-    fn parse_checklist_output(
-        &self,
-        result: Output,
-        key_to_index: &HashMap<String, usize>,
-        action_map: &HashMap<String, ChecklistAction>,
-    ) -> Result<ChecklistSelection> {
-        let exit_code = result.status.code();
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    let lines: Vec<&str> = stdout.trim_end().split('\n').collect();
 
-        if exit_code != Some(1) && check_fzf_exit::<()>(&result).is_some() {
-            return Ok(ChecklistSelection::Cancelled);
+    let query = lines.first().map(|s| s.trim()).unwrap_or("");
+    let selected = lines.get(1).map(|s| s.trim()).unwrap_or("");
+
+    if selected.is_empty() {
+        if query.is_empty() {
+            return Ok(ChecklistSelection::EmptyQuery);
+        } else {
+            return Ok(ChecklistSelection::NotFound);
         }
-
-        let stdout = String::from_utf8_lossy(&result.stdout);
-        let lines: Vec<&str> = stdout.trim_end().split('\n').collect();
-
-        let query = lines.first().map(|s| s.trim()).unwrap_or("");
-        let selected = lines.get(1).map(|s| s.trim()).unwrap_or("");
-
-        if selected.is_empty() {
-            if query.is_empty() {
-                return Ok(ChecklistSelection::EmptyQuery);
-            } else {
-                return Ok(ChecklistSelection::NotFound);
-            }
-        }
-
-        if let Some(key) = selected.split('\x1f').nth(2) {
-            if key == ChecklistConfirm::confirm_key() {
-                return Ok(ChecklistSelection::Confirmed);
-            }
-
-            if action_map.contains_key(key) {
-                return Ok(ChecklistSelection::Action(key.to_string()));
-            }
-
-            if let Some(&index) = key_to_index.get(key) {
-                return Ok(ChecklistSelection::Toggled(index));
-            }
-        }
-
-        Ok(ChecklistSelection::NotFound)
     }
+
+    if let Some(key) = selected.split('\x1f').nth(2) {
+        if key == ChecklistConfirm::confirm_key() {
+            return Ok(ChecklistSelection::Confirmed);
+        }
+
+        if action_map.contains_key(key) {
+            return Ok(ChecklistSelection::Action(key.to_string()));
+        }
+
+        if let Some(&index) = key_to_index.get(key) {
+            return Ok(ChecklistSelection::Toggled(index));
+        }
+    }
+
+    Ok(ChecklistSelection::NotFound)
 }
 
 #[cfg(test)]

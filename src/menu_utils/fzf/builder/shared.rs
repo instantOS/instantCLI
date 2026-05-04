@@ -2,7 +2,7 @@ use anyhow::{Result, anyhow};
 use std::io::Write;
 use std::process::{Command, Output, Stdio};
 
-use super::FzfBuilder;
+use super::SharedConfig;
 use crate::menu_utils::fzf::types::Header;
 use crate::menu_utils::fzf::utils::{check_fzf_spawn_error_and_exit, extract_icon_padding};
 
@@ -14,44 +14,46 @@ pub(super) struct FzfCommandOptions {
     pub responsive_layout: bool,
 }
 
-impl FzfBuilder {
-    pub(super) fn base_fzf_command(&self) -> Command {
-        let mut cmd = Command::new("fzf");
-        cmd.env_remove("FZF_DEFAULT_OPTS");
-        cmd
+pub(super) fn base_fzf_command() -> Command {
+    let mut cmd = Command::new("fzf");
+    cmd.env_remove("FZF_DEFAULT_OPTS");
+    cmd
+}
+
+pub(super) fn apply_fzf_command_options(
+    cmd: &mut Command,
+    shared: &SharedConfig,
+    options: FzfCommandOptions,
+) {
+    if let Some(prompt_suffix) = options.prompt_suffix
+        && let Some(prompt) = &shared.prompt
+    {
+        cmd.arg("--prompt").arg(format!("{prompt}{prompt_suffix}"));
     }
 
-    pub(super) fn apply_fzf_command_options(&self, cmd: &mut Command, options: FzfCommandOptions) {
-        if let Some(prompt_suffix) = options.prompt_suffix
-            && let Some(prompt) = &self.prompt
-        {
-            cmd.arg("--prompt").arg(format!("{prompt}{prompt_suffix}"));
-        }
+    if let Some(header) = options.header {
+        cmd.arg("--header").arg(header);
+    }
 
-        if let Some(header) = options.header {
-            cmd.arg("--header").arg(header);
-        }
-
-        if options.include_additional_args {
-            for arg in &self.additional_args {
-                cmd.arg(arg);
-            }
-        }
-
-        if let Some(index) = options.cursor {
-            cmd.arg("--bind").arg(format!("load:pos({})", index + 1));
-        }
-
-        if options.responsive_layout && self.responsive_layout {
-            let layout = super::super::utils::get_responsive_layout();
-            cmd.arg(layout.preview_window);
-            cmd.arg("--margin").arg(layout.margin);
+    if options.include_additional_args {
+        for arg in &shared.additional_args {
+            cmd.arg(arg);
         }
     }
 
-    pub(super) fn default_header_text(&self) -> Option<String> {
-        self.header.as_ref().map(Header::to_fzf_string)
+    if let Some(index) = options.cursor {
+        cmd.arg("--bind").arg(format!("load:pos({})", index + 1));
     }
+
+    if options.responsive_layout && shared.responsive_layout {
+        let layout = super::super::utils::get_responsive_layout();
+        cmd.arg(layout.preview_window);
+        cmd.arg("--margin").arg(layout.margin);
+    }
+}
+
+pub(super) fn default_header_text(shared: &SharedConfig) -> Option<String> {
+    shared.header.as_ref().map(Header::to_fzf_string)
 }
 
 pub(super) fn run_fzf_with_input(mut cmd: Command, input: &[u8]) -> Result<Output> {

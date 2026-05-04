@@ -4,15 +4,24 @@ use std::process::{Command, Stdio};
 use crate::ui::catppuccin::{colors, hex_to_ansi_bg, hex_to_ansi_fg};
 use crate::ui::nerd_font::NerdFont;
 
-use super::shared::{FzfCommandOptions, build_padded_item, run_fzf_with_input};
-use super::{ConfirmOption, DialogType, FzfBuilder};
+use super::shared::{
+    FzfCommandOptions, apply_fzf_command_options, base_fzf_command, build_padded_item,
+    run_fzf_with_input,
+};
+use super::{
+    ConfirmBuilder, ConfirmOption, FzfBuilder, InputBuilder, MessageBuilder, PasswordBuilder,
+};
 use crate::menu_utils::fzf::types::{ConfirmResult, FzfResult, Header};
 use crate::menu_utils::fzf::utils::get_terminal_dimensions;
 use crate::menu_utils::fzf::wrapper::{FzfWrapper, check_fzf_exit};
 
-impl FzfBuilder {
-    pub(super) fn execute_input(self) -> Result<String> {
-        match self.execute_input_result()? {
+// ---------------------------------------------------------------------------
+// InputBuilder
+// ---------------------------------------------------------------------------
+
+impl InputBuilder {
+    pub fn input_dialog(self) -> Result<String> {
+        match self.input_result()? {
             FzfResult::Selected(s) => Ok(s),
             FzfResult::Cancelled => Ok(String::new()),
             FzfResult::Error(e) => Err(anyhow!(e)),
@@ -20,7 +29,7 @@ impl FzfBuilder {
         }
     }
 
-    pub(super) fn execute_input_result(self) -> Result<FzfResult<String>> {
+    pub fn input_result(self) -> Result<FzfResult<String>> {
         #[cfg(test)]
         if let Some(resp) = crate::menu_utils::mock::pop_mock() {
             return match resp {
@@ -30,10 +39,11 @@ impl FzfBuilder {
             };
         }
 
-        let mut cmd = self.base_fzf_command();
+        let mut cmd = base_fzf_command();
         cmd.arg("--print-query").arg("--no-info");
-        self.apply_fzf_command_options(
+        apply_fzf_command_options(
             &mut cmd,
+            &self.shared,
             FzfCommandOptions {
                 prompt_suffix: Some(" "),
                 header: None,
@@ -43,7 +53,7 @@ impl FzfBuilder {
             },
         );
 
-        if let Some(query) = &self.initial_query {
+        if let Some(query) = &self.shared.initial_query {
             cmd.arg("-q").arg(query);
         }
 
@@ -66,13 +76,19 @@ impl FzfBuilder {
             Ok(FzfResult::Selected(String::new()))
         }
     }
+}
 
-    pub(super) fn execute_password(self, confirm: bool) -> Result<FzfResult<String>> {
+// ---------------------------------------------------------------------------
+// PasswordBuilder
+// ---------------------------------------------------------------------------
+
+impl PasswordBuilder {
+    pub fn password_dialog(self) -> Result<FzfResult<String>> {
         #[cfg(test)]
         if let Some(resp) = crate::menu_utils::mock::pop_mock() {
             return match resp {
                 crate::menu_utils::mock::MockResponse::PasswordString(s) => {
-                    let _ = confirm;
+                    let _ = self.confirm;
                     Ok(FzfResult::Selected(s))
                 }
                 crate::menu_utils::mock::MockResponse::PasswordCancelled => {
@@ -82,9 +98,12 @@ impl FzfBuilder {
             };
         }
 
+        let confirm = self.confirm;
+        let prompt = self.shared.prompt.clone();
+        let header_str = self.shared.header.as_ref().map(|h| h.to_fzf_string());
+
         loop {
-            let header_str = self.header.as_ref().map(|h| h.to_fzf_string());
-            let pass1 = self.run_password_prompt(self.prompt.as_deref(), header_str.as_deref())?;
+            let pass1 = run_password_prompt(prompt.as_deref(), header_str.as_deref())?;
 
             if !confirm {
                 return Ok(pass1);
@@ -95,7 +114,7 @@ impl FzfBuilder {
                 _ => return Ok(pass1),
             };
 
-            let pass2 = self.run_password_prompt(Some("Confirm password"), None)?;
+            let pass2 = run_password_prompt(Some("Confirm password"), None)?;
 
             let pass2_str = match pass2 {
                 FzfResult::Selected(s) => s,
@@ -109,72 +128,74 @@ impl FzfBuilder {
             FzfWrapper::message("Passwords do not match. Please try again.")?;
         }
     }
+}
 
-    fn run_password_prompt(
-        &self,
-        prompt: Option<&str>,
-        header: Option<&str>,
-    ) -> Result<FzfResult<String>> {
-        let mut cmd = Command::new("gum");
-        cmd.arg("input").arg("--password");
+fn run_password_prompt(prompt: Option<&str>, header: Option<&str>) -> Result<FzfResult<String>> {
+    let mut cmd = Command::new("gum");
+    cmd.arg("input").arg("--password");
 
-        if let Some(p) = prompt {
-            cmd.arg("--prompt").arg(format!("{p} "));
-        }
+    if let Some(p) = prompt {
+        cmd.arg("--prompt").arg(format!("{p} "));
+    }
 
-        cmd.arg("--padding").arg("1 2");
-        cmd.arg("--width").arg("60");
+    cmd.arg("--padding").arg("1 2");
+    cmd.arg("--width").arg("60");
 
-        if let Some(h) = header {
-            cmd.arg("--placeholder").arg(h);
-        } else {
-            cmd.arg("--placeholder").arg("Enter your password");
-        }
+    if let Some(h) = header {
+        cmd.arg("--placeholder").arg(h);
+    } else {
+        cmd.arg("--placeholder").arg("Enter your password");
+    }
 
-        let child = cmd
-            .stdin(Stdio::inherit())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .spawn();
+    let child = cmd
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn();
 
-        match child {
-            Ok(child) => {
-                let output = child.wait_with_output()?;
+    match child {
+        Ok(child) => {
+            let output = child.wait_with_output()?;
 
-                if let Some(code) = output.status.code()
-                    && (code == 130 || code == 143)
-                {
-                    return Ok(FzfResult::Cancelled);
-                }
-
-                if output.status.success() {
-                    let stdout = String::from_utf8_lossy(&output.stdout);
-                    Ok(FzfResult::Selected(stdout.trim().to_string()))
-                } else {
-                    self.fallback_password_input(prompt)
-                }
+            if let Some(code) = output.status.code()
+                && (code == 130 || code == 143)
+            {
+                return Ok(FzfResult::Cancelled);
             }
-            Err(_) => self.fallback_password_input(prompt),
+
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                Ok(FzfResult::Selected(stdout.trim().to_string()))
+            } else {
+                fallback_password_input(prompt)
+            }
         }
+        Err(_) => fallback_password_input(prompt),
+    }
+}
+
+fn fallback_password_input(prompt: Option<&str>) -> Result<FzfResult<String>> {
+    use std::io::Write as _;
+
+    eprint!("{}: ", prompt.unwrap_or("Enter password"));
+    let _ = std::io::stderr().flush();
+
+    let mut password = String::new();
+    let bytes = std::io::stdin().read_line(&mut password)?;
+
+    if bytes == 0 {
+        return Ok(FzfResult::Cancelled);
     }
 
-    fn fallback_password_input(&self, prompt: Option<&str>) -> Result<FzfResult<String>> {
-        use std::io::Write as _;
+    Ok(FzfResult::Selected(password.trim().to_string()))
+}
 
-        eprint!("{}: ", prompt.unwrap_or("Enter password"));
-        let _ = std::io::stderr().flush();
+// ---------------------------------------------------------------------------
+// ConfirmBuilder
+// ---------------------------------------------------------------------------
 
-        let mut password = String::new();
-        let bytes = std::io::stdin().read_line(&mut password)?;
-
-        if bytes == 0 {
-            return Ok(FzfResult::Cancelled);
-        }
-
-        Ok(FzfResult::Selected(password.trim().to_string()))
-    }
-
-    pub(super) fn execute_confirm(mut self) -> Result<ConfirmResult> {
+impl ConfirmBuilder {
+    pub fn confirm_dialog(mut self) -> Result<ConfirmResult> {
         #[cfg(test)]
         if let Some(resp) = crate::menu_utils::mock::pop_mock() {
             return match resp {
@@ -187,34 +208,46 @@ impl FzfBuilder {
             };
         }
 
-        let (yes_text, no_text) = if let DialogType::Confirmation {
-            ref yes_text,
-            ref no_text,
-        } = self.dialog_type
-        {
-            (yes_text.clone(), no_text.clone())
-        } else {
-            return Ok(ConfirmResult::Cancelled);
-        };
-
-        let header_text = Self::format_message_header(None, self.header.as_ref());
+        let header_text = format_message_header(None, self.shared.header.as_ref());
         if !header_text.is_empty() {
-            self.header = Some(Header::Manual(header_text));
+            self.shared.header = Some(Header::Manual(header_text));
         }
 
         let options = vec![
-            ConfirmOption::new(yes_text, colors::GREEN, NerdFont::Check, ConfirmResult::Yes),
-            ConfirmOption::new(no_text, colors::RED, NerdFont::Cross, ConfirmResult::No),
+            ConfirmOption::new(
+                self.yes_text.clone(),
+                colors::GREEN,
+                NerdFont::Check,
+                ConfirmResult::Yes,
+            ),
+            ConfirmOption::new(
+                self.no_text.clone(),
+                colors::RED,
+                NerdFont::Cross,
+                ConfirmResult::No,
+            ),
         ];
 
-        match self.select_padded(options)? {
+        // Reuse the padded selection terminal on the entry FzfBuilder by
+        // constructing one with the prepared shared config.
+        let entry = FzfBuilder {
+            shared: self.shared,
+        };
+
+        match entry.select_padded(options)? {
             FzfResult::Selected(option) => Ok(option.result),
             FzfResult::Cancelled => Ok(ConfirmResult::Cancelled),
             _ => Ok(ConfirmResult::Cancelled),
         }
     }
+}
 
-    pub(super) fn execute_message(self) -> Result<()> {
+// ---------------------------------------------------------------------------
+// MessageBuilder
+// ---------------------------------------------------------------------------
+
+impl MessageBuilder {
+    pub fn message_dialog(self) -> Result<()> {
         #[cfg(test)]
         if let Some(resp) = crate::menu_utils::mock::pop_mock() {
             return match resp {
@@ -223,17 +256,10 @@ impl FzfBuilder {
             };
         }
 
-        let (ok_text, title) = if let DialogType::Message {
-            ref ok_text,
-            ref title,
-        } = self.dialog_type
-        {
-            (ok_text.clone(), title.clone())
-        } else {
-            return Ok(());
-        };
+        let ok_text = self.ok_text.clone();
+        let title = self.title.clone();
 
-        let mut cmd = self.base_fzf_command();
+        let mut cmd = base_fzf_command();
         cmd.arg("--layout").arg("reverse");
         cmd.arg("--wrap");
         cmd.arg("--read0");
@@ -241,9 +267,10 @@ impl FzfBuilder {
         cmd.arg("--highlight-line");
 
         cmd.arg("--no-input");
-        let header_text = Self::format_message_header(title.as_deref(), self.header.as_ref());
-        self.apply_fzf_command_options(
+        let header_text = format_message_header(title.as_deref(), self.shared.header.as_ref());
+        apply_fzf_command_options(
             &mut cmd,
+            &self.shared,
             FzfCommandOptions {
                 prompt_suffix: None,
                 header: (!header_text.is_empty()).then_some(header_text),
@@ -253,7 +280,7 @@ impl FzfBuilder {
             },
         );
 
-        let ok_styled = Self::format_styled_button(&ok_text, colors::GREEN, NerdFont::Check);
+        let ok_styled = format_styled_button(&ok_text, colors::GREEN, NerdFont::Check);
         let output = run_fzf_with_input(cmd, ok_styled.as_bytes())?;
 
         if check_fzf_exit::<()>(&output).is_some() {
@@ -262,82 +289,86 @@ impl FzfBuilder {
 
         Ok(())
     }
+}
 
-    fn format_styled_button(text: &str, color: &str, icon: NerdFont) -> String {
-        let bg = hex_to_ansi_bg(color);
-        let fg = hex_to_ansi_fg(colors::CRUST);
-        let reset = "\x1b[49;39m";
+// ---------------------------------------------------------------------------
+// Free helpers (formerly assoc fns on FzfBuilder)
+// ---------------------------------------------------------------------------
 
-        let icon = char::from(icon);
-        let display_line = format!("{bg}{fg}   {icon}   {reset}  {text}");
+fn format_styled_button(text: &str, color: &str, icon: NerdFont) -> String {
+    let bg = hex_to_ansi_bg(color);
+    let fg = hex_to_ansi_fg(colors::CRUST);
+    let reset = "\x1b[49;39m";
 
-        build_padded_item(&display_line)
+    let icon = char::from(icon);
+    let display_line = format!("{bg}{fg}   {icon}   {reset}  {text}");
+
+    build_padded_item(&display_line)
+}
+
+pub(super) fn format_message_header(title: Option<&str>, message: Option<&Header>) -> String {
+    const RESET: &str = "\x1b[0m";
+    const SEPARATOR: &str = "───────────────────────────────────";
+
+    let mut lines = Vec::new();
+
+    if let Some(t) = title {
+        let mauve = hex_to_ansi_fg(colors::MAUVE);
+        let bold = "\x1b[1m";
+        lines.push(format!("{bold}{mauve}{t}{RESET}"));
+
+        let surface = hex_to_ansi_fg(colors::SURFACE1);
+        lines.push(format!("{surface}{SEPARATOR}{RESET}"));
     }
 
-    fn format_message_header(title: Option<&str>, message: Option<&Header>) -> String {
-        const RESET: &str = "\x1b[0m";
-        const SEPARATOR: &str = "───────────────────────────────────";
-
-        let mut lines = Vec::new();
-
-        if let Some(t) = title {
-            let mauve = hex_to_ansi_fg(colors::MAUVE);
-            let bold = "\x1b[1m";
-            lines.push(format!("{bold}{mauve}{t}{RESET}"));
-
-            let surface = hex_to_ansi_fg(colors::SURFACE1);
-            lines.push(format!("{surface}{SEPARATOR}{RESET}"));
+    if let Some(header) = message {
+        let text_color = hex_to_ansi_fg(colors::TEXT);
+        let msg_text = header.to_fzf_string();
+        let wrap_width = get_terminal_dimensions()
+            .map(|(cols, _)| (cols as usize).saturating_sub(10))
+            .unwrap_or(60)
+            .max(40);
+        for wrapped_line in wrap_text(&msg_text, wrap_width) {
+            lines.push(format!("{text_color}{wrapped_line}{RESET}"));
         }
-
-        if let Some(header) = message {
-            let text_color = hex_to_ansi_fg(colors::TEXT);
-            let msg_text = header.to_fzf_string();
-            let wrap_width = get_terminal_dimensions()
-                .map(|(cols, _)| (cols as usize).saturating_sub(10))
-                .unwrap_or(60)
-                .max(40);
-            for wrapped_line in Self::wrap_text(&msg_text, wrap_width) {
-                lines.push(format!("{text_color}{wrapped_line}{RESET}"));
-            }
-            lines.push(String::new());
-            lines.push(String::new());
-        }
-
-        lines.join("\n")
+        lines.push(String::new());
+        lines.push(String::new());
     }
 
-    fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
-        let mut output_lines = Vec::new();
+    lines.join("\n")
+}
 
-        for input_line in text.lines() {
-            if input_line.is_empty() {
-                output_lines.push(String::new());
-                continue;
-            }
+fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
+    let mut output_lines = Vec::new();
 
-            let mut current_line = String::new();
-            for word in input_line.split_whitespace() {
-                if current_line.is_empty() {
-                    current_line = word.to_string();
-                } else if current_line.len() + 1 + word.len() <= max_width {
-                    current_line.push(' ');
-                    current_line.push_str(word);
-                } else {
-                    output_lines.push(current_line);
-                    current_line = word.to_string();
-                }
-            }
-            if !current_line.is_empty() {
-                output_lines.push(current_line);
-            }
-        }
-
-        if output_lines.is_empty() {
+    for input_line in text.lines() {
+        if input_line.is_empty() {
             output_lines.push(String::new());
+            continue;
         }
 
-        output_lines
+        let mut current_line = String::new();
+        for word in input_line.split_whitespace() {
+            if current_line.is_empty() {
+                current_line = word.to_string();
+            } else if current_line.len() + 1 + word.len() <= max_width {
+                current_line.push(' ');
+                current_line.push_str(word);
+            } else {
+                output_lines.push(current_line);
+                current_line = word.to_string();
+            }
+        }
+        if !current_line.is_empty() {
+            output_lines.push(current_line);
+        }
     }
+
+    if output_lines.is_empty() {
+        output_lines.push(String::new());
+    }
+
+    output_lines
 }
 
 #[cfg(test)]

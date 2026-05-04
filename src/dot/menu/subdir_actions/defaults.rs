@@ -106,15 +106,15 @@ pub(crate) fn handle_edit_default_subdirs(
         ));
 
     let selection = FzfWrapper::builder()
-        .checklist("Save Defaults")
         .prompt("Toggle defaults")
         .header(Header::fancy(&format!(
             "Default enabled: {}\nUse Auto to reset | Select none to disable defaults",
             repo_name
         )))
-        .checklist_actions(vec![auto_action])
         .args(fzf_mocha_args())
         .responsive_layout()
+        .checklist("Save Defaults")
+        .checklist_actions(vec![auto_action])
         .checklist_dialog(items)?;
 
     let new_defaults = match selection {

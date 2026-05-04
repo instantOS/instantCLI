@@ -125,14 +125,13 @@ impl DiskQuestion {
         last_custom_path: &mut Option<String>,
     ) -> Result<Option<String>> {
         loop {
-            let mut builder = FzfWrapper::builder()
-                .prompt("Custom disk path")
-                .ghost("/dev/nvme0n1")
-                .input();
+            let mut base = FzfWrapper::builder().prompt("Custom disk path");
 
             if let Some(previous) = last_custom_path.as_ref() {
-                builder = builder.query(previous.clone());
+                base = base.query(previous.clone());
             }
+
+            let builder = base.input().ghost("/dev/nvme0n1");
 
             let input = builder.input_result()?;
             let path = match input {

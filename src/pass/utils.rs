@@ -41,16 +41,19 @@ pub(super) fn prompt_text_value(
     ghost: Option<&str>,
     initial: Option<&str>,
 ) -> Result<Option<String>> {
-    let mut builder = FzfWrapper::builder().input().prompt(prompt);
+    let mut base = FzfWrapper::builder().prompt(prompt);
 
     if let Some(header) = header {
-        builder = builder.header(header);
-    }
-    if let Some(ghost) = ghost {
-        builder = builder.ghost(ghost);
+        base = base.header(header);
     }
     if let Some(initial) = initial {
-        builder = builder.query(initial);
+        base = base.query(initial);
+    }
+
+    let mut builder = base.input();
+
+    if let Some(ghost) = ghost {
+        builder = builder.ghost(ghost);
     }
 
     match builder.input_result()? {

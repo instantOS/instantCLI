@@ -91,7 +91,7 @@ pub trait FzfSelectable {
 
     /// Optional: provide initial checked state for checklists.
     /// Default implementation returns false (unchecked).
-    /// Only used by DialogType::Checklist.
+    /// Only used by checklist dialogs.
     fn fzf_initial_checked_state(&self) -> bool {
         false
     }

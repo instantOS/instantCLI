@@ -1,11 +1,19 @@
-//! Builder pattern for FZF dialogs
+//! Typestate builder pattern for FZF dialogs.
+//!
+//! Each dialog kind (selection, input, password, confirmation, message,
+//! checklist) is represented by its own concrete builder struct. Shared
+//! configuration lives on [`FzfBuilder`] (the entry point); calling a
+//! transition method (`input()`, `password()`, `confirm()`, `message()`,
+//! `checklist()`) consumes the builder and yields a specialized builder that
+//! exposes only the methods relevant to that dialog kind. This makes mistakes
+//! like `.message(...).confirm_dialog()` impossible to express.
 
 mod checklist;
 mod dialogs;
 mod padded;
 mod shared;
 
-use anyhow::{self, Result};
+use anyhow::Result;
 use serde::de::DeserializeOwned;
 
 use crate::ui::catppuccin::format_icon_colored;
@@ -15,58 +23,110 @@ use super::types::*;
 use super::wrapper::FzfWrapper;
 use super::wrapper::FzfWrapperParts;
 
+/// Configuration shared across every dialog kind. Carried forward through
+/// transitions; specialized builders read from this for prompt, header,
+/// additional args, etc.
+#[derive(Debug, Clone)]
+pub(crate) struct SharedConfig {
+    pub multi_select: bool,
+    pub prompt: Option<String>,
+    pub header: Option<Header>,
+    pub additional_args: Vec<String>,
+    pub initial_cursor: Option<InitialCursor>,
+    pub initial_query: Option<String>,
+    pub responsive_layout: bool,
+}
+
+impl SharedConfig {
+    fn new() -> Self {
+        Self {
+            multi_select: false,
+            prompt: None,
+            header: None,
+            additional_args: default_args(),
+            initial_cursor: None,
+            initial_query: None,
+            responsive_layout: false,
+        }
+    }
+
+    fn with_dialog_args(mut self, defaults: Vec<String>) -> Self {
+        let base_defaults = default_args();
+        let user_args = if self.additional_args.starts_with(&base_defaults) {
+            self.additional_args.split_off(base_defaults.len())
+        } else {
+            self.additional_args
+        };
+
+        self.additional_args = defaults;
+        self.additional_args.extend(user_args);
+        self
+    }
+}
+
+/// Entry-point builder. Carries shared configuration and exposes:
+/// - shared setters (`prompt`, `header`, `args`, `initial_index`, `query`,
+///   `multi_select`, `responsive_layout`)
+/// - selection terminals (`select`, `select_menu`, `select_padded`,
+///   `select_encoded_streaming{,_prefilled}`)
+/// - transitions to specialized builders (`input`, `password`, `confirm`,
+///   `message`, `checklist`)
 #[derive(Debug, Clone)]
 pub struct FzfBuilder {
-    multi_select: bool,
-    prompt: Option<String>,
-    header: Option<Header>,
-    additional_args: Vec<String>,
-    dialog_type: DialogType,
-    initial_cursor: Option<InitialCursor>,
-    initial_query: Option<String>,
-    ghost_text: Option<String>,
-    responsive_layout: bool,
-    checklist_actions: Vec<ChecklistAction>,
+    pub(crate) shared: SharedConfig,
 }
 
 #[derive(Debug, Clone)]
-enum DialogType {
-    Selection,
-    Input,
-    Password {
-        confirm: bool,
-    },
-    Confirmation {
-        yes_text: String,
-        no_text: String,
-    },
-    Message {
-        ok_text: String,
-        title: Option<String>,
-    },
-    Checklist {
-        confirm_text: String,
-        allow_empty: bool,
-    },
+pub struct InputBuilder {
+    pub(crate) shared: SharedConfig,
+    pub(crate) ghost_text: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PasswordBuilder {
+    pub(crate) shared: SharedConfig,
+    pub(crate) confirm: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct ConfirmBuilder {
+    pub(crate) shared: SharedConfig,
+    pub(crate) yes_text: String,
+    pub(crate) no_text: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct MessageBuilder {
+    pub(crate) shared: SharedConfig,
+    pub(crate) ok_text: String,
+    pub(crate) title: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ChecklistBuilder {
+    pub(crate) shared: SharedConfig,
+    pub(crate) confirm_text: String,
+    pub(crate) allow_empty: bool,
+    pub(crate) actions: Vec<ChecklistAction>,
 }
 
 #[derive(Clone)]
-struct ConfirmOption {
-    label: String,
-    color: &'static str,
-    icon: NerdFont,
-    result: ConfirmResult,
+pub(crate) struct ConfirmOption {
+    pub(crate) label: String,
+    pub(crate) color: &'static str,
+    pub(crate) icon: NerdFont,
+    pub(crate) result: ConfirmResult,
 }
 
 #[derive(Clone)]
-struct ChecklistEntry {
-    display: String,
-    key: String,
-    preview: FzfPreview,
+pub(crate) struct ChecklistEntry {
+    pub(crate) display: String,
+    pub(crate) key: String,
+    pub(crate) preview: FzfPreview,
 }
 
 impl ChecklistEntry {
-    fn new(display: String, key: String, preview: FzfPreview) -> Self {
+    pub(crate) fn new(display: String, key: String, preview: FzfPreview) -> Self {
         Self {
             display,
             key,
@@ -90,7 +150,12 @@ impl FzfSelectable for ChecklistEntry {
 }
 
 impl ConfirmOption {
-    fn new(label: String, color: &'static str, icon: NerdFont, result: ConfirmResult) -> Self {
+    pub(crate) fn new(
+        label: String,
+        color: &'static str,
+        icon: NerdFont,
+        result: ConfirmResult,
+    ) -> Self {
         Self {
             label,
             color,
@@ -111,55 +176,101 @@ impl FzfSelectable for ConfirmOption {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Default fzf args per dialog kind
+// ---------------------------------------------------------------------------
+
+pub(crate) fn base_args(margin: &str) -> Vec<String> {
+    let mut args = vec![
+        "--margin".to_string(),
+        margin.to_string(),
+        "--min-height".to_string(),
+        "10".to_string(),
+    ];
+    args.extend(
+        super::theme::theme_args()
+            .into_iter()
+            .map(|s| s.to_string()),
+    );
+    args
+}
+
+pub(crate) fn default_args() -> Vec<String> {
+    base_args("10%,2%")
+}
+
+pub(crate) fn input_args() -> Vec<String> {
+    base_args("20%,2%")
+}
+
+pub(crate) fn confirm_args() -> Vec<String> {
+    let mut args = base_args("20%,2%");
+    args.push("--info=hidden".to_string());
+    args.push("--color=header:-1".to_string());
+    args.push("--no-input".to_string());
+    args
+}
+
+pub(crate) fn password_args() -> Vec<String> {
+    vec![]
+}
+
+pub(crate) fn checklist_args() -> Vec<String> {
+    let mut args = base_args("10%,2%");
+    args.push("--height=95%".to_string());
+    args
+}
+
+// ---------------------------------------------------------------------------
+// FzfBuilder (entry / Selection state)
+// ---------------------------------------------------------------------------
+
+impl Default for FzfBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FzfBuilder {
     pub fn new() -> Self {
         Self {
-            multi_select: false,
-            prompt: None,
-            header: None,
-            additional_args: Self::default_args(),
-            dialog_type: DialogType::Selection,
-            initial_cursor: None,
-            initial_query: None,
-            ghost_text: None,
-            responsive_layout: false,
-            checklist_actions: Vec::new(),
+            shared: SharedConfig::new(),
         }
     }
 
     pub(crate) fn into_wrapper_parts(self) -> FzfWrapperParts {
         FzfWrapperParts {
-            multi_select: self.multi_select,
-            prompt: self.prompt,
-            header: self.header,
-            additional_args: self.additional_args,
-            initial_cursor: self.initial_cursor,
-            responsive_layout: self.responsive_layout,
+            multi_select: self.shared.multi_select,
+            prompt: self.shared.prompt,
+            header: self.shared.header,
+            additional_args: self.shared.additional_args,
+            initial_cursor: self.shared.initial_cursor,
+            responsive_layout: self.shared.responsive_layout,
         }
     }
 
     pub fn multi_select(mut self, multi: bool) -> Self {
-        self.multi_select = multi;
+        self.shared.multi_select = multi;
         self
     }
 
     pub fn prompt<S: Into<String>>(mut self, prompt: S) -> Self {
-        self.prompt = Some(prompt.into());
+        self.shared.prompt = Some(prompt.into());
         self
     }
 
     pub fn header<H: Into<Header>>(mut self, header: H) -> Self {
-        self.header = Some(header.into());
+        self.shared.header = Some(header.into());
         self
     }
 
     pub fn initial_index(mut self, index: usize) -> Self {
-        self.initial_cursor = Some(InitialCursor::Index(index));
+        self.shared.initial_cursor = Some(InitialCursor::Index(index));
         self
     }
 
     pub fn query<S: Into<String>>(mut self, query: S) -> Self {
-        self.initial_query = Some(query.into());
+        self.shared.initial_query = Some(query.into());
         self
     }
 
@@ -168,114 +279,66 @@ impl FzfBuilder {
         I: IntoIterator<Item = S>,
         S: Into<String>,
     {
-        self.additional_args
+        self.shared
+            .additional_args
             .extend(args.into_iter().map(Into::into));
         self
     }
 
     pub fn responsive_layout(mut self) -> Self {
-        self.responsive_layout = true;
+        self.shared.responsive_layout = true;
         self
     }
 
-    pub fn input(mut self) -> Self {
-        self.dialog_type = DialogType::Input;
-        self.additional_args = Self::input_args();
-        self
-    }
+    // ---- transitions ----
 
-    pub fn ghost<S: Into<String>>(mut self, text: S) -> Self {
-        self.ghost_text = Some(text.into());
-        self
-    }
-
-    pub fn password(mut self) -> Self {
-        self.dialog_type = DialogType::Password { confirm: false };
-        self.additional_args = Self::password_args();
-        self
-    }
-
-    pub fn with_confirmation(mut self) -> Self {
-        if let DialogType::Password { ref mut confirm } = self.dialog_type {
-            *confirm = true;
+    pub fn input(self) -> InputBuilder {
+        let shared = self.shared.with_dialog_args(input_args());
+        InputBuilder {
+            shared,
+            ghost_text: None,
         }
-        self
     }
 
-    pub fn confirm<S: Into<String>>(mut self, message: S) -> Self {
-        self.dialog_type = DialogType::Confirmation {
+    pub fn password(self) -> PasswordBuilder {
+        let shared = self.shared.with_dialog_args(password_args());
+        PasswordBuilder {
+            shared,
+            confirm: false,
+        }
+    }
+
+    pub fn confirm<S: Into<String>>(self, message: S) -> ConfirmBuilder {
+        let mut shared = self.shared.with_dialog_args(confirm_args());
+        shared.header = Some(Header::Default(message.into()));
+        ConfirmBuilder {
+            shared,
             yes_text: "Yes".to_string(),
             no_text: "No".to_string(),
-        };
-        self.header = Some(Header::Default(message.into()));
-        self.additional_args = Self::confirm_args();
-        self
-    }
-
-    pub fn yes_text<S: Into<String>>(mut self, text: S) -> Self {
-        if let DialogType::Confirmation { yes_text, .. } = &mut self.dialog_type {
-            *yes_text = text.into();
         }
-        self
     }
 
-    pub fn no_text<S: Into<String>>(mut self, text: S) -> Self {
-        if let DialogType::Confirmation { no_text, .. } = &mut self.dialog_type {
-            *no_text = text.into();
-        }
-        self
-    }
-
-    pub fn message<S: Into<String>>(mut self, message: S) -> Self {
-        self.dialog_type = DialogType::Message {
+    pub fn message<S: Into<String>>(self, message: S) -> MessageBuilder {
+        let mut shared = self.shared.with_dialog_args(confirm_args());
+        shared.header = Some(Header::Default(message.into()));
+        MessageBuilder {
+            shared,
             ok_text: "OK".to_string(),
             title: None,
-        };
-        self.header = Some(Header::Default(message.into()));
-        self.additional_args = Self::confirm_args();
-        self
-    }
-
-    pub fn title<S: Into<String>>(mut self, title: S) -> Self {
-        if let DialogType::Message { title: target, .. } = &mut self.dialog_type {
-            *target = Some(title.into());
         }
-        self
     }
 
-    pub fn checklist<S: Into<String>>(mut self, confirm_text: S) -> Self {
-        self.dialog_type = DialogType::Checklist {
+    pub fn checklist<S: Into<String>>(self, confirm_text: S) -> ChecklistBuilder {
+        let shared = self.shared.with_dialog_args(checklist_args());
+        ChecklistBuilder {
+            shared,
             confirm_text: confirm_text.into(),
             allow_empty: true,
-        };
-        self.additional_args = Self::checklist_args();
-        self
-    }
-
-    pub fn checklist_actions<I>(mut self, actions: I) -> Self
-    where
-        I: IntoIterator<Item = ChecklistAction>,
-    {
-        self.checklist_actions = actions.into_iter().collect();
-        self
-    }
-
-    pub fn allow_empty_confirm(mut self, allow: bool) -> Self {
-        if let DialogType::Checklist { allow_empty, .. } = &mut self.dialog_type {
-            *allow_empty = allow;
+            actions: Vec::new(),
         }
-        self
     }
 
-    pub fn checklist_dialog<T: FzfSelectable + Clone>(
-        self,
-        items: Vec<T>,
-    ) -> Result<ChecklistResult<T>> {
-        if !matches!(self.dialog_type, DialogType::Checklist { .. }) {
-            return Err(anyhow::anyhow!("Builder not configured for checklist"));
-        }
-        self.execute_checklist(items)
-    }
+    // ---- selection terminals ----
 
     pub fn select<T: FzfSelectable + Clone>(self, items: Vec<T>) -> Result<FzfResult<T>> {
         FzfWrapper::from_builder(self).select(items)
@@ -336,82 +399,105 @@ impl FzfBuilder {
     {
         FzfWrapper::from_builder(self).select_encoded_streaming_prefilled(command, initial_input)
     }
+}
 
-    pub fn input_dialog(self) -> Result<String> {
-        if !matches!(self.dialog_type, DialogType::Input) {
-            return Err(anyhow::anyhow!("Builder not configured for input"));
-        }
-        self.execute_input()
+// ---------------------------------------------------------------------------
+// InputBuilder
+// ---------------------------------------------------------------------------
+
+impl InputBuilder {
+    pub fn ghost<S: Into<String>>(mut self, text: S) -> Self {
+        self.ghost_text = Some(text.into());
+        self
+    }
+}
+
+// ---------------------------------------------------------------------------
+// PasswordBuilder
+// ---------------------------------------------------------------------------
+
+impl PasswordBuilder {
+    pub fn with_confirmation(mut self) -> Self {
+        self.confirm = true;
+        self
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ConfirmBuilder
+// ---------------------------------------------------------------------------
+
+impl ConfirmBuilder {
+    pub fn yes_text<S: Into<String>>(mut self, text: S) -> Self {
+        self.yes_text = text.into();
+        self
     }
 
-    pub fn password_dialog(self) -> Result<FzfResult<String>> {
-        let confirm = if let DialogType::Password { confirm } = self.dialog_type {
-            confirm
-        } else {
-            return Err(anyhow::anyhow!("Builder not configured for password"));
-        };
-        self.execute_password(confirm)
+    pub fn no_text<S: Into<String>>(mut self, text: S) -> Self {
+        self.no_text = text.into();
+        self
+    }
+}
+
+// ---------------------------------------------------------------------------
+// MessageBuilder
+// ---------------------------------------------------------------------------
+
+impl MessageBuilder {
+    pub fn title<S: Into<String>>(mut self, title: S) -> Self {
+        self.title = Some(title.into());
+        self
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ChecklistBuilder
+// ---------------------------------------------------------------------------
+
+impl ChecklistBuilder {
+    pub fn checklist_actions<I>(mut self, actions: I) -> Self
+    where
+        I: IntoIterator<Item = ChecklistAction>,
+    {
+        self.actions = actions.into_iter().collect();
+        self
     }
 
-    pub fn confirm_dialog(self) -> Result<ConfirmResult> {
-        if !matches!(self.dialog_type, DialogType::Confirmation { .. }) {
-            return Err(anyhow::anyhow!("Builder not configured for confirmation"));
-        }
-        self.execute_confirm()
+    pub fn allow_empty_confirm(mut self, allow: bool) -> Self {
+        self.allow_empty = allow;
+        self
     }
+}
 
-    pub fn message_dialog(self) -> Result<()> {
-        if !matches!(self.dialog_type, DialogType::Message { .. }) {
-            return Err(anyhow::anyhow!("Builder not configured for message"));
-        }
-        self.execute_message()
-    }
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    pub fn input_result(self) -> Result<FzfResult<String>> {
-        if !matches!(self.dialog_type, DialogType::Input) {
-            return Err(anyhow::anyhow!("Builder not configured for input"));
-        }
-        self.execute_input_result()
-    }
-
-    fn base_args(margin: &str) -> Vec<String> {
-        let mut args = vec![
-            "--margin".to_string(),
-            margin.to_string(),
-            "--min-height".to_string(),
-            "10".to_string(),
-        ];
-        args.extend(
-            super::theme::theme_args()
-                .into_iter()
-                .map(|s| s.to_string()),
+    #[test]
+    fn dialog_transitions_replace_defaults_but_preserve_user_args() {
+        let input = FzfBuilder::new().args(["--color=fg:red"]).input();
+        assert!(input.shared.additional_args.starts_with(&input_args()));
+        assert!(
+            input
+                .shared
+                .additional_args
+                .contains(&"--color=fg:red".to_string())
         );
-        args
-    }
 
-    fn default_args() -> Vec<String> {
-        Self::base_args("10%,2%")
-    }
-
-    fn input_args() -> Vec<String> {
-        Self::base_args("20%,2%")
-    }
-
-    fn confirm_args() -> Vec<String> {
-        let mut args = Self::base_args("20%,2%");
-        args.push("--info=hidden".to_string());
-        args.push("--color=header:-1".to_string());
-        args.push("--no-input".to_string());
-        args
-    }
-
-    fn password_args() -> Vec<String> {
-        vec![]
-    }
-
-    fn checklist_args() -> Vec<String> {
-        let mut args = Self::base_args("10%,2%");
-        args.push("--height=95%".to_string());
-        args
+        let checklist = FzfBuilder::new()
+            .args(["--color=fg:green"])
+            .checklist("Save");
+        assert!(
+            checklist
+                .shared
+                .additional_args
+                .starts_with(&checklist_args())
+        );
+        assert!(
+            checklist
+                .shared
+                .additional_args
+                .contains(&"--color=fg:green".to_string())
+        );
     }
 }

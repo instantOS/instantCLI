@@ -153,8 +153,8 @@ pub fn edit_name(state: &mut EditState) -> Result<bool> {
     let result = FzfWrapper::builder()
         .prompt("Enter new game name")
         .header(format!("Current name: {}", current_name))
-        .input()
         .query(current_name)
+        .input()
         .input_result()?;
 
     let new_name = match result {

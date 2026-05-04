@@ -308,13 +308,13 @@ pub fn select_render_options() -> Result<Option<RenderOptions>> {
     ];
 
     let selection = FzfWrapper::builder()
-        .checklist("Save")
         .prompt("Toggle")
         .header(Header::default(
             "Select render options. Toggle with Enter, then choose Save.",
         ))
         .args(fzf_mocha_args())
         .responsive_layout()
+        .checklist("Save")
         .checklist_dialog(items)?;
 
     match selection {
@@ -429,9 +429,9 @@ pub fn confirm_action(message: &str, yes_text: &str, no_text: &str) -> Result<Co
 
 pub fn prompt_with_default(prompt: &str, default: &str) -> Result<PromptOutcome<String>> {
     let result = FzfWrapper::builder()
-        .input()
         .prompt(prompt)
         .query(default)
+        .input()
         .ghost("Press Enter to keep default")
         .input_result()?;
 
@@ -451,8 +451,8 @@ pub fn prompt_with_default(prompt: &str, default: &str) -> Result<PromptOutcome<
 
 pub fn prompt_optional(prompt: &str, ghost: &str) -> Result<PromptOutcome<Option<String>>> {
     let result = FzfWrapper::builder()
-        .input()
         .prompt(prompt)
+        .input()
         .ghost(ghost)
         .input_result()?;
 
@@ -472,8 +472,8 @@ pub fn prompt_optional(prompt: &str, ghost: &str) -> Result<PromptOutcome<Option
 
 pub fn prompt_optional_path(prompt: &str, ghost: &str) -> Result<PromptOutcome<Option<PathBuf>>> {
     let result = FzfWrapper::builder()
-        .input()
         .prompt(prompt)
+        .input()
         .ghost(ghost)
         .input_result()?;
 
