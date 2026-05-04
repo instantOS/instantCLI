@@ -31,7 +31,8 @@ pub(crate) struct SharedConfig {
     pub multi_select: bool,
     pub prompt: Option<String>,
     pub header: Option<Header>,
-    pub additional_args: Vec<String>,
+    pub default_args: Vec<String>,
+    pub user_args: Vec<String>,
     pub initial_cursor: Option<InitialCursor>,
     pub initial_query: Option<String>,
     pub responsive_layout: bool,
@@ -43,23 +44,20 @@ impl SharedConfig {
             multi_select: false,
             prompt: None,
             header: None,
-            additional_args: default_args(),
+            default_args: default_args(),
+            user_args: Vec::new(),
             initial_cursor: None,
             initial_query: None,
             responsive_layout: false,
         }
     }
 
-    fn with_dialog_args(mut self, defaults: Vec<String>) -> Self {
-        let base_defaults = default_args();
-        let user_args = if self.additional_args.starts_with(&base_defaults) {
-            self.additional_args.split_off(base_defaults.len())
-        } else {
-            self.additional_args
-        };
+    pub(crate) fn args(&self) -> impl Iterator<Item = &String> {
+        self.default_args.iter().chain(self.user_args.iter())
+    }
 
-        self.additional_args = defaults;
-        self.additional_args.extend(user_args);
+    fn with_dialog_args(mut self, defaults: Vec<String>) -> Self {
+        self.default_args = defaults;
         self
     }
 }
@@ -239,11 +237,13 @@ impl FzfBuilder {
     }
 
     pub(crate) fn into_wrapper_parts(self) -> FzfWrapperParts {
+        let additional_args = self.shared.args().cloned().collect();
+
         FzfWrapperParts {
             multi_select: self.shared.multi_select,
             prompt: self.shared.prompt,
             header: self.shared.header,
-            additional_args: self.shared.additional_args,
+            additional_args,
             initial_cursor: self.shared.initial_cursor,
             responsive_layout: self.shared.responsive_layout,
         }
@@ -280,7 +280,7 @@ impl FzfBuilder {
         S: Into<String>,
     {
         self.shared
-            .additional_args
+            .user_args
             .extend(args.into_iter().map(Into::into));
         self
     }
@@ -476,28 +476,13 @@ mod tests {
     #[test]
     fn dialog_transitions_replace_defaults_but_preserve_user_args() {
         let input = FzfBuilder::new().args(["--color=fg:red"]).input();
-        assert!(input.shared.additional_args.starts_with(&input_args()));
-        assert!(
-            input
-                .shared
-                .additional_args
-                .contains(&"--color=fg:red".to_string())
-        );
+        assert_eq!(input.shared.default_args, input_args());
+        assert_eq!(input.shared.user_args, vec!["--color=fg:red"]);
 
         let checklist = FzfBuilder::new()
             .args(["--color=fg:green"])
             .checklist("Save");
-        assert!(
-            checklist
-                .shared
-                .additional_args
-                .starts_with(&checklist_args())
-        );
-        assert!(
-            checklist
-                .shared
-                .additional_args
-                .contains(&"--color=fg:green".to_string())
-        );
+        assert_eq!(checklist.shared.default_args, checklist_args());
+        assert_eq!(checklist.shared.user_args, vec!["--color=fg:green"]);
     }
 }

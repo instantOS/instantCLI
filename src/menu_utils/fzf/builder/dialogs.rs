@@ -49,7 +49,7 @@ impl InputBuilder {
                 header: None,
                 include_additional_args: true,
                 cursor: None,
-                responsive_layout: false,
+                responsive_layout: true,
             },
         );
 
@@ -276,7 +276,7 @@ impl MessageBuilder {
                 header: (!header_text.is_empty()).then_some(header_text),
                 include_additional_args: true,
                 cursor: None,
-                responsive_layout: false,
+                responsive_layout: true,
             },
         );
 

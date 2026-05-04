@@ -36,7 +36,7 @@ pub(super) fn apply_fzf_command_options(
     }
 
     if options.include_additional_args {
-        for arg in &shared.additional_args {
+        for arg in shared.args() {
             cmd.arg(arg);
         }
     }
