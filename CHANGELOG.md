@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.27](https://github.com/instantOS/instantCLI/compare/v0.13.26...v0.13.27) - 2026-04-27
+
+### Other
+
+- update readme
+- better `ins arch` error handling
+- add desktop environment question to `ins arch`
+- more encapsulation
+- better push handling of local only repos
+- cleaner preview method
+- cleaner exit
+- skip repos which ignore file in menu
+- earlier ignore checks
+- home dir support for ins ignore
+
 ## [0.13.26](https://github.com/instantOS/instantCLI/compare/v0.13.25...v0.13.26) - 2026-04-24
 
 ### Fixed
