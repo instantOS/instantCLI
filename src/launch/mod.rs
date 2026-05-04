@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use clap::Subcommand;
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 pub mod cache;
 pub mod desktop;
@@ -11,6 +12,28 @@ use crate::menu::client;
 use crate::menu::protocol::{FzfPreview, SerializableMenuItem};
 use cache::LaunchCache;
 use types::LaunchItem;
+
+/// Get XDG data directories (common helper shared by cache and desktop)
+pub(crate) fn get_xdg_data_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+
+    if let Some(home_data) = dirs::data_dir() {
+        dirs.push(home_data);
+    }
+
+    if let Ok(system_dirs) = std::env::var("XDG_DATA_DIRS") {
+        for dir in system_dirs.split(':') {
+            if !dir.is_empty() {
+                dirs.push(PathBuf::from(dir));
+            }
+        }
+    } else {
+        dirs.push(PathBuf::from("/usr/local/share"));
+        dirs.push(PathBuf::from("/usr/share"));
+    }
+
+    dirs
+}
 
 /// Launch command for application discovery and execution
 #[derive(Subcommand, Debug, Clone)]

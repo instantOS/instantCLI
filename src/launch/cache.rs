@@ -162,7 +162,7 @@ impl LaunchCache {
         }
 
         // Check XDG data directories for desktop files
-        let data_dirs = Self::get_xdg_data_dirs();
+        let data_dirs = crate::launch::get_xdg_data_dirs();
         for data_dir in data_dirs {
             let apps_dir = data_dir.join("applications");
             if apps_dir.exists()
@@ -258,32 +258,10 @@ impl LaunchCache {
         Self::resolve_conflicts_simple(items)
     }
 
-    /// Get XDG data directories
-    fn get_xdg_data_dirs() -> Vec<PathBuf> {
-        let mut dirs = Vec::new();
-
-        if let Some(home_data) = dirs::data_dir() {
-            dirs.push(home_data);
-        }
-
-        if let Ok(system_dirs) = env::var("XDG_DATA_DIRS") {
-            for dir in system_dirs.split(':') {
-                if !dir.is_empty() {
-                    dirs.push(PathBuf::from(dir));
-                }
-            }
-        } else {
-            dirs.push(PathBuf::from("/usr/local/share"));
-            dirs.push(PathBuf::from("/usr/share"));
-        }
-
-        dirs
-    }
-
     /// Fast desktop name scanning - no parsing, just file names
     fn get_desktop_names_fast() -> Vec<LaunchItem> {
         let mut names = Vec::new();
-        let data_dirs = Self::get_xdg_data_dirs();
+        let data_dirs = crate::launch::get_xdg_data_dirs();
 
         for data_dir in data_dirs {
             let apps_dir = data_dir.join("applications");

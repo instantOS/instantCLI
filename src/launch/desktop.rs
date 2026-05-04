@@ -69,7 +69,7 @@ impl DesktopLoader {
 
     /// Find the path to a desktop file by searching XDG directories
     async fn find_desktop_file_path(&self, desktop_id: &str) -> Result<std::path::PathBuf> {
-        let data_dirs = self.get_xdg_data_dirs();
+        let data_dirs = crate::launch::get_xdg_data_dirs();
 
         for data_dir in data_dirs {
             let apps_dir = data_dir.join("applications");
@@ -82,28 +82,6 @@ impl DesktopLoader {
         }
 
         Err(anyhow::anyhow!("Desktop file not found: {}", desktop_id))
-    }
-
-    /// Get XDG data directories
-    fn get_xdg_data_dirs(&self) -> Vec<std::path::PathBuf> {
-        let mut dirs = Vec::new();
-
-        if let Some(home_data) = dirs::data_dir() {
-            dirs.push(home_data);
-        }
-
-        if let Ok(system_dirs) = std::env::var("XDG_DATA_DIRS") {
-            for dir in system_dirs.split(':') {
-                if !dir.is_empty() {
-                    dirs.push(std::path::PathBuf::from(dir));
-                }
-            }
-        } else {
-            dirs.push(std::path::PathBuf::from("/usr/local/share"));
-            dirs.push(std::path::PathBuf::from("/usr/share"));
-        }
-
-        dirs
     }
 }
 
