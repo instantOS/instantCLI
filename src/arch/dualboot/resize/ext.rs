@@ -60,3 +60,34 @@ pub fn parse_dumpe2fs_field(output: &str, field: &str) -> Option<u64> {
     }
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::arch::dualboot::test_utils::TestDisk;
+
+    #[test]
+    fn test_get_ext_resize_info_e2e() {
+        let disk = TestDisk::new(100);
+        disk.format_ext4();
+
+        let info = get_ext_resize_info(disk.path_str(), None);
+        assert!(info.can_shrink);
+        assert!(info.min_size_bytes.is_some());
+        assert_eq!(info.prerequisites.len(), 0);
+    }
+
+    #[test]
+    fn test_get_ext_resize_info_mounted_e2e() {
+        let disk = TestDisk::new(100);
+        disk.format_ext4();
+
+        // Simulate it being mounted
+        let info = get_ext_resize_info(disk.path_str(), Some("/mnt/test"));
+        assert!(info.can_shrink);
+        assert!(
+            info.prerequisites
+                .contains(&"Unmount filesystem before resizing".to_string())
+        );
+    }
+}

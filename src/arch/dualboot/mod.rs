@@ -5,6 +5,9 @@ pub mod parsing;
 pub mod resize;
 pub mod types;
 
+#[cfg(test)]
+pub mod test_utils;
+
 // Legacy modules
 pub mod display;
 pub mod verification;

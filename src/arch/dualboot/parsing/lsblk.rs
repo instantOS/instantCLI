@@ -23,7 +23,11 @@ where
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty());
 
-    let device_path = format!("/dev/{}", name);
+    let device_path = if name.starts_with('/') {
+        name.to_string()
+    } else {
+        format!("/dev/{}", name)
+    };
 
     let should_check_bitlocker = raw_fs_type.is_none()
         || raw_fs_type.is_some_and(|fs| {

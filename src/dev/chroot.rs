@@ -262,7 +262,7 @@ fn candidate_from_root(root: &str, disk: Option<&str>) -> Result<ChrootCandidate
 fn scan_candidates(disk_filter: Option<&str>, debug: bool) -> Result<Vec<ChrootCandidate>> {
     let mut report = ScanReport::default();
     report.push("Scanning block devices with lsblk.");
-    let mut tree = load_lsblk()?;
+    let mut tree = load_lsblk(&[])?;
     if let Some(disk) = disk_filter {
         report.push(format!("Restricting scan to {disk}."));
         tree.blockdevices.retain(|device| {
@@ -407,7 +407,7 @@ fn scan_luks_partition(
             "vgchange -ay failed or no volume groups were present: {err}"
         )),
     }
-    let tree = load_lsblk()?;
+    let tree = load_lsblk(&[])?;
     let mut roots = find_linux_children_for_mapper(&tree.blockdevices, &mapper_name, &mapper_path);
     if roots.is_empty() {
         report.push(format!(

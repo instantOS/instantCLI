@@ -32,7 +32,7 @@ pub struct BlockDevice {
 
 impl BlockDevice {
     pub fn path(&self) -> String {
-        if self.name.starts_with("/dev/") {
+        if self.name.starts_with('/') {
             self.name.clone()
         } else {
             format!("/dev/{}", self.name)
@@ -79,16 +79,17 @@ impl BlockDevice {
     }
 }
 
-pub fn load_lsblk() -> Result<LsblkOutput> {
-    let output = Command::new("lsblk")
-        .args([
-            "-J",
-            "-b",
-            "-o",
-            "NAME,SIZE,TYPE,FSTYPE,UUID,LABEL,MOUNTPOINT,PTTYPE,PARTTYPE",
-        ])
-        .output()
-        .context("Failed to run lsblk")?;
+pub fn load_lsblk(extra_args: &[&str]) -> Result<LsblkOutput> {
+    let mut cmd = Command::new("lsblk");
+    cmd.args([
+        "-J",
+        "-b",
+        "-o",
+        "NAME,SIZE,TYPE,FSTYPE,UUID,LABEL,MOUNTPOINT,PTTYPE,PARTTYPE",
+    ]);
+    cmd.args(extra_args);
+
+    let output = cmd.output().context("Failed to run lsblk")?;
 
     if !output.status.success() {
         bail!("lsblk failed: {}", String::from_utf8_lossy(&output.stderr));
