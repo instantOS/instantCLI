@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.28](https://github.com/instantOS/instantCLI/compare/v0.13.27...v0.13.28) - 2026-05-04
+
+### Fixed
+
+- fix i3 getting sway only config
+- fix unnecessary reloads
+- fix messed up menus
+- fix back button for warning questions
+- fix resolvething bugs
+- fix resolvething errors
+
+### Other
+
+- centralize some utils
+- finish old module refactor
+- make disk operations more testable
+- more thorough lvm probing
+- better `ins dev chroot` reports
+- deduplicate `ins dev chroot`
+- init ins dev chroot
+- more semantic fzf improvements
+- better compile time safety for fzf builder
+- Merge pull request #136 from instantOS/release-plz-2026-04-27T23-02-41Z
+- remove libgit2 references
+- context aware menu filtering for dotfile dirs
+- adjust `ins menu` for root owned dotfiles
+- init support for root owned dotfiles
+- better enforce deletion invariants
+- add trashbin size doctor check
+- simplify resolvething
+- account for more resolvething edge cases
+- add singleton skip reason
+- add dry-run for resolvething
+- more sensitive resolvething behavior
+- auto resolve stversions duplicates
+- add way to show ignored duplicates
+- rework resolvething
+- do not hardcode tmp dir, fix trash on termux
+- more robust yazi handling
+- add resolvething
+- Merge branch 'dev' of github.com:instantOS/instantCLI into dev
+- update deps
+
 ## [0.13.27](https://github.com/instantOS/instantCLI/compare/v0.13.26...v0.13.27) - 2026-04-27
 
 ### Other
