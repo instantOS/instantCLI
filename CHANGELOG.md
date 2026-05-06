@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.29](https://github.com/instantOS/instantCLI/compare/v0.13.28...v0.13.29) - 2026-05-05
+
+### Fixed
+
+- fix CI
+
+### Other
+
+- dedupe xdg dir retrieval
+
 ## [0.13.28](https://github.com/instantOS/instantCLI/compare/v0.13.27...v0.13.28) - 2026-05-04
 
 ### Fixed
