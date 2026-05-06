@@ -24,7 +24,7 @@ jobs:
           pacman -Syu --noconfirm
       - name: Install build dependencies
         run: |
-          pacman -S --noconfirm --needed base-devel rust pkgconf openssl git pacman-contrib fzf cmake jq restic unzip python3
+          pacman -S --noconfirm --needed base-devel rust pkgconf openssl git pacman-contrib fzf cmake jq restic unzip python3 ntfs-3g
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
       - name: Create build user
@@ -264,7 +264,7 @@ jobs:
           pacman -Syu --noconfirm
       - name: Install build dependencies
         run: |
-          pacman -S --noconfirm --needed base-devel rust pkgconf openssl git pacman-contrib cmake fzf sqlite sudo
+          pacman -S --noconfirm --needed base-devel rust pkgconf openssl git pacman-contrib cmake fzf sqlite sudo ntfs-3g
       - name: Checkout
         uses: actions/checkout@v4
       - name: Extract version
