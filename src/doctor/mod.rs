@@ -149,6 +149,21 @@ pub struct CheckResult {
     pub check_id: String,
     pub status: CheckStatus,
     pub fix_message: Option<String>,
+    pub details: Option<String>,
+}
+
+pub struct DetailedCheckStatus {
+    pub status: CheckStatus,
+    pub details: Option<String>,
+}
+
+impl From<CheckStatus> for DetailedCheckStatus {
+    fn from(status: CheckStatus) -> Self {
+        Self {
+            status,
+            details: None,
+        }
+    }
 }
 
 impl Display for CheckResult {
@@ -169,6 +184,10 @@ pub trait DoctorCheck: Send + Sync {
     fn id(&self) -> &'static str; // Machine-readable identifier
 
     async fn execute(&self) -> CheckStatus;
+
+    async fn execute_detailed(&self) -> DetailedCheckStatus {
+        self.execute().await.into()
+    }
 
     fn fix_message(&self) -> Option<String> {
         None
@@ -239,12 +258,12 @@ pub async fn run_all_checks(
                 let fix_message = check.fix_message();
 
                 // Check privilege requirements before running
-                let status = if let Some(skip_reason) =
+                let detailed = if let Some(skip_reason) =
                     skip_reason_for_privilege_level(check.check_privilege_level(), is_root)
                 {
-                    CheckStatus::Skipped(skip_reason.to_string())
+                    CheckStatus::Skipped(skip_reason.to_string()).into()
                 } else {
-                    check.execute().await
+                    check.execute_detailed().await
                 };
 
                 // Update progress
@@ -256,8 +275,9 @@ pub async fn run_all_checks(
                     CheckResult {
                         name,
                         check_id,
-                        status,
+                        status: detailed.status,
                         fix_message,
+                        details: detailed.details,
                     },
                 )
             });
@@ -508,53 +528,91 @@ pub fn print_single_check_result_table(result: &CheckResult) {
                     "message": result.status.message(),
                     "fixable_indicator": result.status.fixable_indicator(),
                     "fix_message": result.fix_message,
+                    "details": result.details,
                     "needs_fix": matches!(result.status, CheckStatus::Fail { .. }),
                 })),
             );
         }
         crate::ui::OutputFormat::Text => {
-            let mut table = Table::new();
-            table
-                .load_preset(UTF8_FULL)
-                .set_content_arrangement(ContentArrangement::Dynamic)
-                .set_header(Row::from(vec![
-                    Cell::new("Check").add_attribute(Attribute::Bold),
-                    Cell::new("Status").add_attribute(Attribute::Bold),
-                    Cell::new("Message").add_attribute(Attribute::Bold),
-                ]));
-
-            let status_cell =
-                Cell::new(result.status.status_text()).fg(result.status.status_color());
-            let check_cell = Cell::new(&result.name).fg(result.status.status_color());
-
             let msg = format!(
                 "{}{}",
                 result.status.message(),
                 result.status.fixable_indicator()
             );
 
-            table.add_row(Row::from(vec![check_cell, status_cell, Cell::new(msg)]));
-
             println!("{}", "Health Check Result:".bold());
-            println!("{table}");
+            println!("  {} {}", "Check:".bold(), result.name);
+            println!("  {} {}", "ID:".bold(), result.check_id.dimmed());
+            println!("  {} {}", "Status:".bold(), result.status.color_status());
+            print_wrapped_field("Message:", &msg, 80, 2);
+
+            if let Some(details) = &result.details {
+                println!();
+                print_wrapped_field("Details:", details, 100, 2);
+            }
 
             if matches!(result.status, CheckStatus::Fail { .. }) {
                 if result.status.is_fixable() {
                     if let Some(ref msg) = result.fix_message {
                         println!();
-                        println!("  Fix available: {msg}");
+                        println!("  {} {msg}", "Fix available:".bold().yellow());
                         println!(
-                            "  Run: {} doctor fix {}",
+                            "  {} {} doctor fix {}",
+                            "Run:".bold(),
                             env!("CARGO_BIN_NAME"),
                             result.check_id
                         );
                     }
                 } else {
                     println!();
-                    println!("  Manual intervention required.");
+                    println!("  {}", "Manual intervention required.".bold().red());
                 }
             }
         }
+    }
+}
+
+fn print_wrapped_field(label: &str, value: &str, max_width: usize, indent: usize) {
+    let prefix = format!("{}{} ", " ".repeat(indent), label.bold());
+    let visible_prefix_width = indent + label.chars().count() + 1;
+    let continuation = " ".repeat(visible_prefix_width);
+    let available_width = max_width.saturating_sub(visible_prefix_width).max(24);
+    let mut is_first_output_line = true;
+
+    for raw_line in value.lines() {
+        let mut current = String::new();
+
+        for word in raw_line.split_whitespace() {
+            let current_len = current.chars().count();
+            let word_len = word.chars().count();
+            if current_len > 0 && current_len + 1 + word_len > available_width {
+                let line_prefix = if is_first_output_line {
+                    prefix.as_str()
+                } else {
+                    continuation.as_str()
+                };
+                println!("{line_prefix}{current}");
+                is_first_output_line = false;
+                current.clear();
+            }
+
+            if !current.is_empty() {
+                current.push(' ');
+            }
+            current.push_str(word);
+        }
+
+        let line_prefix = if is_first_output_line {
+            prefix.as_str()
+        } else {
+            continuation.as_str()
+        };
+        if current.is_empty() {
+            println!("{line_prefix}");
+        } else {
+            println!("{line_prefix}{current}");
+        }
+        is_first_output_line = false;
     }
 }
 

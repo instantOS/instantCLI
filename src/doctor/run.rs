@@ -40,13 +40,14 @@ pub async fn run_single_check(check_id: &str) -> Result<()> {
 pub async fn execute_check_logic(check: Box<dyn DoctorCheck + Send + Sync>) -> CheckResult {
     let name = check.name().to_string();
     let check_id = check.id().to_string();
-    let status = check.execute().await;
     let fix_message = check.fix_message();
+    let detailed = check.execute_detailed().await;
 
     CheckResult {
         name,
         check_id,
-        status,
+        status: detailed.status,
         fix_message,
+        details: detailed.details,
     }
 }

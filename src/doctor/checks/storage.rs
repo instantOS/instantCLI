@@ -1,6 +1,7 @@
 use super::{CheckStatus, DoctorCheck, PrivilegeLevel};
 use crate::common::TildePath;
 use crate::common::distro::OperatingSystem;
+use crate::doctor::DetailedCheckStatus;
 use crate::game::platforms::discovery::steam::collect_orphaned_steam_compatdata_dirs;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
@@ -330,6 +331,69 @@ pub struct SteamCompatdataOrphansCheck;
 impl SteamCompatdataOrphansCheck {
     const THRESHOLD_COUNT: usize = 2;
     const THRESHOLD_BYTES: u64 = 1024 * 1024 * 1024;
+
+    async fn collect_orphaned_prefixes() -> Result<Vec<SteamCompatdataOrphan>> {
+        let orphaned = collect_orphaned_steam_compatdata_dirs()?;
+        let mut prefixes = Vec::with_capacity(orphaned.len());
+
+        for dir in orphaned {
+            let size = calculate_dir_size(&dir.path.to_string_lossy())
+                .await
+                .unwrap_or(0);
+            prefixes.push(SteamCompatdataOrphan {
+                app_id: dir.app_id,
+                path: dir.path,
+                size,
+            });
+        }
+
+        prefixes.sort_by(|left, right| {
+            right
+                .size
+                .cmp(&left.size)
+                .then_with(|| left.app_id.cmp(&right.app_id))
+        });
+
+        Ok(prefixes)
+    }
+
+    fn summary(prefixes: &[SteamCompatdataOrphan]) -> String {
+        let total_size: u64 = prefixes.iter().map(|prefix| prefix.size).sum();
+        let largest = prefixes.first();
+
+        format!(
+            "Found {} orphaned Steam Proton prefix{} using {} total{}",
+            prefixes.len(),
+            if prefixes.len() == 1 { "" } else { "es" },
+            format_size(total_size),
+            largest
+                .map(|prefix| format!(
+                    "; largest is {} at {}",
+                    format_size(prefix.size),
+                    TildePath::new(prefix.path.clone()).display_string()
+                ))
+                .unwrap_or_default()
+        )
+    }
+
+    fn format_details(prefixes: &[SteamCompatdataOrphan]) -> String {
+        let mut lines = vec!["Orphaned prefixes, largest first:".to_string()];
+        for prefix in prefixes {
+            lines.push(format!(
+                "- {}  {}  {}",
+                prefix.app_id,
+                format_size(prefix.size),
+                TildePath::new(prefix.path.clone()).display_string()
+            ));
+        }
+        lines.join("\n")
+    }
+}
+
+struct SteamCompatdataOrphan {
+    app_id: u32,
+    path: std::path::PathBuf,
+    size: u64,
 }
 
 #[async_trait]
@@ -351,8 +415,8 @@ impl DoctorCheck for SteamCompatdataOrphansCheck {
     }
 
     async fn execute(&self) -> CheckStatus {
-        let orphaned = match collect_orphaned_steam_compatdata_dirs() {
-            Ok(orphaned) => orphaned,
+        let prefixes = match Self::collect_orphaned_prefixes().await {
+            Ok(prefixes) => prefixes,
             Err(e) => {
                 return CheckStatus::Fail {
                     message: format!("Could not inspect Steam compatdata: {}", e),
@@ -361,41 +425,14 @@ impl DoctorCheck for SteamCompatdataOrphansCheck {
             }
         };
 
-        if orphaned.is_empty() {
+        if prefixes.is_empty() {
             return CheckStatus::Pass("No orphaned Steam Proton prefixes found".to_string());
         }
 
-        let mut total_size = 0;
-        let mut largest_size = 0;
-        let mut largest_path = None;
+        let total_size: u64 = prefixes.iter().map(|prefix| prefix.size).sum();
+        let message = Self::summary(&prefixes);
 
-        for dir in &orphaned {
-            let size = calculate_dir_size(&dir.path.to_string_lossy())
-                .await
-                .unwrap_or(0);
-            total_size += size;
-            if size > largest_size {
-                largest_size = size;
-                largest_path = Some(dir.path.clone());
-            }
-        }
-
-        let message = format!(
-            "Found {} orphaned Steam Proton prefix{} using {} total{}",
-            orphaned.len(),
-            if orphaned.len() == 1 { "" } else { "es" },
-            format_size(total_size),
-            largest_path
-                .as_ref()
-                .map(|path| format!(
-                    "; largest is {} at {}",
-                    format_size(largest_size),
-                    TildePath::new(path.clone()).display_string()
-                ))
-                .unwrap_or_default()
-        );
-
-        if orphaned.len() > Self::THRESHOLD_COUNT || total_size > Self::THRESHOLD_BYTES {
+        if prefixes.len() > Self::THRESHOLD_COUNT || total_size > Self::THRESHOLD_BYTES {
             CheckStatus::Warning {
                 message,
                 fixable: false,
@@ -407,6 +444,52 @@ impl DoctorCheck for SteamCompatdataOrphansCheck {
                 Self::THRESHOLD_COUNT,
                 format_size(Self::THRESHOLD_BYTES)
             ))
+        }
+    }
+
+    async fn execute_detailed(&self) -> DetailedCheckStatus {
+        let prefixes = match Self::collect_orphaned_prefixes().await {
+            Ok(prefixes) => prefixes,
+            Err(e) => {
+                return DetailedCheckStatus {
+                    status: CheckStatus::Fail {
+                        message: format!("Could not inspect Steam compatdata: {}", e),
+                        fixable: false,
+                    },
+                    details: None,
+                };
+            }
+        };
+
+        if prefixes.is_empty() {
+            DetailedCheckStatus {
+                status: CheckStatus::Pass("No orphaned Steam Proton prefixes found".to_string()),
+                details: None,
+            }
+        } else {
+            let details = Some(Self::format_details(&prefixes));
+            let total_size: u64 = prefixes.iter().map(|prefix| prefix.size).sum();
+            let message = Self::summary(&prefixes);
+
+            if prefixes.len() > Self::THRESHOLD_COUNT || total_size > Self::THRESHOLD_BYTES {
+                DetailedCheckStatus {
+                    status: CheckStatus::Warning {
+                        message,
+                        fixable: false,
+                    },
+                    details,
+                }
+            } else {
+                DetailedCheckStatus {
+                    status: CheckStatus::Pass(format!(
+                        "{} (below {} prefix / {} threshold)",
+                        message,
+                        Self::THRESHOLD_COUNT,
+                        format_size(Self::THRESHOLD_BYTES)
+                    )),
+                    details,
+                }
+            }
         }
     }
 }

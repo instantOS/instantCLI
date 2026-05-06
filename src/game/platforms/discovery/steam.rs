@@ -21,6 +21,10 @@ use crate::menu::protocol::FzfPreview;
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 
+const SPECIAL_COMPATDATA_APP_IDS: &[u32] = &[
+    0, // Proton/tool-managed prefix, not a normal Steam game or shortcut app ID.
+];
+
 #[derive(Debug, Clone)]
 pub struct SteamDiscoveredGame {
     pub display_name: String,
@@ -428,7 +432,10 @@ fn collect_orphaned_steam_compatdata_dirs_from(
                 continue;
             };
 
-            if known_app_ids.contains(&app_id) || !path.join("pfx").join("drive_c").is_dir() {
+            if SPECIAL_COMPATDATA_APP_IDS.contains(&app_id)
+                || known_app_ids.contains(&app_id)
+                || !path.join("pfx").join("drive_c").is_dir()
+            {
                 continue;
             }
 
@@ -513,6 +520,7 @@ mod tests {
         fs::create_dir_all(compatdata.join("111").join("pfx").join("drive_c")).unwrap();
         fs::create_dir_all(compatdata.join("222").join("pfx").join("drive_c")).unwrap();
         fs::create_dir_all(compatdata.join("333").join("pfx")).unwrap();
+        fs::create_dir_all(compatdata.join("0").join("pfx").join("drive_c")).unwrap();
         fs::create_dir_all(compatdata.join("not-an-id").join("pfx").join("drive_c")).unwrap();
 
         let known_app_ids = HashSet::from([111]);

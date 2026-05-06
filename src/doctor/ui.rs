@@ -253,6 +253,7 @@ pub struct ViewableCheck {
     pub check_id: String,
     pub status: String,
     pub message: String,
+    pub details: Option<String>,
 }
 
 impl ViewableCheck {
@@ -262,6 +263,7 @@ impl ViewableCheck {
             check_id: result.check_id.clone(),
             status: result.status.status_text().to_string(),
             message: result.status.message().to_string(),
+            details: result.details.clone(),
         }
     }
 }
@@ -295,12 +297,16 @@ impl FzfSelectable for ViewableCheck {
             _ => NerdFont::Info,
         };
 
-        PreviewBuilder::new()
+        let mut builder = PreviewBuilder::new()
             .header(icon, &format!("{} {}", self.status, self.name))
             .field("Status", &self.message)
-            .blank()
-            .subtext(&format!("ID: {}", self.check_id))
-            .build()
+            .blank();
+
+        if let Some(details) = &self.details {
+            builder = builder.text(details).blank();
+        }
+
+        builder.subtext(&format!("ID: {}", self.check_id)).build()
     }
 
     fn fzf_key(&self) -> String {
