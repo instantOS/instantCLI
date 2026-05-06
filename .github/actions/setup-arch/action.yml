@@ -1,0 +1,51 @@
+name: Setup Arch container
+description: |
+  Initialise pacman (key init, populate, sync update) and install packages.
+  Optionally includes the standard Rust build + cargo test dependencies used
+  across the project's Arch jobs.
+inputs:
+  packages:
+    description: Space-separated list of additional pacman packages to install.
+    required: false
+    default: ""
+  include-test-base:
+    description: |
+      When 'true' (default), also install the standard Rust build/test
+      dependency set used by every Arch job that runs `cargo test`
+      (base-devel, rust, ntfs-3g, etc.). Set to 'false' for jobs that don't
+      build or test the project (e.g. PKGBUILD sync).
+    required: false
+    default: "true"
+runs:
+  using: composite
+  steps:
+    - name: Initialise pacman
+      shell: bash
+      run: |
+        pacman-key --init
+        pacman-key --populate archlinux
+        pacman -Syu --noconfirm
+    - name: Install packages
+      shell: bash
+      env:
+        EXTRA_PACKAGES: ${{ inputs.packages }}
+        INCLUDE_TEST_BASE: ${{ inputs.include-test-base }}
+      run: |
+        set -euo pipefail
+        # Standard Rust build + cargo test dependency set.
+        # Keep this list in sync with the project's actual build/test needs;
+        # adding a package here covers every Arch job that runs cargo test.
+        TEST_BASE="base-devel rust pkgconf openssl git cmake ntfs-3g"
+        packages=""
+        if [[ "$INCLUDE_TEST_BASE" == "true" ]]; then
+          packages="$TEST_BASE"
+        fi
+        if [[ -n "$EXTRA_PACKAGES" ]]; then
+          packages="$packages $EXTRA_PACKAGES"
+        fi
+        if [[ -z "$packages" ]]; then
+          echo "No packages to install" >&2
+          exit 1
+        fi
+        # shellcheck disable=SC2086
+        pacman -S --noconfirm --needed $packages

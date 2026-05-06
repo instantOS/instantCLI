@@ -17,14 +17,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Initialise pacman
-        run: |
-          pacman-key --init
-          pacman-key --populate archlinux
-          pacman -Syu --noconfirm
-      - name: Install build dependencies
-        run: |
-          pacman -S --noconfirm --needed base-devel rust pkgconf openssl git cmake restic jq ntfs-3g
+      - name: Setup Arch container
+        uses: ./.github/actions/setup-arch
+        with:
+          packages: restic jq
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:

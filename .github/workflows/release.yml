@@ -17,14 +17,10 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Initialise pacman
-        run: |
-          pacman-key --init
-          pacman-key --populate archlinux
-          pacman -Syu --noconfirm
-      - name: Install build dependencies
-        run: |
-          pacman -S --noconfirm --needed base-devel rust pkgconf openssl git pacman-contrib fzf cmake jq restic unzip python3 ntfs-3g
+      - name: Setup Arch container
+        uses: ./.github/actions/setup-arch
+        with:
+          packages: pacman-contrib fzf jq restic unzip python3
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
       - name: Create build user
@@ -257,16 +253,12 @@ jobs:
       image: archlinux:latest
     needs: build
     steps:
-      - name: Initialise pacman
-        run: |
-          pacman-key --init
-          pacman-key --populate archlinux
-          pacman -Syu --noconfirm
-      - name: Install build dependencies
-        run: |
-          pacman -S --noconfirm --needed base-devel rust pkgconf openssl git pacman-contrib cmake fzf sqlite sudo ntfs-3g
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Setup Arch container
+        uses: ./.github/actions/setup-arch
+        with:
+          packages: pacman-contrib fzf sqlite sudo
       - name: Extract version
         id: vars
         run: |
