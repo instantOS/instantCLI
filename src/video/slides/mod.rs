@@ -112,7 +112,7 @@ impl SlideGenerator {
         hasher.update(DEFAULT_CSS.as_bytes());
         hasher.update(DEFAULT_JS.as_bytes());
         hasher.update(markdown_content.as_bytes());
-        format!("{:x}", hasher.finalize())
+        hex::encode(hasher.finalize())
     }
 
     fn write_css(&self, path: &Path) -> Result<()> {

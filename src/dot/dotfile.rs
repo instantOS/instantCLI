@@ -158,8 +158,7 @@ impl Dotfile {
             hasher.update(&buffer[..bytes_read]);
         }
 
-        let result = hasher.finalize();
-        let hash = format!("{result:x}");
+        let hash = hex::encode(hasher.finalize());
 
         // Cache the result
         {

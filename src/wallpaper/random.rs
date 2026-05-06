@@ -1,6 +1,6 @@
 use anyhow::Result;
 use colored::*;
-use rand::seq::SliceRandom;
+use rand::seq::IndexedRandom;
 use regex::Regex;
 use std::path::{Path, PathBuf};
 use tokio::fs;
@@ -53,7 +53,7 @@ async fn fetch_random_wallhaven_wallpaper(dir: &Path) -> Result<PathBuf> {
         anyhow::bail!("No wallpaper links found on Wallhaven search page");
     }
 
-    let wall_page_url = links.choose(&mut rand::thread_rng()).unwrap();
+    let wall_page_url = links.choose(&mut rand::rng()).unwrap();
 
     // Step 2: Wallpaper page
     let wall_resp = client.get(*wall_page_url).send().await?.text().await?;

@@ -69,7 +69,7 @@ pub fn compute_file_hash(path: &Path) -> Result<String> {
             hasher.update(&buffer[..read_total]);
         }
     }
-    Ok(format!("{:x}", hasher.finalize()))
+    Ok(hex::encode(hasher.finalize()))
 }
 
 pub fn extension_or_default(path: &Path, default: &str) -> String {

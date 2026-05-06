@@ -106,7 +106,7 @@ fn cache_path(id: PreviewId, ctx: &PreviewContext) -> Result<Option<PathBuf>> {
         hasher.update(ctx.columns.unwrap_or_default().to_le_bytes());
         hasher.update(ctx.lines.unwrap_or_default().to_le_bytes());
     }
-    let digest = format!("{:x}", hasher.finalize());
+    let digest = hex::encode(hasher.finalize());
 
     Ok(Some(preview_cache_dir()?.join(format!("{digest}.txt"))))
 }

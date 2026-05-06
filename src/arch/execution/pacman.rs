@@ -23,7 +23,7 @@ fn shuffle_mirrors() -> Result<()> {
             server_pool.push(line.to_string());
         } else {
             if !server_pool.is_empty() {
-                let mut rng = rand::thread_rng();
+                let mut rng = rand::rng();
                 server_pool.shuffle(&mut rng);
                 new_lines.append(&mut server_pool);
             }
@@ -31,7 +31,7 @@ fn shuffle_mirrors() -> Result<()> {
         }
     }
     if !server_pool.is_empty() {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         server_pool.shuffle(&mut rng);
         new_lines.append(&mut server_pool);
     }

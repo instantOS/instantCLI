@@ -368,7 +368,7 @@ async fn verify_checksum(archive_path: &Path, sha_url: Option<&str>) -> Result<(
     let archive_bytes =
         fs::read(archive_path).context("Failed to read archive for verification")?;
 
-    let actual_hash = format!("{:x}", sha2::Sha256::digest(archive_bytes));
+    let actual_hash = hex::encode(sha2::Sha256::digest(archive_bytes));
 
     if actual_hash != expected_hash {
         return Err(anyhow!("Checksum verification failed"));
