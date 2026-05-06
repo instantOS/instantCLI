@@ -34,7 +34,7 @@ pub use network::{InstantRepoCheck, InternetCheck};
 pub use security::{FaillockCheck, PolkitAgentCheck, SshAuthSockCheck};
 pub use storage::{
     PacmanCacheCheck, PacmanDbSyncCheck, PacmanStaleDownloadsCheck, SmartHealthCheck,
-    TrashBinSizeCheck, YayCacheCheck,
+    SteamCompatdataOrphansCheck, TrashBinSizeCheck, YayCacheCheck,
 };
 pub use system::{PendingUpdatesCheck, SwapCheck};
 pub use tools::{BatCheck, FzfVersionCheck, GitConfigCheck};

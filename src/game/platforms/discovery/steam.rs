@@ -157,6 +157,12 @@ struct SteamPrefixCandidate {
     is_shortcut: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SteamCompatdataDir {
+    pub app_id: u32,
+    pub path: PathBuf,
+}
+
 pub fn is_steam_installed() -> bool {
     collect_steam_library_roots().is_ok_and(|roots| !roots.is_empty())
 }
@@ -273,7 +279,18 @@ fn collect_steam_prefix_candidates() -> Result<Vec<SteamPrefixCandidate>> {
     Ok(candidates)
 }
 
-fn collect_steam_library_roots() -> Result<Vec<PathBuf>> {
+pub fn collect_orphaned_steam_compatdata_dirs() -> Result<Vec<SteamCompatdataDir>> {
+    let libraries = collect_steam_library_roots()?;
+    let mut known_app_ids = collect_native_steam_app_ids(&libraries);
+    known_app_ids.extend(collect_shortcut_names()?.into_keys());
+
+    Ok(collect_orphaned_steam_compatdata_dirs_from(
+        &libraries,
+        &known_app_ids,
+    ))
+}
+
+pub(crate) fn collect_steam_library_roots() -> Result<Vec<PathBuf>> {
     let home = dirs::home_dir().context("Cannot determine home directory")?;
     let roots = [home.join(".local/share/Steam"), home.join(".steam/steam")];
     let mut libraries = Vec::new();
@@ -322,6 +339,36 @@ fn unescape_vdf_path(path: &str) -> String {
     path.replace("\\\\", "\\")
 }
 
+fn collect_native_steam_app_ids(libraries: &[PathBuf]) -> HashSet<u32> {
+    let mut app_ids = HashSet::new();
+    let appmanifest_re =
+        Regex::new(r#"appmanifest_(\d+)\.acf$"#).expect("valid appmanifest filename regex");
+
+    for library in libraries {
+        let steamapps = library.join("steamapps");
+        let entries = match fs::read_dir(&steamapps) {
+            Ok(entries) => entries,
+            Err(_) => continue,
+        };
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            let Some(caps) = appmanifest_re.captures(file_name) else {
+                continue;
+            };
+            let Ok(app_id) = caps[1].parse::<u32>() else {
+                continue;
+            };
+            app_ids.insert(app_id);
+        }
+    }
+
+    app_ids
+}
+
 fn collect_native_steam_names(libraries: &[PathBuf]) -> HashMap<u32, String> {
     let mut names = HashMap::new();
     let appmanifest_re =
@@ -352,6 +399,51 @@ fn collect_native_steam_names(libraries: &[PathBuf]) -> HashMap<u32, String> {
     }
 
     names
+}
+
+fn collect_orphaned_steam_compatdata_dirs_from(
+    libraries: &[PathBuf],
+    known_app_ids: &HashSet<u32>,
+) -> Vec<SteamCompatdataDir> {
+    let mut orphaned = Vec::new();
+    let mut seen = HashSet::new();
+
+    for library in libraries {
+        let compatdata = library.join("steamapps").join("compatdata");
+        let entries = match fs::read_dir(&compatdata) {
+            Ok(entries) => entries,
+            Err(_) => continue,
+        };
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+
+            let Some(dir_name) = path.file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            let Ok(app_id) = dir_name.parse::<u32>() else {
+                continue;
+            };
+
+            if known_app_ids.contains(&app_id) || !path.join("pfx").join("drive_c").is_dir() {
+                continue;
+            }
+
+            let normalized = path.canonicalize().unwrap_or(path);
+            if seen.insert((app_id, normalized.clone())) {
+                orphaned.push(SteamCompatdataDir {
+                    app_id,
+                    path: normalized,
+                });
+            }
+        }
+    }
+
+    orphaned.sort_by_key(|dir| dir.app_id);
+    orphaned
 }
 
 fn parse_appmanifest_name(path: &Path) -> Option<String> {
@@ -410,5 +502,36 @@ mod tests {
             parse_appmanifest_name(&manifest).as_deref(),
             Some("Test Game")
         );
+    }
+
+    #[test]
+    fn finds_orphaned_compatdata_dirs() {
+        let dir = tempfile::tempdir().unwrap();
+        let library = dir.path().join("SteamLibrary");
+        let compatdata = library.join("steamapps").join("compatdata");
+
+        fs::create_dir_all(compatdata.join("111").join("pfx").join("drive_c")).unwrap();
+        fs::create_dir_all(compatdata.join("222").join("pfx").join("drive_c")).unwrap();
+        fs::create_dir_all(compatdata.join("333").join("pfx")).unwrap();
+        fs::create_dir_all(compatdata.join("not-an-id").join("pfx").join("drive_c")).unwrap();
+
+        let known_app_ids = HashSet::from([111]);
+        let orphaned = collect_orphaned_steam_compatdata_dirs_from(&[library], &known_app_ids);
+
+        assert_eq!(orphaned.len(), 1);
+        assert_eq!(orphaned[0].app_id, 222);
+    }
+
+    #[test]
+    fn collects_native_app_ids_from_manifest_filenames() {
+        let dir = tempfile::tempdir().unwrap();
+        let steamapps = dir.path().join("steamapps");
+        fs::create_dir_all(&steamapps).unwrap();
+        fs::write(steamapps.join("appmanifest_123.acf"), "").unwrap();
+        fs::write(steamapps.join("appmanifest_bad.acf"), "").unwrap();
+
+        let app_ids = collect_native_steam_app_ids(&[dir.path().to_path_buf()]);
+
+        assert_eq!(app_ids, HashSet::from([123]));
     }
 }

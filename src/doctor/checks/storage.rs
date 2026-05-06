@@ -1,5 +1,7 @@
 use super::{CheckStatus, DoctorCheck, PrivilegeLevel};
+use crate::common::TildePath;
 use crate::common::distro::OperatingSystem;
+use crate::game::platforms::discovery::steam::collect_orphaned_steam_compatdata_dirs;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use tokio::process::Command as TokioCommand;
@@ -319,6 +321,93 @@ impl DoctorCheck for TrashBinSizeCheck {
         }
 
         Ok(())
+    }
+}
+
+#[derive(Default)]
+pub struct SteamCompatdataOrphansCheck;
+
+impl SteamCompatdataOrphansCheck {
+    const THRESHOLD_COUNT: usize = 2;
+    const THRESHOLD_BYTES: u64 = 1024 * 1024 * 1024;
+}
+
+#[async_trait]
+impl DoctorCheck for SteamCompatdataOrphansCheck {
+    fn name(&self) -> &'static str {
+        "Steam Orphaned Compatdata"
+    }
+
+    fn id(&self) -> &'static str {
+        "steam-compatdata-orphans"
+    }
+
+    fn check_privilege_level(&self) -> PrivilegeLevel {
+        PrivilegeLevel::User
+    }
+
+    fn fix_privilege_level(&self) -> PrivilegeLevel {
+        PrivilegeLevel::User
+    }
+
+    async fn execute(&self) -> CheckStatus {
+        let orphaned = match collect_orphaned_steam_compatdata_dirs() {
+            Ok(orphaned) => orphaned,
+            Err(e) => {
+                return CheckStatus::Fail {
+                    message: format!("Could not inspect Steam compatdata: {}", e),
+                    fixable: false,
+                };
+            }
+        };
+
+        if orphaned.is_empty() {
+            return CheckStatus::Pass("No orphaned Steam Proton prefixes found".to_string());
+        }
+
+        let mut total_size = 0;
+        let mut largest_size = 0;
+        let mut largest_path = None;
+
+        for dir in &orphaned {
+            let size = calculate_dir_size(&dir.path.to_string_lossy())
+                .await
+                .unwrap_or(0);
+            total_size += size;
+            if size > largest_size {
+                largest_size = size;
+                largest_path = Some(dir.path.clone());
+            }
+        }
+
+        let message = format!(
+            "Found {} orphaned Steam Proton prefix{} using {} total{}",
+            orphaned.len(),
+            if orphaned.len() == 1 { "" } else { "es" },
+            format_size(total_size),
+            largest_path
+                .as_ref()
+                .map(|path| format!(
+                    "; largest is {} at {}",
+                    format_size(largest_size),
+                    TildePath::new(path.clone()).display_string()
+                ))
+                .unwrap_or_default()
+        );
+
+        if orphaned.len() > Self::THRESHOLD_COUNT || total_size > Self::THRESHOLD_BYTES {
+            CheckStatus::Warning {
+                message,
+                fixable: false,
+            }
+        } else {
+            CheckStatus::Pass(format!(
+                "{} (below {} prefix / {} threshold)",
+                message,
+                Self::THRESHOLD_COUNT,
+                format_size(Self::THRESHOLD_BYTES)
+            ))
+        }
     }
 }
 
@@ -751,6 +840,16 @@ async fn calculate_dir_size(path: &str) -> Result<u64> {
     }
 
     Ok(total_size)
+}
+
+fn format_size(bytes: u64) -> String {
+    let gib = bytes as f64 / 1024.0 / 1024.0 / 1024.0;
+    if gib >= 1.0 {
+        format!("{gib:.2} GiB")
+    } else {
+        let mib = bytes as f64 / 1024.0 / 1024.0;
+        format!("{mib:.1} MiB")
+    }
 }
 
 /// Check if pacman is currently running by looking for its lock file
