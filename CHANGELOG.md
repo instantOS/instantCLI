@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.30](https://github.com/instantOS/instantCLI/compare/v0.13.29...v0.13.30) - 2026-05-06
+
+### Fixed
+
+- fix completions check messing with progress bar
+- fix missing deps bug
+
+### Other
+
+- prettier doctor checks
+- upgrade deps
+- init steam orphan doctor check
+- deduplicate arch setup
+
 ## [0.13.29](https://github.com/instantOS/instantCLI/compare/v0.13.28...v0.13.29) - 2026-05-05
 
 ### Fixed
