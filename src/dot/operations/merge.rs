@@ -8,7 +8,7 @@ use crate::ui::prelude::*;
 use anyhow::Context;
 use anyhow::Result;
 use colored::*;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Stdio;
 
 enum DotfileSkip {

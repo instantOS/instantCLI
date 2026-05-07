@@ -20,7 +20,6 @@ pub use detection::{analyze_all_disks, detect_disks};
 pub use display::display_disks;
 
 // From resize module
-pub use resize::get_resize_info;
 pub use resize::{ResizeStatus, ResizeVerifier};
 
 /// Minimum size for a Linux installation in bytes (30 GB)

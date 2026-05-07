@@ -5,7 +5,6 @@ use crate::dot::utils::{filter_dotfiles_by_path, get_all_dotfiles, resolve_dotfi
 use crate::ui::prelude::*;
 use anyhow::Result;
 use colored::*;
-use std::path::PathBuf;
 
 /// Reset modified dotfiles to their original state
 pub fn reset_modified(
