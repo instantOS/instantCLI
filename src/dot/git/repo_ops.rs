@@ -82,7 +82,9 @@ pub fn add_repo(config: &mut DotfileConfig, repo: config::Repo, debug: bool) -> 
     if !skip_clone {
         let pb = common::progress::create_spinner(format!("Cloning {}...", clone_url));
 
-        git::clone_repo(&clone_url, &target, repo.branch.as_deref(), depth)
+        // Suspend the spinner around the clone so SSH/credential prompts and
+        // git's own progress are visible on the user's terminal.
+        pb.suspend(|| git::clone_repo(&clone_url, &target, repo.branch.as_deref(), depth))
             .context("Failed to clone repository")?;
 
         common::progress::finish_spinner_with_success(pb, format!("Cloned {}", clone_url));

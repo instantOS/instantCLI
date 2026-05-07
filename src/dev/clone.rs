@@ -24,12 +24,15 @@ pub fn clone_or_pull_repository(repo: &GitHubRepo, target_dir: &Path, _debug: bo
         target_dir.display()
     ));
 
-    let result = git::clone_repo(
-        &repo.clone_url,
-        target_dir,
-        Some(&repo.default_branch),
-        Some(1),
-    );
+    // Suspend the spinner so SSH/credential prompts can interact with the TTY.
+    let result = pb.suspend(|| {
+        git::clone_repo(
+            &repo.clone_url,
+            target_dir,
+            Some(&repo.default_branch),
+            Some(1),
+        )
+    });
 
     crate::common::progress::finish_spinner_with_success(
         pb,
@@ -84,7 +87,8 @@ fn pull_existing(repo: &GitHubRepo, target_dir: &Path) -> Result<()> {
 
     let branch = git::current_branch(target_dir).unwrap_or_else(|_| repo.default_branch.clone());
 
-    let result = git::fetch_branch(target_dir, &branch);
+    // Suspend the spinner around the network call so SSH prompts are visible.
+    let result = pb.suspend(|| git::fetch_branch(target_dir, &branch));
 
     match result {
         Ok(()) => {

@@ -1,5 +1,132 @@
 use anyhow::{Context, Result};
-use std::{path::Path, process::Command};
+use std::io::IsTerminal;
+use std::{
+    path::Path,
+    process::{Command, Stdio},
+};
+
+/// Detects whether we are attached to an interactive terminal that can answer
+/// SSH or git credential prompts. We require both stdin and stderr to be TTYs
+/// so the prompt is visible *and* the user can respond to it.
+fn is_interactive_terminal() -> bool {
+    std::io::stdin().is_terminal() && std::io::stderr().is_terminal()
+}
+
+/// Configure a git command for non-interactive network use: tell git/ssh to
+/// fail fast instead of hanging on a passphrase, host-key, or credential
+/// prompt.
+fn apply_noninteractive_git_env(cmd: &mut Command) {
+    cmd.env("GIT_TERMINAL_PROMPT", "0");
+
+    let ssh_cmd = match std::env::var("GIT_SSH_COMMAND") {
+        Ok(existing) if !existing.trim().is_empty() => {
+            format!("{existing} -o BatchMode=yes -o ConnectTimeout=15")
+        }
+        _ => "ssh -o BatchMode=yes -o ConnectTimeout=15".to_string(),
+    };
+    cmd.env("GIT_SSH_COMMAND", ssh_cmd);
+}
+
+/// Translate captured git/ssh error output into a friendlier diagnostic for
+/// the non-interactive case.
+fn summarize_git_network_failure(args: &[&str], stderr: &str) -> String {
+    let trimmed = stderr.trim();
+    let lower = trimmed.to_ascii_lowercase();
+
+    let hint = if lower.contains("permission denied (publickey")
+        || lower.contains("permission denied, please try again")
+        || lower.contains("could not read from remote repository")
+    {
+        Some(
+            "SSH authentication failed and no terminal is available to prompt. \
+             Load your key into ssh-agent (ssh-add), use a key without a passphrase, \
+             or rerun the command in an interactive terminal.",
+        )
+    } else if lower.contains("enter passphrase")
+        || lower.contains("passphrase for key")
+        || lower.contains("batchmode")
+    {
+        Some(
+            "SSH key requires a passphrase but no terminal is available to prompt. \
+             Run `ssh-add` to unlock the key in your ssh-agent, or rerun in an \
+             interactive terminal.",
+        )
+    } else if lower.contains("host key verification failed")
+        || lower.contains("no matching host key")
+        || lower.contains("host key for")
+    {
+        Some(
+            "SSH host key is not trusted yet. Connect to the host once \
+             interactively to accept the host key (or pre-populate ~/.ssh/known_hosts).",
+        )
+    } else if lower.contains("could not resolve hostname")
+        || lower.contains("name or service not known")
+    {
+        Some("SSH hostname could not be resolved.")
+    } else if lower.contains("connection timed out") || lower.contains("operation timed out") {
+        Some("SSH connection timed out.")
+    } else if lower.contains("terminal prompts disabled")
+        || lower.contains("could not read username")
+        || lower.contains("could not read password")
+    {
+        Some(
+            "git asked for credentials but no terminal is available. Configure \
+             a credential helper or rerun in an interactive terminal.",
+        )
+    } else {
+        None
+    };
+
+    let prefix = format!("git {} failed", args.join(" "));
+    match (hint, trimmed.is_empty()) {
+        (Some(h), false) => format!("{prefix}: {h}\n{trimmed}"),
+        (Some(h), true) => format!("{prefix}: {h}"),
+        (None, false) => format!("{prefix}: {trimmed}"),
+        (None, true) => prefix,
+    }
+}
+
+/// Run a git command that talks to the network (clone/fetch/pull/push).
+///
+/// On an interactive terminal, stdio is inherited so SSH passphrase prompts,
+/// host-key prompts, and git's own progress are visible to the user.
+///
+/// When no TTY is available we set `GIT_TERMINAL_PROMPT=0` and force SSH into
+/// `BatchMode` so the operation fails fast with a clear message instead of
+/// hanging forever waiting for input that nobody can provide.
+fn run_git_network_in(current_dir: Option<&Path>, args: &[&str]) -> Result<()> {
+    let mut cmd = Command::new("git");
+    cmd.args(args);
+    if let Some(dir) = current_dir {
+        cmd.current_dir(dir);
+    }
+
+    if is_interactive_terminal() {
+        let status = cmd
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .status()
+            .context("Failed to execute git")?;
+
+        if !status.success() {
+            anyhow::bail!("git {} failed (exit status {})", args.join(" "), status);
+        }
+        return Ok(());
+    }
+
+    apply_noninteractive_git_env(&mut cmd);
+    let output = cmd
+        .stdin(Stdio::null())
+        .output()
+        .context("Failed to execute git")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("{}", summarize_git_network_failure(args, &stderr));
+    }
+    Ok(())
+}
 
 /// Run a git command in the given repo directory, returning stdout on success.
 fn run_git(repo_path: &Path, args: &[&str]) -> Result<String> {
@@ -110,22 +237,22 @@ pub fn clone_repo(
     branch: Option<&str>,
     depth: Option<i32>,
 ) -> Result<()> {
-    let mut cmd = Command::new("git");
-    cmd.arg("clone");
-    if let Some(d) = depth.filter(|d| *d > 0) {
-        cmd.arg("--depth").arg(d.to_string());
+    let depth_str = depth.filter(|d| *d > 0).map(|d| d.to_string());
+    let target_str = target.to_string_lossy().into_owned();
+
+    let mut args: Vec<&str> = vec!["clone"];
+    if let Some(d) = depth_str.as_deref() {
+        args.push("--depth");
+        args.push(d);
     }
     if let Some(b) = branch {
-        cmd.arg("-b").arg(b);
+        args.push("-b");
+        args.push(b);
     }
-    cmd.arg(url).arg(target);
+    args.push(url);
+    args.push(&target_str);
 
-    let output = cmd.output().context("Failed to execute git clone")?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("Failed to clone repository: {}", stderr.trim());
-    }
-    Ok(())
+    run_git_network_in(None, &args).context("Failed to clone repository")
 }
 
 /// Get the current checked out branch name
@@ -144,7 +271,8 @@ pub fn fetch_branch(repo_path: &Path, branch: &str) -> Result<()> {
         return Ok(());
     };
 
-    run_git(repo_path, &["fetch", &remote, branch]).context("Failed to fetch branch")?;
+    run_git_network_in(Some(repo_path), &["fetch", &remote, branch])
+        .context("Failed to fetch branch")?;
     Ok(())
 }
 
@@ -288,8 +416,8 @@ pub fn clean_and_pull(repo_path: &Path) -> Result<()> {
         .context("Failed to discard tracked local changes")?;
     run_git(repo_path, &["clean", "-fdx"]).context("Failed to remove untracked local files")?;
 
-    // Fetch
-    run_git(repo_path, &["fetch"]).context("Failed to fetch")?;
+    // Fetch (network: may need SSH auth, so use the network-aware helper)
+    run_git_network_in(Some(repo_path), &["fetch"]).context("Failed to fetch")?;
 
     // Hard reset to upstream
     run_git(repo_path, &["reset", "--hard", "@{u}"]).context("Failed to reset to upstream")?;
@@ -305,8 +433,8 @@ pub fn fetch_and_fast_forward(repo_path: &Path) -> Result<()> {
         return Ok(());
     }
 
-    // Fetch latest
-    run_git(repo_path, &["fetch"]).context("Failed to fetch")?;
+    // Fetch latest (network: may need SSH auth, so use the network-aware helper)
+    run_git_network_in(Some(repo_path), &["fetch"]).context("Failed to fetch")?;
 
     // Check ahead/behind
     let Some((ahead, behind)) = ahead_behind(repo_path)? else {

@@ -123,9 +123,10 @@ pub async fn handle_install(debug: bool) -> Result<()> {
 
     let pb = create_spinner("Preparing package repository...".to_string());
 
-    // Initialize and update repository
+    // Initialize and update repository. Suspend the spinner around the network
+    // call so SSH/credential prompts can be answered on the user's terminal.
     let repo = PackageRepo::new()?;
-    repo.ensure_updated()?;
+    pb.suspend(|| repo.ensure_updated())?;
 
     finish_spinner_with_success(pb, "Package repository ready");
 

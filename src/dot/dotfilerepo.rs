@@ -229,7 +229,11 @@ impl DotfileRepo {
             // fetch the branch and checkout
             let pb = common::progress::create_spinner(format!("Fetching branch {branch}..."));
 
-            git::fetch_branch(&target, branch).context("Failed to fetch branch")?;
+            // Suspend the spinner around the network call so any SSH/credential
+            // prompts (or git's own progress on the inherited TTY) are visible
+            // to the user instead of being hidden behind the spinner.
+            pb.suspend(|| git::fetch_branch(&target, branch))
+                .context("Failed to fetch branch")?;
 
             common::progress::finish_spinner_with_success(pb, format!("Fetched branch {branch}"));
 
@@ -260,10 +264,13 @@ impl DotfileRepo {
         // pull latest
         let pb = common::progress::create_spinner(format!("Updating {}...", self.name));
 
+        // Suspend the spinner around the network call so SSH passphrase /
+        // host-key prompts can be answered on the real terminal.
         if is_read_only {
-            git::clean_and_pull(&target).context("Failed to pull latest changes")?;
+            pb.suspend(|| git::clean_and_pull(&target))
+                .context("Failed to pull latest changes")?;
         } else {
-            git::fetch_and_fast_forward(&target)
+            pb.suspend(|| git::fetch_and_fast_forward(&target))
                 .context("Failed to fast-forward to latest changes")?;
         }
 
