@@ -129,7 +129,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - handle cloudinit in hostname settings
 - add hostname settings
-- fmt
 
 ## [0.13.24](https://github.com/instantOS/instantCLI/compare/v0.13.23...v0.13.24) - 2026-04-20
 
@@ -271,7 +270,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Other
 
-- fmt
 - add faugus as source
 - better streaming
 - better scan prefix
@@ -320,7 +318,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - fix release (hopefully)
-- fix
 
 ### Other
 
@@ -414,7 +411,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - add ins doctor ssh check
 - better behavior for update on non-read-only repos
 - better ffmpeg handling
-- cleanup
 - some renames
 - consolidate video source thingy
 - consolidate frontmatter handling
@@ -435,14 +431,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Other
 
 - simplify add.rs
-- rename
 - refactor discovery to trait
-- fmt
 - better azahar previews
 - init azahar discovery
 - add duckstation previews
 - duckstation discovery
-- cleanup
 - standardize some stuff
 - split manager.rs
 - refactor manager.rs
@@ -456,7 +449,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - better builder
 - clean up duplicates
 - add to desktop feature
-- clippy
 - remove old test
 - better steam shortcut handling
 - better self-update
@@ -519,16 +511,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - fix mouse sensitivity
 - fix video project thingy
-- fix
-- fix
 - fix missing audio
 - fix math in reels mode
-- fix
 - fix b-roll not playing frames
 - fix sway picker
 - fix toggle
 - fix silence parsing
-- fix
 - fix plymouth application
 - fix fzf wrapper
 - fix yes/no menu
@@ -574,7 +562,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - make b-roll distinguishable
 - more b-roll tests
 - change how broll works
-- fmt
 - Merge branch 'dev' of github.com:instantOS/instantCLI into dev
 - merge refactor
 - better menu
@@ -583,7 +570,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - better sink flow
 - implement display for some enums
 - better preprocessor preview
-- fmt
 - better vidoe name conflict resolution
 - better flow
 - add recording option
@@ -698,13 +684,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - better structure
 - better status
 - better status message
-- fmt
 - more intuitive UX
 - less io
 - display status in alternative picker
 - better alternative flow
 - init better auto option and checkbox actions
-- fmt
 - refactor subdir actions
 - better empty default handling
 - better default subdir handling
@@ -731,7 +715,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - fix file extension detection
 - fix the shell preview builder escaping
-- fix
 - fix repo readable action
 - fix circular dependency issue
 
@@ -772,7 +755,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Other
 
 - improve audio player setting
-- fmt
 
 ## [0.12.2](https://github.com/instantOS/instantCLI/compare/v0.12.1...v0.12.2) - 2026-01-15
 
@@ -784,7 +766,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Other
 
-- fmt
 - add dotfiles to settings
 - better alternative creation
 - better orphan handling
@@ -819,7 +800,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Other
 
-- clippy
 - init fzf doctor check
 
 ## [0.11.2](https://github.com/instantOS/instantCLI/compare/v0.11.1...v0.11.2) - 2026-01-10
@@ -844,7 +824,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - make checklist read stdin
 - init checklist
-- fmt
 - more ansi support
 - migrate some previews
 - init preview builder
@@ -854,7 +833,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - make settings responsive
 - init responsive layout for previews
 - add line wrapping to messages
-- clippy
 - add git config check
 - limit buffer amount
 - more friendly doctor settings
@@ -874,7 +852,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - init backup skipper
 - add checkpoint checkout menu
 - add close menu option
-- fmt
 - better game edit dialogues
 - remove wrong deprecated markers
 - better display settings UX
@@ -917,7 +894,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Other
 
 - add fatal installer error message
-- fmt
 - implement mirrorlist fallback
 - fallback plans
 - settings refactor
@@ -926,7 +902,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - add gtk menu icons setting
 - better batch terminology
 - refactor fzf select
-- fmt
 - refactor dark/light mode setting
 - refactor apply function
 - more gtk icon light/dark theme variants
@@ -943,7 +918,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - add network config to welcome
 - better welcome app disabling experience
 - add archive manager install more options
-- fmt
 - use nerd fonts
 - init `install more`
 
@@ -960,7 +934,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - make instantASSIST handle package installation decline
 - remove redundant messages
 - handle package installation decline
-- clippy
 - clean up setting state computation
 - batch package ensure requests
 - clean up package installation flow
@@ -992,7 +965,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - install packages earlier
 - partition deletion detection
 - cap swap so it's not absurd
-- fmt
 - use largest free region instead of total space
 - I hate disk stuff
 - another fix?
@@ -1020,18 +992,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Other
 
-- clippy
 - auto disk unmounting
 - notify the user no resize is necessary
 - handle free space appropriately
 - use colored
 - better messaging
-- fmt
 - refactor dual boot verifier
 - check if partition can actually be used now
 - init btrfs size detection
 - more nerd fonts icons
-- clippy
 - account for unused space
 - better detection of odd stuff
 - improve dualboot detection
@@ -1045,12 +1014,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - remove redundant field
 - add efi detection
 - better output
-- fmt
 - init dual boot detection
 - make git shorthands accept git commands
 - better package messaging
 - init sway display check
-- fmt
 - add qt reset setting
 - add preview command to dark mode
 - add moon icon
@@ -1065,7 +1032,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Other
 
-- fmt
 - add a bit of timestamp tolerance
 - Merge branch 'dev'
 - init beads
@@ -1082,7 +1048,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Other
 
 - make pacman checks skip non-arch
-- fmt
 - add stale pacman dirs check
 - better base distro detection
 - better OS detection
@@ -1127,7 +1092,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Other
 
 - remove inventory crate
-- clippy
 - make setting tree the single source of truth for setting location
 - init flatpak setting
 
@@ -1158,10 +1122,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - add icon color override
 - add back removed settings
 - clean up more old files
-- fmt
 - clean up settings which launch external commands
-- clippy
-- fmt
 - remove old registry
 - more cleanup
 - remove old stuff
@@ -1181,7 +1142,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Other
 
-- fmt
 - add path displays
 - refactor writable repo handling
 - remove old plan
@@ -1200,7 +1160,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Other
 
-- fmt
 - refactor custom kernel handling
 - init X11 support for keyboard layouts
 - init keyboard settings
@@ -1208,9 +1167,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - init info assists
 - clear up confusion
 - clean up changelog
-- fmt
 - init some cleanup
-- fmt
 - better alias
 
 ## [0.8.5](https://github.com/instantOS/instantCLI/compare/v0.8.4...v0.8.5) - 2025-12-03
@@ -1245,7 +1202,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - make autostart apply wallpaper
 - init sway wallpaper support
 - init wallpaper command
-- cleanup
 - make ins dot use menu utils
 - better icons
 - better logging for read-only
@@ -1391,7 +1347,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Other
 
-- clippy
 
 ## [0.7.7](https://github.com/instantOS/instantCLI/compare/v0.7.6...v0.7.7) - 2025-11-26
 
@@ -1624,9 +1579,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Other
 
-- format
 - repair debug
-- format
 - refactor command handling
 
 ## [0.6.3](https://github.com/instantOS/instantCLI/compare/v0.6.2...v0.6.3) - 2025-11-17
@@ -1669,7 +1622,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - compat with older fzf versions
 - self update
 - format and sudo
-- format
 - make deps cleaner
 - init qr screenshotting
 - add icons to assist help menu
@@ -1715,7 +1667,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- fix
 
 ### Other
 
@@ -1736,10 +1687,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - add bruh moment
 - better icons
 - swap p and n assists
-- format
 - init flatpak dependency system
 - dedup packages
-- format
 - add full screen screenshot assist
 - abstract away area selection
 - make imgur uploader more rusty
@@ -1802,7 +1751,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Other
 
-- format
 
 ## [0.2.7](https://github.com/instantOS/instantCLI/compare/v0.2.6...v0.2.7) - 2025-10-29
 
@@ -1838,7 +1786,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - add bug md
 - init editor refactor
 - refactor game install
-- format
 - refactor game display
 - resolve game add details
 - init game manager refactor
@@ -1917,7 +1864,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Other
 
-- format
 
 ## [0.1.12](https://github.com/instantOS/instantCLI/compare/v0.1.11...v0.1.12) - 2025-10-09
 
