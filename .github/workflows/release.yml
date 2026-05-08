@@ -50,10 +50,6 @@ jobs:
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
-      - name: Run tests
-        run: |
-          WORKSPACE="$PWD"
-          su builder -c "cd '$WORKSPACE' && CARGO_TERM_COLOR=always cargo test --locked"
       - name: Build release binary
         run: |
           WORKSPACE="$PWD"

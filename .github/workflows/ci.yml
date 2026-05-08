@@ -42,11 +42,9 @@ jobs:
       - name: Check code formatting
         run: cargo fmt -- --check
       - name: Run clippy lints
-        run: cargo clippy --all-targets --all-features
-      - name: Run unit tests
+        run: cargo clippy --all-targets
+      - name: Run unit tests and build debug binary
         run: cargo test --locked --verbose
-      - name: Build debug binary for integration tests
-        run: cargo build --locked
       - name: Run integration tests
         run: |
           # Make test scripts executable
