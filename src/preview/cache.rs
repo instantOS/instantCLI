@@ -223,9 +223,12 @@ mod tests {
             lines: Some(40),
         };
 
+        // Compare the cache file names rather than the full paths so the
+        // assertion does not depend on global env state (e.g. another test
+        // toggling INS_PREVIEW_CACHE_DIR concurrently).
         let path_a = cache_path(PreviewId::Flatpak, &ctx_a).unwrap().unwrap();
         let path_b = cache_path(PreviewId::Flatpak, &ctx_b).unwrap().unwrap();
 
-        assert_eq!(path_a, path_b);
+        assert_eq!(path_a.file_name(), path_b.file_name());
     }
 }
