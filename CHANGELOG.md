@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.32](https://github.com/instantOS/instantCLI/compare/v0.13.31...v0.13.32) - 2026-05-10
+
+### Fixed
+
+- fix test failure
+
+### Other
+
+- remove redundant tests
+
 ## [0.13.31](https://github.com/instantOS/instantCLI/compare/v0.13.30...v0.13.31) - 2026-05-08
 
 ### Other
