@@ -14,6 +14,10 @@ impl Question for ResizeInstructionsQuestion {
         QuestionId::DualBootInstructions
     }
 
+    fn description(&self) -> Option<&str> {
+        Some("Resize your partition for dual boot")
+    }
+
     fn should_ask(&self, context: &InstallContext) -> bool {
         let is_dualboot = context
             .get_answer(&QuestionId::PartitioningMethod)

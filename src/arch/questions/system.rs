@@ -294,6 +294,10 @@ impl Question for DesktopEnvironmentQuestion {
         true
     }
 
+    fn description(&self) -> Option<&str> {
+        Some("Choose your desktop environment")
+    }
+
     async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
         let options = vec![
             DesktopEnvironment::Sway,
@@ -332,6 +336,10 @@ impl Question for HostnameQuestion {
         QuestionId::Hostname
     }
 
+    fn description(&self) -> Option<&str> {
+        Some("Set the system's network hostname")
+    }
+
     async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
         let result = FzfWrapper::builder()
             .prompt(format!(
@@ -365,6 +373,10 @@ pub struct UsernameQuestion;
 impl Question for UsernameQuestion {
     fn id(&self) -> QuestionId {
         QuestionId::Username
+    }
+
+    fn description(&self) -> Option<&str> {
+        Some("Create the main user account")
     }
 
     async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
@@ -403,6 +415,10 @@ pub struct MirrorRegionQuestion;
 impl Question for MirrorRegionQuestion {
     fn id(&self) -> QuestionId {
         QuestionId::MirrorRegion
+    }
+
+    fn description(&self) -> Option<&str> {
+        Some("Select the closest mirror region for faster downloads")
     }
 
     fn required_data_keys(&self) -> Vec<String> {
@@ -464,6 +480,10 @@ impl Question for TimezoneQuestion {
         QuestionId::Timezone
     }
 
+    fn description(&self) -> Option<&str> {
+        Some("Set the system timezone")
+    }
+
     fn required_data_keys(&self) -> Vec<String> {
         vec![crate::arch::timezones::TimezonesKey::KEY.to_string()]
     }
@@ -509,6 +529,10 @@ impl Question for KeymapQuestion {
         QuestionId::Keymap
     }
 
+    fn description(&self) -> Option<&str> {
+        Some("Set the console keyboard layout")
+    }
+
     fn required_data_keys(&self) -> Vec<String> {
         vec![crate::arch::keymaps::KeymapsKey::KEY.to_string()]
     }
@@ -546,6 +570,10 @@ pub struct LocaleQuestion;
 impl Question for LocaleQuestion {
     fn id(&self) -> QuestionId {
         QuestionId::Locale
+    }
+
+    fn description(&self) -> Option<&str> {
+        Some("Set the system language and formatting")
     }
 
     fn required_data_keys(&self) -> Vec<String> {
@@ -587,6 +615,10 @@ impl Question for PasswordQuestion {
         QuestionId::Password
     }
 
+    fn description(&self) -> Option<&str> {
+        Some("Set the password for the new user and root account")
+    }
+
     fn is_sensitive(&self) -> bool {
         true
     }
@@ -615,6 +647,10 @@ pub struct KernelQuestion;
 impl Question for KernelQuestion {
     fn id(&self) -> QuestionId {
         QuestionId::Kernel
+    }
+
+    fn description(&self) -> Option<&str> {
+        Some("Select the Linux kernel variant")
     }
 
     fn is_optional(&self) -> bool {
@@ -651,6 +687,10 @@ pub struct EncryptionPasswordQuestion;
 impl Question for EncryptionPasswordQuestion {
     fn id(&self) -> QuestionId {
         QuestionId::EncryptionPassword
+    }
+
+    fn description(&self) -> Option<&str> {
+        Some("Set the disk encryption password")
     }
 
     fn is_sensitive(&self) -> bool {

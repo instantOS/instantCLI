@@ -11,6 +11,10 @@ impl Question for LowRamWarning {
         QuestionId::LowRamWarning
     }
 
+    fn description(&self) -> Option<&str> {
+        Some("Warning: system has less than 1 GB of RAM")
+    }
+
     fn is_info_only(&self) -> bool {
         true
     }
@@ -40,6 +44,10 @@ pub struct VirtualBoxWarning;
 impl Question for VirtualBoxWarning {
     fn id(&self) -> QuestionId {
         QuestionId::VirtualBoxWarning
+    }
+
+    fn description(&self) -> Option<&str> {
+        Some("Warning: VirtualBox detected — Wayland compatibility issues")
     }
 
     fn is_info_only(&self) -> bool {
@@ -74,6 +82,10 @@ impl Question for WeakPasswordWarning {
         QuestionId::WeakPasswordWarning
     }
 
+    fn description(&self) -> Option<&str> {
+        Some("Warning: encryption password is shorter than 4 characters")
+    }
+
     fn is_info_only(&self) -> bool {
         true
     }
@@ -106,6 +118,10 @@ pub struct DualBootEspWarning;
 impl Question for DualBootEspWarning {
     fn id(&self) -> QuestionId {
         QuestionId::DualBootEspWarning
+    }
+
+    fn description(&self) -> Option<&str> {
+        Some("Warning: EFI System Partition may be missing or too small")
     }
 
     fn is_info_only(&self) -> bool {

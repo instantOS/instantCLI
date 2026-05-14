@@ -189,6 +189,7 @@ enum ReviewItem {
     Question {
         index: usize,
         id: String,
+        description: String,
         answer: String,
         is_sensitive: bool,
     },
@@ -241,6 +242,7 @@ impl FzfSelectable for ReviewItem {
                 .build(),
             ReviewItem::Question {
                 id,
+                description,
                 answer,
                 is_sensitive,
                 ..
@@ -250,8 +252,12 @@ impl FzfSelectable for ReviewItem {
                 } else {
                     answer.clone()
                 };
-                PreviewBuilder::new()
-                    .header(NerdFont::Question, id)
+                let mut builder = PreviewBuilder::new().header(NerdFont::Question, id);
+                if !description.is_empty() {
+                    builder = builder.subtext(description);
+                }
+                builder
+                    .blank()
                     .field("Current Answer", &display_ans)
                     .blank()
                     .line(colors::TEAL, None, "Select to re-answer this question.")
@@ -336,6 +342,7 @@ impl QuestionEngine {
                 review_items.push(ReviewItem::Question {
                     index: i,
                     id: format!("{:?}", q.id()),
+                    description: q.description().unwrap_or("").to_string(),
                     answer: ans.clone(),
                     is_sensitive: q.is_sensitive(),
                 });

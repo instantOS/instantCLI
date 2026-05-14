@@ -101,6 +101,10 @@ impl Question for DualBootPartitionQuestion {
         QuestionId::DualBootPartition
     }
 
+    fn description(&self) -> Option<&str> {
+        Some("Select a partition to resize for Linux")
+    }
+
     fn should_ask(&self, context: &InstallContext) -> bool {
         context
             .get_answer(&QuestionId::PartitioningMethod)
@@ -215,6 +219,10 @@ pub struct DualBootSizeQuestion;
 impl Question for DualBootSizeQuestion {
     fn id(&self) -> QuestionId {
         QuestionId::DualBootSize
+    }
+
+    fn description(&self) -> Option<&str> {
+        Some("Choose how much space to allocate for Linux")
     }
 
     fn should_ask(&self, context: &InstallContext) -> bool {

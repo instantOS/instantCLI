@@ -132,6 +132,10 @@ impl Question for PartitionSelectorQuestion {
         self.id.clone()
     }
 
+    fn description(&self) -> Option<&str> {
+        Some(&self.prompt)
+    }
+
     fn is_optional(&self) -> bool {
         self.is_optional
     }

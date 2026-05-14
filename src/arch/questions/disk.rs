@@ -165,6 +165,10 @@ impl Question for DiskQuestion {
         QuestionId::Disk
     }
 
+    fn description(&self) -> Option<&str> {
+        Some("Select the disk for installation")
+    }
+
     fn required_data_keys(&self) -> Vec<String> {
         vec![crate::arch::disks::DisksKey::KEY.to_string()]
     }
@@ -349,6 +353,10 @@ impl Question for PartitioningMethodQuestion {
         QuestionId::PartitioningMethod
     }
 
+    fn description(&self) -> Option<&str> {
+        Some("Choose how to partition the disk")
+    }
+
     async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
         let mut options = vec![
             PartitioningMethodOption::Automatic,
@@ -405,6 +413,10 @@ pub struct RunCfdiskQuestion;
 impl Question for RunCfdiskQuestion {
     fn id(&self) -> QuestionId {
         QuestionId::RunCfdisk
+    }
+
+    fn description(&self) -> Option<&str> {
+        Some("Create partitions manually with cfdisk")
     }
 
     fn should_ask(&self, context: &InstallContext) -> bool {
