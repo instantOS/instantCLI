@@ -1,3 +1,5 @@
+use crate::common::deps::DELTA;
+use crate::common::package::InstallResult;
 use crate::dot::config::DotfileConfig;
 use crate::dot::git::status::get_dotfile_status;
 use crate::dot::git::{get_dotfile_dir_name, get_repo_name_for_dotfile, status::DotFileStatus};
@@ -196,15 +198,11 @@ pub fn show_all_diffs(
 }
 
 fn show_dotfile_diff(dotfile: &crate::dot::Dotfile) -> Result<()> {
-    // Check if delta is available
-    if Command::new("delta").arg("--help").output().is_ok() {
-        show_delta_diff(dotfile)?;
-    } else {
-        return Err(anyhow::anyhow!(
-            "delta command not found. Please install delta to use the diff command.\n\
-             Install with: cargo install git-delta\n\
-             Or visit: https://github.com/dandavison/delta"
-        ));
+    match DELTA.ensure()? {
+        InstallResult::Installed | InstallResult::AlreadyInstalled => show_delta_diff(dotfile)?,
+        InstallResult::Declined => anyhow::bail!("delta installation cancelled"),
+        InstallResult::NotAvailable { hint, .. } => anyhow::bail!("missing dependency: {hint}"),
+        InstallResult::Failed { reason } => anyhow::bail!("delta installation failed: {reason}"),
     }
 
     Ok(())

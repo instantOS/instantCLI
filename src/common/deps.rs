@@ -28,6 +28,17 @@ pub static GIT: Dependency = Dependency {
     tests: &[InstallTest::WhichSucceeds("git")],
 };
 
+pub static DELTA: Dependency = Dependency {
+    name: "delta",
+    packages: &[
+        PackageDefinition::new("git-delta", PackageManager::Pacman),
+        PackageDefinition::new("git-delta", PackageManager::Apt),
+        PackageDefinition::new("git-delta", PackageManager::Dnf),
+        PackageDefinition::new("git-delta", PackageManager::Cargo),
+    ],
+    tests: &[InstallTest::WhichSucceeds("delta")],
+};
+
 pub static GUM: Dependency = Dependency {
     name: "gum",
     packages: &[PackageDefinition::new("gum", PackageManager::Pacman)],
