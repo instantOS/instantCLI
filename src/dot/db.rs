@@ -72,7 +72,7 @@ pub struct Database {
     conn: Connection,
 }
 
-const CURRENT_SCHEMA_VERSION: i32 = 3;
+const CURRENT_SCHEMA_VERSION: i32 = 4;
 
 impl Database {
     pub fn new(path: PathBuf) -> Result<Self> {
@@ -125,59 +125,69 @@ impl Database {
     }
 
     fn migrate_schema(conn: &Connection, from_version: i32) -> Result<()> {
-        match from_version {
-            0 => {
-                // Initial schema creation
-                conn.execute(
-                    "CREATE TABLE IF NOT EXISTS file_hashes (
-                        created TEXT NOT NULL,
-                        hash TEXT NOT NULL,
-                        path TEXT NOT NULL,
-                        source_file INTEGER NOT NULL,
-                        PRIMARY KEY (hash, path)
-                    )",
-                    (),
-                )?;
-
-                Self::create_indexes(conn)?;
-
-                // Update to version 3
-                conn.execute(
-                    "INSERT INTO schema_version (version, updated) VALUES (3, datetime('now'))",
-                    [],
-                )?;
+        let mut current = from_version;
+        while current < CURRENT_SCHEMA_VERSION {
+            match current {
+                0 => {
+                    // Initial schema creation
+                    conn.execute(
+                        "CREATE TABLE IF NOT EXISTS file_hashes (
+                            created TEXT NOT NULL,
+                            hash TEXT NOT NULL,
+                            path TEXT NOT NULL,
+                            source_file INTEGER NOT NULL,
+                            PRIMARY KEY (hash, path)
+                        )",
+                        (),
+                    )?;
+                    Self::create_indexes(conn)?;
+                    current = 3;
+                }
+                1 => {
+                    // Drop legacy `hashes` table and create new `file_hashes`
+                    conn.execute("DROP TABLE IF EXISTS hashes", ())?;
+                    conn.execute(
+                        "CREATE TABLE IF NOT EXISTS file_hashes (
+                            created TEXT NOT NULL,
+                            hash TEXT NOT NULL,
+                            path TEXT NOT NULL,
+                            source_file INTEGER NOT NULL,
+                            PRIMARY KEY (hash, path)
+                        )",
+                        (),
+                    )?;
+                    Self::create_indexes(conn)?;
+                    current = 3;
+                }
+                2 => {
+                    Self::create_indexes(conn)?;
+                    current = 3;
+                }
+                3 => {
+                    // Add the encrypted_sources side table for the cipher_hash → plain_hash
+                    // mapping that backs encrypted dotfile support. The main file_hashes
+                    // table continues to store plaintext hashes for encrypted sources, so
+                    // the existing comparison logic does not need to change.
+                    conn.execute(
+                        "CREATE TABLE IF NOT EXISTS encrypted_sources (
+                            cipher_hash TEXT NOT NULL PRIMARY KEY,
+                            plain_hash  TEXT NOT NULL,
+                            created     TEXT NOT NULL
+                        )",
+                        (),
+                    )?;
+                    conn.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_encrypted_sources_plain ON encrypted_sources(plain_hash)",
+                        (),
+                    )?;
+                    current = 4;
+                }
+                _ => break,
             }
-            1 => {
-                // Migration from version 1: drop old table and create new one
-                conn.execute("DROP TABLE IF EXISTS hashes", ())?;
-                conn.execute(
-                    "CREATE TABLE IF NOT EXISTS file_hashes (
-                        created TEXT NOT NULL,
-                        hash TEXT NOT NULL,
-                        path TEXT NOT NULL,
-                        source_file INTEGER NOT NULL,
-                        PRIMARY KEY (hash, path)
-                    )",
-                    (),
-                )?;
-
-                Self::create_indexes(conn)?;
-
-                // Update to version 3
-                conn.execute(
-                    "INSERT INTO schema_version (version, updated) VALUES (3, datetime('now'))",
-                    [],
-                )?;
-            }
-            2 => {
-                Self::create_indexes(conn)?;
-                conn.execute(
-                    "INSERT INTO schema_version (version, updated) VALUES (3, datetime('now'))",
-                    [],
-                )?;
-            }
-            // Future migrations can be added here
-            _ => {}
+            conn.execute(
+                "INSERT INTO schema_version (version, updated) VALUES (?, datetime('now'))",
+                [current],
+            )?;
         }
         Ok(())
     }
@@ -292,6 +302,31 @@ impl Database {
             .optional()?;
 
         Ok(result)
+    }
+
+    /// Look up the plaintext hash for a given ciphertext hash of an age-encrypted source.
+    /// Returns `Ok(None)` if the ciphertext has not been decrypted before.
+    pub fn get_plain_hash_for_cipher(&self, cipher_hash: &str) -> Result<Option<String>> {
+        let result: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT plain_hash FROM encrypted_sources WHERE cipher_hash = ?",
+                [cipher_hash],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(result)
+    }
+
+    /// Record the plaintext hash associated with a ciphertext hash.
+    /// Idempotent: replaces any existing mapping for the same `cipher_hash`.
+    pub fn record_encrypted_source(&self, cipher_hash: &str, plain_hash: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO encrypted_sources (cipher_hash, plain_hash, created) \
+             VALUES (?, ?, datetime('now'))",
+            [cipher_hash, plain_hash],
+        )?;
+        Ok(())
     }
 
     pub fn cleanup_hashes(&self, days: u32) -> Result<()> {

@@ -144,13 +144,17 @@ pub fn scan_directory_for_dotfiles(
                     )
                 })?
                 .to_path_buf();
-            let target_path = target_prefix.join(relative_path);
 
-            dotfiles.push(Dotfile {
-                source_path,
-                target_path,
-                is_root,
-            });
+            // Strip the `.age` suffix from the target path so that
+            // `<dots>/.config/foo/bar.toml.age` maps to `~/.config/foo/bar.toml`.
+            // `Dotfile::new` infers the encrypted kind from the source path
+            // extension; the relative path used for the *target* is what
+            // changes.
+            let target_relative =
+                crate::dot::encryption::strip_age_suffix(&relative_path).unwrap_or(relative_path);
+            let target_path = target_prefix.join(target_relative);
+
+            dotfiles.push(Dotfile::new(source_path, target_path, is_root));
         }
     }
 

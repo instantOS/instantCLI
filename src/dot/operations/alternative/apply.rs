@@ -45,11 +45,11 @@ pub fn set_alternative(
     let db = Database::new(config.database_path().to_path_buf())?;
     let mut overrides = OverrideConfig::load()?;
 
-    let dotfile = Dotfile {
-        source_path: source.source.source_path.clone(),
-        target_path: target_path.to_path_buf(),
-        is_root: false,
-    };
+    let dotfile = Dotfile::new(
+        source.source.source_path.clone(),
+        target_path.to_path_buf(),
+        false,
+    );
     dotfile.reset(&db)?;
 
     overrides.set_override(
@@ -101,11 +101,11 @@ pub fn remove_override(
         return Ok(());
     }
 
-    let dotfile = Dotfile {
-        source_path: default_source.source_path.clone(),
-        target_path: target_path.to_path_buf(),
-        is_root: false,
-    };
+    let dotfile = Dotfile::new(
+        default_source.source_path.clone(),
+        target_path.to_path_buf(),
+        false,
+    );
     dotfile.reset(&db)?;
 
     emit(
@@ -211,11 +211,7 @@ pub fn add_to_destination(
         fs::create_dir_all(parent)?;
     }
 
-    let dotfile = Dotfile {
-        source_path: dest_path.clone(),
-        target_path: target_path.to_path_buf(),
-        is_root: false,
-    };
+    let dotfile = Dotfile::new(dest_path.clone(), target_path.to_path_buf(), false);
     dotfile.create_source_from_target(db)?;
 
     let repo_path = config.repos_path().join(&dest.repo_name);

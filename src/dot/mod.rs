@@ -4,6 +4,7 @@ pub mod config;
 pub mod db;
 pub mod dotfile;
 pub mod dotfilerepo;
+pub mod encryption;
 pub mod git;
 pub mod insignore;
 pub mod menu;
