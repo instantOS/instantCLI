@@ -690,6 +690,7 @@ mod tests {
             hash_cleanup_days: 30,
             ignored_paths: vec![],
             units: vec![],
+            age_identity_files: vec![],
         };
         // Save the config to disk so that DotfileConfig::load(None) reads it
         let config_toml = toml::to_string(&config).unwrap();

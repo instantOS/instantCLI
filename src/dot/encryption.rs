@@ -13,8 +13,9 @@
 //! Identity discovery for v1:
 //!   1. `$AGE_IDENTITY` env var (colon-separated paths, like `ssh-add` /
 //!      the `age(1)` CLI).
-//!   2. `<instant_config_dir>/age/identity` (single file) if it exists.
-//!   3. `<instant_config_dir>/age/identities/*` (every file in the dir) if
+//!   2. `<instant_config_dir>/dots.toml` `age_identity_files` list, if present.
+//!   3. `<instant_config_dir>/age/identity` (single file) if it exists.
+//!   4. `<instant_config_dir>/age/identities/*` (every file in the dir) if
 //!      the directory exists.
 //!
 //! SSH agent and passphrase prompting are explicitly out of scope for v1 —
@@ -102,7 +103,6 @@ pub fn classify_encrypted_failure(err: &anyhow::Error) -> EncryptedFailureReason
                 | age::DecryptError::InvalidMac
                 | age::DecryptError::KeyDecryptionFailed
                 | age::DecryptError::UnknownFormat => EncryptedFailureReason::CiphertextInvalid,
-                _ => EncryptedFailureReason::CiphertextInvalid,
             };
         }
     }
@@ -167,9 +167,16 @@ pub fn append_age_suffix(path: &Path) -> PathBuf {
 /// readable; does not parse them. Empty list is a normal outcome — callers
 /// must distinguish "no identities configured" from "identities failed to
 /// decrypt" themselves.
+///
+/// Sources (in priority order, deduplicated):
+///   1. `$AGE_IDENTITY` env var (colon-separated paths)
+///   2. `dots.toml` `age_identity_files` list (loaded from the global config)
+///   3. `<instant_config_dir>/age/identity`
+///   4. `<instant_config_dir>/age/identities/*`
 pub fn discover_identity_files() -> Vec<PathBuf> {
     let mut out = Vec::new();
 
+    // 1. $AGE_IDENTITY env var
     if let Ok(val) = std::env::var("AGE_IDENTITY") {
         for raw in val.split(':') {
             let raw = raw.trim();
@@ -183,6 +190,17 @@ pub fn discover_identity_files() -> Vec<PathBuf> {
         }
     }
 
+    // 2. dots.toml age_identity_files
+    if let Ok(config) = crate::dot::config::DotfileConfig::load(None) {
+        for raw in &config.age_identity_files {
+            let expanded = PathBuf::from(shellexpand::tilde(raw).into_owned());
+            if expanded.is_file() && !out.iter().any(|p| p == &expanded) {
+                out.push(expanded);
+            }
+        }
+    }
+
+    // 3-4. Default paths under <instant_config_dir>/age/
     if let Ok(cfg_dir) = paths::instant_config_dir() {
         let single = cfg_dir.join("age").join("identity");
         if single.is_file() && !out.iter().any(|p| p == &single) {
