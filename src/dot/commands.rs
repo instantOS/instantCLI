@@ -93,6 +93,11 @@ pub enum DotCommands {
         #[command(flatten)]
         root_flags: RootFlags,
     },
+    /// Manage dotfile encryption keys, identities, and recipients
+    Key {
+        #[command(subcommand)]
+        command: KeyCommands,
+    },
     Update {
         /// Do not apply dotfiles after updating
         #[arg(long)]
@@ -275,6 +280,51 @@ pub enum PriorityCommands {
     },
     /// List repositories in priority order
     List,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum KeyCommands {
+    /// Generate a new age identity for this machine
+    Init {
+        /// Force generation even if an identity already exists
+        #[arg(long)]
+        force: bool,
+    },
+    /// Authorize a new age recipient public key in the repository metadata
+    Authorize {
+        /// Public key to authorize (age1... or ssh-...). Defaults to the local machine's public key.
+        recipient: Option<String>,
+        /// Add recipient to this repository instead of the default repo
+        #[arg(long, value_name = "REPO")]
+        repo: Option<String>,
+        /// Show what would be done without writing any changes
+        #[arg(long)]
+        dry_run: bool,
+        #[command(flatten)]
+        root_flags: RootFlags,
+    },
+    /// Rotate all keys in a repository with a new set of recipients
+    Rotate {
+        /// New comma-separated list of age recipients (overwrites old recipients)
+        #[arg(long, value_delimiter = ',')]
+        recipients: Vec<String>,
+        /// Rotate keys in this repository instead of the default repo
+        #[arg(long, value_name = "REPO")]
+        repo: Option<String>,
+        /// Show what would be done without writing any changes
+        #[arg(long)]
+        dry_run: bool,
+        #[command(flatten)]
+        root_flags: RootFlags,
+    },
+    /// List authorized recipients and check local identity decryption status
+    Status {
+        /// Check keys for this repository instead of all repositories
+        #[arg(long, value_name = "REPO")]
+        repo: Option<String>,
+        #[command(flatten)]
+        root_flags: RootFlags,
+    },
 }
 
 fn handle_ignore_command(
@@ -578,6 +628,12 @@ pub fn handle_dot_command(
         | DotCommands::Update { root_flags, .. }
         | DotCommands::Status { root_flags, .. }
         | DotCommands::Diff { root_flags, .. } => root_flags.home.as_deref(),
+        DotCommands::Key { command } => match command {
+            KeyCommands::Authorize { root_flags, .. }
+            | KeyCommands::Rotate { root_flags, .. }
+            | KeyCommands::Status { root_flags, .. } => root_flags.home.as_deref(),
+            _ => None,
+        },
         DotCommands::Clone(args) => args.root_flags.home.as_deref(),
         DotCommands::Repo {
             command: RepoCommands::Clone(args),
@@ -768,6 +824,9 @@ pub fn handle_dot_command(
         }
         DotCommands::Priority { command } => {
             handle_priority_command(&mut config, command, config_path)?;
+        }
+        DotCommands::Key { command } => {
+            super::handle_key_command(&config, &db, command, debug)?;
         }
         DotCommands::Menu { gui } => {
             if *gui {
