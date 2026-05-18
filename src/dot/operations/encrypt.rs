@@ -84,7 +84,7 @@ pub fn encrypt_dotfile(
             .context("verifying target modification state")?;
         if !is_unmodified {
             anyhow::bail!(
-                "Target file {} has local modifications. Fetch changes with `ins dot fetch` or reset before encrypting.",
+                "Target file {} has local modifications. Fetch changes with `ins dot add` or reset before encrypting.",
                 dotfile.target_path.display()
             );
         }

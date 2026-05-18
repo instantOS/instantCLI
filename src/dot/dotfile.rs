@@ -315,37 +315,60 @@ impl Dotfile {
     }
 
     pub fn fetch(&self, db: &Database) -> Result<(), anyhow::Error> {
+        use anyhow::Context as _;
+
         if !self.target_path.exists() {
             return Ok(());
         }
 
-        // v1: fetching back into an encrypted source is not yet implemented.
-        // Doing so requires recipient configuration in instantdots.toml and
-        // careful re-encryption to avoid spurious git diffs from new nonces;
-        // see plans/encryption.md.
-        if self.kind == SourceKind::Age {
-            return Err(anyhow::anyhow!(
-                "fetch is not yet supported for age-encrypted dotfiles ({}): re-encrypt manually with `age` for now",
-                self.source_path.display()
-            ));
+        match self.kind {
+            SourceKind::Plain => {
+                let target_hash = self.get_file_hash(&self.target_path, false, db)?;
+
+                let should_copy = if self.source_path.exists() {
+                    let source_hash = self.get_file_hash(&self.source_path, true, db)?;
+                    target_hash != source_hash
+                } else {
+                    true
+                };
+
+                if should_copy {
+                    fs::copy(&self.target_path, &self.source_path)?;
+                    invalidate_cache(&self.source_path);
+                    // Update the source file's hash in the database after copying
+                    let _ = self.get_file_hash(&self.source_path, true, db);
+                    let _ = self.get_file_hash(&self.target_path, false, db);
+                }
+            }
+            SourceKind::Age => {
+                let config = crate::dot::config::DotfileConfig::load(None)?;
+                let repo_name = crate::dot::git::get_repo_name_for_dotfile(self, &config);
+                let dotfile_repo =
+                    crate::dot::dotfilerepo::DotfileRepo::new(&config, repo_name.to_string())?;
+
+                let recipients =
+                    crate::dot::encryption::parse_recipients(&dotfile_repo.meta.age_recipients)
+                        .context("loading repository public keys for re-encryption")?;
+
+                let target_hash = self.get_file_hash(&self.target_path, false, db)?;
+                let plain_hash = self.get_file_hash(&self.source_path, true, db)?;
+
+                if target_hash != plain_hash {
+                    let plaintext = fs::read(&self.target_path)?;
+                    let ciphertext = encryption::encrypt_bytes_to_armored(&plaintext, &recipients)?;
+                    fs::write(&self.source_path, &ciphertext)?;
+                    invalidate_cache(&self.source_path);
+
+                    // Record the new plain hash and cipher hash in the database
+                    let new_plain_hash = Self::hash_bytes(&plaintext);
+                    let new_cipher_hash = Self::compute_hash(&self.source_path)?;
+                    db.record_encrypted_source(&new_cipher_hash, &new_plain_hash)?;
+                    db.add_hash(&new_plain_hash, &self.source_path, DotFileType::SourceFile)?;
+                    db.add_hash(&new_plain_hash, &self.target_path, DotFileType::TargetFile)?;
+                }
+            }
         }
 
-        let target_hash = self.get_file_hash(&self.target_path, false, db)?;
-
-        let should_copy = if self.source_path.exists() {
-            let source_hash = self.get_file_hash(&self.source_path, true, db)?;
-            target_hash != source_hash
-        } else {
-            true
-        };
-
-        if should_copy {
-            fs::copy(&self.target_path, &self.source_path)?;
-            invalidate_cache(&self.source_path);
-            // Update the source file's hash in the database after copying
-            let _ = self.get_file_hash(&self.source_path, true, db);
-            let _ = self.get_file_hash(&self.target_path, false, db);
-        }
         Ok(())
     }
 
@@ -560,5 +583,141 @@ mod tests {
         let new_hash = Dotfile::compute_hash(&dotfile.source_path).unwrap();
 
         assert_ne!(initial_hash, new_hash, "Hash should change after fetch");
+    }
+
+    #[test]
+    #[serial]
+    fn test_fetch_age_encrypted_source() {
+        use crate::dot::config::{DotfileConfig, Repo};
+        use crate::dot::encryption;
+        use crate::dot::types::RepoMetaData;
+        use std::io::Write as _;
+
+        let dir = tempdir().unwrap();
+        let config_path = dir.path().join("dots.toml");
+        let repos_dir = dir.path().join("repos");
+        let target_dir = dir.path().join("target");
+        let repo_path = repos_dir.join("my-repo");
+        let dots_dir = repo_path.join("dots");
+
+        fs::create_dir_all(&dots_dir).unwrap();
+        fs::create_dir_all(&target_dir).unwrap();
+
+        // 1. Generate a throwaway age identity and key
+        let identity = age::x25519::Identity::generate();
+        let recipient = identity.to_public();
+        let identity_file = dir.path().join("identity.txt");
+        fs::write(&identity_file, identity.to_string().expose_secret())
+            .expect("write identity file");
+
+        // 2. Set up age recipients string
+        let recipient_str = recipient.to_string();
+
+        // 3. Write instantdots.toml inside the repository
+        let metadata = RepoMetaData {
+            name: "my-repo".to_string(),
+            description: Some("My personal secrets".to_string()),
+            dots_dirs: vec!["dots".to_string()],
+            age_recipients: vec![recipient_str.clone()],
+            ..Default::default()
+        };
+        let meta_toml = toml::to_string(&metadata).unwrap();
+        fs::write(repo_path.join("instantdots.toml"), meta_toml).unwrap();
+
+        // 4. Create the global dots.toml config
+        let repo_config = Repo {
+            url: "https://example.com/dots.git".to_string(),
+            name: "my-repo".to_string(),
+            branch: None,
+            enabled: true,
+            read_only: false,
+            active_subdirectories: Some(vec!["dots".to_string()]),
+            metadata: None,
+        };
+        let config = DotfileConfig {
+            repos: vec![repo_config],
+            repos_dir: crate::common::tilde_path::TildePath::new(repos_dir.clone()),
+            database_dir: crate::common::tilde_path::TildePath::new(dir.path().join("test.db")),
+            clone_depth: 1,
+            hash_cleanup_days: 30,
+            ignored_paths: vec![],
+            units: vec![],
+        };
+        // Save the config to disk so that DotfileConfig::load(None) reads it
+        let config_toml = toml::to_string(&config).unwrap();
+        fs::write(&config_path, config_toml).unwrap();
+
+        // 5. Encrypt initial plaintext "initial secret" into repository source
+        let initial_plaintext = b"initial secret";
+        let encryptor =
+            age::Encryptor::with_recipients(std::iter::once(&recipient as &dyn age::Recipient))
+                .expect("build encryptor");
+        let source_path = dots_dir.join("secrets.txt.age");
+        let cipher_file = fs::File::create(&source_path).unwrap();
+        let mut writer = encryptor.wrap_output(cipher_file).unwrap();
+        writer.write_all(initial_plaintext).unwrap();
+        writer.finish().unwrap();
+
+        // 6. Set up the local target file with modified content "modified secret"
+        let target_path = target_dir.join("secrets.txt");
+        let modified_plaintext = b"modified secret";
+        fs::write(&target_path, modified_plaintext).unwrap();
+
+        // 7. Point AGE_IDENTITY at our identity file for decryption during status checks
+        let prev = std::env::var_os("AGE_IDENTITY");
+        let prev_config = std::env::var_os("XDG_CONFIG_HOME");
+        // SAFETY: serialized via #[serial]
+        unsafe {
+            std::env::set_var("AGE_IDENTITY", &identity_file);
+            // Point XDG_CONFIG_HOME to our temp dir so load(None) finds dots.toml
+            let config_home = dir.path().join(".config");
+            fs::create_dir_all(config_home.join("instant")).unwrap();
+            fs::copy(&config_path, config_home.join("instant").join("dots.toml")).unwrap();
+            std::env::set_var("XDG_CONFIG_HOME", &config_home);
+        }
+
+        let db = Database::new(dir.path().join("test.db")).unwrap();
+        let dotfile = Dotfile::new(source_path.clone(), target_path.clone(), false);
+        assert_eq!(dotfile.kind, super::SourceKind::Age);
+
+        // Pre-register initial plain/cipher hashes so target is detected as modified from source
+        let initial_cipher_hash = Dotfile::compute_hash(&source_path).unwrap();
+        let initial_plain_hash = Dotfile::hash_bytes(initial_plaintext);
+        db.record_encrypted_source(&initial_cipher_hash, &initial_plain_hash)
+            .unwrap();
+        db.add_hash(&initial_plain_hash, &source_path, DotFileType::SourceFile)
+            .unwrap();
+        db.add_hash(&initial_plain_hash, &target_path, DotFileType::TargetFile)
+            .unwrap();
+
+        // Run fetch (sync target -> source)
+        dotfile.fetch(&db).expect("fetch encrypted dotfile");
+
+        // Verify the source ciphertext has changed and can be decrypted to the modified plaintext
+        let new_cipher_hash = Dotfile::compute_hash(&source_path).unwrap();
+        assert_ne!(
+            initial_cipher_hash, new_cipher_hash,
+            "Ciphertext hash must have updated"
+        );
+
+        // Decrypt the newly generated source file to verify its contents
+        let identities = encryption::load_identities().unwrap();
+        let decrypted_bytes = encryption::decrypt_file_to_bytes(&source_path, &identities).unwrap();
+        assert_eq!(
+            decrypted_bytes, modified_plaintext,
+            "Decrypted bytes must match modified plaintext"
+        );
+
+        // Restore env
+        unsafe {
+            match prev {
+                Some(v) => std::env::set_var("AGE_IDENTITY", v),
+                None => std::env::remove_var("AGE_IDENTITY"),
+            }
+            match prev_config {
+                Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
+                None => std::env::remove_var("XDG_CONFIG_HOME"),
+            }
+        }
     }
 }
