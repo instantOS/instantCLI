@@ -350,6 +350,14 @@ impl Database {
             (),
         )?;
 
+        // Clean up orphaned encrypted source cache entries
+        self.conn.execute(
+            "DELETE FROM encrypted_sources WHERE plain_hash NOT IN (
+                SELECT DISTINCT hash FROM file_hashes
+            )",
+            (),
+        )?;
+
         Ok(())
     }
 }

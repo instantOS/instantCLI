@@ -277,6 +277,20 @@ pub fn merge_dotfile(
     let mut modified_count = 0;
 
     for dotfile in dotfiles_in_path {
+        if dotfile.kind == crate::dot::dotfile::SourceKind::Age {
+            emit(
+                Level::Warn,
+                "dot.merge.encrypted_unsupported",
+                &format!(
+                    "{} Merging is not yet supported for encrypted files: {}",
+                    char::from(NerdFont::ShieldAlert),
+                    crate::dot::display_path(&dotfile.target_path, dotfile.is_root).yellow()
+                ),
+                None,
+            );
+            continue;
+        }
+
         match should_skip_dotfile(dotfile, config, db, &home, verbose)? {
             Some(DotfileSkip::ReadOnly) => continue,
             Some(DotfileSkip::Unmodified) => {

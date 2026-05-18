@@ -47,15 +47,51 @@ pub fn reset_modified(
             continue;
         }
 
-        if !dotfile.is_target_unmodified(db)? {
-            dotfile.reset(db)?;
-            let relative_path = crate::dot::display_path(&dotfile.target_path, dotfile.is_root);
-            println!(
-                "{} Reset {} ",
-                char::from(NerdFont::Check),
-                relative_path.green()
-            );
-            reset_count += 1;
+        let is_unmodified = match dotfile.is_target_unmodified(db) {
+            Ok(unmodified) => unmodified,
+            Err(_) if dotfile.kind == crate::dot::dotfile::SourceKind::Age => {
+                emit(
+                    Level::Warn,
+                    "dot.reset.skipped_encrypted",
+                    &format!(
+                        "{} Skipped reset of encrypted file (identity required): {}",
+                        char::from(NerdFont::ShieldAlert),
+                        crate::dot::display_path(&dotfile.target_path, dotfile.is_root).yellow()
+                    ),
+                    None,
+                );
+                continue;
+            }
+            Err(err) => return Err(err),
+        };
+
+        if !is_unmodified {
+            match dotfile.reset(db) {
+                Ok(_) => {
+                    let relative_path =
+                        crate::dot::display_path(&dotfile.target_path, dotfile.is_root);
+                    println!(
+                        "{} Reset {} ",
+                        char::from(NerdFont::Check),
+                        relative_path.green()
+                    );
+                    reset_count += 1;
+                }
+                Err(_) if dotfile.kind == crate::dot::dotfile::SourceKind::Age => {
+                    emit(
+                        Level::Warn,
+                        "dot.reset.skipped_encrypted",
+                        &format!(
+                            "{} Skipped reset of encrypted file (identity required): {}",
+                            char::from(NerdFont::ShieldAlert),
+                            crate::dot::display_path(&dotfile.target_path, dotfile.is_root)
+                                .yellow()
+                        ),
+                        None,
+                    );
+                }
+                Err(err) => return Err(err),
+            }
         } else {
             clean_count += 1;
         }
