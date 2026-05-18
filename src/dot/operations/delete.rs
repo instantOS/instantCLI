@@ -14,7 +14,6 @@ type DotfileMap = std::collections::HashMap<std::path::PathBuf, crate::dot::Dotf
 #[derive(Clone)]
 struct DotfileEntry {
     display: String,
-    source_path: std::path::PathBuf,
     target_path: std::path::PathBuf,
 }
 

@@ -223,6 +223,18 @@ pub enum DotCommands {
         #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::completions::repo_name_completion))]
         name: Option<String>,
     },
+    /// Delete a tracked dotfile (removes from repo, home directory, and database)
+    Delete {
+        /// Path to the dotfile to delete (omit for interactive picker)
+        #[arg(value_hint = ValueHint::AnyPath)]
+        path: Option<String>,
+        /// Delete all tracked dotfiles under a directory
+        #[arg(long, short)]
+        recursive: bool,
+        /// Show what would be deleted without actually deleting
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -848,6 +860,15 @@ pub fn handle_dot_command(
         }
         DotCommands::Lg { name } => {
             super::repo::commands::interactive::open_repo_lazygit(&config, &db, name.as_deref())?;
+        }
+        DotCommands::Delete {
+            path,
+            recursive,
+            dry_run,
+        } => {
+            super::operations::delete::delete_dotfiles(
+                &config, &db, path.as_deref(), *recursive, *dry_run, debug,
+            )?;
         }
     }
 
