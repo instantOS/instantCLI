@@ -233,6 +233,71 @@ pub fn display_path(path: &Path, is_root: bool) -> String {
     }
 }
 
+pub fn resolve_dotfile_to_source(
+    config: &DotfileConfig,
+    db: &Database,
+    target_path: &Path,
+    repo: Option<&str>,
+    subdir: Option<&str>,
+    include_root: bool,
+) -> Result<Dotfile> {
+    if repo.is_none() && subdir.is_none() {
+        let all_dotfiles = get_all_dotfiles(config, db, include_root)?;
+        return all_dotfiles.get(target_path).cloned().ok_or_else(|| {
+            anyhow::anyhow!("no tracked dotfile found at {}", target_path.display())
+        });
+    }
+
+    let repo = repo.ok_or_else(|| anyhow::anyhow!("--subdir requires --repo"))?;
+    let sources = crate::dot::sources::list_sources_for_target(config, target_path)?;
+    let matching: Vec<crate::dot::override_config::DotfileSource> = sources
+        .into_iter()
+        .filter(|source| source.repo_name == repo && subdir.is_none_or(|s| source.subdir_name == s))
+        .collect();
+
+    match matching.as_slice() {
+        [] => Err(anyhow::anyhow!(
+            "no tracked source found for {} in repository '{}'",
+            target_path.display(),
+            repo
+        )),
+        [source] => Ok(Dotfile::new(
+            source.source_path.clone(),
+            target_path.to_path_buf(),
+            !target_path.starts_with(home_dir()),
+        )),
+        _ => Err(anyhow::anyhow!(
+            "multiple sources found for {} in repository '{}'; pass --subdir",
+            target_path.display(),
+            repo
+        )),
+    }
+}
+
+pub fn persist_file_safely(path: &Path, content: &[u8], description: &str) -> Result<()> {
+    use anyhow::Context;
+    use std::io::Write;
+
+    let parent = path.parent().ok_or_else(|| {
+        anyhow::anyhow!(
+            "{} has no parent directory: {}",
+            description,
+            path.display()
+        )
+    })?;
+    std::fs::create_dir_all(parent)
+        .with_context(|| format!("creating directory {}", parent.display()))?;
+
+    let mut tmp = tempfile::NamedTempFile::new_in(parent)
+        .with_context(|| format!("creating temporary file in {}", parent.display()))?;
+    tmp.write_all(content)
+        .with_context(|| format!("writing temporary file for {}", path.display()))?;
+    tmp.flush()?;
+    tmp.persist(path)
+        .map_err(|err| anyhow::anyhow!("persisting {} {}: {}", description, path.display(), err))?;
+    Ok(())
+}
+
 use crate::dot::dotfilerepo::DotfileDir;
 
 #[cfg(test)]

@@ -333,10 +333,8 @@ impl Database {
         let path_str = path
             .to_str()
             .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 path: {}", path.display()))?;
-        self.conn.execute(
-            "DELETE FROM file_hashes WHERE path = ?",
-            [path_str],
-        )?;
+        self.conn
+            .execute("DELETE FROM file_hashes WHERE path = ?", [path_str])?;
         Ok(())
     }
 

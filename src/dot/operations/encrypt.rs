@@ -23,7 +23,14 @@ pub fn encrypt_dotfile(
     debug: bool,
 ) -> Result<()> {
     let target_path = resolve_dotfile_path(path, include_root)?;
-    let dotfile = resolve_dotfile_to_encrypt(config, db, &target_path, repo, subdir, include_root)?;
+    let dotfile = crate::dot::utils::resolve_dotfile_to_source(
+        config,
+        db,
+        &target_path,
+        repo,
+        subdir,
+        include_root,
+    )?;
 
     if dotfile.kind == SourceKind::Age {
         anyhow::bail!(
@@ -114,7 +121,11 @@ pub fn encrypt_dotfile(
 
     let ciphertext = crate::dot::encryption::encrypt_bytes_to_armored(&plaintext, &recipients)
         .context("encrypting dotfile plaintext")?;
-    persist_encrypted_source(&encrypted_source_path, &ciphertext)?;
+    crate::dot::utils::persist_file_safely(
+        &encrypted_source_path,
+        &ciphertext,
+        "encrypted source",
+    )?;
     fs::remove_file(&dotfile.source_path).with_context(|| {
         format!(
             "removing plaintext source {}",
@@ -152,64 +163,6 @@ pub fn encrypt_dotfile(
     );
     print_history_warning();
 
-    Ok(())
-}
-
-fn resolve_dotfile_to_encrypt(
-    config: &DotfileConfig,
-    db: &Database,
-    target_path: &Path,
-    repo: Option<&str>,
-    subdir: Option<&str>,
-    include_root: bool,
-) -> Result<Dotfile> {
-    if repo.is_none() && subdir.is_none() {
-        let all_dotfiles = get_all_dotfiles(config, db, include_root)?;
-        return all_dotfiles
-            .get(target_path)
-            .cloned()
-            .ok_or_else(|| anyhow!("no tracked dotfile found at {}", target_path.display()));
-    }
-
-    let repo = repo.ok_or_else(|| anyhow!("--subdir requires --repo"))?;
-    let sources = crate::dot::sources::list_sources_for_target(config, target_path)?;
-    let matching: Vec<DotfileSource> = sources
-        .into_iter()
-        .filter(|source| source.repo_name == repo && subdir.is_none_or(|s| source.subdir_name == s))
-        .collect();
-
-    match matching.as_slice() {
-        [] => Err(anyhow!(
-            "no tracked source found for {} in repository '{}'",
-            target_path.display(),
-            repo
-        )),
-        [source] => Ok(Dotfile::new(
-            source.source_path.clone(),
-            target_path.to_path_buf(),
-            !target_path.starts_with(home_dir()),
-        )),
-        _ => Err(anyhow!(
-            "multiple sources found for {} in repository '{}'; pass --subdir",
-            target_path.display(),
-            repo
-        )),
-    }
-}
-
-fn persist_encrypted_source(path: &Path, ciphertext: &[u8]) -> Result<()> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| anyhow!("encrypted source has no parent: {}", path.display()))?;
-    fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
-
-    let mut tmp = tempfile::NamedTempFile::new_in(parent)
-        .with_context(|| format!("creating temporary file in {}", parent.display()))?;
-    tmp.write_all(ciphertext)
-        .with_context(|| format!("writing encrypted temporary file for {}", path.display()))?;
-    tmp.flush()?;
-    tmp.persist(path)
-        .map_err(|err| anyhow!("persisting encrypted source {}: {}", path.display(), err))?;
     Ok(())
 }
 

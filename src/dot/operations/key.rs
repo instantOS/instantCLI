@@ -6,11 +6,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
+use crate::dot::commands::KeyCommands;
 use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
-use crate::dot::commands::KeyCommands;
-use crate::dot::dotfilerepo::DotfileRepo;
 use crate::dot::dotfile::Dotfile;
+use crate::dot::dotfilerepo::DotfileRepo;
 use crate::ui::prelude::*;
 
 /// Primary entry point for executing key subcommands.
@@ -27,7 +27,14 @@ pub fn handle_key_command(
             repo,
             dry_run,
             ..
-        } => handle_authorize(config, db, recipient.as_deref(), repo.as_deref(), *dry_run, debug),
+        } => handle_authorize(
+            config,
+            db,
+            recipient.as_deref(),
+            repo.as_deref(),
+            *dry_run,
+            debug,
+        ),
         KeyCommands::Rotate {
             recipients,
             repo,
@@ -139,7 +146,9 @@ fn handle_authorize(
     } else {
         let local_pubkeys = get_local_public_keys()?;
         if local_pubkeys.is_empty() {
-            anyhow::bail!("No local age identity found. Please run `ins dot key init` first to generate one.");
+            anyhow::bail!(
+                "No local age identity found. Please run `ins dot key init` first to generate one."
+            );
         } else if local_pubkeys.len() > 1 {
             anyhow::bail!(
                 "Multiple local age identities found. Please specify which public key to authorize explicitly:\n{:?}",
@@ -185,7 +194,9 @@ fn handle_authorize(
 
     let identities = crate::dot::encryption::load_identities()?;
     if !encrypted_files.is_empty() && identities.is_empty() {
-        anyhow::bail!("Repository has existing encrypted files, but no local age identities were found. Please configure your identity first.");
+        anyhow::bail!(
+            "Repository has existing encrypted files, but no local age identities were found. Please configure your identity first."
+        );
     }
     for file in &encrypted_files {
         if let Err(err) = crate::dot::encryption::decrypt_file_to_bytes(file, &identities) {
@@ -288,7 +299,9 @@ fn handle_rotate(
 
     let identities = crate::dot::encryption::load_identities()?;
     if !encrypted_files.is_empty() && identities.is_empty() {
-        anyhow::bail!("Repository has existing encrypted files, but no local age identities were found. Please configure your identity first.");
+        anyhow::bail!(
+            "Repository has existing encrypted files, but no local age identities were found. Please configure your identity first."
+        );
     }
     for file in &encrypted_files {
         if let Err(err) = crate::dot::encryption::decrypt_file_to_bytes(file, &identities) {
@@ -396,7 +409,9 @@ fn handle_status(config: &DotfileConfig, target_repo_opt: Option<&str>) -> Resul
             repo_path.display()
         );
         if recipients.is_empty() {
-            println!("  👥 Configured Recipients: None (Dotfiles in this repository are not encrypted)");
+            println!(
+                "  👥 Configured Recipients: None (Dotfiles in this repository are not encrypted)"
+            );
             println!();
             continue;
         }
@@ -438,7 +453,9 @@ fn handle_status(config: &DotfileConfig, target_repo_opt: Option<&str>) -> Resul
                     "  ❌ Local Decryption Status: {} Unauthorized!",
                     char::from(NerdFont::Warning).to_string().red()
                 );
-                println!("     👉 Hint: Place the matching private key in ~/.config/instant/age/identity");
+                println!(
+                    "     👉 Hint: Place the matching private key in ~/.config/instant/age/identity"
+                );
             }
         }
         println!();
@@ -538,22 +555,28 @@ mod tests {
         // 3. Encrypt an initial file for id1
         let plain_bytes = b"super secret password";
         let parsed_recipients = crate::dot::encryption::parse_recipients(&[pub1.clone()]).unwrap();
-        let cipher_bytes = crate::dot::encryption::encrypt_bytes_to_armored(plain_bytes, &parsed_recipients).unwrap();
+        let cipher_bytes =
+            crate::dot::encryption::encrypt_bytes_to_armored(plain_bytes, &parsed_recipients)
+                .unwrap();
         let encrypted_file_path = repo_dir.join("dots/secrets.txt.age");
         fs::write(&encrypted_file_path, &cipher_bytes).unwrap();
 
         // 4. Setup mock DotfileConfig and DB
         let config_file = temp.path().join("dots.toml");
-        fs::write(&config_file, format!(
-            r#"
+        fs::write(
+            &config_file,
+            format!(
+                r#"
             clone_depth = 1
             [[repos]]
             url = "{}"
             name = "my-repo"
             enabled = true
             "#,
-            repo_dir.to_string_lossy()
-        )).unwrap();
+                repo_dir.to_string_lossy()
+            ),
+        )
+        .unwrap();
 
         let mut config = DotfileConfig::load(Some(config_file.to_str().unwrap())).unwrap();
         config.repos_dir = crate::common::TildePath::new(temp.path().to_path_buf());
@@ -579,8 +602,17 @@ mod tests {
 
         // 7. Verify we can decrypt with the new key (id2)
         let newly_encrypted_bytes = fs::read(&encrypted_file_path).unwrap();
-        let decryptor = age::Decryptor::new_buffered(age::armor::ArmoredReader::new(newly_encrypted_bytes.as_slice())).unwrap();
-        let mut reader = decryptor.decrypt(vec![Box::new(id2) as Box<dyn age::Identity>].iter().map(|i| i.as_ref() as &dyn age::Identity)).unwrap();
+        let decryptor = age::Decryptor::new_buffered(age::armor::ArmoredReader::new(
+            newly_encrypted_bytes.as_slice(),
+        ))
+        .unwrap();
+        let mut reader = decryptor
+            .decrypt(
+                vec![Box::new(id2) as Box<dyn age::Identity>]
+                    .iter()
+                    .map(|i| i.as_ref() as &dyn age::Identity),
+            )
+            .unwrap();
         let mut decrypted_payload = Vec::new();
         std::io::Read::read_to_end(&mut reader, &mut decrypted_payload).unwrap();
         assert_eq!(decrypted_payload, plain_bytes);

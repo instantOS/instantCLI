@@ -23,7 +23,14 @@ pub fn decrypt_dotfile(
     debug: bool,
 ) -> Result<()> {
     let target_path = resolve_dotfile_path(path, include_root)?;
-    let dotfile = resolve_dotfile_to_decrypt(config, db, &target_path, repo, subdir, include_root)?;
+    let dotfile = crate::dot::utils::resolve_dotfile_to_source(
+        config,
+        db,
+        &target_path,
+        repo,
+        subdir,
+        include_root,
+    )?;
 
     if dotfile.kind != SourceKind::Age {
         anyhow::bail!(
@@ -83,8 +90,8 @@ pub fn decrypt_dotfile(
     }
 
     // Load identities for decryption
-    let identities = crate::dot::encryption::load_identities()
-        .context("loading age decryption identities")?;
+    let identities =
+        crate::dot::encryption::load_identities().context("loading age decryption identities")?;
 
     // Decrypt source to memory
     let plaintext = crate::dot::encryption::decrypt_file_to_bytes(&dotfile.source_path, &identities)
@@ -120,7 +127,7 @@ pub fn decrypt_dotfile(
     let cipher_hash = Dotfile::compute_hash(&dotfile.source_path)?;
 
     // Persist plaintext source file
-    persist_plaintext_source(&plain_source_path, &plaintext)?;
+    crate::dot::utils::persist_file_safely(&plain_source_path, &plaintext, "plaintext source")?;
 
     // Remove old .age source file
     fs::remove_file(&dotfile.source_path).with_context(|| {
@@ -163,64 +170,6 @@ pub fn decrypt_dotfile(
         })),
     );
 
-    Ok(())
-}
-
-fn resolve_dotfile_to_decrypt(
-    config: &DotfileConfig,
-    db: &Database,
-    target_path: &Path,
-    repo: Option<&str>,
-    subdir: Option<&str>,
-    include_root: bool,
-) -> Result<Dotfile> {
-    if repo.is_none() && subdir.is_none() {
-        let all_dotfiles = get_all_dotfiles(config, db, include_root)?;
-        return all_dotfiles
-            .get(target_path)
-            .cloned()
-            .ok_or_else(|| anyhow!("no tracked dotfile found at {}", target_path.display()));
-    }
-
-    let repo = repo.ok_or_else(|| anyhow!("--subdir requires --repo"))?;
-    let sources = crate::dot::sources::list_sources_for_target(config, target_path)?;
-    let matching: Vec<DotfileSource> = sources
-        .into_iter()
-        .filter(|source| source.repo_name == repo && subdir.is_none_or(|s| source.subdir_name == s))
-        .collect();
-
-    match matching.as_slice() {
-        [] => Err(anyhow!(
-            "no tracked source found for {} in repository '{}'",
-            target_path.display(),
-            repo
-        )),
-        [source] => Ok(Dotfile::new(
-            source.source_path.clone(),
-            target_path.to_path_buf(),
-            !target_path.starts_with(home_dir()),
-        )),
-        _ => Err(anyhow!(
-            "multiple sources found for {} in repository '{}'; pass --subdir",
-            target_path.display(),
-            repo
-        )),
-    }
-}
-
-fn persist_plaintext_source(path: &Path, plaintext: &[u8]) -> Result<()> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| anyhow!("plaintext source has no parent: {}", path.display()))?;
-    fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
-
-    let mut tmp = tempfile::NamedTempFile::new_in(parent)
-        .with_context(|| format!("creating temporary file in {}", parent.display()))?;
-    tmp.write_all(plaintext)
-        .with_context(|| format!("writing plaintext temporary file for {}", path.display()))?;
-    tmp.flush()?;
-    tmp.persist(path)
-        .map_err(|err| anyhow!("persisting plaintext source {}: {}", path.display(), err))?;
     Ok(())
 }
 
@@ -313,7 +262,10 @@ mod tests {
         assert_eq!(plaintext_content, "target secret");
 
         // Verify SQLite hashes
-        assert!(db.source_hash_exists_anywhere(&Dotfile::hash_bytes(b"target secret")).unwrap());
+        assert!(
+            db.source_hash_exists_anywhere(&Dotfile::hash_bytes(b"target secret"))
+                .unwrap()
+        );
         assert!(!db.source_hash_exists_anywhere("invalid").unwrap());
 
         unsafe {
