@@ -163,7 +163,9 @@ pub(super) fn handle_repo_encryption(
                             let key = key.trim();
                             if !key.is_empty() {
                                 if !key.starts_with("age1") && !key.starts_with("ssh-") {
-                                    crate::menu_utils::FzfWrapper::message("Invalid key prefix. Press Enter to continue")?;
+                                    crate::menu_utils::FzfWrapper::message(
+                                        "Invalid key prefix. Press Enter to continue",
+                                    )?;
                                 } else {
                                     crate::dot::operations::key::handle_authorize(
                                         config,
@@ -173,7 +175,9 @@ pub(super) fn handle_repo_encryption(
                                         false,
                                         debug,
                                     )?;
-                                    crate::menu_utils::FzfWrapper::message("Press Enter to continue")?;
+                                    crate::menu_utils::FzfWrapper::message(
+                                        "Press Enter to continue",
+                                    )?;
                                 }
                             }
                         }
@@ -217,7 +221,9 @@ pub(super) fn handle_repo_encryption(
                                         false,
                                         debug,
                                     )?;
-                                    crate::menu_utils::FzfWrapper::message("Press Enter to continue")?;
+                                    crate::menu_utils::FzfWrapper::message(
+                                        "Press Enter to continue",
+                                    )?;
                                 }
                             }
                         }

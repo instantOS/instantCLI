@@ -43,10 +43,7 @@ pub fn delete_dotfiles(
         emit(
             Level::Info,
             "dot.delete.no_files",
-            &format!(
-                "{} No dotfiles to delete",
-                char::from(NerdFont::Info)
-            ),
+            &format!("{} No dotfiles to delete", char::from(NerdFont::Info)),
             None,
         );
         return Ok(());
@@ -171,11 +168,7 @@ fn pick_dotfiles_fzf(all_dotfiles: &DotfileMap) -> Result<Vec<crate::dot::Dotfil
     }
 }
 
-fn delete_single_dotfile(
-    db: &Database,
-    dotfile: &crate::dot::Dotfile,
-    debug: bool,
-) -> Result<()> {
+fn delete_single_dotfile(db: &Database, dotfile: &crate::dot::Dotfile, debug: bool) -> Result<()> {
     let display = crate::dot::display_path(&dotfile.target_path, dotfile.is_root);
 
     // Delete target file from home directory
@@ -192,8 +185,10 @@ fn delete_single_dotfile(
 
         // Stage the deletion in git
         if let Some(repo_path) = find_repo_root(&dotfile.source_path) {
-            let relative =
-                dotfile.source_path.strip_prefix(&repo_path).unwrap_or(&dotfile.source_path);
+            let relative = dotfile
+                .source_path
+                .strip_prefix(&repo_path)
+                .unwrap_or(&dotfile.source_path);
             crate::dot::git::repo_ops::git_add(&repo_path, relative, debug)?;
         }
     }
@@ -205,7 +200,11 @@ fn delete_single_dotfile(
     // Clean up empty parent directories in home
     clean_empty_parents(&dotfile.target_path);
 
-    println!("{} Deleted {}", char::from(NerdFont::Check), display.green());
+    println!(
+        "{} Deleted {}",
+        char::from(NerdFont::Check),
+        display.green()
+    );
 
     Ok(())
 }
@@ -225,9 +224,7 @@ fn clean_empty_parents(path: &std::path::Path) {
         if parent.file_name().is_some_and(|n| n == "dots") {
             break;
         }
-        if parent.is_dir()
-            && std::fs::read_dir(parent).map_or(true, |mut d| d.next().is_none())
-        {
+        if parent.is_dir() && std::fs::read_dir(parent).map_or(true, |mut d| d.next().is_none()) {
             let _ = std::fs::remove_dir(parent);
             dir = parent.parent();
         } else {

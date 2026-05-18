@@ -305,15 +305,6 @@ fn reencrypt_repository(
             "Repository has existing encrypted files, but no local age identities were found. Please configure your identity first."
         );
     }
-    for file in &encrypted_files {
-        if let Err(err) = crate::dot::encryption::decrypt_file_to_bytes(file, &identities) {
-            anyhow::bail!(
-                "Decryption verification failed for '{}'. You must possess a valid identity key matching the existing recipients before modifying recipients.\nError: {}",
-                file.display(),
-                err
-            );
-        }
-    }
 
     if dry_run {
         println!("--- DRY RUN ---");
@@ -334,11 +325,17 @@ fn reencrypt_repository(
 
     let parsed_recipients = crate::dot::encryption::parse_recipients(new_recipients_str)?;
 
-    // Phase 1: Decrypt and re-encrypt all files in memory
+    // Decrypt and re-encrypt all files in memory first.
     // This prevents a partial failure from leaving the repository in a mixed state.
     let mut pending_writes = Vec::new();
     for file in &encrypted_files {
-        let plain_bytes = crate::dot::encryption::decrypt_file_to_bytes(file, &identities)?;
+        let plain_bytes = crate::dot::encryption::decrypt_file_to_bytes(file, &identities)
+            .with_context(|| {
+                format!(
+                    "Decryption failed for '{}'. You must possess a valid identity key matching the existing recipients before modifying recipients.",
+                    file.display()
+                )
+            })?;
         let plain_hash = Dotfile::hash_bytes(&plain_bytes);
         let cipher_bytes =
             crate::dot::encryption::encrypt_bytes_to_armored(&plain_bytes, &parsed_recipients)?;

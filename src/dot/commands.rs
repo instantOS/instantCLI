@@ -867,7 +867,12 @@ pub fn handle_dot_command(
             dry_run,
         } => {
             super::operations::delete::delete_dotfiles(
-                &config, &db, path.as_deref(), *recursive, *dry_run, debug,
+                &config,
+                &db,
+                path.as_deref(),
+                *recursive,
+                *dry_run,
+                debug,
             )?;
         }
     }

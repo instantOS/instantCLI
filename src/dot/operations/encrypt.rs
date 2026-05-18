@@ -72,15 +72,6 @@ pub fn encrypt_dotfile(
         );
     }
 
-    // Always encrypt the repository source file as the source of truth
-    let plaintext = fs::read(&dotfile.source_path).with_context(|| {
-        format!(
-            "reading plaintext from source file {}",
-            dotfile.source_path.display()
-        )
-    })?;
-    let plain_hash = Dotfile::hash_bytes(&plaintext);
-
     // If target exists, verify it doesn't have uncommitted modifications that would be lost
     if dotfile.target_path.exists() {
         let is_unmodified = dotfile
@@ -93,6 +84,15 @@ pub fn encrypt_dotfile(
             );
         }
     }
+
+    // Always encrypt the repository source file as the source of truth
+    let plaintext = fs::read(&dotfile.source_path).with_context(|| {
+        format!(
+            "reading plaintext from source file {}",
+            dotfile.source_path.display()
+        )
+    })?;
+    let plain_hash = Dotfile::hash_bytes(&plaintext);
 
     if dry_run {
         emit(

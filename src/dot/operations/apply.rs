@@ -64,15 +64,13 @@ pub fn apply_all(
 
     let mut stats = ApplyStats::default();
 
+    let all_units = get_all_units(config, db)?;
+    let modified_units = get_modified_units(&all_dotfiles, &all_units, db)?;
+
     if !root_only {
         for dotfile in &home_dotfiles {
-            let action = determine_and_apply_action(
-                dotfile,
-                &get_all_units(config, db)?,
-                &get_modified_units(&all_dotfiles, &get_all_units(config, db)?, db)?,
-                &mut stats,
-                db,
-            )?;
+            let action =
+                determine_and_apply_action(dotfile, &all_units, &modified_units, &mut stats, db)?;
             emit_action_result(&action, dotfile);
             record_action(&action, dotfile, &mut stats);
         }
@@ -83,8 +81,8 @@ pub fn apply_all(
             for dotfile in &root_dotfiles {
                 let action = determine_and_apply_action(
                     dotfile,
-                    &get_all_units(config, db)?,
-                    &get_modified_units(&all_dotfiles, &get_all_units(config, db)?, db)?,
+                    &all_units,
+                    &modified_units,
                     &mut stats,
                     db,
                 )?;

@@ -7,7 +7,6 @@ use crate::ui::prelude::*;
 use anyhow::{Context, Result, anyhow};
 use colored::Colorize;
 use std::fs;
-use std::path::Path;
 
 pub fn decrypt_dotfile(
     config: &DotfileConfig,
@@ -71,14 +70,13 @@ pub fn decrypt_dotfile(
     }
 
     // Determine the plain source path by stripping the .age suffix
-    let source_str = dotfile.source_path.to_string_lossy();
-    if !source_str.ends_with(".age") {
-        anyhow::bail!(
-            "encrypted source file path does not end in '.age': {}",
-            dotfile.source_path.display()
-        );
-    }
-    let plain_source_path = Path::new(&source_str[..source_str.len() - 4]).to_path_buf();
+    let plain_source_path = crate::dot::encryption::strip_age_suffix(&dotfile.source_path)
+        .ok_or_else(|| {
+            anyhow!(
+                "encrypted source file path does not end in '.age': {}",
+                dotfile.source_path.display()
+            )
+        })?;
     if plain_source_path.exists() {
         anyhow::bail!(
             "plaintext source file already exists: {}",
