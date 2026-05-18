@@ -814,8 +814,7 @@ fn show_action_suggestions(
                 }
                 if identity_required_count > 0 {
                     suggestions.push(
-                        "Configure an age identity with $AGE_IDENTITY or ~/.config/instant/age/identity"
-                            .to_string(),
+                        format!("Configure an age identity with '{bin} dot key init' or set $AGE_IDENTITY")
                     );
                 }
                 suggestions.push(format!(
@@ -866,7 +865,7 @@ fn show_action_suggestions(
                 }
                 if identity_required_count > 0 {
                     println!(
-                        "  Configure an age identity with $AGE_IDENTITY or ~/.config/instant/age/identity"
+                        "  Configure an age identity with '{bin} dot key init' or set $AGE_IDENTITY"
                     );
                 }
                 println!(

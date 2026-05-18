@@ -493,6 +493,7 @@ impl Dotfile {
 mod tests {
     use super::Dotfile;
     use crate::dot::db::{Database, DotFileType};
+    use crate::dot::encryption;
     use age::secrecy::ExposeSecret;
     use serial_test::serial;
     use std::fs;
@@ -765,5 +766,47 @@ mod tests {
                 None => std::env::remove_var("XDG_CONFIG_HOME"),
             }
         }
+    }
+
+    #[test]
+    #[serial]
+    fn test_create_encrypted_source_from_target() {
+        let dir = tempdir().unwrap();
+        let target_path = dir.path().join("secrets.txt");
+        let source_path = dir.path().join("secrets.txt.age");
+        fs::write(&target_path, "super_secret_plaintext").unwrap();
+
+        let db_path = dir.path().join("test.db");
+        let db = Database::new(db_path).unwrap();
+
+        // Generate recipient and identity
+        let identity = age::x25519::Identity::generate();
+        let recipient = identity.to_public();
+
+        let dotfile = Dotfile::new(source_path.clone(), target_path.clone(), false);
+        assert_eq!(dotfile.kind, super::SourceKind::Age);
+
+        // Perform encryption copy to source repo path
+        dotfile
+            .create_encrypted_source_from_target(&db, &[Box::new(recipient)])
+            .unwrap();
+
+        // Verify source exists
+        assert!(source_path.exists());
+
+        // Verify plaintext doesn't leak into source directory directly
+        let source_content = fs::read_to_string(&source_path).unwrap();
+        assert!(!source_content.contains("super_secret_plaintext"));
+
+        // Verify we can decrypt the source file back to original plaintext
+        let decrypted = encryption::decrypt_file_to_bytes(&source_path, &[Box::new(identity)]).unwrap();
+        assert_eq!(decrypted, b"super_secret_plaintext");
+
+        // Verify DB records
+        let plain_hash = Dotfile::compute_hash(&target_path).unwrap();
+        let cipher_hash = Dotfile::compute_hash(&source_path).unwrap();
+
+        let recorded_plain = db.get_plain_hash_for_cipher(&cipher_hash).unwrap();
+        assert_eq!(recorded_plain, Some(plain_hash));
     }
 }

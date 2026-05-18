@@ -209,7 +209,7 @@ pub fn decrypt_file_to_bytes(
 ) -> Result<Vec<u8>> {
     if identities.is_empty() {
         return Err(anyhow!(
-            "no age identities configured (set $AGE_IDENTITY or place an identity file in <instant_config>/age/)"
+            "No local age identity found. Please run 'ins dot key init' first, or set $AGE_IDENTITY."
         ));
     }
     let file = File::open(cipher_path)
