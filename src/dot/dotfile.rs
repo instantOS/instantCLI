@@ -264,6 +264,29 @@ impl Dotfile {
         Ok(hash)
     }
 
+    /// Decrypt the age source, write plaintext to the target, and record all
+    /// hashes in the database. Shared by `apply` and `reset`.
+    fn decrypt_source_to_target(&self, db: &Database) -> Result<(), anyhow::Error> {
+        let identities = encryption::load_identities()?;
+        let plaintext = encryption::decrypt_file_to_bytes(&self.source_path, &identities)?;
+        crate::dot::utils::persist_file_safely(
+            &self.target_path,
+            &plaintext,
+            "decrypted target file",
+        )?;
+        invalidate_cache(&self.target_path);
+
+        let plain_hash = Self::hash_bytes(&plaintext);
+        let cipher_hash = Self::compute_hash(&self.source_path)?;
+        db.register_encrypted_hashes(
+            &cipher_hash,
+            &plain_hash,
+            &self.source_path,
+            &self.target_path,
+        )?;
+        Ok(())
+    }
+
     pub fn apply(&self, db: &Database) -> Result<(), anyhow::Error> {
         if !self.is_target_unmodified(db)? {
             // Skip modified files, as they could contain user modifications
@@ -295,24 +318,7 @@ impl Dotfile {
                 db.add_hash(&source_hash, &self.target_path, DotFileType::TargetFile)?;
             }
             SourceKind::Age => {
-                let identities = encryption::load_identities()?;
-                let plaintext = encryption::decrypt_file_to_bytes(&self.source_path, &identities)?;
-                crate::dot::utils::persist_file_safely(
-                    &self.target_path,
-                    &plaintext,
-                    "decrypted target file",
-                )?;
-                invalidate_cache(&self.target_path);
-
-                // Record the plaintext hash on both sides. We just produced
-                // the plaintext, so hash the in-memory buffer directly rather
-                // than re-reading the target from disk (and also seed the
-                // cipher → plain mapping if it was missing).
-                let plain_hash = Self::hash_bytes(&plaintext);
-                let cipher_hash = Self::compute_hash(&self.source_path)?;
-                db.record_encrypted_source(&cipher_hash, &plain_hash)?;
-                db.add_hash(&plain_hash, &self.source_path, DotFileType::SourceFile)?;
-                db.add_hash(&plain_hash, &self.target_path, DotFileType::TargetFile)?;
+                self.decrypt_source_to_target(db)?;
             }
         }
 
@@ -370,9 +376,12 @@ impl Dotfile {
                     // Record the new plain hash and cipher hash in the database
                     let new_plain_hash = Self::hash_bytes(&plaintext);
                     let new_cipher_hash = Self::compute_hash(&self.source_path)?;
-                    db.record_encrypted_source(&new_cipher_hash, &new_plain_hash)?;
-                    db.add_hash(&new_plain_hash, &self.source_path, DotFileType::SourceFile)?;
-                    db.add_hash(&new_plain_hash, &self.target_path, DotFileType::TargetFile)?;
+                    db.register_encrypted_hashes(
+                        &new_cipher_hash,
+                        &new_plain_hash,
+                        &self.source_path,
+                        &self.target_path,
+                    )?;
                 }
             }
         }
@@ -400,20 +409,7 @@ impl Dotfile {
                 db.add_hash(&source_hash, &self.target_path, DotFileType::TargetFile)?;
             }
             SourceKind::Age => {
-                let identities = encryption::load_identities()?;
-                let plaintext = encryption::decrypt_file_to_bytes(&self.source_path, &identities)?;
-                crate::dot::utils::persist_file_safely(
-                    &self.target_path,
-                    &plaintext,
-                    "decrypted target file",
-                )?;
-                invalidate_cache(&self.target_path);
-
-                let plain_hash = Self::hash_bytes(&plaintext);
-                let cipher_hash = Self::compute_hash(&self.source_path)?;
-                db.record_encrypted_source(&cipher_hash, &plain_hash)?;
-                db.add_hash(&plain_hash, &self.source_path, DotFileType::SourceFile)?;
-                db.add_hash(&plain_hash, &self.target_path, DotFileType::TargetFile)?;
+                self.decrypt_source_to_target(db)?;
             }
         }
 
@@ -493,9 +489,12 @@ impl Dotfile {
 
         // Register hashes in SQLite database
         let cipher_hash = Self::compute_hash(&self.source_path)?;
-        db.record_encrypted_source(&cipher_hash, &plain_hash)?;
-        db.add_hash(&plain_hash, &self.source_path, DotFileType::SourceFile)?;
-        db.add_hash(&plain_hash, &self.target_path, DotFileType::TargetFile)?;
+        db.register_encrypted_hashes(
+            &cipher_hash,
+            &plain_hash,
+            &self.source_path,
+            &self.target_path,
+        )?;
 
         Ok(())
     }

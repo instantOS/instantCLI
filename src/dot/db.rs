@@ -338,6 +338,23 @@ impl Database {
         Ok(())
     }
 
+    /// Record the cipher→plain mapping and register the plaintext hash against
+    /// both the source and target paths in a single call. This is the common
+    /// post-decrypt/post-encrypt bookkeeping pattern used by apply, reset,
+    /// fetch, and the encrypt/decrypt operations.
+    pub fn register_encrypted_hashes(
+        &self,
+        cipher_hash: &str,
+        plain_hash: &str,
+        source_path: &Path,
+        target_path: &Path,
+    ) -> Result<()> {
+        self.record_encrypted_source(cipher_hash, plain_hash)?;
+        self.add_hash(plain_hash, source_path, DotFileType::SourceFile)?;
+        self.add_hash(plain_hash, target_path, DotFileType::TargetFile)?;
+        Ok(())
+    }
+
     pub fn delete_encrypted_source(&self, cipher_hash: &str) -> Result<()> {
         self.conn.execute(
             "DELETE FROM encrypted_sources WHERE cipher_hash = ?",
