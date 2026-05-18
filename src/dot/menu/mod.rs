@@ -1,6 +1,7 @@
 //! Interactive dot menu for managing dotfile repositories
 
 pub mod add_repo;
+pub mod encryption_menu;
 pub mod repo_actions;
 mod subdir_actions;
 
@@ -23,6 +24,7 @@ pub enum DotMenuEntry {
     AddRepo,
     AlternateFiles,
     GlobalUnits,
+    EncryptionKeys,
     CloseMenu,
 }
 
@@ -58,6 +60,10 @@ impl FzfSelectable for DotMenuEntry {
                 "{} Global Units",
                 format_icon_colored(NerdFont::FolderConfig, colors::TEAL)
             ),
+            DotMenuEntry::EncryptionKeys => format!(
+                "{} Encryption Keys",
+                format_icon_colored(NerdFont::Key, colors::YELLOW)
+            ),
             DotMenuEntry::CloseMenu => format!("{} Close Menu", format_back_icon()),
         }
     }
@@ -68,6 +74,7 @@ impl FzfSelectable for DotMenuEntry {
             DotMenuEntry::AddRepo => "!__add_repo__".to_string(),
             DotMenuEntry::AlternateFiles => "!__alternate_files__".to_string(),
             DotMenuEntry::GlobalUnits => "!__global_units__".to_string(),
+            DotMenuEntry::EncryptionKeys => "!__encryption_keys__".to_string(),
             DotMenuEntry::CloseMenu => "!__close_menu__".to_string(),
         }
     }
@@ -102,6 +109,14 @@ impl FzfSelectable for DotMenuEntry {
                 .text("and the entire unit is protected from updates.")
                 .blank()
                 .subtext("Repo authors should prefer repo-scoped units.")
+                .build(),
+            DotMenuEntry::EncryptionKeys => PreviewBuilder::new()
+                .header(NerdFont::Key, "Encryption Keys")
+                .text("Manage global encryption identities and SSH keys")
+                .blank()
+                .text("View your machine's public keys, authorize")
+                .text("them across repositories, or generate a new")
+                .text("secure identity if one does not exist.")
                 .build(),
             DotMenuEntry::CloseMenu => PreviewBuilder::new()
                 .header(NerdFont::Cross, "Close Menu")
@@ -150,6 +165,7 @@ fn select_dot_menu_entry(
     entries.push(DotMenuEntry::AddRepo);
     entries.push(DotMenuEntry::AlternateFiles);
     entries.push(DotMenuEntry::GlobalUnits);
+    entries.push(DotMenuEntry::EncryptionKeys);
     entries.push(DotMenuEntry::CloseMenu);
 
     // Create entries with custom previews (Repo gets dynamic preview, others use trait impl)
@@ -230,6 +246,14 @@ pub fn dot_menu(debug: bool) -> Result<()> {
             }
             DotMenuEntry::GlobalUnits => {
                 crate::dot::menu::repo_actions::handle_global_units_menu(&mut config, &db)?;
+                reload_menu_state(&mut config, &mut db)?;
+            }
+            DotMenuEntry::EncryptionKeys => {
+                crate::dot::menu::encryption_menu::handle_encryption_keys_menu(
+                    &mut config,
+                    &db,
+                    debug,
+                )?;
                 reload_menu_state(&mut config, &mut db)?;
             }
             DotMenuEntry::CloseMenu => return Ok(()),

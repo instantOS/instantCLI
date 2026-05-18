@@ -46,7 +46,7 @@ pub fn handle_key_command(
     }
 }
 
-fn handle_init(force: bool) -> Result<()> {
+pub(crate) fn handle_init(force: bool) -> Result<()> {
     let config_dir = crate::common::paths::instant_config_dir()?;
     let identity_dir = config_dir.join("age");
     let identity_path = identity_dir.join("identity");
@@ -125,7 +125,7 @@ fn handle_init(force: bool) -> Result<()> {
     Ok(())
 }
 
-fn handle_authorize(
+pub(crate) fn handle_authorize(
     config: &DotfileConfig,
     db: &Database,
     recipient_opt: Option<&str>,
@@ -263,7 +263,7 @@ fn handle_authorize(
     Ok(())
 }
 
-fn handle_rotate(
+pub(crate) fn handle_rotate(
     config: &DotfileConfig,
     db: &Database,
     recipients: &[String],
@@ -370,7 +370,7 @@ fn handle_rotate(
     Ok(())
 }
 
-fn handle_status(config: &DotfileConfig, target_repo_opt: Option<&str>) -> Result<()> {
+pub(crate) fn handle_status(config: &DotfileConfig, target_repo_opt: Option<&str>) -> Result<()> {
     let writable_repos = config.get_writable_repos();
     if writable_repos.is_empty() {
         emit(
@@ -524,7 +524,7 @@ fn find_age_files(dir: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
     Ok(())
 }
 
-fn handle_identity() -> Result<()> {
+pub(crate) fn handle_identity() -> Result<()> {
     let config_dir = crate::common::paths::instant_config_dir()?;
     let identity_dir = config_dir.join("age");
     let identity_path = identity_dir.join("identity");

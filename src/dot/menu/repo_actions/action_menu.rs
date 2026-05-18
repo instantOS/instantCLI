@@ -20,6 +20,7 @@ pub(super) enum RepoAction {
     OpenInLazygit,
     OpenInShell,
     ShowInfo,
+    EncryptionSettings,
     Remove,
     Back,
 }
@@ -316,6 +317,20 @@ pub(super) fn build_repo_action_menu(
         ),
         preview: build_repo_preview(repo_name, config, db),
         action: RepoAction::ShowInfo,
+    });
+
+    // Encryption Settings
+    actions.push(RepoActionItem {
+        display: format!(
+            "{} Encryption Settings",
+            format_icon_colored(NerdFont::Lock, colors::YELLOW)
+        ),
+        preview: PreviewBuilder::new()
+            .line(colors::YELLOW, Some(NerdFont::Key), "Encryption Settings")
+            .blank()
+            .text("Manage age recipients and key authorization for this repository.")
+            .build_string(),
+        action: RepoAction::EncryptionSettings,
     });
 
     // Remove
