@@ -62,7 +62,8 @@ pub fn encrypt_dotfile(
     let recipients = crate::dot::encryption::parse_recipients(&dotfile_repo.meta.age_recipients)
         .with_context(|| {
             format!(
-                "repository '{}' has no usable age_recipients in instantdots.toml",
+                "repository '{}' has no usable age_recipients configured in instantdots.toml.\n\
+                 Please authorize decryption keys first using 'ins dot key authorize'.",
                 repo_name
             )
         })?;
@@ -171,13 +172,21 @@ fn display_target(dotfile: &Dotfile) -> String {
 }
 
 fn print_history_warning() {
+    println!("\n{}", "┌────────────────────────────────────────────────────────┐".yellow().bold());
+    println!("{}", "│ SECURITY WARNING:                                      │".yellow().bold());
+    println!("{}", "│                                                        │".yellow().bold());
+    println!("{}", "│ Encrypting this file only protects future commits!     │".yellow().bold());
+    println!("{}", "│ Plaintext secrets are STILL PRESENT in your git        │".yellow().bold());
+    println!("{}", "│ repository history and can be exposed if pushed.       │".yellow().bold());
+    println!("{}", "│                                                        │".yellow().bold());
+    println!("{}", "│ To completely remove plaintext from history, you must  │".yellow().bold());
+    println!("{}", "│ purge it using a tool like git-filter-repo or BFG.     │".yellow().bold());
+    println!("{}\n", "└────────────────────────────────────────────────────────┘".yellow().bold());
+
     emit(
         Level::Warn,
         "dot.encrypt.history_warning",
-        &format!(
-            "{} Encryption does not remove plaintext secrets from git history",
-            char::from(NerdFont::Warning)
-        ),
+        "Encryption does not remove plaintext secrets from git history",
         Some(serde_json::json!({
             "warning": "git_history_not_rewritten"
         })),

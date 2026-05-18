@@ -170,7 +170,33 @@ pub fn decrypt_dotfile(
         })),
     );
 
+    print_decrypt_history_warning();
+
     Ok(())
+}
+
+fn print_decrypt_history_warning() {
+    let warn_icon = NerdFont::ShieldLock.to_string();
+    println!();
+    println!("{}", format!("  {}  {}", warn_icon.red().bold(), "SECURITY WARNING".red().bold()));
+    println!("{}", "  ────────────────────────────────────────────────────────".red());
+    println!("{}", "  You have decrypted a tracked secret to PLAINTEXT.".red());
+    println!("{}", "  If you commit and push this change to a remote, your".red());
+    println!("{}", "  raw plaintext secrets will be publicly EXPOSED!".red());
+    println!();
+    println!("{}", "  Be extremely careful not to stage or commit this".red());
+    println!("{}", "  plaintext file unless you explicitly intend to.".red());
+    println!("{}", "  ────────────────────────────────────────────────────────".red());
+    println!();
+
+    emit(
+        Level::Warn,
+        "dot.decrypt.plaintext_warning",
+        "Decryption will expose plaintext secrets in repository git history",
+        Some(serde_json::json!({
+            "warning": "plaintext_exposed_in_git"
+        })),
+    );
 }
 
 fn display_target(dotfile: &Dotfile) -> String {
