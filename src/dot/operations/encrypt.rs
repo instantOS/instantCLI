@@ -172,16 +172,66 @@ fn display_target(dotfile: &Dotfile) -> String {
 }
 
 fn print_history_warning() {
-    println!("\n{}", "┌────────────────────────────────────────────────────────┐".yellow().bold());
-    println!("{}", "│ SECURITY WARNING:                                      │".yellow().bold());
-    println!("{}", "│                                                        │".yellow().bold());
-    println!("{}", "│ Encrypting this file only protects future commits!     │".yellow().bold());
-    println!("{}", "│ Plaintext secrets are STILL PRESENT in your git        │".yellow().bold());
-    println!("{}", "│ repository history and can be exposed if pushed.       │".yellow().bold());
-    println!("{}", "│                                                        │".yellow().bold());
-    println!("{}", "│ To completely remove plaintext from history, you must  │".yellow().bold());
-    println!("{}", "│ purge it using a tool like git-filter-repo or BFG.     │".yellow().bold());
-    println!("{}\n", "└────────────────────────────────────────────────────────┘".yellow().bold());
+    println!(
+        "\n{}",
+        "┌────────────────────────────────────────────────────────┐"
+            .yellow()
+            .bold()
+    );
+    println!(
+        "{}",
+        "│ SECURITY WARNING:                                      │"
+            .yellow()
+            .bold()
+    );
+    println!(
+        "{}",
+        "│                                                        │"
+            .yellow()
+            .bold()
+    );
+    println!(
+        "{}",
+        "│ Encrypting this file only protects future commits!     │"
+            .yellow()
+            .bold()
+    );
+    println!(
+        "{}",
+        "│ Plaintext secrets are STILL PRESENT in your git        │"
+            .yellow()
+            .bold()
+    );
+    println!(
+        "{}",
+        "│ repository history and can be exposed if pushed.       │"
+            .yellow()
+            .bold()
+    );
+    println!(
+        "{}",
+        "│                                                        │"
+            .yellow()
+            .bold()
+    );
+    println!(
+        "{}",
+        "│ To completely remove plaintext from history, you must  │"
+            .yellow()
+            .bold()
+    );
+    println!(
+        "{}",
+        "│ purge it using a tool like git-filter-repo or BFG.     │"
+            .yellow()
+            .bold()
+    );
+    println!(
+        "{}\n",
+        "└────────────────────────────────────────────────────────┘"
+            .yellow()
+            .bold()
+    );
 
     emit(
         Level::Warn,

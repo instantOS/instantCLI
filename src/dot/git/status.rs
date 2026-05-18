@@ -541,18 +541,26 @@ fn show_text_status(
 
     // Show summary
     println!("Total tracked: {} files", summary.total_files);
-    println!("{} Clean: {} files", "✓".green(), summary.clean_count);
+    println!(
+        "{} Clean: {} files",
+        char::from(NerdFont::Check).to_string().green(),
+        summary.clean_count
+    );
 
     if summary.modified_count > 0 {
         println!(
             "{} Modified: {} files",
-            "".yellow(),
+            char::from(NerdFont::Edit).to_string().yellow(),
             summary.modified_count
         );
     }
 
     if summary.outdated_count > 0 {
-        println!("{} Outdated: {} files", "↓".blue(), summary.outdated_count);
+        println!(
+            "{} Outdated: {} files",
+            char::from(NerdFont::ArrowDown).to_string().blue(),
+            summary.outdated_count
+        );
     }
 
     if summary.identity_required_count > 0 {
@@ -813,9 +821,9 @@ fn show_action_suggestions(
                     ));
                 }
                 if identity_required_count > 0 {
-                    suggestions.push(
-                        format!("Configure an age identity with '{bin} dot key init' or set $AGE_IDENTITY")
-                    );
+                    suggestions.push(format!(
+                        "Configure an age identity with '{bin} dot key init' or set $AGE_IDENTITY"
+                    ));
                 }
                 suggestions.push(format!(
                     "Use '{bin} dot status --all' to see all tracked files including clean ones"
@@ -872,7 +880,10 @@ fn show_action_suggestions(
                     "  Use '{bin} dot status --all' to see all tracked files including clean ones"
                 );
             } else if clean_count > 0 {
-                println!("✓ All dotfiles are clean and up to date!");
+                println!(
+                    "{} All dotfiles are clean and up to date!",
+                    char::from(NerdFont::Check).to_string().green()
+                );
             } else {
                 println!(
                     "No dotfiles found. Use '{bin} dot repo clone <url>' to clone a repository."

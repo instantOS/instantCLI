@@ -799,7 +799,8 @@ mod tests {
         assert!(!source_content.contains("super_secret_plaintext"));
 
         // Verify we can decrypt the source file back to original plaintext
-        let decrypted = encryption::decrypt_file_to_bytes(&source_path, &[Box::new(identity)]).unwrap();
+        let decrypted =
+            encryption::decrypt_file_to_bytes(&source_path, &[Box::new(identity)]).unwrap();
         assert_eq!(decrypted, b"super_secret_plaintext");
 
         // Verify DB records

@@ -162,6 +162,40 @@ pub fn build_repo_preview(repo_name: &str, config: &DotfileConfig, db: &Database
                 .indented_line(colors::GREEN, None, &format!("Active: {}", active));
         }
 
+        // Show encryption status if present
+        let recipients = &dotfile_repo.meta.age_recipients;
+        if !recipients.is_empty() {
+            builder =
+                builder
+                    .blank()
+                    .line(colors::PEACH, Some(NerdFont::ShieldLock), "Age Encryption");
+
+            let local_pubkeys =
+                crate::dot::operations::key::get_local_public_keys().unwrap_or_default();
+            let has_matching_identity = recipients.iter().any(|r| local_pubkeys.contains(r));
+
+            let status_line = if has_matching_identity {
+                format!("Authorized ({} recipient(s))", recipients.len())
+            } else {
+                format!(
+                    "Unauthorized ({} recipient(s) - key missing)",
+                    recipients.len()
+                )
+            };
+            let status_color = if has_matching_identity {
+                colors::GREEN
+            } else {
+                colors::RED
+            };
+            let status_icon = if has_matching_identity {
+                NerdFont::Check
+            } else {
+                NerdFont::Warning
+            };
+
+            builder = builder.indented_line(status_color, Some(status_icon), &status_line);
+        }
+
         // Local path
         if let Ok(local_path) = dotfile_repo.local_path(config) {
             let tilde_path = local_path.display().to_string();

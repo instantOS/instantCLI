@@ -66,9 +66,11 @@ fn handle_init(force: bool) -> Result<()> {
                 Level::Info,
                 "dot.key.init.exists",
                 &format!(
-                    "{} Age identity already exists!\n🔒 Path: {}\n👥 Public recipient key: {}",
+                    "{} Age identity already exists!\n{} Path: {}\n{} Public recipient key: {}",
                     char::from(NerdFont::Info),
+                    char::from(NerdFont::Lock),
                     identity_path.display().to_string().cyan(),
+                    char::from(NerdFont::Users),
                     pk.green()
                 ),
                 None,
@@ -109,9 +111,11 @@ fn handle_init(force: bool) -> Result<()> {
         Level::Success,
         "dot.key.init.success",
         &format!(
-            "{} Generated secure age identity keypair for this machine!\n🔒 Private key saved to: {}\n👥 Public key: {}",
+            "{} Generated secure age identity keypair for this machine!\n{} Private key saved to: {}\n{} Public key: {}",
             char::from(NerdFont::Check),
+            char::from(NerdFont::Lock),
             identity_path.display().to_string().cyan(),
+            char::from(NerdFont::Users),
             public_key.green()
         ),
         None,
@@ -244,10 +248,12 @@ fn handle_authorize(
         Level::Success,
         "dot.key.authorize.success",
         &format!(
-            "{} Successfully authorized recipient in repository '{}'!\n👥 Recipient: {}\n📁 Re-encrypted {} files.",
+            "{} Successfully authorized recipient in repository '{}'!\n{} Recipient: {}\n{} Re-encrypted {} files.",
             char::from(NerdFont::Check),
             repo_name,
+            char::from(NerdFont::Users),
             recipient_key.green(),
+            char::from(NerdFont::Folder),
             encrypted_files.len()
         ),
         None,
@@ -349,10 +355,12 @@ fn handle_rotate(
         Level::Success,
         "dot.key.rotate.success",
         &format!(
-            "{} Successfully rotated keys in repository '{}'!\n👥 New Recipients: {:?}\n📁 Re-encrypted {} files.",
+            "{} Successfully rotated keys in repository '{}'!\n{} New Recipients: {:?}\n{} Re-encrypted {} files.",
             char::from(NerdFont::Check),
             repo_name,
+            char::from(NerdFont::Users),
             recipients,
+            char::from(NerdFont::Folder),
             encrypted_files.len()
         ),
         None,
@@ -392,10 +400,14 @@ fn handle_status(config: &DotfileConfig, target_repo_opt: Option<&str>) -> Resul
     };
 
     println!(
-        "📊 Repository Age Key Status Dashboard (Local identities: {})",
+        "{} Repository Age Key Status Dashboard (Local identities: {})",
+        char::from(NerdFont::ShieldLock).to_string().cyan(),
         local_pubkeys.len()
     );
-    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println!(
+        "{}",
+        "────────────────────────────────────────────────────────────────────────────────".cyan()
+    );
 
     for repo in repos_to_check {
         let dotfile_repo = DotfileRepo::new(config, repo.name.clone())?;
@@ -404,31 +416,38 @@ fn handle_status(config: &DotfileConfig, target_repo_opt: Option<&str>) -> Resul
         let recipients = &meta.age_recipients;
 
         println!(
-            "Repository: {} (Path: {})",
+            "{} Repository: {} (Path: {})",
+            char::from(NerdFont::Folder).to_string().blue(),
             repo.name.cyan(),
             repo_path.display()
         );
         if recipients.is_empty() {
             println!(
-                "  👥 Configured Recipients: None (Dotfiles in this repository are not encrypted)"
+                "  {} Encryption Status: Not Encrypted",
+                char::from(NerdFont::InfoCircle).to_string().dimmed()
             );
             println!();
             continue;
         }
 
-        println!("  👥 Configured Recipients:");
+        println!(
+            "  {} Configured Recipients:",
+            char::from(NerdFont::Users).to_string().cyan()
+        );
         let mut matching_identity_found = false;
         for recipient in recipients {
             let is_local = local_pubkeys.contains(recipient);
             if is_local {
                 matching_identity_found = true;
                 println!(
-                    "     [✓] {}  (Matches local machine identity)",
+                    "     {} {}  (Authorized)",
+                    char::from(NerdFont::CheckCircle).to_string().green(),
                     recipient.green()
                 );
             } else {
                 println!(
-                    "     [ ] {}  (No local private key found)",
+                    "     {} {}  (Remote Identity)",
+                    char::from(NerdFont::Lock).to_string().yellow(),
                     recipient.yellow()
                 );
             }
@@ -441,20 +460,27 @@ fn handle_status(config: &DotfileConfig, target_repo_opt: Option<&str>) -> Resul
             }
         }
 
-        println!("  📁 Encrypted Files Tracked: {}", encrypted_files.len());
+        println!(
+            "  {} Encrypted Files Tracked: {}",
+            char::from(NerdFont::FolderConfig).to_string().blue(),
+            encrypted_files.len()
+        );
         if !encrypted_files.is_empty() {
             if matching_identity_found {
                 println!(
-                    "  🔑 Local Decryption Status: {} Authorized!",
+                    "  {} Local Decryption Status: {} Authorized!",
+                    char::from(NerdFont::Key).to_string().green(),
                     char::from(NerdFont::Check).to_string().green()
                 );
             } else {
                 println!(
-                    "  ❌ Local Decryption Status: {} Unauthorized!",
+                    "  {} Local Decryption Status: {} Unauthorized!",
+                    char::from(NerdFont::ShieldAlert).to_string().red(),
                     char::from(NerdFont::Warning).to_string().red()
                 );
                 println!(
-                    "     👉 Hint: Place the matching private key in ~/.config/instant/age/identity"
+                    "     {} Hint: Place the matching private key in ~/.config/instant/age/identity",
+                    char::from(NerdFont::Lightbulb).to_string().yellow()
                 );
             }
         }
@@ -464,7 +490,7 @@ fn handle_status(config: &DotfileConfig, target_repo_opt: Option<&str>) -> Resul
     Ok(())
 }
 
-fn get_local_public_keys() -> Result<Vec<String>> {
+pub fn get_local_public_keys() -> Result<Vec<String>> {
     let files = crate::dot::encryption::discover_identity_files();
     let mut pubkeys = Vec::new();
     for path in files {

@@ -211,7 +211,15 @@ pub fn add_dotfile(
     if add_all {
         // Scan for untracked files and add them
         let (_, untracked_files) = scan_and_categorize_files(&target_path, &all_dotfiles, force)?;
-        add_untracked_files(&untracked_files, config, db, &mut stats, force, encrypt, debug)?;
+        add_untracked_files(
+            &untracked_files,
+            config,
+            db,
+            &mut stats,
+            force,
+            encrypt,
+            debug,
+        )?;
     } else if target_path.is_file() && tracked_dotfiles.is_empty() {
         if !force && let Some(ignore_file) = crate::dot::insignore::match_home_path(&target_path)? {
             println!(
@@ -270,8 +278,8 @@ fn add_new_file(
     encrypt: bool,
 ) -> Result<Option<PathBuf>> {
     use super::alternative::add_to_destination;
-    use crate::dot::override_config::DotfileSource;
     use crate::dot::dotfilerepo::DotfileRepo;
+    use crate::dot::override_config::DotfileSource;
     use anyhow::Context;
 
     // Repository selection

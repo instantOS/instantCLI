@@ -3,6 +3,7 @@ use crate::common::package::InstallResult;
 use crate::dot::config::DotfileConfig;
 use crate::dot::git::status::get_dotfile_status;
 use crate::dot::git::{get_dotfile_dir_name, get_repo_name_for_dotfile, status::DotFileStatus};
+use crate::ui::prelude::*;
 use anyhow::{Context, Result};
 use colored::*;
 use std::collections::HashMap;
@@ -93,7 +94,7 @@ fn diff_directory(
     if !showed_diff {
         println!(
             "  {} No modified or outdated dotfiles under {}",
-            "✓".green(),
+            char::from(NerdFont::Check).to_string().green(),
             tilde_dir
         );
     }
@@ -114,7 +115,11 @@ fn diff_file(
                 let home = dirs::home_dir().context("Failed to get home directory")?;
                 let relative_path = target_path.strip_prefix(&home).unwrap_or(target_path);
                 let tilde_path = format!("~/{}", relative_path.display());
-                println!("{} {} is unmodified", "✓".green(), tilde_path.green());
+                println!(
+                    "{} {} is unmodified",
+                    char::from(NerdFont::Check).to_string().green(),
+                    tilde_path.green()
+                );
             }
             DotFileStatus::Modified | DotFileStatus::Outdated | DotFileStatus::IdentityRequired => {
                 show_dotfile_diff(dotfile)?;
@@ -147,7 +152,11 @@ pub fn show_all_diffs(
         .map_or(0, |v| v.len());
 
     if modified_count == 0 && outdated_count == 0 {
-        println!("{}", "✓ All dotfiles are clean and up to date!".green());
+        println!(
+            "{} {}",
+            char::from(NerdFont::Check).to_string().green(),
+            "All dotfiles are clean and up to date!".green()
+        );
         return Ok(());
     }
 
