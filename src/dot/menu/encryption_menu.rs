@@ -131,15 +131,11 @@ pub fn handle_encryption_keys_menu(
                 match item.action {
                     EncryptionMenuAction::ShowIdentities => {
                         crate::dot::operations::key::handle_identity()?;
-                        let _ = crate::menu_utils::prompt_text_edit(
-                            crate::menu_utils::TextEditPrompt::new("Press Enter to continue", None),
-                        )?;
+                        crate::menu_utils::FzfWrapper::message("Press Enter to continue")?;
                     }
                     EncryptionMenuAction::InitKeypair => {
                         crate::dot::operations::key::handle_init(false)?;
-                        let _ = crate::menu_utils::prompt_text_edit(
-                            crate::menu_utils::TextEditPrompt::new("Press Enter to continue", None),
-                        )?;
+                        crate::menu_utils::FzfWrapper::message("Press Enter to continue")?;
                     }
                     EncryptionMenuAction::Back => return Ok(()),
                 }

@@ -138,9 +138,7 @@ pub(super) fn handle_repo_encryption(
                 match item.action {
                     RepoEncryptionAction::ShowStatus => {
                         crate::dot::operations::key::handle_status(config, Some(repo_name))?;
-                        let _ = crate::menu_utils::prompt_text_edit(
-                            crate::menu_utils::TextEditPrompt::new("Press Enter to continue", None),
-                        )?;
+                        crate::menu_utils::FzfWrapper::message("Press Enter to continue")?;
                     }
                     RepoEncryptionAction::AuthorizeLocalKey => {
                         crate::dot::operations::key::handle_authorize(
@@ -151,9 +149,7 @@ pub(super) fn handle_repo_encryption(
                             false,
                             debug,
                         )?;
-                        let _ = crate::menu_utils::prompt_text_edit(
-                            crate::menu_utils::TextEditPrompt::new("Press Enter to continue", None),
-                        )?;
+                        crate::menu_utils::FzfWrapper::message("Press Enter to continue")?;
                     }
                     RepoEncryptionAction::AuthorizeRemoteKey => {
                         if let crate::menu_utils::TextEditOutcome::Updated(Some(key)) =
@@ -167,12 +163,7 @@ pub(super) fn handle_repo_encryption(
                             let key = key.trim();
                             if !key.is_empty() {
                                 if !key.starts_with("age1") && !key.starts_with("ssh-") {
-                                    let _ = crate::menu_utils::prompt_text_edit(
-                                        crate::menu_utils::TextEditPrompt::new(
-                                            "Invalid key prefix. Press Enter to continue",
-                                            None,
-                                        ),
-                                    )?;
+                                    crate::menu_utils::FzfWrapper::message("Invalid key prefix. Press Enter to continue")?;
                                 } else {
                                     crate::dot::operations::key::handle_authorize(
                                         config,
@@ -182,12 +173,7 @@ pub(super) fn handle_repo_encryption(
                                         false,
                                         debug,
                                     )?;
-                                    let _ = crate::menu_utils::prompt_text_edit(
-                                        crate::menu_utils::TextEditPrompt::new(
-                                            "Press Enter to continue",
-                                            None,
-                                        ),
-                                    )?;
+                                    crate::menu_utils::FzfWrapper::message("Press Enter to continue")?;
                                 }
                             }
                         }
@@ -210,15 +196,10 @@ pub(super) fn handle_repo_encryption(
                             if !keys.is_empty() {
                                 for k in &keys {
                                     if !k.starts_with("age1") && !k.starts_with("ssh-") {
-                                        let _ = crate::menu_utils::prompt_text_edit(
-                                            crate::menu_utils::TextEditPrompt::new(
-                                                &format!(
-                                                    "Invalid key '{}'. Press Enter to continue",
-                                                    k
-                                                ),
-                                                None,
-                                            ),
-                                        )?;
+                                        crate::menu_utils::FzfWrapper::message(&format!(
+                                            "Invalid key '{}'. Press Enter to continue",
+                                            k
+                                        ))?;
                                         continue;
                                     }
                                 }
@@ -236,12 +217,7 @@ pub(super) fn handle_repo_encryption(
                                         false,
                                         debug,
                                     )?;
-                                    let _ = crate::menu_utils::prompt_text_edit(
-                                        crate::menu_utils::TextEditPrompt::new(
-                                            "Press Enter to continue",
-                                            None,
-                                        ),
-                                    )?;
+                                    crate::menu_utils::FzfWrapper::message("Press Enter to continue")?;
                                 }
                             }
                         }

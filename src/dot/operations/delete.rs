@@ -130,7 +130,6 @@ fn pick_dotfiles_fzf(all_dotfiles: &DotfileMap) -> Result<Vec<crate::dot::Dotfil
         .values()
         .map(|d| DotfileEntry {
             display: crate::dot::display_path(&d.target_path, d.is_root),
-            source_path: d.source_path.clone(),
             target_path: d.target_path.clone(),
         })
         .collect();
