@@ -138,9 +138,8 @@ fn show_group_options_instantmenu(
         let actual_chord = format!("{}{}", group_prefix, action.key);
 
         options.push(format!(
-            "{}:{}",
-            instantmenu_key,
-            format!("{} ({})", action.description, actual_chord)
+            "{}:{} ({})",
+            instantmenu_key, action.description, actual_chord
         ));
 
         key_map.push((instantmenu_key, actual_chord));

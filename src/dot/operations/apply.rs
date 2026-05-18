@@ -142,7 +142,7 @@ pub fn apply_all(
     }
 
     db.cleanup_hashes(config.hash_cleanup_days)?;
-    if !root_only || (root_only && !root_dotfiles.is_empty()) {
+    if !root_only || !root_dotfiles.is_empty() {
         print_apply_summary(&stats);
     }
 

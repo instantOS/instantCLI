@@ -633,12 +633,13 @@ pub fn handle_dot_command(
         | DotCommands::Update { root_flags, .. }
         | DotCommands::Status { root_flags, .. }
         | DotCommands::Diff { root_flags, .. } => root_flags.home.as_deref(),
-        DotCommands::Key { command } => match command {
-            KeyCommands::Authorize { root_flags, .. }
-            | KeyCommands::Rotate { root_flags, .. }
-            | KeyCommands::Status { root_flags, .. } => root_flags.home.as_deref(),
-            _ => None,
-        },
+        DotCommands::Key {
+            command:
+                KeyCommands::Authorize { root_flags, .. }
+                | KeyCommands::Rotate { root_flags, .. }
+                | KeyCommands::Status { root_flags, .. },
+        } => root_flags.home.as_deref(),
+        DotCommands::Key { .. } => None,
         DotCommands::Clone(args) => args.root_flags.home.as_deref(),
         DotCommands::Repo {
             command: RepoCommands::Clone(args),

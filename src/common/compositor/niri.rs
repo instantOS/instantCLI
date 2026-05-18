@@ -643,7 +643,7 @@ fn find_named_block(
             });
         }
 
-        depth = update_depth(depth, &code);
+        depth = update_depth(depth, code);
     }
 
     None

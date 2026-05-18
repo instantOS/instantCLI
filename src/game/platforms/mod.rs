@@ -891,10 +891,7 @@ fn ask_gamescope_flags() -> Result<GamescopeOptions> {
         .ghost("Example: -f -W 1280 -H 720");
 
     let options = match prompt_text_edit(prompt)? {
-        TextEditOutcome::Updated(Some(raw)) => match shell_words::split(raw.trim()) {
-            Ok(options) => options,
-            Err(_) => Vec::new(),
-        },
+        TextEditOutcome::Updated(Some(raw)) => shell_words::split(raw.trim()).unwrap_or_default(),
         _ => Vec::new(),
     };
 

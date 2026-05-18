@@ -167,10 +167,11 @@ fn configure_padded_cmd(
         cmd.arg("--preview").arg(&preview_cmd);
     }
 
-    let cursor = match builder.shared.initial_cursor {
-        Some(InitialCursor::Index(index)) => Some(index),
-        None => None,
-    };
+    let cursor = builder
+        .shared
+        .initial_cursor
+        .as_ref()
+        .map(|InitialCursor::Index(index)| *index);
     apply_fzf_command_options(
         &mut cmd,
         &builder.shared,

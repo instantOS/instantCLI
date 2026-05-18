@@ -125,7 +125,7 @@ fn prune_zero_change_snapshots(game_name: Option<String>) -> Result<()> {
             continue;
         }
 
-        snapshots.sort_by(|a, b| parse_snapshot_time(&b.time).cmp(&parse_snapshot_time(&a.time)));
+        snapshots.sort_by_key(|b| std::cmp::Reverse(parse_snapshot_time(&b.time)));
         let zero_change: Vec<&Snapshot> = snapshots
             .iter()
             .filter(|snap| is_zero_change(snap))

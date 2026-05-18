@@ -1,5 +1,4 @@
 use anyhow::Result;
-use colored::Colorize;
 
 use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;

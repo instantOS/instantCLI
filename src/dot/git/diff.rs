@@ -59,7 +59,7 @@ fn diff_directory(
         return Ok(());
     }
 
-    matching.sort_by(|(a, _), (b, _)| a.cmp(b));
+    matching.sort_by_key(|(a, _)| a.as_path());
 
     let home = dirs::home_dir().context("Failed to get home directory")?;
     let relative_dir = target_dir.strip_prefix(&home).unwrap_or(target_dir);

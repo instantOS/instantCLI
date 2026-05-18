@@ -176,12 +176,9 @@ fn print_decrypt_history_warning() {
     let warn_icon = NerdFont::ShieldLock.to_string();
     println!();
     println!(
-        "{}",
-        format!(
-            "  {}  {}",
-            warn_icon.red().bold(),
-            "SECURITY WARNING".red().bold()
-        )
+        "  {}  {}",
+        warn_icon.red().bold(),
+        "SECURITY WARNING".red().bold()
     );
     println!(
         "{}",

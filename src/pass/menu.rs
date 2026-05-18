@@ -118,14 +118,14 @@ pub(super) fn interactive_pass_tree_menu() -> Result<i32> {
 pub(super) fn run_add_menu(current_prefix: Option<&str>) -> Result<()> {
     let items = build_add_menu_items();
 
-    match FzfWrapper::builder()
+    if let FzfResult::Selected(item) = FzfWrapper::builder()
         .header(Header::fancy("Pass Add"))
         .prompt("Create")
         .args(fzf_mocha_args())
         .responsive_layout()
         .select(items)?
     {
-        FzfResult::Selected(item) => match item.action {
+        match item.action {
             AddMenuAction::AddPassword => {
                 insert_password_entry_with_prefix(None, current_prefix)?;
             }
@@ -137,8 +137,7 @@ pub(super) fn run_add_menu(current_prefix: Option<&str>) -> Result<()> {
                 insert_otp_entry_with_prefix(None, current_prefix)?;
             }
             AddMenuAction::Back => {}
-        },
-        _ => {}
+        }
     }
 
     Ok(())

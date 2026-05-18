@@ -591,7 +591,7 @@ pub(crate) fn handle_identity() -> Result<()> {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path.is_file()
-                    && path.extension().map_or(false, |ext| ext == "pub")
+                    && path.extension().is_some_and(|ext| ext == "pub")
                     && let Ok(content) = fs::read_to_string(&path)
                 {
                     let content_trimmed = content.trim();

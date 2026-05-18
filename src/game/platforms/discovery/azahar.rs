@@ -511,7 +511,7 @@ fn build_rom_index(
                 Some((tid, path, modified))
             })
             .collect();
-        saves_with_time.sort_by(|a, b| b.2.cmp(&a.2));
+        saves_with_time.sort_by_key(|a| std::cmp::Reverse(a.2));
 
         // Match recent ROMs to saves by position (most recent first)
         for (i, rom_path) in recent_roms.iter().enumerate() {

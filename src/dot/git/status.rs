@@ -119,7 +119,7 @@ pub fn show_single_file_status(
             return Ok(());
         }
 
-        matching.sort_by(|(a, _), (b, _)| a.cmp(b));
+        matching.sort_by_key(|(a, _)| a.as_path());
 
         match get_output_format() {
             OutputFormat::Json => {
