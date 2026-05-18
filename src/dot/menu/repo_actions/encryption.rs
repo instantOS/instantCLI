@@ -166,20 +166,29 @@ pub(super) fn handle_repo_encryption(
                         {
                             let key = key.trim();
                             if !key.is_empty() {
-                                crate::dot::operations::key::handle_authorize(
-                                    config,
-                                    db,
-                                    Some(key),
-                                    Some(repo_name),
-                                    false,
-                                    debug,
-                                )?;
-                                let _ = crate::menu_utils::prompt_text_edit(
-                                    crate::menu_utils::TextEditPrompt::new(
-                                        "Press Enter to continue",
-                                        None,
-                                    ),
-                                )?;
+                                if !key.starts_with("age1") && !key.starts_with("ssh-") {
+                                    let _ = crate::menu_utils::prompt_text_edit(
+                                        crate::menu_utils::TextEditPrompt::new(
+                                            "Invalid key prefix. Press Enter to continue",
+                                            None,
+                                        ),
+                                    )?;
+                                } else {
+                                    crate::dot::operations::key::handle_authorize(
+                                        config,
+                                        db,
+                                        Some(key),
+                                        Some(repo_name),
+                                        false,
+                                        debug,
+                                    )?;
+                                    let _ = crate::menu_utils::prompt_text_edit(
+                                        crate::menu_utils::TextEditPrompt::new(
+                                            "Press Enter to continue",
+                                            None,
+                                        ),
+                                    )?;
+                                }
                             }
                         }
                     }
@@ -197,28 +206,50 @@ pub(super) fn handle_repo_encryption(
                                 .map(|s| s.trim().to_string())
                                 .filter(|s| !s.is_empty())
                                 .collect();
+
                             if !keys.is_empty() {
-                                crate::dot::operations::key::handle_rotate(
-                                    config,
-                                    db,
-                                    &keys,
-                                    Some(repo_name),
-                                    false,
-                                    debug,
-                                )?;
-                                let _ = crate::menu_utils::prompt_text_edit(
-                                    crate::menu_utils::TextEditPrompt::new(
-                                        "Press Enter to continue",
-                                        None,
-                                    ),
-                                )?;
+                                for k in &keys {
+                                    if !k.starts_with("age1") && !k.starts_with("ssh-") {
+                                        let _ = crate::menu_utils::prompt_text_edit(
+                                            crate::menu_utils::TextEditPrompt::new(
+                                                &format!(
+                                                    "Invalid key '{}'. Press Enter to continue",
+                                                    k
+                                                ),
+                                                None,
+                                            ),
+                                        )?;
+                                        continue;
+                                    }
+                                }
+
+                                let confirm = crate::menu_utils::FzfWrapper::confirm(&format!(
+                                    "Are you sure you want to rotate keys to {} recipients? You will lose access if your key is not included.",
+                                    keys.len()
+                                ))?;
+                                if confirm == crate::menu_utils::ConfirmResult::Yes {
+                                    crate::dot::operations::key::handle_rotate(
+                                        config,
+                                        db,
+                                        &keys,
+                                        Some(repo_name),
+                                        false,
+                                        debug,
+                                    )?;
+                                    let _ = crate::menu_utils::prompt_text_edit(
+                                        crate::menu_utils::TextEditPrompt::new(
+                                            "Press Enter to continue",
+                                            None,
+                                        ),
+                                    )?;
+                                }
                             }
                         }
                     }
                     RepoEncryptionAction::Back => return Ok(()),
                 }
             }
-            FzfResult::Cancelled => return Ok(()),
+            FzfResult::Error(e) => return Err(anyhow::anyhow!("FZF Error: {}", e)),
             _ => return Ok(()),
         }
     }

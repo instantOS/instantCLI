@@ -145,6 +145,7 @@ pub fn handle_encryption_keys_menu(
                 }
             }
             FzfResult::Cancelled => return Ok(()),
+            FzfResult::Error(e) => return Err(anyhow::anyhow!("FZF Error: {}", e)),
             _ => return Ok(()),
         }
     }

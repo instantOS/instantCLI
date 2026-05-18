@@ -219,7 +219,7 @@ impl DotfileConfig {
     pub fn save(&self, custom_path: Option<&str>) -> Result<()> {
         let cfg_path = config_file_path(custom_path)?;
         let toml = toml::to_string_pretty(self).context("serializing config to toml")?;
-        fs::write(cfg_path, toml).context("writing config file")?;
+        crate::dot::utils::persist_file_safely(cfg_path, toml.as_bytes(), "dotfile config").context("writing config file")?;
         Ok(())
     }
 

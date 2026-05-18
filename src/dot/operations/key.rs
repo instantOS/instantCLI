@@ -100,7 +100,7 @@ pub(crate) fn handle_init(force: bool) -> Result<()> {
     let secret_string = identity.to_string();
     let secret_str = secret_string.expose_secret();
 
-    fs::write(&identity_path, secret_str)?;
+    crate::dot::utils::persist_file_safely(&identity_path, secret_str.as_bytes(), "age identity")?;
 
     #[cfg(unix)]
     {
@@ -190,79 +190,26 @@ pub(crate) fn handle_authorize(
     let mut new_recipients = meta.age_recipients.clone();
     new_recipients.push(recipient_key.clone());
 
-    let mut encrypted_files = Vec::new();
-    for dir in &dotfile_repo.dotfile_dirs {
-        if dir.path.is_dir() {
-            find_age_files(&dir.path, &mut encrypted_files)?;
-        }
-    }
-
-    let identities = crate::dot::encryption::load_identities()?;
-    if !encrypted_files.is_empty() && identities.is_empty() {
-        anyhow::bail!(
-            "Repository has existing encrypted files, but no local age identities were found. Please configure your identity first."
-        );
-    }
-    for file in &encrypted_files {
-        if let Err(err) = crate::dot::encryption::decrypt_file_to_bytes(file, &identities) {
-            anyhow::bail!(
-                "Decryption verification failed for '{}'. You must possess a valid identity key matching the existing recipients before authorizing a new recipient.\nError: {}",
-                file.display(),
-                err
-            );
-        }
-    }
-
-    if dry_run {
-        println!("--- DRY RUN ---");
-        println!("Would authorize recipient: {}", recipient_key.green());
-        println!(
-            "Would update instantdots.toml at: {}",
-            repo_path.join("instantdots.toml").display()
-        );
-        println!("Would re-encrypt {} tracked files:", encrypted_files.len());
-        for file in &encrypted_files {
-            println!("  - {}", file.display());
-        }
-        return Ok(());
-    }
-
-    let parsed_recipients = crate::dot::encryption::parse_recipients(&new_recipients)?;
-
-    // Phase 1: Decrypt and re-encrypt all files in memory
-    // This prevents a partial failure from leaving the repository in a mixed state.
-    let mut pending_writes = Vec::new();
-    for file in &encrypted_files {
-        let plain_bytes = crate::dot::encryption::decrypt_file_to_bytes(file, &identities)?;
-        let plain_hash = crate::dot::dotfile::Dotfile::hash_bytes(&plain_bytes);
-        let cipher_bytes =
-            crate::dot::encryption::encrypt_bytes_to_armored(&plain_bytes, &parsed_recipients)?;
-        let new_cipher_hash = crate::dot::dotfile::Dotfile::hash_bytes(&cipher_bytes);
-        pending_writes.push((file, cipher_bytes, plain_hash, new_cipher_hash));
-    }
-
-    // Phase 2: Write all files atomically and update database
-    for (file, cipher_bytes, plain_hash, new_cipher_hash) in pending_writes {
-        crate::dot::utils::persist_file_safely(file, &cipher_bytes, "encrypted file")?;
-        db.record_encrypted_source(&new_cipher_hash, &plain_hash)?;
-        crate::dot::git::repo_ops::git_add(&repo_path, file, debug)?;
-    }
-
-    meta.age_recipients = new_recipients;
-    crate::dot::meta::update_meta(&repo_path, &meta)?;
-    crate::dot::git::repo_ops::git_add(&repo_path, &repo_path.join("instantdots.toml"), debug)?;
+    reencrypt_repository(
+        &repo_path,
+        &repo_name,
+        &dotfile_repo,
+        &new_recipients,
+        db,
+        dry_run,
+        debug,
+    )?;
 
     emit(
         Level::Success,
         "dot.key.authorize.success",
         &format!(
-            "{} Successfully authorized recipient in repository '{}'!\n{} Recipient: {}\n{} Re-encrypted {} files.",
+            "{} Successfully authorized recipient in repository '{}'!\n{} Recipient: {}\n{} Re-encrypted tracked files.",
             char::from(NerdFont::Check),
             repo_name,
             char::from(NerdFont::Users),
             recipient_key.green(),
-            char::from(NerdFont::Folder),
-            encrypted_files.len()
+            char::from(NerdFont::Folder)
         ),
         None,
     );
@@ -290,6 +237,21 @@ pub(crate) fn handle_rotate(
         }
     }
 
+    let local_pubkeys = get_local_public_keys()?;
+    let mut lockout = true;
+    for pk in &local_pubkeys {
+        if recipients.contains(pk) {
+            lockout = false;
+            break;
+        }
+    }
+
+    if lockout && !local_pubkeys.is_empty() {
+        anyhow::bail!(
+            "Self-lockout prevented: Your local public keys are not in the new recipient list. You would lose access. To rotate, ensure your key is included."
+        );
+    }
+
     let repo_name = if let Some(name) = repo_name_opt {
         name.to_string()
     } else {
@@ -302,7 +264,43 @@ pub(crate) fn handle_rotate(
 
     let dotfile_repo = DotfileRepo::new(config, repo_name.clone())?;
     let repo_path = dotfile_repo.local_path(config)?;
-    let mut meta = crate::dot::meta::read_meta(&repo_path)?;
+
+    reencrypt_repository(
+        &repo_path,
+        &repo_name,
+        &dotfile_repo,
+        recipients,
+        db,
+        dry_run,
+        debug,
+    )?;
+
+    emit(
+        Level::Success,
+        "dot.key.rotate.success",
+        &format!(
+            "{} Successfully rotated keys in repository '{}'!\n{} New Recipients: {:?}",
+            char::from(NerdFont::Check),
+            repo_name,
+            char::from(NerdFont::Users),
+            recipients
+        ),
+        None,
+    );
+
+    Ok(())
+}
+
+fn reencrypt_repository(
+    repo_path: &Path,
+    repo_name: &str,
+    dotfile_repo: &DotfileRepo,
+    new_recipients_str: &[String],
+    db: &Database,
+    dry_run: bool,
+    debug: bool,
+) -> Result<()> {
+    let mut meta = crate::dot::meta::read_meta(repo_path)?;
 
     let mut encrypted_files = Vec::new();
     for dir in &dotfile_repo.dotfile_dirs {
@@ -320,7 +318,7 @@ pub(crate) fn handle_rotate(
     for file in &encrypted_files {
         if let Err(err) = crate::dot::encryption::decrypt_file_to_bytes(file, &identities) {
             anyhow::bail!(
-                "Decryption verification failed for '{}'. You must possess a valid identity key matching the existing recipients before performing rotation.\nError: {}",
+                "Decryption verification failed for '{}'. You must possess a valid identity key matching the existing recipients before modifying recipients.\nError: {}",
                 file.display(),
                 err
             );
@@ -329,7 +327,10 @@ pub(crate) fn handle_rotate(
 
     if dry_run {
         println!("--- DRY RUN ---");
-        println!("Would rotate recipients to: {:?}", recipients);
+        println!(
+            "Would rotate/authorize recipients to: {:?}",
+            new_recipients_str
+        );
         println!(
             "Would update instantdots.toml at: {}",
             repo_path.join("instantdots.toml").display()
@@ -341,7 +342,7 @@ pub(crate) fn handle_rotate(
         return Ok(());
     }
 
-    let parsed_recipients = crate::dot::encryption::parse_recipients(recipients)?;
+    let parsed_recipients = crate::dot::encryption::parse_recipients(new_recipients_str)?;
 
     // Phase 1: Decrypt and re-encrypt all files in memory
     // This prevents a partial failure from leaving the repository in a mixed state.
@@ -359,27 +360,12 @@ pub(crate) fn handle_rotate(
     for (file, cipher_bytes, plain_hash, new_cipher_hash) in pending_writes {
         crate::dot::utils::persist_file_safely(file, &cipher_bytes, "encrypted file")?;
         db.record_encrypted_source(&new_cipher_hash, &plain_hash)?;
-        crate::dot::git::repo_ops::git_add(&repo_path, file, debug)?;
+        crate::dot::git::repo_ops::git_add(repo_path, file, debug)?;
     }
 
-    meta.age_recipients = recipients.to_vec();
-    crate::dot::meta::update_meta(&repo_path, &meta)?;
-    crate::dot::git::repo_ops::git_add(&repo_path, &repo_path.join("instantdots.toml"), debug)?;
-
-    emit(
-        Level::Success,
-        "dot.key.rotate.success",
-        &format!(
-            "{} Successfully rotated keys in repository '{}'!\n{} New Recipients: {:?}\n{} Re-encrypted {} files.",
-            char::from(NerdFont::Check),
-            repo_name,
-            char::from(NerdFont::Users),
-            recipients,
-            char::from(NerdFont::Folder),
-            encrypted_files.len()
-        ),
-        None,
-    );
+    meta.age_recipients = new_recipients_str.to_vec();
+    crate::dot::meta::update_meta(repo_path, &meta)?;
+    crate::dot::git::repo_ops::git_add(repo_path, &repo_path.join("instantdots.toml"), debug)?;
 
     Ok(())
 }
@@ -556,24 +542,26 @@ pub(crate) fn handle_identity() -> Result<()> {
 
     if identity_path.exists() {
         let content = fs::read_to_string(&identity_path)?;
-        let mut pubkey = None;
+        let mut pubkeys = Vec::new();
         for line in content.lines() {
             let trimmed = line.trim();
             if trimmed.starts_with("AGE-SECRET-KEY-1")
                 && let Ok(identity) = age::x25519::Identity::from_str(trimmed)
             {
-                pubkey = Some(identity.to_public().to_string());
+                pubkeys.push(identity.to_public().to_string());
             }
         }
-        if let Some(pk) = pubkey {
+        if !pubkeys.is_empty() {
             identity_found = true;
             println!(
-                "{} Primary Age Public Key (from ~/.config/instant/age/identity):",
+                "{} Age Public Keys (from ~/.config/instant/age/identity):",
                 char::from(NerdFont::CheckCircle).to_string().green()
             );
-            println!("   {}", pk.green().bold());
+            for pk in pubkeys {
+                println!("   {}", pk.green().bold());
+            }
             println!(
-                "   {} Share this public key with others to allow them to authorize you as a recipient.",
+                "   {} Share these public keys with others to allow them to authorize you as a recipient.",
                 char::from(NerdFont::InfoCircle).to_string().dimmed()
             );
             println!();

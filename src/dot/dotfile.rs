@@ -297,7 +297,7 @@ impl Dotfile {
             SourceKind::Age => {
                 let identities = encryption::load_identities()?;
                 let plaintext = encryption::decrypt_file_to_bytes(&self.source_path, &identities)?;
-                fs::write(&self.target_path, &plaintext)?;
+                crate::dot::utils::persist_file_safely(&self.target_path, &plaintext, "decrypted target file")?;
                 invalidate_cache(&self.target_path);
 
                 // Record the plaintext hash on both sides. We just produced
@@ -398,7 +398,7 @@ impl Dotfile {
             SourceKind::Age => {
                 let identities = encryption::load_identities()?;
                 let plaintext = encryption::decrypt_file_to_bytes(&self.source_path, &identities)?;
-                fs::write(&self.target_path, &plaintext)?;
+                crate::dot::utils::persist_file_safely(&self.target_path, &plaintext, "decrypted target file")?;
                 invalidate_cache(&self.target_path);
 
                 let plain_hash = Self::hash_bytes(&plaintext);
