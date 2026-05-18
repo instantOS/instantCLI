@@ -1,7 +1,7 @@
 use crate::common::home_dir;
 use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
-use crate::dot::dotfile::Dotfile;
+use crate::dot::dotfile::{Dotfile, SourceKind};
 use crate::dot::units::{get_all_units, get_modified_units};
 use crate::dot::utils::get_all_dotfiles;
 use crate::ui::prelude::*;
@@ -16,6 +16,7 @@ enum ApplyAction {
     Created,
     Updated,
     Skipped,
+    SkippedEncrypted,
     SkippedUnit,
     AlreadyUpToDate,
 }
@@ -26,6 +27,7 @@ struct ApplyStats {
     created: Vec<String>,
     updated: Vec<String>,
     skipped: Vec<String>,
+    skipped_encrypted: Vec<String>,
     skipped_unit_files: usize,
     unchanged: usize,
     reported_units: HashSet<PathBuf>,
@@ -196,8 +198,21 @@ fn determine_and_apply_action(
 /// Apply a single dotfile and determine what action was taken
 fn apply_single_dotfile(dotfile: &Dotfile, db: &Database) -> Result<ApplyAction> {
     let target_exists = dotfile.target_path.exists();
-    let is_modified = !dotfile.is_target_unmodified(db)?;
-    let is_outdated = dotfile.is_outdated(db);
+    let is_modified = match dotfile.is_target_unmodified(db) {
+        Ok(unmodified) => !unmodified,
+        Err(err) if dotfile.kind == SourceKind::Age => {
+            if target_exists {
+                return Ok(ApplyAction::SkippedEncrypted);
+            }
+            return Err(err);
+        }
+        Err(err) => return Err(err),
+    };
+    let is_outdated = match dotfile.is_outdated(db) {
+        Ok(outdated) => outdated,
+        Err(_) if dotfile.kind == SourceKind::Age => return Ok(ApplyAction::SkippedEncrypted),
+        Err(err) => return Err(err),
+    };
 
     if is_modified {
         return Ok(ApplyAction::Skipped);
@@ -208,7 +223,12 @@ fn apply_single_dotfile(dotfile: &Dotfile, db: &Database) -> Result<ApplyAction>
         return Ok(ApplyAction::AlreadyUpToDate);
     }
 
-    dotfile.apply(db)?;
+    if let Err(err) = dotfile.apply(db) {
+        if dotfile.kind == SourceKind::Age {
+            return Ok(ApplyAction::SkippedEncrypted);
+        }
+        return Err(err);
+    }
 
     if !target_exists {
         Ok(ApplyAction::Created)
@@ -260,6 +280,22 @@ fn emit_action_result(action: &ApplyAction, dotfile: &Dotfile) {
                 ),
             );
         }
+        ApplyAction::SkippedEncrypted => {
+            emit(
+                Level::Warn,
+                "dot.apply.skipped_encrypted",
+                &format!(
+                    "{} Skipped (encrypted, identity required): {}",
+                    char::from(NerdFont::ShieldAlert),
+                    path_str.yellow()
+                ),
+                Some(serde_json::json!({
+                    "path": path_str,
+                    "action": "skipped",
+                    "reason": "identity_required"
+                })),
+            );
+        }
         ApplyAction::SkippedUnit | ApplyAction::AlreadyUpToDate => {}
     }
 }
@@ -272,6 +308,7 @@ fn record_action(action: &ApplyAction, dotfile: &Dotfile, stats: &mut ApplyStats
         ApplyAction::Created => stats.created.push(path_str),
         ApplyAction::Updated => stats.updated.push(path_str),
         ApplyAction::Skipped => stats.skipped.push(path_str),
+        ApplyAction::SkippedEncrypted => stats.skipped_encrypted.push(path_str),
         ApplyAction::SkippedUnit => stats.skipped_unit_files += 1,
         ApplyAction::AlreadyUpToDate => stats.unchanged += 1,
     }
@@ -295,6 +332,7 @@ fn print_apply_summary(stats: &ApplyStats) {
         "created": stats.created.len(),
         "updated": stats.updated.len(),
         "skipped": stats.skipped.len(),
+        "skipped_encrypted": stats.skipped_encrypted.len(),
         "skipped_unit_files": stats.skipped_unit_files,
         "skipped_units": stats.skipped_units(),
         "unchanged": stats.unchanged
@@ -306,10 +344,11 @@ fn print_apply_summary(stats: &ApplyStats) {
             Level::Info,
             "dot.apply.summary",
             &format!(
-                "  Created: {}\n  Updated: {}\n  Skipped: {}\n  Skipped (units): {} files in {} units\n  Unchanged: {}",
+                "  Created: {}\n  Updated: {}\n  Skipped: {}\n  Skipped (encrypted): {}\n  Skipped (units): {} files in {} units\n  Unchanged: {}",
                 stats.created.len(),
                 stats.updated.len(),
                 stats.skipped.len(),
+                stats.skipped_encrypted.len(),
                 stats.skipped_unit_files,
                 stats.skipped_units(),
                 stats.unchanged
@@ -352,6 +391,22 @@ fn print_apply_summary(stats: &ApplyStats) {
             stats.skipped.len().to_string(),
             "dot.apply.summary.skipped",
         ));
+    }
+
+    if !stats.skipped_encrypted.is_empty() {
+        emit(
+            Level::Warn,
+            "dot.apply.summary.skipped_encrypted",
+            &format!(
+                "{} Skipped {} encrypted file(s) that need an age identity",
+                char::from(NerdFont::ShieldAlert),
+                stats.skipped_encrypted.len()
+            ),
+            Some(serde_json::json!({
+                "skipped_encrypted": stats.skipped_encrypted.len(),
+                "reason": "identity_required"
+            })),
+        );
     }
 
     if stats.skipped_units() > 0 {

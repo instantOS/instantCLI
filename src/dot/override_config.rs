@@ -170,16 +170,20 @@ pub fn apply_overrides(
                 continue;
             }
 
-            // Construct the overridden source path
+            // Construct the overridden source path. Encrypted sources map to
+            // the same target path with an extra `.age` suffix in the repo.
             let relative_path = target_path.strip_prefix(&home).unwrap_or(target_path);
             let repo_path = config.repos_path().join(&override_entry.source_repo);
             let source_path = repo_path
                 .join(&override_entry.source_subdir)
                 .join(relative_path);
+            let encrypted_source_path = crate::dot::encryption::append_age_suffix(&source_path);
 
             // Only apply if the override source actually exists
             if source_path.exists() {
-                dotfile.source_path = source_path;
+                dotfile.set_source_path(source_path);
+            } else if encrypted_source_path.exists() {
+                dotfile.set_source_path(encrypted_source_path);
             }
         }
     }

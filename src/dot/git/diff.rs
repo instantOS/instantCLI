@@ -6,6 +6,7 @@ use crate::dot::git::{get_dotfile_dir_name, get_repo_name_for_dotfile, status::D
 use anyhow::{Context, Result};
 use colored::*;
 use std::collections::HashMap;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -115,7 +116,7 @@ fn diff_file(
                 let tilde_path = format!("~/{}", relative_path.display());
                 println!("{} {} is unmodified", "✓".green(), tilde_path.green());
             }
-            DotFileStatus::Modified | DotFileStatus::Outdated => {
+            DotFileStatus::Modified | DotFileStatus::Outdated | DotFileStatus::IdentityRequired => {
                 show_dotfile_diff(dotfile)?;
             }
         }
@@ -230,15 +231,56 @@ fn show_delta_diff(dotfile: &crate::dot::Dotfile) -> Result<()> {
         return Ok(());
     }
 
+    let source_temp;
+    let source_for_diff: &Path = if dotfile.kind == crate::dot::dotfile::SourceKind::Age {
+        let identities = match crate::dot::encryption::load_identities() {
+            Ok(identities) => identities,
+            Err(err) => {
+                println!(
+                    "  {} encrypted source requires a readable age identity ({})",
+                    crate::ui::nerd_font::NerdFont::ShieldAlert
+                        .to_string()
+                        .yellow(),
+                    err
+                );
+                return Ok(());
+            }
+        };
+        let plaintext = match crate::dot::encryption::decrypt_file_to_bytes(
+            &dotfile.source_path,
+            &identities,
+        ) {
+            Ok(plaintext) => plaintext,
+            Err(err) => {
+                println!(
+                    "  {} encrypted source requires a matching age identity ({})",
+                    crate::ui::nerd_font::NerdFont::ShieldAlert
+                        .to_string()
+                        .yellow(),
+                    err
+                );
+                return Ok(());
+            }
+        };
+        source_temp = tempfile::Builder::new()
+            .prefix("ins-dot-source-")
+            .suffix(".plaintext")
+            .tempfile()?;
+        source_temp.as_file().write_all(&plaintext)?;
+        source_temp.path()
+    } else {
+        &dotfile.source_path
+    };
+
     // Check if files are binary
-    if is_binary_file(&dotfile.source_path)? || is_binary_file(&dotfile.target_path)? {
+    if is_binary_file(source_for_diff)? || is_binary_file(&dotfile.target_path)? {
         println!("  {}", "Binary files differ".yellow());
         return Ok(());
     }
 
     // Use delta for direct file comparison (not git mode)
     let mut child = Command::new("delta")
-        .arg(&dotfile.source_path)
+        .arg(source_for_diff)
         .arg(&dotfile.target_path)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -268,7 +310,7 @@ fn show_delta_diff(dotfile: &crate::dot::Dotfile) -> Result<()> {
     Ok(())
 }
 
-fn is_binary_file(path: &PathBuf) -> Result<bool> {
+fn is_binary_file(path: &Path) -> Result<bool> {
     use std::fs::File;
     use std::io::Read;
 

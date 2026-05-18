@@ -12,6 +12,7 @@ use std::path::PathBuf;
 pub enum DotFileStatus {
     Modified,
     Outdated,
+    IdentityRequired,
     Clean,
 }
 
@@ -29,6 +30,14 @@ impl std::fmt::Display for DotFileStatus {
                 "{} {}",
                 crate::ui::nerd_font::NerdFont::Sync2.to_string().blue(),
                 "outdated".blue()
+            ),
+            DotFileStatus::IdentityRequired => write!(
+                f,
+                "{} {}",
+                crate::ui::nerd_font::NerdFont::ShieldAlert
+                    .to_string()
+                    .yellow(),
+                "encrypted: identity required".yellow()
             ),
             DotFileStatus::Clean => write!(
                 f,
@@ -57,6 +66,7 @@ pub struct StatusSummary {
     pub clean_count: usize,
     pub modified_count: usize,
     pub outdated_count: usize,
+    pub identity_required_count: usize,
 }
 
 /// Show status for a single file
@@ -285,7 +295,7 @@ pub fn show_status_summary(
     show_all: bool,
     show_sources: bool,
     unit_index: &UnitIndex,
-    include_root: bool,
+    _include_root: bool,
 ) -> Result<()> {
     let home = dirs::home_dir().context("Failed to get home directory")?;
 
@@ -321,6 +331,7 @@ pub fn categorize_files_and_get_summary<'a>(
     let mut clean_count = 0;
     let mut modified_count = 0;
     let mut outdated_count = 0;
+    let mut identity_required_count = 0;
 
     // Load override config to check for overridden files
     let overrides = crate::dot::override_config::OverrideConfig::load().unwrap_or_default();
@@ -348,6 +359,7 @@ pub fn categorize_files_and_get_summary<'a>(
             DotFileStatus::Clean => clean_count += 1,
             DotFileStatus::Modified => modified_count += 1,
             DotFileStatus::Outdated => outdated_count += 1,
+            DotFileStatus::IdentityRequired => identity_required_count += 1,
         }
     }
 
@@ -361,6 +373,7 @@ pub fn categorize_files_and_get_summary<'a>(
         clean_count,
         modified_count,
         outdated_count,
+        identity_required_count,
     };
 
     (files_by_status, summary)
@@ -461,13 +474,40 @@ fn show_json_status(
         vec![]
     };
 
+    let identity_required_files: Vec<_> = files_by_status
+        .get(&DotFileStatus::IdentityRequired)
+        .unwrap_or(&vec![])
+        .iter()
+        .map(|file_info| {
+            let relative_path = file_info
+                .target_path
+                .strip_prefix(&home)
+                .unwrap_or(&file_info.target_path);
+            let priority = get_priority(file_info.repo_name.as_str());
+            let mut json_val = serde_json::json!({
+                "path": format!("~/{}", relative_path.display()),
+                "status": "identity_required",
+                "repo": file_info.repo_name.as_str(),
+                "dotfile_dir": file_info.dotfile_dir,
+                "reason": "encrypted_source"
+            });
+            if show_sources {
+                json_val["priority"] = serde_json::json!(priority);
+                json_val["override"] = serde_json::json!(file_info.is_overridden);
+            }
+            json_val
+        })
+        .collect();
+
     let status_data = serde_json::json!({
         "total_files": summary.total_files,
         "clean_count": summary.clean_count,
         "modified_count": summary.modified_count,
         "outdated_count": summary.outdated_count,
+        "identity_required_count": summary.identity_required_count,
         "modified_files": modified_files,
         "outdated_files": outdated_files,
+        "identity_required_files": identity_required_files,
         "clean_files": clean_files,
         "show_all": show_all,
         "show_sources": show_sources
@@ -515,8 +555,21 @@ fn show_text_status(
         println!("{} Outdated: {} files", "↓".blue(), summary.outdated_count);
     }
 
+    if summary.identity_required_count > 0 {
+        println!(
+            "{} Encrypted: {} files need an age identity",
+            crate::ui::nerd_font::NerdFont::ShieldAlert
+                .to_string()
+                .yellow(),
+            summary.identity_required_count
+        );
+    }
+
     // Show files with issues
-    if summary.modified_count > 0 || summary.outdated_count > 0 {
+    if summary.modified_count > 0
+        || summary.outdated_count > 0
+        || summary.identity_required_count > 0
+    {
         println!();
 
         if let Some(modified_files) = files_by_status.get(&DotFileStatus::Modified) {
@@ -525,6 +578,16 @@ fn show_text_status(
 
         if let Some(outdated_files) = files_by_status.get(&DotFileStatus::Outdated) {
             show_outdated_files(outdated_files, home, show_sources, &get_priority);
+        }
+
+        if let Some(identity_required_files) = files_by_status.get(&DotFileStatus::IdentityRequired)
+        {
+            show_identity_required_files(
+                identity_required_files,
+                home,
+                show_sources,
+                &get_priority,
+            );
         }
     }
 
@@ -540,6 +603,7 @@ fn show_text_status(
     show_action_suggestions(
         summary.modified_count,
         summary.outdated_count,
+        summary.identity_required_count,
         summary.clean_count,
     );
 }
@@ -632,6 +696,49 @@ fn show_outdated_files(
     println!();
 }
 
+fn show_identity_required_files(
+    files: &[FileInfo],
+    home: &PathBuf,
+    show_sources: bool,
+    get_priority: &dyn Fn(&str) -> usize,
+) {
+    println!("{}", "Encrypted files needing identity:".yellow().bold());
+    for file_info in files {
+        let relative_path = file_info
+            .target_path
+            .strip_prefix(home)
+            .unwrap_or(&file_info.target_path);
+        let tilde_path = format!("~/{}", relative_path.display());
+        let override_indicator = if file_info.is_overridden {
+            " [override]"
+        } else {
+            ""
+        };
+
+        if show_sources {
+            let priority = get_priority(file_info.repo_name.as_str());
+            println!(
+                "  {} -> {} / {} (P{}){}",
+                tilde_path,
+                file_info.repo_name.as_str().bright_purple(),
+                file_info.dotfile_dir,
+                priority,
+                override_indicator.magenta()
+            );
+        } else {
+            println!(
+                "  {} -> {} ({}: {}{})",
+                tilde_path,
+                "identity required".yellow(),
+                file_info.repo_name,
+                file_info.dotfile_dir,
+                override_indicator.magenta()
+            );
+        }
+    }
+    println!();
+}
+
 /// Show clean files section
 fn show_clean_files(
     files: &[FileInfo],
@@ -677,13 +784,18 @@ fn show_clean_files(
 }
 
 /// Show action suggestions based on file status counts
-fn show_action_suggestions(modified_count: usize, outdated_count: usize, clean_count: usize) {
+fn show_action_suggestions(
+    modified_count: usize,
+    outdated_count: usize,
+    identity_required_count: usize,
+    clean_count: usize,
+) {
     match get_output_format() {
         OutputFormat::Json => {
             let bin = env!("CARGO_BIN_NAME");
             let mut suggestions = Vec::new();
 
-            if modified_count > 0 || outdated_count > 0 {
+            if modified_count > 0 || outdated_count > 0 || identity_required_count > 0 {
                 if modified_count > 0 {
                     suggestions.push(format!(
                         "Use '{bin} dot apply' to apply changes from repositories"
@@ -699,6 +811,12 @@ fn show_action_suggestions(modified_count: usize, outdated_count: usize, clean_c
                     suggestions.push(format!(
                         "Use '{bin} dot reset <path>' to restore files to their original state"
                     ));
+                }
+                if identity_required_count > 0 {
+                    suggestions.push(
+                        "Configure an age identity with $AGE_IDENTITY or ~/.config/instant/age/identity"
+                            .to_string(),
+                    );
                 }
                 suggestions.push(format!(
                     "Use '{bin} dot status --all' to see all tracked files including clean ones"
@@ -721,7 +839,7 @@ fn show_action_suggestions(modified_count: usize, outdated_count: usize, clean_c
             }
 
             let suggestion_data = serde_json::json!({
-                "has_issues": modified_count > 0 || outdated_count > 0,
+                "has_issues": modified_count > 0 || outdated_count > 0 || identity_required_count > 0,
                 "suggestions": suggestions
             });
 
@@ -734,7 +852,7 @@ fn show_action_suggestions(modified_count: usize, outdated_count: usize, clean_c
         }
         OutputFormat::Text => {
             let bin = env!("CARGO_BIN_NAME");
-            if modified_count > 0 || outdated_count > 0 {
+            if modified_count > 0 || outdated_count > 0 || identity_required_count > 0 {
                 println!("{}", "Suggested actions:".bold());
                 if modified_count > 0 {
                     println!("  Use '{bin} dot apply' to apply changes from repositories");
@@ -744,6 +862,11 @@ fn show_action_suggestions(modified_count: usize, outdated_count: usize, clean_c
                 if outdated_count > 0 {
                     println!(
                         "  Use '{bin} dot reset <path>' to restore files to their original state"
+                    );
+                }
+                if identity_required_count > 0 {
+                    println!(
+                        "  Configure an age identity with $AGE_IDENTITY or ~/.config/instant/age/identity"
                     );
                 }
                 println!(
@@ -774,16 +897,26 @@ pub fn get_dotfile_status(
     db: &crate::dot::db::Database,
     unit_index: &UnitIndex,
 ) -> DotFileStatus {
-    if !dotfile.is_target_unmodified(db).unwrap_or(false) {
-        return DotFileStatus::Modified;
+    match dotfile.is_target_unmodified(db) {
+        Ok(false) => return DotFileStatus::Modified,
+        Ok(true) => {}
+        Err(_) if dotfile.kind == crate::dot::dotfile::SourceKind::Age => {
+            return DotFileStatus::IdentityRequired;
+        }
+        Err(_) => return DotFileStatus::Modified,
     }
 
     if unit_index.is_target_in_modified_unit(&dotfile.target_path) {
         return DotFileStatus::Modified;
     }
 
-    if dotfile.is_outdated(db) {
-        return DotFileStatus::Outdated;
+    match dotfile.is_outdated(db) {
+        Ok(true) => return DotFileStatus::Outdated,
+        Ok(false) => {}
+        Err(_) if dotfile.kind == crate::dot::dotfile::SourceKind::Age => {
+            return DotFileStatus::IdentityRequired;
+        }
+        Err(_) => return DotFileStatus::Modified,
     }
 
     DotFileStatus::Clean

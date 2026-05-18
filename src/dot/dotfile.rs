@@ -70,19 +70,21 @@ impl Dotfile {
         }
     }
 
-    pub fn is_outdated(&self, db: &Database) -> bool {
+    pub fn set_source_path(&mut self, source_path: PathBuf) {
+        self.kind = SourceKind::from_source_path(&source_path);
+        self.source_path = source_path;
+    }
+
+    pub fn is_outdated(&self, db: &Database) -> Result<bool, anyhow::Error> {
         if !self.target_path.exists() {
-            return true;
+            return Ok(true);
         }
 
-        // First, check if both files have the same hash in the database
-        if let (Ok(source_hash), Ok(target_hash)) = (
-            self.get_file_hash(&self.source_path, true, db),
-            self.get_file_hash(&self.target_path, false, db),
-        ) && source_hash == target_hash
-        {
+        let source_hash = self.get_file_hash(&self.source_path, true, db)?;
+        let target_hash = self.get_file_hash(&self.target_path, false, db)?;
+        if source_hash == target_hash {
             // Files have the same content, not outdated
-            return false;
+            return Ok(false);
         }
 
         // Fall back to modification time comparison
@@ -93,10 +95,10 @@ impl Dotfile {
             && let (Ok(source_time), Ok(target_time)) =
                 (source_meta.modified(), target_meta.modified())
         {
-            return source_time > target_time;
+            return Ok(source_time > target_time);
         }
 
-        false
+        Ok(false)
     }
 
     /// Determines if the target file can be safely overwritten
@@ -271,7 +273,7 @@ impl Dotfile {
             return Ok(());
         }
 
-        if !self.is_outdated(db) {
+        if !self.is_outdated(db)? {
             let _ = self.get_file_hash(&self.source_path, true, db);
             return Ok(());
         }
@@ -422,6 +424,7 @@ impl Dotfile {
 mod tests {
     use super::Dotfile;
     use crate::dot::db::{Database, DotFileType};
+    use age::secrecy::ExposeSecret;
     use serial_test::serial;
     use std::fs;
     use tempfile::tempdir;

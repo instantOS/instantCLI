@@ -149,10 +149,10 @@ pub fn add_repo(config: &mut DotfileConfig, repo: config::Repo, debug: bool) -> 
         for (_, dotfile) in dotfiles {
             // Only register hashes for dotfiles from this repository
             if dotfile.source_path.starts_with(&target) {
-                // Register the source file hash with source_file=true
-                if let Ok(source_hash) =
-                    crate::dot::dotfile::Dotfile::compute_hash(&dotfile.source_path)
-                {
+                // Register the source file hash with source_file=true. Use the
+                // Dotfile hash API rather than raw bytes so encrypted sources
+                // record their plaintext hash.
+                if let Ok(source_hash) = dotfile.get_file_hash(&dotfile.source_path, true, &db) {
                     db.add_hash(&source_hash, &dotfile.source_path, DotFileType::SourceFile)?; // source_file=true
 
                     // If the target file exists and has the same content,
