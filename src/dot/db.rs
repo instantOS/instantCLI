@@ -352,7 +352,7 @@ impl Database {
 
         // Remove old target file hashes
         self.conn.execute(
-            "DELETE FROM file_hashes WHERE source_file = 0 AND created < datetime('now', ?1 || ' days')",
+            "DELETE FROM file_hashes WHERE source_file = 0 AND created < datetime('now', '-' || ?1 || ' days')",
             [days.to_string()],
         )?;
 

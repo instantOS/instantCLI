@@ -228,15 +228,22 @@ pub(crate) fn handle_authorize(
     }
 
     let parsed_recipients = crate::dot::encryption::parse_recipients(&new_recipients)?;
+
+    // Phase 1: Decrypt and re-encrypt all files in memory
+    // This prevents a partial failure from leaving the repository in a mixed state.
+    let mut pending_writes = Vec::new();
     for file in &encrypted_files {
         let plain_bytes = crate::dot::encryption::decrypt_file_to_bytes(file, &identities)?;
-        let plain_hash = Dotfile::hash_bytes(&plain_bytes);
+        let plain_hash = crate::dot::dotfile::Dotfile::hash_bytes(&plain_bytes);
         let cipher_bytes =
             crate::dot::encryption::encrypt_bytes_to_armored(&plain_bytes, &parsed_recipients)?;
-        let new_cipher_hash = Dotfile::hash_bytes(&cipher_bytes);
+        let new_cipher_hash = crate::dot::dotfile::Dotfile::hash_bytes(&cipher_bytes);
+        pending_writes.push((file, cipher_bytes, plain_hash, new_cipher_hash));
+    }
 
-        fs::write(file, cipher_bytes)?;
-
+    // Phase 2: Write all files atomically and update database
+    for (file, cipher_bytes, plain_hash, new_cipher_hash) in pending_writes {
+        crate::dot::utils::persist_file_safely(file, &cipher_bytes, "encrypted file")?;
         db.record_encrypted_source(&new_cipher_hash, &plain_hash)?;
         crate::dot::git::repo_ops::git_add(&repo_path, file, debug)?;
     }
@@ -335,15 +342,22 @@ pub(crate) fn handle_rotate(
     }
 
     let parsed_recipients = crate::dot::encryption::parse_recipients(recipients)?;
+
+    // Phase 1: Decrypt and re-encrypt all files in memory
+    // This prevents a partial failure from leaving the repository in a mixed state.
+    let mut pending_writes = Vec::new();
     for file in &encrypted_files {
         let plain_bytes = crate::dot::encryption::decrypt_file_to_bytes(file, &identities)?;
         let plain_hash = Dotfile::hash_bytes(&plain_bytes);
         let cipher_bytes =
             crate::dot::encryption::encrypt_bytes_to_armored(&plain_bytes, &parsed_recipients)?;
         let new_cipher_hash = Dotfile::hash_bytes(&cipher_bytes);
+        pending_writes.push((file, cipher_bytes, plain_hash, new_cipher_hash));
+    }
 
-        fs::write(file, cipher_bytes)?;
-
+    // Phase 2: Write all files atomically and update database
+    for (file, cipher_bytes, plain_hash, new_cipher_hash) in pending_writes {
+        crate::dot::utils::persist_file_safely(file, &cipher_bytes, "encrypted file")?;
         db.record_encrypted_source(&new_cipher_hash, &plain_hash)?;
         crate::dot::git::repo_ops::git_add(&repo_path, file, debug)?;
     }

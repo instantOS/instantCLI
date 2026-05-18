@@ -356,7 +356,11 @@ impl Dotfile {
                 if target_hash != plain_hash {
                     let plaintext = fs::read(&self.target_path)?;
                     let ciphertext = encryption::encrypt_bytes_to_armored(&plaintext, &recipients)?;
-                    fs::write(&self.source_path, &ciphertext)?;
+                    crate::dot::utils::persist_file_safely(
+                        &self.source_path,
+                        &ciphertext,
+                        "encrypted source file",
+                    )?;
                     invalidate_cache(&self.source_path);
 
                     // Record the new plain hash and cipher hash in the database
