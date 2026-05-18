@@ -45,13 +45,7 @@ pub fn calculate_free_regions_from_json(
 
     let pt = output.partitiontable;
     let sector_size = pt.sectorsize;
-    let disk_size_sectors = disk_size_bytes.and_then(|b| {
-        if sector_size > 0 {
-            Some(b / sector_size)
-        } else {
-            None
-        }
-    });
+    let disk_size_sectors = disk_size_bytes.and_then(|b| b.checked_div(sector_size));
     let mut partitions = pt.partitions.unwrap_or_default();
 
     let first_lba = pt

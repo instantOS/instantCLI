@@ -153,6 +153,7 @@ impl DiskInfo {
 }
 
 /// Partition table type
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum PartitionTableType {
     GPT,

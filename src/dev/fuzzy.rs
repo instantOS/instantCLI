@@ -11,7 +11,7 @@ use anyhow::Result;
 #[derive(thiserror::Error, Debug)]
 pub enum FzfError {
     #[error("FZF error: {0}")]
-    FzfError(String),
+    Process(String),
 
     #[error("User cancelled selection")]
     UserCancelled,
@@ -201,14 +201,12 @@ pub fn select_repository(
         .args(fzf_mocha_args())
         .responsive_layout()
         .select(items)
-        .map_err(|e| FzfError::FzfError(format!("Selection error: {e}")))?
+        .map_err(|e| FzfError::Process(format!("Selection error: {e}")))?
     {
         crate::menu_utils::FzfResult::Selected(item) => Ok(item),
         crate::menu_utils::FzfResult::Cancelled => Err(FzfError::UserCancelled),
-        crate::menu_utils::FzfResult::Error(e) => Err(FzfError::FzfError(e)),
-        _ => Err(FzfError::FzfError(
-            "Unexpected selection result".to_string(),
-        )),
+        crate::menu_utils::FzfResult::Error(e) => Err(FzfError::Process(e)),
+        _ => Err(FzfError::Process("Unexpected selection result".to_string())),
     }
 }
 
@@ -228,13 +226,11 @@ pub fn select_package(packages: Vec<Package>) -> Result<Package, FzfError> {
         .args(fzf_mocha_args())
         .responsive_layout()
         .select(items)
-        .map_err(|e| FzfError::FzfError(format!("Selection error: {e}")))?
+        .map_err(|e| FzfError::Process(format!("Selection error: {e}")))?
     {
         crate::menu_utils::FzfResult::Selected(item) => Ok(item.package),
         crate::menu_utils::FzfResult::Cancelled => Err(FzfError::UserCancelled),
-        crate::menu_utils::FzfResult::Error(e) => Err(FzfError::FzfError(e)),
-        _ => Err(FzfError::FzfError(
-            "Unexpected selection result".to_string(),
-        )),
+        crate::menu_utils::FzfResult::Error(e) => Err(FzfError::Process(e)),
+        _ => Err(FzfError::Process("Unexpected selection result".to_string())),
     }
 }

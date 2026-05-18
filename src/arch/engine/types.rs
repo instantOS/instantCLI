@@ -35,6 +35,7 @@ pub enum QuestionId {
     DualBootInstructions,
 }
 
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub enum BootMode {
     UEFI64,

@@ -170,7 +170,7 @@ pub(crate) fn handle_authorize(
         );
     }
 
-    let mut meta = crate::dot::meta::read_meta(&repo_path)?;
+    let meta = crate::dot::meta::read_meta(&repo_path)?;
 
     if meta.age_recipients.contains(&recipient_key) {
         emit(
@@ -192,7 +192,6 @@ pub(crate) fn handle_authorize(
 
     reencrypt_repository(
         &repo_path,
-        &repo_name,
         &dotfile_repo,
         &new_recipients,
         db,
@@ -267,7 +266,6 @@ pub(crate) fn handle_rotate(
 
     reencrypt_repository(
         &repo_path,
-        &repo_name,
         &dotfile_repo,
         recipients,
         db,
@@ -293,7 +291,6 @@ pub(crate) fn handle_rotate(
 
 fn reencrypt_repository(
     repo_path: &Path,
-    repo_name: &str,
     dotfile_repo: &DotfileRepo,
     new_recipients_str: &[String],
     db: &Database,
@@ -413,7 +410,7 @@ pub(crate) fn handle_status(config: &DotfileConfig, target_repo_opt: Option<&str
     for repo in repos_to_check {
         let dotfile_repo = DotfileRepo::new(config, repo.name.clone())?;
         let repo_path = dotfile_repo.local_path(config)?;
-        let meta = &dotfile_repo.meta;
+        let meta = crate::dot::meta::read_meta(&repo_path)?;
         let recipients = &meta.age_recipients;
 
         println!(

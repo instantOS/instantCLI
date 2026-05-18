@@ -155,8 +155,10 @@ impl MkinitcpioConfig {
             }
         }
     }
+}
 
-    pub fn to_string(&self) -> String {
+impl std::fmt::Display for MkinitcpioConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut lines: Vec<String> = self.original_content.lines().map(String::from).collect();
 
         if let Some(idx) = self.hooks_line_idx {
@@ -175,7 +177,7 @@ impl MkinitcpioConfig {
             lines.push(format!("HOOKS=({})", self.hooks.join(" ")));
         }
 
-        lines.join("\n")
+        write!(f, "{}", lines.join("\n"))
     }
 }
 
