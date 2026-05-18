@@ -58,6 +58,9 @@ pub enum DotCommands {
         /// Override .insignore rules when adding files
         #[arg(short, long)]
         force: bool,
+        /// Encrypt the file during adding to repository (adds as a .age file)
+        #[arg(long)]
+        encrypt: bool,
     },
     /// Convert a tracked plaintext dotfile source to age-encrypted `.age`
     Encrypt {
@@ -682,12 +685,13 @@ pub fn handle_dot_command(
             all,
             choose,
             force,
+            encrypt,
         } => {
             // Auto-detect root path handling is inside add_dotfile.
             // include_root parameter is removed from CLI args for add.
             // We pass true here to allow adding root files, since Add should handle both automatically.
             super::add_dotfile(
-                &config, &db, path, *all, *choose, *force,
+                &config, &db, path, *all, *choose, *force, *encrypt,
                 true, // include_root = true allows absolute paths outside home
                 debug,
             )?;

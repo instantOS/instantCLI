@@ -170,6 +170,7 @@ pub fn add_to_destination(
     target_path: &Path,
     dest: &DotfileSource,
     force: bool,
+    recipients: Option<&[Box<dyn age::Recipient>]>,
 ) -> Result<bool> {
     // Ensure the target file exists before attempting to copy
     if !target_path.exists() {
@@ -205,14 +206,21 @@ pub fn add_to_destination(
         .strip_prefix(sources::home_dir())
         .unwrap_or(target_path);
 
-    let dest_path = dest.source_path.join(relative);
+    let mut dest_path = dest.source_path.join(relative);
+    if recipients.is_some() {
+        dest_path = crate::dot::encryption::append_age_suffix(&dest_path);
+    }
 
     if let Some(parent) = dest_path.parent() {
         fs::create_dir_all(parent)?;
     }
 
     let dotfile = Dotfile::new(dest_path.clone(), target_path.to_path_buf(), false);
-    dotfile.create_source_from_target(db)?;
+    if let Some(recs) = recipients {
+        dotfile.create_encrypted_source_from_target(db, recs)?;
+    } else {
+        dotfile.create_source_from_target(db)?;
+    }
 
     let repo_path = config.repos_path().join(&dest.repo_name);
     if let Err(e) = crate::dot::git::repo_ops::git_add(&repo_path, &dest_path, false) {

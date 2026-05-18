@@ -173,6 +173,7 @@ pub fn add_dotfile(
     add_all: bool,
     choose: bool,
     force: bool,
+    encrypt: bool,
     include_root: bool,
     debug: bool,
 ) -> Result<()> {
@@ -210,7 +211,7 @@ pub fn add_dotfile(
     if add_all {
         // Scan for untracked files and add them
         let (_, untracked_files) = scan_and_categorize_files(&target_path, &all_dotfiles, force)?;
-        add_untracked_files(&untracked_files, config, db, &mut stats, force, debug)?;
+        add_untracked_files(&untracked_files, config, db, &mut stats, force, encrypt, debug)?;
     } else if target_path.is_file() && tracked_dotfiles.is_empty() {
         if !force && let Some(ignore_file) = crate::dot::insignore::match_home_path(&target_path)? {
             println!(
@@ -221,7 +222,7 @@ pub fn add_dotfile(
         }
 
         // Single untracked file - prompt to add it
-        if let Some(repo_path) = add_new_file(config, db, &target_path, force)? {
+        if let Some(repo_path) = add_new_file(config, db, &target_path, force, encrypt)? {
             stats.added_count += 1;
             stats.modified_repos.insert(repo_path);
         }
@@ -266,9 +267,12 @@ fn add_new_file(
     db: &Database,
     full_path: &Path,
     force: bool,
+    encrypt: bool,
 ) -> Result<Option<PathBuf>> {
     use super::alternative::add_to_destination;
     use crate::dot::override_config::DotfileSource;
+    use crate::dot::dotfilerepo::DotfileRepo;
+    use anyhow::Context;
 
     // Repository selection
     let repo_config = select_repo(config, db, full_path)?;
@@ -293,8 +297,22 @@ fn add_new_file(
         source_path: chosen_dir.path.clone(),
     };
 
+    let recipients = if encrypt {
+        let parsed = crate::dot::encryption::parse_recipients(&dotfile_repo.meta.age_recipients)
+            .with_context(|| {
+                format!(
+                    "repository '{}' has no usable age_recipients configured in instantdots.toml.\n\
+                     Please authorize decryption keys first using 'ins dot key authorize'.",
+                    repo_config.name
+                )
+            })?;
+        Some(parsed)
+    } else {
+        None
+    };
+
     // Use shared add function
-    if add_to_destination(config, db, full_path, &dest, force)? {
+    if add_to_destination(config, db, full_path, &dest, force, recipients.as_deref())? {
         Ok(Some(repo_base))
     } else {
         Ok(None)
@@ -455,6 +473,7 @@ fn add_untracked_files(
     db: &Database,
     stats: &mut DirectoryAddStats,
     force: bool,
+    encrypt: bool,
     _debug: bool,
 ) -> Result<()> {
     if file_paths.is_empty() {
@@ -468,7 +487,7 @@ fn add_untracked_files(
     );
 
     for file_path in file_paths {
-        if let Some(repo_path) = add_new_file(config, db, file_path, force)? {
+        if let Some(repo_path) = add_new_file(config, db, file_path, force, encrypt)? {
             stats.added_count += 1;
             stats.modified_repos.insert(repo_path);
         }

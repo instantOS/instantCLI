@@ -162,7 +162,7 @@ pub(crate) fn handle_create_direct(
 
     // Copy file to destination
     let db = Database::new(config.database_path().to_path_buf())?;
-    let added = add_to_destination(config, &db, path, dest, false)?;
+    let added = add_to_destination(config, &db, path, dest, false, None)?;
     if !added {
         return Ok(());
     }

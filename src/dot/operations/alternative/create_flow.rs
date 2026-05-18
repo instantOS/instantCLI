@@ -188,7 +188,7 @@ fn add_file_to_destination(
     };
 
     // Copy the file
-    let added = match add_to_destination(config, &db, path, &item.source, force) {
+    let added = match add_to_destination(config, &db, path, &item.source, force, None) {
         Ok(added) => added,
         Err(e) => {
             return message_and_continue(&format!(

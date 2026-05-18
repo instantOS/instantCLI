@@ -441,6 +441,52 @@ impl Dotfile {
 
         Ok(())
     }
+
+    /// Create an encrypted source file in the repository by encrypting the target (home) file,
+    /// and register its hashes in the database.
+    pub fn create_encrypted_source_from_target(
+        &self,
+        db: &Database,
+        recipients: &[Box<dyn age::Recipient>],
+    ) -> Result<(), anyhow::Error> {
+        use anyhow::Context;
+
+        if self.kind != SourceKind::Age {
+            return Err(anyhow::anyhow!(
+                "source path {} is not an encrypted (.age) source",
+                self.source_path.display()
+            ));
+        }
+
+        // Ensure parent directories exist
+        if let Some(parent) = self.source_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        // Read plaintext from target
+        let plaintext = fs::read(&self.target_path).with_context(|| {
+            format!(
+                "reading plaintext from target file {}",
+                self.target_path.display()
+            )
+        })?;
+        let plain_hash = Self::hash_bytes(&plaintext);
+
+        // Encrypt to armored ciphertext
+        let ciphertext = encryption::encrypt_bytes_to_armored(&plaintext, recipients)
+            .context("encrypting plaintext for source file")?;
+
+        // Write ciphertext safely/atomically using consolidated helper
+        crate::dot::utils::persist_file_safely(&self.source_path, &ciphertext, "encrypted source")?;
+
+        // Register hashes in SQLite database
+        let cipher_hash = Self::compute_hash(&self.source_path)?;
+        db.record_encrypted_source(&cipher_hash, &plain_hash)?;
+        db.add_hash(&plain_hash, &self.source_path, DotFileType::SourceFile)?;
+        db.add_hash(&plain_hash, &self.target_path, DotFileType::TargetFile)?;
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
