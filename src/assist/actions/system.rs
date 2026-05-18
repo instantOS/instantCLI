@@ -62,29 +62,28 @@ pub fn volume_direct(action: &str) -> Result<()> {
     if let Ok(output) = Command::new("wpctl")
         .args(["get-volume", "@DEFAULT_AUDIO_SINK@"])
         .output()
+        && output.status.success()
     {
-        if output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            if let Some(vol) = stdout.split_whitespace().find_map(|t| {
-                t.trim_matches(|c: char| matches!(c, '[' | ']' | ',' | ':'))
-                    .parse::<f64>()
-                    .ok()
-            }) {
-                let percent = (vol * 100.0).round() as i64;
-                let _ = Command::new("dunstify")
-                    .args([
-                        "--appname",
-                        "instantCLI",
-                        "-h",
-                        "string:x-dunst-stack-tag:instantcli-volume",
-                        "-h",
-                        &format!("int:value:{}", percent),
-                        "-i",
-                        "audio-volume-medium-symbolic",
-                        &format!("Volume [{}%]", percent),
-                    ])
-                    .spawn();
-            }
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if let Some(vol) = stdout.split_whitespace().find_map(|t| {
+            t.trim_matches(|c: char| matches!(c, '[' | ']' | ',' | ':'))
+                .parse::<f64>()
+                .ok()
+        }) {
+            let percent = (vol * 100.0).round() as i64;
+            let _ = Command::new("dunstify")
+                .args([
+                    "--appname",
+                    "instantCLI",
+                    "-h",
+                    "string:x-dunst-stack-tag:instantcli-volume",
+                    "-h",
+                    &format!("int:value:{}", percent),
+                    "-i",
+                    "audio-volume-medium-symbolic",
+                    &format!("Volume [{}%]", percent),
+                ])
+                .spawn();
         }
     }
 
@@ -119,32 +118,33 @@ pub fn brightness_direct(action: &str) -> Result<()> {
     // Show notification with current brightness level
     let current = Command::new("brightnessctl").arg("get").output().ok();
     let max = Command::new("brightnessctl").arg("max").output().ok();
-    if let (Some(cur), Some(mx)) = (current, max) {
-        if cur.status.success() && mx.status.success() {
-            let cur_val: f64 = String::from_utf8_lossy(&cur.stdout)
-                .trim()
-                .parse()
-                .unwrap_or(0.0);
-            let max_val: f64 = String::from_utf8_lossy(&mx.stdout)
-                .trim()
-                .parse()
-                .unwrap_or(1.0);
-            if max_val > 0.0 {
-                let percent = (cur_val / max_val * 100.0).round() as i64;
-                let _ = Command::new("dunstify")
-                    .args([
-                        "--appname",
-                        "instantCLI",
-                        "-h",
-                        "string:x-dunst-stack-tag:instantcli-brightness",
-                        "-h",
-                        &format!("int:value:{}", percent),
-                        "-i",
-                        "display-brightness-medium-symbolic",
-                        &format!("Brightness [{}%]", percent),
-                    ])
-                    .spawn();
-            }
+    if let (Some(cur), Some(mx)) = (current, max)
+        && cur.status.success()
+        && mx.status.success()
+    {
+        let cur_val: f64 = String::from_utf8_lossy(&cur.stdout)
+            .trim()
+            .parse()
+            .unwrap_or(0.0);
+        let max_val: f64 = String::from_utf8_lossy(&mx.stdout)
+            .trim()
+            .parse()
+            .unwrap_or(1.0);
+        if max_val > 0.0 {
+            let percent = (cur_val / max_val * 100.0).round() as i64;
+            let _ = Command::new("dunstify")
+                .args([
+                    "--appname",
+                    "instantCLI",
+                    "-h",
+                    "string:x-dunst-stack-tag:instantcli-brightness",
+                    "-h",
+                    &format!("int:value:{}", percent),
+                    "-i",
+                    "display-brightness-medium-symbolic",
+                    &format!("Brightness [{}%]", percent),
+                ])
+                .spawn();
         }
     }
 

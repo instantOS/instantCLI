@@ -142,22 +142,20 @@ fn handle_cloudinit_hostname(ctx: &mut SettingsContext) -> Result<()> {
     }
 
     // Already preserved via drop-in?
-    if Path::new(CLOUDINIT_DROPIN).exists() {
-        if let Ok(content) = std::fs::read_to_string(CLOUDINIT_DROPIN) {
-            if content.contains("preserve_hostname: true") {
-                return Ok(());
-            }
-        }
+    if Path::new(CLOUDINIT_DROPIN).exists()
+        && let Ok(content) = std::fs::read_to_string(CLOUDINIT_DROPIN)
+        && content.contains("preserve_hostname: true")
+    {
+        return Ok(());
     }
 
     // Check main config
-    if let Ok(content) = std::fs::read_to_string(CLOUDINIT_CFG) {
-        if content
+    if let Ok(content) = std::fs::read_to_string(CLOUDINIT_CFG)
+        && content
             .lines()
             .any(|l| l.trim() == "preserve_hostname: true")
-        {
-            return Ok(());
-        }
+    {
+        return Ok(());
     }
 
     let result = FzfWrapper::builder()

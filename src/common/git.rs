@@ -205,10 +205,10 @@ fn list_remotes(repo_path: &Path) -> Result<Vec<String>> {
 }
 
 fn remote_for_branch(repo_path: &Path, branch: &str) -> Result<Option<String>> {
-    if let Some(remote) = branch_upstream_remote(repo_path, branch)? {
-        if remote_exists(repo_path, &remote)? {
-            return Ok(Some(remote));
-        }
+    if let Some(remote) = branch_upstream_remote(repo_path, branch)?
+        && remote_exists(repo_path, &remote)?
+    {
+        return Ok(Some(remote));
     }
 
     if remote_exists(repo_path, "origin")? {

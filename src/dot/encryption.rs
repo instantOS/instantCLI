@@ -189,18 +189,18 @@ pub fn discover_identity_files() -> Vec<PathBuf> {
             out.push(single);
         }
         let dir = cfg_dir.join("age").join("identities");
-        if dir.is_dir() {
-            if let Ok(entries) = std::fs::read_dir(&dir) {
-                let mut files: Vec<PathBuf> = entries
-                    .filter_map(|e| e.ok())
-                    .map(|e| e.path())
-                    .filter(|p| p.is_file())
-                    .collect();
-                files.sort();
-                for p in files {
-                    if !out.iter().any(|q| q == &p) {
-                        out.push(p);
-                    }
+        if dir.is_dir()
+            && let Ok(entries) = std::fs::read_dir(&dir)
+        {
+            let mut files: Vec<PathBuf> = entries
+                .filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|p| p.is_file())
+                .collect();
+            files.sort();
+            for p in files {
+                if !out.iter().any(|q| q == &p) {
+                    out.push(p);
                 }
             }
         }

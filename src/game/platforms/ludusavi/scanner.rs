@@ -607,7 +607,7 @@ where
     let ctx = WinePrefixContext::new(prefix, scan_root);
     let mut path_cache = PathExistenceCache::default();
 
-    let entries: Vec<&WindowsGameEntry> = if let Some(root) = scan_root {
+    let entries: Vec<&WindowsGameEntry> = if scan_root.is_some() {
         let focused: Vec<&WindowsGameEntry> = manifest
             .iter()
             .filter(|entry| should_focus_entry(entry, &ctx.base_directories))

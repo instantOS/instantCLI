@@ -46,10 +46,10 @@ where
         }
 
         // If the path is the same as the current one, just return it without confirmation
-        if let Some(current) = current_path {
-            if current == &save_path {
-                return Ok(Some(save_path));
-            }
+        if let Some(current) = current_path
+            && current == &save_path
+        {
+            return Ok(Some(save_path));
         }
 
         let save_path_display = save_path.display_string();

@@ -125,18 +125,18 @@ pub fn apply_all(
                     ),
                     None,
                 );
-            } else if let Ok(s) = status {
-                if !s.success() {
-                    emit(
-                        Level::Warn,
-                        "dot.apply.root_failed",
-                        &format!(
-                            "{} Applying root dotfiles failed or was cancelled",
-                            char::from(NerdFont::Warning)
-                        ),
-                        None,
-                    );
-                }
+            } else if let Ok(s) = status
+                && !s.success()
+            {
+                emit(
+                    Level::Warn,
+                    "dot.apply.root_failed",
+                    &format!(
+                        "{} Applying root dotfiles failed or was cancelled",
+                        char::from(NerdFont::Warning)
+                    ),
+                    None,
+                );
             }
         }
     }

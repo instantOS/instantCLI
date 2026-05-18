@@ -659,11 +659,11 @@ fn verify_instantos_root(root: &Path) -> Result<RootVerification> {
     let os_release = root.join(ROOT_MARKER.trim_start_matches('/'));
     let mut is_instantos = false;
 
-    if let Ok(content) = fs::read_to_string(&os_release) {
-        if os_release_has_id(&content, "instantos") {
-            is_instantos = true;
-            evidence.push("ID=instantos in /etc/os-release".to_string());
-        }
+    if let Ok(content) = fs::read_to_string(&os_release)
+        && os_release_has_id(&content, "instantos")
+    {
+        is_instantos = true;
+        evidence.push("ID=instantos in /etc/os-release".to_string());
     }
 
     for (path, label) in [

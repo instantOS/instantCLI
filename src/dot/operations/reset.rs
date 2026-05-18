@@ -149,18 +149,18 @@ pub fn reset_modified(
                     ),
                     None,
                 );
-            } else if let Ok(s) = status {
-                if !s.success() {
-                    emit(
-                        Level::Warn,
-                        "dot.reset.root_failed",
-                        &format!(
-                            "{} Resetting root dotfiles failed or was cancelled",
-                            char::from(NerdFont::Warning)
-                        ),
-                        None,
-                    );
-                }
+            } else if let Ok(s) = status
+                && !s.success()
+            {
+                emit(
+                    Level::Warn,
+                    "dot.reset.root_failed",
+                    &format!(
+                        "{} Resetting root dotfiles failed or was cancelled",
+                        char::from(NerdFont::Warning)
+                    ),
+                    None,
+                );
             }
         }
     }

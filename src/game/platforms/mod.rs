@@ -804,10 +804,10 @@ fn prompt_executable_command(
     if let Some(context) = context {
         if let Some(executable_path) = &context.executable_path {
             builder = builder.start_path(executable_path);
-        } else if let Some(save_path) = &context.save_path {
-            if let Some(parent) = save_path.parent() {
-                builder = builder.start_dir(parent);
-            }
+        } else if let Some(save_path) = &context.save_path
+            && let Some(parent) = save_path.parent()
+        {
+            builder = builder.start_dir(parent);
         }
     }
 

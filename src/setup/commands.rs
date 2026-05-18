@@ -278,15 +278,14 @@ pub(crate) fn generate_wm_config(wm: WindowManager) -> Result<String> {
     writeln!(content)?;
 
     // Cursor theme section (sway-only, i3 doesn't support this)
-    if wm == WindowManager::Sway {
-        if let Ok(theme) = get_current_cursor_theme()
-            && !theme.is_empty()
-        {
-            writeln!(content, "# --- BEGIN cursor_theme ---")?;
-            writeln!(content, "seat * xcursor_theme {}", theme)?;
-            writeln!(content, "# --- END cursor_theme ---")?;
-            writeln!(content)?;
-        }
+    if wm == WindowManager::Sway
+        && let Ok(theme) = get_current_cursor_theme()
+        && !theme.is_empty()
+    {
+        writeln!(content, "# --- BEGIN cursor_theme ---")?;
+        writeln!(content, "seat * xcursor_theme {}", theme)?;
+        writeln!(content, "# --- END cursor_theme ---")?;
+        writeln!(content)?;
     }
 
     // Assist keybinds section

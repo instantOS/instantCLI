@@ -56,10 +56,10 @@ fn handle_init(force: bool) -> Result<()> {
         let mut pubkey = None;
         for line in content.lines() {
             let trimmed = line.trim();
-            if trimmed.starts_with("AGE-SECRET-KEY-1") {
-                if let Ok(identity) = age::x25519::Identity::from_str(trimmed) {
-                    pubkey = Some(identity.to_public().to_string());
-                }
+            if trimmed.starts_with("AGE-SECRET-KEY-1")
+                && let Ok(identity) = age::x25519::Identity::from_str(trimmed)
+            {
+                pubkey = Some(identity.to_public().to_string());
             }
         }
         if let Some(pk) = pubkey {
@@ -499,10 +499,10 @@ pub fn get_local_public_keys() -> Result<Vec<String>> {
             .with_context(|| format!("reading identity file {}", path.display()))?;
         for line in content.lines() {
             let trimmed = line.trim();
-            if trimmed.starts_with("AGE-SECRET-KEY-1") {
-                if let Ok(identity) = age::x25519::Identity::from_str(trimmed) {
-                    pubkeys.push(identity.to_public().to_string());
-                }
+            if trimmed.starts_with("AGE-SECRET-KEY-1")
+                && let Ok(identity) = age::x25519::Identity::from_str(trimmed)
+            {
+                pubkeys.push(identity.to_public().to_string());
             }
         }
     }
@@ -516,10 +516,8 @@ fn find_age_files(dir: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
             let path = entry.path();
             if path.is_dir() {
                 find_age_files(&path, files)?;
-            } else if path.is_file() {
-                if crate::dot::encryption::is_encrypted_source(&path) {
-                    files.push(path);
-                }
+            } else if path.is_file() && crate::dot::encryption::is_encrypted_source(&path) {
+                files.push(path);
             }
         }
     }
@@ -547,10 +545,10 @@ fn handle_identity() -> Result<()> {
         let mut pubkey = None;
         for line in content.lines() {
             let trimmed = line.trim();
-            if trimmed.starts_with("AGE-SECRET-KEY-1") {
-                if let Ok(identity) = age::x25519::Identity::from_str(trimmed) {
-                    pubkey = Some(identity.to_public().to_string());
-                }
+            if trimmed.starts_with("AGE-SECRET-KEY-1")
+                && let Ok(identity) = age::x25519::Identity::from_str(trimmed)
+            {
+                pubkey = Some(identity.to_public().to_string());
             }
         }
         if let Some(pk) = pubkey {
@@ -573,22 +571,22 @@ fn handle_identity() -> Result<()> {
     let home = std::env::var("HOME").map(PathBuf::from).ok();
     if let Some(home_path) = home {
         let ssh_dir = home_path.join(".ssh");
-        if ssh_dir.is_dir() {
-            if let Ok(entries) = fs::read_dir(ssh_dir) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if path.is_file() && path.extension().map_or(false, |ext| ext == "pub") {
-                        if let Ok(content) = fs::read_to_string(&path) {
-                            let content_trimmed = content.trim();
-                            if content_trimmed.starts_with("ssh-")
-                                || content_trimmed.starts_with("ecdsa-")
-                            {
-                                ssh_keys.push((
-                                    path.file_name().unwrap().to_string_lossy().into_owned(),
-                                    content_trimmed.to_string(),
-                                ));
-                            }
-                        }
+        if ssh_dir.is_dir()
+            && let Ok(entries) = fs::read_dir(ssh_dir)
+        {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file()
+                    && path.extension().map_or(false, |ext| ext == "pub")
+                    && let Ok(content) = fs::read_to_string(&path)
+                {
+                    let content_trimmed = content.trim();
+                    if content_trimmed.starts_with("ssh-") || content_trimmed.starts_with("ecdsa-")
+                    {
+                        ssh_keys.push((
+                            path.file_name().unwrap().to_string_lossy().into_owned(),
+                            content_trimmed.to_string(),
+                        ));
                     }
                 }
             }
