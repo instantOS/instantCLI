@@ -328,6 +328,8 @@ pub enum KeyCommands {
         #[command(flatten)]
         root_flags: RootFlags,
     },
+    /// Show the local public key identity for this machine
+    Identity,
 }
 
 fn handle_ignore_command(

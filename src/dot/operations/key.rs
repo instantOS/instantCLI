@@ -42,6 +42,7 @@ pub fn handle_key_command(
             ..
         } => handle_rotate(config, db, recipients, repo.as_deref(), *dry_run, debug),
         KeyCommands::Status { repo, .. } => handle_status(config, repo.as_deref()),
+        KeyCommands::Identity => handle_identity(),
     }
 }
 
@@ -522,6 +523,106 @@ fn find_age_files(dir: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
             }
         }
     }
+    Ok(())
+}
+
+fn handle_identity() -> Result<()> {
+    let config_dir = crate::common::paths::instant_config_dir()?;
+    let identity_dir = config_dir.join("age");
+    let identity_path = identity_dir.join("identity");
+
+    println!(
+        "{} Local Machine Age Identity Public Keys",
+        char::from(NerdFont::Key).to_string().cyan()
+    );
+    println!(
+        "{}",
+        "────────────────────────────────────────────────────────────────────────────────".cyan()
+    );
+
+    let mut identity_found = false;
+
+    if identity_path.exists() {
+        let content = fs::read_to_string(&identity_path)?;
+        let mut pubkey = None;
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("AGE-SECRET-KEY-1") {
+                if let Ok(identity) = age::x25519::Identity::from_str(trimmed) {
+                    pubkey = Some(identity.to_public().to_string());
+                }
+            }
+        }
+        if let Some(pk) = pubkey {
+            identity_found = true;
+            println!(
+                "{} Primary Age Public Key (from ~/.config/instant/age/identity):",
+                char::from(NerdFont::CheckCircle).to_string().green()
+            );
+            println!("   {}", pk.green().bold());
+            println!(
+                "   {} Share this public key with others to allow them to authorize you as a recipient.",
+                char::from(NerdFont::InfoCircle).to_string().dimmed()
+            );
+            println!();
+        }
+    }
+
+    // Discover SSH public keys which can be used natively as age recipients!
+    let mut ssh_keys = Vec::new();
+    let home = std::env::var("HOME").map(PathBuf::from).ok();
+    if let Some(home_path) = home {
+        let ssh_dir = home_path.join(".ssh");
+        if ssh_dir.is_dir() {
+            if let Ok(entries) = fs::read_dir(ssh_dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_file() && path.extension().map_or(false, |ext| ext == "pub") {
+                        if let Ok(content) = fs::read_to_string(&path) {
+                            let content_trimmed = content.trim();
+                            if content_trimmed.starts_with("ssh-")
+                                || content_trimmed.starts_with("ecdsa-")
+                            {
+                                ssh_keys.push((
+                                    path.file_name().unwrap().to_string_lossy().into_owned(),
+                                    content_trimmed.to_string(),
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if !ssh_keys.is_empty() {
+        println!(
+            "{} Discovered SSH Public Keys (Natively supported by age!):",
+            char::from(NerdFont::Terminal).to_string().blue()
+        );
+        for (name, key) in &ssh_keys {
+            println!(
+                "   {} (from ~/.ssh/{}):",
+                char::from(NerdFont::Bullet).to_string().blue(),
+                name
+            );
+            println!("   {}", key.cyan());
+        }
+        println!();
+    }
+
+    if !identity_found && ssh_keys.is_empty() {
+        println!(
+            "  {} No local age identities or SSH keys found on this machine.",
+            char::from(NerdFont::Warning).to_string().red()
+        );
+        println!(
+            "  {} Run `ins dot key init` to generate a secure local age keypair.",
+            char::from(NerdFont::Lightbulb).to_string().yellow()
+        );
+        println!();
+    }
+
     Ok(())
 }
 
