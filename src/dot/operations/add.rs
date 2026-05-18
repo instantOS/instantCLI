@@ -178,7 +178,7 @@ pub fn add_dotfile(
     debug: bool,
 ) -> Result<()> {
     let all_dotfiles = get_all_dotfiles(config, db, include_root)?;
-    let target_path = resolve_dotfile_path(path, include_root)?;
+    let target_path = resolve_dotfile_path(path, include_root, true)?;
     let home = home_dir();
 
     // Get tracked dotfiles within the specified path
@@ -393,7 +393,7 @@ fn update_single_dotfile(dotfile: &Dotfile, config: &DotfileConfig, db: &Databas
         None
     };
 
-    dotfile.fetch(db)?;
+    dotfile.fetch(db, config)?;
 
     let new_source_hash = Dotfile::compute_hash(&dotfile.source_path)?;
     let has_changes = old_source_hash.as_ref() != Some(&new_source_hash);

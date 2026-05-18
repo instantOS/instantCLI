@@ -1,4 +1,5 @@
 use crate::dot::config::DotfileConfig;
+use crate::dot::encryption::classify_encrypted_failure;
 use crate::dot::git::{get_dotfile_dir_name, get_repo_name_for_dotfile};
 use crate::dot::units::UnitIndex;
 use crate::ui::prelude::*;
@@ -13,6 +14,7 @@ pub enum DotFileStatus {
     Modified,
     Outdated,
     IdentityRequired,
+    EncryptedError,
     Clean,
 }
 
@@ -38,6 +40,12 @@ impl std::fmt::Display for DotFileStatus {
                     .to_string()
                     .yellow(),
                 "encrypted: identity required".yellow()
+            ),
+            DotFileStatus::EncryptedError => write!(
+                f,
+                "{} {}",
+                crate::ui::nerd_font::NerdFont::Warning.to_string().red(),
+                "encrypted: processing error".red()
             ),
             DotFileStatus::Clean => write!(
                 f,
@@ -67,6 +75,7 @@ pub struct StatusSummary {
     pub modified_count: usize,
     pub outdated_count: usize,
     pub identity_required_count: usize,
+    pub encrypted_error_count: usize,
 }
 
 /// Show status for a single file
@@ -79,7 +88,7 @@ pub fn show_single_file_status(
     unit_index: &UnitIndex,
     include_root: bool,
 ) -> Result<()> {
-    let target_path = crate::dot::resolve_dotfile_path(path_str, include_root)?;
+    let target_path = crate::dot::resolve_dotfile_path(path_str, include_root, true)?;
     let home = dirs::home_dir().context("Failed to get home directory")?;
 
     if target_path.is_dir() {
@@ -332,6 +341,7 @@ pub fn categorize_files_and_get_summary<'a>(
     let mut modified_count = 0;
     let mut outdated_count = 0;
     let mut identity_required_count = 0;
+    let mut encrypted_error_count = 0;
 
     // Load override config to check for overridden files
     let overrides = crate::dot::override_config::OverrideConfig::load().unwrap_or_default();
@@ -360,6 +370,7 @@ pub fn categorize_files_and_get_summary<'a>(
             DotFileStatus::Modified => modified_count += 1,
             DotFileStatus::Outdated => outdated_count += 1,
             DotFileStatus::IdentityRequired => identity_required_count += 1,
+            DotFileStatus::EncryptedError => encrypted_error_count += 1,
         }
     }
 
@@ -374,6 +385,7 @@ pub fn categorize_files_and_get_summary<'a>(
         modified_count,
         outdated_count,
         identity_required_count,
+        encrypted_error_count,
     };
 
     (files_by_status, summary)
@@ -499,15 +511,42 @@ fn show_json_status(
         })
         .collect();
 
+    let encrypted_error_files: Vec<_> = files_by_status
+        .get(&DotFileStatus::EncryptedError)
+        .unwrap_or(&vec![])
+        .iter()
+        .map(|file_info| {
+            let relative_path = file_info
+                .target_path
+                .strip_prefix(&home)
+                .unwrap_or(&file_info.target_path);
+            let priority = get_priority(file_info.repo_name.as_str());
+            let mut json_val = serde_json::json!({
+                "path": format!("~/{}", relative_path.display()),
+                "status": "encrypted_error",
+                "repo": file_info.repo_name.as_str(),
+                "dotfile_dir": file_info.dotfile_dir,
+                "reason": "encrypted_source_error"
+            });
+            if show_sources {
+                json_val["priority"] = serde_json::json!(priority);
+                json_val["override"] = serde_json::json!(file_info.is_overridden);
+            }
+            json_val
+        })
+        .collect();
+
     let status_data = serde_json::json!({
         "total_files": summary.total_files,
         "clean_count": summary.clean_count,
         "modified_count": summary.modified_count,
         "outdated_count": summary.outdated_count,
         "identity_required_count": summary.identity_required_count,
+        "encrypted_error_count": summary.encrypted_error_count,
         "modified_files": modified_files,
         "outdated_files": outdated_files,
         "identity_required_files": identity_required_files,
+        "encrypted_error_files": encrypted_error_files,
         "clean_files": clean_files,
         "show_all": show_all,
         "show_sources": show_sources
@@ -573,10 +612,19 @@ fn show_text_status(
         );
     }
 
+    if summary.encrypted_error_count > 0 {
+        println!(
+            "{} Encrypted: {} files have non-identity decryption errors",
+            crate::ui::nerd_font::NerdFont::Warning.to_string().red(),
+            summary.encrypted_error_count
+        );
+    }
+
     // Show files with issues
     if summary.modified_count > 0
         || summary.outdated_count > 0
         || summary.identity_required_count > 0
+        || summary.encrypted_error_count > 0
     {
         println!();
 
@@ -597,6 +645,10 @@ fn show_text_status(
                 &get_priority,
             );
         }
+
+        if let Some(encrypted_error_files) = files_by_status.get(&DotFileStatus::EncryptedError) {
+            show_encrypted_error_files(encrypted_error_files, home, show_sources, &get_priority);
+        }
     }
 
     // Show all files if requested
@@ -612,6 +664,7 @@ fn show_text_status(
         summary.modified_count,
         summary.outdated_count,
         summary.identity_required_count,
+        summary.encrypted_error_count,
         summary.clean_count,
     );
 }
@@ -747,6 +800,49 @@ fn show_identity_required_files(
     println!();
 }
 
+fn show_encrypted_error_files(
+    files: &[FileInfo],
+    home: &PathBuf,
+    show_sources: bool,
+    get_priority: &dyn Fn(&str) -> usize,
+) {
+    println!("{}", "Encrypted files with errors:".red().bold());
+    for file_info in files {
+        let relative_path = file_info
+            .target_path
+            .strip_prefix(home)
+            .unwrap_or(&file_info.target_path);
+        let tilde_path = format!("~/{}", relative_path.display());
+        let override_indicator = if file_info.is_overridden {
+            " [override]"
+        } else {
+            ""
+        };
+
+        if show_sources {
+            let priority = get_priority(file_info.repo_name.as_str());
+            println!(
+                "  {} -> {} / {} (P{}){}",
+                tilde_path,
+                file_info.repo_name.as_str().bright_purple(),
+                file_info.dotfile_dir,
+                priority,
+                override_indicator.magenta()
+            );
+        } else {
+            println!(
+                "  {} -> {} ({}: {}{})",
+                tilde_path,
+                "encrypted error".red(),
+                file_info.repo_name,
+                file_info.dotfile_dir,
+                override_indicator.magenta()
+            );
+        }
+    }
+    println!();
+}
+
 /// Show clean files section
 fn show_clean_files(
     files: &[FileInfo],
@@ -796,6 +892,7 @@ fn show_action_suggestions(
     modified_count: usize,
     outdated_count: usize,
     identity_required_count: usize,
+    encrypted_error_count: usize,
     clean_count: usize,
 ) {
     match get_output_format() {
@@ -803,7 +900,11 @@ fn show_action_suggestions(
             let bin = env!("CARGO_BIN_NAME");
             let mut suggestions = Vec::new();
 
-            if modified_count > 0 || outdated_count > 0 || identity_required_count > 0 {
+            if modified_count > 0
+                || outdated_count > 0
+                || identity_required_count > 0
+                || encrypted_error_count > 0
+            {
                 if modified_count > 0 {
                     suggestions.push(format!(
                         "Use '{bin} dot apply' to apply changes from repositories"
@@ -823,6 +924,11 @@ fn show_action_suggestions(
                 if identity_required_count > 0 {
                     suggestions.push(format!(
                         "Configure an age identity with '{bin} dot key init' or set $AGE_IDENTITY"
+                    ));
+                }
+                if encrypted_error_count > 0 {
+                    suggestions.push(format!(
+                        "Use '{bin} dot diff <path>' to inspect encrypted source errors for affected files"
                     ));
                 }
                 suggestions.push(format!(
@@ -846,7 +952,10 @@ fn show_action_suggestions(
             }
 
             let suggestion_data = serde_json::json!({
-                "has_issues": modified_count > 0 || outdated_count > 0 || identity_required_count > 0,
+                "has_issues": modified_count > 0
+                    || outdated_count > 0
+                    || identity_required_count > 0
+                    || encrypted_error_count > 0,
                 "suggestions": suggestions
             });
 
@@ -859,7 +968,11 @@ fn show_action_suggestions(
         }
         OutputFormat::Text => {
             let bin = env!("CARGO_BIN_NAME");
-            if modified_count > 0 || outdated_count > 0 || identity_required_count > 0 {
+            if modified_count > 0
+                || outdated_count > 0
+                || identity_required_count > 0
+                || encrypted_error_count > 0
+            {
                 println!("{}", "Suggested actions:".bold());
                 if modified_count > 0 {
                     println!("  Use '{bin} dot apply' to apply changes from repositories");
@@ -874,6 +987,11 @@ fn show_action_suggestions(
                 if identity_required_count > 0 {
                     println!(
                         "  Configure an age identity with '{bin} dot key init' or set $AGE_IDENTITY"
+                    );
+                }
+                if encrypted_error_count > 0 {
+                    println!(
+                        "  Use '{bin} dot diff <path>' to inspect encrypted source errors for affected files"
                     );
                 }
                 println!(
@@ -910,8 +1028,13 @@ pub fn get_dotfile_status(
     match dotfile.is_target_unmodified(db) {
         Ok(false) => return DotFileStatus::Modified,
         Ok(true) => {}
-        Err(_) if dotfile.kind == crate::dot::dotfile::SourceKind::Age => {
-            return DotFileStatus::IdentityRequired;
+        Err(err) if dotfile.kind == crate::dot::dotfile::SourceKind::Age => {
+            let reason = classify_encrypted_failure(&err);
+            return if reason.is_identity_related() {
+                DotFileStatus::IdentityRequired
+            } else {
+                DotFileStatus::EncryptedError
+            };
         }
         Err(_) => return DotFileStatus::Modified,
     }
@@ -923,8 +1046,13 @@ pub fn get_dotfile_status(
     match dotfile.is_outdated(db) {
         Ok(true) => return DotFileStatus::Outdated,
         Ok(false) => {}
-        Err(_) if dotfile.kind == crate::dot::dotfile::SourceKind::Age => {
-            return DotFileStatus::IdentityRequired;
+        Err(err) if dotfile.kind == crate::dot::dotfile::SourceKind::Age => {
+            let reason = classify_encrypted_failure(&err);
+            return if reason.is_identity_related() {
+                DotFileStatus::IdentityRequired
+            } else {
+                DotFileStatus::EncryptedError
+            };
         }
         Err(_) => return DotFileStatus::Modified,
     }
@@ -937,6 +1065,7 @@ mod tests {
     use super::*;
     use crate::dot::db::Database;
     use crate::dot::dotfile::Dotfile;
+    use age::secrecy::ExposeSecret;
     use serial_test::serial;
     use std::fs;
     use tempfile::tempdir;
@@ -986,5 +1115,56 @@ mod tests {
         }
 
         assert_eq!(status, DotFileStatus::IdentityRequired);
+    }
+
+    #[test]
+    #[serial]
+    fn encrypted_status_reports_encrypted_error_for_invalid_ciphertext_with_identity() {
+        let dir = tempdir().unwrap();
+        let home = dir.path().join("home");
+        let config_home = dir.path().join("config");
+        fs::create_dir_all(&home).unwrap();
+        fs::create_dir_all(&config_home).unwrap();
+
+        let identity = age::x25519::Identity::generate();
+        let identity_file = dir.path().join("identity.txt");
+        fs::write(&identity_file, identity.to_string().expose_secret()).unwrap();
+
+        let prev_home = std::env::var_os("HOME");
+        let prev_xdg = std::env::var_os("XDG_CONFIG_HOME");
+        let prev_age = std::env::var_os("AGE_IDENTITY");
+        // SAFETY: this test is serialised and restores the process env below.
+        unsafe {
+            std::env::set_var("HOME", &home);
+            std::env::set_var("XDG_CONFIG_HOME", &config_home);
+            std::env::set_var("AGE_IDENTITY", &identity_file);
+        }
+
+        let source_path = dir.path().join("repo/dots/secret.txt.age");
+        let target_path = home.join("secret.txt");
+        fs::create_dir_all(source_path.parent().unwrap()).unwrap();
+        fs::write(&source_path, "not an age file").unwrap();
+        fs::write(&target_path, "plaintext").unwrap();
+
+        let db = Database::new(dir.path().join("test.db")).unwrap();
+        let dotfile = Dotfile::new(source_path, target_path, false);
+        let status = get_dotfile_status(&dotfile, &db, &UnitIndex::default());
+
+        unsafe {
+            match prev_home {
+                Some(v) => std::env::set_var("HOME", v),
+                None => std::env::remove_var("HOME"),
+            }
+            match prev_xdg {
+                Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
+                None => std::env::remove_var("XDG_CONFIG_HOME"),
+            }
+            match prev_age {
+                Some(v) => std::env::set_var("AGE_IDENTITY", v),
+                None => std::env::remove_var("AGE_IDENTITY"),
+            }
+        }
+
+        assert_eq!(status, DotFileStatus::EncryptedError);
     }
 }

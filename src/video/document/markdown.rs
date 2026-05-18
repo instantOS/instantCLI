@@ -116,7 +116,7 @@ pub fn format_timestamp(duration: Duration) -> String {
 mod tests {
     use super::*;
     use crate::video::document::VideoSource;
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
 
     fn cue(start: u64, end: u64, text: &str) -> TranscriptCue {
         TranscriptCue {

@@ -23,4 +23,4 @@ pub use style::{select_one_with_style, select_one_with_style_at};
 pub use text_input::{TextEditOutcome, TextEditPrompt, prompt_text_edit};
 
 #[cfg(test)]
-pub use mock::{MockQueue, MockQueueGuard};
+pub use mock::MockQueue;

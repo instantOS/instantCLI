@@ -251,7 +251,7 @@ pub fn merge_dotfile(
     verbose: bool,
 ) -> Result<()> {
     let all_dotfiles = get_all_dotfiles(config, db, false)?;
-    let target_path = resolve_dotfile_path(path, false)?;
+    let target_path = resolve_dotfile_path(path, false, true)?;
     let home = home_dir();
 
     let dotfiles_in_path = filter_dotfiles_by_path(&all_dotfiles, &target_path);

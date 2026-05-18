@@ -34,7 +34,7 @@ pub fn show_path_diff(
     cfg: &DotfileConfig,
     db: &crate::dot::db::Database,
 ) -> Result<()> {
-    let target_path = crate::dot::resolve_dotfile_path(path_str, false)?;
+    let target_path = crate::dot::resolve_dotfile_path(path_str, false, true)?;
 
     if target_path.is_dir() {
         diff_directory(target_path.as_path(), all_dotfiles, cfg, db)
@@ -121,7 +121,10 @@ fn diff_file(
                     tilde_path.green()
                 );
             }
-            DotFileStatus::Modified | DotFileStatus::Outdated | DotFileStatus::IdentityRequired => {
+            DotFileStatus::Modified
+            | DotFileStatus::Outdated
+            | DotFileStatus::IdentityRequired
+            | DotFileStatus::EncryptedError => {
                 show_dotfile_diff(dotfile)?;
             }
         }
@@ -245,11 +248,13 @@ fn show_delta_diff(dotfile: &crate::dot::Dotfile) -> Result<()> {
         let identities = match crate::dot::encryption::load_identities() {
             Ok(identities) => identities,
             Err(err) => {
+                let reason = crate::dot::encryption::classify_encrypted_failure(&err);
                 println!(
-                    "  {} encrypted source requires a readable age identity ({})",
+                    "  {} encrypted source unavailable ({}): {}",
                     crate::ui::nerd_font::NerdFont::ShieldAlert
                         .to_string()
                         .yellow(),
+                    reason.label(),
                     err
                 );
                 return Ok(());
@@ -261,11 +266,13 @@ fn show_delta_diff(dotfile: &crate::dot::Dotfile) -> Result<()> {
         ) {
             Ok(plaintext) => plaintext,
             Err(err) => {
+                let reason = crate::dot::encryption::classify_encrypted_failure(&err);
                 println!(
-                    "  {} encrypted source requires a matching age identity ({})",
+                    "  {} encrypted source unavailable ({}): {}",
                     crate::ui::nerd_font::NerdFont::ShieldAlert
                         .to_string()
                         .yellow(),
+                    reason.label(),
                     err
                 );
                 return Ok(());

@@ -31,7 +31,7 @@ pub fn normalize_path_to_tilde(path: &str) -> String {
     }
 }
 
-pub fn resolve_dotfile_path(path: &str, allow_root: bool) -> Result<PathBuf> {
+pub fn resolve_dotfile_path(path: &str, allow_root: bool, require_exists: bool) -> Result<PathBuf> {
     let home = home_dir();
 
     let resolved_path = if path.starts_with('~') {
@@ -51,7 +51,7 @@ pub fn resolve_dotfile_path(path: &str, allow_root: bool) -> Result<PathBuf> {
 
     let normalized_path = normalize_path(&resolved_path)?;
 
-    if !normalized_path.exists() {
+    if require_exists && !normalized_path.exists() {
         return Err(anyhow::anyhow!(
             "Path '{}' does not exist",
             normalized_path.display()
@@ -68,15 +68,20 @@ pub fn resolve_dotfile_path(path: &str, allow_root: bool) -> Result<PathBuf> {
         return Ok(normalized_path);
     }
 
-    let real_path = normalized_path
+    let canonical_home = home
         .canonicalize()
-        .map_err(|e| anyhow::anyhow!("Failed to validate path '{}': {}", path, e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to canonicalize home directory: {}", e))?;
 
-    if !real_path.starts_with(
-        &home
+    let is_inside_home = if require_exists {
+        normalized_path
             .canonicalize()
-            .map_err(|e| anyhow::anyhow!("Failed to canonicalize home directory: {}", e))?,
-    ) {
+            .map_err(|e| anyhow::anyhow!("Failed to validate path '{}': {}", path, e))?
+            .starts_with(&canonical_home)
+    } else {
+        normalized_path.starts_with(&canonical_home)
+    };
+
+    if !is_inside_home {
         return Err(anyhow::anyhow!(
             "Path '{}' is outside the home directory. Only files in {} are allowed.",
             normalized_path.display(),

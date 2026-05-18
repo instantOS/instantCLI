@@ -32,6 +32,101 @@ use crate::common::paths;
 /// File extension that marks a source file as age-encrypted.
 pub const AGE_EXTENSION: &str = "age";
 
+/// Categorized reason for a failure while handling encrypted dotfiles.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EncryptedFailureReason {
+    IdentityNotConfigured,
+    IdentityUnreadable,
+    IdentityMismatch,
+    CiphertextInvalid,
+    IoFailure,
+    Unknown,
+}
+
+impl EncryptedFailureReason {
+    pub fn code(self) -> &'static str {
+        match self {
+            EncryptedFailureReason::IdentityNotConfigured => "identity_not_configured",
+            EncryptedFailureReason::IdentityUnreadable => "identity_unreadable",
+            EncryptedFailureReason::IdentityMismatch => "identity_mismatch",
+            EncryptedFailureReason::CiphertextInvalid => "ciphertext_invalid",
+            EncryptedFailureReason::IoFailure => "io_failure",
+            EncryptedFailureReason::Unknown => "unknown_error",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            EncryptedFailureReason::IdentityNotConfigured => "identity required (not configured)",
+            EncryptedFailureReason::IdentityUnreadable => "identity error (unreadable/invalid)",
+            EncryptedFailureReason::IdentityMismatch => "identity required (no matching key)",
+            EncryptedFailureReason::CiphertextInvalid => "encrypted source is invalid/corrupted",
+            EncryptedFailureReason::IoFailure => "I/O error while processing encrypted source",
+            EncryptedFailureReason::Unknown => "encrypted source processing failed",
+        }
+    }
+
+    pub fn is_identity_related(self) -> bool {
+        matches!(
+            self,
+            EncryptedFailureReason::IdentityNotConfigured
+                | EncryptedFailureReason::IdentityUnreadable
+                | EncryptedFailureReason::IdentityMismatch
+        )
+    }
+}
+
+/// Classify an encrypted dotfile processing error into a stable user-facing reason.
+pub fn classify_encrypted_failure(err: &anyhow::Error) -> EncryptedFailureReason {
+    let root_message = err.to_string().to_lowercase();
+    if root_message.contains("no local age identity found")
+        || root_message.contains("no age identities configured")
+    {
+        return EncryptedFailureReason::IdentityNotConfigured;
+    }
+
+    if root_message.contains("reading age identity file")
+        || root_message.contains("parsing age identity file")
+    {
+        return EncryptedFailureReason::IdentityUnreadable;
+    }
+
+    for cause in err.chain() {
+        if let Some(decrypt_err) = cause.downcast_ref::<age::DecryptError>() {
+            return match decrypt_err {
+                age::DecryptError::NoMatchingKeys => EncryptedFailureReason::IdentityMismatch,
+                age::DecryptError::Io(_) => EncryptedFailureReason::IoFailure,
+                age::DecryptError::DecryptionFailed
+                | age::DecryptError::ExcessiveWork { .. }
+                | age::DecryptError::InvalidHeader
+                | age::DecryptError::InvalidMac
+                | age::DecryptError::KeyDecryptionFailed
+                | age::DecryptError::UnknownFormat => EncryptedFailureReason::CiphertextInvalid,
+                _ => EncryptedFailureReason::CiphertextInvalid,
+            };
+        }
+    }
+
+    for cause in err.chain() {
+        if cause.downcast_ref::<std::io::Error>().is_some() {
+            return EncryptedFailureReason::IoFailure;
+        }
+    }
+
+    if root_message.contains("no matching identity") || root_message.contains("no matching key") {
+        return EncryptedFailureReason::IdentityMismatch;
+    }
+
+    if root_message.contains("parsing age header")
+        || root_message.contains("invalid age")
+        || root_message.contains("decrypting ")
+    {
+        return EncryptedFailureReason::CiphertextInvalid;
+    }
+
+    EncryptedFailureReason::Unknown
+}
+
 /// Returns `true` if the path's final extension is `.age`.
 pub fn is_encrypted_source(path: &Path) -> bool {
     path.extension().and_then(OsStr::to_str) == Some(AGE_EXTENSION)

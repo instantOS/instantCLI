@@ -1,16 +1,12 @@
-use crate::common::home_dir;
 use crate::dot::config::DotfileConfig;
 use crate::dot::db::{Database, DotFileType};
 use crate::dot::dotfile::{Dotfile, SourceKind};
 use crate::dot::dotfilerepo::DotfileRepo;
-use crate::dot::override_config::DotfileSource;
-use crate::dot::utils::{get_all_dotfiles, resolve_dotfile_path};
+use crate::dot::utils::resolve_dotfile_path;
 use crate::ui::prelude::*;
 use anyhow::{Context, Result, anyhow};
 use colored::Colorize;
 use std::fs;
-use std::io::Write;
-use std::path::Path;
 
 pub fn encrypt_dotfile(
     config: &DotfileConfig,
@@ -22,7 +18,7 @@ pub fn encrypt_dotfile(
     include_root: bool,
     debug: bool,
 ) -> Result<()> {
-    let target_path = resolve_dotfile_path(path, include_root)?;
+    let target_path = resolve_dotfile_path(path, include_root, false)?;
     let dotfile = crate::dot::utils::resolve_dotfile_to_source(
         config,
         db,

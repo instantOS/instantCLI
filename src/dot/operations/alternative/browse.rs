@@ -230,7 +230,8 @@ fn pick_new_file_to_track() -> Result<Option<std::path::PathBuf>> {
         .pick_one()
     {
         Ok(Some(path)) => {
-            if crate::dot::utils::resolve_dotfile_path(&path.to_string_lossy(), true).is_err() {
+            if crate::dot::utils::resolve_dotfile_path(&path.to_string_lossy(), true, true).is_err()
+            {
                 FzfWrapper::message(
                     "File must be in your home directory or an absolute root path",
                 )?;

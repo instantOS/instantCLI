@@ -2,6 +2,7 @@ use crate::common::home_dir;
 use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
 use crate::dot::dotfile::{Dotfile, SourceKind};
+use crate::dot::encryption::{EncryptedFailureReason, classify_encrypted_failure};
 use crate::dot::units::{get_all_units, get_modified_units};
 use crate::dot::utils::get_all_dotfiles;
 use crate::ui::prelude::*;
@@ -16,7 +17,7 @@ enum ApplyAction {
     Created,
     Updated,
     Skipped,
-    SkippedEncrypted,
+    SkippedEncrypted(EncryptedFailureReason),
     SkippedUnit,
     AlreadyUpToDate,
 }
@@ -202,7 +203,9 @@ fn apply_single_dotfile(dotfile: &Dotfile, db: &Database) -> Result<ApplyAction>
         Ok(unmodified) => !unmodified,
         Err(err) if dotfile.kind == SourceKind::Age => {
             if target_exists {
-                return Ok(ApplyAction::SkippedEncrypted);
+                return Ok(ApplyAction::SkippedEncrypted(classify_encrypted_failure(
+                    &err,
+                )));
             }
             return Err(err);
         }
@@ -210,7 +213,11 @@ fn apply_single_dotfile(dotfile: &Dotfile, db: &Database) -> Result<ApplyAction>
     };
     let is_outdated = match dotfile.is_outdated(db) {
         Ok(outdated) => outdated,
-        Err(_) if dotfile.kind == SourceKind::Age => return Ok(ApplyAction::SkippedEncrypted),
+        Err(err) if dotfile.kind == SourceKind::Age => {
+            return Ok(ApplyAction::SkippedEncrypted(classify_encrypted_failure(
+                &err,
+            )));
+        }
         Err(err) => return Err(err),
     };
 
@@ -225,7 +232,9 @@ fn apply_single_dotfile(dotfile: &Dotfile, db: &Database) -> Result<ApplyAction>
 
     if let Err(err) = dotfile.apply(db) {
         if dotfile.kind == SourceKind::Age {
-            return Ok(ApplyAction::SkippedEncrypted);
+            return Ok(ApplyAction::SkippedEncrypted(classify_encrypted_failure(
+                &err,
+            )));
         }
         return Err(err);
     }
@@ -280,19 +289,20 @@ fn emit_action_result(action: &ApplyAction, dotfile: &Dotfile) {
                 ),
             );
         }
-        ApplyAction::SkippedEncrypted => {
+        ApplyAction::SkippedEncrypted(reason) => {
             emit(
                 Level::Warn,
                 "dot.apply.skipped_encrypted",
                 &format!(
-                    "{} Skipped (encrypted, identity required): {}",
+                    "{} Skipped (encrypted, {}): {}",
                     char::from(NerdFont::ShieldAlert),
+                    reason.label(),
                     path_str.yellow()
                 ),
                 Some(serde_json::json!({
                     "path": path_str,
                     "action": "skipped",
-                    "reason": "identity_required"
+                    "reason": reason.code()
                 })),
             );
         }
@@ -308,7 +318,7 @@ fn record_action(action: &ApplyAction, dotfile: &Dotfile, stats: &mut ApplyStats
         ApplyAction::Created => stats.created.push(path_str),
         ApplyAction::Updated => stats.updated.push(path_str),
         ApplyAction::Skipped => stats.skipped.push(path_str),
-        ApplyAction::SkippedEncrypted => stats.skipped_encrypted.push(path_str),
+        ApplyAction::SkippedEncrypted(_) => stats.skipped_encrypted.push(path_str),
         ApplyAction::SkippedUnit => stats.skipped_unit_files += 1,
         ApplyAction::AlreadyUpToDate => stats.unchanged += 1,
     }
@@ -398,13 +408,13 @@ fn print_apply_summary(stats: &ApplyStats) {
             Level::Warn,
             "dot.apply.summary.skipped_encrypted",
             &format!(
-                "{} Skipped {} encrypted file(s) that need an age identity",
+                "{} Skipped {} encrypted file(s); see warnings above for reason details",
                 char::from(NerdFont::ShieldAlert),
                 stats.skipped_encrypted.len()
             ),
             Some(serde_json::json!({
                 "skipped_encrypted": stats.skipped_encrypted.len(),
-                "reason": "identity_required"
+                "reason": "encrypted_failure"
             })),
         );
     }

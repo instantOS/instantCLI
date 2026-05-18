@@ -1,3 +1,4 @@
+use super::config::DotfileConfig;
 use super::db::{Database, DotFileType};
 use super::encryption;
 use sha2::{Digest, Sha256};
@@ -314,7 +315,7 @@ impl Dotfile {
         Ok(())
     }
 
-    pub fn fetch(&self, db: &Database) -> Result<(), anyhow::Error> {
+    pub fn fetch(&self, db: &Database, config: &DotfileConfig) -> Result<(), anyhow::Error> {
         use anyhow::Context as _;
 
         if !self.target_path.exists() {
@@ -341,10 +342,9 @@ impl Dotfile {
                 }
             }
             SourceKind::Age => {
-                let config = crate::dot::config::DotfileConfig::load(None)?;
-                let repo_name = crate::dot::git::get_repo_name_for_dotfile(self, &config);
+                let repo_name = crate::dot::git::get_repo_name_for_dotfile(self, config);
                 let dotfile_repo =
-                    crate::dot::dotfilerepo::DotfileRepo::new(&config, repo_name.to_string())?;
+                    crate::dot::dotfilerepo::DotfileRepo::new(config, repo_name.to_string())?;
 
                 let recipients =
                     crate::dot::encryption::parse_recipients(&dotfile_repo.meta.age_recipients)
@@ -492,6 +492,7 @@ impl Dotfile {
 #[cfg(test)]
 mod tests {
     use super::Dotfile;
+    use crate::dot::config::DotfileConfig;
     use crate::dot::db::{Database, DotFileType};
     use crate::dot::encryption;
     use age::secrecy::ExposeSecret;
@@ -525,7 +526,7 @@ mod tests {
         assert!(target_path.join("test.txt").exists());
 
         fs::write(target_path.join("test.txt"), "modified").unwrap();
-        dotfile.fetch(&db).unwrap();
+        dotfile.fetch(&db, &DotfileConfig::default()).unwrap();
         assert_eq!(
             fs::read_to_string(repo_path.join("test.txt")).unwrap(),
             "modified"
@@ -624,7 +625,7 @@ mod tests {
         let initial_hash = Dotfile::compute_hash(&dotfile.source_path).unwrap();
 
         // 2. Fetch (updates source file to "modified")
-        dotfile.fetch(&db).unwrap();
+        dotfile.fetch(&db, &DotfileConfig::default()).unwrap();
 
         // 3. Compute hash of source again (should return hash of "modified")
         let new_hash = Dotfile::compute_hash(&dotfile.source_path).unwrap();
@@ -738,7 +739,9 @@ mod tests {
             .unwrap();
 
         // Run fetch (sync target -> source)
-        dotfile.fetch(&db).expect("fetch encrypted dotfile");
+        dotfile
+            .fetch(&db, &config)
+            .expect("fetch encrypted dotfile");
 
         // Verify the source ciphertext has changed and can be decrypted to the modified plaintext
         let new_cipher_hash = Dotfile::compute_hash(&source_path).unwrap();

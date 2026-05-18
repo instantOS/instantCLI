@@ -1,6 +1,7 @@
 use crate::common::home_dir;
 use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
+use crate::dot::encryption::classify_encrypted_failure;
 use crate::dot::utils::{filter_dotfiles_by_path, get_all_dotfiles, resolve_dotfile_path};
 use crate::ui::prelude::*;
 use anyhow::Result;
@@ -15,7 +16,7 @@ pub fn reset_modified(
     root_only: bool,
 ) -> Result<()> {
     let all_dotfiles = get_all_dotfiles(config, db, include_root || root_only)?;
-    let target_path = resolve_dotfile_path(path, include_root)?;
+    let target_path = resolve_dotfile_path(path, include_root, true)?;
     let home = home_dir();
 
     // Filter to dotfiles within the specified path
@@ -49,16 +50,21 @@ pub fn reset_modified(
 
         let is_unmodified = match dotfile.is_target_unmodified(db) {
             Ok(unmodified) => unmodified,
-            Err(_) if dotfile.kind == crate::dot::dotfile::SourceKind::Age => {
+            Err(err) if dotfile.kind == crate::dot::dotfile::SourceKind::Age => {
+                let reason = classify_encrypted_failure(&err);
                 emit(
                     Level::Warn,
                     "dot.reset.skipped_encrypted",
                     &format!(
-                        "{} Skipped reset of encrypted file (identity required): {}",
+                        "{} Skipped reset of encrypted file ({}): {}",
                         char::from(NerdFont::ShieldAlert),
+                        reason.label(),
                         crate::dot::display_path(&dotfile.target_path, dotfile.is_root).yellow()
                     ),
-                    None,
+                    Some(serde_json::json!({
+                        "path": crate::dot::display_path(&dotfile.target_path, dotfile.is_root),
+                        "reason": reason.code()
+                    })),
                 );
                 continue;
             }
@@ -77,17 +83,22 @@ pub fn reset_modified(
                     );
                     reset_count += 1;
                 }
-                Err(_) if dotfile.kind == crate::dot::dotfile::SourceKind::Age => {
+                Err(err) if dotfile.kind == crate::dot::dotfile::SourceKind::Age => {
+                    let reason = classify_encrypted_failure(&err);
                     emit(
                         Level::Warn,
                         "dot.reset.skipped_encrypted",
                         &format!(
-                            "{} Skipped reset of encrypted file (identity required): {}",
+                            "{} Skipped reset of encrypted file ({}): {}",
                             char::from(NerdFont::ShieldAlert),
+                            reason.label(),
                             crate::dot::display_path(&dotfile.target_path, dotfile.is_root)
                                 .yellow()
                         ),
-                        None,
+                        Some(serde_json::json!({
+                            "path": crate::dot::display_path(&dotfile.target_path, dotfile.is_root),
+                            "reason": reason.code()
+                        })),
                     );
                 }
                 Err(err) => return Err(err),

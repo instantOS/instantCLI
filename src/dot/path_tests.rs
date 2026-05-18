@@ -4,11 +4,10 @@ mod tests {
     use crate::dot::resolve_dotfile_path;
 
     use std::fs;
-    use std::path::PathBuf;
 
     #[test]
     fn test_resolve_dotfile_path_tilde_expansion() {
-        let result = resolve_dotfile_path("~", false);
+        let result = resolve_dotfile_path("~", false, true);
         assert!(result.is_ok());
         let home = std::env::var("HOME").unwrap();
         assert_eq!(result.unwrap().to_str().unwrap(), home);
@@ -21,7 +20,7 @@ mod tests {
 
         fs::write(&test_file, "test content").unwrap();
 
-        let result = resolve_dotfile_path(test_file.to_str().unwrap(), false);
+        let result = resolve_dotfile_path(test_file.to_str().unwrap(), false, true);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), test_file.canonicalize().unwrap());
 
@@ -30,7 +29,7 @@ mod tests {
 
     #[test]
     fn test_resolve_dotfile_path_outside_home() {
-        let result = resolve_dotfile_path("/etc/passwd", false);
+        let result = resolve_dotfile_path("/etc/passwd", false, true);
         assert!(result.is_err());
         let error = result.unwrap_err();
         assert!(error.to_string().contains("outside the home directory"));
@@ -41,9 +40,19 @@ mod tests {
         let home = home_dir();
         let nonexistent = home.join("nonexistent_file.txt");
 
-        let result = resolve_dotfile_path(nonexistent.to_str().unwrap(), false);
+        let result = resolve_dotfile_path(nonexistent.to_str().unwrap(), false, true);
         assert!(result.is_err());
         let error = result.unwrap_err();
         assert!(error.to_string().contains("does not exist"));
+    }
+
+    #[test]
+    fn test_resolve_dotfile_path_nonexistent_when_allowed() {
+        let home = home_dir();
+        let nonexistent = home.join("nonexistent_file_allowed.txt");
+
+        let result = resolve_dotfile_path(nonexistent.to_str().unwrap(), false, false);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), nonexistent);
     }
 }
