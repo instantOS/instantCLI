@@ -264,14 +264,7 @@ pub(crate) fn handle_rotate(
     let dotfile_repo = DotfileRepo::new(config, repo_name.clone())?;
     let repo_path = dotfile_repo.local_path(config)?;
 
-    reencrypt_repository(
-        &repo_path,
-        &dotfile_repo,
-        recipients,
-        db,
-        dry_run,
-        debug,
-    )?;
+    reencrypt_repository(&repo_path, &dotfile_repo, recipients, db, dry_run, debug)?;
 
     emit(
         Level::Success,
@@ -732,7 +725,7 @@ mod tests {
         .unwrap();
         let mut reader = decryptor
             .decrypt(
-                vec![Box::new(id2) as Box<dyn age::Identity>]
+                vec![Box::new(id2.clone()) as Box<dyn age::Identity>]
                     .iter()
                     .map(|i| i.as_ref() as &dyn age::Identity),
             )
@@ -741,7 +734,15 @@ mod tests {
         std::io::Read::read_to_end(&mut reader, &mut decrypted_payload).unwrap();
         assert_eq!(decrypted_payload, plain_bytes);
 
-        // 8. Test Rotate Operation (only allow id2)
+        // 8. Setup id2 as the local key to test rotating out id1
+        let identity_file2 = temp.path().join("my_identity2");
+        let id2_string = id2.to_string();
+        fs::write(&identity_file2, id2_string.expose_secret()).unwrap();
+        unsafe {
+            std::env::set_var("AGE_IDENTITY", identity_file2.to_string_lossy().as_ref());
+        }
+
+        // 9. Test Rotate Operation (only allow id2)
         handle_rotate(&config, &db, &[pub2.clone()], Some("my-repo"), false, false).unwrap();
 
         let rotated_meta = crate::dot::meta::read_meta(&repo_dir).unwrap();
