@@ -54,6 +54,7 @@ fn configure_external_repo(
                 dots_dirs: vec![".".to_string()],
                 default_active_subdirs: None,
                 units: vec![],
+                age_recipients: vec![],
             });
             break;
         }

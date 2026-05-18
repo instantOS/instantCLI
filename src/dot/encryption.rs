@@ -23,8 +23,9 @@
 use anyhow::{Context, Result, anyhow};
 use std::ffi::OsStr;
 use std::fs::File;
-use std::io::{BufReader, Read};
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 use crate::common::paths;
 
@@ -135,6 +136,70 @@ pub fn load_identities() -> Result<Vec<Box<dyn age::Identity>>> {
     Ok(all)
 }
 
+/// Parse public age recipients from repository metadata.
+///
+/// Supports native X25519 recipients (`age1...`) and SSH public keys
+/// (`ssh-ed25519 ...`, `ssh-rsa ...`) through the `age` crate.
+pub fn parse_recipients(raw_recipients: &[String]) -> Result<Vec<Box<dyn age::Recipient>>> {
+    let mut recipients: Vec<Box<dyn age::Recipient>> = Vec::new();
+
+    for raw in raw_recipients {
+        let recipient = raw.trim();
+        if recipient.is_empty() {
+            continue;
+        }
+
+        if recipient.starts_with("age1") {
+            let parsed = age::x25519::Recipient::from_str(recipient)
+                .map_err(|err| anyhow!("invalid age recipient '{}': {}", recipient, err))?;
+            recipients.push(Box::new(parsed));
+            continue;
+        }
+
+        if recipient.starts_with("ssh-") {
+            let parsed = age::ssh::Recipient::from_str(recipient)
+                .map_err(|err| anyhow!("invalid SSH age recipient '{}': {:?}", recipient, err))?;
+            recipients.push(Box::new(parsed));
+            continue;
+        }
+
+        return Err(anyhow!(
+            "unsupported age recipient '{}': expected an age1... key or SSH public key",
+            recipient
+        ));
+    }
+
+    if recipients.is_empty() {
+        return Err(anyhow!("no age recipients configured"));
+    }
+
+    Ok(recipients)
+}
+
+/// Encrypt plaintext bytes to ASCII-armored age ciphertext.
+pub fn encrypt_bytes_to_armored(
+    plaintext: &[u8],
+    recipients: &[Box<dyn age::Recipient>],
+) -> Result<Vec<u8>> {
+    if recipients.is_empty() {
+        return Err(anyhow!("no age recipients configured"));
+    }
+
+    let encryptor = age::Encryptor::with_recipients(
+        recipients
+            .iter()
+            .map(|recipient| recipient.as_ref() as &dyn age::Recipient),
+    )?;
+    let mut ciphertext = Vec::new();
+    let armored =
+        age::armor::ArmoredWriter::wrap_output(&mut ciphertext, age::armor::Format::AsciiArmor)?;
+    let mut writer = encryptor.wrap_output(armored)?;
+    writer.write_all(plaintext)?;
+    writer.finish()?.finish()?;
+
+    Ok(ciphertext)
+}
+
 /// Decrypt an age-encrypted file at `cipher_path` to an owned byte buffer,
 /// using the given identities. Returns an error if no identity matches the
 /// file's recipients, or if the file is malformed.
@@ -149,7 +214,7 @@ pub fn decrypt_file_to_bytes(
     }
     let file = File::open(cipher_path)
         .with_context(|| format!("opening encrypted file {}", cipher_path.display()))?;
-    let decryptor = age::Decryptor::new_buffered(BufReader::new(file))
+    let decryptor = age::Decryptor::new_buffered(age::armor::ArmoredReader::new(file))
         .with_context(|| format!("parsing age header of {}", cipher_path.display()))?;
     let mut reader = decryptor
         .decrypt(identities.iter().map(|i| i.as_ref() as &dyn age::Identity))
@@ -206,5 +271,45 @@ mod tests {
         assert!(is_encrypted_source(Path::new("foo.age")));
         assert!(!is_encrypted_source(Path::new("foo.toml")));
         assert!(!is_encrypted_source(Path::new("foo")));
+    }
+
+    #[test]
+    fn parse_recipients_accepts_x25519_recipient() {
+        let identity = age::x25519::Identity::generate();
+        let raw = vec![identity.to_public().to_string()];
+
+        let recipients = parse_recipients(&raw).expect("parse generated recipient");
+
+        assert_eq!(recipients.len(), 1);
+    }
+
+    #[test]
+    fn parse_recipients_rejects_empty_list() {
+        let err = match parse_recipients(&[]) {
+            Ok(_) => panic!("empty recipients should fail"),
+            Err(err) => err,
+        };
+
+        assert!(err.to_string().contains("no age recipients configured"));
+    }
+
+    #[test]
+    fn encrypt_bytes_to_armored_round_trips() {
+        let identity = age::x25519::Identity::generate();
+        let raw_recipients = vec![identity.to_public().to_string()];
+        let recipients = parse_recipients(&raw_recipients).expect("parse recipient");
+
+        let ciphertext =
+            encrypt_bytes_to_armored(b"secret payload", &recipients).expect("encrypt payload");
+        assert!(ciphertext.starts_with(b"-----BEGIN AGE ENCRYPTED FILE-----"));
+
+        let cipher_file = tempfile::NamedTempFile::new().expect("temp cipher file");
+        std::fs::write(cipher_file.path(), ciphertext).expect("write cipher file");
+        let identities: Vec<Box<dyn age::Identity>> = vec![Box::new(identity)];
+
+        let plaintext =
+            decrypt_file_to_bytes(cipher_file.path(), &identities).expect("decrypt payload");
+
+        assert_eq!(plaintext, b"secret payload");
     }
 }

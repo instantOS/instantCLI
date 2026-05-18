@@ -214,7 +214,7 @@ impl Dotfile {
 
     /// Sha256-hex of an in-memory byte slice. Used for plaintext of
     /// decrypted age sources (never goes through the on-disk hash cache).
-    fn hash_bytes(bytes: &[u8]) -> String {
+    pub(crate) fn hash_bytes(bytes: &[u8]) -> String {
         let mut hasher = Sha256::new();
         hasher.update(bytes);
         hex::encode(hasher.finalize())

@@ -309,6 +309,7 @@ fn write_instantdots_toml(repo_path: &Path, inputs: &RepoInputs) -> Result<()> {
         dots_dirs: vec![inputs.dots_dir.clone()],
         default_active_subdirs: None,
         units: Vec::new(),
+        age_recipients: Vec::new(),
     };
 
     meta.save_with_documentation(&toml_path)
