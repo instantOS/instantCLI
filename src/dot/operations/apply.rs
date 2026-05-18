@@ -451,3 +451,85 @@ fn print_apply_summary(stats: &ApplyStats) {
 
     separator(false);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::TildePath;
+    use crate::dot::config::{DotfileConfig, Repo};
+    use crate::dot::db::Database;
+    use crate::dot::types::RepoMetaData;
+    use serial_test::serial;
+    use std::fs;
+    use tempfile::tempdir;
+
+    #[test]
+    #[serial]
+    fn apply_all_skips_undecryptable_age_file_and_applies_plain_file() {
+        let dir = tempdir().unwrap();
+        let home = dir.path().join("home");
+        let config_home = dir.path().join("config");
+        let repos_dir = dir.path().join("repos");
+        let repo_dir = repos_dir.join("test-repo");
+        let dots_dir = repo_dir.join("dots");
+        fs::create_dir_all(&home).unwrap();
+        fs::create_dir_all(&config_home).unwrap();
+        fs::create_dir_all(&dots_dir).unwrap();
+        fs::write(dots_dir.join("plain.txt"), "plain").unwrap();
+        fs::write(dots_dir.join("secret.txt.age"), "not an age file").unwrap();
+
+        let prev_home = std::env::var_os("HOME");
+        let prev_xdg = std::env::var_os("XDG_CONFIG_HOME");
+        let prev_age = std::env::var_os("AGE_IDENTITY");
+        // SAFETY: this test is serialised and restores the process env below.
+        unsafe {
+            std::env::set_var("HOME", &home);
+            std::env::set_var("XDG_CONFIG_HOME", &config_home);
+            std::env::remove_var("AGE_IDENTITY");
+        }
+
+        let config = DotfileConfig {
+            repos: vec![Repo {
+                url: "local".to_string(),
+                name: "test-repo".to_string(),
+                branch: None,
+                active_subdirectories: Some(vec!["dots".to_string()]),
+                enabled: true,
+                read_only: false,
+                metadata: Some(RepoMetaData {
+                    name: "test-repo".to_string(),
+                    dots_dirs: vec!["dots".to_string()],
+                    ..RepoMetaData::default()
+                }),
+            }],
+            repos_dir: TildePath::new(repos_dir),
+            database_dir: TildePath::new(dir.path().join("test.db")),
+            ..DotfileConfig::default()
+        };
+        let db = Database::new(config.database_path().to_path_buf()).unwrap();
+
+        let result = apply_all(&config, &db, false, false);
+
+        unsafe {
+            match prev_home {
+                Some(v) => std::env::set_var("HOME", v),
+                None => std::env::remove_var("HOME"),
+            }
+            match prev_xdg {
+                Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
+                None => std::env::remove_var("XDG_CONFIG_HOME"),
+            }
+            match prev_age {
+                Some(v) => std::env::set_var("AGE_IDENTITY", v),
+                None => std::env::remove_var("AGE_IDENTITY"),
+            }
+        }
+
+        result.expect("apply should skip encrypted failures instead of aborting");
+        assert_eq!(fs::read_to_string(home.join("plain.txt")).unwrap(), "plain");
+        assert!(
+            !home.join("secret.txt").exists(),
+            "undecryptable encrypted file should be skipped"
+        );
+    }
+}

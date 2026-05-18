@@ -194,6 +194,11 @@ pub fn apply_overrides(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::TildePath;
+    use crate::dot::config::{DotfileConfig, Repo};
+    use crate::dot::dotfile::SourceKind;
+    use crate::dot::types::RepoMetaData;
+    use serial_test::serial;
     use tempfile::tempdir;
 
     #[test]
@@ -216,5 +221,68 @@ mod tests {
 
         assert_eq!(loaded.overrides.len(), 1);
         assert_eq!(loaded.overrides[0].source_repo, "my-dots");
+    }
+
+    #[test]
+    #[serial]
+    fn apply_overrides_resolves_encrypted_source_path() {
+        let dir = tempdir().unwrap();
+        let home = dir.path().join("home");
+        let repos_dir = dir.path().join("repos");
+        let repo_dir = repos_dir.join("test-repo");
+        fs::create_dir_all(home.join(".config/app")).unwrap();
+        fs::create_dir_all(repo_dir.join("secrets/.config/app")).unwrap();
+        let encrypted_source = repo_dir.join("secrets/.config/app/token.toml.age");
+        fs::write(&encrypted_source, "ciphertext").unwrap();
+
+        let prev_home = std::env::var_os("HOME");
+        // SAFETY: this test is serialised and restores HOME below.
+        unsafe {
+            std::env::set_var("HOME", &home);
+        }
+
+        let target_path = home.join(".config/app/token.toml");
+        let original_source = repo_dir.join("dots/.config/app/token.toml");
+        let mut dotfiles = HashMap::from([(
+            target_path.clone(),
+            Dotfile::new(original_source, target_path.clone(), false),
+        )]);
+        let overrides = OverrideConfig {
+            overrides: vec![DotfileOverride {
+                target_path: TildePath::new(target_path.clone()),
+                source_repo: "test-repo".to_string(),
+                source_subdir: "secrets".to_string(),
+            }],
+        };
+        let config = DotfileConfig {
+            repos: vec![Repo {
+                url: "local".to_string(),
+                name: "test-repo".to_string(),
+                branch: None,
+                active_subdirectories: Some(vec!["secrets".to_string()]),
+                enabled: true,
+                read_only: false,
+                metadata: Some(RepoMetaData {
+                    name: "test-repo".to_string(),
+                    dots_dirs: vec!["secrets".to_string()],
+                    ..RepoMetaData::default()
+                }),
+            }],
+            repos_dir: TildePath::new(repos_dir),
+            ..DotfileConfig::default()
+        };
+
+        apply_overrides(&mut dotfiles, &overrides, &config).unwrap();
+
+        unsafe {
+            match prev_home {
+                Some(v) => std::env::set_var("HOME", v),
+                None => std::env::remove_var("HOME"),
+            }
+        }
+
+        let dotfile = dotfiles.get(&target_path).unwrap();
+        assert_eq!(dotfile.source_path, encrypted_source);
+        assert_eq!(dotfile.kind, SourceKind::Age);
     }
 }

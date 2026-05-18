@@ -234,3 +234,33 @@ pub fn display_path(path: &Path, is_root: bool) -> String {
 }
 
 use crate::dot::dotfilerepo::DotfileDir;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dot::dotfile::SourceKind;
+    use std::fs;
+    use tempfile::tempdir;
+
+    #[test]
+    fn scan_directory_strips_age_suffix_from_target() {
+        let dir = tempdir().unwrap();
+        let source_dir = dir.path().join("dots");
+        let target_prefix = dir.path().join("home");
+        fs::create_dir_all(source_dir.join(".config/app")).unwrap();
+        fs::write(source_dir.join(".config/app/token.toml.age"), "ciphertext").unwrap();
+
+        let dotfiles = scan_directory_for_dotfiles(&source_dir, &target_prefix, false).unwrap();
+
+        assert_eq!(dotfiles.len(), 1);
+        assert_eq!(
+            dotfiles[0].source_path,
+            source_dir.join(".config/app/token.toml.age")
+        );
+        assert_eq!(
+            dotfiles[0].target_path,
+            target_prefix.join(".config/app/token.toml")
+        );
+        assert_eq!(dotfiles[0].kind, SourceKind::Age);
+    }
+}

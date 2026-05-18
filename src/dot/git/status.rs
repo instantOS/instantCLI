@@ -921,3 +921,60 @@ pub fn get_dotfile_status(
 
     DotFileStatus::Clean
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dot::db::Database;
+    use crate::dot::dotfile::Dotfile;
+    use serial_test::serial;
+    use std::fs;
+    use tempfile::tempdir;
+
+    #[test]
+    #[serial]
+    fn encrypted_status_reports_identity_required_on_decrypt_failure() {
+        let dir = tempdir().unwrap();
+        let home = dir.path().join("home");
+        let config_home = dir.path().join("config");
+        fs::create_dir_all(&home).unwrap();
+        fs::create_dir_all(&config_home).unwrap();
+
+        let prev_home = std::env::var_os("HOME");
+        let prev_xdg = std::env::var_os("XDG_CONFIG_HOME");
+        let prev_age = std::env::var_os("AGE_IDENTITY");
+        // SAFETY: this test is serialised and restores the process env below.
+        unsafe {
+            std::env::set_var("HOME", &home);
+            std::env::set_var("XDG_CONFIG_HOME", &config_home);
+            std::env::remove_var("AGE_IDENTITY");
+        }
+
+        let source_path = dir.path().join("repo/dots/secret.txt.age");
+        let target_path = home.join("secret.txt");
+        fs::create_dir_all(source_path.parent().unwrap()).unwrap();
+        fs::write(&source_path, "not an age file").unwrap();
+        fs::write(&target_path, "plaintext").unwrap();
+
+        let db = Database::new(dir.path().join("test.db")).unwrap();
+        let dotfile = Dotfile::new(source_path, target_path, false);
+        let status = get_dotfile_status(&dotfile, &db, &UnitIndex::default());
+
+        unsafe {
+            match prev_home {
+                Some(v) => std::env::set_var("HOME", v),
+                None => std::env::remove_var("HOME"),
+            }
+            match prev_xdg {
+                Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
+                None => std::env::remove_var("XDG_CONFIG_HOME"),
+            }
+            match prev_age {
+                Some(v) => std::env::set_var("AGE_IDENTITY", v),
+                None => std::env::remove_var("AGE_IDENTITY"),
+            }
+        }
+
+        assert_eq!(status, DotFileStatus::IdentityRequired);
+    }
+}
