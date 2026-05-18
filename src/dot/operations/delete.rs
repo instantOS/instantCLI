@@ -172,14 +172,21 @@ fn delete_single_dotfile(db: &Database, dotfile: &crate::dot::Dotfile, debug: bo
     let display = crate::dot::display_path(&dotfile.target_path, dotfile.is_root);
 
     // Delete target file from home directory
-    if dotfile.target_path.exists() {
-        std::fs::remove_file(&dotfile.target_path)?;
+    match std::fs::remove_file(&dotfile.target_path) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e.into()),
     }
 
     // Delete source file from repo
-    if dotfile.source_path.exists() {
-        std::fs::remove_file(&dotfile.source_path)?;
+    let source_existed;
+    match std::fs::remove_file(&dotfile.source_path) {
+        Ok(()) => source_existed = true,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => source_existed = false,
+        Err(e) => return Err(e.into()),
+    }
 
+    if source_existed {
         // Clean up empty parent directories in repo
         clean_empty_parents(&dotfile.source_path);
 
