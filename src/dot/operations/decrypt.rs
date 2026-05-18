@@ -1,0 +1,330 @@
+use crate::common::home_dir;
+use crate::dot::config::DotfileConfig;
+use crate::dot::db::{Database, DotFileType};
+use crate::dot::dotfile::{Dotfile, SourceKind};
+use crate::dot::dotfilerepo::DotfileRepo;
+use crate::dot::override_config::DotfileSource;
+use crate::dot::utils::{get_all_dotfiles, resolve_dotfile_path};
+use crate::ui::prelude::*;
+use anyhow::{Context, Result, anyhow};
+use colored::Colorize;
+use std::fs;
+use std::io::Write;
+use std::path::Path;
+
+pub fn decrypt_dotfile(
+    config: &DotfileConfig,
+    db: &Database,
+    path: &str,
+    repo: Option<&str>,
+    subdir: Option<&str>,
+    dry_run: bool,
+    include_root: bool,
+    debug: bool,
+) -> Result<()> {
+    let target_path = resolve_dotfile_path(path, include_root)?;
+    let dotfile = resolve_dotfile_to_decrypt(config, db, &target_path, repo, subdir, include_root)?;
+
+    if dotfile.kind != SourceKind::Age {
+        anyhow::bail!(
+            "{} is already backed by a plaintext source: {}",
+            display_target(&dotfile),
+            dotfile.source_path.display()
+        );
+    }
+
+    if !dotfile.source_path.exists() {
+        anyhow::bail!(
+            "encrypted source file does not exist for {}: {}",
+            display_target(&dotfile),
+            dotfile.source_path.display()
+        );
+    }
+
+    let repo_name = crate::dot::git::get_repo_name_for_dotfile(&dotfile, config);
+    let repo_config = config
+        .repos
+        .iter()
+        .find(|r| r.name == repo_name.as_str())
+        .ok_or_else(|| anyhow!("repository '{}' not found in config", repo_name))?;
+    if repo_config.read_only {
+        anyhow::bail!("repository '{}' is read-only", repo_name);
+    }
+
+    let dotfile_repo = DotfileRepo::new(config, repo_name.to_string())?;
+
+    // Check if target exists and verify it doesn't have uncommitted modifications that would be lost
+    if dotfile.target_path.exists() {
+        let is_unmodified = dotfile
+            .is_target_unmodified(db)
+            .context("verifying target modification state")?;
+        if !is_unmodified {
+            anyhow::bail!(
+                "Target file {} has local modifications. Fetch changes with `ins dot add` or reset before decrypting.",
+                dotfile.target_path.display()
+            );
+        }
+    }
+
+    // Determine the plain source path by stripping the .age suffix
+    let source_str = dotfile.source_path.to_string_lossy();
+    if !source_str.ends_with(".age") {
+        anyhow::bail!(
+            "encrypted source file path does not end in '.age': {}",
+            dotfile.source_path.display()
+        );
+    }
+    let plain_source_path = Path::new(&source_str[..source_str.len() - 4]).to_path_buf();
+    if plain_source_path.exists() {
+        anyhow::bail!(
+            "plaintext source file already exists: {}",
+            plain_source_path.display()
+        );
+    }
+
+    // Load identities for decryption
+    let identities = crate::dot::encryption::load_identities()
+        .context("loading age decryption identities")?;
+
+    // Decrypt source to memory
+    let plaintext = crate::dot::encryption::decrypt_file_to_bytes(&dotfile.source_path, &identities)
+        .with_context(|| {
+            format!(
+                "decrypting {} — please verify that your age key is correctly configured in ~/.config/instant/age/identity or $AGE_IDENTITY",
+                dotfile.source_path.display()
+            )
+        })?;
+
+    if dry_run {
+        emit(
+            Level::Info,
+            "dot.decrypt.dry_run",
+            &format!(
+                "{} Would decrypt {} -> {}",
+                char::from(NerdFont::Info),
+                dotfile.source_path.display().to_string().cyan(),
+                plain_source_path.display().to_string().cyan()
+            ),
+            Some(serde_json::json!({
+                "target": display_target(&dotfile),
+                "source": dotfile.source_path.display().to_string(),
+                "decrypted_source": plain_source_path.display().to_string(),
+                "repo": repo_name.as_str(),
+                "dry_run": true
+            })),
+        );
+        return Ok(());
+    }
+
+    // Compute cipher hash before deleting the file so we can clean up cache mapping
+    let cipher_hash = Dotfile::compute_hash(&dotfile.source_path)?;
+
+    // Persist plaintext source file
+    persist_plaintext_source(&plain_source_path, &plaintext)?;
+
+    // Remove old .age source file
+    fs::remove_file(&dotfile.source_path).with_context(|| {
+        format!(
+            "removing encrypted source {}",
+            dotfile.source_path.display()
+        )
+    })?;
+
+    // Update SQLite database tracking
+    db.remove_hashes_for_path(&dotfile.source_path)?;
+    db.delete_encrypted_source(&cipher_hash)?;
+
+    let plain_hash = Dotfile::hash_bytes(&plaintext);
+    db.add_hash(&plain_hash, &plain_source_path, DotFileType::SourceFile)?;
+    if dotfile.target_path.exists() {
+        db.add_hash(&plain_hash, &dotfile.target_path, DotFileType::TargetFile)?;
+    }
+
+    // Stage changes in Git
+    let repo_path = dotfile_repo.local_path(config)?;
+    crate::dot::git::repo_ops::git_add(&repo_path, &dotfile.source_path, debug)
+        .with_context(|| format!("staging deletion of {}", dotfile.source_path.display()))?;
+    crate::dot::git::repo_ops::git_add(&repo_path, &plain_source_path, debug)
+        .with_context(|| format!("staging {}", plain_source_path.display()))?;
+
+    emit(
+        Level::Success,
+        "dot.decrypt.complete",
+        &format!(
+            "{} Decrypted {}",
+            char::from(NerdFont::Check),
+            display_target(&dotfile).green()
+        ),
+        Some(serde_json::json!({
+            "target": display_target(&dotfile),
+            "source_removed": dotfile.source_path.display().to_string(),
+            "decrypted_source": plain_source_path.display().to_string(),
+            "repo": repo_name.as_str()
+        })),
+    );
+
+    Ok(())
+}
+
+fn resolve_dotfile_to_decrypt(
+    config: &DotfileConfig,
+    db: &Database,
+    target_path: &Path,
+    repo: Option<&str>,
+    subdir: Option<&str>,
+    include_root: bool,
+) -> Result<Dotfile> {
+    if repo.is_none() && subdir.is_none() {
+        let all_dotfiles = get_all_dotfiles(config, db, include_root)?;
+        return all_dotfiles
+            .get(target_path)
+            .cloned()
+            .ok_or_else(|| anyhow!("no tracked dotfile found at {}", target_path.display()));
+    }
+
+    let repo = repo.ok_or_else(|| anyhow!("--subdir requires --repo"))?;
+    let sources = crate::dot::sources::list_sources_for_target(config, target_path)?;
+    let matching: Vec<DotfileSource> = sources
+        .into_iter()
+        .filter(|source| source.repo_name == repo && subdir.is_none_or(|s| source.subdir_name == s))
+        .collect();
+
+    match matching.as_slice() {
+        [] => Err(anyhow!(
+            "no tracked source found for {} in repository '{}'",
+            target_path.display(),
+            repo
+        )),
+        [source] => Ok(Dotfile::new(
+            source.source_path.clone(),
+            target_path.to_path_buf(),
+            !target_path.starts_with(home_dir()),
+        )),
+        _ => Err(anyhow!(
+            "multiple sources found for {} in repository '{}'; pass --subdir",
+            target_path.display(),
+            repo
+        )),
+    }
+}
+
+fn persist_plaintext_source(path: &Path, plaintext: &[u8]) -> Result<()> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| anyhow!("plaintext source has no parent: {}", path.display()))?;
+    fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
+
+    let mut tmp = tempfile::NamedTempFile::new_in(parent)
+        .with_context(|| format!("creating temporary file in {}", parent.display()))?;
+    tmp.write_all(plaintext)
+        .with_context(|| format!("writing plaintext temporary file for {}", path.display()))?;
+    tmp.flush()?;
+    tmp.persist(path)
+        .map_err(|err| anyhow!("persisting plaintext source {}: {}", path.display(), err))?;
+    Ok(())
+}
+
+fn display_target(dotfile: &Dotfile) -> String {
+    crate::dot::display_path(&dotfile.target_path, dotfile.is_root)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::TildePath;
+    use crate::dot::config::Repo;
+    use crate::dot::operations::encrypt::encrypt_dotfile;
+    use crate::dot::types::RepoMetaData;
+    use age::secrecy::ExposeSecret;
+    use serial_test::serial;
+    use tempfile::tempdir;
+
+    #[test]
+    #[serial]
+    fn test_decrypt_dotfile_converts_age_source_to_plain_source() {
+        let dir = tempdir().unwrap();
+        let home = dir.path().join("home");
+        let repos_dir = dir.path().join("repos");
+        let repo_dir = repos_dir.join("test-repo");
+        let dots_dir = repo_dir.join("dots");
+        fs::create_dir_all(&home).unwrap();
+        fs::create_dir_all(&dots_dir).unwrap();
+        fs::write(repo_dir.join("instantdots.toml"), "").unwrap();
+        fs::write(dots_dir.join("secret.txt"), "target secret").unwrap();
+        fs::write(home.join("secret.txt"), "target secret").unwrap();
+
+        std::process::Command::new("git")
+            .arg("init")
+            .current_dir(&repo_dir)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["add", "dots/secret.txt"])
+            .current_dir(&repo_dir)
+            .output()
+            .unwrap();
+
+        let identity = age::x25519::Identity::generate();
+        let recipient = identity.to_public().to_string();
+        let identity_file = dir.path().join("identity.txt");
+        fs::write(&identity_file, identity.to_string().expose_secret()).unwrap();
+
+        let prev_home = std::env::var_os("HOME");
+        let prev_age = std::env::var_os("AGE_IDENTITY");
+        unsafe {
+            std::env::set_var("HOME", &home);
+            std::env::set_var("AGE_IDENTITY", &identity_file);
+        }
+
+        let config = DotfileConfig {
+            repos: vec![Repo {
+                url: "local".to_string(),
+                name: "test-repo".to_string(),
+                branch: None,
+                active_subdirectories: Some(vec!["dots".to_string()]),
+                enabled: true,
+                read_only: false,
+                metadata: Some(RepoMetaData {
+                    name: "test-repo".to_string(),
+                    dots_dirs: vec!["dots".to_string()],
+                    age_recipients: vec![recipient],
+                    ..RepoMetaData::default()
+                }),
+            }],
+            repos_dir: TildePath::new(repos_dir),
+            database_dir: TildePath::new(dir.path().join("test.db")),
+            ..DotfileConfig::default()
+        };
+        let db = Database::new(config.database_path().to_path_buf()).unwrap();
+
+        // 1. Encrypt first
+        encrypt_dotfile(&config, &db, "secret.txt", None, None, false, false, false).unwrap();
+
+        assert!(!dots_dir.join("secret.txt").exists());
+        assert!(dots_dir.join("secret.txt.age").exists());
+
+        // 2. Decrypt back
+        decrypt_dotfile(&config, &db, "secret.txt", None, None, false, false, false).unwrap();
+
+        assert!(dots_dir.join("secret.txt").exists());
+        assert!(!dots_dir.join("secret.txt.age").exists());
+
+        let plaintext_content = fs::read_to_string(dots_dir.join("secret.txt")).unwrap();
+        assert_eq!(plaintext_content, "target secret");
+
+        // Verify SQLite hashes
+        assert!(db.source_hash_exists_anywhere(&Dotfile::hash_bytes(b"target secret")).unwrap());
+        assert!(!db.source_hash_exists_anywhere("invalid").unwrap());
+
+        unsafe {
+            match prev_home {
+                Some(v) => std::env::set_var("HOME", v),
+                None => std::env::remove_var("HOME"),
+            }
+            match prev_age {
+                Some(v) => std::env::set_var("AGE_IDENTITY", v),
+                None => std::env::remove_var("AGE_IDENTITY"),
+            }
+        }
+    }
+}

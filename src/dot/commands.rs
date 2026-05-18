@@ -76,6 +76,23 @@ pub enum DotCommands {
         #[command(flatten)]
         root_flags: RootFlags,
     },
+    /// Convert a tracked age-encrypted `.age` dotfile source back to plaintext
+    Decrypt {
+        /// Target path to decrypt (relative to ~ or absolute path for root dotfiles)
+        #[arg(value_hint = ValueHint::AnyPath)]
+        path: String,
+        /// Convert the source from this repository instead of the default source
+        #[arg(long, value_name = "REPO")]
+        repo: Option<String>,
+        /// Convert the source from this subdirectory (requires --repo)
+        #[arg(long, requires = "repo", value_name = "SUBDIR")]
+        subdir: Option<String>,
+        /// Show what would be converted without writing files
+        #[arg(long)]
+        dry_run: bool,
+        #[command(flatten)]
+        root_flags: RootFlags,
+    },
     Update {
         /// Do not apply dotfiles after updating
         #[arg(long)]
@@ -557,6 +574,7 @@ pub fn handle_dot_command(
         DotCommands::Reset { root_flags, .. }
         | DotCommands::Apply { root_flags, .. }
         | DotCommands::Encrypt { root_flags, .. }
+        | DotCommands::Decrypt { root_flags, .. }
         | DotCommands::Update { root_flags, .. }
         | DotCommands::Status { root_flags, .. }
         | DotCommands::Diff { root_flags, .. } => root_flags.home.as_deref(),
@@ -626,6 +644,24 @@ pub fn handle_dot_command(
             root_flags,
         } => {
             super::encrypt_dotfile(
+                &config,
+                &db,
+                path,
+                repo.as_deref(),
+                subdir.as_deref(),
+                *dry_run,
+                root_flags.include_root,
+                debug,
+            )?;
+        }
+        DotCommands::Decrypt {
+            path,
+            repo,
+            subdir,
+            dry_run,
+            root_flags,
+        } => {
+            super::decrypt_dotfile(
                 &config,
                 &db,
                 path,

@@ -30,7 +30,7 @@ pub use crate::dot::config::DotfileConfig;
 pub use crate::dot::dotfile::Dotfile;
 pub use git::{diff_all, status_all, update_all};
 pub use operations::{
-    add_dotfile, apply_all, encrypt_dotfile, git_commit_all, git_pull_all, git_push_all,
+    add_dotfile, apply_all, decrypt_dotfile, encrypt_dotfile, git_commit_all, git_pull_all, git_push_all,
     git_run_any, reset_modified,
 };
 pub use types::RepoName;

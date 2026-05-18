@@ -329,6 +329,25 @@ impl Database {
         Ok(())
     }
 
+    pub fn remove_hashes_for_path(&self, path: &Path) -> Result<()> {
+        let path_str = path
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 path: {}", path.display()))?;
+        self.conn.execute(
+            "DELETE FROM file_hashes WHERE path = ?",
+            [path_str],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_encrypted_source(&self, cipher_hash: &str) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM encrypted_sources WHERE cipher_hash = ?",
+            [cipher_hash],
+        )?;
+        Ok(())
+    }
+
     pub fn cleanup_hashes(&self, days: u32) -> Result<()> {
         // Keep newest N hashes per target file (source_file = 0), but always keep all
         // source file hashes
