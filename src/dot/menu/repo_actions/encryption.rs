@@ -43,6 +43,73 @@ impl FzfSelectable for RepoEncryptionItem {
     }
 }
 
+fn build_status_message(repo_name: &str, config: &DotfileConfig) -> String {
+    let Ok(dotfile_repo) = crate::dot::dotfilerepo::DotfileRepo::new(config, repo_name.to_string())
+    else {
+        return format!("Repository '{}' not found.", repo_name);
+    };
+    let Ok(repo_path) = dotfile_repo.local_path(config) else {
+        return format!("Repository path not found for '{}'.", repo_name);
+    };
+    let Ok(meta) = crate::dot::meta::read_meta(&repo_path) else {
+        return format!("Could not read metadata for '{}'.", repo_name);
+    };
+    let local_keys = crate::dot::operations::key::get_local_public_keys().unwrap_or_default();
+
+    if meta.age_recipients.is_empty() {
+        return format!(
+            "Repository: {}\n\nEncryption is not configured.\nNo age recipients have been authorized yet.",
+            repo_name
+        );
+    }
+
+    let local_authorized = meta.age_recipients.iter().any(|r| local_keys.contains(r));
+
+    let mut encrypted_files = 0;
+    for dir in &dotfile_repo.dotfile_dirs {
+        if dir.path.is_dir() {
+            encrypted_files += count_age_files(&dir.path);
+        }
+    }
+
+    let auth_icon = if local_authorized { "✓" } else { "✗" };
+    let auth_note = if local_authorized {
+        String::new()
+    } else {
+        "\n\nYour key is NOT authorized.\nYou cannot decrypt files for this repo.\nRun 'Authorize Local Key' to fix this.".to_string()
+    };
+
+    format!(
+        "Repository: {}\n\nRecipients: {}\nEncrypted files: {}\nLocal key: {} {}\n{}",
+        repo_name,
+        meta.age_recipients.len(),
+        encrypted_files,
+        auth_icon,
+        if local_authorized {
+            "Authorized"
+        } else {
+            "Unauthorized"
+        },
+        auth_note,
+    )
+}
+
+fn count_age_files(dir: &std::path::Path) -> usize {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    let mut count = 0;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            count += count_age_files(&path);
+        } else if path.is_file() && crate::dot::encryption::is_encrypted_source(&path) {
+            count += 1;
+        }
+    }
+    count
+}
+
 pub(super) fn handle_repo_encryption(
     repo_name: &str,
     config: &mut DotfileConfig,
@@ -137,8 +204,8 @@ pub(super) fn handle_repo_encryption(
                 cursor.update(&item, &actions);
                 match item.action {
                     RepoEncryptionAction::ShowStatus => {
-                        crate::dot::operations::key::handle_status(config, Some(repo_name))?;
-                        crate::menu_utils::FzfWrapper::message("Press Enter to continue")?;
+                        let msg = build_status_message(repo_name, config);
+                        FzfWrapper::message(&msg)?;
                     }
                     RepoEncryptionAction::AuthorizeLocalKey => {
                         crate::dot::operations::key::handle_authorize(
@@ -149,7 +216,16 @@ pub(super) fn handle_repo_encryption(
                             false,
                             debug,
                         )?;
-                        crate::menu_utils::FzfWrapper::message("Press Enter to continue")?;
+                        let local_keys = crate::dot::operations::key::get_local_public_keys()
+                            .unwrap_or_default();
+                        let key = local_keys
+                            .first()
+                            .map(|s| s.as_str())
+                            .unwrap_or("(unknown)");
+                        FzfWrapper::message(&format!(
+                            "Local key authorized for {}.\n\n{}",
+                            repo_name, key
+                        ))?;
                     }
                     RepoEncryptionAction::AuthorizeRemoteKey => {
                         if let crate::menu_utils::TextEditOutcome::Updated(Some(key)) =
@@ -163,8 +239,8 @@ pub(super) fn handle_repo_encryption(
                             let key = key.trim();
                             if !key.is_empty() {
                                 if !key.starts_with("age1") && !key.starts_with("ssh-") {
-                                    crate::menu_utils::FzfWrapper::message(
-                                        "Invalid key prefix. Press Enter to continue",
+                                    FzfWrapper::message(
+                                        "Invalid key prefix.\nExpected age1... or ssh-...",
                                     )?;
                                 } else {
                                     crate::dot::operations::key::handle_authorize(
@@ -175,9 +251,10 @@ pub(super) fn handle_repo_encryption(
                                         false,
                                         debug,
                                     )?;
-                                    crate::menu_utils::FzfWrapper::message(
-                                        "Press Enter to continue",
-                                    )?;
+                                    FzfWrapper::message(&format!(
+                                        "Remote key authorized for {}.\n\n{}",
+                                        repo_name, key
+                                    ))?;
                                 }
                             }
                         }
@@ -198,18 +275,23 @@ pub(super) fn handle_repo_encryption(
                                 .collect();
 
                             if !keys.is_empty() {
+                                let mut has_invalid = false;
                                 for k in &keys {
                                     if !k.starts_with("age1") && !k.starts_with("ssh-") {
-                                        crate::menu_utils::FzfWrapper::message(&format!(
-                                            "Invalid key '{}'. Press Enter to continue",
+                                        FzfWrapper::message(&format!(
+                                            "Invalid key: {}\nExpected age1... or ssh-...",
                                             k
                                         ))?;
-                                        continue;
+                                        has_invalid = true;
+                                        break;
                                     }
                                 }
+                                if has_invalid {
+                                    continue;
+                                }
 
-                                let confirm = crate::menu_utils::FzfWrapper::confirm(&format!(
-                                    "Are you sure you want to rotate keys to {} recipients? You will lose access if your key is not included.",
+                                let confirm = FzfWrapper::confirm(&format!(
+                                    "Rotate keys to {} recipient(s)?\nYou will lose access if your key is not included.",
                                     keys.len()
                                 ))?;
                                 if confirm == crate::menu_utils::ConfirmResult::Yes {
@@ -221,9 +303,11 @@ pub(super) fn handle_repo_encryption(
                                         false,
                                         debug,
                                     )?;
-                                    crate::menu_utils::FzfWrapper::message(
-                                        "Press Enter to continue",
-                                    )?;
+                                    FzfWrapper::message(&format!(
+                                        "Keys rotated for {}.\nRecipients set: {}",
+                                        repo_name,
+                                        keys.len()
+                                    ))?;
                                 }
                             }
                         }
