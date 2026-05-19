@@ -74,10 +74,10 @@ pub fn encrypt_dotfile(
             EncryptRecovery::Diverged => {
                 anyhow::bail!(
                     "encrypted source already exists and does NOT match the current plaintext: {}\n\
-                     This usually means a previous encrypt was interrupted, or the file was edited \
-                     out-of-band. To recover, either:\n  \
-                     - remove {} (drops new plaintext changes), or\n  \
-                     - remove {} (drops previous ciphertext) and re-run.",
+This usually means a previous encrypt was interrupted, or the file was edited \
+out-of-band. To recover, either:\n  \
+- remove {} (drops new plaintext changes), or\n  \
+- remove {} (drops previous ciphertext) and re-run.",
                     cipher_candidate.display(),
                     plain_candidate.display(),
                     cipher_candidate.display(),
@@ -86,9 +86,9 @@ pub fn encrypt_dotfile(
             EncryptRecovery::Unknown => {
                 anyhow::bail!(
                     "encrypted source already exists: {}\n\
-                     The previous encrypt may have been interrupted. If you are certain the \
-                     plaintext at {} is identical to the contents of the ciphertext, delete the \
-                     plaintext file and re-run; otherwise delete the ciphertext file and re-run.",
+The previous encrypt may have been interrupted. If you are certain the \
+plaintext at {} is identical to the contents of the ciphertext, delete the \
+plaintext file and re-run; otherwise delete the ciphertext file and re-run.",
                     cipher_candidate.display(),
                     plain_candidate.display(),
                 );
@@ -375,7 +375,7 @@ mod tests {
     use super::*;
     use crate::common::TildePath;
     use crate::dot::config::Repo;
-    use crate::dot::test_util::EnvGuard;
+    use crate::dot::test_util::{EnvGuard, setup_encrypt_test_env};
     use crate::dot::types::RepoMetaData;
     use age::secrecy::ExposeSecret;
     use serial_test::serial;
@@ -524,70 +524,41 @@ mod tests {
     #[test]
     #[serial]
     fn encrypt_dotfile_recovers_from_leftover_ciphertext() {
-        let dir = tempdir().unwrap();
-        let home = dir.path().join("home");
-        let repos_dir = dir.path().join("repos");
-        let repo_dir = repos_dir.join("test-repo");
-        let dots_dir = repo_dir.join("dots");
-        fs::create_dir_all(&home).unwrap();
-        fs::create_dir_all(&dots_dir).unwrap();
-        fs::write(repo_dir.join("instantdots.toml"), "").unwrap();
-        fs::write(dots_dir.join("secret.txt"), "leftover plain").unwrap();
-        fs::write(home.join("secret.txt"), "leftover plain").unwrap();
+        let env = setup_encrypt_test_env();
+        let cipher_path = env.dots_dir.join("secret.txt.age");
 
-        std::process::Command::new("git")
-            .arg("init")
-            .current_dir(&repo_dir)
-            .output()
-            .unwrap();
-
-        let identity = age::x25519::Identity::generate();
-        let recipient = identity.to_public().to_string();
-        let identity_file = dir.path().join("identity.txt");
-        fs::write(&identity_file, identity.to_string().expose_secret()).unwrap();
-
-        let _home_guard = EnvGuard::set("HOME", &home);
-        let _age_guard = EnvGuard::set("AGE_IDENTITY", &identity_file);
-
-        let config = DotfileConfig {
-            repos: vec![Repo {
-                url: "local".to_string(),
-                name: "test-repo".to_string(),
-                branch: None,
-                active_subdirectories: Some(vec!["dots".to_string()]),
-                enabled: true,
-                read_only: false,
-                metadata: Some(RepoMetaData {
-                    name: "test-repo".to_string(),
-                    dots_dirs: vec!["dots".to_string()],
-                    encryption_recipients: vec![recipient.clone()],
-                    ..RepoMetaData::default()
-                }),
-            }],
-            repos_dir: TildePath::new(repos_dir),
-            database_dir: TildePath::new(dir.path().join("test.db")),
-            ..DotfileConfig::default()
-        };
-        let db = Database::new(config.database_path().to_path_buf()).unwrap();
+        // Seed plaintext on disk first.
+        fs::write(env.dots_dir.join("secret.txt"), "leftover plain").unwrap();
+        fs::write(env.home.join("secret.txt"), "leftover plain").unwrap();
 
         // Simulate the "crashed mid-encrypt" state: both plaintext and
         // ciphertext on disk, with the DB already containing the cipher→plain
         // mapping that the happy path would have recorded.
-        let parsed = crate::dot::encryption::parse_recipients(&[recipient]).unwrap();
+        let parsed = crate::dot::encryption::parse_recipients(&[env.recipient]).unwrap();
         let cipher_bytes =
             crate::dot::encryption::encrypt_bytes_to_armored(b"leftover plain", &parsed).unwrap();
-        let cipher_path = dots_dir.join("secret.txt.age");
         fs::write(&cipher_path, &cipher_bytes).unwrap();
         let cipher_hash = Dotfile::compute_hash(&cipher_path).unwrap();
         let plain_hash = Dotfile::hash_bytes(b"leftover plain");
-        db.record_encrypted_source(&cipher_hash, &plain_hash)
+        env.db
+            .record_encrypted_source(&cipher_hash, &plain_hash)
             .unwrap();
 
-        encrypt_dotfile(&config, &db, "secret.txt", None, None, false, false, false).unwrap();
+        encrypt_dotfile(
+            &env.config,
+            &env.db,
+            "secret.txt",
+            None,
+            None,
+            false,
+            false,
+            false,
+        )
+        .unwrap();
 
         // Recovery should have removed the plaintext and kept the existing
         // ciphertext on disk untouched.
-        assert!(!dots_dir.join("secret.txt").exists());
+        assert!(!env.dots_dir.join("secret.txt").exists());
         assert!(cipher_path.exists());
     }
 
@@ -597,69 +568,38 @@ mod tests {
     #[test]
     #[serial]
     fn encrypt_dotfile_bails_when_leftover_ciphertext_diverges() {
-        let dir = tempdir().unwrap();
-        let home = dir.path().join("home");
-        let repos_dir = dir.path().join("repos");
-        let repo_dir = repos_dir.join("test-repo");
-        let dots_dir = repo_dir.join("dots");
-        fs::create_dir_all(&home).unwrap();
-        fs::create_dir_all(&dots_dir).unwrap();
-        fs::write(repo_dir.join("instantdots.toml"), "").unwrap();
+        let env = setup_encrypt_test_env();
+        let cipher_path = env.dots_dir.join("secret.txt.age");
+
         // Plaintext on disk now differs from what the ciphertext encrypts.
-        fs::write(dots_dir.join("secret.txt"), "modified plain").unwrap();
-        fs::write(home.join("secret.txt"), "modified plain").unwrap();
+        fs::write(env.dots_dir.join("secret.txt"), "modified plain").unwrap();
+        fs::write(env.home.join("secret.txt"), "modified plain").unwrap();
 
-        std::process::Command::new("git")
-            .arg("init")
-            .current_dir(&repo_dir)
-            .output()
-            .unwrap();
-
-        let identity = age::x25519::Identity::generate();
-        let recipient = identity.to_public().to_string();
-        let identity_file = dir.path().join("identity.txt");
-        fs::write(&identity_file, identity.to_string().expose_secret()).unwrap();
-
-        let _home_guard = EnvGuard::set("HOME", &home);
-        let _age_guard = EnvGuard::set("AGE_IDENTITY", &identity_file);
-
-        let config = DotfileConfig {
-            repos: vec![Repo {
-                url: "local".to_string(),
-                name: "test-repo".to_string(),
-                branch: None,
-                active_subdirectories: Some(vec!["dots".to_string()]),
-                enabled: true,
-                read_only: false,
-                metadata: Some(RepoMetaData {
-                    name: "test-repo".to_string(),
-                    dots_dirs: vec!["dots".to_string()],
-                    encryption_recipients: vec![recipient.clone()],
-                    ..RepoMetaData::default()
-                }),
-            }],
-            repos_dir: TildePath::new(repos_dir),
-            database_dir: TildePath::new(dir.path().join("test.db")),
-            ..DotfileConfig::default()
-        };
-        let db = Database::new(config.database_path().to_path_buf()).unwrap();
-
-        let parsed = crate::dot::encryption::parse_recipients(&[recipient]).unwrap();
+        let parsed = crate::dot::encryption::parse_recipients(&[env.recipient]).unwrap();
         let cipher_bytes =
             crate::dot::encryption::encrypt_bytes_to_armored(b"original plain", &parsed).unwrap();
-        let cipher_path = dots_dir.join("secret.txt.age");
         fs::write(&cipher_path, &cipher_bytes).unwrap();
         let cipher_hash = Dotfile::compute_hash(&cipher_path).unwrap();
         // DB recorded the cipher as encrypting the ORIGINAL plain.
-        db.record_encrypted_source(&cipher_hash, &Dotfile::hash_bytes(b"original plain"))
+        env.db
+            .record_encrypted_source(&cipher_hash, &Dotfile::hash_bytes(b"original plain"))
             .unwrap();
 
-        let result = encrypt_dotfile(&config, &db, "secret.txt", None, None, false, false, false);
+        let result = encrypt_dotfile(
+            &env.config,
+            &env.db,
+            "secret.txt",
+            None,
+            None,
+            false,
+            false,
+            false,
+        );
         let err = result.expect_err("divergent recovery must bail");
         let msg = format!("{err:#}");
         assert!(msg.contains("does NOT match"), "got: {msg}");
         // Both files should still be on disk untouched.
-        assert!(dots_dir.join("secret.txt").exists());
+        assert!(env.dots_dir.join("secret.txt").exists());
         assert!(cipher_path.exists());
     }
 }

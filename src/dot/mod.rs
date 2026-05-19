@@ -23,9 +23,9 @@ pub mod utils;
 #[cfg(test)]
 mod external_metadata_tests;
 #[cfg(test)]
-pub(crate) mod test_util;
-#[cfg(test)]
 mod path_tests;
+#[cfg(test)]
+pub(crate) mod test_util;
 
 // Re-exports for convenience - these are used throughout the dot module
 pub use crate::dot::config::DotfileConfig;

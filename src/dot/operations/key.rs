@@ -229,7 +229,7 @@ pub(crate) fn handle_authorize(
     )?;
 
     let repo_note = if repo_auto_selected {
-        format!(" (auto-selected; pass --repo to override)")
+        " (auto-selected; pass --repo to override)".to_string()
     } else {
         String::new()
     };

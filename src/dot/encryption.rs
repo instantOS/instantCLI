@@ -39,6 +39,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use crate::common::paths;
+use crate::ui::{Level, emit};
 
 /// File extension that marks a source file as age-encrypted.
 pub const AGE_EXTENSION: &str = "age";
@@ -202,11 +203,11 @@ pub fn discover_identity_files() -> Vec<PathBuf> {
     let mut out: Vec<PathBuf> = Vec::new();
     let mut seen: HashSet<PathBuf> = HashSet::new();
 
-    let push_unique = |p: PathBuf, out: &mut Vec<PathBuf>, seen: &mut HashSet<PathBuf>| {
+    fn dedup_push(out: &mut Vec<PathBuf>, seen: &mut HashSet<PathBuf>, p: PathBuf) {
         if seen.insert(p.clone()) {
             out.push(p);
         }
-    };
+    }
 
     // 1. $AGE_IDENTITY env var
     if let Ok(val) = std::env::var("AGE_IDENTITY") {
@@ -217,7 +218,7 @@ pub fn discover_identity_files() -> Vec<PathBuf> {
             }
             let expanded = PathBuf::from(shellexpand::tilde(raw).into_owned());
             if expanded.is_file() {
-                push_unique(expanded, &mut out, &mut seen);
+                dedup_push(&mut out, &mut seen, expanded);
             }
         }
     }
@@ -227,7 +228,7 @@ pub fn discover_identity_files() -> Vec<PathBuf> {
         for raw in &config.encryption_keys {
             let expanded = PathBuf::from(shellexpand::tilde(raw).into_owned());
             if expanded.is_file() {
-                push_unique(expanded, &mut out, &mut seen);
+                dedup_push(&mut out, &mut seen, expanded);
             }
         }
     }
@@ -236,7 +237,7 @@ pub fn discover_identity_files() -> Vec<PathBuf> {
     if let Ok(cfg_dir) = paths::instant_config_dir() {
         let single = cfg_dir.join("encryption").join("identity");
         if single.is_file() {
-            push_unique(single, &mut out, &mut seen);
+            dedup_push(&mut out, &mut seen, single);
         }
         let dir = cfg_dir.join("encryption").join("identities");
         if dir.is_dir()
@@ -249,19 +250,20 @@ pub fn discover_identity_files() -> Vec<PathBuf> {
                 .collect();
             files.sort();
             for p in files {
-                push_unique(p, &mut out, &mut seen);
+                dedup_push(&mut out, &mut seen, p);
             }
         }
-    }
-
-    // 5. Conventional unencrypted SSH private keys. Only the well-known
+    } // 5. Conventional unencrypted SSH private keys. Only the well-known
     //    filenames so we don't sweep up unrelated files in ~/.ssh.
+    //    FIDO2/U2F `_sk` variants (id_ed25519_sk, id_ecdsa_sk) are
+    //    excluded because age::ssh::Identity cannot interact with
+    //    hardware tokens.
     if let Ok(home) = std::env::var("HOME") {
         let ssh_dir = PathBuf::from(home).join(".ssh");
-        for name in ["id_ed25519", "id_rsa"] {
+        for name in ["id_ed25519", "id_ecdsa", "id_rsa"] {
             let p = ssh_dir.join(name);
             if p.is_file() {
-                push_unique(p, &mut out, &mut seen);
+                dedup_push(&mut out, &mut seen, p);
             }
         }
     }
@@ -339,25 +341,33 @@ fn parse_ssh_identity_file(path: &Path) -> Result<Vec<Box<dyn age::Identity>>> {
         .with_context(|| format!("parsing ssh identity file {}", path.display()))?;
 
     match ssh_id {
-        age::ssh::Identity::Unencrypted(_) => {
-            Ok(vec![Box::new(ssh_id) as Box<dyn age::Identity>])
-        }
+        age::ssh::Identity::Unencrypted(_) => Ok(vec![Box::new(ssh_id) as Box<dyn age::Identity>]),
         age::ssh::Identity::Encrypted(_) => {
             // v1 deliberately doesn't prompt; skip so apply still runs from
             // autostart instead of erroring out. The user can place a
             // plaintext copy of the key under
             // ~/.config/instant/encryption/identities/ to use it, or set
             // AGE_IDENTITY to point at one.
-            eprintln!(
-                "instant: skipping passphrase-protected SSH identity {} (v1 does not prompt)",
-                path.display()
+            emit(
+                Level::Debug,
+                "dot.encrypt.ssh_identity_encrypted",
+                &format!(
+                    "skipping passphrase-protected SSH identity {} (v1 does not prompt)",
+                    path.display()
+                ),
+                None,
             );
             Ok(Vec::new())
         }
         age::ssh::Identity::Unsupported(_) => {
-            eprintln!(
-                "instant: skipping unsupported SSH identity {} (key type not supported by age)",
-                path.display()
+            emit(
+                Level::Debug,
+                "dot.encrypt.ssh_identity_unsupported",
+                &format!(
+                    "skipping unsupported SSH identity {} (key type not supported by age)",
+                    path.display()
+                ),
+                None,
             );
             Ok(Vec::new())
         }
@@ -524,7 +534,8 @@ mod tests {
         };
 
         assert!(
-            err.to_string().contains("no encryption recipients configured"),
+            err.to_string()
+                .contains("no encryption recipients configured"),
             "unexpected error: {err}"
         );
     }
