@@ -115,7 +115,7 @@ impl MusicResolver {
     fn download_url(&self, url: &str) -> Result<PathBuf> {
         let mut hasher = Sha256::new();
         hasher.update(url.as_bytes());
-        let hash = format!("{:x}", hasher.finalize());
+        let hash = hex::encode(hasher.finalize());
 
         let mut cache_path =
             cache_dir().context("Unable to resolve cache directory for music downloads")?;

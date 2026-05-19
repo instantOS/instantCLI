@@ -118,7 +118,6 @@ pub fn find_appimages_in_dir(directory: &str) -> Result<Vec<PathBuf>> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     #[test]
     fn test_case_insensitive_matching() {

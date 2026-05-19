@@ -65,32 +65,42 @@ pub(super) fn setup_single_game_with_discovered_path(
     let snapshot_selection = gather_snapshot_selection(game_name, game_config, snapshot_context)?;
     snapshot_selection.announce(game_name, discovered_save_path);
 
-    let selected_path = snapshot_selection.select_path(game_name, discovered_save_path)?;
+    let outcome = loop {
+        let selected_path = snapshot_selection.select_path(game_name, discovered_save_path)?;
 
-    let outcome = match selected_path {
-        Some(selected_path) => finalize_game_setup(
-            game_name,
-            selected_path,
-            game_config,
-            installations,
-            &snapshot_selection,
-        )?,
-        None => {
-            emit(
-                Level::Warn,
-                "game.setup.cancelled",
-                &format!(
-                    "{} Setup cancelled for game '{game_name}'.",
-                    char::from(NerdFont::Warning)
-                ),
-                None,
-            );
-            SetupStepOutcome::Cancelled
+        match selected_path {
+            Some(selected_path) => match finalize_game_setup(
+                game_name,
+                selected_path,
+                game_config,
+                installations,
+                &snapshot_selection,
+            )? {
+                FinalizeOutcome::Done(outcome) => break outcome,
+                FinalizeOutcome::Reselect => continue,
+            },
+            None => {
+                emit(
+                    Level::Warn,
+                    "game.setup.cancelled",
+                    &format!(
+                        "{} Setup cancelled for game '{game_name}'.",
+                        char::from(NerdFont::Warning)
+                    ),
+                    None,
+                );
+                break SetupStepOutcome::Cancelled;
+            }
         }
     };
 
     println!();
     Ok(outcome)
+}
+
+enum FinalizeOutcome {
+    Done(SetupStepOutcome),
+    Reselect,
 }
 
 struct SnapshotSelection {
@@ -224,7 +234,7 @@ fn finalize_game_setup(
     game_config: &InstantGameConfig,
     installations: &mut InstallationsConfig,
     snapshot_selection: &SnapshotSelection,
-) -> Result<SetupStepOutcome> {
+) -> Result<FinalizeOutcome> {
     let original_selection = selected_path.display_path.clone();
     let mut save_path =
         TildePath::from_str(&original_selection).map_err(|e| anyhow!("Invalid save path: {e}"))?;
@@ -249,7 +259,7 @@ fn finalize_game_setup(
                 ),
                 None,
             );
-            return Ok(SetupStepOutcome::Cancelled);
+            return Ok(FinalizeOutcome::Done(SetupStepOutcome::Cancelled));
         }
     };
     if save_path_kind == PathContentKind::Directory
@@ -271,7 +281,22 @@ fn finalize_game_setup(
     let mut installation =
         GameInstallation::with_kind(game_name, save_path.clone(), save_path_kind);
 
-    let path_prep = prepare_save_path(&save_path, save_path_kind, &path_display)?;
+    let path_prep = match prepare_save_path(&save_path, save_path_kind, &path_display)? {
+        PathPreparationOutcome::Ready(prep) => prep,
+        PathPreparationOutcome::Reselect => return Ok(FinalizeOutcome::Reselect),
+        PathPreparationOutcome::Cancelled => {
+            emit(
+                Level::Warn,
+                "game.setup.cancelled",
+                &format!(
+                    "{} Setup cancelled for game '{game_name}'.",
+                    char::from(NerdFont::Warning)
+                ),
+                None,
+            );
+            return Ok(FinalizeOutcome::Done(SetupStepOutcome::Cancelled));
+        }
+    };
     let state = capture_path_state(&save_path, save_path_kind, &path_display)?;
 
     let has_existing_snapshot = snapshot_selection.latest_snapshot_id().is_some();
@@ -290,7 +315,9 @@ fn finalize_game_setup(
         decision,
         state.directory_info.as_ref(),
     )? {
-        RestoreFlow::Cancelled => return Ok(SetupStepOutcome::Cancelled),
+        RestoreFlow::Cancelled => {
+            return Ok(FinalizeOutcome::Done(SetupStepOutcome::Cancelled));
+        }
         RestoreFlow::Proceed(value) => value,
     };
 
@@ -345,7 +372,7 @@ fn finalize_game_setup(
         None,
     );
 
-    Ok(SetupStepOutcome::Completed)
+    Ok(FinalizeOutcome::Done(SetupStepOutcome::Completed))
 }
 
 struct PathPreparation {
@@ -353,11 +380,90 @@ struct PathPreparation {
     exists_after: bool,
 }
 
+enum PathPreparationOutcome {
+    Ready(PathPreparation),
+    Reselect,
+    Cancelled,
+}
+
+#[derive(Clone)]
+struct MissingPathChoice {
+    label: String,
+    description: String,
+    kind: MissingPathChoiceKind,
+}
+
+#[derive(Clone, Copy)]
+enum MissingPathChoiceKind {
+    UseAnyway,
+    Reselect,
+    Cancel,
+}
+
+impl FzfSelectable for MissingPathChoice {
+    fn fzf_display_text(&self) -> String {
+        self.label.clone()
+    }
+
+    fn fzf_preview(&self) -> protocol::FzfPreview {
+        protocol::FzfPreview::Text(self.description.clone())
+    }
+}
+
+/// After the user declines to create a missing directory, ask what they want to
+/// do instead: keep the non-existent path, pick a different path, or cancel.
+fn resolve_missing_path(display: &str, label: &str) -> Result<MissingPathChoiceKind> {
+    let options = vec![
+        MissingPathChoice {
+            label: format!(
+                "{} Use this path anyway (create it manually later)",
+                char::from(NerdFont::Folder)
+            ),
+            description: format!(
+                "Keep '{display}' as the {label} even though it does not exist on disk yet. You will need to create it manually before the game can use it."
+            ),
+            kind: MissingPathChoiceKind::UseAnyway,
+        },
+        MissingPathChoice {
+            label: format!(
+                "{} Choose a different save path",
+                char::from(NerdFont::Edit)
+            ),
+            description:
+                "Go back and select another save path (from the snapshot list or a custom one)."
+                    .to_string(),
+            kind: MissingPathChoiceKind::Reselect,
+        },
+        MissingPathChoice {
+            label: format!("{} Cancel setup", char::from(NerdFont::CrossCircle)),
+            description: "Abort the game setup. You can run setup again later.".to_string(),
+            kind: MissingPathChoiceKind::Cancel,
+        },
+    ];
+
+    match FzfWrapper::builder()
+        .header(format!(
+            "{} {label} '{display}' does not exist.\nWhat would you like to do?",
+            char::from(NerdFont::Question)
+        ))
+        .select(options)
+        .map_err(|e| anyhow!("Failed to prompt for missing path action: {e}"))?
+    {
+        FzfResult::Selected(choice) => Ok(choice.kind),
+        FzfResult::MultiSelected(mut choices) => Ok(choices
+            .pop()
+            .map(|c| c.kind)
+            .unwrap_or(MissingPathChoiceKind::Cancel)),
+        FzfResult::Cancelled => Ok(MissingPathChoiceKind::Cancel),
+        FzfResult::Error(err) => Err(anyhow!(err)),
+    }
+}
+
 fn prepare_save_path(
     save_path: &TildePath,
     kind: PathContentKind,
     display: &str,
-) -> Result<PathPreparation> {
+) -> Result<PathPreparationOutcome> {
     let mut path_created = false;
 
     if kind.is_directory() {
@@ -382,7 +488,17 @@ fn prepare_save_path(
                     path_created = true;
                 }
                 ConfirmResult::No | ConfirmResult::Cancelled => {
-                    println!("Directory not created. You can create it later when needed.");
+                    match resolve_missing_path(display, "Save directory")? {
+                        MissingPathChoiceKind::UseAnyway => {
+                            println!("Directory not created. You can create it later when needed.");
+                        }
+                        MissingPathChoiceKind::Reselect => {
+                            return Ok(PathPreparationOutcome::Reselect);
+                        }
+                        MissingPathChoiceKind::Cancel => {
+                            return Ok(PathPreparationOutcome::Cancelled);
+                        }
+                    }
                 }
             }
         }
@@ -422,16 +538,29 @@ fn prepare_save_path(
                     );
                 }
                 ConfirmResult::No | ConfirmResult::Cancelled => {
-                    println!("Parent directory not created. You can set it up later when needed.");
+                    let parent_display = parent.display().to_string();
+                    match resolve_missing_path(&parent_display, "Parent directory")? {
+                        MissingPathChoiceKind::UseAnyway => {
+                            println!(
+                                "Parent directory not created. You can set it up later when needed."
+                            );
+                        }
+                        MissingPathChoiceKind::Reselect => {
+                            return Ok(PathPreparationOutcome::Reselect);
+                        }
+                        MissingPathChoiceKind::Cancel => {
+                            return Ok(PathPreparationOutcome::Cancelled);
+                        }
+                    }
                 }
             }
         }
     }
 
-    Ok(PathPreparation {
+    Ok(PathPreparationOutcome::Ready(PathPreparation {
         path_created,
         exists_after: save_path.as_path().exists(),
-    })
+    }))
 }
 
 struct PathState {

@@ -1,5 +1,8 @@
 use super::{CheckStatus, DoctorCheck, PrivilegeLevel};
+use crate::common::TildePath;
 use crate::common::distro::OperatingSystem;
+use crate::doctor::DetailedCheckStatus;
+use crate::game::platforms::discovery::steam::collect_orphaned_steam_compatdata_dirs;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use tokio::process::Command as TokioCommand;
@@ -204,6 +207,290 @@ impl DoctorCheck for PacmanStaleDownloadsCheck {
             if removed == 1 { "y" } else { "ies" }
         );
         Ok(())
+    }
+}
+
+#[derive(Default)]
+pub struct TrashBinSizeCheck;
+
+impl TrashBinSizeCheck {
+    const THRESHOLD_GB: u64 = 5;
+    const THRESHOLD_BYTES: u64 = 5 * 1024 * 1024 * 1024; // 5 GB
+
+    fn get_trash_dir() -> Result<std::path::PathBuf> {
+        let home_dir = dirs::home_dir()
+            .ok_or_else(|| anyhow::anyhow!("Could not determine home directory"))?;
+        Ok(home_dir.join(".local").join("share").join("Trash"))
+    }
+}
+
+#[async_trait]
+impl DoctorCheck for TrashBinSizeCheck {
+    fn name(&self) -> &'static str {
+        "Trash Bin Size"
+    }
+
+    fn id(&self) -> &'static str {
+        "trash-size"
+    }
+
+    fn check_privilege_level(&self) -> PrivilegeLevel {
+        PrivilegeLevel::User
+    }
+
+    fn fix_privilege_level(&self) -> PrivilegeLevel {
+        PrivilegeLevel::User
+    }
+
+    async fn execute(&self) -> CheckStatus {
+        let trash_dir = match Self::get_trash_dir() {
+            Ok(dir) => dir,
+            Err(e) => {
+                return CheckStatus::Fail {
+                    message: format!("Could not determine trash directory: {}", e),
+                    fixable: false,
+                };
+            }
+        };
+
+        if !trash_dir.exists() {
+            return CheckStatus::Pass("Trash directory does not exist".to_string());
+        }
+
+        match calculate_dir_size(&trash_dir.to_string_lossy()).await {
+            Ok(size) => {
+                let size_gb = size as f64 / (1024.0 * 1024.0 * 1024.0);
+                if size < Self::THRESHOLD_BYTES {
+                    CheckStatus::Pass(format!(
+                        "Trash bin size: {:.2} GB (below {} GB threshold)",
+                        size_gb,
+                        Self::THRESHOLD_GB
+                    ))
+                } else {
+                    CheckStatus::Warning {
+                        message: format!(
+                            "Trash bin size: {:.2} GB (exceeds {} GB threshold)",
+                            size_gb,
+                            Self::THRESHOLD_GB
+                        ),
+                        fixable: true,
+                    }
+                }
+            }
+            Err(e) => CheckStatus::Fail {
+                message: format!("Could not calculate trash bin size: {}", e),
+                fixable: false,
+            },
+        }
+    }
+
+    fn fix_message(&self) -> Option<String> {
+        Some("Empty the trash bin".to_string())
+    }
+
+    async fn fix(&self) -> Result<()> {
+        let trash_dir = Self::get_trash_dir()?;
+
+        // Use trash-empty if available, otherwise manual deletion
+        if which::which("trash-empty").is_ok() {
+            let status = TokioCommand::new("trash-empty").status().await?;
+            if status.success() {
+                println!("Trash bin emptied using trash-empty.");
+                return Ok(());
+            }
+        }
+
+        // Manual deletion of files and info subdirectories
+        let subdirs = ["files", "info"];
+        let mut removed_any = false;
+
+        for subdir in subdirs {
+            let path = trash_dir.join(subdir);
+            if path.exists() {
+                // We want to empty the directory, not remove it, but removing and recreating is simpler
+                // and follows how most trash managers work.
+                tokio::fs::remove_dir_all(&path).await?;
+                tokio::fs::create_dir_all(&path).await?;
+                removed_any = true;
+            }
+        }
+
+        if removed_any {
+            println!("Trash bin emptied manually.");
+        } else {
+            println!("Trash bin was already empty.");
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Default)]
+pub struct SteamCompatdataOrphansCheck;
+
+impl SteamCompatdataOrphansCheck {
+    const THRESHOLD_COUNT: usize = 2;
+    const THRESHOLD_BYTES: u64 = 1024 * 1024 * 1024;
+
+    async fn collect_orphaned_prefixes() -> Result<Vec<SteamCompatdataOrphan>> {
+        let orphaned = collect_orphaned_steam_compatdata_dirs()?;
+        let mut prefixes = Vec::with_capacity(orphaned.len());
+
+        for dir in orphaned {
+            let size = calculate_dir_size(&dir.path.to_string_lossy())
+                .await
+                .unwrap_or(0);
+            prefixes.push(SteamCompatdataOrphan {
+                app_id: dir.app_id,
+                path: dir.path,
+                size,
+            });
+        }
+
+        prefixes.sort_by(|left, right| {
+            right
+                .size
+                .cmp(&left.size)
+                .then_with(|| left.app_id.cmp(&right.app_id))
+        });
+
+        Ok(prefixes)
+    }
+
+    fn summary(prefixes: &[SteamCompatdataOrphan]) -> String {
+        let total_size: u64 = prefixes.iter().map(|prefix| prefix.size).sum();
+        let largest = prefixes.first();
+
+        format!(
+            "Found {} orphaned Steam Proton prefix{} using {} total{}",
+            prefixes.len(),
+            if prefixes.len() == 1 { "" } else { "es" },
+            format_size(total_size),
+            largest
+                .map(|prefix| format!(
+                    "; largest is {} at {}",
+                    format_size(prefix.size),
+                    TildePath::new(prefix.path.clone()).display_string()
+                ))
+                .unwrap_or_default()
+        )
+    }
+
+    fn format_details(prefixes: &[SteamCompatdataOrphan]) -> String {
+        let mut lines = vec!["Orphaned prefixes, largest first:".to_string()];
+        for prefix in prefixes {
+            lines.push(format!(
+                "- {}  {}  {}",
+                prefix.app_id,
+                format_size(prefix.size),
+                TildePath::new(prefix.path.clone()).display_string()
+            ));
+        }
+        lines.join("\n")
+    }
+}
+
+struct SteamCompatdataOrphan {
+    app_id: u32,
+    path: std::path::PathBuf,
+    size: u64,
+}
+
+#[async_trait]
+impl DoctorCheck for SteamCompatdataOrphansCheck {
+    fn name(&self) -> &'static str {
+        "Steam Orphaned Compatdata"
+    }
+
+    fn id(&self) -> &'static str {
+        "steam-compatdata-orphans"
+    }
+
+    fn check_privilege_level(&self) -> PrivilegeLevel {
+        PrivilegeLevel::User
+    }
+
+    fn fix_privilege_level(&self) -> PrivilegeLevel {
+        PrivilegeLevel::User
+    }
+
+    async fn execute(&self) -> CheckStatus {
+        let prefixes = match Self::collect_orphaned_prefixes().await {
+            Ok(prefixes) => prefixes,
+            Err(e) => {
+                return CheckStatus::Fail {
+                    message: format!("Could not inspect Steam compatdata: {}", e),
+                    fixable: false,
+                };
+            }
+        };
+
+        if prefixes.is_empty() {
+            return CheckStatus::Pass("No orphaned Steam Proton prefixes found".to_string());
+        }
+
+        let total_size: u64 = prefixes.iter().map(|prefix| prefix.size).sum();
+        let message = Self::summary(&prefixes);
+
+        if prefixes.len() > Self::THRESHOLD_COUNT || total_size > Self::THRESHOLD_BYTES {
+            CheckStatus::Warning {
+                message,
+                fixable: false,
+            }
+        } else {
+            CheckStatus::Pass(format!(
+                "{} (below {} prefix / {} threshold)",
+                message,
+                Self::THRESHOLD_COUNT,
+                format_size(Self::THRESHOLD_BYTES)
+            ))
+        }
+    }
+
+    async fn execute_detailed(&self) -> DetailedCheckStatus {
+        let prefixes = match Self::collect_orphaned_prefixes().await {
+            Ok(prefixes) => prefixes,
+            Err(e) => {
+                return DetailedCheckStatus {
+                    status: CheckStatus::Fail {
+                        message: format!("Could not inspect Steam compatdata: {}", e),
+                        fixable: false,
+                    },
+                    details: None,
+                };
+            }
+        };
+
+        if prefixes.is_empty() {
+            DetailedCheckStatus {
+                status: CheckStatus::Pass("No orphaned Steam Proton prefixes found".to_string()),
+                details: None,
+            }
+        } else {
+            let details = Some(Self::format_details(&prefixes));
+            let total_size: u64 = prefixes.iter().map(|prefix| prefix.size).sum();
+            let message = Self::summary(&prefixes);
+
+            if prefixes.len() > Self::THRESHOLD_COUNT || total_size > Self::THRESHOLD_BYTES {
+                DetailedCheckStatus {
+                    status: CheckStatus::Warning {
+                        message,
+                        fixable: false,
+                    },
+                    details,
+                }
+            } else {
+                DetailedCheckStatus {
+                    status: CheckStatus::Pass(format!(
+                        "{} (below {} prefix / {} threshold)",
+                        message,
+                        Self::THRESHOLD_COUNT,
+                        format_size(Self::THRESHOLD_BYTES)
+                    )),
+                    details,
+                }
+            }
+        }
     }
 }
 
@@ -636,6 +923,16 @@ async fn calculate_dir_size(path: &str) -> Result<u64> {
     }
 
     Ok(total_size)
+}
+
+fn format_size(bytes: u64) -> String {
+    let gib = bytes as f64 / 1024.0 / 1024.0 / 1024.0;
+    if gib >= 1.0 {
+        format!("{gib:.2} GiB")
+    } else {
+        let mib = bytes as f64 / 1024.0 / 1024.0;
+        format!("{mib:.1} MiB")
+    }
 }
 
 /// Check if pacman is currently running by looking for its lock file

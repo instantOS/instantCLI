@@ -56,10 +56,12 @@ pub struct BrollPlan {
     pub clips: Vec<BrollClip>,
 }
 
-pub fn plan_timeline(document: &VideoDocument) -> Result<TimelinePlan> {
-    let mut planner = TimelinePlanner::new();
-    planner.process_document(document);
-    Ok(planner.into_plan())
+impl VideoDocument {
+    pub fn plan_timeline(&self) -> Result<TimelinePlan> {
+        let mut planner = TimelinePlanner::new();
+        planner.process_document(self);
+        Ok(planner.into_plan())
+    }
 }
 
 /// State machine for building a timeline plan from document blocks.

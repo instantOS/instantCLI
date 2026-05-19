@@ -91,22 +91,26 @@ static STRING_SOURCES: [(&StringSettingKey, &'static dyn StringStateSource); 2] 
     (&GTK_ICON_THEME_KEY, &GTK_ICON_THEME_SOURCE),
 ];
 
-pub fn source_for(key: &BoolSettingKey) -> Option<&'static dyn BoolStateSource> {
-    BOOL_SOURCES
-        .iter()
-        .find(|(candidate, _)| candidate.key == key.key)
-        .map(|(_, source)| *source)
+impl BoolSettingKey {
+    pub fn source(&self) -> Option<&'static dyn BoolStateSource> {
+        BOOL_SOURCES
+            .iter()
+            .find(|(candidate, _)| candidate.key == self.key)
+            .map(|(_, source)| *source)
+    }
 }
 
 pub fn all_bool_sources() -> &'static [(&'static BoolSettingKey, &'static dyn BoolStateSource)] {
     &BOOL_SOURCES
 }
 
-pub fn string_source_for(key: &StringSettingKey) -> Option<&'static dyn StringStateSource> {
-    STRING_SOURCES
-        .iter()
-        .find(|(candidate, _)| candidate.key == key.key)
-        .map(|(_, source)| *source)
+impl StringSettingKey {
+    pub fn source(&self) -> Option<&'static dyn StringStateSource> {
+        STRING_SOURCES
+            .iter()
+            .find(|(candidate, _)| candidate.key == self.key)
+            .map(|(_, source)| *source)
+    }
 }
 
 pub fn all_string_sources() -> &'static [(&'static StringSettingKey, &'static dyn StringStateSource)]

@@ -554,7 +554,10 @@ mod tests {
 
         let log = mock.command_log();
         // Should have groupadd commands for each user group + system groups
-        assert!(log.iter().all(|c| c.contains("groupadd") && c.contains("-f")));
+        assert!(
+            log.iter()
+                .all(|c| c.contains("groupadd") && c.contains("-f"))
+        );
         // USER_GROUPS: wheel, video, docker, sys, rfkill
         assert!(log.iter().any(|c| c.contains("wheel")));
         assert!(log.iter().any(|c| c.contains("video")));

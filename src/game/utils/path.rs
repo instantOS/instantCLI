@@ -6,13 +6,6 @@ use crate::game::utils::safeguards::{PathUsage, ensure_safe_path};
 use crate::menu_utils::{ConfirmResult, FzfWrapper, PathInputSelection};
 use crate::ui::nerd_font::NerdFont;
 
-/// Convert a TildePath to a display string, falling back to absolute path if tilde conversion fails
-pub fn tilde_display_string(tilde: &TildePath) -> String {
-    tilde
-        .to_tilde_string()
-        .unwrap_or_else(|_| tilde.as_path().to_string_lossy().to_string())
-}
-
 /// Convert a PathInputSelection into a TildePath
 /// Returns None if the selection was cancelled or empty
 pub fn path_selection_to_tilde(selection: PathInputSelection) -> Result<Option<TildePath>> {
@@ -53,13 +46,13 @@ where
         }
 
         // If the path is the same as the current one, just return it without confirmation
-        if let Some(current) = current_path {
-            if current == &save_path {
-                return Ok(Some(save_path));
-            }
+        if let Some(current) = current_path
+            && current == &save_path
+        {
+            return Ok(Some(save_path));
         }
 
-        let save_path_display = tilde_display_string(&save_path);
+        let save_path_display = save_path.display_string();
 
         match FzfWrapper::builder()
             .confirm(format!(

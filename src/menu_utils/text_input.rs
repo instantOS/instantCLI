@@ -46,18 +46,19 @@ pub fn prompt_text_edit(prompt: TextEditPrompt<'_>) -> Result<TextEditOutcome> {
         ghost,
     } = prompt;
 
-    let mut builder = FzfWrapper::builder()
-        .input()
-        .prompt(label)
-        .ghost(ghost.as_deref().unwrap_or("Leave empty to clear"));
+    let mut base = FzfWrapper::builder().prompt(label);
 
     if let Some(header) = header {
-        builder = builder.header(header);
+        base = base.header(header);
     }
 
     if let Some(value) = current {
-        builder = builder.query(value);
+        base = base.query(value);
     }
+
+    let builder = base
+        .input()
+        .ghost(ghost.as_deref().unwrap_or("Leave empty to clear"));
 
     match builder.input_result()? {
         FzfResult::Cancelled => Ok(TextEditOutcome::Cancelled),

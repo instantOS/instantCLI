@@ -5,7 +5,6 @@ use crate::dev::package::Package;
 use crate::ui::prelude::*;
 use anyhow::{Context, Result};
 use duct::cmd;
-use git2::Repository;
 use std::path::PathBuf;
 
 pub struct PackageRepo {
@@ -32,19 +31,11 @@ impl PackageRepo {
 
     pub fn ensure_updated(&self) -> Result<()> {
         if self.path.exists() {
-            // Repository exists, pull latest changes
-            let mut repo =
-                Repository::open(&self.path).context("Failed to open package repository")?;
-
-            // Check if there are local changes by examining the repository status
-            let has_local_changes = self.has_local_changes(&repo)?;
-
-            if has_local_changes {
+            if git::has_local_changes(&self.path)? {
                 self.handle_local_changes()?;
             }
 
-            // Pull latest changes
-            git::clean_and_pull(&mut repo).context("Failed to pull latest changes")?;
+            git::clean_and_pull(&self.path).context("Failed to pull latest changes")?;
         } else {
             // Clone repository
             git::clone_repo(&self.url, &self.path, Some("main"), Some(3))
@@ -52,15 +43,6 @@ impl PackageRepo {
         }
 
         Ok(())
-    }
-
-    fn has_local_changes(&self, repo: &Repository) -> Result<bool> {
-        // Check if there are uncommitted changes
-        let statuses = repo
-            .statuses(None)
-            .context("Failed to get repository status")?;
-
-        Ok(!statuses.is_empty())
     }
 
     fn handle_local_changes(&self) -> Result<()> {
@@ -80,60 +62,54 @@ impl PackageRepo {
             None,
         );
 
-        let mut repo =
-            Repository::open(&self.path).context("Failed to open repository for stashing")?;
-
-        // Use git2 to stash changes
-        let signature = repo.signature().context("Failed to get git signature")?;
-
-        repo.stash_save(&signature, "Auto-stash by instantCLI", None)
-            .context("Failed to stash changes")?;
+        git::stash_local_changes(&self.path, "Auto-stash by instantCLI")?;
 
         Ok(())
     }
 }
 
-pub fn build_and_install_package(package: &Package, debug: bool) -> Result<()> {
-    if debug {
-        let message = format!(
-            "{} Building package: {}",
-            char::from(NerdFont::Bug),
-            package.name
+impl Package {
+    pub fn build_and_install(&self, debug: bool) -> Result<()> {
+        if debug {
+            let message = format!(
+                "{} Building package: {}",
+                char::from(NerdFont::Bug),
+                self.name
+            );
+            emit(Level::Debug, "dev.install.build.start", &message, None);
+        }
+
+        let build_message = format!(
+            "{} Building and installing {}... (This may be interactive)",
+            char::from(NerdFont::Info),
+            self.name
         );
-        emit(Level::Debug, "dev.install.build.start", &message, None);
+        emit(
+            Level::Info,
+            "dev.install.build.install",
+            &build_message,
+            None,
+        );
+
+        cmd!("makepkg", "-si")
+            .dir(&self.path)
+            .run()
+            .context("Failed to build and install package")?;
+
+        let success_message = format!(
+            "{} Successfully installed {}",
+            char::from(NerdFont::Check),
+            self.name
+        );
+        emit(
+            Level::Success,
+            "dev.install.success",
+            &success_message,
+            None,
+        );
+
+        Ok(())
     }
-
-    let build_message = format!(
-        "{} Building and installing {}... (This may be interactive)",
-        char::from(NerdFont::Info),
-        package.name
-    );
-    emit(
-        Level::Info,
-        "dev.install.build.install",
-        &build_message,
-        None,
-    );
-
-    // Build and install package (interactive - no spinner)
-    cmd!("makepkg", "-si")
-        .dir(&package.path)
-        .run()
-        .context("Failed to build and install package")?;
-
-    let success_message = format!(
-        "{} Successfully installed {}",
-        char::from(NerdFont::Check),
-        package.name
-    );
-    emit(
-        Level::Success,
-        "dev.install.success",
-        &success_message,
-        None,
-    );
-
-    Ok(())
 }
 
 pub async fn handle_install(debug: bool) -> Result<()> {
@@ -147,9 +123,10 @@ pub async fn handle_install(debug: bool) -> Result<()> {
 
     let pb = create_spinner("Preparing package repository...".to_string());
 
-    // Initialize and update repository
+    // Initialize and update repository. Suspend the spinner around the network
+    // call so SSH/credential prompts can be answered on the user's terminal.
     let repo = PackageRepo::new()?;
-    repo.ensure_updated()?;
+    pb.suspend(|| repo.ensure_updated())?;
 
     finish_spinner_with_success(pb, "Package repository ready");
 
@@ -216,7 +193,7 @@ pub async fn handle_install(debug: bool) -> Result<()> {
     }
 
     // Build and install package
-    build_and_install_package(&selected_package, debug)?;
+    selected_package.build_and_install(debug)?;
 
     Ok(())
 }

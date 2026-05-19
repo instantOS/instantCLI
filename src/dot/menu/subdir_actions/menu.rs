@@ -366,8 +366,8 @@ fn select_subdir(
 fn handle_add_new_subdir(dotfile_repo: &DotfileRepo, config: &DotfileConfig) -> Result<()> {
     // Prompt for new directory name
     let new_dir = match FzfWrapper::builder()
-        .input()
         .prompt("New dotfile directory name")
+        .input()
         .ghost("e.g. themes, config, scripts")
         .input_result()?
     {

@@ -5,6 +5,7 @@ use std::process::Command;
 use anyhow::Result;
 use serde::Deserialize;
 
+use crate::common::compositor::niri;
 use crate::preview::helpers::{push_raw_lines, truncate_label};
 use crate::settings::definitions::keyboard::{
     current_gnome_layouts, current_vconsole_keymap, current_x11_layout, current_x11_layouts,
@@ -21,6 +22,8 @@ pub(crate) fn render_keyboard_layout_preview() -> Result<String> {
 
     let lines = if is_sway_session() {
         sway_keyboard_lines()
+    } else if is_niri_session() {
+        niri_keyboard_lines()
     } else if is_gnome_session() {
         gnome_keyboard_lines()
     } else if is_x11_session() {
@@ -35,8 +38,8 @@ pub(crate) fn render_keyboard_layout_preview() -> Result<String> {
     builder = push_raw_lines(builder, &lines)
         .blank()
         .text("Info")
-        .text("Sway can have multiple layouts per keyboard.")
-        .text("Applies via swaymsg (Sway), gsettings (GNOME), or setxkbmap (X11).")
+        .text("Wayland compositors can expose multiple active layouts.")
+        .text("Applies via niri config reload (niri), swaymsg (Sway), gsettings (GNOME), or setxkbmap (X11).")
         .text("Saved value is reapplied on login.");
 
     Ok(builder.build_string())
@@ -110,6 +113,10 @@ fn is_gnome_session() -> bool {
         || std::env::var("DESKTOP_SESSION")
             .map(|s| s.to_lowercase().contains("gnome"))
             .unwrap_or(false)
+}
+
+fn is_niri_session() -> bool {
+    std::env::var_os("NIRI_SOCKET").is_some() && which::which("niri").is_ok()
 }
 
 fn is_x11_session() -> bool {
@@ -258,6 +265,35 @@ fn sway_keyboard_lines() -> Vec<String> {
     }
 
     lines
+}
+
+fn niri_keyboard_lines() -> Vec<String> {
+    let Ok(state) = niri::keyboard_layouts() else {
+        return vec![
+            "Session: niri".to_string(),
+            "Active: Not detected".to_string(),
+            "Layouts: Not detected".to_string(),
+        ];
+    };
+
+    let active = state
+        .names
+        .get(state.current_idx)
+        .cloned()
+        .unwrap_or_else(|| "Unknown".to_string());
+
+    let layouts = if state.names.is_empty() {
+        "Unknown".to_string()
+    } else {
+        state.names.join(", ")
+    };
+
+    vec![
+        "Session: niri".to_string(),
+        format!("Active: {active}"),
+        format!("Layouts: {layouts}"),
+        format!("Configured layouts: {}", state.names.len()),
+    ]
 }
 
 fn x11_keyboard_lines() -> Vec<String> {

@@ -2,6 +2,7 @@ use crate::ui::nerd_font::NerdFont;
 use anyhow::Result;
 use clap::Subcommand;
 
+mod chroot;
 mod clone;
 mod fuzzy;
 mod github;
@@ -18,6 +19,8 @@ pub use install::handle_install;
 #[derive(Subcommand, Debug, Clone)]
 pub enum DevCommands {
     Clone,
+    /// Mount and chroot into an installed instantOS system
+    Chroot(chroot::ChrootOptions),
     Install,
     /// Setup development environment (Arch live ISO)
     Setup,
@@ -28,6 +31,7 @@ pub enum DevCommands {
 pub async fn handle_dev_command(command: DevCommands, debug: bool) -> Result<()> {
     match command {
         DevCommands::Clone => handle_clone_internal(debug).await,
+        DevCommands::Chroot(options) => chroot::handle_chroot(options, debug),
         DevCommands::Install => handle_install(debug).await,
         DevCommands::Setup => setup::handle_setup(debug).await,
         DevCommands::Menu => menu::dev_menu(debug).await,

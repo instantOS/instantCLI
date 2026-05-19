@@ -98,8 +98,8 @@ pub fn mount_bios(disk: &str, executor: &dyn CommandRunner) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use crate::arch::execution::mock::MockRunner;
     use crate::arch::execution::CommandRunner;
+    use crate::arch::execution::mock::MockRunner;
     use std::process::Command;
 
     #[test]
@@ -144,8 +144,14 @@ mod tests {
         super::format_uefi("/dev/sda", &mock).unwrap();
 
         let log = mock.command_log();
-        assert!(log.iter().any(|c| c.contains("mkfs.fat") && c.contains("-F32")));
+        assert!(
+            log.iter()
+                .any(|c| c.contains("mkfs.fat") && c.contains("-F32"))
+        );
         assert!(log.iter().any(|c| c.contains("mkswap")));
-        assert!(log.iter().any(|c| c.contains("mkfs.ext4") && c.contains("-F")));
+        assert!(
+            log.iter()
+                .any(|c| c.contains("mkfs.ext4") && c.contains("-F"))
+        );
     }
 }

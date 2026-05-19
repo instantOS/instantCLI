@@ -86,6 +86,29 @@ pub fn git_push_all(config: &DotfileConfig, args: &[String], debug: bool) -> Res
         let dotfile_repo = DotfileRepo::new(config, repo.name.clone())?;
         let repo_path = dotfile_repo.local_path(config)?;
 
+        if args.is_empty() {
+            match crate::common::git::default_push_readiness(&repo_path)? {
+                crate::common::git::DefaultPushReadiness::Ready => {}
+                crate::common::git::DefaultPushReadiness::NoRemote => {
+                    println!(
+                        "{} No remote configured for '{}'; skipping local-only repository.",
+                        char::from(NerdFont::Warning),
+                        repo.name.yellow()
+                    );
+                    continue;
+                }
+                crate::common::git::DefaultPushReadiness::NoUpstream { branch } => {
+                    println!(
+                        "{} Branch '{}' in '{}' has no upstream; skipping. Use `ins dot push <remote> <branch>` or `git push -u <remote> <branch>` to set one.",
+                        char::from(NerdFont::Warning),
+                        branch.yellow(),
+                        repo.name.yellow()
+                    );
+                    continue;
+                }
+            }
+        }
+
         if let Err(e) = run_git_command(&repo_path, &git_args, debug) {
             eprintln!("Failed to push in {}: {}", repo.name, e);
         }

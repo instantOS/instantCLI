@@ -1,0 +1,804 @@
+use anyhow::{Context, Result, bail};
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::time::SystemTime;
+
+use crate::preview::{self, PreviewId};
+use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
+use crate::ui::nerd_font::NerdFont;
+use crate::ui::preview::{FzfPreview, PreviewBuilder};
+
+use super::config::format_path;
+use super::utils::{STVERSIONS_DIR, trash_path};
+
+/// Directories whose path components mark a file as "ignored" for deduplication.
+/// Built from the shared [`STVERSIONS_DIR`] constant so there is a single
+/// authoritative spelling of the directory name.
+const IGNORED_DIR_SEGMENTS: &[&str] = &[STVERSIONS_DIR];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DuplicateFileType {
+    Regular,
+    SyncthingConflict,
+    Orig,
+    Tmp,
+}
+
+impl DuplicateFileType {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Regular => "regular",
+            Self::SyncthingConflict => "sync-conflict",
+            Self::Orig => "orig",
+            Self::Tmp => "tmp",
+        }
+    }
+
+    pub fn icon(self) -> NerdFont {
+        match self {
+            Self::Regular => NerdFont::File,
+            Self::SyncthingConflict => NerdFont::Warning,
+            Self::Orig => NerdFont::Archive,
+            Self::Tmp => NerdFont::Clock,
+        }
+    }
+
+    pub fn color(self) -> &'static str {
+        match self {
+            Self::Regular => colors::GREEN,
+            Self::SyncthingConflict => colors::PEACH,
+            Self::Orig => colors::YELLOW,
+            Self::Tmp => colors::SUBTEXT0,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct DuplicateEntry {
+    pub path: PathBuf,
+    pub file_type: DuplicateFileType,
+}
+
+impl DuplicateEntry {
+    pub fn new(path: PathBuf) -> Self {
+        let file_name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default();
+        let file_type = if super::utils::SYNC_CONFLICT_REGEX.is_match(file_name) {
+            DuplicateFileType::SyncthingConflict
+        } else if file_name.ends_with(".orig") {
+            DuplicateFileType::Orig
+        } else if file_name.ends_with(".tmp") {
+            DuplicateFileType::Tmp
+        } else {
+            DuplicateFileType::Regular
+        };
+
+        Self { path, file_type }
+    }
+
+    pub fn is_in_ignored_dir(&self) -> bool {
+        path_in_ignored_dir(&self.path)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct DuplicateGroup {
+    pub files: Vec<DuplicateEntry>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AutoResolution {
+    keep: Vec<PathBuf>,
+    trash: Vec<PathBuf>,
+}
+
+impl AutoResolution {
+    pub fn keep(&self) -> &[PathBuf] {
+        &self.keep
+    }
+
+    pub fn trash(&self) -> &[PathBuf] {
+        &self.trash
+    }
+
+    pub fn trash_count(&self) -> usize {
+        self.trash.len()
+    }
+}
+
+/// What to do with a duplicate group:
+/// - `Auto` means we can act without prompting the user.
+/// - `Manual` means the user must pick which live file to keep.
+///   `auto_keep` holds paths that must be preserved regardless of the
+///   interactive choice (e.g. the latest `.stversions` snapshot in a mixed
+///   live/version group).
+/// - `Skip` means we deliberately leave the group untouched.
+#[derive(Debug, Clone)]
+pub enum GroupPlan {
+    Auto(AutoResolution),
+    Manual { auto_keep: Vec<PathBuf> },
+    Skip(SkipReason),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum SkipReason {
+    /// The group lives inside an ignored directory (e.g. `.stversions`) and
+    /// contains no conflict files, so it is left untouched deliberately.
+    IgnoredFolder,
+    /// The group contains fewer than 2 files — nothing to deduplicate.
+    /// This should never occur with well-formed fclones output, but is
+    /// handled defensively.
+    Singleton,
+}
+
+impl DuplicateGroup {
+    pub fn new(paths: Vec<PathBuf>) -> Self {
+        Self {
+            files: paths.into_iter().map(DuplicateEntry::new).collect(),
+        }
+    }
+
+    /// Lightweight check for whether this group requires any action, without
+    /// building the full `AutoResolution`/`Manual` plan. Used by status
+    /// computation to count actionable groups cheaply.
+    pub fn is_actionable(&self) -> bool {
+        if self.files.len() < 2 {
+            return false;
+        }
+        if self
+            .files
+            .iter()
+            .any(|f| f.file_type == DuplicateFileType::SyncthingConflict)
+        {
+            return true;
+        }
+        let all_in_ignored = self.files.iter().all(DuplicateEntry::is_in_ignored_dir);
+        let any_in_ignored = self.files.iter().any(DuplicateEntry::is_in_ignored_dir);
+        if all_in_ignored {
+            return true;
+        }
+        if any_in_ignored {
+            return self.files.iter().filter(|f| f.is_in_ignored_dir()).count() > 1;
+        }
+        true
+    }
+
+    /// Compute what to do with this group. Conflict-file dedup runs even in
+    /// ignored folders; pure-version-file groups inside `.stversions` keep
+    /// only the latest copy.
+    pub fn plan(&self, no_auto: bool) -> GroupPlan {
+        self.plan_with(no_auto, &fs_mtime_lookup)
+    }
+
+    /// Like [`plan`], but uses an injectable mtime lookup (used by tests).
+    pub fn plan_with(
+        &self,
+        no_auto: bool,
+        mtime: &dyn Fn(&Path) -> Option<SystemTime>,
+    ) -> GroupPlan {
+        if self.files.len() < 2 {
+            return GroupPlan::Skip(SkipReason::Singleton);
+        }
+
+        let has_conflict = self
+            .files
+            .iter()
+            .any(|f| f.file_type == DuplicateFileType::SyncthingConflict);
+        let non_conflicts: Vec<DuplicateEntry> = self
+            .files
+            .iter()
+            .filter(|f| f.file_type != DuplicateFileType::SyncthingConflict)
+            .cloned()
+            .collect();
+
+        // Whenever a conflict file is in the group we always act
+        // automatically (even inside ignored folders): keep exactly one
+        // file. Prefer a non-conflict file; otherwise the latest conflict.
+        if has_conflict {
+            let keep = if !non_conflicts.is_empty() {
+                pick_latest(&non_conflicts, mtime)
+            } else {
+                pick_latest(&self.files, mtime)
+            };
+            return GroupPlan::Auto(self.resolution_for_keep_infallible(vec![keep]));
+        }
+
+        // No conflict files past this point.
+        let all_in_ignored = self.files.iter().all(DuplicateEntry::is_in_ignored_dir);
+        let any_in_ignored = self.files.iter().any(DuplicateEntry::is_in_ignored_dir);
+
+        // Pure version-file group inside `.stversions`: keep the latest copy,
+        // trash the rest. These are just snapshots of the same content; one
+        // archived copy is enough.
+        if all_in_ignored {
+            let keep = pick_latest(&self.files, mtime);
+            return GroupPlan::Auto(self.resolution_for_keep_infallible(vec![keep]));
+        }
+
+        // Mixed inside/outside ignored folder with no conflicts.
+        if any_in_ignored {
+            let version_entries: Vec<DuplicateEntry> = self
+                .files
+                .iter()
+                .filter(|f| f.is_in_ignored_dir())
+                .cloned()
+                .collect();
+            let live_entries: Vec<DuplicateEntry> = self
+                .files
+                .iter()
+                .filter(|f| !f.is_in_ignored_dir())
+                .cloned()
+                .collect();
+            // live_entries is non-empty because all_in_ignored was false above.
+
+            // Among version files keep the latest; older copies are redundant.
+            let latest_version = pick_latest(&version_entries, mtime);
+            let version_trash: Vec<PathBuf> = version_entries
+                .iter()
+                .filter(|e| e.path != latest_version)
+                .map(|e| e.path.clone())
+                .collect();
+
+            if live_entries.len() == 1 {
+                if version_trash.is_empty() {
+                    // One live file + one version snapshot with the same content.
+                    // This is normal Syncthing behaviour; nothing actionable.
+                    return GroupPlan::Skip(SkipReason::IgnoredFolder);
+                }
+                // Multiple redundant version snapshots: trash all but the latest.
+                // The live file is the unambiguous keeper.
+                return GroupPlan::Auto(self.resolution_for_keep_infallible(vec![
+                    live_entries[0].path.clone(),
+                    latest_version,
+                ]));
+            }
+
+            // Multiple live files: apply normal dedup logic to the live subset,
+            // then fold in the version-file cleanup.
+            let live_group = DuplicateGroup {
+                files: live_entries,
+            };
+            return match live_group.plan_with(no_auto, mtime) {
+                GroupPlan::Auto(action) => {
+                    // Preserve the latest version snapshot alongside the
+                    // auto-chosen live file. Otherwise resolving the full
+                    // group by keep-set would trash the version snapshot.
+                    let keep = action
+                        .keep()
+                        .iter()
+                        .cloned()
+                        .chain(std::iter::once(latest_version))
+                        .collect();
+                    GroupPlan::Auto(self.resolution_for_keep_infallible(keep))
+                }
+                // User must pick which live file to keep; the latest version
+                // snapshot is preserved automatically via auto_keep.
+                // Merge with any inner auto_keep (always empty today, but
+                // correct by construction for future changes).
+                GroupPlan::Manual { auto_keep: inner } => GroupPlan::Manual {
+                    auto_keep: std::iter::once(latest_version).chain(inner).collect(),
+                },
+                // Skip(Singleton): unreachable — live_entries.len() >= 2.
+                // Skip(IgnoredFolder): unreachable — live entries are never in
+                //   ignored dirs, so any_in_ignored is false for live_group.
+                GroupPlan::Skip(_) => {
+                    unreachable!("live_group cannot produce Skip in mixed-group branch")
+                }
+            };
+        }
+
+        if no_auto {
+            return GroupPlan::Manual { auto_keep: vec![] };
+        }
+
+        // Existing tmp/orig auto rules.
+        let regular: Vec<&DuplicateEntry> = self
+            .files
+            .iter()
+            .filter(|f| f.file_type == DuplicateFileType::Regular)
+            .collect();
+        let tmps: Vec<&DuplicateEntry> = self
+            .files
+            .iter()
+            .filter(|f| f.file_type == DuplicateFileType::Tmp)
+            .collect();
+
+        if regular.len() == 1 && regular.len() < self.files.len() {
+            let keep = regular[0].path.clone();
+            return GroupPlan::Auto(self.resolution_for_keep_infallible(vec![keep]));
+        }
+
+        if tmps.len() == self.files.len() {
+            let keep = tmps[0].path.clone();
+            return GroupPlan::Auto(self.resolution_for_keep_infallible(vec![keep]));
+        }
+
+        GroupPlan::Manual { auto_keep: vec![] }
+    }
+
+    pub fn resolution_for_keep(&self, keep: Vec<PathBuf>) -> Result<AutoResolution> {
+        if keep.is_empty() {
+            bail!("refusing to resolve duplicate group without a file to keep");
+        }
+
+        let mut unique_keep = Vec::new();
+        for path in keep {
+            if !unique_keep.iter().any(|existing| existing == &path) {
+                unique_keep.push(path);
+            }
+        }
+
+        for path in &unique_keep {
+            if !self.files.iter().any(|file| file.path == *path) {
+                bail!(
+                    "refusing to resolve duplicate group with unknown keep path: {}",
+                    path.display()
+                );
+            }
+        }
+
+        let trash: Vec<PathBuf> = self
+            .files
+            .iter()
+            .filter(|file| !unique_keep.iter().any(|keep| keep == &file.path))
+            .map(|file| file.path.clone())
+            .collect();
+
+        if trash.is_empty() {
+            bail!("refusing to resolve duplicate group without any file to trash");
+        }
+
+        Ok(AutoResolution {
+            keep: unique_keep,
+            trash,
+        })
+    }
+
+    fn resolution_for_keep_infallible(&self, keep: Vec<PathBuf>) -> AutoResolution {
+        self.resolution_for_keep(keep).expect(
+            "duplicate resolution planner must keep group paths and trash at least one file",
+        )
+    }
+
+    pub fn apply_resolution(&self, resolution: &AutoResolution) -> Result<usize> {
+        let validated = self.resolution_for_keep(resolution.keep.clone())?;
+        if validated.trash != resolution.trash {
+            bail!("refusing to resolve duplicate group with inconsistent trash plan");
+        }
+
+        for path in &validated.trash {
+            trash_path(path)?;
+        }
+        Ok(validated.trash.len())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum DuplicateChoice {
+    Keep(DuplicateEntry),
+    Skip,
+}
+
+impl crate::menu_utils::FzfSelectable for DuplicateChoice {
+    fn fzf_display_text(&self) -> String {
+        match self {
+            Self::Keep(file) => format!(
+                "{} {} [{}]",
+                format_icon_colored(file.file_type.icon(), file.file_type.color()),
+                format_path(&file.path),
+                file.file_type.label()
+            ),
+            Self::Skip => format!("{} Skip Group", format_back_icon()),
+        }
+    }
+
+    fn fzf_key(&self) -> String {
+        match self {
+            Self::Keep(file) => file.path.to_string_lossy().to_string(),
+            Self::Skip => "!__skip__".to_string(),
+        }
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        match self {
+            Self::Keep(_file) => {
+                FzfPreview::Command(preview::preview_command(PreviewId::FileSuggestion))
+            }
+            Self::Skip => PreviewBuilder::new()
+                .header(NerdFont::Cross, "Skip Group")
+                .text("Leave this duplicate group untouched for now.")
+                .build(),
+        }
+    }
+}
+
+/// Scan for duplicates inside `directory`. We include normally-ignored
+/// folders (e.g. `.stversions`) so that conflict-file duplicates can be
+/// auto-resolved even there; pure non-conflict groups inside ignored
+/// folders are skipped by `DuplicateGroup::plan`.
+pub fn scan_duplicates(directory: &Path) -> Result<Vec<DuplicateGroup>> {
+    let output = Command::new("fclones")
+        .arg("group")
+        .arg("--hidden")
+        .arg(directory)
+        .arg("--format")
+        .arg("fdupes")
+        .arg("--cache")
+        .output()
+        .with_context(|| format!("running fclones in {}", directory.display()))?;
+
+    if !output.status.success() {
+        bail!("fclones failed with status {}", output.status);
+    }
+
+    let stdout = String::from_utf8(output.stdout).context("parsing fclones output as UTF-8")?;
+    let mut groups = Vec::new();
+    let mut current = Vec::new();
+
+    for line in stdout.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            if !current.is_empty() {
+                groups.push(DuplicateGroup::new(std::mem::take(&mut current)));
+            }
+            continue;
+        }
+
+        current.push(PathBuf::from(trimmed));
+    }
+
+    if !current.is_empty() {
+        groups.push(DuplicateGroup::new(current));
+    }
+
+    Ok(groups)
+}
+
+fn path_in_ignored_dir(path: &Path) -> bool {
+    path.components()
+        .filter_map(|c| c.as_os_str().to_str())
+        .any(|seg| IGNORED_DIR_SEGMENTS.contains(&seg))
+}
+
+fn fs_mtime_lookup(path: &Path) -> Option<SystemTime> {
+    std::fs::metadata(path).ok().and_then(|m| m.modified().ok())
+}
+
+/// Pick the entry whose mtime is most recent. Falls back to the
+/// lexicographically largest path when mtimes are unavailable, which works
+/// well for Syncthing's `~YYYYMMDD-HHMMSS` version filename convention.
+fn pick_latest(files: &[DuplicateEntry], mtime: &dyn Fn(&Path) -> Option<SystemTime>) -> PathBuf {
+    debug_assert!(!files.is_empty());
+    let mut best: &DuplicateEntry = &files[0];
+    let mut best_mtime: Option<SystemTime> = mtime(&best.path);
+    for entry in &files[1..] {
+        let candidate_mtime = mtime(&entry.path);
+        let take = match (candidate_mtime, best_mtime) {
+            (Some(c), Some(b)) => c > b,
+            (Some(_), None) => true,
+            (None, Some(_)) => false,
+            (None, None) => entry.path > best.path,
+        };
+        if take {
+            best = entry;
+            best_mtime = candidate_mtime;
+        }
+    }
+    best.path.clone()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn group(paths: &[&str]) -> DuplicateGroup {
+        DuplicateGroup::new(paths.iter().map(PathBuf::from).collect())
+    }
+
+    fn auto(plan: GroupPlan) -> AutoResolution {
+        match plan {
+            GroupPlan::Auto(a) => a,
+            other => panic!("expected Auto plan, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn mixed_group_keeps_one_non_conflict_and_trashes_others() {
+        use std::time::{Duration, UNIX_EPOCH};
+        let g = group(&[
+            "/dir/note.md",
+            "/dir/note.sync-conflict-20240101-AAA.md",
+            "/dir/copy.md",
+            "/dir/note.sync-conflict-20240202-BBB.md",
+        ]);
+        let mtimes = |p: &Path| match p.to_str().unwrap() {
+            "/dir/note.md" => Some(UNIX_EPOCH + Duration::from_secs(100)),
+            "/dir/copy.md" => Some(UNIX_EPOCH + Duration::from_secs(200)),
+            _ => Some(UNIX_EPOCH + Duration::from_secs(50)),
+        };
+        let action = auto(g.plan_with(false, &mtimes));
+        // Latest non-conflict file is kept.
+        assert_eq!(action.keep(), vec![PathBuf::from("/dir/copy.md")]);
+        // All others (including the older non-conflict and both conflicts)
+        // are trashed.
+        assert_eq!(action.trash().len(), 3);
+        assert!(action.trash().contains(&PathBuf::from("/dir/note.md")));
+        assert!(
+            action
+                .trash()
+                .contains(&PathBuf::from("/dir/note.sync-conflict-20240101-AAA.md"))
+        );
+        assert!(
+            action
+                .trash()
+                .contains(&PathBuf::from("/dir/note.sync-conflict-20240202-BBB.md"))
+        );
+    }
+
+    #[test]
+    fn all_conflict_group_keeps_latest_trashes_rest() {
+        use std::time::{Duration, UNIX_EPOCH};
+        let g = group(&[
+            "/dir/note.sync-conflict-20240202-BBB.md",
+            "/dir/note.sync-conflict-20240101-AAA.md",
+        ]);
+        let mtimes = |p: &Path| match p.to_str().unwrap() {
+            "/dir/note.sync-conflict-20240101-AAA.md" => {
+                Some(UNIX_EPOCH + Duration::from_secs(100))
+            }
+            "/dir/note.sync-conflict-20240202-BBB.md" => {
+                Some(UNIX_EPOCH + Duration::from_secs(200))
+            }
+            _ => None,
+        };
+        let action = auto(g.plan_with(false, &mtimes));
+        assert_eq!(action.keep().len(), 1);
+        assert_eq!(
+            action.keep()[0],
+            PathBuf::from("/dir/note.sync-conflict-20240202-BBB.md")
+        );
+        assert_eq!(action.trash().len(), 1);
+    }
+
+    #[test]
+    fn mixed_group_in_ignored_folder_still_auto_resolves_conflicts() {
+        let g = group(&[
+            "/dir/.stversions/note.md",
+            "/dir/.stversions/note.sync-conflict-20240101-AAA.md",
+        ]);
+        let action = auto(g.plan(false));
+        assert_eq!(
+            action.keep(),
+            vec![PathBuf::from("/dir/.stversions/note.md")]
+        );
+        assert_eq!(
+            action.trash(),
+            vec![PathBuf::from(
+                "/dir/.stversions/note.sync-conflict-20240101-AAA.md"
+            )]
+        );
+    }
+
+    #[test]
+    fn all_conflict_group_in_ignored_folder_keeps_one() {
+        let g = group(&[
+            "/dir/.stversions/a.sync-conflict-20240101-AAA.md",
+            "/dir/.stversions/a.sync-conflict-20240202-BBB.md",
+        ]);
+        let action = auto(g.plan(false));
+        assert_eq!(action.keep().len(), 1);
+        assert_eq!(action.trash().len(), 1);
+    }
+
+    #[test]
+    fn pure_stversions_group_keeps_latest_version_by_mtime() {
+        use std::time::{Duration, UNIX_EPOCH};
+        let g = group(&[
+            "/dir/.stversions/a~20240101-000000.md",
+            "/dir/.stversions/a~20240202-000000.md",
+            "/dir/.stversions/a~20240303-000000.md",
+        ]);
+        let mtimes = |p: &Path| match p.to_str().unwrap() {
+            "/dir/.stversions/a~20240101-000000.md" => {
+                Some(UNIX_EPOCH + Duration::from_secs(1_700_000_000))
+            }
+            "/dir/.stversions/a~20240202-000000.md" => {
+                Some(UNIX_EPOCH + Duration::from_secs(1_710_000_000))
+            }
+            "/dir/.stversions/a~20240303-000000.md" => {
+                Some(UNIX_EPOCH + Duration::from_secs(1_720_000_000))
+            }
+            _ => None,
+        };
+        let action = match g.plan_with(false, &mtimes) {
+            GroupPlan::Auto(a) => a,
+            other => panic!("expected Auto, got {:?}", other),
+        };
+        assert_eq!(
+            action.keep(),
+            vec![PathBuf::from("/dir/.stversions/a~20240303-000000.md")]
+        );
+        assert_eq!(action.trash().len(), 2);
+    }
+
+    #[test]
+    fn pure_stversions_group_falls_back_to_path_order_without_mtimes() {
+        let g = group(&[
+            "/dir/.stversions/a~20240202-000000.md",
+            "/dir/.stversions/a~20240101-000000.md",
+            "/dir/.stversions/a~20240303-000000.md",
+        ]);
+        let action = match g.plan_with(false, &|_| None) {
+            GroupPlan::Auto(a) => a,
+            other => panic!("expected Auto, got {:?}", other),
+        };
+        // Without mtimes, the latest path lexicographically wins. With ISO
+        // timestamps in the filename this matches the latest version.
+        assert_eq!(
+            action.keep(),
+            vec![PathBuf::from("/dir/.stversions/a~20240303-000000.md")]
+        );
+        assert_eq!(action.trash().len(), 2);
+    }
+
+    #[test]
+    fn mixed_inside_outside_ignored_group_is_skipped() {
+        let g = group(&["/dir/note.md", "/dir/.stversions/note~20240101-000000.md"]);
+        assert!(matches!(
+            g.plan(false),
+            GroupPlan::Skip(SkipReason::IgnoredFolder)
+        ));
+    }
+
+    #[test]
+    fn no_auto_forces_manual_for_regular_groups() {
+        let g = group(&["/dir/a.md", "/dir/b.md"]);
+        assert!(matches!(g.plan(true), GroupPlan::Manual { .. }));
+    }
+
+    #[test]
+    fn no_auto_still_auto_resolves_conflict_files() {
+        let g = group(&["/dir/a.md", "/dir/a.sync-conflict-20240101-AAA.md"]);
+        let action = auto(g.plan(true));
+        assert_eq!(action.keep(), vec![PathBuf::from("/dir/a.md")]);
+    }
+
+    #[test]
+    fn single_regular_in_mixed_orig_tmp_group_is_auto() {
+        let g = group(&["/dir/a.md", "/dir/a.md.orig", "/dir/a.md.tmp"]);
+        let action = auto(g.plan(false));
+        assert_eq!(action.keep(), vec![PathBuf::from("/dir/a.md")]);
+        assert_eq!(action.trash().len(), 2);
+    }
+
+    #[test]
+    fn resolution_requires_at_least_one_keeper() {
+        let g = group(&["/dir/a.md", "/dir/b.md"]);
+        assert!(g.resolution_for_keep(vec![]).is_err());
+    }
+
+    #[test]
+    fn resolution_rejects_unknown_keeper() {
+        let g = group(&["/dir/a.md", "/dir/b.md"]);
+        assert!(
+            g.resolution_for_keep(vec![PathBuf::from("/dir/missing.md")])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn resolution_rejects_noop_keep_set() {
+        let g = group(&["/dir/a.md", "/dir/b.md"]);
+        assert!(
+            g.resolution_for_keep(vec![PathBuf::from("/dir/a.md"), PathBuf::from("/dir/b.md")])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn apply_resolution_rejects_inconsistent_trash_plan() {
+        let g = group(&["/dir/a.md", "/dir/b.md"]);
+        let resolution = AutoResolution {
+            keep: vec![PathBuf::from("/dir/a.md")],
+            trash: vec![PathBuf::from("/dir/a.md")],
+        };
+        assert!(g.apply_resolution(&resolution).is_err());
+    }
+
+    // --- Mixed live + .stversions cases ---
+
+    /// 1 live + 1 version: still a skip (normal Syncthing state, nothing actionable).
+    #[test]
+    fn mixed_one_live_one_version_is_skipped() {
+        let g = group(&["/dir/note.md", "/dir/.stversions/note~20240101-000000.md"]);
+        assert!(matches!(
+            g.plan(false),
+            GroupPlan::Skip(SkipReason::IgnoredFolder)
+        ));
+    }
+
+    /// 1 live + 2 versions: auto-trash the older version, keep live + latest version.
+    #[test]
+    fn mixed_one_live_multiple_versions_trashes_older_versions() {
+        use std::time::{Duration, UNIX_EPOCH};
+        let g = group(&[
+            "/dir/note.md",
+            "/dir/.stversions/note~20240101-000000.md",
+            "/dir/.stversions/note~20240202-000000.md",
+        ]);
+        let mtimes = |p: &Path| match p.to_str().unwrap() {
+            "/dir/.stversions/note~20240101-000000.md" => {
+                Some(UNIX_EPOCH + Duration::from_secs(100))
+            }
+            "/dir/.stversions/note~20240202-000000.md" => {
+                Some(UNIX_EPOCH + Duration::from_secs(200))
+            }
+            _ => Some(UNIX_EPOCH + Duration::from_secs(300)),
+        };
+        let action = auto(g.plan_with(false, &mtimes));
+        assert!(action.keep().contains(&PathBuf::from("/dir/note.md")));
+        assert!(
+            action
+                .keep()
+                .contains(&PathBuf::from("/dir/.stversions/note~20240202-000000.md"))
+        );
+        assert_eq!(action.keep().len(), 2);
+        assert_eq!(
+            action.trash(),
+            vec![PathBuf::from("/dir/.stversions/note~20240101-000000.md")]
+        );
+    }
+
+    /// 2 live + 2 versions, auto-resolvable live subset: keep the single
+    /// regular live file and the latest version snapshot; trash the orig and
+    /// the older version.
+    #[test]
+    fn mixed_multiple_live_multiple_versions_auto_resolvable() {
+        let g = group(&[
+            "/dir/note.md",
+            "/dir/note.md.orig",
+            "/dir/.stversions/note~20240101-000000.md",
+            "/dir/.stversions/note~20240202-000000.md",
+        ]);
+        // note.md is Regular, note.md.orig is Orig → auto-resolution of the
+        // live subset keeps note.md. The latest version (lexicographically
+        // note~20240202) is also added to keep; the older one is trashed.
+        let action = auto(g.plan_with(false, &|_| None));
+        assert!(action.keep().contains(&PathBuf::from("/dir/note.md")));
+        assert!(
+            action
+                .keep()
+                .contains(&PathBuf::from("/dir/.stversions/note~20240202-000000.md"))
+        );
+        assert_eq!(action.keep().len(), 2);
+        assert!(action.trash().contains(&PathBuf::from("/dir/note.md.orig")));
+        assert!(
+            action
+                .trash()
+                .contains(&PathBuf::from("/dir/.stversions/note~20240101-000000.md"))
+        );
+        assert_eq!(action.trash().len(), 2);
+    }
+
+    /// 2 live + 1 version, manual live subset: returns Manual with the version
+    /// file in auto_keep so it is preserved regardless of the user's choice.
+    #[test]
+    fn mixed_multiple_live_manual_carries_auto_keep() {
+        let g = group(&[
+            "/dir/note_a.md",
+            "/dir/note_b.md",
+            "/dir/.stversions/note~20240101-000000.md",
+        ]);
+        match g.plan(false) {
+            GroupPlan::Manual { auto_keep } => {
+                assert_eq!(
+                    auto_keep,
+                    vec![PathBuf::from("/dir/.stversions/note~20240101-000000.md")]
+                );
+            }
+            other => panic!("expected Manual, got {:?}", other),
+        }
+    }
+}

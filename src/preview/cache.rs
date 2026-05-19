@@ -106,7 +106,7 @@ fn cache_path(id: PreviewId, ctx: &PreviewContext) -> Result<Option<PathBuf>> {
         hasher.update(ctx.columns.unwrap_or_default().to_le_bytes());
         hasher.update(ctx.lines.unwrap_or_default().to_le_bytes());
     }
-    let digest = format!("{:x}", hasher.finalize());
+    let digest = hex::encode(hasher.finalize());
 
     Ok(Some(preview_cache_dir()?.join(format!("{digest}.txt"))))
 }
@@ -223,9 +223,12 @@ mod tests {
             lines: Some(40),
         };
 
+        // Compare the cache file names rather than the full paths so the
+        // assertion does not depend on global env state (e.g. another test
+        // toggling INS_PREVIEW_CACHE_DIR concurrently).
         let path_a = cache_path(PreviewId::Flatpak, &ctx_a).unwrap().unwrap();
         let path_b = cache_path(PreviewId::Flatpak, &ctx_b).unwrap().unwrap();
 
-        assert_eq!(path_a, path_b);
+        assert_eq!(path_a.file_name(), path_b.file_name());
     }
 }

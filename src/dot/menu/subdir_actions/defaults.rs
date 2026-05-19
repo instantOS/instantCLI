@@ -25,10 +25,6 @@ impl FzfSelectable for DefaultSubdirItem {
         self.name.clone()
     }
 
-    fn fzf_key(&self) -> String {
-        self.name.clone()
-    }
-
     fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
         crate::menu::protocol::FzfPreview::Text(
             PreviewBuilder::new()
@@ -110,15 +106,15 @@ pub(crate) fn handle_edit_default_subdirs(
         ));
 
     let selection = FzfWrapper::builder()
-        .checklist("Save Defaults")
         .prompt("Toggle defaults")
         .header(Header::fancy(&format!(
             "Default enabled: {}\nUse Auto to reset | Select none to disable defaults",
             repo_name
         )))
-        .checklist_actions(vec![auto_action])
         .args(fzf_mocha_args())
         .responsive_layout()
+        .checklist("Save Defaults")
+        .checklist_actions(vec![auto_action])
         .checklist_dialog(items)?;
 
     let new_defaults = match selection {

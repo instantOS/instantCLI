@@ -4,8 +4,10 @@ use std::process::Command;
 use crate::assist::utils;
 
 pub fn bruh() -> Result<()> {
-    // Create cache directory if it doesn't exist
-    let cache_dir = dirs::cache_dir().unwrap_or_else(|| std::path::PathBuf::from("/tmp"));
+    // Create cache directory if it doesn't exist. Honor $TMPDIR via
+    // std::env::temp_dir() so platforms like Termux (where /tmp doesn't exist
+    // and $PREFIX/tmp is used instead) still resolve to a writable path.
+    let cache_dir = dirs::cache_dir().unwrap_or_else(std::env::temp_dir);
     let assist_cache_dir = cache_dir.join("instantassist");
     std::fs::create_dir_all(&assist_cache_dir)?;
 

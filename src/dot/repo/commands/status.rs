@@ -37,20 +37,7 @@ pub(super) fn show_repository_status(
 
         let repo_path = local_repo.local_path(config)?;
 
-        let git_repo = match git2::Repository::open(&repo_path) {
-            Ok(repo) => repo,
-            Err(e) => {
-                eprintln!(
-                    "{} {}: Failed to open git repository: {}",
-                    char::from(NerdFont::CrossCircle),
-                    repo_name.cyan(),
-                    e
-                );
-                continue;
-            }
-        };
-
-        let repo_status = match crate::common::git::get_repo_status(&git_repo) {
+        let repo_status = match crate::common::git::get_repo_status(&repo_path) {
             Ok(status) => status,
             Err(e) => {
                 eprintln!(

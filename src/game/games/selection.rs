@@ -1,5 +1,4 @@
 use crate::game::config::{Game, InstallationsConfig, InstantGameConfig, PathContentKind};
-use crate::game::utils::path::tilde_display_string;
 use crate::game::utils::save_files::{
     format_file_size, format_system_time_for_display, get_save_directory_info,
 };
@@ -243,7 +242,7 @@ impl Game {
 
         // Installation section
         if let Some(install) = installation {
-            let path_display = tilde_display_string(&install.save_path);
+            let path_display = install.save_path.display_string();
 
             builder = builder
                 .blank()

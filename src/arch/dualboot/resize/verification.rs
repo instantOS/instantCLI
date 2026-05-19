@@ -5,8 +5,8 @@
 
 use anyhow::Result;
 
-use super::detection::detect_disks;
-use super::types::{DiskInfo, PartitionInfo, format_size};
+use crate::arch::dualboot::detection::detect_disks;
+use crate::arch::dualboot::types::{DiskInfo, PartitionInfo, format_size};
 
 /// Result of checking if a resize has been performed
 #[derive(Debug, Clone)]

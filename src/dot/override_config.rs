@@ -3,6 +3,7 @@
 //! Allows users to manually specify which repository/subdirectory a dotfile
 //! should be sourced from, overriding the default priority-based resolution.
 
+use crate::common::home_dir;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -143,7 +144,7 @@ pub fn apply_overrides(
     overrides: &OverrideConfig,
     config: &DotfileConfig,
 ) -> Result<()> {
-    let home = PathBuf::from(shellexpand::tilde("~").to_string());
+    let home = home_dir();
     let lookup = overrides.build_lookup_map();
     let mut active_subdirs_by_repo: HashMap<String, HashSet<String>> = HashMap::new();
 
@@ -169,16 +170,20 @@ pub fn apply_overrides(
                 continue;
             }
 
-            // Construct the overridden source path
+            // Construct the overridden source path. Encrypted sources map to
+            // the same target path with an extra `.age` suffix in the repo.
             let relative_path = target_path.strip_prefix(&home).unwrap_or(target_path);
             let repo_path = config.repos_path().join(&override_entry.source_repo);
             let source_path = repo_path
                 .join(&override_entry.source_subdir)
                 .join(relative_path);
+            let encrypted_source_path = crate::dot::encryption::append_age_suffix(&source_path);
 
             // Only apply if the override source actually exists
             if source_path.exists() {
-                dotfile.source_path = source_path;
+                dotfile.set_source_path(source_path);
+            } else if encrypted_source_path.exists() {
+                dotfile.set_source_path(encrypted_source_path);
             }
         }
     }
@@ -189,6 +194,11 @@ pub fn apply_overrides(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::TildePath;
+    use crate::dot::config::{DotfileConfig, Repo};
+    use crate::dot::dotfile::SourceKind;
+    use crate::dot::types::RepoMetaData;
+    use serial_test::serial;
     use tempfile::tempdir;
 
     #[test]
@@ -211,5 +221,68 @@ mod tests {
 
         assert_eq!(loaded.overrides.len(), 1);
         assert_eq!(loaded.overrides[0].source_repo, "my-dots");
+    }
+
+    #[test]
+    #[serial]
+    fn apply_overrides_resolves_encrypted_source_path() {
+        let dir = tempdir().unwrap();
+        let home = dir.path().join("home");
+        let repos_dir = dir.path().join("repos");
+        let repo_dir = repos_dir.join("test-repo");
+        fs::create_dir_all(home.join(".config/app")).unwrap();
+        fs::create_dir_all(repo_dir.join("secrets/.config/app")).unwrap();
+        let encrypted_source = repo_dir.join("secrets/.config/app/token.toml.age");
+        fs::write(&encrypted_source, "ciphertext").unwrap();
+
+        let prev_home = std::env::var_os("HOME");
+        // SAFETY: this test is serialised and restores HOME below.
+        unsafe {
+            std::env::set_var("HOME", &home);
+        }
+
+        let target_path = home.join(".config/app/token.toml");
+        let original_source = repo_dir.join("dots/.config/app/token.toml");
+        let mut dotfiles = HashMap::from([(
+            target_path.clone(),
+            Dotfile::new(original_source, target_path.clone(), false),
+        )]);
+        let overrides = OverrideConfig {
+            overrides: vec![DotfileOverride {
+                target_path: TildePath::new(target_path.clone()),
+                source_repo: "test-repo".to_string(),
+                source_subdir: "secrets".to_string(),
+            }],
+        };
+        let config = DotfileConfig {
+            repos: vec![Repo {
+                url: "local".to_string(),
+                name: "test-repo".to_string(),
+                branch: None,
+                active_subdirectories: Some(vec!["secrets".to_string()]),
+                enabled: true,
+                read_only: false,
+                metadata: Some(RepoMetaData {
+                    name: "test-repo".to_string(),
+                    dots_dirs: vec!["secrets".to_string()],
+                    ..RepoMetaData::default()
+                }),
+            }],
+            repos_dir: TildePath::new(repos_dir),
+            ..DotfileConfig::default()
+        };
+
+        apply_overrides(&mut dotfiles, &overrides, &config).unwrap();
+
+        unsafe {
+            match prev_home {
+                Some(v) => std::env::set_var("HOME", v),
+                None => std::env::remove_var("HOME"),
+            }
+        }
+
+        let dotfile = dotfiles.get(&target_path).unwrap();
+        assert_eq!(dotfile.source_path, encrypted_source);
+        assert_eq!(dotfile.kind, SourceKind::Age);
     }
 }

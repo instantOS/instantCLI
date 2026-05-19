@@ -311,11 +311,8 @@ fn add_local_files_comparison(
         let local_time_str = format_system_time_for_display(Some(local_time));
         builder = builder.field("Last Modified", &local_time_str).blank();
 
-        match compare_snapshot_vs_local(snapshot_time, local_time) {
-            comparison => {
-                builder = add_comparison_status(builder, &comparison, context);
-            }
-        }
+        let comparison = compare_snapshot_vs_local(snapshot_time, local_time);
+        builder = add_comparison_status(builder, &comparison, context);
     } else {
         builder = builder
             .field("Last Modified", "Unknown")
@@ -636,11 +633,6 @@ impl FzfSelectable for EnhancedSnapshot {
         };
 
         format!("{date} ({host}){comparison_indicator}")
-    }
-
-    fn fzf_key(&self) -> String {
-        // Use the display text as the key since that's what fzf passes to the preview script
-        self.fzf_display_text()
     }
 
     fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {

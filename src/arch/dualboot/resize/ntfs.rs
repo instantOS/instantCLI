@@ -98,3 +98,30 @@ pub fn parse_ntfs_min_size(output: &str) -> Option<u64> {
     }
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::arch::dualboot::test_utils::TestDisk;
+
+    #[test]
+    fn test_parse_ntfs_min_size() {
+        let output = "You might resize at 12345678 bytes";
+        assert_eq!(parse_ntfs_min_size(output), Some(12345678));
+    }
+
+    #[test]
+    fn test_get_ntfs_resize_info_e2e() {
+        // Create a 100MB image
+        let disk = TestDisk::new(100);
+        disk.format_ntfs();
+
+        let info = get_ntfs_resize_info(disk.path_str());
+
+        // On a fresh NTFS, it should be shrinkable
+        assert!(info.can_shrink);
+        // It should have found a minimum size
+        assert!(info.min_size_bytes.is_some());
+        assert!(info.reason.is_none());
+    }
+}

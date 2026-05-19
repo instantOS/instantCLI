@@ -28,13 +28,15 @@ pub static GIT: Dependency = Dependency {
     tests: &[InstallTest::WhichSucceeds("git")],
 };
 
-pub static LIBGIT2: Dependency = Dependency {
-    name: "libgit2",
+pub static DELTA: Dependency = Dependency {
+    name: "delta",
     packages: &[
-        PackageDefinition::new("libgit2", PackageManager::Pacman),
-        PackageDefinition::new("libgit2-dev", PackageManager::Apt),
+        PackageDefinition::new("git-delta", PackageManager::Pacman),
+        PackageDefinition::new("git-delta", PackageManager::Apt),
+        PackageDefinition::new("git-delta", PackageManager::Dnf),
+        PackageDefinition::new("git-delta", PackageManager::Cargo),
     ],
-    tests: &[InstallTest::FileExists("/usr/lib/libgit2.so")],
+    tests: &[InstallTest::WhichSucceeds("delta")],
 };
 
 pub static GUM: Dependency = Dependency {

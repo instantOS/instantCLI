@@ -20,6 +20,8 @@ impl CheckRegistry {
         registry.register::<NerdFontCheck>("nerd-font");
         registry.register::<PacmanCacheCheck>("pacman-cache");
         registry.register::<YayCacheCheck>("yay-cache");
+        registry.register::<TrashBinSizeCheck>("trash-size");
+        registry.register::<SteamCompatdataOrphansCheck>("steam-compatdata-orphans");
         registry.register::<PacmanStaleDownloadsCheck>("pacman-stale-downloads");
         registry.register::<SwapCheck>("swap");
         registry.register::<PendingUpdatesCheck>("pending-updates");

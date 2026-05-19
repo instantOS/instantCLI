@@ -10,6 +10,7 @@
 //!
 //! The effective units are the union of both sources.
 
+use crate::common::home_dir;
 use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
 use crate::dot::dotfile::Dotfile;
@@ -22,7 +23,7 @@ use std::path::{Path, PathBuf};
 ///
 /// Returns units sorted by depth (more specific first), then lexicographically.
 pub fn find_units_for_path(target_path: &Path, units: &[PathBuf]) -> Vec<PathBuf> {
-    let home = PathBuf::from(shellexpand::tilde("~").to_string());
+    let home = home_dir();
     let mut matches = Vec::new();
 
     for unit in units {
@@ -46,7 +47,7 @@ pub fn find_units_for_path(target_path: &Path, units: &[PathBuf]) -> Vec<PathBuf
 }
 
 fn normalize_unit_path(unit: &str) -> PathBuf {
-    let home = PathBuf::from(shellexpand::tilde("~").to_string());
+    let home = home_dir();
 
     if unit.starts_with('~') {
         let expanded = PathBuf::from(shellexpand::tilde(unit).to_string());
@@ -207,7 +208,7 @@ mod tests {
 
     #[test]
     fn test_find_units_for_path_basic() {
-        let home = PathBuf::from(shellexpand::tilde("~").to_string());
+        let home = home_dir();
         let units = vec![
             PathBuf::from(".config/nvim"),
             PathBuf::from(".config/helix"),
@@ -225,7 +226,7 @@ mod tests {
 
     #[test]
     fn test_find_units_for_path_overlap() {
-        let home = PathBuf::from(shellexpand::tilde("~").to_string());
+        let home = home_dir();
         let units = vec![
             PathBuf::from(".config"),
             PathBuf::from(".config/nvim"),

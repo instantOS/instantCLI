@@ -1,9 +1,13 @@
+use crate::common::deps::DELTA;
+use crate::common::package::InstallResult;
 use crate::dot::config::DotfileConfig;
 use crate::dot::git::status::get_dotfile_status;
 use crate::dot::git::{get_dotfile_dir_name, get_repo_name_for_dotfile, status::DotFileStatus};
+use crate::ui::prelude::*;
 use anyhow::{Context, Result};
 use colored::*;
 use std::collections::HashMap;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -11,8 +15,9 @@ pub fn diff_all(
     cfg: &DotfileConfig,
     path: Option<&str>,
     db: &crate::dot::db::Database,
+    include_root: bool,
 ) -> Result<()> {
-    let all_dotfiles = crate::dot::get_all_dotfiles(cfg, db)?;
+    let all_dotfiles = crate::dot::get_all_dotfiles(cfg, db, include_root)?;
 
     if let Some(path_str) = path {
         show_path_diff(path_str, &all_dotfiles, cfg, db)?;
@@ -29,7 +34,7 @@ pub fn show_path_diff(
     cfg: &DotfileConfig,
     db: &crate::dot::db::Database,
 ) -> Result<()> {
-    let target_path = crate::dot::resolve_dotfile_path(path_str)?;
+    let target_path = crate::dot::resolve_dotfile_path(path_str, false, true)?;
 
     if target_path.is_dir() {
         diff_directory(target_path.as_path(), all_dotfiles, cfg, db)
@@ -54,7 +59,7 @@ fn diff_directory(
         return Ok(());
     }
 
-    matching.sort_by(|(a, _), (b, _)| a.cmp(b));
+    matching.sort_by_key(|(a, _)| a.as_path());
 
     let home = dirs::home_dir().context("Failed to get home directory")?;
     let relative_dir = target_dir.strip_prefix(&home).unwrap_or(target_dir);
@@ -89,7 +94,7 @@ fn diff_directory(
     if !showed_diff {
         println!(
             "  {} No modified or outdated dotfiles under {}",
-            "✓".green(),
+            char::from(NerdFont::Check).to_string().green(),
             tilde_dir
         );
     }
@@ -110,9 +115,16 @@ fn diff_file(
                 let home = dirs::home_dir().context("Failed to get home directory")?;
                 let relative_path = target_path.strip_prefix(&home).unwrap_or(target_path);
                 let tilde_path = format!("~/{}", relative_path.display());
-                println!("{} {} is unmodified", "✓".green(), tilde_path.green());
+                println!(
+                    "{} {} is unmodified",
+                    char::from(NerdFont::Check).to_string().green(),
+                    tilde_path.green()
+                );
             }
-            DotFileStatus::Modified | DotFileStatus::Outdated => {
+            DotFileStatus::Modified
+            | DotFileStatus::Outdated
+            | DotFileStatus::IdentityRequired
+            | DotFileStatus::EncryptedError => {
                 show_dotfile_diff(dotfile)?;
             }
         }
@@ -143,7 +155,11 @@ pub fn show_all_diffs(
         .map_or(0, |v| v.len());
 
     if modified_count == 0 && outdated_count == 0 {
-        println!("{}", "✓ All dotfiles are clean and up to date!".green());
+        println!(
+            "{} {}",
+            char::from(NerdFont::Check).to_string().green(),
+            "All dotfiles are clean and up to date!".green()
+        );
         return Ok(());
     }
 
@@ -195,15 +211,11 @@ pub fn show_all_diffs(
 }
 
 fn show_dotfile_diff(dotfile: &crate::dot::Dotfile) -> Result<()> {
-    // Check if delta is available
-    if Command::new("delta").arg("--help").output().is_ok() {
-        show_delta_diff(dotfile)?;
-    } else {
-        return Err(anyhow::anyhow!(
-            "delta command not found. Please install delta to use the diff command.\n\
-             Install with: cargo install git-delta\n\
-             Or visit: https://github.com/dandavison/delta"
-        ));
+    match DELTA.ensure()? {
+        InstallResult::Installed | InstallResult::AlreadyInstalled => show_delta_diff(dotfile)?,
+        InstallResult::Declined => anyhow::bail!("delta installation cancelled"),
+        InstallResult::NotAvailable { hint, .. } => anyhow::bail!("missing dependency: {hint}"),
+        InstallResult::Failed { reason } => anyhow::bail!("delta installation failed: {reason}"),
     }
 
     Ok(())
@@ -231,15 +243,60 @@ fn show_delta_diff(dotfile: &crate::dot::Dotfile) -> Result<()> {
         return Ok(());
     }
 
+    let source_temp;
+    let source_for_diff: &Path = if dotfile.kind == crate::dot::dotfile::SourceKind::Age {
+        let identities = match crate::dot::encryption::load_identities() {
+            Ok(identities) => identities,
+            Err(err) => {
+                let reason = crate::dot::encryption::classify_encrypted_failure(&err);
+                println!(
+                    "  {} encrypted source unavailable ({}): {}",
+                    crate::ui::nerd_font::NerdFont::ShieldAlert
+                        .to_string()
+                        .yellow(),
+                    reason.label(),
+                    err
+                );
+                return Ok(());
+            }
+        };
+        let plaintext = match crate::dot::encryption::decrypt_file_to_bytes(
+            &dotfile.source_path,
+            &identities,
+        ) {
+            Ok(plaintext) => plaintext,
+            Err(err) => {
+                let reason = crate::dot::encryption::classify_encrypted_failure(&err);
+                println!(
+                    "  {} encrypted source unavailable ({}): {}",
+                    crate::ui::nerd_font::NerdFont::ShieldAlert
+                        .to_string()
+                        .yellow(),
+                    reason.label(),
+                    err
+                );
+                return Ok(());
+            }
+        };
+        source_temp = tempfile::Builder::new()
+            .prefix("ins-dot-source-")
+            .suffix(".plaintext")
+            .tempfile()?;
+        source_temp.as_file().write_all(&plaintext)?;
+        source_temp.path()
+    } else {
+        &dotfile.source_path
+    };
+
     // Check if files are binary
-    if is_binary_file(&dotfile.source_path)? || is_binary_file(&dotfile.target_path)? {
+    if is_binary_file(source_for_diff)? || is_binary_file(&dotfile.target_path)? {
         println!("  {}", "Binary files differ".yellow());
         return Ok(());
     }
 
     // Use delta for direct file comparison (not git mode)
     let mut child = Command::new("delta")
-        .arg(&dotfile.source_path)
+        .arg(source_for_diff)
         .arg(&dotfile.target_path)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -269,7 +326,7 @@ fn show_delta_diff(dotfile: &crate::dot::Dotfile) -> Result<()> {
     Ok(())
 }
 
-fn is_binary_file(path: &PathBuf) -> Result<bool> {
+fn is_binary_file(path: &Path) -> Result<bool> {
     use std::fs::File;
     use std::io::Read;
 

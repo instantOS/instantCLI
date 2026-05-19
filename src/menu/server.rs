@@ -6,7 +6,7 @@ use crate::common::compositor::CompositorType;
 use crate::scratchpad::config::ScratchpadConfig;
 use anyhow::{Context, Result};
 use std::io::{self, BufRead, Write};
-use std::os::unix::net::{UnixListener, UnixStream};
+use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::sync::{
     Arc, Mutex,
@@ -112,69 +112,94 @@ impl MenuServer {
                 .context("Failed to remove existing socket file")?;
         }
 
-        let listener = UnixListener::bind(&self.socket_path)
+        let listener = tokio::net::UnixListener::bind(&self.socket_path)
             .context(format!("Failed to bind to socket at {}", self.socket_path))?;
 
         self.running.store(true, Ordering::SeqCst);
 
-        // TUI is already initialized in the struct
+        let mut sigint = signal::unix::signal(signal::unix::SignalKind::interrupt())
+            .context("Failed to setup SIGINT handler")?;
+        let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate())
+            .context("Failed to setup SIGTERM handler")?;
 
-        let running_clone = self.running.clone();
-        let socket_path_clone = self.socket_path.clone();
-        tokio::spawn(async move {
-            let mut sigint = signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
-                .expect("Failed to setup SIGINT handler");
-            let mut sigterm = signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-                .expect("Failed to setup SIGTERM handler");
+        // Initial draw of the status screen
+        if let Some(ref mut tui) = self.tui {
+            let has_scratchpad = self.scratchpad_manager.is_some();
+            let requests_processed = self.requests_processed.load(Ordering::SeqCst);
+            tui.draw_status_screen(has_scratchpad, requests_processed, self.start_time)?;
+        }
 
+        // Tick once per second to refresh the uptime display.
+        // Skip missed ticks so we don't burn a backlog after long-running connections.
+        let mut tick = tokio::time::interval(Duration::from_secs(1));
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        // Consume the immediate first tick — we just drew above.
+        tick.tick().await;
+
+        let mut last_requests = self.requests_processed.load(Ordering::SeqCst);
+        let mut last_uptime = self.start_time.elapsed().unwrap_or_default().as_secs();
+
+        loop {
             tokio::select! {
-                _ = sigint.recv() => {}
-                _ = sigterm.recv() => {}
-            }
-            running_clone.store(false, Ordering::SeqCst);
-            if Path::new(&socket_path_clone).exists() {
-                let _ = std::fs::remove_file(&socket_path_clone);
-            }
-        });
+                biased;
+                _ = sigint.recv() => break,
+                _ = sigterm.recv() => break,
+                accept_res = listener.accept() => {
+                    match accept_res {
+                        Ok((stream, _addr)) => {
+                            // Convert to a blocking std stream so the existing
+                            // synchronous handler keeps working unchanged.
+                            let std_stream = match stream.into_std() {
+                                Ok(s) => s,
+                                Err(e) => {
+                                    eprintln!("Failed to convert accepted stream: {e}");
+                                    continue;
+                                }
+                            };
+                            std_stream.set_nonblocking(false)?;
 
-        while self.running.load(Ordering::SeqCst) {
-            listener.set_nonblocking(true)?;
+                            if let Some(ref mut tui) = self.tui {
+                                tui.suspend()?;
+                            }
 
-            match listener.accept() {
-                Ok((stream, _addr)) => {
-                    // Temporarily suspend TUI for connection handling
-                    if let Some(ref mut tui) = self.tui {
-                        tui.suspend()?;
-                    }
+                            let _ = self.handle_connection_sync(std_stream);
 
-                    let _ = self.handle_connection_sync(stream);
+                            if let Some(ref mut tui) = self.tui {
+                                tui.resume()?;
+                                let has_scratchpad = self.scratchpad_manager.is_some();
+                                last_requests = self.requests_processed.load(Ordering::SeqCst);
+                                last_uptime = self.start_time.elapsed().unwrap_or_default().as_secs();
+                                tui.draw_status_screen(has_scratchpad, last_requests, self.start_time)?;
+                            }
 
-                    // Resume TUI after connection handling
-                    if let Some(ref mut tui) = self.tui {
-                        tui.resume()?;
+                            // A Stop request can flip `running` from inside the handler.
+                            if !self.running.load(Ordering::SeqCst) {
+                                break;
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("accept error: {e}");
+                            tokio::time::sleep(Duration::from_millis(100)).await;
+                        }
                     }
                 }
-                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                    // Draw the status screen using TUI module
-                    if let Some(ref mut tui) = self.tui {
-                        let has_scratchpad = self.scratchpad_manager.is_some();
-                        let requests_processed = self.requests_processed.load(Ordering::SeqCst);
-                        tui.draw_status_screen(
-                            has_scratchpad,
-                            requests_processed,
-                            self.start_time,
-                        )?;
-
-                        // Sleep to prevent high CPU usage - no event handling to allow input buffering
-                        std::thread::sleep(std::time::Duration::from_millis(50));
+                _ = tick.tick() => {
+                    // Only redraw when something actually changed.
+                    let current_requests = self.requests_processed.load(Ordering::SeqCst);
+                    let current_uptime = self.start_time.elapsed().unwrap_or_default().as_secs();
+                    if current_uptime != last_uptime || current_requests != last_requests {
+                        if let Some(ref mut tui) = self.tui {
+                            let has_scratchpad = self.scratchpad_manager.is_some();
+                            tui.draw_status_screen(has_scratchpad, current_requests, self.start_time)?;
+                        }
+                        last_uptime = current_uptime;
+                        last_requests = current_requests;
                     }
-                    continue;
-                }
-                Err(_e) => {
-                    tokio::time::sleep(Duration::from_millis(100)).await;
                 }
             }
         }
+
+        self.running.store(false, Ordering::SeqCst);
 
         // Cleanup TUI
         if let Some(ref mut tui) = self.tui {

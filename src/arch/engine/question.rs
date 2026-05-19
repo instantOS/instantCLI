@@ -71,6 +71,18 @@ pub trait Question: Send + Sync {
         false
     }
 
+    /// Returns true if this question is an informational message or warning
+    /// and should be skipped when navigating backwards
+    fn is_info_only(&self) -> bool {
+        false
+    }
+
+    /// A short human-readable description of what this question is for.
+    /// Shown in the review menu preview when browsing answers.
+    fn description(&self) -> Option<&str> {
+        None
+    }
+
     /// Validate the answer. Returns Ok(()) if valid, or Err(message) if invalid.
     fn validate(&self, _context: &InstallContext, _answer: &str) -> Result<(), String> {
         Ok(())

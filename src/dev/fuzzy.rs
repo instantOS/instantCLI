@@ -11,7 +11,7 @@ use anyhow::Result;
 #[derive(thiserror::Error, Debug)]
 pub enum FzfError {
     #[error("FZF error: {0}")]
-    FzfError(String),
+    Process(String),
 
     #[error("User cancelled selection")]
     UserCancelled,
@@ -35,9 +35,8 @@ impl GitHubRepoSelectItem {
         if !self.cloned {
             return None;
         }
-        let repo = git2::Repository::open(&self.local_path).ok()?;
-        let branch = crate::common::git::current_branch(&repo).ok()?;
-        let status = crate::common::git::get_repo_status(&repo).ok()?;
+        let branch = crate::common::git::current_branch(&self.local_path).ok()?;
+        let status = crate::common::git::get_repo_status(&self.local_path).ok()?;
         Some(LocalRepoInfo {
             branch,
             clean: status.working_dir_clean,
@@ -202,14 +201,12 @@ pub fn select_repository(
         .args(fzf_mocha_args())
         .responsive_layout()
         .select(items)
-        .map_err(|e| FzfError::FzfError(format!("Selection error: {e}")))?
+        .map_err(|e| FzfError::Process(format!("Selection error: {e}")))?
     {
         crate::menu_utils::FzfResult::Selected(item) => Ok(item),
         crate::menu_utils::FzfResult::Cancelled => Err(FzfError::UserCancelled),
-        crate::menu_utils::FzfResult::Error(e) => Err(FzfError::FzfError(e)),
-        _ => Err(FzfError::FzfError(
-            "Unexpected selection result".to_string(),
-        )),
+        crate::menu_utils::FzfResult::Error(e) => Err(FzfError::Process(e)),
+        _ => Err(FzfError::Process("Unexpected selection result".to_string())),
     }
 }
 
@@ -229,13 +226,11 @@ pub fn select_package(packages: Vec<Package>) -> Result<Package, FzfError> {
         .args(fzf_mocha_args())
         .responsive_layout()
         .select(items)
-        .map_err(|e| FzfError::FzfError(format!("Selection error: {e}")))?
+        .map_err(|e| FzfError::Process(format!("Selection error: {e}")))?
     {
         crate::menu_utils::FzfResult::Selected(item) => Ok(item.package),
         crate::menu_utils::FzfResult::Cancelled => Err(FzfError::UserCancelled),
-        crate::menu_utils::FzfResult::Error(e) => Err(FzfError::FzfError(e)),
-        _ => Err(FzfError::FzfError(
-            "Unexpected selection result".to_string(),
-        )),
+        crate::menu_utils::FzfResult::Error(e) => Err(FzfError::Process(e)),
+        _ => Err(FzfError::Process("Unexpected selection result".to_string())),
     }
 }

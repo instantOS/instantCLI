@@ -1,4 +1,3 @@
-use crate::arch::dualboot::feasibility::check_disk_dualboot_feasibility;
 use crate::arch::engine::{DataKey, InstallContext, Question, QuestionId, QuestionResult};
 use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper};
 use crate::ui::catppuccin::colors;
@@ -126,14 +125,13 @@ impl DiskQuestion {
         last_custom_path: &mut Option<String>,
     ) -> Result<Option<String>> {
         loop {
-            let mut builder = FzfWrapper::builder()
-                .prompt("Custom disk path")
-                .ghost("/dev/nvme0n1")
-                .input();
+            let mut base = FzfWrapper::builder().prompt("Custom disk path");
 
             if let Some(previous) = last_custom_path.as_ref() {
-                builder = builder.query(previous.clone());
+                base = base.query(previous.clone());
             }
+
+            let builder = base.input().ghost("/dev/nvme0n1");
 
             let input = builder.input_result()?;
             let path = match input {
@@ -165,6 +163,10 @@ impl DiskQuestion {
 impl Question for DiskQuestion {
     fn id(&self) -> QuestionId {
         QuestionId::Disk
+    }
+
+    fn description(&self) -> Option<&str> {
+        Some("Select the disk for installation")
     }
 
     fn required_data_keys(&self) -> Vec<String> {
@@ -351,6 +353,10 @@ impl Question for PartitioningMethodQuestion {
         QuestionId::PartitioningMethod
     }
 
+    fn description(&self) -> Option<&str> {
+        Some("Choose how to partition the disk")
+    }
+
     async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
         let mut options = vec![
             PartitioningMethodOption::Automatic,
@@ -365,7 +371,7 @@ impl Question for PartitioningMethodQuestion {
                 move || -> anyhow::Result<crate::arch::dualboot::DualBootFeasibility> {
                     let disks = crate::arch::dualboot::detect_disks()?;
                     if let Some(disk_info) = disks.iter().find(|d| d.device == disk_path_owned) {
-                        Ok(check_disk_dualboot_feasibility(disk_info))
+                        Ok(disk_info.check_disk_dualboot_feasibility())
                     } else {
                         Ok(crate::arch::dualboot::DualBootFeasibility {
                             feasible: false,
@@ -407,6 +413,10 @@ pub struct RunCfdiskQuestion;
 impl Question for RunCfdiskQuestion {
     fn id(&self) -> QuestionId {
         QuestionId::RunCfdisk
+    }
+
+    fn description(&self) -> Option<&str> {
+        Some("Create partitions manually with cfdisk")
     }
 
     fn should_ask(&self, context: &InstallContext) -> bool {

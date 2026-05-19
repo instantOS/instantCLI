@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
 use std::io::{self, Write};
+use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -295,14 +296,14 @@ fn find_appstream_files(base_dir: &PathBuf) -> Vec<PathBuf> {
     files
 }
 
-fn appstream_remote_name(path: &PathBuf) -> Option<String> {
+fn appstream_remote_name(path: &Path) -> Option<String> {
     let active = path.parent()?;
     let arch = active.parent()?;
     let remote = arch.parent()?;
     remote.file_name()?.to_str().map(|s| s.to_string())
 }
 
-fn appstream_installation(path: &PathBuf) -> Option<String> {
+fn appstream_installation(path: &Path) -> Option<String> {
     let path = path.to_string_lossy();
     if path.contains("/var/lib/flatpak/appstream/") {
         Some("system".to_string())

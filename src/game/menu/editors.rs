@@ -2,9 +2,7 @@ use anyhow::{Result, anyhow};
 
 use crate::game::launch_command::LaunchCommand;
 use crate::game::platforms::LaunchCommandBuilderContext;
-use crate::game::utils::path::{
-    path_selection_to_tilde, prompt_for_save_path, tilde_display_string,
-};
+use crate::game::utils::path::{path_selection_to_tilde, prompt_for_save_path};
 use crate::menu::protocol::FzfPreview;
 use crate::menu_utils::{
     FilePickerScope, FzfResult, FzfSelectable, FzfWrapper, Header, PathInputBuilder,
@@ -155,8 +153,8 @@ pub fn edit_name(state: &mut EditState) -> Result<bool> {
     let result = FzfWrapper::builder()
         .prompt("Enter new game name")
         .header(format!("Current name: {}", current_name))
-        .input()
         .query(current_name)
+        .input()
         .input_result()?;
 
     let new_name = match result {
@@ -489,7 +487,7 @@ pub fn edit_save_path(state: &mut EditState) -> Result<bool> {
     let current_path_str = if current_path.as_path().as_os_str().is_empty() {
         "<not set>".to_string()
     } else {
-        tilde_display_string(current_path)
+        current_path.display_string()
     };
 
     match prompt_for_save_path(&state.game().name.0, Some(current_path), || {

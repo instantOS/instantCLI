@@ -13,7 +13,8 @@ pub use dualboot::{DualBootPartitionQuestion, DualBootSizeQuestion};
 pub use partition::{EspPartitionValidator, PartitionSelectorQuestion};
 pub use resize_instructions::ResizeInstructionsQuestion;
 pub use system::{
-    EncryptionPasswordQuestion, HostnameQuestion, KernelQuestion, KeymapQuestion, LocaleQuestion,
-    MirrorRegionQuestion, PasswordQuestion, TimezoneQuestion, UsernameQuestion,
+    DesktopEnvironmentQuestion, EncryptionPasswordQuestion, HostnameQuestion, KernelQuestion,
+    KeymapQuestion, LocaleQuestion, MirrorRegionQuestion, PasswordQuestion, TimezoneQuestion,
+    UsernameQuestion,
 };
 pub use warnings::{DualBootEspWarning, VirtualBoxWarning, WeakPasswordWarning};

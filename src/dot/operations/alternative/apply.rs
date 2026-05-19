@@ -45,10 +45,11 @@ pub fn set_alternative(
     let db = Database::new(config.database_path().to_path_buf())?;
     let mut overrides = OverrideConfig::load()?;
 
-    let dotfile = Dotfile {
-        source_path: source.source.source_path.clone(),
-        target_path: target_path.to_path_buf(),
-    };
+    let dotfile = Dotfile::new(
+        source.source.source_path.clone(),
+        target_path.to_path_buf(),
+        false,
+    );
     dotfile.reset(&db)?;
 
     overrides.set_override(
@@ -100,10 +101,11 @@ pub fn remove_override(
         return Ok(());
     }
 
-    let dotfile = Dotfile {
-        source_path: default_source.source_path.clone(),
-        target_path: target_path.to_path_buf(),
-    };
+    let dotfile = Dotfile::new(
+        default_source.source_path.clone(),
+        target_path.to_path_buf(),
+        false,
+    );
     dotfile.reset(&db)?;
 
     emit(
@@ -167,7 +169,9 @@ pub fn add_to_destination(
     db: &Database,
     target_path: &Path,
     dest: &DotfileSource,
-) -> Result<()> {
+    force: bool,
+    recipients: Option<&[Box<dyn age::Recipient>]>,
+) -> Result<bool> {
     // Ensure the target file exists before attempting to copy
     if !target_path.exists() {
         anyhow::bail!(
@@ -177,20 +181,46 @@ pub fn add_to_destination(
         );
     }
 
+    if !force {
+        if let Some(ignore_file) = crate::dot::insignore::match_home_path(target_path)? {
+            println!(
+                "{}",
+                crate::dot::insignore::format_skip_message(target_path, &ignore_file)
+            );
+            return Ok(false);
+        }
+
+        let repo_root = config.repos_path().join(&dest.repo_name);
+        if let Some(ignore_file) =
+            crate::dot::insignore::match_repo_target_path(&repo_root, target_path)?
+        {
+            println!(
+                "{}",
+                crate::dot::insignore::format_skip_message(target_path, &ignore_file)
+            );
+            return Ok(false);
+        }
+    }
+
     let relative = target_path
         .strip_prefix(sources::home_dir())
         .unwrap_or(target_path);
-    let dest_path = dest.source_path.join(relative);
+
+    let mut dest_path = dest.source_path.join(relative);
+    if recipients.is_some() {
+        dest_path = crate::dot::encryption::append_age_suffix(&dest_path);
+    }
 
     if let Some(parent) = dest_path.parent() {
         fs::create_dir_all(parent)?;
     }
 
-    let dotfile = Dotfile {
-        source_path: dest_path.clone(),
-        target_path: target_path.to_path_buf(),
-    };
-    dotfile.create_source_from_target(db)?;
+    let dotfile = Dotfile::new(dest_path.clone(), target_path.to_path_buf(), false);
+    if let Some(recs) = recipients {
+        dotfile.create_encrypted_source_from_target(db, recs)?;
+    } else {
+        dotfile.create_source_from_target(db)?;
+    }
 
     let repo_path = config.repos_path().join(&dest.repo_name);
     if let Err(e) = crate::dot::git::repo_ops::git_add(&repo_path, &dest_path, false) {
@@ -213,5 +243,5 @@ pub fn add_to_destination(
         ),
         None,
     );
-    Ok(())
+    Ok(true)
 }

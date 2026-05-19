@@ -7,6 +7,7 @@ use super::{CheckStatus, DoctorCheck, PrivilegeLevel};
 use anyhow::Result;
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
 use std::time::Duration;
 use tokio::fs;
 use tokio::process::Command as TokioCommand;
@@ -403,6 +404,7 @@ async fn spawn_subshell_with_timeout(shell: &str, command: &str) -> Result<std::
             .arg("-i")
             .arg("-c")
             .arg(command)
+            .stdin(Stdio::null())
             .output(),
     )
     .await

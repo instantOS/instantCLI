@@ -6,7 +6,7 @@ use anyhow::{Context, Result, bail};
 use std::process::Command;
 
 use crate::assist::{AssistInternalCommand, assist_command_argv};
-use crate::common::compositor::{CompositorType, sway};
+use crate::common::compositor::{CompositorType, niri, sway};
 use crate::common::instantwmctl;
 use crate::menu::client::MenuClient;
 use crate::menu::protocol::SliderRequest;
@@ -184,7 +184,7 @@ impl Setting for AccelProfile {
             .id("mouse.accel_profile")
             .title("Acceleration Profile")
             .icon(NerdFont::Mouse)
-            .summary("Choose how pointer acceleration behaves.\n\n\"Flat\" provides constant cursor speed regardless of movement speed.\n\"Adaptive\" applies dynamic acceleration - faster movements result in greater cursor travel.\n\nSupports InstantWM.")
+            .summary("Choose how pointer acceleration behaves.\n\n\"Flat\" provides constant cursor speed regardless of movement speed.\n\"Adaptive\" applies dynamic acceleration - faster movements result in greater cursor travel.\n\nSupports niri and InstantWM.")
             .requires_reapply(true)
             .build()
     }
@@ -228,7 +228,7 @@ impl Setting for AccelProfile {
 
     fn restore(&self, ctx: &mut SettingsContext) -> Option<Result<()>> {
         let compositor = CompositorType::detect();
-        if !matches!(compositor, CompositorType::InstantWM) {
+        if !matches!(compositor, CompositorType::InstantWM | CompositorType::Niri) {
             return None;
         }
 
@@ -333,7 +333,7 @@ impl Setting for MouseSensitivity {
             .id("mouse.sensitivity")
             .title("Mouse Sensitivity")
             .icon(NerdFont::Mouse)
-            .summary("Adjust mouse pointer speed using an interactive slider.\n\nThe setting will be automatically restored on login.")
+            .summary("Adjust mouse pointer speed using an interactive slider.\n\nThe setting will be automatically restored on login.\n\nSupports niri, Sway, InstantWM, GNOME, and X11.")
             .requires_reapply(true)
             .build()
     }
@@ -736,7 +736,7 @@ fn apply_tap_to_click(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
 fn apply_accel_profile(ctx: &mut SettingsContext, profile: &str) -> Result<()> {
     let compositor = CompositorType::detect();
 
-    if !matches!(compositor, CompositorType::InstantWM) {
+    if !matches!(compositor, CompositorType::InstantWM | CompositorType::Niri) {
         ctx.emit_unsupported(
             "settings.mouse.accel_profile.unsupported",
             &format!(
@@ -747,14 +747,28 @@ fn apply_accel_profile(ctx: &mut SettingsContext, profile: &str) -> Result<()> {
         return Ok(());
     }
 
-    let result = instantwmctl::run(["mouse", "accel-profile", profile]);
+    match compositor {
+        CompositorType::InstantWM => {
+            let result = instantwmctl::run(["mouse", "accel-profile", profile]);
 
-    if let Err(e) = &result {
-        ctx.emit_info(
-            "settings.mouse.accel_profile.instantwm_failed",
-            &format!("Failed to apply acceleration profile in instantWM: {e}"),
-        );
-        return Ok(());
+            if let Err(e) = &result {
+                ctx.emit_info(
+                    "settings.mouse.accel_profile.instantwm_failed",
+                    &format!("Failed to apply acceleration profile in instantWM: {e}"),
+                );
+                return Ok(());
+            }
+        }
+        CompositorType::Niri => {
+            if let Err(e) = niri::set_mouse_accel_profile(profile) {
+                ctx.emit_info(
+                    "settings.mouse.accel_profile.niri_failed",
+                    &format!("Failed to apply acceleration profile in niri: {e}"),
+                );
+                return Ok(());
+            }
+        }
+        _ => {}
     }
 
     let profile_label = if profile == "flat" {

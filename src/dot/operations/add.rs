@@ -1,3 +1,4 @@
+use crate::common::home_dir;
 use crate::dot::config::{self, DotfileConfig};
 use crate::dot::db::Database;
 use crate::dot::dotfile::Dotfile;
@@ -38,17 +39,9 @@ impl DirectoryAddStats {
 }
 
 /// Prompt the user to select one of the configured repositories
-fn select_repo(config: &DotfileConfig, db: &Database) -> Result<config::Repo> {
+fn select_repo(config: &DotfileConfig, db: &Database, target_path: &Path) -> Result<config::Repo> {
     if config.repos.is_empty() {
         return Err(anyhow::anyhow!("No repositories configured"));
-    }
-
-    if config.repos.len() == 1 {
-        let repo = &config.repos[0];
-        if !repo.read_only {
-            return Ok(repo.clone());
-        }
-        // If the only repo is read-only, fall through to filtering logic which will return error
     }
 
     let items: Vec<RepoMenuItem> = config
@@ -63,7 +56,30 @@ fn select_repo(config: &DotfileConfig, db: &Database) -> Result<config::Repo> {
                 );
                 false
             } else {
-                true
+                let repo_root = config.repos_path().join(&r.name);
+                match crate::dot::insignore::match_repo_target_path(&repo_root, target_path) {
+                    Ok(Some(ignore_file)) => {
+                        println!(
+                            "{}",
+                            crate::dot::insignore::format_repo_skip_message(
+                                &r.name,
+                                target_path,
+                                &ignore_file
+                            )
+                        );
+                        false
+                    }
+                    Ok(None) => true,
+                    Err(err) => {
+                        eprintln!(
+                            "{} Failed to evaluate .insignore for repository '{}': {}",
+                            char::from(NerdFont::Warning).to_string().yellow(),
+                            r.name,
+                            err
+                        );
+                        false
+                    }
+                }
             }
         })
         .map(|repo| RepoMenuItem {
@@ -73,7 +89,9 @@ fn select_repo(config: &DotfileConfig, db: &Database) -> Result<config::Repo> {
         .collect();
 
     if items.is_empty() {
-        return Err(anyhow::anyhow!("No writable repositories configured"));
+        return Err(anyhow::anyhow!(
+            "No writable repositories available for this path"
+        ));
     }
 
     match FzfWrapper::builder()
@@ -92,13 +110,21 @@ fn select_repo(config: &DotfileConfig, db: &Database) -> Result<config::Repo> {
 }
 
 /// Prompt the user to select one of the repo's configured `dots_dirs`
-fn select_dots_dir(dotfile_repo: &DotfileRepo) -> Result<DotfileDir> {
-    let dirs = &dotfile_repo.dotfile_dirs;
+fn select_dots_dir(dotfile_repo: &DotfileRepo, target_path: &Path) -> Result<DotfileDir> {
+    let home = crate::dot::sources::home_dir();
+    let is_root_target = !target_path.starts_with(&home);
+    let dirs: Vec<_> = dotfile_repo
+        .dotfile_dirs
+        .iter()
+        .filter(|d| d.is_root == is_root_target)
+        .cloned()
+        .collect();
 
     if dirs.is_empty() {
         return Err(anyhow::anyhow!(
-            "Repository '{}' has no configured dots_dirs",
-            dotfile_repo.name
+            "Repository '{}' has no configured dots_dirs for {} paths",
+            dotfile_repo.name,
+            if is_root_target { "root" } else { "home" }
         ));
     }
 
@@ -107,8 +133,7 @@ fn select_dots_dir(dotfile_repo: &DotfileRepo) -> Result<DotfileDir> {
     }
 
     let items: Vec<DotsDirSelectItem> = dirs
-        .iter()
-        .cloned()
+        .into_iter()
         .map(|dots_dir| DotsDirSelectItem {
             dots_dir,
             repo_name: dotfile_repo.name.clone(),
@@ -147,19 +172,33 @@ pub fn add_dotfile(
     path: &str,
     add_all: bool,
     choose: bool,
+    force: bool,
+    encrypt: bool,
+    include_root: bool,
     debug: bool,
 ) -> Result<()> {
-    let all_dotfiles = get_all_dotfiles(config, db)?;
-    let target_path = resolve_dotfile_path(path)?;
-    let home = PathBuf::from(shellexpand::tilde("~").to_string());
-
-    // Handle --choose flag for single files
-    if choose && target_path.is_file() {
-        return add_with_destination_picker(config, db, &target_path);
-    }
+    let all_dotfiles = get_all_dotfiles(config, db, include_root)?;
+    let target_path = resolve_dotfile_path(path, include_root, true)?;
+    let home = home_dir();
 
     // Get tracked dotfiles within the specified path
     let tracked_dotfiles = filter_dotfiles_by_path(&all_dotfiles, &target_path);
+
+    // Handle --choose flag for single files
+    if choose && target_path.is_file() {
+        if tracked_dotfiles.is_empty()
+            && !force
+            && let Some(ignore_file) = crate::dot::insignore::match_home_path(&target_path)?
+        {
+            println!(
+                "{}",
+                crate::dot::insignore::format_skip_message(&target_path, &ignore_file)
+            );
+            return Ok(());
+        }
+
+        return add_with_destination_picker(config, db, &target_path, force);
+    }
 
     let mut stats = DirectoryAddStats::new();
 
@@ -171,13 +210,30 @@ pub fn add_dotfile(
     // Handle untracked files
     if add_all {
         // Scan for untracked files and add them
-        let (_, untracked_files) = scan_and_categorize_files(&target_path, &all_dotfiles);
-        add_untracked_files(&untracked_files, config, db, &mut stats, debug)?;
+        let (_, untracked_files) = scan_and_categorize_files(&target_path, &all_dotfiles, force)?;
+        add_untracked_files(
+            &untracked_files,
+            config,
+            db,
+            &mut stats,
+            force,
+            encrypt,
+            debug,
+        )?;
     } else if target_path.is_file() && tracked_dotfiles.is_empty() {
+        if !force && let Some(ignore_file) = crate::dot::insignore::match_home_path(&target_path)? {
+            println!(
+                "{}",
+                crate::dot::insignore::format_skip_message(&target_path, &ignore_file)
+            );
+            return Ok(());
+        }
+
         // Single untracked file - prompt to add it
-        let repo_path = add_new_file(config, db, &target_path)?;
-        stats.added_count += 1;
-        stats.modified_repos.insert(repo_path);
+        if let Some(repo_path) = add_new_file(config, db, &target_path, force, encrypt)? {
+            stats.added_count += 1;
+            stats.modified_repos.insert(repo_path);
+        }
     } else if tracked_dotfiles.is_empty() {
         // Directory with no tracked files
         let relative_dir = target_path.strip_prefix(&home).unwrap_or(&target_path);
@@ -207,22 +263,35 @@ fn add_with_destination_picker(
     config: &DotfileConfig,
     _db: &Database,
     target_path: &Path,
+    force: bool,
 ) -> Result<()> {
-    super::alternative::pick_destination_and_add(config, target_path)?;
+    super::alternative::pick_destination_and_add(config, target_path, force)?;
     Ok(())
 }
 
 /// Add a new untracked file and return the repo path
-fn add_new_file(config: &DotfileConfig, db: &Database, full_path: &Path) -> Result<PathBuf> {
+fn add_new_file(
+    config: &DotfileConfig,
+    db: &Database,
+    full_path: &Path,
+    force: bool,
+    encrypt: bool,
+) -> Result<Option<PathBuf>> {
     use super::alternative::add_to_destination;
+    use crate::dot::dotfilerepo::DotfileRepo;
     use crate::dot::override_config::DotfileSource;
+    use anyhow::Context;
 
     // Repository selection
-    let repo_config = select_repo(config, db)?;
+    let repo_config = select_repo(config, db, full_path)?;
     let dotfile_repo = DotfileRepo::new(config, repo_config.name.clone())?;
 
+    if !force && is_path_ignored_by_repo(config, &repo_config.name, full_path)? {
+        return Ok(None);
+    }
+
     // dots_dir selection
-    let chosen_dir = select_dots_dir(&dotfile_repo)?;
+    let chosen_dir = select_dots_dir(&dotfile_repo, full_path)?;
 
     // Build destination info
     let repo_base = dotfile_repo.local_path(config)?;
@@ -236,17 +305,54 @@ fn add_new_file(config: &DotfileConfig, db: &Database, full_path: &Path) -> Resu
         source_path: chosen_dir.path.clone(),
     };
 
-    // Use shared add function
-    add_to_destination(config, db, full_path, &dest)?;
+    let recipients = if encrypt {
+        let parsed = crate::dot::encryption::parse_recipients(&dotfile_repo.meta.encryption_recipients)
+            .with_context(|| {
+                format!(
+                    "repository '{}' has no usable encryption_recipients configured in instantdots.toml.\n\
+                     Please authorize decryption keys first using 'ins dot keys authorize'.",
+                    repo_config.name
+                )
+            })?;
+        Some(parsed)
+    } else {
+        None
+    };
 
-    Ok(repo_base)
+    // Use shared add function
+    if add_to_destination(config, db, full_path, &dest, force, recipients.as_deref())? {
+        Ok(Some(repo_base))
+    } else {
+        Ok(None)
+    }
+}
+
+fn is_path_ignored_by_repo(
+    config: &DotfileConfig,
+    repo_name: &str,
+    target_path: &Path,
+) -> Result<bool> {
+    let repo_root = config.repos_path().join(repo_name);
+
+    if let Some(ignore_file) =
+        crate::dot::insignore::match_repo_target_path(&repo_root, target_path)?
+    {
+        println!(
+            "{}",
+            crate::dot::insignore::format_skip_message(target_path, &ignore_file)
+        );
+        return Ok(true);
+    }
+
+    Ok(false)
 }
 
 /// Scan directory and categorize files as tracked or untracked
 fn scan_and_categorize_files(
     dir_path: &Path,
     all_dotfiles: &HashMap<PathBuf, Dotfile>,
-) -> (Vec<PathBuf>, Vec<PathBuf>) {
+    force: bool,
+) -> Result<(Vec<PathBuf>, Vec<PathBuf>)> {
     let mut tracked_files = Vec::new();
     let mut untracked_files = Vec::new();
 
@@ -263,13 +369,20 @@ fn scan_and_categorize_files(
 
             if all_dotfiles.contains_key(file_path) {
                 tracked_files.push(file_path.to_path_buf());
+            } else if !force
+                && let Some(ignore_file) = crate::dot::insignore::match_home_path(file_path)?
+            {
+                println!(
+                    "{}",
+                    crate::dot::insignore::format_skip_message(file_path, &ignore_file)
+                );
             } else {
                 untracked_files.push(file_path.to_path_buf());
             }
         }
     }
 
-    (tracked_files, untracked_files)
+    Ok((tracked_files, untracked_files))
 }
 
 /// Update a single tracked dotfile and return whether it was updated or unchanged
@@ -280,12 +393,12 @@ fn update_single_dotfile(dotfile: &Dotfile, config: &DotfileConfig, db: &Databas
         None
     };
 
-    dotfile.fetch(db)?;
+    dotfile.fetch(db, config)?;
 
     let new_source_hash = Dotfile::compute_hash(&dotfile.source_path)?;
     let has_changes = old_source_hash.as_ref() != Some(&new_source_hash);
 
-    let home = PathBuf::from(shellexpand::tilde("~").to_string());
+    let home = home_dir();
     let relative_path = dotfile
         .target_path
         .strip_prefix(&home)
@@ -367,6 +480,8 @@ fn add_untracked_files(
     config: &DotfileConfig,
     db: &Database,
     stats: &mut DirectoryAddStats,
+    force: bool,
+    encrypt: bool,
     _debug: bool,
 ) -> Result<()> {
     if file_paths.is_empty() {
@@ -380,9 +495,10 @@ fn add_untracked_files(
     );
 
     for file_path in file_paths {
-        let repo_path = add_new_file(config, db, file_path)?;
-        stats.added_count += 1;
-        stats.modified_repos.insert(repo_path);
+        if let Some(repo_path) = add_new_file(config, db, file_path, force, encrypt)? {
+            stats.added_count += 1;
+            stats.modified_repos.insert(repo_path);
+        }
     }
 
     Ok(())

@@ -12,7 +12,6 @@ use anyhow::Result;
 
 use super::DiscoveredGame;
 use crate::common::TildePath;
-use crate::game::utils::path::tilde_display_string;
 use crate::menu::protocol::FzfPreview;
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -114,7 +113,7 @@ impl DiscoveredGame for Pcsx2DiscoveredMemcard {
     }
 
     fn build_preview(&self) -> FzfPreview {
-        let save_display = tilde_display_string(&TildePath::new(self.memcard_path.clone()));
+        let save_display = TildePath::new(self.memcard_path.clone()).display_string();
         let header_name = self.tracked_name.as_deref().unwrap_or(&self.display_name);
 
         let mut builder = PreviewBuilder::new()

@@ -1,3 +1,4 @@
+use crate::common::home_dir;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -73,6 +74,11 @@ pub struct DotfileConfig {
     /// Combined with per-repo units from instantdots.toml.
     #[serde(default)]
     pub units: Vec<String>,
+    /// Paths to encryption key files (private keys) for decrypting `.age` dotfiles.
+    /// Paths are tilde-expanded and loaded in order alongside $AGE_IDENTITY and
+    /// the default paths under `<instant_config_dir>/encryption/`.
+    #[serde(default)]
+    pub encryption_keys: Vec<String>,
 }
 
 impl Default for DotfileConfig {
@@ -85,6 +91,7 @@ impl Default for DotfileConfig {
             database_dir: default_database_dir(),
             ignored_paths: Vec::new(),
             units: Vec::new(),
+            encryption_keys: Vec::new(),
         }
     }
 }
@@ -212,7 +219,8 @@ impl DotfileConfig {
     pub fn save(&self, custom_path: Option<&str>) -> Result<()> {
         let cfg_path = config_file_path(custom_path)?;
         let toml = toml::to_string_pretty(self).context("serializing config to toml")?;
-        fs::write(cfg_path, toml).context("writing config file")?;
+        crate::dot::utils::persist_file_safely(&cfg_path, toml.as_bytes(), "dotfile config")
+            .context("writing config file")?;
         Ok(())
     }
 
@@ -316,7 +324,7 @@ impl DotfileConfig {
 
     /// Check if a path should be ignored
     pub fn is_path_ignored(&self, path: &Path) -> bool {
-        let home = PathBuf::from(shellexpand::tilde("~").to_string());
+        let home = home_dir();
 
         for ignored in &self.ignored_paths {
             let ignored_path = if ignored.starts_with('~') {
@@ -557,5 +565,6 @@ documented_config!(DotfileConfig,
     repos, "List of dotfile repositories to manage",
     ignored_paths, "Paths to ignore during dotfile operations (local overrides)",
     units, "Global dotfile units - directories treated as atomic (combined with per-repo units)",
+    encryption_keys, "Paths to encryption key files (private keys) for decrypting .age dotfiles; tilde-expanded, loaded after $AGE_IDENTITY",
     => config_file_path(None)
 );

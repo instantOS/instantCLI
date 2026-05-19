@@ -45,13 +45,7 @@ pub fn calculate_free_regions_from_json(
 
     let pt = output.partitiontable;
     let sector_size = pt.sectorsize;
-    let disk_size_sectors = disk_size_bytes.and_then(|b| {
-        if sector_size > 0 {
-            Some(b / sector_size)
-        } else {
-            None
-        }
-    });
+    let disk_size_sectors = disk_size_bytes.and_then(|b| b.checked_div(sector_size));
     let mut partitions = pt.partitions.unwrap_or_default();
 
     let first_lba = pt
@@ -329,5 +323,40 @@ mod tests {
         assert_eq!(regions.len(), 1);
         assert_eq!(regions[0].start, 2048 + 4096); // partition end + 1
         assert_eq!(regions[0].sectors, 100000 - (2048 + 4096));
+    }
+
+    #[test]
+    fn test_get_free_regions_e2e() {
+        use crate::arch::dualboot::test_utils::{GPT_DUAL_BOOT_SCRIPT, TestDisk};
+
+        // Create a 2GB disk image
+        let disk = TestDisk::new(2048);
+        disk.partition(GPT_DUAL_BOOT_SCRIPT);
+
+        let regions = get_free_regions(disk.path_str(), Some(disk.size_mb * 1024 * 1024)).unwrap();
+
+        // GPT_DUAL_BOOT_SCRIPT uses:
+        // 100M EFI (starts at 2048)
+        // 500M Linux
+        // 1G Windows
+        // Total partitioned: ~1.6G. There should be free space at the end.
+        assert!(!regions.is_empty());
+        let last_region = regions.last().unwrap();
+        assert!(last_region.size_bytes > 300 * 1024 * 1024); // At least 300MB free at end
+    }
+
+    #[test]
+    fn test_get_free_regions_mbr_e2e() {
+        use crate::arch::dualboot::test_utils::{MBR_SCRIPT, TestDisk};
+
+        let disk = TestDisk::new(1024); // 1GB disk
+        disk.partition(MBR_SCRIPT);
+
+        let regions = get_free_regions(disk.path_str(), Some(disk.size_mb * 1024 * 1024)).unwrap();
+
+        // MBR_SCRIPT has 100M + 500M = 600M. Should have ~400M free.
+        assert!(!regions.is_empty());
+        let last_region = regions.last().unwrap();
+        assert!(last_region.size_bytes > 350 * 1024 * 1024);
     }
 }

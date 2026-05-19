@@ -1,4 +1,6 @@
 pub mod audio;
+pub mod blockdev;
+pub mod commands;
 pub mod compositor;
 pub mod config;
 pub mod deps;
@@ -20,4 +22,4 @@ pub mod terminal;
 pub mod tilde_path;
 
 // Re-export commonly used types
-pub use tilde_path::TildePath;
+pub use tilde_path::{TildePath, home_dir};

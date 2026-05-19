@@ -12,8 +12,9 @@ use walkdir::WalkDir;
 use crate::game::platforms::discovery::{
     self as platform_discovery, DiscoveredGame, DiscoveryEvent, DiscoverySource,
 };
+use crate::game::platforms::ludusavi::choose_primary_save;
 use crate::menu_utils::StreamingMenuItem;
-use crate::preview::{GameSavePreviewPayload, preview_command_for_game_save};
+use crate::preview::GameSavePreviewPayload;
 use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::prelude::{Level, OutputFormat, emit, get_output_format};
@@ -440,33 +441,33 @@ fn stream_generic_prefix_records<F>(
 where
     F: FnMut(DiscoveredGameWithPreview) -> Result<()>,
 {
-    crate::game::platforms::ludusavi::stream_primary_wine_prefix_saves_with_scan_root(
-        prefix,
-        scan_root,
-        |save| {
-            let display_name = if save.game_name.trim().is_empty() {
-                "Unknown Wine Game".to_string()
-            } else {
-                save.game_name
-            };
-            let save_path = PathBuf::from(save.save_path);
-            let existing_name =
-                context.and_then(|ctx| find_existing_game(&display_name, save_path.as_path(), ctx));
+    crate::game::platforms::ludusavi::stream_wine_prefix_saves(prefix, scan_root, |game_saves| {
+        let save = match choose_primary_save(game_saves) {
+            Some(s) => s,
+            None => return Ok(()),
+        };
+        let display_name = if save.game_name.trim().is_empty() {
+            "Unknown Wine Game".to_string()
+        } else {
+            save.game_name
+        };
+        let save_path = PathBuf::from(save.save_path);
+        let existing_name =
+            context.and_then(|ctx| find_existing_game(&display_name, save_path.as_path(), ctx));
 
-            let mut game = crate::game::platforms::discovery::wine::WineDiscoveredGame::new(
-                display_name,
-                prefix.to_path_buf(),
-                save_path,
-            );
+        let mut game = crate::game::platforms::discovery::wine::WineDiscoveredGame::new(
+            display_name,
+            prefix.to_path_buf(),
+            save_path,
+        );
 
-            if let Some(existing_name) = existing_name {
-                game.set_existing(existing_name);
-            }
+        if let Some(existing_name) = existing_name {
+            game.set_existing(existing_name);
+        }
 
-            on_game(into_record_with_preview(Box::new(game), context))?;
-            Ok(())
-        },
-    )?;
+        on_game(into_record_with_preview(Box::new(game), context))?;
+        Ok(())
+    })?;
 
     Ok(())
 }
@@ -738,16 +739,19 @@ fn preview_to_text(preview: FzfPreview) -> String {
 }
 
 fn discovered_menu_preview(record: &DiscoveredGameRecord) -> FzfPreview {
-    FzfPreview::Command(preview_command_for_game_save(&GameSavePreviewPayload {
-        name: record.name.clone(),
-        platform: record.platform.clone(),
-        platform_short: record.platform_short.clone(),
-        save_path: record.save_path.clone(),
-        game_path: record.game_path.clone(),
-        prefix_path: record.prefix_path.clone(),
-        existing: record.existing,
-        tracked_name: record.tracked_name.clone(),
-    }))
+    FzfPreview::Command(
+        GameSavePreviewPayload {
+            name: record.name.clone(),
+            platform: record.platform.clone(),
+            platform_short: record.platform_short.clone(),
+            save_path: record.save_path.clone(),
+            game_path: record.game_path.clone(),
+            prefix_path: record.prefix_path.clone(),
+            existing: record.existing,
+            tracked_name: record.tracked_name.clone(),
+        }
+        .preview_command(),
+    )
 }
 
 #[derive(Clone)]

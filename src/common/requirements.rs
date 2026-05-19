@@ -24,7 +24,9 @@ impl InstallTest {
         match self {
             InstallTest::WhichSucceeds(program) => which::which(program).is_ok(),
             InstallTest::FileExists(path) => Path::new(path).exists(),
-            InstallTest::CommandSucceeds { program, args } => cmd(program, args).run().is_ok(),
+            InstallTest::CommandSucceeds { program, args } => {
+                cmd(program, args).stdout_null().stderr_null().run().is_ok()
+            }
         }
     }
 }

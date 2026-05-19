@@ -1,3 +1,4 @@
+use crate::common::home_dir;
 use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
 use crate::dot::dotfile::Dotfile;
@@ -7,7 +8,7 @@ use crate::ui::prelude::*;
 use anyhow::Context;
 use anyhow::Result;
 use colored::*;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Stdio;
 
 enum DotfileSkip {
@@ -249,9 +250,9 @@ pub fn merge_dotfile(
     path: &str,
     verbose: bool,
 ) -> Result<()> {
-    let all_dotfiles = get_all_dotfiles(config, db)?;
-    let target_path = resolve_dotfile_path(path)?;
-    let home = PathBuf::from(shellexpand::tilde("~").to_string());
+    let all_dotfiles = get_all_dotfiles(config, db, false)?;
+    let target_path = resolve_dotfile_path(path, false, true)?;
+    let home = home_dir();
 
     let dotfiles_in_path = filter_dotfiles_by_path(&all_dotfiles, &target_path);
 
@@ -276,6 +277,20 @@ pub fn merge_dotfile(
     let mut modified_count = 0;
 
     for dotfile in dotfiles_in_path {
+        if dotfile.kind == crate::dot::dotfile::SourceKind::Age {
+            emit(
+                Level::Warn,
+                "dot.merge.encrypted_unsupported",
+                &format!(
+                    "{} Merging is not yet supported for encrypted files: {}",
+                    char::from(NerdFont::ShieldAlert),
+                    crate::dot::display_path(&dotfile.target_path, dotfile.is_root).yellow()
+                ),
+                None,
+            );
+            continue;
+        }
+
         match should_skip_dotfile(dotfile, config, db, &home, verbose)? {
             Some(DotfileSkip::ReadOnly) => continue,
             Some(DotfileSkip::Unmodified) => {

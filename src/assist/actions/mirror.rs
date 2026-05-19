@@ -382,6 +382,7 @@ fn create_menu_item(
     }
 
     SerializableMenuItem {
+        key: None,
         display_text: display_text.to_string(),
         preview: FzfPreview::None,
         metadata: Some(metadata),

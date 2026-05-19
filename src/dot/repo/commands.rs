@@ -35,6 +35,7 @@ pub fn handle_repo_command(
                 read_only: args.read_only,
                 force_write: args.force_write,
                 debug,
+                root_flags: &args.root_flags,
             },
         ),
         RepoCommands::Remove { name, keep_files } => {

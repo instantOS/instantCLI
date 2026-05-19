@@ -29,19 +29,6 @@ impl LaunchItem {
             LaunchItem::PathExecutable(_) => "path",
         }
     }
-
-    pub fn metadata_key(&self) -> String {
-        match self {
-            LaunchItem::DesktopApp(id) => format!("desktop:{id}"),
-            LaunchItem::PathExecutable(name) => {
-                if name.starts_with("path:") {
-                    name.clone()
-                } else {
-                    format!("path:{name}")
-                }
-            }
-        }
-    }
 }
 
 impl std::fmt::Display for LaunchItem {

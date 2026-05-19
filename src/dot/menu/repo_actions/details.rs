@@ -34,10 +34,6 @@ impl FzfSelectable for DetailActionItem {
         self.display.clone()
     }
 
-    fn fzf_key(&self) -> String {
-        self.display.clone()
-    }
-
     fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
         crate::menu::protocol::FzfPreview::Text(self.preview.clone())
     }
@@ -320,10 +316,6 @@ enum UnitMenuAction {
 
 impl FzfSelectable for UnitMenuItem {
     fn fzf_display_text(&self) -> String {
-        self.display.clone()
-    }
-
-    fn fzf_key(&self) -> String {
         self.display.clone()
     }
 

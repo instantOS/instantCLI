@@ -10,8 +10,8 @@ use anyhow::Result;
 
 use super::DiscoveredGame;
 use crate::common::TildePath;
-use crate::game::platforms::ludusavi::stream_primary_wine_prefix_saves;
-use crate::game::utils::path::{is_valid_wine_prefix, tilde_display_string};
+use crate::game::platforms::ludusavi::{choose_primary_save, stream_wine_prefix_saves};
+use crate::game::utils::path::is_valid_wine_prefix;
 use crate::menu::protocol::FzfPreview;
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -84,8 +84,8 @@ impl DiscoveredGame for WineDiscoveredGame {
     }
 
     fn build_preview(&self) -> FzfPreview {
-        let prefix_display = tilde_display_string(&TildePath::new(self.prefix_path.clone()));
-        let save_display = tilde_display_string(&TildePath::new(self.save_path.clone()));
+        let prefix_display = TildePath::new(self.prefix_path.clone()).display_string();
+        let save_display = TildePath::new(self.save_path.clone()).display_string();
         let header_name = self.tracked_name.as_deref().unwrap_or(&self.display_name);
 
         let mut builder = PreviewBuilder::new()
@@ -132,15 +132,6 @@ pub fn is_wine_installed() -> bool {
     })
 }
 
-pub fn discover_wine_games() -> Result<Vec<WineDiscoveredGame>> {
-    let mut results = Vec::new();
-    stream_discover_wine_games(|game| {
-        results.push(game);
-        Ok(())
-    })?;
-    Ok(results)
-}
-
 pub fn stream_discover_wine_games<F>(mut on_game: F) -> Result<()>
 where
     F: FnMut(WineDiscoveredGame) -> Result<()>,
@@ -156,31 +147,24 @@ where
     Ok(())
 }
 
-pub fn discover_wine_games_in_prefix(prefix: &Path) -> Result<Vec<WineDiscoveredGame>> {
-    let mut results = Vec::new();
-    stream_discover_wine_games_in_prefix(prefix, |game| {
-        results.push(game);
-        Ok(())
-    })?;
-    Ok(results)
-}
-
 pub fn stream_discover_wine_games_in_prefix<F>(prefix: &Path, mut on_game: F) -> Result<()>
 where
     F: FnMut(WineDiscoveredGame) -> Result<()>,
 {
-    stream_primary_wine_prefix_saves(prefix, |save| {
-        let display_name = if save.game_name.trim().is_empty() {
-            "Unknown Wine Game".to_string()
-        } else {
-            save.game_name
-        };
+    stream_wine_prefix_saves(prefix, None, |game_saves| {
+        if let Some(save) = choose_primary_save(game_saves) {
+            let display_name = if save.game_name.trim().is_empty() {
+                "Unknown Wine Game".to_string()
+            } else {
+                save.game_name
+            };
 
-        on_game(WineDiscoveredGame::new(
-            display_name,
-            prefix.to_path_buf(),
-            PathBuf::from(save.save_path),
-        ))?;
+            on_game(WineDiscoveredGame::new(
+                display_name,
+                prefix.to_path_buf(),
+                PathBuf::from(save.save_path),
+            ))?;
+        }
         Ok(())
     })
 }

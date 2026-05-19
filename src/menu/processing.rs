@@ -99,8 +99,8 @@ impl RequestProcessor {
     /// Handle message dialog request
     fn handle_message_request(&self, title: String, message: String) -> Result<MenuResponse> {
         match FzfWrapper::builder()
-            .title(title)
             .message(&message)
+            .title(title)
             .message_dialog()
         {
             Ok(()) => Ok(MenuResponse::MessageResult),

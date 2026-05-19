@@ -3,10 +3,9 @@
 //! Provides pretty-printed output for disk and partition information.
 //! Uses simple row-based output similar to `ins arch info`.
 
+use crate::arch::dualboot::types::{DiskInfo, OSType, PartitionInfo};
 use crate::ui::nerd_font::NerdFont;
 use colored::Colorize;
-
-use super::{DiskInfo, OSType, PartitionInfo};
 
 /// Display all detected disks with their partitions
 pub fn display_disks(disks: &[&DiskInfo]) {
@@ -25,7 +24,7 @@ pub fn display_disks(disks: &[&DiskInfo]) {
     }
 }
 
-/// Display a single disk with its partitions
+/// Display a disk with its partitions
 pub fn display_disk(disk: &DiskInfo) {
     // Disk header
     println!(
@@ -51,27 +50,23 @@ pub fn display_disk(disk: &DiskInfo) {
 }
 
 /// Display a single partition as a row
-fn display_partition_row(partition: &PartitionInfo) {
-    // Extract partition name from full path (/dev/nvme0n1p2 -> nvme0n1p2)
+pub fn display_partition_row(partition: &PartitionInfo) {
     let name = partition
         .device
         .strip_prefix("/dev/")
         .unwrap_or(&partition.device);
 
-    // Filesystem type
     let fs_type = partition
         .filesystem
         .as_ref()
         .map(|f| f.fs_type.as_str())
         .unwrap_or("-");
 
-    // Format type/fs string like "ext4 [83]" or just "ext4"
     let type_str = match &partition.partition_type {
         Some(pt) => format!("{} [{}]", fs_type, pt),
         None => fs_type.to_string(),
     };
 
-    // OS detection with icon - EFI partitions get special treatment
     let (os_icon, os_text) = if partition.is_efi {
         (
             NerdFont::Efi.to_string(),
@@ -98,10 +93,8 @@ fn display_partition_row(partition: &PartitionInfo) {
         }
     };
 
-    // Resize info - EFI partitions show reuse message in green
     let resize_text = match &partition.resize_info {
         Some(info) if partition.is_efi => {
-            // EFI partitions: show reuse message
             let reason = info
                 .reason
                 .as_ref()
@@ -137,7 +130,6 @@ fn display_partition_row(partition: &PartitionInfo) {
         os_text
     );
 
-    // Show resize info on separate line if present and interesting
     if let Some(info) = &partition.resize_info {
         if info.can_shrink || info.reason.is_some() {
             println!(
@@ -147,7 +139,6 @@ fn display_partition_row(partition: &PartitionInfo) {
             );
         }
 
-        // Show prerequisites if any
         if !info.prerequisites.is_empty() {
             for prereq in &info.prerequisites {
                 println!(

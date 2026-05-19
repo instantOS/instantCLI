@@ -2,6 +2,7 @@
 
 mod action_menu;
 mod details;
+mod encryption;
 mod handlers;
 mod preview;
 

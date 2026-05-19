@@ -87,10 +87,6 @@ impl FzfSelectable for PauseMenuItem {
     fn fzf_preview(&self) -> FzfPreview {
         self.preview()
     }
-
-    fn fzf_key(&self) -> String {
-        self.to_string()
-    }
 }
 
 #[derive(Clone)]
@@ -163,10 +159,6 @@ impl FzfSelectable for FinalReviewItem {
     fn fzf_preview(&self) -> FzfPreview {
         FzfPreview::None
     }
-
-    fn fzf_key(&self) -> String {
-        self.to_string()
-    }
 }
 
 fn review_answers_preview() -> FzfPreview {
@@ -189,6 +181,97 @@ fn abort_installation_preview() -> FzfPreview {
             "Exits before installation starts.",
         )
         .build()
+}
+
+#[derive(Clone)]
+enum ReviewItem {
+    Continue,
+    Question {
+        index: usize,
+        id: String,
+        description: String,
+        answer: String,
+        is_sensitive: bool,
+    },
+}
+
+impl FzfSelectable for ReviewItem {
+    fn fzf_display_text(&self) -> String {
+        match self {
+            ReviewItem::Continue => format!(
+                "{} Continue with installation",
+                format_icon_colored(NerdFont::ArrowRight, colors::GREEN)
+            ),
+            ReviewItem::Question {
+                id,
+                answer,
+                is_sensitive,
+                ..
+            } => {
+                let display_ans = if *is_sensitive {
+                    "******".to_string()
+                } else {
+                    answer.clone()
+                };
+                let truncated = if display_ans.len() > 50 {
+                    format!("{}…", &display_ans[..47])
+                } else {
+                    display_ans
+                };
+                format!(
+                    "{} {}: {}",
+                    format_icon_colored(NerdFont::Check, colors::TEAL),
+                    id,
+                    truncated,
+                )
+            }
+        }
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        match self {
+            ReviewItem::Continue => PreviewBuilder::new()
+                .header(NerdFont::ArrowRight, "Continue with installation")
+                .text("Resume the installation flow.")
+                .blank()
+                .line(
+                    colors::GREEN,
+                    Some(NerdFont::Check),
+                    "All reviewed answers will be kept.",
+                )
+                .build(),
+            ReviewItem::Question {
+                id,
+                description,
+                answer,
+                is_sensitive,
+                ..
+            } => {
+                let display_ans = if *is_sensitive {
+                    "******".to_string()
+                } else {
+                    answer.clone()
+                };
+                let mut builder = PreviewBuilder::new().header(NerdFont::Question, id);
+                if !description.is_empty() {
+                    builder = builder.subtext(description);
+                }
+                builder
+                    .blank()
+                    .field("Current Answer", &display_ans)
+                    .blank()
+                    .line(colors::TEAL, None, "Select to re-answer this question.")
+                    .build()
+            }
+        }
+    }
+
+    fn fzf_key(&self) -> String {
+        match self {
+            ReviewItem::Continue => "continue".to_string(),
+            ReviewItem::Question { index, .. } => format!("q_{}", index),
+        }
+    }
 }
 
 fn build_final_review_preview(item: &FinalReviewItem, summary: &InstallSummary) -> FzfPreview {
@@ -252,17 +335,17 @@ impl QuestionEngine {
     fn handle_review(&self, current_index: usize) -> Result<Option<usize>> {
         let mut review_items = Vec::new();
 
-        let continue_opt = format!("{} Continue with installation", NerdFont::ArrowRight);
-        review_items.push(continue_opt.clone());
+        review_items.push(ReviewItem::Continue);
 
-        for q in self.questions.iter().take(current_index) {
+        for (i, q) in self.questions.iter().enumerate().take(current_index) {
             if let Some(ans) = self.context.get_answer(&q.id()) {
-                let display_ans = if q.is_sensitive() {
-                    "******"
-                } else {
-                    ans.as_str()
-                };
-                review_items.push(format!("{} {:?}: {}", NerdFont::Check, q.id(), display_ans));
+                review_items.push(ReviewItem::Question {
+                    index: i,
+                    id: format!("{:?}", q.id()),
+                    description: q.description().unwrap_or("").to_string(),
+                    answer: ans.clone(),
+                    is_sensitive: q.is_sensitive(),
+                });
             }
         }
 
@@ -272,34 +355,26 @@ impl QuestionEngine {
         }
 
         let review = FzfWrapper::builder()
-            .header("Select a question to modify")
+            .header(Header::fancy("Select a question to modify"))
+            .prompt("Search")
+            .args(fzf_mocha_args())
+            .responsive_layout()
             .select(review_items)?;
 
-        if let FzfResult::Selected(selection) = review {
-            if selection == continue_opt {
-                return Ok(None);
-            }
-
-            // Format: "ICON QuestionId: Answer"
-            let parts: Vec<&str> = selection.splitn(3, ' ').collect();
-            if parts.len() >= 2 {
-                let id_str = parts[1].trim_end_matches(':');
-                if let Some(new_index) = self
-                    .questions
-                    .iter()
-                    .position(|q| format!("{:?}", q.id()) == id_str)
-                {
-                    return Ok(Some(new_index));
-                }
-            }
+        match review {
+            FzfResult::Selected(ReviewItem::Continue) => Ok(None),
+            FzfResult::Selected(ReviewItem::Question { index, .. }) => Ok(Some(index)),
+            _ => Ok(None),
         }
-        Ok(None)
     }
 
     fn handle_go_back(&self, mut index: usize) -> usize {
         if index > 0 {
             index -= 1;
-            while index > 0 && !self.questions[index].should_ask(&self.context) {
+            while index > 0
+                && (!self.questions[index].should_ask(&self.context)
+                    || self.questions[index].is_info_only())
+            {
                 index -= 1;
             }
         }
@@ -317,7 +392,7 @@ impl QuestionEngine {
                     // Check for fatal provider errors before asking
                     if let Some(error_msg) = self.questions[idx].fatal_error_message(&self.context)
                     {
-                        self.show_fatal_error_and_exit(&error_msg)?;
+                        self.show_fatal_error_and_exit(&error_msg);
                     }
 
                     loop {
@@ -367,13 +442,12 @@ impl QuestionEngine {
     }
 
     /// Show a fatal error message and exit the installer
-    fn show_fatal_error_and_exit(&self, message: &str) -> Result<()> {
+    fn show_fatal_error_and_exit(&self, message: &str) -> ! {
         let full_message = format!(
             "{} Fatal Error\n\n{}\n\nThe installation cannot continue.",
             NerdFont::CrossCircle,
             message
         );
-        // Show fatal error dialog
         let _ = FzfWrapper::message(&full_message);
         std::process::exit(1);
     }

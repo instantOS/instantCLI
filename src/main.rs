@@ -14,7 +14,9 @@ mod game;
 mod launch;
 mod menu;
 mod menu_utils;
+mod pass;
 mod preview;
+mod resolvething;
 mod restic;
 mod scratchpad;
 mod self_update;
@@ -50,6 +52,8 @@ use crate::debug::DebugCommands;
 use crate::dev::DevCommands;
 use crate::doctor::DoctorCommands;
 use crate::dot::commands::DotCommands;
+use crate::pass::PassCommands;
+use crate::resolvething::ResolvethingCommands;
 use crate::scratchpad::ScratchpadCommand;
 use crate::settings::SettingsCommands;
 use crate::welcome::WelcomeCommands;
@@ -113,6 +117,11 @@ enum Commands {
         #[command(subcommand)]
         command: game::GameCommands,
     },
+    /// Resolve duplicate files and Syncthing conflicts
+    Resolvething {
+        #[command(subcommand)]
+        command: ResolvethingCommands,
+    },
     /// System diagnostics and fixes
     Doctor {
         #[command(subcommand)]
@@ -131,6 +140,17 @@ enum Commands {
         /// List available applications instead of launching
         #[arg(long)]
         list: bool,
+    },
+    /// Password-store integration backed by `pass`
+    Pass {
+        /// List available entries instead of opening the interactive picker
+        #[arg(long)]
+        list: bool,
+        /// Open the pass menu using the instantmenu server
+        #[arg(long = "gui")]
+        gui: bool,
+        #[command(subcommand)]
+        command: Option<PassCommands>,
     },
     /// Quick assist actions
     Assist {
@@ -252,6 +272,12 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
                 "Error handling game command",
             )?;
         }
+        Some(Commands::Resolvething { command }) => {
+            execute_with_error_handling(
+                resolvething::handle_resolvething_command(command.clone(), cli.debug),
+                "Error handling resolvething command",
+            )?;
+        }
         Some(Commands::Dot { command }) => {
             execute_with_error_handling(
                 dot::commands::handle_dot_command(command, cli.config.as_deref(), cli.debug),
@@ -266,6 +292,10 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
         }
         Some(Commands::Launch { list }) => {
             let exit_code = launch::handle_launch_command(*list).await?;
+            std::process::exit(exit_code);
+        }
+        Some(Commands::Pass { list, gui, command }) => {
+            let exit_code = pass::handle_pass_command(*gui, cli.debug, *list, command.clone())?;
             std::process::exit(exit_code);
         }
         Some(Commands::Assist {

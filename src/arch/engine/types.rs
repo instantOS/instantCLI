@@ -12,6 +12,7 @@ pub enum QuestionId {
     Timezone,
     Locale,
     Kernel,
+    DesktopEnvironment,
     UseEncryption,
     EncryptionPassword,
     UsePlymouth,
@@ -34,6 +35,7 @@ pub enum QuestionId {
     DualBootInstructions,
 }
 
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub enum BootMode {
     UEFI64,

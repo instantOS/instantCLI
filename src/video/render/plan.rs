@@ -3,7 +3,7 @@ use std::path::Path;
 use anyhow::{Result, bail};
 
 use crate::ui::prelude::Level;
-use crate::video::planning::{TimelinePlan, align_plan_with_subtitles, plan_timeline};
+use crate::video::planning::{TimelinePlan, align_plan_with_subtitles};
 use crate::video::render::logging::log_event;
 
 pub(crate) fn build_timeline_plan(
@@ -16,7 +16,7 @@ pub(crate) fn build_timeline_plan(
         "video.render.plan",
         "Planning timeline (selecting clips, overlays, cards)",
     );
-    let mut plan = plan_timeline(document)?;
+    let mut plan = document.plan_timeline()?;
 
     if plan.items.is_empty() {
         bail!(

@@ -5,7 +5,6 @@ use crate::dot::db::DotFileType;
 use crate::dot::dotfilerepo as repo_mod;
 use crate::dot::get_all_dotfiles;
 use anyhow::{Context, Result};
-use git2::Repository;
 use std::path::PathBuf;
 
 /// Get the dotfile directory name for a dotfile
@@ -53,7 +52,7 @@ pub fn add_repo(config: &mut DotfileConfig, repo: config::Repo, debug: bool) -> 
 
     let mut skip_clone = false;
     if target.exists() {
-        if Repository::open(&target).is_ok() {
+        if crate::common::git::is_git_repo(&target) {
             if debug {
                 eprintln!(
                     "Destination '{}' already exists and is a git repository. Skipping clone.",
@@ -83,20 +82,20 @@ pub fn add_repo(config: &mut DotfileConfig, repo: config::Repo, debug: bool) -> 
     if !skip_clone {
         let pb = common::progress::create_spinner(format!("Cloning {}...", clone_url));
 
-        git::clone_repo(&clone_url, &target, repo.branch.as_deref(), depth)
+        // Suspend the spinner around the clone so SSH/credential prompts and
+        // git's own progress are visible on the user's terminal.
+        pb.suspend(|| git::clone_repo(&clone_url, &target, repo.branch.as_deref(), depth))
             .context("Failed to clone repository")?;
 
         common::progress::finish_spinner_with_success(pb, format!("Cloned {}", clone_url));
     } else if let Some(branch) = repo.branch.as_deref() {
         // If we reused an existing repo, try to ensure the correct branch is checked out
-        if let Ok(mut repo_instance) = Repository::open(&target) {
-            if let Err(e) = git::checkout_branch(&mut repo_instance, branch) {
-                if debug {
-                    eprintln!("Warning: Failed to checkout branch '{}': {}", branch, e);
-                }
-            } else if debug {
-                eprintln!("Checked out branch '{}'", branch);
+        if let Err(e) = git::checkout_branch(&target, branch) {
+            if debug {
+                eprintln!("Warning: Failed to checkout branch '{}': {}", branch, e);
             }
+        } else if debug {
+            eprintln!("Checked out branch '{}'", branch);
         }
     }
 
@@ -145,15 +144,15 @@ pub fn add_repo(config: &mut DotfileConfig, repo: config::Repo, debug: bool) -> 
     // Initialize database with source file hashes to prevent false "modified" status
     // when identical files already exist in the home directory
     if let Ok(db) = crate::dot::db::Database::new(config.database_path().to_path_buf())
-        && let Ok(dotfiles) = get_all_dotfiles(config, &db)
+        && let Ok(dotfiles) = get_all_dotfiles(config, &db, false)
     {
         for (_, dotfile) in dotfiles {
             // Only register hashes for dotfiles from this repository
             if dotfile.source_path.starts_with(&target) {
-                // Register the source file hash with source_file=true
-                if let Ok(source_hash) =
-                    crate::dot::dotfile::Dotfile::compute_hash(&dotfile.source_path)
-                {
+                // Register the source file hash with source_file=true. Use the
+                // Dotfile hash API rather than raw bytes so encrypted sources
+                // record their plaintext hash.
+                if let Ok(source_hash) = dotfile.get_file_hash(&dotfile.source_path, true, &db) {
                     db.add_hash(&source_hash, &dotfile.source_path, DotFileType::SourceFile)?; // source_file=true
 
                     // If the target file exists and has the same content,
@@ -178,6 +177,7 @@ pub fn update_all(
     debug: bool,
     db: &crate::dot::db::Database,
     should_apply: bool,
+    include_root: bool,
 ) -> Result<()> {
     let repos = cfg.repos.clone();
     if repos.is_empty() {
@@ -203,7 +203,7 @@ pub fn update_all(
     }
 
     if should_apply {
-        crate::dot::operations::apply_all(cfg, db)?;
+        crate::dot::operations::apply_all(cfg, db, include_root, false)?;
     }
 
     if any_failed {

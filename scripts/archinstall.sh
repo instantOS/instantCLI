@@ -22,8 +22,6 @@ fi
 
 # Now install required packages
 echo "Installing dependencies..."
-pacman -S --needed libgit2 --noconfirm
 curl https://stuff.paperbenni.xyz/ins > ins
 chmod +x ins
 ./ins arch install
-

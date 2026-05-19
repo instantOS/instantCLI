@@ -25,6 +25,9 @@ pub fn format_size(bytes: u64) -> String {
 /// Minimum ESP size for dual boot (260 MB recommended for multi-OS)
 pub const MIN_ESP_SIZE: u64 = 260 * 1024 * 1024;
 
+/// Minimum size for a partition to be considered a valid shrink candidate (2 GB)
+const MIN_SHRINK_CANDIDATE_SIZE: u64 = 2 * 1024 * 1024 * 1024;
+
 /// Information about a physical disk
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiskInfo {
@@ -60,9 +63,97 @@ impl DiskInfo {
             .iter()
             .find(|p| p.is_efi && p.size_bytes >= MIN_ESP_SIZE)
     }
+
+    /// Check if dual boot is feasible on this disk
+    pub fn check_disk_dualboot_feasibility(&self) -> DualBootFeasibility {
+        let feasible_partitions: Vec<String> = self
+            .partitions
+            .iter()
+            .filter(|p| p.is_dualboot_feasible())
+            .map(|p| p.device.clone())
+            .collect();
+
+        // Check if we have enough unpartitioned space
+        // We check CONTIGUOUS space to ensure we can actually create the partition
+        let free_space_bytes = self.max_contiguous_free_space_bytes;
+        let has_unpartitioned_space = free_space_bytes >= crate::arch::dualboot::MIN_LINUX_SIZE;
+
+        if feasible_partitions.is_empty() {
+            if has_unpartitioned_space {
+                return DualBootFeasibility {
+                    feasible: true,
+                    feasible_partitions: vec![], // No specific partition to resize, but disk is feasible
+                    reason: Some(format!(
+                        "Unpartitioned space available: {}",
+                        format_size(free_space_bytes)
+                    )),
+                };
+            }
+
+            // Check if there are any partitions at all
+            if self.partitions.is_empty() {
+                // If empty partitions AND not enough space (checked above), then disk is too small
+                DualBootFeasibility {
+                    feasible: false,
+                    feasible_partitions: vec![],
+                    reason: Some(format!(
+                        "Disk too small or full (Largest free region: {})",
+                        format_size(self.max_contiguous_free_space_bytes)
+                    )),
+                }
+            } else {
+                // Check if there are shrinkable partitions but not enough space
+                let shrinkable: Vec<_> = self
+                    .partitions
+                    .iter()
+                    .filter(|p| {
+                        !p.is_efi
+                            && p.resize_info
+                                .as_ref()
+                                .map(|r| r.can_shrink)
+                                .unwrap_or(false)
+                    })
+                    .collect();
+
+                // Filter out partitions that are way too small (e.g. < 2GB) to be relevant candidates
+                // This prevents misleading messages like "shrinkable partitions found" when only a tiny /boot exists
+                let valid_candidates: Vec<_> = shrinkable
+                    .iter()
+                    .filter(|p| p.size_bytes >= MIN_SHRINK_CANDIDATE_SIZE)
+                    .collect();
+
+                if valid_candidates.is_empty() {
+                    DualBootFeasibility {
+                        feasible: false,
+                        feasible_partitions: vec![],
+                        reason: Some(
+                            "No suitable partitions found (too small or not shrinkable)"
+                                .to_string(),
+                        ),
+                    }
+                } else {
+                    DualBootFeasibility {
+                        feasible: false,
+                        feasible_partitions: vec![],
+                        reason: Some(format!(
+                            "Shrinkable partitions found, but none have enough free space for Linux (need {})",
+                            format_size(crate::arch::dualboot::MIN_LINUX_SIZE)
+                        )),
+                    }
+                }
+            }
+        } else {
+            DualBootFeasibility {
+                feasible: true,
+                feasible_partitions,
+                reason: None,
+            }
+        }
+    }
 }
 
 /// Partition table type
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum PartitionTableType {
     GPT,
@@ -106,6 +197,45 @@ impl PartitionInfo {
     pub fn size_human(&self) -> String {
         format_size(self.size_bytes)
     }
+
+    /// Check if a partition is feasible for dual boot installation
+    pub fn is_dualboot_feasible(&self) -> bool {
+        // Cannot resize EFI partitions
+        if self.is_efi {
+            return false;
+        }
+
+        if !is_supported_auto_resize_fs(self) {
+            return false;
+        }
+
+        // Must be shrinkable
+        let resize_info = match self.resize_info.as_ref() {
+            Some(info) => info,
+            None => return false,
+        };
+
+        let can_shrink = resize_info.can_shrink;
+
+        if !can_shrink {
+            return false;
+        }
+
+        // Must have enough space
+        let min_existing = match resize_info.min_size_bytes {
+            Some(min) => min,
+            None => return false,
+        };
+
+        self.size_bytes.saturating_sub(min_existing) >= crate::arch::dualboot::MIN_LINUX_SIZE
+    }
+}
+
+fn is_supported_auto_resize_fs(partition: &PartitionInfo) -> bool {
+    matches!(
+        partition.filesystem.as_ref().map(|fs| fs.fs_type.as_str()),
+        Some("ntfs") | Some("ext4") | Some("ext3") | Some("ext2")
+    )
 }
 
 /// Filesystem information
@@ -376,5 +506,4 @@ mod tests {
         };
         assert!(info.min_size_human().is_none());
     }
-
 }

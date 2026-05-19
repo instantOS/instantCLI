@@ -37,7 +37,7 @@ pub fn handle_alternative(config: &DotfileConfig, opts: AlternativeOptions<'_>) 
         opts.repo,
         opts.subdir,
     );
-    let target_path = resolve_dotfile_path(opts.path)?;
+    let target_path = resolve_dotfile_path(opts.path, true, true)?;
     let display_path = to_display_path(&target_path);
 
     if target_path.is_dir() {
@@ -78,7 +78,7 @@ fn handle_file(config: &DotfileConfig, path: &Path, display: &str, action: Actio
         }
         Action::Create => {
             let sources = sources::list_sources_for_target(config, path)?;
-            run_create_flow(path, display, &sources)?;
+            run_create_flow(path, display, &sources, false)?;
             Ok(())
         }
         Action::Select => {

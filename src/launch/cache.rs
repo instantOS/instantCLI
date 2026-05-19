@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use fre::args::SortMethod;
 use fre::store::{FrecencyStore, read_store, write_store};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -24,8 +24,12 @@ impl LaunchCache {
         let cache_dir = if let Some(cache_dir) = dirs::cache_dir() {
             cache_dir.join(env!("CARGO_BIN_NAME"))
         } else {
-            PathBuf::from(env::var("HOME").unwrap_or_else(|_| "/tmp".to_string()))
-                .join(format!(".cache/{}", env!("CARGO_BIN_NAME")))
+            // Fall back to $HOME/.cache; if HOME is unset use the platform
+            // temp dir (Termux exposes $PREFIX/tmp via $TMPDIR rather than /tmp).
+            let base = env::var_os("HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(env::temp_dir);
+            base.join(format!(".cache/{}", env!("CARGO_BIN_NAME")))
         };
 
         // Ensure cache directory exists
@@ -158,7 +162,7 @@ impl LaunchCache {
         }
 
         // Check XDG data directories for desktop files
-        let data_dirs = Self::get_xdg_data_dirs();
+        let data_dirs = crate::launch::get_xdg_data_dirs();
         for data_dir in data_dirs {
             let apps_dir = data_dir.join("applications");
             if apps_dir.exists()
@@ -201,6 +205,11 @@ impl LaunchCache {
             // Load frecency store and resort the items
             let frecency_store = read_store(&frecency_store_path).unwrap_or_default();
             let sorted_items = frecency_store.sorted(fre::args::SortMethod::Frecent);
+            let frecency_rank: HashMap<_, _> = sorted_items
+                .iter()
+                .enumerate()
+                .map(|(index, item)| (item.item.as_str(), index))
+                .collect();
 
             let frequent_keys: std::collections::HashSet<_> =
                 sorted_items.iter().map(|item| &item.item).collect();
@@ -216,14 +225,8 @@ impl LaunchCache {
 
                 match (a_is_frequent, b_is_frequent) {
                     (true, true) => {
-                        let a_index = sorted_items
-                            .iter()
-                            .position(|item| item.item == a_key)
-                            .unwrap_or(0);
-                        let b_index = sorted_items
-                            .iter()
-                            .position(|item| item.item == b_key)
-                            .unwrap_or(0);
+                        let a_index = frecency_rank.get(a_key.as_str()).copied().unwrap_or(0);
+                        let b_index = frecency_rank.get(b_key.as_str()).copied().unwrap_or(0);
                         a_index.cmp(&b_index)
                     }
                     (true, false) => std::cmp::Ordering::Less,
@@ -255,32 +258,10 @@ impl LaunchCache {
         Self::resolve_conflicts_simple(items)
     }
 
-    /// Get XDG data directories
-    fn get_xdg_data_dirs() -> Vec<PathBuf> {
-        let mut dirs = Vec::new();
-
-        if let Some(home_data) = dirs::data_dir() {
-            dirs.push(home_data);
-        }
-
-        if let Ok(system_dirs) = env::var("XDG_DATA_DIRS") {
-            for dir in system_dirs.split(':') {
-                if !dir.is_empty() {
-                    dirs.push(PathBuf::from(dir));
-                }
-            }
-        } else {
-            dirs.push(PathBuf::from("/usr/local/share"));
-            dirs.push(PathBuf::from("/usr/share"));
-        }
-
-        dirs
-    }
-
     /// Fast desktop name scanning - no parsing, just file names
     fn get_desktop_names_fast() -> Vec<LaunchItem> {
         let mut names = Vec::new();
-        let data_dirs = Self::get_xdg_data_dirs();
+        let data_dirs = crate::launch::get_xdg_data_dirs();
 
         for data_dir in data_dirs {
             let apps_dir = data_dir.join("applications");
@@ -406,6 +387,11 @@ impl LaunchCache {
     fn sort_by_frecency_launch_items(&mut self, items: &mut [LaunchItem]) -> Result<()> {
         let frecency_store = self.get_frecency_store()?;
         let sorted_items = frecency_store.sorted(SortMethod::Frecent);
+        let frecency_rank: HashMap<_, _> = sorted_items
+            .iter()
+            .enumerate()
+            .map(|(index, item)| (item.item.as_str(), index))
+            .collect();
 
         let frequent_keys: std::collections::HashSet<_> =
             sorted_items.iter().map(|item| &item.item).collect();
@@ -419,14 +405,8 @@ impl LaunchCache {
 
             match (a_is_frequent, b_is_frequent) {
                 (true, true) => {
-                    let a_index = sorted_items
-                        .iter()
-                        .position(|item| item.item == a_key)
-                        .unwrap_or(0);
-                    let b_index = sorted_items
-                        .iter()
-                        .position(|item| item.item == b_key)
-                        .unwrap_or(0);
+                    let a_index = frecency_rank.get(a_key.as_str()).copied().unwrap_or(0);
+                    let b_index = frecency_rank.get(b_key.as_str()).copied().unwrap_or(0);
                     a_index.cmp(&b_index)
                 }
                 (true, false) => std::cmp::Ordering::Less,

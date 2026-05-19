@@ -32,6 +32,7 @@ mod tests {
             dots_dirs: vec![".".to_string()],
             default_active_subdirs: None,
             units: vec![],
+            encryption_recipients: vec![],
         };
 
         let repo_config = Repo {

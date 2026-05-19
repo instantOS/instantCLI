@@ -179,10 +179,10 @@ fn handle_cancel(state: &EditState) -> Result<Flow> {
 /// Confirm discarding unsaved changes
 fn confirm_discard_changes() -> Result<bool> {
     let result = FzfWrapper::builder()
+        .responsive_layout()
         .confirm("You have unsaved changes. Exit without saving?")
         .yes_text("Exit Without Saving")
         .no_text("Go Back")
-        .responsive_layout()
         .confirm_dialog()?;
 
     Ok(result == ConfirmResult::Yes)

@@ -1,6 +1,8 @@
+use crate::common::home_dir;
 use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
-use crate::dot::dotfile::Dotfile;
+use crate::dot::dotfile::{Dotfile, SourceKind};
+use crate::dot::encryption::{EncryptedFailureReason, classify_encrypted_failure};
 use crate::dot::units::{get_all_units, get_modified_units};
 use crate::dot::utils::get_all_dotfiles;
 use crate::ui::prelude::*;
@@ -15,6 +17,7 @@ enum ApplyAction {
     Created,
     Updated,
     Skipped,
+    SkippedEncrypted(EncryptedFailureReason),
     SkippedUnit,
     AlreadyUpToDate,
 }
@@ -25,6 +28,7 @@ struct ApplyStats {
     created: Vec<String>,
     updated: Vec<String>,
     skipped: Vec<String>,
+    skipped_encrypted: Vec<String>,
     skipped_unit_files: usize,
     unchanged: usize,
     reported_units: HashSet<PathBuf>,
@@ -37,8 +41,13 @@ impl ApplyStats {
 }
 
 /// Apply all dotfiles from configured repositories
-pub fn apply_all(config: &DotfileConfig, db: &Database) -> Result<()> {
-    let all_dotfiles = get_all_dotfiles(config, db)?;
+pub fn apply_all(
+    config: &DotfileConfig,
+    db: &Database,
+    include_root: bool,
+    root_only: bool,
+) -> Result<()> {
+    let all_dotfiles = get_all_dotfiles(config, db, include_root || root_only)?;
 
     if all_dotfiles.is_empty() {
         emit(
@@ -50,21 +59,90 @@ pub fn apply_all(config: &DotfileConfig, db: &Database) -> Result<()> {
         return Ok(());
     }
 
-    // Get unit definitions and find which units have modified files
-    let units = get_all_units(config, db)?;
-    let modified_units = get_modified_units(&all_dotfiles, &units, db)?;
+    let home_dotfiles: Vec<_> = all_dotfiles.values().filter(|d| !d.is_root).collect();
+    let root_dotfiles: Vec<_> = all_dotfiles.values().filter(|d| d.is_root).collect();
 
     let mut stats = ApplyStats::default();
 
-    // Apply each dotfile
-    for dotfile in all_dotfiles.values() {
-        let action = determine_and_apply_action(dotfile, &units, &modified_units, &mut stats, db)?;
-        emit_action_result(&action, dotfile);
-        record_action(&action, dotfile, &mut stats);
+    let all_units = get_all_units(config, db)?;
+    let modified_units = get_modified_units(&all_dotfiles, &all_units, db)?;
+
+    if !root_only {
+        for dotfile in &home_dotfiles {
+            let action =
+                determine_and_apply_action(dotfile, &all_units, &modified_units, &mut stats, db)?;
+            emit_action_result(&action, dotfile);
+            record_action(&action, dotfile, &mut stats);
+        }
+    }
+
+    if !root_dotfiles.is_empty() && (include_root || root_only) {
+        if root_only {
+            for dotfile in &root_dotfiles {
+                let action = determine_and_apply_action(
+                    dotfile,
+                    &all_units,
+                    &modified_units,
+                    &mut stats,
+                    db,
+                )?;
+                emit_action_result(&action, dotfile);
+                record_action(&action, dotfile, &mut stats);
+            }
+        } else {
+            let home_dir = home_dir();
+            let home_dir_str = home_dir.to_string_lossy();
+            emit(
+                Level::Info,
+                "dot.apply.root_files",
+                &format!(
+                    "{} Applying {} root dotfile(s) (requires sudo)",
+                    char::from(NerdFont::ShieldCheck),
+                    root_dotfiles.len()
+                ),
+                None,
+            );
+
+            let status = std::process::Command::new("sudo")
+                .arg("ins")
+                .arg("dot")
+                .arg("apply")
+                .arg("--root-only")
+                .arg("--home")
+                .arg(home_dir_str.as_ref())
+                .status();
+
+            if let Err(e) = status {
+                emit(
+                    Level::Warn,
+                    "dot.apply.root_failed",
+                    &format!(
+                        "{} Failed to spawn sudo for root dotfiles: {}",
+                        char::from(NerdFont::Warning),
+                        e
+                    ),
+                    None,
+                );
+            } else if let Ok(s) = status
+                && !s.success()
+            {
+                emit(
+                    Level::Warn,
+                    "dot.apply.root_failed",
+                    &format!(
+                        "{} Applying root dotfiles failed or was cancelled",
+                        char::from(NerdFont::Warning)
+                    ),
+                    None,
+                );
+            }
+        }
     }
 
     db.cleanup_hashes(config.hash_cleanup_days)?;
-    print_apply_summary(&stats);
+    if !root_only || !root_dotfiles.is_empty() {
+        print_apply_summary(&stats);
+    }
 
     Ok(())
 }
@@ -119,8 +197,27 @@ fn determine_and_apply_action(
 /// Apply a single dotfile and determine what action was taken
 fn apply_single_dotfile(dotfile: &Dotfile, db: &Database) -> Result<ApplyAction> {
     let target_exists = dotfile.target_path.exists();
-    let is_modified = !dotfile.is_target_unmodified(db)?;
-    let is_outdated = dotfile.is_outdated(db);
+    let is_modified = match dotfile.is_target_unmodified(db) {
+        Ok(unmodified) => !unmodified,
+        Err(err) if dotfile.kind == SourceKind::Age => {
+            if target_exists {
+                return Ok(ApplyAction::SkippedEncrypted(classify_encrypted_failure(
+                    &err,
+                )));
+            }
+            return Err(err);
+        }
+        Err(err) => return Err(err),
+    };
+    let is_outdated = match dotfile.is_outdated(db) {
+        Ok(outdated) => outdated,
+        Err(err) if dotfile.kind == SourceKind::Age => {
+            return Ok(ApplyAction::SkippedEncrypted(classify_encrypted_failure(
+                &err,
+            )));
+        }
+        Err(err) => return Err(err),
+    };
 
     if is_modified {
         return Ok(ApplyAction::Skipped);
@@ -131,7 +228,14 @@ fn apply_single_dotfile(dotfile: &Dotfile, db: &Database) -> Result<ApplyAction>
         return Ok(ApplyAction::AlreadyUpToDate);
     }
 
-    dotfile.apply(db)?;
+    if let Err(err) = dotfile.apply(db) {
+        if dotfile.kind == SourceKind::Age {
+            return Ok(ApplyAction::SkippedEncrypted(classify_encrypted_failure(
+                &err,
+            )));
+        }
+        return Err(err);
+    }
 
     if !target_exists {
         Ok(ApplyAction::Created)
@@ -142,12 +246,7 @@ fn apply_single_dotfile(dotfile: &Dotfile, db: &Database) -> Result<ApplyAction>
 
 /// Emit user-visible output for an action
 fn emit_action_result(action: &ApplyAction, dotfile: &Dotfile) {
-    let home = PathBuf::from(shellexpand::tilde("~").to_string());
-    let relative_path = dotfile
-        .target_path
-        .strip_prefix(&home)
-        .unwrap_or(&dotfile.target_path);
-    let path_str = format!("~/{}", relative_path.display());
+    let path_str = crate::dot::display_path(&dotfile.target_path, dotfile.is_root);
 
     match action {
         ApplyAction::Created => {
@@ -188,23 +287,36 @@ fn emit_action_result(action: &ApplyAction, dotfile: &Dotfile) {
                 ),
             );
         }
+        ApplyAction::SkippedEncrypted(reason) => {
+            emit(
+                Level::Warn,
+                "dot.apply.skipped_encrypted",
+                &format!(
+                    "{} Skipped (encrypted, {}): {}",
+                    char::from(NerdFont::ShieldAlert),
+                    reason.label(),
+                    path_str.yellow()
+                ),
+                Some(serde_json::json!({
+                    "path": path_str,
+                    "action": "skipped",
+                    "reason": reason.code()
+                })),
+            );
+        }
         ApplyAction::SkippedUnit | ApplyAction::AlreadyUpToDate => {}
     }
 }
 
 /// Record action results into stats
 fn record_action(action: &ApplyAction, dotfile: &Dotfile, stats: &mut ApplyStats) {
-    let home = PathBuf::from(shellexpand::tilde("~").to_string());
-    let relative_path = dotfile
-        .target_path
-        .strip_prefix(&home)
-        .unwrap_or(&dotfile.target_path);
-    let path_str = format!("~/{}", relative_path.display());
+    let path_str = crate::dot::display_path(&dotfile.target_path, dotfile.is_root);
 
     match action {
         ApplyAction::Created => stats.created.push(path_str),
         ApplyAction::Updated => stats.updated.push(path_str),
         ApplyAction::Skipped => stats.skipped.push(path_str),
+        ApplyAction::SkippedEncrypted(_) => stats.skipped_encrypted.push(path_str),
         ApplyAction::SkippedUnit => stats.skipped_unit_files += 1,
         ApplyAction::AlreadyUpToDate => stats.unchanged += 1,
     }
@@ -228,6 +340,7 @@ fn print_apply_summary(stats: &ApplyStats) {
         "created": stats.created.len(),
         "updated": stats.updated.len(),
         "skipped": stats.skipped.len(),
+        "skipped_encrypted": stats.skipped_encrypted.len(),
         "skipped_unit_files": stats.skipped_unit_files,
         "skipped_units": stats.skipped_units(),
         "unchanged": stats.unchanged
@@ -239,10 +352,11 @@ fn print_apply_summary(stats: &ApplyStats) {
             Level::Info,
             "dot.apply.summary",
             &format!(
-                "  Created: {}\n  Updated: {}\n  Skipped: {}\n  Skipped (units): {} files in {} units\n  Unchanged: {}",
+                "  Created: {}\n  Updated: {}\n  Skipped: {}\n  Skipped (encrypted): {}\n  Skipped (units): {} files in {} units\n  Unchanged: {}",
                 stats.created.len(),
                 stats.updated.len(),
                 stats.skipped.len(),
+                stats.skipped_encrypted.len(),
                 stats.skipped_unit_files,
                 stats.skipped_units(),
                 stats.unchanged
@@ -287,6 +401,22 @@ fn print_apply_summary(stats: &ApplyStats) {
         ));
     }
 
+    if !stats.skipped_encrypted.is_empty() {
+        emit(
+            Level::Warn,
+            "dot.apply.summary.skipped_encrypted",
+            &format!(
+                "{} Skipped {} encrypted file(s); see warnings above for reason details",
+                char::from(NerdFont::ShieldAlert),
+                stats.skipped_encrypted.len()
+            ),
+            Some(serde_json::json!({
+                "skipped_encrypted": stats.skipped_encrypted.len(),
+                "reason": "encrypted_failure"
+            })),
+        );
+    }
+
     if stats.skipped_units() > 0 {
         entries.push((
             Level::Warn,
@@ -328,4 +458,86 @@ fn print_apply_summary(stats: &ApplyStats) {
     }
 
     separator(false);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::TildePath;
+    use crate::dot::config::{DotfileConfig, Repo};
+    use crate::dot::db::Database;
+    use crate::dot::types::RepoMetaData;
+    use serial_test::serial;
+    use std::fs;
+    use tempfile::tempdir;
+
+    #[test]
+    #[serial]
+    fn apply_all_skips_undecryptable_age_file_and_applies_plain_file() {
+        let dir = tempdir().unwrap();
+        let home = dir.path().join("home");
+        let config_home = dir.path().join("config");
+        let repos_dir = dir.path().join("repos");
+        let repo_dir = repos_dir.join("test-repo");
+        let dots_dir = repo_dir.join("dots");
+        fs::create_dir_all(&home).unwrap();
+        fs::create_dir_all(&config_home).unwrap();
+        fs::create_dir_all(&dots_dir).unwrap();
+        fs::write(dots_dir.join("plain.txt"), "plain").unwrap();
+        fs::write(dots_dir.join("secret.txt.age"), "not an age file").unwrap();
+
+        let prev_home = std::env::var_os("HOME");
+        let prev_xdg = std::env::var_os("XDG_CONFIG_HOME");
+        let prev_age = std::env::var_os("AGE_IDENTITY");
+        // SAFETY: this test is serialised and restores the process env below.
+        unsafe {
+            std::env::set_var("HOME", &home);
+            std::env::set_var("XDG_CONFIG_HOME", &config_home);
+            std::env::remove_var("AGE_IDENTITY");
+        }
+
+        let config = DotfileConfig {
+            repos: vec![Repo {
+                url: "local".to_string(),
+                name: "test-repo".to_string(),
+                branch: None,
+                active_subdirectories: Some(vec!["dots".to_string()]),
+                enabled: true,
+                read_only: false,
+                metadata: Some(RepoMetaData {
+                    name: "test-repo".to_string(),
+                    dots_dirs: vec!["dots".to_string()],
+                    ..RepoMetaData::default()
+                }),
+            }],
+            repos_dir: TildePath::new(repos_dir),
+            database_dir: TildePath::new(dir.path().join("test.db")),
+            ..DotfileConfig::default()
+        };
+        let db = Database::new(config.database_path().to_path_buf()).unwrap();
+
+        let result = apply_all(&config, &db, false, false);
+
+        unsafe {
+            match prev_home {
+                Some(v) => std::env::set_var("HOME", v),
+                None => std::env::remove_var("HOME"),
+            }
+            match prev_xdg {
+                Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
+                None => std::env::remove_var("XDG_CONFIG_HOME"),
+            }
+            match prev_age {
+                Some(v) => std::env::set_var("AGE_IDENTITY", v),
+                None => std::env::remove_var("AGE_IDENTITY"),
+            }
+        }
+
+        result.expect("apply should skip encrypted failures instead of aborting");
+        assert_eq!(fs::read_to_string(home.join("plain.txt")).unwrap(), "plain");
+        assert!(
+            !home.join("secret.txt").exists(),
+            "undecryptable encrypted file should be skipped"
+        );
+    }
 }

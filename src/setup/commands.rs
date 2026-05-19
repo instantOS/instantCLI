@@ -54,27 +54,27 @@ pub fn handle_setup_command(command: SetupCommands) -> Result<()> {
 }
 
 fn setup_wm(wm: WindowManager) -> Result<()> {
-    validate_compositor(&wm);
+    let compositor = validate_compositor(&wm);
     let manager = WmConfigManager::new(wm);
     let config_changed = write_config_if_changed(&manager)?;
     let include_added = ensure_main_config_include(&manager, &wm)?;
     report_status(&wm, config_changed, include_added, &manager);
     if config_changed || include_added {
-        maybe_reload_wm(&manager, &wm);
+        maybe_reload_wm(&manager, &wm, &compositor);
     }
     Ok(())
 }
 
 fn setup_instantwm() -> Result<()> {
-    validate_compositor(&WindowManager::InstantWM);
     let wm = WindowManager::InstantWM;
+    let compositor = validate_compositor(&wm);
     let manager = WmConfigManager::new(wm);
     ensure_main_config_exists(&manager)?;
     let config_changed = write_instantwm_config_if_changed(&manager)?;
     let include_added = ensure_main_config_include(&manager, &wm)?;
     report_status(&wm, config_changed, include_added, &manager);
     if config_changed || include_added {
-        maybe_reload_wm(&manager, &wm);
+        maybe_reload_wm(&manager, &wm, &compositor);
     }
     Ok(())
 }
@@ -109,15 +109,10 @@ fn ensure_main_config_exists(manager: &WmConfigManager) -> Result<()> {
     Ok(())
 }
 
-fn validate_compositor(wm: &WindowManager) {
+fn validate_compositor(wm: &WindowManager) -> CompositorType {
     let compositor = CompositorType::detect();
-    let expected_compositor = match wm {
-        WindowManager::Sway => CompositorType::Sway,
-        WindowManager::I3 => CompositorType::I3,
-        WindowManager::InstantWM => CompositorType::InstantWM,
-    };
 
-    if compositor != expected_compositor {
+    if !compositor_matches_wm(wm, &compositor) {
         emit(
             Level::Warn,
             &format!("setup.{}.wrong_compositor", wm.name()),
@@ -130,10 +125,22 @@ fn validate_compositor(wm: &WindowManager) {
             None,
         );
     }
+
+    compositor
+}
+
+fn compositor_matches_wm(wm: &WindowManager, compositor: &CompositorType) -> bool {
+    let expected_compositor = match wm {
+        WindowManager::Sway => CompositorType::Sway,
+        WindowManager::I3 => CompositorType::I3,
+        WindowManager::InstantWM => CompositorType::InstantWM,
+    };
+
+    compositor == &expected_compositor
 }
 
 fn write_config_if_changed(manager: &WmConfigManager) -> Result<bool> {
-    let expected_content = generate_sway_config()?;
+    let expected_content = generate_wm_config(manager.wm())?;
     let disk_hash = manager.hash_config().unwrap_or(0);
     let expected_hash = hash_string(&expected_content);
     let changed = disk_hash != expected_hash;
@@ -211,7 +218,22 @@ fn report_status(
     );
 }
 
-fn maybe_reload_wm(manager: &WmConfigManager, wm: &WindowManager) {
+fn maybe_reload_wm(manager: &WmConfigManager, wm: &WindowManager, compositor: &CompositorType) {
+    if !compositor_matches_wm(wm, compositor) {
+        emit(
+            Level::Warn,
+            &format!("setup.{}.reload_skipped_wrong_compositor", wm.name()),
+            &format!(
+                "{} Skipping {} reload because current compositor is {}",
+                char::from(NerdFont::Warning),
+                wm.name(),
+                compositor.name()
+            ),
+            None,
+        );
+        return;
+    }
+
     match manager.reload() {
         Ok(()) => {
             emit(
@@ -241,22 +263,23 @@ fn maybe_reload_wm(manager: &WmConfigManager, wm: &WindowManager) {
     }
 }
 
-/// Generate the full sway config content.
-pub(crate) fn generate_sway_config() -> Result<String> {
+/// Generate the full WM config content (sway/i3).
+pub(crate) fn generate_wm_config(wm: WindowManager) -> Result<String> {
     use std::fmt::Write;
 
     let mut content = String::new();
 
     // Header
-    writeln!(content, "# instantCLI sway configuration")?;
+    writeln!(content, "# instantCLI {} configuration", wm.name())?;
     writeln!(
         content,
         "# This file is managed by instantCLI. Manual edits may be overwritten."
     )?;
     writeln!(content)?;
 
-    // Cursor theme section
-    if let Ok(theme) = get_current_cursor_theme()
+    // Cursor theme section (sway-only, i3 doesn't support this)
+    if wm == WindowManager::Sway
+        && let Ok(theme) = get_current_cursor_theme()
         && !theme.is_empty()
     {
         writeln!(content, "# --- BEGIN cursor_theme ---")?;
@@ -595,4 +618,41 @@ fn get_current_cursor_theme() -> Result<String> {
         .trim_matches('\'')
         .trim_matches('"')
         .to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compositor_matches_target_window_manager() {
+        assert!(compositor_matches_wm(
+            &WindowManager::Sway,
+            &CompositorType::Sway
+        ));
+        assert!(compositor_matches_wm(
+            &WindowManager::I3,
+            &CompositorType::I3
+        ));
+        assert!(compositor_matches_wm(
+            &WindowManager::InstantWM,
+            &CompositorType::InstantWM
+        ));
+    }
+
+    #[test]
+    fn compositor_mismatch_prevents_target_reload() {
+        assert!(!compositor_matches_wm(
+            &WindowManager::I3,
+            &CompositorType::Sway
+        ));
+        assert!(!compositor_matches_wm(
+            &WindowManager::Sway,
+            &CompositorType::I3
+        ));
+        assert!(!compositor_matches_wm(
+            &WindowManager::InstantWM,
+            &CompositorType::Sway
+        ));
+    }
 }

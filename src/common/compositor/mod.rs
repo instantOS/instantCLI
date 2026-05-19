@@ -12,6 +12,7 @@ pub mod hyprland;
 pub mod i3;
 pub mod instantwm;
 pub mod kwin;
+pub mod niri;
 pub mod sway;
 
 /// Create and launch terminal in background
@@ -77,6 +78,8 @@ pub enum CompositorType {
     Sway,
     /// Hyprland compositor (dynamic tiling Wayland compositor)
     Hyprland,
+    /// niri compositor
+    Niri,
     /// KDE KWin compositor
     KWin,
     /// Gnome compositor
@@ -108,6 +111,11 @@ impl CompositorType {
             return CompositorType::Hyprland;
         }
 
+        // Fast path: check niri socket
+        if env::var("NIRI_SOCKET").is_ok() {
+            return CompositorType::Niri;
+        }
+
         // Check XDG_SESSION_DESKTOP
         if let Ok(session) = env::var("XDG_SESSION_DESKTOP") {
             match session.to_lowercase().as_str() {
@@ -116,6 +124,7 @@ impl CompositorType {
                 "instantwm" => return CompositorType::InstantWM,
                 "sway" => return CompositorType::Sway,
                 "hyprland" => return CompositorType::Hyprland,
+                "niri" => return CompositorType::Niri,
                 "kde" | "plasma" | "kwin" => return CompositorType::KWin,
                 s if s.contains("gnome") || s == "ubuntu" => return CompositorType::Gnome,
                 _ => {}
@@ -130,6 +139,7 @@ impl CompositorType {
                 "instantwm" => return CompositorType::InstantWM,
                 "sway" => return CompositorType::Sway,
                 "hyprland" => return CompositorType::Hyprland,
+                "niri" => return CompositorType::Niri,
                 "kde" | "plasma" | "kwin" => return CompositorType::KWin,
                 s if s.contains("gnome") || s == "ubuntu" => return CompositorType::Gnome,
                 _ => {}
@@ -156,6 +166,9 @@ impl CompositorType {
                 }
                 if CompositorType::is_process_running("Hyprland") {
                     return CompositorType::Hyprland;
+                }
+                if CompositorType::is_process_running("niri") {
+                    return CompositorType::Niri;
                 }
                 if CompositorType::is_process_running("kwin_wayland") {
                     return CompositorType::KWin;
@@ -202,6 +215,7 @@ impl CompositorType {
             CompositorType::InstantWM => Box::new(instantwm::InstantWM),
             CompositorType::Sway => Box::new(sway::Sway),
             CompositorType::Hyprland => Box::new(hyprland::Hyprland),
+            CompositorType::Niri => Box::new(niri::Niri),
             CompositorType::KWin => Box::new(kwin::KWin),
             CompositorType::Gnome => Box::new(gnome::Gnome),
             CompositorType::Other(_) => Box::new(fallback::Fallback),
@@ -236,6 +250,7 @@ impl CompositorType {
             CompositorType::InstantWM => "instantwm".to_string(),
             CompositorType::Sway => "Sway".to_string(),
             CompositorType::Hyprland => "Hyprland".to_string(),
+            CompositorType::Niri => "niri".to_string(),
             CompositorType::KWin => "KWin".to_string(),
             CompositorType::Gnome => "Gnome".to_string(),
             CompositorType::Other(name) => name.clone(),
@@ -246,7 +261,7 @@ impl CompositorType {
     #[allow(dead_code)]
     pub fn is_wayland(&self) -> bool {
         match self {
-            CompositorType::Sway | CompositorType::Hyprland => true,
+            CompositorType::Sway | CompositorType::Hyprland | CompositorType::Niri => true,
             CompositorType::InstantWM => DisplayServer::detect() == DisplayServer::Wayland,
             CompositorType::KWin => DisplayServer::detect() == DisplayServer::Wayland,
             CompositorType::Gnome => DisplayServer::detect() == DisplayServer::Wayland,
@@ -273,7 +288,9 @@ impl CompositorType {
     #[allow(dead_code)]
     pub fn display_server(&self) -> DisplayServer {
         match self {
-            CompositorType::Sway | CompositorType::Hyprland => DisplayServer::Wayland,
+            CompositorType::Sway | CompositorType::Hyprland | CompositorType::Niri => {
+                DisplayServer::Wayland
+            }
             CompositorType::I3 => DisplayServer::X11,
             CompositorType::Dwm => DisplayServer::X11,
             CompositorType::InstantWM => DisplayServer::detect(),
@@ -310,6 +327,7 @@ mod tests {
             CompositorType::I3
             | CompositorType::Sway
             | CompositorType::Hyprland
+            | CompositorType::Niri
             | CompositorType::KWin
             | CompositorType::Gnome
             | CompositorType::Dwm
@@ -324,6 +342,7 @@ mod tests {
     fn test_compositor_name() {
         assert_eq!(CompositorType::Sway.name(), "Sway");
         assert_eq!(CompositorType::Hyprland.name(), "Hyprland");
+        assert_eq!(CompositorType::Niri.name(), "niri");
         assert_eq!(CompositorType::KWin.name(), "KWin");
         assert_eq!(CompositorType::Gnome.name(), "Gnome");
         assert_eq!(CompositorType::Other("test".to_string()).name(), "test");
@@ -333,6 +352,7 @@ mod tests {
     fn test_wayland_detection() {
         assert!(CompositorType::Sway.is_wayland());
         assert!(CompositorType::Hyprland.is_wayland());
+        assert!(CompositorType::Niri.is_wayland());
         assert!(!CompositorType::Other("x11".to_string()).is_wayland());
         assert!(CompositorType::Other("wayland-other".to_string()).is_wayland());
     }
@@ -341,6 +361,7 @@ mod tests {
     fn test_x11_detection() {
         assert!(!CompositorType::Sway.is_x11());
         assert!(!CompositorType::Hyprland.is_x11());
+        assert!(!CompositorType::Niri.is_x11());
         assert!(CompositorType::Other("x11".to_string()).is_x11());
         assert!(!CompositorType::Other("wayland".to_string()).is_x11());
     }

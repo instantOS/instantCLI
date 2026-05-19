@@ -9,9 +9,6 @@
 //! `pop_mock()` returns `Option<Infallible>` which can never be `Some`.
 //! The compiler elides the entire `if let Some(resp) = pop_mock()` block.
 
-use std::cell::RefCell;
-use std::collections::VecDeque;
-
 // ---------------------------------------------------------------------------
 // pop_mock() — the function called from production code
 // ---------------------------------------------------------------------------
@@ -32,6 +29,11 @@ pub(crate) fn pop_mock() -> Option<MockResponse> {
 // ---------------------------------------------------------------------------
 // Test-only items below
 // ---------------------------------------------------------------------------
+
+#[cfg(test)]
+use std::cell::RefCell;
+#[cfg(test)]
+use std::collections::VecDeque;
 
 #[cfg(test)]
 thread_local! {

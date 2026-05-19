@@ -174,4 +174,131 @@ impl SystemInfo {
 
         info
     }
+
+    pub fn print_system_info(&self) {
+        use crate::common::compositor::CompositorType;
+        use crate::ui::nerd_font::NerdFont;
+
+        let print_row =
+            |icon: colored::ColoredString, label: &str, value: &dyn std::fmt::Display| {
+                println!("  {}   {:<20} {}", icon, label, value);
+            };
+
+        println!();
+        println!(
+            "  {} {}",
+            NerdFont::Desktop.to_string().bright_cyan(),
+            "System Information".bright_white().bold()
+        );
+        println!("  {}", "─".repeat(50).bright_black());
+
+        print_row(
+            NerdFont::Terminal.to_string().bright_cyan(),
+            "Distro:",
+            &self.distro.bright_cyan(),
+        );
+
+        let boot_mode_str = match self.boot_mode {
+            super::types::BootMode::UEFI64 => "UEFI 64-bit",
+            super::types::BootMode::UEFI32 => "UEFI 32-bit",
+            super::types::BootMode::BIOS => "BIOS",
+        };
+        print_row(
+            NerdFont::PowerOff.to_string().bright_green(),
+            "Boot Mode:",
+            &boot_mode_str.bright_green(),
+        );
+
+        print_row(
+            NerdFont::Cpu.to_string().bright_magenta(),
+            "Architecture:",
+            &self.architecture.bright_magenta(),
+        );
+
+        if let Some(ram_gb) = self.total_ram_gb {
+            let ram_str = format!("{} GB", ram_gb);
+            let colored = if ram_gb >= 4 {
+                ram_str.bright_green()
+            } else if ram_gb >= 1 {
+                ram_str.bright_yellow()
+            } else {
+                ram_str.bright_red()
+            };
+            print_row(
+                NerdFont::Memory.to_string().bright_cyan(),
+                "Memory:",
+                &colored,
+            );
+        }
+
+        if self.has_intel_cpu {
+            print_row(
+                NerdFont::Cpu.to_string().bright_blue(),
+                "CPU:",
+                &"Intel".bright_blue(),
+            );
+        } else if self.has_amd_cpu {
+            print_row(
+                NerdFont::Cpu.to_string().bright_red(),
+                "CPU:",
+                &"AMD".bright_red(),
+            );
+        }
+
+        if !self.gpus.is_empty() {
+            let colored_gpu_str = if self.gpus.len() == 1 {
+                self.gpus[0].to_colored_string()
+            } else {
+                let gpu_strs: Vec<String> = self.gpus.iter().map(|gpu| gpu.to_string()).collect();
+                gpu_strs.join(", ").normal()
+            };
+
+            print_row(
+                NerdFont::Gpu.to_string().bright_cyan(),
+                "GPU:",
+                &colored_gpu_str,
+            );
+        }
+
+        if let Some(vm_type) = &self.vm_type {
+            println!(
+                "  {}   {:<20} {} ({})",
+                NerdFont::Server.to_string().bright_yellow(),
+                "Virtualization:",
+                vm_type.bright_yellow(),
+                "Virtual Machine".bright_black()
+            );
+        } else {
+            print_row(
+                NerdFont::Server.to_string().bright_green(),
+                "Virtualization:",
+                &"Bare Metal".bright_green(),
+            );
+        }
+
+        if self.internet_connected {
+            print_row(
+                NerdFont::Globe.to_string().bright_green(),
+                "Internet:",
+                &"Connected".bright_green(),
+            );
+        } else {
+            print_row(
+                NerdFont::Globe.to_string().bright_red(),
+                "Internet:",
+                &"Disconnected".bright_red(),
+            );
+        }
+
+        let compositor = CompositorType::detect();
+        let compositor_str = format!("{} ({})", compositor.name(), compositor.display_server());
+        print_row(
+            NerdFont::Monitor.to_string().bright_yellow(),
+            "Compositor:",
+            &compositor_str.bright_yellow(),
+        );
+
+        println!("  {}", "─".repeat(50).bright_black());
+        println!();
+    }
 }

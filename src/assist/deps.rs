@@ -55,14 +55,26 @@ pub static FLAMESHOT: Dependency = Dependency {
     tests: &[InstallTest::WhichSucceeds("flameshot")],
 };
 
-/// instantpass - password manager (Arch only)
-pub static INSTANTPASS: Dependency = Dependency {
-    name: "instantpass",
+/// pass - unix password store
+pub static PASS: Dependency = Dependency {
+    name: "pass",
     packages: &[
-        PackageDefinition::new("instantpass", PackageManager::Pacman),
-        PackageDefinition::new("instantpass", PackageManager::Aur),
+        PackageDefinition::new("pass", PackageManager::Pacman),
+        PackageDefinition::new("pass", PackageManager::Apt),
+        PackageDefinition::new("pass", PackageManager::Dnf),
     ],
-    tests: &[InstallTest::WhichSucceeds("instantpass")],
+    tests: &[InstallTest::WhichSucceeds("pass")],
+};
+
+/// gpg - backend for pass
+pub static GPG: Dependency = Dependency {
+    name: "gpg",
+    packages: &[
+        PackageDefinition::new("gnupg", PackageManager::Pacman),
+        PackageDefinition::new("gnupg", PackageManager::Apt),
+        PackageDefinition::new("gnupg2", PackageManager::Dnf),
+    ],
+    tests: &[InstallTest::WhichSucceeds("gpg")],
 };
 
 /// mpv - minimal video player

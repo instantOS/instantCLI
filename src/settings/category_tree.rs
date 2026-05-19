@@ -150,6 +150,7 @@ pub fn category_tree(category: Category) -> Vec<CategoryNode> {
             CategoryNode::setting(&language::Timezone),
         ],
         Category::System => vec![
+            CategoryNode::setting(&system::Hostname),
             CategoryNode::setting(&system::AboutSystem),
             CategoryNode::setting(&system::SystemDoctor),
             CategoryNode::setting(&system::DotfileManager),

@@ -1,6 +1,7 @@
 //! lsblk JSON parsing for partition detection
 
 use crate::arch::dualboot::types::*;
+use crate::common::blockdev::is_efi_partition_type;
 use serde_json::Value;
 use std::process::Command;
 
@@ -22,7 +23,11 @@ where
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty());
 
-    let device_path = format!("/dev/{}", name);
+    let device_path = if name.starts_with('/') {
+        name.to_string()
+    } else {
+        format!("/dev/{}", name)
+    };
 
     let should_check_bitlocker = raw_fs_type.is_none()
         || raw_fs_type.is_some_and(|fs| {
@@ -58,7 +63,7 @@ where
     // Check if this is an EFI System Partition
     // MBR: 0xef, GPT: C12A7328-F81F-11D2-BA4B-00A0C93EC93B (case insensitive)
     let parttype = value.get("parttype").and_then(|v| v.as_str()).unwrap_or("");
-    let is_efi = is_efi_partition(parttype);
+    let is_efi = is_efi_partition_type(parttype);
 
     // Detect OS based on filesystem type and mount point
     let detected_os = if is_efi {
@@ -100,20 +105,6 @@ where
     })
 }
 
-/// Check if partition type indicates EFI System Partition
-pub fn is_efi_partition(parttype: &str) -> bool {
-    let pt = parttype.to_lowercase();
-    // MBR type 0xef or ef
-    if pt == "0xef" || pt == "ef" {
-        return true;
-    }
-    // GPT GUID for EFI System Partition (case insensitive comparison)
-    if pt == "c12a7328-f81f-11d2-ba4b-00a0c93ec93b" {
-        return true;
-    }
-    false
-}
-
 fn detect_bitlocker(device_path: &str) -> bool {
     let output = Command::new("blkid")
         .args(["-o", "value", "-s", "TYPE", device_path])
@@ -153,46 +144,6 @@ mod tests {
         serde_json::from_str(json_str).unwrap()
     }
 
-    // ── is_efi_partition ────────────────────────────────────────────────
-
-    #[test]
-    fn test_is_efi_partition_gpt_guid() {
-        assert!(is_efi_partition("C12A7328-F81F-11D2-BA4B-00A0C93EC93B"));
-    }
-
-    #[test]
-    fn test_is_efi_partition_gpt_guid_lowercase() {
-        assert!(is_efi_partition(
-            "c12a7328-f81f-11d2-ba4b-00a0c93ec93b"
-        ));
-    }
-
-    #[test]
-    fn test_is_efi_partition_mbr_0xef() {
-        assert!(is_efi_partition("0xef"));
-    }
-
-    #[test]
-    fn test_is_efi_partition_mbr_ef() {
-        assert!(is_efi_partition("ef"));
-    }
-
-    #[test]
-    fn test_is_efi_partition_mbr_uppercase() {
-        assert!(is_efi_partition("0xEF"));
-    }
-
-    #[test]
-    fn test_is_efi_partition_not_efi() {
-        assert!(!is_efi_partition("0x83"));
-        assert!(!is_efi_partition("0fc63daf-8483-4772-8e79-3d69d8477de4"));
-    }
-
-    #[test]
-    fn test_is_efi_partition_empty() {
-        assert!(!is_efi_partition(""));
-    }
-
     // ── parse_partition ─────────────────────────────────────────────────
 
     #[test]
@@ -215,10 +166,7 @@ mod tests {
         );
         let p = parse_partition(&json, noop_detect_os, noop_resize_info).unwrap();
         assert!(p.is_efi);
-        assert_eq!(
-            p.detected_os.as_ref().unwrap().name,
-            "EFI System Partition"
-        );
+        assert_eq!(p.detected_os.as_ref().unwrap().name, "EFI System Partition");
     }
 
     #[test]
@@ -240,18 +188,14 @@ mod tests {
 
     #[test]
     fn test_parse_partition_empty_mountpoint_treated_as_none() {
-        let json = make_json(
-            r#"{"name": "sda1", "size": 1000, "mountpoint": ""}"#,
-        );
+        let json = make_json(r#"{"name": "sda1", "size": 1000, "mountpoint": ""}"#);
         let p = parse_partition(&json, noop_detect_os, noop_resize_info).unwrap();
         assert!(p.mount_point.is_none());
     }
 
     #[test]
     fn test_parse_partition_empty_fstype_treated_as_none() {
-        let json = make_json(
-            r#"{"name": "sda1", "size": 1000, "fstype": ""}"#,
-        );
+        let json = make_json(r#"{"name": "sda1", "size": 1000, "fstype": ""}"#);
         let p = parse_partition(&json, noop_detect_os, noop_resize_info).unwrap();
         assert!(p.filesystem.is_none());
     }
@@ -269,9 +213,7 @@ mod tests {
 
     #[test]
     fn test_parse_partition_detect_os_called_for_non_efi() {
-        let json = make_json(
-            r#"{"name": "sda2", "size": 1000, "fstype": "ntfs"}"#,
-        );
+        let json = make_json(r#"{"name": "sda2", "size": 1000, "fstype": "ntfs"}"#);
         let detect_os = |_fs: &Option<_>, _mount: &Option<String>| {
             Some(crate::arch::dualboot::types::DetectedOS {
                 os_type: crate::arch::dualboot::types::OSType::Windows,

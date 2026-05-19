@@ -48,12 +48,11 @@ struct UserResponse {
     data: UserInfo,
 }
 
-/// Checks if the account is a free account based on credits information
-/// Free accounts have 2 hours of recurring credits per month
-pub fn is_free_account(user_info: &UserInfo) -> bool {
-    // Free accounts have exactly 2.0 recurring credits and no additional features
-    // We also check if they have no one-time credits beyond the minimum
-    user_info.recharge_recurring_credits <= 2.0 && user_info.onetime_credits <= 1.0
+impl UserInfo {
+    /// Checks if the account is a free account based on credits information
+    pub fn is_free_account(&self) -> bool {
+        self.recharge_recurring_credits <= 2.0 && self.onetime_credits <= 1.0
+    }
 }
 
 /// Gets user account information from Auphonic API

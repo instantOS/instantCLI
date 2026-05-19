@@ -54,6 +54,7 @@ fn configure_external_repo(
                 dots_dirs: vec![".".to_string()],
                 default_active_subdirs: None,
                 units: vec![],
+                encryption_recipients: vec![],
             });
             break;
         }
@@ -98,6 +99,7 @@ pub struct CloneOptions<'a> {
     pub read_only: bool,
     pub force_write: bool,
     pub debug: bool,
+    pub root_flags: &'a crate::dot::commands::RootFlags,
 }
 
 /// Clone a new repository
@@ -166,7 +168,12 @@ pub fn clone_repository(
                 ),
                 None,
             );
-            if let Err(e) = apply_all_repos(config, db) {
+            if let Err(e) = apply_all_repos(
+                config,
+                db,
+                opts.root_flags.include_root,
+                opts.root_flags.root_only,
+            ) {
                 emit(
                     Level::Warn,
                     "dot.repo.clone.apply_failed",

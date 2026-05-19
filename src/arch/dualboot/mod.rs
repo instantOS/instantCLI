@@ -1,34 +1,29 @@
 // New modular structure
 pub mod detection;
-pub mod feasibility;
+pub mod display;
 pub mod os_detection;
 pub mod parsing;
 pub mod resize;
 pub mod types;
 
-// Legacy modules
-pub mod display;
-pub mod verification;
+#[cfg(test)]
+pub mod test_utils;
 
 // Re-exports
+// From types module (core data structures and utilities)
+pub use types::*;
+
 // From detection module
 pub use detection::{analyze_all_disks, detect_disks};
 
 // From display module
 pub use display::display_disks;
 
-// From types module
-pub use types::{
-    DiskInfo, DualBootFeasibility, OSType, PartitionInfo, PartitionTableType, format_size,
-};
+// From resize module
+pub use resize::{ResizeStatus, ResizeVerifier};
 
-// From verification module
-pub use verification::{ResizeStatus, ResizeVerifier};
-
-/// Minimum required space for Linux installation in bytes (10 GB)
-pub const MIN_LINUX_SIZE: u64 = 10 * 1024 * 1024 * 1024;
-
-// Re-export MIN_ESP_SIZE from detection for convenience
+/// Minimum size for a Linux installation in bytes (30 GB)
+pub const MIN_LINUX_SIZE: u64 = 30 * 1024 * 1024 * 1024;
 
 pub struct DisksKey;
 

@@ -86,6 +86,9 @@ fn dispatch_repo_action(
         RepoAction::ShowInfo => {
             show_repo_info(repo_name, config, db)?;
         }
+        RepoAction::EncryptionSettings => {
+            super::encryption::handle_repo_encryption(repo_name, config, db, debug)?;
+        }
         RepoAction::Remove => return remove_repo(repo_name, config, db, debug),
         RepoAction::Back => return Ok(true),
         RepoAction::OpenInLazygit => open_repo_lazygit(repo_name, config, db)?,

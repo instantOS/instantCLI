@@ -15,8 +15,9 @@ use crate::ui::{Level, emit};
 
 use super::common::{
     KeyboardLayoutKeys, LayoutChoice, apply_keyboard_layouts, current_gnome_layouts,
-    current_instantwm_layouts, current_sway_layout_names, current_x11_layouts, join_layout_codes,
-    map_layout_names_to_codes, parse_xkb_layouts, split_layout_codes,
+    current_instantwm_layouts, current_niri_layouts, current_sway_layout_names,
+    current_x11_layouts, join_layout_codes, map_layout_names_to_codes, parse_xkb_layouts,
+    split_layout_codes,
 };
 
 pub struct KeyboardLayout;
@@ -276,7 +277,7 @@ impl Setting for KeyboardLayout {
             .id("language.keyboard_layout")
             .title("Keyboard Layout")
             .icon(NerdFont::Keyboard)
-            .summary("Select one or more keyboard layouts for the current desktop session (e.g., us, de, fr).\n\nSupports Sway, GNOME, InstantWM, and X11 window managers. Use the TTY and login screen settings for system-wide layouts.")
+            .summary("Select one or more keyboard layouts for the current desktop session (e.g., us, de, fr).\n\nSupports niri, Sway, GNOME, InstantWM, and X11 window managers. Use the TTY and login screen settings for system-wide layouts.")
             .requires_reapply(true)
             .build()
     }
@@ -289,13 +290,14 @@ impl Setting for KeyboardLayout {
         let compositor = CompositorType::detect();
         let is_sway = matches!(compositor, CompositorType::Sway);
         let is_gnome = matches!(compositor, CompositorType::Gnome);
+        let is_niri = matches!(compositor, CompositorType::Niri);
         let is_instantwm = matches!(compositor, CompositorType::InstantWM);
         let is_x11 = compositor.is_x11();
 
-        if !is_sway && !is_gnome && !is_x11 && !is_instantwm {
+        if !is_sway && !is_gnome && !is_niri && !is_x11 && !is_instantwm {
             ctx.emit_unsupported(
                 "settings.keyboard.unsupported",
-                "Keyboard layout configuration is currently only supported on Sway, GNOME, InstantWM, and X11 window managers.",
+                "Keyboard layout configuration is currently only supported on niri, Sway, GNOME, InstantWM, and X11 window managers.",
             );
             return Ok(());
         }
@@ -316,6 +318,8 @@ impl Setting for KeyboardLayout {
             keys.sway
         } else if is_gnome {
             keys.gnome
+        } else if is_niri {
+            keys.niri
         } else if is_instantwm {
             keys.instantwm
         } else {
@@ -330,6 +334,8 @@ impl Setting for KeyboardLayout {
                     .unwrap_or_default()
             } else if is_gnome {
                 current_gnome_layouts().unwrap_or_default()
+            } else if is_niri {
+                current_niri_layouts().unwrap_or_default()
             } else if is_instantwm {
                 current_instantwm_layouts().unwrap_or_default()
             } else {
@@ -398,10 +404,11 @@ impl Setting for KeyboardLayout {
         let compositor = CompositorType::detect();
         let is_sway = matches!(compositor, CompositorType::Sway);
         let is_gnome = matches!(compositor, CompositorType::Gnome);
+        let is_niri = matches!(compositor, CompositorType::Niri);
         let is_instantwm = matches!(compositor, CompositorType::InstantWM);
         let is_x11 = compositor.is_x11();
 
-        if !is_sway && !is_gnome && !is_x11 && !is_instantwm {
+        if !is_sway && !is_gnome && !is_niri && !is_x11 && !is_instantwm {
             return None;
         }
 
@@ -410,6 +417,8 @@ impl Setting for KeyboardLayout {
             keys.sway
         } else if is_gnome {
             keys.gnome
+        } else if is_niri {
+            keys.niri
         } else if is_instantwm {
             keys.instantwm
         } else {

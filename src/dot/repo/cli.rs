@@ -97,4 +97,6 @@ pub struct CloneArgs {
     pub read_only: bool,
     #[arg(long)]
     pub force_write: bool,
+    #[command(flatten)]
+    pub root_flags: crate::dot::commands::RootFlags,
 }

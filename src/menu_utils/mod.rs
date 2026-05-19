@@ -14,6 +14,7 @@ pub use file_picker::{FilePickerResult, FilePickerScope, MenuWrapper};
 pub use fzf::{
     ChecklistAction, ChecklistResult, ConfirmResult, DecodedStreamingMenuItem, FzfResult,
     FzfSelectable, FzfWrapper, Header, MenuItem, StreamingCommand, StreamingMenuItem,
+    default_fzf_key,
 };
 pub use keychord::{KeyChord, KeyChordAction, KeyChordChild, KeyChordNode};
 pub use path_input::{PathInputBuilder, PathInputSelection};
@@ -22,4 +23,4 @@ pub use style::{select_one_with_style, select_one_with_style_at};
 pub use text_input::{TextEditOutcome, TextEditPrompt, prompt_text_edit};
 
 #[cfg(test)]
-pub use mock::{MockQueue, MockQueueGuard};
+pub use mock::MockQueue;

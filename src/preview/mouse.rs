@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use crate::common::compositor::CompositorType;
+use crate::common::compositor::{CompositorType, niri};
 use crate::settings::store::{IntSettingKey, SettingsStore};
 use crate::ui::prelude::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -23,6 +23,7 @@ pub(crate) fn render_mouse_sensitivity_preview() -> Result<String> {
             CompositorType::Gnome => {
                 crate::assist::actions::mouse::get_gnome_mouse_speed().unwrap_or(0.0)
             }
+            CompositorType::Niri => niri::current_mouse_speed().unwrap_or(0.0),
             _ if compositor.is_x11() => {
                 crate::assist::actions::mouse::get_x11_mouse_speed().unwrap_or(0.0)
             }

@@ -23,7 +23,7 @@ mod wrapper;
 // Re-export public API
 pub use types::{
     ChecklistAction, ChecklistResult, ConfirmResult, DecodedStreamingMenuItem, FzfResult,
-    FzfSelectable, Header, MenuItem, StreamingCommand, StreamingMenuItem,
+    FzfSelectable, Header, MenuItem, StreamingCommand, StreamingMenuItem, default_fzf_key,
 };
 
 // Re-export main user-facing types

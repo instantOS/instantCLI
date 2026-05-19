@@ -102,7 +102,12 @@ pub(crate) fn run_browse_menu(dir: &Path, display: &str, mode: BrowseMode) -> Re
                     BrowseMode::CreateAlternative => {
                         let sources =
                             sources::list_sources_for_target(&config, &selected.target_path)?;
-                        run_create_flow(&selected.target_path, &selected.display_path, &sources)?
+                        run_create_flow(
+                            &selected.target_path,
+                            &selected.display_path,
+                            &sources,
+                            false,
+                        )?
                     }
                     BrowseMode::SelectAlternative => {
                         run_select_flow(&selected.target_path, &selected.display_path)?
@@ -127,7 +132,7 @@ pub(crate) fn run_browse_menu(dir: &Path, display: &str, mode: BrowseMode) -> Re
                 if let Some(path) = pick_new_file_to_track()? {
                     let file_display = to_display_path(&path);
                     let sources = sources::list_sources_for_target(&config, &path)?;
-                    let create_result = run_create_flow(&path, &file_display, &sources)?;
+                    let create_result = run_create_flow(&path, &file_display, &sources, false)?;
                     if matches!(create_result, Flow::Done | Flow::Cancelled) {
                         preselect = Some(file_display);
                     }
@@ -225,8 +230,11 @@ fn pick_new_file_to_track() -> Result<Option<std::path::PathBuf>> {
         .pick_one()
     {
         Ok(Some(path)) => {
-            if !path.starts_with(&home) {
-                FzfWrapper::message("File must be in your home directory")?;
+            if crate::dot::utils::resolve_dotfile_path(&path.to_string_lossy(), true, true).is_err()
+            {
+                FzfWrapper::message(
+                    "File must be in your home directory or an absolute root path",
+                )?;
                 return Ok(None);
             }
             Ok(Some(path))

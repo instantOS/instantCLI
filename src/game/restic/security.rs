@@ -137,7 +137,7 @@ pub fn check_snapshot_vs_local_saves(
         None => {
             // Show warning but allow proceed
             let confirmed = FzfWrapper::builder()
-                .message(format!(
+                .confirm(format!(
                     "  Security Warning for '{game_name}':\n\nLocal save files exist but modification time cannot be determined.\n\nRestoring from snapshot might overwrite existing saves.\n\nDo you want to continue?"
                 ))
                 .yes_text("Continue Restore")
@@ -159,7 +159,7 @@ pub fn check_snapshot_vs_local_saves(
             let snapshot_time_str = format_snapshot_time_for_display(&snapshot.time);
 
             let confirmed = FzfWrapper::builder()
-                .message(format!(
+                .confirm(format!(
                     "  CRITICAL Security Warning for '{game_name}':\n\nLocal saves are NEWER than the selected snapshot!\n\n Local saves modified: {local_time_str}\n Snapshot created:   {snapshot_time_str}\n\nRestoring will OVERWRITE newer local saves with older data.\n\nThis action cannot be undone. Are you absolutely sure?"
                 ))
                 .yes_text("Overwrite Local Saves")
@@ -175,7 +175,7 @@ pub fn check_snapshot_vs_local_saves(
             let snapshot_time_str = format_snapshot_time_for_display(&snapshot.time);
 
             let confirmed = FzfWrapper::builder()
-                .message(format!(
+                .confirm(format!(
                     " Restore Summary for '{}':\n\nSnapshot is newer than local saves.\n\n Local saves modified: {}\n Snapshot created:   {}\n Local save files:   {} ({})\n\nDo you want to continue with the restore?",
                     game_name, local_time_str, snapshot_time_str, save_info.file_count, format_file_size(save_info.total_size)
                 ))
@@ -193,7 +193,7 @@ pub fn check_snapshot_vs_local_saves(
         TimeComparison::Error(msg) => {
             // Error in comparison - warn but allow
             let confirmed = FzfWrapper::builder()
-                .message(format!(
+                .confirm(format!(
                     "  Warning for '{game_name}':\n\nCould not compare snapshot and local save times: {msg}\n\nRestoring might overwrite existing saves.\n\nDo you want to continue?"
                 ))
                 .yes_text("Continue Restore")
@@ -269,7 +269,7 @@ pub fn create_restore_confirmation(
     message.push_str("\n  This will overwrite existing save files.\nThis action cannot be undone.\n\nAre you sure you want to continue?");
 
     let confirmed = FzfWrapper::builder()
-        .message(&message)
+        .confirm(&message)
         .yes_text("Restore")
         .no_text("Cancel")
         .confirm_dialog()

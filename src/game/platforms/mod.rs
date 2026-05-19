@@ -804,10 +804,10 @@ fn prompt_executable_command(
     if let Some(context) = context {
         if let Some(executable_path) = &context.executable_path {
             builder = builder.start_path(executable_path);
-        } else if let Some(save_path) = &context.save_path {
-            if let Some(parent) = save_path.parent() {
-                builder = builder.start_dir(parent);
-            }
+        } else if let Some(save_path) = &context.save_path
+            && let Some(parent) = save_path.parent()
+        {
+            builder = builder.start_dir(parent);
         }
     }
 
@@ -891,10 +891,7 @@ fn ask_gamescope_flags() -> Result<GamescopeOptions> {
         .ghost("Example: -f -W 1280 -H 720");
 
     let options = match prompt_text_edit(prompt)? {
-        TextEditOutcome::Updated(Some(raw)) => match shell_words::split(raw.trim()) {
-            Ok(options) => options,
-            Err(_) => Vec::new(),
-        },
+        TextEditOutcome::Updated(Some(raw)) => shell_words::split(raw.trim()).unwrap_or_default(),
         _ => Vec::new(),
     };
 
