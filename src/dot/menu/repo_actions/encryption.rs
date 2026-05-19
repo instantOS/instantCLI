@@ -208,6 +208,29 @@ pub(super) fn handle_repo_encryption(
                         FzfWrapper::message(&msg)?;
                     }
                     RepoEncryptionAction::AuthorizeLocalKey => {
+                        let local_keys = crate::dot::operations::key::get_local_public_keys()
+                            .unwrap_or_default();
+                        if local_keys.is_empty() {
+                            let result = FzfWrapper::builder()
+                                .responsive_layout()
+                                .confirm(
+                                    "No local age identity found.\n\nWould you like to generate one now?",
+                                )
+                                .yes_text("Generate Key")
+                                .no_text("Cancel")
+                                .confirm_dialog()?;
+                            if result == crate::menu_utils::ConfirmResult::Yes {
+                                crate::dot::operations::key::handle_init(false)?;
+                                let new_keys = crate::dot::operations::key::get_local_public_keys()
+                                    .unwrap_or_default();
+                                if new_keys.is_empty() {
+                                    FzfWrapper::message("No key was generated.")?;
+                                    continue;
+                                }
+                            } else {
+                                continue;
+                            }
+                        }
                         crate::dot::operations::key::handle_authorize(
                             config,
                             db,
