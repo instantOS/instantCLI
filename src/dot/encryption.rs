@@ -452,7 +452,7 @@ pub fn decrypt_file_to_bytes(
 ) -> Result<Vec<u8>> {
     if identities.is_empty() {
         return Err(anyhow!(
-            "No local encryption key found. Please run 'ins dot encrypt generate' first, or set $AGE_IDENTITY."
+            "No local encryption key found. Please run 'ins dot keys generate' first, or set $AGE_IDENTITY."
         ));
     }
     let file = File::open(cipher_path)

@@ -181,7 +181,7 @@ pub(crate) fn handle_authorize(
         let local_pubkeys = get_local_public_keys()?;
         if local_pubkeys.is_empty() {
             anyhow::bail!(
-                "No local encryption key found. Please run `ins dot encrypt generate` first to generate one."
+                "No local encryption key found. Please run `ins dot keys generate` first to generate one."
             );
         } else if local_pubkeys.len() > 1 {
             anyhow::bail!(
@@ -698,7 +698,7 @@ pub(crate) fn handle_identity() -> Result<()> {
             char::from(NerdFont::Warning).to_string().red()
         );
         println!(
-            "  {} Run `ins dot encrypt generate` to generate a secure local encryption keypair.",
+            "  {} Run `ins dot keys generate` to generate a secure local encryption keypair.",
             char::from(NerdFont::Lightbulb).to_string().yellow()
         );
         println!();

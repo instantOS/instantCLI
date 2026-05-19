@@ -129,7 +129,7 @@ plaintext file and re-run; otherwise delete the ciphertext file and re-run.",
     .with_context(|| {
         format!(
             "repository '{}' has no usable encryption_recipients configured in instantdots.toml.\n\
-                 Please authorize decryption keys first using 'ins dot key authorize'.",
+                 Please authorize decryption keys first using 'ins dot keys authorize'.",
             repo_name
         )
     })?;
