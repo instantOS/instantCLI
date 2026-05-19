@@ -23,6 +23,8 @@ pub mod utils;
 #[cfg(test)]
 mod external_metadata_tests;
 #[cfg(test)]
+pub(crate) mod test_util;
+#[cfg(test)]
 mod path_tests;
 
 // Re-exports for convenience - these are used throughout the dot module

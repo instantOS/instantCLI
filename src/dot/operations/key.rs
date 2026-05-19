@@ -137,14 +137,39 @@ pub(crate) fn handle_authorize(
     dry_run: bool,
     debug: bool,
 ) -> Result<()> {
-    let repo_name = if let Some(name) = repo_name_opt {
-        name.to_string()
+    let (repo_name, repo_auto_selected) = if let Some(name) = repo_name_opt {
+        (name.to_string(), false)
     } else {
         let writable_repos = config.get_writable_repos();
         if writable_repos.is_empty() {
             anyhow::bail!("No writable repositories found in config to authorize keys.");
         }
-        writable_repos[0].name.clone()
+        let chosen = writable_repos[0].name.clone();
+        if writable_repos.len() > 1 {
+            // Make the implicit choice visible so users with multiple repos
+            // don't accidentally authorize the wrong one (issue #9).
+            let other_names: Vec<&str> = writable_repos
+                .iter()
+                .skip(1)
+                .map(|r| r.name.as_str())
+                .collect();
+            emit(
+                Level::Warn,
+                "dot.key.authorize.repo_auto_selected",
+                &format!(
+                    "{} No --repo given; authorizing in '{}' (other writable repos: {}). \
+                     Pass --repo to choose explicitly.",
+                    char::from(NerdFont::Warning),
+                    chosen.cyan(),
+                    other_names.join(", ")
+                ),
+                Some(serde_json::json!({
+                    "selected_repo": chosen,
+                    "other_writable_repos": other_names,
+                })),
+            );
+        }
+        (chosen, true)
     };
 
     let dotfile_repo = DotfileRepo::new(config, repo_name.clone())?;
@@ -203,18 +228,27 @@ pub(crate) fn handle_authorize(
         debug,
     )?;
 
+    let repo_note = if repo_auto_selected {
+        format!(" (auto-selected; pass --repo to override)")
+    } else {
+        String::new()
+    };
     emit(
         Level::Success,
         "dot.key.authorize.success",
         &format!(
-            "{} Successfully authorized recipient in repository '{}'!\n{} Recipient: {}\n{} Re-encrypted tracked files.",
+            "{} Successfully authorized recipient in repository '{}'{}!\n{} Recipient: {}\n{} Re-encrypted tracked files.",
             char::from(NerdFont::Check),
             repo_name,
+            repo_note,
             char::from(NerdFont::Users),
             recipient_key.green(),
             char::from(NerdFont::Folder)
         ),
-        None,
+        Some(serde_json::json!({
+            "repo": repo_name.as_str(),
+            "auto_selected": repo_auto_selected,
+        })),
     );
 
     Ok(())
@@ -255,14 +289,39 @@ pub(crate) fn handle_rotate(
         );
     }
 
-    let repo_name = if let Some(name) = repo_name_opt {
-        name.to_string()
+    let (repo_name, repo_auto_selected) = if let Some(name) = repo_name_opt {
+        (name.to_string(), false)
     } else {
         let writable_repos = config.get_writable_repos();
         if writable_repos.is_empty() {
             anyhow::bail!("No writable repositories found in config to rotate keys.");
         }
-        writable_repos[0].name.clone()
+        let chosen = writable_repos[0].name.clone();
+        if writable_repos.len() > 1 {
+            // Issue #9 — surface the implicit choice; rotate is destructive
+            // so be loud about which repo got picked.
+            let other_names: Vec<&str> = writable_repos
+                .iter()
+                .skip(1)
+                .map(|r| r.name.as_str())
+                .collect();
+            emit(
+                Level::Warn,
+                "dot.key.rotate.repo_auto_selected",
+                &format!(
+                    "{} No --repo given; rotating in '{}' (other writable repos: {}). \
+                     Pass --repo to choose explicitly.",
+                    char::from(NerdFont::Warning),
+                    chosen.cyan(),
+                    other_names.join(", ")
+                ),
+                Some(serde_json::json!({
+                    "selected_repo": chosen,
+                    "other_writable_repos": other_names,
+                })),
+            );
+        }
+        (chosen, true)
     };
 
     let dotfile_repo = DotfileRepo::new(config, repo_name.clone())?;
@@ -270,17 +329,26 @@ pub(crate) fn handle_rotate(
 
     reencrypt_repository(&repo_path, &dotfile_repo, recipients, db, dry_run, debug)?;
 
+    let repo_note = if repo_auto_selected {
+        " (auto-selected; pass --repo to override)"
+    } else {
+        ""
+    };
     emit(
         Level::Success,
         "dot.key.rotate.success",
         &format!(
-            "{} Successfully rotated keys in repository '{}'!\n{} New Recipients: {:?}",
+            "{} Successfully rotated keys in repository '{}'{}!\n{} New Recipients: {:?}",
             char::from(NerdFont::Check),
             repo_name,
+            repo_note,
             char::from(NerdFont::Users),
             recipients
         ),
-        None,
+        Some(serde_json::json!({
+            "repo": repo_name.as_str(),
+            "auto_selected": repo_auto_selected,
+        })),
     );
 
     Ok(())
@@ -331,8 +399,18 @@ fn reencrypt_repository(
 
     // Decrypt and re-encrypt all files in memory first.
     // This prevents a partial failure from leaving the repository in a mixed state.
+    // Capture the OLD cipher hash for each file so we can prune its
+    // encrypted_sources row after the new ciphertext is in place (issue
+    // #7 — without this, the cipher→plain mapping table grows unboundedly
+    // on every key rotation/authorize).
     let mut pending_writes = Vec::new();
     for file in &encrypted_files {
+        let old_cipher_hash = Dotfile::compute_hash(file).with_context(|| {
+            format!(
+                "hashing existing encrypted file {} before re-encrypt",
+                file.display()
+            )
+        })?;
         let plain_bytes = crate::dot::encryption::decrypt_file_to_bytes(file, &identities)
             .with_context(|| {
                 format!(
@@ -344,12 +422,24 @@ fn reencrypt_repository(
         let cipher_bytes =
             crate::dot::encryption::encrypt_bytes_to_armored(&plain_bytes, &parsed_recipients)?;
         let new_cipher_hash = Dotfile::hash_bytes(&cipher_bytes);
-        pending_writes.push((file, cipher_bytes, plain_hash, new_cipher_hash));
+        pending_writes.push((
+            file,
+            cipher_bytes,
+            plain_hash,
+            new_cipher_hash,
+            old_cipher_hash,
+        ));
     }
 
     // Phase 2: Write all files atomically and update database
-    for (file, cipher_bytes, plain_hash, new_cipher_hash) in pending_writes {
+    for (file, cipher_bytes, plain_hash, new_cipher_hash, old_cipher_hash) in pending_writes {
         crate::dot::utils::persist_file_safely(file, &cipher_bytes, "encrypted file")?;
+        // Drop the stale mapping first so the table doesn't accumulate
+        // orphaned rows on every recipient change. Skip if the encryption
+        // happened to produce identical ciphertext (no-op rotation).
+        if old_cipher_hash != new_cipher_hash {
+            db.delete_encrypted_source(&old_cipher_hash)?;
+        }
         db.record_encrypted_source(&new_cipher_hash, &plain_hash)?;
         crate::dot::git::repo_ops::git_add(repo_path, file, debug)?;
     }
@@ -706,9 +796,7 @@ mod tests {
         use age::secrecy::ExposeSecret;
         let id1_string = id1.to_string();
         fs::write(&identity_file, id1_string.expose_secret()).unwrap();
-        unsafe {
-            std::env::set_var("AGE_IDENTITY", identity_file.to_string_lossy().as_ref());
-        }
+        let age_guard = crate::dot::test_util::EnvGuard::set("AGE_IDENTITY", &identity_file);
 
         // 6. Test Authorize Operation
         handle_authorize(&config, &db, Some(&pub2), Some("my-repo"), false, false).unwrap();
@@ -735,23 +823,21 @@ mod tests {
         std::io::Read::read_to_end(&mut reader, &mut decrypted_payload).unwrap();
         assert_eq!(decrypted_payload, plain_bytes);
 
-        // 8. Setup id2 as the local key to test rotating out id1
+        // 8. Setup id2 as the local key to test rotating out id1.
+        //    Drop the first guard before installing the second so the
+        //    second EnvGuard captures the original (pre-test) value of
+        //    AGE_IDENTITY rather than the previous test value.
         let identity_file2 = temp.path().join("my_identity2");
         let id2_string = id2.to_string();
         fs::write(&identity_file2, id2_string.expose_secret()).unwrap();
-        unsafe {
-            std::env::set_var("AGE_IDENTITY", identity_file2.to_string_lossy().as_ref());
-        }
+        drop(age_guard);
+        let _age_guard2 = crate::dot::test_util::EnvGuard::set("AGE_IDENTITY", &identity_file2);
 
         // 9. Test Rotate Operation (only allow id2)
         handle_rotate(&config, &db, &[pub2.clone()], Some("my-repo"), false, false).unwrap();
 
         let rotated_meta = crate::dot::meta::read_meta(&repo_dir).unwrap();
         assert_eq!(rotated_meta.encryption_recipients, vec![pub2.clone()]);
-
-        // Clean env
-        unsafe {
-            std::env::remove_var("AGE_IDENTITY");
-        }
+        // _age_guard2 restores AGE_IDENTITY on drop at end of scope.
     }
 }

@@ -17,14 +17,24 @@
 //!   3. `<instant_config_dir>/encryption/identity` (single file) if it exists.
 //!   4. `<instant_config_dir>/encryption/identities/*` (every file in the dir) if
 //!      the directory exists.
+//!   5. Conventional unencrypted SSH private keys at `~/.ssh/id_ed25519` and
+//!      `~/.ssh/id_rsa`, if present. These are picked up only as a fallback
+//!      so users who authorize an SSH recipient can decrypt out-of-the-box.
 //!
-//! SSH agent and passphrase prompting are explicitly out of scope for v1 —
-//! `apply` runs from the autostart path and must never block on user input.
+//! Both native age identities (`AGE-SECRET-KEY-1...`) and SSH private keys
+//! (OpenSSH PEM format) are accepted in every slot above; `load_identities`
+//! falls back to the SSH parser when the age identity parser rejects a file.
+//!
+//! ssh-agent integration and passphrase prompting are explicitly out of scope
+//! for v1 — `apply` runs from the autostart path and must never block on user
+//! input. Passphrase-protected SSH keys (`Identity::Encrypted`) are
+//! intentionally dropped from the loaded identity set with a debug log.
 
 use anyhow::{Context, Result, anyhow};
+use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -78,6 +88,18 @@ impl EncryptedFailureReason {
 }
 
 /// Classify an encrypted dotfile processing error into a stable user-facing reason.
+///
+/// Primary classification comes from downcasting to `age::DecryptError` /
+/// `std::io::Error` in the anyhow chain — those checks are robust across
+/// `age` crate updates. The first set of string checks (identity not
+/// configured / unreadable) intentionally matches messages we ourselves
+/// produce in this module and in `load_identities`, so they're stable.
+///
+/// The trailing `no matching identity` / `parsing age header` / etc. string
+/// matches are defensive best-effort fallbacks for the rare case where an
+/// `age` error isn't wrapped via its concrete type. If a future `age`
+/// release changes wording, the typed downcast above still wins; the worst
+/// case is a single error gets classified as `Unknown`.
 pub fn classify_encrypted_failure(err: &anyhow::Error) -> EncryptedFailureReason {
     let root_message = err.to_string().to_lowercase();
     if root_message.contains("no local encryption key found")
@@ -114,6 +136,7 @@ pub fn classify_encrypted_failure(err: &anyhow::Error) -> EncryptedFailureReason
         }
     }
 
+    // Defensive fallbacks — see the rustdoc above. Kept narrow on purpose.
     if root_message.contains("no matching identity") || root_message.contains("no matching key") {
         return EncryptedFailureReason::IdentityMismatch;
     }
@@ -174,8 +197,16 @@ pub fn append_age_suffix(path: &Path) -> PathBuf {
 ///   2. `dots.toml` `encryption_keys` list (loaded from the global config)
 ///   3. `<instant_config_dir>/encryption/identity`
 ///   4. `<instant_config_dir>/encryption/identities/*`
+///   5. Conventional SSH private keys (`~/.ssh/id_ed25519`, `~/.ssh/id_rsa`)
 pub fn discover_identity_files() -> Vec<PathBuf> {
-    let mut out = Vec::new();
+    let mut out: Vec<PathBuf> = Vec::new();
+    let mut seen: HashSet<PathBuf> = HashSet::new();
+
+    let push_unique = |p: PathBuf, out: &mut Vec<PathBuf>, seen: &mut HashSet<PathBuf>| {
+        if seen.insert(p.clone()) {
+            out.push(p);
+        }
+    };
 
     // 1. $AGE_IDENTITY env var
     if let Ok(val) = std::env::var("AGE_IDENTITY") {
@@ -186,7 +217,7 @@ pub fn discover_identity_files() -> Vec<PathBuf> {
             }
             let expanded = PathBuf::from(shellexpand::tilde(raw).into_owned());
             if expanded.is_file() {
-                out.push(expanded);
+                push_unique(expanded, &mut out, &mut seen);
             }
         }
     }
@@ -195,8 +226,8 @@ pub fn discover_identity_files() -> Vec<PathBuf> {
     if let Ok(config) = crate::dot::config::DotfileConfig::load(None) {
         for raw in &config.encryption_keys {
             let expanded = PathBuf::from(shellexpand::tilde(raw).into_owned());
-            if expanded.is_file() && !out.iter().any(|p| p == &expanded) {
-                out.push(expanded);
+            if expanded.is_file() {
+                push_unique(expanded, &mut out, &mut seen);
             }
         }
     }
@@ -204,8 +235,8 @@ pub fn discover_identity_files() -> Vec<PathBuf> {
     // 3-4. Default paths under <instant_config_dir>/encryption/
     if let Ok(cfg_dir) = paths::instant_config_dir() {
         let single = cfg_dir.join("encryption").join("identity");
-        if single.is_file() && !out.iter().any(|p| p == &single) {
-            out.push(single);
+        if single.is_file() {
+            push_unique(single, &mut out, &mut seen);
         }
         let dir = cfg_dir.join("encryption").join("identities");
         if dir.is_dir()
@@ -218,9 +249,19 @@ pub fn discover_identity_files() -> Vec<PathBuf> {
                 .collect();
             files.sort();
             for p in files {
-                if !out.iter().any(|q| q == &p) {
-                    out.push(p);
-                }
+                push_unique(p, &mut out, &mut seen);
+            }
+        }
+    }
+
+    // 5. Conventional unencrypted SSH private keys. Only the well-known
+    //    filenames so we don't sweep up unrelated files in ~/.ssh.
+    if let Ok(home) = std::env::var("HOME") {
+        let ssh_dir = PathBuf::from(home).join(".ssh");
+        for name in ["id_ed25519", "id_rsa"] {
+            let p = ssh_dir.join(name);
+            if p.is_file() {
+                push_unique(p, &mut out, &mut seen);
             }
         }
     }
@@ -231,6 +272,16 @@ pub fn discover_identity_files() -> Vec<PathBuf> {
 /// Load and parse every discovered identity file into an in-memory list of
 /// age identities. Returns `Ok(Vec::new())` if no identity files are present.
 ///
+/// Each discovered file is first tried as a native age identity file
+/// (`AGE-SECRET-KEY-1...`). If that fails with an `InvalidData` error — the
+/// signal that the file isn't in age identity format — the file is retried
+/// as an OpenSSH private key. SSH keys that are passphrase-encrypted or use
+/// an unsupported algorithm are silently dropped, because the autostart
+/// path can't prompt for a passphrase.
+///
+/// A file that fails both parsers surfaces the original age parse error,
+/// since age format is the primary supported identity format.
+///
 /// Note: this is intentionally not cached. Identity files are tiny and
 /// parsing is microseconds; calling this once per `apply_all` invocation is
 /// fine. Avoiding caching also sidesteps `Send`/`Sync` issues with the
@@ -239,15 +290,78 @@ pub fn load_identities() -> Result<Vec<Box<dyn age::Identity>>> {
     let files = discover_identity_files();
     let mut all: Vec<Box<dyn age::Identity>> = Vec::new();
     for path in &files {
-        let name = path.to_string_lossy().into_owned();
-        let idf = age::IdentityFile::from_file(name.clone())
-            .with_context(|| format!("reading age identity file {}", path.display()))?;
-        let mut parsed = idf
-            .into_identities()
-            .with_context(|| format!("parsing age identity file {}", path.display()))?;
+        let mut parsed = load_identities_from_file(path)
+            .with_context(|| format!("loading identity file {}", path.display()))?;
         all.append(&mut parsed);
     }
     Ok(all)
+}
+
+/// Parse a single identity file as either an age identity file or an
+/// OpenSSH private key.
+///
+/// `~/.ssh/id_ed25519` style keys go through `age::ssh::Identity`. Native
+/// age files go through `age::IdentityFile`. The age parser is tried first.
+fn load_identities_from_file(path: &Path) -> Result<Vec<Box<dyn age::Identity>>> {
+    let name = path.to_string_lossy().into_owned();
+
+    // Try native age identity file first. The age parser tolerates blank
+    // lines and `#` comments, so well-formed age identity files will always
+    // parse here. SSH keys produce `InvalidData` ("contains non-identity
+    // data on line N") — that's our cue to fall back.
+    match age::IdentityFile::from_file(name.clone()) {
+        Ok(idf) => {
+            let parsed = idf
+                .into_identities()
+                .with_context(|| format!("parsing age identity file {}", path.display()))?;
+            Ok(parsed)
+        }
+        Err(age_err) if age_err.kind() == std::io::ErrorKind::InvalidData => {
+            match parse_ssh_identity_file(path) {
+                Ok(parsed) => Ok(parsed),
+                // Surface the original age error rather than the SSH one;
+                // age is the primary format and its diagnostic is more
+                // useful for the common case.
+                Err(_) => Err(anyhow::Error::from(age_err))
+                    .with_context(|| format!("reading age identity file {}", path.display())),
+            }
+        }
+        Err(age_err) => Err(anyhow::Error::from(age_err))
+            .with_context(|| format!("reading age identity file {}", path.display())),
+    }
+}
+
+fn parse_ssh_identity_file(path: &Path) -> Result<Vec<Box<dyn age::Identity>>> {
+    let file = File::open(path)
+        .with_context(|| format!("opening ssh identity file {}", path.display()))?;
+    let reader = BufReader::new(file);
+    let ssh_id = age::ssh::Identity::from_buffer(reader, Some(path.to_string_lossy().into_owned()))
+        .with_context(|| format!("parsing ssh identity file {}", path.display()))?;
+
+    match ssh_id {
+        age::ssh::Identity::Unencrypted(_) => {
+            Ok(vec![Box::new(ssh_id) as Box<dyn age::Identity>])
+        }
+        age::ssh::Identity::Encrypted(_) => {
+            // v1 deliberately doesn't prompt; skip so apply still runs from
+            // autostart instead of erroring out. The user can place a
+            // plaintext copy of the key under
+            // ~/.config/instant/encryption/identities/ to use it, or set
+            // AGE_IDENTITY to point at one.
+            eprintln!(
+                "instant: skipping passphrase-protected SSH identity {} (v1 does not prompt)",
+                path.display()
+            );
+            Ok(Vec::new())
+        }
+        age::ssh::Identity::Unsupported(_) => {
+            eprintln!(
+                "instant: skipping unsupported SSH identity {} (key type not supported by age)",
+                path.display()
+            );
+            Ok(Vec::new())
+        }
+    }
 }
 
 /// Parse public encryption recipients from repository metadata.
@@ -409,7 +523,10 @@ mod tests {
             Err(err) => err,
         };
 
-        assert!(err.to_string().contains("no age recipients configured"));
+        assert!(
+            err.to_string().contains("no encryption recipients configured"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]
