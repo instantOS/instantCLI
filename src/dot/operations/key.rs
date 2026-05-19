@@ -1,4 +1,4 @@
-//! Key, identity, and recipient management operations.
+//! Encryption key and recipient management operations.
 
 use anyhow::{Context, Result};
 use colored::Colorize;
@@ -6,23 +6,23 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-use crate::dot::commands::KeyCommands;
+use crate::dot::commands::EncryptCommands;
 use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
 use crate::dot::dotfile::Dotfile;
 use crate::dot::dotfilerepo::DotfileRepo;
 use crate::ui::prelude::*;
 
-/// Primary entry point for executing key subcommands.
-pub fn handle_key_command(
+/// Primary entry point for executing encryption subcommands.
+pub fn handle_encrypt_command(
     config: &DotfileConfig,
     db: &Database,
-    command: &KeyCommands,
+    command: &EncryptCommands,
     debug: bool,
 ) -> Result<()> {
     match command {
-        KeyCommands::Init { force } => handle_init(*force),
-        KeyCommands::Authorize {
+        EncryptCommands::Generate { force } => handle_init(*force),
+        EncryptCommands::Authorize {
             recipient,
             repo,
             dry_run,
@@ -35,20 +35,20 @@ pub fn handle_key_command(
             *dry_run,
             debug,
         ),
-        KeyCommands::Rotate {
+        EncryptCommands::Rotate {
             recipients,
             repo,
             dry_run,
             ..
         } => handle_rotate(config, db, recipients, repo.as_deref(), *dry_run, debug),
-        KeyCommands::Status { repo, .. } => handle_status(config, repo.as_deref()),
-        KeyCommands::Identity => handle_identity(),
+        EncryptCommands::Status { repo, .. } => handle_status(config, repo.as_deref()),
+        EncryptCommands::Show => handle_identity(),
     }
 }
 
 pub(crate) fn handle_init(force: bool) -> Result<()> {
     let config_dir = crate::common::paths::instant_config_dir()?;
-    let identity_dir = config_dir.join("age");
+    let identity_dir = config_dir.join("encryption");
     let identity_path = identity_dir.join("identity");
 
     if identity_path.exists() && !force {
@@ -67,7 +67,7 @@ pub(crate) fn handle_init(force: bool) -> Result<()> {
                 Level::Info,
                 "dot.key.init.exists",
                 &format!(
-                    "{} Age identity already exists!\n{} Path: {}\n{} Public recipient key: {}",
+                    "{} Encryption key already exists!\n{} Path: {}\n{} Public recipient key: {}",
                     char::from(NerdFont::Info),
                     char::from(NerdFont::Lock),
                     identity_path.display().to_string().cyan(),
@@ -78,7 +78,7 @@ pub(crate) fn handle_init(force: bool) -> Result<()> {
             );
         } else {
             anyhow::bail!(
-                "Age identity file already exists at {} but is invalid or corrupted. Use --force to overwrite it.",
+                "Encryption key file already exists at {} but is invalid or corrupted. Use --force to overwrite it.",
                 identity_path.display()
             );
         }
@@ -88,7 +88,7 @@ pub(crate) fn handle_init(force: bool) -> Result<()> {
     emit(
         Level::Info,
         "dot.key.init.generating",
-        "Generating secure age identity keypair...",
+        "Generating secure encryption keypair...",
         None,
     );
 
@@ -100,7 +100,11 @@ pub(crate) fn handle_init(force: bool) -> Result<()> {
     let secret_string = identity.to_string();
     let secret_str = secret_string.expose_secret();
 
-    crate::dot::utils::persist_file_safely(&identity_path, secret_str.as_bytes(), "age identity")?;
+    crate::dot::utils::persist_file_safely(
+        &identity_path,
+        secret_str.as_bytes(),
+        "encryption key",
+    )?;
 
     #[cfg(unix)]
     {
@@ -112,7 +116,7 @@ pub(crate) fn handle_init(force: bool) -> Result<()> {
         Level::Success,
         "dot.key.init.success",
         &format!(
-            "{} Generated secure age identity keypair for this machine!\n{} Private key saved to: {}\n{} Public key: {}",
+            "{} Generated secure encryption keypair for this machine!\n{} Private key saved to: {}\n{} Public key: {}",
             char::from(NerdFont::Check),
             char::from(NerdFont::Lock),
             identity_path.display().to_string().cyan(),
@@ -152,11 +156,11 @@ pub(crate) fn handle_authorize(
         let local_pubkeys = get_local_public_keys()?;
         if local_pubkeys.is_empty() {
             anyhow::bail!(
-                "No local age identity found. Please run `ins dot key init` first to generate one."
+                "No local encryption key found. Please run `ins dot encrypt generate` first to generate one."
             );
         } else if local_pubkeys.len() > 1 {
             anyhow::bail!(
-                "Multiple local age identities found. Please specify which public key to authorize explicitly:\n{:?}",
+                "Multiple local encryption keys found. Please specify which public key to authorize explicitly:\n{:?}",
                 local_pubkeys
             );
         }
@@ -172,7 +176,7 @@ pub(crate) fn handle_authorize(
 
     let meta = crate::dot::meta::read_meta(&repo_path)?;
 
-    if meta.age_recipients.contains(&recipient_key) {
+    if meta.encryption_recipients.contains(&recipient_key) {
         emit(
             Level::Info,
             "dot.key.authorize.already_present",
@@ -187,7 +191,7 @@ pub(crate) fn handle_authorize(
         return Ok(());
     }
 
-    let mut new_recipients = meta.age_recipients.clone();
+    let mut new_recipients = meta.encryption_recipients.clone();
     new_recipients.push(recipient_key.clone());
 
     reencrypt_repository(
@@ -302,7 +306,7 @@ fn reencrypt_repository(
     let identities = crate::dot::encryption::load_identities()?;
     if !encrypted_files.is_empty() && identities.is_empty() {
         anyhow::bail!(
-            "Repository has existing encrypted files, but no local age identities were found. Please configure your identity first."
+            "Repository has existing encrypted files, but no local encryption keys were found. Please configure your key first."
         );
     }
 
@@ -350,7 +354,7 @@ fn reencrypt_repository(
         crate::dot::git::repo_ops::git_add(repo_path, file, debug)?;
     }
 
-    meta.age_recipients = new_recipients_str.to_vec();
+    meta.encryption_recipients = new_recipients_str.to_vec();
     crate::dot::meta::update_meta(repo_path, &meta)?;
     crate::dot::git::repo_ops::git_add(repo_path, &repo_path.join("instantdots.toml"), debug)?;
 
@@ -401,7 +405,7 @@ pub(crate) fn handle_status(config: &DotfileConfig, target_repo_opt: Option<&str
         let dotfile_repo = DotfileRepo::new(config, repo.name.clone())?;
         let repo_path = dotfile_repo.local_path(config)?;
         let meta = crate::dot::meta::read_meta(&repo_path)?;
-        let recipients = &meta.age_recipients;
+        let recipients = &meta.encryption_recipients;
 
         println!(
             "{} Repository: {} (Path: {})",
@@ -467,7 +471,7 @@ pub(crate) fn handle_status(config: &DotfileConfig, target_repo_opt: Option<&str
                     char::from(NerdFont::Warning).to_string().red()
                 );
                 println!(
-                    "     {} Hint: Place the matching private key in ~/.config/instant/age/identity",
+                    "     {} Hint: Place the matching private key in ~/.config/instant/encryption/identity",
                     char::from(NerdFont::Lightbulb).to_string().yellow()
                 );
             }
@@ -513,7 +517,7 @@ fn find_age_files(dir: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
 
 pub(crate) fn handle_identity() -> Result<()> {
     let config_dir = crate::common::paths::instant_config_dir()?;
-    let identity_dir = config_dir.join("age");
+    let identity_dir = config_dir.join("encryption");
     let identity_path = identity_dir.join("identity");
 
     println!(
@@ -541,7 +545,7 @@ pub(crate) fn handle_identity() -> Result<()> {
         if !pubkeys.is_empty() {
             identity_found = true;
             println!(
-                "{} Age Public Keys (from ~/.config/instant/age/identity):",
+                "{} Encryption keys (from ~/.config/instant/encryption/identity):",
                 char::from(NerdFont::CheckCircle).to_string().green()
             );
             for pk in pubkeys {
@@ -584,7 +588,7 @@ pub(crate) fn handle_identity() -> Result<()> {
 
     if !ssh_keys.is_empty() {
         println!(
-            "{} Discovered SSH Public Keys (Natively supported by age!):",
+            "{} Discovered SSH Public Keys (natively supported for encryption):",
             char::from(NerdFont::Terminal).to_string().blue()
         );
         for (name, key) in &ssh_keys {
@@ -600,11 +604,11 @@ pub(crate) fn handle_identity() -> Result<()> {
 
     if !identity_found && ssh_keys.is_empty() {
         println!(
-            "  {} No local age identities or SSH keys found on this machine.",
+            "  {} No local encryption keys or SSH keys found on this machine.",
             char::from(NerdFont::Warning).to_string().red()
         );
         println!(
-            "  {} Run `ins dot key init` to generate a secure local age keypair.",
+            "  {} Run `ins dot encrypt generate` to generate a secure local encryption keypair.",
             char::from(NerdFont::Lightbulb).to_string().yellow()
         );
         println!();
@@ -647,7 +651,7 @@ mod tests {
         let repo_dir = temp.path().join("my-repo");
         fs::create_dir_all(repo_dir.join("dots")).unwrap();
 
-        // 1. Generate age identities
+        // 1. Generate encryption keys
         let id1 = age::x25519::Identity::generate();
         let pub1 = id1.to_public().to_string();
 
@@ -661,7 +665,7 @@ mod tests {
         let meta = crate::dot::types::RepoMetaData {
             name: "my-repo".to_string(),
             dots_dirs: vec!["dots".to_string()],
-            age_recipients: vec![pub1.clone()],
+            encryption_recipients: vec![pub1.clone()],
             ..Default::default()
         };
         crate::dot::meta::update_meta(&repo_dir, &meta).unwrap();
@@ -711,8 +715,8 @@ mod tests {
 
         // Check metadata updated
         let updated_meta = crate::dot::meta::read_meta(&repo_dir).unwrap();
-        assert!(updated_meta.age_recipients.contains(&pub1));
-        assert!(updated_meta.age_recipients.contains(&pub2));
+        assert!(updated_meta.encryption_recipients.contains(&pub1));
+        assert!(updated_meta.encryption_recipients.contains(&pub2));
 
         // 7. Verify we can decrypt with the new key (id2)
         let newly_encrypted_bytes = fs::read(&encrypted_file_path).unwrap();
@@ -743,7 +747,7 @@ mod tests {
         handle_rotate(&config, &db, &[pub2.clone()], Some("my-repo"), false, false).unwrap();
 
         let rotated_meta = crate::dot::meta::read_meta(&repo_dir).unwrap();
-        assert_eq!(rotated_meta.age_recipients, vec![pub2.clone()]);
+        assert_eq!(rotated_meta.encryption_recipients, vec![pub2.clone()]);
 
         // Clean env
         unsafe {

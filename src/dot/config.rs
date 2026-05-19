@@ -74,11 +74,11 @@ pub struct DotfileConfig {
     /// Combined with per-repo units from instantdots.toml.
     #[serde(default)]
     pub units: Vec<String>,
-    /// Paths to age identity files (private keys) for decrypting `.age` dotfiles.
+    /// Paths to encryption key files (private keys) for decrypting `.age` dotfiles.
     /// Paths are tilde-expanded and loaded in order alongside $AGE_IDENTITY and
-    /// the default paths under `<instant_config_dir>/age/`.
+    /// the default paths under `<instant_config_dir>/encryption/`.
     #[serde(default)]
-    pub age_identity_files: Vec<String>,
+    pub encryption_keys: Vec<String>,
 }
 
 impl Default for DotfileConfig {
@@ -91,7 +91,7 @@ impl Default for DotfileConfig {
             database_dir: default_database_dir(),
             ignored_paths: Vec::new(),
             units: Vec::new(),
-            age_identity_files: Vec::new(),
+            encryption_keys: Vec::new(),
         }
     }
 }
@@ -565,6 +565,6 @@ documented_config!(DotfileConfig,
     repos, "List of dotfile repositories to manage",
     ignored_paths, "Paths to ignore during dotfile operations (local overrides)",
     units, "Global dotfile units - directories treated as atomic (combined with per-repo units)",
-    age_identity_files, "Paths to age identity files (private keys) for decrypting .age dotfiles; tilde-expanded, loaded after $AGE_IDENTITY",
+    encryption_keys, "Paths to encryption key files (private keys) for decrypting .age dotfiles; tilde-expanded, loaded after $AGE_IDENTITY",
     => config_file_path(None)
 );

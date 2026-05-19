@@ -56,14 +56,17 @@ fn build_status_message(repo_name: &str, config: &DotfileConfig) -> String {
     };
     let local_keys = crate::dot::operations::key::get_local_public_keys().unwrap_or_default();
 
-    if meta.age_recipients.is_empty() {
+    if meta.encryption_recipients.is_empty() {
         return format!(
-            "Repository: {}\n\nEncryption is not configured.\nNo age recipients have been authorized yet.",
+            "Repository: {}\n\nEncryption is not configured.\nNo encryption recipients have been authorized yet.",
             repo_name
         );
     }
 
-    let local_authorized = meta.age_recipients.iter().any(|r| local_keys.contains(r));
+    let local_authorized = meta
+        .encryption_recipients
+        .iter()
+        .any(|r| local_keys.contains(r));
 
     let mut encrypted_files = 0;
     for dir in &dotfile_repo.dotfile_dirs {
@@ -82,7 +85,7 @@ fn build_status_message(repo_name: &str, config: &DotfileConfig) -> String {
     format!(
         "Repository: {}\n\nRecipients: {}\nEncrypted files: {}\nLocal key: {} {}\n{}",
         repo_name,
-        meta.age_recipients.len(),
+        meta.encryption_recipients.len(),
         encrypted_files,
         auth_icon,
         if local_authorized {
@@ -214,7 +217,7 @@ pub(super) fn handle_repo_encryption(
                             let result = FzfWrapper::builder()
                                 .responsive_layout()
                                 .confirm(
-                                    "No local age identity found.\n\nWould you like to generate one now?",
+                                    "No local encryption key found.\n\nWould you like to generate one now?",
                                 )
                                 .yes_text("Generate Key")
                                 .no_text("Cancel")

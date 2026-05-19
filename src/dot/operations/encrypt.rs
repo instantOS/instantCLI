@@ -55,14 +55,16 @@ pub fn encrypt_dotfile(
     }
 
     let dotfile_repo = DotfileRepo::new(config, repo_name.to_string())?;
-    let recipients = crate::dot::encryption::parse_recipients(&dotfile_repo.meta.age_recipients)
-        .with_context(|| {
-            format!(
-                "repository '{}' has no usable age_recipients configured in instantdots.toml.\n\
+    let recipients = crate::dot::encryption::parse_recipients(
+        &dotfile_repo.meta.encryption_recipients,
+    )
+    .with_context(|| {
+        format!(
+            "repository '{}' has no usable encryption_recipients configured in instantdots.toml.\n\
                  Please authorize decryption keys first using 'ins dot key authorize'.",
-                repo_name
-            )
-        })?;
+            repo_name
+        )
+    })?;
 
     let encrypted_source_path = crate::dot::encryption::append_age_suffix(&dotfile.source_path);
     if encrypted_source_path.exists() {
@@ -297,7 +299,7 @@ mod tests {
                 metadata: Some(RepoMetaData {
                     name: "test-repo".to_string(),
                     dots_dirs: vec!["dots".to_string()],
-                    age_recipients: vec![recipient],
+                    encryption_recipients: vec![recipient],
                     ..RepoMetaData::default()
                 }),
             }],
@@ -378,7 +380,7 @@ mod tests {
                 metadata: Some(RepoMetaData {
                     name: "test-repo".to_string(),
                     dots_dirs: vec!["dots".to_string()],
-                    age_recipients: vec![recipient],
+                    encryption_recipients: vec![recipient],
                     ..RepoMetaData::default()
                 }),
             }],

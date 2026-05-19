@@ -92,7 +92,7 @@ pub fn decrypt_dotfile(
     let plaintext = crate::dot::encryption::decrypt_file_to_bytes(&dotfile.source_path, &identities)
         .with_context(|| {
             format!(
-                "decrypting {} — please verify that your age key is correctly configured in ~/.config/instant/age/identity or $AGE_IDENTITY",
+                "decrypting {} — please verify that your encryption key is correctly configured in ~/.config/instant/encryption/identity or $AGE_IDENTITY",
                 dotfile.source_path.display()
             )
         })?;
@@ -282,7 +282,7 @@ mod tests {
                 metadata: Some(RepoMetaData {
                     name: "test-repo".to_string(),
                     dots_dirs: vec!["dots".to_string()],
-                    age_recipients: vec![recipient],
+                    encryption_recipients: vec![recipient],
                     ..RepoMetaData::default()
                 }),
             }],

@@ -306,10 +306,10 @@ fn add_new_file(
     };
 
     let recipients = if encrypt {
-        let parsed = crate::dot::encryption::parse_recipients(&dotfile_repo.meta.age_recipients)
+        let parsed = crate::dot::encryption::parse_recipients(&dotfile_repo.meta.encryption_recipients)
             .with_context(|| {
                 format!(
-                    "repository '{}' has no usable age_recipients configured in instantdots.toml.\n\
+                    "repository '{}' has no usable encryption_recipients configured in instantdots.toml.\n\
                      Please authorize decryption keys first using 'ins dot key authorize'.",
                     repo_config.name
                 )

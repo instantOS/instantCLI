@@ -604,7 +604,7 @@ fn show_text_status(
 
     if summary.identity_required_count > 0 {
         println!(
-            "{} Encrypted: {} files need an age identity",
+            "{} Encrypted: {} files need an encryption key",
             crate::ui::nerd_font::NerdFont::ShieldAlert
                 .to_string()
                 .yellow(),
@@ -923,7 +923,7 @@ fn show_action_suggestions(
                 }
                 if identity_required_count > 0 {
                     suggestions.push(format!(
-                        "Configure an age identity with '{bin} dot key init' or set $AGE_IDENTITY"
+                        "Configure an encryption key with '{bin} dot encrypt generate' or set $AGE_IDENTITY"
                     ));
                 }
                 if encrypted_error_count > 0 {
@@ -986,7 +986,7 @@ fn show_action_suggestions(
                 }
                 if identity_required_count > 0 {
                     println!(
-                        "  Configure an age identity with '{bin} dot key init' or set $AGE_IDENTITY"
+                        "  Configure an encryption key with '{bin} dot encrypt generate' or set $AGE_IDENTITY"
                     );
                 }
                 if encrypted_error_count > 0 {

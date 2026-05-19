@@ -62,7 +62,7 @@ impl EncryptionKeyKind {
 
     fn key_type_label(&self) -> &'static str {
         match self {
-            Self::AgeIdentity { .. } => "age",
+            Self::AgeIdentity { .. } => "key",
             Self::SshKey { .. } => "ssh",
         }
     }
@@ -395,7 +395,7 @@ fn handle_delete_key(key: &EncryptionKeyKind, config: &DotfileConfig) -> Result<
                 crate::dot::dotfilerepo::DotfileRepo::new(config, r.name.clone()).ok()?;
             let repo_path = dotfile_repo.local_path(config).ok()?;
             let meta = crate::dot::meta::read_meta(&repo_path).ok()?;
-            if meta.age_recipients.iter().any(|r| r == public_key) {
+            if meta.encryption_recipients.iter().any(|r| r == public_key) {
                 Some(r.name.clone())
             } else {
                 None
@@ -479,10 +479,10 @@ pub fn handle_encryption_keys_menu(
             ),
             preview: PreviewBuilder::new()
                 .header(NerdFont::Plus, "Generate New Key")
-                .text("Create a new age x25519 identity keypair.")
+                .text("Create a new x25519 encryption keypair.")
                 .blank()
                 .text("The private key is saved to:")
-                .text("  ~/.config/instant/age/identity")
+                .text("  ~/.config/instant/encryption/identity")
                 .blank()
                 .subtext("Existing keys are not overwritten.")
                 .build_string(),
@@ -521,11 +521,11 @@ pub fn handle_encryption_keys_menu(
                             .unwrap_or_default();
                         if let Some(pk) = pubkeys.first() {
                             FzfWrapper::message(&format!(
-                                "Age identity is ready.\n\nPublic key:\n{}",
+                                "Encryption key is ready.\n\nPublic key:\n{}",
                                 pk
                             ))?;
                         } else {
-                            FzfWrapper::message("Age identity is ready.")?;
+                            FzfWrapper::message("Encryption key is ready.")?;
                         }
                     }
                     EncryptionMenuAction::Back => return Ok(()),

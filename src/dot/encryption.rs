@@ -13,9 +13,9 @@
 //! Identity discovery for v1:
 //!   1. `$AGE_IDENTITY` env var (colon-separated paths, like `ssh-add` /
 //!      the `age(1)` CLI).
-//!   2. `<instant_config_dir>/dots.toml` `age_identity_files` list, if present.
-//!   3. `<instant_config_dir>/age/identity` (single file) if it exists.
-//!   4. `<instant_config_dir>/age/identities/*` (every file in the dir) if
+//!   2. `<instant_config_dir>/dots.toml` `encryption_keys` list, if present.
+//!   3. `<instant_config_dir>/encryption/identity` (single file) if it exists.
+//!   4. `<instant_config_dir>/encryption/identities/*` (every file in the dir) if
 //!      the directory exists.
 //!
 //! SSH agent and passphrase prompting are explicitly out of scope for v1 —
@@ -80,7 +80,8 @@ impl EncryptedFailureReason {
 /// Classify an encrypted dotfile processing error into a stable user-facing reason.
 pub fn classify_encrypted_failure(err: &anyhow::Error) -> EncryptedFailureReason {
     let root_message = err.to_string().to_lowercase();
-    if root_message.contains("no local age identity found")
+    if root_message.contains("no local encryption key found")
+        || root_message.contains("no encryption keys were found")
         || root_message.contains("no age identities configured")
     {
         return EncryptedFailureReason::IdentityNotConfigured;
@@ -170,9 +171,9 @@ pub fn append_age_suffix(path: &Path) -> PathBuf {
 ///
 /// Sources (in priority order, deduplicated):
 ///   1. `$AGE_IDENTITY` env var (colon-separated paths)
-///   2. `dots.toml` `age_identity_files` list (loaded from the global config)
-///   3. `<instant_config_dir>/age/identity`
-///   4. `<instant_config_dir>/age/identities/*`
+///   2. `dots.toml` `encryption_keys` list (loaded from the global config)
+///   3. `<instant_config_dir>/encryption/identity`
+///   4. `<instant_config_dir>/encryption/identities/*`
 pub fn discover_identity_files() -> Vec<PathBuf> {
     let mut out = Vec::new();
 
@@ -190,9 +191,9 @@ pub fn discover_identity_files() -> Vec<PathBuf> {
         }
     }
 
-    // 2. dots.toml age_identity_files
+    // 2. dots.toml encryption_keys
     if let Ok(config) = crate::dot::config::DotfileConfig::load(None) {
-        for raw in &config.age_identity_files {
+        for raw in &config.encryption_keys {
             let expanded = PathBuf::from(shellexpand::tilde(raw).into_owned());
             if expanded.is_file() && !out.iter().any(|p| p == &expanded) {
                 out.push(expanded);
@@ -200,13 +201,13 @@ pub fn discover_identity_files() -> Vec<PathBuf> {
         }
     }
 
-    // 3-4. Default paths under <instant_config_dir>/age/
+    // 3-4. Default paths under <instant_config_dir>/encryption/
     if let Ok(cfg_dir) = paths::instant_config_dir() {
-        let single = cfg_dir.join("age").join("identity");
+        let single = cfg_dir.join("encryption").join("identity");
         if single.is_file() && !out.iter().any(|p| p == &single) {
             out.push(single);
         }
-        let dir = cfg_dir.join("age").join("identities");
+        let dir = cfg_dir.join("encryption").join("identities");
         if dir.is_dir()
             && let Ok(entries) = std::fs::read_dir(&dir)
         {
@@ -249,7 +250,7 @@ pub fn load_identities() -> Result<Vec<Box<dyn age::Identity>>> {
     Ok(all)
 }
 
-/// Parse public age recipients from repository metadata.
+/// Parse public encryption recipients from repository metadata.
 ///
 /// Supports native X25519 recipients (`age1...`) and SSH public keys
 /// (`ssh-ed25519 ...`, `ssh-rsa ...`) through the `age` crate.
@@ -264,26 +265,31 @@ pub fn parse_recipients(raw_recipients: &[String]) -> Result<Vec<Box<dyn age::Re
 
         if recipient.starts_with("age1") {
             let parsed = age::x25519::Recipient::from_str(recipient)
-                .map_err(|err| anyhow!("invalid age recipient '{}': {}", recipient, err))?;
+                .map_err(|err| anyhow!("invalid encryption recipient '{}': {}", recipient, err))?;
             recipients.push(Box::new(parsed));
             continue;
         }
 
         if recipient.starts_with("ssh-") {
-            let parsed = age::ssh::Recipient::from_str(recipient)
-                .map_err(|err| anyhow!("invalid SSH age recipient '{}': {:?}", recipient, err))?;
+            let parsed = age::ssh::Recipient::from_str(recipient).map_err(|err| {
+                anyhow!(
+                    "invalid SSH encryption recipient '{}': {:?}",
+                    recipient,
+                    err
+                )
+            })?;
             recipients.push(Box::new(parsed));
             continue;
         }
 
         return Err(anyhow!(
-            "unsupported age recipient '{}': expected an age1... key or SSH public key",
+            "unsupported encryption recipient '{}': expected an age1... key or SSH public key",
             recipient
         ));
     }
 
     if recipients.is_empty() {
-        return Err(anyhow!("no age recipients configured"));
+        return Err(anyhow!("no encryption recipients configured"));
     }
 
     Ok(recipients)
@@ -295,7 +301,7 @@ pub fn encrypt_bytes_to_armored(
     recipients: &[Box<dyn age::Recipient>],
 ) -> Result<Vec<u8>> {
     if recipients.is_empty() {
-        return Err(anyhow!("no age recipients configured"));
+        return Err(anyhow!("no encryption recipients configured"));
     }
 
     let encryptor = age::Encryptor::with_recipients(
@@ -322,7 +328,7 @@ pub fn decrypt_file_to_bytes(
 ) -> Result<Vec<u8>> {
     if identities.is_empty() {
         return Err(anyhow!(
-            "No local age identity found. Please run 'ins dot key init' first, or set $AGE_IDENTITY."
+            "No local encryption key found. Please run 'ins dot encrypt generate' first, or set $AGE_IDENTITY."
         ));
     }
     let file = File::open(cipher_path)

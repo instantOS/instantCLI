@@ -96,10 +96,10 @@ pub enum DotCommands {
         #[command(flatten)]
         root_flags: RootFlags,
     },
-    /// Manage dotfile encryption keys, identities, and recipients
-    Key {
+    /// Manage dotfile encryption keys and recipients
+    Keys {
         #[command(subcommand)]
-        command: KeyCommands,
+        command: EncryptCommands,
     },
     Update {
         /// Do not apply dotfiles after updating
@@ -298,14 +298,14 @@ pub enum PriorityCommands {
 }
 
 #[derive(Subcommand, Debug, Clone)]
-pub enum KeyCommands {
-    /// Generate a new age identity for this machine
-    Init {
-        /// Force generation even if an identity already exists
+pub enum EncryptCommands {
+    /// Generate a new encryption key for this machine
+    Generate {
+        /// Force generation even if a key already exists
         #[arg(long)]
         force: bool,
     },
-    /// Authorize a new age recipient public key in the repository metadata
+    /// Authorize a new encryption recipient public key in the repository metadata
     Authorize {
         /// Public key to authorize (age1... or ssh-...). Defaults to the local machine's public key.
         recipient: Option<String>,
@@ -320,7 +320,7 @@ pub enum KeyCommands {
     },
     /// Rotate all keys in a repository with a new set of recipients
     Rotate {
-        /// New comma-separated list of age recipients (overwrites old recipients)
+        /// New comma-separated list of encryption recipients (overwrites old recipients)
         #[arg(long, value_delimiter = ',')]
         recipients: Vec<String>,
         /// Rotate keys in this repository instead of the default repo
@@ -332,7 +332,7 @@ pub enum KeyCommands {
         #[command(flatten)]
         root_flags: RootFlags,
     },
-    /// List authorized recipients and check local identity decryption status
+    /// List authorized recipients and check local key decryption status
     Status {
         /// Check keys for this repository instead of all repositories
         #[arg(long, value_name = "REPO")]
@@ -340,8 +340,8 @@ pub enum KeyCommands {
         #[command(flatten)]
         root_flags: RootFlags,
     },
-    /// Show the local public key identity for this machine
-    Identity,
+    /// Show the local public encryption key for this machine
+    Show,
 }
 
 fn handle_ignore_command(
@@ -645,13 +645,13 @@ pub fn handle_dot_command(
         | DotCommands::Update { root_flags, .. }
         | DotCommands::Status { root_flags, .. }
         | DotCommands::Diff { root_flags, .. } => root_flags.home.as_deref(),
-        DotCommands::Key {
+        DotCommands::Keys {
             command:
-                KeyCommands::Authorize { root_flags, .. }
-                | KeyCommands::Rotate { root_flags, .. }
-                | KeyCommands::Status { root_flags, .. },
+                EncryptCommands::Authorize { root_flags, .. }
+                | EncryptCommands::Rotate { root_flags, .. }
+                | EncryptCommands::Status { root_flags, .. },
         } => root_flags.home.as_deref(),
-        DotCommands::Key { .. } => None,
+        DotCommands::Keys { .. } => None,
         DotCommands::Clone(args) => args.root_flags.home.as_deref(),
         DotCommands::Repo {
             command: RepoCommands::Clone(args),
@@ -844,8 +844,8 @@ pub fn handle_dot_command(
         DotCommands::Priority { command } => {
             handle_priority_command(&mut config, command, config_path)?;
         }
-        DotCommands::Key { command } => {
-            super::handle_key_command(&config, &db, command, debug)?;
+        DotCommands::Keys { command } => {
+            super::handle_encrypt_command(&config, &db, command, debug)?;
         }
         DotCommands::Menu { gui } => {
             if *gui {
