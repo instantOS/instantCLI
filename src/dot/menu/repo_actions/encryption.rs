@@ -68,12 +68,16 @@ pub(super) fn handle_repo_encryption(
             return Ok(());
         };
 
-        let local_pubkeys =
-            crate::dot::operations::key::get_local_public_keys().unwrap_or_default();
+        let local_keys = discover_all_keys();
+        let local_key_map: std::collections::HashMap<&str, &EncryptionKeyKind> = local_keys
+            .iter()
+            .map(|k| (k.public_key(), k))
+            .collect();
         let mut items: Vec<MenuItem> = Vec::new();
 
         for r in &meta.encryption_recipients {
-            let is_local = local_pubkeys.contains(r);
+            let matched = local_key_map.get(r.as_str()).copied();
+            let is_local = matched.is_some();
             let icon = format_icon_colored(
                 if is_local {
                     NerdFont::CheckCircle
@@ -86,34 +90,68 @@ pub(super) fn handle_repo_encryption(
                     colors::PEACH
                 },
             );
-            let short = {
-                const MAX: usize = 40;
-                if r.len() > MAX {
-                    format!("{}...", &r[..MAX.saturating_sub(3)])
-                } else {
-                    r.clone()
-                }
+
+            let display_label = if let Some(key) = matched {
+                format!("{}  ({})", key.display_name(), key.key_type_label())
+            } else {
+                let short = {
+                    const MAX: usize = 40;
+                    if r.len() > MAX {
+                        format!("{}...", &r[..MAX.saturating_sub(3)])
+                    } else {
+                        r.clone()
+                    }
+                };
+                format!("{}  (Remote)", short)
             };
-            let tag = if is_local { "Your Key" } else { "Remote" };
+
+            let mut preview = PreviewBuilder::new()
+                .header(NerdFont::Users, "Authorized Recipient")
+                .blank();
+
+            if let Some(key) = matched {
+                preview = preview
+                    .field("Name", &key.display_name())
+                    .field("Type", key.key_type_label())
+                    .field("Public key", r)
+                    .field("Path", &key.path().to_string_lossy());
+
+                if let Ok(meta) = std::fs::metadata(key.path()) {
+                    if let Ok(modified) = meta.modified() {
+                        if let Some(duration) = modified.elapsed().ok() {
+                            let days = duration.as_secs() / 86400;
+                            let date_str = if days == 0 {
+                                "Today".to_string()
+                            } else if days == 1 {
+                                "Yesterday".to_string()
+                            } else {
+                                format!("{} days ago", days)
+                            };
+                            preview = preview.field("Created", &date_str);
+                        }
+                    }
+                }
+
+                let authorized_repos =
+                    crate::dot::operations::key::find_repos_using_key(config, key.public_key());
+                if !authorized_repos.is_empty() {
+                    preview = preview
+                        .blank()
+                        .field("Authorized in", &authorized_repos.join(", "));
+                }
+            } else {
+                preview = preview
+                    .field("Type", "Remote Key")
+                    .field("Public key", r);
+            }
+
             items.push(MenuItem {
                 kind: MenuKind::Recipient {
                     public_key: r.clone(),
                     is_local,
                 },
-                display: format!("{} {}  ({})", icon, short, tag),
-                preview: PreviewBuilder::new()
-                    .header(NerdFont::Users, "Authorized Recipient")
-                    .blank()
-                    .field(
-                        "Type",
-                        if is_local {
-                            "Your Key (local)"
-                        } else {
-                            "Remote Key"
-                        },
-                    )
-                    .field("Public key", r)
-                    .build_string(),
+                display: format!("{} {}", icon, display_label),
+                preview: preview.build_string(),
             });
         }
 
