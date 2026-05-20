@@ -1127,7 +1127,7 @@ mod tests {
         fs::create_dir_all(&config_home).unwrap();
 
         let identity = age::x25519::Identity::generate();
-        let identity_file = dir.path().join("identity.txt");
+        let identity_file = dir.path().join("identity.key");
         fs::write(&identity_file, identity.to_string().expose_secret()).unwrap();
 
         let prev_home = std::env::var_os("HOME");

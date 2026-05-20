@@ -560,7 +560,7 @@ mod tests {
         // point AGE_IDENTITY at it for the duration of this test.
         let identity = age::x25519::Identity::generate();
         let recipient = identity.to_public();
-        let identity_file = dir.path().join("identity.txt");
+        let identity_file = dir.path().join("identity.key");
         fs::write(&identity_file, identity.to_string().expose_secret())
             .expect("write identity file");
 
@@ -666,7 +666,7 @@ mod tests {
         // 1. Generate a throwaway age identity and key
         let identity = age::x25519::Identity::generate();
         let recipient = identity.to_public();
-        let identity_file = dir.path().join("identity.txt");
+        let identity_file = dir.path().join("identity.key");
         fs::write(&identity_file, identity.to_string().expose_secret())
             .expect("write identity file");
 

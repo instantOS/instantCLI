@@ -10,23 +10,22 @@
 //! ciphertext on disk actually changes (e.g. after `git pull`), and never
 //! during plain `status` / `diff` operations.
 //!
-//! Identity discovery for v1:
+//! Identity discovery order:
 //!   1. `$AGE_IDENTITY` env var (colon-separated paths, like `ssh-add` /
 //!      the `age(1)` CLI).
 //!   2. `<instant_config_dir>/dots.toml` `encryption_keys` list, if present.
 //!   3. `<instant_config_dir>/encryption/identities/*` (every file in the dir).
 //!   4. Conventional unencrypted SSH private keys at `~/.ssh/id_ed25519` and
-//!      `~/.ssh/id_rsa`, if present. These are picked up only as a fallback
-//!      so users who authorize an SSH recipient can decrypt out-of-the-box.
+//!      `~/.ssh/id_rsa`, if present.
 //!
 //! Both native age identities (`AGE-SECRET-KEY-1...`) and SSH private keys
 //! (OpenSSH PEM format) are accepted in every slot above; `load_identities`
 //! falls back to the SSH parser when the age identity parser rejects a file.
 //!
-//! ssh-agent integration and passphrase prompting are explicitly out of scope
-//! for v1 — `apply` runs from the autostart path and must never block on user
-//! input. Passphrase-protected SSH keys (`Identity::Encrypted`) are
-//! intentionally dropped from the loaded identity set with a debug log.
+//! ssh-agent integration and passphrase prompting are not supported — `apply`
+//! runs from the autostart path and must never block on user input.
+//! Passphrase-protected SSH keys (`Identity::Encrypted`) are intentionally
+//! dropped from the loaded identity set with a debug log.
 
 use anyhow::{Context, Result, anyhow};
 use std::collections::HashSet;
@@ -336,8 +335,8 @@ fn parse_ssh_identity_file(path: &Path) -> Result<Vec<Box<dyn age::Identity>>> {
     match ssh_id {
         age::ssh::Identity::Unencrypted(_) => Ok(vec![Box::new(ssh_id) as Box<dyn age::Identity>]),
         age::ssh::Identity::Encrypted(_) => {
-            // v1 deliberately doesn't prompt; skip so apply still runs from
-            // autostart instead of erroring out. The user can place a
+            // Passphrase-protected SSH keys are skipped; the autostart
+            // path can't prompt for a passphrase. The user can place a
             // plaintext copy of the key under
             // ~/.config/instant/encryption/identities/ to use it, or set
             // AGE_IDENTITY to point at one.

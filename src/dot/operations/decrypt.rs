@@ -159,7 +159,7 @@ delete the plaintext file and re-run.",
     let plaintext = crate::dot::encryption::decrypt_file_to_bytes(&dotfile.source_path, &identities)
         .with_context(|| {
             format!(
-                "decrypting {} — please verify that your encryption key is correctly configured in ~/.config/instant/encryption/identity or $AGE_IDENTITY",
+                "decrypting {} — please verify that your encryption key is in ~/.config/instant/encryption/identities/ or set $AGE_IDENTITY",
                 dotfile.source_path.display()
             )
         })?;
@@ -380,7 +380,7 @@ mod tests {
 
         let identity = age::x25519::Identity::generate();
         let recipient = identity.to_public().to_string();
-        let identity_file = dir.path().join("identity.txt");
+        let identity_file = dir.path().join("identity.key");
         fs::write(&identity_file, identity.to_string().expose_secret()).unwrap();
 
         let _home_guard = EnvGuard::set("HOME", &home);
