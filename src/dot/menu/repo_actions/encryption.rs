@@ -69,10 +69,8 @@ pub(super) fn handle_repo_encryption(
         };
 
         let local_keys = discover_all_keys();
-        let local_key_map: std::collections::HashMap<&str, &EncryptionKeyKind> = local_keys
-            .iter()
-            .map(|k| (k.public_key(), k))
-            .collect();
+        let local_key_map: std::collections::HashMap<&str, &EncryptionKeyKind> =
+            local_keys.iter().map(|k| (k.public_key(), k)).collect();
         let mut items: Vec<MenuItem> = Vec::new();
 
         for r in &meta.encryption_recipients {
@@ -116,20 +114,19 @@ pub(super) fn handle_repo_encryption(
                     .field("Public key", r)
                     .field("Path", &key.path().to_string_lossy());
 
-                if let Ok(meta) = std::fs::metadata(key.path()) {
-                    if let Ok(modified) = meta.modified() {
-                        if let Some(duration) = modified.elapsed().ok() {
-                            let days = duration.as_secs() / 86400;
-                            let date_str = if days == 0 {
-                                "Today".to_string()
-                            } else if days == 1 {
-                                "Yesterday".to_string()
-                            } else {
-                                format!("{} days ago", days)
-                            };
-                            preview = preview.field("Created", &date_str);
-                        }
-                    }
+                if let Ok(meta) = std::fs::metadata(key.path())
+                    && let Ok(modified) = meta.modified()
+                    && let Ok(duration) = modified.elapsed()
+                {
+                    let days = duration.as_secs() / 86400;
+                    let date_str = if days == 0 {
+                        "Today".to_string()
+                    } else if days == 1 {
+                        "Yesterday".to_string()
+                    } else {
+                        format!("{} days ago", days)
+                    };
+                    preview = preview.field("Created", &date_str);
                 }
 
                 let authorized_repos =
@@ -140,9 +137,7 @@ pub(super) fn handle_repo_encryption(
                         .field("Authorized in", &authorized_repos.join(", "));
                 }
             } else {
-                preview = preview
-                    .field("Type", "Remote Key")
-                    .field("Public key", r);
+                preview = preview.field("Type", "Remote Key").field("Public key", r);
             }
 
             items.push(MenuItem {
@@ -519,13 +514,9 @@ fn handle_recipient_actions(
                     };
 
                     let warning = if is_local && recipients.len() == 1 {
-                        format!(
-                            "\n\u{26a0} WARNING: This is your only key and the only recipient.\nRemoving it will leave the repository unencrypted."
-                        )
+                        "\n\u{26a0} WARNING: This is your only key and the only recipient.\nRemoving it will leave the repository unencrypted.".to_string()
                     } else if is_local {
-                        format!(
-                            "\n\u{26a0} WARNING: This is your own key.\nYou will lose the ability to decrypt unless another of your keys is authorized."
-                        )
+                        "\n\u{26a0} WARNING: This is your own key.\nYou will lose the ability to decrypt unless another of your keys is authorized.".to_string()
                     } else {
                         String::new()
                     };

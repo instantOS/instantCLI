@@ -12,13 +12,10 @@ pub fn handle_init(name: Option<&str>, force: bool) -> Result<()> {
             validate_key_name(n)?;
             n.to_string()
         }
-        None => {
-            let default = nix::unistd::gethostname()
-                .ok()
-                .and_then(|h| h.into_string().ok())
-                .unwrap_or_else(|| "default".to_string());
-            default
-        }
+        None => nix::unistd::gethostname()
+            .ok()
+            .and_then(|h| h.into_string().ok())
+            .unwrap_or_else(|| "default".to_string()),
     };
 
     let dir = identities_dir()?;

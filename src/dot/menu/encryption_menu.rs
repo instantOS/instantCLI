@@ -308,10 +308,7 @@ fn handle_key_action_menu(
                         if new_name.is_empty() || new_name == current_name {
                             continue;
                         }
-                        match crate::dot::operations::key::handle_rename(
-                            &current_name,
-                            &new_name,
-                        ) {
+                        match crate::dot::operations::key::handle_rename(&current_name, &new_name) {
                             Ok(()) => {
                                 FzfWrapper::message(&format!(
                                     "Key renamed: {} → {}",

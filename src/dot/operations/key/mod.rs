@@ -24,16 +24,16 @@ pub use discover::{discover_all_keys_info, get_local_public_keys};
 pub use generate::handle_init;
 pub use manage::{find_repos_using_key, handle_rename};
 pub use status::{handle_identity, handle_list, handle_status};
-pub use types::{KeyType};
+pub use types::KeyType;
 
 pub(crate) use authorize::{handle_authorize, handle_deauthorize};
 pub(crate) use manage::handle_remove;
 pub(crate) use rotate::handle_rotate;
 
-use anyhow::Result;
 use crate::dot::commands::EncryptCommands;
 use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
+use anyhow::Result;
 
 pub fn handle_encrypt_command(
     config: &DotfileConfig,
@@ -44,9 +44,7 @@ pub fn handle_encrypt_command(
     match command {
         EncryptCommands::Generate { name, force } => handle_init(name.as_deref(), *force),
         EncryptCommands::List => handle_list(config),
-        EncryptCommands::Rename { old_name, new_name } => {
-            handle_rename(old_name, new_name)
-        }
+        EncryptCommands::Rename { old_name, new_name } => handle_rename(old_name, new_name),
         EncryptCommands::Remove { name } => handle_remove(config, name),
         EncryptCommands::Authorize {
             recipient,
@@ -134,8 +132,7 @@ mod tests {
 
         // 3. Encrypt an initial file for id1
         let plain_bytes = b"super secret password";
-        let parsed_recipients =
-            crate::dot::encryption::parse_recipients(&[pub1.clone()]).unwrap();
+        let parsed_recipients = crate::dot::encryption::parse_recipients(&[pub1.clone()]).unwrap();
         let cipher_bytes =
             crate::dot::encryption::encrypt_bytes_to_armored(plain_bytes, &parsed_recipients)
                 .unwrap();
@@ -201,8 +198,7 @@ mod tests {
         let id2_string = id2.to_string();
         std::fs::write(&identity_file2, id2_string.expose_secret()).unwrap();
         drop(age_guard);
-        let _age_guard2 =
-            crate::dot::test_util::EnvGuard::set("AGE_IDENTITY", &identity_file2);
+        let _age_guard2 = crate::dot::test_util::EnvGuard::set("AGE_IDENTITY", &identity_file2);
 
         // 9. Test Rotate Operation (only allow id2)
         handle_rotate(&config, &db, &[pub2.clone()], Some("my-repo"), false, false).unwrap();
