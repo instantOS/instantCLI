@@ -3,7 +3,7 @@ use crate::common::git;
 use crate::common::home_dir;
 use crate::dot::config::DotfileConfig;
 use anyhow::{Context, Result};
-use colored::Colorize;
+
 use std::{path::Path, path::PathBuf};
 
 /// Represents a single dotfile directory within a repository
@@ -15,33 +15,6 @@ pub struct DotfileDir {
 }
 
 impl DotfileDir {
-    pub fn new(name: &str, repo_path: &Path, is_active: bool, is_root: bool) -> Result<Self> {
-        let path = repo_path.join(name);
-
-        if !path.exists() {
-            std::fs::create_dir_all(&path).with_context(|| {
-                format!("Failed to create dotfile directory '{}'", path.display())
-            })?;
-
-            crate::ui::emit(
-                crate::ui::Level::Success,
-                "dot.repo.directory_created",
-                &format!(
-                    "{} Created directory: {}",
-                    char::from(crate::ui::nerd_font::NerdFont::Folder),
-                    path.display().to_string().cyan()
-                ),
-                None,
-            );
-        }
-
-        Ok(DotfileDir {
-            path,
-            is_active,
-            is_root,
-        })
-    }
-
     pub fn new_no_create(
         name: &str,
         repo_path: &Path,
@@ -54,10 +27,6 @@ impl DotfileDir {
             is_active,
             is_root,
         })
-    }
-
-    pub fn is_root_dir(&self) -> bool {
-        self.is_root
     }
 }
 
