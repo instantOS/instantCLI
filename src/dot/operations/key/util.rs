@@ -1,6 +1,10 @@
 use anyhow::Result;
+use colored::Colorize;
 use std::fs;
 use std::path::{Path, PathBuf};
+
+use crate::dot::config::DotfileConfig;
+use crate::ui::prelude::*;
 
 /// Get the identities directory path, creating it if needed.
 pub fn identities_dir() -> Result<PathBuf> {
@@ -38,4 +42,49 @@ pub fn find_age_files(dir: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Auto-select a writable repo when none is explicitly given.
+/// Emits a warning if multiple writable repos exist.
+/// `action_verb` is the present-participle verb for user-facing messages (e.g. "authorizing").
+pub fn resolve_writable_repo(
+    config: &DotfileConfig,
+    repo_name_opt: Option<&str>,
+    action_verb: &str,
+    event_tag: &str,
+) -> Result<(String, bool)> {
+    if let Some(name) = repo_name_opt {
+        return Ok((name.to_string(), false));
+    }
+    let writable_repos = config.get_writable_repos();
+    if writable_repos.is_empty() {
+        anyhow::bail!(
+            "No writable repositories found in config to {} keys.",
+            action_verb
+        );
+    }
+    let chosen = writable_repos[0].name.clone();
+    if writable_repos.len() > 1 {
+        let other_names: Vec<&str> = writable_repos
+            .iter()
+            .skip(1)
+            .map(|r| r.name.as_str())
+            .collect();
+        emit(
+            Level::Warn,
+            event_tag,
+            &format!(
+                "{} No --repo given; {} in '{}' (other writable repos: {}). Pass --repo to choose explicitly.",
+                char::from(NerdFont::Warning),
+                action_verb,
+                chosen.cyan(),
+                other_names.join(", "),
+            ),
+            Some(serde_json::json!({
+                "selected_repo": chosen,
+                "other_writable_repos": other_names,
+            })),
+        );
+    }
+    Ok((chosen, true))
 }

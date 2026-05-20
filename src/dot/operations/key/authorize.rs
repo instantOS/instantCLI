@@ -8,6 +8,7 @@ use crate::ui::prelude::*;
 
 use super::discover::get_local_public_keys;
 use super::rotate::reencrypt_repository;
+use super::util::resolve_writable_repo;
 
 pub fn handle_authorize(
     config: &DotfileConfig,
@@ -17,38 +18,12 @@ pub fn handle_authorize(
     dry_run: bool,
     debug: bool,
 ) -> Result<()> {
-    let (repo_name, repo_auto_selected) = if let Some(name) = repo_name_opt {
-        (name.to_string(), false)
-    } else {
-        let writable_repos = config.get_writable_repos();
-        if writable_repos.is_empty() {
-            anyhow::bail!("No writable repositories found in config to authorize keys.");
-        }
-        let chosen = writable_repos[0].name.clone();
-        if writable_repos.len() > 1 {
-            let other_names: Vec<&str> = writable_repos
-                .iter()
-                .skip(1)
-                .map(|r| r.name.as_str())
-                .collect();
-            emit(
-                Level::Warn,
-                "dot.key.authorize.repo_auto_selected",
-                &format!(
-                    "{} No --repo given; authorizing in '{}' (other writable repos: {}). \
-                     Pass --repo to choose explicitly.",
-                    char::from(NerdFont::Warning),
-                    chosen.cyan(),
-                    other_names.join(", ")
-                ),
-                Some(serde_json::json!({
-                    "selected_repo": chosen,
-                    "other_writable_repos": other_names,
-                })),
-            );
-        }
-        (chosen, true)
-    };
+    let (repo_name, repo_auto_selected) = resolve_writable_repo(
+        config,
+        repo_name_opt,
+        "authorizing",
+        "dot.key.authorize.repo_auto_selected",
+    )?;
 
     let dotfile_repo = DotfileRepo::new(config, repo_name.clone())?;
     let repo_path = dotfile_repo.local_path(config)?;
@@ -148,35 +123,12 @@ pub fn handle_deauthorize(
         );
     }
 
-    let (repo_name, repo_auto_selected) = if let Some(name) = repo_name_opt {
-        (name.to_string(), false)
-    } else {
-        let writable_repos = config.get_writable_repos();
-        if writable_repos.is_empty() {
-            anyhow::bail!("No writable repositories found in config to de-authorize keys.");
-        }
-        let chosen = writable_repos[0].name.clone();
-        if writable_repos.len() > 1 {
-            let other_names: Vec<&str> = writable_repos
-                .iter()
-                .skip(1)
-                .map(|r| r.name.as_str())
-                .collect();
-            emit(
-                Level::Warn,
-                "dot.key.deauthorize.repo_auto_selected",
-                &format!(
-                    "{} No --repo given; de-authorizing in '{}' (other writable repos: {}). \
-                     Pass --repo to choose explicitly.",
-                    char::from(NerdFont::Warning),
-                    chosen.cyan(),
-                    other_names.join(", ")
-                ),
-                None,
-            );
-        }
-        (chosen, true)
-    };
+    let (repo_name, repo_auto_selected) = resolve_writable_repo(
+        config,
+        repo_name_opt,
+        "de-authorizing",
+        "dot.key.deauthorize.repo_auto_selected",
+    )?;
 
     let dotfile_repo = DotfileRepo::new(config, repo_name.clone())?;
     let repo_path = dotfile_repo.local_path(config)?;

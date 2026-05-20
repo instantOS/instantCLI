@@ -9,7 +9,11 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-pub use types::*;
+pub use types::{
+    EmulatorLaunchCommand, EmulatorLauncher, EmulatorOptions, EmulatorPlatform,
+    GamescopeOptions, LaunchCommand, LaunchCommandKind, LaunchWrappers, ProtonSelection,
+    SteamLaunchCommand, WineLaunchCommand, WineRunner,
+};
 
 impl LaunchCommand {
     pub fn manual(command: impl Into<String>) -> Self {

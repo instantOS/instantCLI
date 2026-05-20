@@ -231,15 +231,7 @@ fn handle_slide(
 
     if gui {
         let client = MenuClient::new();
-        match client.slide(protocol::SliderRequest {
-            min: request.min,
-            max: request.max,
-            value: request.value,
-            step: request.step,
-            big_step: request.big_step,
-            label: request.label.clone(),
-            command: request.command.clone(),
-        }) {
+        match client.slide(request.clone()) {
             Ok(Some(result)) => {
                 println!("{result}");
                 Ok(0)

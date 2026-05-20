@@ -103,7 +103,7 @@ impl SliderPreset {
 
     fn notification_script(stack_tag: &str, icon: &str, label: &str) -> String {
         format!(
-            "dunstify --appname instantCLI \\\n+    -h string:x-dunst-stack-tag:{stack_tag} \\\n+    -h int:value:\"${{value}}\" \\\n+    -i {icon} \\\n+    \"{label}\" 2>/dev/null",
+            "dunstify --appname instantCLI \\\n    -h string:x-dunst-stack-tag:{stack_tag} \\\n    -h int:value:\"${{value}}\" \\\n    -i {icon} \\\n    \"{label}\" 2>/dev/null",
             stack_tag = stack_tag,
             icon = icon,
             label = label
