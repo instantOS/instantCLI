@@ -401,30 +401,28 @@ fn handle_authorize_key_to_repo(
         .args(fzf_mocha_args())
         .responsive_layout();
 
-    loop {
-        let result = builder.select(repo_entries.clone())?;
-        match result {
-            FzfResult::Selected(entry) => match &entry.action {
-                RepoAction::Select(repo_name) => {
-                    let dry_run = false;
-                    crate::dot::operations::key::handle_authorize(
-                        config,
-                        db,
-                        Some(public_key),
-                        Some(repo_name),
-                        dry_run,
-                        debug,
-                    )?;
-                    FzfWrapper::message(&format!(
-                        "Key authorized for '{}'.\n\n{}",
-                        repo_name, public_key
-                    ))?;
-                    return Ok(());
-                }
-                RepoAction::Back => return Ok(()),
-            },
-            _ => return Ok(()),
-        }
+    let result = builder.select(repo_entries)?;
+    match result {
+        FzfResult::Selected(entry) => match &entry.action {
+            RepoAction::Select(repo_name) => {
+                let dry_run = false;
+                crate::dot::operations::key::handle_authorize(
+                    config,
+                    db,
+                    Some(public_key),
+                    Some(repo_name),
+                    dry_run,
+                    debug,
+                )?;
+                FzfWrapper::message(&format!(
+                    "Key authorized for '{}'.\n\n{}",
+                    repo_name, public_key
+                ))?;
+                return Ok(());
+            }
+            RepoAction::Back => return Ok(()),
+        },
+        _ => return Ok(()),
     }
 }
 
