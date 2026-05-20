@@ -6,6 +6,7 @@ use anyhow::{Context, Result};
 use std::process::Command;
 
 use crate::common::compositor::CompositorType;
+use crate::common::format::format_size;
 use crate::common::package::{InstallResult, ensure_all};
 use crate::menu_utils::{FzfWrapper, MenuWrapper};
 use crate::settings::context::SettingsContext;
@@ -151,8 +152,7 @@ impl Setting for SetWallpaper {
                         .field("Status", if exists { "Available" } else { "Missing" });
 
                     if exists && let Ok(metadata) = std::fs::metadata(&path_buf) {
-                        builder = builder
-                            .field("Size", &crate::arch::dualboot::format_size(metadata.len()));
+                        builder = builder.field("Size", &format_size(metadata.len()));
                     }
                 } else {
                     builder = builder

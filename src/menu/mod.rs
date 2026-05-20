@@ -5,7 +5,6 @@ use anyhow::{Context, Result, anyhow};
 use protocol::SerializableMenuItem;
 use std::path::PathBuf;
 
-mod all;
 pub mod chord;
 pub mod client;
 mod fallback;
@@ -25,7 +24,9 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
             request_file,
             response_file,
         } => fallback::run_worker(&request_file, &response_file),
-        MenuCommands::All => all::run_all_menu(_debug).await,
+        MenuCommands::All => Err(anyhow!(
+            "MenuCommands::All should be dispatched from main.rs"
+        )),
         MenuCommands::Confirm { ref message, gui } => handle_confirm(message, gui, &command),
         MenuCommands::Message {
             ref message,

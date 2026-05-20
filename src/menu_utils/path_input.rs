@@ -421,8 +421,6 @@ fn preview_wine_prefix() -> FzfPreview {
 }
 
 fn preview_suggestion(_path: &Path) -> FzfPreview {
-    // Use async command-based preview for rich file type detection
-    // The path is passed as the fzf key ($1) to the preview command
     FzfPreview::Command(preview_command(PreviewId::FileSuggestion))
 }
 

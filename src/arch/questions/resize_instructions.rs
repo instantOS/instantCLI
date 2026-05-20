@@ -1,6 +1,7 @@
 use crate::arch::dualboot::types::ResizeInfo;
 use crate::arch::dualboot::{ResizeStatus, ResizeVerifier};
 use crate::arch::engine::{InstallContext, Question, QuestionId, QuestionResult};
+use crate::common::format::format_size;
 use crate::menu_utils::{ConfirmResult, FzfResult, FzfWrapper};
 use crate::ui::nerd_font::NerdFont;
 use anyhow::{Context, Result};
@@ -90,7 +91,7 @@ impl Question for ResizeInstructionsQuestion {
             FzfWrapper::message(&format!(
                 "{} Selected size is too small. Minimum size for this partition is {}.",
                 NerdFont::Warning,
-                crate::arch::dualboot::format_size(min_size)
+                format_size(min_size)
             ))?;
             return Ok(QuestionResult::Cancelled);
         }
@@ -158,9 +159,9 @@ fn confirm_auto_resize(
         NerdFont::Warning,
         partition_path,
         fs_type,
-        crate::arch::dualboot::format_size(original_size),
-        crate::arch::dualboot::format_size(target_size),
-        crate::arch::dualboot::format_size(new_linux_size_bytes)
+        format_size(original_size),
+        format_size(target_size),
+        format_size(new_linux_size_bytes)
     );
 
     if let Some(mount_point) = mount_point {
@@ -205,15 +206,12 @@ async fn run_manual_resize_flow(ctx: ResizeFlowContext<'_>) -> Result<QuestionRe
     loop {
         let (current_size_human, shrink_remaining_gb) = if let Some(ref status) = last_status {
             let current_size = status.current_partition_size.unwrap_or(ctx.original_size);
-            let human = crate::arch::dualboot::format_size(current_size);
+            let human = format_size(current_size);
             let shrink_remaining =
                 current_size.saturating_sub(ctx.target_size) as f64 / 1024.0 / 1024.0 / 1024.0;
             (human, shrink_remaining)
         } else {
-            (
-                crate::arch::dualboot::format_size(ctx.original_size),
-                linux_size_gb,
-            )
+            (format_size(ctx.original_size), linux_size_gb)
         };
 
         let mut full_message = build_instructions_message(

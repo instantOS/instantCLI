@@ -349,30 +349,51 @@ fn handle_authorize_key_to_repo(
     }
 
     #[derive(Clone)]
-    struct RepoOption(String);
-    impl FzfSelectable for RepoOption {
+    enum RepoAction {
+        Select(String),
+        Back,
+    }
+
+    #[derive(Clone)]
+    struct RepoEntry {
+        action: RepoAction,
+        display: String,
+        preview: String,
+    }
+
+    impl FzfSelectable for RepoEntry {
         fn fzf_display_text(&self) -> String {
-            format!(
-                "{} {}",
-                format_icon_colored(NerdFont::Folder, colors::MAUVE),
-                self.0
-            )
+            self.display.clone()
         }
         fn fzf_key(&self) -> String {
-            self.0.clone()
+            match &self.action {
+                RepoAction::Select(name) => name.clone(),
+                RepoAction::Back => "back".to_string(),
+            }
         }
         fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
-            crate::menu::protocol::FzfPreview::Text(format!(
-                "Authorize key in repository '{}'",
-                self.0
-            ))
+            crate::menu::protocol::FzfPreview::Text(self.preview.clone())
         }
     }
 
-    let repo_options: Vec<RepoOption> = writable_repos
+    let mut repo_entries: Vec<RepoEntry> = writable_repos
         .iter()
-        .map(|r| RepoOption(r.name.clone()))
+        .map(|r| RepoEntry {
+            action: RepoAction::Select(r.name.clone()),
+            display: format!(
+                "{} {}",
+                format_icon_colored(NerdFont::Folder, colors::MAUVE),
+                r.name
+            ),
+            preview: format!("Authorize key in repository '{}'", r.name),
+        })
         .collect();
+
+    repo_entries.push(RepoEntry {
+        action: RepoAction::Back,
+        display: format!("{} Back", format_back_icon()),
+        preview: "Return to key actions".to_string(),
+    });
 
     let builder = FzfWrapper::builder()
         .header(Header::fancy("Select Repository"))
@@ -380,25 +401,31 @@ fn handle_authorize_key_to_repo(
         .args(fzf_mocha_args())
         .responsive_layout();
 
-    let result = builder.select(repo_options.clone())?;
-
-    if let FzfResult::Selected(repo_option) = result {
-        let dry_run = false;
-        crate::dot::operations::key::handle_authorize(
-            config,
-            db,
-            Some(public_key),
-            Some(&repo_option.0),
-            dry_run,
-            debug,
-        )?;
-        FzfWrapper::message(&format!(
-            "Key authorized for '{}'.\n\n{}",
-            repo_option.0, public_key
-        ))?;
+    loop {
+        let result = builder.select(repo_entries.clone())?;
+        match result {
+            FzfResult::Selected(entry) => match &entry.action {
+                RepoAction::Select(repo_name) => {
+                    let dry_run = false;
+                    crate::dot::operations::key::handle_authorize(
+                        config,
+                        db,
+                        Some(public_key),
+                        Some(repo_name),
+                        dry_run,
+                        debug,
+                    )?;
+                    FzfWrapper::message(&format!(
+                        "Key authorized for '{}'.\n\n{}",
+                        repo_name, public_key
+                    ))?;
+                    return Ok(());
+                }
+                RepoAction::Back => return Ok(()),
+            },
+            _ => return Ok(()),
+        }
     }
-
-    Ok(())
 }
 
 fn handle_delete_key(key: &EncryptionKeyKind, config: &DotfileConfig) -> Result<bool> {

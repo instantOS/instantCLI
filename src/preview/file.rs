@@ -5,7 +5,7 @@ use std::process::Command;
 
 use anyhow::Result;
 
-use crate::arch::dualboot::types::format_size;
+use crate::common::format::format_size;
 use crate::game::utils::save_files::format_system_time_for_display;
 use crate::preview::PreviewContext;
 use crate::ui::prelude::NerdFont;

@@ -238,8 +238,15 @@ pub(super) fn handle_repo_encryption(
                         keys[0].clone()
                     } else {
                         #[derive(Clone)]
+                        enum PickerAction {
+                            Select(EncryptionKeyKind),
+                            Generate,
+                            Back,
+                        }
+
+                        #[derive(Clone)]
                         struct PickerEntry {
-                            key: Option<EncryptionKeyKind>,
+                            action: PickerAction,
                             display: String,
                             preview: String,
                         }
@@ -249,9 +256,10 @@ pub(super) fn handle_repo_encryption(
                                 self.display.clone()
                             }
                             fn fzf_key(&self) -> String {
-                                match &self.key {
-                                    Some(k) => k.public_key().to_string(),
-                                    None => "generate".to_string(),
+                                match &self.action {
+                                    PickerAction::Select(k) => k.public_key().to_string(),
+                                    PickerAction::Generate => "generate".to_string(),
+                                    PickerAction::Back => "back".to_string(),
                                 }
                             }
                             fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
@@ -283,7 +291,7 @@ pub(super) fn handle_repo_encryption(
                                     format!("Authorized in: {}", authorized_repos.join(", "))
                                 };
                                 PickerEntry {
-                                    key: Some(key.clone()),
+                                    action: PickerAction::Select(key.clone()),
                                     display: format!(
                                         "{} {}  {}",
                                         icon,
@@ -306,7 +314,7 @@ pub(super) fn handle_repo_encryption(
                             .collect();
 
                         entries.push(PickerEntry {
-                            key: None,
+                            action: PickerAction::Generate,
                             display: format!(
                                 "{} Generate New Key",
                                 format_icon_colored(NerdFont::Plus, colors::GREEN)
@@ -319,15 +327,23 @@ pub(super) fn handle_repo_encryption(
                                 .build_string(),
                         });
 
+                        entries.push(PickerEntry {
+                            action: PickerAction::Back,
+                            display: format!("{} Back", format_back_icon()),
+                            preview: PreviewBuilder::new()
+                                .subtext("Return to repository encryption menu")
+                                .build_string(),
+                        });
+
                         let builder = FzfWrapper::builder()
                             .header(Header::fancy("Select Key to Authorize"))
                             .prompt("Key")
                             .responsive_layout();
 
                         match builder.select(entries)? {
-                            FzfResult::Selected(entry) => match entry.key {
-                                Some(k) => k,
-                                None => {
+                            FzfResult::Selected(entry) => match &entry.action {
+                                PickerAction::Select(k) => k.clone(),
+                                PickerAction::Generate => {
                                     let default_name = nix::unistd::gethostname()
                                         .ok()
                                         .and_then(|h| h.into_string().ok())
@@ -346,6 +362,7 @@ pub(super) fn handle_repo_encryption(
                                     }
                                     continue;
                                 }
+                                PickerAction::Back => continue,
                             },
                             _ => continue,
                         }

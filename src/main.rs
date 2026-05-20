@@ -1,6 +1,7 @@
 use anyhow::Result;
 use colored::*;
 
+mod all_menu;
 mod arch;
 mod assist;
 mod autostart;
@@ -314,7 +315,10 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
             doctor::handle_doctor_command(command.clone(), *concurrency).await?;
         }
         Some(Commands::Menu { command }) => {
-            let exit_code = menu::handle_menu_command(command.clone(), cli.debug).await?;
+            let exit_code = match command {
+                menu::MenuCommands::All => all_menu::run_all_menu(cli.debug).await?,
+                _ => menu::handle_menu_command(command.clone(), cli.debug).await?,
+            };
             std::process::exit(exit_code);
         }
         Some(Commands::Preview { id, key }) => {

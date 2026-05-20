@@ -8,6 +8,7 @@ use clap::Args;
 
 use crate::common::blockdev::{BlockDevice, load_lsblk};
 use crate::common::commands::{ensure_commands, run_interactive_status, run_status};
+use crate::common::format::format_size;
 use crate::menu_utils::{ConfirmResult, FzfPreview, FzfResult, FzfSelectable, FzfWrapper, Header};
 use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
@@ -88,7 +89,7 @@ impl FzfSelectable for ChrootCandidate {
         let fs = self.fs_type.as_deref().unwrap_or("unknown fs");
         let size = self
             .size_bytes
-            .map(crate::arch::dualboot::format_size)
+            .map(format_size)
             .unwrap_or_else(|| "unknown size".to_string());
 
         format!(
@@ -111,7 +112,7 @@ impl FzfSelectable for ChrootCandidate {
                 "Size",
                 &self
                     .size_bytes
-                    .map(crate::arch::dualboot::format_size)
+                    .map(format_size)
                     .unwrap_or_else(|| "unknown".to_string()),
             )
             .field("Encrypted", if self.encrypted { "yes" } else { "no" });

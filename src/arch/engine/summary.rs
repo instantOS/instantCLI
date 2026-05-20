@@ -1,3 +1,4 @@
+use crate::common::format::format_size;
 use crate::ui::catppuccin::colors;
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -74,7 +75,7 @@ fn format_dualboot_size(context: &InstallContext) -> Option<String> {
     context.get_answer(&QuestionId::DualBootSize).map(|value| {
         value
             .parse::<u64>()
-            .map(crate::arch::dualboot::format_size)
+            .map(format_size)
             .unwrap_or_else(|_| value.clone())
     })
 }
