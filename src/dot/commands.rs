@@ -301,15 +301,45 @@ pub enum PriorityCommands {
 pub enum EncryptCommands {
     /// Generate a new encryption key for this machine
     Generate {
-        /// Force generation even if a key already exists
+        /// Name for the new key (stored in ~/.config/instant/encryption/identities/<name>)
+        #[arg(long)]
+        name: Option<String>,
+        /// Force generation even if a key with this name already exists
         #[arg(long)]
         force: bool,
+    },
+    /// List all local encryption keys
+    List,
+    /// Rename an encryption key
+    Rename {
+        /// Current key name
+        old_name: String,
+        /// New key name
+        new_name: String,
+    },
+    /// Remove an encryption key
+    Remove {
+        /// Key name to remove
+        name: String,
     },
     /// Authorize a new encryption recipient public key in the repository metadata
     Authorize {
         /// Public key to authorize (age1... or ssh-...). Defaults to the local machine's public key.
         recipient: Option<String>,
         /// Add recipient to this repository instead of the default repo
+        #[arg(long, value_name = "REPO")]
+        repo: Option<String>,
+        /// Show what would be done without writing any changes
+        #[arg(long)]
+        dry_run: bool,
+        #[command(flatten)]
+        root_flags: RootFlags,
+    },
+    /// De-authorize a recipient key from a repository
+    Deauthorize {
+        /// Public key to de-authorize (age1... or ssh-...)
+        recipient: String,
+        /// Remove recipient from this repository instead of the default repo
         #[arg(long, value_name = "REPO")]
         repo: Option<String>,
         /// Show what would be done without writing any changes

@@ -21,7 +21,10 @@ pub fn handle_encrypt_command(
     debug: bool,
 ) -> Result<()> {
     match command {
-        EncryptCommands::Generate { force } => handle_init(*force),
+        EncryptCommands::Generate { name, force } => handle_init(name.as_deref(), *force),
+        EncryptCommands::List => handle_list(config),
+        EncryptCommands::Rename { old_name, new_name } => handle_rename(old_name, new_name),
+        EncryptCommands::Remove { name } => handle_remove(config, name),
         EncryptCommands::Authorize {
             recipient,
             repo,
@@ -35,6 +38,12 @@ pub fn handle_encrypt_command(
             *dry_run,
             debug,
         ),
+        EncryptCommands::Deauthorize {
+            recipient,
+            repo,
+            dry_run,
+            ..
+        } => handle_deauthorize(config, db, recipient, repo.as_deref(), *dry_run, debug),
         EncryptCommands::Rotate {
             recipients,
             repo,
@@ -46,10 +55,45 @@ pub fn handle_encrypt_command(
     }
 }
 
-pub(crate) fn handle_init(force: bool) -> Result<()> {
+/// Get the identities directory path, creating it if needed.
+fn identities_dir() -> Result<PathBuf> {
     let config_dir = crate::common::paths::instant_config_dir()?;
-    let identity_dir = config_dir.join("encryption");
-    let identity_path = identity_dir.join("identity");
+    let dir = config_dir.join("encryption").join("identities");
+    fs::create_dir_all(&dir)?;
+    Ok(dir)
+}
+
+/// Validate a key name: non-empty, no path separators, no `.`/`..`.
+fn validate_key_name(name: &str) -> Result<()> {
+    if name.is_empty() {
+        anyhow::bail!("Key name cannot be empty");
+    }
+    if name.contains('/') || name.contains(std::path::MAIN_SEPARATOR) {
+        anyhow::bail!("Key name cannot contain path separators");
+    }
+    if name == "." || name == ".." {
+        anyhow::bail!("Key name cannot be '.' or '..'");
+    }
+    Ok(())
+}
+
+pub(crate) fn handle_init(name: Option<&str>, force: bool) -> Result<()> {
+    let key_name = match name {
+        Some(n) => {
+            validate_key_name(n)?;
+            n.to_string()
+        }
+        None => {
+            let default = nix::unistd::gethostname()
+                .ok()
+                .and_then(|h| h.into_string().ok())
+                .unwrap_or_else(|| "default".to_string());
+            default
+        }
+    };
+
+    let dir = identities_dir()?;
+    let identity_path = dir.join(&key_name);
 
     if identity_path.exists() && !force {
         let content = fs::read_to_string(&identity_path)?;
@@ -67,8 +111,9 @@ pub(crate) fn handle_init(force: bool) -> Result<()> {
                 Level::Info,
                 "dot.key.init.exists",
                 &format!(
-                    "{} Encryption key already exists!\n{} Path: {}\n{} Public recipient key: {}",
+                    "{} Encryption key '{}' already exists!\n{} Path: {}\n{} Public recipient key: {}",
                     char::from(NerdFont::Info),
+                    key_name.cyan(),
                     char::from(NerdFont::Lock),
                     identity_path.display().to_string().cyan(),
                     char::from(NerdFont::Users),
@@ -92,7 +137,6 @@ pub(crate) fn handle_init(force: bool) -> Result<()> {
         None,
     );
 
-    fs::create_dir_all(&identity_dir)?;
     let identity = age::x25519::Identity::generate();
     let public_key = identity.to_public().to_string();
 
@@ -116,8 +160,9 @@ pub(crate) fn handle_init(force: bool) -> Result<()> {
         Level::Success,
         "dot.key.init.success",
         &format!(
-            "{} Generated secure encryption keypair for this machine!\n{} Private key saved to: {}\n{} Public key: {}",
+            "{} Generated secure encryption keypair '{}'\n{} Private key saved to: {}\n{} Public key: {}",
             char::from(NerdFont::Check),
+            key_name.cyan(),
             char::from(NerdFont::Lock),
             identity_path.display().to_string().cyan(),
             char::from(NerdFont::Users),
@@ -249,6 +294,144 @@ pub(crate) fn handle_authorize(
             "repo": repo_name.as_str(),
             "auto_selected": repo_auto_selected,
         })),
+    );
+
+    Ok(())
+}
+
+pub(crate) fn handle_deauthorize(
+    config: &DotfileConfig,
+    db: &Database,
+    recipient: &str,
+    repo_name_opt: Option<&str>,
+    dry_run: bool,
+    debug: bool,
+) -> Result<()> {
+    let recipient_key = recipient.trim();
+    if !recipient_key.starts_with("age1") && !recipient_key.starts_with("ssh-") {
+        anyhow::bail!(
+            "Invalid recipient public key: '{}'. Expected age1... or ssh-...",
+            recipient_key
+        );
+    }
+
+    let (repo_name, repo_auto_selected) = if let Some(name) = repo_name_opt {
+        (name.to_string(), false)
+    } else {
+        let writable_repos = config.get_writable_repos();
+        if writable_repos.is_empty() {
+            anyhow::bail!("No writable repositories found in config to de-authorize keys.");
+        }
+        let chosen = writable_repos[0].name.clone();
+        if writable_repos.len() > 1 {
+            let other_names: Vec<&str> = writable_repos
+                .iter()
+                .skip(1)
+                .map(|r| r.name.as_str())
+                .collect();
+            emit(
+                Level::Warn,
+                "dot.key.deauthorize.repo_auto_selected",
+                &format!(
+                    "{} No --repo given; de-authorizing in '{}' (other writable repos: {}). \
+                     Pass --repo to choose explicitly.",
+                    char::from(NerdFont::Warning),
+                    chosen.cyan(),
+                    other_names.join(", ")
+                ),
+                None,
+            );
+        }
+        (chosen, true)
+    };
+
+    let dotfile_repo = DotfileRepo::new(config, repo_name.clone())?;
+    let repo_path = dotfile_repo.local_path(config)?;
+    let meta = crate::dot::meta::read_meta(&repo_path)?;
+
+    if !meta
+        .encryption_recipients
+        .contains(&recipient_key.to_string())
+    {
+        emit(
+            Level::Info,
+            "dot.key.deauthorize.not_found",
+            &format!(
+                "{} Recipient '{}' is not authorized in repository '{}'",
+                char::from(NerdFont::Info),
+                recipient_key.cyan(),
+                repo_name
+            ),
+            None,
+        );
+        return Ok(());
+    }
+
+    let local_pubkeys = get_local_public_keys()?;
+    let is_self = local_pubkeys.contains(&recipient_key.to_string());
+
+    if is_self && meta.encryption_recipients.len() == 1 {
+        anyhow::bail!(
+            "Self-lockout prevented: '{}' is the only authorized recipient and it belongs to you. \
+             Add another key first or use --force if you really want to remove encryption.",
+            recipient_key
+        );
+    }
+
+    if meta.encryption_recipients.len() == 1 {
+        emit(
+            Level::Warn,
+            "dot.key.deauthorize.last_recipient",
+            &format!(
+                "{} Removing the last authorized recipient. The repository will no longer be encrypted.",
+                char::from(NerdFont::Warning)
+            ),
+            None,
+        );
+    } else if is_self {
+        emit(
+            Level::Warn,
+            "dot.key.deauthorize.self_removal",
+            &format!(
+                "{} You are de-authorizing your own key. You will lose the ability to decrypt \
+                 files in this repository unless another of your keys is authorized.",
+                char::from(NerdFont::Warning)
+            ),
+            None,
+        );
+    }
+
+    let new_recipients: Vec<String> = meta
+        .encryption_recipients
+        .into_iter()
+        .filter(|r| r != recipient_key)
+        .collect();
+
+    reencrypt_repository(
+        &repo_path,
+        &dotfile_repo,
+        &new_recipients,
+        db,
+        dry_run,
+        debug,
+    )?;
+
+    let repo_note = if repo_auto_selected {
+        " (auto-selected; pass --repo to override)"
+    } else {
+        ""
+    };
+    emit(
+        Level::Success,
+        "dot.key.deauthorize.success",
+        &format!(
+            "{} De-authorized recipient '{}' from repository '{}'{}!",
+            char::from(NerdFont::Check),
+            recipient_key.cyan(),
+            repo_name,
+            repo_note
+        ),
+        None,
     );
 
     Ok(())
@@ -561,13 +744,296 @@ pub(crate) fn handle_status(config: &DotfileConfig, target_repo_opt: Option<&str
                     char::from(NerdFont::Warning).to_string().red()
                 );
                 println!(
-                    "     {} Hint: Place the matching private key in ~/.config/instant/encryption/identity",
+                    "     {} Hint: Place the matching private key in ~/.config/instant/encryption/identities/",
                     char::from(NerdFont::Lightbulb).to_string().yellow()
                 );
             }
         }
         println!();
     }
+
+    Ok(())
+}
+
+#[derive(Debug)]
+pub struct KeyInfo {
+    pub name: String,
+    pub key_type: KeyType,
+    pub public_key: String,
+    pub path: PathBuf,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeyType {
+    Age,
+    Ssh,
+}
+
+impl std::fmt::Display for KeyType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            KeyType::Age => write!(f, "age"),
+            KeyType::Ssh => write!(f, "ssh"),
+        }
+    }
+}
+
+pub fn discover_all_keys_info() -> Result<Vec<KeyInfo>> {
+    let mut keys = Vec::new();
+
+    for path in crate::dot::encryption::discover_identity_files() {
+        if let Ok(content) = fs::read_to_string(&path) {
+            for line in content.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("AGE-SECRET-KEY-1")
+                    && let Ok(identity) = age::x25519::Identity::from_str(trimmed)
+                {
+                    let name = path
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| path.to_string_lossy().to_string());
+                    keys.push(KeyInfo {
+                        name,
+                        key_type: KeyType::Age,
+                        public_key: identity.to_public().to_string(),
+                        path: path.clone(),
+                    });
+                }
+            }
+        }
+    }
+
+    let home = std::env::var("HOME").map(PathBuf::from).ok();
+    if let Some(home_path) = home {
+        let ssh_dir = home_path.join(".ssh");
+        if ssh_dir.is_dir()
+            && let Ok(entries) = fs::read_dir(&ssh_dir)
+        {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file()
+                    && path.extension().is_some_and(|ext| ext == "pub")
+                    && let Ok(content) = fs::read_to_string(&path)
+                {
+                    let content_trimmed = content.trim();
+                    if content_trimmed.starts_with("ssh-") || content_trimmed.starts_with("ecdsa-")
+                    {
+                        let name = path
+                            .file_stem()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_else(|| path.to_string_lossy().to_string());
+                        keys.push(KeyInfo {
+                            name,
+                            key_type: KeyType::Ssh,
+                            public_key: content_trimmed.to_string(),
+                            path,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(keys)
+}
+
+fn handle_list(config: &DotfileConfig) -> Result<()> {
+    let keys = discover_all_keys_info()?;
+
+    if keys.is_empty() {
+        emit(
+            Level::Info,
+            "dot.key.list.empty",
+            &format!(
+                "{} No encryption keys found.\n{} Run `ins dot keys generate` to create one.",
+                char::from(NerdFont::Info),
+                char::from(NerdFont::Lightbulb).to_string().yellow()
+            ),
+            None,
+        );
+        return Ok(());
+    }
+
+    // Collect authorized repos for each key
+    let writable_repos = config.get_writable_repos();
+    let mut key_repo_map: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    for repo in &writable_repos {
+        if let Ok(dotfile_repo) = DotfileRepo::new(config, repo.name.clone())
+            && let Ok(repo_path) = dotfile_repo.local_path(config)
+            && let Ok(meta) = crate::dot::meta::read_meta(&repo_path)
+        {
+            for recipient in &meta.encryption_recipients {
+                key_repo_map
+                    .entry(recipient.clone())
+                    .or_default()
+                    .push(repo.name.clone());
+            }
+        }
+    }
+
+    println!(
+        "{} Local Encryption Keys ({} found)",
+        char::from(NerdFont::Key).to_string().cyan(),
+        keys.len()
+    );
+    println!(
+        "{}",
+        "────────────────────────────────────────────────────────────────────────────────".cyan()
+    );
+
+    for key in &keys {
+        let short_key = {
+            let k = &key.public_key;
+            const MAX: usize = 40;
+            if k.len() > MAX {
+                format!("{}...", &k[..MAX - 3])
+            } else {
+                k.clone()
+            }
+        };
+
+        let auth_note = key_repo_map
+            .get(&key.public_key)
+            .map(|repos| format!(" (authorized: {})", repos.join(", ")))
+            .unwrap_or_default();
+
+        println!(
+            "  {}  {}  {}{}",
+            key.name.cyan().bold(),
+            key.key_type.to_string().dimmed(),
+            short_key.dimmed(),
+            auth_note.green()
+        );
+    }
+
+    Ok(())
+}
+
+fn handle_rename(old_name: &str, new_name: &str) -> Result<()> {
+    validate_key_name(new_name)?;
+
+    let dir = identities_dir()?;
+    let old_path = dir.join(old_name);
+    let new_path = dir.join(new_name);
+
+    if !old_path.exists() {
+        anyhow::bail!("Key '{}' not found in {}", old_name, dir.display());
+    }
+
+    if new_path.exists() {
+        anyhow::bail!(
+            "A key named '{}' already exists in {}",
+            new_name,
+            dir.display()
+        );
+    }
+
+    fs::rename(&old_path, &new_path).with_context(|| {
+        format!(
+            "renaming key from '{}' to '{}'",
+            old_path.display(),
+            new_path.display()
+        )
+    })?;
+
+    emit(
+        Level::Success,
+        "dot.key.rename.success",
+        &format!(
+            "{} Renamed key '{}' → '{}'",
+            char::from(NerdFont::Check),
+            old_name.cyan(),
+            new_name.cyan()
+        ),
+        None,
+    );
+
+    Ok(())
+}
+
+/// Public wrapper for TUI to call handle_rename.
+pub fn handle_rename_public(old_name: &str, new_name: &str) -> Result<()> {
+    handle_rename(old_name, new_name)
+}
+
+/// Check which repos a given public key is authorized in.
+pub(crate) fn find_repos_using_key(config: &DotfileConfig, public_key: &str) -> Vec<String> {
+    let writable_repos = config.get_writable_repos();
+    writable_repos
+        .iter()
+        .filter_map(|r| {
+            let dotfile_repo = DotfileRepo::new(config, r.name.clone()).ok()?;
+            let repo_path = dotfile_repo.local_path(config).ok()?;
+            let meta = crate::dot::meta::read_meta(&repo_path).ok()?;
+            if meta
+                .encryption_recipients
+                .iter()
+                .any(|rec| rec == public_key)
+            {
+                Some(r.name.clone())
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+fn handle_remove(config: &DotfileConfig, name: &str) -> Result<()> {
+    let dir = identities_dir()?;
+    let key_path = dir.join(name);
+
+    if !key_path.exists() {
+        anyhow::bail!("Key '{}' not found in {}", name, dir.display());
+    }
+
+    // Read public key to check repo usage
+    let mut public_key_opt = None;
+    if let Ok(content) = fs::read_to_string(&key_path) {
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("AGE-SECRET-KEY-1")
+                && let Ok(identity) = age::x25519::Identity::from_str(trimmed)
+            {
+                public_key_opt = Some(identity.to_public().to_string());
+                break;
+            }
+        }
+    }
+
+    if let Some(pk) = &public_key_opt {
+        let repos_using_key = find_repos_using_key(config, pk);
+
+        if !repos_using_key.is_empty() {
+            emit(
+                Level::Warn,
+                "dot.key.remove.in_use",
+                &format!(
+                    "{} Key '{}' is authorized in: {}.\n{} Removing it will prevent decryption of those repositories until a different key is authorized.",
+                    char::from(NerdFont::Warning).to_string().yellow(),
+                    name.cyan(),
+                    repos_using_key.join(", ").yellow(),
+                    char::from(NerdFont::Warning).to_string().yellow()
+                ),
+                None,
+            );
+        }
+    }
+
+    fs::remove_file(&key_path)
+        .with_context(|| format!("Failed to delete key file at {}", key_path.display()))?;
+
+    emit(
+        Level::Success,
+        "dot.key.remove.success",
+        &format!(
+            "{} Removed key '{}' ({})",
+            char::from(NerdFont::Check),
+            name.cyan(),
+            key_path.display()
+        ),
+        None,
+    );
 
     Ok(())
 }
@@ -606,12 +1072,10 @@ fn find_age_files(dir: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
 }
 
 pub(crate) fn handle_identity() -> Result<()> {
-    let config_dir = crate::common::paths::instant_config_dir()?;
-    let identity_dir = config_dir.join("encryption");
-    let identity_path = identity_dir.join("identity");
+    let keys = discover_all_keys_info()?;
 
     println!(
-        "{} Local Machine Age Identity Public Keys",
+        "{} Local Machine Encryption Keys",
         char::from(NerdFont::Key).to_string().cyan()
     );
     println!(
@@ -619,80 +1083,7 @@ pub(crate) fn handle_identity() -> Result<()> {
         "────────────────────────────────────────────────────────────────────────────────".cyan()
     );
 
-    let mut identity_found = false;
-
-    if identity_path.exists() {
-        let content = fs::read_to_string(&identity_path)?;
-        let mut pubkeys = Vec::new();
-        for line in content.lines() {
-            let trimmed = line.trim();
-            if trimmed.starts_with("AGE-SECRET-KEY-1")
-                && let Ok(identity) = age::x25519::Identity::from_str(trimmed)
-            {
-                pubkeys.push(identity.to_public().to_string());
-            }
-        }
-        if !pubkeys.is_empty() {
-            identity_found = true;
-            println!(
-                "{} Encryption keys (from ~/.config/instant/encryption/identity):",
-                char::from(NerdFont::CheckCircle).to_string().green()
-            );
-            for pk in pubkeys {
-                println!("   {}", pk.green().bold());
-            }
-            println!(
-                "   {} Share these public keys with others to allow them to authorize you as a recipient.",
-                char::from(NerdFont::InfoCircle).to_string().dimmed()
-            );
-            println!();
-        }
-    }
-
-    // Discover SSH public keys which can be used natively as age recipients!
-    let mut ssh_keys = Vec::new();
-    let home = std::env::var("HOME").map(PathBuf::from).ok();
-    if let Some(home_path) = home {
-        let ssh_dir = home_path.join(".ssh");
-        if ssh_dir.is_dir()
-            && let Ok(entries) = fs::read_dir(ssh_dir)
-        {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_file()
-                    && path.extension().is_some_and(|ext| ext == "pub")
-                    && let Ok(content) = fs::read_to_string(&path)
-                {
-                    let content_trimmed = content.trim();
-                    if content_trimmed.starts_with("ssh-") || content_trimmed.starts_with("ecdsa-")
-                    {
-                        ssh_keys.push((
-                            path.file_name().unwrap().to_string_lossy().into_owned(),
-                            content_trimmed.to_string(),
-                        ));
-                    }
-                }
-            }
-        }
-    }
-
-    if !ssh_keys.is_empty() {
-        println!(
-            "{} Discovered SSH Public Keys (natively supported for encryption):",
-            char::from(NerdFont::Terminal).to_string().blue()
-        );
-        for (name, key) in &ssh_keys {
-            println!(
-                "   {} (from ~/.ssh/{}):",
-                char::from(NerdFont::Bullet).to_string().blue(),
-                name
-            );
-            println!("   {}", key.cyan());
-        }
-        println!();
-    }
-
-    if !identity_found && ssh_keys.is_empty() {
+    if keys.is_empty() {
         println!(
             "  {} No local encryption keys or SSH keys found on this machine.",
             char::from(NerdFont::Warning).to_string().red()
@@ -702,7 +1093,25 @@ pub(crate) fn handle_identity() -> Result<()> {
             char::from(NerdFont::Lightbulb).to_string().yellow()
         );
         println!();
+        return Ok(());
     }
+
+    for key in &keys {
+        println!(
+            "  {} ({})",
+            key.name.cyan().bold(),
+            key.key_type.to_string().dimmed()
+        );
+        println!("    {}", key.public_key.green());
+        println!("    ({})", key.path.display().to_string().dimmed());
+        println!();
+    }
+
+    println!(
+        "  {} Share these public keys with others to allow them to authorize you as a recipient.",
+        char::from(NerdFont::InfoCircle).to_string().dimmed()
+    );
+    println!();
 
     Ok(())
 }

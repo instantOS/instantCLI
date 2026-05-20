@@ -14,10 +14,8 @@
 //!   1. `$AGE_IDENTITY` env var (colon-separated paths, like `ssh-add` /
 //!      the `age(1)` CLI).
 //!   2. `<instant_config_dir>/dots.toml` `encryption_keys` list, if present.
-//!   3. `<instant_config_dir>/encryption/identity` (single file) if it exists.
-//!   4. `<instant_config_dir>/encryption/identities/*` (every file in the dir) if
-//!      the directory exists.
-//!   5. Conventional unencrypted SSH private keys at `~/.ssh/id_ed25519` and
+//!   3. `<instant_config_dir>/encryption/identities/*` (every file in the dir).
+//!   4. Conventional unencrypted SSH private keys at `~/.ssh/id_ed25519` and
 //!      `~/.ssh/id_rsa`, if present. These are picked up only as a fallback
 //!      so users who authorize an SSH recipient can decrypt out-of-the-box.
 //!
@@ -196,9 +194,8 @@ pub fn append_age_suffix(path: &Path) -> PathBuf {
 /// Sources (in priority order, deduplicated):
 ///   1. `$AGE_IDENTITY` env var (colon-separated paths)
 ///   2. `dots.toml` `encryption_keys` list (loaded from the global config)
-///   3. `<instant_config_dir>/encryption/identity`
-///   4. `<instant_config_dir>/encryption/identities/*`
-///   5. Conventional SSH private keys (`~/.ssh/id_ed25519`, `~/.ssh/id_rsa`)
+///   3. `<instant_config_dir>/encryption/identities/*`
+///   4. Conventional SSH private keys (`~/.ssh/id_ed25519`, `~/.ssh/id_rsa`)
 pub fn discover_identity_files() -> Vec<PathBuf> {
     let mut out: Vec<PathBuf> = Vec::new();
     let mut seen: HashSet<PathBuf> = HashSet::new();
@@ -233,12 +230,8 @@ pub fn discover_identity_files() -> Vec<PathBuf> {
         }
     }
 
-    // 3-4. Default paths under <instant_config_dir>/encryption/
+    // 3. Default paths under <instant_config_dir>/encryption/identities/*
     if let Ok(cfg_dir) = paths::instant_config_dir() {
-        let single = cfg_dir.join("encryption").join("identity");
-        if single.is_file() {
-            dedup_push(&mut out, &mut seen, single);
-        }
         let dir = cfg_dir.join("encryption").join("identities");
         if dir.is_dir()
             && let Ok(entries) = std::fs::read_dir(&dir)
@@ -253,7 +246,7 @@ pub fn discover_identity_files() -> Vec<PathBuf> {
                 dedup_push(&mut out, &mut seen, p);
             }
         }
-    } // 5. Conventional unencrypted SSH private keys. Only the well-known
+    } // 4. Conventional unencrypted SSH private keys. Only the well-known
     //    filenames so we don't sweep up unrelated files in ~/.ssh.
     //    FIDO2/U2F `_sk` variants (id_ed25519_sk, id_ecdsa_sk) are
     //    excluded because age::ssh::Identity cannot interact with

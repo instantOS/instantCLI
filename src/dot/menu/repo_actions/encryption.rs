@@ -2,39 +2,40 @@ use anyhow::Result;
 
 use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
-use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
-use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
+use crate::dot::menu::encryption_menu::{EncryptionKeyKind, discover_all_keys};
+use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header};
+use crate::ui::catppuccin::{
+    colors, format_back_icon, format_icon_colored, format_with_color, fzf_mocha_args,
+};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 
-#[derive(Debug, Clone)]
-enum RepoEncryptionAction {
-    ShowStatus,
-    AuthorizeLocalKey,
-    AuthorizeRemoteKey,
-    RotateKeys,
+#[derive(Clone)]
+pub(crate) enum MenuKind {
+    Recipient { public_key: String, is_local: bool },
+    AuthorizeLocal,
+    AuthorizeRemote,
     Back,
 }
 
 #[derive(Clone)]
-struct RepoEncryptionItem {
-    action: RepoEncryptionAction,
+struct MenuItem {
+    kind: MenuKind,
     display: String,
     preview: String,
 }
 
-impl FzfSelectable for RepoEncryptionItem {
+impl FzfSelectable for MenuItem {
     fn fzf_display_text(&self) -> String {
         self.display.clone()
     }
 
     fn fzf_key(&self) -> String {
-        match self.action {
-            RepoEncryptionAction::ShowStatus => "show_status".to_string(),
-            RepoEncryptionAction::AuthorizeLocalKey => "authorize_local".to_string(),
-            RepoEncryptionAction::AuthorizeRemoteKey => "authorize_remote".to_string(),
-            RepoEncryptionAction::RotateKeys => "rotate_keys".to_string(),
-            RepoEncryptionAction::Back => "back".to_string(),
+        match &self.kind {
+            MenuKind::Recipient { public_key, .. } => public_key.clone(),
+            MenuKind::AuthorizeLocal => "authorize_local".to_string(),
+            MenuKind::AuthorizeRemote => "authorize_remote".to_string(),
+            MenuKind::Back => "back".to_string(),
         }
     }
 
@@ -43,305 +44,495 @@ impl FzfSelectable for RepoEncryptionItem {
     }
 }
 
-fn build_status_message(repo_name: &str, config: &DotfileConfig) -> String {
-    let Ok(dotfile_repo) = crate::dot::dotfilerepo::DotfileRepo::new(config, repo_name.to_string())
-    else {
-        return format!("Repository '{}' not found.", repo_name);
-    };
-    let Ok(repo_path) = dotfile_repo.local_path(config) else {
-        return format!("Repository path not found for '{}'.", repo_name);
-    };
-    let Ok(meta) = crate::dot::meta::read_meta(&repo_path) else {
-        return format!("Could not read metadata for '{}'.", repo_name);
-    };
-    let local_keys = crate::dot::operations::key::get_local_public_keys().unwrap_or_default();
-
-    if meta.encryption_recipients.is_empty() {
-        return format!(
-            "Repository: {}\n\nEncryption is not configured.\nNo encryption recipients have been authorized yet.",
-            repo_name
-        );
-    }
-
-    let local_authorized = meta
-        .encryption_recipients
-        .iter()
-        .any(|r| local_keys.contains(r));
-
-    let mut encrypted_files = 0;
-    for dir in &dotfile_repo.dotfile_dirs {
-        if dir.path.is_dir() {
-            encrypted_files += count_age_files(&dir.path);
-        }
-    }
-
-    let auth_icon = if local_authorized { "✓" } else { "✗" };
-    let auth_note = if local_authorized {
-        String::new()
-    } else {
-        "\n\nYour key is NOT authorized.\nYou cannot decrypt files for this repo.\nRun 'Authorize Local Key' to fix this.".to_string()
-    };
-
-    format!(
-        "Repository: {}\n\nRecipients: {}\nEncrypted files: {}\nLocal key: {} {}\n{}",
-        repo_name,
-        meta.encryption_recipients.len(),
-        encrypted_files,
-        auth_icon,
-        if local_authorized {
-            "Authorized"
-        } else {
-            "Unauthorized"
-        },
-        auth_note,
-    )
-}
-
-fn count_age_files(dir: &std::path::Path) -> usize {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return 0;
-    };
-    let mut count = 0;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            count += count_age_files(&path);
-        } else if path.is_file() && crate::dot::encryption::is_encrypted_source(&path) {
-            count += 1;
-        }
-    }
-    count
-}
-
 pub(super) fn handle_repo_encryption(
     repo_name: &str,
     config: &mut DotfileConfig,
     db: &Database,
     debug: bool,
 ) -> Result<()> {
-    let mut cursor = MenuCursor::new();
+    let display_server = crate::common::display_server::DisplayServer::detect();
 
     loop {
-        let mut actions = Vec::new();
+        let Ok(dotfile_repo) =
+            crate::dot::dotfilerepo::DotfileRepo::new(config, repo_name.to_string())
+        else {
+            FzfWrapper::message("Repository not found.")?;
+            return Ok(());
+        };
+        let Ok(repo_path) = dotfile_repo.local_path(config) else {
+            FzfWrapper::message("Repository path not found.")?;
+            return Ok(());
+        };
+        let Ok(meta) = crate::dot::meta::read_meta(&repo_path) else {
+            FzfWrapper::message("Could not read repository metadata.")?;
+            return Ok(());
+        };
 
-        actions.push(RepoEncryptionItem {
-            action: RepoEncryptionAction::ShowStatus,
-            display: format!(
-                "{} Show Status",
-                format_icon_colored(NerdFont::InfoCircle, colors::BLUE)
-            ),
-            preview: PreviewBuilder::new()
-                .line(colors::BLUE, Some(NerdFont::InfoCircle), "Show Status")
-                .blank()
-                .text("Display detailed authorized recipients and")
-                .text("local decryption validation.")
-                .build_string(),
-        });
+        let local_pubkeys =
+            crate::dot::operations::key::get_local_public_keys().unwrap_or_default();
+        let mut items: Vec<MenuItem> = Vec::new();
 
-        actions.push(RepoEncryptionItem {
-            action: RepoEncryptionAction::AuthorizeLocalKey,
+        for r in &meta.encryption_recipients {
+            let is_local = local_pubkeys.contains(r);
+            let icon = format_icon_colored(
+                if is_local {
+                    NerdFont::CheckCircle
+                } else {
+                    NerdFont::Globe
+                },
+                if is_local {
+                    colors::GREEN
+                } else {
+                    colors::PEACH
+                },
+            );
+            let short = {
+                const MAX: usize = 40;
+                if r.len() > MAX {
+                    format!("{}...", &r[..MAX.saturating_sub(3)])
+                } else {
+                    r.clone()
+                }
+            };
+            let tag = if is_local { "Your Key" } else { "Remote" };
+            items.push(MenuItem {
+                kind: MenuKind::Recipient {
+                    public_key: r.clone(),
+                    is_local,
+                },
+                display: format!("{} {}  ({})", icon, short, tag),
+                preview: PreviewBuilder::new()
+                    .header(NerdFont::Users, "Authorized Recipient")
+                    .blank()
+                    .field(
+                        "Type",
+                        if is_local {
+                            "Your Key (local)"
+                        } else {
+                            "Remote Key"
+                        },
+                    )
+                    .field("Public key", r)
+                    .build_string(),
+            });
+        }
+
+        items.push(MenuItem {
+            kind: MenuKind::AuthorizeLocal,
             display: format!(
                 "{} Authorize Local Key",
                 format_icon_colored(NerdFont::Key, colors::GREEN)
             ),
             preview: PreviewBuilder::new()
-                .line(colors::GREEN, Some(NerdFont::Key), "Authorize Local Key")
+                .header(NerdFont::Key, "Authorize Local Key")
                 .blank()
-                .text("Automatically authorize your local machine's primary")
-                .text("key or discovered SSH keys in instantdots.toml")
-                .text("and re-encrypt all files.")
+                .text("Authorize your local machine's encryption key.")
+                .text("Files will be re-encrypted for the new recipient set.")
                 .build_string(),
         });
 
-        actions.push(RepoEncryptionItem {
-            action: RepoEncryptionAction::AuthorizeRemoteKey,
+        items.push(MenuItem {
+            kind: MenuKind::AuthorizeRemote,
             display: format!(
                 "{} Authorize Remote Key",
                 format_icon_colored(NerdFont::Users, colors::PEACH)
             ),
             preview: PreviewBuilder::new()
-                .line(colors::PEACH, Some(NerdFont::Users), "Authorize Remote Key")
+                .header(NerdFont::Users, "Authorize Remote Key")
                 .blank()
                 .text("Enter an external public key (age1... or ssh-...)")
                 .text("to authorize a teammate or another device.")
                 .build_string(),
         });
 
-        actions.push(RepoEncryptionItem {
-            action: RepoEncryptionAction::RotateKeys,
-            display: format!(
-                "{} Rotate Keys",
-                format_icon_colored(NerdFont::Refresh, colors::RED)
-            ),
-            preview: PreviewBuilder::new()
-                .line(colors::RED, Some(NerdFont::Refresh), "Rotate Keys")
-                .blank()
-                .text("Prompt for a comma-separated list of keys to set")
-                .text("as the exclusive authorized recipients, performing")
-                .text("safe key rotation.")
-                .build_string(),
-        });
-
-        actions.push(RepoEncryptionItem {
-            action: RepoEncryptionAction::Back,
+        items.push(MenuItem {
+            kind: MenuKind::Back,
             display: format!("{} Back", format_back_icon()),
             preview: PreviewBuilder::new()
                 .subtext("Return to repository actions")
                 .build_string(),
         });
 
-        let mut builder = FzfWrapper::builder()
+        let builder = FzfWrapper::builder()
             .header(Header::fancy(&format!("Encryption: {}", repo_name)))
             .prompt("Select action")
             .args(fzf_mocha_args())
             .responsive_layout();
 
-        if let Some(index) = cursor.initial_index(&actions) {
-            builder = builder.initial_index(index);
-        }
-
-        let result = builder.select(actions.clone())?;
+        let result = builder.select(items)?;
 
         match result {
-            FzfResult::Selected(item) => {
-                cursor.update(&item, &actions);
-                match item.action {
-                    RepoEncryptionAction::ShowStatus => {
-                        let msg = build_status_message(repo_name, config);
-                        FzfWrapper::message(&msg)?;
-                    }
-                    RepoEncryptionAction::AuthorizeLocalKey => {
-                        let local_keys = crate::dot::operations::key::get_local_public_keys()
-                            .unwrap_or_default();
-                        if local_keys.is_empty() {
-                            let result = FzfWrapper::builder()
-                                .responsive_layout()
-                                .confirm(
-                                    "No local encryption key found.\n\nWould you like to generate one now?",
-                                )
-                                .yes_text("Generate Key")
-                                .no_text("Cancel")
-                                .confirm_dialog()?;
-                            if result == crate::menu_utils::ConfirmResult::Yes {
-                                crate::dot::operations::key::handle_init(false)?;
-                                let new_keys = crate::dot::operations::key::get_local_public_keys()
-                                    .unwrap_or_default();
-                                if new_keys.is_empty() {
-                                    FzfWrapper::message("No key was generated.")?;
-                                    continue;
-                                }
-                            } else {
+            FzfResult::Selected(item) => match &item.kind {
+                MenuKind::Recipient {
+                    public_key,
+                    is_local,
+                } => {
+                    handle_recipient_actions(
+                        public_key,
+                        *is_local,
+                        repo_name,
+                        config,
+                        db,
+                        debug,
+                        &display_server,
+                    )?;
+                }
+                MenuKind::AuthorizeLocal => {
+                    let mut keys = discover_all_keys();
+
+                    if keys.is_empty() {
+                        let result = FzfWrapper::builder()
+                            .responsive_layout()
+                            .confirm(
+                                "No local encryption key found.\n\nWould you like to generate one now?",
+                            )
+                            .yes_text("Generate Key")
+                            .no_text("Cancel")
+                            .confirm_dialog()?;
+                        if result == crate::menu_utils::ConfirmResult::Yes {
+                            crate::dot::operations::key::handle_init(None, false)?;
+                            keys = discover_all_keys();
+                            if keys.is_empty() {
+                                FzfWrapper::message("No key was generated.")?;
                                 continue;
                             }
+                        } else {
+                            continue;
                         }
-                        crate::dot::operations::key::handle_authorize(
-                            config,
-                            db,
-                            None,
-                            Some(repo_name),
-                            false,
-                            debug,
-                        )?;
-                        let local_keys = crate::dot::operations::key::get_local_public_keys()
-                            .unwrap_or_default();
-                        let key = local_keys
-                            .first()
-                            .map(|s| s.as_str())
-                            .unwrap_or("(unknown)");
-                        FzfWrapper::message(&format!(
-                            "Local key authorized for {}.\n\n{}",
-                            repo_name, key
-                        ))?;
                     }
-                    RepoEncryptionAction::AuthorizeRemoteKey => {
-                        if let crate::menu_utils::TextEditOutcome::Updated(Some(key)) =
-                            crate::menu_utils::prompt_text_edit(
-                                crate::menu_utils::TextEditPrompt::new(
-                                    "Enter public key to authorize (age1... or ssh-...):",
-                                    None,
-                                ),
-                            )?
-                        {
-                            let key = key.trim();
-                            if !key.is_empty() {
-                                if !key.starts_with("age1") && !key.starts_with("ssh-") {
-                                    FzfWrapper::message(
-                                        "Invalid key prefix.\nExpected age1... or ssh-...",
-                                    )?;
-                                } else {
-                                    crate::dot::operations::key::handle_authorize(
-                                        config,
-                                        db,
-                                        Some(key),
-                                        Some(repo_name),
-                                        false,
-                                        debug,
-                                    )?;
-                                    FzfWrapper::message(&format!(
-                                        "Remote key authorized for {}.\n\n{}",
-                                        repo_name, key
-                                    ))?;
+
+                    let chosen: EncryptionKeyKind = if keys.len() == 1 {
+                        keys[0].clone()
+                    } else {
+                        #[derive(Clone)]
+                        struct PickerEntry {
+                            key: Option<EncryptionKeyKind>,
+                            display: String,
+                            preview: String,
+                        }
+
+                        impl FzfSelectable for PickerEntry {
+                            fn fzf_display_text(&self) -> String {
+                                self.display.clone()
+                            }
+                            fn fzf_key(&self) -> String {
+                                match &self.key {
+                                    Some(k) => k.public_key().to_string(),
+                                    None => "generate".to_string(),
                                 }
                             }
+                            fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
+                                crate::menu::protocol::FzfPreview::Text(self.preview.clone())
+                            }
                         }
-                    }
-                    RepoEncryptionAction::RotateKeys => {
-                        if let crate::menu_utils::TextEditOutcome::Updated(Some(keys_str)) =
-                            crate::menu_utils::prompt_text_edit(
-                                crate::menu_utils::TextEditPrompt::new(
-                                    "Enter comma-separated public keys for rotation:",
-                                    None,
-                                ),
-                            )?
-                        {
-                            let keys: Vec<String> = keys_str
-                                .split(',')
-                                .map(|s| s.trim().to_string())
-                                .filter(|s| !s.is_empty())
-                                .collect();
 
-                            if !keys.is_empty() {
-                                let mut has_invalid = false;
-                                for k in &keys {
-                                    if !k.starts_with("age1") && !k.starts_with("ssh-") {
-                                        FzfWrapper::message(&format!(
-                                            "Invalid key: {}\nExpected age1... or ssh-...",
-                                            k
-                                        ))?;
-                                        has_invalid = true;
-                                        break;
-                                    }
+                        let mut entries: Vec<PickerEntry> = keys
+                            .iter()
+                            .map(|key| {
+                                let icon = format_icon_colored(
+                                    match key {
+                                        EncryptionKeyKind::AgeIdentity { .. } => NerdFont::Lock,
+                                        EncryptionKeyKind::SshKey { .. } => NerdFont::Terminal,
+                                    },
+                                    match key {
+                                        EncryptionKeyKind::AgeIdentity { .. } => colors::GREEN,
+                                        EncryptionKeyKind::SshKey { .. } => colors::BLUE,
+                                    },
+                                );
+                                let authorized_repos =
+                                    crate::dot::operations::key::find_repos_using_key(
+                                        config,
+                                        key.public_key(),
+                                    );
+                                let auth_info = if authorized_repos.is_empty() {
+                                    "Not authorized in any repo".to_string()
+                                } else {
+                                    format!("Authorized in: {}", authorized_repos.join(", "))
+                                };
+                                PickerEntry {
+                                    key: Some(key.clone()),
+                                    display: format!(
+                                        "{} {}  {}",
+                                        icon,
+                                        key.display_name(),
+                                        format_with_color(&key.short_key(), colors::OVERLAY0),
+                                    ),
+                                    preview: PreviewBuilder::new()
+                                        .header(
+                                            NerdFont::Key,
+                                            &format!("{} Key", key.key_type_label()),
+                                        )
+                                        .blank()
+                                        .field("Public key", key.public_key())
+                                        .field("Path", &key.path().to_string_lossy())
+                                        .blank()
+                                        .text(&auth_info)
+                                        .build_string(),
                                 }
-                                if has_invalid {
+                            })
+                            .collect();
+
+                        entries.push(PickerEntry {
+                            key: None,
+                            display: format!(
+                                "{} Generate New Key",
+                                format_icon_colored(NerdFont::Plus, colors::GREEN)
+                            ),
+                            preview: PreviewBuilder::new()
+                                .header(NerdFont::Plus, "Generate New Key")
+                                .text("Create a new x25519 encryption keypair.")
+                                .blank()
+                                .subtext("Existing keys are not overwritten.")
+                                .build_string(),
+                        });
+
+                        let builder = FzfWrapper::builder()
+                            .header(Header::fancy("Select Key to Authorize"))
+                            .prompt("Key")
+                            .responsive_layout();
+
+                        match builder.select(entries)? {
+                            FzfResult::Selected(entry) => match entry.key {
+                                Some(k) => k,
+                                None => {
+                                    let default_name = nix::unistd::gethostname()
+                                        .ok()
+                                        .and_then(|h| h.into_string().ok())
+                                        .unwrap_or_else(|| "default".to_string());
+                                    let name = FzfWrapper::builder()
+                                        .header(Header::fancy("Generate New Key"))
+                                        .prompt("Key name")
+                                        .query(&default_name)
+                                        .input()
+                                        .input_dialog()?;
+                                    if !name.is_empty() {
+                                        crate::dot::operations::key::handle_init(
+                                            Some(&name),
+                                            false,
+                                        )?;
+                                    }
                                     continue;
                                 }
+                            },
+                            _ => continue,
+                        }
+                    };
 
-                                let confirm = FzfWrapper::confirm(&format!(
-                                    "Rotate keys to {} recipient(s)?\nYou will lose access if your key is not included.",
-                                    keys.len()
+                    crate::dot::operations::key::handle_authorize(
+                        config,
+                        db,
+                        Some(chosen.public_key()),
+                        Some(repo_name),
+                        false,
+                        debug,
+                    )?;
+
+                    FzfWrapper::message(&format!(
+                        "Local key '{}' authorized for {}.\n\n{}",
+                        chosen.display_name(),
+                        repo_name,
+                        chosen.public_key(),
+                    ))?;
+                }
+                MenuKind::AuthorizeRemote => {
+                    if let crate::menu_utils::TextEditOutcome::Updated(Some(key)) =
+                        crate::menu_utils::prompt_text_edit(
+                            crate::menu_utils::TextEditPrompt::new(
+                                "Enter public key to authorize (age1... or ssh-...):",
+                                None,
+                            ),
+                        )?
+                    {
+                        let key = key.trim();
+                        if !key.is_empty() {
+                            if !key.starts_with("age1") && !key.starts_with("ssh-") {
+                                FzfWrapper::message(
+                                    "Invalid key prefix.\nExpected age1... or ssh-...",
+                                )?;
+                            } else {
+                                crate::dot::operations::key::handle_authorize(
+                                    config,
+                                    db,
+                                    Some(key),
+                                    Some(repo_name),
+                                    false,
+                                    debug,
+                                )?;
+                                FzfWrapper::message(&format!(
+                                    "Remote key authorized for {}.\n\n{}",
+                                    repo_name, key
                                 ))?;
-                                if confirm == crate::menu_utils::ConfirmResult::Yes {
-                                    crate::dot::operations::key::handle_rotate(
-                                        config,
-                                        db,
-                                        &keys,
-                                        Some(repo_name),
-                                        false,
-                                        debug,
-                                    )?;
-                                    FzfWrapper::message(&format!(
-                                        "Keys rotated for {}.\nRecipients set: {}",
-                                        repo_name,
-                                        keys.len()
-                                    ))?;
-                                }
                             }
                         }
                     }
-                    RepoEncryptionAction::Back => return Ok(()),
                 }
+                MenuKind::Back => return Ok(()),
+            },
+            _ => return Ok(()),
+        }
+    }
+}
+
+fn handle_recipient_actions(
+    recipient_key: &str,
+    is_local: bool,
+    repo_name: &str,
+    config: &mut DotfileConfig,
+    db: &Database,
+    debug: bool,
+    display_server: &crate::common::display_server::DisplayServer,
+) -> Result<()> {
+    let short_key = {
+        const MAX: usize = 40;
+        if recipient_key.len() > MAX {
+            format!("{}...", &recipient_key[..MAX.saturating_sub(3)])
+        } else {
+            recipient_key.to_string()
+        }
+    };
+
+    loop {
+        #[derive(Clone)]
+        struct ActionItem {
+            action: &'static str,
+            display: String,
+            preview: String,
+        }
+
+        impl FzfSelectable for ActionItem {
+            fn fzf_display_text(&self) -> String {
+                self.display.clone()
             }
-            FzfResult::Error(e) => return Err(anyhow::anyhow!("FZF Error: {}", e)),
+            fn fzf_key(&self) -> String {
+                self.action.to_string()
+            }
+            fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
+                crate::menu::protocol::FzfPreview::Text(self.preview.clone())
+            }
+        }
+
+        let type_label = if is_local { "Your Key" } else { "Remote Key" };
+
+        let items = vec![
+            ActionItem {
+                action: "deauthorize",
+                display: format!(
+                    "{} De-authorize",
+                    format_icon_colored(NerdFont::Minus, colors::RED)
+                ),
+                preview: PreviewBuilder::new()
+                    .line(colors::RED, Some(NerdFont::Minus), "De-authorize")
+                    .blank()
+                    .text(&format!(
+                        "Remove this recipient ({}) from the repository.",
+                        type_label
+                    ))
+                    .blank()
+                    .text("Files will be re-encrypted for the remaining recipients.")
+                    .build_string(),
+            },
+            ActionItem {
+                action: "copy",
+                display: format!(
+                    "{} Copy Public Key",
+                    format_icon_colored(NerdFont::Clipboard, colors::GREEN)
+                ),
+                preview: PreviewBuilder::new()
+                    .header(NerdFont::Clipboard, "Copy Public Key")
+                    .blank()
+                    .field("Key", recipient_key)
+                    .build_string(),
+            },
+            ActionItem {
+                action: "back",
+                display: format!("{} Back", format_back_icon()),
+                preview: PreviewBuilder::new()
+                    .subtext("Return to repository encryption menu")
+                    .build_string(),
+            },
+        ];
+
+        let builder = FzfWrapper::builder()
+            .header(Header::fancy(&format!("{} — {}", type_label, short_key)))
+            .prompt("Action")
+            .responsive_layout();
+
+        let result = builder.select(items)?;
+        match result {
+            FzfResult::Selected(item) => match item.action {
+                "deauthorize" => {
+                    let recipients = {
+                        let Ok(dotfile_repo) = crate::dot::dotfilerepo::DotfileRepo::new(
+                            config,
+                            repo_name.to_string(),
+                        ) else {
+                            FzfWrapper::message("Repository not found.")?;
+                            return Ok(());
+                        };
+                        let Ok(repo_path) = dotfile_repo.local_path(config) else {
+                            FzfWrapper::message("Repository path not found.")?;
+                            return Ok(());
+                        };
+                        let Ok(meta) = crate::dot::meta::read_meta(&repo_path) else {
+                            FzfWrapper::message("Could not read repository metadata.")?;
+                            return Ok(());
+                        };
+                        meta.encryption_recipients
+                    };
+
+                    let warning = if is_local && recipients.len() == 1 {
+                        format!(
+                            "\n\u{26a0} WARNING: This is your only key and the only recipient.\nRemoving it will leave the repository unencrypted."
+                        )
+                    } else if is_local {
+                        format!(
+                            "\n\u{26a0} WARNING: This is your own key.\nYou will lose the ability to decrypt unless another of your keys is authorized."
+                        )
+                    } else {
+                        String::new()
+                    };
+
+                    let confirm_result = FzfWrapper::builder()
+                        .responsive_layout()
+                        .confirm(format!(
+                            "Remove this recipient from '{}'?\n\n{}{}",
+                            repo_name, short_key, warning
+                        ))
+                        .yes_text("De-authorize")
+                        .no_text("Cancel")
+                        .confirm_dialog()?;
+                    if confirm_result != crate::menu_utils::ConfirmResult::Yes {
+                        continue;
+                    }
+
+                    crate::dot::operations::key::handle_deauthorize(
+                        config,
+                        db,
+                        recipient_key,
+                        Some(repo_name),
+                        false,
+                        debug,
+                    )?;
+
+                    FzfWrapper::message(&format!(
+                        "Recipient de-authorized from {}.\n\n{}",
+                        repo_name, recipient_key
+                    ))?;
+                    return Ok(());
+                }
+                "copy" => {
+                    crate::assist::utils::copy_to_clipboard(
+                        recipient_key.as_bytes(),
+                        display_server,
+                    )
+                    .map_err(|e| anyhow::anyhow!("Failed to copy to clipboard: {}", e))?;
+                    FzfWrapper::message(&format!(
+                        "Public key copied to clipboard.\n\n{}",
+                        recipient_key
+                    ))?;
+                }
+                _ => return Ok(()),
+            },
             _ => return Ok(()),
         }
     }
