@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use super::detect::{matches_appimage, matches_flatpak_app};
 use super::render::shell_escape;
-use super::types::{
+use super::{
     EmulatorLaunchCommand, EmulatorLauncher, EmulatorOptions, EmulatorPlatform, GamescopeOptions,
     LaunchCommand, LaunchCommandKind, LaunchWrappers, ProtonSelection, SteamLaunchCommand,
     WineLaunchCommand, WineRunner,

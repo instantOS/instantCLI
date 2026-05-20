@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use super::types::EmulatorPlatform;
+use super::EmulatorPlatform;
 
 pub fn matches_flatpak_app<'a>(tokens: &'a [String], app_id: &str) -> Option<&'a [String]> {
     match tokens {
