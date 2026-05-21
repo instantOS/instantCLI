@@ -5,10 +5,10 @@
 
 use crate::arch::dualboot::os_detection::detect_os_from_info;
 use crate::arch::dualboot::parsing;
-use crate::arch::dualboot::types::format_size;
 use crate::arch::dualboot::types::{
     DiskAnalysis, DiskInfo, MIN_ESP_SIZE, PartitionTableType, ResizeInfo,
 };
+use crate::common::format::format_size;
 use anyhow::Result;
 
 /// Detect all disks and their partitions

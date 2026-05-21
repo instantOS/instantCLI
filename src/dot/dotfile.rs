@@ -356,9 +356,10 @@ impl Dotfile {
                 let dotfile_repo =
                     crate::dot::dotfilerepo::DotfileRepo::new(config, repo_name.to_string())?;
 
-                let recipients =
-                    crate::dot::encryption::parse_recipients(&dotfile_repo.meta.age_recipients)
-                        .context("loading repository public keys for re-encryption")?;
+                let recipients = crate::dot::encryption::parse_recipients(
+                    &dotfile_repo.meta.encryption_recipients,
+                )
+                .context("loading repository public keys for re-encryption")?;
 
                 let target_hash = self.get_file_hash(&self.target_path, false, db)?;
                 let plain_hash = self.get_file_hash(&self.source_path, true, db)?;
@@ -559,7 +560,7 @@ mod tests {
         // point AGE_IDENTITY at it for the duration of this test.
         let identity = age::x25519::Identity::generate();
         let recipient = identity.to_public();
-        let identity_file = dir.path().join("identity.txt");
+        let identity_file = dir.path().join("identity.key");
         fs::write(&identity_file, identity.to_string().expose_secret())
             .expect("write identity file");
 
@@ -665,7 +666,7 @@ mod tests {
         // 1. Generate a throwaway age identity and key
         let identity = age::x25519::Identity::generate();
         let recipient = identity.to_public();
-        let identity_file = dir.path().join("identity.txt");
+        let identity_file = dir.path().join("identity.key");
         fs::write(&identity_file, identity.to_string().expose_secret())
             .expect("write identity file");
 
@@ -677,7 +678,7 @@ mod tests {
             name: "my-repo".to_string(),
             description: Some("My personal secrets".to_string()),
             dots_dirs: vec!["dots".to_string()],
-            age_recipients: vec![recipient_str.clone()],
+            encryption_recipients: vec![recipient_str.clone()],
             ..Default::default()
         };
         let meta_toml = toml::to_string(&metadata).unwrap();
@@ -701,7 +702,7 @@ mod tests {
             hash_cleanup_days: 30,
             ignored_paths: vec![],
             units: vec![],
-            age_identity_files: vec![],
+            encryption_keys: vec![],
         };
         // Save the config to disk so that DotfileConfig::load(None) reads it
         let config_toml = toml::to_string(&config).unwrap();

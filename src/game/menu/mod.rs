@@ -179,276 +179,289 @@ impl GameState {
 
 /// Build the game action menu items
 fn build_action_menu(game_name: &str, state: &GameState) -> Vec<GameActionItem> {
-    let mut actions = Vec::new();
+    let mut actions: Vec<GameActionItem> = Vec::new();
 
-    // Add setup option first if game needs it
     if state.needs_setup {
-        actions.push(GameActionItem {
-            display: format!(
-                "{} Setup",
-                format_icon_colored(NerdFont::Wrench, colors::PEACH)
-            ),
-            action: GameAction::Setup,
-            preview: PreviewBuilder::new()
-                .header(NerdFont::Wrench, "Setup Game")
-                .text(&format!(
-                    "Configure save path for '{}' on this device.",
-                    game_name
-                ))
-                .blank()
-                .text("This game is registered but has no save data location set up yet.")
-                .build(),
-            keywords: vec![],
-        });
+        actions.push(action_setup_item(game_name));
     }
 
-    // Launch preview
-    let launch_preview = {
-        let mut builder = PreviewBuilder::new()
-            .header(NerdFont::Rocket, "Launch Game")
-            .text(&format!("Launch {} with automatic save sync.", game_name));
+    actions.push(action_launch_item(game_name, state));
+    actions.push(action_edit_item(game_name, state));
 
-        if let Some(cmd) = &state.launch_command {
-            builder = builder.blank().field("Command", cmd);
-        } else {
-            builder = builder
-                .blank()
-                .line(
-                    colors::YELLOW,
-                    Some(NerdFont::Warning),
-                    "No launch command configured.",
-                )
-                .subtext("Pressing Launch will offer to build one.");
+    if !state.needs_setup {
+        if let Some(path) = &state.save_path {
+            actions.push(action_open_save_item(game_name, path));
+            actions.push(action_move_item(game_name, path));
         }
-        builder.build()
-    };
+        actions.push(action_checkpoint_item(game_name));
+    }
 
-    actions.push(GameActionItem {
+    if state.launch_command.is_some() {
+        actions.push(action_steam_item(game_name));
+        actions.push(action_desktop_item(game_name));
+    }
+
+    actions.push(action_back_item());
+    actions
+}
+
+fn action_setup_item(game_name: &str) -> GameActionItem {
+    GameActionItem {
+        display: format!(
+            "{} Setup",
+            format_icon_colored(NerdFont::Wrench, colors::PEACH)
+        ),
+        action: GameAction::Setup,
+        preview: PreviewBuilder::new()
+            .header(NerdFont::Wrench, "Setup Game")
+            .text(&format!(
+                "Configure save path for '{}' on this device.",
+                game_name
+            ))
+            .blank()
+            .text("This game is registered but has no save data location set up yet.")
+            .build(),
+        keywords: vec![],
+    }
+}
+
+fn action_launch_item(game_name: &str, state: &GameState) -> GameActionItem {
+    let mut builder = PreviewBuilder::new()
+        .header(NerdFont::Rocket, "Launch Game")
+        .text(&format!("Launch {} with automatic save sync.", game_name));
+
+    if let Some(cmd) = &state.launch_command {
+        builder = builder.blank().field("Command", cmd);
+    } else {
+        builder = builder
+            .blank()
+            .line(
+                colors::YELLOW,
+                Some(NerdFont::Warning),
+                "No launch command configured.",
+            )
+            .subtext("Pressing Launch will offer to build one.");
+    }
+
+    GameActionItem {
         display: format!(
             "{} Launch",
             format_icon_colored(NerdFont::Rocket, colors::GREEN)
         ),
         action: GameAction::Launch,
-        preview: launch_preview,
+        preview: builder.build(),
         keywords: vec!["play", "start", "run"],
-    });
+    }
+}
 
-    // Edit preview
-    let edit_preview = {
-        let mut builder = PreviewBuilder::new()
-            .header(NerdFont::Edit, "Edit Configuration")
-            .text(&format!("Edit configuration for '{}'", game_name))
+fn action_edit_item(game_name: &str, state: &GameState) -> GameActionItem {
+    let mut builder = PreviewBuilder::new()
+        .header(NerdFont::Edit, "Edit Configuration")
+        .text(&format!("Edit configuration for '{}'", game_name))
+        .blank()
+        .separator()
+        .blank()
+        .line(colors::MAUVE, Some(NerdFont::FileConfig), "games.toml")
+        .field_indented(
+            "Description",
+            state.description.as_deref().unwrap_or("<not set>"),
+        )
+        .field_indented(
+            "Launch Command",
+            state.launch_command.as_deref().unwrap_or("<not set>"),
+        );
+
+    if let Some(path) = &state.save_path {
+        builder = builder
             .blank()
-            .separator()
-            .blank()
-            .line(colors::MAUVE, Some(NerdFont::FileConfig), "games.toml")
-            .field_indented(
-                "Description",
-                state.description.as_deref().unwrap_or("<not set>"),
-            )
-            .field_indented(
-                "Launch Command",
-                state.launch_command.as_deref().unwrap_or("<not set>"),
-            );
+            .line(colors::MAUVE, Some(NerdFont::Desktop), "installations.toml")
+            .field_indented("Save Path", path);
+    } else {
+        builder = builder.blank().subtext("No installation on this device");
+    }
 
-        if let Some(path) = &state.save_path {
-            builder = builder
-                .blank()
-                .line(colors::MAUVE, Some(NerdFont::Desktop), "installations.toml")
-                .field_indented("Save Path", path);
-        } else {
-            builder = builder.blank().subtext("No installation on this device");
-        }
-        builder.build()
-    };
-
-    actions.push(GameActionItem {
+    GameActionItem {
         display: format!(
             "{} Edit",
             format_icon_colored(NerdFont::Edit, colors::SAPPHIRE)
         ),
         action: GameAction::Edit,
-        preview: edit_preview,
+        preview: builder.build(),
         keywords: vec!["change", "modify", "configure", "settings"],
-    });
+    }
+}
 
-    // Move option - only show if game has a save path configured
-    if !state.needs_setup {
-        if let Some(path) = &state.save_path {
-            actions.push(GameActionItem {
-                display: format!(
-                    "{} Open Save Directory",
-                    format_icon_colored(NerdFont::FolderOpen, colors::GREEN)
-                ),
-                action: GameAction::OpenSaveDirectory,
-                preview: PreviewBuilder::new()
-                    .header(NerdFont::FolderOpen, "Open Save Directory")
-                    .text(&format!("Open the save location for '{}'.", game_name))
-                    .blank()
-                    .field("Configured path", path)
-                    .blank()
-                    .text("Choose how to open it:")
-                    .bullet("yazi file manager")
-                    .bullet("Terminal window in that directory")
-                    .bullet("Default desktop application via xdg-open")
-                    .build(),
-                keywords: vec!["folder", "browse", "explore", "files"],
-            });
+fn action_open_save_item(game_name: &str, path: &str) -> GameActionItem {
+    GameActionItem {
+        display: format!(
+            "{} Open Save Directory",
+            format_icon_colored(NerdFont::FolderOpen, colors::GREEN)
+        ),
+        action: GameAction::OpenSaveDirectory,
+        preview: PreviewBuilder::new()
+            .header(NerdFont::FolderOpen, "Open Save Directory")
+            .text(&format!("Open the save location for '{}'.", game_name))
+            .blank()
+            .field("Configured path", path)
+            .blank()
+            .text("Choose how to open it:")
+            .bullet("yazi file manager")
+            .bullet("Terminal window in that directory")
+            .bullet("Default desktop application via xdg-open")
+            .build(),
+        keywords: vec!["folder", "browse", "explore", "files"],
+    }
+}
+
+fn action_move_item(game_name: &str, path: &str) -> GameActionItem {
+    GameActionItem {
+        display: format!(
+            "{} Change Save Path",
+            format_icon_colored(NerdFont::Folder, colors::LAVENDER)
+        ),
+        action: GameAction::Move,
+        preview: PreviewBuilder::new()
+            .header(NerdFont::Folder, "Change Save Path")
+            .text(&format!("Select a new save location for '{}'.", game_name))
+            .blank()
+            .subtext("This updates where the game manager looks for saves.")
+            .subtext("Files are not moved automatically.")
+            .blank()
+            .field("Current path", path)
+            .build(),
+        keywords: vec![],
+    }
+}
+
+fn action_checkpoint_item(game_name: &str) -> GameActionItem {
+    GameActionItem {
+        display: format!(
+            "{} Checkpoint",
+            format_icon_colored(NerdFont::Clock, colors::YELLOW)
+        ),
+        action: GameAction::Checkpoint,
+        preview: PreviewBuilder::new()
+            .header(NerdFont::Clock, "Restore Checkpoint")
+            .text(&format!(
+                "Browse and restore from a past checkpoint for '{}'.",
+                game_name
+            ))
+            .blank()
+            .text("View all available snapshots and select one to restore.")
+            .text("If local saves are newer, you will be warned before overwriting.")
+            .build(),
+        keywords: vec!["snapshot"],
+    }
+}
+
+fn action_steam_item(game_name: &str) -> GameActionItem {
+    let is_in_steam = steam::is_game_in_steam(game_name).unwrap_or(false);
+    let status_text = if is_in_steam {
+        format!(
+            "{} Already in Steam Library",
+            format_icon_colored(NerdFont::Check, colors::GREEN)
+        )
+    } else {
+        format!(
+            "{} Not in Steam Library",
+            format_icon_colored(NerdFont::Cross, colors::RED)
+        )
+    };
+
+    let mut builder = PreviewBuilder::new()
+        .header(NerdFont::Steam, "Add to Steam")
+        .text(&format!("Manage Steam shortcut for '{}'.", game_name))
+        .blank()
+        .text(&status_text);
+
+    if is_in_steam && let Ok(Some(shortcut)) = steam::get_game_shortcut(game_name) {
+        builder = builder.blank().text("Current shortcut details:");
+        builder = builder
+            .subtext(&format!("Exe:        {}", shortcut.exe))
+            .subtext(&format!("Start dir:  {}", shortcut.start_dir));
+
+        if !shortcut.launch_options.is_empty() {
+            builder = builder.subtext(&format!("Options:    {}", shortcut.launch_options));
         }
 
-        if let Some(path) = &state.save_path {
-            actions.push(GameActionItem {
-                display: format!(
-                    "{} Change Save Path",
-                    format_icon_colored(NerdFont::Folder, colors::LAVENDER)
-                ),
-                action: GameAction::Move,
-                preview: PreviewBuilder::new()
-                    .header(NerdFont::Folder, "Change Save Path")
-                    .text(&format!("Select a new save location for '{}'.", game_name))
-                    .blank()
-                    .subtext("This updates where the game manager looks for saves.")
-                    .subtext("Files are not moved automatically.")
-                    .blank()
-                    .field("Current path", path)
-                    .build(),
-                keywords: vec![],
-            });
-        }
-
-        actions.push(GameActionItem {
-            display: format!(
-                "{} Checkpoint",
-                format_icon_colored(NerdFont::Clock, colors::YELLOW)
-            ),
-            action: GameAction::Checkpoint,
-            preview: PreviewBuilder::new()
-                .header(NerdFont::Clock, "Restore Checkpoint")
-                .text(&format!(
-                    "Browse and restore from a past checkpoint for '{}'.",
-                    game_name
-                ))
-                .blank()
-                .text("View all available snapshots and select one to restore.")
-                .text("If local saves are newer, you will be warned before overwriting.")
-                .build(),
-            keywords: vec!["snapshot"],
-        });
+        let full_cmd = if shortcut.launch_options.is_empty() {
+            shortcut.exe.clone()
+        } else {
+            format!("{} {}", shortcut.exe, shortcut.launch_options)
+        };
+        builder = builder
+            .blank()
+            .subtext(&format!("Full command: {}", full_cmd));
     }
 
-    if state.launch_command.is_some() {
-        let is_in_steam = steam::is_game_in_steam(game_name).unwrap_or(false);
-        let status_text = if is_in_steam {
-            format!(
-                "{} Already in Steam Library",
-                format_icon_colored(NerdFont::Check, colors::GREEN)
-            )
-        } else {
-            format!(
-                "{} Not in Steam Library",
-                format_icon_colored(NerdFont::Cross, colors::RED)
-            )
-        };
+    let preview = builder
+        .blank()
+        .text("The shortcut will launch the game through ins,")
+        .text("which automatically syncs saves before and after.")
+        .blank()
+        .subtext("Note: Restart Steam after adding to see the shortcut.")
+        .build();
 
-        // Build preview with command details if already in Steam
-        let mut preview_builder = PreviewBuilder::new()
-            .header(NerdFont::Steam, "Add to Steam")
-            .text(&format!("Manage Steam shortcut for '{}'.", game_name))
+    GameActionItem {
+        display: format!(
+            "{} Add to Steam",
+            format_icon_colored(NerdFont::Steam, colors::SAPPHIRE)
+        ),
+        action: GameAction::AddToSteam,
+        preview,
+        keywords: vec![],
+    }
+}
+
+fn action_desktop_item(game_name: &str) -> GameActionItem {
+    let is_on_desktop = desktop::is_game_on_desktop(game_name).unwrap_or(false);
+    let status_text = if is_on_desktop {
+        format!(
+            "{} Already on Desktop",
+            format_icon_colored(NerdFont::Check, colors::GREEN)
+        )
+    } else {
+        format!(
+            "{} Not on Desktop",
+            format_icon_colored(NerdFont::Cross, colors::RED)
+        )
+    };
+
+    let mut builder = PreviewBuilder::new()
+        .header(NerdFont::Desktop, "Add to Desktop")
+        .text(&format!("Manage desktop shortcut for '{}'.", game_name))
+        .blank()
+        .text(&status_text);
+
+    if is_on_desktop && let Ok(Some(path)) = desktop::get_game_desktop_path(game_name) {
+        builder = builder
             .blank()
-            .text(&status_text);
-
-        // Add command details if game is already in Steam
-        if is_in_steam && let Ok(Some(shortcut)) = steam::get_game_shortcut(game_name) {
-            preview_builder = preview_builder.blank().text("Current shortcut details:");
-
-            preview_builder = preview_builder
-                .subtext(&format!("Exe:        {}", shortcut.exe))
-                .subtext(&format!("Start dir:  {}", shortcut.start_dir));
-
-            if !shortcut.launch_options.is_empty() {
-                preview_builder =
-                    preview_builder.subtext(&format!("Options:    {}", shortcut.launch_options));
-            }
-
-            // Show the full command as Steam would run it
-            let full_cmd = if shortcut.launch_options.is_empty() {
-                shortcut.exe.clone()
-            } else {
-                format!("{} {}", shortcut.exe, shortcut.launch_options)
-            };
-            preview_builder = preview_builder
-                .blank()
-                .subtext(&format!("Full command: {}", full_cmd));
-        }
-
-        let preview = preview_builder
-            .blank()
-            .text("The shortcut will launch the game through ins,")
-            .text("which automatically syncs saves before and after.")
-            .blank()
-            .subtext("Note: Restart Steam after adding to see the shortcut.")
-            .build();
-
-        actions.push(GameActionItem {
-            display: format!(
-                "{} Add to Steam",
-                format_icon_colored(NerdFont::Steam, colors::SAPPHIRE)
-            ),
-            action: GameAction::AddToSteam,
-            preview,
-            keywords: vec![],
-        });
-
-        // Add desktop shortcut option
-        let is_on_desktop = desktop::is_game_on_desktop(game_name).unwrap_or(false);
-        let desktop_status_text = if is_on_desktop {
-            format!(
-                "{} Already on Desktop",
-                format_icon_colored(NerdFont::Check, colors::GREEN)
-            )
-        } else {
-            format!(
-                "{} Not on Desktop",
-                format_icon_colored(NerdFont::Cross, colors::RED)
-            )
-        };
-
-        // Build preview with path details if already on desktop
-        let mut desktop_preview_builder = PreviewBuilder::new()
-            .header(NerdFont::Desktop, "Add to Desktop")
-            .text(&format!("Manage desktop shortcut for '{}'.", game_name))
-            .blank()
-            .text(&desktop_status_text);
-
-        // Add path details if game is already on desktop
-        if is_on_desktop && let Ok(Some(path)) = desktop::get_game_desktop_path(game_name) {
-            desktop_preview_builder = desktop_preview_builder
-                .blank()
-                .text("Current shortcut location:")
-                .subtext(&path.display().to_string());
-        }
-
-        let desktop_preview = desktop_preview_builder
-            .blank()
-            .text("Creates a .desktop file that launches the game through ins,")
-            .text("which automatically syncs saves before and after.")
-            .blank()
-            .subtext("The shortcut will be placed on your Desktop if possible,")
-            .subtext("otherwise in the applications menu.")
-            .build();
-
-        actions.push(GameActionItem {
-            display: format!(
-                "{} Add to Desktop",
-                format_icon_colored(NerdFont::Desktop, colors::MAUVE)
-            ),
-            action: GameAction::AddToDesktop,
-            preview: desktop_preview,
-            keywords: vec!["shortcut", "launcher"],
-        });
+            .text("Current shortcut location:")
+            .subtext(&path.display().to_string());
     }
 
-    actions.push(GameActionItem {
+    let preview = builder
+        .blank()
+        .text("Creates a .desktop file that launches the game through ins,")
+        .text("which automatically syncs saves before and after.")
+        .blank()
+        .subtext("The shortcut will be placed on your Desktop if possible,")
+        .subtext("otherwise in the applications menu.")
+        .build();
+
+    GameActionItem {
+        display: format!(
+            "{} Add to Desktop",
+            format_icon_colored(NerdFont::Desktop, colors::MAUVE)
+        ),
+        action: GameAction::AddToDesktop,
+        preview,
+        keywords: vec!["shortcut", "launcher"],
+    }
+}
+
+fn action_back_item() -> GameActionItem {
+    GameActionItem {
         display: format!("{} Back", format_back_icon()),
         action: GameAction::Back,
         preview: PreviewBuilder::new()
@@ -456,9 +469,7 @@ fn build_action_menu(game_name: &str, state: &GameState) -> Vec<GameActionItem> 
             .text("Return to game selection.")
             .build(),
         keywords: vec![],
-    });
-
-    actions
+    }
 }
 
 /// Result of handling a game action
@@ -476,66 +487,14 @@ fn handle_action(
     exit_after: bool,
 ) -> Result<ActionResult> {
     match action {
-        GameAction::Launch => {
-            if state.launch_command.is_none() {
-                // Show builder menu directly to let user choose manual or builder
-                let installation = state
-                    .installations
-                    .installations
-                    .iter()
-                    .find(|install| install.game_name.0 == game_name);
-                let context = LaunchCommandBuilderContext::from_game(
-                    Some(game_name),
-                    installation.map(|install| install.save_path.as_path()),
-                    installation
-                        .and_then(|install| install.launch_command.as_ref())
-                        .or_else(|| {
-                            state
-                                .game_config
-                                .games
-                                .iter()
-                                .find(|game| game.name.0 == game_name)
-                                .and_then(|game| game.launch_command.as_ref())
-                        }),
-                );
-
-                match crate::game::platforms::build_launch_command_with_context(Some(&context))? {
-                    Some(command) => {
-                        // Save to game config
-                        let mut game_config = state.game_config.clone();
-                        if let Some(game) =
-                            game_config.games.iter_mut().find(|g| g.name.0 == game_name)
-                        {
-                            game.launch_command = Some(command.clone());
-                            game_config.save()?;
-                            FzfWrapper::message(&format!(
-                                "{} Launch command saved. Launching game now...",
-                                char::from(NerdFont::Check)
-                            ))?;
-                        } else {
-                            return Ok(ActionResult::Stay);
-                        }
-                    }
-                    None => return Ok(ActionResult::Stay),
-                }
-            }
-            if state.needs_setup {
-                FzfWrapper::message(&format!(
-                    "No save path configured for '{}' on this device.\n\nUse Setup to configure the save path first.",
-                    game_name
-                ))?;
-                return Ok(ActionResult::Stay);
-            }
-            launch_game(Some(game_name.to_string()))?;
-            Ok(ActionResult::Exit)
-        }
+        GameAction::Launch => handle_launch_action(game_name, state),
         GameAction::Edit => {
             run_edit_menu_for_game(game_name, &state.game_config, &state.installations)?;
-            if exit_after {
-                Ok(ActionResult::Exit)
+            Ok(if exit_after {
+                ActionResult::Exit
             } else {
-                Ok(ActionResult::Stay)
-            }
+                ActionResult::Stay
+            })
         }
         GameAction::OpenSaveDirectory => {
             handle_open_save_directory_action(game_name, state)?;
@@ -543,154 +502,194 @@ fn handle_action(
         }
         GameAction::Setup => {
             setup::setup_uninstalled_games()?;
-            if exit_after {
-                Ok(ActionResult::Exit)
+            Ok(if exit_after {
+                ActionResult::Exit
             } else {
-                Ok(ActionResult::Stay)
-            }
+                ActionResult::Stay
+            })
         }
         GameAction::Move => {
             GameManager::relocate_game(Some(game_name.to_string()), None)?;
-            if exit_after {
-                Ok(ActionResult::Exit)
+            Ok(if exit_after {
+                ActionResult::Exit
             } else {
-                Ok(ActionResult::Stay)
-            }
+                ActionResult::Stay
+            })
         }
         GameAction::Checkpoint => {
             handle_checkpoint_action(game_name)?;
-            if exit_after {
-                Ok(ActionResult::Exit)
+            Ok(if exit_after {
+                ActionResult::Exit
             } else {
-                Ok(ActionResult::Stay)
-            }
+                ActionResult::Stay
+            })
         }
         GameAction::AddToSteam => {
             let launch_cmd = state.launch_command.as_deref().unwrap_or("");
-
-            if steam::is_game_in_steam(game_name).unwrap_or(false) {
-                if FzfWrapper::builder()
-                    .confirm(format!(
-                        "'{}' is already in Steam.\n\nRemove it?",
-                        game_name
-                    ))
-                    .yes_text("Remove from Steam")
-                    .no_text("Keep it")
-                    .confirm_dialog()?
-                    == ConfirmResult::Yes
-                {
-                    match steam::remove_game_from_steam(game_name) {
-                        Ok((true, steam_running)) => {
-                            let base_msg = format!("Removed '{}' from Steam.", game_name);
-                            let msg = if steam_running {
-                                format!(
-                                    "{}\n\n{}",
-                                    base_msg,
-                                    steam::format_steam_running_warning("removed")
-                                )
-                            } else {
-                                format!("{}\n\nRestart Steam to update your library.", base_msg)
-                            };
-                            FzfWrapper::message(&msg)?;
-                        }
-                        Ok((false, _)) => FzfWrapper::message(&format!(
-                            "'{}' was not found in Steam (maybe already removed).",
-                            game_name
-                        ))?,
-                        Err(e) => {
-                            FzfWrapper::message(&format!("Failed to remove from Steam: {}", e))?
-                        }
-                    }
-                }
-            } else {
-                match steam::add_game_to_steam(game_name, launch_cmd) {
-                    Ok((true, steam_running)) => {
-                        let base_msg =
-                            format!("Added '{}' to Steam as a non-Steam game.", game_name);
-                        let msg = if steam_running {
-                            format!(
-                                "{}\n\n{}",
-                                base_msg,
-                                steam::format_steam_running_warning("added")
-                            )
-                        } else {
-                            format!("{}\n\nRestart Steam to see it in your library.", base_msg)
-                        };
-                        FzfWrapper::message(&msg)?;
-                    }
-                    Ok((false, _)) => {
-                        FzfWrapper::message(&format!(
-                            "'{}' is already in your Steam library.",
-                            game_name
-                        ))?;
-                    }
-                    Err(e) => {
-                        FzfWrapper::message(&format!("Failed to add to Steam: {}", e))?;
-                    }
-                }
-            }
+            handle_steam_action(game_name, launch_cmd)?;
             Ok(ActionResult::Stay)
         }
         GameAction::AddToDesktop => {
             let launch_cmd = state.launch_command.as_deref().unwrap_or("");
-
-            if desktop::is_game_on_desktop(game_name).unwrap_or(false) {
-                if FzfWrapper::builder()
-                    .confirm(format!(
-                        "'{}' is already on the Desktop.\n\nRemove it?",
-                        game_name
-                    ))
-                    .yes_text("Remove from Desktop")
-                    .no_text("Keep it")
-                    .confirm_dialog()?
-                    == ConfirmResult::Yes
-                {
-                    match desktop::remove_game_from_desktop(game_name) {
-                        Ok(true) => {
-                            FzfWrapper::message(&format!("Removed '{}' from Desktop.", game_name))?;
-                        }
-                        Ok(false) => FzfWrapper::message(&format!(
-                            "'{}' was not found on the Desktop (maybe already removed).",
-                            game_name
-                        ))?,
-                        Err(e) => {
-                            FzfWrapper::message(&format!("Failed to remove from Desktop: {}", e))?
-                        }
-                    }
-                }
-            } else {
-                match desktop::add_game_to_desktop(game_name, launch_cmd) {
-                    Ok((true, Some(path))) => {
-                        FzfWrapper::message(&format!(
-                            "Added '{}' to Desktop.\n\nLocation: {}",
-                            game_name,
-                            path.display()
-                        ))?;
-                    }
-                    Ok((true, None)) => {
-                        FzfWrapper::message(&format!("Added '{}' to Desktop.", game_name))?;
-                    }
-                    Ok((false, _)) => {
-                        FzfWrapper::message(&format!(
-                            "'{}' is already on your Desktop.",
-                            game_name
-                        ))?;
-                    }
-                    Err(e) => {
-                        FzfWrapper::message(&format!("Failed to add to Desktop: {}", e))?;
-                    }
-                }
-            }
+            handle_desktop_action(game_name, launch_cmd)?;
             Ok(ActionResult::Stay)
         }
-        GameAction::Back => {
-            if exit_after {
-                Ok(ActionResult::Exit)
-            } else {
-                Ok(ActionResult::Back)
+        GameAction::Back => Ok(if exit_after {
+            ActionResult::Exit
+        } else {
+            ActionResult::Back
+        }),
+    }
+}
+
+fn handle_launch_action(game_name: &str, state: &GameState) -> Result<ActionResult> {
+    if state.launch_command.is_none() {
+        let installation = state
+            .installations
+            .installations
+            .iter()
+            .find(|install| install.game_name.0 == game_name);
+        let context = LaunchCommandBuilderContext::from_game(
+            Some(game_name),
+            installation.map(|install| install.save_path.as_path()),
+            installation
+                .and_then(|install| install.launch_command.as_ref())
+                .or_else(|| {
+                    state
+                        .game_config
+                        .games
+                        .iter()
+                        .find(|game| game.name.0 == game_name)
+                        .and_then(|game| game.launch_command.as_ref())
+                }),
+        );
+
+        match crate::game::platforms::build_launch_command_with_context(Some(&context))? {
+            Some(command) => {
+                let mut game_config = state.game_config.clone();
+                if let Some(game) = game_config.games.iter_mut().find(|g| g.name.0 == game_name) {
+                    game.launch_command = Some(command.clone());
+                    game_config.save()?;
+                    FzfWrapper::message(&format!(
+                        "{} Launch command saved. Launching game now...",
+                        char::from(NerdFont::Check)
+                    ))?;
+                } else {
+                    return Ok(ActionResult::Stay);
+                }
             }
+            None => return Ok(ActionResult::Stay),
         }
     }
+    if state.needs_setup {
+        FzfWrapper::message(&format!(
+            "No save path configured for '{}' on this device.\n\nUse Setup to configure the save path first.",
+            game_name
+        ))?;
+        return Ok(ActionResult::Stay);
+    }
+    launch_game(Some(game_name.to_string()))?;
+    Ok(ActionResult::Exit)
+}
+
+fn handle_steam_action(game_name: &str, launch_cmd: &str) -> Result<()> {
+    if steam::is_game_in_steam(game_name).unwrap_or(false) {
+        if FzfWrapper::builder()
+            .confirm(format!(
+                "'{}' is already in Steam.\n\nRemove it?",
+                game_name
+            ))
+            .yes_text("Remove from Steam")
+            .no_text("Keep it")
+            .confirm_dialog()?
+            == ConfirmResult::Yes
+        {
+            match steam::remove_game_from_steam(game_name) {
+                Ok((true, steam_running)) => {
+                    let base_msg = format!("Removed '{}' from Steam.", game_name);
+                    let msg = if steam_running {
+                        format!(
+                            "{}\n\n{}",
+                            base_msg,
+                            steam::format_steam_running_warning("removed")
+                        )
+                    } else {
+                        format!("{}\n\nRestart Steam to update your library.", base_msg)
+                    };
+                    FzfWrapper::message(&msg)?;
+                }
+                Ok((false, _)) => FzfWrapper::message(&format!(
+                    "'{}' was not found in Steam (maybe already removed).",
+                    game_name
+                ))?,
+                Err(e) => FzfWrapper::message(&format!("Failed to remove from Steam: {}", e))?,
+            }
+        }
+    } else {
+        match steam::add_game_to_steam(game_name, launch_cmd) {
+            Ok((true, steam_running)) => {
+                let base_msg = format!("Added '{}' to Steam as a non-Steam game.", game_name);
+                let msg = if steam_running {
+                    format!(
+                        "{}\n\n{}",
+                        base_msg,
+                        steam::format_steam_running_warning("added")
+                    )
+                } else {
+                    format!("{}\n\nRestart Steam to see it in your library.", base_msg)
+                };
+                FzfWrapper::message(&msg)?;
+            }
+            Ok((false, _)) => {
+                FzfWrapper::message(&format!(
+                    "'{}' is already in your Steam library.",
+                    game_name
+                ))?;
+            }
+            Err(e) => FzfWrapper::message(&format!("Failed to add to Steam: {}", e))?,
+        }
+    }
+    Ok(())
+}
+
+fn handle_desktop_action(game_name: &str, launch_cmd: &str) -> Result<()> {
+    if desktop::is_game_on_desktop(game_name).unwrap_or(false) {
+        if FzfWrapper::builder()
+            .confirm(format!(
+                "'{}' is already on the Desktop.\n\nRemove it?",
+                game_name
+            ))
+            .yes_text("Remove from Desktop")
+            .no_text("Keep it")
+            .confirm_dialog()?
+            == ConfirmResult::Yes
+        {
+            match desktop::remove_game_from_desktop(game_name) {
+                Ok(true) => FzfWrapper::message(&format!("Removed '{}' from Desktop.", game_name))?,
+                Ok(false) => FzfWrapper::message(&format!(
+                    "'{}' was not found on the Desktop (maybe already removed).",
+                    game_name
+                ))?,
+                Err(e) => FzfWrapper::message(&format!("Failed to remove from Desktop: {}", e))?,
+            }
+        }
+    } else {
+        match desktop::add_game_to_desktop(game_name, launch_cmd) {
+            Ok((true, Some(path))) => FzfWrapper::message(&format!(
+                "Added '{}' to Desktop.\n\nLocation: {}",
+                game_name,
+                path.display()
+            ))?,
+            Ok((true, None)) => {
+                FzfWrapper::message(&format!("Added '{}' to Desktop.", game_name))?;
+            }
+            Ok((false, _)) => {
+                FzfWrapper::message(&format!("'{}' is already on your Desktop.", game_name))?;
+            }
+            Err(e) => FzfWrapper::message(&format!("Failed to add to Desktop: {}", e))?,
+        }
+    }
+    Ok(())
 }
 
 /// Handle checkpoint action - select and restore from a past snapshot

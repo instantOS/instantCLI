@@ -1,4 +1,4 @@
-use super::types::{
+use super::{
     EmulatorLaunchCommand, EmulatorLauncher, EmulatorPlatform, LaunchCommand, LaunchCommandKind,
     WineRunner,
 };

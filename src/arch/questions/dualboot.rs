@@ -1,4 +1,5 @@
 use crate::arch::engine::{InstallContext, Question, QuestionId, QuestionResult};
+use crate::common::format::format_size;
 use crate::menu::slide::run_slider;
 use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, SliderConfig};
 use crate::ui::catppuccin::colors;
@@ -166,7 +167,7 @@ impl Question for DualBootPartitionQuestion {
                      This is enough for a Linux installation (minimum 10 GB).\n\n\
                      {} Proceeding to installation...",
                     NerdFont::Check,
-                    crate::arch::dualboot::format_size(free_space_bytes),
+                    format_size(free_space_bytes),
                     NerdFont::ArrowRight
                 ))?;
                 return Ok(QuestionResult::Answer("__free_space__".to_string()));
@@ -176,7 +177,7 @@ impl Question for DualBootPartitionQuestion {
                      Largest contiguous free region: {} (need at least 10 GB)",
                     NerdFont::Warning,
                     disk_path,
-                    crate::arch::dualboot::format_size(free_space_bytes)
+                    format_size(free_space_bytes)
                 );
                 if bitlocker_detected {
                     message.push_str(
@@ -314,8 +315,8 @@ impl Question for DualBootSizeQuestion {
             FzfWrapper::message(&format!(
                 "{} Not enough free space on partition for Linux.\nNeed at least {}, but only {} available (after preserving existing OS).",
                 NerdFont::Warning,
-                crate::arch::dualboot::format_size(min_total),
-                crate::arch::dualboot::format_size(max_linux)
+                format_size(min_total),
+                format_size(max_linux)
             ))?;
             return Ok(QuestionResult::Cancelled);
         }

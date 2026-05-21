@@ -7,8 +7,8 @@ use duct::cmd;
 use std::path::Path;
 use std::process::Command;
 
-use crate::arch::dualboot::types::format_size;
 use crate::common::distro::OperatingSystem;
+use crate::common::format::format_size;
 use crate::menu_utils::{FzfWrapper, TextEditOutcome, TextEditPrompt, prompt_text_edit};
 use crate::settings::context::SettingsContext;
 use crate::settings::deps::{FASTFETCH, GNOME_FIRMWARE, PACMAN_CONTRIB, TOPGRADE};

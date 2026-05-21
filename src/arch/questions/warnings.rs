@@ -1,4 +1,5 @@
 use crate::arch::engine::{BootMode, InstallContext, Question, QuestionId, QuestionResult};
+use crate::common::format::format_size;
 use crate::menu_utils::FzfWrapper;
 use crate::ui::nerd_font::NerdFont;
 use anyhow::{Context, Result};
@@ -208,7 +209,7 @@ impl Question for DualBootEspWarning {
                 message.push_str(&format!(
                     "  {} ({})\n",
                     esp.device,
-                    crate::arch::dualboot::format_size(esp.size_bytes)
+                    format_size(esp.size_bytes)
                 ));
             }
             message.push_str(

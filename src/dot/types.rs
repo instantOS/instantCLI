@@ -22,9 +22,9 @@ pub struct RepoMetaData {
     /// If any file in a unit is modified, all files in that unit are treated as modified.
     #[serde(default)]
     pub units: Vec<String>,
-    /// Public age recipients used for encrypting dotfiles in this repository.
+    /// Public encryption recipients used for encrypting dotfiles in this repository.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub age_recipients: Vec<String>,
+    pub encryption_recipients: Vec<String>,
 }
 
 impl RepoMetaData {
@@ -43,7 +43,7 @@ impl Default for RepoMetaData {
             dots_dirs: default_dots_dirs(),
             default_active_subdirs: None,
             units: Vec::new(),
-            age_recipients: Vec::new(),
+            encryption_recipients: Vec::new(),
         }
     }
 }
@@ -177,7 +177,7 @@ documented_config!(RepoMetaData,
     dots_dirs, "Directories containing dotfiles (e.g., ['dots'])",
     default_active_subdirs, "Default active subdirectories (defaults to first in dots_dirs)",
     units, "Directories treated as atomic units (all files modified together)",
-    age_recipients, "Public age recipients for encrypted dotfiles",
+    encryption_recipients, "Public encryption recipients for encrypted dotfiles",
     => Ok(std::path::PathBuf::from("instantdots.toml"))
 );
 

@@ -7,6 +7,7 @@ pub mod deps;
 pub mod display;
 pub mod display_server;
 pub mod distro;
+pub mod format;
 pub mod git;
 pub mod instantwm;
 pub mod instantwmctl;

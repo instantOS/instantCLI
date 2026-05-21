@@ -250,9 +250,7 @@ pub fn dot_menu(debug: bool) -> Result<()> {
             }
             DotMenuEntry::EncryptionKeys => {
                 crate::dot::menu::encryption_menu::handle_encryption_keys_menu(
-                    &mut config,
-                    &db,
-                    debug,
+                    &config, &db, debug,
                 )?;
                 reload_menu_state(&mut config, &mut db)?;
             }

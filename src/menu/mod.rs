@@ -2,12 +2,9 @@ use crate::menu_utils::{
     ConfirmResult, FilePickerResult, FilePickerScope, FzfWrapper, MenuWrapper,
 };
 use anyhow::{Context, Result, anyhow};
-use clap::ValueEnum;
 use protocol::SerializableMenuItem;
 use std::path::PathBuf;
-use std::process::Command;
 
-mod all;
 pub mod chord;
 pub mod client;
 mod fallback;
@@ -18,139 +15,7 @@ pub mod server;
 pub mod slide;
 pub mod tui;
 use client::MenuClient;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
-pub enum SliderPreset {
-    #[value(alias = "volume")]
-    Audio,
-    #[value(alias = "brightness")]
-    #[value(alias = "bright")]
-    Brightness,
-}
-
-struct PresetConfig {
-    min: i64,
-    max: i64,
-    value: Option<i64>,
-    step: Option<i64>,
-    big_step: Option<i64>,
-    label: Option<String>,
-    command: Vec<String>,
-}
-
-impl SliderPreset {
-    fn config(self) -> PresetConfig {
-        match self {
-            SliderPreset::Audio => PresetConfig {
-                min: 0,
-                max: 100,
-                value: Self::detect_audio_volume(),
-                step: Some(1),
-                big_step: Some(5),
-                label: Some("Audio Volume".to_string()),
-                command: vec![
-                    "sh".to_string(),
-                    "-c".to_string(),
-                    Self::audio_command_script(),
-                    "ins-menu-slide-audio".to_string(),
-                ],
-            },
-            SliderPreset::Brightness => PresetConfig {
-                min: 0,
-                max: 100,
-                value: Self::detect_brightness_level(),
-                step: Some(1),
-                big_step: Some(5),
-                label: Some("Screen Brightness".to_string()),
-                command: vec![
-                    "sh".to_string(),
-                    "-c".to_string(),
-                    Self::brightness_command_script(),
-                    "ins-menu-slide-brightness".to_string(),
-                ],
-            },
-        }
-    }
-
-    fn detect_audio_volume() -> Option<i64> {
-        Self::wpctl_volume()
-    }
-
-    fn detect_brightness_level() -> Option<i64> {
-        Self::brightnessctl_percentage()
-    }
-
-    fn audio_command_script() -> String {
-        let mut script = String::from("value=\"$1\"\n\n");
-        script.push_str("wpctl set-volume @DEFAULT_AUDIO_SINK@ \"${value}%\" 2>/dev/null\n\n");
-        script.push_str(&Self::notification_script(
-            "instantcli-volume",
-            "audio-volume-medium-symbolic",
-            "Volume [${value}%]",
-        ));
-        script
-    }
-
-    fn brightness_command_script() -> String {
-        let mut script = String::from("value=\"$1\"\n\n");
-        script.push_str("brightnessctl --quiet set \"${value}%\" 2>/dev/null\n\n");
-        script.push_str(&Self::notification_script(
-            "instantcli-brightness",
-            "display-brightness-medium-symbolic",
-            "Brightness [${value}%]",
-        ));
-        script
-    }
-
-    fn notification_script(stack_tag: &str, icon: &str, label: &str) -> String {
-        format!(
-            "dunstify --appname instantCLI \\\n+    -h string:x-dunst-stack-tag:{stack_tag} \\\n+    -h int:value:\"${{value}}\" \\\n+    -i {icon} \\\n+    \"{label}\" 2>/dev/null",
-            stack_tag = stack_tag,
-            icon = icon,
-            label = label
-        )
-    }
-
-    fn wpctl_volume() -> Option<i64> {
-        let output = Self::command_output("wpctl", &["get-volume", "@DEFAULT_AUDIO_SINK@"])?;
-        let fraction = output.split_whitespace().find_map(|token| {
-            let sanitized = token.trim_matches(|c: char| matches!(c, '[' | ']' | ',' | ':'));
-            sanitized.parse::<f64>().ok()
-        })?;
-
-        let percent = (fraction * 100.0).trunc().clamp(0.0, 100.0);
-        Some(percent as i64)
-    }
-    fn brightnessctl_percentage() -> Option<i64> {
-        let current = Self::command_output("brightnessctl", &["get"])?
-            .parse::<f64>()
-            .ok()?;
-        let max = Self::command_output("brightnessctl", &["max"])?
-            .parse::<f64>()
-            .ok()?;
-
-        if max <= 0.0 {
-            return None;
-        }
-
-        let percent = (current / max * 100.0).round().clamp(0.0, 100.0);
-        Some(percent as i64)
-    }
-
-    fn command_output(program: &str, args: &[&str]) -> Option<String> {
-        let output = Command::new(program).args(args).output().ok()?;
-        if !output.status.success() {
-            return None;
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if stdout.is_empty() {
-            None
-        } else {
-            Some(stdout)
-        }
-    }
-}
+use slide::SliderPreset;
 
 /// Handle menu commands for shell scripts
 pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<i32> {
@@ -159,127 +24,25 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
             request_file,
             response_file,
         } => fallback::run_worker(&request_file, &response_file),
-        MenuCommands::All => all::run_all_menu(_debug).await,
-        MenuCommands::Confirm { ref message, gui } => {
-            if gui {
-                client::handle_gui_request(&command)
-            } else {
-                match FzfWrapper::confirm(message) {
-                    Ok(ConfirmResult::Yes) => Ok(0),       // Yes
-                    Ok(ConfirmResult::No) => Ok(1),        // No
-                    Ok(ConfirmResult::Cancelled) => Ok(2), // Cancelled
-                    Err(e) => {
-                        eprintln!("Error: {e}");
-                        Ok(3) // Error
-                    }
-                }
-            }
-        }
+        MenuCommands::All => Err(anyhow!(
+            "MenuCommands::All should be dispatched from main.rs"
+        )),
+        MenuCommands::Confirm { ref message, gui } => handle_confirm(message, gui, &command),
         MenuCommands::Message {
             ref message,
             ref title,
-        } => {
-            let mut builder = FzfWrapper::builder().message(message);
-            if let Some(t) = title {
-                builder = builder.title(t);
-            }
-            match builder.message_dialog() {
-                Ok(_) => Ok(0),
-                Err(e) => {
-                    eprintln!("Error: {e}");
-                    Ok(1)
-                }
-            }
-        }
+        } => handle_message(message, title.as_deref()),
         MenuCommands::Choice {
             ref prompt,
             ref items,
             multi,
             gui,
-        } => {
-            if gui {
-                client::handle_gui_request(&command)
-            } else {
-                let item_list: Vec<SerializableMenuItem> = if items.is_empty() {
-                    // Read from stdin if items is empty
-                    use std::io::{self, Read};
-                    let mut buffer = String::new();
-                    io::stdin()
-                        .read_to_string(&mut buffer)
-                        .map_err(|e| anyhow::anyhow!("Failed to read from stdin: {}", e))?;
-                    protocol::plain_choice_items_from_input(&buffer)
-                } else {
-                    // Split space-separated items from command line
-                    items.split(' ').map(SerializableMenuItem::plain).collect()
-                };
-
-                match FzfWrapper::builder()
-                    .prompt(prompt.clone())
-                    .multi_select(multi)
-                    .select(item_list)?
-                {
-                    crate::menu_utils::FzfResult::Selected(item) => {
-                        println!("{}", item.display_text);
-                        Ok(0) // Selected
-                    }
-                    crate::menu_utils::FzfResult::MultiSelected(items) => {
-                        for item in items {
-                            println!("{}", item.display_text);
-                        }
-                        Ok(0) // Selected
-                    }
-                    crate::menu_utils::FzfResult::Cancelled => Ok(1), // Cancelled
-                    crate::menu_utils::FzfResult::Error(e) => {
-                        eprintln!("Error: {e}");
-                        Ok(2) // Error
-                    }
-                }
-            }
-        }
+        } => handle_choice(prompt, items, multi, gui, &command),
         MenuCommands::Chord {
             ref chords,
             stdin,
             gui,
-        } => {
-            let mut combined = chords.clone();
-
-            if stdin {
-                use std::io::{self, Read};
-
-                let mut buffer = String::new();
-                io::stdin()
-                    .read_to_string(&mut buffer)
-                    .context("Failed to read chords from stdin")?;
-
-                for line in buffer.lines() {
-                    let trimmed = line.trim();
-                    if !trimmed.is_empty() {
-                        combined.push(trimmed.to_string());
-                    }
-                }
-            }
-
-            if combined.is_empty() {
-                return Err(anyhow!("Provide at least one chord specification"));
-            }
-
-            if gui {
-                let client = MenuClient::new();
-                match client.chord(combined) {
-                    Ok(Some(sequence)) => {
-                        println!("{sequence}");
-                        Ok(0)
-                    }
-                    Ok(None) => Ok(1),
-                    Err(e) => {
-                        eprintln!("GUI menu error: {e}");
-                        Ok(3)
-                    }
-                }
-            } else {
-                chord::run_chord_command(&combined)
-            }
-        }
+        } => handle_chord(chords, stdin, gui),
         MenuCommands::Slide {
             min,
             max,
@@ -290,234 +53,366 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
             command,
             gui,
             preset,
-        } => {
-            let mut min_value = min;
-            let mut max_value = max;
-            let mut initial_value = value;
-            let mut step_value = step;
-            let mut big_step_value = big_step;
-            let mut label_value = label;
-            let mut command_args = command;
-
-            if let Some(preset_kind) = preset {
-                let preset_config = preset_kind.config();
-                min_value = preset_config.min;
-                max_value = preset_config.max;
-                initial_value = initial_value.or(preset_config.value);
-                step_value = step_value.or(preset_config.step);
-                big_step_value = big_step_value.or(preset_config.big_step);
-                label_value = label_value.or(preset_config.label);
-                if command_args.is_empty() {
-                    command_args = preset_config.command;
-                }
-            }
-
-            if gui {
-                let client = MenuClient::new();
-                match client.slide(protocol::SliderRequest {
-                    min: min_value,
-                    max: max_value,
-                    value: initial_value,
-                    step: step_value,
-                    big_step: big_step_value,
-                    label: label_value.clone(),
-                    command: command_args.clone(),
-                }) {
-                    Ok(Some(result)) => {
-                        println!("{result}");
-                        Ok(0)
-                    }
-                    Ok(None) => Ok(1),
-                    Err(e) => {
-                        eprintln!("GUI menu error: {e}");
-                        Ok(3)
-                    }
-                }
-            } else {
-                let request = protocol::SliderRequest {
-                    min: min_value,
-                    max: max_value,
-                    value: initial_value,
-                    step: step_value,
-                    big_step: big_step_value,
-                    label: label_value,
-                    command: command_args,
-                };
-                match slide::run_slider_command(&request) {
-                    Ok(Some(result)) => {
-                        println!("{result}");
-                        Ok(0)
-                    }
-                    Ok(None) => Ok(1),
-                    Err(e) => {
-                        eprintln!("Error: {e}");
-                        Ok(2)
-                    }
-                }
-            }
-        }
+        } => handle_slide(min, max, value, step, big_step, label, command, gui, preset),
         MenuCommands::Pick {
             ref start,
             dirs,
             files,
             multi,
             gui,
-        } => {
-            let scope = match (dirs, files) {
-                (true, false) => FilePickerScope::Directories,
-                (false, true) => FilePickerScope::Files,
-                (true, true) => FilePickerScope::FilesAndDirectories,
-                (false, false) => FilePickerScope::Files,
-            };
-
-            if gui {
-                client::handle_gui_request(&command)
-            } else {
-                let mut builder = MenuWrapper::file_picker().scope(scope).multi(multi);
-
-                if let Some(start_dir) = start.as_ref().filter(|s| !s.is_empty()) {
-                    builder = builder.start_dir(PathBuf::from(start_dir));
-                }
-
-                match builder.pick()? {
-                    FilePickerResult::Selected(path) => {
-                        println!("{}", path.display());
-                        Ok(0)
-                    }
-                    FilePickerResult::MultiSelected(paths) => {
-                        for path in paths {
-                            println!("{}", path.display());
-                        }
-                        Ok(0)
-                    }
-                    FilePickerResult::Cancelled => Ok(1),
-                }
-            }
-        }
-        MenuCommands::Input { ref prompt, gui } => {
-            if gui {
-                client::handle_gui_request(&command)
-            } else {
-                match FzfWrapper::input(prompt) {
-                    Ok(input) => {
-                        println!("{input}");
-                        Ok(0) // Success
-                    }
-                    Err(e) => {
-                        eprintln!("Error: {e}");
-                        Ok(2) // Error
-                    }
-                }
-            }
-        }
-        MenuCommands::Password { ref prompt, gui } => {
-            if gui {
-                client::handle_gui_request(&command)
-            } else {
-                match FzfWrapper::password(prompt) {
-                    Ok(crate::menu_utils::FzfResult::Selected(password)) => {
-                        println!("{password}");
-                        Ok(0) // Success
-                    }
-                    Ok(crate::menu_utils::FzfResult::Cancelled) => Ok(1), // Cancelled
-                    Ok(crate::menu_utils::FzfResult::Error(e)) => {
-                        eprintln!("Error: {e}");
-                        Ok(2) // Error
-                    }
-                    Ok(_) => Ok(1),
-                    Err(e) => {
-                        eprintln!("Error: {e}");
-                        Ok(2) // Error
-                    }
-                }
-            }
-        }
-        MenuCommands::Status => {
-            let client = client::MenuClient::new();
-            if client.is_fallback() {
-                match client.status() {
-                    Ok(status_info) => {
-                        client::print_status_info(&status_info);
-                        println!();
-                        println!(
-                            "Fallback mode: interactive dialogs run in transient kitty terminals."
-                        );
-                        Ok(0)
-                    }
-                    Err(e) => {
-                        eprintln!("Error getting fallback status: {e}");
-                        Ok(2)
-                    }
-                }
-            } else if client.is_server_running() {
-                match client.status() {
-                    Ok(status_info) => {
-                        client::print_status_info(&status_info);
-                        Ok(0)
-                    }
-                    Err(e) => {
-                        eprintln!("Error getting server status: {e}");
-                        Ok(2)
-                    }
-                }
-            } else {
-                println!("✗ Menu server is not running");
-                println!(
-                    "  Start the server with: {} menu server launch --inside",
-                    env!("CARGO_BIN_NAME")
-                );
-                Ok(1)
-            }
-        }
-        MenuCommands::Show => {
-            let client = MenuClient::new();
-            match client.show() {
-                Ok(_) => Ok(0),
-                Err(e) => {
-                    eprintln!("✗ Failed to show scratchpad: {e}");
-                    Ok(1)
-                }
-            }
-        }
+        } => handle_pick(start, dirs, files, multi, gui, &command),
+        MenuCommands::Input { ref prompt, gui } => handle_input(prompt, gui, &command),
+        MenuCommands::Password { ref prompt, gui } => handle_password(prompt, gui, &command),
+        MenuCommands::Status => handle_status(),
+        MenuCommands::Show => handle_show(),
         MenuCommands::Checklist {
             ref items,
             ref confirm,
-        } => {
-            // Parse items from stdin if empty, otherwise from --items arg
-            let item_list: Vec<String> = if items.is_empty() {
-                // Read from stdin (one item per line, like `ins menu choice`)
-                use std::io::{self, Read};
-                let mut buffer = String::new();
-                io::stdin()
-                    .read_to_string(&mut buffer)
-                    .map_err(|e| anyhow::anyhow!("Failed to read from stdin: {}", e))?;
-                buffer.lines().map(|s| s.to_string()).collect()
-            } else {
-                // Split space-separated items from command line
-                items.split(' ').map(|s| s.to_string()).collect()
-            };
+        } => handle_checklist(items, confirm),
+        MenuCommands::Server { command } => handle_server_command(command).await,
+    }
+}
 
-            match FzfWrapper::builder()
-                .prompt("Select items")
-                .header("Enter on item toggles it | Enter on Continue confirms")
-                .initial_index(item_list.len().saturating_sub(1))
-                .checklist(confirm)
-                .checklist_dialog(item_list)?
-            {
-                crate::menu_utils::ChecklistResult::Confirmed(selected) => {
-                    for item in selected {
-                        println!("{}", item);
-                    }
-                    Ok(0)
-                }
-                crate::menu_utils::ChecklistResult::Action(action) => {
-                    println!("{}", action.text);
-                    Ok(0)
-                }
-                crate::menu_utils::ChecklistResult::Cancelled => Ok(1),
+fn handle_confirm(message: &str, gui: bool, command: &MenuCommands) -> Result<i32> {
+    if gui {
+        client::handle_gui_request(command)
+    } else {
+        match FzfWrapper::confirm(message) {
+            Ok(ConfirmResult::Yes) => Ok(0),
+            Ok(ConfirmResult::No) => Ok(1),
+            Ok(ConfirmResult::Cancelled) => Ok(2),
+            Err(e) => {
+                eprintln!("Error: {e}");
+                Ok(3)
             }
         }
-        MenuCommands::Server { command } => handle_server_command(command).await,
+    }
+}
+
+fn handle_message(message: &str, title: Option<&str>) -> Result<i32> {
+    let mut builder = FzfWrapper::builder().message(message);
+    if let Some(t) = title {
+        builder = builder.title(t);
+    }
+    match builder.message_dialog() {
+        Ok(_) => Ok(0),
+        Err(e) => {
+            eprintln!("Error: {e}");
+            Ok(1)
+        }
+    }
+}
+
+fn handle_choice(
+    prompt: &str,
+    items: &str,
+    multi: bool,
+    gui: bool,
+    command: &MenuCommands,
+) -> Result<i32> {
+    if gui {
+        return client::handle_gui_request(command);
+    }
+    let item_list: Vec<SerializableMenuItem> = if items.is_empty() {
+        use std::io::{self, Read};
+        let mut buffer = String::new();
+        io::stdin()
+            .read_to_string(&mut buffer)
+            .map_err(|e| anyhow::anyhow!("Failed to read from stdin: {}", e))?;
+        protocol::plain_choice_items_from_input(&buffer)
+    } else {
+        items.split(' ').map(SerializableMenuItem::plain).collect()
+    };
+
+    match FzfWrapper::builder()
+        .prompt(prompt.to_string())
+        .multi_select(multi)
+        .select(item_list)?
+    {
+        crate::menu_utils::FzfResult::Selected(item) => {
+            println!("{}", item.display_text);
+            Ok(0)
+        }
+        crate::menu_utils::FzfResult::MultiSelected(items) => {
+            for item in items {
+                println!("{}", item.display_text);
+            }
+            Ok(0)
+        }
+        crate::menu_utils::FzfResult::Cancelled => Ok(1),
+        crate::menu_utils::FzfResult::Error(e) => {
+            eprintln!("Error: {e}");
+            Ok(2)
+        }
+    }
+}
+
+fn handle_chord(chords: &[String], stdin: bool, gui: bool) -> Result<i32> {
+    let mut combined = chords.to_vec();
+
+    if stdin {
+        use std::io::{self, Read};
+
+        let mut buffer = String::new();
+        io::stdin()
+            .read_to_string(&mut buffer)
+            .context("Failed to read chords from stdin")?;
+
+        for line in buffer.lines() {
+            let trimmed = line.trim();
+            if !trimmed.is_empty() {
+                combined.push(trimmed.to_string());
+            }
+        }
+    }
+
+    if combined.is_empty() {
+        return Err(anyhow!("Provide at least one chord specification"));
+    }
+
+    if gui {
+        let client = MenuClient::new();
+        match client.chord(combined) {
+            Ok(Some(sequence)) => {
+                println!("{sequence}");
+                Ok(0)
+            }
+            Ok(None) => Ok(1),
+            Err(e) => {
+                eprintln!("GUI menu error: {e}");
+                Ok(3)
+            }
+        }
+    } else {
+        chord::run_chord_command(&combined)
+    }
+}
+
+fn handle_slide(
+    min: i64,
+    max: i64,
+    value: Option<i64>,
+    step: Option<i64>,
+    big_step: Option<i64>,
+    label: Option<String>,
+    command: Vec<String>,
+    gui: bool,
+    preset: Option<SliderPreset>,
+) -> Result<i32> {
+    let mut min_value = min;
+    let mut max_value = max;
+    let mut initial_value = value;
+    let mut step_value = step;
+    let mut big_step_value = big_step;
+    let mut label_value = label;
+    let mut command_args = command;
+
+    if let Some(preset_kind) = preset {
+        let preset_config = preset_kind.config();
+        min_value = preset_config.min;
+        max_value = preset_config.max;
+        initial_value = initial_value.or(preset_config.value);
+        step_value = step_value.or(preset_config.step);
+        big_step_value = big_step_value.or(preset_config.big_step);
+        label_value = label_value.or(preset_config.label);
+        if command_args.is_empty() {
+            command_args = preset_config.command;
+        }
+    }
+
+    let request = protocol::SliderRequest {
+        min: min_value,
+        max: max_value,
+        value: initial_value,
+        step: step_value,
+        big_step: big_step_value,
+        label: label_value,
+        command: command_args,
+    };
+
+    if gui {
+        let client = MenuClient::new();
+        match client.slide(request.clone()) {
+            Ok(Some(result)) => {
+                println!("{result}");
+                Ok(0)
+            }
+            Ok(None) => Ok(1),
+            Err(e) => {
+                eprintln!("GUI menu error: {e}");
+                Ok(3)
+            }
+        }
+    } else {
+        match slide::run_slider_command(&request) {
+            Ok(Some(result)) => {
+                println!("{result}");
+                Ok(0)
+            }
+            Ok(None) => Ok(1),
+            Err(e) => {
+                eprintln!("Error: {e}");
+                Ok(2)
+            }
+        }
+    }
+}
+
+fn handle_pick(
+    start: &Option<String>,
+    dirs: bool,
+    files: bool,
+    multi: bool,
+    gui: bool,
+    command: &MenuCommands,
+) -> Result<i32> {
+    let scope = match (dirs, files) {
+        (true, false) => FilePickerScope::Directories,
+        (false, true) => FilePickerScope::Files,
+        (true, true) => FilePickerScope::FilesAndDirectories,
+        (false, false) => FilePickerScope::Files,
+    };
+
+    if gui {
+        return client::handle_gui_request(command);
+    }
+
+    let mut builder = MenuWrapper::file_picker().scope(scope).multi(multi);
+
+    if let Some(start_dir) = start.as_ref().filter(|s| !s.is_empty()) {
+        builder = builder.start_dir(PathBuf::from(start_dir));
+    }
+
+    match builder.pick()? {
+        FilePickerResult::Selected(path) => {
+            println!("{}", path.display());
+            Ok(0)
+        }
+        FilePickerResult::MultiSelected(paths) => {
+            for path in paths {
+                println!("{}", path.display());
+            }
+            Ok(0)
+        }
+        FilePickerResult::Cancelled => Ok(1),
+    }
+}
+
+fn handle_input(prompt: &str, gui: bool, command: &MenuCommands) -> Result<i32> {
+    if gui {
+        return client::handle_gui_request(command);
+    }
+    match FzfWrapper::input(prompt) {
+        Ok(input) => {
+            println!("{input}");
+            Ok(0)
+        }
+        Err(e) => {
+            eprintln!("Error: {e}");
+            Ok(2)
+        }
+    }
+}
+
+fn handle_password(prompt: &str, gui: bool, command: &MenuCommands) -> Result<i32> {
+    if gui {
+        return client::handle_gui_request(command);
+    }
+    match FzfWrapper::password(prompt) {
+        Ok(crate::menu_utils::FzfResult::Selected(password)) => {
+            println!("{password}");
+            Ok(0)
+        }
+        Ok(crate::menu_utils::FzfResult::Cancelled) => Ok(1),
+        Ok(crate::menu_utils::FzfResult::Error(e)) => {
+            eprintln!("Error: {e}");
+            Ok(2)
+        }
+        Ok(_) => Ok(1),
+        Err(e) => {
+            eprintln!("Error: {e}");
+            Ok(2)
+        }
+    }
+}
+
+fn handle_status() -> Result<i32> {
+    let client = client::MenuClient::new();
+    if client.is_fallback() {
+        match client.status() {
+            Ok(status_info) => {
+                client::print_status_info(&status_info);
+                println!();
+                println!("Fallback mode: interactive dialogs run in transient kitty terminals.");
+                Ok(0)
+            }
+            Err(e) => {
+                eprintln!("Error getting fallback status: {e}");
+                Ok(2)
+            }
+        }
+    } else if client.is_server_running() {
+        match client.status() {
+            Ok(status_info) => {
+                client::print_status_info(&status_info);
+                Ok(0)
+            }
+            Err(e) => {
+                eprintln!("Error getting server status: {e}");
+                Ok(2)
+            }
+        }
+    } else {
+        println!("✗ Menu server is not running");
+        println!(
+            "  Start the server with: {} menu server launch --inside",
+            env!("CARGO_BIN_NAME")
+        );
+        Ok(1)
+    }
+}
+
+fn handle_show() -> Result<i32> {
+    let client = MenuClient::new();
+    match client.show() {
+        Ok(_) => Ok(0),
+        Err(e) => {
+            eprintln!("✗ Failed to show scratchpad: {e}");
+            Ok(1)
+        }
+    }
+}
+
+fn handle_checklist(items: &str, confirm: &str) -> Result<i32> {
+    let item_list: Vec<String> = if items.is_empty() {
+        use std::io::{self, Read};
+        let mut buffer = String::new();
+        io::stdin()
+            .read_to_string(&mut buffer)
+            .map_err(|e| anyhow::anyhow!("Failed to read from stdin: {}", e))?;
+        buffer.lines().map(|s| s.to_string()).collect()
+    } else {
+        items.split(' ').map(|s| s.to_string()).collect()
+    };
+
+    match FzfWrapper::builder()
+        .prompt("Select items")
+        .header("Enter on item toggles it | Enter on Continue confirms")
+        .initial_index(item_list.len().saturating_sub(1))
+        .checklist(confirm)
+        .checklist_dialog(item_list)?
+    {
+        crate::menu_utils::ChecklistResult::Confirmed(selected) => {
+            for item in selected {
+                println!("{}", item);
+            }
+            Ok(0)
+        }
+        crate::menu_utils::ChecklistResult::Action(action) => {
+            println!("{}", action.text);
+            Ok(0)
+        }
+        crate::menu_utils::ChecklistResult::Cancelled => Ok(1),
     }
 }
 

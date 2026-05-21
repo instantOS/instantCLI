@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use walkdir::WalkDir;
 
-use crate::arch::dualboot::types::format_size;
+use crate::common::format::format_size;
 use crate::game::utils::save_files::format_system_time_for_display;
 use crate::preview::{GameSavePreviewPayload, PreviewContext};
 use crate::ui::catppuccin::colors;

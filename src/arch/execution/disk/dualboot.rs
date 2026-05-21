@@ -8,6 +8,7 @@ use crate::arch::engine::{
     DualBootPartitionPaths, DualBootPartitions, EspNeedsFormat, InstallContext, QuestionId,
 };
 use crate::arch::execution::CommandRunner;
+use crate::common::format::format_size;
 use anyhow::{Context, Result};
 use std::process::Command;
 
@@ -76,7 +77,7 @@ pub fn prepare_dualboot_disk(
         println!(
             "Reusing existing ESP: {} ({})",
             esp.device,
-            crate::arch::dualboot::format_size(esp.size_bytes)
+            format_size(esp.size_bytes)
         );
         esp.device.clone()
     } else {
@@ -140,7 +141,7 @@ pub fn prepare_dualboot_disk(
         let adjusted_swap_gb = (swap_size_bytes / GB).max(1);
         println!(
             "Capping swap to {} (was {} GiB) to keep swap <= half of root",
-            crate::arch::dualboot::format_size(adjusted_swap_gb * GB),
+            format_size(adjusted_swap_gb * GB),
             swap_size_gb
         );
         swap_size_bytes = adjusted_swap_gb * GB;
@@ -153,10 +154,10 @@ pub fn prepare_dualboot_disk(
     if available_space + alignment_slack < min_required {
         anyhow::bail!(
             "Not enough contiguous free space: {} available, {} required ({} Root + {} Swap)",
-            crate::arch::dualboot::format_size(available_space),
-            crate::arch::dualboot::format_size(min_required),
-            crate::arch::dualboot::format_size(crate::arch::dualboot::MIN_LINUX_SIZE),
-            crate::arch::dualboot::format_size(swap_size_bytes)
+            format_size(available_space),
+            format_size(min_required),
+            format_size(crate::arch::dualboot::MIN_LINUX_SIZE),
+            format_size(swap_size_bytes)
         );
     }
 
@@ -243,7 +244,7 @@ fn auto_resize_partition(
         println!(
             "Skipping resize; existing free space after {} is {}",
             partition_path,
-            crate::arch::dualboot::format_size(existing_free_bytes)
+            format_size(existing_free_bytes)
         );
 
         return Ok(ResizePlan {
@@ -255,7 +256,7 @@ fn auto_resize_partition(
     if target_size_bytes < min_size_bytes {
         anyhow::bail!(
             "Requested resize would shrink below minimum size ({})",
-            crate::arch::dualboot::format_size(min_size_bytes)
+            format_size(min_size_bytes)
         );
     }
 
@@ -272,9 +273,9 @@ fn auto_resize_partition(
     println!(
         "Resizing {} from {} to {} (freeing {})",
         partition_path,
-        crate::arch::dualboot::format_size(partition.size_bytes),
-        crate::arch::dualboot::format_size(target_size_bytes),
-        crate::arch::dualboot::format_size(freed_bytes)
+        format_size(partition.size_bytes),
+        format_size(target_size_bytes),
+        format_size(freed_bytes)
     );
 
     if let Some(mount_point) = &partition.mount_point {
@@ -486,7 +487,7 @@ fn create_dualboot_partitions(
     if root_size_bytes < crate::arch::dualboot::MIN_LINUX_SIZE {
         anyhow::bail!(
             "Largest remaining free space is too small for Root: {}",
-            crate::arch::dualboot::format_size(root_size_bytes)
+            format_size(root_size_bytes)
         );
     }
 
@@ -498,7 +499,7 @@ fn create_dualboot_partitions(
     println!(
         "  Root: Start Sector {}, Size {} (approx)",
         root_start_sector,
-        crate::arch::dualboot::format_size(root_size_bytes)
+        format_size(root_size_bytes)
     );
 
     let script = format!(
@@ -570,17 +571,17 @@ fn create_dualboot_partitions(
     println!(
         "Identified Swap: {} ({})",
         swap_path,
-        crate::arch::dualboot::format_size(identified_swap_size)
+        format_size(identified_swap_size)
     );
     println!(
         "Identified Root: {} ({})",
         root_path,
-        crate::arch::dualboot::format_size(get_partition_size_bytes(&root_path)?)
+        format_size(get_partition_size_bytes(&root_path)?)
     );
     println!(
         "Created root partition: {} ({})",
         root_path,
-        crate::arch::dualboot::format_size(root_size_bytes)
+        format_size(root_size_bytes)
     );
 
     Ok((root_path, swap_path))

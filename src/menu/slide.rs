@@ -1,7 +1,9 @@
 use std::io::stdout;
+use std::process::Command;
 use std::time::Duration;
 
 use anyhow::Result;
+use clap::ValueEnum;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseEventKind};
 use crossterm::execute;
 use crossterm::terminal::{
@@ -15,6 +17,139 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Gauge, Paragraph};
 
 use crate::menu_utils::{SliderCommand, SliderConfig};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub enum SliderPreset {
+    #[value(alias = "volume")]
+    Audio,
+    #[value(alias = "brightness")]
+    #[value(alias = "bright")]
+    Brightness,
+}
+
+pub(crate) struct PresetConfig {
+    pub(crate) min: i64,
+    pub(crate) max: i64,
+    pub(crate) value: Option<i64>,
+    pub(crate) step: Option<i64>,
+    pub(crate) big_step: Option<i64>,
+    pub(crate) label: Option<String>,
+    pub(crate) command: Vec<String>,
+}
+
+impl SliderPreset {
+    pub(crate) fn config(self) -> PresetConfig {
+        match self {
+            SliderPreset::Audio => PresetConfig {
+                min: 0,
+                max: 100,
+                value: Self::detect_audio_volume(),
+                step: Some(1),
+                big_step: Some(5),
+                label: Some("Audio Volume".to_string()),
+                command: vec![
+                    "sh".to_string(),
+                    "-c".to_string(),
+                    Self::audio_command_script(),
+                    "ins-menu-slide-audio".to_string(),
+                ],
+            },
+            SliderPreset::Brightness => PresetConfig {
+                min: 0,
+                max: 100,
+                value: Self::detect_brightness_level(),
+                step: Some(1),
+                big_step: Some(5),
+                label: Some("Screen Brightness".to_string()),
+                command: vec![
+                    "sh".to_string(),
+                    "-c".to_string(),
+                    Self::brightness_command_script(),
+                    "ins-menu-slide-brightness".to_string(),
+                ],
+            },
+        }
+    }
+
+    fn detect_audio_volume() -> Option<i64> {
+        Self::wpctl_volume()
+    }
+
+    fn detect_brightness_level() -> Option<i64> {
+        Self::brightnessctl_percentage()
+    }
+
+    fn audio_command_script() -> String {
+        let mut script = String::from("value=\"$1\"\n\n");
+        script.push_str("wpctl set-volume @DEFAULT_AUDIO_SINK@ \"${value}%\" 2>/dev/null\n\n");
+        script.push_str(&Self::notification_script(
+            "instantcli-volume",
+            "audio-volume-medium-symbolic",
+            "Volume [${value}%]",
+        ));
+        script
+    }
+
+    fn brightness_command_script() -> String {
+        let mut script = String::from("value=\"$1\"\n\n");
+        script.push_str("brightnessctl --quiet set \"${value}%\" 2>/dev/null\n\n");
+        script.push_str(&Self::notification_script(
+            "instantcli-brightness",
+            "display-brightness-medium-symbolic",
+            "Brightness [${value}%]",
+        ));
+        script
+    }
+
+    fn notification_script(stack_tag: &str, icon: &str, label: &str) -> String {
+        format!(
+            "dunstify --appname instantCLI \\\n    -h string:x-dunst-stack-tag:{stack_tag} \\\n    -h int:value:\"${{value}}\" \\\n    -i {icon} \\\n    \"{label}\" 2>/dev/null",
+            stack_tag = stack_tag,
+            icon = icon,
+            label = label
+        )
+    }
+
+    fn wpctl_volume() -> Option<i64> {
+        let output = Self::command_output("wpctl", &["get-volume", "@DEFAULT_AUDIO_SINK@"])?;
+        let fraction = output.split_whitespace().find_map(|token| {
+            let sanitized = token.trim_matches(|c: char| matches!(c, '[' | ']' | ',' | ':'));
+            sanitized.parse::<f64>().ok()
+        })?;
+
+        let percent = (fraction * 100.0).trunc().clamp(0.0, 100.0);
+        Some(percent as i64)
+    }
+    fn brightnessctl_percentage() -> Option<i64> {
+        let current = Self::command_output("brightnessctl", &["get"])?
+            .parse::<f64>()
+            .ok()?;
+        let max = Self::command_output("brightnessctl", &["max"])?
+            .parse::<f64>()
+            .ok()?;
+
+        if max <= 0.0 {
+            return None;
+        }
+
+        let percent = (current / max * 100.0).round().clamp(0.0, 100.0);
+        Some(percent as i64)
+    }
+
+    fn command_output(program: &str, args: &[&str]) -> Option<String> {
+        let output = Command::new(program).args(args).output().ok()?;
+        if !output.status.success() {
+            return None;
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if stdout.is_empty() {
+            None
+        } else {
+            Some(stdout)
+        }
+    }
+}
 
 const POLL_TIMEOUT: Duration = Duration::from_millis(150);
 const DIGIT_SEQUENCE: [char; 10] = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];

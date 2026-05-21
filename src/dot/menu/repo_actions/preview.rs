@@ -163,7 +163,7 @@ pub fn build_repo_preview(repo_name: &str, config: &DotfileConfig, db: &Database
         }
 
         // Show encryption status if present
-        let recipients = &dotfile_repo.meta.age_recipients;
+        let recipients = &dotfile_repo.meta.encryption_recipients;
         if !recipients.is_empty() {
             builder =
                 builder
