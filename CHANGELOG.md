@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.33](https://github.com/instantOS/instantCLI/compare/v0.13.32...v0.13.33) - 2026-05-20
+
+### Fixed
+
+- fix error messages
+- fix TOCTOU
+- fix misuse of fzf wrapper
+- fix key test
+- fix add encrypt
+- fix duplication
+- fix `ins dot` encryption fetching
+- fix encryption bugs
+
+### Other
+
+- Merge pull request #142 from instantOS/release-plz-2026-05-10T13-49-34Z
+- refactor tests
+- add better ssh key support
+- rename encryption things to be more UX friendly
+- add prompt to generate identity
+- rework encryption menu
+- upgrade deps
+- improve encryption menu UX
+- improve order, code reuse and performance
+- deduplicate DB operations
+- deletion CLI
+- init ins dot delete functionality
+- make clippy happy
+- more atomic writes
+- do clippy suggestions
+- some encryption operation hardening
+- update plans
+- add `ins dot menu` encryption menu
+- support for configuring the age identity paths
+- collapsible if chains
+- some encryption hardening
+- add `ins dot key identity` command
+- fmt, no emojis in output
+- better decrypt warning
+- better warning messages
+- init `ins dot key`
+- init `ins dot decrypt` feature
+- add `ins dot encrypt` command
+- add age tests
+- improve encryption support
+- init encryption support
+- add encryption design plan
+- make delta use the deps system
+- add description to installer questions
+- prettier question review
+
 ## [0.13.32](https://github.com/instantOS/instantCLI/compare/v0.13.31...v0.13.32) - 2026-05-10
 
 ### Fixed
