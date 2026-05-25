@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.34](https://github.com/instantOS/instantCLI/compare/v0.13.33...v0.13.34) - 2026-05-25
+
+### Fixed
+
+- fix konsole not launching
+
+### Other
+
+- include paths in eden shortcut
+- Merge pull request #143 from instantOS/release-plz-2026-05-19T21-30-35Z
+- get layout choices from instantwmctl
+
 ## [0.13.33](https://github.com/instantOS/instantCLI/compare/v0.13.32...v0.13.33) - 2026-05-20
 
 ### Fixed
