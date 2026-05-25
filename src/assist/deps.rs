@@ -317,3 +317,14 @@ pub static FEH: Dependency = Dependency {
     ],
     tests: &[InstallTest::WhichSucceeds("feh")],
 };
+
+/// figlet - ASCII art text banner generator
+pub static FIGLET: Dependency = Dependency {
+    name: "figlet",
+    packages: &[
+        PackageDefinition::new("figlet", PackageManager::Pacman),
+        PackageDefinition::new("figlet", PackageManager::Apt),
+        PackageDefinition::new("figlet", PackageManager::Dnf),
+    ],
+    tests: &[InstallTest::WhichSucceeds("figlet")],
+};

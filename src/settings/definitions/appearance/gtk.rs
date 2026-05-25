@@ -88,8 +88,14 @@ struct ThemeMenuItem {
 
 #[derive(Clone)]
 enum ThemeMenuItemKind {
-    InstallMore { label: String },
-    Theme { name: String, is_current: bool, path: String },
+    InstallMore {
+        label: String,
+    },
+    Theme {
+        name: String,
+        is_current: bool,
+        path: String,
+    },
 }
 
 impl ThemeMenuItem {
@@ -109,7 +115,11 @@ impl ThemeMenuItem {
         preview_icon: NerdFont,
     ) -> Self {
         Self {
-            kind: ThemeMenuItemKind::Theme { name, is_current, path },
+            kind: ThemeMenuItemKind::Theme {
+                name,
+                is_current,
+                path,
+            },
             preview_title,
             preview_icon,
         }
@@ -132,7 +142,9 @@ impl FzfSelectable for ThemeMenuItem {
                 format_icon_colored(NerdFont::Package, colors::SAPPHIRE),
                 label
             ),
-            ThemeMenuItemKind::Theme { name, is_current, .. } => {
+            ThemeMenuItemKind::Theme {
+                name, is_current, ..
+            } => {
                 let icon = if *is_current {
                     NerdFont::CheckSquare
                 } else {
@@ -150,7 +162,11 @@ impl FzfSelectable for ThemeMenuItem {
 
     fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
         match &self.kind {
-            ThemeMenuItemKind::Theme { name, is_current, path } => PreviewBuilder::new()
+            ThemeMenuItemKind::Theme {
+                name,
+                is_current,
+                path,
+            } => PreviewBuilder::new()
                 .header(self.preview_icon, self.preview_title)
                 .field("Theme", name)
                 .field(

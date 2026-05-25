@@ -111,7 +111,7 @@ pub const ASSISTS: &[AssistEntry] = &[
         key: 'c',
         description: "Caffeine: Keep system awake",
         icon: NerdFont::Coffee,
-        dependencies: &[],
+        dependencies: &[&FIGLET],
         execute: actions::system::caffeine,
     }),
     AssistEntry::Action(AssistAction {
