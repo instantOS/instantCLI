@@ -8,6 +8,7 @@ use std::process::Command;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuItem};
 use crate::preview::{PreviewId, preview_command};
 use crate::settings::context::SettingsContext;
+use crate::settings::definitions::appearance::common::{find_icon_theme_path, find_theme_path};
 use crate::settings::installable_packages::{self, GTK_ICON_THEMES, GTK_THEMES};
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::store::{BoolSettingKey, GTK_ICON_THEME_KEY, GTK_THEME_KEY, StringSettingKey};
@@ -88,7 +89,7 @@ struct ThemeMenuItem {
 #[derive(Clone)]
 enum ThemeMenuItemKind {
     InstallMore { label: String },
-    Theme { name: String, is_current: bool },
+    Theme { name: String, is_current: bool, path: String },
 }
 
 impl ThemeMenuItem {
@@ -103,11 +104,12 @@ impl ThemeMenuItem {
     fn theme(
         name: String,
         is_current: bool,
+        path: String,
         preview_title: &'static str,
         preview_icon: NerdFont,
     ) -> Self {
         Self {
-            kind: ThemeMenuItemKind::Theme { name, is_current },
+            kind: ThemeMenuItemKind::Theme { name, is_current, path },
             preview_title,
             preview_icon,
         }
@@ -130,7 +132,7 @@ impl FzfSelectable for ThemeMenuItem {
                 format_icon_colored(NerdFont::Package, colors::SAPPHIRE),
                 label
             ),
-            ThemeMenuItemKind::Theme { name, is_current } => {
+            ThemeMenuItemKind::Theme { name, is_current, .. } => {
                 let icon = if *is_current {
                     NerdFont::CheckSquare
                 } else {
@@ -148,7 +150,7 @@ impl FzfSelectable for ThemeMenuItem {
 
     fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
         match &self.kind {
-            ThemeMenuItemKind::Theme { name, is_current } => PreviewBuilder::new()
+            ThemeMenuItemKind::Theme { name, is_current, path } => PreviewBuilder::new()
                 .header(self.preview_icon, self.preview_title)
                 .field("Theme", name)
                 .field(
@@ -159,6 +161,7 @@ impl FzfSelectable for ThemeMenuItem {
                         "Available"
                     },
                 )
+                .field("Location", path)
                 .build(),
             ThemeMenuItemKind::InstallMore { .. } => PreviewBuilder::new()
                 .header(self.preview_icon, self.preview_title)
@@ -220,9 +223,13 @@ impl Setting for GtkIconTheme {
 
             // Add all theme names
             for theme in &themes {
+                let path = find_icon_theme_path(theme)
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_default();
                 options.push(MenuItem::entry(ThemeMenuItem::theme(
                     theme.clone(),
                     theme == &current,
+                    path,
                     "Icon Theme",
                     NerdFont::Image,
                 )));
@@ -333,9 +340,13 @@ impl Setting for GtkTheme {
 
             // Add all theme names
             for theme in &themes {
+                let path = find_theme_path(theme)
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_default();
                 options.push(MenuItem::entry(ThemeMenuItem::theme(
                     theme.clone(),
                     theme == &current,
+                    path,
                     "GTK Theme",
                     NerdFont::Palette,
                 )));
