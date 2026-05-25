@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.35](https://github.com/instantOS/instantCLI/compare/v0.13.34...v0.13.35) - 2026-05-25
+
+### Other
+
+- make recursive package uninstaller faster
+- better recursive package uninstaller
+- rename skip feature
+- add password manager setting
+
 ## [0.13.34](https://github.com/instantOS/instantCLI/compare/v0.13.33...v0.13.34) - 2026-05-25
 
 ### Fixed
