@@ -45,6 +45,8 @@ pub struct MenuSelectionPayload {
     pub display_name: Option<String>,
     pub tracked_name: Option<String>,
     pub save_path: Option<String>,
+    pub game_path: Option<String>,
+    pub platform_short: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -102,6 +104,8 @@ pub fn print_streaming_menu_rows(
                         display_name: Some(game.record.name.clone()),
                         tracked_name: game.record.tracked_name.clone(),
                         save_path: Some(game.record.save_path.clone()),
+                        game_path: game.record.game_path.clone(),
+                        platform_short: Some(game.record.platform_short.clone()),
                     },
                 )
                 .preview(discovered_menu_preview(&game.record))
@@ -787,6 +791,8 @@ mod tests {
                 display_name: Some("Game".to_string()),
                 tracked_name: None,
                 save_path: Some("/tmp/save".to_string()),
+                game_path: None,
+                platform_short: None,
             },
         )
         .preview(FzfPreview::Text("preview".to_string()))

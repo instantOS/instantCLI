@@ -525,13 +525,17 @@ fn handle_action(
             })
         }
         GameAction::AddToSteam => {
-            let launch_cmd = state.launch_command.as_deref().unwrap_or("");
-            handle_steam_action(game_name, launch_cmd)?;
+            let Some(launch_cmd) = ensure_launch_command(game_name, state)? else {
+                return Ok(ActionResult::Stay);
+            };
+            handle_steam_action(game_name, &launch_cmd)?;
             Ok(ActionResult::Stay)
         }
         GameAction::AddToDesktop => {
-            let launch_cmd = state.launch_command.as_deref().unwrap_or("");
-            handle_desktop_action(game_name, launch_cmd)?;
+            let Some(launch_cmd) = ensure_launch_command(game_name, state)? else {
+                return Ok(ActionResult::Stay);
+            };
+            handle_desktop_action(game_name, &launch_cmd)?;
             Ok(ActionResult::Stay)
         }
         GameAction::Back => Ok(if exit_after {
@@ -543,43 +547,8 @@ fn handle_action(
 }
 
 fn handle_launch_action(game_name: &str, state: &GameState) -> Result<ActionResult> {
-    if state.launch_command.is_none() {
-        let installation = state
-            .installations
-            .installations
-            .iter()
-            .find(|install| install.game_name.0 == game_name);
-        let context = LaunchCommandBuilderContext::from_game(
-            Some(game_name),
-            installation.map(|install| install.save_path.as_path()),
-            installation
-                .and_then(|install| install.launch_command.as_ref())
-                .or_else(|| {
-                    state
-                        .game_config
-                        .games
-                        .iter()
-                        .find(|game| game.name.0 == game_name)
-                        .and_then(|game| game.launch_command.as_ref())
-                }),
-        );
-
-        match crate::game::platforms::build_launch_command_with_context(Some(&context))? {
-            Some(command) => {
-                let mut game_config = state.game_config.clone();
-                if let Some(game) = game_config.games.iter_mut().find(|g| g.name.0 == game_name) {
-                    game.launch_command = Some(command.clone());
-                    game_config.save()?;
-                    FzfWrapper::message(&format!(
-                        "{} Launch command saved. Launching game now...",
-                        char::from(NerdFont::Check)
-                    ))?;
-                } else {
-                    return Ok(ActionResult::Stay);
-                }
-            }
-            None => return Ok(ActionResult::Stay),
-        }
+    if ensure_launch_command(game_name, state)?.is_none() {
+        return Ok(ActionResult::Stay);
     }
     if state.needs_setup {
         FzfWrapper::message(&format!(
@@ -590,6 +559,50 @@ fn handle_launch_action(game_name: &str, state: &GameState) -> Result<ActionResu
     }
     launch_game(Some(game_name.to_string()))?;
     Ok(ActionResult::Exit)
+}
+
+fn ensure_launch_command(game_name: &str, state: &GameState) -> Result<Option<String>> {
+    if let Some(command) = state.launch_command.as_deref() {
+        return Ok(Some(command.to_string()));
+    }
+
+    let installation = state
+        .installations
+        .installations
+        .iter()
+        .find(|install| install.game_name.0 == game_name);
+    let context = LaunchCommandBuilderContext::from_game(
+        Some(game_name),
+        installation.map(|install| install.save_path.as_path()),
+        installation
+            .and_then(|install| install.launch_command.as_ref())
+            .or_else(|| {
+                state
+                    .game_config
+                    .games
+                    .iter()
+                    .find(|game| game.name.0 == game_name)
+                    .and_then(|game| game.launch_command.as_ref())
+            }),
+    );
+
+    let Some(command) = crate::game::platforms::build_launch_command_with_context(Some(&context))?
+    else {
+        return Ok(None);
+    };
+
+    let mut game_config = state.game_config.clone();
+    let Some(game) = game_config.games.iter_mut().find(|g| g.name.0 == game_name) else {
+        return Ok(None);
+    };
+    game.launch_command = Some(command.clone());
+    game_config.save()?;
+    FzfWrapper::message(&format!(
+        "{} Launch command saved.",
+        char::from(NerdFont::Check)
+    ))?;
+
+    Ok(Some(command.to_string()))
 }
 
 fn handle_steam_action(game_name: &str, launch_cmd: &str) -> Result<()> {
