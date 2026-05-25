@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use duct::cmd;
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use crate::common::distro::OperatingSystem;
 use crate::common::package::{PackageManager, detect_aur_helper};
@@ -402,9 +402,15 @@ fn render_pacman_removal_cascade(
 }
 
 fn pacman_dependent_closure(package: &str, package_info: &str) -> Result<Vec<String>> {
+    let direct_dependents = parse_pacman_required_by(package_info);
+    if direct_dependents.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let all_required_by = pacman_required_by_map()?;
     let mut seen = BTreeSet::from([package.to_string()]);
     let mut dependents = BTreeSet::new();
-    let mut queue = parse_pacman_required_by(package_info);
+    let mut queue = direct_dependents;
 
     while let Some(dependent) = queue.pop() {
         if !seen.insert(dependent.clone()) {
@@ -412,15 +418,36 @@ fn pacman_dependent_closure(package: &str, package_info: &str) -> Result<Vec<Str
         }
 
         dependents.insert(dependent.clone());
-        queue.extend(pacman_required_by(&dependent)?);
+        if let Some(next_dependents) = all_required_by.get(&dependent) {
+            queue.extend(next_dependents.iter().cloned());
+        }
     }
 
     Ok(dependents.into_iter().collect())
 }
 
-fn pacman_required_by(package: &str) -> Result<Vec<String>> {
-    let output = cmd!("pacman", "-Qi", package).stderr_null().read()?;
-    Ok(parse_pacman_required_by(&output))
+fn pacman_required_by_map() -> Result<BTreeMap<String, Vec<String>>> {
+    let output = cmd!("pacman", "-Qi").stderr_null().read()?;
+    Ok(parse_pacman_required_by_map(&output))
+}
+
+fn parse_pacman_required_by_map(output: &str) -> BTreeMap<String, Vec<String>> {
+    output
+        .split("\n\n")
+        .filter_map(|block| {
+            let name = parse_pacman_field(block, "Name")?;
+            Some((name, parse_pacman_required_by(block)))
+        })
+        .collect()
+}
+
+fn parse_pacman_field(output: &str, field: &str) -> Option<String> {
+    output.lines().find_map(|line| {
+        line.strip_prefix(field)
+            .and_then(|value| value.split_once(':'))
+            .map(|(_, value)| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+    })
 }
 
 fn parse_pacman_required_by(output: &str) -> Vec<String> {
@@ -856,5 +883,28 @@ Optional For    : app-one
 ";
 
         assert!(parse_pacman_required_by(output).is_empty());
+    }
+
+    #[test]
+    fn parses_pacman_required_by_map_from_full_package_dump() {
+        let output = "\
+Name            : libfoo
+Required By     : app-one  app-two
+
+Name            : app-one
+Required By     : shell-one
+
+Name            : app-two
+Required By     : None
+";
+
+        let map = parse_pacman_required_by_map(output);
+
+        assert_eq!(
+            map.get("libfoo"),
+            Some(&vec!["app-one".to_string(), "app-two".to_string()])
+        );
+        assert_eq!(map.get("app-one"), Some(&vec!["shell-one".to_string()]));
+        assert_eq!(map.get("app-two"), Some(&Vec::new()));
     }
 }
