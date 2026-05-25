@@ -69,7 +69,7 @@ pub struct DotfileConfig {
     #[serde(default = "default_database_dir")]
     pub database_dir: TildePath,
     #[serde(default)]
-    pub ignored_paths: Vec<String>,
+    pub skipped_paths: Vec<String>,
     /// Global dotfile units - directories treated as atomic.
     /// Combined with per-repo units from instantdots.toml.
     #[serde(default)]
@@ -89,7 +89,7 @@ impl Default for DotfileConfig {
             hash_cleanup_days: default_hash_cleanup_days(),
             repos_dir: default_repos_dir(),
             database_dir: default_database_dir(),
-            ignored_paths: Vec::new(),
+            skipped_paths: Vec::new(),
             units: Vec::new(),
             encryption_keys: Vec::new(),
         }
@@ -303,39 +303,37 @@ impl DotfileConfig {
         self.save(custom_path)
     }
 
-    /// Add a path to the ignore list
-    pub fn add_ignored_path(&mut self, path: String, custom_path: Option<&str>) -> Result<()> {
-        if self.ignored_paths.contains(&path) {
-            return Err(anyhow::anyhow!("Path '{}' is already ignored", path));
+    /// Add a path to the skip list
+    pub fn add_skipped_path(&mut self, path: String, custom_path: Option<&str>) -> Result<()> {
+        if self.skipped_paths.contains(&path) {
+            return Err(anyhow::anyhow!("Path '{}' is already skipped", path));
         }
-        self.ignored_paths.push(path);
+        self.skipped_paths.push(path);
         self.save(custom_path)
     }
 
-    /// Remove a path from the ignore list
-    pub fn remove_ignored_path(&mut self, path: &str, custom_path: Option<&str>) -> Result<()> {
-        let original_len = self.ignored_paths.len();
-        self.ignored_paths.retain(|p| p != path);
-        if self.ignored_paths.len() == original_len {
-            return Err(anyhow::anyhow!("Path '{}' is not in the ignore list", path));
+    /// Remove a path from the skip list
+    pub fn remove_skipped_path(&mut self, path: &str, custom_path: Option<&str>) -> Result<()> {
+        let original_len = self.skipped_paths.len();
+        self.skipped_paths.retain(|p| p != path);
+        if self.skipped_paths.len() == original_len {
+            return Err(anyhow::anyhow!("Path '{}' is not in the skip list", path));
         }
         self.save(custom_path)
     }
 
-    /// Check if a path should be ignored
-    pub fn is_path_ignored(&self, path: &Path) -> bool {
+    /// Check if a path should be skipped
+    pub fn is_path_skipped(&self, path: &Path) -> bool {
         let home = home_dir();
 
-        for ignored in &self.ignored_paths {
-            let ignored_path = if ignored.starts_with('~') {
-                PathBuf::from(shellexpand::tilde(ignored).to_string())
+        for skipped in &self.skipped_paths {
+            let skipped_path = if skipped.starts_with('~') {
+                PathBuf::from(shellexpand::tilde(skipped).to_string())
             } else {
-                home.join(ignored)
+                home.join(skipped)
             };
 
-            // Check if the path starts with the ignored path (for directories)
-            // or is exactly the ignored path (for files)
-            if path == ignored_path || path.starts_with(&ignored_path) {
+            if path == skipped_path || path.starts_with(&skipped_path) {
                 return true;
             }
         }
@@ -563,7 +561,7 @@ documented_config!(DotfileConfig,
     repos_dir, "Directory where dotfile repositories are stored",
     database_dir, "Path to the SQLite database storing file hashes",
     repos, "List of dotfile repositories to manage",
-    ignored_paths, "Paths to ignore during dotfile operations (local overrides)",
+    skipped_paths, "Paths to skip during dotfile operations (local overrides)",
     units, "Global dotfile units - directories treated as atomic (combined with per-repo units)",
     encryption_keys, "Paths to encryption key files (private keys) for decrypting .age dotfiles; tilde-expanded, loaded after $AGE_IDENTITY",
     => config_file_path(None)

@@ -206,7 +206,7 @@ pub fn get_all_dotfiles(
         merged.retain(|_, dotfile| !dotfile.is_root);
     }
 
-    merged.retain(|target_path, _| !config.is_path_ignored(target_path));
+    merged.retain(|target_path, _| !config.is_path_skipped(target_path));
 
     if let Ok(overrides) = crate::dot::override_config::OverrideConfig::load() {
         let _ = crate::dot::override_config::apply_overrides(&mut merged, &overrides, config);

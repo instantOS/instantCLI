@@ -700,7 +700,7 @@ mod tests {
             database_dir: crate::common::tilde_path::TildePath::new(dir.path().join("test.db")),
             clone_depth: 1,
             hash_cleanup_days: 30,
-            ignored_paths: vec![],
+            skipped_paths: vec![],
             units: vec![],
             encryption_keys: vec![],
         };

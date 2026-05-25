@@ -145,10 +145,10 @@ pub enum DotCommands {
         #[arg(long)]
         verbose: bool,
     },
-    /// Manage ignored paths
-    Ignore {
+    /// Manage skipped paths (prevents tracked files from being restored during update/apply)
+    Skip {
         #[command(subcommand)]
-        command: IgnoreCommands,
+        command: SkipCommands,
     },
     /// Manage dotfile units
     Unit {
@@ -238,20 +238,20 @@ pub enum DotCommands {
 }
 
 #[derive(Subcommand, Debug)]
-pub enum IgnoreCommands {
-    /// Add a path to the ignore list
+pub enum SkipCommands {
+    /// Add a path to the skip list
     Add {
-        /// Path to ignore (relative to ~, e.g., .config/nvim or .bashrc)
+        /// Path to skip (relative to ~, e.g., .config/nvim or .bashrc)
         #[arg(value_hint = ValueHint::AnyPath)]
         path: String,
     },
-    /// Remove a path from the ignore list
+    /// Remove a path from the skip list
     Remove {
-        /// Path to stop ignoring
+        /// Path to stop skipping
         #[arg(value_hint = ValueHint::AnyPath)]
         path: String,
     },
-    /// List all ignored paths
+    /// List all skipped paths
     List,
 }
 
@@ -374,21 +374,21 @@ pub enum EncryptCommands {
     Show,
 }
 
-fn handle_ignore_command(
+fn handle_skip_command(
     config: &mut DotfileConfig,
-    command: &IgnoreCommands,
+    command: &SkipCommands,
     config_path: Option<&str>,
 ) -> Result<()> {
     match command {
-        IgnoreCommands::Add { path } => {
+        SkipCommands::Add { path } => {
             let normalized_path = crate::dot::utils::normalize_path_to_tilde(path);
 
-            config.add_ignored_path(normalized_path.clone(), config_path)?;
+            config.add_skipped_path(normalized_path.clone(), config_path)?;
             emit(
                 Level::Success,
-                "dot.ignore.added",
+                "dot.skip.added",
                 &format!(
-                    "{} Added {} to ignore list",
+                    "{} Added {} to skip list",
                     char::from(NerdFont::Check),
                     normalized_path.green()
                 ),
@@ -398,7 +398,7 @@ fn handle_ignore_command(
                 })),
             );
         }
-        IgnoreCommands::Remove { path } => {
+        SkipCommands::Remove { path } => {
             let normalized_path = crate::dot::utils::normalize_path_to_tilde(path);
 
             // Validate that absolute paths are under home
@@ -408,12 +408,12 @@ fn handle_ignore_command(
                 ));
             }
 
-            config.remove_ignored_path(&normalized_path, config_path)?;
+            config.remove_skipped_path(&normalized_path, config_path)?;
             emit(
                 Level::Success,
-                "dot.ignore.removed",
+                "dot.skip.removed",
                 &format!(
-                    "{} Removed {} from ignore list",
+                    "{} Removed {} from skip list",
                     char::from(NerdFont::Check),
                     normalized_path.green()
                 ),
@@ -423,13 +423,13 @@ fn handle_ignore_command(
                 })),
             );
         }
-        IgnoreCommands::List => {
-            if config.ignored_paths.is_empty() {
+        SkipCommands::List => {
+            if config.skipped_paths.is_empty() {
                 emit(
                     Level::Info,
-                    "dot.ignore.list.empty",
+                    "dot.skip.list.empty",
                     &format!(
-                        "{} No paths are currently ignored",
+                        "{} No paths are currently skipped",
                         char::from(NerdFont::Info)
                     ),
                     None,
@@ -437,16 +437,16 @@ fn handle_ignore_command(
             } else {
                 emit(
                     Level::Info,
-                    "dot.ignore.list.header",
-                    &format!("{} Ignored paths:", char::from(NerdFont::List)),
+                    "dot.skip.list.header",
+                    &format!("{} Skipped paths:", char::from(NerdFont::List)),
                     Some(serde_json::json!({
-                        "count": config.ignored_paths.len()
+                        "count": config.skipped_paths.len()
                     })),
                 );
-                for (i, path) in config.ignored_paths.iter().enumerate() {
+                for (i, path) in config.skipped_paths.iter().enumerate() {
                     emit(
                         Level::Info,
-                        "dot.ignore.list.item",
+                        "dot.skip.list.item",
                         &format!("  {} {}", (i + 1), path.cyan()),
                         Some(serde_json::json!({
                             "index": i + 1,
@@ -822,8 +822,8 @@ pub fn handle_dot_command(
         DotCommands::Merge { path, verbose } => {
             super::operations::merge::merge_dotfile(&config, &db, path, *verbose)?;
         }
-        DotCommands::Ignore { command } => {
-            handle_ignore_command(&mut config, command, config_path)?;
+        DotCommands::Skip { command } => {
+            handle_skip_command(&mut config, command, config_path)?;
         }
         DotCommands::Unit { repo, command } => {
             handle_unit_command(&mut config, &db, command, repo.as_deref(), config_path)?;
