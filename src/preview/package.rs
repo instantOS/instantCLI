@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use duct::cmd;
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 
 use crate::common::distro::OperatingSystem;
 use crate::common::package::{PackageManager, detect_aur_helper};
@@ -75,7 +75,7 @@ fn render_installed_package_with(ctx: &PreviewContext, preview: &mut PreviewWrit
         && let Some((src, pkg)) = package.split_once('\t')
     {
         if let Ok(manager) = src.parse::<PackageManager>() {
-            return render_for_manager(pkg, manager, preview);
+            return render_installed_for_manager(pkg, manager, preview);
         }
 
         preview
@@ -88,12 +88,25 @@ fn render_installed_package_with(ctx: &PreviewContext, preview: &mut PreviewWrit
 
     let os = OperatingSystem::detect();
     if let Some(manager) = os.native_package_manager() {
-        render_for_manager(package, manager, preview)
+        render_installed_for_manager(package, manager, preview)
     } else {
         preview
             .header(NerdFont::Package, package)
             .subtext("Package manager not available");
         Ok(())
+    }
+}
+
+fn render_installed_for_manager(
+    package: &str,
+    manager: PackageManager,
+    preview: &mut PreviewWriter,
+) -> Result<()> {
+    match manager {
+        PackageManager::Pacman | PackageManager::Aur => {
+            render_installed_pacman_impl(package, preview)
+        }
+        _ => render_for_manager(package, manager, preview),
     }
 }
 
@@ -306,6 +319,35 @@ pub(crate) fn render_pacman_impl(package: &str, preview: &mut PreviewWriter) -> 
         return Ok(());
     }
 
+    render_pacman_fields(&output, preview);
+
+    Ok(())
+}
+
+fn render_installed_pacman_impl(package: &str, preview: &mut PreviewWriter) -> Result<()> {
+    preview
+        .header(NerdFont::Package, package)
+        .line(colors::GREEN, None, "Installed Pacman Package")
+        .blank();
+
+    let output = cmd!("pacman", "-Qi", package)
+        .stderr_null()
+        .read()
+        .unwrap_or_default();
+
+    if output.is_empty() {
+        preview.subtext("No package information available");
+        return Ok(());
+    }
+
+    render_pacman_fields(&output, preview);
+    preview.blank();
+    render_pacman_removal_cascade(package, &output, preview)?;
+
+    Ok(())
+}
+
+fn render_pacman_fields(output: &str, preview: &mut PreviewWriter) {
     for line in output.lines() {
         if let Some((key, value)) = line.split_once(':') {
             let key = key.trim();
@@ -333,8 +375,69 @@ pub(crate) fn render_pacman_impl(package: &str, preview: &mut PreviewWriter) -> 
             }
         }
     }
+}
+
+fn render_pacman_removal_cascade(
+    package: &str,
+    package_info: &str,
+    preview: &mut PreviewWriter,
+) -> Result<()> {
+    preview.title(colors::PEACH, "Removal Cascade");
+
+    let dependents = pacman_dependent_closure(package, package_info)?;
+    if dependents.is_empty() {
+        preview.subtext("No installed packages depend on this package.");
+        return Ok(());
+    }
+
+    preview
+        .line(
+            colors::YELLOW,
+            Some(NerdFont::Warning),
+            "Uninstalling this package also requires uninstalling these packages.",
+        )
+        .bullets(dependents);
 
     Ok(())
+}
+
+fn pacman_dependent_closure(package: &str, package_info: &str) -> Result<Vec<String>> {
+    let mut seen = BTreeSet::from([package.to_string()]);
+    let mut dependents = BTreeSet::new();
+    let mut queue = parse_pacman_required_by(package_info);
+
+    while let Some(dependent) = queue.pop() {
+        if !seen.insert(dependent.clone()) {
+            continue;
+        }
+
+        dependents.insert(dependent.clone());
+        queue.extend(pacman_required_by(&dependent)?);
+    }
+
+    Ok(dependents.into_iter().collect())
+}
+
+fn pacman_required_by(package: &str) -> Result<Vec<String>> {
+    let output = cmd!("pacman", "-Qi", package).stderr_null().read()?;
+    Ok(parse_pacman_required_by(&output))
+}
+
+fn parse_pacman_required_by(output: &str) -> Vec<String> {
+    output
+        .lines()
+        .find_map(|line| {
+            line.strip_prefix("Required By")
+                .and_then(|value| value.split_once(':'))
+        })
+        .map(|(_, packages)| {
+            packages
+                .split_whitespace()
+                .filter(|package| *package != "None")
+                .map(ToString::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 pub(crate) fn render_snap_impl(package_info: &str, preview: &mut PreviewWriter) -> Result<()> {
@@ -724,4 +827,34 @@ pub(crate) fn render_cargo_impl(package: &str, preview: &mut PreviewWriter) -> R
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_pacman_required_by_for_preview_cascade() {
+        let output = "\
+Name            : libfoo
+Required By     : app-one  app-two
+Optional For    : None
+";
+
+        assert_eq!(
+            parse_pacman_required_by(output),
+            vec!["app-one".to_string(), "app-two".to_string()]
+        );
+    }
+
+    #[test]
+    fn ignores_pacman_required_by_none_for_preview_cascade() {
+        let output = "\
+Name            : leaf-package
+Required By     : None
+Optional For    : app-one
+";
+
+        assert!(parse_pacman_required_by(output).is_empty());
+    }
 }

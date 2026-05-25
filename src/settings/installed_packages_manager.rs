@@ -2,6 +2,9 @@
 //!
 //! Interactive package browser and uninstaller for installed system packages.
 
+use std::collections::BTreeSet;
+use std::process::Command;
+
 use anyhow::{Context, Result};
 
 use crate::common::distro::OperatingSystem;
@@ -77,11 +80,11 @@ fn handle_uninstall_result(
 ) -> Result<UninstallResult> {
     match result {
         FzfResult::MultiSelected(rows) if !rows.is_empty() => {
-            let packages: Vec<String> = rows
-                .into_iter()
-                .map(|row| row.payload.package)
-                .filter(|s| !s.is_empty())
-                .collect();
+            let packages = deduplicate_packages(
+                rows.into_iter()
+                    .map(|row| row.payload.package)
+                    .filter(|s| !s.is_empty()),
+            );
 
             if packages.is_empty() {
                 println!("No valid packages selected.");
@@ -92,12 +95,12 @@ fn handle_uninstall_result(
                 println!("Selected packages: {:?}", packages);
             }
 
-            let msg = format!(
-                "Uninstall {} {} package{}?\n\nThis action cannot be undone.",
-                packages.len(),
-                manager.display_name(),
-                if packages.len() == 1 { "" } else { "s" }
-            );
+            let Some(packages) = prepare_uninstall_packages(manager, packages, debug)? else {
+                println!("Uninstall cancelled.");
+                return Ok(UninstallResult::Done);
+            };
+
+            let msg = uninstall_confirmation_message(manager, &packages);
 
             if !confirm_uninstall(&msg)? {
                 println!("Uninstall cancelled.");
@@ -117,18 +120,20 @@ fn handle_uninstall_result(
                 println!("Selected package: {}", name);
             }
 
-            let msg = format!(
-                "Uninstall {} package '{}'?\n\nThis action cannot be undone.",
-                manager.display_name(),
-                name
-            );
+            let Some(packages) = prepare_uninstall_packages(manager, vec![name], debug)? else {
+                println!("Uninstall cancelled.");
+                return Ok(UninstallResult::Done);
+            };
+
+            let msg = uninstall_confirmation_message(manager, &packages);
 
             if !confirm_uninstall(&msg)? {
                 println!("Uninstall cancelled.");
                 return Ok(UninstallResult::Done);
             }
 
-            uninstall_packages(manager, &[&name])?;
+            let refs: Vec<&str> = packages.iter().map(|s| s.as_str()).collect();
+            uninstall_packages(manager, &refs)?;
 
             println!("✓ Package uninstallation completed successfully!");
             Ok(UninstallResult::Uninstalled)
@@ -146,4 +151,179 @@ fn confirm_uninstall(message: &str) -> Result<bool> {
         .no_text("Cancel")
         .confirm_dialog()?;
     Ok(matches!(result, ConfirmResult::Yes))
+}
+
+fn prepare_uninstall_packages(
+    manager: PackageManager,
+    packages: Vec<String>,
+    debug: bool,
+) -> Result<Option<Vec<String>>> {
+    if manager != PackageManager::Pacman {
+        return Ok(Some(packages));
+    }
+
+    let dependents = pacman_dependent_closure(&packages)?;
+    if dependents.is_empty() {
+        return Ok(Some(packages));
+    }
+
+    if debug {
+        println!(
+            "Dependent packages that also need removal: {:?}",
+            dependents
+        );
+    }
+
+    let dependent_list = format_package_list(&dependents);
+    let msg = format!(
+        "Some installed packages depend on your selection:\n\n{}\n\nAdd {} dependent package{} to the uninstall list?",
+        dependent_list,
+        dependents.len(),
+        if dependents.len() == 1 { "" } else { "s" }
+    );
+
+    if !confirm_add_dependents(&msg)? {
+        return Ok(None);
+    }
+
+    let mut expanded = packages;
+    expanded.extend(dependents);
+    Ok(Some(deduplicate_packages(expanded)))
+}
+
+fn confirm_add_dependents(message: &str) -> Result<bool> {
+    let result = FzfWrapper::builder()
+        .confirm(message)
+        .yes_text("Add dependents")
+        .no_text("Cancel")
+        .confirm_dialog()?;
+    Ok(matches!(result, ConfirmResult::Yes))
+}
+
+fn pacman_dependent_closure(packages: &[String]) -> Result<Vec<String>> {
+    let selected: BTreeSet<String> = packages.iter().cloned().collect();
+    let mut seen = selected.clone();
+    let mut queue: Vec<String> = packages.to_vec();
+    let mut dependents = BTreeSet::new();
+
+    while let Some(package) = queue.pop() {
+        for dependent in pacman_required_by(&package)? {
+            if seen.insert(dependent.clone()) {
+                dependents.insert(dependent.clone());
+                queue.push(dependent);
+            }
+        }
+    }
+
+    Ok(dependents.into_iter().collect())
+}
+
+fn pacman_required_by(package: &str) -> Result<Vec<String>> {
+    let output = Command::new("pacman")
+        .args(["-Qi", package])
+        .output()
+        .with_context(|| format!("Failed to inspect pacman package '{package}'"))?;
+
+    if !output.status.success() {
+        anyhow::bail!("Failed to inspect pacman package '{}'", package);
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(parse_pacman_required_by(&stdout))
+}
+
+fn parse_pacman_required_by(output: &str) -> Vec<String> {
+    output
+        .lines()
+        .find_map(|line| {
+            line.strip_prefix("Required By")
+                .and_then(|value| value.split_once(':'))
+        })
+        .map(|(_, packages)| {
+            packages
+                .split_whitespace()
+                .filter(|package| *package != "None")
+                .map(ToString::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn deduplicate_packages(packages: impl IntoIterator<Item = String>) -> Vec<String> {
+    let mut seen = BTreeSet::new();
+    packages
+        .into_iter()
+        .filter(|package| seen.insert(package.clone()))
+        .collect()
+}
+
+fn format_package_list(packages: &[String]) -> String {
+    const MAX_SHOWN: usize = 12;
+
+    let mut lines: Vec<String> = packages
+        .iter()
+        .take(MAX_SHOWN)
+        .map(|package| format!("  - {package}"))
+        .collect();
+
+    if packages.len() > MAX_SHOWN {
+        lines.push(format!("  - ... and {} more", packages.len() - MAX_SHOWN));
+    }
+
+    lines.join("\n")
+}
+
+fn uninstall_confirmation_message(manager: PackageManager, packages: &[String]) -> String {
+    format!(
+        "Uninstall {} {} package{}?\n\n{}\n\nThis action cannot be undone.",
+        packages.len(),
+        manager.display_name(),
+        if packages.len() == 1 { "" } else { "s" },
+        format_package_list(packages)
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_pacman_required_by_packages() {
+        let output = "\
+Name            : libfoo
+Required By     : app-one  app-two
+Optional For    : None
+";
+
+        assert_eq!(
+            parse_pacman_required_by(output),
+            vec!["app-one".to_string(), "app-two".to_string()]
+        );
+    }
+
+    #[test]
+    fn parses_pacman_required_by_none() {
+        let output = "\
+Name            : leaf-package
+Required By     : None
+Optional For    : app-one
+";
+
+        assert!(parse_pacman_required_by(output).is_empty());
+    }
+
+    #[test]
+    fn deduplicates_packages_without_reordering_first_occurrences() {
+        let packages = vec![
+            "one".to_string(),
+            "two".to_string(),
+            "one".to_string(),
+            "three".to_string(),
+        ];
+
+        assert_eq!(
+            deduplicate_packages(packages),
+            vec!["one".to_string(), "two".to_string(), "three".to_string()]
+        );
+    }
 }
