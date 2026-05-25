@@ -143,7 +143,7 @@ pub(super) fn run_add_menu(current_prefix: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn run_edit_browser(initial_prefix: Option<&str>) -> Result<()> {
+pub(crate) fn run_edit_browser(initial_prefix: Option<&str>) -> Result<()> {
     let store_dir = ensure_password_store_dir()?;
     let mut path = initial_prefix.map(path_segments).unwrap_or_default();
     let mut cursor = MenuCursor::new();

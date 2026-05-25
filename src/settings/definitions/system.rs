@@ -342,6 +342,32 @@ impl Setting for WebUiManager {
 }
 
 // ============================================================================
+// Password Manager (launches the pass edit browser)
+// ============================================================================
+
+pub struct PasswordManager;
+
+impl Setting for PasswordManager {
+    fn metadata(&self) -> SettingMetadata {
+        SettingMetadata::builder()
+            .id("system.password_manager")
+            .title("Password Manager")
+            .icon(NerdFont::Key)
+            .summary("Browse, edit, add, and delete password store entries.\n\nOpens the interactive pass store browser for managing passwords and OTP entries.")
+            .search_keywords(&["pass", "credentials", "secrets", "keychain", "otp"])
+            .build()
+    }
+
+    fn setting_type(&self) -> SettingType {
+        SettingType::Action
+    }
+
+    fn apply(&self, _ctx: &mut SettingsContext) -> Result<()> {
+        crate::pass::menu::run_edit_browser(None)
+    }
+}
+
+// ============================================================================
 // Firmware Manager (GUI app)
 // ============================================================================
 
