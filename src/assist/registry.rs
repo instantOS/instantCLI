@@ -294,6 +294,13 @@ pub const ASSISTS: &[AssistEntry] = &[
                 execute: actions::screenrecord::screen_record_fullscreen,
             }),
             AssistEntry::Action(AssistAction {
+                key: 'k',
+                description: "Kooha: Open screen recorder",
+                icon: NerdFont::Video,
+                dependencies: &[&KOOHA],
+                execute: actions::screenrecord::open_kooha,
+            }),
+            AssistEntry::Action(AssistAction {
                 key: 'x',
                 description: "Stop Recording: Stop current screen recording",
                 icon: NerdFont::CircleStop,
@@ -608,6 +615,13 @@ mod tests {
             action.unwrap().description,
             "Record Fullscreen: Record entire screen (toggle)"
         );
+    }
+
+    #[test]
+    fn test_find_kooha_action() {
+        let action = find_action("sk");
+        assert!(action.is_some());
+        assert_eq!(action.unwrap().description, "Kooha: Open screen recorder");
     }
 
     #[test]

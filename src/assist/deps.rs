@@ -285,6 +285,19 @@ pub static EMOTE: Dependency = Dependency {
     }],
 };
 
+/// Kooha - simple screen recorder (Flatpak only)
+pub static KOOHA: Dependency = Dependency {
+    name: "Kooha",
+    packages: &[PackageDefinition::new(
+        "io.github.seadve.Kooha",
+        PackageManager::Flatpak,
+    )],
+    tests: &[InstallTest::CommandSucceeds {
+        program: "flatpak",
+        args: &["info", "io.github.seadve.Kooha"],
+    }],
+};
+
 /// wf-recorder - Wayland screen recorder
 pub static WF_RECORDER: Dependency = Dependency {
     name: "wf-recorder",
