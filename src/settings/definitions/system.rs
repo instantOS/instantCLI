@@ -209,6 +209,10 @@ impl Setting for AboutSystem {
         SettingType::Command
     }
 
+    fn preview_command(&self) -> Option<String> {
+        Some("fastfetch --pipe false 2>/dev/null || echo 'fastfetch not available'".to_string())
+    }
+
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
         ctx.emit_info(
             "settings.command.launching",

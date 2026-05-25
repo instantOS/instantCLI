@@ -82,9 +82,7 @@ pub fn category_tree(category: Category) -> Vec<CategoryNode> {
                 .child(CategoryNode::setting(&appearance::GtkIconTheme))
                 .child(CategoryNode::setting(&appearance::GtkMenuIcons))
                 .child(CategoryNode::setting(&appearance::ResetGtk)),
-            CategoryNode::group("Qt")
-                .description("Qt application theming.")
-                .child(CategoryNode::setting(&appearance::ResetQt)),
+            CategoryNode::setting(&appearance::ResetQt),
         ],
         Category::Network => vec![
             CategoryNode::setting(&network::IpInfo),
@@ -105,11 +103,9 @@ pub fn category_tree(category: Category) -> Vec<CategoryNode> {
             CategoryNode::setting(&mouse::NaturalScroll),
             CategoryNode::setting(&mouse::TapToClick),
             CategoryNode::setting(&mouse::SwapButtons),
-            CategoryNode::group("Pointer")
-                .description("Pointer acceleration and scrolling settings.")
-                .child(CategoryNode::setting(&mouse::MouseSensitivity))
-                .child(CategoryNode::setting(&mouse::AccelProfile))
-                .child(CategoryNode::setting(&mouse::ScrollFactor)),
+            CategoryNode::setting(&mouse::MouseSensitivity),
+            CategoryNode::setting(&mouse::AccelProfile),
+            CategoryNode::setting(&mouse::ScrollFactor),
             CategoryNode::setting(&desktop::GamingMouse),
         ],
         Category::Desktop => vec![
