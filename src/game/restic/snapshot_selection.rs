@@ -569,22 +569,25 @@ pub fn select_snapshot_interactive(
 
     // Show selection prompt
     // Create wrapper snapshots that include local comparison info
-    let enhanced_snapshots: Vec<EnhancedSnapshot> = snapshots
+    let mut entries: Vec<SnapshotMenuEntry> = snapshots
         .into_iter()
-        .map(|snapshot| EnhancedSnapshot {
-            snapshot,
-            local_save_info: local_save_info.clone(),
-            game_name: game_name.to_string(),
-            nearest_checkpoint: nearest_checkpoint.clone(),
+        .map(|snapshot| {
+            SnapshotMenuEntry::Snapshot(EnhancedSnapshot {
+                snapshot,
+                local_save_info: local_save_info.clone(),
+                game_name: game_name.to_string(),
+                nearest_checkpoint: nearest_checkpoint.clone(),
+            })
         })
         .collect();
+    entries.push(SnapshotMenuEntry::Back);
 
-    let selected = FzfWrapper::select_one(enhanced_snapshots)
+    let selected = FzfWrapper::select_one(entries)
         .map_err(|e| anyhow::anyhow!("Failed to select snapshot: {}", e))?;
 
     match selected {
-        Some(enhanced) => Ok(Some(enhanced.snapshot.id)),
-        None => {
+        Some(SnapshotMenuEntry::Snapshot(enhanced)) => Ok(Some(enhanced.snapshot.id)),
+        Some(SnapshotMenuEntry::Back) | None => {
             emit(
                 Level::Info,
                 "game.snapshots.cancelled",
@@ -592,6 +595,40 @@ pub fn select_snapshot_interactive(
                 None,
             );
             Ok(None)
+        }
+    }
+}
+
+/// Menu entry for snapshot selection that includes a back option
+#[derive(Clone)]
+pub enum SnapshotMenuEntry {
+    Snapshot(EnhancedSnapshot),
+    Back,
+}
+
+impl FzfSelectable for SnapshotMenuEntry {
+    fn fzf_display_text(&self) -> String {
+        match self {
+            SnapshotMenuEntry::Snapshot(s) => s.fzf_display_text(),
+            SnapshotMenuEntry::Back => format!("{} Back", char::from(NerdFont::ArrowLeft)),
+        }
+    }
+
+    fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
+        match self {
+            SnapshotMenuEntry::Snapshot(s) => s.fzf_preview(),
+            SnapshotMenuEntry::Back => PreviewBuilder::new()
+                .header(NerdFont::ArrowLeft, "Back")
+                .blank()
+                .subtext("Return to the previous menu without selecting a snapshot.")
+                .build(),
+        }
+    }
+
+    fn fzf_key(&self) -> String {
+        match self {
+            SnapshotMenuEntry::Snapshot(s) => s.snapshot.id.clone(),
+            SnapshotMenuEntry::Back => "__back__".to_string(),
         }
     }
 }
