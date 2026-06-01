@@ -1,9 +1,9 @@
+pub mod awww;
 pub mod cli;
 pub mod colored;
 pub mod commands;
 mod common;
 pub mod gnome;
-pub mod hyprland;
 pub mod instantwm;
 pub mod kwin;
 pub mod random;
