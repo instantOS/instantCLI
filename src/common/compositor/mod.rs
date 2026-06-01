@@ -3,6 +3,7 @@ use crate::scratchpad::config::ScratchpadConfig;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::env;
+use std::path::Path;
 use std::process::Command;
 
 pub mod config;
@@ -96,27 +97,8 @@ impl CompositorType {
             return CompositorType::InstantWM;
         }
 
-        // Fast path: check for sway socket (sway sets SWAYSOCK)
-        if env::var("SWAYSOCK").is_ok() {
-            return CompositorType::Sway;
-        }
-
-        // Fast path: check i3 socket (i3 sets I3SOCK)
-        if env::var("I3SOCK").is_ok() {
-            return CompositorType::I3;
-        }
-
-        // Fast path: check Hyprland sockets
-        if env::var("HYPRLAND_SOCKET").is_ok() || env::var("HYPRLAND_INSTANCE_SIGNATURE").is_ok() {
-            return CompositorType::Hyprland;
-        }
-
-        // Fast path: check niri socket
-        if env::var("NIRI_SOCKET").is_ok() {
-            return CompositorType::Niri;
-        }
-
-        // Check XDG_SESSION_DESKTOP
+        // Trust the session vars first - they're set by the login session and
+        // don't go stale the way shell-exported socket vars do.
         if let Ok(session) = env::var("XDG_SESSION_DESKTOP") {
             match session.to_lowercase().as_str() {
                 "i3" => return CompositorType::I3,
@@ -131,7 +113,6 @@ impl CompositorType {
             }
         }
 
-        // Check DESKTOP_SESSION
         if let Ok(desktop) = env::var("DESKTOP_SESSION") {
             match desktop.to_lowercase().as_str() {
                 "i3" => return CompositorType::I3,
@@ -144,6 +125,23 @@ impl CompositorType {
                 s if s.contains("gnome") || s == "ubuntu" => return CompositorType::Gnome,
                 _ => {}
             }
+        }
+
+        // Fall back to socket env vars, but only if the socket file actually
+        // exists - otherwise stale exports from a previous session mislead us.
+        if CompositorType::socket_alive("SWAYSOCK") {
+            return CompositorType::Sway;
+        }
+        if CompositorType::socket_alive("I3SOCK") {
+            return CompositorType::I3;
+        }
+        if CompositorType::socket_alive("HYPRLAND_SOCKET")
+            || env::var("HYPRLAND_INSTANCE_SIGNATURE").is_ok()
+        {
+            return CompositorType::Hyprland;
+        }
+        if CompositorType::socket_alive("NIRI_SOCKET") {
+            return CompositorType::Niri;
         }
 
         // Check XDG_CURRENT_DESKTOP for KDE or GNOME
@@ -161,14 +159,14 @@ impl CompositorType {
         match DisplayServer::detect() {
             DisplayServer::Wayland => {
                 // Try to detect specific Wayland compositors
+                if CompositorType::is_process_running("niri") {
+                    return CompositorType::Niri;
+                }
                 if CompositorType::is_process_running("sway") {
                     return CompositorType::Sway;
                 }
                 if CompositorType::is_process_running("Hyprland") {
                     return CompositorType::Hyprland;
-                }
-                if CompositorType::is_process_running("niri") {
-                    return CompositorType::Niri;
                 }
                 if CompositorType::is_process_running("kwin_wayland") {
                     return CompositorType::KWin;
@@ -220,6 +218,15 @@ impl CompositorType {
             CompositorType::Gnome => Box::new(gnome::Gnome),
             CompositorType::Other(_) => Box::new(fallback::Fallback),
         }
+    }
+
+    /// Check if an env var points at a path that actually exists on disk.
+    /// Used to ignore stale exports from a previous compositor session.
+    fn socket_alive(var: &str) -> bool {
+        env::var(var)
+            .ok()
+            .map(|p| Path::new(&p).exists())
+            .unwrap_or(false)
     }
 
     /// Check if a process with the given name is running
