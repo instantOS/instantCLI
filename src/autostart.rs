@@ -91,7 +91,7 @@ pub async fn run(debug: bool) -> Result<()> {
         eprintln!("Failed to apply settings: {}", e);
     }
 
-    // Run sway/i3 setup based on detected compositor
+    // Run sway/i3/niri setup based on detected compositor
     match CompositorType::detect() {
         CompositorType::Sway => {
             if debug {
@@ -113,9 +113,19 @@ pub async fn run(debug: bool) -> Result<()> {
                 eprintln!("i3 setup failed: {}", e);
             }
         }
+        CompositorType::Niri => {
+            if debug {
+                println!("Running niri setup");
+            }
+            if let Err(e) = handle_setup_command(SetupCommands::Niri)
+                && debug
+            {
+                eprintln!("niri setup failed: {}", e);
+            }
+        }
         _ => {
             if debug {
-                println!("Not running Sway or i3, skipping window manager setup");
+                println!("Not running Sway, i3, or niri, skipping window manager setup");
             }
         }
     }

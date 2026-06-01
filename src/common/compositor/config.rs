@@ -1,7 +1,7 @@
 //! Window manager configuration file manager
 //!
-//! This module provides utilities for managing shared Sway/i3 configuration files
-//! that instantCLI uses for WM integration.
+//! This module provides utilities for managing shared Sway/i3/niri configuration
+//! files that instantCLI uses for WM integration.
 
 use anyhow::{Context, Result};
 use std::collections::hash_map::DefaultHasher;
@@ -9,9 +9,14 @@ use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
-/// Marker for the integration block in the main config
+/// Marker for the integration block in the main config (sway/i3 use `#` comments).
 const INTEGRATION_MARKER_START: &str = "# BEGIN instantCLI integration (managed automatically)";
 const INTEGRATION_MARKER_END: &str = "# END instantCLI integration";
+
+/// Marker for the integration block in niri's KDL config (KDL uses `//` comments).
+const KDL_INTEGRATION_MARKER_START: &str =
+    "// BEGIN instantCLI integration (managed automatically)";
+const KDL_INTEGRATION_MARKER_END: &str = "// END instantCLI integration";
 
 /// Supported window managers
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -19,6 +24,7 @@ pub enum WindowManager {
     Sway,
     I3,
     InstantWM,
+    Niri,
 }
 
 impl WindowManager {
@@ -28,6 +34,7 @@ impl WindowManager {
             WindowManager::Sway => "sway",
             WindowManager::I3 => "i3",
             WindowManager::InstantWM => "instantwm",
+            WindowManager::Niri => "niri",
         }
     }
 
@@ -37,6 +44,7 @@ impl WindowManager {
             WindowManager::Sway => "Sway",
             WindowManager::I3 => "i3",
             WindowManager::InstantWM => "instantWM",
+            WindowManager::Niri => "niri",
         }
     }
 
@@ -46,6 +54,7 @@ impl WindowManager {
             WindowManager::Sway => "swaymsg",
             WindowManager::I3 => "i3-msg",
             WindowManager::InstantWM => "instantwmctl",
+            WindowManager::Niri => "niri",
         }
     }
 
@@ -55,6 +64,7 @@ impl WindowManager {
             WindowManager::Sway => true,
             WindowManager::I3 => false,
             WindowManager::InstantWM => false,
+            WindowManager::Niri => false,
         }
     }
 }
@@ -83,6 +93,10 @@ impl WmConfigManager {
             WindowManager::InstantWM => (
                 config_dir.join("assist.toml"),
                 config_dir.join("config.toml"),
+            ),
+            WindowManager::Niri => (
+                config_dir.join("instant.kdl"),
+                config_dir.join("config.kdl"),
             ),
             _ => (config_dir.join("instant"), config_dir.join("config")),
         };
@@ -142,7 +156,7 @@ impl WmConfigManager {
             .with_context(|| format!("Failed to write {}", self.config_path.display()))
     }
 
-    /// Check if the config file is included in the main sway config.
+    /// Check if the config file is included in the main WM config.
     pub fn is_included_in_main_config(&self) -> Result<bool> {
         if !self.main_config_path.exists() {
             return Ok(false);
@@ -151,7 +165,11 @@ impl WmConfigManager {
         let content = fs::read_to_string(&self.main_config_path)
             .with_context(|| format!("Failed to read {}", self.main_config_path.display()))?;
 
-        Ok(content.contains(INTEGRATION_MARKER_START))
+        let marker = match self.wm {
+            WindowManager::Niri => KDL_INTEGRATION_MARKER_START,
+            _ => INTEGRATION_MARKER_START,
+        };
+        Ok(content.contains(marker))
     }
 
     /// Ensure the config file is included in the main WM config.
@@ -159,12 +177,26 @@ impl WmConfigManager {
     /// Returns `true` if the include was added, `false` if it already existed.
     pub fn ensure_included_in_main_config(&self) -> Result<bool> {
         if !self.main_config_path.exists() {
-            anyhow::bail!(
-                "{} config not found at {}\nPlease ensure {} is installed and configured.",
-                self.wm.name(),
-                self.main_config_path.display(),
-                self.wm.name()
-            );
+            // For niri, auto-create an empty main config so the include can be
+            // added on first run. sway/i3/instantwm still require pre-existing
+            // configs (matching their setup expectations).
+            if self.wm == WindowManager::Niri {
+                if let Some(parent) = self.main_config_path.parent() {
+                    fs::create_dir_all(parent).with_context(|| {
+                        format!("Failed to create directory {}", parent.display())
+                    })?;
+                }
+                fs::write(&self.main_config_path, "").with_context(|| {
+                    format!("Failed to create {}", self.main_config_path.display())
+                })?;
+            } else {
+                anyhow::bail!(
+                    "{} config not found at {}\nPlease ensure {} is installed and configured.",
+                    self.wm.name(),
+                    self.main_config_path.display(),
+                    self.wm.name()
+                );
+            }
         }
 
         let content = fs::read_to_string(&self.main_config_path)
@@ -172,6 +204,7 @@ impl WmConfigManager {
 
         match self.wm {
             WindowManager::InstantWM => self.ensure_toml_include(&content),
+            WindowManager::Niri => self.ensure_niri_include(&content),
             _ => self.ensure_sway_include(&content),
         }
     }
@@ -223,10 +256,53 @@ impl WmConfigManager {
         Ok(true)
     }
 
+    /// Append a KDL `include` directive to niri's main config, wrapped in markers.
+    ///
+    /// Niri supports `include "file.kdl"` at the top level since v25.11. We use a
+    /// path relative to the main config so the include line stays portable. Since
+    /// includes are positional and we append at the end, ins-managed settings
+    /// override any duplicate keys the user may have written earlier in the main
+    /// config.
+    fn ensure_niri_include(&self, content: &str) -> Result<bool> {
+        if content.contains(KDL_INTEGRATION_MARKER_START) {
+            return Ok(false);
+        }
+
+        // Niri resolves relative include paths against the directory of the
+        // including file, so a bare filename is the most portable form.
+        let relative_path = self
+            .config_path
+            .file_name()
+            .map(|f| f.to_string_lossy().to_string())
+            .unwrap_or_else(|| "instant.kdl".to_string());
+
+        let include_line = format!("include \"{}\"", relative_path);
+        let mut integration_block = String::new();
+        // Ensure a separating newline before the block if the file does not end with one.
+        if !content.is_empty() && !content.ends_with('\n') {
+            integration_block.push('\n');
+        }
+        integration_block.push('\n');
+        integration_block.push_str(KDL_INTEGRATION_MARKER_START);
+        integration_block.push('\n');
+        integration_block.push_str(&include_line);
+        integration_block.push('\n');
+        integration_block.push_str(KDL_INTEGRATION_MARKER_END);
+        integration_block.push('\n');
+
+        let new_content = format!("{}{}", content, integration_block);
+
+        fs::write(&self.main_config_path, new_content)
+            .with_context(|| format!("Failed to write {}", self.main_config_path.display()))?;
+
+        Ok(true)
+    }
+
     /// Reload WM configuration.
     pub fn reload(&self) -> Result<()> {
         match self.wm {
             WindowManager::InstantWM => crate::common::compositor::instantwm::reload_config(),
+            WindowManager::Niri => crate::common::compositor::niri::reload_config(),
             _ => {
                 let cmd = self.wm.reload_command();
                 let status = std::process::Command::new(cmd)
@@ -268,10 +344,22 @@ mod tests {
         let config_dir = temp_dir.path().join(wm.config_dir_name());
         fs::create_dir_all(&config_dir).unwrap();
 
+        let (config_path, main_config_path) = match wm {
+            WindowManager::Niri => (
+                config_dir.join("instant.kdl"),
+                config_dir.join("config.kdl"),
+            ),
+            WindowManager::InstantWM => (
+                config_dir.join("assist.toml"),
+                config_dir.join("config.toml"),
+            ),
+            _ => (config_dir.join("instant"), config_dir.join("config")),
+        };
+
         WmConfigManager {
             wm,
-            config_path: config_dir.join("instant"),
-            main_config_path: config_dir.join("config"),
+            config_path,
+            main_config_path,
         }
     }
 
@@ -327,5 +415,50 @@ mod tests {
         let content = fs::read_to_string(&manager.main_config_path).unwrap();
         assert!(content.contains(INTEGRATION_MARKER_START));
         assert!(content.contains("include"));
+    }
+
+    #[test]
+    fn test_ensure_niri_include_appended_with_kdl_markers() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = create_test_manager(&temp_dir, WindowManager::Niri);
+
+        let mut main_config = fs::File::create(&manager.main_config_path).unwrap();
+        writeln!(main_config, "// existing niri config").unwrap();
+        writeln!(main_config, "input {{").unwrap();
+        writeln!(main_config, "    mouse {{ accel-speed 0.1 }}").unwrap();
+        writeln!(main_config, "}}").unwrap();
+
+        // First call adds the include block.
+        assert!(manager.ensure_included_in_main_config().unwrap());
+
+        let content = fs::read_to_string(&manager.main_config_path).unwrap();
+        assert!(content.contains(KDL_INTEGRATION_MARKER_START));
+        assert!(content.contains(KDL_INTEGRATION_MARKER_END));
+        assert!(content.contains("include \"instant.kdl\""));
+
+        // Marker must come AFTER existing user content (positional override).
+        let marker_idx = content.find(KDL_INTEGRATION_MARKER_START).unwrap();
+        let user_idx = content.find("accel-speed 0.1").unwrap();
+        assert!(marker_idx > user_idx);
+
+        // Second call is a no-op.
+        assert!(!manager.ensure_included_in_main_config().unwrap());
+
+        // is_included_in_main_config also recognises the KDL marker.
+        assert!(manager.is_included_in_main_config().unwrap());
+    }
+
+    #[test]
+    fn test_ensure_niri_include_creates_missing_main_config() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = create_test_manager(&temp_dir, WindowManager::Niri);
+
+        // No main config yet — niri should bootstrap one.
+        assert!(!manager.main_config_path.exists());
+        assert!(manager.ensure_included_in_main_config().unwrap());
+
+        let content = fs::read_to_string(&manager.main_config_path).unwrap();
+        assert!(content.contains("include \"instant.kdl\""));
+        assert!(content.contains(KDL_INTEGRATION_MARKER_START));
     }
 }

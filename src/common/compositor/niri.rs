@@ -1,3 +1,4 @@
+use super::config::{WindowManager, WmConfigManager};
 use super::{ScratchpadProvider, ScratchpadWindowInfo, create_terminal_process};
 use crate::scratchpad::{config::ScratchpadConfig, terminal::Terminal};
 use anyhow::{Context, Result, bail};
@@ -462,38 +463,48 @@ fn trim_float(value: f64) -> String {
     }
 }
 
+/// Header written into `instant.kdl` when ins creates it for the first time.
+const INSTANT_KDL_HEADER: &str = "\
+// instantCLI niri configuration
+// This file is managed by instantCLI. Manual edits may be overwritten.
+// It is loaded into your main niri config via an `include` directive.
+";
+
+/// Path to the ins-managed niri config fragment (`~/.config/niri/instant.kdl`).
+///
+/// This always lives next to `config.kdl` in `$XDG_CONFIG_HOME/niri/`, regardless
+/// of `$NIRI_CONFIG`. The main `config.kdl` (which niri actually loads) is left
+/// alone except for a single `include "instant.kdl"` line that ins adds via
+/// `WmConfigManager::ensure_included_in_main_config`.
 fn config_path() -> Result<PathBuf> {
-    if let Some(path) = std::env::var_os("NIRI_CONFIG")
-        && !path.is_empty()
-    {
-        return Ok(PathBuf::from(path));
-    }
-
-    if let Some(base) = dirs::config_dir() {
-        let user_config = base.join("niri").join("config.kdl");
-        if user_config.exists() {
-            return Ok(user_config);
-        }
-    }
-
-    let system_config = PathBuf::from("/etc/niri/config.kdl");
-    if system_config.exists() {
-        return Ok(system_config);
-    }
-
-    let base = dirs::config_dir().context("Unable to determine config directory")?;
-    Ok(base.join("niri").join("config.kdl"))
+    Ok(WmConfigManager::new(WindowManager::Niri)
+        .config_path()
+        .clone())
 }
 
 fn read_config() -> Result<String> {
     let path = config_path()?;
+    if !path.exists() {
+        return Ok(INSTANT_KDL_HEADER.to_string());
+    }
     fs::read_to_string(&path).with_context(|| format!("Failed to read {}", path.display()))
 }
 
 fn write_config(content: &str) -> Result<()> {
-    let path = config_path()?;
-    ensure_parent_dir(&path)?;
-    fs::write(&path, content).with_context(|| format!("Failed to write {}", path.display()))
+    let manager = WmConfigManager::new(WindowManager::Niri);
+    let path = manager.config_path();
+    ensure_parent_dir(path)?;
+    fs::write(path, content).with_context(|| format!("Failed to write {}", path.display()))?;
+
+    // Lazily add the `include "instant.kdl"` line to ~/.config/niri/config.kdl
+    // the first time we write. Failure here is non-fatal: ins still writes the
+    // settings, but niri won't pick them up until the include is in place. We
+    // surface this as a warning.
+    if let Err(err) = manager.ensure_included_in_main_config() {
+        eprintln!("warning: failed to add `include \"instant.kdl\"` to niri main config: {err}");
+    }
+
+    Ok(())
 }
 
 fn find_property_value(content: &str, path: &[&str], property: &str) -> Option<String> {

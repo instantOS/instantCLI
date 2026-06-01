@@ -37,6 +37,14 @@ pub enum SetupCommands {
     /// - Adds an include to your config.toml if not present
     /// - Reloads instantWM to apply changes
     InstantWM,
+
+    /// Set up niri compositor integration
+    ///
+    /// This command:
+    /// - Ensures ~/.config/niri/instant.kdl exists (managed by instantCLI)
+    /// - Adds an `include "instant.kdl"` line to your main niri config
+    /// - Reloads niri to apply changes
+    Niri,
 }
 
 /// Handle setup command dispatch
@@ -45,10 +53,12 @@ pub fn handle_setup_command(command: SetupCommands) -> Result<()> {
         SetupCommands::Sway => WindowManager::Sway,
         SetupCommands::I3 => WindowManager::I3,
         SetupCommands::InstantWM => WindowManager::InstantWM,
+        SetupCommands::Niri => WindowManager::Niri,
     };
 
     match &command {
         SetupCommands::InstantWM => setup_instantwm(),
+        SetupCommands::Niri => setup_niri(),
         _ => setup_wm(wm),
     }
 }
@@ -77,6 +87,41 @@ fn setup_instantwm() -> Result<()> {
         maybe_reload_wm(&manager, &wm, &compositor);
     }
     Ok(())
+}
+
+/// Set up niri integration.
+///
+/// Unlike sway/i3 we do not generate a static `instant.kdl` here. The file is
+/// populated dynamically by `ins settings ...` calls (mouse speed, accel
+/// profile, keyboard layout). This command's job is to (a) make sure the file
+/// exists with a header and (b) ensure `include "instant.kdl"` is present in
+/// the main niri config so live edits to `instant.kdl` actually take effect.
+fn setup_niri() -> Result<()> {
+    let wm = WindowManager::Niri;
+    let compositor = validate_compositor(&wm);
+    let manager = WmConfigManager::new(wm);
+    let config_changed = write_niri_instant_if_missing(&manager)?;
+    let include_added = ensure_main_config_include(&manager, &wm)?;
+    report_status(&wm, config_changed, include_added, &manager);
+    if config_changed || include_added {
+        maybe_reload_wm(&manager, &wm, &compositor);
+    }
+    Ok(())
+}
+
+/// Create an empty `instant.kdl` with a header if it does not exist yet.
+///
+/// Returns `true` when the file was created. Existing user content is never
+/// overwritten — `ins settings` mutations operate on it incrementally.
+fn write_niri_instant_if_missing(manager: &WmConfigManager) -> Result<bool> {
+    if manager.config_path().exists() {
+        return Ok(false);
+    }
+    let header = "// instantCLI niri configuration\n\
+                  // This file is managed by instantCLI. Manual edits may be overwritten.\n\
+                  // It is loaded into your main niri config via an `include` directive.\n";
+    manager.write_full_config(header)?;
+    Ok(true)
 }
 
 fn ensure_main_config_exists(manager: &WmConfigManager) -> Result<()> {
@@ -134,6 +179,7 @@ fn compositor_matches_wm(wm: &WindowManager, compositor: &CompositorType) -> boo
         WindowManager::Sway => CompositorType::Sway,
         WindowManager::I3 => CompositorType::I3,
         WindowManager::InstantWM => CompositorType::InstantWM,
+        WindowManager::Niri => CompositorType::Niri,
     };
 
     compositor == &expected_compositor
@@ -638,6 +684,10 @@ mod tests {
             &WindowManager::InstantWM,
             &CompositorType::InstantWM
         ));
+        assert!(compositor_matches_wm(
+            &WindowManager::Niri,
+            &CompositorType::Niri
+        ));
     }
 
     #[test]
@@ -652,6 +702,10 @@ mod tests {
         ));
         assert!(!compositor_matches_wm(
             &WindowManager::InstantWM,
+            &CompositorType::Sway
+        ));
+        assert!(!compositor_matches_wm(
+            &WindowManager::Niri,
             &CompositorType::Sway
         ));
     }
