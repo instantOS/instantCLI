@@ -5,9 +5,10 @@
 
 use anyhow::{Context, Result};
 use std::collections::hash_map::DefaultHasher;
+use std::env;
 use std::fs;
 use std::hash::{Hash, Hasher};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Marker for the integration block in the main config (sway/i3 use `#` comments).
 const INTEGRATION_MARKER_START: &str = "# BEGIN instantCLI integration (managed automatically)";
@@ -17,6 +18,18 @@ const INTEGRATION_MARKER_END: &str = "# END instantCLI integration";
 const KDL_INTEGRATION_MARKER_START: &str =
     "// BEGIN instantCLI integration (managed automatically)";
 const KDL_INTEGRATION_MARKER_END: &str = "// END instantCLI integration";
+
+/// Header written into niri's `instant.kdl` the first time ins creates it.
+///
+/// Shared by the runtime read path (returns this when the file is missing so
+/// subsequent upserts have a valid base) and the `setup niri` command (seeds
+/// the file on disk). Kept here next to the KDL markers so all niri-specific
+/// integration strings live in one place.
+pub(crate) const INSTANT_KDL_HEADER: &str = "\
+// instantCLI niri configuration
+// This file is managed by instantCLI. Manual edits may be overwritten.
+// It is loaded into your main niri config via an `include` directive.
+";
 
 /// Supported window managers
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -85,20 +98,21 @@ pub struct WmConfigManager {
 impl WmConfigManager {
     /// Create a new WmConfigManager for the given window manager.
     pub fn new(wm: WindowManager) -> Self {
-        let config_dir = dirs::config_dir()
-            .unwrap_or_else(|| PathBuf::from("~/.config"))
-            .join(wm.config_dir_name());
+        let config_dir = dirs::config_dir().unwrap_or_else(|| PathBuf::from("~/.config"));
 
         let (config_path, main_config_path) = match wm {
-            WindowManager::InstantWM => (
-                config_dir.join("assist.toml"),
-                config_dir.join("config.toml"),
-            ),
-            WindowManager::Niri => (
-                config_dir.join("instant.kdl"),
-                config_dir.join("config.kdl"),
-            ),
-            _ => (config_dir.join("instant"), config_dir.join("config")),
+            WindowManager::InstantWM => {
+                let dir = config_dir.join(wm.config_dir_name());
+                (dir.join("assist.toml"), dir.join("config.toml"))
+            }
+            WindowManager::Niri => {
+                let niri_config = env::var_os("NIRI_CONFIG").map(PathBuf::from);
+                Self::resolve_niri_paths(niri_config.as_deref(), &config_dir)
+            }
+            _ => {
+                let dir = config_dir.join(wm.config_dir_name());
+                (dir.join("instant"), dir.join("config"))
+            }
         };
 
         Self {
@@ -106,6 +120,32 @@ impl WmConfigManager {
             config_path,
             main_config_path,
         }
+    }
+
+    /// Resolve the (config_path, main_config_path) pair for niri.
+    ///
+    /// Mirrors niri's own resolution order for the main config, but skips
+    /// `/etc/niri/config.kdl` because as a regular user we cannot write there.
+    /// If `$NIRI_CONFIG` is set we use it as-is (so we patch the same file
+    /// niri actually reads) and place `instant.kdl` as a sibling so the
+    /// relative `include` line is portable.
+    ///
+    /// Returns `(instant.kdl path, main config path)`.
+    fn resolve_niri_paths(
+        niri_config_env: Option<&Path>,
+        default_config_dir: &Path,
+    ) -> (PathBuf, PathBuf) {
+        let main = niri_config_env
+            .filter(|p| !p.as_os_str().is_empty())
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| default_config_dir.join("niri/config.kdl"));
+
+        let instant = main
+            .parent()
+            .map(|p| p.join("instant.kdl"))
+            .unwrap_or_else(|| default_config_dir.join("niri/instant.kdl"));
+
+        (instant, main)
     }
 
     /// Get the path to the shared config file.
@@ -277,18 +317,17 @@ impl WmConfigManager {
             .unwrap_or_else(|| "instant.kdl".to_string());
 
         let include_line = format!("include \"{}\"", relative_path);
-        let mut integration_block = String::new();
-        // Ensure a separating newline before the block if the file does not end with one.
-        if !content.is_empty() && !content.ends_with('\n') {
-            integration_block.push('\n');
-        }
-        integration_block.push('\n');
-        integration_block.push_str(KDL_INTEGRATION_MARKER_START);
-        integration_block.push('\n');
-        integration_block.push_str(&include_line);
-        integration_block.push('\n');
-        integration_block.push_str(KDL_INTEGRATION_MARKER_END);
-        integration_block.push('\n');
+        // Add a leading newline if the file does not end with one, so the
+        // block always starts on its own line.
+        let separator = if !content.is_empty() && !content.ends_with('\n') {
+            "\n"
+        } else {
+            ""
+        };
+        let integration_block = format!(
+            "{}\n{}\n{}\n{}\n",
+            separator, KDL_INTEGRATION_MARKER_START, include_line, KDL_INTEGRATION_MARKER_END
+        );
 
         let new_content = format!("{}{}", content, integration_block);
 
@@ -460,5 +499,50 @@ mod tests {
         let content = fs::read_to_string(&manager.main_config_path).unwrap();
         assert!(content.contains("include \"instant.kdl\""));
         assert!(content.contains(KDL_INTEGRATION_MARKER_START));
+    }
+
+    #[test]
+    fn test_resolve_niri_paths_default() {
+        let default = PathBuf::from("/home/user/.config");
+        let (instant, main) = WmConfigManager::resolve_niri_paths(None, &default);
+        assert_eq!(main, PathBuf::from("/home/user/.config/niri/config.kdl"));
+        assert_eq!(
+            instant,
+            PathBuf::from("/home/user/.config/niri/instant.kdl")
+        );
+    }
+
+    #[test]
+    fn test_resolve_niri_paths_with_niri_config() {
+        let default = PathBuf::from("/home/user/.config");
+        let custom = PathBuf::from("/home/user/dotfiles/niri.kdl");
+        let (instant, main) = WmConfigManager::resolve_niri_paths(Some(&custom), &default);
+        assert_eq!(main, custom);
+        // instant.kdl is a sibling of the main config so the relative
+        // `include` line resolves correctly.
+        assert_eq!(instant, PathBuf::from("/home/user/dotfiles/instant.kdl"));
+    }
+
+    #[test]
+    fn test_resolve_niri_paths_empty_env_var_treated_as_unset() {
+        let default = PathBuf::from("/home/user/.config");
+        let empty = PathBuf::new();
+        let (instant, main) = WmConfigManager::resolve_niri_paths(Some(&empty), &default);
+        assert_eq!(main, PathBuf::from("/home/user/.config/niri/config.kdl"));
+        assert_eq!(
+            instant,
+            PathBuf::from("/home/user/.config/niri/instant.kdl")
+        );
+    }
+
+    #[test]
+    fn test_resolve_niri_paths_relative_env_var_preserved() {
+        let default = PathBuf::from("/home/user/.config");
+        let relative = PathBuf::from("niri/config.kdl");
+        let (instant, main) = WmConfigManager::resolve_niri_paths(Some(&relative), &default);
+        // Niri resolves relative paths against cwd; we mirror that exactly
+        // so both processes look at the same files.
+        assert_eq!(main, relative);
+        assert_eq!(instant, PathBuf::from("niri/instant.kdl"));
     }
 }

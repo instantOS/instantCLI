@@ -1,4 +1,4 @@
-use super::config::{WindowManager, WmConfigManager};
+use super::config::{INSTANT_KDL_HEADER, WindowManager, WmConfigManager};
 use super::{ScratchpadProvider, ScratchpadWindowInfo, create_terminal_process};
 use crate::scratchpad::{config::ScratchpadConfig, terminal::Terminal};
 use anyhow::{Context, Result, bail};
@@ -160,6 +160,14 @@ pub fn switch_layout(index: usize) -> Result<()> {
     Ok(())
 }
 
+/// Reload niri's configuration by re-reading the current main config.
+///
+/// Called as `niri msg action load-config-file` (no `--path`): niri re-reads
+/// the config chain starting from whatever main config it was started with,
+/// which transitively re-reads every `include`d file. We don't pass `--path`
+/// because the include we manage lives next to the user's main config; if we
+/// ever wanted to redirect niri to a different config at runtime, `--path`
+/// (added in niri 26.04) would be the way to do that.
 pub fn reload_config() -> Result<()> {
     let output = Command::new("niri")
         .args(["msg", "action", "load-config-file"])
@@ -463,19 +471,13 @@ fn trim_float(value: f64) -> String {
     }
 }
 
-/// Header written into `instant.kdl` when ins creates it for the first time.
-const INSTANT_KDL_HEADER: &str = "\
-// instantCLI niri configuration
-// This file is managed by instantCLI. Manual edits may be overwritten.
-// It is loaded into your main niri config via an `include` directive.
-";
-
-/// Path to the ins-managed niri config fragment (`~/.config/niri/instant.kdl`).
+/// Path to the ins-managed niri config fragment.
 ///
-/// This always lives next to `config.kdl` in `$XDG_CONFIG_HOME/niri/`, regardless
-/// of `$NIRI_CONFIG`. The main `config.kdl` (which niri actually loads) is left
-/// alone except for a single `include "instant.kdl"` line that ins adds via
-/// `WmConfigManager::ensure_included_in_main_config`.
+/// Resolved via `WmConfigManager::new(WindowManager::Niri)`: honors `$NIRI_CONFIG`
+/// if set (so we write the include into the same main config niri actually reads),
+/// otherwise falls back to `$XDG_CONFIG_HOME/niri/`. The `instant.kdl` file is
+/// placed as a sibling of the main config so the relative `include` line is
+/// portable. See `WmConfigManager::resolve_niri_paths` for the exact rules.
 fn config_path() -> Result<PathBuf> {
     Ok(WmConfigManager::new(WindowManager::Niri)
         .config_path()

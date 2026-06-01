@@ -117,10 +117,7 @@ fn write_niri_instant_if_missing(manager: &WmConfigManager) -> Result<bool> {
     if manager.config_path().exists() {
         return Ok(false);
     }
-    let header = "// instantCLI niri configuration\n\
-                  // This file is managed by instantCLI. Manual edits may be overwritten.\n\
-                  // It is loaded into your main niri config via an `include` directive.\n";
-    manager.write_full_config(header)?;
+    manager.write_full_config(crate::common::compositor::config::INSTANT_KDL_HEADER)?;
     Ok(true)
 }
 
