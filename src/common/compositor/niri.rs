@@ -219,6 +219,17 @@ pub fn set_mouse_accel_profile(profile: &str) -> Result<()> {
     reload_config()
 }
 
+pub fn set_touchpad_tap(enabled: bool) -> Result<()> {
+    let config = read_config()?;
+    let config = if enabled {
+        upsert_flag(&config, &["input", "touchpad"], "tap")
+    } else {
+        remove_flag(&config, &["input", "touchpad"], "tap")
+    };
+    write_config(&config)?;
+    reload_config()
+}
+
 pub fn set_keyboard_layouts(layouts: &[String]) -> Result<()> {
     let joined = layouts.join(",");
     if joined.trim().is_empty() {
@@ -561,6 +572,41 @@ fn upsert_property(content: &str, path: &[&str], property: &str, value: &str) ->
     updated
 }
 
+fn upsert_flag(content: &str, path: &[&str], flag: &str) -> String {
+    let mut lines: Vec<String> = content.lines().map(ToString::to_string).collect();
+    let range = ensure_block_path(&mut lines, path);
+
+    if find_flag_line(&lines, &range, flag).is_some() {
+        return content.to_string();
+    }
+
+    let replacement = format!("{}{}", " ".repeat(range.indent + 4), flag);
+    lines.insert(range.end, replacement);
+
+    let mut updated = lines.join("\n");
+    if content.ends_with('\n') {
+        updated.push('\n');
+    }
+    updated
+}
+
+fn remove_flag(content: &str, path: &[&str], flag: &str) -> String {
+    let mut lines: Vec<String> = content.lines().map(ToString::to_string).collect();
+    let Some(range) = find_block_lines(&lines, path) else {
+        return content.to_string();
+    };
+
+    if let Some(existing_idx) = find_flag_line(&lines, &range, flag) {
+        lines.remove(existing_idx);
+    }
+
+    let mut updated = lines.join("\n");
+    if content.ends_with('\n') {
+        updated.push('\n');
+    }
+    updated
+}
+
 #[derive(Clone, Copy)]
 struct BlockRange {
     start: usize,
@@ -607,6 +653,13 @@ fn find_property_line(lines: &[String], block: &BlockRange, property: &str) -> O
         trimmed
             .strip_prefix(property)
             .is_some_and(|rest| rest.starts_with(char::is_whitespace))
+    })
+}
+
+fn find_flag_line(lines: &[String], block: &BlockRange, flag: &str) -> Option<usize> {
+    (block.start + 1..block.end).find(|idx| {
+        let trimmed = strip_comment(&lines[*idx]).trim();
+        trimmed == flag
     })
 }
 

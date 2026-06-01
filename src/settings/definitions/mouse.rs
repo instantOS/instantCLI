@@ -120,7 +120,7 @@ impl Setting for TapToClick {
             .id("mouse.tap")
             .title("Tap-to-Click")
             .icon(NerdFont::Mouse)
-            .summary("Enable or disable tap-to-click on touchpads.\n\nWhen enabled, tapping on the touchpad surface acts as a mouse click.\n\nSupports InstantWM.")
+            .summary("Enable or disable tap-to-click on touchpads.\n\nWhen enabled, tapping on the touchpad surface acts as a mouse click.\n\nSupports niri and InstantWM.")
             .requires_reapply(true)
             .build()
     }
@@ -697,7 +697,7 @@ impl FzfSelectable for AccelProfileChoiceDisplay {
 fn apply_tap_to_click(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
     let compositor = CompositorType::detect();
 
-    if !matches!(compositor, CompositorType::InstantWM) {
+    if !matches!(compositor, CompositorType::InstantWM | CompositorType::Niri) {
         ctx.emit_unsupported(
             "settings.mouse.tap.unsupported",
             &format!(
@@ -708,16 +708,27 @@ fn apply_tap_to_click(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
         return Ok(());
     }
 
-    let value = if enabled { "enabled" } else { "disabled" };
-
-    let pointer_result = instantwmctl::run(["mouse", "tap", value]);
-
-    if let Err(e) = &pointer_result {
-        ctx.emit_info(
-            "settings.mouse.tap.instantwm_failed",
-            &format!("Failed to apply tap-to-click in instantWM: {e}"),
-        );
-        return Ok(());
+    match compositor {
+        CompositorType::InstantWM => {
+            let value = if enabled { "enabled" } else { "disabled" };
+            if let Err(e) = instantwmctl::run(["mouse", "tap", value]) {
+                ctx.emit_info(
+                    "settings.mouse.tap.instantwm_failed",
+                    &format!("Failed to apply tap-to-click in instantWM: {e}"),
+                );
+                return Ok(());
+            }
+        }
+        CompositorType::Niri => {
+            if let Err(e) = niri::set_touchpad_tap(enabled) {
+                ctx.emit_info(
+                    "settings.mouse.tap.niri_failed",
+                    &format!("Failed to apply tap-to-click in niri: {e}"),
+                );
+                return Ok(());
+            }
+        }
+        _ => {}
     }
 
     ctx.notify(
