@@ -6,7 +6,7 @@ use crate::dot::dotfilerepo::{DotfileDir, DotfileRepo};
 use crate::dot::menu::repo_actions::build_repo_preview;
 use crate::dot::types::{DotsDirSelectItem, RepoMenuItem};
 use crate::dot::utils::{filter_dotfiles_by_path, get_all_dotfiles, resolve_dotfile_path};
-use crate::menu_utils::{FzfResult, FzfWrapper, Header};
+use crate::menu_utils::{ConfirmResult, FzfResult, FzfWrapper, Header};
 use crate::ui::catppuccin::fzf_mocha_args;
 use crate::ui::prelude::*;
 use anyhow::Result;
@@ -110,7 +110,11 @@ fn select_repo(config: &DotfileConfig, db: &Database, target_path: &Path) -> Res
 }
 
 /// Prompt the user to select one of the repo's configured `dots_dirs`
-fn select_dots_dir(dotfile_repo: &DotfileRepo, target_path: &Path) -> Result<DotfileDir> {
+fn select_dots_dir(
+    config: &DotfileConfig,
+    dotfile_repo: &DotfileRepo,
+    target_path: &Path,
+) -> Result<Option<DotfileDir>> {
     let home = crate::dot::sources::home_dir();
     let is_root_target = !target_path.starts_with(&home);
     let dirs: Vec<_> = dotfile_repo
@@ -121,6 +125,30 @@ fn select_dots_dir(dotfile_repo: &DotfileRepo, target_path: &Path) -> Result<Dot
         .collect();
 
     if dirs.is_empty() {
+        if is_root_target {
+            println!(
+                "{} Repository '{}' has no directory for root-owned dotfiles.",
+                char::from(NerdFont::Info),
+                dotfile_repo.name
+            );
+            println!("  Dotfile directories ending in '_root' store root-owned dotfiles.");
+            if FzfWrapper::confirm("Create 'dots_root' and add this file there?")?
+                == ConfirmResult::Yes
+            {
+                super::alternative::create_and_activate_subdir(
+                    config,
+                    &dotfile_repo.name,
+                    "dots_root",
+                )?;
+                return Ok(Some(DotfileDir::new_no_create(
+                    "dots_root",
+                    &dotfile_repo.local_path(config)?,
+                    true,
+                    true,
+                )?));
+            }
+            return Ok(None);
+        }
         return Err(anyhow::anyhow!(
             "Repository '{}' has no configured dots_dirs for {} paths",
             dotfile_repo.name,
@@ -129,7 +157,7 @@ fn select_dots_dir(dotfile_repo: &DotfileRepo, target_path: &Path) -> Result<Dot
     }
 
     if dirs.len() == 1 {
-        return Ok(dirs[0].clone());
+        return Ok(Some(dirs[0].clone()));
     }
 
     let items: Vec<DotsDirSelectItem> = dirs
@@ -151,7 +179,7 @@ fn select_dots_dir(dotfile_repo: &DotfileRepo, target_path: &Path) -> Result<Dot
         .select(items)
         .map_err(|e| anyhow::anyhow!("Selection error: {}", e))?
     {
-        FzfResult::Selected(item) => Ok(item.dots_dir),
+        FzfResult::Selected(item) => Ok(Some(item.dots_dir)),
         FzfResult::Cancelled => Err(anyhow::anyhow!("No dots directory selected")),
         FzfResult::Error(e) => Err(anyhow::anyhow!("Selection error: {}", e)),
         _ => Err(anyhow::anyhow!("Unexpected selection result")),
@@ -282,16 +310,18 @@ fn add_new_file(
     use crate::dot::override_config::DotfileSource;
     use anyhow::Context;
 
-    // Repository selection
-    let repo_config = select_repo(config, db, full_path)?;
-    let dotfile_repo = DotfileRepo::new(config, repo_config.name.clone())?;
+    let (repo_config, dotfile_repo, chosen_dir) = loop {
+        let repo_config = select_repo(config, db, full_path)?;
+        let dotfile_repo = DotfileRepo::new(config, repo_config.name.clone())?;
 
-    if !force && is_path_ignored_by_repo(config, &repo_config.name, full_path)? {
-        return Ok(None);
-    }
+        if !force && is_path_ignored_by_repo(config, &repo_config.name, full_path)? {
+            return Ok(None);
+        }
 
-    // dots_dir selection
-    let chosen_dir = select_dots_dir(&dotfile_repo, full_path)?;
+        if let Some(chosen_dir) = select_dots_dir(config, &dotfile_repo, full_path)? {
+            break (repo_config, dotfile_repo, chosen_dir);
+        }
+    };
 
     // Build destination info
     let repo_base = dotfile_repo.local_path(config)?;

@@ -418,11 +418,11 @@ fn handle_authorize_key_to_repo(
                     "Key authorized for '{}'.\n\n{}",
                     repo_name, public_key
                 ))?;
-                return Ok(());
+                Ok(())
             }
-            RepoAction::Back => return Ok(()),
+            RepoAction::Back => Ok(()),
         },
-        _ => return Ok(()),
+        _ => Ok(()),
     }
 }
 

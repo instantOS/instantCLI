@@ -101,13 +101,15 @@ pub(crate) fn run_create_flow(
             .collect();
 
         // Add "new subdir" options
-        let repos_with_subdirs: HashSet<_> = destinations.iter().map(|d| &d.repo_name).collect();
-        for repo in config.repos.iter().filter(|r| r.enabled && !r.read_only) {
-            if repos_with_subdirs.contains(&repo.name) {
-                menu.push(CreateMenuItem::AddSubdir {
-                    repo_name: repo.name.clone(),
-                });
-            }
+        for repo in config
+            .repos
+            .iter()
+            .filter(|r| r.enabled && !r.read_only && r.metadata.is_none())
+        {
+            menu.push(CreateMenuItem::AddSubdir {
+                repo_name: repo.name.clone(),
+                is_root_target,
+            });
         }
 
         menu.push(CreateMenuItem::CloneRepo);
@@ -130,10 +132,14 @@ pub(crate) fn run_create_flow(
                     other => return Ok(other),
                 }
             }
-            FzfResult::Selected(CreateMenuItem::AddSubdir { repo_name }) => {
+            FzfResult::Selected(CreateMenuItem::AddSubdir {
+                repo_name,
+                is_root_target,
+            }) => {
                 cursor.update(
                     &CreateMenuItem::AddSubdir {
                         repo_name: repo_name.clone(),
+                        is_root_target,
                     },
                     &menu,
                 );
@@ -258,10 +264,12 @@ fn create_new_subdir(
     repo_name: &str,
     is_root_target: bool,
 ) -> Result<bool> {
-    use crate::dot::dotfilerepo::DotfileRepo;
-
     let mut new_dir = match FzfWrapper::builder()
-        .prompt("New dotfile directory name: ")
+        .prompt(if is_root_target {
+            "New root dotfile directory name (_root is added automatically): "
+        } else {
+            "New dotfile directory name: "
+        })
         .args(fzf_mocha_args())
         .input()
         .input_result()?
@@ -274,21 +282,8 @@ fn create_new_subdir(
         new_dir.push_str("_root");
     }
 
-    let dotfile_repo = DotfileRepo::new(config, repo_name.to_string())?;
-    let local_path = dotfile_repo.local_path(config)?;
-
-    match crate::dot::meta::add_dots_dir(&local_path, &new_dir) {
+    match create_and_activate_subdir(config, repo_name, &new_dir) {
         Ok(()) => {
-            // Add to global config
-            let mut config = DotfileConfig::load(None)?;
-            if let Some(repo) = config.repos.iter_mut().find(|r| r.name == repo_name) {
-                let active_subdirs = repo.active_subdirectories.get_or_insert_with(Vec::new);
-                if !active_subdirs.contains(&new_dir) {
-                    active_subdirs.push(new_dir.clone());
-                    config.save(None)?;
-                }
-            }
-
             emit(
                 Level::Success,
                 "dot.alternative.subdir_created",
@@ -307,6 +302,39 @@ fn create_new_subdir(
             Ok(false)
         }
     }
+}
+
+pub(crate) fn create_and_activate_subdir(
+    config: &DotfileConfig,
+    repo_name: &str,
+    new_dir: &str,
+) -> Result<()> {
+    use crate::dot::dotfilerepo::DotfileRepo;
+
+    let dotfile_repo = DotfileRepo::new(config, repo_name.to_string())?;
+    let local_path = dotfile_repo.local_path(config)?;
+    crate::dot::meta::add_dots_dir(&local_path, new_dir)?;
+
+    let mut config = DotfileConfig::load(None)?;
+    if let Some(repo) = config.repos.iter_mut().find(|r| r.name == repo_name) {
+        let active_subdirs = repo.active_subdirectories.get_or_insert_with(Vec::new);
+        if !active_subdirs.contains(&new_dir.to_string()) {
+            active_subdirs.push(new_dir.to_string());
+            config.save(None)?;
+        }
+    }
+
+    if let Err(e) =
+        crate::dot::git::repo_ops::git_add(&local_path, &local_path.join("instantdots.toml"), false)
+    {
+        eprintln!(
+            "{} Failed to stage instantdots.toml: {}",
+            char::from(NerdFont::Warning).to_string().yellow(),
+            e
+        );
+    }
+
+    Ok(())
 }
 
 fn clone_new_repo() -> Result<bool> {

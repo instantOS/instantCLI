@@ -368,7 +368,7 @@ fn handle_add_new_subdir(dotfile_repo: &DotfileRepo, config: &DotfileConfig) -> 
     let new_dir = match FzfWrapper::builder()
         .prompt("New dotfile directory name")
         .input()
-        .ghost("e.g. themes, config, scripts")
+        .ghost("e.g. themes, scripts, system_root (_root = root-owned dotfiles)")
         .input_result()?
     {
         FzfResult::Selected(s) if !s.trim().is_empty() => s.trim().to_string(),
@@ -380,9 +380,14 @@ fn handle_add_new_subdir(dotfile_repo: &DotfileRepo, config: &DotfileConfig) -> 
     let local_path = dotfile_repo.local_path(config)?;
     match crate::dot::meta::add_dots_dir(&local_path, &new_dir) {
         Ok(()) => {
+            let root_note = if new_dir.ends_with("_root") {
+                "\nDirectories ending in '_root' store root-owned dotfiles."
+            } else {
+                ""
+            };
             FzfWrapper::message(&format!(
-                "Created dotfile directory '{}'. Enable it to start using.",
-                new_dir
+                "Created dotfile directory '{}'. Enable it to start using.{}",
+                new_dir, root_note
             ))?;
         }
         Err(e) => {
