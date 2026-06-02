@@ -37,8 +37,10 @@ fn configure_external_repo(
         Level::Info,
         "dot.repo.clone.external",
         &format!(
-            "{} Detected external dotfile repository (Yadm/Stow compatible)",
-            char::from(NerdFont::Info)
+            "{} Detected external dotfile repository (Yadm/Stow compatible).\n\
+             Uses fixed layout rooted at '.'; metadata is stored in global config.\n\
+             Subdirectories cannot be added or removed. Root-owned dotfiles are not supported because '_root' directories cannot be created.",
+            char::from(NerdFont::Info),
         ),
         None,
     );

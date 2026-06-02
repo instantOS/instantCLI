@@ -111,7 +111,7 @@ pub(crate) fn run_create_flow(
         for repo in config
             .repos
             .iter()
-            .filter(|r| r.enabled && !r.read_only && r.metadata.is_none())
+            .filter(|r| r.enabled && !r.read_only && !r.is_external())
         {
             menu.push(CreateMenuItem::AddSubdir {
                 repo_name: repo.name.clone(),

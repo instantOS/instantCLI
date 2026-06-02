@@ -162,7 +162,7 @@ impl DotfileRepo {
             .repos
             .iter()
             .find(|r| r.name == self.name)
-            .map(|r| r.metadata.is_some())
+            .map(|r| r.is_external())
             .unwrap_or(false)
     }
 

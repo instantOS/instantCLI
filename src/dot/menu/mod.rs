@@ -159,7 +159,7 @@ fn select_dot_menu_entry(
     let mut entries: Vec<DotMenuEntry> = config
         .repos
         .iter()
-        .map(|r| DotMenuEntry::Repo(r.name.clone(), r.metadata.is_some()))
+        .map(|r| DotMenuEntry::Repo(r.name.clone(), r.is_external()))
         .collect();
 
     entries.push(DotMenuEntry::AddRepo);

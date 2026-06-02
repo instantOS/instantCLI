@@ -32,6 +32,12 @@ pub(super) fn show_repository_info(
     } else {
         "No".green().to_string()
     };
+    let is_external = repo_config.is_external();
+    let repo_type = if is_external {
+        "External (Yadm/Stow compatible)".yellow().to_string()
+    } else {
+        "Instantdots".green().to_string()
+    };
 
     let mut rows: Vec<(char, &str, String)> = vec![
         (
@@ -49,6 +55,7 @@ pub(super) fn show_repository_info(
                 .unwrap_or("default")
                 .to_string(),
         ),
+        (char::from(NerdFont::Info), "Type", repo_type),
         (char::from(NerdFont::Check), "Status", status_text),
         (char::from(NerdFont::Lock), "Read-only", read_only_text),
         (char::from(NerdFont::Folder), "Local Path", local_path),
@@ -91,6 +98,20 @@ pub(super) fn show_repository_info(
 
     println!();
     println!("{} {}", char::from(NerdFont::List), "Subdirectories".bold());
+
+    if is_external {
+        println!(
+            "  {} {}",
+            char::from(NerdFont::Info),
+            "Fixed layout: uses repository root '.'; subdirectories cannot be added or removed."
+                .yellow()
+        );
+        println!(
+            "    {}",
+            "Root-owned dotfiles are not supported because external repos cannot create '_root' directories."
+                .dimmed()
+        );
+    }
 
     let defaults_disabled = repo_config.active_subdirectories.is_none()
         && local_repo

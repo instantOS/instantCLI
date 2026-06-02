@@ -25,6 +25,13 @@ pub struct Repo {
     pub metadata: Option<crate::dot::types::RepoMetaData>,
 }
 
+impl Repo {
+    /// Whether metadata is stored in global config instead of instantdots.toml.
+    pub fn is_external(&self) -> bool {
+        self.metadata.is_some()
+    }
+}
+
 fn default_enabled() -> bool {
     true
 }

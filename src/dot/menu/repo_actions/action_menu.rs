@@ -178,28 +178,40 @@ pub(super) fn build_repo_action_menu(
         });
     }
 
-    // Manage subdirs
+    let is_external = repo_config.map(|r| r.is_external()).unwrap_or(false);
+    let is_read_only = repo_config.map(|r| r.read_only).unwrap_or(false);
+    let (manage_label, manage_description) = if is_external {
+        (
+            "Manage Fixed Source",
+            "Enable or disable the fixed external repository source rooted at '.'.",
+        )
+    } else {
+        (
+            "Manage Subdirs",
+            "Enable or disable specific subdirectories within this repository.",
+        )
+    };
+
+    // Manage active dotfile sources
     actions.push(RepoActionItem {
         display: format!(
-            "{} Manage Subdirs",
-            format_icon_colored(NerdFont::Folder, colors::MAUVE)
+            "{} {}",
+            format_icon_colored(NerdFont::Folder, colors::MAUVE),
+            manage_label,
         ),
         preview: PreviewBuilder::new()
             .line(
                 colors::MAUVE,
                 Some(NerdFont::Folder),
-                &format!("Manage subdirectories for '{}'", repo_name),
+                &format!("{} for '{}'", manage_label, repo_name),
             )
             .blank()
-            .subtext("Enable or disable specific subdirectories within this repository.")
+            .subtext(manage_description)
             .build_string(),
         action: RepoAction::ManageSubdirs,
     });
 
     // Edit Details (only for writable, non-external repos)
-    let is_read_only = repo_config.map(|r| r.read_only).unwrap_or(false);
-    let is_external = repo_config.map(|r| r.metadata.is_some()).unwrap_or(false);
-
     if !is_read_only && !is_external {
         actions.push(RepoActionItem {
             display: format!(
@@ -220,7 +232,6 @@ pub(super) fn build_repo_action_menu(
     }
 
     // Toggle read-only
-    let is_read_only = repo_config.map(|r| r.read_only).unwrap_or(false);
     let (ro_icon, ro_color, ro_text, ro_preview) = if is_read_only {
         (
             NerdFont::Lock,

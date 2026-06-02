@@ -155,7 +155,7 @@ fn load_edit_metadata(
         return Ok(None);
     }
 
-    if repo_config.metadata.is_some() {
+    if repo_config.is_external() {
         FzfWrapper::message(
             "External repositories have metadata in global config.\n\
             Editing external repo metadata is not currently supported.",

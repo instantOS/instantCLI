@@ -89,7 +89,7 @@ impl FzfSelectable for RepoMenuItem {
         use crate::ui::catppuccin::{colors, format_icon_colored};
         use crate::ui::nerd_font::NerdFont;
 
-        let badge = if self.repo.metadata.is_some() {
+        let badge = if self.repo.is_external() {
             " \x1b[33m[external]\x1b[0m".to_string()
         } else {
             String::new()

@@ -194,7 +194,7 @@ fn repo_context_for_write(
         anyhow::bail!("Repository '{}' is read-only", repo_name);
     }
 
-    if repo_config.metadata.is_some() {
+    if repo_config.is_external() {
         anyhow::bail!(
             "Repository '{}' is external; unit metadata editing is not supported",
             repo_name
