@@ -736,8 +736,15 @@ pub fn handle_dot_command(
             // include_root parameter is removed from CLI args for add.
             // We pass true here to allow adding root files, since Add should handle both automatically.
             super::add_dotfile(
-                &config, &db, path, *all, *choose, *force, *encrypt,
+                &config,
+                &db,
+                path,
+                *all,
+                *choose,
+                *force,
+                *encrypt,
                 true, // include_root = true allows absolute paths outside home
+                config_path,
                 debug,
             )?;
         }

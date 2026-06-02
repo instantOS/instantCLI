@@ -114,6 +114,7 @@ fn select_dots_dir(
     config: &DotfileConfig,
     dotfile_repo: &DotfileRepo,
     target_path: &Path,
+    config_path: Option<&str>,
 ) -> Result<Option<DotfileDir>> {
     let home = crate::dot::sources::home_dir();
     let is_root_target = !target_path.starts_with(&home);
@@ -126,6 +127,13 @@ fn select_dots_dir(
 
     if dirs.is_empty() {
         if is_root_target {
+            if dotfile_repo.is_external(config) {
+                anyhow::bail!(
+                    "Repository '{}' is external and cannot create a root dotfile directory.\n\
+                     Choose a writable InstantCLI repository with an editable instantdots.toml.",
+                    dotfile_repo.name
+                );
+            }
             println!(
                 "{} Repository '{}' has no directory for root-owned dotfiles.",
                 char::from(NerdFont::Info),
@@ -139,12 +147,15 @@ fn select_dots_dir(
                     config,
                     &dotfile_repo.name,
                     "dots_root",
+                    config_path,
                 )?;
+                let is_active = true;
+                let is_root = true;
                 return Ok(Some(DotfileDir::new_no_create(
                     "dots_root",
                     &dotfile_repo.local_path(config)?,
-                    true,
-                    true,
+                    is_active,
+                    is_root,
                 )?));
             }
             return Ok(None);
@@ -203,6 +214,7 @@ pub fn add_dotfile(
     force: bool,
     encrypt: bool,
     include_root: bool,
+    config_path: Option<&str>,
     debug: bool,
 ) -> Result<()> {
     let all_dotfiles = get_all_dotfiles(config, db, include_root)?;
@@ -225,7 +237,7 @@ pub fn add_dotfile(
             return Ok(());
         }
 
-        return add_with_destination_picker(config, db, &target_path, force);
+        return add_with_destination_picker(config, db, &target_path, force, config_path);
     }
 
     let mut stats = DirectoryAddStats::new();
@@ -246,7 +258,7 @@ pub fn add_dotfile(
             &mut stats,
             force,
             encrypt,
-            debug,
+            config_path,
         )?;
     } else if target_path.is_file() && tracked_dotfiles.is_empty() {
         if !force && let Some(ignore_file) = crate::dot::insignore::match_home_path(&target_path)? {
@@ -258,7 +270,9 @@ pub fn add_dotfile(
         }
 
         // Single untracked file - prompt to add it
-        if let Some(repo_path) = add_new_file(config, db, &target_path, force, encrypt)? {
+        if let Some(repo_path) =
+            add_new_file(config, db, &target_path, force, encrypt, config_path)?
+        {
             stats.added_count += 1;
             stats.modified_repos.insert(repo_path);
         }
@@ -292,8 +306,9 @@ fn add_with_destination_picker(
     _db: &Database,
     target_path: &Path,
     force: bool,
+    config_path: Option<&str>,
 ) -> Result<()> {
-    super::alternative::pick_destination_and_add(config, target_path, force)?;
+    super::alternative::pick_destination_and_add(config, target_path, force, config_path)?;
     Ok(())
 }
 
@@ -304,6 +319,7 @@ fn add_new_file(
     full_path: &Path,
     force: bool,
     encrypt: bool,
+    config_path: Option<&str>,
 ) -> Result<Option<PathBuf>> {
     use super::alternative::add_to_destination;
     use crate::dot::dotfilerepo::DotfileRepo;
@@ -318,7 +334,7 @@ fn add_new_file(
             return Ok(None);
         }
 
-        if let Some(chosen_dir) = select_dots_dir(config, &dotfile_repo, full_path)? {
+        if let Some(chosen_dir) = select_dots_dir(config, &dotfile_repo, full_path, config_path)? {
             break (repo_config, dotfile_repo, chosen_dir);
         }
     };
@@ -512,7 +528,7 @@ fn add_untracked_files(
     stats: &mut DirectoryAddStats,
     force: bool,
     encrypt: bool,
-    _debug: bool,
+    config_path: Option<&str>,
 ) -> Result<()> {
     if file_paths.is_empty() {
         return Ok(());
@@ -525,7 +541,7 @@ fn add_untracked_files(
     );
 
     for file_path in file_paths {
-        if let Some(repo_path) = add_new_file(config, db, file_path, force, encrypt)? {
+        if let Some(repo_path) = add_new_file(config, db, file_path, force, encrypt, config_path)? {
             stats.added_count += 1;
             stats.modified_repos.insert(repo_path);
         }
