@@ -261,8 +261,22 @@ fn render_discovered_game(game: &DiscoveredGameRecord) -> String {
     }
     if let Some(tracked_name) = &game.tracked_name {
         text.push_str(&format!("  Tracked as: {}\n", tracked_name));
+    } else {
+        text.push_str(&format!(
+            "  Add with: ins game add --name {} --save-path {}\n",
+            shell_quote(&game.name),
+            shell_quote(&game.save_path)
+        ));
     }
     text
+}
+
+fn shell_quote(value: &str) -> String {
+    if value.is_empty() {
+        return "''".to_string();
+    }
+
+    format!("'{}'", value.replace('\'', "'\\''"))
 }
 
 fn stream_discovered_records<F, G>(
@@ -909,7 +923,38 @@ mod tests {
 
         assert!(rendered.contains("Save path: /tmp/save"));
         assert!(rendered.contains("Prefix path: /tmp/prefix"));
+        assert!(
+            rendered.contains(
+                "Add with: ins game add --name 'Under the Waves' --save-path '/tmp/save'"
+            )
+        );
         assert!(!rendered.contains("Game path:"));
+    }
+
+    #[test]
+    fn render_discovered_game_omits_add_hint_for_tracked_game() {
+        let record = DiscoveredGameRecord {
+            name: "Under the Waves".to_string(),
+            platform: "Wine Prefix".to_string(),
+            platform_short: "Wine".to_string(),
+            unique_key: "wine:test".to_string(),
+            save_path: "/tmp/save".to_string(),
+            game_path: None,
+            prefix_path: Some("/tmp/prefix".to_string()),
+            existing: true,
+            tracked_name: Some("Under the Waves".to_string()),
+        };
+
+        let rendered = render_discovered_game(&record);
+
+        assert!(rendered.contains("Tracked as: Under the Waves"));
+        assert!(!rendered.contains("Add with:"));
+    }
+
+    #[test]
+    fn shell_quote_escapes_single_quotes() {
+        assert_eq!(shell_quote("Bob's Game"), "'Bob'\\''s Game'");
+        assert_eq!(shell_quote(""), "''");
     }
 
     #[test]
