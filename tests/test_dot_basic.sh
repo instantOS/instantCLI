@@ -50,6 +50,17 @@ main() {
 
 	local repo_dir="${TEST_ROOT}/dotrepo"
 	create_sample_dot_repo "${repo_dir}" "basic-test"
+	mkdir -p "${repo_dir}/extras/.ssh"
+	cat >"${repo_dir}/extras/.ssh/config" <<'EOF'
+Host example
+  HostName example.com
+EOF
+	cat >"${repo_dir}/instantdots.toml" <<'EOF'
+name = "basic-test"
+description = "Sample repository for tests"
+dots_dirs = ["dots", "extras"]
+EOF
+	(cd "${repo_dir}" && git add . >/dev/null && git commit -qm "Add inactive ssh config")
 
 	local repo_url="file://${repo_dir}"
 
@@ -118,6 +129,15 @@ main() {
 	assert_json_field "${dir_status_json}" ".data.type" "directory"
 	assert_json_field "${dir_status_json}" ".data.files | length" "2"
 	assert_json_field_contains "${dir_status_json}" ".data.files[0].path" "~/.config/instanttest"
+
+	# Test merge hint for a dotfile that exists only in an inactive subdir
+	echo "Testing inactive subdir hint for dot merge..."
+	mkdir -p "${HOME}/.ssh"
+	local inactive_merge_output
+	inactive_merge_output="$(ins_output dot merge .ssh 2>&1)"
+	assert_output_contains "${inactive_merge_output}" "No tracked dotfiles found at ~/.ssh"
+	assert_output_contains "${inactive_merge_output}" "Found a matching source in inactive subdir 'basic-test:extras'"
+	assert_output_contains "${inactive_merge_output}" "ins dot repo subdirs enable basic-test extras"
 
 	# Clone an external repository without instantdots.toml
 	echo "Testing external repository UX..."
