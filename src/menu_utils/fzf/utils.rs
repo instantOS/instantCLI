@@ -59,6 +59,28 @@ pub(crate) fn get_responsive_layout() -> ResponsiveLayout {
     }
 }
 
+/// Re-execute the current command replacing the current process execution
+fn re_execute_current_process() {
+    eprintln!("Automatically retrying the command...\n");
+    if let Ok(exe) = std::env::current_exe() {
+        let child = std::process::Command::new(exe)
+            .args(std::env::args().skip(1))
+            .spawn();
+        match child {
+            Ok(mut c) => {
+                let status = c.wait();
+                match status {
+                    Ok(s) => std::process::exit(s.code().unwrap_or(0)),
+                    Err(_) => std::process::exit(1),
+                }
+            }
+            Err(_) => std::process::exit(1),
+        }
+    } else {
+        std::process::exit(1);
+    }
+}
+
 /// Try setting up fzf using pacman if running on a live ISO
 fn try_setup_fzf_on_live_iso() -> bool {
     if crate::common::distro::is_live_iso() {
@@ -69,7 +91,6 @@ fn try_setup_fzf_on_live_iso() -> bool {
         ) {
             Ok(_) => {
                 eprintln!("\nSuccessfully installed fzf via pacman!");
-                eprintln!("Please re-run the command.\n");
                 return true;
             }
             Err(e) => {
@@ -84,8 +105,8 @@ fn try_setup_fzf_on_live_iso() -> bool {
 fn try_setup_fzf_with_mise() -> bool {
     let home = dirs::home_dir();
     let mise_path = home.as_ref().map(|h| h.join(".local/bin/mise"));
-    let mise_installed = which::which("mise").is_ok()
-        || mise_path.as_ref().map(|p| p.exists()).unwrap_or(false);
+    let mise_installed =
+        which::which("mise").is_ok() || mise_path.as_ref().map(|p| p.exists()).unwrap_or(false);
     let mise_activated = std::env::var("MISE_SHELL").is_ok();
 
     if mise_installed && mise_activated {
@@ -108,7 +129,6 @@ fn try_setup_fzf_with_mise() -> bool {
         match status {
             Ok(s) if s.success() => {
                 eprintln!("\nSuccessfully set up a recent version of fzf via mise!");
-                eprintln!("Please re-run the command.\n");
                 return true;
             }
             Ok(s) => {
@@ -122,8 +142,8 @@ fn try_setup_fzf_with_mise() -> bool {
     false
 }
 
-/// Check if the error indicates an old fzf version and exit if so
-pub(crate) fn check_for_old_fzf_and_exit(stderr: &[u8]) {
+/// Handle errors indicating an old fzf version and try to recover/setup fzf
+pub(crate) fn handle_old_fzf_error(stderr: &[u8]) {
     let stderr_str = String::from_utf8_lossy(stderr);
     if stderr_str.contains("unknown option")
         || stderr_str.contains("invalid option")
@@ -131,11 +151,11 @@ pub(crate) fn check_for_old_fzf_and_exit(stderr: &[u8]) {
         || stderr_str.contains("unrecognized option")
     {
         if try_setup_fzf_on_live_iso() {
-            std::process::exit(0);
+            re_execute_current_process();
         }
 
         if try_setup_fzf_with_mise() {
-            std::process::exit(0);
+            re_execute_current_process();
         }
 
         eprintln!("\n{}\n", "=".repeat(70));
@@ -153,15 +173,15 @@ pub(crate) fn check_for_old_fzf_and_exit(stderr: &[u8]) {
     }
 }
 
-/// Check if spawn error indicates fzf is not installed and exit if so
-pub(crate) fn check_fzf_spawn_error_and_exit(error: &std::io::Error) {
+/// Handle spawn error indicating fzf is not installed and try to recover/setup fzf
+pub(crate) fn handle_fzf_spawn_error(error: &std::io::Error) {
     if error.kind() == ErrorKind::NotFound {
         if try_setup_fzf_on_live_iso() {
-            std::process::exit(0);
+            re_execute_current_process();
         }
 
         if try_setup_fzf_with_mise() {
-            std::process::exit(0);
+            re_execute_current_process();
         }
 
         eprintln!("\n{}\n", "=".repeat(70));
@@ -242,8 +262,8 @@ pub(crate) fn extract_icon_padding(display: &str) -> (String, String) {
 mod tests {
     use super::*;
     use std::fs::File;
-    use std::os::unix::fs::PermissionsExt;
     use std::io::Write;
+    use std::os::unix::fs::PermissionsExt;
 
     #[test]
     fn test_try_setup_fzf_on_live_iso_not_live_iso() {
@@ -322,4 +342,3 @@ mod tests {
         assert!(run_marker_path.exists());
     }
 }
-
