@@ -57,6 +57,7 @@ pub enum GameCommands {
         no_cache: bool,
     },
     /// Sync game saves with restic repository
+    #[command(alias = "update")]
     Sync {
         /// Game name to sync (optional, syncs all if not specified)
         #[arg(add = ArgValueCompleter::new(crate::completions::game_name_completion))]
