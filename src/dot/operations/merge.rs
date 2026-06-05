@@ -2,6 +2,7 @@ use crate::common::home_dir;
 use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
 use crate::dot::dotfile::Dotfile;
+use crate::dot::dotfilerepo::DotfileRepo;
 use crate::dot::git::repo_ops::get_repo_name_for_dotfile;
 use crate::dot::utils::{filter_dotfiles_by_path, get_all_dotfiles, resolve_dotfile_path};
 use crate::ui::prelude::*;
@@ -9,6 +10,7 @@ use anyhow::Context;
 use anyhow::Result;
 use colored::*;
 use std::path::Path;
+use std::path::PathBuf;
 use std::process::Stdio;
 
 enum DotfileSkip {
@@ -243,6 +245,133 @@ fn emit_no_modified(target_path: &Path, home: &Path, unmodified_count: usize, ve
     emit(Level::Info, "dot.merge.no_changes", &message, None);
 }
 
+#[derive(Debug, Eq, PartialEq, Ord, PartialOrd)]
+struct InactiveDotfileMatch {
+    repo_name: String,
+    subdir_name: String,
+}
+
+fn relative_target_path(target_path: &Path, home: &Path) -> PathBuf {
+    target_path
+        .strip_prefix(home)
+        .unwrap_or_else(|_| {
+            target_path
+                .strip_prefix(Path::new("/"))
+                .unwrap_or(target_path)
+        })
+        .to_path_buf()
+}
+
+fn age_source_path(source_path: &Path) -> PathBuf {
+    let mut age_path = source_path.as_os_str().to_os_string();
+    age_path.push(".age");
+    PathBuf::from(age_path)
+}
+
+fn inactive_dir_contains_target(dir_path: &Path, relative_target: &Path) -> bool {
+    let source_path = dir_path.join(relative_target);
+    source_path.exists() || age_source_path(&source_path).exists()
+}
+
+fn find_inactive_dotfile_matches(
+    config: &DotfileConfig,
+    target_path: &Path,
+) -> Result<Vec<InactiveDotfileMatch>> {
+    let home = home_dir();
+    let relative_target = relative_target_path(target_path, &home);
+    let mut matches = Vec::new();
+
+    for repo in &config.repos {
+        if !repo.enabled {
+            continue;
+        }
+
+        let dotfile_repo = match DotfileRepo::new(config, repo.name.clone()) {
+            Ok(repo) => repo,
+            Err(e) => {
+                eprintln!(
+                    "{}",
+                    format!("Warning: skipping repo '{}': {}", repo.name, e).yellow()
+                );
+                continue;
+            }
+        };
+
+        for dir in dotfile_repo
+            .dotfile_dirs
+            .iter()
+            .filter(|dir| !dir.is_active)
+        {
+            if !inactive_dir_contains_target(&dir.path, &relative_target) {
+                continue;
+            }
+
+            let subdir_name = dir
+                .path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("unknown")
+                .to_string();
+            matches.push(InactiveDotfileMatch {
+                repo_name: dotfile_repo.name.clone(),
+                subdir_name,
+            });
+        }
+    }
+
+    matches.sort();
+    matches.dedup();
+    Ok(matches)
+}
+
+fn emit_not_found_with_inactive_hint(
+    config: &DotfileConfig,
+    target_path: &Path,
+    home: &Path,
+) -> Result<()> {
+    let relative_path = target_path.strip_prefix(home).unwrap_or(target_path);
+    let inactive_matches = find_inactive_dotfile_matches(config, target_path)?;
+
+    let mut message = format!(
+        "{} No tracked dotfiles found at ~/{}\n   Try {} or {}",
+        char::from(NerdFont::Warning),
+        relative_path.display(),
+        "ins dot status".yellow(),
+        "ins dot add".yellow()
+    );
+
+    match inactive_matches.as_slice() {
+        [] => {}
+        [m] => {
+            message.push_str(&format!(
+                "\n   Found a matching source in inactive subdir '{}:{}'\n   Enable it with {}",
+                m.repo_name.cyan(),
+                m.subdir_name.cyan(),
+                format!(
+                    "ins dot repo subdirs enable {} {}",
+                    m.repo_name, m.subdir_name
+                )
+                .yellow()
+            ));
+        }
+        matches => {
+            let locations = matches
+                .iter()
+                .map(|m| format!("{}:{}", m.repo_name, m.subdir_name))
+                .collect::<Vec<_>>()
+                .join(", ");
+            message.push_str(&format!(
+                "\n   Found matching sources in inactive subdirs: {}\n   Enable one with {}",
+                locations.cyan(),
+                "ins dot repo subdirs enable <repo> <subdir>".yellow()
+            ));
+        }
+    }
+
+    emit(Level::Warn, "dot.merge.not_found", &message, None);
+    Ok(())
+}
+
 /// Merge a modified dotfile with its source using nvim diff
 pub fn merge_dotfile(
     config: &DotfileConfig,
@@ -257,19 +386,7 @@ pub fn merge_dotfile(
     let dotfiles_in_path = filter_dotfiles_by_path(&all_dotfiles, &target_path);
 
     if dotfiles_in_path.is_empty() {
-        let relative_path = target_path.strip_prefix(&home).unwrap_or(&target_path);
-        emit(
-            Level::Warn,
-            "dot.merge.not_found",
-            &format!(
-                "{} No tracked dotfiles found at ~/{}\n   Try {} or {}",
-                char::from(NerdFont::Warning),
-                relative_path.display(),
-                "ins dot status".yellow(),
-                "ins dot add".yellow()
-            ),
-            None,
-        );
+        emit_not_found_with_inactive_hint(config, &target_path, &home)?;
         return Ok(());
     }
 
