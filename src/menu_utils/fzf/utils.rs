@@ -59,6 +59,27 @@ pub(crate) fn get_responsive_layout() -> ResponsiveLayout {
     }
 }
 
+/// Try setting up fzf using pacman if running on a live ISO
+fn try_setup_fzf_on_live_iso() -> bool {
+    if crate::common::distro::is_live_iso() {
+        eprintln!("\nRunning on a live ISO. Attempting to install fzf using pacman...");
+        match crate::common::package::install_package_names(
+            crate::common::package::PackageManager::Pacman,
+            &["fzf"],
+        ) {
+            Ok(_) => {
+                eprintln!("\nSuccessfully installed fzf via pacman!");
+                eprintln!("Please re-run the command.\n");
+                return true;
+            }
+            Err(e) => {
+                eprintln!("Warning: Failed to install fzf via pacman: {}", e);
+            }
+        }
+    }
+    false
+}
+
 /// Try setting up fzf using mise if installed and activated
 fn try_setup_fzf_with_mise() -> bool {
     let home = dirs::home_dir();
@@ -109,6 +130,10 @@ pub(crate) fn check_for_old_fzf_and_exit(stderr: &[u8]) {
         || stderr_str.contains("invalid color specification")
         || stderr_str.contains("unrecognized option")
     {
+        if try_setup_fzf_on_live_iso() {
+            std::process::exit(0);
+        }
+
         if try_setup_fzf_with_mise() {
             std::process::exit(0);
         }
@@ -131,6 +156,10 @@ pub(crate) fn check_for_old_fzf_and_exit(stderr: &[u8]) {
 /// Check if spawn error indicates fzf is not installed and exit if so
 pub(crate) fn check_fzf_spawn_error_and_exit(error: &std::io::Error) {
     if error.kind() == ErrorKind::NotFound {
+        if try_setup_fzf_on_live_iso() {
+            std::process::exit(0);
+        }
+
         if try_setup_fzf_with_mise() {
             std::process::exit(0);
         }
@@ -215,6 +244,12 @@ mod tests {
     use std::fs::File;
     use std::os::unix::fs::PermissionsExt;
     use std::io::Write;
+
+    #[test]
+    fn test_try_setup_fzf_on_live_iso_not_live_iso() {
+        // Since we are not on a live ISO during normal unit tests, it should return false
+        assert!(!try_setup_fzf_on_live_iso());
+    }
 
     #[test]
     fn test_try_setup_fzf_with_mise_not_activated() {
