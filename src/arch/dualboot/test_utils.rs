@@ -1,6 +1,8 @@
 #[cfg(test)]
 use std::io::Write;
 #[cfg(test)]
+use std::io::{ErrorKind, Result as IoResult};
+#[cfg(test)]
 use std::process::Command;
 #[cfg(test)]
 use tempfile::NamedTempFile;
@@ -69,13 +71,35 @@ impl TestDisk {
 
     /// Format as NTFS
     pub fn format_ntfs(&self) {
-        let status = Command::new("mkfs.ntfs")
-            .arg("-F")
-            .arg("-Q") // Quick format
-            .arg(self.path_str())
-            .status()
-            .expect("Failed to run mkfs.ntfs");
-        assert!(status.success(), "mkfs.ntfs failed");
+        let status = run_ntfs_formatter(self.path_str()).expect("Failed to run NTFS formatter");
+        assert!(status.success(), "NTFS formatter failed");
+    }
+}
+
+#[cfg(test)]
+fn run_ntfs_formatter(path: &str) -> IoResult<std::process::ExitStatus> {
+    let mut not_found = None;
+    for formatter in ["mkfs.ntfs", "mkntfs"] {
+        match Command::new(formatter).arg("-F").arg("-Q").arg(path).status() {
+            Ok(status) => return Ok(status),
+            Err(err) if err.kind() == ErrorKind::NotFound => {
+                not_found = Some(err);
+            }
+            Err(err) => return Err(err),
+        }
+    }
+    Err(not_found.expect("Formatter list is non-empty"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::run_ntfs_formatter;
+
+    #[test]
+    fn ntfs_formatter_is_available() {
+        let disk = super::TestDisk::new(16);
+        let status = run_ntfs_formatter(disk.path_str()).expect("No NTFS formatter found");
+        assert!(status.success(), "NTFS formatter failed");
     }
 }
 
