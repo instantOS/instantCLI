@@ -13,7 +13,7 @@ use super::preview::PreviewStrategy;
 use super::preview::PreviewUtils;
 use super::types::ItemDisplayData;
 use super::types::*;
-use super::utils::{check_for_old_fzf_and_exit, log_fzf_failure};
+use super::utils::{handle_old_fzf_error, log_fzf_failure};
 
 /// Named parts extracted from `FzfBuilder` for constructing `FzfWrapper`.
 pub(crate) struct FzfWrapperParts {
@@ -34,7 +34,7 @@ pub(crate) fn check_fzf_exit<T>(result: &std::process::Output) -> Option<FzfResu
         return Some(FzfResult::Cancelled);
     }
     if !result.status.success() {
-        check_for_old_fzf_and_exit(&result.stderr);
+        handle_old_fzf_error(&result.stderr);
         if crate::ui::is_debug_enabled() {
             log_fzf_failure(&result.stderr, result.status.code(), |code, message| {
                 crate::ui::emit(crate::ui::Level::Debug, code, message, None);
@@ -322,7 +322,7 @@ fn execute_fzf_command(mut cmd: Command, input_text: &str) -> Result<std::proces
     crate::menu::server::unregister_menu_process(pid);
 
     if let Err(e) = &output {
-        super::utils::check_fzf_spawn_error_and_exit(e)
+        super::utils::handle_fzf_spawn_error(e)
     }
     output.map_err(Into::into)
 }
@@ -543,7 +543,7 @@ impl FzfWrapper {
         match output {
             Ok(result) => Ok(result),
             Err(e) => {
-                super::utils::check_fzf_spawn_error_and_exit(&e);
+                super::utils::handle_fzf_spawn_error(&e);
                 Err(anyhow!("fzf execution failed: {e}"))
             }
         }

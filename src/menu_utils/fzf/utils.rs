@@ -59,14 +59,105 @@ pub(crate) fn get_responsive_layout() -> ResponsiveLayout {
     }
 }
 
-/// Check if the error indicates an old fzf version and exit if so
-pub(crate) fn check_for_old_fzf_and_exit(stderr: &[u8]) {
+/// Re-execute the current command replacing the current process execution
+fn re_execute_current_process() {
+    eprintln!("Automatically retrying the command...\n");
+    if let Ok(exe) = std::env::current_exe() {
+        let child = std::process::Command::new(exe)
+            .args(std::env::args().skip(1))
+            .spawn();
+        match child {
+            Ok(mut c) => {
+                let status = c.wait();
+                match status {
+                    Ok(s) => std::process::exit(s.code().unwrap_or(0)),
+                    Err(_) => std::process::exit(1),
+                }
+            }
+            Err(_) => std::process::exit(1),
+        }
+    } else {
+        std::process::exit(1);
+    }
+}
+
+/// Try setting up fzf using pacman if running on a live ISO
+fn try_setup_fzf_on_live_iso() -> bool {
+    if crate::common::distro::is_live_iso() {
+        eprintln!("\nRunning on a live ISO. Attempting to install fzf using pacman...");
+        match crate::common::package::install_package_names(
+            crate::common::package::PackageManager::Pacman,
+            &["fzf"],
+        ) {
+            Ok(_) => {
+                eprintln!("\nSuccessfully installed fzf via pacman!");
+                return true;
+            }
+            Err(e) => {
+                eprintln!("Warning: Failed to install fzf via pacman: {}", e);
+            }
+        }
+    }
+    false
+}
+
+/// Try setting up fzf using mise if installed and activated
+fn try_setup_fzf_with_mise() -> bool {
+    let home = dirs::home_dir();
+    let mise_path = home.as_ref().map(|h| h.join(".local/bin/mise"));
+    let mise_installed =
+        which::which("mise").is_ok() || mise_path.as_ref().map(|p| p.exists()).unwrap_or(false);
+    let mise_activated = std::env::var("MISE_SHELL").is_ok();
+
+    if mise_installed && mise_activated {
+        let mise_bin = if which::which("mise").is_ok() {
+            std::path::PathBuf::from("mise")
+        } else {
+            mise_path.unwrap()
+        };
+
+        eprintln!("\nDetecting mise is installed and activated.");
+        eprintln!("Attempting to install/setup a recent version of fzf using mise...");
+        eprintln!("Running: {:?} use -g fzf\n", mise_bin);
+
+        let status = std::process::Command::new(&mise_bin)
+            .arg("use")
+            .arg("-g")
+            .arg("fzf")
+            .status();
+
+        match status {
+            Ok(s) if s.success() => {
+                eprintln!("\nSuccessfully set up a recent version of fzf via mise!");
+                return true;
+            }
+            Ok(s) => {
+                eprintln!("Warning: mise failed with exit status: {}", s);
+            }
+            Err(e) => {
+                eprintln!("Warning: Failed to execute mise: {}", e);
+            }
+        }
+    }
+    false
+}
+
+/// Handle errors indicating an old fzf version and try to recover/setup fzf
+pub(crate) fn handle_old_fzf_error(stderr: &[u8]) {
     let stderr_str = String::from_utf8_lossy(stderr);
     if stderr_str.contains("unknown option")
         || stderr_str.contains("invalid option")
         || stderr_str.contains("invalid color specification")
         || stderr_str.contains("unrecognized option")
     {
+        if try_setup_fzf_on_live_iso() {
+            re_execute_current_process();
+        }
+
+        if try_setup_fzf_with_mise() {
+            re_execute_current_process();
+        }
+
         eprintln!("\n{}\n", "=".repeat(70));
         eprintln!("ERROR: Your fzf version is too old");
         eprintln!("{}\n", "=".repeat(70));
@@ -82,9 +173,17 @@ pub(crate) fn check_for_old_fzf_and_exit(stderr: &[u8]) {
     }
 }
 
-/// Check if spawn error indicates fzf is not installed and exit if so
-pub(crate) fn check_fzf_spawn_error_and_exit(error: &std::io::Error) {
+/// Handle spawn error indicating fzf is not installed and try to recover/setup fzf
+pub(crate) fn handle_fzf_spawn_error(error: &std::io::Error) {
     if error.kind() == ErrorKind::NotFound {
+        if try_setup_fzf_on_live_iso() {
+            re_execute_current_process();
+        }
+
+        if try_setup_fzf_with_mise() {
+            re_execute_current_process();
+        }
+
         eprintln!("\n{}\n", "=".repeat(70));
         eprintln!("ERROR: fzf is not installed");
         eprintln!("{}\n", "=".repeat(70));
@@ -157,4 +256,89 @@ pub(crate) fn extract_icon_padding(display: &str) -> (String, String) {
     }
     // Fallback: just return spaces for padding
     (" ".to_string(), " ".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::File;
+    use std::io::Write;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn test_try_setup_fzf_on_live_iso_not_live_iso() {
+        // Since we are not on a live ISO during normal unit tests, it should return false
+        assert!(!try_setup_fzf_on_live_iso());
+    }
+
+    #[test]
+    fn test_try_setup_fzf_with_mise_not_activated() {
+        // Ensure MISE_SHELL is not set
+        let original_mise_shell = std::env::var("MISE_SHELL");
+        unsafe {
+            std::env::remove_var("MISE_SHELL");
+        }
+
+        // Should return false because it's not activated
+        assert!(!try_setup_fzf_with_mise());
+
+        // Restore env
+        if let Ok(val) = original_mise_shell {
+            unsafe {
+                std::env::set_var("MISE_SHELL", val);
+            }
+        }
+    }
+
+    #[test]
+    fn test_try_setup_fzf_with_mise_activated_and_mocked() {
+        // Setup env
+        let original_mise_shell = std::env::var("MISE_SHELL");
+        let original_path = std::env::var("PATH").unwrap_or_default();
+        unsafe {
+            std::env::set_var("MISE_SHELL", "bash");
+        }
+
+        // Create a temp directory for our mock mise
+        let temp_dir = tempfile::tempdir().unwrap();
+        let mock_mise_path = temp_dir.path().join("mise");
+        let run_marker_path = temp_dir.path().join("run_marker");
+
+        // Write a mock script that touches run_marker and exits 0
+        {
+            let mut file = File::create(&mock_mise_path).unwrap();
+            let script_content = format!(
+                "#!/bin/sh\ntouch \"{}\"\nexit 0\n",
+                run_marker_path.to_str().unwrap()
+            );
+            file.write_all(script_content.as_bytes()).unwrap();
+        }
+
+        // Make it executable
+        let perms = std::fs::Permissions::from_mode(0o755);
+        std::fs::set_permissions(&mock_mise_path, perms).unwrap();
+
+        // Update PATH to include our temp dir
+        let new_path = format!("{}:{}", temp_dir.path().to_str().unwrap(), original_path);
+        unsafe {
+            std::env::set_var("PATH", new_path);
+        }
+
+        // Run the setup helper
+        let result = try_setup_fzf_with_mise();
+
+        // Restore PATH and MISE_SHELL
+        unsafe {
+            std::env::set_var("PATH", original_path);
+            if let Ok(val) = original_mise_shell {
+                std::env::set_var("MISE_SHELL", val);
+            } else {
+                std::env::remove_var("MISE_SHELL");
+            }
+        }
+
+        // Assert that the command succeeded and the script actually ran
+        assert!(result);
+        assert!(run_marker_path.exists());
+    }
 }
