@@ -88,7 +88,14 @@ fn run_ntfs_formatter(path: &str) -> IoResult<std::process::ExitStatus> {
             Err(err) => return Err(err),
         }
     }
-    Err(not_found.expect("Formatter list is non-empty"))
+    Err(
+        not_found.unwrap_or_else(|| {
+            std::io::Error::new(
+                ErrorKind::NotFound,
+                "No NTFS formatter found (tried mkfs.ntfs and mkntfs)",
+            )
+        }),
+    )
 }
 
 #[cfg(test)]
