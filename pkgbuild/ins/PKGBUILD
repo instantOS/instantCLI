@@ -11,6 +11,8 @@ makedepends=('rust')
 optdepends=(
     'restic: for backup functionality'
     'kitty: default terminal for scratchpad'
+    'ntfsprogs: for NTFS partition resize detection (dual-boot)'
+    'ntfs-3g: for mounting Windows NTFS partitions (dual-boot)'
 )
 source=("$pkgname-$pkgver.tar.gz::https://github.com/instantOS/instantCLI/archive/refs/tags/v$pkgver.tar.gz")
 sha256sums=('SKIP')  # Will be calculated after first release

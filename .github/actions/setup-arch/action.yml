@@ -12,7 +12,7 @@ inputs:
     description: |
       When 'true' (default), also install the standard Rust build/test
       dependency set used by every Arch job that runs `cargo test`
-      (base-devel, rust, ntfs-3g, etc.). Set to 'false' for jobs that don't
+      (base-devel, rust, ntfs-3g, ntfsprogs, etc.). Set to 'false' for jobs that don't
       build or test the project (e.g. PKGBUILD sync).
     required: false
     default: "true"
@@ -35,7 +35,7 @@ runs:
         # Standard Rust build + cargo test dependency set.
         # Keep this list in sync with the project's actual build/test needs;
         # adding a package here covers every Arch job that runs cargo test.
-        TEST_BASE="base-devel rust pkgconf openssl git cmake ntfs-3g"
+        TEST_BASE="base-devel rust pkgconf openssl git cmake ntfs-3g ntfsprogs"
         packages=""
         if [[ "$INCLUDE_TEST_BASE" == "true" ]]; then
           packages="$TEST_BASE"
