@@ -135,6 +135,13 @@ pub enum GameCommands {
         #[arg(long)]
         force: bool,
     },
+    /// List game backup snapshots
+    #[command(alias = "history")]
+    Snapshots {
+        /// Game name to list snapshots for (optional, shows all game snapshots)
+        #[arg(add = ArgValueCompleter::new(crate::completions::game_name_completion))]
+        game_name: Option<String>,
+    },
     /// Set up games that have been added but are not configured on this device
     Setup,
     /// Relocate a game's save path (updates config, does not move files)

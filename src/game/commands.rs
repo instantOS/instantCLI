@@ -20,6 +20,7 @@ use super::repository::GameRepositoryManager;
 use super::repository::manager::InitOptions;
 use super::restic::{
     backup_game_saves, handle_restic_command, prune::prune_snapshots, restore_game_saves,
+    snapshots::list_snapshots,
 };
 use super::setup;
 use super::utils::validation::prompt_initialize_if_needed;
@@ -111,6 +112,10 @@ pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
         } => {
             ensure_restic_available()?;
             handle_restore(game_name, snapshot_id, force)
+        }
+        GameCommands::Snapshots { game_name } => {
+            ensure_restic_available()?;
+            handle_snapshots(game_name)
         }
         GameCommands::Setup => {
             ensure_restic_available()?;
@@ -387,6 +392,10 @@ fn handle_restore(
     force: bool,
 ) -> Result<()> {
     restore_game_saves(game_name, snapshot_id, force)
+}
+
+fn handle_snapshots(game_name: Option<String>) -> Result<()> {
+    list_snapshots(game_name)
 }
 
 fn handle_setup() -> Result<()> {
