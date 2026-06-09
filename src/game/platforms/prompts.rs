@@ -96,43 +96,66 @@ pub(super) fn select_file_with_validation<F>(
 where
     F: Fn(&Path) -> Result<(), String>,
 {
-    let mut builder = PathInputBuilder::new()
-        .header(prompt.header)
-        .scope(FilePickerScope::Files)
-        .picker_hint(prompt.picker_hint)
-        .manual_option_label(prompt.manual_option_label)
-        .picker_option_label(prompt.picker_option_label)
-        .suggested_paths(prompt.suggested_paths);
+    let mut retry_paths: Vec<PathBuf> = Vec::new();
 
-    if let Some(start_dir) = prompt.start_dir {
-        builder = builder.start_dir(start_dir);
-    }
-
-    if let Some(start_path) = prompt.start_path {
-        builder = builder.start_path(start_path);
-    }
-
-    let selection = builder.choose()?;
-
-    match selection {
-        PathInputSelection::Manual(input) => {
-            let path = PathBuf::from(shellexpand::tilde(&input).into_owned());
-            if let Err(e) = validate(&path) {
-                FzfWrapper::message(&format!("{} {}", char::from(NerdFont::CrossCircle), e))?;
-                return Ok(None);
+    loop {
+        let mut suggested_paths = prompt.suggested_paths.clone();
+        for path in &retry_paths {
+            if !suggested_paths.iter().any(|existing| existing == path) {
+                suggested_paths.push(path.clone());
             }
-            Ok(Some(path))
         }
-        PathInputSelection::Picker(path) => {
-            if let Err(e) = validate(&path) {
-                FzfWrapper::message(&format!("{} {}", char::from(NerdFont::CrossCircle), e))?;
-                return Ok(None);
+
+        let mut builder = PathInputBuilder::new()
+            .header(prompt.header.clone())
+            .scope(FilePickerScope::Files)
+            .picker_hint(prompt.picker_hint.clone())
+            .manual_option_label(prompt.manual_option_label.clone())
+            .picker_option_label(prompt.picker_option_label.clone())
+            .suggested_paths(suggested_paths);
+
+        if let Some(start_dir) = &prompt.start_dir {
+            builder = builder.start_dir(start_dir.clone());
+        }
+
+        if let Some(start_path) = &prompt.start_path {
+            builder = builder.start_path(start_path.clone());
+        }
+
+        let selection = builder.choose()?;
+
+        match selection {
+            PathInputSelection::Manual(input) => {
+                let path = PathBuf::from(shellexpand::tilde(&input).into_owned());
+                if validate_or_retry(&path, &validate, &mut retry_paths)? {
+                    return Ok(Some(path));
+                }
             }
-            Ok(Some(path))
+            PathInputSelection::Picker(path) => {
+                if validate_or_retry(&path, &validate, &mut retry_paths)? {
+                    return Ok(Some(path));
+                }
+            }
+            PathInputSelection::WinePrefix(_) => return Ok(None),
+            PathInputSelection::Cancelled => return Ok(None),
         }
-        PathInputSelection::WinePrefix(_) => Ok(None),
-        PathInputSelection::Cancelled => Ok(None),
     }
+}
+
+fn validate_or_retry<F>(path: &Path, validate: &F, retry_paths: &mut Vec<PathBuf>) -> Result<bool>
+where
+    F: Fn(&Path) -> Result<(), String>,
+{
+    if let Err(e) = validate(path) {
+        if !retry_paths.iter().any(|existing| existing == path) {
+            retry_paths.push(path.to_path_buf());
+        }
+
+        FzfWrapper::message(&format!("{} {}", char::from(NerdFont::CrossCircle), e))?;
+        return Ok(false);
+    }
+
+    Ok(true)
 }
 
 pub(super) fn ask_fullscreen() -> Result<bool> {
@@ -275,5 +298,42 @@ where
         Ok(Some(value))
     } else {
         Ok(None)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::menu_utils::MockQueue;
+
+    #[test]
+    fn validated_file_prompt_retries_after_invalid_picker_selection() {
+        let temp = tempfile::tempdir().unwrap();
+        let invalid = temp.path().join("notes.txt");
+        let valid = temp.path().join("Game.exe");
+        std::fs::write(&invalid, b"not an executable").unwrap();
+        std::fs::write(&valid, b"windows executable").unwrap();
+
+        let _guard = MockQueue::new()
+            .select_index(1)
+            .file_picker(invalid.to_string_lossy())
+            .message_ack()
+            .select_index(2)
+            .file_picker(valid.to_string_lossy())
+            .guard();
+
+        let selection = select_file_with_validation(
+            FileSelectionPrompt::game_file("Select game".to_string(), "Pick file".to_string()),
+            |path| {
+                if path.extension().and_then(|ext| ext.to_str()) == Some("exe") {
+                    Ok(())
+                } else {
+                    Err("expected .exe".to_string())
+                }
+            },
+        )
+        .unwrap();
+
+        assert_eq!(selection, Some(valid));
     }
 }

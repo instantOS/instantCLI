@@ -198,7 +198,7 @@ impl FilePickerBuilder {
 
             let (selections, invalid_entries) = self.filter_by_scope(selections);
 
-            if let Some(next_preselect) = self.handle_directory_invalid_entries(&invalid_entries)? {
+            if let Some(next_preselect) = self.handle_invalid_entries(&invalid_entries)? {
                 preselect = Some(next_preselect);
                 continue;
             }
@@ -264,21 +264,37 @@ impl FilePickerBuilder {
         (valid, invalid)
     }
 
-    fn handle_directory_invalid_entries(
-        &self,
-        invalid_entries: &[PathBuf],
-    ) -> Result<Option<PathBuf>> {
-        if self.scope != FilePickerScope::Directories || invalid_entries.is_empty() {
+    fn handle_invalid_entries(&self, invalid_entries: &[PathBuf]) -> Result<Option<PathBuf>> {
+        if invalid_entries.is_empty() {
             return Ok(None);
         }
 
-        // invalid_entries is guaranteed to be non-empty here due to the guard above
         let first_invalid = invalid_entries.first().unwrap();
-        let message = format!(
-            "`{}` is a file.\n\nPlease choose a directory instead.",
-            first_invalid.display()
-        );
-        FzfWrapper::message(&message)?;
+        match self.scope {
+            FilePickerScope::Files => {
+                if !first_invalid.is_dir() {
+                    return Ok(None);
+                }
+
+                let message = format!(
+                    "`{}` is a directory.\n\nPlease choose a file instead.",
+                    first_invalid.display()
+                );
+                FzfWrapper::message(&message)?;
+            }
+            FilePickerScope::Directories => {
+                if !first_invalid.is_file() {
+                    return Ok(None);
+                }
+
+                let message = format!(
+                    "`{}` is a file.\n\nPlease choose a directory instead.",
+                    first_invalid.display()
+                );
+                FzfWrapper::message(&message)?;
+            }
+            FilePickerScope::FilesAndDirectories => return Ok(None),
+        }
 
         Ok(invalid_entries.first().cloned())
     }
@@ -466,5 +482,35 @@ mod mock_tests {
         let _guard = MockQueue::new().file_picker_cancelled().guard();
         let result = MenuWrapper::file_picker().pick_one().unwrap();
         assert_eq!(result, None);
+    }
+
+    #[test]
+    fn files_scope_invalid_directory_reopens_picker_at_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let directory = temp.path().join("games");
+        std::fs::create_dir(&directory).unwrap();
+
+        let _guard = MockQueue::new().message_ack().guard();
+        let builder = FilePickerBuilder::new().scope(FilePickerScope::Files);
+
+        let preselect = builder
+            .handle_invalid_entries(&[directory.clone()])
+            .unwrap();
+
+        assert_eq!(preselect, Some(directory));
+    }
+
+    #[test]
+    fn directories_scope_invalid_file_reopens_picker_at_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let file = temp.path().join("Game.exe");
+        std::fs::write(&file, b"").unwrap();
+
+        let _guard = MockQueue::new().message_ack().guard();
+        let builder = FilePickerBuilder::new().scope(FilePickerScope::Directories);
+
+        let preselect = builder.handle_invalid_entries(&[file.clone()]).unwrap();
+
+        assert_eq!(preselect, Some(file));
     }
 }
