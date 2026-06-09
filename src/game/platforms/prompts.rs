@@ -101,9 +101,7 @@ where
     loop {
         let mut suggested_paths = prompt.suggested_paths.clone();
         for path in &retry_paths {
-            if !suggested_paths.iter().any(|existing| existing == path) {
-                suggested_paths.push(path.clone());
-            }
+            push_path_if_absent(&mut suggested_paths, path.clone());
         }
 
         let mut builder = PathInputBuilder::new()
@@ -147,15 +145,19 @@ where
     F: Fn(&Path) -> Result<(), String>,
 {
     if let Err(e) = validate(path) {
-        if !retry_paths.iter().any(|existing| existing == path) {
-            retry_paths.push(path.to_path_buf());
-        }
+        push_path_if_absent(retry_paths, path.to_path_buf());
 
         FzfWrapper::message(&format!("{} {}", char::from(NerdFont::CrossCircle), e))?;
         return Ok(false);
     }
 
     Ok(true)
+}
+
+fn push_path_if_absent(paths: &mut Vec<PathBuf>, path: PathBuf) {
+    if !paths.iter().any(|existing| existing == &path) {
+        paths.push(path);
+    }
 }
 
 pub(super) fn ask_fullscreen() -> Result<bool> {
@@ -317,6 +319,37 @@ mod tests {
         let _guard = MockQueue::new()
             .select_index(1)
             .file_picker(invalid.to_string_lossy())
+            .message_ack()
+            .select_index(2)
+            .file_picker(valid.to_string_lossy())
+            .guard();
+
+        let selection = select_file_with_validation(
+            FileSelectionPrompt::game_file("Select game".to_string(), "Pick file".to_string()),
+            |path| {
+                if path.extension().and_then(|ext| ext.to_str()) == Some("exe") {
+                    Ok(())
+                } else {
+                    Err("expected .exe".to_string())
+                }
+            },
+        )
+        .unwrap();
+
+        assert_eq!(selection, Some(valid));
+    }
+
+    #[test]
+    fn validated_file_prompt_retries_after_invalid_manual_selection() {
+        let temp = tempfile::tempdir().unwrap();
+        let invalid = temp.path().join("notes.txt");
+        let valid = temp.path().join("Game.exe");
+        std::fs::write(&invalid, b"not an executable").unwrap();
+        std::fs::write(&valid, b"windows executable").unwrap();
+
+        let _guard = MockQueue::new()
+            .select_index(0)
+            .input_string(invalid.to_string_lossy())
             .message_ack()
             .select_index(2)
             .file_picker(valid.to_string_lossy())
