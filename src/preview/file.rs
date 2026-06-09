@@ -22,25 +22,28 @@ pub(crate) fn render_file_suggestion_preview(ctx: &PreviewContext) -> Result<Str
     };
 
     let path = Path::new(path_str);
+    let columns = ctx.columns();
 
     if !path.exists() {
-        return Ok(PreviewBuilder::new()
-            .header(NerdFont::Warning, "File not found")
-            .subtext(path_str)
-            .build_string());
+        return Ok(append_wrapped_path(
+            PreviewBuilder::new().header(NerdFont::Warning, "File not found"),
+            Path::new(path_str),
+            columns,
+        )
+        .build_string());
     }
 
     let mimetype = detect_mimetype(path);
     let category = mimetype_category(&mimetype);
 
     match category {
-        FileCategory::Video | FileCategory::Audio => render_media_preview(path, &mimetype),
-        FileCategory::Image => render_image_preview(path, &mimetype),
-        FileCategory::Text => render_text_preview(path, &mimetype),
-        FileCategory::Archive => render_archive_preview(path, &mimetype),
-        FileCategory::Pdf => render_pdf_preview(path, &mimetype),
-        FileCategory::Directory => render_directory_preview(path),
-        FileCategory::Other => render_generic_preview(path, &mimetype),
+        FileCategory::Video | FileCategory::Audio => render_media_preview(path, &mimetype, columns),
+        FileCategory::Image => render_image_preview(path, &mimetype, columns),
+        FileCategory::Text => render_text_preview(path, &mimetype, columns),
+        FileCategory::Archive => render_archive_preview(path, &mimetype, columns),
+        FileCategory::Pdf => render_pdf_preview(path, &mimetype, columns),
+        FileCategory::Directory => render_directory_preview(path, columns),
+        FileCategory::Other => render_generic_preview(path, &mimetype, columns),
     }
 }
 
@@ -127,7 +130,7 @@ fn detect_mimetype(path: &Path) -> String {
     "application/octet-stream".to_string()
 }
 
-fn render_media_preview(path: &Path, mimetype: &str) -> Result<String> {
+fn render_media_preview(path: &Path, mimetype: &str, columns: Option<usize>) -> Result<String> {
     let metadata = probe_media_metadata(path);
     let file_name = path
         .file_name()
@@ -173,15 +176,12 @@ fn render_media_preview(path: &Path, mimetype: &str) -> Result<String> {
         builder = builder.field("Bitrate", &bitrate);
     }
 
-    builder = builder
-        .blank()
-        .field("MIME Type", mimetype)
-        .subtext(&path.to_string_lossy());
+    builder = append_wrapped_path(builder.blank().field("MIME Type", mimetype), path, columns);
 
     Ok(builder.build_string())
 }
 
-fn render_image_preview(path: &Path, mimetype: &str) -> Result<String> {
+fn render_image_preview(path: &Path, mimetype: &str, columns: Option<usize>) -> Result<String> {
     let file_name = path
         .file_name()
         .and_then(|s| s.to_str())
@@ -201,10 +201,7 @@ fn render_image_preview(path: &Path, mimetype: &str) -> Result<String> {
         }
     }
 
-    builder = builder
-        .blank()
-        .field("MIME Type", mimetype)
-        .subtext(&path.to_string_lossy());
+    builder = append_wrapped_path(builder.blank().field("MIME Type", mimetype), path, columns);
 
     Ok(builder.build_string())
 }
@@ -257,7 +254,7 @@ fn parse_dimensions_from_file_output(output: &str) -> Option<(u32, u32)> {
     None
 }
 
-fn render_text_preview(path: &Path, mimetype: &str) -> Result<String> {
+fn render_text_preview(path: &Path, mimetype: &str, columns: Option<usize>) -> Result<String> {
     let file_name = path
         .file_name()
         .and_then(|s| s.to_str())
@@ -278,15 +275,12 @@ fn render_text_preview(path: &Path, mimetype: &str) -> Result<String> {
         builder = builder.field("Lines", &lines.to_string());
     }
 
-    builder = builder
-        .blank()
-        .field("MIME Type", mimetype)
-        .subtext(&path.to_string_lossy());
+    builder = append_wrapped_path(builder.blank().field("MIME Type", mimetype), path, columns);
 
     Ok(builder.build_string())
 }
 
-fn render_archive_preview(path: &Path, mimetype: &str) -> Result<String> {
+fn render_archive_preview(path: &Path, mimetype: &str, columns: Option<usize>) -> Result<String> {
     let file_name = path
         .file_name()
         .and_then(|s| s.to_str())
@@ -301,15 +295,12 @@ fn render_archive_preview(path: &Path, mimetype: &str) -> Result<String> {
         }
     }
 
-    builder = builder
-        .blank()
-        .field("MIME Type", mimetype)
-        .subtext(&path.to_string_lossy());
+    builder = append_wrapped_path(builder.blank().field("MIME Type", mimetype), path, columns);
 
     Ok(builder.build_string())
 }
 
-fn render_pdf_preview(path: &Path, mimetype: &str) -> Result<String> {
+fn render_pdf_preview(path: &Path, mimetype: &str, columns: Option<usize>) -> Result<String> {
     let file_name = path
         .file_name()
         .and_then(|s| s.to_str())
@@ -342,15 +333,12 @@ fn render_pdf_preview(path: &Path, mimetype: &str) -> Result<String> {
         }
     }
 
-    builder = builder
-        .blank()
-        .field("MIME Type", mimetype)
-        .subtext(&path.to_string_lossy());
+    builder = append_wrapped_path(builder.blank().field("MIME Type", mimetype), path, columns);
 
     Ok(builder.build_string())
 }
 
-fn render_directory_preview(path: &Path) -> Result<String> {
+fn render_directory_preview(path: &Path, columns: Option<usize>) -> Result<String> {
     let dir_name = path
         .file_name()
         .and_then(|s| s.to_str())
@@ -369,12 +357,12 @@ fn render_directory_preview(path: &Path) -> Result<String> {
         builder = builder.field("Modified", &format_system_time_for_display(Some(modified)));
     }
 
-    builder = builder.blank().subtext(&path.to_string_lossy());
+    builder = append_wrapped_path(builder.blank(), path, columns);
 
     Ok(builder.build_string())
 }
 
-fn render_generic_preview(path: &Path, mimetype: &str) -> Result<String> {
+fn render_generic_preview(path: &Path, mimetype: &str, columns: Option<usize>) -> Result<String> {
     let file_name = path
         .file_name()
         .and_then(|s| s.to_str())
@@ -397,10 +385,125 @@ fn render_generic_preview(path: &Path, mimetype: &str) -> Result<String> {
         }
     }
 
-    builder = builder
-        .blank()
-        .field("MIME Type", mimetype)
-        .subtext(&path.to_string_lossy());
+    builder = append_wrapped_path(builder.blank().field("MIME Type", mimetype), path, columns);
 
     Ok(builder.build_string())
+}
+
+fn append_wrapped_path(
+    mut builder: PreviewBuilder,
+    path: &Path,
+    columns: Option<usize>,
+) -> PreviewBuilder {
+    let path = path.to_string_lossy();
+    let line_width = path_line_width(columns);
+    let lines = wrap_path_for_preview(&path, line_width);
+
+    for (index, line) in lines.iter().enumerate() {
+        let label = if index == 0 { "Path: " } else { "      " };
+        builder = builder.subtext(&format!("{label}{line}"));
+    }
+
+    builder
+}
+
+fn path_line_width(columns: Option<usize>) -> usize {
+    columns.unwrap_or(80).saturating_sub(8).clamp(24, 160)
+}
+
+fn wrap_path_for_preview(path: &str, line_width: usize) -> Vec<String> {
+    if path.chars().count() <= line_width {
+        return vec![path.to_string()];
+    }
+
+    let mut lines = Vec::new();
+    let mut current = String::new();
+
+    for segment in split_path_segments(path) {
+        if current.chars().count() + segment.chars().count() <= line_width {
+            current.push_str(&segment);
+            continue;
+        }
+
+        if !current.is_empty() {
+            lines.push(std::mem::take(&mut current));
+        }
+
+        if segment.chars().count() <= line_width {
+            current.push_str(&segment);
+        } else {
+            lines.extend(split_long_segment(&segment, line_width));
+        }
+    }
+
+    if !current.is_empty() {
+        lines.push(current);
+    }
+
+    lines
+}
+
+fn split_path_segments(path: &str) -> Vec<String> {
+    let mut segments = Vec::new();
+    let mut current = String::new();
+
+    for ch in path.chars() {
+        current.push(ch);
+        if ch == '/' || ch == '\\' {
+            segments.push(std::mem::take(&mut current));
+        }
+    }
+
+    if !current.is_empty() {
+        segments.push(current);
+    }
+
+    segments
+}
+
+fn split_long_segment(segment: &str, line_width: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut current = String::new();
+
+    for ch in segment.chars() {
+        if current.chars().count() >= line_width {
+            lines.push(std::mem::take(&mut current));
+        }
+        current.push(ch);
+    }
+
+    if !current.is_empty() {
+        lines.push(current);
+    }
+
+    lines
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wraps_long_paths_at_directory_boundaries() {
+        let lines = wrap_path_for_preview(
+            "/run/media/benjamin/External Drive/Games/Very Long Game Name/Game.exe",
+            24,
+        );
+
+        assert!(lines.len() > 1);
+        assert!(lines.iter().all(|line| line.chars().count() <= 24));
+        assert_eq!(
+            lines.join(""),
+            "/run/media/benjamin/External Drive/Games/Very Long Game Name/Game.exe"
+        );
+    }
+
+    #[test]
+    fn wraps_single_long_path_component() {
+        let lines = wrap_path_for_preview("/mnt/aaaaaaaaaaaaaaaaaaaaaaaaaaaa/Game.exe", 10);
+
+        assert!(lines.len() > 1);
+        assert!(lines.iter().all(|line| line.chars().count() <= 10));
+        assert_eq!(lines.join(""), "/mnt/aaaaaaaaaaaaaaaaaaaaaaaaaaaa/Game.exe");
+    }
 }
