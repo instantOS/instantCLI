@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.36](https://github.com/instantOS/instantCLI/compare/v0.13.35...v0.13.36) - 2026-06-05
+
+### Other
+
+- better merge hints
+- better external repo handling in CLI
+- handle external repos better in root flow
+- better root add dotfiles flow
+- init wallpaper support for niri
+- tap to click for niri
+- refactor niri a bit
+- unify niri and sway handling more
+- improve false compositor detection
+- Merge pull request #145 from instantOS/release-plz-2026-05-25T17-29-58Z
+- add back button to snapshot selection
+- add kooha assist
+- add fastfetch preview
+- add figlet to caffeine
+- Merge branch 'main' into dev
+- better theme preview
+
+## [0.13.36](https://github.com/instantOS/instantCLI/compare/v0.13.35...v0.13.36) - 2026-06-02
+
+### Other
+
+- better external repo handling in CLI
+- handle external repos better in root flow
+- better root add dotfiles flow
+- init wallpaper support for niri
+- tap to click for niri
+- refactor niri a bit
+- unify niri and sway handling more
+- improve false compositor detection
+- Merge pull request #145 from instantOS/release-plz-2026-05-25T17-29-58Z
+- add back button to snapshot selection
+- add kooha assist
+- add fastfetch preview
+- add figlet to caffeine
+- Merge branch 'main' into dev
+- better theme preview
+
 ## [0.13.35](https://github.com/instantOS/instantCLI/compare/v0.13.34...v0.13.35) - 2026-05-25
 
 ### Other
