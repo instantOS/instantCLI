@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.37](https://github.com/instantOS/instantCLI/compare/v0.13.36...v0.13.37) - 2026-06-06
+
+### Fixed
+
+- fix ins arch deps
+
+### Other
+
+- Merge branch 'dev'
+- add ntfsprogs
+
 ## [0.13.36](https://github.com/instantOS/instantCLI/compare/v0.13.35...v0.13.36) - 2026-06-05
 
 ### Other
