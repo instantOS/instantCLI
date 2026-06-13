@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashSet,
+    fs,
     path::{Path, PathBuf},
 };
 
@@ -260,6 +261,19 @@ pub fn installations_config_path() -> Result<PathBuf> {
     Ok(paths::games_config_dir()?.join("installations.toml"))
 }
 
+fn save_pretty_config<T: Serialize>(config: &T, path: &Path, description: &str) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("creating config directory {}", parent.display()))?;
+    }
+
+    let toml = toml::to_string_pretty(config).context("serializing game config to toml")?;
+    fs::write(path, format!("# {description}\n{toml}"))
+        .with_context(|| format!("writing config to {}", path.display()))?;
+
+    Ok(())
+}
+
 impl InstantGameConfig {
     pub fn load() -> Result<Self> {
         let path = games_config_path()?;
@@ -288,12 +302,12 @@ impl InstantGameConfig {
 
     pub fn save(&self) -> Result<()> {
         let path = games_config_path()?;
-        self.save_with_documentation(&path)
+        self.save_to_path(path)
     }
 
     pub fn save_to_path(&self, path: impl AsRef<Path>) -> Result<()> {
         let path = path.as_ref();
-        self.save_with_documentation(path)
+        save_pretty_config(self, path, "Instant game configuration")
     }
 
     pub fn is_initialized(&self) -> bool {
@@ -329,12 +343,12 @@ impl InstallationsConfig {
 
     pub fn save(&self) -> Result<()> {
         let path = installations_config_path()?;
-        self.save_with_documentation(&path)
+        self.save_to_path(path)
     }
 
     pub fn save_to_path(&self, path: impl AsRef<Path>) -> Result<()> {
         let path = path.as_ref();
-        self.save_with_documentation(path)
+        save_pretty_config(self, path, "Device-specific game installations")
     }
 }
 
@@ -359,6 +373,7 @@ documented_config!(InstallationsConfig,
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use std::path::PathBuf;
 
     #[test]
@@ -483,5 +498,40 @@ mod tests {
                 .to_string()
                 .contains("Duplicate installation for game found")
         );
+    }
+
+    #[test]
+    fn test_save_installations_uses_pretty_table_arrays() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("installations.toml");
+        let config = InstallationsConfig {
+            installations: vec![GameInstallation::with_kind(
+                "Game1",
+                TildePath::new(PathBuf::from("~/.saves/game1")),
+                PathContentKind::Directory,
+            )],
+        };
+
+        config.save_to_path(&path).unwrap();
+
+        let contents = fs::read_to_string(path).unwrap();
+        assert!(contents.contains("[[installations]]"));
+        assert!(contents.contains("game_name = \"Game1\""));
+        assert!(!contents.contains("installations = [{"));
+    }
+
+    #[test]
+    fn test_save_games_uses_pretty_table_arrays() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("games.toml");
+        let mut config = InstantGameConfig::default();
+        config.games.push(Game::new("Game1"));
+
+        config.save_to_path(&path).unwrap();
+
+        let contents = fs::read_to_string(path).unwrap();
+        assert!(contents.contains("[[games]]"));
+        assert!(contents.contains("name = \"Game1\""));
+        assert!(!contents.contains("games = [{"));
     }
 }
