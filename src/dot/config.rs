@@ -574,6 +574,15 @@ documented_config!(
     "Path to the SQLite database storing file hashes",
     repos,
     "List of dotfile repositories to manage",
+    example,
+    r#"
+[[repos]]
+url = "git@github.com:you/dotfiles.git"
+name = "dotfiles"
+branch = "main"
+enabled = true
+read_only = false
+"#,
     skipped_paths,
     "Paths to skip during dotfile operations (local overrides)",
     units,
@@ -581,3 +590,36 @@ documented_config!(
     encryption_keys,
     "Paths to encryption key files (private keys) for decrypting .age dotfiles; tilde-expanded, loaded after $AGE_IDENTITY",
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn save_documents_repos_example_and_uses_pretty_table_arrays() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("dots.toml");
+        let mut config = DotfileConfig::default();
+        config.repos.push(Repo {
+            url: "git@github.com:me/dotfiles.git".to_string(),
+            name: "dotfiles".to_string(),
+            branch: Some("main".to_string()),
+            active_subdirectories: None,
+            enabled: true,
+            read_only: false,
+            metadata: None,
+        });
+
+        config.save_documented_pretty_toml(&path, None).unwrap();
+
+        let contents = fs::read_to_string(path).unwrap();
+        assert!(contents.contains("# repos = []  # List of dotfile repositories to manage"));
+        assert!(contents.contains("# Example repos entry:"));
+        assert!(contents.contains("# [[repos]]"));
+        assert!(contents.contains("# url = \"git@github.com:you/dotfiles.git\""));
+        assert!(contents.contains("[[repos]]"));
+        assert!(contents.contains("url = \"git@github.com:me/dotfiles.git\""));
+        assert!(!contents.contains("repos = [{"));
+    }
+}

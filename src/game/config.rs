@@ -341,6 +341,17 @@ documented_config!(
     secret,
     games,
     "List of tracked games",
+    example,
+    r#"
+[[games]]
+name = "Example Game"
+description = "Optional description"
+
+[[games.dependencies]]
+id = "example-save-data"
+source_path = "~/Games/Example Game/Saves"
+source_type = "directory"
+"#,
     retention_policy,
     "Backup retention policy (keep-daily, keep-weekly, etc.)",
 );
@@ -350,6 +361,13 @@ documented_config!(
     InstallationsConfig,
     installations,
     "List of game installations on this device",
+    example,
+    r#"
+[[installations]]
+game_name = "Example Game"
+save_path = "~/Games/Example Game/Saves"
+save_path_type = "directory"
+"#,
 );
 
 #[cfg(test)]
@@ -503,6 +521,10 @@ mod tests {
         assert!(
             contents.contains("# installations = []  # List of game installations on this device")
         );
+        assert!(contents.contains("# Example installations entry:"));
+        assert!(contents.contains("# [[installations]]"));
+        assert!(contents.contains("# game_name = \"Example Game\""));
+        assert!(contents.contains("# save_path = \"~/Games/Example Game/Saves\""));
         assert!(contents.contains("[[installations]]"));
         assert!(contents.contains("game_name = \"Game1\""));
         assert!(!contents.contains("installations = [{"));
@@ -522,6 +544,10 @@ mod tests {
         let contents = fs::read_to_string(path).unwrap();
         assert!(contents.contains("# Available fields:"));
         assert!(contents.contains("# games = []  # List of tracked games"));
+        assert!(contents.contains("# Example games entry:"));
+        assert!(contents.contains("# [[games]]"));
+        assert!(contents.contains("# name = \"Example Game\""));
+        assert!(contents.contains("# [[games.dependencies]]"));
         assert!(contents.contains("[[games]]"));
         assert!(contents.contains("name = \"Game1\""));
         assert!(!contents.contains("games = [{"));

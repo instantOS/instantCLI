@@ -56,6 +56,12 @@ documented_config!(
     ResolvethingConfig,
     scan_dirs,
     "List of directories to scan; each entry has a path and a list of file extensions (empty = all plain text files)",
+    example,
+    r#"
+[[scan_dirs]]
+path = "~/Documents"
+extensions = ["md", "json"]
+"#,
     editor_command,
     "Optional editor command used for conflict diffs; defaults to $EDITOR or nvim",
 );
@@ -207,6 +213,10 @@ mod tests {
         assert!(contents.contains(
             "# scan_dirs  # List of directories to scan; each entry has a path and a list of file extensions"
         ));
+        assert!(contents.contains("# Example scan_dirs entry:"));
+        assert!(contents.contains("# [[scan_dirs]]"));
+        assert!(contents.contains("# path = \"~/Documents\""));
+        assert!(contents.contains("# extensions = [\"md\", \"json\"]"));
         assert!(contents.contains("# editor_command = \"\""));
         assert!(contents.contains("[[scan_dirs]]"));
         assert!(contents.contains("path = \"~/wiki\""));

@@ -29,18 +29,35 @@ fn single_line(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-fn documented_field_line(field: &ConfigFieldMeta) -> String {
-    let description = single_line(field.description);
-    if field.secret {
-        return format!("# {}  # {}\n", field.name, description);
+fn comment_lines(s: &str) -> String {
+    let mut output = String::new();
+    for line in s.trim().lines() {
+        let line = line.trim_end();
+        if line.is_empty() {
+            output.push_str("#\n");
+        } else {
+            output.push_str(&format!("# {line}\n"));
+        }
     }
+    output
+}
 
-    match field.default_value.as_deref() {
+fn documented_field_lines(field: &ConfigFieldMeta) -> String {
+    let description = single_line(field.description);
+    let mut output = match field.default_value.as_deref() {
+        _ if field.secret => format!("# {}  # {}\n", field.name, description),
         Some(default_value) if is_compact_doc_value(default_value) => {
             format!("# {} = {}  # {}\n", field.name, default_value, description)
         }
         _ => format!("# {}  # {}\n", field.name, description),
+    };
+
+    if let Some(example) = field.example {
+        output.push_str(&format!("# Example {} entry:\n", field.name));
+        output.push_str(&comment_lines(example));
     }
+
+    output
 }
 
 fn is_compact_doc_value(value: &str) -> bool {
@@ -112,6 +129,8 @@ pub struct ConfigFieldMeta {
     /// field name and description are still documented. This does not redact
     /// or encrypt actual configured values when saving the TOML body.
     pub secret: bool,
+    /// Commented TOML snippet that demonstrates how to configure this field.
+    pub example: Option<&'static str>,
 }
 
 /// Trait for configs with documented defaults
@@ -137,7 +156,7 @@ pub trait DocumentedConfig: Sized + Default + Serialize {
         let mut field_docs = String::new();
         field_docs.push_str("# Available fields:\n");
         for field in Self::field_metadata() {
-            field_docs.push_str(&documented_field_line(&field));
+            field_docs.push_str(&documented_field_lines(&field));
         }
 
         let toml = toml::to_string_pretty(self).context("serializing config to toml")?;
@@ -167,7 +186,7 @@ pub trait DocumentedConfig: Sized + Default + Serialize {
 
             if is_default {
                 // Comment out fields with default values on initial creation
-                output.push_str(&documented_field_line(field));
+                output.push_str(&documented_field_lines(field));
             } else if let Some(value) = current_value {
                 output.push_str(&format!(
                     "{} = {}  # {}\n",
@@ -217,6 +236,11 @@ pub trait DocumentedConfig: Sized + Default + Serialize {
 ///     music_volume, "Music volume (0.0-1.0)",
 ///     preprocessor, "Audio preprocessor",
 ///     auphonic_api_key, "Auphonic API key", secret,
+///     scan_dirs, "Directories to scan", example, r#"
+/// [[scan_dirs]]
+/// path = "~/Documents"
+/// extensions = ["md", "json"]
+/// "#,
 /// );
 /// ```
 ///
@@ -224,6 +248,7 @@ pub trait DocumentedConfig: Sized + Default + Serialize {
 /// sensitive (e.g. passwords, API keys); the field will still be documented,
 /// but its default value will not be written to generated documentation. This
 /// does not redact or encrypt actual configured values when saving the TOML body.
+/// Append `, example, r#"..."#` to include a commented TOML example for a field.
 ///
 /// Option<T> fields are automatically detected - the inner type's default
 /// is used for documentation (e.g., `Option<Vec<String>>` shows `[]`).
@@ -243,9 +268,33 @@ macro_rules! documented_config {
         );
     };
 
-    // Munch: secret field. Accumulate ($field, $desc, true).
-    // Arm must come before the plain-field arm so the literal `secret` token
-    // is consumed here instead of leaking into $rest.
+    // Munch: secret field with example.
+    (@munch
+        $config_name:ident,
+        [$($acc:tt)*]
+        $field:ident, $desc:expr, secret, example, $example:expr, $($rest:tt)*
+    ) => {
+        $crate::documented_config!(
+            @munch $config_name,
+            [$($acc)* ($field, $desc, true, Some($example))]
+            $($rest)*
+        );
+    };
+
+    // Munch: field with example.
+    (@munch
+        $config_name:ident,
+        [$($acc:tt)*]
+        $field:ident, $desc:expr, example, $example:expr, $($rest:tt)*
+    ) => {
+        $crate::documented_config!(
+            @munch $config_name,
+            [$($acc)* ($field, $desc, false, Some($example))]
+            $($rest)*
+        );
+    };
+
+    // Munch: secret field.
     (@munch
         $config_name:ident,
         [$($acc:tt)*]
@@ -253,12 +302,12 @@ macro_rules! documented_config {
     ) => {
         $crate::documented_config!(
             @munch $config_name,
-            [$($acc)* ($field, $desc, true)]
+            [$($acc)* ($field, $desc, true, None)]
             $($rest)*
         );
     };
 
-    // Munch: plain field followed by more. Accumulate ($field, $desc, false).
+    // Munch: plain field.
     (@munch
         $config_name:ident,
         [$($acc:tt)*]
@@ -266,7 +315,7 @@ macro_rules! documented_config {
     ) => {
         $crate::documented_config!(
             @munch $config_name,
-            [$($acc)* ($field, $desc, false)]
+            [$($acc)* ($field, $desc, false, None)]
             $($rest)*
         );
     };
@@ -274,7 +323,7 @@ macro_rules! documented_config {
     // Munch: terminator reached — emit the impl.
     (@munch
         $config_name:ident,
-        [$(($field:ident, $desc:expr, $secret:expr))*]
+        [$(($field:ident, $desc:expr, $secret:expr, $example:expr))*]
     ) => {
         impl $crate::common::config::DocumentedConfig for $config_name {
             fn field_metadata() -> Vec<$crate::common::config::ConfigFieldMeta> {
@@ -287,6 +336,7 @@ macro_rules! documented_config {
                             default_value: $crate::common::config::DocValue(&default_config.$field).to_toml(),
                             description: $desc,
                             secret: $secret,
+                            example: $example,
                         }
                     ),*
                 ]
