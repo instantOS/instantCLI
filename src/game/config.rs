@@ -1,8 +1,7 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashSet,
-    fs,
     path::{Path, PathBuf},
 };
 
@@ -261,19 +260,6 @@ pub fn installations_config_path() -> Result<PathBuf> {
     Ok(paths::games_config_dir()?.join("installations.toml"))
 }
 
-fn save_pretty_config<T: Serialize>(config: &T, path: &Path, description: &str) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("creating config directory {}", parent.display()))?;
-    }
-
-    let toml = toml::to_string_pretty(config).context("serializing game config to toml")?;
-    fs::write(path, format!("# {description}\n{toml}"))
-        .with_context(|| format!("writing config to {}", path.display()))?;
-
-    Ok(())
-}
-
 impl InstantGameConfig {
     pub fn load() -> Result<Self> {
         let path = games_config_path()?;
@@ -302,12 +288,7 @@ impl InstantGameConfig {
 
     pub fn save(&self) -> Result<()> {
         let path = games_config_path()?;
-        self.save_to_path(path)
-    }
-
-    pub fn save_to_path(&self, path: impl AsRef<Path>) -> Result<()> {
-        let path = path.as_ref();
-        save_pretty_config(self, path, "Instant game configuration")
+        self.save_documented_pretty_toml(path, Some("Instant game configuration"))
     }
 
     pub fn is_initialized(&self) -> bool {
@@ -343,12 +324,7 @@ impl InstallationsConfig {
 
     pub fn save(&self) -> Result<()> {
         let path = installations_config_path()?;
-        self.save_to_path(path)
-    }
-
-    pub fn save_to_path(&self, path: impl AsRef<Path>) -> Result<()> {
-        let path = path.as_ref();
-        save_pretty_config(self, path, "Device-specific game installations")
+        self.save_documented_pretty_toml(path, Some("Device-specific game installations"))
     }
 }
 
@@ -356,18 +332,24 @@ impl InstallationsConfig {
 use crate::documented_config;
 
 // Implement DocumentedConfig trait for InstantGameConfig using the macro
-documented_config!(InstantGameConfig,
-    repo, "Path to restic backup repository",
-    repo_password, "Password for restic repository",
-    games, "List of tracked games",
-    retention_policy, "Backup retention policy (keep-daily, keep-weekly, etc.)",
-    => games_config_path()
+documented_config!(
+    InstantGameConfig,
+    repo,
+    "Path to restic backup repository",
+    repo_password,
+    "Password for restic repository",
+    secret,
+    games,
+    "List of tracked games",
+    retention_policy,
+    "Backup retention policy (keep-daily, keep-weekly, etc.)",
 );
 
 // Implement DocumentedConfig trait for InstallationsConfig using the macro
-documented_config!(InstallationsConfig,
-    installations, "List of game installations on this device",
-    => installations_config_path()
+documented_config!(
+    InstallationsConfig,
+    installations,
+    "List of game installations on this device",
 );
 
 #[cfg(test)]
@@ -512,9 +494,15 @@ mod tests {
             )],
         };
 
-        config.save_to_path(&path).unwrap();
+        config
+            .save_documented_pretty_toml(&path, Some("Device-specific game installations"))
+            .unwrap();
 
         let contents = fs::read_to_string(path).unwrap();
+        assert!(contents.contains("# Available fields:"));
+        assert!(
+            contents.contains("# installations = []  # List of game installations on this device")
+        );
         assert!(contents.contains("[[installations]]"));
         assert!(contents.contains("game_name = \"Game1\""));
         assert!(!contents.contains("installations = [{"));
@@ -527,11 +515,56 @@ mod tests {
         let mut config = InstantGameConfig::default();
         config.games.push(Game::new("Game1"));
 
-        config.save_to_path(&path).unwrap();
+        config
+            .save_documented_pretty_toml(&path, Some("Instant game configuration"))
+            .unwrap();
 
         let contents = fs::read_to_string(path).unwrap();
+        assert!(contents.contains("# Available fields:"));
+        assert!(contents.contains("# games = []  # List of tracked games"));
         assert!(contents.contains("[[games]]"));
         assert!(contents.contains("name = \"Game1\""));
         assert!(!contents.contains("games = [{"));
+    }
+
+    #[test]
+    fn test_save_games_documents_repo_password_without_default() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("games.toml");
+        let config = InstantGameConfig::default();
+
+        config
+            .save_documented_pretty_toml(&path, Some("Instant game configuration"))
+            .unwrap();
+
+        let contents = fs::read_to_string(path).unwrap();
+        // Secret fields should still be discoverable, but their default value
+        // must not be advertised in the documentation block.
+        let docs_end = contents.find("\n\n").unwrap_or(contents.len());
+        let docs_block = &contents[..docs_end];
+        assert!(
+            docs_block.contains("# repo_password  # Password for restic repository"),
+            "repo_password missing from docs header: {docs_block}"
+        );
+        assert!(
+            !docs_block.contains("instantgamepassword"),
+            "default password leaked into docs header: {docs_block}"
+        );
+        // The current value still has to round-trip via the TOML body.
+        assert!(contents.contains("repo_password = "));
+    }
+
+    #[test]
+    fn test_repo_password_marked_secret_in_metadata() {
+        let metadata = InstantGameConfig::field_metadata();
+        let repo_password = metadata.iter().find(|f| f.name == "repo_password").unwrap();
+        assert!(
+            repo_password.secret,
+            "repo_password should be marked secret so its default is not written into docs"
+        );
+
+        // Sanity: a non-secret field on the same config is not flagged.
+        let games = metadata.iter().find(|f| f.name == "games").unwrap();
+        assert!(!games.secret);
     }
 }

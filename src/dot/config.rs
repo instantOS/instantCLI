@@ -562,14 +562,22 @@ pub fn extract_repo_name(repo: &str) -> String {
 use crate::documented_config;
 
 // Implement DocumentedConfig trait for DotfileConfig using the macro
-documented_config!(DotfileConfig,
-    clone_depth, "Git clone depth for repositories (default: 1 for shallow clones)",
-    hash_cleanup_days, "Days before old file hashes are cleaned up from database (default: 30)",
-    repos_dir, "Directory where dotfile repositories are stored",
-    database_dir, "Path to the SQLite database storing file hashes",
-    repos, "List of dotfile repositories to manage",
-    skipped_paths, "Paths to skip during dotfile operations (local overrides)",
-    units, "Global dotfile units - directories treated as atomic (combined with per-repo units)",
-    encryption_keys, "Paths to encryption key files (private keys) for decrypting .age dotfiles; tilde-expanded, loaded after $AGE_IDENTITY",
-    => config_file_path(None)
+documented_config!(
+    DotfileConfig,
+    clone_depth,
+    "Git clone depth for repositories (default: 1 for shallow clones)",
+    hash_cleanup_days,
+    "Days before old file hashes are cleaned up from database (default: 30)",
+    repos_dir,
+    "Directory where dotfile repositories are stored",
+    database_dir,
+    "Path to the SQLite database storing file hashes",
+    repos,
+    "List of dotfile repositories to manage",
+    skipped_paths,
+    "Paths to skip during dotfile operations (local overrides)",
+    units,
+    "Global dotfile units - directories treated as atomic (combined with per-repo units)",
+    encryption_keys,
+    "Paths to encryption key files (private keys) for decrypting .age dotfiles; tilde-expanded, loaded after $AGE_IDENTITY",
 );
