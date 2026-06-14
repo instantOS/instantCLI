@@ -353,7 +353,15 @@ source_path = "~/Games/Example Game/Saves"
 source_type = "directory"
 "#,
     retention_policy,
-    "Backup retention policy (keep-daily, keep-weekly, etc.)",
+    "Optional top-level backup retention policy; omit to use defaults (keep-daily, keep-weekly, etc.)",
+    example,
+    r#"
+[retention_policy]
+keep_daily = 90
+keep_weekly = 52
+keep_monthly = 36
+keep_yearly = 10
+"#,
 );
 
 // Implement DocumentedConfig trait for InstallationsConfig using the macro
@@ -548,6 +556,11 @@ mod tests {
         assert!(contents.contains("# [[games]]"));
         assert!(contents.contains("# name = \"Example Game\""));
         assert!(contents.contains("# [[games.dependencies]]"));
+        assert!(contents.contains("#\n# retention_policy"));
+        assert!(contents.contains("Optional top-level backup retention policy"));
+        assert!(contents.contains("# Example retention_policy entry:"));
+        assert!(contents.contains("# [retention_policy]"));
+        assert!(contents.contains("# keep_daily = 90"));
         assert!(contents.contains("[[games]]"));
         assert!(contents.contains("name = \"Game1\""));
         assert!(!contents.contains("games = [{"));

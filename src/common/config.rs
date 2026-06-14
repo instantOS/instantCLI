@@ -55,6 +55,7 @@ fn documented_field_lines(field: &ConfigFieldMeta) -> String {
     if let Some(example) = field.example {
         output.push_str(&format!("# Example {} entry:\n", field.name));
         output.push_str(&comment_lines(example));
+        output.push_str("#\n");
     }
 
     output
