@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0](https://github.com/instantOS/instantCLI/compare/v0.13.37...v0.14.0) - 2026-06-14
+
+### Fixed
+
+- fix pretty config
+- fix ugly settings serialization
+- fix file previews with huge path lengths
+- fix buggy yazi/recommendation picker
+
+### Other
+
+- bump
+- add better examples
+- update docs
+- add example capability
+- add ins game snapshots command
+- dedupe
+- alias game sync
+
 ## [0.13.37](https://github.com/instantOS/instantCLI/compare/v0.13.36...v0.13.37) - 2026-06-06
 
 ### Fixed
