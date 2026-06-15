@@ -150,7 +150,9 @@ impl WinePrefixContext {
 
         expanded
             .into_iter()
-            .flat_map(|pattern| expand_root_placeholders(&pattern, &self.root_candidates))
+            .flat_map(|pattern| {
+                expand_root_placeholders(&pattern, &self.root_candidates, &self.win_program_data)
+            })
             .flat_map(|pattern| {
                 expand_base_placeholders(&pattern, candidate_base_paths_for_entry(game, self))
             })
@@ -311,19 +313,49 @@ fn expand_dynamic_placeholders(pattern: &str) -> Vec<String> {
     vec![pattern.to_string()]
 }
 
-fn expand_root_placeholders(pattern: &str, root_candidates: &[String]) -> Vec<String> {
+fn expand_root_placeholders(
+    pattern: &str,
+    root_candidates: &[String],
+    win_program_data: &str,
+) -> Vec<String> {
     if !pattern.contains("<root>") {
         return vec![pattern.to_string()];
     }
 
-    if root_candidates.is_empty() {
-        return Vec::new();
+    let mut expanded = Vec::new();
+
+    expanded.extend(
+        root_candidates
+            .iter()
+            .map(|root| pattern.replace("<root>", root)),
+    );
+
+    if let Some(orbit_path) = legacy_ubisoft_orbit_path(pattern, win_program_data) {
+        expanded.push(orbit_path);
     }
 
-    root_candidates
-        .iter()
-        .map(|root| pattern.replace("<root>", root))
-        .collect()
+    expanded.sort();
+    expanded.dedup();
+    expanded
+}
+
+fn legacy_ubisoft_orbit_path(pattern: &str, win_program_data: &str) -> Option<String> {
+    let normalized = pattern.replace('\\', "/");
+    let token = "<root>/savegames/<storeUserId>/";
+    let title_id = normalized
+        .strip_prefix(token)
+        .or_else(|| normalized.split_once(token).map(|(_, suffix)| suffix))?
+        .split('/')
+        .next()
+        .filter(|value| !value.is_empty())?;
+
+    Some(
+        PathBuf::from(win_program_data)
+            .join("Orbit")
+            .join(title_id)
+            .display()
+            .to_string(),
+    )
 }
 
 fn expand_base_placeholders(pattern: &str, base_candidates: Vec<String>) -> Vec<String> {
@@ -864,7 +896,68 @@ mod tests {
 
         assert_eq!(
             expanded,
-            vec![format!("{}/savegames/*/857", ubisoft_root.display())]
+            vec![
+                format!("{}/savegames/*/857", ubisoft_root.display()),
+                prefix
+                    .path()
+                    .join("drive_c")
+                    .join("ProgramData")
+                    .join("Orbit")
+                    .join("857")
+                    .display()
+                    .to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn root_placeholder_also_expands_legacy_ubisoft_orbit_saves() {
+        let prefix = tempfile::tempdir().unwrap();
+        let program_data = prefix.path().join("drive_c").join("ProgramData");
+        std::fs::create_dir_all(program_data.join("Orbit").join("46")).unwrap();
+
+        let ctx = WinePrefixContext::new(prefix.path(), None);
+        let game = test_windows_game("<root>/savegames/<storeUserId>/46", &[]);
+
+        let expanded = ctx.expand_paths(&game, &game.files[0]);
+
+        assert_eq!(
+            expanded,
+            vec![program_data.join("Orbit").join("46").display().to_string()]
+        );
+    }
+
+    #[test]
+    fn root_placeholder_keeps_launcher_and_legacy_ubisoft_candidates() {
+        let prefix = tempfile::tempdir().unwrap();
+        let drive_c = prefix.path().join("drive_c");
+        let ubisoft_root = drive_c
+            .join("Program Files (x86)")
+            .join("Ubisoft")
+            .join("Ubisoft Game Launcher");
+        let orbit_root = drive_c.join("ProgramData").join("Orbit").join("46");
+        std::fs::create_dir_all(&ubisoft_root).unwrap();
+        std::fs::create_dir_all(&orbit_root).unwrap();
+
+        let ctx = WinePrefixContext::new(prefix.path(), None);
+        let game = test_windows_game("<root>/savegames/<storeUserId>/46", &[]);
+
+        let expanded = ctx.expand_paths(&game, &game.files[0]);
+
+        assert_eq!(
+            expanded,
+            vec![
+                drive_c
+                    .join("Program Files (x86)")
+                    .join("Ubisoft")
+                    .join("Ubisoft Game Launcher")
+                    .join("savegames")
+                    .join("*")
+                    .join("46")
+                    .display()
+                    .to_string(),
+                orbit_root.display().to_string(),
+            ]
         );
     }
 

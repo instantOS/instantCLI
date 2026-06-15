@@ -22,7 +22,7 @@ use crate::ui::preview::FzfPreview;
 
 use super::manager::GameCreationContext;
 
-const DISCOVERY_CACHE_VERSION: u32 = 1;
+const DISCOVERY_CACHE_VERSION: u32 = 2;
 const DISCOVERY_CACHE_FILE: &str = "game-discovery-cache.json";
 const DISCOVERY_CACHE_MAX_BYTES: u64 = 4 * 1024 * 1024;
 
