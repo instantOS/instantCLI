@@ -292,7 +292,7 @@ where
 {
     let context = GameCreationContext::load().ok();
     let mut seen_save_paths = HashSet::new();
-    let scan_root = scan_path
+    let result_root = scan_path
         .map(expand_scan_path)
         .transpose()?
         .map(PathBuf::from);
@@ -309,7 +309,7 @@ where
         let cached_snapshot: Vec<_> = cache_entries.values().cloned().collect();
         for cached in cached_snapshot {
             let runtime_game = cached_into_runtime_game(cached, context.as_ref());
-            if cached_record_matches_request(&runtime_game.record, sources, scan_root.as_deref())
+            if cached_record_matches_request(&runtime_game.record, sources, result_root.as_deref())
                 && seen_save_paths.insert(runtime_game.record.save_path.clone())
             {
                 on_game(runtime_game)?;
@@ -332,13 +332,24 @@ where
     };
 
     if let Some(scan_path) = scan_path {
-        let root = scan_root
+        let root = result_root
             .clone()
             .unwrap_or_else(|| PathBuf::from(scan_path));
         if let Some(prefix) = find_prefix_root(&root) {
             on_progress(0, 1, &format!("Scanning Wine prefix {}", prefix.display()))?;
-            let result =
-                stream_generic_prefix_records(&prefix, Some(&root), context.as_ref(), emit_game);
+            let install_hint_root = if root == prefix {
+                None
+            } else {
+                Some(root.as_path())
+            };
+            let result = stream_generic_prefix_records(
+                &prefix,
+                Some(&root),
+                install_hint_root,
+                install_hint_root.is_some(),
+                context.as_ref(),
+                emit_game,
+            );
             if use_cache {
                 save_discovery_cache(cache_entries.into_values().collect())?;
             }
@@ -357,6 +368,8 @@ where
                 stream_generic_prefix_records(
                     &prefix,
                     Some(&root),
+                    None,
+                    false,
                     context.as_ref(),
                     &mut emit_game,
                 )?;
@@ -390,7 +403,14 @@ where
             if known_prefixes.iter().any(|known| known == &prefix) {
                 continue;
             }
-            stream_generic_prefix_records(&prefix, Some(&root), context.as_ref(), &mut emit_game)?;
+            stream_generic_prefix_records(
+                &prefix,
+                Some(&root),
+                None,
+                false,
+                context.as_ref(),
+                &mut emit_game,
+            )?;
         }
 
         if use_cache {
@@ -452,14 +472,23 @@ fn find_prefix_root(path: &Path) -> Option<PathBuf> {
 
 fn stream_generic_prefix_records<F>(
     prefix: &Path,
-    scan_root: Option<&Path>,
+    result_root: Option<&Path>,
+    install_hint_root: Option<&Path>,
+    focus_manifest_entries: bool,
     context: Option<&GameCreationContext>,
     mut on_game: F,
 ) -> Result<()>
 where
     F: FnMut(DiscoveredGameWithPreview) -> Result<()>,
 {
-    crate::game::platforms::ludusavi::stream_wine_prefix_saves(prefix, scan_root, |game_saves| {
+    let mut options = match install_hint_root {
+        Some(root) => crate::game::platforms::ludusavi::WinePrefixScanOptions::new(prefix)
+            .with_install_hint_root(root),
+        None => crate::game::platforms::ludusavi::WinePrefixScanOptions::new(prefix),
+    };
+    options.focus_manifest_entries = focus_manifest_entries;
+
+    crate::game::platforms::ludusavi::stream_wine_prefix_saves(options, |game_saves| {
         let save = match choose_primary_save(game_saves) {
             Some(s) => s,
             None => return Ok(()),
@@ -483,7 +512,10 @@ where
             game.set_existing(existing_name);
         }
 
-        on_game(into_record_with_preview(Box::new(game), context))?;
+        let discovered = into_record_with_preview(Box::new(game), context);
+        if result_root.is_none_or(|root| record_is_under_root(&discovered.record, root)) {
+            on_game(discovered)?;
+        }
         Ok(())
     })?;
 
@@ -656,7 +688,7 @@ fn load_valid_cached_entries() -> Result<Vec<CachedDiscoveredGame>> {
 fn cached_record_matches_request(
     record: &DiscoveredGameRecord,
     sources: &[DiscoverySource],
-    scan_root: Option<&Path>,
+    result_root: Option<&Path>,
 ) -> bool {
     if !sources.is_empty() {
         let source_matches = sources
@@ -668,7 +700,7 @@ fn cached_record_matches_request(
         }
     }
 
-    scan_root.is_none_or(|root| record_is_under_root(record, root))
+    result_root.is_none_or(|root| record_is_under_root(record, root))
 }
 
 fn record_matches_source(record: &DiscoveredGameRecord, source: DiscoverySource) -> bool {

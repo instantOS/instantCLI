@@ -14,6 +14,29 @@ static WINDOWS_MANIFEST: OnceLock<std::result::Result<Vec<WindowsGameEntry>, Str
     OnceLock::new();
 const STORE_USER_ID_PLACEHOLDER: &str = "<storeUserId>";
 
+#[derive(Debug, Clone, Copy)]
+pub struct WinePrefixScanOptions<'a> {
+    pub prefix: &'a Path,
+    pub install_hint_root: Option<&'a Path>,
+    pub focus_manifest_entries: bool,
+}
+
+impl<'a> WinePrefixScanOptions<'a> {
+    pub fn new(prefix: &'a Path) -> Self {
+        Self {
+            prefix,
+            install_hint_root: None,
+            focus_manifest_entries: false,
+        }
+    }
+
+    pub fn with_install_hint_root(mut self, install_hint_root: &'a Path) -> Self {
+        self.install_hint_root = Some(install_hint_root);
+        self.focus_manifest_entries = true;
+        self
+    }
+}
+
 #[derive(Debug, Clone)]
 struct WindowsGameEntry {
     game_name: String,
@@ -48,7 +71,7 @@ struct WinePrefixContext {
     win_program_data: String,
     win_dir: String,
     base_directories: Vec<BaseDirectory>,
-    base_search_roots: Vec<PathBuf>,
+    base_expansion_roots: Vec<PathBuf>,
     root_candidates: Vec<String>,
 }
 
@@ -59,7 +82,8 @@ struct BaseDirectory {
 }
 
 impl WinePrefixContext {
-    fn new(prefix: &Path, scan_root: Option<&Path>) -> Self {
+    fn new(options: WinePrefixScanOptions<'_>) -> Self {
+        let prefix = options.prefix;
         let drive_c = prefix.join("drive_c");
         let users_dir = drive_c.join("users");
         let home_dir = dirs::home_dir()
@@ -118,7 +142,7 @@ impl WinePrefixContext {
             Vec::new()
         };
 
-        let base_search_roots = collect_base_search_roots(prefix, scan_root);
+        let base_expansion_roots = collect_base_expansion_roots(prefix, options.install_hint_root);
 
         Self {
             users,
@@ -127,8 +151,8 @@ impl WinePrefixContext {
             xdg_config,
             win_program_data: drive_c.join("ProgramData").to_string_lossy().to_string(),
             win_dir: drive_c.join("Windows").to_string_lossy().to_string(),
-            base_directories: collect_base_directories(&base_search_roots),
-            base_search_roots,
+            base_directories: collect_base_directories(&base_expansion_roots),
+            base_expansion_roots,
             root_candidates: collect_root_candidates(&drive_c),
         }
     }
@@ -211,7 +235,7 @@ fn collect_root_candidates(drive_c: &Path) -> Vec<String> {
     roots
 }
 
-fn collect_base_search_roots(prefix: &Path, scan_root: Option<&Path>) -> Vec<PathBuf> {
+fn collect_base_expansion_roots(prefix: &Path, install_hint_root: Option<&Path>) -> Vec<PathBuf> {
     let drive_c = prefix.join("drive_c");
     let mut roots = vec![
         drive_c.join("Games"),
@@ -219,8 +243,8 @@ fn collect_base_search_roots(prefix: &Path, scan_root: Option<&Path>) -> Vec<Pat
         drive_c.join("Program Files (x86)"),
     ];
 
-    if let Some(scan_root) = scan_root {
-        roots.push(scan_root.to_path_buf());
+    if let Some(install_hint_root) = install_hint_root {
+        roots.push(install_hint_root.to_path_buf());
     }
 
     roots.retain(|path| path.is_dir());
@@ -229,9 +253,16 @@ fn collect_base_search_roots(prefix: &Path, scan_root: Option<&Path>) -> Vec<Pat
     roots
 }
 
-fn collect_base_directories(base_search_roots: &[PathBuf]) -> Vec<BaseDirectory> {
+fn collect_base_directories(base_expansion_roots: &[PathBuf]) -> Vec<BaseDirectory> {
     let mut directories = Vec::new();
-    for root in base_search_roots {
+    for root in base_expansion_roots {
+        if let Some(name) = root.file_name().and_then(|name| name.to_str()) {
+            directories.push(BaseDirectory {
+                name: name.to_string(),
+                path: root.clone(),
+            });
+        }
+
         for child in read_immediate_child_dirs(root) {
             if let Some(name) = child.file_name().and_then(|name| name.to_str()) {
                 directories.push(BaseDirectory {
@@ -381,7 +412,7 @@ fn normalize_name(value: &str) -> String {
         .collect()
 }
 
-fn names_loosely_match(left: &str, right: &str) -> bool {
+fn names_match_manifest_hint(left: &str, right: &str) -> bool {
     let left = normalize_name(left);
     let right = normalize_name(right);
     if left.is_empty() || right.is_empty() {
@@ -407,7 +438,7 @@ fn candidate_base_paths_for_entry(
 ) -> Vec<String> {
     let mut candidates = Vec::new();
 
-    for root in &ctx.base_search_roots {
+    for root in &ctx.base_expansion_roots {
         for install_dir in &entry.install_dirs {
             let exact = root.join(install_dir);
             if exact.is_dir() {
@@ -431,14 +462,17 @@ fn candidate_base_paths_for_entry(
 }
 
 fn directory_matches_entry(directory: &BaseDirectory, entry: &WindowsGameEntry) -> bool {
-    names_loosely_match(&directory.name, &entry.game_name)
+    names_match_manifest_hint(&directory.name, &entry.game_name)
         || entry
             .install_dirs
             .iter()
-            .any(|install_dir| names_loosely_match(&directory.name, install_dir))
+            .any(|install_dir| names_match_manifest_hint(&directory.name, install_dir))
 }
 
-fn should_focus_entry(entry: &WindowsGameEntry, base_directories: &[BaseDirectory]) -> bool {
+fn entry_matches_install_hints(
+    entry: &WindowsGameEntry,
+    base_directories: &[BaseDirectory],
+) -> bool {
     if base_directories.is_empty() {
         return false;
     }
@@ -625,24 +659,20 @@ fn extract_base_path(pattern: &str) -> String {
 /// Each invocation of `on_game` receives all saves discovered for one game entry
 /// from the Ludusavi manifest.
 ///
-/// When `scan_root` is `Some`, only scan manifest entries whose install dirs
-/// match paths under that root. Falls back to all entries if no matches are found.
-pub fn stream_wine_prefix_saves<F>(
-    prefix: &Path,
-    scan_root: Option<&Path>,
-    mut on_game: F,
-) -> Result<()>
+/// When `focus_manifest_entries` is true, only scan manifest entries whose install dirs
+/// match install hint roots. Falls back to all entries if no matches are found.
+pub fn stream_wine_prefix_saves<F>(options: WinePrefixScanOptions<'_>, mut on_game: F) -> Result<()>
 where
     F: FnMut(Vec<DiscoveredWineSave>) -> Result<()>,
 {
     let manifest = load_windows_manifest()?;
-    let ctx = WinePrefixContext::new(prefix, scan_root);
+    let ctx = WinePrefixContext::new(options);
     let mut path_cache = PathExistenceCache::default();
 
-    let entries: Vec<&WindowsGameEntry> = if scan_root.is_some() {
+    let entries: Vec<&WindowsGameEntry> = if options.focus_manifest_entries {
         let focused: Vec<&WindowsGameEntry> = manifest
             .iter()
-            .filter(|entry| should_focus_entry(entry, &ctx.base_directories))
+            .filter(|entry| entry_matches_install_hints(entry, &ctx.base_directories))
             .collect();
         if focused.is_empty() {
             manifest.iter().collect()
@@ -684,7 +714,7 @@ where
 /// Collect the primary save per game from a wine prefix into a Vec.
 pub fn collect_primary_wine_prefix_saves(prefix: &Path) -> Vec<DiscoveredWineSave> {
     let mut results = Vec::new();
-    let _ = stream_wine_prefix_saves(prefix, None, |game_saves| {
+    let _ = stream_wine_prefix_saves(WinePrefixScanOptions::new(prefix), |game_saves| {
         if let Some(primary) = choose_primary_save(game_saves) {
             results.push(primary);
         }
@@ -696,7 +726,7 @@ pub fn collect_primary_wine_prefix_saves(prefix: &Path) -> Vec<DiscoveredWineSav
 /// Collect all saves from a wine prefix into a sorted, deduplicated Vec.
 pub fn collect_wine_prefix_saves(prefix: &Path) -> Result<Vec<DiscoveredWineSave>> {
     let mut results = Vec::new();
-    stream_wine_prefix_saves(prefix, None, |game_saves| {
+    stream_wine_prefix_saves(WinePrefixScanOptions::new(prefix), |game_saves| {
         results.extend(game_saves);
         Ok(())
     })?;
@@ -739,6 +769,10 @@ mod tests {
                 has_store_user_id: pattern.contains(STORE_USER_ID_PLACEHOLDER),
             }],
         }
+    }
+
+    fn test_context(prefix: &Path) -> WinePrefixContext {
+        WinePrefixContext::new(WinePrefixScanOptions::new(prefix))
     }
 
     #[test]
@@ -817,7 +851,7 @@ mod tests {
             .join("steamuser");
         std::fs::create_dir_all(&user_root).unwrap();
 
-        let ctx = WinePrefixContext::new(prefix.path(), None);
+        let ctx = test_context(prefix.path());
         let game = test_windows_game("<home>/foo/<xdgConfig>", &[]);
 
         let expanded = ctx.expand_paths(&game, &game.files[0]);
@@ -835,7 +869,7 @@ mod tests {
             .join("steamuser");
         std::fs::create_dir_all(&user_root).unwrap();
 
-        let ctx = WinePrefixContext::new(prefix.path(), None);
+        let ctx = test_context(prefix.path());
         let game = test_windows_game("<home>/AppData/LocalLow/Game", &[]);
 
         let expanded = ctx.expand_paths(&game, &game.files[0]);
@@ -867,7 +901,7 @@ mod tests {
         std::fs::create_dir_all(local_app_data.join("f4ad40790de54fef9a1c7ea48bd13b12")).unwrap();
         std::fs::create_dir_all(local_app_data.join("cache")).unwrap();
 
-        let ctx = WinePrefixContext::new(prefix.path(), None);
+        let ctx = test_context(prefix.path());
         let game = test_windows_game("<winLocalAppData>/Remedy/AlanWake2/<storeUserId>", &[]);
 
         let expanded = ctx.expand_paths(&game, &game.files[0]);
@@ -889,7 +923,7 @@ mod tests {
             .join("Ubisoft Game Launcher");
         std::fs::create_dir_all(&ubisoft_root).unwrap();
 
-        let ctx = WinePrefixContext::new(prefix.path(), None);
+        let ctx = test_context(prefix.path());
         let game = test_windows_game("<root>/savegames/<storeUserId>/857", &[]);
 
         let expanded = ctx.expand_paths(&game, &game.files[0]);
@@ -916,7 +950,7 @@ mod tests {
         let program_data = prefix.path().join("drive_c").join("ProgramData");
         std::fs::create_dir_all(program_data.join("Orbit").join("46")).unwrap();
 
-        let ctx = WinePrefixContext::new(prefix.path(), None);
+        let ctx = test_context(prefix.path());
         let game = test_windows_game("<root>/savegames/<storeUserId>/46", &[]);
 
         let expanded = ctx.expand_paths(&game, &game.files[0]);
@@ -939,7 +973,7 @@ mod tests {
         std::fs::create_dir_all(&ubisoft_root).unwrap();
         std::fs::create_dir_all(&orbit_root).unwrap();
 
-        let ctx = WinePrefixContext::new(prefix.path(), None);
+        let ctx = test_context(prefix.path());
         let game = test_windows_game("<root>/savegames/<storeUserId>/46", &[]);
 
         let expanded = ctx.expand_paths(&game, &game.files[0]);
@@ -968,7 +1002,7 @@ mod tests {
         let black_mesa_dir = games_dir.join("Black Mesa Definitive Edition");
         std::fs::create_dir_all(black_mesa_dir.join("bms").join("save")).unwrap();
 
-        let ctx = WinePrefixContext::new(prefix.path(), None);
+        let ctx = test_context(prefix.path());
         let game = test_windows_game("<base>/bms/save", &["Black Mesa"]);
 
         let expanded = ctx.expand_paths(&game, &game.files[0]);
@@ -984,17 +1018,60 @@ mod tests {
     }
 
     #[test]
-    fn loose_name_match_accepts_prefix_expansions() {
-        assert!(names_loosely_match(
+    fn install_hint_root_can_be_exact_install_directory() {
+        let prefix = tempfile::tempdir().unwrap();
+        let install_dir = prefix
+            .path()
+            .join("drive_c")
+            .join("Games")
+            .join("Black Mesa Definitive Edition");
+        std::fs::create_dir_all(install_dir.join("bms").join("save")).unwrap();
+
+        let ctx = WinePrefixContext::new(
+            WinePrefixScanOptions::new(prefix.path()).with_install_hint_root(&install_dir),
+        );
+        let game = test_windows_game("<base>/bms/save", &["Black Mesa"]);
+
+        let expanded = ctx.expand_paths(&game, &game.files[0]);
+
+        assert_eq!(
+            expanded,
+            vec![install_dir.join("bms").join("save").display().to_string()]
+        );
+    }
+
+    #[test]
+    fn broad_parent_directory_is_not_an_install_hint_by_default() {
+        let root = tempfile::tempdir().unwrap();
+        let prefix = root.path().join("riftapart");
+        std::fs::create_dir_all(prefix.join("drive_c")).unwrap();
+        let sibling = root.path().join("Ratchet & Clank - Rift Apart");
+        std::fs::create_dir_all(sibling.join("save")).unwrap();
+
+        let ctx = WinePrefixContext::new(WinePrefixScanOptions::new(&prefix));
+        let game = test_windows_game("<base>/save", &["Ratchet & Clank - Rift Apart"]);
+
+        let expanded = ctx.expand_paths(&game, &game.files[0]);
+
+        assert!(expanded.is_empty());
+    }
+
+    #[test]
+    fn manifest_hint_name_match_accepts_prefix_expansions() {
+        assert!(names_match_manifest_hint(
             "Black Mesa Definitive Edition",
             "Black Mesa"
         ));
     }
 
     #[test]
-    fn loose_name_match_rejects_short_substring_noise() {
-        assert!(!names_loosely_match("Files", "Some Files Game"));
-        assert!(!names_loosely_match("Mesa", "Black Mesa"));
+    fn manifest_hint_name_match_rejects_substring_noise() {
+        assert!(!names_match_manifest_hint("Files", "Some Files Game"));
+        assert!(!names_match_manifest_hint("Mesa", "Black Mesa"));
+        assert!(!names_match_manifest_hint(
+            "riftapart",
+            "Ratchet & Clank: Rift Apart"
+        ));
     }
 
     #[test]

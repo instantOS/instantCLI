@@ -10,7 +10,9 @@ use anyhow::Result;
 
 use super::DiscoveredGame;
 use crate::common::TildePath;
-use crate::game::platforms::ludusavi::{choose_primary_save, stream_wine_prefix_saves};
+use crate::game::platforms::ludusavi::{
+    WinePrefixScanOptions, choose_primary_save, stream_wine_prefix_saves,
+};
 use crate::game::utils::path::is_valid_wine_prefix;
 use crate::menu::protocol::FzfPreview;
 use crate::ui::nerd_font::NerdFont;
@@ -151,7 +153,7 @@ pub fn stream_discover_wine_games_in_prefix<F>(prefix: &Path, mut on_game: F) ->
 where
     F: FnMut(WineDiscoveredGame) -> Result<()>,
 {
-    stream_wine_prefix_saves(prefix, None, |game_saves| {
+    stream_wine_prefix_saves(WinePrefixScanOptions::new(prefix), |game_saves| {
         if let Some(save) = choose_primary_save(game_saves) {
             let display_name = if save.game_name.trim().is_empty() {
                 "Unknown Wine Game".to_string()

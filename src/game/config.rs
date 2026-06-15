@@ -268,7 +268,7 @@ impl InstantGameConfig {
 
     pub fn load_from_path(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
-        let config = <Self as DocumentedConfig>::load_from_path_documented(path.to_path_buf())?;
+        let config = <Self as DocumentedConfig>::load_from_path_documented(path)?;
         config.validate()?;
         Ok(config)
     }
@@ -304,7 +304,7 @@ impl InstallationsConfig {
 
     pub fn load_from_path(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
-        let config = <Self as DocumentedConfig>::load_from_path_documented(path.to_path_buf())?;
+        let config = <Self as DocumentedConfig>::load_from_path_documented(path)?;
         config.validate()?;
         Ok(config)
     }

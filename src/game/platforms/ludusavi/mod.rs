@@ -9,6 +9,7 @@ mod scanner;
 pub mod types;
 
 pub use scanner::{
-    collect_primary_wine_prefix_saves, collect_wine_prefix_saves, stream_wine_prefix_saves,
+    WinePrefixScanOptions, collect_primary_wine_prefix_saves, collect_wine_prefix_saves,
+    stream_wine_prefix_saves,
 };
 pub use types::{DiscoveredWineSave, choose_primary_save};
