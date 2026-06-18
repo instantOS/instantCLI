@@ -154,7 +154,9 @@ fn is_appimage() -> bool {
 fn build_exec_command(game_name: &str) -> String {
     use crate::common::distro::OperatingSystem;
 
-    let ins_bin = super::resolve_ins_binary().to_string_lossy().to_string();
+    let ins_bin = crate::common::shell::resolve_current_binary()
+        .to_string_lossy()
+        .to_string();
 
     if is_appimage() {
         // Check if running on SteamOS using the existing utility
@@ -248,7 +250,9 @@ pub fn add_menu_to_desktop() -> Result<(bool, Option<PathBuf>)> {
         return Ok((false, get_game_desktop_path(menu_name)?));
     }
 
-    let ins_bin = super::resolve_ins_binary().to_string_lossy().to_string();
+    let ins_bin = crate::common::shell::resolve_current_binary()
+        .to_string_lossy()
+        .to_string();
 
     let terminal = detect_terminal();
     let terminal_path = which::which(&terminal).context("Failed to find terminal emulator")?;

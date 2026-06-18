@@ -8,10 +8,6 @@ use crate::video::document::{frontmatter::split_frontmatter, parse_video_documen
 
 use super::types::{AUDIO_EXTENSIONS, VIDEO_EXTENSIONS};
 
-pub fn discover_video_file_suggestions() -> Result<Vec<PathBuf>> {
-    discover_media_suggestions()
-}
-
 pub fn is_video_or_audio_file(path: &Path) -> bool {
     let ext = path
         .extension()
@@ -163,7 +159,7 @@ pub fn discover_video_suggestions() -> Result<Vec<PathBuf>> {
     Ok(suggestions)
 }
 
-fn discover_media_suggestions() -> Result<Vec<PathBuf>> {
+pub fn discover_video_file_suggestions() -> Result<Vec<PathBuf>> {
     let candidates = collect_media_candidates()?;
     let mut suggestions = filter_media_candidates(candidates)?;
     suggestions.sort();

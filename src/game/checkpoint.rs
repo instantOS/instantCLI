@@ -69,13 +69,8 @@ pub fn update_checkpoint_after_backup(
     Ok(())
 }
 
-/// Update installation checkpoint after successful restore
-pub fn update_checkpoint_after_restore(game_name: &str, snapshot_id: &str) -> Result<()> {
-    update_from_snapshot(game_name, snapshot_id)
-}
-
 /// Update checkpoint with the snapshot's actual timestamp (not current time)
-fn update_from_snapshot(game_name: &str, snapshot_id: &str) -> Result<()> {
+pub fn update_checkpoint_after_restore(game_name: &str, snapshot_id: &str) -> Result<()> {
     let mut installations =
         InstallationsConfig::load().context("Failed to load installations configuration")?;
 

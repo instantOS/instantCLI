@@ -43,7 +43,7 @@ impl SliderPreset {
             SliderPreset::Audio => PresetConfig {
                 min: 0,
                 max: 100,
-                value: Self::detect_audio_volume(),
+                value: Self::wpctl_volume(),
                 step: Some(1),
                 big_step: Some(5),
                 label: Some("Audio Volume".to_string()),
@@ -57,7 +57,7 @@ impl SliderPreset {
             SliderPreset::Brightness => PresetConfig {
                 min: 0,
                 max: 100,
-                value: Self::detect_brightness_level(),
+                value: Self::brightnessctl_percentage(),
                 step: Some(1),
                 big_step: Some(5),
                 label: Some("Screen Brightness".to_string()),
@@ -69,14 +69,6 @@ impl SliderPreset {
                 ],
             },
         }
-    }
-
-    fn detect_audio_volume() -> Option<i64> {
-        Self::wpctl_volume()
-    }
-
-    fn detect_brightness_level() -> Option<i64> {
-        Self::brightnessctl_percentage()
     }
 
     fn audio_command_script() -> String {

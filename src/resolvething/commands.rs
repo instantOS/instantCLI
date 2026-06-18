@@ -85,7 +85,7 @@ pub fn handle_resolvething_command(command: ResolvethingCommands, debug: bool) -
 
 /// Resolve which scan dirs to operate on for a CLI invocation.
 pub fn resolve_scan_dirs(dir_override: Option<&str>) -> Result<Vec<ResolvedScanDir>> {
-    let config = resolved_config()?;
+    let config = ResolvethingConfig::load()?;
     if let Some(raw) = dir_override {
         let resolved = config.resolved_scan_dir_for_override(raw)?;
         return Ok(vec![resolved]);
@@ -317,7 +317,7 @@ pub fn resolve_conflicts(scan_dir: &ResolvedScanDir, dry_run: bool) -> Result<()
     }
 
     ensure_menu_dependencies()?;
-    let config = resolved_config()?;
+    let config = ResolvethingConfig::load()?;
 
     let mut resolved = 0usize;
     let mut unresolved = 0usize;
@@ -377,10 +377,6 @@ pub fn resolve_conflicts(scan_dir: &ResolvedScanDir, dry_run: bool) -> Result<()
     Ok(())
 }
 
-pub fn resolved_config() -> Result<ResolvethingConfig> {
-    ResolvethingConfig::load()
-}
-
 pub fn show_config() -> Result<()> {
     let config_path = ResolvethingConfig::config_path()?;
     let contents = std::fs::read_to_string(&config_path)
@@ -391,7 +387,7 @@ pub fn show_config() -> Result<()> {
 
 pub fn edit_config() -> Result<()> {
     let path = ResolvethingConfig::config_path()?;
-    let config = resolved_config()?;
+    let config = ResolvethingConfig::load()?;
     let mut command = plain_editor_command(config.editor_command.as_deref())?;
     command.arg(&path);
     command
@@ -401,7 +397,7 @@ pub fn edit_config() -> Result<()> {
 }
 
 pub fn add_scan_directory() -> Result<bool> {
-    let mut config = resolved_config()?;
+    let mut config = ResolvethingConfig::load()?;
 
     let mut builder = PathInputBuilder::new()
         .header(format!(
@@ -463,7 +459,7 @@ pub fn add_scan_directory() -> Result<bool> {
 }
 
 pub fn remove_scan_directory(index: usize) -> Result<bool> {
-    let mut config = resolved_config()?;
+    let mut config = ResolvethingConfig::load()?;
     if index >= config.scan_dirs.len() {
         return Ok(false);
     }
@@ -483,7 +479,7 @@ pub fn remove_scan_directory(index: usize) -> Result<bool> {
 }
 
 pub fn change_scan_directory_path(index: usize) -> Result<bool> {
-    let mut config = resolved_config()?;
+    let mut config = ResolvethingConfig::load()?;
     let current = config
         .scan_dirs
         .get(index)
@@ -535,7 +531,7 @@ pub fn change_scan_directory_path(index: usize) -> Result<bool> {
 }
 
 pub fn configure_scan_directory_extensions(index: usize) -> Result<bool> {
-    let mut config = resolved_config()?;
+    let mut config = ResolvethingConfig::load()?;
     let entry = config
         .scan_dirs
         .get(index)

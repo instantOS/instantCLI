@@ -26,7 +26,7 @@ pub struct ResticCommandLogger {
 
 impl ResticCommandLogger {
     pub fn new() -> Result<Self> {
-        let log_dir = Self::get_log_dir()?;
+        let log_dir = paths::instant_restic_logs_dir()?;
 
         // Only create directory if debug is enabled
         if crate::ui::is_debug_enabled() {
@@ -34,10 +34,6 @@ impl ResticCommandLogger {
         }
 
         Ok(Self { log_dir })
-    }
-
-    fn get_log_dir() -> Result<PathBuf> {
-        paths::instant_restic_logs_dir()
     }
 
     pub fn log_command(

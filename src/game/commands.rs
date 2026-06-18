@@ -1,5 +1,3 @@
-use std::ffi::OsString;
-
 use anyhow::Result;
 
 use crate::common::deps::RESTIC;
@@ -73,9 +71,9 @@ pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
             ensure_restic_available()?;
             handle_sync(game_name, force)
         }
-        GameCommands::Launch { game_name } => handle_launch(game_name),
-        GameCommands::Exec { command } => handle_exec(command),
-        GameCommands::List => handle_list(),
+        GameCommands::Launch { game_name } => launch_game(game_name),
+        GameCommands::Exec { command } => exec_game_command(command),
+        GameCommands::List => display::list_games(),
         GameCommands::Info { game_name } => handle_info(game_name),
         GameCommands::Menu { game_name, gui } => {
             if gui {
@@ -89,17 +87,17 @@ pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
             }
             menu::game_menu(game_name)
         }
-        GameCommands::Remove { game_name, force } => handle_remove(game_name, force),
+        GameCommands::Remove { game_name, force } => remove_game(game_name, force),
         GameCommands::Backup { game_name } => {
             ensure_restic_available()?;
-            handle_backup(game_name)
+            backup_game_saves(game_name)
         }
         GameCommands::Prune {
             game_name,
             zero_changes,
         } => {
             ensure_restic_available()?;
-            handle_prune(game_name, zero_changes)
+            prune_snapshots(game_name, zero_changes)
         }
         GameCommands::Restic { args } => {
             ensure_restic_available()?;
@@ -111,17 +109,17 @@ pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
             force,
         } => {
             ensure_restic_available()?;
-            handle_restore(game_name, snapshot_id, force)
+            restore_game_saves(game_name, snapshot_id, force)
         }
         GameCommands::Snapshots { game_name } => {
             ensure_restic_available()?;
-            handle_snapshots(game_name)
+            list_snapshots(game_name)
         }
         GameCommands::Setup => {
             ensure_restic_available()?;
-            handle_setup()
+            setup::setup_uninstalled_games()
         }
-        GameCommands::Relocate { path, game } => handle_relocate(game, path),
+        GameCommands::Relocate { path, game } => GameManager::relocate_game(game, path),
         GameCommands::ScanWinePrefix { prefix, list } => handle_scan_wine_prefix(prefix, list),
         GameCommands::Deps { command } => handle_dependency_command(command),
         #[cfg(debug_assertions)]
@@ -350,22 +348,6 @@ fn map_sources(sources: &[GameDiscoverySourceArg]) -> Vec<DiscoverySource> {
         .collect()
 }
 
-fn handle_launch(game_name: Option<String>) -> Result<()> {
-    launch_game(game_name)
-}
-
-fn handle_exec(command: Vec<OsString>) -> Result<()> {
-    exec_game_command(command)
-}
-
-fn handle_remove(game_name: Option<String>, force: bool) -> Result<()> {
-    remove_game(game_name, force)
-}
-
-fn handle_list() -> Result<()> {
-    display::list_games()
-}
-
 fn handle_info(game_name: Option<String>) -> Result<()> {
     let game_name = match game_name {
         Some(name) => name,
@@ -376,34 +358,6 @@ fn handle_info(game_name: Option<String>) -> Result<()> {
     };
 
     display::show_game_details(&game_name)
-}
-
-fn handle_backup(game_name: Option<String>) -> Result<()> {
-    backup_game_saves(game_name)
-}
-
-fn handle_prune(game_name: Option<String>, zero_changes: bool) -> Result<()> {
-    prune_snapshots(game_name, zero_changes)
-}
-
-fn handle_restore(
-    game_name: Option<String>,
-    snapshot_id: Option<String>,
-    force: bool,
-) -> Result<()> {
-    restore_game_saves(game_name, snapshot_id, force)
-}
-
-fn handle_snapshots(game_name: Option<String>) -> Result<()> {
-    list_snapshots(game_name)
-}
-
-fn handle_setup() -> Result<()> {
-    setup::setup_uninstalled_games()
-}
-
-fn handle_relocate(game_name: Option<String>, path: Option<String>) -> Result<()> {
-    GameManager::relocate_game(game_name, path)
 }
 
 fn handle_dependency_command(command: DependencyCommands) -> Result<()> {
