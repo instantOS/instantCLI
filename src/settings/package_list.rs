@@ -227,8 +227,9 @@ fn stream_installed(manager: PackageManager) -> Result<()> {
             |pkg| print_installed_package_row(manager, &pkg, &pkg),
         ),
         PackageManager::Apt => stream_and_print(
-            Command::new("dpkg-query").args(["-W", "-f=${Package}\\n"]),
-            |line| Some(line.to_string()),
+            Command::new("dpkg-query")
+                .args(["-W", "-f=${db:Status-Abbrev}\\t${binary:Package}\\n"]),
+            parse_dpkg_installed_package_name,
             |pkg| print_installed_package_row(manager, &pkg, &pkg),
         ),
         PackageManager::Dnf => stream_and_print(
@@ -451,11 +452,44 @@ fn parse_zypper_package_name(line: &str) -> Option<String> {
     }
 }
 
+fn parse_dpkg_installed_package_name(line: &str) -> Option<String> {
+    let mut fields = line.split_whitespace();
+    let status = fields.next()?;
+    let package = fields.next()?;
+
+    (status == "ii" && !package.is_empty()).then(|| package.to_string())
+}
+
 fn parse_pkg_name(line: &str) -> Option<String> {
     if line.starts_with("Listing") {
         return None;
     }
     line.split('/').next().map(ToString::to_string)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_installed_dpkg_package() {
+        assert_eq!(
+            parse_dpkg_installed_package_name("ii \tlibexample:amd64"),
+            Some("libexample:amd64".to_string())
+        );
+    }
+
+    #[test]
+    fn ignores_removed_dpkg_package_with_residual_config() {
+        assert_eq!(parse_dpkg_installed_package_name("rc \tlibexample"), None);
+    }
+
+    #[test]
+    fn ignores_non_installed_dpkg_states() {
+        assert_eq!(parse_dpkg_installed_package_name("iU \tlibexample"), None);
+        assert_eq!(parse_dpkg_installed_package_name("un \tlibexample"), None);
+        assert_eq!(parse_dpkg_installed_package_name("pn \tlibexample"), None);
+    }
 }
 
 fn parse_cargo_installed_name(line: &str) -> Option<String> {
