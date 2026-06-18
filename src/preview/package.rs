@@ -2,10 +2,10 @@
 
 use anyhow::Result;
 use duct::cmd;
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::HashSet;
 
 use crate::common::distro::OperatingSystem;
-use crate::common::package::{PackageManager, detect_aur_helper};
+use crate::common::package::{PackageManager, detect_aur_helper, removal_cascade};
 use crate::ui::catppuccin::colors;
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewWriter;
@@ -106,6 +106,7 @@ fn render_installed_for_manager(
         PackageManager::Pacman | PackageManager::Aur => {
             render_installed_pacman_impl(package, preview)
         }
+        PackageManager::Apt => render_installed_apt_impl(package, preview),
         _ => render_for_manager(package, manager, preview),
     }
 }
@@ -209,6 +210,12 @@ pub(crate) fn render_apt_impl(package: &str, preview: &mut PreviewWriter) -> Res
     }
 
     Ok(())
+}
+
+fn render_installed_apt_impl(package: &str, preview: &mut PreviewWriter) -> Result<()> {
+    render_apt_impl(package, preview)?;
+    preview.blank();
+    render_removal_cascade(PackageManager::Apt, package, preview)
 }
 
 pub(crate) fn render_dnf_impl(package: &str, preview: &mut PreviewWriter) -> Result<()> {
@@ -342,7 +349,12 @@ fn render_installed_pacman_impl(package: &str, preview: &mut PreviewWriter) -> R
 
     render_pacman_fields(&output, preview);
     preview.blank();
-    render_pacman_removal_cascade(package, &output, preview)?;
+    render_removal_cascade_with_package_info(
+        PackageManager::Pacman,
+        package,
+        Some(&output),
+        preview,
+    )?;
 
     Ok(())
 }
@@ -377,14 +389,24 @@ fn render_pacman_fields(output: &str, preview: &mut PreviewWriter) {
     }
 }
 
-fn render_pacman_removal_cascade(
+fn render_removal_cascade(
+    manager: PackageManager,
     package: &str,
-    package_info: &str,
+    preview: &mut PreviewWriter,
+) -> Result<()> {
+    render_removal_cascade_with_package_info(manager, package, None, preview)
+}
+
+fn render_removal_cascade_with_package_info(
+    manager: PackageManager,
+    package: &str,
+    package_info: Option<&str>,
     preview: &mut PreviewWriter,
 ) -> Result<()> {
     preview.title(colors::PEACH, "Removal Cascade");
 
-    let dependents = pacman_dependent_closure(package, package_info)?;
+    let packages = [package.to_string()];
+    let dependents = removal_cascade(manager, &packages, package_info)?;
     if dependents.is_empty() {
         preview.subtext("No installed packages depend on this package.");
         return Ok(());
@@ -399,72 +421,6 @@ fn render_pacman_removal_cascade(
         .bullets(dependents);
 
     Ok(())
-}
-
-fn pacman_dependent_closure(package: &str, package_info: &str) -> Result<Vec<String>> {
-    let direct_dependents = parse_pacman_required_by(package_info);
-    if direct_dependents.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let all_required_by = pacman_required_by_map()?;
-    let mut seen = BTreeSet::from([package.to_string()]);
-    let mut dependents = BTreeSet::new();
-    let mut queue = direct_dependents;
-
-    while let Some(dependent) = queue.pop() {
-        if !seen.insert(dependent.clone()) {
-            continue;
-        }
-
-        dependents.insert(dependent.clone());
-        if let Some(next_dependents) = all_required_by.get(&dependent) {
-            queue.extend(next_dependents.iter().cloned());
-        }
-    }
-
-    Ok(dependents.into_iter().collect())
-}
-
-fn pacman_required_by_map() -> Result<BTreeMap<String, Vec<String>>> {
-    let output = cmd!("pacman", "-Qi").stderr_null().read()?;
-    Ok(parse_pacman_required_by_map(&output))
-}
-
-fn parse_pacman_required_by_map(output: &str) -> BTreeMap<String, Vec<String>> {
-    output
-        .split("\n\n")
-        .filter_map(|block| {
-            let name = parse_pacman_field(block, "Name")?;
-            Some((name, parse_pacman_required_by(block)))
-        })
-        .collect()
-}
-
-fn parse_pacman_field(output: &str, field: &str) -> Option<String> {
-    output.lines().find_map(|line| {
-        line.strip_prefix(field)
-            .and_then(|value| value.split_once(':'))
-            .map(|(_, value)| value.trim().to_string())
-            .filter(|value| !value.is_empty())
-    })
-}
-
-fn parse_pacman_required_by(output: &str) -> Vec<String> {
-    output
-        .lines()
-        .find_map(|line| {
-            line.strip_prefix("Required By")
-                .and_then(|value| value.split_once(':'))
-        })
-        .map(|(_, packages)| {
-            packages
-                .split_whitespace()
-                .filter(|package| *package != "None")
-                .map(ToString::to_string)
-                .collect()
-        })
-        .unwrap_or_default()
 }
 
 pub(crate) fn render_snap_impl(package_info: &str, preview: &mut PreviewWriter) -> Result<()> {
@@ -854,57 +810,4 @@ pub(crate) fn render_cargo_impl(package: &str, preview: &mut PreviewWriter) -> R
     }
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parses_pacman_required_by_for_preview_cascade() {
-        let output = "\
-Name            : libfoo
-Required By     : app-one  app-two
-Optional For    : None
-";
-
-        assert_eq!(
-            parse_pacman_required_by(output),
-            vec!["app-one".to_string(), "app-two".to_string()]
-        );
-    }
-
-    #[test]
-    fn ignores_pacman_required_by_none_for_preview_cascade() {
-        let output = "\
-Name            : leaf-package
-Required By     : None
-Optional For    : app-one
-";
-
-        assert!(parse_pacman_required_by(output).is_empty());
-    }
-
-    #[test]
-    fn parses_pacman_required_by_map_from_full_package_dump() {
-        let output = "\
-Name            : libfoo
-Required By     : app-one  app-two
-
-Name            : app-one
-Required By     : shell-one
-
-Name            : app-two
-Required By     : None
-";
-
-        let map = parse_pacman_required_by_map(output);
-
-        assert_eq!(
-            map.get("libfoo"),
-            Some(&vec!["app-one".to_string(), "app-two".to_string()])
-        );
-        assert_eq!(map.get("app-one"), Some(&vec!["shell-one".to_string()]));
-        assert_eq!(map.get("app-two"), Some(&Vec::new()));
-    }
 }

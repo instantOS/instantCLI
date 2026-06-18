@@ -3,12 +3,11 @@
 //! Interactive package browser and uninstaller for installed system packages.
 
 use std::collections::BTreeSet;
-use std::process::Command;
 
 use anyhow::{Context, Result};
 
 use crate::common::distro::OperatingSystem;
-use crate::common::package::{PackageManager, uninstall_packages};
+use crate::common::package::{PackageManager, removal_cascade, uninstall_packages};
 use crate::menu_utils::{ConfirmResult, DecodedStreamingMenuItem, FzfResult, FzfWrapper, Header};
 use crate::settings::package_list::{self, PackageSelectionPayload};
 use crate::ui::catppuccin::fzf_mocha_args;
@@ -158,11 +157,7 @@ fn prepare_uninstall_packages(
     packages: Vec<String>,
     debug: bool,
 ) -> Result<Option<Vec<String>>> {
-    if manager != PackageManager::Pacman {
-        return Ok(Some(packages));
-    }
-
-    let dependents = pacman_dependent_closure(&packages)?;
+    let dependents = removal_cascade(manager, &packages, None)?;
     if dependents.is_empty() {
         return Ok(Some(packages));
     }
@@ -198,55 +193,6 @@ fn confirm_add_dependents(message: &str) -> Result<bool> {
         .no_text("Cancel")
         .confirm_dialog()?;
     Ok(matches!(result, ConfirmResult::Yes))
-}
-
-fn pacman_dependent_closure(packages: &[String]) -> Result<Vec<String>> {
-    let selected: BTreeSet<String> = packages.iter().cloned().collect();
-    let mut seen = selected.clone();
-    let mut queue: Vec<String> = packages.to_vec();
-    let mut dependents = BTreeSet::new();
-
-    while let Some(package) = queue.pop() {
-        for dependent in pacman_required_by(&package)? {
-            if seen.insert(dependent.clone()) {
-                dependents.insert(dependent.clone());
-                queue.push(dependent);
-            }
-        }
-    }
-
-    Ok(dependents.into_iter().collect())
-}
-
-fn pacman_required_by(package: &str) -> Result<Vec<String>> {
-    let output = Command::new("pacman")
-        .args(["-Qi", package])
-        .output()
-        .with_context(|| format!("Failed to inspect pacman package '{package}'"))?;
-
-    if !output.status.success() {
-        anyhow::bail!("Failed to inspect pacman package '{}'", package);
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    Ok(parse_pacman_required_by(&stdout))
-}
-
-fn parse_pacman_required_by(output: &str) -> Vec<String> {
-    output
-        .lines()
-        .find_map(|line| {
-            line.strip_prefix("Required By")
-                .and_then(|value| value.split_once(':'))
-        })
-        .map(|(_, packages)| {
-            packages
-                .split_whitespace()
-                .filter(|package| *package != "None")
-                .map(ToString::to_string)
-                .collect()
-        })
-        .unwrap_or_default()
 }
 
 fn deduplicate_packages(packages: impl IntoIterator<Item = String>) -> Vec<String> {
@@ -286,31 +232,6 @@ fn uninstall_confirmation_message(manager: PackageManager, packages: &[String]) 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn parses_pacman_required_by_packages() {
-        let output = "\
-Name            : libfoo
-Required By     : app-one  app-two
-Optional For    : None
-";
-
-        assert_eq!(
-            parse_pacman_required_by(output),
-            vec!["app-one".to_string(), "app-two".to_string()]
-        );
-    }
-
-    #[test]
-    fn parses_pacman_required_by_none() {
-        let output = "\
-Name            : leaf-package
-Required By     : None
-Optional For    : app-one
-";
-
-        assert!(parse_pacman_required_by(output).is_empty());
-    }
 
     #[test]
     fn deduplicates_packages_without_reordering_first_occurrences() {
