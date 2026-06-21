@@ -141,6 +141,38 @@ impl DotfileConfig {
         }
     }
 
+    /// Resolve subdirectories intended to be active without requiring them to
+    /// exist on disk. Reconciliation uses this after Git removes the final file
+    /// from a subdirectory; normal scanning uses [`Self::resolve_active_subdirs`].
+    pub fn resolve_configured_active_subdirs(&self, repo: &Repo) -> Vec<String> {
+        if let Some(subdirs) = &repo.active_subdirectories {
+            return subdirs.clone();
+        }
+
+        let repo_path = self.repos_path().join(&repo.name);
+        let meta = if let Some(meta) = &repo.metadata {
+            Some(meta.clone())
+        } else if repo_path.join("instantdots.toml").exists() {
+            crate::dot::meta::read_meta(&repo_path).ok()
+        } else {
+            None
+        };
+
+        match meta {
+            Some(meta) => {
+                if let Some(default_active) = meta.default_active_subdirs {
+                    default_active
+                        .into_iter()
+                        .filter(|dir| meta.dots_dirs.contains(dir))
+                        .collect()
+                } else {
+                    meta.dots_dirs.into_iter().next().into_iter().collect()
+                }
+            }
+            None => self.detect_repo_subdirs(&repo_path),
+        }
+    }
+
     fn resolve_active_subdirs_from_meta(
         &self,
         repo_path: &Path,

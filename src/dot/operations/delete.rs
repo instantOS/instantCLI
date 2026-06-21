@@ -1,7 +1,9 @@
-use crate::common::home_dir;
 use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
-use crate::dot::utils::{filter_dotfiles_by_path, get_all_dotfiles, resolve_dotfile_path};
+use crate::dot::utils::{
+    EmptyParentBoundary, clean_empty_parent_dirs, filter_dotfiles_by_path, get_all_dotfiles,
+    resolve_dotfile_path,
+};
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
 use crate::ui::prelude::*;
 use anyhow::Result;
@@ -188,7 +190,7 @@ fn delete_single_dotfile(db: &Database, dotfile: &crate::dot::Dotfile, debug: bo
 
     if source_existed {
         // Clean up empty parent directories in repo
-        clean_empty_parents(&dotfile.source_path);
+        clean_empty_parent_dirs(&dotfile.source_path, EmptyParentBoundary::HomeOrDots);
 
         // Stage the deletion in git
         if let Some(repo_path) = find_repo_root(&dotfile.source_path) {
@@ -206,7 +208,9 @@ fn delete_single_dotfile(db: &Database, dotfile: &crate::dot::Dotfile, debug: bo
     db.remove_managed_target(&dotfile.target_path)?;
 
     // Clean up empty parent directories in home
-    clean_empty_parents(&dotfile.target_path);
+    if !dotfile.is_root {
+        clean_empty_parent_dirs(&dotfile.target_path, EmptyParentBoundary::Home);
+    }
 
     println!(
         "{} Deleted {}",
@@ -215,30 +219,6 @@ fn delete_single_dotfile(db: &Database, dotfile: &crate::dot::Dotfile, debug: bo
     );
 
     Ok(())
-}
-
-/// Remove empty parent directories, stopping before hitting the home dir or repo dots dir
-fn clean_empty_parents(path: &std::path::Path) {
-    let mut dir = path.parent();
-    while let Some(parent) = dir {
-        if parent.file_name().is_none() {
-            break;
-        }
-        // Stop at home directory
-        if parent == home_dir() {
-            break;
-        }
-        // Stop at dots directory
-        if parent.file_name().is_some_and(|n| n == "dots") {
-            break;
-        }
-        if parent.is_dir() && std::fs::read_dir(parent).map_or(true, |mut d| d.next().is_none()) {
-            let _ = std::fs::remove_dir(parent);
-            dir = parent.parent();
-        } else {
-            break;
-        }
-    }
 }
 
 /// Find the git repository root by walking up from a path looking for .git
