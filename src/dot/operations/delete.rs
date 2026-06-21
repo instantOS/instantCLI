@@ -203,6 +203,7 @@ fn delete_single_dotfile(db: &Database, dotfile: &crate::dot::Dotfile, debug: bo
     // Remove DB records for both source and target paths
     db.remove_hashes_for_path(&dotfile.source_path)?;
     db.remove_hashes_for_path(&dotfile.target_path)?;
+    db.remove_managed_target(&dotfile.target_path)?;
 
     // Clean up empty parent directories in home
     clean_empty_parents(&dotfile.target_path);

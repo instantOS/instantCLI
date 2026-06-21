@@ -68,11 +68,23 @@ impl PartialEq for FileHash {
     }
 }
 
+/// A target file whose contents were last confirmed to match an effective
+/// dotfile source.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ManagedTarget {
+    pub target_path: PathBuf,
+    pub source_path: PathBuf,
+    pub repo_name: String,
+    pub subdir_name: String,
+    pub applied_hash: String,
+    pub is_root: bool,
+}
+
 pub struct Database {
     conn: Connection,
 }
 
-const CURRENT_SCHEMA_VERSION: i32 = 4;
+const CURRENT_SCHEMA_VERSION: i32 = 5;
 
 impl Database {
     pub fn new(path: PathBuf) -> Result<Self> {
@@ -181,6 +193,30 @@ impl Database {
                         (),
                     )?;
                     current = 4;
+                }
+                4 => {
+                    // Track the effective source that last supplied each target.
+                    // `file_hashes` remains a content cache/history table; this
+                    // table is the authoritative ownership snapshot used to
+                    // reconcile sources deleted from active repositories.
+                    conn.execute(
+                        "CREATE TABLE IF NOT EXISTS managed_targets (
+                            target_path  TEXT NOT NULL PRIMARY KEY,
+                            source_path  TEXT NOT NULL,
+                            repo_name    TEXT NOT NULL,
+                            subdir_name  TEXT NOT NULL,
+                            applied_hash TEXT NOT NULL,
+                            is_root      INTEGER NOT NULL,
+                            updated      TEXT NOT NULL
+                        )",
+                        (),
+                    )?;
+                    conn.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_managed_targets_source \
+                         ON managed_targets(source_path)",
+                        (),
+                    )?;
+                    current = 5;
                 }
                 _ => break,
             }
@@ -338,6 +374,78 @@ impl Database {
         Ok(())
     }
 
+    pub fn upsert_managed_target(&self, target: &ManagedTarget) -> Result<()> {
+        let target_path = target.target_path.to_str().ok_or_else(|| {
+            anyhow::anyhow!("Invalid UTF-8 path: {}", target.target_path.display())
+        })?;
+        let source_path = target.source_path.to_str().ok_or_else(|| {
+            anyhow::anyhow!("Invalid UTF-8 path: {}", target.source_path.display())
+        })?;
+
+        self.conn.execute(
+            "INSERT INTO managed_targets (
+                target_path, source_path, repo_name, subdir_name,
+                applied_hash, is_root, updated
+             ) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+             ON CONFLICT(target_path) DO UPDATE SET
+                source_path = excluded.source_path,
+                repo_name = excluded.repo_name,
+                subdir_name = excluded.subdir_name,
+                applied_hash = excluded.applied_hash,
+                is_root = excluded.is_root,
+                updated = excluded.updated",
+            (
+                target_path,
+                source_path,
+                &target.repo_name,
+                &target.subdir_name,
+                &target.applied_hash,
+                target.is_root,
+            ),
+        )?;
+        Ok(())
+    }
+
+    pub fn get_managed_targets(&self, is_root: bool) -> Result<Vec<ManagedTarget>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT target_path, source_path, repo_name, subdir_name, applied_hash, is_root
+             FROM managed_targets
+             WHERE is_root = ?
+             ORDER BY target_path",
+        )?;
+        let rows = stmt.query_map([is_root], |row| {
+            Ok(ManagedTarget {
+                target_path: PathBuf::from(row.get::<_, String>(0)?),
+                source_path: PathBuf::from(row.get::<_, String>(1)?),
+                repo_name: row.get(2)?,
+                subdir_name: row.get(3)?,
+                applied_hash: row.get(4)?,
+                is_root: row.get(5)?,
+            })
+        })?;
+
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    pub fn remove_managed_target(&self, target_path: &Path) -> Result<()> {
+        let target_path = target_path
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 path: {}", target_path.display()))?;
+        self.conn.execute(
+            "DELETE FROM managed_targets WHERE target_path = ?",
+            [target_path],
+        )?;
+        Ok(())
+    }
+
+    pub fn remove_managed_targets_for_repo(&self, repo_name: &str) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM managed_targets WHERE repo_name = ?",
+            [repo_name],
+        )?;
+        Ok(())
+    }
+
     /// Record the cipher→plain mapping and register the plaintext hash against
     /// both the source and target paths in a single call. This is the common
     /// post-decrypt/post-encrypt bookkeeping pattern used by apply, reset,
@@ -485,5 +593,72 @@ mod tests {
 
         // Should not exist as source hash
         assert!(!db.source_hash_exists("test_hash", &test_path).unwrap());
+    }
+
+    #[test]
+    fn test_managed_target_roundtrip() {
+        let dir = tempdir().unwrap();
+        let db = Database::new(dir.path().join("test.db")).unwrap();
+        let target_path = dir.path().join("home/.config/app.conf");
+        let first = ManagedTarget {
+            target_path: target_path.clone(),
+            source_path: dir.path().join("repos/one/dots/.config/app.conf"),
+            repo_name: "one".to_string(),
+            subdir_name: "dots".to_string(),
+            applied_hash: "first".to_string(),
+            is_root: false,
+        };
+
+        db.upsert_managed_target(&first).unwrap();
+        assert_eq!(db.get_managed_targets(false).unwrap(), vec![first.clone()]);
+        assert!(db.get_managed_targets(true).unwrap().is_empty());
+
+        let second = ManagedTarget {
+            source_path: dir.path().join("repos/two/dots/.config/app.conf"),
+            repo_name: "two".to_string(),
+            applied_hash: "second".to_string(),
+            ..first
+        };
+        db.upsert_managed_target(&second).unwrap();
+        assert_eq!(db.get_managed_targets(false).unwrap(), vec![second]);
+
+        db.remove_managed_target(&target_path).unwrap();
+        assert!(db.get_managed_targets(false).unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_migrates_schema_v4_to_managed_targets() {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("test.db");
+        {
+            let conn = Connection::open(&db_path).unwrap();
+            conn.execute(
+                "CREATE TABLE schema_version (
+                    version INTEGER NOT NULL,
+                    updated TEXT NOT NULL,
+                    PRIMARY KEY (version)
+                )",
+                (),
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO schema_version (version, updated)
+                 VALUES (4, datetime('now'))",
+                (),
+            )
+            .unwrap();
+        }
+
+        let db = Database::new(db_path).unwrap();
+        assert!(db.get_managed_targets(false).unwrap().is_empty());
+        let version: i32 = db
+            .conn
+            .query_row(
+                "SELECT version FROM schema_version ORDER BY version DESC LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(version, CURRENT_SCHEMA_VERSION);
     }
 }

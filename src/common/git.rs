@@ -156,6 +156,40 @@ fn run_git_status(repo_path: &Path, args: &[&str]) -> Result<(bool, String)> {
     Ok((output.status.success(), stdout))
 }
 
+/// Return whether `path` was tracked in repository history but is absent from
+/// the current `HEAD`.
+///
+/// A path that still exists in `HEAD` is only missing from the working tree
+/// (for example during an uncommitted edit) and must not be treated as a
+/// committed deletion. Paths that were never committed are also excluded.
+pub fn path_deleted_in_head(repo_path: &Path, path: &Path) -> Result<bool> {
+    let relative = path.strip_prefix(repo_path).with_context(|| {
+        format!(
+            "path {} is outside repository {}",
+            path.display(),
+            repo_path.display()
+        )
+    })?;
+    let relative = relative
+        .to_str()
+        .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 path: {}", relative.display()))?;
+
+    let (has_head, _) = run_git_status(repo_path, &["rev-parse", "--verify", "HEAD"])?;
+    if !has_head {
+        return Ok(false);
+    }
+
+    let head_spec = format!("HEAD:{relative}");
+    let (exists_in_head, _) = run_git_status(repo_path, &["cat-file", "-e", &head_spec])?;
+    if exists_in_head {
+        return Ok(false);
+    }
+
+    let (history_ok, history) =
+        run_git_status(repo_path, &["log", "-1", "--format=%H", "--", relative])?;
+    Ok(history_ok && !history.is_empty())
+}
+
 fn git_config_value(repo_path: &Path, key: &str) -> Result<Option<String>> {
     let (ok, value) = run_git_status(repo_path, &["config", "--get", key])?;
     if !ok || value.is_empty() {

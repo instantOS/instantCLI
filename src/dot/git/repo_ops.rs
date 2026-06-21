@@ -203,7 +203,13 @@ pub fn update_all(
     }
 
     if should_apply {
-        crate::dot::operations::apply_all(cfg, db, include_root, false)?;
+        crate::dot::operations::apply::apply_all_with_reconciliation(
+            cfg,
+            db,
+            include_root,
+            false,
+            !any_failed,
+        )?;
     }
 
     if any_failed {
