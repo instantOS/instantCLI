@@ -70,14 +70,42 @@ pub(super) fn reconcile_removed_targets(
         }
 
         if !managed.target_path.exists() {
-            clear_managed_target(db, &managed, true)?;
+            // Target already gone: just drop the stale tracking record. A
+            // failure here must not abort the rest of reconciliation.
+            if let Err(e) = clear_managed_target(db, &managed, true) {
+                emit_reconcile_skip(&managed, &e);
+            }
             continue;
         }
 
-        reconcile_existing_target(db, &managed)?;
+        // Per-target reconciliation is best-effort: an unreadable target or a
+        // transient failure removes nothing and leaves ownership intact so the
+        // next run can retry, rather than failing the whole apply.
+        if let Err(e) = reconcile_existing_target(db, &managed) {
+            emit_reconcile_skip(&managed, &e);
+        }
     }
 
     Ok(())
+}
+
+fn emit_reconcile_skip(managed: &ManagedTarget, error: &anyhow::Error) {
+    let display = crate::dot::display_path(&managed.target_path, managed.is_root);
+    emit(
+        Level::Warn,
+        "dot.apply.reconcile_skipped",
+        &format!(
+            "{} Skipped reconciling {}: {}",
+            char::from(NerdFont::Warning),
+            display.yellow(),
+            error
+        ),
+        Some(serde_json::json!({
+            "path": display,
+            "action": "reconcile_skipped",
+            "error": format!("{error}"),
+        })),
+    );
 }
 
 fn reconcile_existing_target(db: &Database, managed: &ManagedTarget) -> Result<()> {
@@ -347,6 +375,33 @@ mod tests {
         crate::dot::operations::apply::apply_all(&env.config, &env.db, false, false).unwrap();
 
         assert_eq!(fs::read_to_string(&target).unwrap(), "managed");
+        assert_eq!(env.db.get_managed_targets(false).unwrap().len(), 1);
+    }
+
+    #[test]
+    #[serial]
+    fn unhashable_target_does_not_abort_reconcile() {
+        let env = setup_reconcile_test_env();
+        let target = env.home.join(".config/app/config.toml");
+
+        // Establish ownership, then make the target unhashable by replacing the
+        // file with a directory (reading a directory fails). The committed
+        // source deletion would otherwise try to reconcile this target.
+        crate::dot::operations::apply::apply_all(&env.config, &env.db, false, false).unwrap();
+        fs::remove_file(&target).unwrap();
+        fs::create_dir(&target).unwrap();
+        crate::dot::dotfile::invalidate_cache(&target);
+        commit_source_deletion(&env);
+
+        let current = crate::dot::get_all_dotfiles(&env.config, &env.db, false).unwrap();
+        let result = reconcile_removed_targets(&env.config, &env.db, &current, false, true);
+
+        // Reconcile must succeed even though the target can't be hashed...
+        assert!(
+            result.is_ok(),
+            "reconcile should not abort on an unhashable target"
+        );
+        // ...and retain ownership, since the target's state could not be verified.
         assert_eq!(env.db.get_managed_targets(false).unwrap().len(), 1);
     }
 }

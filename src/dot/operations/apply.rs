@@ -121,14 +121,12 @@ pub(crate) fn apply_all_with_reconciliation(
             None,
         );
 
-        let status = std::process::Command::new("sudo")
-            .arg("ins")
-            .arg("dot")
-            .arg("apply")
-            .arg("--root-only")
-            .arg("--home")
-            .arg(home_dir_str.as_ref())
-            .status();
+        let status = {
+            let mut command = std::process::Command::new("sudo");
+            command.args(root_apply_child_args(reconcile_removed));
+            command.arg("--home").arg(home_dir_str.as_ref());
+            command.status()
+        };
 
         if let Err(e) = status {
             emit(
@@ -173,6 +171,19 @@ pub(crate) fn apply_all_with_reconciliation(
 
 fn should_delegate_root_apply(include_root: bool, current_root_dotfiles: usize) -> bool {
     include_root && current_root_dotfiles > 0
+}
+
+/// Build the static argument list for the `sudo ins dot apply --root-only`
+/// child process. `--no-reconcile` is forwarded only when the parent decided
+/// removed-source reconciliation must be suppressed (e.g. a repo failed to
+/// update during `dot update`), keeping root targets consistent with home
+/// targets instead of always reconciling via the child's hardcoded default.
+fn root_apply_child_args(reconcile_removed: bool) -> Vec<&'static str> {
+    let mut args = vec!["ins", "dot", "apply", "--root-only"];
+    if !reconcile_removed {
+        args.push("--no-reconcile");
+    }
+    args
 }
 
 /// Determine and execute the appropriate action for a dotfile
@@ -574,5 +585,14 @@ mod tests {
         assert!(!should_delegate_root_apply(true, 0));
         assert!(!should_delegate_root_apply(false, 1));
         assert!(should_delegate_root_apply(true, 1));
+    }
+
+    #[test]
+    fn root_child_forwards_no_reconcile_only_when_reconcile_suppressed() {
+        // Normal apply / successful update: root child reconciles.
+        assert!(!root_apply_child_args(true).contains(&"--no-reconcile"));
+        // Failed update (`any_failed`): root child must suppress reconcile too,
+        // matching the home-target behavior instead of always deleting.
+        assert!(root_apply_child_args(false).contains(&"--no-reconcile"));
     }
 }
