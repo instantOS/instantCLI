@@ -45,6 +45,7 @@ pub enum DotCommands {
     ///
     /// For a single file: If tracked, update the source file. If untracked, prompt to add it.
     /// For a directory: Update all tracked files. Use --all to also add untracked files.
+    /// Use --choose to pick which repo/subdirectory to add a file to interactively.
     Add {
         /// Path to add or update (relative to ~ or absolute path for root dotfiles)
         #[arg(value_hint = ValueHint::AnyPath)]
