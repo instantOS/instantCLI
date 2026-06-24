@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.1](https://github.com/instantOS/instantCLI/compare/v0.14.0...v0.14.1) - 2026-06-18
+
+### Fixed
+
+- fix apt removal thingy
+
+### Other
+
+- inline trivial forwarding functions
+- add apt support for removal cascade
+- make wine save scanning more robust
+- add orbit compat
+
 ## [0.14.0](https://github.com/instantOS/instantCLI/compare/v0.13.37...v0.14.0) - 2026-06-14
 
 ### Fixed

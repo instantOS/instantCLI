@@ -15,6 +15,10 @@ pub struct RootFlags {
     /// Internal flag: only process root dotfiles
     #[arg(long, hide = true)]
     pub root_only: bool,
+    /// Internal flag: skip reconciling targets whose sources were removed
+    /// (set on the sudo child when the parent update had a failed repo)
+    #[arg(long, hide = true)]
+    pub no_reconcile: bool,
     /// Internal flag: override home directory
     #[arg(long, hide = true)]
     pub home: Option<String>,
@@ -724,7 +728,18 @@ pub fn handle_dot_command(
             )?;
         }
         DotCommands::Apply { root_flags, .. } => {
-            super::apply_all(&config, &db, root_flags.include_root, root_flags.root_only)?;
+            // `--no-reconcile` is set by the sudo root-apply child when the
+            // parent `dot update` had a failed repository, so that a failed
+            // pull suppresses removed-source reconciliation for root targets
+            // just as it already does for home targets.
+            let reconcile = !root_flags.no_reconcile;
+            crate::dot::operations::apply::apply_all_with_reconciliation(
+                &config,
+                &db,
+                root_flags.include_root,
+                root_flags.root_only,
+                reconcile,
+            )?;
         }
         DotCommands::Add {
             path,

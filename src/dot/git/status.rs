@@ -1063,12 +1063,53 @@ pub fn get_dotfile_status(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dot::db::Database;
+    use crate::dot::db::{Database, DotFileType};
     use crate::dot::dotfile::Dotfile;
     use age::secrecy::ExposeSecret;
     use serial_test::serial;
     use std::fs;
     use tempfile::tempdir;
+
+    #[test]
+    fn status_reports_known_unmodified_content_as_outdated_when_source_differs() {
+        let dir = tempdir().unwrap();
+        let source_path = dir.path().join("repo/dots/config.toml");
+        let target_path = dir.path().join("home/config.toml");
+        fs::create_dir_all(source_path.parent().unwrap()).unwrap();
+        fs::create_dir_all(target_path.parent().unwrap()).unwrap();
+        fs::write(&source_path, "new source").unwrap();
+        fs::write(&target_path, "previous source").unwrap();
+
+        let source_file = fs::File::open(&source_path).unwrap();
+        source_file
+            .set_times(
+                fs::FileTimes::new()
+                    .set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(100)),
+            )
+            .unwrap();
+        let target_file = fs::File::open(&target_path).unwrap();
+        target_file
+            .set_times(
+                fs::FileTimes::new()
+                    .set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(200)),
+            )
+            .unwrap();
+
+        let db = Database::new(dir.path().join("test.db")).unwrap();
+        let previous_hash = Dotfile::compute_hash(&target_path).unwrap();
+        db.add_hash(
+            &previous_hash,
+            &dir.path().join("repo/dots/previous-config.toml"),
+            DotFileType::SourceFile,
+        )
+        .unwrap();
+
+        let dotfile = Dotfile::new(source_path, target_path, false);
+        assert_eq!(
+            get_dotfile_status(&dotfile, &db, &UnitIndex::default()),
+            DotFileStatus::Outdated
+        );
+    }
 
     #[test]
     #[serial]

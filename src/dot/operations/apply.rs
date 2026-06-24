@@ -3,6 +3,9 @@ use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
 use crate::dot::dotfile::{Dotfile, SourceKind};
 use crate::dot::encryption::{EncryptedFailureReason, classify_encrypted_failure};
+use crate::dot::operations::reconcile::{
+    reconcile_removed_targets, record_managed_target_if_confirmed,
+};
 use crate::dot::units::{get_all_units, get_modified_units};
 use crate::dot::utils::get_all_dotfiles;
 use crate::ui::prelude::*;
@@ -47,17 +50,17 @@ pub fn apply_all(
     include_root: bool,
     root_only: bool,
 ) -> Result<()> {
-    let all_dotfiles = get_all_dotfiles(config, db, include_root || root_only)?;
+    apply_all_with_reconciliation(config, db, include_root, root_only, true)
+}
 
-    if all_dotfiles.is_empty() {
-        emit(
-            Level::Info,
-            "dot.apply.no_dotfiles",
-            &format!("{} No dotfiles configured", char::from(NerdFont::Info)),
-            None,
-        );
-        return Ok(());
-    }
+pub(crate) fn apply_all_with_reconciliation(
+    config: &DotfileConfig,
+    db: &Database,
+    include_root: bool,
+    root_only: bool,
+    reconcile_removed: bool,
+) -> Result<()> {
+    let all_dotfiles = get_all_dotfiles(config, db, include_root || root_only)?;
 
     let home_dotfiles: Vec<_> = all_dotfiles.values().filter(|d| !d.is_root).collect();
     let root_dotfiles: Vec<_> = all_dotfiles.values().filter(|d| d.is_root).collect();
@@ -73,78 +76,114 @@ pub fn apply_all(
                 determine_and_apply_action(dotfile, &all_units, &modified_units, &mut stats, db)?;
             emit_action_result(&action, dotfile);
             record_action(&action, dotfile, &mut stats);
+            record_managed_target_if_confirmed(
+                config,
+                db,
+                dotfile,
+                matches!(
+                    action,
+                    ApplyAction::Created | ApplyAction::Updated | ApplyAction::AlreadyUpToDate
+                ),
+            )?;
         }
+
+        reconcile_removed_targets(config, db, &all_dotfiles, false, reconcile_removed)?;
     }
 
-    if !root_dotfiles.is_empty() && (include_root || root_only) {
-        if root_only {
-            for dotfile in &root_dotfiles {
-                let action = determine_and_apply_action(
-                    dotfile,
-                    &all_units,
-                    &modified_units,
-                    &mut stats,
-                    db,
-                )?;
-                emit_action_result(&action, dotfile);
-                record_action(&action, dotfile, &mut stats);
-            }
-        } else {
-            let home_dir = home_dir();
-            let home_dir_str = home_dir.to_string_lossy();
+    if root_only {
+        for dotfile in &root_dotfiles {
+            let action =
+                determine_and_apply_action(dotfile, &all_units, &modified_units, &mut stats, db)?;
+            emit_action_result(&action, dotfile);
+            record_action(&action, dotfile, &mut stats);
+            record_managed_target_if_confirmed(
+                config,
+                db,
+                dotfile,
+                matches!(
+                    action,
+                    ApplyAction::Created | ApplyAction::Updated | ApplyAction::AlreadyUpToDate
+                ),
+            )?;
+        }
+        reconcile_removed_targets(config, db, &all_dotfiles, true, reconcile_removed)?;
+    } else if should_delegate_root_apply(include_root, root_dotfiles.len()) {
+        let home_dir = home_dir();
+        let home_dir_str = home_dir.to_string_lossy();
+        emit(
+            Level::Info,
+            "dot.apply.root_files",
+            &format!(
+                "{} Applying {} root dotfile(s) (requires sudo)",
+                char::from(NerdFont::ShieldCheck),
+                root_dotfiles.len()
+            ),
+            None,
+        );
+
+        let status = {
+            let mut command = std::process::Command::new("sudo");
+            command.args(root_apply_child_args(reconcile_removed));
+            command.arg("--home").arg(home_dir_str.as_ref());
+            command.status()
+        };
+
+        if let Err(e) = status {
             emit(
-                Level::Info,
-                "dot.apply.root_files",
+                Level::Warn,
+                "dot.apply.root_failed",
                 &format!(
-                    "{} Applying {} root dotfile(s) (requires sudo)",
-                    char::from(NerdFont::ShieldCheck),
-                    root_dotfiles.len()
+                    "{} Failed to spawn sudo for root dotfiles: {}",
+                    char::from(NerdFont::Warning),
+                    e
                 ),
                 None,
             );
-
-            let status = std::process::Command::new("sudo")
-                .arg("ins")
-                .arg("dot")
-                .arg("apply")
-                .arg("--root-only")
-                .arg("--home")
-                .arg(home_dir_str.as_ref())
-                .status();
-
-            if let Err(e) = status {
-                emit(
-                    Level::Warn,
-                    "dot.apply.root_failed",
-                    &format!(
-                        "{} Failed to spawn sudo for root dotfiles: {}",
-                        char::from(NerdFont::Warning),
-                        e
-                    ),
-                    None,
-                );
-            } else if let Ok(s) = status
-                && !s.success()
-            {
-                emit(
-                    Level::Warn,
-                    "dot.apply.root_failed",
-                    &format!(
-                        "{} Applying root dotfiles failed or was cancelled",
-                        char::from(NerdFont::Warning)
-                    ),
-                    None,
-                );
-            }
+        } else if let Ok(s) = status
+            && !s.success()
+        {
+            emit(
+                Level::Warn,
+                "dot.apply.root_failed",
+                &format!(
+                    "{} Applying root dotfiles failed or was cancelled",
+                    char::from(NerdFont::Warning)
+                ),
+                None,
+            );
         }
     }
 
     db.cleanup_hashes(config.hash_cleanup_days)?;
-    if !root_only || !root_dotfiles.is_empty() {
+    if all_dotfiles.is_empty() {
+        emit(
+            Level::Info,
+            "dot.apply.no_dotfiles",
+            &format!("{} No dotfiles configured", char::from(NerdFont::Info)),
+            None,
+        );
+    } else if !root_only || !root_dotfiles.is_empty() {
         print_apply_summary(&stats);
     }
 
     Ok(())
+}
+
+fn should_delegate_root_apply(include_root: bool, current_root_dotfiles: usize) -> bool {
+    include_root && current_root_dotfiles > 0
+}
+
+/// Build the static argument list for the `sudo ins dot apply --root-only`
+/// child process. `--no-reconcile` is forwarded only when the parent decided
+/// removed-source reconciliation must be suppressed (e.g. a repo failed to
+/// update during `dot update`), keeping root targets consistent with home
+/// targets instead of always reconciling via the child's hardcoded default.
+fn root_apply_child_args(reconcile_removed: bool) -> Vec<&'static str> {
+    let mut args = vec!["ins", "dot", "apply", "--root-only"];
+    if !reconcile_removed {
+        args.push("--no-reconcile");
+    }
+    args
 }
 
 /// Determine and execute the appropriate action for a dotfile
@@ -539,5 +578,21 @@ mod tests {
             !home.join("secret.txt").exists(),
             "undecryptable encrypted file should be skipped"
         );
+    }
+
+    #[test]
+    fn stale_root_tracking_alone_does_not_delegate_to_sudo() {
+        assert!(!should_delegate_root_apply(true, 0));
+        assert!(!should_delegate_root_apply(false, 1));
+        assert!(should_delegate_root_apply(true, 1));
+    }
+
+    #[test]
+    fn root_child_forwards_no_reconcile_only_when_reconcile_suppressed() {
+        // Normal apply / successful update: root child reconciles.
+        assert!(!root_apply_child_args(true).contains(&"--no-reconcile"));
+        // Failed update (`any_failed`): root child must suppress reconcile too,
+        // matching the home-target behavior instead of always deleting.
+        assert!(root_apply_child_args(false).contains(&"--no-reconcile"));
     }
 }
