@@ -6,7 +6,9 @@
 mod handlers;
 mod menu_items;
 mod models;
+mod ssh_keys;
 mod system;
 mod utils;
 
 pub(super) use handlers::manage_users;
+pub(super) use ssh_keys::manage_ssh_keys;

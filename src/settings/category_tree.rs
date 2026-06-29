@@ -140,7 +140,10 @@ pub fn category_tree(category: Category) -> Vec<CategoryNode> {
             CategoryNode::setting(&printers::PrinterServices),
             CategoryNode::setting(&printers::PrinterManager),
         ],
-        Category::Users => vec![CategoryNode::setting(&users::ManageUsers)],
+        Category::Users => vec![
+            CategoryNode::setting(&users::ManageUsers),
+            CategoryNode::setting(&users::SshKeys),
+        ],
         Category::Language => vec![
             CategoryNode::setting(&language::SystemLanguage),
             CategoryNode::setting(&language::Timezone),
