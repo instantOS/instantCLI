@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.2](https://github.com/instantOS/instantCLI/compare/v0.14.1...v0.14.2) - 2026-06-23
+
+### Other
+
+- better deletion root handling
+- refactor deletion
+- add support for cleaning files when deleted from dotfile repos
+
 ## [0.14.1](https://github.com/instantOS/instantCLI/compare/v0.14.0...v0.14.1) - 2026-06-18
 
 ### Fixed
