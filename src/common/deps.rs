@@ -54,6 +54,25 @@ pub static CFDISK: Dependency = Dependency {
     tests: &[InstallTest::WhichSucceeds("cfdisk")],
 };
 
+/// NTFS userspace utilities (mkntfs, ntfsresize, ...).
+///
+/// Required for dual-boot NTFS partition resize detection and execution.
+/// On Arch these split out of `ntfs-3g` into the `ntfsprogs` package.
+/// Arch-only: `ins arch` is not supported on other distros.
+pub static NTFSPROGS: Dependency = Dependency {
+    name: "ntfsprogs",
+    packages: &[PackageDefinition::new("ntfsprogs", PackageManager::Pacman)],
+    tests: &[InstallTest::WhichSucceeds("ntfsresize")],
+};
+
+/// NTFS FUSE driver, for mounting existing Windows NTFS partitions during
+/// dual-boot installation. Arch-only: `ins arch` is not supported on other distros.
+pub static NTFS_3G: Dependency = Dependency {
+    name: "ntfs-3g",
+    packages: &[PackageDefinition::new("ntfs-3g", PackageManager::Pacman)],
+    tests: &[InstallTest::WhichSucceeds("ntfs-3g")],
+};
+
 // =============================================================================
 // System Upgrade
 // =============================================================================

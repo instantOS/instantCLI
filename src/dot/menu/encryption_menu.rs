@@ -1,6 +1,5 @@
 use anyhow::{Context, Result};
 use std::path::PathBuf;
-use std::str::FromStr;
 
 use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
@@ -25,21 +24,21 @@ pub enum EncryptionKeyKind {
 }
 
 impl EncryptionKeyKind {
-    fn public_key(&self) -> &str {
+    pub fn public_key(&self) -> &str {
         match self {
             Self::AgeIdentity { public_key, .. } => public_key,
             Self::SshKey { public_key, .. } => public_key,
         }
     }
 
-    fn path(&self) -> &PathBuf {
+    pub fn path(&self) -> &PathBuf {
         match self {
             Self::AgeIdentity { path, .. } => path,
             Self::SshKey { path, .. } => path,
         }
     }
 
-    fn display_name(&self) -> String {
+    pub fn display_name(&self) -> String {
         match self {
             Self::AgeIdentity { path, .. } => path
                 .file_name()
@@ -49,7 +48,7 @@ impl EncryptionKeyKind {
         }
     }
 
-    fn short_key(&self) -> String {
+    pub fn short_key(&self) -> String {
         let key = self.public_key();
         const MAX_DISPLAY: usize = 40;
         const ELLIPSIS: &str = "...";
@@ -60,7 +59,7 @@ impl EncryptionKeyKind {
         }
     }
 
-    fn key_type_label(&self) -> &'static str {
+    pub fn key_type_label(&self) -> &'static str {
         match self {
             Self::AgeIdentity { .. } => "key",
             Self::SshKey { .. } => "ssh",
@@ -79,6 +78,7 @@ pub enum EncryptionMenuAction {
 pub enum KeyAction {
     CopyPublicKey,
     AuthorizeToRepo,
+    RenameKey,
     DeleteKey,
     Back,
 }
@@ -124,6 +124,7 @@ impl FzfSelectable for KeyActionItem {
         match self.action {
             KeyAction::CopyPublicKey => "copy_public_key".to_string(),
             KeyAction::AuthorizeToRepo => "authorize_to_repo".to_string(),
+            KeyAction::RenameKey => "rename_key".to_string(),
             KeyAction::DeleteKey => "delete_key".to_string(),
             KeyAction::Back => "back".to_string(),
         }
@@ -134,50 +135,29 @@ impl FzfSelectable for KeyActionItem {
     }
 }
 
-fn discover_all_keys() -> Vec<EncryptionKeyKind> {
+pub(crate) fn discover_all_keys() -> Vec<EncryptionKeyKind> {
     let mut keys = Vec::new();
 
-    for path in crate::dot::encryption::discover_identity_files() {
-        if let Ok(content) = std::fs::read_to_string(&path) {
-            for line in content.lines() {
-                let trimmed = line.trim();
-                if trimmed.starts_with("AGE-SECRET-KEY-1")
-                    && let Ok(identity) = age::x25519::Identity::from_str(trimmed)
-                {
+    if let Ok(info_keys) = crate::dot::operations::key::discover_all_keys_info() {
+        for info in info_keys {
+            match info.key_type {
+                crate::dot::operations::key::KeyType::Age => {
                     keys.push(EncryptionKeyKind::AgeIdentity {
-                        path: path.clone(),
-                        public_key: identity.to_public().to_string(),
+                        path: info.path,
+                        public_key: info.public_key,
                     });
                 }
-            }
-        }
-    }
-
-    let home = std::env::var("HOME").map(PathBuf::from).ok();
-    if let Some(home_path) = home {
-        let ssh_dir = home_path.join(".ssh");
-        if ssh_dir.is_dir()
-            && let Ok(entries) = std::fs::read_dir(ssh_dir)
-        {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_file()
-                    && path.extension().is_some_and(|ext| ext == "pub")
-                    && let Ok(content) = std::fs::read_to_string(&path)
-                {
-                    let content_trimmed = content.trim();
-                    if content_trimmed.starts_with("ssh-") || content_trimmed.starts_with("ecdsa-")
-                    {
-                        let Some(filename) = path.file_name() else {
-                            continue;
-                        };
-                        let filename = filename.to_string_lossy().into_owned();
-                        keys.push(EncryptionKeyKind::SshKey {
-                            path: path.clone(),
-                            public_key: content_trimmed.to_string(),
-                            filename,
-                        });
-                    }
+                crate::dot::operations::key::KeyType::Ssh => {
+                    let filename = info
+                        .path
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| info.name.clone());
+                    keys.push(EncryptionKeyKind::SshKey {
+                        path: info.path,
+                        public_key: info.public_key,
+                        filename,
+                    });
                 }
             }
         }
@@ -186,7 +166,7 @@ fn discover_all_keys() -> Vec<EncryptionKeyKind> {
     keys
 }
 
-fn build_key_preview(key: &EncryptionKeyKind) -> String {
+pub(crate) fn build_key_preview(key: &EncryptionKeyKind) -> String {
     let mut builder = PreviewBuilder::new()
         .header(NerdFont::Key, &format!("{} Key", key.key_type_label()))
         .blank()
@@ -250,6 +230,20 @@ fn handle_key_action_menu(
         });
 
         actions.push(KeyActionItem {
+            action: KeyAction::RenameKey,
+            display: format!(
+                "{} Rename Key",
+                format_icon_colored(NerdFont::Edit, colors::MAUVE)
+            ),
+            preview: PreviewBuilder::new()
+                .header(NerdFont::Edit, "Rename Key")
+                .text("Rename this key file.")
+                .blank()
+                .field("Current name", &key.display_name())
+                .build_string(),
+        });
+
+        actions.push(KeyActionItem {
             action: KeyAction::DeleteKey,
             display: format!(
                 "{} Delete Key",
@@ -303,6 +297,30 @@ fn handle_key_action_menu(
                     KeyAction::AuthorizeToRepo => {
                         handle_authorize_key_to_repo(key.public_key(), config, db, debug)?;
                     }
+                    KeyAction::RenameKey => {
+                        let current_name = key.display_name();
+                        let new_name = FzfWrapper::builder()
+                            .header(Header::fancy("Rename Key"))
+                            .prompt("New name")
+                            .query(&current_name)
+                            .input()
+                            .input_dialog()?;
+                        if new_name.is_empty() || new_name == current_name {
+                            continue;
+                        }
+                        match crate::dot::operations::key::handle_rename(&current_name, &new_name) {
+                            Ok(()) => {
+                                FzfWrapper::message(&format!(
+                                    "Key renamed: {} → {}",
+                                    current_name, new_name
+                                ))?;
+                                return Ok(());
+                            }
+                            Err(e) => {
+                                FzfWrapper::message(&format!("Rename failed: {}", e))?;
+                            }
+                        }
+                    }
                     KeyAction::DeleteKey => {
                         if handle_delete_key(key, config)? {
                             return Ok(());
@@ -331,30 +349,51 @@ fn handle_authorize_key_to_repo(
     }
 
     #[derive(Clone)]
-    struct RepoOption(String);
-    impl FzfSelectable for RepoOption {
+    enum RepoAction {
+        Select(String),
+        Back,
+    }
+
+    #[derive(Clone)]
+    struct RepoEntry {
+        action: RepoAction,
+        display: String,
+        preview: String,
+    }
+
+    impl FzfSelectable for RepoEntry {
         fn fzf_display_text(&self) -> String {
-            format!(
-                "{} {}",
-                format_icon_colored(NerdFont::Folder, colors::MAUVE),
-                self.0
-            )
+            self.display.clone()
         }
         fn fzf_key(&self) -> String {
-            self.0.clone()
+            match &self.action {
+                RepoAction::Select(name) => name.clone(),
+                RepoAction::Back => "back".to_string(),
+            }
         }
         fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
-            crate::menu::protocol::FzfPreview::Text(format!(
-                "Authorize key in repository '{}'",
-                self.0
-            ))
+            crate::menu::protocol::FzfPreview::Text(self.preview.clone())
         }
     }
 
-    let repo_options: Vec<RepoOption> = writable_repos
+    let mut repo_entries: Vec<RepoEntry> = writable_repos
         .iter()
-        .map(|r| RepoOption(r.name.clone()))
+        .map(|r| RepoEntry {
+            action: RepoAction::Select(r.name.clone()),
+            display: format!(
+                "{} {}",
+                format_icon_colored(NerdFont::Folder, colors::MAUVE),
+                r.name
+            ),
+            preview: format!("Authorize key in repository '{}'", r.name),
+        })
         .collect();
+
+    repo_entries.push(RepoEntry {
+        action: RepoAction::Back,
+        display: format!("{} Back", format_back_icon()),
+        preview: "Return to key actions".to_string(),
+    });
 
     let builder = FzfWrapper::builder()
         .header(Header::fancy("Select Repository"))
@@ -362,46 +401,36 @@ fn handle_authorize_key_to_repo(
         .args(fzf_mocha_args())
         .responsive_layout();
 
-    let result = builder.select(repo_options.clone())?;
-
-    if let FzfResult::Selected(repo_option) = result {
-        let dry_run = false;
-        crate::dot::operations::key::handle_authorize(
-            config,
-            db,
-            Some(public_key),
-            Some(&repo_option.0),
-            dry_run,
-            debug,
-        )?;
-        FzfWrapper::message(&format!(
-            "Key authorized for '{}'.\n\n{}",
-            repo_option.0, public_key
-        ))?;
+    let result = builder.select(repo_entries)?;
+    match result {
+        FzfResult::Selected(entry) => match &entry.action {
+            RepoAction::Select(repo_name) => {
+                let dry_run = false;
+                crate::dot::operations::key::handle_authorize(
+                    config,
+                    db,
+                    Some(public_key),
+                    Some(repo_name),
+                    dry_run,
+                    debug,
+                )?;
+                FzfWrapper::message(&format!(
+                    "Key authorized for '{}'.\n\n{}",
+                    repo_name, public_key
+                ))?;
+                Ok(())
+            }
+            RepoAction::Back => Ok(()),
+        },
+        _ => Ok(()),
     }
-
-    Ok(())
 }
 
 fn handle_delete_key(key: &EncryptionKeyKind, config: &DotfileConfig) -> Result<bool> {
     let key_path = key.path();
     let public_key = key.public_key();
 
-    let repos_using_key: Vec<String> = config
-        .get_writable_repos()
-        .into_iter()
-        .filter_map(|r| {
-            let dotfile_repo =
-                crate::dot::dotfilerepo::DotfileRepo::new(config, r.name.clone()).ok()?;
-            let repo_path = dotfile_repo.local_path(config).ok()?;
-            let meta = crate::dot::meta::read_meta(&repo_path).ok()?;
-            if meta.encryption_recipients.iter().any(|r| r == public_key) {
-                Some(r.name.clone())
-            } else {
-                None
-            }
-        })
-        .collect();
+    let repos_using_key = crate::dot::operations::key::find_repos_using_key(config, public_key);
 
     let warning = if repos_using_key.is_empty() {
         String::new()
@@ -482,7 +511,7 @@ pub fn handle_encryption_keys_menu(
                 .text("Create a new x25519 encryption keypair.")
                 .blank()
                 .text("The private key is saved to:")
-                .text("  ~/.config/instant/encryption/identity")
+                .text("  ~/.config/instant/encryption/identities/<name>")
                 .blank()
                 .subtext("Existing keys are not overwritten.")
                 .build_string(),
@@ -516,17 +545,20 @@ pub fn handle_encryption_keys_menu(
                         handle_key_action_menu(&key, config, db, debug)?;
                     }
                     EncryptionMenuAction::GenerateNewKey => {
-                        crate::dot::operations::key::handle_init(false)?;
-                        let pubkeys = crate::dot::operations::key::get_local_public_keys()
-                            .unwrap_or_default();
-                        if let Some(pk) = pubkeys.first() {
-                            FzfWrapper::message(&format!(
-                                "Encryption key is ready.\n\nPublic key:\n{}",
-                                pk
-                            ))?;
-                        } else {
-                            FzfWrapper::message("Encryption key is ready.")?;
+                        let default_name = nix::unistd::gethostname()
+                            .ok()
+                            .and_then(|h| h.into_string().ok())
+                            .unwrap_or_else(|| "default".to_string());
+                        let name = FzfWrapper::builder()
+                            .header(Header::fancy("Generate New Key"))
+                            .prompt("Key name")
+                            .query(&default_name)
+                            .input()
+                            .input_dialog()?;
+                        if name.is_empty() {
+                            continue;
                         }
+                        crate::dot::operations::key::handle_init(Some(&name), false)?;
                     }
                     EncryptionMenuAction::Back => return Ok(()),
                 }

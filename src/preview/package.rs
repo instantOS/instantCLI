@@ -5,7 +5,7 @@ use duct::cmd;
 use std::collections::HashSet;
 
 use crate::common::distro::OperatingSystem;
-use crate::common::package::{PackageManager, detect_aur_helper};
+use crate::common::package::{PackageManager, detect_aur_helper, removal_cascade};
 use crate::ui::catppuccin::colors;
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewWriter;
@@ -75,7 +75,7 @@ fn render_installed_package_with(ctx: &PreviewContext, preview: &mut PreviewWrit
         && let Some((src, pkg)) = package.split_once('\t')
     {
         if let Ok(manager) = src.parse::<PackageManager>() {
-            return render_for_manager(pkg, manager, preview);
+            return render_installed_for_manager(pkg, manager, preview);
         }
 
         preview
@@ -88,12 +88,26 @@ fn render_installed_package_with(ctx: &PreviewContext, preview: &mut PreviewWrit
 
     let os = OperatingSystem::detect();
     if let Some(manager) = os.native_package_manager() {
-        render_for_manager(package, manager, preview)
+        render_installed_for_manager(package, manager, preview)
     } else {
         preview
             .header(NerdFont::Package, package)
             .subtext("Package manager not available");
         Ok(())
+    }
+}
+
+fn render_installed_for_manager(
+    package: &str,
+    manager: PackageManager,
+    preview: &mut PreviewWriter,
+) -> Result<()> {
+    match manager {
+        PackageManager::Pacman | PackageManager::Aur => {
+            render_installed_pacman_impl(package, preview)
+        }
+        PackageManager::Apt => render_installed_apt_impl(package, preview),
+        _ => render_for_manager(package, manager, preview),
     }
 }
 
@@ -196,6 +210,12 @@ pub(crate) fn render_apt_impl(package: &str, preview: &mut PreviewWriter) -> Res
     }
 
     Ok(())
+}
+
+fn render_installed_apt_impl(package: &str, preview: &mut PreviewWriter) -> Result<()> {
+    render_apt_impl(package, preview)?;
+    preview.blank();
+    render_removal_cascade(PackageManager::Apt, package, preview)
 }
 
 pub(crate) fn render_dnf_impl(package: &str, preview: &mut PreviewWriter) -> Result<()> {
@@ -306,6 +326,40 @@ pub(crate) fn render_pacman_impl(package: &str, preview: &mut PreviewWriter) -> 
         return Ok(());
     }
 
+    render_pacman_fields(&output, preview);
+
+    Ok(())
+}
+
+fn render_installed_pacman_impl(package: &str, preview: &mut PreviewWriter) -> Result<()> {
+    preview
+        .header(NerdFont::Package, package)
+        .line(colors::GREEN, None, "Installed Pacman Package")
+        .blank();
+
+    let output = cmd!("pacman", "-Qi", package)
+        .stderr_null()
+        .read()
+        .unwrap_or_default();
+
+    if output.is_empty() {
+        preview.subtext("No package information available");
+        return Ok(());
+    }
+
+    render_pacman_fields(&output, preview);
+    preview.blank();
+    render_removal_cascade_with_package_info(
+        PackageManager::Pacman,
+        package,
+        Some(&output),
+        preview,
+    )?;
+
+    Ok(())
+}
+
+fn render_pacman_fields(output: &str, preview: &mut PreviewWriter) {
     for line in output.lines() {
         if let Some((key, value)) = line.split_once(':') {
             let key = key.trim();
@@ -333,6 +387,38 @@ pub(crate) fn render_pacman_impl(package: &str, preview: &mut PreviewWriter) -> 
             }
         }
     }
+}
+
+fn render_removal_cascade(
+    manager: PackageManager,
+    package: &str,
+    preview: &mut PreviewWriter,
+) -> Result<()> {
+    render_removal_cascade_with_package_info(manager, package, None, preview)
+}
+
+fn render_removal_cascade_with_package_info(
+    manager: PackageManager,
+    package: &str,
+    package_info: Option<&str>,
+    preview: &mut PreviewWriter,
+) -> Result<()> {
+    preview.title(colors::PEACH, "Removal Cascade");
+
+    let packages = [package.to_string()];
+    let dependents = removal_cascade(manager, &packages, package_info)?;
+    if dependents.is_empty() {
+        preview.subtext("No installed packages depend on this package.");
+        return Ok(());
+    }
+
+    preview
+        .line(
+            colors::YELLOW,
+            Some(NerdFont::Warning),
+            "Uninstalling this package also requires uninstalling these packages.",
+        )
+        .bullets(dependents);
 
     Ok(())
 }

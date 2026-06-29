@@ -1,6 +1,6 @@
-use anyhow::Result;
-use colored::*;
+use anyhow::{Context, Result};
 
+mod all_menu;
 mod arch;
 mod assist;
 mod autostart;
@@ -30,22 +30,9 @@ mod welcome;
 
 use clap::{CommandFactory, Parser, Subcommand};
 
-/// Helper function to format and print errors consistently
-fn handle_error(context: &str, error: &anyhow::Error) -> String {
-    use std::fmt::Write as _;
-    // Print the top-level error and then the full cause chain for better diagnostics
-    let mut msg = format!("{}: {}", context.red(), error.to_string().red());
-    for cause in error.chain().skip(1) {
-        let _ = write!(&mut msg, "\n  Caused by: {}", cause);
-    }
-    msg
-}
-
 /// Helper function to execute a fallible operation with consistent error handling
 fn execute_with_error_handling<T>(operation: Result<T>, error_context: &str) -> Result<T> {
-    operation.inspect_err(|e| {
-        eprintln!("{}", handle_error(error_context, e));
-    })
+    operation.with_context(|| error_context.to_string())
 }
 
 use crate::debug::DebugCommands;
@@ -314,7 +301,10 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
             doctor::handle_doctor_command(command.clone(), *concurrency).await?;
         }
         Some(Commands::Menu { command }) => {
-            let exit_code = menu::handle_menu_command(command.clone(), cli.debug).await?;
+            let exit_code = match command {
+                menu::MenuCommands::All => all_menu::run_all_menu(cli.debug).await?,
+                _ => menu::handle_menu_command(command.clone(), cli.debug).await?,
+            };
             std::process::exit(exit_code);
         }
         Some(Commands::Preview { id, key }) => {

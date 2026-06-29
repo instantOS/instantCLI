@@ -49,8 +49,8 @@ impl Category {
         match self {
             Category::Install => CategoryMeta {
                 id: "install",
-                title: "Installation",
-                description: "Installation and setup options.",
+                title: "Package management",
+                description: "Package management and setup options.",
                 icon: NerdFont::Download,
                 color: colors::BLUE,
                 search_keywords: &["package"],

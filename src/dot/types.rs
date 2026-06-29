@@ -1,9 +1,7 @@
 use crate::dot::config;
 use crate::dot::dotfilerepo::DotfileDir;
 use crate::menu_utils::FzfSelectable;
-use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 
 /// Repository metadata structure.
 /// This is used for reading from instantdots.toml OR from the main config.
@@ -89,7 +87,7 @@ impl FzfSelectable for RepoMenuItem {
         use crate::ui::catppuccin::{colors, format_icon_colored};
         use crate::ui::nerd_font::NerdFont;
 
-        let badge = if self.repo.metadata.is_some() {
+        let badge = if self.repo.is_external() {
             " \x1b[33m[external]\x1b[0m".to_string()
         } else {
             String::new()
@@ -168,23 +166,31 @@ impl FzfSelectable for DotsDirSelectItem {
 use crate::documented_config;
 
 // Implement DocumentedConfig trait for RepoMetaData using the macro
-// Note: config_path returns a placeholder since instantdots.toml paths are dynamic per-repo
-documented_config!(RepoMetaData,
-    name, "Repository name (used for identification)",
-    author, "Repository author/maintainer",
-    description, "Repository description",
-    read_only, "Whether repository is read-only (default: false)",
-    dots_dirs, "Directories containing dotfiles (e.g., ['dots'])",
-    default_active_subdirs, "Default active subdirectories (defaults to first in dots_dirs)",
-    units, "Directories treated as atomic units (all files modified together)",
-    encryption_recipients, "Public encryption recipients for encrypted dotfiles",
-    => Ok(std::path::PathBuf::from("instantdots.toml"))
+documented_config!(
+    RepoMetaData,
+    name,
+    "Repository name (used for identification)",
+    author,
+    "Repository author/maintainer",
+    description,
+    "Repository description",
+    read_only,
+    "Whether repository is read-only (default: false)",
+    dots_dirs,
+    "Directories containing dotfiles (e.g., ['dots']); names ending in '_root' store root-owned dotfiles",
+    default_active_subdirs,
+    "Default active subdirectories (defaults to first in dots_dirs)",
+    units,
+    "Directories treated as atomic units (all files modified together)",
+    encryption_recipients,
+    "Public encryption recipients for encrypted dotfiles",
 );
 
 #[cfg(test)]
 mod documented_config_tests {
     use super::*;
     use crate::common::config::DocumentedConfig;
+    use std::fs;
 
     #[test]
     fn test_field_metadata_default_values() {
@@ -202,5 +208,34 @@ mod documented_config_tests {
 
         let units_field = metadata.iter().find(|f| f.name == "units").unwrap();
         assert_eq!(units_field.default_value.as_deref(), Some("[]"));
+    }
+
+    #[test]
+    fn save_metadata_uses_pretty_arrays() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("instantdots.toml");
+        let metadata = RepoMetaData {
+            name: "dotfiles".to_string(),
+            author: None,
+            description: None,
+            read_only: None,
+            dots_dirs: vec!["dots".to_string(), "dots_root".to_string()],
+            default_active_subdirs: Some(vec!["dots".to_string()]),
+            units: vec!["~/.config/nvim".to_string(), "~/.config/fish".to_string()],
+            encryption_recipients: vec![
+                "age1exampleexampleexampleexampleexampleexampleexampleexample".to_string(),
+                "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDexample".to_string(),
+            ],
+        };
+
+        metadata.save_documented_pretty_toml(&path, None).unwrap();
+
+        let contents = fs::read_to_string(path).unwrap();
+        assert!(contents.contains("# Available fields:"));
+        assert!(contents.contains("# dots_dirs = [\"dots\"]"));
+        assert!(contents.contains("# encryption_recipients = []"));
+        assert!(contents.contains("dots_dirs = [\n"));
+        assert!(contents.contains("encryption_recipients = [\n"));
+        assert!(!contents.contains("dots_dirs = [\"dots\", \"dots_root\"]"));
     }
 }

@@ -40,7 +40,6 @@ impl FolderMeta {
         let (icon, color) = match name {
             "GTK" => (NerdFont::Palette, colors::TEAL),
             "Wallpaper" => (NerdFont::Image, colors::LAVENDER),
-            "Qt" => (NerdFont::Palette, colors::PINK),
             _ => (NerdFont::Folder, colors::BLUE),
         };
         Self {

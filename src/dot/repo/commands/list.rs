@@ -63,6 +63,7 @@ pub(super) fn list_repositories(config: &DotfileConfig, db: &Database) -> Result
                         "url": repo_config.url,
                         "branch": repo_config.branch,
                         "enabled": repo_config.enabled,
+                        "external": repo_config.is_external(),
                         "active_subdirectories": config
                             .resolve_active_subdirs(repo_config)
                             .iter()
@@ -106,6 +107,11 @@ pub(super) fn list_repositories(config: &DotfileConfig, db: &Database) -> Result
                 } else {
                     "".clear()
                 };
+                let external = if repo_config.is_external() {
+                    " [external]".yellow()
+                } else {
+                    "".clear()
+                };
 
                 let branch_info = repo_config
                     .branch
@@ -133,8 +139,7 @@ pub(super) fn list_repositories(config: &DotfileConfig, db: &Database) -> Result
                         "(disabled by defaults)".to_string()
                     } else {
                         let repo_path = config.repos_path().join(&repo_config.name);
-                        if repo_path.join("instantdots.toml").exists()
-                            || repo_config.metadata.is_some()
+                        if repo_path.join("instantdots.toml").exists() || repo_config.is_external()
                         {
                             "(none configured)".to_string()
                         } else {
@@ -164,13 +169,14 @@ pub(super) fn list_repositories(config: &DotfileConfig, db: &Database) -> Result
                 };
 
                 println!(
-                    "  {} {}{} - {} [{}]{}{}",
+                    "  {} {}{} - {} [{}]{}{}{}",
                     priority_label,
                     repo_config.name.cyan(),
                     branch_info,
                     repo_config.url,
                     status,
                     read_only,
+                    external,
                     priority_hint
                 );
                 println!("    Local path: {}", local_path.dimmed());

@@ -408,7 +408,7 @@ mod tests {
 
         let identity = age::x25519::Identity::generate();
         let recipient = identity.to_public().to_string();
-        let identity_file = dir.path().join("identity.txt");
+        let identity_file = dir.path().join("identity.key");
         fs::write(&identity_file, identity.to_string().expose_secret()).unwrap();
 
         let _home_guard = EnvGuard::set("HOME", &home);
@@ -474,7 +474,7 @@ mod tests {
 
         let identity = age::x25519::Identity::generate();
         let recipient = identity.to_public().to_string();
-        let identity_file = dir.path().join("identity.txt");
+        let identity_file = dir.path().join("identity.key");
         fs::write(&identity_file, identity.to_string().expose_secret()).unwrap();
 
         let _home_guard = EnvGuard::set("HOME", &home);

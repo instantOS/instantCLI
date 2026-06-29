@@ -1,7 +1,7 @@
 //! Apply alternative selections - set overrides and copy files.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use colored::Colorize;
@@ -14,6 +14,28 @@ use crate::ui::prelude::*;
 
 use super::picker::SourceOption;
 use crate::dot::sources;
+
+fn relative_target_path(target_path: &Path) -> Result<(PathBuf, bool)> {
+    if let Ok(relative) = target_path.strip_prefix(sources::home_dir()) {
+        return Ok((relative.to_path_buf(), false));
+    }
+
+    let relative = target_path.strip_prefix("/").map_err(|_| {
+        anyhow::anyhow!(
+            "Target path must be inside the home directory or an absolute root path: {}",
+            target_path.display()
+        )
+    })?;
+    Ok((relative.to_path_buf(), true))
+}
+
+fn display_target_path(relative: &Path, is_root_target: bool) -> String {
+    if is_root_target {
+        format!("/{}", relative.display())
+    } else {
+        format!("~/{}", relative.display())
+    }
+}
 
 /// Check if target file is safe to switch (matches any known source).
 pub fn is_safe_to_switch(target_path: &Path, sources: &[SourceOption]) -> Result<bool> {
@@ -202,11 +224,23 @@ pub fn add_to_destination(
         }
     }
 
-    let relative = target_path
-        .strip_prefix(sources::home_dir())
-        .unwrap_or(target_path);
+    let (relative, is_root_target) = relative_target_path(target_path)?;
+    let is_root_destination = dest.subdir_name.ends_with("_root");
+    if is_root_target != is_root_destination {
+        anyhow::bail!(
+            "Destination '{}/{}' cannot store {}.\n\
+             Dotfile directories ending in '_root' store root-owned dotfiles.",
+            dest.repo_name,
+            dest.subdir_name,
+            if is_root_target {
+                "root-owned dotfiles"
+            } else {
+                "home dotfiles"
+            }
+        );
+    }
 
-    let mut dest_path = dest.source_path.join(relative);
+    let mut dest_path = dest.source_path.join(&relative);
     if recipients.is_some() {
         dest_path = crate::dot::encryption::append_age_suffix(&dest_path);
     }
@@ -215,7 +249,7 @@ pub fn add_to_destination(
         fs::create_dir_all(parent)?;
     }
 
-    let dotfile = Dotfile::new(dest_path.clone(), target_path.to_path_buf(), false);
+    let dotfile = Dotfile::new(dest_path.clone(), target_path.to_path_buf(), is_root_target);
     if let Some(recs) = recipients {
         dotfile.create_encrypted_source_from_target(db, recs)?;
     } else {
@@ -235,13 +269,83 @@ pub fn add_to_destination(
         Level::Success,
         "dot.add.created",
         &format!(
-            "{} Added ~/{} to {} / {}",
+            "{} Added {} to {} / {}",
             char::from(NerdFont::Check),
-            relative.display().to_string().green(),
+            display_target_path(&relative, is_root_target).green(),
             dest.repo_name.green(),
             dest.subdir_name.green()
         ),
         None,
     );
     Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{add_to_destination, display_target_path, relative_target_path};
+    use crate::common::TildePath;
+    use crate::dot::config::DotfileConfig;
+    use crate::dot::db::Database;
+    use crate::dot::override_config::DotfileSource;
+    use crate::dot::test_util::EnvGuard;
+    use serial_test::serial;
+    use std::fs;
+    use std::path::Path;
+
+    #[test]
+    #[serial]
+    fn root_target_paths_are_stored_relative_to_root() {
+        let _home = EnvGuard::set("HOME", "/tmp/instantcli-test-home");
+        let (relative, is_root) =
+            relative_target_path(Path::new("/etc/ppp/ip-up.d/99-fortivpn-routes.sh")).unwrap();
+
+        assert!(is_root);
+        assert_eq!(relative, Path::new("etc/ppp/ip-up.d/99-fortivpn-routes.sh"));
+        assert_eq!(
+            display_target_path(&relative, is_root),
+            "/etc/ppp/ip-up.d/99-fortivpn-routes.sh"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn root_owned_dotfile_is_copied_under_root_destination() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("home");
+        let repos_dir = dir.path().join("repos");
+        let repo_dir = repos_dir.join("personal");
+        let root_dir = repo_dir.join("dots_root");
+        let target = dir.path().join("system/etc/example.conf");
+        fs::create_dir_all(&home).unwrap();
+        fs::create_dir_all(&root_dir).unwrap();
+        fs::create_dir_all(target.parent().unwrap()).unwrap();
+        fs::write(&target, "root config").unwrap();
+        std::process::Command::new("git")
+            .arg("init")
+            .arg("-q")
+            .current_dir(&repo_dir)
+            .status()
+            .unwrap();
+
+        let _home = EnvGuard::set("HOME", &home);
+        let config = DotfileConfig {
+            repos_dir: TildePath::new(repos_dir),
+            database_dir: TildePath::new(dir.path().join("instant.db")),
+            ..DotfileConfig::default()
+        };
+        let db = Database::new(config.database_path().to_path_buf()).unwrap();
+        let dest = DotfileSource {
+            repo_name: "personal".to_string(),
+            subdir_name: "dots_root".to_string(),
+            source_path: root_dir.clone(),
+        };
+
+        add_to_destination(&config, &db, &target, &dest, true, None).unwrap();
+
+        let relative = target.strip_prefix("/").unwrap();
+        assert_eq!(
+            fs::read_to_string(root_dir.join(relative)).unwrap(),
+            "root config"
+        );
+    }
 }

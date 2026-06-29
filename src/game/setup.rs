@@ -30,7 +30,8 @@ pub fn setup_uninstalled_games() -> Result<()> {
 
     loop {
         let snapshot_overview = restic::collect_snapshot_overview(&game_config)?;
-        let candidates = collect_setup_candidates(&game_config, &installations, &snapshot_overview);
+        let candidates =
+            CandidateCollector::new(&game_config, &installations, &snapshot_overview).collect();
 
         if candidates.is_empty() {
             println!(
@@ -297,14 +298,6 @@ fn missing_dependencies_for_game(
         .filter(|dependency| !installed.contains(&dependency.id))
         .cloned()
         .collect()
-}
-
-fn collect_setup_candidates(
-    game_config: &InstantGameConfig,
-    installations: &InstallationsConfig,
-    snapshot_overview: &HashMap<String, restic::SnapshotOverview>,
-) -> Vec<SetupCandidate> {
-    CandidateCollector::new(game_config, installations, snapshot_overview).collect()
 }
 
 #[derive(Clone)]

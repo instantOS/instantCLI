@@ -37,6 +37,7 @@ pub(super) fn remove_repository(
 
     // Remove from config
     config.remove_repo(name, None)?;
+    db.remove_managed_targets_for_repo(name)?;
 
     println!("{} repository '{}'", "Removed".green(), name);
 

@@ -10,25 +10,22 @@
 //! ciphertext on disk actually changes (e.g. after `git pull`), and never
 //! during plain `status` / `diff` operations.
 //!
-//! Identity discovery for v1:
+//! Identity discovery order:
 //!   1. `$AGE_IDENTITY` env var (colon-separated paths, like `ssh-add` /
 //!      the `age(1)` CLI).
 //!   2. `<instant_config_dir>/dots.toml` `encryption_keys` list, if present.
-//!   3. `<instant_config_dir>/encryption/identity` (single file) if it exists.
-//!   4. `<instant_config_dir>/encryption/identities/*` (every file in the dir) if
-//!      the directory exists.
-//!   5. Conventional unencrypted SSH private keys at `~/.ssh/id_ed25519` and
-//!      `~/.ssh/id_rsa`, if present. These are picked up only as a fallback
-//!      so users who authorize an SSH recipient can decrypt out-of-the-box.
+//!   3. `<instant_config_dir>/encryption/identities/*` (every file in the dir).
+//!   4. Conventional unencrypted SSH private keys at `~/.ssh/id_ed25519` and
+//!      `~/.ssh/id_rsa`, if present.
 //!
 //! Both native age identities (`AGE-SECRET-KEY-1...`) and SSH private keys
 //! (OpenSSH PEM format) are accepted in every slot above; `load_identities`
 //! falls back to the SSH parser when the age identity parser rejects a file.
 //!
-//! ssh-agent integration and passphrase prompting are explicitly out of scope
-//! for v1 — `apply` runs from the autostart path and must never block on user
-//! input. Passphrase-protected SSH keys (`Identity::Encrypted`) are
-//! intentionally dropped from the loaded identity set with a debug log.
+//! ssh-agent integration and passphrase prompting are not supported — `apply`
+//! runs from the autostart path and must never block on user input.
+//! Passphrase-protected SSH keys (`Identity::Encrypted`) are intentionally
+//! dropped from the loaded identity set with a debug log.
 
 use anyhow::{Context, Result, anyhow};
 use std::collections::HashSet;
@@ -196,9 +193,8 @@ pub fn append_age_suffix(path: &Path) -> PathBuf {
 /// Sources (in priority order, deduplicated):
 ///   1. `$AGE_IDENTITY` env var (colon-separated paths)
 ///   2. `dots.toml` `encryption_keys` list (loaded from the global config)
-///   3. `<instant_config_dir>/encryption/identity`
-///   4. `<instant_config_dir>/encryption/identities/*`
-///   5. Conventional SSH private keys (`~/.ssh/id_ed25519`, `~/.ssh/id_rsa`)
+///   3. `<instant_config_dir>/encryption/identities/*`
+///   4. Conventional SSH private keys (`~/.ssh/id_ed25519`, `~/.ssh/id_rsa`)
 pub fn discover_identity_files() -> Vec<PathBuf> {
     let mut out: Vec<PathBuf> = Vec::new();
     let mut seen: HashSet<PathBuf> = HashSet::new();
@@ -233,12 +229,8 @@ pub fn discover_identity_files() -> Vec<PathBuf> {
         }
     }
 
-    // 3-4. Default paths under <instant_config_dir>/encryption/
+    // 3. Default paths under <instant_config_dir>/encryption/identities/*
     if let Ok(cfg_dir) = paths::instant_config_dir() {
-        let single = cfg_dir.join("encryption").join("identity");
-        if single.is_file() {
-            dedup_push(&mut out, &mut seen, single);
-        }
         let dir = cfg_dir.join("encryption").join("identities");
         if dir.is_dir()
             && let Ok(entries) = std::fs::read_dir(&dir)
@@ -253,7 +245,7 @@ pub fn discover_identity_files() -> Vec<PathBuf> {
                 dedup_push(&mut out, &mut seen, p);
             }
         }
-    } // 5. Conventional unencrypted SSH private keys. Only the well-known
+    } // 4. Conventional unencrypted SSH private keys. Only the well-known
     //    filenames so we don't sweep up unrelated files in ~/.ssh.
     //    FIDO2/U2F `_sk` variants (id_ed25519_sk, id_ecdsa_sk) are
     //    excluded because age::ssh::Identity cannot interact with
@@ -343,8 +335,8 @@ fn parse_ssh_identity_file(path: &Path) -> Result<Vec<Box<dyn age::Identity>>> {
     match ssh_id {
         age::ssh::Identity::Unencrypted(_) => Ok(vec![Box::new(ssh_id) as Box<dyn age::Identity>]),
         age::ssh::Identity::Encrypted(_) => {
-            // v1 deliberately doesn't prompt; skip so apply still runs from
-            // autostart instead of erroring out. The user can place a
+            // Passphrase-protected SSH keys are skipped; the autostart
+            // path can't prompt for a passphrase. The user can place a
             // plaintext copy of the key under
             // ~/.config/instant/encryption/identities/ to use it, or set
             // AGE_IDENTITY to point at one.

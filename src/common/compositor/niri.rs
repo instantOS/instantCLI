@@ -1,3 +1,4 @@
+use super::config::{INSTANT_KDL_HEADER, WindowManager, WmConfigManager};
 use super::{ScratchpadProvider, ScratchpadWindowInfo, create_terminal_process};
 use crate::scratchpad::{config::ScratchpadConfig, terminal::Terminal};
 use anyhow::{Context, Result, bail};
@@ -159,6 +160,14 @@ pub fn switch_layout(index: usize) -> Result<()> {
     Ok(())
 }
 
+/// Reload niri's configuration by re-reading the current main config.
+///
+/// Called as `niri msg action load-config-file` (no `--path`): niri re-reads
+/// the config chain starting from whatever main config it was started with,
+/// which transitively re-reads every `include`d file. We don't pass `--path`
+/// because the include we manage lives next to the user's main config; if we
+/// ever wanted to redirect niri to a different config at runtime, `--path`
+/// (added in niri 26.04) would be the way to do that.
 pub fn reload_config() -> Result<()> {
     let output = Command::new("niri")
         .args(["msg", "action", "load-config-file"])
@@ -206,6 +215,17 @@ pub fn set_mouse_accel_profile(profile: &str) -> Result<()> {
     let value = quoted(profile);
     let config = upsert_property(&config, &["input", "mouse"], "accel-profile", &value);
     let config = upsert_property(&config, &["input", "touchpad"], "accel-profile", &value);
+    write_config(&config)?;
+    reload_config()
+}
+
+pub fn set_touchpad_tap(enabled: bool) -> Result<()> {
+    let config = read_config()?;
+    let config = if enabled {
+        upsert_flag(&config, &["input", "touchpad"], "tap")
+    } else {
+        remove_flag(&config, &["input", "touchpad"], "tap")
+    };
     write_config(&config)?;
     reload_config()
 }
@@ -462,38 +482,42 @@ fn trim_float(value: f64) -> String {
     }
 }
 
+/// Path to the ins-managed niri config fragment.
+///
+/// Resolved via `WmConfigManager::new(WindowManager::Niri)`: honors `$NIRI_CONFIG`
+/// if set (so we write the include into the same main config niri actually reads),
+/// otherwise falls back to `$XDG_CONFIG_HOME/niri/`. The `instant.kdl` file is
+/// placed as a sibling of the main config so the relative `include` line is
+/// portable. See `WmConfigManager::resolve_niri_paths` for the exact rules.
 fn config_path() -> Result<PathBuf> {
-    if let Some(path) = std::env::var_os("NIRI_CONFIG")
-        && !path.is_empty()
-    {
-        return Ok(PathBuf::from(path));
-    }
-
-    if let Some(base) = dirs::config_dir() {
-        let user_config = base.join("niri").join("config.kdl");
-        if user_config.exists() {
-            return Ok(user_config);
-        }
-    }
-
-    let system_config = PathBuf::from("/etc/niri/config.kdl");
-    if system_config.exists() {
-        return Ok(system_config);
-    }
-
-    let base = dirs::config_dir().context("Unable to determine config directory")?;
-    Ok(base.join("niri").join("config.kdl"))
+    Ok(WmConfigManager::new(WindowManager::Niri)
+        .config_path()
+        .clone())
 }
 
 fn read_config() -> Result<String> {
     let path = config_path()?;
+    if !path.exists() {
+        return Ok(INSTANT_KDL_HEADER.to_string());
+    }
     fs::read_to_string(&path).with_context(|| format!("Failed to read {}", path.display()))
 }
 
 fn write_config(content: &str) -> Result<()> {
-    let path = config_path()?;
-    ensure_parent_dir(&path)?;
-    fs::write(&path, content).with_context(|| format!("Failed to write {}", path.display()))
+    let manager = WmConfigManager::new(WindowManager::Niri);
+    let path = manager.config_path();
+    ensure_parent_dir(path)?;
+    fs::write(path, content).with_context(|| format!("Failed to write {}", path.display()))?;
+
+    // Lazily add the `include "instant.kdl"` line to ~/.config/niri/config.kdl
+    // the first time we write. Failure here is non-fatal: ins still writes the
+    // settings, but niri won't pick them up until the include is in place. We
+    // surface this as a warning.
+    if let Err(err) = manager.ensure_included_in_main_config() {
+        eprintln!("warning: failed to add `include \"instant.kdl\"` to niri main config: {err}");
+    }
+
+    Ok(())
 }
 
 fn find_property_value(content: &str, path: &[&str], property: &str) -> Option<String> {
@@ -539,6 +563,41 @@ fn upsert_property(content: &str, path: &[&str], property: &str, value: &str) ->
         lines[existing_idx] = replacement;
     } else {
         lines.insert(range.end, replacement);
+    }
+
+    let mut updated = lines.join("\n");
+    if content.ends_with('\n') {
+        updated.push('\n');
+    }
+    updated
+}
+
+fn upsert_flag(content: &str, path: &[&str], flag: &str) -> String {
+    let mut lines: Vec<String> = content.lines().map(ToString::to_string).collect();
+    let range = ensure_block_path(&mut lines, path);
+
+    if find_flag_line(&lines, &range, flag).is_some() {
+        return content.to_string();
+    }
+
+    let replacement = format!("{}{}", " ".repeat(range.indent + 4), flag);
+    lines.insert(range.end, replacement);
+
+    let mut updated = lines.join("\n");
+    if content.ends_with('\n') {
+        updated.push('\n');
+    }
+    updated
+}
+
+fn remove_flag(content: &str, path: &[&str], flag: &str) -> String {
+    let mut lines: Vec<String> = content.lines().map(ToString::to_string).collect();
+    let Some(range) = find_block_lines(&lines, path) else {
+        return content.to_string();
+    };
+
+    if let Some(existing_idx) = find_flag_line(&lines, &range, flag) {
+        lines.remove(existing_idx);
     }
 
     let mut updated = lines.join("\n");
@@ -594,6 +653,13 @@ fn find_property_line(lines: &[String], block: &BlockRange, property: &str) -> O
         trimmed
             .strip_prefix(property)
             .is_some_and(|rest| rest.starts_with(char::is_whitespace))
+    })
+}
+
+fn find_flag_line(lines: &[String], block: &BlockRange, flag: &str) -> Option<usize> {
+    (block.start + 1..block.end).find(|idx| {
+        let trimmed = strip_comment(&lines[*idx]).trim();
+        trimmed == flag
     })
 }
 

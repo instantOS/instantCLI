@@ -7,6 +7,7 @@ pub mod prune;
 pub mod security;
 pub mod single_file;
 pub mod snapshot_selection;
+pub mod snapshots;
 pub mod tags;
 
 use crate::game::checkpoint;

@@ -111,7 +111,7 @@ pub const ASSISTS: &[AssistEntry] = &[
         key: 'c',
         description: "Caffeine: Keep system awake",
         icon: NerdFont::Coffee,
-        dependencies: &[],
+        dependencies: &[&FIGLET],
         execute: actions::system::caffeine,
     }),
     AssistEntry::Action(AssistAction {
@@ -292,6 +292,13 @@ pub const ASSISTS: &[AssistEntry] = &[
                 icon: NerdFont::Desktop,
                 dependencies: &[&WF_RECORDER, &FFMPEG, &WL_CLIPBOARD, &XCLIP, &LIBNOTIFY],
                 execute: actions::screenrecord::screen_record_fullscreen,
+            }),
+            AssistEntry::Action(AssistAction {
+                key: 'k',
+                description: "Kooha: Open screen recorder",
+                icon: NerdFont::Video,
+                dependencies: &[&KOOHA],
+                execute: actions::screenrecord::open_kooha,
             }),
             AssistEntry::Action(AssistAction {
                 key: 'x',
@@ -608,6 +615,13 @@ mod tests {
             action.unwrap().description,
             "Record Fullscreen: Record entire screen (toggle)"
         );
+    }
+
+    #[test]
+    fn test_find_kooha_action() {
+        let action = find_action("sk");
+        assert!(action.is_some());
+        assert_eq!(action.unwrap().description, "Kooha: Open screen recorder");
     }
 
     #[test]

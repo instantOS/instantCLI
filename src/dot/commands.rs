@@ -15,6 +15,10 @@ pub struct RootFlags {
     /// Internal flag: only process root dotfiles
     #[arg(long, hide = true)]
     pub root_only: bool,
+    /// Internal flag: skip reconciling targets whose sources were removed
+    /// (set on the sudo child when the parent update had a failed repo)
+    #[arg(long, hide = true)]
+    pub no_reconcile: bool,
     /// Internal flag: override home directory
     #[arg(long, hide = true)]
     pub home: Option<String>,
@@ -45,6 +49,7 @@ pub enum DotCommands {
     ///
     /// For a single file: If tracked, update the source file. If untracked, prompt to add it.
     /// For a directory: Update all tracked files. Use --all to also add untracked files.
+    /// Use --choose to pick which repo/subdirectory to add a file to interactively.
     Add {
         /// Path to add or update (relative to ~ or absolute path for root dotfiles)
         #[arg(value_hint = ValueHint::AnyPath)]
@@ -145,10 +150,10 @@ pub enum DotCommands {
         #[arg(long)]
         verbose: bool,
     },
-    /// Manage ignored paths
-    Ignore {
+    /// Manage skipped paths (prevents tracked files from being restored during update/apply)
+    Skip {
         #[command(subcommand)]
-        command: IgnoreCommands,
+        command: SkipCommands,
     },
     /// Manage dotfile units
     Unit {
@@ -238,20 +243,20 @@ pub enum DotCommands {
 }
 
 #[derive(Subcommand, Debug)]
-pub enum IgnoreCommands {
-    /// Add a path to the ignore list
+pub enum SkipCommands {
+    /// Add a path to the skip list
     Add {
-        /// Path to ignore (relative to ~, e.g., .config/nvim or .bashrc)
+        /// Path to skip (relative to ~, e.g., .config/nvim or .bashrc)
         #[arg(value_hint = ValueHint::AnyPath)]
         path: String,
     },
-    /// Remove a path from the ignore list
+    /// Remove a path from the skip list
     Remove {
-        /// Path to stop ignoring
+        /// Path to stop skipping
         #[arg(value_hint = ValueHint::AnyPath)]
         path: String,
     },
-    /// List all ignored paths
+    /// List all skipped paths
     List,
 }
 
@@ -301,15 +306,45 @@ pub enum PriorityCommands {
 pub enum EncryptCommands {
     /// Generate a new encryption key for this machine
     Generate {
-        /// Force generation even if a key already exists
+        /// Name for the new key (stored in ~/.config/instant/encryption/identities/<name>)
+        #[arg(long)]
+        name: Option<String>,
+        /// Force generation even if a key with this name already exists
         #[arg(long)]
         force: bool,
+    },
+    /// List all local encryption keys
+    List,
+    /// Rename an encryption key
+    Rename {
+        /// Current key name
+        old_name: String,
+        /// New key name
+        new_name: String,
+    },
+    /// Remove an encryption key
+    Remove {
+        /// Key name to remove
+        name: String,
     },
     /// Authorize a new encryption recipient public key in the repository metadata
     Authorize {
         /// Public key to authorize (age1... or ssh-...). Defaults to the local machine's public key.
         recipient: Option<String>,
         /// Add recipient to this repository instead of the default repo
+        #[arg(long, value_name = "REPO")]
+        repo: Option<String>,
+        /// Show what would be done without writing any changes
+        #[arg(long)]
+        dry_run: bool,
+        #[command(flatten)]
+        root_flags: RootFlags,
+    },
+    /// De-authorize a recipient key from a repository
+    Deauthorize {
+        /// Public key to de-authorize (age1... or ssh-...)
+        recipient: String,
+        /// Remove recipient from this repository instead of the default repo
         #[arg(long, value_name = "REPO")]
         repo: Option<String>,
         /// Show what would be done without writing any changes
@@ -344,21 +379,21 @@ pub enum EncryptCommands {
     Show,
 }
 
-fn handle_ignore_command(
+fn handle_skip_command(
     config: &mut DotfileConfig,
-    command: &IgnoreCommands,
+    command: &SkipCommands,
     config_path: Option<&str>,
 ) -> Result<()> {
     match command {
-        IgnoreCommands::Add { path } => {
+        SkipCommands::Add { path } => {
             let normalized_path = crate::dot::utils::normalize_path_to_tilde(path);
 
-            config.add_ignored_path(normalized_path.clone(), config_path)?;
+            config.add_skipped_path(normalized_path.clone(), config_path)?;
             emit(
                 Level::Success,
-                "dot.ignore.added",
+                "dot.skip.added",
                 &format!(
-                    "{} Added {} to ignore list",
+                    "{} Added {} to skip list",
                     char::from(NerdFont::Check),
                     normalized_path.green()
                 ),
@@ -368,7 +403,7 @@ fn handle_ignore_command(
                 })),
             );
         }
-        IgnoreCommands::Remove { path } => {
+        SkipCommands::Remove { path } => {
             let normalized_path = crate::dot::utils::normalize_path_to_tilde(path);
 
             // Validate that absolute paths are under home
@@ -378,12 +413,12 @@ fn handle_ignore_command(
                 ));
             }
 
-            config.remove_ignored_path(&normalized_path, config_path)?;
+            config.remove_skipped_path(&normalized_path, config_path)?;
             emit(
                 Level::Success,
-                "dot.ignore.removed",
+                "dot.skip.removed",
                 &format!(
-                    "{} Removed {} from ignore list",
+                    "{} Removed {} from skip list",
                     char::from(NerdFont::Check),
                     normalized_path.green()
                 ),
@@ -393,13 +428,13 @@ fn handle_ignore_command(
                 })),
             );
         }
-        IgnoreCommands::List => {
-            if config.ignored_paths.is_empty() {
+        SkipCommands::List => {
+            if config.skipped_paths.is_empty() {
                 emit(
                     Level::Info,
-                    "dot.ignore.list.empty",
+                    "dot.skip.list.empty",
                     &format!(
-                        "{} No paths are currently ignored",
+                        "{} No paths are currently skipped",
                         char::from(NerdFont::Info)
                     ),
                     None,
@@ -407,16 +442,16 @@ fn handle_ignore_command(
             } else {
                 emit(
                     Level::Info,
-                    "dot.ignore.list.header",
-                    &format!("{} Ignored paths:", char::from(NerdFont::List)),
+                    "dot.skip.list.header",
+                    &format!("{} Skipped paths:", char::from(NerdFont::List)),
                     Some(serde_json::json!({
-                        "count": config.ignored_paths.len()
+                        "count": config.skipped_paths.len()
                     })),
                 );
-                for (i, path) in config.ignored_paths.iter().enumerate() {
+                for (i, path) in config.skipped_paths.iter().enumerate() {
                     emit(
                         Level::Info,
-                        "dot.ignore.list.item",
+                        "dot.skip.list.item",
                         &format!("  {} {}", (i + 1), path.cyan()),
                         Some(serde_json::json!({
                             "index": i + 1,
@@ -693,7 +728,18 @@ pub fn handle_dot_command(
             )?;
         }
         DotCommands::Apply { root_flags, .. } => {
-            super::apply_all(&config, &db, root_flags.include_root, root_flags.root_only)?;
+            // `--no-reconcile` is set by the sudo root-apply child when the
+            // parent `dot update` had a failed repository, so that a failed
+            // pull suppresses removed-source reconciliation for root targets
+            // just as it already does for home targets.
+            let reconcile = !root_flags.no_reconcile;
+            crate::dot::operations::apply::apply_all_with_reconciliation(
+                &config,
+                &db,
+                root_flags.include_root,
+                root_flags.root_only,
+                reconcile,
+            )?;
         }
         DotCommands::Add {
             path,
@@ -706,8 +752,15 @@ pub fn handle_dot_command(
             // include_root parameter is removed from CLI args for add.
             // We pass true here to allow adding root files, since Add should handle both automatically.
             super::add_dotfile(
-                &config, &db, path, *all, *choose, *force, *encrypt,
+                &config,
+                &db,
+                path,
+                *all,
+                *choose,
+                *force,
+                *encrypt,
                 true, // include_root = true allows absolute paths outside home
+                config_path,
                 debug,
             )?;
         }
@@ -792,8 +845,8 @@ pub fn handle_dot_command(
         DotCommands::Merge { path, verbose } => {
             super::operations::merge::merge_dotfile(&config, &db, path, *verbose)?;
         }
-        DotCommands::Ignore { command } => {
-            handle_ignore_command(&mut config, command, config_path)?;
+        DotCommands::Skip { command } => {
+            handle_skip_command(&mut config, command, config_path)?;
         }
         DotCommands::Unit { repo, command } => {
             handle_unit_command(&mut config, &db, command, repo.as_deref(), config_path)?;

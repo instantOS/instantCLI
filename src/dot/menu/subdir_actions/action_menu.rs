@@ -187,9 +187,7 @@ fn build_subdir_action_menu(
         .map(|subdirs| subdirs.len())
         .unwrap_or(0);
 
-    let is_external = repo_config
-        .map(|repo| repo.metadata.is_some())
-        .unwrap_or(false);
+    let is_external = repo_config.map(|repo| repo.is_external()).unwrap_or(false);
 
     // Check if this is the only subdir in the repo's instantdots.toml
     // We approximate this by checking if there are multiple subdirs total

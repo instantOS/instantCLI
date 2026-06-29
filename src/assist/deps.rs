@@ -285,6 +285,19 @@ pub static EMOTE: Dependency = Dependency {
     }],
 };
 
+/// Kooha - simple screen recorder (Flatpak only)
+pub static KOOHA: Dependency = Dependency {
+    name: "Kooha",
+    packages: &[PackageDefinition::new(
+        "io.github.seadve.Kooha",
+        PackageManager::Flatpak,
+    )],
+    tests: &[InstallTest::CommandSucceeds {
+        program: "flatpak",
+        args: &["info", "io.github.seadve.Kooha"],
+    }],
+};
+
 /// wf-recorder - Wayland screen recorder
 pub static WF_RECORDER: Dependency = Dependency {
     name: "wf-recorder",
@@ -316,4 +329,15 @@ pub static FEH: Dependency = Dependency {
         PackageDefinition::new("feh", PackageManager::Dnf),
     ],
     tests: &[InstallTest::WhichSucceeds("feh")],
+};
+
+/// figlet - ASCII art text banner generator
+pub static FIGLET: Dependency = Dependency {
+    name: "figlet",
+    packages: &[
+        PackageDefinition::new("figlet", PackageManager::Pacman),
+        PackageDefinition::new("figlet", PackageManager::Apt),
+        PackageDefinition::new("figlet", PackageManager::Dnf),
+    ],
+    tests: &[InstallTest::WhichSucceeds("figlet")],
 };

@@ -48,6 +48,27 @@ pub(crate) fn list_gtk_themes() -> Result<Vec<String>> {
     Ok(result)
 }
 
+/// Find the full path of a GTK theme by name
+pub(crate) fn find_theme_path(theme_name: &str) -> Option<std::path::PathBuf> {
+    let dirs = [
+        dirs::home_dir().map(|p| p.join(".themes")),
+        dirs::home_dir().map(|p| p.join(".local/share/themes")),
+        Some(std::path::PathBuf::from("/usr/share/themes")),
+    ];
+
+    for dir in dirs.into_iter().flatten() {
+        let theme_path = dir.join(theme_name);
+        if theme_path.exists()
+            && (theme_path.join("index.theme").exists()
+                || theme_path.join("gtk-3.0/gtk.css").exists()
+                || theme_path.join("gtk-4.0/gtk.css").exists())
+        {
+            return Some(theme_path);
+        }
+    }
+    None
+}
+
 /// Check if a theme with the given name exists
 pub(crate) fn theme_exists(theme_name: &str) -> bool {
     let dirs = [
@@ -150,6 +171,23 @@ pub(crate) fn list_icon_themes() -> Result<Vec<String>> {
     let mut result: Vec<String> = themes.into_iter().collect();
     result.sort();
     Ok(result)
+}
+
+/// Find the full path of an icon theme by name
+pub(crate) fn find_icon_theme_path(theme_name: &str) -> Option<std::path::PathBuf> {
+    let dirs = [
+        dirs::home_dir().map(|p| p.join(".icons")),
+        dirs::data_local_dir().map(|p| p.join("icons")),
+        Some(std::path::PathBuf::from("/usr/share/icons")),
+    ];
+
+    for dir in dirs.into_iter().flatten() {
+        let theme_path = dir.join(theme_name);
+        if theme_path.exists() && theme_path.join("index.theme").exists() {
+            return Some(theme_path);
+        }
+    }
+    None
 }
 
 /// Check if an icon theme with the given name exists

@@ -57,6 +57,7 @@ pub enum GameCommands {
         no_cache: bool,
     },
     /// Sync game saves with restic repository
+    #[command(alias = "update")]
     Sync {
         /// Game name to sync (optional, syncs all if not specified)
         #[arg(add = ArgValueCompleter::new(crate::completions::game_name_completion))]
@@ -133,6 +134,13 @@ pub enum GameCommands {
         /// Force restore even if checkpoint matches
         #[arg(long)]
         force: bool,
+    },
+    /// List game backup snapshots
+    #[command(alias = "history")]
+    Snapshots {
+        /// Game name to list snapshots for (optional, shows all game snapshots)
+        #[arg(add = ArgValueCompleter::new(crate::completions::game_name_completion))]
+        game_name: Option<String>,
     },
     /// Set up games that have been added but are not configured on this device
     Setup,

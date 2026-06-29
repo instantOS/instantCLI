@@ -24,6 +24,7 @@ use crate::settings::store::{
 
 const MAX_RECORDING_SECONDS: u64 = 300;
 const PID_FILE: &str = "wf-recorder.pid";
+const KOOHA_FLATPAK_ID: &str = "io.github.seadve.Kooha";
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RecordingFormat {
@@ -788,6 +789,15 @@ pub fn screen_record_fullscreen() -> Result<()> {
     }
 
     start_recording_impl(None, RecordingFormat::Mp4)
+}
+
+pub fn open_kooha() -> Result<()> {
+    Command::new("flatpak")
+        .args(["run", KOOHA_FLATPAK_ID])
+        .spawn()
+        .context("Failed to launch Kooha screen recorder")?;
+
+    Ok(())
 }
 
 pub fn toggle_recording() -> Result<()> {

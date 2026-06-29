@@ -50,6 +50,17 @@ main() {
 
 	local repo_dir="${TEST_ROOT}/dotrepo"
 	create_sample_dot_repo "${repo_dir}" "basic-test"
+	mkdir -p "${repo_dir}/extras/.ssh"
+	cat >"${repo_dir}/extras/.ssh/config" <<'EOF'
+Host example
+  HostName example.com
+EOF
+	cat >"${repo_dir}/instantdots.toml" <<'EOF'
+name = "basic-test"
+description = "Sample repository for tests"
+dots_dirs = ["dots", "extras"]
+EOF
+	(cd "${repo_dir}" && git add . >/dev/null && git commit -qm "Add inactive ssh config")
 
 	local repo_url="file://${repo_dir}"
 
@@ -71,6 +82,7 @@ main() {
 	assert_json_field "${repo_list_json}" ".data.count" "1"
 	assert_json_field "${repo_list_json}" ".data.repos[0].name" "basic-test"
 	assert_json_field "${repo_list_json}" ".data.repos[0].enabled" "true"
+	assert_json_field "${repo_list_json}" ".data.repos[0].external" "false"
 	assert_json_field "${repo_list_json}" ".data.repos[0].active_subdirectories[0]" "dots"
 	assert_json_field "${repo_list_json}" ".data.repos[0].active_subdirectories | length" "1"
 
@@ -117,6 +129,46 @@ main() {
 	assert_json_field "${dir_status_json}" ".data.type" "directory"
 	assert_json_field "${dir_status_json}" ".data.files | length" "2"
 	assert_json_field_contains "${dir_status_json}" ".data.files[0].path" "~/.config/instanttest"
+
+	# Test merge hint for a dotfile that exists only in an inactive subdir
+	echo "Testing inactive subdir hint for dot merge..."
+	mkdir -p "${HOME}/.ssh"
+	local inactive_merge_output
+	inactive_merge_output="$(ins_output dot merge .ssh 2>&1)"
+	assert_output_contains "${inactive_merge_output}" "No tracked dotfiles found at ~/.ssh"
+	assert_output_contains "${inactive_merge_output}" "Found a matching source in inactive subdir 'basic-test:extras'"
+	assert_output_contains "${inactive_merge_output}" "ins dot repo subdirs enable basic-test extras"
+
+	# Clone an external repository without instantdots.toml
+	echo "Testing external repository UX..."
+	local external_repo_dir="${TEST_ROOT}/external-dotrepo"
+	mkdir -p "${external_repo_dir}/.config/externaltest"
+	(cd "${external_repo_dir}" && git init -q)
+	(cd "${external_repo_dir}" && git config user.email "tests@example.com" && git config user.name "InstantCLI Tests")
+	echo "external configuration content" >"${external_repo_dir}/.config/externaltest/config.txt"
+	(cd "${external_repo_dir}" && git add . >/dev/null && git commit -qm "Initial commit" && git branch -m main >/dev/null)
+
+	local external_clone_output
+	external_clone_output="$(ins dot repo clone "file://${external_repo_dir}" --name external-test 2>&1)"
+	assert_output_contains "${external_clone_output}" "Detected external dotfile repository"
+	assert_output_contains "${external_clone_output}" "Uses fixed layout rooted at '.'"
+	assert_output_contains "${external_clone_output}" "Root-owned dotfiles are not supported because '_root' directories cannot be created."
+	assert_file_equals "${HOME}/.config/externaltest/config.txt" "external configuration content"
+
+	local external_list_json
+	external_list_json="$(ins_output --output json dot repo list 2>/dev/null)"
+	assert_json_field "${external_list_json}" ".data.count" "2"
+	assert_json_field "${external_list_json}" '.data.repos[] | select(.name == "external-test") | .external' "true"
+
+	local external_list_text
+	external_list_text="$(ins_output dot repo list)"
+	assert_output_contains "${external_list_text}" "[external]"
+
+	local external_info_text
+	external_info_text="$(ins_output dot repo info external-test)"
+	assert_output_contains "${external_info_text}" "External (Yadm/Stow compatible)"
+	assert_output_contains "${external_info_text}" "Fixed layout: uses repository root '.'"
+	assert_output_contains "${external_info_text}" "external repos cannot create '_root' directories"
 
 	echo "✓ All JSON output tests passed"
 	echo "✓ Basic dot apply flow succeeded"

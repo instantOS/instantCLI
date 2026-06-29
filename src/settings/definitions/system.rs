@@ -7,8 +7,8 @@ use duct::cmd;
 use std::path::Path;
 use std::process::Command;
 
-use crate::arch::dualboot::types::format_size;
 use crate::common::distro::OperatingSystem;
+use crate::common::format::format_size;
 use crate::menu_utils::{FzfWrapper, TextEditOutcome, TextEditPrompt, prompt_text_edit};
 use crate::settings::context::SettingsContext;
 use crate::settings::deps::{FASTFETCH, GNOME_FIRMWARE, PACMAN_CONTRIB, TOPGRADE};
@@ -209,6 +209,10 @@ impl Setting for AboutSystem {
         SettingType::Command
     }
 
+    fn preview_command(&self) -> Option<String> {
+        Some("fastfetch --pipe false 2>/dev/null || echo 'fastfetch not available'".to_string())
+    }
+
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
         ctx.emit_info(
             "settings.command.launching",
@@ -338,6 +342,32 @@ impl Setting for WebUiManager {
 
     fn apply(&self, _ctx: &mut SettingsContext) -> Result<()> {
         crate::settings::systemd::launch_cockpit()
+    }
+}
+
+// ============================================================================
+// Password Manager (launches the pass edit browser)
+// ============================================================================
+
+pub struct PasswordManager;
+
+impl Setting for PasswordManager {
+    fn metadata(&self) -> SettingMetadata {
+        SettingMetadata::builder()
+            .id("system.password_manager")
+            .title("Password Manager")
+            .icon(NerdFont::Key)
+            .summary("Browse, edit, add, and delete password store entries.\n\nOpens the interactive pass store browser for managing passwords and OTP entries.")
+            .search_keywords(&["pass", "credentials", "secrets", "keychain", "otp"])
+            .build()
+    }
+
+    fn setting_type(&self) -> SettingType {
+        SettingType::Action
+    }
+
+    fn apply(&self, _ctx: &mut SettingsContext) -> Result<()> {
+        crate::pass::menu::run_edit_browser(None)
     }
 }
 

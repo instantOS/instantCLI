@@ -42,7 +42,7 @@ fn get_hash_cache() -> &'static Mutex<HashMap<String, String>> {
 
 /// Remove a path from the in-memory hash cache.
 /// Should be called whenever a file is modified by the program.
-fn invalidate_cache(path: &Path) {
+pub(crate) fn invalidate_cache(path: &Path) {
     let path_str = path.to_string_lossy().to_string();
     if let Ok(mut cache) = get_hash_cache().lock() {
         cache.remove(&path_str);
@@ -83,23 +83,10 @@ impl Dotfile {
 
         let source_hash = self.get_file_hash(&self.source_path, true, db)?;
         let target_hash = self.get_file_hash(&self.target_path, false, db)?;
-        if source_hash == target_hash {
-            // Files have the same content, not outdated
-            return Ok(false);
-        }
-
-        // Fall back to modification time comparison
-        let source_metadata = fs::metadata(&self.source_path).ok();
-        let target_metadata = fs::metadata(&self.target_path).ok();
-
-        if let (Some(source_meta), Some(target_meta)) = (source_metadata, target_metadata)
-            && let (Ok(source_time), Ok(target_time)) =
-                (source_meta.modified(), target_meta.modified())
-        {
-            return Ok(source_time > target_time);
-        }
-
-        Ok(false)
+        // Once a target is known to be safe to overwrite, any content
+        // difference is outdated. Modification times cannot establish which
+        // provider is authoritative and break priority fallback or rollbacks.
+        Ok(source_hash != target_hash)
     }
 
     /// Determines if the target file can be safely overwritten
@@ -560,7 +547,7 @@ mod tests {
         // point AGE_IDENTITY at it for the duration of this test.
         let identity = age::x25519::Identity::generate();
         let recipient = identity.to_public();
-        let identity_file = dir.path().join("identity.txt");
+        let identity_file = dir.path().join("identity.key");
         fs::write(&identity_file, identity.to_string().expose_secret())
             .expect("write identity file");
 
@@ -666,7 +653,7 @@ mod tests {
         // 1. Generate a throwaway age identity and key
         let identity = age::x25519::Identity::generate();
         let recipient = identity.to_public();
-        let identity_file = dir.path().join("identity.txt");
+        let identity_file = dir.path().join("identity.key");
         fs::write(&identity_file, identity.to_string().expose_secret())
             .expect("write identity file");
 
@@ -700,7 +687,7 @@ mod tests {
             database_dir: crate::common::tilde_path::TildePath::new(dir.path().join("test.db")),
             clone_depth: 1,
             hash_cleanup_days: 30,
-            ignored_paths: vec![],
+            skipped_paths: vec![],
             units: vec![],
             encryption_keys: vec![],
         };

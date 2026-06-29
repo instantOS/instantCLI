@@ -38,7 +38,10 @@ pub enum CreateMenuItem {
     /// Select existing destination.
     Destination(SourceOption),
     /// Add a new dotfile subdir to a repo.
-    AddSubdir { repo_name: String },
+    AddSubdir {
+        repo_name: String,
+        is_root_target: bool,
+    },
     /// Clone a new repository.
     CloneRepo,
     /// Cancel.
@@ -58,11 +61,15 @@ impl FzfSelectable for CreateMenuItem {
                     status
                 )
             }
-            CreateMenuItem::AddSubdir { repo_name } => {
+            CreateMenuItem::AddSubdir {
+                repo_name,
+                is_root_target,
+            } => {
                 format!(
-                    "{} {} / <new subdir>",
+                    "{} {} / <new {}dotfile dir>",
                     format_icon_colored(NerdFont::Plus, colors::GREEN),
-                    repo_name
+                    repo_name,
+                    if *is_root_target { "root " } else { "" }
                 )
             }
             CreateMenuItem::CloneRepo => {
@@ -85,7 +92,9 @@ impl FzfSelectable for CreateMenuItem {
             CreateMenuItem::Destination(item) => {
                 format!("{}:{}", item.source.repo_name, item.source.subdir_name)
             }
-            CreateMenuItem::AddSubdir { repo_name } => format!("!__add_subdir__:{}", repo_name),
+            CreateMenuItem::AddSubdir { repo_name, .. } => {
+                format!("!__add_subdir__:{}", repo_name)
+            }
             CreateMenuItem::CloneRepo => "!__clone_repo__".to_string(),
             CreateMenuItem::Cancel => "!__cancel__".to_string(),
         }
@@ -111,6 +120,13 @@ impl FzfSelectable for CreateMenuItem {
                         "File already exists here - will set as active source",
                     );
                 }
+                if item.source.subdir_name.ends_with("_root") {
+                    b = b.blank().line(
+                        colors::TEXT,
+                        Some(NerdFont::Info),
+                        "Directories ending in '_root' store root-owned dotfiles",
+                    );
+                }
                 b = b.blank().line(
                     colors::TEXT,
                     Some(NerdFont::File),
@@ -118,8 +134,11 @@ impl FzfSelectable for CreateMenuItem {
                 );
                 FzfPreview::Text(b.build_string())
             }
-            CreateMenuItem::AddSubdir { repo_name } => FzfPreview::Text(
-                PreviewBuilder::new()
+            CreateMenuItem::AddSubdir {
+                repo_name,
+                is_root_target,
+            } => {
+                let mut builder = PreviewBuilder::new()
                     .header(NerdFont::Plus, "Add Dotfile Directory")
                     .blank()
                     .text(&format!(
@@ -130,9 +149,15 @@ impl FzfSelectable for CreateMenuItem {
                     .text("This will:")
                     .bullet("Create the directory in the repository")
                     .bullet("Add it to instantdots.toml")
-                    .bullet("Copy your file there")
-                    .build_string(),
-            ),
+                    .bullet("Copy your file there");
+                if *is_root_target {
+                    builder = builder
+                        .blank()
+                        .text("Directories ending in '_root' store root-owned dotfiles.")
+                        .text("The '_root' suffix will be added automatically.");
+                }
+                FzfPreview::Text(builder.build_string())
+            }
             CreateMenuItem::CloneRepo => FzfPreview::Text(
                 PreviewBuilder::new()
                     .header(NerdFont::Download, "Clone Repository")

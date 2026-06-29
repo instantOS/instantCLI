@@ -74,7 +74,7 @@ pub fn get_ntfs_resize_info(device: &str) -> ResizeInfo {
                 can_shrink: false,
                 min_size_bytes: None,
                 reason: Some(format!("ntfsresize not available: {}", e)),
-                prerequisites: vec!["Install ntfs-3g package".to_string()],
+                prerequisites: vec!["Install ntfsprogs package".to_string()],
             }
         }
     }

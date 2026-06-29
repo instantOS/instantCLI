@@ -165,10 +165,10 @@ pub static YAZI: Dependency = Dependency {
     tests: &[InstallTest::WhichSucceeds("yazi")],
 };
 
-pub static SWWW: Dependency = Dependency {
-    name: "swww",
-    packages: &[PackageDefinition::new("swww", PackageManager::Pacman)],
-    tests: &[InstallTest::WhichSucceeds("swww")],
+pub static AWWW: Dependency = Dependency {
+    name: "awww",
+    packages: &[PackageDefinition::new("awww", PackageManager::Pacman)],
+    tests: &[InstallTest::WhichSucceeds("awww")],
 };
 
 pub static ZENITY: Dependency = Dependency {

@@ -3,6 +3,7 @@
 //! Window layout and other desktop settings.
 
 use anyhow::Result;
+use serde::Deserialize;
 
 use crate::common::audio::{
     AudioDefaults, AudioSourceInfo, default_source_names, list_audio_sources_short, pactl_defaults,
@@ -39,20 +40,27 @@ impl WindowLayout {
 
 #[derive(Clone)]
 struct LayoutChoice {
-    value: &'static str,
-    label: &'static str,
-    description: &'static str,
+    value: String,
+    label: String,
+    description: String,
 }
 
 #[derive(Clone)]
 struct LayoutChoiceDisplay {
-    choice: Option<&'static LayoutChoice>,
+    choice: Option<LayoutChoice>,
     is_current: bool,
+}
+
+#[derive(Deserialize)]
+struct InstantWmLayoutInfo {
+    name: String,
+    label: String,
+    description: String,
 }
 
 impl FzfSelectable for LayoutChoiceDisplay {
     fn fzf_display_text(&self) -> String {
-        match self.choice {
+        match &self.choice {
             Some(choice) => {
                 let icon = if self.is_current {
                     format_icon_colored(NerdFont::CheckSquare, colors::GREEN)
@@ -67,14 +75,14 @@ impl FzfSelectable for LayoutChoiceDisplay {
 
     fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
         match self.choice {
-            Some(choice) => crate::menu_utils::FzfPreview::Text(choice.description.to_string()),
+            Some(ref choice) => crate::menu_utils::FzfPreview::Text(choice.description.clone()),
             None => crate::menu_utils::FzfPreview::Text("Go back to the previous menu".to_string()),
         }
     }
 
     fn fzf_key(&self) -> String {
         match self.choice {
-            Some(choice) => choice.value.to_string(),
+            Some(ref choice) => choice.value.clone(),
             None => "__back__".to_string(),
         }
     }
@@ -110,11 +118,11 @@ fn apply_window_layout(ctx: &mut SettingsContext, layout: &str) -> Result<()> {
 }
 
 /// Build the display items list with current selection marked
-fn build_layout_items(current: &str) -> Vec<LayoutChoiceDisplay> {
-    let mut items: Vec<LayoutChoiceDisplay> = LAYOUT_OPTIONS
+fn build_layout_items(layouts: &[LayoutChoice], current: &str) -> Vec<LayoutChoiceDisplay> {
+    let mut items: Vec<LayoutChoiceDisplay> = layouts
         .iter()
         .map(|choice| LayoutChoiceDisplay {
-            choice: Some(choice),
+            choice: Some(choice.clone()),
             is_current: choice.value == current,
         })
         .collect();
@@ -128,53 +136,18 @@ fn build_layout_items(current: &str) -> Vec<LayoutChoiceDisplay> {
     items
 }
 
-const LAYOUT_OPTIONS: &[LayoutChoice] = &[
-    LayoutChoice {
-        value: "tile",
-        label: "Tile",
-        description: "Windows split the screen side-by-side (recommended for most users)",
-    },
-    LayoutChoice {
-        value: "grid",
-        label: "Grid",
-        description: "Windows arranged in an even grid pattern",
-    },
-    LayoutChoice {
-        value: "float",
-        label: "Float",
-        description: "Windows can be freely moved and resized (like Windows/macOS)",
-    },
-    LayoutChoice {
-        value: "monocle",
-        label: "Monocle",
-        description: "One window fills the entire screen at a time",
-    },
-    LayoutChoice {
-        value: "tcl",
-        label: "Three Columns",
-        description: "Main window in center, others on sides",
-    },
-    LayoutChoice {
-        value: "deck",
-        label: "Deck",
-        description: "Large main window with smaller windows stacked on the side",
-    },
-    LayoutChoice {
-        value: "overviewlayout",
-        label: "Overview",
-        description: "See all your workspaces at once",
-    },
-    LayoutChoice {
-        value: "bstack",
-        label: "Bottom Stack",
-        description: "Main window on top, others stacked below",
-    },
-    LayoutChoice {
-        value: "bstackhoriz",
-        label: "Bottom Stack (Horizontal)",
-        description: "Main window on top, others arranged horizontally below",
-    },
-];
+fn load_layout_options() -> Result<Vec<LayoutChoice>> {
+    let layouts: Vec<InstantWmLayoutInfo> = instantwmctl::json(["layout", "list"])?;
+
+    Ok(layouts
+        .into_iter()
+        .map(|layout| LayoutChoice {
+            value: layout.name,
+            label: layout.label,
+            description: layout.description,
+        })
+        .collect())
+}
 
 impl Setting for WindowLayout {
     fn metadata(&self) -> SettingMetadata {
@@ -182,7 +155,7 @@ impl Setting for WindowLayout {
             .id("desktop.layout")
             .title("Window Layout")
             .icon(NerdFont::List)
-            .summary("Choose how windows are arranged on your screen by default.\n\nYou can always change the layout temporarily with keyboard shortcuts.")
+            .summary("Choose how windows are arranged on your screen by default.\n\nOnly supported on instantWM. You can always change the layout temporarily with keyboard shortcuts.")
             .requires_reapply(true)
             .build()
     }
@@ -192,16 +165,14 @@ impl Setting for WindowLayout {
     }
 
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
+        let layouts = load_layout_options()?;
         let current = ctx.string(Self::KEY);
-        let initial_index = LAYOUT_OPTIONS
-            .iter()
-            .position(|l| l.value == current)
-            .unwrap_or(0);
+        let initial_index = layouts.iter().position(|l| l.value == current).unwrap_or(0);
 
         let mut cursor = MenuCursor::new();
 
         loop {
-            let items = build_layout_items(&ctx.string(Self::KEY));
+            let items = build_layout_items(&layouts, &ctx.string(Self::KEY));
             let initial_cursor = cursor.initial_index(&items).or(Some(initial_index));
             let selection = select_one_with_style_at(items.clone(), initial_cursor)?;
 
@@ -211,8 +182,8 @@ impl Setting for WindowLayout {
 
                     match display.choice {
                         Some(choice) => {
-                            ctx.set_string(Self::KEY, choice.value);
-                            apply_window_layout(ctx, choice.value)?;
+                            ctx.set_string(Self::KEY, &choice.value);
+                            apply_window_layout(ctx, &choice.value)?;
                         }
                         None => break, // Back selected
                     }

@@ -154,7 +154,9 @@ fn is_appimage() -> bool {
 fn build_exec_command(game_name: &str) -> String {
     use crate::common::distro::OperatingSystem;
 
-    let ins_bin = super::resolve_ins_binary().to_string_lossy().to_string();
+    let ins_bin = crate::common::shell::resolve_current_binary()
+        .to_string_lossy()
+        .to_string();
 
     if is_appimage() {
         // Check if running on SteamOS using the existing utility
@@ -239,7 +241,7 @@ pub fn remove_game_from_desktop(name: &str) -> Result<bool> {
 
 /// Add the game menu to the desktop
 pub fn add_menu_to_desktop() -> Result<(bool, Option<PathBuf>)> {
-    use crate::common::terminal::detect_terminal;
+    use crate::common::terminal::{detect_terminal, get_execute_flag};
 
     let menu_name = "ins game menu";
 
@@ -248,21 +250,27 @@ pub fn add_menu_to_desktop() -> Result<(bool, Option<PathBuf>)> {
         return Ok((false, get_game_desktop_path(menu_name)?));
     }
 
-    let ins_bin = super::resolve_ins_binary().to_string_lossy().to_string();
+    let ins_bin = crate::common::shell::resolve_current_binary()
+        .to_string_lossy()
+        .to_string();
 
     let terminal = detect_terminal();
     let terminal_path = which::which(&terminal).context("Failed to find terminal emulator")?;
     let terminal_str = terminal_path.to_string_lossy().to_string();
+    let execute_flag = get_execute_flag(&terminal);
 
     // Build exec command
     // On SteamOS with AppImage, we need --appimage-extract-and-run
     let exec = if is_appimage() && OperatingSystem::detect() == OperatingSystem::SteamOS {
         format!(
-            "{} -- \"{}\" --appimage-extract-and-run game menu",
-            terminal_str, ins_bin
+            "{} {} \"{}\" --appimage-extract-and-run game menu",
+            terminal_str, execute_flag, ins_bin
         )
     } else {
-        format!("{} -- \"{}\" game menu", terminal_str, ins_bin)
+        format!(
+            "{} {} \"{}\" game menu",
+            terminal_str, execute_flag, ins_bin
+        )
     };
 
     let icon = "utilities-terminal";

@@ -7,6 +7,162 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.1](https://github.com/instantOS/instantCLI/compare/v0.14.0...v0.14.1) - 2026-06-18
+
+### Fixed
+
+- fix apt removal thingy
+
+### Other
+
+- inline trivial forwarding functions
+- add apt support for removal cascade
+- make wine save scanning more robust
+- add orbit compat
+
+## [0.14.0](https://github.com/instantOS/instantCLI/compare/v0.13.37...v0.14.0) - 2026-06-14
+
+### Fixed
+
+- fix pretty config
+- fix ugly settings serialization
+- fix file previews with huge path lengths
+- fix buggy yazi/recommendation picker
+
+### Other
+
+- bump
+- add better examples
+- update docs
+- add example capability
+- add ins game snapshots command
+- dedupe
+- alias game sync
+
+## [0.13.37](https://github.com/instantOS/instantCLI/compare/v0.13.36...v0.13.37) - 2026-06-06
+
+### Fixed
+
+- fix ins arch deps
+
+### Other
+
+- Merge branch 'dev'
+- add ntfsprogs
+
+## [0.13.36](https://github.com/instantOS/instantCLI/compare/v0.13.35...v0.13.36) - 2026-06-05
+
+### Other
+
+- better merge hints
+- better external repo handling in CLI
+- handle external repos better in root flow
+- better root add dotfiles flow
+- init wallpaper support for niri
+- tap to click for niri
+- refactor niri a bit
+- unify niri and sway handling more
+- improve false compositor detection
+- Merge pull request #145 from instantOS/release-plz-2026-05-25T17-29-58Z
+- add back button to snapshot selection
+- add kooha assist
+- add fastfetch preview
+- add figlet to caffeine
+- Merge branch 'main' into dev
+- better theme preview
+
+## [0.13.36](https://github.com/instantOS/instantCLI/compare/v0.13.35...v0.13.36) - 2026-06-02
+
+### Other
+
+- better external repo handling in CLI
+- handle external repos better in root flow
+- better root add dotfiles flow
+- init wallpaper support for niri
+- tap to click for niri
+- refactor niri a bit
+- unify niri and sway handling more
+- improve false compositor detection
+- Merge pull request #145 from instantOS/release-plz-2026-05-25T17-29-58Z
+- add back button to snapshot selection
+- add kooha assist
+- add fastfetch preview
+- add figlet to caffeine
+- Merge branch 'main' into dev
+- better theme preview
+
+## [0.13.35](https://github.com/instantOS/instantCLI/compare/v0.13.34...v0.13.35) - 2026-05-25
+
+### Other
+
+- make recursive package uninstaller faster
+- better recursive package uninstaller
+- rename skip feature
+- add password manager setting
+
+## [0.13.34](https://github.com/instantOS/instantCLI/compare/v0.13.33...v0.13.34) - 2026-05-25
+
+### Fixed
+
+- fix konsole not launching
+
+### Other
+
+- include paths in eden shortcut
+- Merge pull request #143 from instantOS/release-plz-2026-05-19T21-30-35Z
+- get layout choices from instantwmctl
+
+## [0.13.33](https://github.com/instantOS/instantCLI/compare/v0.13.32...v0.13.33) - 2026-05-20
+
+### Fixed
+
+- fix error messages
+- fix TOCTOU
+- fix misuse of fzf wrapper
+- fix key test
+- fix add encrypt
+- fix duplication
+- fix `ins dot` encryption fetching
+- fix encryption bugs
+
+### Other
+
+- Merge pull request #142 from instantOS/release-plz-2026-05-10T13-49-34Z
+- refactor tests
+- add better ssh key support
+- rename encryption things to be more UX friendly
+- add prompt to generate identity
+- rework encryption menu
+- upgrade deps
+- improve encryption menu UX
+- improve order, code reuse and performance
+- deduplicate DB operations
+- deletion CLI
+- init ins dot delete functionality
+- make clippy happy
+- more atomic writes
+- do clippy suggestions
+- some encryption operation hardening
+- update plans
+- add `ins dot menu` encryption menu
+- support for configuring the age identity paths
+- collapsible if chains
+- some encryption hardening
+- add `ins dot key identity` command
+- fmt, no emojis in output
+- better decrypt warning
+- better warning messages
+- init `ins dot key`
+- init `ins dot decrypt` feature
+- add `ins dot encrypt` command
+- add age tests
+- improve encryption support
+- init encryption support
+- add encryption design plan
+- make delta use the deps system
+- add description to installer questions
+- prettier question review
+
 ## [0.13.32](https://github.com/instantOS/instantCLI/compare/v0.13.31...v0.13.32) - 2026-05-10
 
 ### Fixed

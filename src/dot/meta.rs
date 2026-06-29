@@ -37,7 +37,7 @@ pub fn read_meta(repo_path: &Path) -> Result<RepoMetaData> {
 /// Write updated metadata to instantdots.toml
 pub fn update_meta(repo_path: &Path, meta: &RepoMetaData) -> Result<()> {
     let toml_path = repo_path.join("instantdots.toml");
-    meta.save_with_documentation(&toml_path)
+    meta.save_documented_pretty_toml(&toml_path, None)
         .with_context(|| format!("writing {}", toml_path.display()))?;
     Ok(())
 }
@@ -312,7 +312,7 @@ fn write_instantdots_toml(repo_path: &Path, inputs: &RepoInputs) -> Result<()> {
         encryption_recipients: Vec::new(),
     };
 
-    meta.save_with_documentation(&toml_path)
+    meta.save_documented_pretty_toml(&toml_path, None)
         .with_context(|| format!("writing {}", toml_path.display()))?;
     Ok(())
 }

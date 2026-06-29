@@ -8,6 +8,37 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
+#[derive(Clone, Copy)]
+pub enum EmptyParentBoundary {
+    Home,
+    HomeOrDots,
+}
+
+pub fn clean_empty_parent_dirs(path: &Path, boundary: EmptyParentBoundary) {
+    let home = home_dir();
+    let mut dir = path.parent();
+    while let Some(parent) = dir {
+        if parent.file_name().is_none()
+            || parent == home
+            || matches!(boundary, EmptyParentBoundary::HomeOrDots)
+                && parent.file_name().is_some_and(|name| name == "dots")
+        {
+            break;
+        }
+
+        if parent.is_dir()
+            && std::fs::read_dir(parent).is_ok_and(|mut entries| entries.next().is_none())
+        {
+            if std::fs::remove_dir(parent).is_err() {
+                break;
+            }
+            dir = parent.parent();
+        } else {
+            break;
+        }
+    }
+}
+
 /// Normalize a path to use tilde notation (~/...)
 /// - If path starts with ~, return as-is
 /// - If path is an absolute path under home, convert to ~...
@@ -206,7 +237,7 @@ pub fn get_all_dotfiles(
         merged.retain(|_, dotfile| !dotfile.is_root);
     }
 
-    merged.retain(|target_path, _| !config.is_path_ignored(target_path));
+    merged.retain(|target_path, _| !config.is_path_skipped(target_path));
 
     if let Ok(overrides) = crate::dot::override_config::OverrideConfig::load() {
         let _ = crate::dot::override_config::apply_overrides(&mut merged, &overrides, config);

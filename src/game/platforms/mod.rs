@@ -248,76 +248,106 @@ impl FzfSelectable for LauncherItem {
 /// Build launcher selection menu items
 fn build_launcher_items(context: Option<&LaunchCommandBuilderContext>) -> Vec<LauncherItem> {
     let recommended_launcher = context.and_then(LaunchCommandBuilderContext::recommended_launcher);
-    let wine_preset = context.and_then(|context| context.preset_for(LauncherType::UmuRun));
-    let steam_preset = context.and_then(|context| context.preset_for(LauncherType::Steam));
-    let eden_preset = context.and_then(|context| context.preset_for(LauncherType::Eden));
 
-    let recommended_wine_prefix = wine_preset.and_then(|preset| match &preset.data {
-        BuilderPresetData::WinePrefix(path) => Some(path.display().to_string()),
-        _ => None,
-    });
-    let recommended_steam_app_id = steam_preset.and_then(|preset| match preset.data {
-        BuilderPresetData::SteamAppId(app_id) => Some(app_id),
-        _ => None,
-    });
+    LAUNCHER_ORDER
+        .iter()
+        .map(|&launcher| LauncherItem {
+            launcher,
+            display: launcher_display(launcher, recommended_launcher == Some(launcher)),
+            preview: launcher_preview(launcher, context),
+        })
+        .collect()
+}
 
-    vec![
-        LauncherItem {
-            launcher: LauncherType::Manual,
-            display: format!(
-                "{} Manual Entry",
-                format_icon_colored(NerdFont::Edit, colors::BLUE)
-            ),
-            preview: PreviewBuilder::new()
-                .header(NerdFont::Edit, "Manual Entry")
-                .text("Type the launch command directly.")
-                .blank()
-                .text("Enter any custom command to launch the game.")
-                .text("Useful for scripts, custom emulators, or")
-                .text("commands not covered by the builders.")
-                .blank()
-                .separator()
-                .blank()
-                .text("Examples:")
-                .bullet("flatpak run com.valvesoftware.Steam")
-                .bullet("./my-game-launcher.sh")
-                .bullet("/usr/games/my-emulator game.rom")
-                .build(),
-        },
-        LauncherItem {
-            launcher: LauncherType::Executable,
-            display: format!(
-                "{} Binary / Script",
-                format_icon_colored(NerdFont::Code, colors::TEAL)
-            ),
-            preview: PreviewBuilder::new()
-                .header(NerdFont::Code, "Binary / Script")
-                .text("Select a script or binary from your system.")
-                .blank()
-                .text("Open a file picker to choose a game")
-                .text("executable or launcher script.")
-                .blank()
-                .separator()
-                .blank()
-                .text("Use this for:")
-                .bullet("Native Linux binaries")
-                .bullet("Shell scripts (.sh)")
-                .bullet("Python scripts (.py)")
-                .bullet("AppImages (manual selection)")
-                .build(),
-        },
-        LauncherItem {
-            launcher: LauncherType::UmuRun,
-            display: format!(
-                "{} Wine / umu-run{}",
-                format_icon_colored(NerdFont::Wine, colors::MAUVE),
-                if recommended_launcher == Some(LauncherType::UmuRun) {
-                    " [recommended]"
-                } else {
-                    ""
-                }
-            ),
-            preview: PreviewBuilder::new()
+fn launcher_display(launcher: LauncherType, recommended: bool) -> String {
+    let suffix = if recommended { " [recommended]" } else { "" };
+    match launcher {
+        LauncherType::Manual => format!(
+            "{} Manual Entry",
+            format_icon_colored(NerdFont::Edit, colors::BLUE)
+        ),
+        LauncherType::Executable => format!(
+            "{} Binary / Script",
+            format_icon_colored(NerdFont::Code, colors::TEAL)
+        ),
+        LauncherType::UmuRun => format!(
+            "{} Wine / umu-run{suffix}",
+            format_icon_colored(NerdFont::Wine, colors::MAUVE)
+        ),
+        LauncherType::Steam => format!(
+            "{} Steam{suffix}",
+            format_icon_colored(NerdFont::Steam, colors::SAPPHIRE)
+        ),
+        LauncherType::Eden => format!(
+            "{} Eden (Switch Emulator){suffix}",
+            format_icon_colored(NerdFont::Gamepad, colors::GREEN)
+        ),
+        LauncherType::DolphinFlatpak => format!(
+            "{} Dolphin Flatpak (GameCube/Wii)",
+            format_icon_colored(NerdFont::Fish, colors::BLUE)
+        ),
+        LauncherType::Pcsx2Flatpak => format!(
+            "{} PCSX2 (PlayStation 2)",
+            format_icon_colored(NerdFont::Disc, colors::SAPPHIRE)
+        ),
+        LauncherType::AzaharFlatpak => format!(
+            "{} Azahar Flatpak (Nintendo 3DS)",
+            format_icon_colored(NerdFont::Gamepad, colors::YELLOW)
+        ),
+        LauncherType::MgbaQt => format!(
+            "{} mGBA-Qt (Game Boy Advance)",
+            format_icon_colored(NerdFont::Gamepad, colors::LAVENDER)
+        ),
+        LauncherType::DuckStation => format!(
+            "{} DuckStation (PlayStation 1)",
+            format_icon_colored(NerdFont::Disc, colors::PEACH)
+        ),
+        LauncherType::Back => format!("{} Back", format_back_icon()),
+    }
+}
+
+fn launcher_preview(
+    launcher: LauncherType,
+    context: Option<&LaunchCommandBuilderContext>,
+) -> FzfPreview {
+    match launcher {
+        LauncherType::Manual => PreviewBuilder::new()
+            .header(NerdFont::Edit, "Manual Entry")
+            .text("Type the launch command directly.")
+            .blank()
+            .text("Enter any custom command to launch the game.")
+            .text("Useful for scripts, custom emulators, or")
+            .text("commands not covered by the builders.")
+            .blank()
+            .separator()
+            .blank()
+            .text("Examples:")
+            .bullet("flatpak run com.valvesoftware.Steam")
+            .bullet("./my-game-launcher.sh")
+            .bullet("/usr/games/my-emulator game.rom")
+            .build(),
+        LauncherType::Executable => PreviewBuilder::new()
+            .header(NerdFont::Code, "Binary / Script")
+            .text("Select a script or binary from your system.")
+            .blank()
+            .text("Open a file picker to choose a game")
+            .text("executable or launcher script.")
+            .blank()
+            .separator()
+            .blank()
+            .text("Use this for:")
+            .bullet("Native Linux binaries")
+            .bullet("Shell scripts (.sh)")
+            .bullet("Python scripts (.py)")
+            .bullet("AppImages (manual selection)")
+            .build(),
+        LauncherType::UmuRun => {
+            let wine_preset = context.and_then(|c| c.preset_for(LauncherType::UmuRun));
+            let recommended_wine_prefix = wine_preset.and_then(|preset| match &preset.data {
+                BuilderPresetData::WinePrefix(path) => Some(path.display().to_string()),
+                _ => None,
+            });
+            PreviewBuilder::new()
                 .header(NerdFont::Wine, "Wine / umu-run")
                 .text("Typed Windows launcher variant.")
                 .blank()
@@ -346,20 +376,15 @@ fn build_launcher_items(context: Option<&LaunchCommandBuilderContext>) -> Vec<La
                 )
                 .blank()
                 .subtext("Requires: umu-launcher for the umu-run mode")
-                .build(),
-        },
-        LauncherItem {
-            launcher: LauncherType::Steam,
-            display: format!(
-                "{} Steam{}",
-                format_icon_colored(NerdFont::Steam, colors::SAPPHIRE),
-                if recommended_launcher == Some(LauncherType::Steam) {
-                    " [recommended]"
-                } else {
-                    ""
-                }
-            ),
-            preview: PreviewBuilder::new()
+                .build()
+        }
+        LauncherType::Steam => {
+            let steam_preset = context.and_then(|c| c.preset_for(LauncherType::Steam));
+            let recommended_steam_app_id = steam_preset.and_then(|preset| match preset.data {
+                BuilderPresetData::SteamAppId(app_id) => Some(app_id),
+                _ => None,
+            });
+            PreviewBuilder::new()
                 .header(NerdFont::Steam, "Steam")
                 .text("Native Steam launch command variant.")
                 .blank()
@@ -378,20 +403,11 @@ fn build_launcher_items(context: Option<&LaunchCommandBuilderContext>) -> Vec<La
                         .map(|preset| preset.reason.as_str())
                         .unwrap_or("<none>"),
                 )
-                .build(),
-        },
-        LauncherItem {
-            launcher: LauncherType::Eden,
-            display: format!(
-                "{} Eden (Switch Emulator){}",
-                format_icon_colored(NerdFont::Gamepad, colors::GREEN),
-                if recommended_launcher == Some(LauncherType::Eden) {
-                    " [recommended]"
-                } else {
-                    ""
-                }
-            ),
-            preview: PreviewBuilder::new()
+                .build()
+        }
+        LauncherType::Eden => {
+            let eden_preset = context.and_then(|c| c.preset_for(LauncherType::Eden));
+            PreviewBuilder::new()
                 .header(NerdFont::Gamepad, "Eden")
                 .text("Nintendo Switch emulator.")
                 .blank()
@@ -414,153 +430,128 @@ fn build_launcher_items(context: Option<&LaunchCommandBuilderContext>) -> Vec<La
                         .map(|preset| preset.reason.as_str())
                         .unwrap_or("<none>"),
                 )
-                .build(),
-        },
-        LauncherItem {
-            launcher: LauncherType::DolphinFlatpak,
-            display: format!(
-                "{} Dolphin Flatpak (GameCube/Wii)",
-                format_icon_colored(NerdFont::Fish, colors::BLUE)
-            ),
-            preview: PreviewBuilder::new()
-                .header(NerdFont::Fish, "Dolphin (Flatpak)")
-                .text("GameCube and Wii emulator.")
-                .blank()
-                .text("Runs GameCube/Wii games via the Flatpak")
-                .text("version of Dolphin Emulator.")
-                .blank()
-                .separator()
-                .blank()
-                .text("Supported formats:")
-                .bullet(".iso - Standard disc image")
-                .bullet(".wbfs - Wii Backup File System")
-                .bullet(".gcm - GameCube Master disc")
-                .bullet(".ciso - Compressed ISO")
-                .bullet(".gcz - Dolphin compressed format")
-                .bullet(".wad - WiiWare/Virtual Console")
-                .bullet(".dol/.elf - Homebrew executables")
-                .blank()
-                .subtext("Requires: org.DolphinEmu.dolphin-emu flatpak")
-                .build(),
-        },
-        LauncherItem {
-            launcher: LauncherType::Pcsx2Flatpak,
-            display: format!(
-                "{} PCSX2 (PlayStation 2)",
-                format_icon_colored(NerdFont::Disc, colors::SAPPHIRE)
-            ),
-            preview: PreviewBuilder::new()
-                .header(NerdFont::Disc, "PCSX2")
-                .text("PlayStation 2 emulator.")
-                .blank()
-                .text("Runs PS2 games via EmuDeck AppImage")
-                .text("(auto-detected) or Flatpak fallback.")
-                .blank()
-                .separator()
-                .blank()
-                .text("Supported formats:")
-                .bullet(".iso - Standard disc image")
-                .bullet(".bin - Binary disc image")
-                .bullet(".chd - Compressed Hunks of Data")
-                .bullet(".cso - Compressed ISO")
-                .bullet(".gz - Gzip compressed")
-                .bullet(".elf/.irx - Executables")
-                .blank()
-                .separator()
-                .blank()
-                .text("Installation:")
-                .bullet("Preferred: EmuDeck (includes AppImage)")
-                .bullet("Fallback: flatpak install flathub net.pcsx2.PCSX2")
-                .build(),
-        },
-        LauncherItem {
-            launcher: LauncherType::AzaharFlatpak,
-            display: format!(
-                "{} Azahar Flatpak (Nintendo 3DS)",
-                format_icon_colored(NerdFont::Gamepad, colors::YELLOW)
-            ),
-            preview: PreviewBuilder::new()
-                .header(NerdFont::Gamepad, "Azahar (Flatpak)")
-                .text("Nintendo 3DS emulator.")
-                .blank()
-                .text("Runs 3DS games via the Flatpak")
-                .text("version of Azahar (Citra fork).")
-                .blank()
-                .separator()
-                .blank()
-                .text("Supported formats:")
-                .bullet(".3ds - Standard 3DS ROM")
-                .bullet(".3dsx - Homebrew format")
-                .bullet(".cia - CTR Importable Archive")
-                .bullet(".app/.elf - Executables")
-                .bullet(".cci/.cxi - Cartridge images")
-                .blank()
-                .subtext("Requires: org.azahar_emu.Azahar flatpak")
-                .build(),
-        },
-        LauncherItem {
-            launcher: LauncherType::MgbaQt,
-            display: format!(
-                "{} mGBA-Qt (Game Boy Advance)",
-                format_icon_colored(NerdFont::Gamepad, colors::LAVENDER)
-            ),
-            preview: PreviewBuilder::new()
-                .header(NerdFont::Gamepad, "mGBA-Qt")
-                .text("Game Boy Advance emulator.")
-                .blank()
-                .text("Runs GBA, GB, and GBC games")
-                .text("via the mGBA-Qt application.")
-                .blank()
-                .separator()
-                .blank()
-                .text("Supported formats:")
-                .bullet(".gba - Game Boy Advance ROM")
-                .bullet(".gb - Game Boy ROM")
-                .bullet(".gbc - Game Boy Color ROM")
-                .bullet(".sgb - Super Game Boy ROM")
-                .bullet(".zip/.7z - Compressed archives")
-                .blank()
-                .subtext("Requires: mgba-qt package")
-                .build(),
-        },
-        LauncherItem {
-            launcher: LauncherType::DuckStation,
-            display: format!(
-                "{} DuckStation (PlayStation 1)",
-                format_icon_colored(NerdFont::Disc, colors::PEACH)
-            ),
-            preview: PreviewBuilder::new()
-                .header(NerdFont::Disc, "DuckStation")
-                .text("PlayStation 1 emulator.")
-                .blank()
-                .text("Runs PS1 games via the DuckStation AppImage.")
-                .text("(Downloads automatically if not found)")
-                .blank()
-                .separator()
-                .blank()
-                .text("Default location:")
-                .bullet("~/AppImages/DuckStation-x64.AppImage")
-                .blank()
-                .text("Supported formats:")
-                .bullet(".bin/.cue - CD image + cue sheet")
-                .bullet(".iso - Standard ISO image")
-                .bullet(".chd - Compressed Hunks of Data")
-                .bullet(".pbp - PSP eboot format")
-                .bullet(".m3u - Multi-disc playlist")
-                .blank()
-                .subtext("x86_64 only - auto-downloads AppImage")
-                .build(),
-        },
-        LauncherItem {
-            launcher: LauncherType::Back,
-            display: format!("{} Back", format_back_icon()),
-            preview: PreviewBuilder::new()
-                .header(NerdFont::ArrowLeft, "Back")
-                .text("Return to previous menu.")
-                .build(),
-        },
-    ]
+                .build()
+        }
+        LauncherType::DolphinFlatpak => PreviewBuilder::new()
+            .header(NerdFont::Fish, "Dolphin (Flatpak)")
+            .text("GameCube and Wii emulator.")
+            .blank()
+            .text("Runs GameCube/Wii games via the Flatpak")
+            .text("version of Dolphin Emulator.")
+            .blank()
+            .separator()
+            .blank()
+            .text("Supported formats:")
+            .bullet(".iso - Standard disc image")
+            .bullet(".wbfs - Wii Backup File System")
+            .bullet(".gcm - GameCube Master disc")
+            .bullet(".ciso - Compressed ISO")
+            .bullet(".gcz - Dolphin compressed format")
+            .bullet(".wad - WiiWare/Virtual Console")
+            .bullet(".dol/.elf - Homebrew executables")
+            .blank()
+            .subtext("Requires: org.DolphinEmu.dolphin-emu flatpak")
+            .build(),
+        LauncherType::Pcsx2Flatpak => PreviewBuilder::new()
+            .header(NerdFont::Disc, "PCSX2")
+            .text("PlayStation 2 emulator.")
+            .blank()
+            .text("Runs PS2 games via EmuDeck AppImage")
+            .text("(auto-detected) or Flatpak fallback.")
+            .blank()
+            .separator()
+            .blank()
+            .text("Supported formats:")
+            .bullet(".iso - Standard disc image")
+            .bullet(".bin - Binary disc image")
+            .bullet(".chd - Compressed Hunks of Data")
+            .bullet(".cso - Compressed ISO")
+            .bullet(".gz - Gzip compressed")
+            .bullet(".elf/.irx - Executables")
+            .blank()
+            .separator()
+            .blank()
+            .text("Installation:")
+            .bullet("Preferred: EmuDeck (includes AppImage)")
+            .bullet("Fallback: flatpak install flathub net.pcsx2.PCSX2")
+            .build(),
+        LauncherType::AzaharFlatpak => PreviewBuilder::new()
+            .header(NerdFont::Gamepad, "Azahar (Flatpak)")
+            .text("Nintendo 3DS emulator.")
+            .blank()
+            .text("Runs 3DS games via the Flatpak")
+            .text("version of Azahar (Citra fork).")
+            .blank()
+            .separator()
+            .blank()
+            .text("Supported formats:")
+            .bullet(".3ds - Standard 3DS ROM")
+            .bullet(".3dsx - Homebrew format")
+            .bullet(".cia - CTR Importable Archive")
+            .bullet(".app/.elf - Executables")
+            .bullet(".cci/.cxi - Cartridge images")
+            .blank()
+            .subtext("Requires: org.azahar_emu.Azahar flatpak")
+            .build(),
+        LauncherType::MgbaQt => PreviewBuilder::new()
+            .header(NerdFont::Gamepad, "mGBA-Qt")
+            .text("Game Boy Advance emulator.")
+            .blank()
+            .text("Runs GBA, GB, and GBC games")
+            .text("via the mGBA-Qt application.")
+            .blank()
+            .separator()
+            .blank()
+            .text("Supported formats:")
+            .bullet(".gba - Game Boy Advance ROM")
+            .bullet(".gb - Game Boy ROM")
+            .bullet(".gbc - Game Boy Color ROM")
+            .bullet(".sgb - Super Game Boy ROM")
+            .bullet(".zip/.7z - Compressed archives")
+            .blank()
+            .subtext("Requires: mgba-qt package")
+            .build(),
+        LauncherType::DuckStation => PreviewBuilder::new()
+            .header(NerdFont::Disc, "DuckStation")
+            .text("PlayStation 1 emulator.")
+            .blank()
+            .text("Runs PS1 games via the DuckStation AppImage.")
+            .text("(Downloads automatically if not found)")
+            .blank()
+            .separator()
+            .blank()
+            .text("Default location:")
+            .bullet("~/AppImages/DuckStation-x64.AppImage")
+            .blank()
+            .text("Supported formats:")
+            .bullet(".bin/.cue - CD image + cue sheet")
+            .bullet(".iso - Standard ISO image")
+            .bullet(".chd - Compressed Hunks of Data")
+            .bullet(".pbp - PSP eboot format")
+            .bullet(".m3u - Multi-disc playlist")
+            .blank()
+            .subtext("x86_64 only - auto-downloads AppImage")
+            .build(),
+        LauncherType::Back => PreviewBuilder::new()
+            .header(NerdFont::ArrowLeft, "Back")
+            .text("Return to previous menu.")
+            .build(),
+    }
 }
+
+const LAUNCHER_ORDER: [LauncherType; 11] = [
+    LauncherType::Manual,
+    LauncherType::Executable,
+    LauncherType::UmuRun,
+    LauncherType::Steam,
+    LauncherType::Eden,
+    LauncherType::DolphinFlatpak,
+    LauncherType::Pcsx2Flatpak,
+    LauncherType::AzaharFlatpak,
+    LauncherType::MgbaQt,
+    LauncherType::DuckStation,
+    LauncherType::Back,
+];
 
 /// Interactive launcher type selection
 pub fn select_launcher_type(

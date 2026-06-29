@@ -311,6 +311,10 @@ impl PreviewContext {
     pub(crate) fn key(&self) -> Option<&str> {
         self.key.as_deref().filter(|k| !k.is_empty())
     }
+
+    pub(crate) fn columns(&self) -> Option<usize> {
+        self.columns
+    }
 }
 
 fn render_preview(id: PreviewId, ctx: &PreviewContext) -> Result<String> {

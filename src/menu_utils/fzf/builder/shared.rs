@@ -4,7 +4,7 @@ use std::process::{Command, Output, Stdio};
 
 use super::SharedConfig;
 use crate::menu_utils::fzf::types::Header;
-use crate::menu_utils::fzf::utils::{check_fzf_spawn_error_and_exit, extract_icon_padding};
+use crate::menu_utils::fzf::utils::{extract_icon_padding, handle_fzf_spawn_error};
 
 pub(super) struct FzfCommandOptions {
     pub prompt_suffix: Option<&'static str>,
@@ -66,7 +66,7 @@ pub(super) fn run_fzf_with_input(mut cmd: Command, input: &[u8]) -> Result<Outpu
     let mut child = match child {
         Ok(child) => child,
         Err(error) => {
-            check_fzf_spawn_error_and_exit(&error);
+            handle_fzf_spawn_error(&error);
             return Err(anyhow!("fzf execution failed: {error}"));
         }
     };
@@ -84,7 +84,7 @@ pub(super) fn run_fzf_with_input(mut cmd: Command, input: &[u8]) -> Result<Outpu
     match output {
         Ok(output) => Ok(output),
         Err(error) => {
-            check_fzf_spawn_error_and_exit(&error);
+            handle_fzf_spawn_error(&error);
             Err(anyhow!("fzf execution failed: {error}"))
         }
     }

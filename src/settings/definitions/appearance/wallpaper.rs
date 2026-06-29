@@ -6,10 +6,11 @@ use anyhow::{Context, Result};
 use std::process::Command;
 
 use crate::common::compositor::CompositorType;
+use crate::common::format::format_size;
 use crate::common::package::{InstallResult, ensure_all};
 use crate::menu_utils::{FzfWrapper, MenuWrapper};
 use crate::settings::context::SettingsContext;
-use crate::settings::deps::{SWWW, YAZI, ZENITY};
+use crate::settings::deps::{AWWW, YAZI, ZENITY};
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::store::{
     BoolSettingKey, OptionalStringSettingKey, SettingsStore, WALLPAPER_PATH_KEY,
@@ -19,12 +20,12 @@ use crate::ui::prelude::*;
 
 use super::common::pick_color_with_zenity;
 
-/// Ensure swww is installed if running on Hyprland
+/// Ensure awww is installed if running on a compositor that needs it (Hyprland, niri).
 /// Returns Ok(true) if deps are satisfied, Ok(false) if user declined installation
-fn ensure_hyprland_deps() -> Result<bool> {
+fn ensure_awww_deps() -> Result<bool> {
     let compositor = CompositorType::detect();
-    if matches!(compositor, CompositorType::Hyprland) {
-        match ensure_all(&[&SWWW])? {
+    if matches!(compositor, CompositorType::Hyprland | CompositorType::Niri) {
+        match ensure_all(&[&AWWW])? {
             InstallResult::Installed | InstallResult::AlreadyInstalled => Ok(true),
             InstallResult::Declined
             | InstallResult::NotAvailable { .. }
@@ -92,8 +93,8 @@ impl Setting for SetWallpaper {
     }
 
     fn apply(&self, _ctx: &mut SettingsContext) -> Result<()> {
-        // Ensure swww is installed if on Hyprland
-        if !ensure_hyprland_deps()? {
+        // Ensure awww is installed if on Hyprland or niri
+        if !ensure_awww_deps()? {
             return Ok(());
         }
 
@@ -151,8 +152,7 @@ impl Setting for SetWallpaper {
                         .field("Status", if exists { "Available" } else { "Missing" });
 
                     if exists && let Ok(metadata) = std::fs::metadata(&path_buf) {
-                        builder = builder
-                            .field("Size", &crate::arch::dualboot::format_size(metadata.len()));
+                        builder = builder.field("Size", &format_size(metadata.len()));
                     }
                 } else {
                     builder = builder
@@ -222,8 +222,8 @@ impl Setting for RandomWallpaper {
     }
 
     fn apply(&self, _ctx: &mut SettingsContext) -> Result<()> {
-        // Ensure swww is installed if on Hyprland
-        if !ensure_hyprland_deps()? {
+        // Ensure awww is installed if on Hyprland or niri
+        if !ensure_awww_deps()? {
             return Ok(());
         }
 
@@ -381,8 +381,8 @@ impl Setting for ApplyColoredWallpaper {
     }
 
     fn apply(&self, _ctx: &mut SettingsContext) -> Result<()> {
-        // Ensure swww is installed if on Hyprland
-        if !ensure_hyprland_deps()? {
+        // Ensure awww is installed if on Hyprland or niri
+        if !ensure_awww_deps()? {
             return Ok(());
         }
 

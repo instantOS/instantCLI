@@ -7,6 +7,7 @@ pub mod encrypt;
 pub mod git_commands;
 pub mod key;
 pub mod merge;
+pub mod reconcile;
 pub mod reset;
 
 pub use add::add_dotfile;

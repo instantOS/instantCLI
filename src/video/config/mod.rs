@@ -113,20 +113,7 @@ impl VideoConfig {
     }
 
     pub fn save(&self) -> Result<()> {
-        self.save_to_path(video_config_path()?)
-    }
-
-    pub fn save_to_path(&self, path: impl AsRef<Path>) -> Result<()> {
-        let path = path.as_ref();
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("creating video config directory {}", parent.display()))?;
-        }
-
-        let toml = toml::to_string_pretty(self).context("serializing video config")?;
-        fs::write(path, toml)
-            .with_context(|| format!("writing video config to {}", path.display()))?;
-        Ok(())
+        self.save_documented_pretty_toml(video_config_path()?, None)
     }
 
     pub fn music_volume(&self) -> f32 {
@@ -139,12 +126,17 @@ impl VideoConfig {
 }
 
 // Implement DocumentedConfig trait for VideoConfig using the macro
-documented_config!(VideoConfig,
-    music_volume, "Music volume for video processing (0.0-1.0)",
-    preprocessor, "Which audio preprocessor to use (local, auphonic, or none)",
-    auphonic_api_key, "Auphonic API key for cloud preprocessing",
-    auphonic_preset_uuid, "Auphonic preset UUID for consistent processing settings",
-    => Ok(paths::instant_config_dir()?.join("video.toml"))
+documented_config!(
+    VideoConfig,
+    music_volume,
+    "Music volume for video processing (0.0-1.0)",
+    preprocessor,
+    "Which audio preprocessor to use (local, auphonic, or none)",
+    auphonic_api_key,
+    "Auphonic API key for cloud preprocessing",
+    secret,
+    auphonic_preset_uuid,
+    "Auphonic preset UUID for consistent processing settings",
 );
 
 fn video_config_path() -> Result<PathBuf> {

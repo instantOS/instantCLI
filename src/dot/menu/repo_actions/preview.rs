@@ -17,12 +17,19 @@ pub fn build_repo_preview(repo_name: &str, config: &DotfileConfig, db: &Database
     let mut builder = PreviewBuilder::new().title(colors::SKY, repo_name).blank();
 
     // Show external repo status if applicable
-    if repo_config.metadata.is_some() {
-        builder = builder.line(
-            colors::YELLOW,
-            Some(NerdFont::Info),
-            "External (Yadm/Stow compatible - metadata in config)",
-        );
+    if repo_config.is_external() {
+        builder = builder
+            .line(
+                colors::YELLOW,
+                Some(NerdFont::Info),
+                "External (Yadm/Stow compatible - metadata in config)",
+            )
+            .indented_line(colors::TEXT, None, "Fixed layout rooted at '.'")
+            .indented_line(
+                colors::TEXT,
+                None,
+                "No additional subdirs or root-owned '_root' directories",
+            );
     }
 
     builder = builder.line(
@@ -147,7 +154,7 @@ pub fn build_repo_preview(repo_name: &str, config: &DotfileConfig, db: &Database
                     if defaults_disabled {
                         "(disabled by defaults)".to_string()
                     } else if repo_path.join("instantdots.toml").exists()
-                        || repo_config.metadata.is_some()
+                        || repo_config.is_external()
                     {
                         "(none configured)".to_string()
                     } else {

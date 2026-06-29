@@ -107,6 +107,7 @@ pub(crate) fn run_browse_menu(dir: &Path, display: &str, mode: BrowseMode) -> Re
                             &selected.display_path,
                             &sources,
                             false,
+                            None,
                         )?
                     }
                     BrowseMode::SelectAlternative => {
@@ -132,7 +133,8 @@ pub(crate) fn run_browse_menu(dir: &Path, display: &str, mode: BrowseMode) -> Re
                 if let Some(path) = pick_new_file_to_track()? {
                     let file_display = to_display_path(&path);
                     let sources = sources::list_sources_for_target(&config, &path)?;
-                    let create_result = run_create_flow(&path, &file_display, &sources, false)?;
+                    let create_result =
+                        run_create_flow(&path, &file_display, &sources, false, None)?;
                     if matches!(create_result, Flow::Done | Flow::Cancelled) {
                         preselect = Some(file_display);
                     }

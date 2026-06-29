@@ -160,7 +160,7 @@ fn run_source_selection_menu(
     overrides: &OverrideConfig,
 ) -> Result<Flow> {
     let current = overrides.get_override(path);
-    let default_source = super::default_source_for(&sources);
+    let default_source = crate::dot::sources::default_source_for(&sources);
     let mut cursor = MenuCursor::new();
 
     let items: Vec<SourceOption> = sources
@@ -218,7 +218,7 @@ fn run_source_selection_menu(
             FzfResult::Selected(MenuItem::CreateAlternative) => {
                 cursor.update(&MenuItem::CreateAlternative, &menu);
                 let sources = sources::list_sources_for_target(&config, path)?;
-                match run_create_flow(path, display, &sources, false)? {
+                match run_create_flow(path, display, &sources, false, None)? {
                     Flow::Continue => continue,
                     other => return Ok(other),
                 }

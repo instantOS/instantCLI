@@ -54,9 +54,16 @@ impl Default for ResolvethingConfig {
 
 documented_config!(
     ResolvethingConfig,
-    scan_dirs, "List of directories to scan; each entry has a path and a list of file extensions (empty = all plain text files)",
-    editor_command, "Optional editor command used for conflict diffs; defaults to $EDITOR or nvim",
-    => paths::instant_config_dir()?.join("resolvething.toml")
+    scan_dirs,
+    "List of directories to scan; each entry has a path and a list of file extensions (empty = all plain text files)",
+    example,
+    r#"
+[[scan_dirs]]
+path = "~/Documents"
+extensions = ["md", "json"]
+"#,
+    editor_command,
+    "Optional editor command used for conflict diffs; defaults to $EDITOR or nvim",
 );
 
 impl ResolvethingConfig {
@@ -66,7 +73,8 @@ impl ResolvethingConfig {
     }
 
     pub fn save(&self) -> Result<()> {
-        self.save_with_documentation(&Self::config_path()?)
+        let path = Self::config_path()?;
+        self.save_documented_pretty_toml(path, None)
             .context("saving resolvething config")
     }
 
@@ -179,4 +187,39 @@ fn default_scan_path() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
         .join("wiki")
         .join("vimwiki")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn save_uses_pretty_table_arrays_for_scan_dirs() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("resolvething.toml");
+        let config = ResolvethingConfig {
+            scan_dirs: vec![ScanDir {
+                path: PathBuf::from("~/wiki"),
+                extensions: vec!["md".to_string(), "json".to_string()],
+            }],
+            editor_command: None,
+        };
+
+        config.save_documented_pretty_toml(&path, None).unwrap();
+
+        let contents = fs::read_to_string(path).unwrap();
+        assert!(contents.contains("# Available fields:"));
+        assert!(contents.contains(
+            "# scan_dirs  # List of directories to scan; each entry has a path and a list of file extensions"
+        ));
+        assert!(contents.contains("# Example scan_dirs entry:"));
+        assert!(contents.contains("# [[scan_dirs]]"));
+        assert!(contents.contains("# path = \"~/Documents\""));
+        assert!(contents.contains("# extensions = [\"md\", \"json\"]"));
+        assert!(contents.contains("# editor_command = \"\""));
+        assert!(contents.contains("[[scan_dirs]]"));
+        assert!(contents.contains("path = \"~/wiki\""));
+        assert!(!contents.contains("scan_dirs = [{"));
+    }
 }

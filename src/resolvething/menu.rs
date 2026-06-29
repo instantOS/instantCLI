@@ -9,7 +9,7 @@ use crate::ui::preview::{FzfPreview, PreviewBuilder};
 
 use super::commands::{
     add_scan_directory, change_scan_directory_path, configure_scan_directory_extensions,
-    edit_config, remove_scan_directory, resolve_conflicts, resolve_duplicates, resolved_config,
+    edit_config, remove_scan_directory, resolve_conflicts, resolve_duplicates,
 };
 use super::config::{ResolvedScanDir, ResolvethingConfig, format_path};
 
@@ -182,7 +182,7 @@ pub fn resolvething_menu(debug: bool) -> Result<()> {
     let mut statuses_dirty = true;
 
     loop {
-        let config = resolved_config()?;
+        let config = ResolvethingConfig::load()?;
 
         if statuses_dirty || cached_statuses.len() != config.scan_dirs.len() {
             cached_statuses = compute_all_statuses(&config);
@@ -316,7 +316,7 @@ fn run_scan_dir_menu(index: usize) -> Result<(ActionResult, bool)> {
     let mut did_resolve = false;
 
     loop {
-        let config = resolved_config()?;
+        let config = ResolvethingConfig::load()?;
         if config.scan_dirs.get(index).is_none() {
             // Removed or shifted: bounce back to the outer menu.
             return Ok((ActionResult::Back, did_resolve));

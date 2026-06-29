@@ -95,7 +95,11 @@ impl EdenBuilder {
         )
     }
 
-    fn build_launch_command(eden_path: &Path, game_file: &Path, fullscreen: bool) -> LaunchCommand {
+    pub(crate) fn build_launch_command(
+        eden_path: &Path,
+        game_file: &Path,
+        fullscreen: bool,
+    ) -> LaunchCommand {
         LaunchCommand {
             wrappers: Default::default(),
             kind: LaunchCommandKind::Emulator(EmulatorLaunchCommand {
@@ -110,6 +114,13 @@ impl EdenBuilder {
                 },
             }),
         }
+    }
+
+    /// Return the first detected Eden AppImage from the standard search paths.
+    pub(crate) fn detected_eden_appimage() -> Option<PathBuf> {
+        find_appimages_by_paths(EDEN_SEARCH_PATHS)
+            .into_iter()
+            .next()
     }
 
     /// Format a simple Eden command without fullscreen flag.
