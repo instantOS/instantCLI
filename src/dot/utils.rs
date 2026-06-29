@@ -120,6 +120,15 @@ pub fn resolve_dotfile_path(path: &str, allow_root: bool, require_exists: bool) 
         ));
     }
 
+    if let Ok(canonical) = normalized_path.canonicalize() {
+        if let Ok(relative) = canonical.strip_prefix(&canonical_home) {
+            if relative.as_os_str().is_empty() {
+                return Ok(home.clone());
+            }
+            return Ok(home.join(relative));
+        }
+    }
+
     Ok(normalized_path)
 }
 
