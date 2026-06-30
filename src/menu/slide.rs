@@ -246,6 +246,12 @@ impl SliderApp {
                     | MouseEventKind::Drag(crossterm::event::MouseButton::Left) => {
                         self.snap_from_position(mouse_event.column, mouse_event.row);
                     }
+                    MouseEventKind::ScrollUp | MouseEventKind::ScrollRight => {
+                        self.bump_value(self.config.step);
+                    }
+                    MouseEventKind::ScrollDown | MouseEventKind::ScrollLeft => {
+                        self.bump_value(-self.config.step);
+                    }
                     _ => {}
                 },
                 Event::Resize(_, _) => {
@@ -318,14 +324,10 @@ impl SliderApp {
     }
 
     fn build_gauge(&self) -> Gauge<'static> {
-        let label = self.config.label.as_deref().unwrap_or("Instant Slider");
         let ratio = self.config.ratio();
         let value = self.config.value;
 
-        let slider_block = Block::default()
-            .borders(Borders::ALL)
-            .title(format!(" {label} "))
-            .title_alignment(Alignment::Left);
+        let slider_block = Block::default().borders(Borders::ALL);
 
         let label_text = format!(" {value} ");
         let label_color = if ratio > 0.5 {
@@ -355,7 +357,7 @@ impl SliderApp {
             Span::styled("h/l", Style::default().fg(Color::Cyan)),
             Span::raw(" ±step  •  "),
             Span::styled("j/k", Style::default().fg(Color::Cyan)),
-            Span::raw(" ±big step  •  Digits jump (1 left … 0 max)"),
+            Span::raw(" ±big step  •  Wheel ±step  •  Digits jump (1 left … 0 max)"),
         ]);
 
         Paragraph::new(help_text)
