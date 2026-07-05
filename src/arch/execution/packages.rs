@@ -67,6 +67,7 @@ fn collect_extended_packages(context: &InstallContext) -> Result<Vec<String>> {
         "fzf",
         "gum",
         "base-devel",
+        "xdg-user-dirs",
     ]);
 
     packages.push(format!("{}-headers", kernel));

@@ -52,6 +52,12 @@ pub async fn setup_instantos(
     super::config::ensure_groups_exist(executor)?;
     if let Some(user) = username.as_ref() {
         super::config::add_user_to_groups(user, executor)?;
+
+        // Create standard XDG user directories (Desktop, Documents, etc.)
+        println!("Creating XDG user directories for {}...", user);
+        let mut cmd_xdg = Command::new("su");
+        cmd_xdg.arg("-c").arg("xdg-user-dirs-update").arg(user);
+        let _ = executor.run(&mut cmd_xdg);
     } else {
         println!("No username provided, skipping user group membership.");
     }
