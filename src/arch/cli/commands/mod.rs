@@ -73,7 +73,7 @@ pub(super) fn build_questions() -> Vec<Box<dyn Question>> {
         PasswordQuestion, ResizeInstructionsQuestion, RunCfdiskQuestion, TimezoneQuestion,
         UsernameQuestion, VirtualBoxWarning, WeakPasswordWarning,
     };
-    use crate::arch::questions::{BtrfsCompressionQuestion, RootFilesystemQuestion};
+    use crate::arch::questions::{BtrfsCompressionQuestion, DisplayManagerQuestion, RootFilesystemQuestion};
 
     vec![
         Box::new(VirtualBoxWarning),
@@ -150,6 +150,7 @@ pub(super) fn build_questions() -> Vec<Box<dyn Question>> {
         Box::new(DesktopEnvironmentQuestion),
         Box::new(RootFilesystemQuestion),
         Box::new(BtrfsCompressionQuestion),
+        Box::new(DisplayManagerQuestion),
         Box::new(
             BooleanQuestion::new(
                 crate::arch::engine::QuestionId::UsePlymouth,
@@ -162,7 +163,7 @@ pub(super) fn build_questions() -> Vec<Box<dyn Question>> {
         Box::new(
             BooleanQuestion::new(
                 crate::arch::engine::QuestionId::Autologin,
-                "Enable LightDM Autologin?",
+                "Enable Display Manager Autologin?",
                 crate::ui::nerd_font::NerdFont::User,
             )
             .optional()

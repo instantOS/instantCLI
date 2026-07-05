@@ -77,11 +77,17 @@ fn collect_extended_packages(context: &InstallContext) -> Result<Vec<String>> {
         let desktop = crate::arch::config::DesktopEnvironment::from_context(context);
 
         if desktop.requires_display_manager() {
-            packages.extend(strings(&[
-                "xorg-xwayland",
-                "lightdm",
-                "lightdm-gtk-greeter",
-            ]));
+            packages.push("xorg-xwayland".to_string());
+            let dm = crate::arch::config::DisplayManager::from_context(context);
+            match dm {
+                crate::arch::config::DisplayManager::Gdm => {
+                    packages.push("gdm".to_string());
+                }
+                crate::arch::config::DisplayManager::Lightdm => {
+                    packages.push("lightdm".to_string());
+                    packages.push("lightdm-gtk-greeter".to_string());
+                }
+            }
         }
 
         packages.extend(strings(desktop.package_names()));
@@ -153,12 +159,13 @@ mod tests {
         let packages = build_standard_package_plan(&context).unwrap();
 
         assert!(!packages.iter().any(|pkg| pkg == "lightdm"));
+        assert!(!packages.iter().any(|pkg| pkg == "gdm"));
         assert!(!packages.iter().any(|pkg| pkg == "sway"));
         assert!(!packages.iter().any(|pkg| pkg == "xorg-xwayland"));
     }
 
     #[test]
-    fn hyprland_selection_adds_hyprland_and_lightdm() {
+    fn hyprland_selection_adds_hyprland_and_gdm_by_default() {
         let mut context = base_context();
         context.set_answer(
             QuestionId::DesktopEnvironment,
@@ -168,6 +175,26 @@ mod tests {
         let packages = build_standard_package_plan(&context).unwrap();
 
         assert!(packages.iter().any(|pkg| pkg == "hyprland"));
+        assert!(packages.iter().any(|pkg| pkg == "gdm"));
+        assert!(!packages.iter().any(|pkg| pkg == "lightdm"));
+    }
+
+    #[test]
+    fn hyprland_selection_adds_hyprland_and_lightdm_when_selected() {
+        let mut context = base_context();
+        context.set_answer(
+            QuestionId::DesktopEnvironment,
+            DesktopEnvironment::Hyprland.answer_value().to_string(),
+        );
+        context.set_answer(
+            QuestionId::DisplayManager,
+            crate::arch::config::DisplayManager::Lightdm.answer_value().to_string(),
+        );
+
+        let packages = build_standard_package_plan(&context).unwrap();
+
+        assert!(packages.iter().any(|pkg| pkg == "hyprland"));
         assert!(packages.iter().any(|pkg| pkg == "lightdm"));
+        assert!(!packages.iter().any(|pkg| pkg == "gdm"));
     }
 }

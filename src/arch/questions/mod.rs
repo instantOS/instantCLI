@@ -1,5 +1,6 @@
 pub mod boolean;
 pub mod disk;
+pub mod display_manager;
 pub mod dualboot;
 pub mod filesystem;
 pub mod partition;
@@ -10,6 +11,7 @@ pub mod warnings;
 // Re-exports
 pub use boolean::BooleanQuestion;
 pub use disk::{DiskQuestion, PartitioningMethodQuestion, RunCfdiskQuestion};
+pub use display_manager::DisplayManagerQuestion;
 pub use dualboot::{DualBootPartitionQuestion, DualBootSizeQuestion};
 pub use filesystem::{BtrfsCompressionQuestion, RootFilesystemQuestion};
 pub use partition::{EspPartitionValidator, PartitionSelectorQuestion};

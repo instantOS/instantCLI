@@ -15,6 +15,7 @@ pub enum QuestionId {
     DesktopEnvironment,
     RootFilesystem,
     BtrfsCompression,
+    DisplayManager,
     UseEncryption,
     EncryptionPassword,
     UsePlymouth,

@@ -183,10 +183,59 @@ impl BtrfsCompression {
     }
 }
 
+/// Display manager choice for the installation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DisplayManager {
+    Gdm,
+    Lightdm,
+}
+
+impl DisplayManager {
+    /// gdm is the default.
+    pub const DEFAULT: Self = Self::Gdm;
+
+    pub fn from_answer(answer: &str) -> Self {
+        match answer {
+            "gdm" => Self::Gdm,
+            "lightdm" => Self::Lightdm,
+            _ => Self::DEFAULT,
+        }
+    }
+
+    pub fn from_context(context: &InstallContext) -> Self {
+        context
+            .get_answer(&QuestionId::DisplayManager)
+            .map(|answer| Self::from_answer(answer))
+            .unwrap_or(Self::DEFAULT)
+    }
+
+    pub fn answer_value(&self) -> &'static str {
+        match self {
+            Self::Gdm => "gdm",
+            Self::Lightdm => "lightdm",
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Gdm => "gdm (default)",
+            Self::Lightdm => "lightdm",
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::DesktopEnvironment;
-    use super::{BtrfsCompression, RootFilesystem};
+    use super::{BtrfsCompression, DisplayManager, RootFilesystem};
+
+    #[test]
+    fn display_manager_defaults_to_gdm() {
+        assert_eq!(DisplayManager::from_answer("gdm"), DisplayManager::Gdm);
+        assert_eq!(DisplayManager::from_answer("lightdm"), DisplayManager::Lightdm);
+        assert_eq!(DisplayManager::from_answer("unknown"), DisplayManager::Gdm);
+        assert_eq!(DisplayManager::DEFAULT, DisplayManager::Gdm);
+    }
 
     #[test]
     fn parses_desktop_environment_answers() {

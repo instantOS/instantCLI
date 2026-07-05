@@ -186,21 +186,27 @@ fn enable_services(executor: &dyn CommandRunner, context: &InstallContext) -> Re
         }
     }
 
+    let selected_dm = crate::arch::config::DisplayManager::from_context(context);
+    let selected_dm_service = selected_dm.answer_value();
+
     // Check if other display managers are enabled
     // We check this directly via Command because the executor errors on failure (non-zero exit),
     // and systemctl is-enabled returns non-zero if disabled.
     let mut other_dm_enabled = false;
 
-    for dm in &["sddm", "gdm"] {
+    for check_dm in &["sddm", "gdm", "lightdm"] {
+        if *check_dm == selected_dm_service {
+            continue;
+        }
         let mut cmd = Command::new("systemctl");
-        cmd.arg("is-enabled").arg(dm);
+        cmd.arg("is-enabled").arg(check_dm);
         cmd.stdout(std::process::Stdio::null());
         cmd.stderr(std::process::Stdio::null());
 
         if let Ok(status) = cmd.status()
             && status.success()
         {
-            println!("Detected enabled display manager: {}", dm);
+            println!("Detected enabled display manager: {}", check_dm);
             other_dm_enabled = true;
             break;
         }
@@ -210,21 +216,37 @@ fn enable_services(executor: &dyn CommandRunner, context: &InstallContext) -> Re
         && !context.get_answer_bool(QuestionId::MinimalMode)
         && desktop.requires_display_manager()
     {
-        services.push("lightdm");
-        configure_lightdm_session(context, executor)?;
+        services.push(selected_dm_service);
 
-        // Handle Autologin
-        let enable_autologin = context.get_answer_bool(QuestionId::Autologin);
-
-        if enable_autologin {
-            configure_lightdm_autologin(context, executor)?;
+        match selected_dm {
+            crate::arch::config::DisplayManager::Gdm => {
+                configure_gdm_session(context, executor)?;
+                if context.get_answer_bool(QuestionId::Autologin) {
+                    configure_gdm_autologin(context, executor)?;
+                }
+            }
+            crate::arch::config::DisplayManager::Lightdm => {
+                configure_lightdm_session(context, executor)?;
+                if context.get_answer_bool(QuestionId::Autologin) {
+                    configure_lightdm_autologin(context, executor)?;
+                }
+            }
         }
     } else if other_dm_enabled {
-        println!("Skipping lightdm setup because another display manager is enabled.");
+        println!(
+            "Skipping {} setup because another display manager is enabled.",
+            selected_dm_service
+        );
     } else if context.get_answer_bool(QuestionId::MinimalMode) {
-        println!("Skipping lightdm setup because minimal mode is enabled.");
+        println!(
+            "Skipping {} setup because minimal mode is enabled.",
+            selected_dm_service
+        );
     } else {
-        println!("Skipping lightdm setup because no graphical desktop was selected.");
+        println!(
+            "Skipping {} setup because no graphical desktop was selected.",
+            selected_dm_service
+        );
     }
 
     for service in services {
@@ -466,6 +488,180 @@ fn setup_backlight_udev_rule(executor: &dyn CommandRunner) -> Result<()> {
     Ok(())
 }
 
+fn configure_gdm_session(
+    context: &InstallContext,
+    executor: &dyn CommandRunner,
+) -> Result<()> {
+    let desktop = crate::arch::config::DesktopEnvironment::from_context(context);
+    let Some(session_name) = desktop.session_name() else {
+        return Ok(());
+    };
+    let username = context
+        .get_answer(&QuestionId::Username)
+        .context("Username not set for GDM session configuration")?;
+
+    println!("Configuring GDM default session for {} to {}...", username, session_name);
+
+    if executor.dry_run() {
+        println!(
+            "[DRY RUN] Set GDM user session for {} to {} in AccountsService",
+            username, session_name
+        );
+        return Ok(());
+    }
+
+    let dir_path = "/var/lib/AccountsService/users";
+    let file_path = format!("{}/{}", dir_path, username);
+
+    // Create the directory if it doesn't exist
+    std::fs::create_dir_all(dir_path)?;
+
+    let content = if std::path::Path::new(&file_path).exists() {
+        std::fs::read_to_string(&file_path)?
+    } else {
+        String::new()
+    };
+
+    let new_content = update_accountsservice_session(&content, session_name);
+
+    std::fs::write(&file_path, new_content)?;
+    Ok(())
+}
+
+fn configure_gdm_autologin(
+    context: &InstallContext,
+    executor: &dyn CommandRunner,
+) -> Result<()> {
+    println!("Configuring GDM autologin...");
+
+    let username = context
+        .get_answer(&QuestionId::Username)
+        .context("Username not set for GDM autologin")?;
+
+    if executor.dry_run() {
+        println!(
+            "[DRY RUN] Enable GDM autologin for user: {} in /etc/gdm/custom.conf",
+            username
+        );
+        return Ok(());
+    }
+
+    let config_path = "/etc/gdm/custom.conf";
+    if !std::path::Path::new(config_path).exists() {
+        println!(
+            "Warning: {} not found, cannot configure GDM autologin",
+            config_path
+        );
+        return Ok(());
+    }
+
+    let content = std::fs::read_to_string(config_path)?;
+    let new_content = update_gdm_conf_autologin(&content, username);
+
+    if content != new_content {
+        std::fs::write(config_path, new_content)?;
+        println!("Updated custom.conf with GDM autologin settings");
+    } else {
+        println!("custom.conf already configured for GDM autologin");
+    }
+
+    Ok(())
+}
+
+fn update_gdm_conf_autologin(content: &str, username: &str) -> String {
+    let mut new_lines = Vec::new();
+    let mut inside_daemon = false;
+    let mut replaced = false;
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("[") {
+            if inside_daemon && !replaced {
+                new_lines.push("AutomaticLoginEnable=true".to_string());
+                new_lines.push(format!("AutomaticLogin={}", username));
+                replaced = true;
+            }
+            if trimmed == "[daemon]" {
+                inside_daemon = true;
+                replaced = false;
+            } else {
+                inside_daemon = false;
+            }
+            new_lines.push(line.to_string());
+        } else if inside_daemon {
+            let clean_line = trimmed.replace(" ", "");
+            if clean_line.starts_with("AutomaticLoginEnable=")
+                || clean_line.starts_with("#AutomaticLoginEnable=")
+            {
+                if !replaced {
+                    new_lines.push("AutomaticLoginEnable=true".to_string());
+                    new_lines.push(format!("AutomaticLogin={}", username));
+                    replaced = true;
+                }
+            } else if clean_line.starts_with("AutomaticLogin=")
+                || clean_line.starts_with("#AutomaticLogin=")
+            {
+                // skip
+            } else {
+                new_lines.push(line.to_string());
+            }
+        } else {
+            new_lines.push(line.to_string());
+        }
+    }
+
+    if inside_daemon && !replaced {
+        new_lines.push("AutomaticLoginEnable=true".to_string());
+        new_lines.push(format!("AutomaticLogin={}", username));
+    }
+
+    new_lines.join("\n")
+}
+
+fn update_accountsservice_session(content: &str, session_name: &str) -> String {
+    let mut new_lines = Vec::new();
+    let mut inside_user = false;
+    let mut has_session = false;
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("[") {
+            if inside_user {
+                new_lines.push(format!("Session={}", session_name));
+                has_session = true;
+                inside_user = false;
+            }
+            if trimmed == "[User]" {
+                inside_user = true;
+            }
+            new_lines.push(line.to_string());
+        } else if inside_user {
+            let clean_line = trimmed.replace(" ", "");
+            if clean_line.starts_with("Session=") {
+                // skip
+            } else {
+                new_lines.push(line.to_string());
+            }
+        } else {
+            new_lines.push(line.to_string());
+        }
+    }
+
+    if inside_user && !has_session {
+        new_lines.push(format!("Session={}", session_name));
+        has_session = true;
+    }
+
+    if !has_session {
+        if !new_lines.iter().any(|l| l.trim() == "[User]") {
+            new_lines.push("[User]".to_string());
+        }
+        new_lines.push(format!("Session={}", session_name));
+    }
+
+    new_lines.join("\n")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -512,6 +708,43 @@ user-session=niri
 autologin-session=niri
 "#;
         let result = update_lightdm_conf_session(input, "niri");
+        assert_eq!(result.trim(), expected.trim());
+    }
+
+    #[test]
+    fn test_update_gdm_conf_autologin() {
+        let input = r#"
+[daemon]
+#WaylandEnable=false
+#AutomaticLoginEnable = true
+#AutomaticLogin = user1
+
+[security]
+"#;
+        let expected = r#"
+[daemon]
+#WaylandEnable=false
+AutomaticLoginEnable=true
+AutomaticLogin=testuser
+
+[security]
+"#;
+        let result = update_gdm_conf_autologin(input, "testuser");
+        assert_eq!(result.trim(), expected.trim());
+    }
+
+    #[test]
+    fn test_update_accountsservice_session() {
+        let input = r#"
+[User]
+SystemAccount=false
+"#;
+        let expected = r#"
+[User]
+SystemAccount=false
+Session=sway
+"#;
+        let result = update_accountsservice_session(input, "sway");
         assert_eq!(result.trim(), expected.trim());
     }
 }

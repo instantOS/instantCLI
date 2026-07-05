@@ -167,13 +167,20 @@ pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary 
     } else {
         "Disabled".to_string()
     };
-
     let autologin_label = if minimal_mode {
         "Disabled (minimal mode)".to_string()
     } else if context.get_answer_bool(QuestionId::Autologin) {
         "Enabled".to_string()
     } else {
         "Disabled".to_string()
+    };
+
+    let dm_label = if minimal_mode {
+        "Skipped (minimal mode)".to_string()
+    } else if crate::arch::config::DesktopEnvironment::from_context(context).requires_display_manager() {
+        crate::arch::config::DisplayManager::from_context(context).label().to_string()
+    } else {
+        "Not required".to_string()
     };
 
     let log_upload_label = if context.get_answer_bool(QuestionId::LogUpload) {
@@ -300,6 +307,7 @@ pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary 
         .line(colors::TEAL, Some(NerdFont::Sliders), "System Options")
         .field_indented("Kernel", &kernel)
         .field_indented("Desktop", &desktop_label)
+        .field_indented("Display manager", &dm_label)
         .field_indented("Profile", &profile)
         .field_indented("Plymouth", &plymouth_label)
         .field_indented("Autologin", &autologin_label)
