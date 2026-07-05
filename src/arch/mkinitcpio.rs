@@ -6,6 +6,7 @@ pub struct MkinitcpioConfig {
     modules: Vec<String>,
     modules_line_idx: Option<usize>,
     modules_modified: bool,
+    modules_quote_char: Option<char>,
     hooks: Vec<String>,
     hooks_line_idx: Option<usize>,
     quote_char: Option<char>,
@@ -15,6 +16,7 @@ impl MkinitcpioConfig {
     pub fn parse(content: &str) -> Result<Self> {
         let mut modules = Vec::new();
         let mut modules_line_idx = None;
+        let mut modules_quote_char = None;
         let mut hooks = Vec::new();
         let mut hooks_line_idx = None;
         let mut quote_char = None;
@@ -23,14 +25,31 @@ impl MkinitcpioConfig {
             let trimmed = line.trim();
             if trimmed.starts_with("MODULES=") {
                 modules_line_idx = Some(idx);
-                if let Some(start) = line.find('(')
-                    && let Some(end) = line.rfind(')')
-                    && end > start
+                // Extract content inside quotes/parentheses
+                if let Some(start) = line
+                    .find('(')
+                    .or_else(|| line.find('"'))
+                    .or_else(|| line.find('\''))
                 {
-                    modules = line[start + 1..end]
-                        .split_whitespace()
-                        .map(String::from)
-                        .collect();
+                    let end_char = match line.chars().nth(start).unwrap() {
+                        '(' => ')',
+                        '"' => '"',
+                        '\'' => '\'',
+                        _ => unreachable!(),
+                    };
+
+                    if let Some(end) = line.rfind(end_char)
+                        && end > start
+                    {
+                        let modules_str = &line[start + 1..end];
+                        modules = modules_str
+                            .split_whitespace()
+                            .map(String::from)
+                            .collect();
+                        if line.chars().nth(start).unwrap() != '(' {
+                            modules_quote_char = Some(line.chars().nth(start).unwrap());
+                        }
+                    }
                 }
             }
             if trimmed.starts_with("HOOKS=") {
@@ -67,6 +86,7 @@ impl MkinitcpioConfig {
             modules,
             modules_line_idx,
             modules_modified: false,
+            modules_quote_char,
             hooks,
             hooks_line_idx,
             quote_char,
@@ -188,7 +208,12 @@ impl std::fmt::Display for MkinitcpioConfig {
         let mut lines: Vec<String> = self.original_content.lines().map(String::from).collect();
 
         if self.modules_modified {
-            let modules_line = format!("MODULES=({})", self.modules.join(" "));
+            let modules_str = self.modules.join(" ");
+            let modules_line = if let Some(quote) = self.modules_quote_char {
+                format!("MODULES={}{}{}", quote, modules_str, quote)
+            } else {
+                format!("MODULES=({})", modules_str)
+            };
             if let Some(idx) = self.modules_line_idx {
                 lines[idx] = modules_line;
             } else {
@@ -229,6 +254,20 @@ mod tests {
         config.ensure_module("btrfs");
 
         assert!(config.to_string().contains("MODULES=(amdgpu btrfs)"));
+    }
+
+    #[test]
+    fn ensure_module_adds_btrfs_with_quotes() {
+        let mut config =
+            MkinitcpioConfig::parse("MODULES=\"amdgpu\"\nHOOKS=(base udev block filesystems)")
+                .unwrap();
+
+        config.ensure_module("btrfs");
+
+        assert_eq!(
+            config.to_string(),
+            "MODULES=\"amdgpu btrfs\"\nHOOKS=(base udev block filesystems)"
+        );
     }
 
     // ── Parse ───────────────────────────────────────────────────────────
