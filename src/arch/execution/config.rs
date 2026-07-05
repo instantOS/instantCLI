@@ -157,8 +157,9 @@ pub fn config_package_list(context: &InstallContext) -> Vec<String> {
 fn configure_mkinitcpio(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
     let use_encryption = context.get_answer_bool(QuestionId::UseEncryption);
     let use_plymouth = context.get_answer_bool(QuestionId::UsePlymouth);
+    let use_btrfs = crate::arch::config::RootFilesystem::from_context(context).is_btrfs();
 
-    if !use_encryption && !use_plymouth {
+    if !use_encryption && !use_plymouth && !use_btrfs {
         return Ok(());
     }
 
@@ -170,6 +171,9 @@ fn configure_mkinitcpio(context: &InstallContext, executor: &dyn CommandRunner) 
     }
 
     if executor.dry_run() {
+        if use_btrfs {
+            println!("[DRY RUN] Adding 'btrfs' to MODULES in /etc/mkinitcpio.conf");
+        }
         if use_plymouth && !context.get_answer_bool(QuestionId::MinimalMode) {
             println!("[DRY RUN] Adding 'plymouth' to HOOKS in /etc/mkinitcpio.conf");
         }
@@ -184,6 +188,10 @@ fn configure_mkinitcpio(context: &InstallContext, executor: &dyn CommandRunner) 
     let content = std::fs::read_to_string(conf_path).context("Failed to read mkinitcpio.conf")?;
 
     let mut config = MkinitcpioConfig::parse(&content)?;
+
+    if use_btrfs {
+        config.ensure_module("btrfs");
+    }
 
     // Switch to systemd hooks
     if config.contains_hook("base") && config.contains_hook("udev") {

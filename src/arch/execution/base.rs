@@ -85,6 +85,10 @@ fn run_pacstrap(context: &InstallContext, executor: &dyn CommandRunner) -> Resul
         .map(String::from)
         .collect();
 
+    if crate::arch::config::RootFilesystem::from_context(context).is_btrfs() {
+        packages.push("btrfs-progs".to_string());
+    }
+
     // Add kernel (headers are installed later alongside extra packages)
     packages.push(kernel.to_string());
 

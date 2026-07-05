@@ -13,6 +13,8 @@ pub enum QuestionId {
     Locale,
     Kernel,
     DesktopEnvironment,
+    RootFilesystem,
+    BtrfsCompression,
     UseEncryption,
     EncryptionPassword,
     UsePlymouth,

@@ -1,3 +1,4 @@
+use super::filesystem;
 use crate::arch::engine::{
     BootMode, DualBootPartitions, EspNeedsFormat, InstallContext, QuestionId,
 };
@@ -25,10 +26,11 @@ pub fn format_and_mount_partitions(
     };
 
     println!("Formatting Root partition: {}", root_path);
-    executor.run(Command::new("mkfs.ext4").args(["-F", &root_path]))?;
+    filesystem::format_root(context, &root_path, executor)?;
 
     println!("Mounting Root partition...");
-    executor.run(Command::new("mount").args([&root_path, "/mnt"]))?;
+    let has_separate_home = context.get_answer(&QuestionId::HomePartition).is_some();
+    filesystem::mount_root(context, &root_path, !has_separate_home, executor)?;
 
     let boot_path = if let Some(ref paths) = dualboot_paths {
         Some(paths.boot.clone())

@@ -152,6 +152,7 @@ fn install_live_iso_dependencies() -> Result<()> {
         &crate::common::deps::GIT,
         &crate::common::deps::GUM,
         &crate::common::deps::CFDISK,
+        &crate::common::deps::BTRFS_PROGS,
         &crate::common::deps::NTFSPROGS,
         &crate::common::deps::NTFS_3G,
     ];

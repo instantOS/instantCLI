@@ -146,6 +146,19 @@ pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary 
             .to_string()
     };
 
+    let root_filesystem = crate::arch::config::RootFilesystem::from_context(context);
+    let filesystem_label = if root_filesystem.is_btrfs() {
+        let compression = crate::arch::config::BtrfsCompression::from_context(context);
+        let subvolumes = if context.get_answer(&QuestionId::HomePartition).is_some() {
+            "@"
+        } else {
+            "@, @home"
+        };
+        format!("btrfs ({subvolumes}; {})", compression.label())
+    } else {
+        "ext4".to_string()
+    };
+
     let use_plymouth = context.get_answer_bool(QuestionId::UsePlymouth);
     let plymouth_label = if minimal_mode {
         "Disabled (minimal mode)".to_string()
@@ -215,7 +228,8 @@ pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary 
         .blank()
         .line(colors::TEAL, Some(NerdFont::HardDrive), "Storage Plan")
         .field_indented("Disk", &disk)
-        .field_indented("Partitioning", &partitioning_method);
+        .field_indented("Partitioning", &partitioning_method)
+        .field_indented("Root filesystem", &filesystem_label);
 
     match partitioning_kind {
         PartitioningKind::Automatic => {

@@ -3,6 +3,9 @@ use anyhow::Result;
 #[derive(Debug, Clone)]
 pub struct MkinitcpioConfig {
     original_content: String,
+    modules: Vec<String>,
+    modules_line_idx: Option<usize>,
+    modules_modified: bool,
     hooks: Vec<String>,
     hooks_line_idx: Option<usize>,
     quote_char: Option<char>,
@@ -10,12 +13,26 @@ pub struct MkinitcpioConfig {
 
 impl MkinitcpioConfig {
     pub fn parse(content: &str) -> Result<Self> {
+        let mut modules = Vec::new();
+        let mut modules_line_idx = None;
         let mut hooks = Vec::new();
         let mut hooks_line_idx = None;
         let mut quote_char = None;
 
         for (idx, line) in content.lines().enumerate() {
             let trimmed = line.trim();
+            if trimmed.starts_with("MODULES=") {
+                modules_line_idx = Some(idx);
+                if let Some(start) = line.find('(')
+                    && let Some(end) = line.rfind(')')
+                    && end > start
+                {
+                    modules = line[start + 1..end]
+                        .split_whitespace()
+                        .map(String::from)
+                        .collect();
+                }
+            }
             if trimmed.starts_with("HOOKS=") {
                 hooks_line_idx = Some(idx);
 
@@ -42,12 +59,14 @@ impl MkinitcpioConfig {
                         }
                     }
                 }
-                break;
             }
         }
 
         Ok(Self {
             original_content: content.to_string(),
+            modules,
+            modules_line_idx,
+            modules_modified: false,
             hooks,
             hooks_line_idx,
             quote_char,
@@ -57,6 +76,13 @@ impl MkinitcpioConfig {
     pub fn ensure_hook(&mut self, hook: &str) {
         if !self.contains_hook(hook) {
             self.hooks.push(hook.to_string());
+        }
+    }
+
+    pub fn ensure_module(&mut self, module: &str) {
+        if !self.modules.iter().any(|item| item == module) {
+            self.modules.push(module.to_string());
+            self.modules_modified = true;
         }
     }
 
@@ -161,6 +187,15 @@ impl std::fmt::Display for MkinitcpioConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut lines: Vec<String> = self.original_content.lines().map(String::from).collect();
 
+        if self.modules_modified {
+            let modules_line = format!("MODULES=({})", self.modules.join(" "));
+            if let Some(idx) = self.modules_line_idx {
+                lines[idx] = modules_line;
+            } else {
+                lines.push(modules_line);
+            }
+        }
+
         if let Some(idx) = self.hooks_line_idx {
             let hooks_str = self.hooks.join(" ");
 
@@ -184,6 +219,17 @@ impl std::fmt::Display for MkinitcpioConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ensure_module_adds_btrfs_and_preserves_existing_modules() {
+        let mut config =
+            MkinitcpioConfig::parse("MODULES=(amdgpu)\nHOOKS=(base udev block filesystems)")
+                .unwrap();
+
+        config.ensure_module("btrfs");
+
+        assert!(config.to_string().contains("MODULES=(amdgpu btrfs)"));
+    }
 
     // ── Parse ───────────────────────────────────────────────────────────
 

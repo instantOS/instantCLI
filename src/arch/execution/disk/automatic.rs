@@ -1,4 +1,6 @@
+use super::filesystem;
 use super::util::get_part_path;
+use crate::arch::engine::InstallContext;
 use crate::arch::execution::CommandRunner;
 use anyhow::Result;
 use std::process::Command;
@@ -44,7 +46,11 @@ pub fn partition_bios(disk: &str, executor: &dyn CommandRunner, swap_size_gb: u6
     Ok(())
 }
 
-pub fn format_uefi(disk: &str, executor: &dyn CommandRunner) -> Result<()> {
+pub fn format_uefi(
+    context: &InstallContext,
+    disk: &str,
+    executor: &dyn CommandRunner,
+) -> Result<()> {
     let p1 = get_part_path(disk, 1);
     let p2 = get_part_path(disk, 2);
     let p3 = get_part_path(disk, 3);
@@ -53,44 +59,56 @@ pub fn format_uefi(disk: &str, executor: &dyn CommandRunner) -> Result<()> {
 
     executor.run(Command::new("mkfs.fat").args(["-F32", &p1]))?;
     executor.run(Command::new("mkswap").arg(&p2))?;
-    executor.run(Command::new("mkfs.ext4").args(["-F", &p3]))?;
+    filesystem::format_root(context, &p3, executor)?;
 
     Ok(())
 }
 
-pub fn format_bios(disk: &str, executor: &dyn CommandRunner) -> Result<()> {
+pub fn format_bios(
+    context: &InstallContext,
+    disk: &str,
+    executor: &dyn CommandRunner,
+) -> Result<()> {
     let p1 = get_part_path(disk, 1);
     let p2 = get_part_path(disk, 2);
 
     println!("Formatting partitions...");
 
     executor.run(Command::new("mkswap").arg(&p1))?;
-    executor.run(Command::new("mkfs.ext4").args(["-F", &p2]))?;
+    filesystem::format_root(context, &p2, executor)?;
 
     Ok(())
 }
 
-pub fn mount_uefi(disk: &str, executor: &dyn CommandRunner) -> Result<()> {
+pub fn mount_uefi(
+    context: &InstallContext,
+    disk: &str,
+    executor: &dyn CommandRunner,
+) -> Result<()> {
     let p1 = get_part_path(disk, 1);
     let p2 = get_part_path(disk, 2);
     let p3 = get_part_path(disk, 3);
 
     println!("Mounting partitions...");
 
-    executor.run(Command::new("mount").args([&p3, "/mnt"]))?;
+    filesystem::mount_root(context, &p3, true, executor)?;
     executor.run(Command::new("mount").args(["--mkdir", &p1, "/mnt/boot"]))?;
     executor.run(Command::new("swapon").arg(&p2))?;
 
     Ok(())
 }
 
-pub fn mount_bios(disk: &str, executor: &dyn CommandRunner) -> Result<()> {
+pub fn mount_bios(
+    context: &InstallContext,
+    disk: &str,
+    executor: &dyn CommandRunner,
+) -> Result<()> {
     let p1 = get_part_path(disk, 1);
     let p2 = get_part_path(disk, 2);
 
     println!("Mounting partitions...");
 
-    executor.run(Command::new("mount").args([&p2, "/mnt"]))?;
+    filesystem::mount_root(context, &p2, true, executor)?;
     executor.run(Command::new("swapon").arg(&p1))?;
 
     Ok(())
@@ -141,7 +159,12 @@ mod tests {
     #[test]
     fn test_format_uefi_commands() {
         let mock = crate::arch::execution::mock::MockRunner::new();
-        super::format_uefi("/dev/sda", &mock).unwrap();
+        let mut context = crate::arch::engine::InstallContext::new();
+        context.answers.insert(
+            crate::arch::engine::QuestionId::RootFilesystem,
+            "ext4".to_string(),
+        );
+        super::format_uefi(&context, "/dev/sda", &mock).unwrap();
 
         let log = mock.command_log();
         assert!(

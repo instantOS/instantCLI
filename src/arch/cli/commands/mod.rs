@@ -73,6 +73,7 @@ pub(super) fn build_questions() -> Vec<Box<dyn Question>> {
         PasswordQuestion, ResizeInstructionsQuestion, RunCfdiskQuestion, TimezoneQuestion,
         UsernameQuestion, VirtualBoxWarning, WeakPasswordWarning,
     };
+    use crate::arch::questions::{BtrfsCompressionQuestion, RootFilesystemQuestion};
 
     vec![
         Box::new(VirtualBoxWarning),
@@ -147,6 +148,8 @@ pub(super) fn build_questions() -> Vec<Box<dyn Question>> {
         Box::new(LocaleQuestion),
         Box::new(KernelQuestion),
         Box::new(DesktopEnvironmentQuestion),
+        Box::new(RootFilesystemQuestion),
+        Box::new(BtrfsCompressionQuestion),
         Box::new(
             BooleanQuestion::new(
                 crate::arch::engine::QuestionId::UsePlymouth,

@@ -1,6 +1,7 @@
 mod automatic;
 mod dualboot;
 mod encryption;
+mod filesystem;
 mod mount;
 mod probe;
 mod util;
@@ -42,23 +43,23 @@ pub fn prepare_disk(context: &InstallContext, executor: &dyn CommandRunner) -> R
         match (boot_mode, use_encryption) {
             (BootMode::UEFI64 | BootMode::UEFI32, false) => {
                 automatic::partition_uefi(disk_path, executor, swap_size_gb)?;
-                automatic::format_uefi(disk_path, executor)?;
-                automatic::mount_uefi(disk_path, executor)?;
+                automatic::format_uefi(context, disk_path, executor)?;
+                automatic::mount_uefi(context, disk_path, executor)?;
             }
             (BootMode::BIOS, false) => {
                 automatic::partition_bios(disk_path, executor, swap_size_gb)?;
-                automatic::format_bios(disk_path, executor)?;
-                automatic::mount_bios(disk_path, executor)?;
+                automatic::format_bios(context, disk_path, executor)?;
+                automatic::mount_bios(context, disk_path, executor)?;
             }
             (BootMode::UEFI64 | BootMode::UEFI32, true) => {
                 encryption::partition_uefi_luks(disk_path, executor)?;
                 encryption::format_luks(context, disk_path, executor, true, swap_size_gb)?;
-                encryption::mount_luks(executor, disk_path)?;
+                encryption::mount_luks(context, executor, disk_path)?;
             }
             (BootMode::BIOS, true) => {
                 encryption::partition_bios_luks(disk_path, executor)?;
                 encryption::format_luks(context, disk_path, executor, false, swap_size_gb)?;
-                encryption::mount_luks(executor, disk_path)?;
+                encryption::mount_luks(context, executor, disk_path)?;
             }
         }
     }

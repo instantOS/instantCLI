@@ -54,6 +54,16 @@ pub static CFDISK: Dependency = Dependency {
     tests: &[InstallTest::WhichSucceeds("cfdisk")],
 };
 
+/// btrfs formatting and subvolume tools used by the Arch installer.
+pub static BTRFS_PROGS: Dependency = Dependency {
+    name: "btrfs-progs",
+    packages: &[PackageDefinition::new(
+        "btrfs-progs",
+        PackageManager::Pacman,
+    )],
+    tests: &[InstallTest::WhichSucceeds("mkfs.btrfs")],
+};
+
 /// NTFS userspace utilities (mkntfs, ntfsresize, ...).
 ///
 /// Required for dual-boot NTFS partition resize detection and execution.

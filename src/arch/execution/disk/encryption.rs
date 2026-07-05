@@ -1,3 +1,4 @@
+use super::filesystem;
 use super::util::get_part_path;
 use crate::arch::engine::{InstallContext, QuestionId};
 use crate::arch::execution::CommandRunner;
@@ -96,15 +97,19 @@ pub fn format_luks(
 
     println!("Formatting Logical Volumes...");
     executor.run(Command::new("mkswap").arg("/dev/instantOS/swap"))?;
-    executor.run(Command::new("mkfs.ext4").args(["-F", "/dev/instantOS/root"]))?;
+    filesystem::format_root(context, "/dev/instantOS/root", executor)?;
 
     Ok(())
 }
 
-pub fn mount_luks(executor: &dyn CommandRunner, disk: &str) -> Result<()> {
+pub fn mount_luks(
+    context: &InstallContext,
+    executor: &dyn CommandRunner,
+    disk: &str,
+) -> Result<()> {
     println!("Mounting LVM volumes...");
 
-    executor.run(Command::new("mount").args(["/dev/instantOS/root", "/mnt"]))?;
+    filesystem::mount_root(context, "/dev/instantOS/root", true, executor)?;
 
     let p1 = get_part_path(disk, 1);
     executor.run(Command::new("mount").args(["--mkdir", &p1, "/mnt/boot"]))?;
