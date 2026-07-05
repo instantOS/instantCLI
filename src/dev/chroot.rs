@@ -44,6 +44,7 @@ pub struct ChrootOptions {
 #[derive(Debug, Clone)]
 struct ChrootCandidate {
     root_device: String,
+    root_mount_option: Option<String>,
     disk: Option<String>,
     fs_type: Option<String>,
     size_bytes: Option<u64>,
@@ -116,6 +117,10 @@ impl FzfSelectable for ChrootCandidate {
                     .unwrap_or_else(|| "unknown".to_string()),
             )
             .field("Encrypted", if self.encrypted { "yes" } else { "no" });
+
+        if let Some(option) = &self.root_mount_option {
+            preview = preview.field("Root mount option", option);
+        }
 
         if let Some(boot) = &self.boot_device {
             preview = preview.field("Boot", boot);
@@ -248,10 +253,16 @@ fn candidate_from_root(root: &str, disk: Option<&str>) -> Result<ChrootCandidate
         bail!("Root device does not exist: {root}");
     }
 
+    let fs_type = blkid_type(root).ok().flatten();
+    let mut report = ScanReport::default();
+    let root_mount_option = probe_instantos_device(root, fs_type.as_deref(), &mut report)?
+        .and_then(|result| result.mount_option);
+
     Ok(ChrootCandidate {
         root_device: root.to_string(),
+        root_mount_option,
         disk: disk.map(str::to_string),
-        fs_type: blkid_type(root).ok().flatten(),
+        fs_type,
         size_bytes: None,
         encrypted: false,
         evidence: vec!["root device provided explicitly".to_string()],
@@ -340,9 +351,12 @@ fn scan_disk_for_candidates(
             report.push(format!(
                 "Found Linux filesystem partition {root}; probing as plaintext root."
             ));
-            if let Some((root_device, evidence)) = probe_block_device(child, report)? {
+            if let Some((root_device, evidence, root_mount_option)) =
+                probe_block_device(child, report)?
+            {
                 candidates.push(ChrootCandidate {
                     root_device,
+                    root_mount_option,
                     disk: Some(disk.path()),
                     fs_type: child.fstype.clone(),
                     size_bytes: child.size,
@@ -431,9 +445,11 @@ fn scan_luks_partition(
     let mut candidates = Vec::new();
 
     for root in roots {
-        if let Some((root_device, evidence)) = probe_block_device(&root, report)? {
+        if let Some((root_device, evidence, root_mount_option)) = probe_block_device(&root, report)?
+        {
             candidates.push(ChrootCandidate {
                 root_device,
+                root_mount_option,
                 disk: Some(disk.path()),
                 fs_type: root.fstype.clone(),
                 size_bytes: root.size,
@@ -526,12 +542,12 @@ fn close_mappers(mappers: HashSet<String>) {
 fn mount_target(candidate: &ChrootCandidate, session: &mut MountSession) -> Result<()> {
     fs::create_dir_all(&session.mountpoint)
         .with_context(|| format!("Failed to create {}", session.mountpoint.display()))?;
-    run_status(
-        Command::new("mount")
-            .arg(&candidate.root_device)
-            .arg(&session.mountpoint),
-    )
-    .with_context(|| format!("Failed to mount {}", candidate.root_device))?;
+    let mut command = Command::new("mount");
+    if let Some(option) = &candidate.root_mount_option {
+        command.args(["-o", option]);
+    }
+    run_status(command.arg(&candidate.root_device).arg(&session.mountpoint))
+        .with_context(|| format!("Failed to mount {}", candidate.root_device))?;
     session.record_mount(session.mountpoint.clone());
     Ok(())
 }
@@ -576,7 +592,7 @@ fn choose_boot_mount_relative(root: &Path) -> &'static str {
 fn probe_block_device(
     device: &BlockDevice,
     report: &mut ScanReport,
-) -> Result<Option<(String, Vec<String>)>> {
+) -> Result<Option<(String, Vec<String>, Option<String>)>> {
     let paths = probe_paths_for_device(device);
     if paths.len() > 1 {
         report.push(format!(
@@ -592,15 +608,24 @@ fn probe_block_device(
             continue;
         }
 
-        if let Some(evidence) = probe_instantos_device(&path, report)? {
-            return Ok(Some((path, evidence)));
+        if let Some(result) = probe_instantos_device(&path, device.fstype.as_deref(), report)? {
+            return Ok(Some((path, result.evidence, result.mount_option)));
         }
     }
 
     Ok(None)
 }
 
-fn probe_instantos_device(device: &str, report: &mut ScanReport) -> Result<Option<Vec<String>>> {
+struct ProbeResult {
+    evidence: Vec<String>,
+    mount_option: Option<String>,
+}
+
+fn probe_instantos_device(
+    device: &str,
+    fs_type: Option<&str>,
+    report: &mut ScanReport,
+) -> Result<Option<ProbeResult>> {
     let tempdir = tempfile::Builder::new()
         .prefix("ins-dev-chroot-")
         .tempdir()
@@ -608,45 +633,61 @@ fn probe_instantos_device(device: &str, report: &mut ScanReport) -> Result<Optio
 
     report.push(format!("Probing {device}."));
 
-    if let Err(err) = run_status(
-        Command::new("mount")
-            .arg("-o")
-            .arg("ro")
+    for mount_option in root_probe_mount_options(fs_type) {
+        let mut command = Command::new("mount");
+        let options = mount_option
+            .as_deref()
+            .map(|option| format!("ro,{option}"))
+            .unwrap_or_else(|| "ro".to_string());
+        command
+            .args(["-o", &options])
             .arg(device)
-            .arg(tempdir.path()),
-    ) {
-        report.push(format!("Skipping {device}: read-only mount failed: {err}."));
-        return Ok(None);
-    }
-    report.push(format!(
-        "Mounted {device} read-only at {} for verification.",
-        tempdir.path().display()
-    ));
+            .arg(tempdir.path());
 
-    let verification = verify_instantos_root(tempdir.path())?;
-    let unmount_result = run_status(Command::new("umount").arg(tempdir.path()));
-    if let Err(err) = unmount_result {
-        report.push(format!(
-            "Warning: failed to unmount probe mount {}: {err}",
-            tempdir.path().display()
-        ));
-    } else {
-        report.push(format!("Unmounted probe mount for {device}."));
+        if let Err(err) = run_status(&mut command) {
+            report.push(format!(
+                "Read-only probe of {device} with {options} failed: {err}."
+            ));
+            continue;
+        }
+
+        let verification = verify_instantos_root(tempdir.path())?;
+        let unmount_result = run_status(Command::new("umount").arg(tempdir.path()));
+        if let Err(err) = unmount_result {
+            bail!(
+                "Failed to unmount probe mount {}: {err}",
+                tempdir.path().display()
+            );
+        }
+
+        if verification.is_instantos {
+            report.push(format!(
+                "{device} verified as instantOS with {options}: {}.",
+                verification.evidence.join("; ")
+            ));
+            return Ok(Some(ProbeResult {
+                evidence: verification.evidence,
+                mount_option,
+            }));
+        }
     }
 
-    if verification.is_instantos {
-        report.push(format!(
-            "{device} verified as instantOS: {}.",
-            verification.evidence.join("; ")
-        ));
-        Ok(Some(verification.evidence))
-    } else {
-        report.push(format!(
-            "{device} did not verify as instantOS: {}.",
-            verification.evidence.join("; ")
-        ));
-        Ok(None)
+    report.push(format!("{device} did not verify as instantOS."));
+    Ok(None)
+}
+
+fn root_probe_mount_options(fs_type: Option<&str>) -> Vec<Option<String>> {
+    let mut options = Vec::new();
+    if fs_type.is_some_and(|fs| fs.eq_ignore_ascii_case("btrfs")) {
+        options.push(Some(format!(
+            "subvol={}",
+            crate::arch::config::BTRFS_ROOT_SUBVOLUME
+        )));
     }
+    // Retain support for btrfs installations that use the default subvolume,
+    // as well as all non-btrfs filesystems.
+    options.push(None);
+    options
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1048,5 +1089,14 @@ mod tests {
         .unwrap();
 
         assert_eq!(choose_boot_mount_relative(temp.path()), "boot/efi");
+    }
+
+    #[test]
+    fn probes_installer_btrfs_root_before_default_subvolume() {
+        assert_eq!(
+            root_probe_mount_options(Some("btrfs")),
+            vec![Some("subvol=@".to_string()), None]
+        );
+        assert_eq!(root_probe_mount_options(Some("ext4")), vec![None]);
     }
 }

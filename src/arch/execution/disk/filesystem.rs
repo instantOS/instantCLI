@@ -1,4 +1,6 @@
-use crate::arch::config::{BtrfsCompression, RootFilesystem};
+use crate::arch::config::{
+    BTRFS_HOME_SUBVOLUME, BTRFS_ROOT_SUBVOLUME, BtrfsCompression, RootFilesystem,
+};
 use crate::arch::engine::InstallContext;
 use crate::arch::execution::CommandRunner;
 use anyhow::Result;
@@ -36,9 +38,11 @@ pub fn mount_root(
     // back user data.
     executor.run(Command::new("mount").args([device, "/mnt"]))?;
     let create_result = (|| -> Result<()> {
-        executor.run(Command::new("btrfs").args(["subvolume", "create", "/mnt/@"]))?;
+        let root_path = format!("/mnt/{BTRFS_ROOT_SUBVOLUME}");
+        executor.run(Command::new("btrfs").args(["subvolume", "create", &root_path]))?;
         if create_home_subvolume {
-            executor.run(Command::new("btrfs").args(["subvolume", "create", "/mnt/@home"]))?;
+            let home_path = format!("/mnt/{BTRFS_HOME_SUBVOLUME}");
+            executor.run(Command::new("btrfs").args(["subvolume", "create", &home_path]))?;
         }
         Ok(())
     })();
@@ -61,11 +65,13 @@ pub fn mount_root(
         options.join(",")
     };
 
-    let options = mount_options("subvol=@");
+    let root_subvolume = format!("subvol={BTRFS_ROOT_SUBVOLUME}");
+    let options = mount_options(&root_subvolume);
     executor.run(Command::new("mount").args(["-o", &options, device, "/mnt"]))?;
 
     if create_home_subvolume {
-        let home_options = mount_options("subvol=@home");
+        let home_subvolume = format!("subvol={BTRFS_HOME_SUBVOLUME}");
+        let home_options = mount_options(&home_subvolume);
         executor.run(Command::new("mount").args([
             "--mkdir",
             "-o",

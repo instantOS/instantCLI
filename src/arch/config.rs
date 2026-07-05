@@ -1,5 +1,9 @@
 use crate::arch::engine::{InstallContext, QuestionId};
 
+/// Subvolume layout created for btrfs installations.
+pub const BTRFS_ROOT_SUBVOLUME: &str = "@";
+pub const BTRFS_HOME_SUBVOLUME: &str = "@home";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DesktopEnvironment {
     Sway,
