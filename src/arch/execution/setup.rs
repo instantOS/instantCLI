@@ -239,6 +239,12 @@ fn enable_services(executor: &dyn CommandRunner, context: &InstallContext) -> Re
         executor.run(&mut cmd)?;
     }
 
+    // Enable the user-level SSH agent socket (socket-activated via ~/.config/systemd/user/)
+    println!("Enabling user-level ssh-agent.socket...");
+    let mut cmd = Command::new("systemctl");
+    cmd.arg("--global").arg("enable").arg("ssh-agent.socket");
+    executor.run(&mut cmd)?;
+
     Ok(())
 }
 

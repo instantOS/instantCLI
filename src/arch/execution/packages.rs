@@ -86,6 +86,7 @@ fn collect_extended_packages(context: &InstallContext) -> Result<Vec<String>> {
         }
 
         packages.extend(strings(desktop.package_names()));
+        packages.extend(strings(desktop.font_packages()));
     }
 
     // GPU packages (after multilib is enabled)

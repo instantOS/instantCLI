@@ -74,6 +74,19 @@ impl DesktopEnvironment {
         }
     }
 
+    /// Font packages required by this desktop environment's configuration.
+    ///
+    /// These ensure that fonts referenced in the DE's config templates
+    /// (bars, window titles, terminal emulators, etc.) are available.
+    pub fn font_packages(&self) -> &'static [&'static str] {
+        match self {
+            Self::Tty => &[],
+            Self::Sway | Self::Niri | Self::InstantWM | Self::Hyprland => {
+                &["ttf-jetbrains-mono-nerd", "inter-font"]
+            }
+        }
+    }
+
     pub fn requires_display_manager(&self) -> bool {
         !matches!(self, Self::Tty)
     }
