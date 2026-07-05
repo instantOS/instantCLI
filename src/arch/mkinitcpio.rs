@@ -42,10 +42,7 @@ impl MkinitcpioConfig {
                         && end > start
                     {
                         let modules_str = &line[start + 1..end];
-                        modules = modules_str
-                            .split_whitespace()
-                            .map(String::from)
-                            .collect();
+                        modules = modules_str.split_whitespace().map(String::from).collect();
                         if line.chars().nth(start).unwrap() != '(' {
                             modules_quote_char = Some(line.chars().nth(start).unwrap());
                         }

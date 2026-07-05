@@ -42,15 +42,19 @@ pub fn mount_root(
     executor.run(Command::new("umount").arg("/mnt"))?;
 
     let compression = BtrfsCompression::from_context(context);
-    let mut options = vec!["subvol=@", "noatime"];
-    if let Some(option) = compression.mount_option() {
-        options.push(option);
-    }
-    let options = options.join(",");
+    let mount_options = |subvolume| {
+        let mut options = vec![subvolume, "noatime"];
+        if let Some(option) = compression.mount_option() {
+            options.push(option);
+        }
+        options.join(",")
+    };
+
+    let options = mount_options("subvol=@");
     executor.run(Command::new("mount").args(["-o", &options, device, "/mnt"]))?;
 
     if create_home_subvolume {
-        let home_options = options.replace("subvol=@", "subvol=@home");
+        let home_options = mount_options("subvol=@home");
         executor.run(Command::new("mount").args([
             "--mkdir",
             "-o",
