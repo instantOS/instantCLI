@@ -46,6 +46,53 @@ pub fn build_instant_package_plan(context: &InstallContext) -> Vec<String> {
     strings(&["instantdepend", "instantos", "instantextra"])
 }
 
+fn collect_language_packages(context: &InstallContext) -> Vec<String> {
+    let mut packages = Vec::new();
+
+    if let Some(locale) = context.get_answer(&QuestionId::Locale) {
+        let locale_lower = locale.to_lowercase();
+        // Extract language and region/country
+        // e.g. "de_DE.UTF-8" -> "de_de"
+        let lang_and_country = locale_lower.split('.').next().unwrap_or(&locale_lower);
+        // e.g. "de_de" -> "de"
+        let lang_code = lang_and_country.split('_').next().unwrap_or(lang_and_country);
+
+        // Mappings from language/locale to packages.
+        // Developers can cleanly add/edit packages per language here.
+        let lang_pkgs: &[&str] = match lang_code {
+            "de" => &["firefox-i18n-de", "hunspell-de", "man-pages-de"],
+            "fr" => &["firefox-i18n-fr", "hunspell-fr-comprehensive", "man-pages-fr"],
+            "es" => match lang_and_country {
+                "es_ar" => &["firefox-i18n-es-ar", "hunspell-es_ar", "man-pages-es"] as &[&str],
+                "es_cl" => &["firefox-i18n-es-cl", "hunspell-es_cl", "man-pages-es"] as &[&str],
+                "es_mx" => &["firefox-i18n-es-mx", "hunspell-es_mx", "man-pages-es"] as &[&str],
+                _ => &["firefox-i18n-es-es", "hunspell-es_es", "man-pages-es"] as &[&str],
+            },
+            "it" => &["firefox-i18n-it", "hunspell-it", "man-pages-it"],
+            "ru" => &["firefox-i18n-ru", "hunspell-ru", "man-pages-ru"],
+            "ja" => &["firefox-i18n-ja"],
+            "zh" => match lang_and_country {
+                "zh_tw" => &["firefox-i18n-zh-tw", "man-pages-zh_tw"] as &[&str],
+                _ => &["firefox-i18n-zh-cn", "man-pages-zh_cn"] as &[&str],
+            },
+            "pt" => match lang_and_country {
+                "pt_pt" => &["firefox-i18n-pt-pt"] as &[&str],
+                _ => &["firefox-i18n-pt-br", "man-pages-pt_br"] as &[&str],
+            },
+            "en" => match lang_and_country {
+                "en_gb" => &["firefox-i18n-en-gb", "hunspell-en_gb"] as &[&str],
+                "en_za" => &["firefox-i18n-en-gb", "hunspell-en_gb"] as &[&str],
+                _ => &[] as &[&str],
+            },
+            _ => &[],
+        };
+
+        packages.extend(lang_pkgs.iter().map(|s| (*s).to_string()));
+    }
+
+    packages
+}
+
 fn collect_extended_packages(context: &InstallContext) -> Result<Vec<String>> {
     let minimal_mode = context.get_answer_bool(QuestionId::MinimalMode);
 
@@ -135,6 +182,14 @@ fn collect_extended_packages(context: &InstallContext) -> Result<Vec<String>> {
         packages.push("plymouth".to_owned());
     }
 
+    // Append language-specific packages (only if GUI is installed and not in minimal mode)
+    if !minimal_mode {
+        let desktop = crate::arch::config::DesktopEnvironment::from_context(context);
+        if desktop.requires_display_manager() {
+            packages.extend(collect_language_packages(context));
+        }
+    }
+
     Ok(packages)
 }
 
@@ -200,5 +255,18 @@ mod tests {
         assert!(packages.iter().any(|pkg| pkg == "hyprland"));
         assert!(packages.iter().any(|pkg| pkg == "lightdm"));
         assert!(!packages.iter().any(|pkg| pkg == "gdm"));
+    }
+
+    #[test]
+    fn selecting_german_locale_adds_german_firefox_i18n_package() {
+        let mut context = base_context();
+        context.set_answer(QuestionId::Locale, "de_DE.UTF-8".to_string());
+        context.set_answer(
+            QuestionId::DesktopEnvironment,
+            DesktopEnvironment::Sway.answer_value().to_string(),
+        );
+
+        let packages = build_standard_package_plan(&context).unwrap();
+        assert!(packages.iter().any(|pkg| pkg == "firefox-i18n-de"));
     }
 }
