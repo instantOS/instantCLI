@@ -55,13 +55,20 @@ fn collect_language_packages(context: &InstallContext) -> Vec<String> {
         // e.g. "de_DE.UTF-8" -> "de_de"
         let lang_and_country = locale_lower.split('.').next().unwrap_or(&locale_lower);
         // e.g. "de_de" -> "de"
-        let lang_code = lang_and_country.split('_').next().unwrap_or(lang_and_country);
+        let lang_code = lang_and_country
+            .split('_')
+            .next()
+            .unwrap_or(lang_and_country);
 
         // Mappings from language/locale to packages.
         // Developers can cleanly add/edit packages per language here.
         let lang_pkgs: &[&str] = match lang_code {
             "de" => &["firefox-i18n-de", "hunspell-de", "man-pages-de"],
-            "fr" => &["firefox-i18n-fr", "hunspell-fr-comprehensive", "man-pages-fr"],
+            "fr" => &[
+                "firefox-i18n-fr",
+                "hunspell-fr-comprehensive",
+                "man-pages-fr",
+            ],
             "es" => match lang_and_country {
                 "es_ar" => &["firefox-i18n-es-ar", "hunspell-es_ar", "man-pages-es"] as &[&str],
                 "es_cl" => &["firefox-i18n-es-cl", "hunspell-es_cl", "man-pages-es"] as &[&str],

@@ -454,7 +454,7 @@ fn configure_users(context: &InstallContext, executor: &dyn CommandRunner) -> Re
 
     // Create standard XDG user directories (Desktop, Documents, etc.)
     let mut cmd_xdg = Command::new("su");
-    cmd_xdg.arg("-c").arg("xdg-user-dirs-update").arg(&username);
+    cmd_xdg.arg("-c").arg("xdg-user-dirs-update").arg(username);
     executor.run(&mut cmd_xdg)?;
 
     Ok(())
