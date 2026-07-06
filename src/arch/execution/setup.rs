@@ -747,4 +747,31 @@ Session=sway
         let result = update_accountsservice_session(input, "sway");
         assert_eq!(result.trim(), expected.trim());
     }
+
+    #[test]
+    fn test_update_gdm_conf_autologin_real_default() {
+        let input = r#"# GDM configuration storage
+
+[daemon]
+
+[security]
+
+[debug]
+# Uncomment the line below to turn on debugging
+#Enable=true
+"#;
+        let expected = r#"# GDM configuration storage
+
+[daemon]
+
+AutomaticLoginEnable=true
+AutomaticLogin=testuser
+[security]
+
+[debug]
+# Uncomment the line below to turn on debugging
+#Enable=true"#;
+        let result = update_gdm_conf_autologin(input, "testuser");
+        assert_eq!(result.trim(), expected.trim());
+    }
 }
