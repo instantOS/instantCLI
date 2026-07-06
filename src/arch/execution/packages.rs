@@ -190,7 +190,9 @@ mod tests {
         );
         context.set_answer(
             QuestionId::DisplayManager,
-            crate::arch::config::DisplayManager::Lightdm.answer_value().to_string(),
+            crate::arch::config::DisplayManager::Lightdm
+                .answer_value()
+                .to_string(),
         );
 
         let packages = build_standard_package_plan(&context).unwrap();
