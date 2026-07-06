@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.4](https://github.com/instantOS/instantCLI/compare/v0.14.3...v0.14.4) - 2026-07-06
+
+### Added
+
+- ins arch btrfs support
+
+### Fixed
+
+- fix sway idle and lock
+- fix weird nerd font icons
+- prevent dev drift
+
+### Other
+
+- accellprofile for ins settings sway
+- fmt
+- add language specific arch deps
+- fmt
+- Merge branch 'dev' of github.com:instantOS/instantCLI into dev
+- add gdm test
+- add gdm choice
+- better btrfs cleanup
+- better replace
+- more robust mkinitcpio parsing
+- support scroll wheel for slider
+
 ## [0.14.3](https://github.com/instantOS/instantCLI/compare/v0.14.2...v0.14.3) - 2026-06-29
 
 ### Fixed
