@@ -177,8 +177,12 @@ pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary 
 
     let dm_label = if minimal_mode {
         "Skipped (minimal mode)".to_string()
-    } else if crate::arch::config::DesktopEnvironment::from_context(context).requires_display_manager() {
-        crate::arch::config::DisplayManager::from_context(context).label().to_string()
+    } else if crate::arch::config::DesktopEnvironment::from_context(context)
+        .requires_display_manager()
+    {
+        crate::arch::config::DisplayManager::from_context(context)
+            .label()
+            .to_string()
     } else {
         "Not required".to_string()
     };

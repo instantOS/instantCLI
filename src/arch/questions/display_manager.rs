@@ -14,7 +14,9 @@ impl DisplayManagerOption {
         match self.0 {
             DisplayManager::Gdm => PreviewBuilder::new()
                 .header(NerdFont::Desktop, "gdm (recommended)")
-                .subtext("The GNOME Display Manager. Highly reliable and supports Wayland natively.")
+                .subtext(
+                    "The GNOME Display Manager. Highly reliable and supports Wayland natively.",
+                )
                 .blank()
                 .line(colors::TEAL, None, "Best for")
                 .bullets([
@@ -67,8 +69,7 @@ impl Question for DisplayManagerQuestion {
     }
 
     fn should_ask(&self, context: &InstallContext) -> bool {
-        crate::arch::config::DesktopEnvironment::from_context(context)
-            .requires_display_manager()
+        crate::arch::config::DesktopEnvironment::from_context(context).requires_display_manager()
     }
 
     fn get_default(&self, _context: &InstallContext) -> Option<String> {

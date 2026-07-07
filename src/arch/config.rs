@@ -245,7 +245,10 @@ mod tests {
     #[test]
     fn display_manager_defaults_to_gdm() {
         assert_eq!(DisplayManager::from_answer("gdm"), DisplayManager::Gdm);
-        assert_eq!(DisplayManager::from_answer("lightdm"), DisplayManager::Lightdm);
+        assert_eq!(
+            DisplayManager::from_answer("lightdm"),
+            DisplayManager::Lightdm
+        );
         assert_eq!(DisplayManager::from_answer("unknown"), DisplayManager::Gdm);
         assert_eq!(DisplayManager::DEFAULT, DisplayManager::Gdm);
     }

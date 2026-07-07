@@ -500,10 +500,7 @@ fn setup_backlight_udev_rule(executor: &dyn CommandRunner) -> Result<()> {
     Ok(())
 }
 
-fn configure_gdm_session(
-    context: &InstallContext,
-    executor: &dyn CommandRunner,
-) -> Result<()> {
+fn configure_gdm_session(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
     let desktop = crate::arch::config::DesktopEnvironment::from_context(context);
     let Some(session_name) = desktop.session_name() else {
         return Ok(());
@@ -512,7 +509,10 @@ fn configure_gdm_session(
         .get_answer(&QuestionId::Username)
         .context("Username not set for GDM session configuration")?;
 
-    println!("Configuring GDM default session for {} to {}...", username, session_name);
+    println!(
+        "Configuring GDM default session for {} to {}...",
+        username, session_name
+    );
 
     if executor.dry_run() {
         println!(
@@ -540,10 +540,7 @@ fn configure_gdm_session(
     Ok(())
 }
 
-fn configure_gdm_autologin(
-    context: &InstallContext,
-    executor: &dyn CommandRunner,
-) -> Result<()> {
+fn configure_gdm_autologin(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
     println!("Configuring GDM autologin...");
 
     let username = context
