@@ -4,6 +4,7 @@ use clap::Subcommand;
 pub mod browser;
 pub mod menu;
 pub mod operations;
+pub mod totp;
 pub mod types;
 pub mod utils;
 
@@ -124,7 +125,6 @@ pub fn handle_pass_command(
         }
         Some(PassCommands::Otp { name }) => {
             ensure_core_dependencies()?;
-            ensure_otp_dependency()?;
             copy_otp_flow(name)?;
             Ok(0)
         }

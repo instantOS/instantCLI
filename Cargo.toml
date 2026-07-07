@@ -64,6 +64,8 @@ shell-words = "1.1.1"
 ignore = "0.4.25"
 hex = "0.4.3"
 age = { version = "0.11", features = ["ssh", "armor"] }
+sha1 = "0.10"
+hmac = "0.12"
 
 [dev-dependencies]
 serial_test = "3"
