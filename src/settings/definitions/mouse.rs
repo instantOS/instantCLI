@@ -184,7 +184,7 @@ impl Setting for AccelProfile {
             .id("mouse.accel_profile")
             .title("Acceleration Profile")
             .icon(NerdFont::Mouse)
-            .summary("Choose how pointer acceleration behaves.\n\n\"Flat\" provides constant cursor speed regardless of movement speed.\n\"Adaptive\" applies dynamic acceleration - faster movements result in greater cursor travel.\n\nSupports niri and InstantWM.")
+            .summary("Choose how pointer acceleration behaves.\n\n\"Flat\" provides constant cursor speed regardless of movement speed.\n\"Adaptive\" applies dynamic acceleration - faster movements result in greater cursor travel.\n\nSupports Sway, niri, and InstantWM.")
             .requires_reapply(true)
             .build()
     }
@@ -228,7 +228,10 @@ impl Setting for AccelProfile {
 
     fn restore(&self, ctx: &mut SettingsContext) -> Option<Result<()>> {
         let compositor = CompositorType::detect();
-        if !matches!(compositor, CompositorType::InstantWM | CompositorType::Niri) {
+        if !matches!(
+            compositor,
+            CompositorType::Sway | CompositorType::InstantWM | CompositorType::Niri
+        ) {
             return None;
         }
 
@@ -747,7 +750,10 @@ fn apply_tap_to_click(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
 fn apply_accel_profile(ctx: &mut SettingsContext, profile: &str) -> Result<()> {
     let compositor = CompositorType::detect();
 
-    if !matches!(compositor, CompositorType::InstantWM | CompositorType::Niri) {
+    if !matches!(
+        compositor,
+        CompositorType::Sway | CompositorType::InstantWM | CompositorType::Niri
+    ) {
         ctx.emit_unsupported(
             "settings.mouse.accel_profile.unsupported",
             &format!(
@@ -759,6 +765,23 @@ fn apply_accel_profile(ctx: &mut SettingsContext, profile: &str) -> Result<()> {
     }
 
     match compositor {
+        CompositorType::Sway => {
+            let pointer_cmd = format!("input type:pointer accel_profile {}", profile);
+            let touchpad_cmd = format!("input type:touchpad accel_profile {}", profile);
+
+            let pointer_result = sway::swaymsg(&pointer_cmd);
+            let touchpad_result = sway::swaymsg(&touchpad_cmd);
+
+            if let (Err(e1), Err(e2)) = (&pointer_result, &touchpad_result) {
+                ctx.emit_info(
+                    "settings.mouse.accel_profile.sway_failed",
+                    &format!(
+                        "Failed to apply acceleration profile in Sway: pointer: {e1}, touchpad: {e2}"
+                    ),
+                );
+                return Ok(());
+            }
+        }
         CompositorType::InstantWM => {
             let result = instantwmctl::run(["mouse", "accel-profile", profile]);
 

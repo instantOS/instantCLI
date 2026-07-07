@@ -66,10 +66,10 @@ impl DesktopEnvironment {
 
     pub fn package_names(&self) -> &'static [&'static str] {
         match self {
-            Self::Sway => &["sway"],
+            Self::Sway => &["sway", "swayidle", "swaylock"],
             Self::Niri => &["niri"],
             Self::InstantWM => &[],
-            Self::Hyprland => &["hyprland"],
+            Self::Hyprland => &["hyprland", "hypridle", "hyprlock"],
             Self::Tty => &[],
         }
     }

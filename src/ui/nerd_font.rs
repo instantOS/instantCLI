@@ -303,7 +303,7 @@ impl NerdFont {
             Self::Cross => '✗',       // fa-times
             Self::CrossCircle => '', // fa-times-circle
             Self::Warning => '',     // fa-exclamation-triangle
-            Self::Info => 'ℹ',        // fa-info-circle
+            Self::Info => '\u{f05a}', // fa-info-circle
             Self::Question => '',    // fa-question-circle
 
             // Files and folders
@@ -319,11 +319,11 @@ impl NerdFont {
             // System and hardware
             Self::Desktop => '',           // fa-desktop
             Self::Terminal => '',          // fa-terminal
-            Self::Gear => '⚙',              // fa-gear
+            Self::Gear => '\u{f013}',       // fa-gear
             Self::Wrench => '',            // fa-wrench
             Self::Bug => '',               // fa-bug
             Self::Key => '',               // fa-key
-            Self::Keyboard => '⌨',          // U+2328 KEYBOARD
+            Self::Keyboard => '\u{f11c}',   // U+2328 KEYBOARD / fa-keyboard-o
             Self::Lock => '',              // fa-lock
             Self::ClosedLockWithKey => '', // fa-lock-with-key
             Self::Unlock => '',            // fa-unlock
@@ -332,14 +332,14 @@ impl NerdFont {
             Self::Continue => '',          // fa-play
 
             // Media and audio
-            Self::VolumeUp => '󰝝',    // fa-volume-up
-            Self::VolumeDown => '󰝞',  // fa-volume-down
-            Self::VolumeMute => '',  // fa-volume-mute
-            Self::Play => '▶',        // fa-play
-            Self::PlayCircle => '',  // fa-play-circle
-            Self::Pause => '⏸',       // fa-pause
-            Self::PauseCircle => '', // fa-pause-circle
-            Self::Stop => '⏹',        // fa-stop
+            Self::VolumeUp => '󰝝',     // fa-volume-up
+            Self::VolumeDown => '󰝞',   // fa-volume-down
+            Self::VolumeMute => '',   // fa-volume-mute
+            Self::Play => '\u{f04b}',  // fa-play
+            Self::PlayCircle => '',   // fa-play-circle
+            Self::Pause => '\u{f04c}', // fa-pause
+            Self::PauseCircle => '',  // fa-pause-circle
+            Self::Stop => '\u{f04d}',  // fa-stop
 
             // Communication and network
             Self::Bluetooth => '',    // fa-bluetooth
@@ -359,7 +359,7 @@ impl NerdFont {
             Self::Plus => '+',          // fa-plus
             Self::Minus => '-',         // fa-minus
             Self::Edit => '',          // fa-edit
-            Self::Trash => '🗑',         // fa-trash
+            Self::Trash => '\u{f1f8}',  // fa-trash
             Self::Search => '',        // fa-search
             Self::Filter => '',        // fa-filter
             Self::QrCode => '\u{f029}', // fa-qrcode
@@ -409,16 +409,16 @@ impl NerdFont {
             Self::Moon => '',      // fa-moon
 
             // Additional icons for better semantics
-            Self::Users2 => '',    // fa-users (alternative)
-            Self::Shield => '🛡',    // fa-shield
-            Self::HardDrive => '󰋊', // fa-hdd
-            Self::Server => '🖥',    // fa-server
-            Self::Cpu => '',       // fa-microchip
-            Self::Memory => '󰍛',    // fa-memory
-            Self::Upgrade => '⬆',   // fa-arrow-circle-up
-            Self::About => 'ℹ',     // fa-info-circle
-            Self::Partition => '', // fa-partition
-            Self::Printer => '',   // fa-print
+            Self::Users2 => '',         // fa-users (alternative)
+            Self::Shield => '\u{f132}',  // fa-shield
+            Self::HardDrive => '󰋊',      // fa-hdd
+            Self::Server => '\u{f233}',  // fa-server
+            Self::Cpu => '',            // fa-microchip
+            Self::Memory => '󰍛',         // fa-memory
+            Self::Upgrade => '\u{f0aa}', // fa-arrow-circle-up
+            Self::About => '\u{f05a}',   // fa-info-circle
+            Self::Partition => '',      // fa-partition
+            Self::Printer => '',        // fa-print
 
             // Toggle-specific semantic icons
             Self::Palette => '󰏘',   // fa-palette
@@ -426,7 +426,7 @@ impl NerdFont {
             Self::Clipboard => '', // fa-clipboard
 
             // File type icons
-            Self::Image => '🖼',            // fa-image
+            Self::Image => '\u{f03e}',     // fa-image
             Self::Video => '',            // fa-video
             Self::Music => '',            // fa-music
             Self::FilePdf => '',          // fa-file-pdf
