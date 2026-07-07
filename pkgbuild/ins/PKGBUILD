@@ -8,6 +8,7 @@ url="https://instantos.io"
 license=('GPL-2.0-only')
 depends=('glibc' 'gcc-libs' 'fzf' 'git' 'sqlite')
 makedepends=('rust')
+checkdepends=('ntfs-3g' 'ntfsprogs')
 optdepends=(
     'restic: for backup functionality'
     'kitty: default terminal for scratchpad'
