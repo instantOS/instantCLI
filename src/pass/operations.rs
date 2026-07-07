@@ -129,14 +129,9 @@ pub(super) fn copy_password_entry(entry: &PassEntry) -> Result<()> {
 
 pub(super) fn copy_otp_entry(entry: &PassEntry) -> Result<()> {
     ensure_clipboard_dependencies()?;
-    ensure_otp_dependency()?;
 
     let otp_key = resolve_otp_key(entry)?;
-    let output = run_pass_stdout(otp_command_args(&otp_key))?;
-    let code = String::from_utf8(output)
-        .context("OTP output is not valid UTF-8")?
-        .trim()
-        .to_string();
+    let code = generate_otp_code(entry, &otp_key)?;
 
     if code.is_empty() {
         bail!("OTP output for '{}' was empty", entry.display_name);
@@ -148,6 +143,33 @@ pub(super) fn copy_otp_entry(entry: &PassEntry) -> Result<()> {
         &format!("Copied OTP code for {}", entry.display_name),
     );
     Ok(())
+}
+
+/// Generate an OTP code for the entry.
+///
+/// Steam Guard and other non-standard tokens (5-digit, custom encoder) are
+/// generated locally because `oathtool`/`pass otp` cannot handle them. Standard
+/// 6/7/8-digit tokens are delegated to `pass otp` to preserve existing
+/// behaviour. If the stored URI cannot be parsed, we fall back to `pass otp`.
+fn generate_otp_code(entry: &PassEntry, otp_key: &str) -> Result<String> {
+    let raw = run_pass_stdout(["show", otp_key])?;
+    let uri = first_secret_line(&raw);
+
+    if let Some(uri) = uri.as_deref()
+        && let Ok(auth) = super::totp::OtpAuth::parse(uri)
+        && !auth.oathtool_supported()
+    {
+        return auth
+            .generate()
+            .with_context(|| format!("Failed to generate OTP code for '{}'", entry.display_name));
+    }
+
+    ensure_otp_dependency()?;
+    let output = run_pass_stdout(otp_command_args(otp_key))?;
+    Ok(String::from_utf8(output)
+        .context("OTP output is not valid UTF-8")?
+        .trim()
+        .to_string())
 }
 
 pub(super) fn otp_command_args(key: &str) -> [&str; 2] {
