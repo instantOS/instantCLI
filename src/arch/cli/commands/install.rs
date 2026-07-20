@@ -4,10 +4,16 @@ use colored::Colorize;
 use crate::arch::cli::{ArchCommands, DEFAULT_QUESTIONS_FILE};
 
 use super::ask::{AskOutcome, handle_ask_command};
+use super::super::utils::ensure_root;
 use super::{build_questions, handle_arch_command};
 
 /// Handle the Install command - orchestrates the full installation process
 pub(super) async fn handle_install_command(debug: bool) -> Result<()> {
+    // Installation state and answers live below /etc, so escalate before
+    // touching either. The nested ask/exec commands then see an already-root
+    // process and do not need to relaunch halfway through the workflow.
+    ensure_root()?;
+
     // Check architecture
     let system_info = crate::arch::engine::SystemInfo::detect();
 

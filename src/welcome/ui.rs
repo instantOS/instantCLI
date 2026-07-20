@@ -404,7 +404,7 @@ fn install_instantos(debug: bool) -> Result<()> {
 
     crate::common::terminal::TerminalLauncher::new("ins")
         .arg("arch")
-        .arg("ask")
+        .arg("install")
         .class("ins-install")
         .title("instantOS Installation")
         .launch()
