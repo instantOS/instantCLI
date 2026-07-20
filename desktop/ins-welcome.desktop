@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Welcome to instantOS
+Comment=Getting started with instantOS
+Exec=ins welcome --gui
+Icon=welcome-screen
+Terminal=false
+Categories=System;
+Keywords=welcome;getting started;instantos;
