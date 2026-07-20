@@ -7,7 +7,7 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
-for command in curl pacman pacman-key; do
+for command in curl mktemp pacman pacman-key; do
     if ! command -v "$command" >/dev/null 2>&1; then
         echo "Required command not found: $command" >&2
         exit 1
@@ -29,5 +29,7 @@ echo "Installing the latest instantCLI release..."
 curl -fsSL https://raw.githubusercontent.com/instantOS/instantCLI/main/scripts/install.sh \
     -o "$installer_script"
 INSTALL_DIR=/usr/local/bin sh "$installer_script"
+cleanup
+trap - EXIT HUP INT TERM
 
 exec /usr/local/bin/ins arch install
