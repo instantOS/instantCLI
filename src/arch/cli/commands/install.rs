@@ -3,8 +3,8 @@ use colored::Colorize;
 
 use crate::arch::cli::{ArchCommands, DEFAULT_QUESTIONS_FILE};
 
-use super::ask::{AskOutcome, handle_ask_command};
 use super::super::utils::ensure_root;
+use super::ask::{AskOutcome, handle_ask_command};
 use super::{build_questions, handle_arch_command};
 
 /// Handle the Install command - orchestrates the full installation process
