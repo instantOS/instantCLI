@@ -112,7 +112,34 @@ impl Package {
     }
 }
 
-pub async fn handle_install(debug: bool) -> Result<()> {
+/// Resolve a package by name using a case-insensitive exact match.
+///
+/// - Exactly one match → returns it.
+/// - No match → error with a hint to use the interactive picker.
+/// - Multiple matches (e.g. names differing only in case) → error listing the
+///   ambiguous candidates so the user can disambiguate.
+fn resolve_package_by_name<'a>(packages: &'a [Package], name: &str) -> Result<&'a Package> {
+    let matches: Vec<&Package> = packages
+        .iter()
+        .filter(|p| p.name.eq_ignore_ascii_case(name))
+        .collect();
+
+    match matches.len() {
+        0 => Err(anyhow::anyhow!(
+            "Package '{name}' not found. Run `ins dev install` without arguments to pick interactively."
+        )),
+        1 => Ok(matches[0]),
+        _ => {
+            let names: Vec<&str> = matches.iter().map(|p| p.name.as_str()).collect();
+            Err(anyhow::anyhow!(
+                "Multiple packages match '{name}': {}. Please specify the exact name.",
+                names.join(", ")
+            ))
+        }
+    }
+}
+
+pub async fn handle_install(debug: bool, package: Option<String>) -> Result<()> {
     if debug {
         let start_message = format!(
             "{} Starting package installation...",
@@ -175,8 +202,14 @@ pub async fn handle_install(debug: bool) -> Result<()> {
         }
     }
 
-    // Select package
-    let selected_package = select_package(packages).context("Failed to select package")?;
+    // Select package: use the provided name directly, or fall back to the
+    // interactive picker when no name was given.
+    let selected_package = match &package {
+        Some(name) => resolve_package_by_name(&packages, name)
+            .cloned()
+            .with_context(|| format!("Failed to resolve package '{name}'"))?,
+        None => select_package(packages).context("Failed to select package")?,
+    };
 
     if debug {
         let selected_message = format!(
@@ -196,4 +229,49 @@ pub async fn handle_install(debug: bool) -> Result<()> {
     selected_package.build_and_install(debug)?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn pkg(name: &str) -> Package {
+        Package {
+            name: name.to_string(),
+            path: PathBuf::from(format!("/tmp/{name}")),
+            description: None,
+        }
+    }
+
+    #[test]
+    fn resolves_single_exact_match() {
+        let packages = vec![pkg("foo"), pkg("bar")];
+        let resolved = resolve_package_by_name(&packages, "foo").unwrap();
+        assert_eq!(resolved.name, "foo");
+    }
+
+    #[test]
+    fn resolves_case_insensitive_match() {
+        let packages = vec![pkg("FooBar")];
+        let resolved = resolve_package_by_name(&packages, "foobar").unwrap();
+        assert_eq!(resolved.name, "FooBar");
+    }
+
+    #[test]
+    fn errors_when_no_match() {
+        let packages = vec![pkg("foo"), pkg("bar")];
+        let err = resolve_package_by_name(&packages, "baz").unwrap_err();
+        assert!(err.to_string().contains("not found"), "got: {err}");
+    }
+
+    #[test]
+    fn errors_when_ambiguous() {
+        let packages = vec![pkg("foo"), pkg("FOO")];
+        let err = resolve_package_by_name(&packages, "foo").unwrap_err();
+        assert!(
+            err.to_string().contains("Multiple packages match"),
+            "got: {err}"
+        );
+    }
 }

@@ -27,7 +27,7 @@ pub async fn dev_menu(debug: bool) -> Result<()> {
                 },
                 debug,
             )?,
-            DevMenuEntry::Install => super::handle_install(debug).await?,
+            DevMenuEntry::Install => super::handle_install(debug, None).await?,
             DevMenuEntry::Setup => super::setup::handle_setup(debug).await?,
             DevMenuEntry::CloseMenu => return Ok(()),
         }
