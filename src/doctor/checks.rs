@@ -30,7 +30,7 @@ pub use completions::{ShellCompletionCheck, ZshHealthCheck};
 pub use display::{SwayDisplayCheck, SwaySetupCheck};
 pub use locale::LocaleCheck;
 pub use nerdfont::NerdFontCheck;
-pub use network::{InstantRepoCheck, InternetCheck};
+pub use network::{InstantRepoCheck, InternetCheck, PacmanMirrorCheck};
 pub use security::{FaillockCheck, PolkitAgentCheck, SshAuthSockCheck};
 pub use storage::{
     PacmanCacheCheck, PacmanDbSyncCheck, PacmanStaleDownloadsCheck, SmartHealthCheck,

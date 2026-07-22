@@ -210,7 +210,10 @@ impl SliderApp {
                     }
 
                     if key_event.modifiers.is_empty()
-                        && matches!(key_event.code, KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q'))
+                        && matches!(
+                            key_event.code,
+                            KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q')
+                        )
                     {
                         return Ok(None);
                     }
