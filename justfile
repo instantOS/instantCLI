@@ -4,6 +4,8 @@ install:
     install ./target/debug/ins ~/.local/bin/i
     mkdir -p ~/.local/share/applications
     install -m644 desktop/*.desktop ~/.local/share/applications/
+    install -Dm644 systemd/ins-notify-local.service ~/.config/systemd/user/ins-notify.service
+    systemctl --user daemon-reload
 
 rootinstall:
     cargo build

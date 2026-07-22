@@ -32,6 +32,9 @@ pub async fn daemon_running() -> Result<bool> {
 
 /// Enable the packaged user service and start it immediately.
 pub fn enable_and_start() -> Result<()> {
+    // A package or local source install may have added the unit after the user
+    // manager started, so refresh its view before trying to resolve the unit.
+    run_systemctl(&["daemon-reload"])?;
     run_systemctl(&["enable", "--now", SERVICE])?;
     emit(
         Level::Success,
