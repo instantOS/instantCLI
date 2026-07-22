@@ -7,7 +7,10 @@
 
 use anyhow::{Context, Result};
 
-use crate::menu_utils::{FzfSelectable, MenuCursor, select_one_with_style_at};
+use crate::menu_utils::{
+    Header, MenuCursor, select_one_with_style_at, select_one_with_style_at_header,
+};
+use crate::ui::catppuccin::{colors, format_icon_colored, hex_to_ansi_fg};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::prelude::*;
 
@@ -39,7 +42,6 @@ pub fn run_notify_ui(debug: bool, mut daemon_running: bool) -> Result<()> {
                 super::service::enable_and_start()?;
                 daemon_running = true;
             }
-            MenuAction::Refresh => {}
             MenuAction::Exit => break,
         }
     }
@@ -51,21 +53,15 @@ enum MenuAction {
     OpenNotification { id: i64, main_cursor: MenuCursor },
     OpenOptions { main_cursor: MenuCursor },
     EnableCapture { main_cursor: MenuCursor },
-    Refresh,
     Exit,
 }
 
 /// Build the main menu items from the database.
-fn build_main_items(db: &NotifyDb, daemon_running: bool) -> Result<Vec<NotifyMainItem>> {
+fn build_main_items(db: &NotifyDb, daemon_running: bool) -> Result<(Vec<NotifyMainItem>, i64)> {
     let notifications = db.list()?;
     let unread = db.unread_count()?;
 
     let mut items: Vec<NotifyMainItem> = Vec::new();
-
-    // Unread count header (if any unread)
-    if unread > 0 {
-        items.push(NotifyMainItem::UnreadCount(unread));
-    }
 
     if !daemon_running {
         items.push(NotifyMainItem::EnableCapture);
@@ -87,7 +83,7 @@ fn build_main_items(db: &NotifyDb, daemon_running: bool) -> Result<Vec<NotifyMai
     items.push(NotifyMainItem::Options);
     items.push(NotifyMainItem::Close);
 
-    Ok(items)
+    Ok((items, unread))
 }
 
 fn run_main_menu(
@@ -96,7 +92,7 @@ fn run_main_menu(
     _debug: bool,
     cursor: &mut MenuCursor,
 ) -> Result<MenuAction> {
-    let items = build_main_items(db, daemon_running)?;
+    let (items, unread) = build_main_items(db, daemon_running)?;
 
     if items.is_empty() {
         emit(
@@ -109,7 +105,17 @@ fn run_main_menu(
     }
 
     let initial_index = cursor.initial_index(&items);
-    let selection = select_one_with_style_at(items.clone(), initial_index)?;
+    let bell = format_icon_colored(NerdFont::Bell, colors::MAUVE);
+    let unread_icon = format_icon_colored(NerdFont::EnvelopeOpen, colors::YELLOW);
+    let count_color = hex_to_ansi_fg(if unread > 0 {
+        colors::YELLOW
+    } else {
+        colors::SUBTEXT0
+    });
+    let header =
+        format!("{bell} Notification Center\n{unread_icon} {count_color}{unread} unread\x1b[0m");
+    let selection =
+        select_one_with_style_at_header(items.clone(), initial_index, Header::fancy(&header))?;
 
     let action = match selection {
         Some(NotifyMainItem::Notification(n)) => {
@@ -131,7 +137,6 @@ fn run_main_menu(
                 main_cursor: cursor.clone(),
             }
         }
-        Some(NotifyMainItem::UnreadCount(_)) => MenuAction::Refresh,
         None => MenuAction::Exit,
         Some(NotifyMainItem::Close) => MenuAction::Exit,
     };
@@ -158,11 +163,10 @@ fn handle_notification_detail(db: &NotifyDb, id: i64, _debug: bool) -> Result<()
     notification.read = true;
 
     let items = build_detail_items(&notification);
-    let initial_index = items.iter().position(FzfSelectable::fzf_is_selectable);
-    let selection = select_one_with_style_at(items.clone(), initial_index)?;
+    let selection = select_one_with_style_at(items, Some(0))?;
 
     match selection {
-        Some(NotificationDetailItem::Action { action, .. }) => match action {
+        Some(item) => match item.action {
             NotificationDetailAction::Back => Ok(()),
             NotificationDetailAction::MarkUnread => {
                 db.mark_unread(id)?;
@@ -185,8 +189,6 @@ fn handle_notification_detail(db: &NotifyDb, id: i64, _debug: bool) -> Result<()
 
 /// Build the detail menu items for a notification.
 fn build_detail_items(notif: &super::db::Notification) -> Vec<NotificationDetailItem> {
-    let mut items = Vec::new();
-
     let action_labels = if notif.actions.is_empty() {
         None
     } else {
@@ -200,21 +202,6 @@ fn build_detail_items(notif: &super::db::Notification) -> Vec<NotificationDetail
         Some(format!("{labels} ({state})"))
     };
 
-    // Info items (non-selectable)
-    items.push(NotificationDetailItem::Title(notif.title.clone()));
-    items.push(NotificationDetailItem::App(notif.app_name.clone()));
-    items.push(NotificationDetailItem::Time(notif.timestamp.clone()));
-    if let Some(labels) = &action_labels {
-        items.push(NotificationDetailItem::Actions(labels.clone()));
-    }
-
-    // Body preview (truncated for display)
-    let body_preview: String = notif.body.chars().take(500).collect();
-    items.push(NotificationDetailItem::Body(body_preview));
-
-    // Separator
-    items.push(NotificationDetailItem::Separator);
-
     let preview = NotificationDetailPreview {
         title: notif.title.clone(),
         app_name: notif.app_name.clone(),
@@ -223,18 +210,17 @@ fn build_detail_items(notif: &super::db::Notification) -> Vec<NotificationDetail
         actions: action_labels,
     };
 
-    // Actions
-    items.push(NotificationDetailItem::Action {
+    let mut items = vec![NotificationDetailItem {
         action: NotificationDetailAction::Back,
         preview: preview.clone(),
-    });
+    }];
     if notif.read {
-        items.push(NotificationDetailItem::Action {
+        items.push(NotificationDetailItem {
             action: NotificationDetailAction::MarkUnread,
             preview: preview.clone(),
         });
     }
-    items.push(NotificationDetailItem::Action {
+    items.push(NotificationDetailItem {
         action: NotificationDetailAction::Delete,
         preview,
     });
@@ -265,21 +251,10 @@ mod tests {
     }
 
     #[test]
-    fn detail_menu_shows_title_and_only_detail_actions() {
+    fn detail_menu_contains_only_actions_with_notification_content() {
         let items = build_detail_items(&notification());
 
-        assert!(matches!(
-            items.first(),
-            Some(NotificationDetailItem::Title(title)) if title == "Pair device?"
-        ));
-
-        let actions = items
-            .iter()
-            .filter_map(|item| match item {
-                NotificationDetailItem::Action { action, .. } => Some(action),
-                _ => None,
-            })
-            .collect::<Vec<_>>();
+        let actions = items.iter().map(|item| &item.action).collect::<Vec<_>>();
         assert_eq!(
             actions,
             vec![
@@ -288,22 +263,26 @@ mod tests {
                 &NotificationDetailAction::Delete,
             ]
         );
+        assert!(
+            items
+                .iter()
+                .all(|item| item.preview.title == "Pair device?")
+        );
+        assert!(
+            items
+                .iter()
+                .all(|item| item.preview.body == "Allow the keyboard to pair.")
+        );
     }
 
     #[test]
     fn first_selectable_detail_item_is_back_with_full_content() {
         let items = build_detail_items(&notification());
-        let first_selectable = items
-            .iter()
-            .find(|item| item.fzf_is_selectable())
-            .expect("detail menu should contain an action");
+        let first = items.first().expect("detail menu should contain an action");
 
-        let NotificationDetailItem::Action { action, preview } = first_selectable else {
-            panic!("first selectable item should be an action");
-        };
-        assert_eq!(action, &NotificationDetailAction::Back);
-        assert_eq!(preview.title, "Pair device?");
-        assert_eq!(preview.body, "Allow the keyboard to pair.");
-        assert_eq!(preview.actions.as_deref(), Some("Pair (live)"));
+        assert_eq!(first.action, NotificationDetailAction::Back);
+        assert_eq!(first.preview.title, "Pair device?");
+        assert_eq!(first.preview.body, "Allow the keyboard to pair.");
+        assert_eq!(first.preview.actions.as_deref(), Some("Pair (live)"));
     }
 }

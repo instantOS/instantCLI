@@ -24,8 +24,6 @@ pub struct NotificationListItem {
 /// Top-level menu items in the notification center.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum NotifyMainItem {
-    /// Unread count header (non-selectable).
-    UnreadCount(i64),
     /// A notification entry.
     Notification(NotificationListItem),
     /// Enable the background capture service.
@@ -39,11 +37,6 @@ pub enum NotifyMainItem {
 impl FzfSelectable for NotifyMainItem {
     fn fzf_display_text(&self) -> String {
         match self {
-            NotifyMainItem::UnreadCount(count) => {
-                let icon = format_icon_colored(NerdFont::EnvelopeOpen, colors::YELLOW);
-                let label_color = hex_to_ansi_fg(colors::SUBTEXT0);
-                format!("{icon} {label_color}{count} unread notification(s){RESET}")
-            }
             NotifyMainItem::Notification(n) => {
                 let icon = if n.read {
                     format_icon_colored(NerdFont::Envelope, colors::OVERLAY1)
@@ -76,10 +69,6 @@ impl FzfSelectable for NotifyMainItem {
 
     fn fzf_preview(&self) -> FzfPreview {
         match self {
-            NotifyMainItem::UnreadCount(count) => PreviewBuilder::new()
-                .header(NerdFont::EnvelopeOpen, "Unread Notifications")
-                .text(&format!("You have {count} unread notification(s)."))
-                .build(),
             NotifyMainItem::Notification(n) => {
                 let read_label = if n.read { "Read" } else { "Unread" };
                 let read_icon = if n.read {
@@ -131,16 +120,11 @@ impl FzfSelectable for NotifyMainItem {
 
     fn fzf_key(&self) -> String {
         match self {
-            NotifyMainItem::UnreadCount(_) => "__unread_count__".to_string(),
             NotifyMainItem::Notification(n) => format!("notif:{}", n.id),
             NotifyMainItem::EnableCapture => "__enable_capture__".to_string(),
             NotifyMainItem::Options => "__options__".to_string(),
             NotifyMainItem::Close => "__close__".to_string(),
         }
-    }
-
-    fn fzf_is_selectable(&self) -> bool {
-        !matches!(self, NotifyMainItem::UnreadCount(_))
     }
 }
 
@@ -162,127 +146,42 @@ pub struct NotificationDetailPreview {
     pub actions: Option<String>,
 }
 
-/// Items in the notification detail submenu.
+/// An actionable item in the notification detail submenu.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum NotificationDetailItem {
-    Title(String),
-    App(String),
-    Time(String),
-    Actions(String),
-    Body(String),
-    Separator,
-    Action {
-        action: NotificationDetailAction,
-        preview: NotificationDetailPreview,
-    },
+pub struct NotificationDetailItem {
+    pub(super) action: NotificationDetailAction,
+    pub(super) preview: NotificationDetailPreview,
 }
 
 impl FzfSelectable for NotificationDetailItem {
     fn fzf_display_text(&self) -> String {
-        match self {
-            NotificationDetailItem::Title(title) => {
-                let title_color = hex_to_ansi_fg(colors::TEXT);
-                format!("{title_color}{title}{RESET}")
+        match self.action {
+            NotificationDetailAction::Back => format!("{} Back", format_back_icon()),
+            NotificationDetailAction::MarkUnread => {
+                format!(
+                    "{} Mark as unread",
+                    format_icon_colored(NerdFont::EnvelopeOpen, colors::YELLOW)
+                )
             }
-            NotificationDetailItem::App(app_name) => {
-                let label_color = hex_to_ansi_fg(colors::SUBTEXT0);
-                let value_color = hex_to_ansi_fg(colors::BLUE);
-                format!("{label_color}Application:{RESET} {value_color}{app_name}{RESET}")
+            NotificationDetailAction::Delete => {
+                format!(
+                    "{} Delete",
+                    format_icon_colored(NerdFont::Trash, colors::RED)
+                )
             }
-            NotificationDetailItem::Time(timestamp) => {
-                let label_color = hex_to_ansi_fg(colors::SUBTEXT0);
-                let value_color = hex_to_ansi_fg(colors::TEAL);
-                format!("{label_color}Time:{RESET} {value_color}{timestamp}{RESET}")
-            }
-            NotificationDetailItem::Actions(actions) => {
-                let label_color = hex_to_ansi_fg(colors::SUBTEXT0);
-                let value_color = hex_to_ansi_fg(colors::MAUVE);
-                format!("{label_color}Actions:{RESET} {value_color}{actions}{RESET}")
-            }
-            NotificationDetailItem::Body(body) => {
-                let body_color = hex_to_ansi_fg(colors::TEXT);
-                let truncated = if body.chars().count() > 80 {
-                    format!("{}...", body.chars().take(77).collect::<String>())
-                } else {
-                    body.clone()
-                };
-                format!("{body_color}{truncated}{RESET}")
-            }
-            NotificationDetailItem::Separator => {
-                let color = hex_to_ansi_fg(colors::SURFACE1);
-                format!("{color}────────────────────────────────────────{RESET}")
-            }
-            NotificationDetailItem::Action { action, .. } => match action {
-                NotificationDetailAction::Back => format!("{} Back", format_back_icon()),
-                NotificationDetailAction::MarkUnread => {
-                    format!(
-                        "{} Mark as unread",
-                        format_icon_colored(NerdFont::EnvelopeOpen, colors::YELLOW)
-                    )
-                }
-                NotificationDetailAction::Delete => {
-                    format!(
-                        "{} Delete",
-                        format_icon_colored(NerdFont::Trash, colors::RED)
-                    )
-                }
-            },
         }
     }
 
     fn fzf_preview(&self) -> FzfPreview {
-        match self {
-            NotificationDetailItem::Title(title) => PreviewBuilder::new()
-                .header(NerdFont::Envelope, title)
-                .text("Notification title")
-                .build(),
-            NotificationDetailItem::App(app_name) => PreviewBuilder::new()
-                .header(NerdFont::User, app_name)
-                .text("The application that sent this notification.")
-                .build(),
-            NotificationDetailItem::Time(timestamp) => PreviewBuilder::new()
-                .header(NerdFont::Clock, timestamp)
-                .text("When this notification was received.")
-                .build(),
-            NotificationDetailItem::Actions(actions) => PreviewBuilder::new()
-                .header(NerdFont::Bolt, "Notification Actions")
-                .text(actions)
-                .blank()
-                .text("Actions are only valid while the original popup is live.")
-                .text("Use the notification daemon's click or context-menu binding.")
-                .build(),
-            NotificationDetailItem::Body(body) => {
-                let mut builder = PreviewBuilder::new().header(NerdFont::Envelope, "Message");
-                for line in wrap_text(body, 60) {
-                    builder = builder.text(&line);
-                }
-                builder.build()
-            }
-            NotificationDetailItem::Separator => PreviewBuilder::new().build(),
-            NotificationDetailItem::Action { action, preview } => {
-                detail_action_preview(action, preview)
-            }
-        }
+        detail_action_preview(&self.action, &self.preview)
     }
 
     fn fzf_key(&self) -> String {
-        match self {
-            NotificationDetailItem::Title(_) => "__title__".to_string(),
-            NotificationDetailItem::App(_) => "__app__".to_string(),
-            NotificationDetailItem::Time(_) => "__time__".to_string(),
-            NotificationDetailItem::Actions(_) => "__actions__".to_string(),
-            NotificationDetailItem::Body(_) => "__body__".to_string(),
-            NotificationDetailItem::Separator => "__sep__".to_string(),
-            NotificationDetailItem::Action { action, .. } => match action {
-                NotificationDetailAction::Back => "__back__".to_string(),
-                NotificationDetailAction::MarkUnread => "__mark_unread__".to_string(),
-                NotificationDetailAction::Delete => "__delete__".to_string(),
-            },
+        match self.action {
+            NotificationDetailAction::Back => "__back__".to_string(),
+            NotificationDetailAction::MarkUnread => "__mark_unread__".to_string(),
+            NotificationDetailAction::Delete => "__delete__".to_string(),
         }
-    }
-
-    fn fzf_is_selectable(&self) -> bool {
-        matches!(self, NotificationDetailItem::Action { .. })
     }
 }
 

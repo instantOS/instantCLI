@@ -3,15 +3,26 @@ use anyhow::Result;
 use crate::ui::catppuccin::fzf_mocha_args;
 use crate::ui::nerd_font::NerdFont;
 
-use super::{FzfResult, FzfSelectable, FzfWrapper};
+use super::{FzfResult, FzfSelectable, FzfWrapper, Header};
 
 pub fn select_one_with_style_at<T>(items: Vec<T>, initial_index: Option<usize>) -> Result<Option<T>>
 where
     T: FzfSelectable + Clone,
 {
+    select_one_with_style_at_header(items, initial_index, Header::default(""))
+}
+
+pub fn select_one_with_style_at_header<T>(
+    items: Vec<T>,
+    initial_index: Option<usize>,
+    header: Header,
+) -> Result<Option<T>>
+where
+    T: FzfSelectable + Clone,
+{
     let mut builder = FzfWrapper::builder()
         .prompt(format!("{} ", char::from(NerdFont::Search)))
-        .header("")
+        .header(header)
         .args(fzf_mocha_args())
         .responsive_layout();
 
