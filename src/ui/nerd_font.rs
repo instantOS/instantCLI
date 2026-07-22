@@ -302,15 +302,15 @@ impl NerdFont {
             Self::ChevronDown => '',  // fa-chevron-down
 
             // Status and feedback
-            Self::Check => '✓',       // fa-check
-            Self::CheckCircle => '', // fa-check-circle
-            Self::CheckSquare => '', // fa-check-square
+            Self::Check => '✓',              // fa-check
+            Self::CheckCircle => '',        // fa-check-circle
+            Self::CheckSquare => '',        // fa-check-square
             Self::CheckDouble => '\u{ebd8}', // cod-check-all
-            Self::Cross => '✗',       // fa-times
-            Self::CrossCircle => '', // fa-times-circle
-            Self::Warning => '',     // fa-exclamation-triangle
-            Self::Info => '\u{f05a}', // fa-info-circle
-            Self::Question => '',    // fa-question-circle
+            Self::Cross => '✗',              // fa-times
+            Self::CrossCircle => '',        // fa-times-circle
+            Self::Warning => '',            // fa-exclamation-triangle
+            Self::Info => '\u{f05a}',        // fa-info-circle
+            Self::Question => '',           // fa-question-circle
 
             // Files and folders
             Self::Folder => '',     // fa-folder
@@ -354,10 +354,10 @@ impl NerdFont {
             Self::Language => '',     // fa-language
             Self::Link => '',         // fa-link
             Self::ExternalLink => '', // fa-external-link
-            Self::Bell => '',        // fa-bell
-            Self::BellSlash => '',   // fa-bell-slash
-            Self::Envelope => '',    // fa-envelope
-            Self::EnvelopeOpen => '',// fa-envelope-open
+            Self::Bell => '',         // fa-bell
+            Self::BellSlash => '',    // fa-bell-slash
+            Self::Envelope => '',     // fa-envelope
+            Self::EnvelopeOpen => '', // fa-envelope-open
 
             // User and social
             Self::User => '',      // fa-user

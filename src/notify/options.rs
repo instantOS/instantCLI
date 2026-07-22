@@ -1,13 +1,14 @@
 //! Notification options menu
 //!
-//! Do Not Disturb toggle, ignore/silent lists, history size, and cleanup.
-//! Mirrors the legacy `instantnotifyoptions.sh` with compositor-aware DnD.
+//! Do Not Disturb toggle, history size, and cleanup.
+//! Mirrors the legacy options while detecting the active notification daemon.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use duct::cmd;
 
-use crate::common::display_server::DisplayServer;
-use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor, select_one_with_style_at};
+use crate::menu_utils::{
+    FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor, select_one_with_style_at,
+};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::prelude::*;
@@ -47,7 +48,10 @@ pub fn run_options_menu(db: &NotifyDb, _debug: bool) -> Result<()> {
                 emit(
                     Level::Success,
                     "notify.deleted_read",
-                    &format!("{} Deleted {count} read notifications.", char::from(NerdFont::Check)),
+                    &format!(
+                        "{} Deleted {count} read notifications.",
+                        char::from(NerdFont::Check)
+                    ),
                     None,
                 );
             }
@@ -57,7 +61,10 @@ pub fn run_options_menu(db: &NotifyDb, _debug: bool) -> Result<()> {
                 emit(
                     Level::Success,
                     "notify.all_read",
-                    &format!("{} All notifications marked as read.", char::from(NerdFont::Check)),
+                    &format!(
+                        "{} All notifications marked as read.",
+                        char::from(NerdFont::Check)
+                    ),
                     None,
                 );
             }
@@ -97,22 +104,40 @@ impl FzfSelectable for OptionsItem {
                 format!("{icon} Do Not Disturb ({status})")
             }
             OptionsItem::DeleteByApp => {
-                format!("{} Delete by application", format_icon_colored(NerdFont::Trash, colors::PEACH))
+                format!(
+                    "{} Delete by application",
+                    format_icon_colored(NerdFont::Trash, colors::PEACH)
+                )
             }
             OptionsItem::DeleteByKeyword => {
-                format!("{} Delete by keyword", format_icon_colored(NerdFont::Search, colors::PEACH))
+                format!(
+                    "{} Delete by keyword",
+                    format_icon_colored(NerdFont::Search, colors::PEACH)
+                )
             }
             OptionsItem::DeleteAll => {
-                format!("{} Delete all notifications", format_icon_colored(NerdFont::Trash, colors::RED))
+                format!(
+                    "{} Delete all notifications",
+                    format_icon_colored(NerdFont::Trash, colors::RED)
+                )
             }
             OptionsItem::DeleteRead => {
-                format!("{} Delete read notifications", format_icon_colored(NerdFont::Check, colors::PEACH))
+                format!(
+                    "{} Delete read notifications",
+                    format_icon_colored(NerdFont::Check, colors::PEACH)
+                )
             }
             OptionsItem::MarkAllRead => {
-                format!("{} Mark all as read", format_icon_colored(NerdFont::CheckDouble, colors::GREEN))
+                format!(
+                    "{} Mark all as read",
+                    format_icon_colored(NerdFont::CheckDouble, colors::GREEN)
+                )
             }
             OptionsItem::HistorySize => {
-                format!("{} History size", format_icon_colored(NerdFont::Database2, colors::BLUE))
+                format!(
+                    "{} History size",
+                    format_icon_colored(NerdFont::Database2, colors::BLUE)
+                )
             }
             OptionsItem::Back => format!("{} Back", format_back_icon()),
         }
@@ -123,7 +148,11 @@ impl FzfSelectable for OptionsItem {
             OptionsItem::DoNotDisturb => {
                 let is_dnd = is_dnd_active();
                 let status = if is_dnd { "Enabled" } else { "Disabled" };
-                let icon = if is_dnd { NerdFont::BellSlash } else { NerdFont::Bell };
+                let icon = if is_dnd {
+                    NerdFont::BellSlash
+                } else {
+                    NerdFont::Bell
+                };
                 let color = if is_dnd { colors::RED } else { colors::GREEN };
                 PreviewBuilder::new()
                     .line(color, Some(icon), status)
@@ -181,88 +210,55 @@ impl FzfSelectable for OptionsItem {
 }
 
 fn build_options_items(_db: &NotifyDb) -> Result<Vec<OptionsItem>> {
-    let mut items = Vec::new();
-    items.push(OptionsItem::DoNotDisturb);
-    items.push(OptionsItem::MarkAllRead);
-    items.push(OptionsItem::DeleteByApp);
-    items.push(OptionsItem::DeleteByKeyword);
-    items.push(OptionsItem::DeleteRead);
-    items.push(OptionsItem::DeleteAll);
-    items.push(OptionsItem::HistorySize);
-    items.push(OptionsItem::Back);
-    Ok(items)
+    Ok(vec![
+        OptionsItem::DoNotDisturb,
+        OptionsItem::MarkAllRead,
+        OptionsItem::DeleteByApp,
+        OptionsItem::DeleteByKeyword,
+        OptionsItem::DeleteRead,
+        OptionsItem::DeleteAll,
+        OptionsItem::HistorySize,
+        OptionsItem::Back,
+    ])
 }
 
-/// Toggle Do Not Disturb mode using the appropriate daemon for the display server.
+#[derive(Clone, Copy)]
+enum DndBackend {
+    Dunst,
+    Mako,
+}
+
+/// Toggle Do Not Disturb using the daemon that actually answers its control client.
 fn handle_dnd_toggle() -> Result<()> {
-    let display = DisplayServer::detect();
+    let backend = detect_dnd_backend().context(
+        "no supported notification daemon found (supported control clients: dunstctl, makoctl)",
+    )?;
+    let now_dnd = match backend {
+        DndBackend::Dunst => {
+            let new_state = !is_dunst_dnd()?;
+            cmd!("dunstctl", "set-paused", new_state.to_string())
+                .run()
+                .context("toggling dunst Do Not Disturb")?;
+            new_state
+        }
+        DndBackend::Mako => {
+            cmd!("makoctl", "mode", "-t", "do-not-disturb")
+                .run()
+                .context("toggling mako Do Not Disturb")?;
+            is_mako_dnd()?
+        }
+    };
 
-    match display {
-        DisplayServer::Wayland => {
-            // mako uses modes for DnD
-            let result = cmd!("makoctl", "mode", "-t", "do-not-disturb").run();
-            match result {
-                Ok(_out) => {
-                    let now_dnd = is_mako_dnd()?;
-                    emit(
-                        Level::Success,
-                        "notify.dnd.toggled",
-                        &format!(
-                            "{} Do Not Disturb {}.",
-                            char::from(NerdFont::Bell),
-                            if now_dnd { "enabled" } else { "disabled" }
-                        ),
-                        None,
-                    );
-                }
-                Err(e) => {
-                    emit(
-                        Level::Warn,
-                        "notify.dnd.error",
-                        &format!("{} Failed to toggle DnD: {e}", char::from(NerdFont::Warning)),
-                        None,
-                    );
-                }
-            }
-        }
-        DisplayServer::X11 => {
-            // dunst uses set-paused
-            let is_paused = is_dunst_dnd()?;
-            let new_state = if is_paused { "false" } else { "true" };
-            let result = cmd!("dunstctl", "set-paused", new_state).run();
-            match result {
-                Ok(_out) => {
-                    emit(
-                        Level::Success,
-                        "notify.dnd.toggled",
-                        &format!(
-                            "{} Do Not Disturb {}.",
-                            char::from(NerdFont::Bell),
-                            if !is_paused { "enabled" } else { "disabled" }
-                        ),
-                        None,
-                    );
-                }
-                Err(e) => {
-                    emit(
-                        Level::Warn,
-                        "notify.dnd.error",
-                        &format!("{} Failed to toggle DnD: {e}", char::from(NerdFont::Warning)),
-                        None,
-                    );
-                }
-            }
-        }
-        DisplayServer::Unknown => {
-            emit(
-                Level::Warn,
-                "notify.dnd.unsupported",
-                &format!("{} Do Not Disturb is not supported on unknown display server.", char::from(NerdFont::Warning)),
-                None,
-            );
-        }
-    }
-
+    emit(
+        Level::Success,
+        "notify.dnd.toggled",
+        &format!(
+            "{} Do Not Disturb {}.",
+            char::from(NerdFont::Bell),
+            if now_dnd { "enabled" } else { "disabled" }
+        ),
+        None,
+    );
     Ok(())
 }
 
@@ -273,11 +269,20 @@ pub fn run_dnd_toggle_standalone() -> Result<()> {
 
 /// Check if DnD is currently active.
 fn is_dnd_active() -> bool {
-    let display = DisplayServer::detect();
-    match display {
-        DisplayServer::Wayland => is_mako_dnd().unwrap_or(false),
-        DisplayServer::X11 => is_dunst_dnd().unwrap_or(false),
-        DisplayServer::Unknown => false,
+    match detect_dnd_backend() {
+        Some(DndBackend::Dunst) => is_dunst_dnd().unwrap_or(false),
+        Some(DndBackend::Mako) => is_mako_dnd().unwrap_or(false),
+        None => false,
+    }
+}
+
+fn detect_dnd_backend() -> Option<DndBackend> {
+    if is_dunst_dnd().is_ok() {
+        Some(DndBackend::Dunst)
+    } else if is_mako_dnd().is_ok() {
+        Some(DndBackend::Mako)
+    } else {
+        None
     }
 }
 
@@ -300,7 +305,10 @@ fn handle_delete_by_app(db: &NotifyDb) -> Result<()> {
         emit(
             Level::Info,
             "notify.no_apps",
-            &format!("{} No applications with notifications.", char::from(NerdFont::Info)),
+            &format!(
+                "{} No applications with notifications.",
+                char::from(NerdFont::Info)
+            ),
             None,
         );
         return Ok(());
@@ -312,7 +320,9 @@ fn handle_delete_by_app(db: &NotifyDb) -> Result<()> {
     // Use FzfWrapper for a simple string selection
     let result = FzfWrapper::builder()
         .prompt(format!("{} Application", char::from(NerdFont::Search)))
-        .header(Header::default("Select an application to delete its notifications"))
+        .header(Header::default(
+            "Select an application to delete its notifications",
+        ))
         .args(fzf_mocha_args())
         .responsive_layout()
         .select(items)?;
@@ -323,7 +333,10 @@ fn handle_delete_by_app(db: &NotifyDb) -> Result<()> {
             emit(
                 Level::Success,
                 "notify.deleted_by_app",
-                &format!("{} Deleted {count} notifications from {app}.", char::from(NerdFont::Check)),
+                &format!(
+                    "{} Deleted {count} notifications from {app}.",
+                    char::from(NerdFont::Check)
+                ),
                 None,
             );
         }
@@ -348,7 +361,10 @@ fn handle_delete_by_keyword(db: &NotifyDb) -> Result<()> {
             emit(
                 Level::Success,
                 "notify.deleted_by_keyword",
-                &format!("{} Deleted {count} notifications containing '{keyword}'.", char::from(NerdFont::Check)),
+                &format!(
+                    "{} Deleted {count} notifications containing '{keyword}'.",
+                    char::from(NerdFont::Check)
+                ),
                 None,
             );
         }
@@ -366,17 +382,17 @@ fn handle_delete_all(db: &NotifyDb) -> Result<()> {
         .confirm("Delete all notifications?")
         .confirm_dialog()?;
 
-    match result {
-        ConfirmResult::Yes => {
-            let count = db.delete_all()?;
-            emit(
-                Level::Success,
-                "notify.deleted_all",
-                &format!("{} Deleted all {count} notifications.", char::from(NerdFont::Check)),
-                None,
-            );
-        }
-        _ => {}
+    if let ConfirmResult::Yes = result {
+        let count = db.delete_all()?;
+        emit(
+            Level::Success,
+            "notify.deleted_all",
+            &format!(
+                "{} Deleted all {count} notifications.",
+                char::from(NerdFont::Check)
+            ),
+            None,
+        );
     }
 
     Ok(())
@@ -386,7 +402,7 @@ fn handle_delete_all(db: &NotifyDb) -> Result<()> {
 fn handle_history_size(db: &NotifyDb) -> Result<()> {
     use crate::menu_utils::{TextEditOutcome, TextEditPrompt};
 
-    let current = db.count()?;
+    let current = db.history_limit()?;
     let label = format!("Maximum notifications to keep (currently {current})");
     let prompt = TextEditPrompt::new(&label, None).ghost("1000");
 
@@ -399,23 +415,32 @@ fn handle_history_size(db: &NotifyDb) -> Result<()> {
                     emit(
                         Level::Warn,
                         "notify.history_size.invalid",
-                        &format!("{} Please enter a number greater than 0.", char::from(NerdFont::Warning)),
+                        &format!(
+                            "{} Please enter a number greater than 0.",
+                            char::from(NerdFont::Warning)
+                        ),
                         None,
                     );
                     return Ok(());
                 }
-                let deleted = db.trim_to(max)?;
+                let deleted = db.set_history_limit(max)?;
                 emit(
                     Level::Success,
                     "notify.history_size.set",
-                    &format!("{} History size set to {max}. Deleted {deleted} old notifications.", char::from(NerdFont::Check)),
+                    &format!(
+                        "{} History size set to {max}. Deleted {deleted} old notifications.",
+                        char::from(NerdFont::Check)
+                    ),
                     None,
                 );
             } else {
                 emit(
                     Level::Warn,
                     "notify.history_size.invalid",
-                    &format!("{} Please enter a valid number.", char::from(NerdFont::Warning)),
+                    &format!(
+                        "{} Please enter a valid number.",
+                        char::from(NerdFont::Warning)
+                    ),
                     None,
                 );
             }

@@ -13,7 +13,9 @@ use crate::ui::prelude::*;
 
 use super::db::NotifyDb;
 use super::handlers;
-use super::items::{NotifyMainItem, NotificationListItem, NotificationDetailItem, NotificationDetailAction};
+use super::items::{
+    NotificationDetailAction, NotificationDetailItem, NotificationListItem, NotifyMainItem,
+};
 
 /// Run the interactive notification center UI.
 pub fn run_notify_ui(debug: bool) -> Result<()> {
@@ -77,11 +79,7 @@ fn build_main_items(db: &NotifyDb) -> Result<Vec<NotifyMainItem>> {
     Ok(items)
 }
 
-fn run_main_menu(
-    db: &NotifyDb,
-    _debug: bool,
-    cursor: &mut MenuCursor,
-) -> Result<MenuAction> {
+fn run_main_menu(db: &NotifyDb, _debug: bool, cursor: &mut MenuCursor) -> Result<MenuAction> {
     let items = build_main_items(db)?;
 
     if items.is_empty() {
@@ -123,9 +121,7 @@ fn run_main_menu(
 /// Shows the notification content and actions (mark read/unread, delete, close).
 /// Returns `false` if the user wants to exit the notification center entirely.
 fn handle_notification_detail(db: &NotifyDb, id: i64, _debug: bool) -> Result<bool> {
-    // Fetch the notification
-    let notifications = db.list()?;
-    let Some(notif) = notifications.iter().find(|n| n.id == id) else {
+    let Some(mut notification) = db.get(id)? else {
         emit(
             Level::Warn,
             "notify.not_found",
@@ -137,41 +133,36 @@ fn handle_notification_detail(db: &NotifyDb, id: i64, _debug: bool) -> Result<bo
 
     // Mark as read when viewed
     db.mark_read(id)?;
+    notification.read = true;
 
     let mut cursor = MenuCursor::new();
+    let items = build_detail_items(&notification);
+    let initial_index = cursor.initial_index(&items);
+    let selection = select_one_with_style_at(items.clone(), initial_index)?;
 
-    loop {
-        // Build detail items
-        let items = build_detail_items(notif);
-
-        let initial_index = cursor.initial_index(&items);
-        let selection = select_one_with_style_at(items.clone(), initial_index)?;
-
-        match selection {
-            Some(NotificationDetailItem::Action(action)) => {
-                cursor.update(&NotificationDetailItem::Action(action.clone()), &items);
-
-                match action {
-                    NotificationDetailAction::Back => return Ok(true),
-                    NotificationDetailAction::MarkUnread => {
-                        db.mark_unread(id)?;
-                        emit(
-                            Level::Success,
-                            "notify.marked_unread",
-                            &format!("{} Marked as unread.", char::from(NerdFont::Check)),
-                            None,
-                        );
-                        return Ok(true);
-                    }
-                    NotificationDetailAction::Delete => {
-                        handlers::handle_delete(db, id)?;
-                        return Ok(true);
-                    }
-                    NotificationDetailAction::Close => return Ok(false),
+    match selection {
+        Some(NotificationDetailItem::Action(action)) => {
+            cursor.update(&NotificationDetailItem::Action(action.clone()), &items);
+            match action {
+                NotificationDetailAction::Back => Ok(true),
+                NotificationDetailAction::MarkUnread => {
+                    db.mark_unread(id)?;
+                    emit(
+                        Level::Success,
+                        "notify.marked_unread",
+                        &format!("{} Marked as unread.", char::from(NerdFont::Check)),
+                        None,
+                    );
+                    Ok(true)
                 }
+                NotificationDetailAction::Delete => {
+                    handlers::handle_delete(db, id)?;
+                    Ok(true)
+                }
+                NotificationDetailAction::Close => Ok(false),
             }
-            _ => return Ok(true),
         }
+        _ => Ok(true),
     }
 }
 
@@ -191,12 +182,20 @@ fn build_detail_items(notif: &super::db::Notification) -> Vec<NotificationDetail
     items.push(NotificationDetailItem::Separator);
 
     // Actions
-    items.push(NotificationDetailItem::Action(NotificationDetailAction::Back));
+    items.push(NotificationDetailItem::Action(
+        NotificationDetailAction::Back,
+    ));
     if notif.read {
-        items.push(NotificationDetailItem::Action(NotificationDetailAction::MarkUnread));
+        items.push(NotificationDetailItem::Action(
+            NotificationDetailAction::MarkUnread,
+        ));
     }
-    items.push(NotificationDetailItem::Action(NotificationDetailAction::Delete));
-    items.push(NotificationDetailItem::Action(NotificationDetailAction::Close));
+    items.push(NotificationDetailItem::Action(
+        NotificationDetailAction::Delete,
+    ));
+    items.push(NotificationDetailItem::Action(
+        NotificationDetailAction::Close,
+    ));
 
     items
 }

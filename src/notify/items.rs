@@ -59,7 +59,10 @@ impl FzfSelectable for NotifyMainItem {
                 )
             }
             NotifyMainItem::Options => {
-                format!("{} Options", format_icon_colored(NerdFont::Gear, colors::MAUVE))
+                format!(
+                    "{} Options",
+                    format_icon_colored(NerdFont::Gear, colors::MAUVE)
+                )
             }
             NotifyMainItem::Close => format!("{} Close", format_back_icon()),
         }
@@ -78,7 +81,11 @@ impl FzfSelectable for NotifyMainItem {
                 } else {
                     NerdFont::EnvelopeOpen
                 };
-                let read_color = if n.read { colors::OVERLAY1 } else { colors::YELLOW };
+                let read_color = if n.read {
+                    colors::OVERLAY1
+                } else {
+                    colors::YELLOW
+                };
 
                 let mut builder = PreviewBuilder::new()
                     .line(read_color, Some(read_icon), &n.title)
@@ -119,10 +126,7 @@ impl FzfSelectable for NotifyMainItem {
     }
 
     fn fzf_is_selectable(&self) -> bool {
-        match self {
-            NotifyMainItem::UnreadCount(_) => false,
-            _ => true,
-        }
+        !matches!(self, NotifyMainItem::UnreadCount(_))
     }
 }
 
@@ -160,8 +164,8 @@ impl FzfSelectable for NotificationDetailItem {
             }
             NotificationDetailItem::Body(body) => {
                 let body_color = hex_to_ansi_fg(colors::TEXT);
-                let truncated = if body.len() > 80 {
-                    format!("{}...", &body[..77])
+                let truncated = if body.chars().count() > 80 {
+                    format!("{}...", body.chars().take(77).collect::<String>())
                 } else {
                     body.clone()
                 };
@@ -174,10 +178,16 @@ impl FzfSelectable for NotificationDetailItem {
             NotificationDetailItem::Action(action) => match action {
                 NotificationDetailAction::Back => format!("{} Back", format_back_icon()),
                 NotificationDetailAction::MarkUnread => {
-                    format!("{} Mark as unread", format_icon_colored(NerdFont::EnvelopeOpen, colors::YELLOW))
+                    format!(
+                        "{} Mark as unread",
+                        format_icon_colored(NerdFont::EnvelopeOpen, colors::YELLOW)
+                    )
                 }
                 NotificationDetailAction::Delete => {
-                    format!("{} Delete", format_icon_colored(NerdFont::Trash, colors::RED))
+                    format!(
+                        "{} Delete",
+                        format_icon_colored(NerdFont::Trash, colors::RED)
+                    )
                 }
                 NotificationDetailAction::Close => format!("{} Close", format_back_icon()),
             },
@@ -239,10 +249,7 @@ impl FzfSelectable for NotificationDetailItem {
     }
 
     fn fzf_is_selectable(&self) -> bool {
-        match self {
-            NotificationDetailItem::Action(_) => true,
-            _ => false,
-        }
+        matches!(self, NotificationDetailItem::Action(_))
     }
 }
 
@@ -254,15 +261,28 @@ fn wrap_text(text: &str, width: usize) -> Vec<String> {
             result.push(String::new());
             continue;
         }
-        let mut start = 0;
-        while start < line.len() {
-            let end = (start + width).min(line.len());
-            result.push(line[start..end].to_string());
-            start = end;
+        let mut characters = line.chars().peekable();
+        while characters.peek().is_some() {
+            result.push(characters.by_ref().take(width).collect());
         }
     }
     if result.is_empty() {
         result.push(String::new());
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::wrap_text;
+
+    #[test]
+    fn wrap_text_handles_multibyte_characters() {
+        assert_eq!(wrap_text("😀世界abc", 2), vec!["😀世", "界a", "bc"]);
+    }
+
+    #[test]
+    fn wrap_text_preserves_blank_lines() {
+        assert_eq!(wrap_text("one\n\ntwo", 10), vec!["one", "", "two"]);
+    }
 }

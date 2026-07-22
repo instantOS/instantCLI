@@ -14,7 +14,25 @@ system diagnostics, WM keychords, game saves and much more.
 - system diagnostics
 - WM keychord management
 - game save management
+- notification history and Do Not Disturb controls
 - video editing (yes, I know it's random)
+
+### Notification history
+
+`ins notify` browses notification history, while `ins notify list`, `count`,
+`read`, `unread`, and `delete` provide scriptable access. History capture runs
+as a separate session process:
+
+```bash
+# Packaged installs
+systemctl --user enable --now ins-notify.service
+
+# Binary-only installs
+ins notify daemon
+```
+
+The history database defaults to 1,000 entries and can be changed from the
+interactive notification options menu. Transient notifications are not stored.
 
 ### Removed dotfiles
 

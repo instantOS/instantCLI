@@ -50,4 +50,7 @@ package() {
     for desktop_file in desktop/*.desktop; do
         install -Dm644 "$desktop_file" "$pkgdir/usr/share/applications/$(basename "$desktop_file")"
     done
+
+    install -Dm644 systemd/ins-notify.service \
+        "$pkgdir/usr/lib/systemd/user/ins-notify.service"
 }

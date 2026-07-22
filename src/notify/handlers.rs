@@ -11,7 +11,7 @@ use super::db::NotifyDb;
 
 /// Handle deleting a notification by ID.
 pub fn handle_delete(db: &NotifyDb, id: i64) -> Result<()> {
-    db.delete(id)?;
+    anyhow::ensure!(db.delete(id)?, "notification {id} was not found");
     emit(
         Level::Success,
         "notify.deleted",

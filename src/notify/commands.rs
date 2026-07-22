@@ -11,7 +11,7 @@
 //! - `daemon` → start D-Bus capture daemon
 
 use anyhow::Result;
-use clap::Subcommand;
+use clap::{ArgGroup, Subcommand};
 
 use crate::ui::prelude::*;
 
@@ -31,6 +31,12 @@ pub enum NotifyCommands {
     Count,
 
     /// Delete notifications
+    #[command(group(
+        ArgGroup::new("criteria")
+            .required(true)
+            .multiple(false)
+            .args(["app", "keyword", "read", "all", "id"])
+    ))]
     Delete {
         /// Delete notifications from a specific application
         #[arg(long = "app")]
@@ -113,13 +119,23 @@ fn list_notifications(unread_only: bool) -> Result<()> {
                 emit(
                     Level::Info,
                     "notify.list.empty",
-                    &format!("{} No notifications.", char::from(crate::ui::nerd_font::NerdFont::Bell)),
+                    &format!(
+                        "{} No notifications.",
+                        char::from(crate::ui::nerd_font::NerdFont::Bell)
+                    ),
                     None,
                 );
             } else {
                 for n in &filtered {
-                    let read_icon = if n.read { " ".to_string() } else { char::from(crate::ui::nerd_font::NerdFont::Circle).to_string() };
-                    println!("[{read_icon}] {:>5} {:>8} {}", n.id, n.timestamp, n.app_name);
+                    let read_icon = if n.read {
+                        " ".to_string()
+                    } else {
+                        char::from(crate::ui::nerd_font::NerdFont::Circle).to_string()
+                    };
+                    println!(
+                        "[{read_icon}] {:>5} {:>8} {}",
+                        n.id, n.timestamp, n.app_name
+                    );
                     println!("        {}", n.title);
                     if !n.body.is_empty() {
                         // Indent and wrap body
@@ -163,11 +179,14 @@ fn handle_delete(
     let db = NotifyDb::open()?;
 
     if let Some(id) = id {
-        db.delete(id)?;
+        anyhow::ensure!(db.delete(id)?, "notification {id} was not found");
         emit(
             Level::Success,
             "notify.deleted",
-            &format!("{} Deleted notification {id}.", char::from(crate::ui::nerd_font::NerdFont::Check)),
+            &format!(
+                "{} Deleted notification {id}.",
+                char::from(crate::ui::nerd_font::NerdFont::Check)
+            ),
             None,
         );
     } else if all {
@@ -175,7 +194,10 @@ fn handle_delete(
         emit(
             Level::Success,
             "notify.deleted_all",
-            &format!("{} Deleted all {count} notifications.", char::from(crate::ui::nerd_font::NerdFont::Check)),
+            &format!(
+                "{} Deleted all {count} notifications.",
+                char::from(crate::ui::nerd_font::NerdFont::Check)
+            ),
             None,
         );
     } else if read {
@@ -183,7 +205,10 @@ fn handle_delete(
         emit(
             Level::Success,
             "notify.deleted_read",
-            &format!("{} Deleted {count} read notifications.", char::from(crate::ui::nerd_font::NerdFont::Check)),
+            &format!(
+                "{} Deleted {count} read notifications.",
+                char::from(crate::ui::nerd_font::NerdFont::Check)
+            ),
             None,
         );
     } else if let Some(app_name) = app {
@@ -191,7 +216,10 @@ fn handle_delete(
         emit(
             Level::Success,
             "notify.deleted_by_app",
-            &format!("{} Deleted {count} notifications from {app_name}.", char::from(crate::ui::nerd_font::NerdFont::Check)),
+            &format!(
+                "{} Deleted {count} notifications from {app_name}.",
+                char::from(crate::ui::nerd_font::NerdFont::Check)
+            ),
             None,
         );
     } else if let Some(kw) = keyword {
@@ -199,14 +227,10 @@ fn handle_delete(
         emit(
             Level::Success,
             "notify.deleted_by_keyword",
-            &format!("{} Deleted {count} notifications containing '{kw}'.", char::from(crate::ui::nerd_font::NerdFont::Check)),
-            None,
-        );
-    } else {
-        emit(
-            Level::Warn,
-            "notify.delete.no_criteria",
-            &format!("{} No deletion criteria specified. Use --app, --keyword, --read, --all, or --id.", char::from(crate::ui::nerd_font::NerdFont::Warning)),
+            &format!(
+                "{} Deleted {count} notifications containing '{kw}'.",
+                char::from(crate::ui::nerd_font::NerdFont::Check)
+            ),
             None,
         );
     }
@@ -222,16 +246,24 @@ fn handle_mark_read(id: &str) -> Result<()> {
         emit(
             Level::Success,
             "notify.all_read",
-            &format!("{} All notifications marked as read.", char::from(crate::ui::nerd_font::NerdFont::Check)),
+            &format!(
+                "{} All notifications marked as read.",
+                char::from(crate::ui::nerd_font::NerdFont::Check)
+            ),
             None,
         );
     } else {
-        let id: i64 = id.parse().map_err(|_| anyhow::anyhow!("Invalid notification ID: {id}"))?;
-        db.mark_read(id)?;
+        let id: i64 = id
+            .parse()
+            .map_err(|_| anyhow::anyhow!("Invalid notification ID: {id}"))?;
+        anyhow::ensure!(db.mark_read(id)?, "notification {id} was not found");
         emit(
             Level::Success,
             "notify.marked_read",
-            &format!("{} Notification {id} marked as read.", char::from(crate::ui::nerd_font::NerdFont::Check)),
+            &format!(
+                "{} Notification {id} marked as read.",
+                char::from(crate::ui::nerd_font::NerdFont::Check)
+            ),
             None,
         );
     }
@@ -241,11 +273,14 @@ fn handle_mark_read(id: &str) -> Result<()> {
 
 fn handle_mark_unread(id: i64) -> Result<()> {
     let db = NotifyDb::open()?;
-    db.mark_unread(id)?;
+    anyhow::ensure!(db.mark_unread(id)?, "notification {id} was not found");
     emit(
         Level::Success,
         "notify.marked_unread",
-        &format!("{} Notification {id} marked as unread.", char::from(crate::ui::nerd_font::NerdFont::Check)),
+        &format!(
+            "{} Notification {id} marked as unread.",
+            char::from(crate::ui::nerd_font::NerdFont::Check)
+        ),
         None,
     );
     Ok(())
