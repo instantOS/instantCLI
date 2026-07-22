@@ -1,13 +1,35 @@
+use std::io::IsTerminal;
+
 use anyhow::Result;
 use colored::Colorize;
 
 use crate::arch::cli::{ArchCommands, DEFAULT_QUESTIONS_FILE};
 
+use super::super::utils::ensure_root;
 use super::ask::{AskOutcome, handle_ask_command};
 use super::{build_questions, handle_arch_command};
 
 /// Handle the Install command - orchestrates the full installation process
 pub(super) async fn handle_install_command(debug: bool) -> Result<()> {
+    // The installer is interactive. Graphical launchers should normally open a
+    // terminal themselves, but keep this guard here so future entry points
+    // cannot accidentally start an invisible TUI.
+    if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
+        let current_exe = std::env::current_exe()?;
+        crate::common::terminal::TerminalLauncher::new(current_exe.to_string_lossy())
+            .arg("arch")
+            .arg("install")
+            .class("ins-install")
+            .title("instantOS Installation")
+            .launch()?;
+        return Ok(());
+    }
+
+    // Installation state and answers live below /etc, so escalate before
+    // touching either. The nested ask/exec commands then see an already-root
+    // process and do not need to relaunch halfway through the workflow.
+    ensure_root()?;
+
     // Check architecture
     let system_info = crate::arch::engine::SystemInfo::detect();
 

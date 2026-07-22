@@ -21,7 +21,10 @@ pub enum DevCommands {
     Clone,
     /// Mount and chroot into an installed instantOS system
     Chroot(chroot::ChrootOptions),
-    Install,
+    Install {
+        /// Package name to install directly, skipping the interactive picker
+        package: Option<String>,
+    },
     /// Setup development environment (Arch live ISO)
     Setup,
     /// Interactive dev menu (guided workflows)
@@ -32,7 +35,7 @@ pub async fn handle_dev_command(command: DevCommands, debug: bool) -> Result<()>
     match command {
         DevCommands::Clone => handle_clone_internal(debug).await,
         DevCommands::Chroot(options) => chroot::handle_chroot(options, debug),
-        DevCommands::Install => handle_install(debug).await,
+        DevCommands::Install { package } => handle_install(debug, package).await,
         DevCommands::Setup => setup::handle_setup(debug).await,
         DevCommands::Menu => menu::dev_menu(debug).await,
     }

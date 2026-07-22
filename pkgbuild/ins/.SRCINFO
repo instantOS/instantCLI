@@ -1,10 +1,12 @@
 pkgbase = ins
 	pkgdesc = A powerful command-line tool for managing dotfiles, system diagnostics, and instantOS configurations
-	pkgver = 0.14.4
+	pkgver = 0.14.5
 	pkgrel = 1
 	url = https://instantos.io
 	arch = x86_64
 	license = GPL-2.0-only
+	checkdepends = ntfs-3g
+	checkdepends = ntfsprogs
 	makedepends = rust
 	depends = glibc
 	depends = gcc-libs
@@ -16,7 +18,7 @@ pkgbase = ins
 	optdepends = ntfsprogs: for NTFS partition resize detection (dual-boot)
 	optdepends = ntfs-3g: for mounting Windows NTFS partitions (dual-boot)
 	options = !lto
-	source = ins-0.14.4.tar.gz::https://github.com/instantOS/instantCLI/archive/refs/tags/v0.14.4.tar.gz
+	source = ins-0.14.5.tar.gz::https://github.com/instantOS/instantCLI/archive/refs/tags/v0.14.5.tar.gz
 	sha256sums = SKIP
 
 pkgname = ins

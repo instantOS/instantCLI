@@ -231,7 +231,9 @@ impl KeyChordNavigator {
                     }
 
                     match key_event.code {
-                        KeyCode::Esc | KeyCode::Backspace => {
+                        KeyCode::Esc | KeyCode::Backspace
+                        | KeyCode::Char('q')
+                        | KeyCode::Char('Q') => {
                             if let Some((node, path)) = self.history.pop() {
                                 self.current_node = node;
                                 self.path = path;
@@ -364,6 +366,8 @@ fn instructions_line() -> Line<'static> {
         Span::styled("Esc", Style::default().fg(Color::Cyan)),
         Span::raw("/"),
         Span::styled("Backspace", Style::default().fg(Color::Cyan)),
+        Span::raw("/"),
+        Span::styled("q/Q", Style::default().fg(Color::Cyan)),
         Span::raw(" to go back or quit"),
     ])
 }

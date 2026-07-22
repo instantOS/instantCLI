@@ -1,27 +1,35 @@
-#!/bin/bash
+#!/bin/sh
 
-# VERY experimental new Rust based installer for instantOS
+set -eu
 
-echo "installing instantOS"
-
-mkdir -p /etc/instantos
-touch /etc/instantos/uploadlogs
-
-# Always initialize pacman keyring (required in live ISO environment)
-echo "Initializing pacman keyring..."
-pacman-key --init
-echo "Populating Arch Linux keys..."
-pacman-key --populate archlinux
-
-# Update keyring package first to avoid signature issues
-echo "Updating archlinux-keyring package..."
-if ! pacman -Sy --needed archlinux-keyring --noconfirm; then
-    echo "Error: Failed to update archlinux-keyring. Cannot continue."
+if [ "$(id -u)" -ne 0 ]; then
+    echo "Run this installer as root." >&2
     exit 1
 fi
 
-# Now install required packages
-echo "Installing dependencies..."
-curl https://stuff.paperbenni.xyz/ins > ins
-chmod +x ins
-./ins arch install
+for command in curl mktemp pacman pacman-key; do
+    if ! command -v "$command" >/dev/null 2>&1; then
+        echo "Required command not found: $command" >&2
+        exit 1
+    fi
+done
+
+echo "Preparing the Arch Linux package keyring..."
+pacman-key --init
+pacman-key --populate archlinux
+pacman -Sy --needed archlinux-keyring --noconfirm
+
+installer_script=$(mktemp)
+cleanup() {
+    rm -f "$installer_script"
+}
+trap cleanup EXIT HUP INT TERM
+
+echo "Installing the latest instantCLI release..."
+curl -fsSL https://raw.githubusercontent.com/instantOS/instantCLI/main/scripts/install.sh \
+    -o "$installer_script"
+INSTALL_DIR=/usr/local/bin sh "$installer_script"
+cleanup
+trap - EXIT HUP INT TERM
+
+exec /usr/local/bin/ins arch install

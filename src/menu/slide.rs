@@ -210,7 +210,7 @@ impl SliderApp {
                     }
 
                     if key_event.modifiers.is_empty()
-                        && matches!(key_event.code, KeyCode::Esc | KeyCode::Char('q'))
+                        && matches!(key_event.code, KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q'))
                     {
                         return Ok(None);
                     }
@@ -352,7 +352,7 @@ impl SliderApp {
         let help_text = Line::from(vec![
             Span::styled("Enter", Style::default().fg(Color::Green)),
             Span::raw(" accept  •  "),
-            Span::styled("Esc/q", Style::default().fg(Color::Red)),
+            Span::styled("Esc/q/Q", Style::default().fg(Color::Red)),
             Span::raw(" quit  •  "),
             Span::styled("h/l", Style::default().fg(Color::Cyan)),
             Span::raw(" ±step  •  "),

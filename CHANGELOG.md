@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.5](https://github.com/instantOS/instantCLI/compare/v0.14.4...v0.14.5) - 2026-07-11
+
+### Fixed
+
+- fix pkgbuild
+- fix steam otp
+
+### Other
+
+- Merge branch 'dev'
+- fmt
+
 ## [0.14.4](https://github.com/instantOS/instantCLI/compare/v0.14.3...v0.14.4) - 2026-07-06
 
 ### Added
