@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.6](https://github.com/instantOS/instantCLI/compare/v0.14.5...v0.14.6) - 2026-07-20
+
+### Fixed
+
+- fix mktemp installation
+- fix archinstall.sh
+- fix escalation and installer opening
+
+### Other
+
+- add dev install package arg
+- Make sure ins arch install is run in a terminal
+
 ## [0.14.5](https://github.com/instantOS/instantCLI/compare/v0.14.4...v0.14.5) - 2026-07-11
 
 ### Fixed
