@@ -39,6 +39,7 @@ pub fn run_notify_ui(debug: bool, mut daemon_running: bool) -> Result<()> {
                 super::service::enable_and_start()?;
                 daemon_running = true;
             }
+            MenuAction::Refresh => {}
             MenuAction::Exit => break,
         }
     }
@@ -50,6 +51,7 @@ enum MenuAction {
     OpenNotification { id: i64, main_cursor: MenuCursor },
     OpenOptions { main_cursor: MenuCursor },
     EnableCapture { main_cursor: MenuCursor },
+    Refresh,
     Exit,
 }
 
@@ -129,7 +131,8 @@ fn run_main_menu(
                 main_cursor: cursor.clone(),
             }
         }
-        Some(NotifyMainItem::UnreadCount(_)) | None => MenuAction::Exit,
+        Some(NotifyMainItem::UnreadCount(_)) => MenuAction::Refresh,
+        None => MenuAction::Exit,
         Some(NotifyMainItem::Close) => MenuAction::Exit,
     };
 
