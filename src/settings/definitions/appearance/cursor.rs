@@ -1,20 +1,25 @@
 //! Cursor theme settings
 //!
-//! Configure cursor themes for Sway.
+//! Configure cursor themes for Sway and instantWM on Wayland.
 
 use anyhow::Result;
 use std::process::Command;
 
-use crate::common::compositor::CompositorType;
+use crate::common::{compositor::CompositorType, instantwmctl};
 use crate::menu_utils::FzfWrapper;
 use crate::preview::{PreviewId, preview_command};
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
+use crate::settings::store::StringSettingKey;
 use crate::ui::prelude::*;
 
 use super::common::list_cursor_themes;
 
 pub struct CursorTheme;
+
+impl CursorTheme {
+    const KEY: StringSettingKey = StringSettingKey::new("appearance.cursor_theme", "");
+}
 
 impl Setting for CursorTheme {
     fn metadata(&self) -> SettingMetadata {
@@ -22,7 +27,8 @@ impl Setting for CursorTheme {
             .id("appearance.cursor_theme")
             .title("Cursor Theme")
             .icon(NerdFont::Mouse)
-            .summary("Select and apply a cursor theme for Sway.\n\nUpdates gsettings cursor-theme setting.\nOnly supported on Sway.")
+            .summary("Select and apply a cursor theme for Sway or instantWM on Wayland.\n\nUpdates the global GSettings cursor theme and applies it to the running compositor.")
+            .requires_reapply(true)
             .build()
     }
 
@@ -36,11 +42,11 @@ impl Setting for CursorTheme {
 
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
         let compositor = CompositorType::detect();
-        if !matches!(compositor, CompositorType::Sway) {
+        if !supports_cursor_theme(&compositor) {
             ctx.emit_unsupported(
                 "settings.appearance.cursor_theme.unsupported",
                 &format!(
-                    "Cursor theme configuration is only supported on Sway. Detected: {}",
+                    "Cursor theme configuration is only supported on Sway and instantWM Wayland. Detected: {}",
                     compositor.name()
                 ),
             );
@@ -70,15 +76,36 @@ impl Setting for CursorTheme {
 
         match selected {
             crate::menu_utils::FzfResult::Selected(selection) => {
-                apply_cursor_theme_changes(ctx, &selection);
+                ctx.set_string(Self::KEY, &selection);
+                apply_cursor_theme_changes(ctx, &compositor, &selection);
                 Ok(())
             }
             _ => Ok(()),
         }
     }
+
+    fn restore(&self, ctx: &mut SettingsContext) -> Option<Result<()>> {
+        let compositor = CompositorType::detect();
+        if !supports_cursor_theme(&compositor) {
+            return None;
+        }
+
+        let theme = ctx.string(Self::KEY);
+        if theme.is_empty() {
+            return None;
+        }
+
+        apply_cursor_theme_changes(ctx, &compositor, &theme);
+        Some(Ok(()))
+    }
 }
 
-fn apply_cursor_theme_changes(ctx: &mut SettingsContext, theme: &str) {
+fn supports_cursor_theme(compositor: &CompositorType) -> bool {
+    matches!(compositor, CompositorType::Sway)
+        || (matches!(compositor, CompositorType::InstantWM) && compositor.is_wayland())
+}
+
+fn apply_cursor_theme_changes(ctx: &mut SettingsContext, compositor: &CompositorType, theme: &str) {
     // 1. Apply to GSettings first (for GTK apps) - setup_sway reads from gsettings
     let status = Command::new("timeout")
         .args([
@@ -112,12 +139,26 @@ fn apply_cursor_theme_changes(ctx: &mut SettingsContext, theme: &str) {
         }
     }
 
-    // 2. Regenerate sway config (reads cursor theme from gsettings)
-    use crate::setup::{SetupCommands, handle_setup_command};
-    if let Err(e) = handle_setup_command(SetupCommands::Sway) {
-        ctx.emit_failure(
-            "settings.appearance.cursor_theme.sway_config_error",
-            &format!("Failed to update sway config: {e}"),
-        );
+    // 2. Apply it to the running compositor.
+    match compositor {
+        CompositorType::Sway => {
+            // setup_sway reads the cursor theme from GSettings and reloads Sway.
+            use crate::setup::{SetupCommands, handle_setup_command};
+            if let Err(e) = handle_setup_command(SetupCommands::Sway) {
+                ctx.emit_failure(
+                    "settings.appearance.cursor_theme.sway_config_error",
+                    &format!("Failed to update Sway config: {e}"),
+                );
+            }
+        }
+        CompositorType::InstantWM => {
+            if let Err(e) = instantwmctl::run(["config", "set", "cursor.theme", theme]) {
+                ctx.emit_failure(
+                    "settings.appearance.cursor_theme.instantwm_error",
+                    &format!("Failed to apply cursor theme to instantWM: {e}"),
+                );
+            }
+        }
+        _ => {}
     }
 }

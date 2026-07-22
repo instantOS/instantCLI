@@ -71,9 +71,9 @@ pub(crate) fn render_cursor_theme_preview() -> Result<String> {
     let theme = get_current_cursor_theme().unwrap_or_else(|| "unknown".to_string());
     Ok(PreviewBuilder::new()
         .header(NerdFont::Mouse, "Cursor Theme")
-        .text("Select and apply a cursor theme for Sway.")
+        .text("Select and apply a cursor theme for Sway or instantWM on Wayland.")
         .text("Updates gsettings cursor-theme setting.")
-        .text("Only supported on Sway.")
+        .text("Supported on Sway and instantWM Wayland.")
         .blank()
         .field("Current cursor theme", &theme)
         .build_string())

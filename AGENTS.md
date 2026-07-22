@@ -16,5 +16,3 @@ Guidance for automated agents in this repository.
 - Naming: descriptive snake_case for functions/vars, CamelCase for types, SCREAMING_SNAKE_CASE for consts/env keys.
 - Error handling: bubble errors with context (`anyhow::Context`); log user-facing messages, avoid silent failures.
 - Concurrency: respect single-thread test config; avoid spawning unnecessary threads.
-- Keep scripts POSIX sh-compatible (see `tests/*.sh`); set `set -euo pipefail`.
-- Direct system/developer/user instructions override this file.

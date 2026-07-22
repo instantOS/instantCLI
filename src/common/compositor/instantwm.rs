@@ -3,7 +3,6 @@ use crate::common::instantwmctl;
 use crate::scratchpad::config::ScratchpadConfig;
 use anyhow::Result;
 use serde::Deserialize;
-use std::collections::HashSet;
 use std::thread;
 use std::time::Duration;
 
@@ -15,17 +14,12 @@ struct InstantWmScratchpadInfo {
     visible: bool,
 }
 
-#[derive(Debug, Deserialize)]
-struct InstantWmWindowInfo {
-    id: u64,
-}
-
 impl ScratchpadProvider for InstantWM {
     fn show(&self, config: &ScratchpadConfig) -> Result<()> {
         if is_scratchpad_registered(&config.name)? {
             instantwmctl::run(["scratchpad", "show", config.name.as_str()])?;
         } else {
-            self.create_and_wait(config, ScratchpadStatus::Shown)?;
+            self.create_and_wait(config)?;
         }
         Ok(())
     }
@@ -38,7 +32,7 @@ impl ScratchpadProvider for InstantWM {
         if is_scratchpad_registered(&config.name)? {
             instantwmctl::run(["scratchpad", "toggle", config.name.as_str()])?;
         } else {
-            self.create_and_wait(config, ScratchpadStatus::Shown)?;
+            self.create_and_wait(config)?;
         }
         Ok(())
     }
@@ -78,12 +72,7 @@ impl ScratchpadProvider for InstantWM {
 }
 
 impl InstantWM {
-    fn create_and_wait(
-        &self,
-        config: &ScratchpadConfig,
-        initial_status: ScratchpadStatus,
-    ) -> Result<()> {
-        let windows_before = get_window_ids()?;
+    fn create_and_wait(&self, config: &ScratchpadConfig) -> Result<()> {
         create_terminal_process(config)?;
 
         let min_delay = Duration::from_millis(20);
@@ -91,24 +80,18 @@ impl InstantWM {
         let total_timeout = Duration::from_secs(5);
         let start = std::time::Instant::now();
         let mut delay = min_delay;
-        let mut new_window_seen = false;
+        let mut registration_seen = false;
 
         while start.elapsed() < total_timeout {
-            let windows_after = get_window_ids()?;
-            if let Some(window_id) = find_new_window(&windows_before, &windows_after) {
-                new_window_seen = true;
-                create_scratchpad(window_id, &config.name, initial_status)?;
-                thread::sleep(Duration::from_millis(40));
-
-                if let Some(scratchpad) = get_scratchpad_info(&config.name)? {
-                    if !matches!(initial_status, ScratchpadStatus::Shown) || scratchpad.visible {
-                        return Ok(());
-                    }
-                    instantwmctl::run(["scratchpad", "show", config.name.as_str()])?;
-                    thread::sleep(Duration::from_millis(30));
-                    if get_scratchpad_info(&config.name)?.is_some_and(|sp| sp.visible) {
-                        return Ok(());
-                    }
+            if let Some(scratchpad) = get_scratchpad_info(&config.name)? {
+                registration_seen = true;
+                if scratchpad.visible {
+                    return Ok(());
+                }
+                instantwmctl::run(["scratchpad", "show", config.name.as_str()])?;
+                thread::sleep(Duration::from_millis(30));
+                if get_scratchpad_info(&config.name)?.is_some_and(|scratchpad| scratchpad.visible) {
+                    return Ok(());
                 }
             }
 
@@ -116,58 +99,19 @@ impl InstantWM {
             delay = (delay * 2).min(max_delay);
         }
 
-        if is_scratchpad_registered(&config.name)? {
-            Ok(())
-        } else if new_window_seen {
-            Err(anyhow::anyhow!(
-                "terminal appeared but instantWM scratchpad registration failed"
-            ))
-        } else {
-            Err(anyhow::anyhow!("terminal window did not appear"))
+        match get_scratchpad_info(&config.name)? {
+            Some(scratchpad) if scratchpad.visible => Ok(()),
+            Some(_) => Err(anyhow::anyhow!(
+                "instantWM registered the scratchpad but did not make it visible"
+            )),
+            None if registration_seen => Err(anyhow::anyhow!(
+                "the scratchpad disappeared before instantWM could make it visible"
+            )),
+            None => Err(anyhow::anyhow!(
+                "terminal did not register its scratchpad identity with instantWM"
+            )),
         }
     }
-}
-
-#[derive(Clone, Copy)]
-enum ScratchpadStatus {
-    Hidden,
-    Shown,
-}
-
-impl ScratchpadStatus {
-    fn as_cli_arg(self) -> &'static str {
-        match self {
-            ScratchpadStatus::Hidden => "hidden",
-            ScratchpadStatus::Shown => "shown",
-        }
-    }
-}
-
-fn find_new_window(before: &[u64], after: &[u64]) -> Option<u64> {
-    let before_set: HashSet<u64> = before.iter().copied().collect();
-    after
-        .iter()
-        .rev()
-        .copied()
-        .find(|window_id| !before_set.contains(window_id))
-}
-
-fn create_scratchpad(window_id: u64, name: &str, status: ScratchpadStatus) -> Result<()> {
-    let window_id = window_id.to_string();
-    instantwmctl::run([
-        "scratchpad",
-        "create",
-        name,
-        "--window-id",
-        window_id.as_str(),
-        "--status",
-        status.as_cli_arg(),
-    ])
-}
-
-fn get_window_ids() -> Result<Vec<u64>> {
-    let windows: Vec<InstantWmWindowInfo> = instantwmctl::json(["window", "list"])?;
-    Ok(windows.into_iter().map(|window| window.id).collect())
 }
 
 fn get_scratchpad_list(name: Option<&str>) -> Result<Vec<InstantWmScratchpadInfo>> {
@@ -210,36 +154,4 @@ pub fn get_current_mode() -> Result<String> {
         }
     }
     Ok("default".to_string())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn finds_new_window_from_delta() {
-        let before = vec![1, 2, 3];
-        let after = vec![1, 2, 3, 7];
-        assert_eq!(find_new_window(&before, &after), Some(7));
-    }
-
-    #[test]
-    fn prefers_latest_new_window_when_multiple_appear() {
-        let before = vec![1, 2];
-        let after = vec![1, 2, 5, 8];
-        assert_eq!(find_new_window(&before, &after), Some(8));
-    }
-
-    #[test]
-    fn returns_none_when_no_new_window_exists() {
-        let before = vec![1, 2, 3];
-        let after = vec![1, 2, 3];
-        assert_eq!(find_new_window(&before, &after), None);
-    }
-
-    #[test]
-    fn scratchpad_status_cli_arg_matches_instantwmctl_values() {
-        assert_eq!(ScratchpadStatus::Hidden.as_cli_arg(), "hidden");
-        assert_eq!(ScratchpadStatus::Shown.as_cli_arg(), "shown");
-    }
 }
