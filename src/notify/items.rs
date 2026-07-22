@@ -1,0 +1,268 @@
+//! FZF menu items for the notification center
+//!
+//! Implements `FzfSelectable` for notification lists and detail views,
+//! following the same pattern as `settings/ui/items.rs`.
+
+use crate::menu_utils::FzfSelectable;
+use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, hex_to_ansi_fg};
+use crate::ui::nerd_font::NerdFont;
+use crate::ui::preview::{FzfPreview, PreviewBuilder};
+
+const RESET: &str = "\x1b[0m";
+
+/// A notification item for display in the main FZF menu.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NotificationListItem {
+    pub id: i64,
+    pub app_name: String,
+    pub title: String,
+    pub body: String,
+    pub timestamp: String,
+    pub read: bool,
+}
+
+/// Top-level menu items in the notification center.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum NotifyMainItem {
+    /// Unread count header (non-selectable).
+    UnreadCount(i64),
+    /// A notification entry.
+    Notification(NotificationListItem),
+    /// Options submenu.
+    Options,
+    /// Close the notification center.
+    Close,
+}
+
+impl FzfSelectable for NotifyMainItem {
+    fn fzf_display_text(&self) -> String {
+        match self {
+            NotifyMainItem::UnreadCount(count) => {
+                let icon = format_icon_colored(NerdFont::EnvelopeOpen, colors::YELLOW);
+                let label_color = hex_to_ansi_fg(colors::SUBTEXT0);
+                format!("{icon} {label_color}{count} unread notification(s){RESET}")
+            }
+            NotifyMainItem::Notification(n) => {
+                let icon = if n.read {
+                    format_icon_colored(NerdFont::Envelope, colors::OVERLAY1)
+                } else {
+                    format_icon_colored(NerdFont::EnvelopeOpen, colors::YELLOW)
+                };
+
+                let app_color = hex_to_ansi_fg(colors::BLUE);
+                let title_color = hex_to_ansi_fg(colors::TEXT);
+                let time_color = hex_to_ansi_fg(colors::SUBTEXT0);
+
+                format!(
+                    "{} {app_color}{}{RESET} {title_color}{}{RESET} {time_color}({}){RESET}",
+                    icon, n.app_name, n.title, n.timestamp,
+                )
+            }
+            NotifyMainItem::Options => {
+                format!("{} Options", format_icon_colored(NerdFont::Gear, colors::MAUVE))
+            }
+            NotifyMainItem::Close => format!("{} Close", format_back_icon()),
+        }
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        match self {
+            NotifyMainItem::UnreadCount(count) => PreviewBuilder::new()
+                .header(NerdFont::EnvelopeOpen, "Unread Notifications")
+                .text(&format!("You have {count} unread notification(s)."))
+                .build(),
+            NotifyMainItem::Notification(n) => {
+                let read_label = if n.read { "Read" } else { "Unread" };
+                let read_icon = if n.read {
+                    NerdFont::Envelope
+                } else {
+                    NerdFont::EnvelopeOpen
+                };
+                let read_color = if n.read { colors::OVERLAY1 } else { colors::YELLOW };
+
+                let mut builder = PreviewBuilder::new()
+                    .line(read_color, Some(read_icon), &n.title)
+                    .separator()
+                    .blank()
+                    .field("Application", &n.app_name)
+                    .field("Time", &n.timestamp)
+                    .field("Status", read_label)
+                    .blank()
+                    .separator()
+                    .blank();
+
+                for line in wrap_text(&n.body, 60) {
+                    builder = builder.text(&line);
+                }
+
+                builder.build()
+            }
+            NotifyMainItem::Options => PreviewBuilder::new()
+                .header(NerdFont::Gear, "Notification Options")
+                .text("Configure Do Not Disturb, clear notifications,")
+                .text("delete by app/keyword, and adjust history size.")
+                .build(),
+            NotifyMainItem::Close => PreviewBuilder::new()
+                .header(NerdFont::Cross, "Close")
+                .text("Exit the notification center.")
+                .build(),
+        }
+    }
+
+    fn fzf_key(&self) -> String {
+        match self {
+            NotifyMainItem::UnreadCount(_) => "__unread_count__".to_string(),
+            NotifyMainItem::Notification(n) => format!("notif:{}", n.id),
+            NotifyMainItem::Options => "__options__".to_string(),
+            NotifyMainItem::Close => "__close__".to_string(),
+        }
+    }
+
+    fn fzf_is_selectable(&self) -> bool {
+        match self {
+            NotifyMainItem::UnreadCount(_) => false,
+            _ => true,
+        }
+    }
+}
+
+/// Actions available in the notification detail view.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum NotificationDetailAction {
+    Back,
+    MarkUnread,
+    Delete,
+    Close,
+}
+
+/// Items in the notification detail submenu.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum NotificationDetailItem {
+    App(String),
+    Time(String),
+    Body(String),
+    Separator,
+    Action(NotificationDetailAction),
+}
+
+impl FzfSelectable for NotificationDetailItem {
+    fn fzf_display_text(&self) -> String {
+        match self {
+            NotificationDetailItem::App(app_name) => {
+                let label_color = hex_to_ansi_fg(colors::SUBTEXT0);
+                let value_color = hex_to_ansi_fg(colors::BLUE);
+                format!("{label_color}Application:{RESET} {value_color}{app_name}{RESET}")
+            }
+            NotificationDetailItem::Time(timestamp) => {
+                let label_color = hex_to_ansi_fg(colors::SUBTEXT0);
+                let value_color = hex_to_ansi_fg(colors::TEAL);
+                format!("{label_color}Time:{RESET} {value_color}{timestamp}{RESET}")
+            }
+            NotificationDetailItem::Body(body) => {
+                let body_color = hex_to_ansi_fg(colors::TEXT);
+                let truncated = if body.len() > 80 {
+                    format!("{}...", &body[..77])
+                } else {
+                    body.clone()
+                };
+                format!("{body_color}{truncated}{RESET}")
+            }
+            NotificationDetailItem::Separator => {
+                let color = hex_to_ansi_fg(colors::SURFACE1);
+                format!("{color}────────────────────────────────────────{RESET}")
+            }
+            NotificationDetailItem::Action(action) => match action {
+                NotificationDetailAction::Back => format!("{} Back", format_back_icon()),
+                NotificationDetailAction::MarkUnread => {
+                    format!("{} Mark as unread", format_icon_colored(NerdFont::EnvelopeOpen, colors::YELLOW))
+                }
+                NotificationDetailAction::Delete => {
+                    format!("{} Delete", format_icon_colored(NerdFont::Trash, colors::RED))
+                }
+                NotificationDetailAction::Close => format!("{} Close", format_back_icon()),
+            },
+        }
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        match self {
+            NotificationDetailItem::App(app_name) => PreviewBuilder::new()
+                .header(NerdFont::User, app_name)
+                .text("The application that sent this notification.")
+                .build(),
+            NotificationDetailItem::Time(timestamp) => PreviewBuilder::new()
+                .header(NerdFont::Clock, timestamp)
+                .text("When this notification was received.")
+                .build(),
+            NotificationDetailItem::Body(body) => {
+                let mut builder = PreviewBuilder::new().header(NerdFont::Envelope, "Message");
+                for line in wrap_text(body, 60) {
+                    builder = builder.text(&line);
+                }
+                builder.build()
+            }
+            NotificationDetailItem::Separator => PreviewBuilder::new().build(),
+            NotificationDetailItem::Action(action) => match action {
+                NotificationDetailAction::Back => PreviewBuilder::new()
+                    .header(NerdFont::ArrowLeft, "Go Back")
+                    .text("Return to the notification list.")
+                    .build(),
+                NotificationDetailAction::MarkUnread => PreviewBuilder::new()
+                    .header(NerdFont::EnvelopeOpen, "Mark as Unread")
+                    .text("Mark this notification as unread.")
+                    .build(),
+                NotificationDetailAction::Delete => PreviewBuilder::new()
+                    .header(NerdFont::Trash, "Delete")
+                    .text("Remove this notification from the database.")
+                    .build(),
+                NotificationDetailAction::Close => PreviewBuilder::new()
+                    .header(NerdFont::Cross, "Close")
+                    .text("Exit the notification center.")
+                    .build(),
+            },
+        }
+    }
+
+    fn fzf_key(&self) -> String {
+        match self {
+            NotificationDetailItem::App(_) => "__app__".to_string(),
+            NotificationDetailItem::Time(_) => "__time__".to_string(),
+            NotificationDetailItem::Body(_) => "__body__".to_string(),
+            NotificationDetailItem::Separator => "__sep__".to_string(),
+            NotificationDetailItem::Action(action) => match action {
+                NotificationDetailAction::Back => "__back__".to_string(),
+                NotificationDetailAction::MarkUnread => "__mark_unread__".to_string(),
+                NotificationDetailAction::Delete => "__delete__".to_string(),
+                NotificationDetailAction::Close => "__close__".to_string(),
+            },
+        }
+    }
+
+    fn fzf_is_selectable(&self) -> bool {
+        match self {
+            NotificationDetailItem::Action(_) => true,
+            _ => false,
+        }
+    }
+}
+
+/// Wrap text to a maximum line width, preserving existing newlines.
+fn wrap_text(text: &str, width: usize) -> Vec<String> {
+    let mut result = Vec::new();
+    for line in text.lines() {
+        if line.is_empty() {
+            result.push(String::new());
+            continue;
+        }
+        let mut start = 0;
+        while start < line.len() {
+            let end = (start + width).min(line.len());
+            result.push(line[start..end].to_string());
+            start = end;
+        }
+    }
+    if result.is_empty() {
+        result.push(String::new());
+    }
+    result
+}
