@@ -66,6 +66,7 @@ hex = "0.4.3"
 age = { version = "0.11", features = ["ssh", "armor"] }
 sha1 = "0.10"
 hmac = "0.12"
+zbus = { version = "5", default-features = false, features = ["tokio"] }
 
 [dev-dependencies]
 serial_test = "3"

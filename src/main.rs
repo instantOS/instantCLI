@@ -14,6 +14,7 @@ mod game;
 mod launch;
 mod menu;
 mod menu_utils;
+mod notify;
 mod pass;
 mod preview;
 mod resolvething;
@@ -151,6 +152,11 @@ enum Commands {
     Menu {
         #[command(subcommand)]
         command: menu::MenuCommands,
+    },
+    /// Notification center
+    Notify {
+        #[command(subcommand)]
+        command: Option<notify::NotifyCommands>,
     },
     /// Internal preview renderer for fzf
     #[command(hide = true)]
@@ -306,6 +312,12 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
                 _ => menu::handle_menu_command(command.clone(), cli.debug).await?,
             };
             std::process::exit(exit_code);
+        }
+        Some(Commands::Notify { command }) => {
+            execute_with_error_handling(
+                notify::handle_notify_command(command, cli.debug).await,
+                "Error handling notify command",
+            )?;
         }
         Some(Commands::Preview { id, key }) => {
             preview::handle_preview_command(*id, key.clone())?;
