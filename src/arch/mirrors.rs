@@ -1,4 +1,4 @@
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use std::collections::HashMap;
 use std::time::Duration;
 
@@ -76,7 +76,7 @@ pub async fn fetch_mirror_regions() -> Result<HashMap<String, String>> {
 /// Single attempt to fetch mirror regions
 async fn try_fetch_mirror_regions() -> Result<HashMap<String, String>> {
     let url = "https://archlinux.org/mirrorlist/";
-    let response = reqwest::get(url).await?.text().await?;
+    let response = download_text(url).await?;
 
     let mut regions = HashMap::new();
 
@@ -117,7 +117,12 @@ pub async fn fetch_mirrorlist(region_code: &str) -> Result<String> {
     // Try 1: Region-specific mirrorlist with retries
     if !region_code.is_empty() {
         match fetch_mirrorlist_with_retry(region_code).await {
-            Ok(list) => return Ok(list),
+            Ok(list) => match validate_and_prioritize_mirrors(&list).await {
+                Ok(list) => return Ok(list),
+                Err(e) => {
+                    eprintln!("No usable mirror found in the selected region: {e:#}");
+                }
+            },
             Err(e) => {
                 eprintln!("Region-specific mirrorlist fetch failed: {}", e);
             }
@@ -127,7 +132,12 @@ pub async fn fetch_mirrorlist(region_code: &str) -> Result<String> {
     // Try 2: All HTTPS mirrors fallback
     eprintln!("Trying fallback: all HTTPS mirrors...");
     match fetch_all_https_mirrors().await {
-        Ok(list) => return Ok(list),
+        Ok(list) => match validate_and_prioritize_mirrors(&list).await {
+            Ok(list) => return Ok(list),
+            Err(e) => {
+                eprintln!("No usable mirror found in the HTTPS fallback list: {e:#}");
+            }
+        },
         Err(e) => {
             eprintln!("All HTTPS mirrors fetch failed: {}", e);
         }
@@ -140,8 +150,15 @@ pub async fn fetch_mirrorlist(region_code: &str) -> Result<String> {
     );
     match std::fs::read_to_string(LOCAL_MIRRORLIST_PATH) {
         Ok(content) if !content.trim().is_empty() => {
-            eprintln!("Using local mirrorlist as fallback");
-            return Ok(content);
+            match validate_and_prioritize_mirrors(&content).await {
+                Ok(content) => {
+                    eprintln!("Using validated local mirrorlist as fallback");
+                    return Ok(content);
+                }
+                Err(e) => {
+                    eprintln!("Local mirrorlist has no usable mirror: {e:#}");
+                }
+            }
         }
         Ok(_) => {
             eprintln!("Local mirrorlist is empty");
@@ -171,21 +188,16 @@ async fn fetch_mirrorlist_with_retry(region_code: &str) -> Result<String> {
             tokio::time::sleep(delay).await;
         }
 
-        match reqwest::get(&url).await {
-            Ok(response) => match response.text().await {
-                Ok(content) => {
-                    let uncommented = uncomment_servers(&content);
-                    if uncommented.contains("Server =") {
-                        return Ok(uncommented);
-                    }
-                    last_error = Some(anyhow!("Mirrorlist contains no server entries"));
+        match download_text(&url).await {
+            Ok(content) => {
+                let uncommented = uncomment_servers(&content);
+                if uncommented.contains("Server =") {
+                    return Ok(uncommented);
                 }
-                Err(e) => {
-                    last_error = Some(e.into());
-                }
-            },
+                last_error = Some(anyhow!("Mirrorlist contains no server entries"));
+            }
             Err(e) => {
-                last_error = Some(e.into());
+                last_error = Some(e);
             }
         }
     }
@@ -203,26 +215,47 @@ async fn fetch_all_https_mirrors() -> Result<String> {
             tokio::time::sleep(delay).await;
         }
 
-        match reqwest::get(ALL_HTTPS_MIRRORS_URL).await {
-            Ok(response) => match response.text().await {
-                Ok(content) => {
-                    let uncommented = uncomment_servers(&content);
-                    if uncommented.contains("Server =") {
-                        return Ok(uncommented);
-                    }
-                    last_error = Some(anyhow!("All-mirrors list contains no server entries"));
+        match download_text(ALL_HTTPS_MIRRORS_URL).await {
+            Ok(content) => {
+                let uncommented = uncomment_servers(&content);
+                if uncommented.contains("Server =") {
+                    return Ok(uncommented);
                 }
-                Err(e) => {
-                    last_error = Some(e.into());
-                }
-            },
+                last_error = Some(anyhow!("All-mirrors list contains no server entries"));
+            }
             Err(e) => {
-                last_error = Some(e.into());
+                last_error = Some(e);
             }
         }
     }
 
     Err(last_error.unwrap_or_else(|| anyhow!("Failed to fetch all HTTPS mirrors")))
+}
+
+async fn validate_and_prioritize_mirrors(content: &str) -> Result<String> {
+    let prepared = crate::common::pacman_mirrors::prepare_mirrorlist(
+        content,
+        crate::common::pacman_mirrors::DEFAULT_PROBE_LIMIT,
+    )
+    .await?;
+    println!(
+        "Selected working mirror after {} check(s): {} ({:.0} ms)",
+        prepared.attempts,
+        prepared.selected.mirror.template,
+        prepared.selected.latency.as_secs_f64() * 1000.0
+    );
+    Ok(prepared.content)
+}
+
+async fn download_text(url: &str) -> Result<String> {
+    reqwest::get(url)
+        .await
+        .with_context(|| format!("Failed to request {url}"))?
+        .error_for_status()
+        .with_context(|| format!("Mirror service returned an error for {url}"))?
+        .text()
+        .await
+        .with_context(|| format!("Failed to read response from {url}"))
 }
 
 /// Uncomment server lines in mirrorlist content
