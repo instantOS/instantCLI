@@ -19,7 +19,8 @@ system diagnostics, WM keychords, game saves and much more.
 
 ### Notification history
 
-`ins notify` browses notification history, while `ins notify list`, `count`,
+`ins notify` browses notification history (`ins notify --gui` opens it in a
+dedicated terminal window), while `ins notify list`, `count`,
 `read`, `unread`, and `delete` provide scriptable access. History capture runs
 as a separate session process:
 
@@ -33,6 +34,30 @@ ins notify daemon
 
 The history database defaults to 1,000 entries and can be changed from the
 interactive notification options menu. Transient notifications are not stored.
+
+Notification actions (for example, Bluetooth pairing approval) must be invoked
+while the original notification is live. `ins notify` records the advertised
+actions and their live/expired state, but it does not replay expired actions:
+the desktop notification protocol invalidates them when the notification
+closes. Configure the notification daemon to invoke them directly:
+
+```ini
+# dunst: ~/.config/dunst/dunstrc.d/90-actions.conf
+[global]
+mouse_left_click = do_action,close_current
+mouse_middle_click = context,close_current
+# `context` uses the configured dmenu-compatible chooser.
+```
+
+```ini
+# mako: ~/.config/mako/config
+on-button-left=invoke-default-action
+on-button-middle=exec makoctl menu -n "$id" -- wmenu -p 'Select action: '
+```
+
+Opening `ins notify --gui` from a separate key binding is useful for history,
+but replacing an action click with it would discard the live application
+callback. Reload dunst with `dunstctl reload`; reload mako with `makoctl reload`.
 
 ### Removed dotfiles
 

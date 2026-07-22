@@ -144,6 +144,7 @@ pub enum NotificationDetailAction {
 pub enum NotificationDetailItem {
     App(String),
     Time(String),
+    Actions(String),
     Body(String),
     Separator,
     Action(NotificationDetailAction),
@@ -161,6 +162,11 @@ impl FzfSelectable for NotificationDetailItem {
                 let label_color = hex_to_ansi_fg(colors::SUBTEXT0);
                 let value_color = hex_to_ansi_fg(colors::TEAL);
                 format!("{label_color}Time:{RESET} {value_color}{timestamp}{RESET}")
+            }
+            NotificationDetailItem::Actions(actions) => {
+                let label_color = hex_to_ansi_fg(colors::SUBTEXT0);
+                let value_color = hex_to_ansi_fg(colors::MAUVE);
+                format!("{label_color}Actions:{RESET} {value_color}{actions}{RESET}")
             }
             NotificationDetailItem::Body(body) => {
                 let body_color = hex_to_ansi_fg(colors::TEXT);
@@ -204,6 +210,13 @@ impl FzfSelectable for NotificationDetailItem {
                 .header(NerdFont::Clock, timestamp)
                 .text("When this notification was received.")
                 .build(),
+            NotificationDetailItem::Actions(actions) => PreviewBuilder::new()
+                .header(NerdFont::Bolt, "Notification Actions")
+                .text(actions)
+                .blank()
+                .text("Actions are only valid while the original popup is live.")
+                .text("Use the notification daemon's click or context-menu binding.")
+                .build(),
             NotificationDetailItem::Body(body) => {
                 let mut builder = PreviewBuilder::new().header(NerdFont::Envelope, "Message");
                 for line in wrap_text(body, 60) {
@@ -237,6 +250,7 @@ impl FzfSelectable for NotificationDetailItem {
         match self {
             NotificationDetailItem::App(_) => "__app__".to_string(),
             NotificationDetailItem::Time(_) => "__time__".to_string(),
+            NotificationDetailItem::Actions(_) => "__actions__".to_string(),
             NotificationDetailItem::Body(_) => "__body__".to_string(),
             NotificationDetailItem::Separator => "__sep__".to_string(),
             NotificationDetailItem::Action(action) => match action {

@@ -26,6 +26,7 @@ pub enum NerdFont {
     Warning,
     Info,
     Question,
+    Bolt,
 
     // Files and folders
     Folder,
@@ -311,6 +312,7 @@ impl NerdFont {
             Self::Warning => '',            // fa-exclamation-triangle
             Self::Info => '\u{f05a}',        // fa-info-circle
             Self::Question => '',           // fa-question-circle
+            Self::Bolt => '',               // fa-bolt
 
             // Files and folders
             Self::Folder => '',     // fa-folder

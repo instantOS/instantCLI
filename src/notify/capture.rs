@@ -18,7 +18,7 @@ use zbus::zvariant::OwnedValue;
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::prelude::*;
 
-use super::db::NotifyDb;
+use super::db::{CapturedNotification, NotificationAction, NotifyDb};
 
 type PendingCalls = HashMap<(String, u32), i64>;
 type NotifyArgs = (
@@ -44,10 +44,6 @@ pub async fn run_daemon(debug: bool) -> Result<()> {
         None,
     );
 
-    let config = NotificationConfig::load()?;
-    let db = NotifyDb::open()?;
-    let mut pending = PendingCalls::new();
-
     // Keep a separate connection holding the name because BecomeMonitor turns
     // its connection into a monitor-only connection and may release names.
     let instance_guard = Builder::session()?
@@ -61,6 +57,11 @@ pub async fn run_daemon(debug: bool) -> Result<()> {
         )
         .await
         .context("another notification history daemon is already running")?;
+
+    let config = NotificationConfig::load()?;
+    let db = NotifyDb::open()?;
+    db.mark_all_inactive()?;
+    let mut pending = PendingCalls::new();
     let connection = Builder::session()?
         .build()
         .await
@@ -73,7 +74,17 @@ pub async fn run_daemon(debug: bool) -> Result<()> {
         "type='method_call',interface='org.freedesktop.Notifications',member='Notify'";
     let return_rule = "type='method_return'";
     let error_rule = "type='error'";
-    let match_rules: &[&str] = &[notify_rule, return_rule, error_rule];
+    let closed_rule =
+        "type='signal',interface='org.freedesktop.Notifications',member='NotificationClosed'";
+    let action_rule =
+        "type='signal',interface='org.freedesktop.Notifications',member='ActionInvoked'";
+    let match_rules: &[&str] = &[
+        notify_rule,
+        return_rule,
+        error_rule,
+        closed_rule,
+        action_rule,
+    ];
     connection
         .call_method(
             Some("org.freedesktop.DBus"),
@@ -150,6 +161,10 @@ fn handle_message(
         return handle_reply(message, db, pending, debug);
     }
 
+    if message.message_type() == MessageType::Signal {
+        return handle_signal(message, db, debug);
+    }
+
     let header = message.header();
     if header.member().map(|member| member.as_str()) != Some("Notify")
         || header.interface().map(|interface| interface.as_str())
@@ -158,7 +173,7 @@ fn handle_message(
         return Ok(());
     }
 
-    let (app_name, replaces_id, _icon, summary, body, _actions, hints, _timeout): NotifyArgs =
+    let (app_name, replaces_id, _icon, summary, body, raw_actions, hints, _timeout): NotifyArgs =
         message
             .body()
             .deserialize()
@@ -188,28 +203,30 @@ fn handle_message(
     let app_name = sanitize_text(&app_name, 100);
     let summary = sanitize_text(&summary, 300);
     let body = sanitize_text(&body, 2000);
+    let actions = parse_actions(raw_actions);
     let timestamp = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let notification = CapturedNotification {
+        timestamp: &timestamp,
+        app_name: &app_name,
+        title: &summary,
+        body: &body,
+        actions: &actions,
+    };
 
     let local_id = if replaces_id == 0 {
-        let id = db.add_captured(&timestamp, &app_name, &summary, &body, None, None)?;
+        let id = db.add_captured(&notification, None, None)?;
         if pending.len() >= 4096 {
             pending.clear();
         }
         pending.insert((sender, message.primary_header().serial_num().get()), id);
         id
-    } else if let Some(id) =
-        db.replace_captured(&timestamp, &app_name, &summary, &body, &sender, replaces_id)?
-    {
+    } else if let Some(id) = db.replace_captured(&notification, &sender, replaces_id)? {
         id
     } else {
-        db.add_captured(
-            &timestamp,
-            &app_name,
-            &summary,
-            &body,
-            Some(&sender),
-            Some(replaces_id),
-        )?
+        // A server ID is globally unique while live. If another sender reused
+        // it as replaces_id, the server replaced that notification too.
+        db.mark_closed(replaces_id)?;
+        db.add_captured(&notification, Some(&sender), Some(replaces_id))?
     };
 
     if debug {
@@ -219,6 +236,37 @@ fn handle_message(
             &format!("Captured {local_id}: [{app_name}] {summary}: {body}"),
             None,
         );
+    }
+    Ok(())
+}
+
+fn handle_signal(message: &Message, db: &NotifyDb, debug: bool) -> Result<()> {
+    let header = message.header();
+    let member = header.member().map(|member| member.as_str());
+    match member {
+        Some("NotificationClosed") => {
+            let (external_id, _reason): (u32, u32) = message
+                .body()
+                .deserialize()
+                .context("deserializing NotificationClosed signal")?;
+            db.mark_closed(external_id)?;
+            if debug {
+                emit(
+                    Level::Debug,
+                    "notify.daemon.closed",
+                    &format!("Notification {external_id} is no longer actionable"),
+                    None,
+                );
+            }
+        }
+        Some("ActionInvoked") => {
+            let (external_id, action_key): (u32, String) = message
+                .body()
+                .deserialize()
+                .context("deserializing ActionInvoked signal")?;
+            db.record_action(external_id, &sanitize_text(&action_key, 200))?;
+        }
+        _ => {}
     }
     Ok(())
 }
@@ -253,6 +301,8 @@ fn handle_reply(
                 None,
             );
         }
+    } else {
+        db.mark_inactive(local_id)?;
     }
     Ok(())
 }
@@ -261,6 +311,16 @@ fn sanitize_text(text: &str, max_chars: usize) -> String {
     text.chars()
         .filter(|character| !character.is_control() || matches!(character, '\n' | '\t'))
         .take(max_chars)
+        .collect()
+}
+
+fn parse_actions(raw_actions: Vec<String>) -> Vec<NotificationAction> {
+    raw_actions
+        .chunks_exact(2)
+        .map(|pair| NotificationAction {
+            key: sanitize_text(&pair[0], 200),
+            label: sanitize_text(&pair[1], 300),
+        })
         .collect()
 }
 
@@ -295,7 +355,7 @@ fn load_app_list(path: &std::path::Path) -> HashSet<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::sanitize_text;
+    use super::{parse_actions, sanitize_text};
 
     #[test]
     fn sanitize_text_is_unicode_safe_and_removes_controls() {
@@ -306,5 +366,19 @@ mod tests {
     #[test]
     fn sanitize_text_truncates_by_character() {
         assert_eq!(sanitize_text("😀😀😀", 2), "😀😀");
+    }
+
+    #[test]
+    fn actions_are_parsed_as_key_label_pairs() {
+        let actions = parse_actions(vec![
+            "default".into(),
+            "Pair".into(),
+            "reject".into(),
+            "Reject".into(),
+            "orphan".into(),
+        ]);
+        assert_eq!(actions.len(), 2);
+        assert_eq!(actions[0].key, "default");
+        assert_eq!(actions[0].label, "Pair");
     }
 }

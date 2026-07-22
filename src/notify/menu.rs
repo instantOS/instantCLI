@@ -173,6 +173,18 @@ fn build_detail_items(notif: &super::db::Notification) -> Vec<NotificationDetail
     // Info items (non-selectable)
     items.push(NotificationDetailItem::App(notif.app_name.clone()));
     items.push(NotificationDetailItem::Time(notif.timestamp.clone()));
+    if !notif.actions.is_empty() {
+        let labels = notif
+            .actions
+            .iter()
+            .map(|action| action.label.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let state = if notif.active { "live" } else { "expired" };
+        items.push(NotificationDetailItem::Actions(format!(
+            "{labels} ({state})"
+        )));
+    }
 
     // Body preview (truncated for display)
     let body_preview: String = notif.body.chars().take(500).collect();

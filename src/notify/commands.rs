@@ -79,7 +79,19 @@ pub enum NotifyCommands {
 }
 
 /// Handle a notification subcommand.
-pub async fn handle_notify_command(command: &Option<NotifyCommands>, debug: bool) -> Result<()> {
+pub async fn handle_notify_command(
+    command: &Option<NotifyCommands>,
+    gui: bool,
+    debug: bool,
+) -> Result<()> {
+    if gui {
+        anyhow::ensure!(
+            command.is_none(),
+            "--gui cannot be combined with a notify subcommand"
+        );
+        return launch_notify_in_terminal(debug);
+    }
+
     match command {
         None => super::menu::run_notify_ui(debug),
         Some(NotifyCommands::List { unread_only }) => list_notifications(*unread_only),
@@ -96,6 +108,21 @@ pub async fn handle_notify_command(command: &Option<NotifyCommands>, debug: bool
         Some(NotifyCommands::Dnd) => super::options::run_dnd_toggle_standalone(),
         Some(NotifyCommands::Daemon) => super::capture::run_daemon(debug).await,
     }
+}
+
+fn launch_notify_in_terminal(debug: bool) -> Result<()> {
+    let mut args = Vec::new();
+    if debug {
+        args.push("--debug".to_string());
+    }
+    args.push("notify".to_string());
+
+    let current_exe = std::env::current_exe()?;
+    crate::common::terminal::TerminalLauncher::new(current_exe.to_string_lossy().as_ref())
+        .class("ins-notify")
+        .title("Notifications")
+        .args(&args)
+        .launch()
 }
 
 fn list_notifications(unread_only: bool) -> Result<()> {

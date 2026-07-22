@@ -157,6 +157,9 @@ enum Commands {
     Notify {
         #[command(subcommand)]
         command: Option<notify::NotifyCommands>,
+        /// Open the notification center in a GUI terminal window
+        #[arg(long = "gui")]
+        gui: bool,
     },
     /// Internal preview renderer for fzf
     #[command(hide = true)]
@@ -313,9 +316,9 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
             };
             std::process::exit(exit_code);
         }
-        Some(Commands::Notify { command }) => {
+        Some(Commands::Notify { command, gui }) => {
             execute_with_error_handling(
-                notify::handle_notify_command(command, cli.debug).await,
+                notify::handle_notify_command(command, *gui, cli.debug).await,
                 "Error handling notify command",
             )?;
         }
@@ -419,4 +422,14 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     initialize_cli(&cli);
     dispatch_command(&cli).await
+}
+
+#[cfg(test)]
+mod cli_tests {
+    use super::cli_command;
+
+    #[test]
+    fn clap_definition_is_internally_valid() {
+        cli_command().debug_assert();
+    }
 }

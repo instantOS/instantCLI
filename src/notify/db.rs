@@ -28,9 +28,32 @@ pub struct Notification {
     pub body: String,
     /// Whether the notification has been read.
     pub read: bool,
+    /// Actions advertised by the originating application.
+    pub actions: Vec<NotificationAction>,
+    /// Whether the notification server still considers this notification live.
+    pub active: bool,
+    /// Action most recently invoked through the notification server.
+    pub invoked_action: Option<String>,
+}
+
+/// A live action advertised on a desktop notification.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NotificationAction {
+    pub key: String,
+    pub label: String,
+}
+
+/// Notification content captured from a D-Bus `Notify` call.
+pub struct CapturedNotification<'a> {
+    pub timestamp: &'a str,
+    pub app_name: &'a str,
+    pub title: &'a str,
+    pub body: &'a str,
+    pub actions: &'a [NotificationAction],
 }
 
 const DEFAULT_HISTORY_LIMIT: usize = 1000;
+const SCHEMA_VERSION: i64 = 1;
 
 /// SQLite database for storing notification history.
 pub struct NotifyDb {
@@ -65,8 +88,19 @@ impl NotifyDb {
         Ok(db)
     }
 
-    /// Create the notifications table if it doesn't exist.
+    /// Create the notifications table. Pre-release schemas are intentionally
+    /// discarded: notification history has not shipped with compatibility
+    /// guarantees yet.
     fn init_schema(&self) -> Result<()> {
+        let version: i64 = self
+            .conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        if version != SCHEMA_VERSION {
+            self.conn.execute_batch(
+                "DROP TABLE IF EXISTS notifications;
+                 DROP TABLE IF EXISTS notification_settings;",
+            )?;
+        }
         self.conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS notifications (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -77,7 +111,9 @@ impl NotifyDb {
                 read        INTEGER NOT NULL DEFAULT 0,
                 sender      TEXT,
                 external_id INTEGER,
-                active      INTEGER NOT NULL DEFAULT 1
+                active      INTEGER NOT NULL DEFAULT 1,
+                actions_json TEXT   NOT NULL DEFAULT '[]',
+                invoked_action TEXT
             );
             CREATE TABLE IF NOT EXISTS notification_settings (
                 key   TEXT PRIMARY KEY,
@@ -85,33 +121,14 @@ impl NotifyDb {
             );",
         )?;
 
-        // Migrate databases created by the initial implementation.
-        if !self.has_column("notifications", "sender")? {
-            self.conn
-                .execute("ALTER TABLE notifications ADD COLUMN sender TEXT", [])?;
-        }
-        if !self.has_column("notifications", "external_id")? {
-            self.conn.execute(
-                "ALTER TABLE notifications ADD COLUMN external_id INTEGER",
-                [],
-            )?;
-        }
-        if !self.has_column("notifications", "active")? {
-            self.conn.execute(
-                "ALTER TABLE notifications ADD COLUMN active INTEGER NOT NULL DEFAULT 1",
-                [],
-            )?;
-        }
-
         self.conn.execute(
             "INSERT OR IGNORE INTO notification_settings (key, value) VALUES ('history_limit', ?1)",
             params![DEFAULT_HISTORY_LIMIT.to_string()],
         )?;
         self.conn.execute_batch(
-            "DROP INDEX IF EXISTS notifications_sender_external_id;
-             CREATE UNIQUE INDEX notifications_sender_external_id
-                 ON notifications(sender, external_id)
-                 WHERE sender IS NOT NULL AND external_id IS NOT NULL AND active = 1;
+            "CREATE UNIQUE INDEX IF NOT EXISTS notifications_active_external_id
+                 ON notifications(external_id)
+                 WHERE external_id IS NOT NULL AND active = 1;
              CREATE TRIGGER IF NOT EXISTS notifications_trim_after_insert
                  AFTER INSERT ON notifications
                  BEGIN
@@ -121,43 +138,49 @@ impl NotifyDb {
                          LIMIT CAST((SELECT value FROM notification_settings
                                      WHERE key = 'history_limit') AS INTEGER)
                      );
-                 END;",
+                 END;
+             PRAGMA user_version = 1;",
         )?;
         Ok(())
-    }
-
-    fn has_column(&self, table: &str, column: &str) -> Result<bool> {
-        let mut stmt = self.conn.prepare(&format!("PRAGMA table_info({table})"))?;
-        let names = stmt.query_map([], |row| row.get::<_, String>(1))?;
-        for name in names {
-            if name? == column {
-                return Ok(true);
-            }
-        }
-        Ok(false)
     }
 
     /// Insert a new notification and return its ID.
     #[cfg(test)]
     pub fn add(&self, timestamp: &str, app_name: &str, title: &str, body: &str) -> Result<i64> {
-        self.add_captured(timestamp, app_name, title, body, None, None)
+        self.add_captured(
+            &CapturedNotification {
+                timestamp,
+                app_name,
+                title,
+                body,
+                actions: &[],
+            },
+            None,
+            None,
+        )
     }
 
     /// Insert a captured notification with optional D-Bus identity metadata.
     pub fn add_captured(
         &self,
-        timestamp: &str,
-        app_name: &str,
-        title: &str,
-        body: &str,
+        notification: &CapturedNotification<'_>,
         sender: Option<&str>,
         external_id: Option<u32>,
     ) -> Result<i64> {
+        let actions_json = serde_json::to_string(notification.actions)?;
         self.conn.execute(
             "INSERT INTO notifications
-                (timestamp, app_name, title, body, read, sender, external_id)
-             VALUES (?1, ?2, ?3, ?4, 0, ?5, ?6)",
-            params![timestamp, app_name, title, body, sender, external_id],
+                (timestamp, app_name, title, body, read, actions_json, sender, external_id)
+             VALUES (?1, ?2, ?3, ?4, 0, ?5, ?6, ?7)",
+            params![
+                notification.timestamp,
+                notification.app_name,
+                notification.title,
+                notification.body,
+                actions_json,
+                sender,
+                external_id
+            ],
         )?;
         Ok(self.conn.last_insert_rowid())
     }
@@ -166,25 +189,65 @@ impl NotifyDb {
     /// Returns the updated local row ID when a matching notification exists.
     pub fn replace_captured(
         &self,
-        timestamp: &str,
-        app_name: &str,
-        title: &str,
-        body: &str,
+        notification: &CapturedNotification<'_>,
         sender: &str,
         external_id: u32,
     ) -> Result<Option<i64>> {
+        let actions_json = serde_json::to_string(notification.actions)?;
         let id = self
             .conn
             .query_row(
                 "UPDATE notifications
-                 SET timestamp = ?1, app_name = ?2, title = ?3, body = ?4, read = 0
-                 WHERE sender = ?5 AND external_id = ?6 AND active = 1
+                 SET timestamp = ?1, app_name = ?2, title = ?3, body = ?4,
+                     read = 0, actions_json = ?5, invoked_action = NULL
+                 WHERE sender = ?6 AND external_id = ?7 AND active = 1
                  RETURNING id",
-                params![timestamp, app_name, title, body, sender, external_id],
+                params![
+                    notification.timestamp,
+                    notification.app_name,
+                    notification.title,
+                    notification.body,
+                    actions_json,
+                    sender,
+                    external_id
+                ],
                 |row| row.get(0),
             )
             .optional()?;
         Ok(id)
+    }
+
+    /// Mark the live notification with this server ID as closed.
+    pub fn mark_closed(&self, external_id: u32) -> Result<bool> {
+        Ok(self.conn.execute(
+            "UPDATE notifications SET active = 0 WHERE external_id = ?1 AND active = 1",
+            params![external_id],
+        )? != 0)
+    }
+
+    /// Record an action emitted by the notification server.
+    pub fn record_action(&self, external_id: u32, action_key: &str) -> Result<bool> {
+        Ok(self.conn.execute(
+            "UPDATE notifications SET invoked_action = ?1
+             WHERE external_id = ?2 AND active = 1",
+            params![action_key, external_id],
+        )? != 0)
+    }
+
+    /// Expire all live-state claims, for example after the capture daemon
+    /// restarts and can no longer prove which older popups remain open.
+    pub fn mark_all_inactive(&self) -> Result<usize> {
+        self.conn
+            .execute("UPDATE notifications SET active = 0 WHERE active = 1", [])
+            .map_err(Into::into)
+    }
+
+    /// Expire one local row after its D-Bus `Notify` request fails.
+    pub fn mark_inactive(&self, id: i64) -> Result<bool> {
+        Ok(self.conn.execute(
+            "UPDATE notifications SET active = 0 WHERE id = ?1",
+            params![id],
+        )? != 0)
     }
 
     /// Attach the notification daemon's ID to a newly inserted row.
@@ -193,8 +256,8 @@ impl NotifyDb {
         // old history rows, but ensure replacements target only the newest one.
         self.conn.execute(
             "UPDATE notifications SET active = 0
-             WHERE sender = ?1 AND external_id = ?2 AND id != ?3",
-            params![sender, external_id, id],
+             WHERE external_id = ?1 AND id != ?2",
+            params![external_id, id],
         )?;
         let changed = self.conn.execute(
             "UPDATE notifications
@@ -207,7 +270,9 @@ impl NotifyDb {
     /// List all notifications, newest first.
     pub fn list(&self) -> Result<Vec<Notification>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, timestamp, app_name, title, body, read FROM notifications ORDER BY id DESC",
+            "SELECT id, timestamp, app_name, title, body, read, actions_json,
+                    active, invoked_action
+             FROM notifications ORDER BY id DESC",
         )?;
         let rows = stmt.query_map([], |row| {
             Ok(Notification {
@@ -217,6 +282,9 @@ impl NotifyDb {
                 title: row.get(3)?,
                 body: row.get(4)?,
                 read: row.get::<_, i64>(5)? != 0,
+                actions: parse_actions(row.get::<_, String>(6)?, 6)?,
+                active: row.get::<_, i64>(7)? != 0,
+                invoked_action: row.get(8)?,
             })
         })?;
         rows.collect::<std::result::Result<Vec<_>, _>>()
@@ -227,7 +295,8 @@ impl NotifyDb {
     pub fn get(&self, id: i64) -> Result<Option<Notification>> {
         self.conn
             .query_row(
-                "SELECT id, timestamp, app_name, title, body, read
+                "SELECT id, timestamp, app_name, title, body, read, actions_json,
+                        active, invoked_action
                  FROM notifications WHERE id = ?1",
                 params![id],
                 |row| {
@@ -238,6 +307,9 @@ impl NotifyDb {
                         title: row.get(3)?,
                         body: row.get(4)?,
                         read: row.get::<_, i64>(5)? != 0,
+                        actions: parse_actions(row.get::<_, String>(6)?, 6)?,
+                        active: row.get::<_, i64>(7)? != 0,
+                        invoked_action: row.get(8)?,
                     })
                 },
             )
@@ -377,6 +449,16 @@ impl NotifyDb {
     }
 }
 
+fn parse_actions(json: String, column: usize) -> rusqlite::Result<Vec<NotificationAction>> {
+    serde_json::from_str(&json).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(
+            column,
+            rusqlite::types::Type::Text,
+            Box::new(error),
+        )
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -386,6 +468,22 @@ mod tests {
         let tmp = NamedTempFile::new().unwrap();
         let db = NotifyDb::open_at(tmp.path()).unwrap();
         (tmp, db)
+    }
+
+    fn captured<'a>(
+        timestamp: &'a str,
+        app_name: &'a str,
+        title: &'a str,
+        body: &'a str,
+        actions: &'a [NotificationAction],
+    ) -> CapturedNotification<'a> {
+        CapturedNotification {
+            timestamp,
+            app_name,
+            title,
+            body,
+            actions,
+        }
     }
 
     #[test]
@@ -524,12 +622,20 @@ mod tests {
     fn replacement_updates_existing_notification() {
         let (_tmp, db) = test_db();
         let id = db
-            .add_captured("12:00", "Downloader", "10%", "Starting", None, None)
+            .add_captured(
+                &captured("12:00", "Downloader", "10%", "Starting", &[]),
+                None,
+                None,
+            )
             .unwrap();
         assert!(db.assign_external_id(id, ":1.42", 7).unwrap());
 
         let replaced = db
-            .replace_captured("12:01", "Downloader", "80%", "Nearly done", ":1.42", 7)
+            .replace_captured(
+                &captured("12:01", "Downloader", "80%", "Nearly done", &[]),
+                ":1.42",
+                7,
+            )
             .unwrap();
         assert_eq!(replaced, Some(id));
         assert_eq!(db.count().unwrap(), 1);
@@ -547,7 +653,7 @@ mod tests {
         db.assign_external_id(new_id, ":1.42", 7).unwrap();
 
         let replaced = db
-            .replace_captured("12:02", "App", "Newest", "Body", ":1.42", 7)
+            .replace_captured(&captured("12:02", "App", "Newest", "Body", &[]), ":1.42", 7)
             .unwrap();
         assert_eq!(replaced, Some(new_id));
         assert_eq!(db.get(old_id).unwrap().unwrap().title, "Old");
@@ -563,7 +669,7 @@ mod tests {
     }
 
     #[test]
-    fn migrates_initial_notification_schema() {
+    fn resets_pre_release_notification_schema() {
         let tmp = NamedTempFile::new().unwrap();
         {
             let connection = Connection::open(tmp.path()).unwrap();
@@ -585,8 +691,58 @@ mod tests {
         }
 
         let db = NotifyDb::open_at(tmp.path()).unwrap();
-        assert_eq!(db.count().unwrap(), 1);
+        assert_eq!(db.count().unwrap(), 0);
         assert_eq!(db.history_limit().unwrap(), DEFAULT_HISTORY_LIMIT);
-        assert_eq!(db.get(1).unwrap().unwrap().title, "Existing");
+    }
+
+    #[test]
+    fn stores_actions_and_tracks_live_state() {
+        let (_tmp, db) = test_db();
+        let actions = vec![NotificationAction {
+            key: "default".into(),
+            label: "Pair".into(),
+        }];
+        let id = db
+            .add_captured(
+                &captured("12:00", "Bluetooth", "Pair?", "Device", &actions),
+                None,
+                None,
+            )
+            .unwrap();
+        db.assign_external_id(id, ":1.42", 9).unwrap();
+        assert!(db.record_action(9, "default").unwrap());
+        let notification = db.get(id).unwrap().unwrap();
+        assert_eq!(notification.actions, actions);
+        assert!(notification.active);
+        assert_eq!(notification.invoked_action.as_deref(), Some("default"));
+        assert!(db.mark_closed(9).unwrap());
+        assert!(!db.get(id).unwrap().unwrap().active);
+    }
+
+    #[test]
+    fn daemon_restart_expires_unverified_live_rows() {
+        let (_tmp, db) = test_db();
+        db.add("12:00", "App", "Title", "Body").unwrap();
+        db.add("12:01", "App", "Title", "Body").unwrap();
+        assert_eq!(db.mark_all_inactive().unwrap(), 2);
+        assert!(
+            db.list()
+                .unwrap()
+                .iter()
+                .all(|notification| !notification.active)
+        );
+    }
+
+    #[test]
+    fn malformed_action_data_is_reported() {
+        let (_tmp, db) = test_db();
+        let id = db.add("12:00", "App", "Title", "Body").unwrap();
+        db.conn
+            .execute(
+                "UPDATE notifications SET actions_json = 'not json' WHERE id = ?1",
+                params![id],
+            )
+            .unwrap();
+        assert!(db.get(id).is_err());
     }
 }
