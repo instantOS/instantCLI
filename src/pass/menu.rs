@@ -44,6 +44,9 @@ pub(super) fn interactive_pass_quick_access() -> Result<i32> {
                         let entry = resolve_entry_by_name(&entries, &key, false)?;
                         copy_primary_entry(&entry)?;
                         record_frecency(&entry.display_name)?;
+                        // Exit after copying so the user can paste immediately
+                        // (OTP codes expire; reopening is one keybinding press).
+                        return Ok(0);
                     }
                     BrowserItemKind::Menu => {
                         interactive_pass_tree_menu()?;
@@ -98,6 +101,8 @@ pub(super) fn interactive_pass_quick_access_server() -> Result<i32> {
                 let entry = resolve_entry_by_name(&entries, key, false)?;
                 copy_primary_entry(&entry)?;
                 record_frecency(&entry.display_name)?;
+                // Exit after copying so the user can paste immediately.
+                return Ok(0);
             }
             Some("menu") => {
                 crate::common::terminal::launch_menu_in_terminal("pass", "Pass", &[], false)?;
