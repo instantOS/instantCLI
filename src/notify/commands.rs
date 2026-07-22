@@ -8,6 +8,9 @@
 //! - `read` → mark as read
 //! - `unread` → mark as unread
 //! - `dnd` → toggle Do Not Disturb
+//! - `enable` → enable and start background capture
+//! - `disable` → stop and disable background capture
+//! - `status` → show capture daemon and service state
 //! - `daemon` → start D-Bus capture daemon
 
 use anyhow::Result;
@@ -74,6 +77,15 @@ pub enum NotifyCommands {
     /// Toggle Do Not Disturb mode
     Dnd,
 
+    /// Enable and start notification capture in the background
+    Enable,
+
+    /// Stop and disable background notification capture
+    Disable,
+
+    /// Show notification capture status
+    Status,
+
     /// Start the D-Bus notification capture daemon
     Daemon,
 }
@@ -93,7 +105,10 @@ pub async fn handle_notify_command(
     }
 
     match command {
-        None => super::menu::run_notify_ui(debug),
+        None => {
+            let daemon_running = super::service::daemon_running().await.unwrap_or(false);
+            super::menu::run_notify_ui(debug, daemon_running)
+        }
         Some(NotifyCommands::List { unread_only }) => list_notifications(*unread_only),
         Some(NotifyCommands::Count) => show_count(),
         Some(NotifyCommands::Delete {
@@ -106,6 +121,9 @@ pub async fn handle_notify_command(
         Some(NotifyCommands::Read { id }) => handle_mark_read(id),
         Some(NotifyCommands::Unread { id }) => handle_mark_unread(*id),
         Some(NotifyCommands::Dnd) => super::options::run_dnd_toggle_standalone(),
+        Some(NotifyCommands::Enable) => super::service::enable_and_start(),
+        Some(NotifyCommands::Disable) => super::service::disable_and_stop(),
+        Some(NotifyCommands::Status) => super::service::show_status().await,
         Some(NotifyCommands::Daemon) => super::capture::run_daemon(debug).await,
     }
 }

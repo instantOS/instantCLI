@@ -11,5 +11,6 @@ pub mod handlers;
 pub mod items;
 pub mod menu;
 pub mod options;
+mod service;
 
 pub use commands::{NotifyCommands, handle_notify_command};

@@ -25,12 +25,21 @@ dedicated terminal window), while `ins notify list`, `count`,
 as a separate session process:
 
 ```bash
-# Packaged installs
-systemctl --user enable --now ins-notify.service
+# Packaged installs: supervised background capture and login autostart
+ins notify enable
+
+# Inspect or disable it later
+ins notify status
+ins notify disable
 
 # Binary-only installs
 ins notify daemon
 ```
+
+When capture is not running, the interactive notification center also offers
+an explicit action to enable and start the packaged service. `daemon` stays in
+the foreground by design; background lifecycle and restart handling belong to
+the systemd user service rather than a self-forking process.
 
 The history database defaults to 1,000 entries and can be changed from the
 interactive notification options menu. Transient notifications are not stored.

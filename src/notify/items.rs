@@ -28,6 +28,8 @@ pub enum NotifyMainItem {
     UnreadCount(i64),
     /// A notification entry.
     Notification(NotificationListItem),
+    /// Enable the background capture service.
+    EnableCapture,
     /// Options submenu.
     Options,
     /// Close the notification center.
@@ -58,6 +60,10 @@ impl FzfSelectable for NotifyMainItem {
                     icon, n.app_name, n.title, n.timestamp,
                 )
             }
+            NotifyMainItem::EnableCapture => format!(
+                "{} Enable and start notification capture",
+                format_icon_colored(NerdFont::PlayCircle, colors::GREEN)
+            ),
             NotifyMainItem::Options => {
                 format!(
                     "{} Options",
@@ -104,6 +110,13 @@ impl FzfSelectable for NotifyMainItem {
 
                 builder.build()
             }
+            NotifyMainItem::EnableCapture => PreviewBuilder::new()
+                .header(NerdFont::PlayCircle, "Enable Notification Capture")
+                .text("Start the supervised background capture service now")
+                .text("and automatically on future graphical logins.")
+                .blank()
+                .text("No notification history is recorded while capture is stopped.")
+                .build(),
             NotifyMainItem::Options => PreviewBuilder::new()
                 .header(NerdFont::Gear, "Notification Options")
                 .text("Configure Do Not Disturb, clear notifications,")
@@ -120,6 +133,7 @@ impl FzfSelectable for NotifyMainItem {
         match self {
             NotifyMainItem::UnreadCount(_) => "__unread_count__".to_string(),
             NotifyMainItem::Notification(n) => format!("notif:{}", n.id),
+            NotifyMainItem::EnableCapture => "__enable_capture__".to_string(),
             NotifyMainItem::Options => "__options__".to_string(),
             NotifyMainItem::Close => "__close__".to_string(),
         }
@@ -136,23 +150,40 @@ pub enum NotificationDetailAction {
     Back,
     MarkUnread,
     Delete,
-    Close,
+}
+
+/// Notification content shown while a detail action is selected.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NotificationDetailPreview {
+    pub title: String,
+    pub app_name: String,
+    pub timestamp: String,
+    pub body: String,
+    pub actions: Option<String>,
 }
 
 /// Items in the notification detail submenu.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum NotificationDetailItem {
+    Title(String),
     App(String),
     Time(String),
     Actions(String),
     Body(String),
     Separator,
-    Action(NotificationDetailAction),
+    Action {
+        action: NotificationDetailAction,
+        preview: NotificationDetailPreview,
+    },
 }
 
 impl FzfSelectable for NotificationDetailItem {
     fn fzf_display_text(&self) -> String {
         match self {
+            NotificationDetailItem::Title(title) => {
+                let title_color = hex_to_ansi_fg(colors::TEXT);
+                format!("{title_color}{title}{RESET}")
+            }
             NotificationDetailItem::App(app_name) => {
                 let label_color = hex_to_ansi_fg(colors::SUBTEXT0);
                 let value_color = hex_to_ansi_fg(colors::BLUE);
@@ -181,7 +212,7 @@ impl FzfSelectable for NotificationDetailItem {
                 let color = hex_to_ansi_fg(colors::SURFACE1);
                 format!("{color}────────────────────────────────────────{RESET}")
             }
-            NotificationDetailItem::Action(action) => match action {
+            NotificationDetailItem::Action { action, .. } => match action {
                 NotificationDetailAction::Back => format!("{} Back", format_back_icon()),
                 NotificationDetailAction::MarkUnread => {
                     format!(
@@ -195,13 +226,16 @@ impl FzfSelectable for NotificationDetailItem {
                         format_icon_colored(NerdFont::Trash, colors::RED)
                     )
                 }
-                NotificationDetailAction::Close => format!("{} Close", format_back_icon()),
             },
         }
     }
 
     fn fzf_preview(&self) -> FzfPreview {
         match self {
+            NotificationDetailItem::Title(title) => PreviewBuilder::new()
+                .header(NerdFont::Envelope, title)
+                .text("Notification title")
+                .build(),
             NotificationDetailItem::App(app_name) => PreviewBuilder::new()
                 .header(NerdFont::User, app_name)
                 .text("The application that sent this notification.")
@@ -225,46 +259,76 @@ impl FzfSelectable for NotificationDetailItem {
                 builder.build()
             }
             NotificationDetailItem::Separator => PreviewBuilder::new().build(),
-            NotificationDetailItem::Action(action) => match action {
-                NotificationDetailAction::Back => PreviewBuilder::new()
-                    .header(NerdFont::ArrowLeft, "Go Back")
-                    .text("Return to the notification list.")
-                    .build(),
-                NotificationDetailAction::MarkUnread => PreviewBuilder::new()
-                    .header(NerdFont::EnvelopeOpen, "Mark as Unread")
-                    .text("Mark this notification as unread.")
-                    .build(),
-                NotificationDetailAction::Delete => PreviewBuilder::new()
-                    .header(NerdFont::Trash, "Delete")
-                    .text("Remove this notification from the database.")
-                    .build(),
-                NotificationDetailAction::Close => PreviewBuilder::new()
-                    .header(NerdFont::Cross, "Close")
-                    .text("Exit the notification center.")
-                    .build(),
-            },
+            NotificationDetailItem::Action { action, preview } => {
+                detail_action_preview(action, preview)
+            }
         }
     }
 
     fn fzf_key(&self) -> String {
         match self {
+            NotificationDetailItem::Title(_) => "__title__".to_string(),
             NotificationDetailItem::App(_) => "__app__".to_string(),
             NotificationDetailItem::Time(_) => "__time__".to_string(),
             NotificationDetailItem::Actions(_) => "__actions__".to_string(),
             NotificationDetailItem::Body(_) => "__body__".to_string(),
             NotificationDetailItem::Separator => "__sep__".to_string(),
-            NotificationDetailItem::Action(action) => match action {
+            NotificationDetailItem::Action { action, .. } => match action {
                 NotificationDetailAction::Back => "__back__".to_string(),
                 NotificationDetailAction::MarkUnread => "__mark_unread__".to_string(),
                 NotificationDetailAction::Delete => "__delete__".to_string(),
-                NotificationDetailAction::Close => "__close__".to_string(),
             },
         }
     }
 
     fn fzf_is_selectable(&self) -> bool {
-        matches!(self, NotificationDetailItem::Action(_))
+        matches!(self, NotificationDetailItem::Action { .. })
     }
+}
+
+fn detail_action_preview(
+    action: &NotificationDetailAction,
+    notification: &NotificationDetailPreview,
+) -> FzfPreview {
+    let mut builder = PreviewBuilder::new()
+        .header(NerdFont::Envelope, &notification.title)
+        .field("Application", &notification.app_name)
+        .field("Time", &notification.timestamp);
+
+    if let Some(actions) = &notification.actions {
+        builder = builder.field("Actions", actions);
+    }
+
+    builder = builder.blank().separator().blank();
+    for line in wrap_text(&notification.body, 60) {
+        builder = builder.text(&line);
+    }
+
+    let (icon, label, description) = match action {
+        NotificationDetailAction::Back => (
+            NerdFont::ArrowLeft,
+            "Back",
+            "Return to the notification list.",
+        ),
+        NotificationDetailAction::MarkUnread => (
+            NerdFont::EnvelopeOpen,
+            "Mark as Unread",
+            "Mark this notification as unread.",
+        ),
+        NotificationDetailAction::Delete => (
+            NerdFont::Trash,
+            "Delete",
+            "Remove this notification from the database.",
+        ),
+    };
+
+    builder
+        .blank()
+        .separator()
+        .blank()
+        .line(colors::SUBTEXT0, Some(icon), label)
+        .text(description)
+        .build()
 }
 
 /// Wrap text to a maximum line width, preserving existing newlines.
