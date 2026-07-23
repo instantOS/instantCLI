@@ -2,7 +2,9 @@ use anyhow::Result;
 use std::path::Path;
 use std::process::Command;
 
-use crate::menu_utils::{ConfirmResult, FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
+use crate::menu_utils::{
+    ConfirmResult, FzfResult, FzfSelectable, FzfWrapper, Header, HeaderBuilder, MenuCursor,
+};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::{FzfPreview, PreviewBuilder};
@@ -331,10 +333,11 @@ fn run_scan_dir_menu(index: usize) -> Result<(ActionResult, bool)> {
         let actions = build_actions(&resolved, status);
 
         let mut builder = FzfWrapper::builder()
-            .header(Header::fancy(&format!(
-                "Scan Dir: {}",
-                resolved.display_path()
-            )))
+            .header(
+                HeaderBuilder::new(NerdFont::Folder, "Scan Directory")
+                    .field("Path", resolved.display_path())
+                    .build(),
+            )
             .prompt("Action")
             .args(fzf_mocha_args())
             .responsive_layout();

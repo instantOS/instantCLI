@@ -1,4 +1,4 @@
-use crate::menu_utils::FzfSelectable;
+use crate::menu_utils::{FzfSelectable, Header, HeaderBuilder};
 use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::prelude::*;
 use crate::ui::preview::{FzfPreview, PreviewBuilder};
@@ -261,18 +261,24 @@ pub(super) fn build_menu_items(
     items
 }
 
-pub(super) fn build_header_text(
+pub(super) fn build_header(
     currently_enabled: bool,
     current_name: &str,
     device_count: usize,
-) -> String {
+) -> Header {
     if currently_enabled {
-        format!(
-            "Combined Audio Sink: {} (active)\n{} devices",
-            current_name, device_count
-        )
+        HeaderBuilder::new(NerdFont::VolumeUp, "Combined Audio Sink")
+            .field("Name", current_name)
+            .status(
+                NerdFont::CheckCircle,
+                format!("Active · {device_count} devices"),
+                colors::GREEN,
+            )
+            .build()
     } else {
-        "Combined Audio Sink: Not active".to_string()
+        HeaderBuilder::new(NerdFont::VolumeUp, "Combined Audio Sink")
+            .status(NerdFont::Circle, "Not active", colors::SUBTEXT0)
+            .build()
     }
 }
 

@@ -21,14 +21,17 @@ pub fn run_options_menu(db: &NotifyDb, _debug: bool) -> Result<()> {
     let mut cursor = MenuCursor::new();
 
     loop {
-        let items = build_options_items(db)?;
+        let items = build_options_items();
         let initial_index = cursor.initial_index(&items);
         let selection = select_one_with_style_at(items.clone(), initial_index)?;
 
         match selection {
-            Some(OptionsItem::DoNotDisturb) => {
-                cursor.update(&OptionsItem::DoNotDisturb, &items);
-                handle_dnd_toggle()?;
+            Some(item @ OptionsItem::DoNotDisturb(_)) => {
+                let backend = item.dnd_backend();
+                cursor.update(&item, &items);
+                if let Some(backend) = backend {
+                    handle_dnd_toggle(Some(backend))?;
+                }
             }
             Some(OptionsItem::DeleteByApp) => {
                 cursor.update(&OptionsItem::DeleteByApp, &items);
@@ -80,7 +83,7 @@ pub fn run_options_menu(db: &NotifyDb, _debug: bool) -> Result<()> {
 /// Options menu items.
 #[derive(Clone)]
 enum OptionsItem {
-    DoNotDisturb,
+    DoNotDisturb(DndStatus),
     DeleteByApp,
     DeleteByKeyword,
     DeleteAll,
@@ -93,16 +96,19 @@ enum OptionsItem {
 impl FzfSelectable for OptionsItem {
     fn fzf_display_text(&self) -> String {
         match self {
-            OptionsItem::DoNotDisturb => {
-                let is_dnd = is_dnd_active();
-                let icon = if is_dnd {
+            OptionsItem::DoNotDisturb(DndStatus::Available { active, .. }) => {
+                let icon = if *active {
                     format_icon_colored(NerdFont::BellSlash, colors::RED)
                 } else {
                     format_icon_colored(NerdFont::Bell, colors::GREEN)
                 };
-                let status = if is_dnd { "on" } else { "off" };
+                let status = if *active { "on" } else { "off" };
                 format!("{icon} Do Not Disturb ({status})")
             }
+            OptionsItem::DoNotDisturb(DndStatus::Unavailable) => format!(
+                "{} Do Not Disturb (unavailable)",
+                format_icon_colored(NerdFont::BellSlash, colors::OVERLAY1)
+            ),
             OptionsItem::DeleteByApp => {
                 format!(
                     "{} Delete by application",
@@ -145,23 +151,29 @@ impl FzfSelectable for OptionsItem {
 
     fn fzf_preview(&self) -> FzfPreview {
         match self {
-            OptionsItem::DoNotDisturb => {
-                let is_dnd = is_dnd_active();
-                let status = if is_dnd { "Enabled" } else { "Disabled" };
-                let icon = if is_dnd {
+            OptionsItem::DoNotDisturb(DndStatus::Available { backend, active }) => {
+                let status = if *active { "Enabled" } else { "Disabled" };
+                let icon = if *active {
                     NerdFont::BellSlash
                 } else {
                     NerdFont::Bell
                 };
-                let color = if is_dnd { colors::RED } else { colors::GREEN };
+                let color = if *active { colors::RED } else { colors::GREEN };
                 PreviewBuilder::new()
-                    .line(color, Some(icon), status)
+                    .header(icon, "Do Not Disturb")
+                    .line(color, None, status)
+                    .field("Notification daemon", backend.label())
                     .separator()
                     .text("Toggle Do Not Disturb mode.")
                     .blank()
                     .text("When enabled, notifications are suppressed by the notification daemon.")
                     .build()
             }
+            OptionsItem::DoNotDisturb(DndStatus::Unavailable) => PreviewBuilder::new()
+                .header(NerdFont::BellSlash, "Do Not Disturb Unavailable")
+                .text("Neither dunstctl nor makoctl could communicate with a compatible")
+                .text("running notification daemon.")
+                .build(),
             OptionsItem::DeleteByApp => PreviewBuilder::new()
                 .header(NerdFont::Trash, "Delete by Application")
                 .text("Remove all notifications from a specific application.")
@@ -197,7 +209,7 @@ impl FzfSelectable for OptionsItem {
 
     fn fzf_key(&self) -> String {
         match self {
-            OptionsItem::DoNotDisturb => "dnd".to_string(),
+            OptionsItem::DoNotDisturb(_) => "dnd".to_string(),
             OptionsItem::DeleteByApp => "del_app".to_string(),
             OptionsItem::DeleteByKeyword => "del_kw".to_string(),
             OptionsItem::DeleteAll => "del_all".to_string(),
@@ -207,11 +219,24 @@ impl FzfSelectable for OptionsItem {
             OptionsItem::Back => "__back__".to_string(),
         }
     }
+
+    fn fzf_is_selectable(&self) -> bool {
+        !matches!(self, OptionsItem::DoNotDisturb(DndStatus::Unavailable))
+    }
 }
 
-fn build_options_items(_db: &NotifyDb) -> Result<Vec<OptionsItem>> {
-    Ok(vec![
-        OptionsItem::DoNotDisturb,
+impl OptionsItem {
+    fn dnd_backend(&self) -> Option<DndBackend> {
+        match self {
+            Self::DoNotDisturb(status) => status.backend(),
+            _ => None,
+        }
+    }
+}
+
+fn build_options_items() -> Vec<OptionsItem> {
+    vec![
+        OptionsItem::DoNotDisturb(detect_dnd_status()),
         OptionsItem::MarkAllRead,
         OptionsItem::DeleteByApp,
         OptionsItem::DeleteByKeyword,
@@ -219,30 +244,58 @@ fn build_options_items(_db: &NotifyDb) -> Result<Vec<OptionsItem>> {
         OptionsItem::DeleteAll,
         OptionsItem::HistorySize,
         OptionsItem::Back,
-    ])
+    ]
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum DndBackend {
     Dunst,
     Mako,
 }
 
+impl DndBackend {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Dunst => "Dunst",
+            Self::Mako => "Mako",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DndStatus {
+    Available { backend: DndBackend, active: bool },
+    Unavailable,
+}
+
+impl DndStatus {
+    fn backend(self) -> Option<DndBackend> {
+        match self {
+            Self::Available { backend, .. } => Some(backend),
+            Self::Unavailable => None,
+        }
+    }
+}
+
 /// Toggle Do Not Disturb using the daemon that actually answers its control client.
-fn handle_dnd_toggle() -> Result<()> {
-    let backend = detect_dnd_backend().context(
-        "no supported notification daemon found (supported control clients: dunstctl, makoctl)",
-    )?;
+fn handle_dnd_toggle(known_backend: Option<DndBackend>) -> Result<()> {
+    let backend = known_backend
+        .or_else(|| detect_dnd_status().backend())
+        .context(
+            "no supported notification daemon found (supported control clients: dunstctl, makoctl)",
+        )?;
     let now_dnd = match backend {
         DndBackend::Dunst => {
             let new_state = !is_dunst_dnd()?;
             cmd!("dunstctl", "set-paused", new_state.to_string())
+                .stderr_null()
                 .run()
                 .context("toggling dunst Do Not Disturb")?;
             new_state
         }
         DndBackend::Mako => {
             cmd!("makoctl", "mode", "-t", "do-not-disturb")
+                .stderr_null()
                 .run()
                 .context("toggling mako Do Not Disturb")?;
             is_mako_dnd()?
@@ -264,37 +317,35 @@ fn handle_dnd_toggle() -> Result<()> {
 
 /// Standalone DnD toggle (for `ins notify dnd` CLI command).
 pub fn run_dnd_toggle_standalone() -> Result<()> {
-    handle_dnd_toggle()
+    handle_dnd_toggle(None)
 }
 
-/// Check if DnD is currently active.
-fn is_dnd_active() -> bool {
-    match detect_dnd_backend() {
-        Some(DndBackend::Dunst) => is_dunst_dnd().unwrap_or(false),
-        Some(DndBackend::Mako) => is_mako_dnd().unwrap_or(false),
-        None => false,
-    }
-}
-
-fn detect_dnd_backend() -> Option<DndBackend> {
-    if is_dunst_dnd().is_ok() {
-        Some(DndBackend::Dunst)
-    } else if is_mako_dnd().is_ok() {
-        Some(DndBackend::Mako)
+/// Probe each supported daemon once and retain both its backend and current state.
+fn detect_dnd_status() -> DndStatus {
+    if let Ok(active) = is_dunst_dnd() {
+        DndStatus::Available {
+            backend: DndBackend::Dunst,
+            active,
+        }
+    } else if let Ok(active) = is_mako_dnd() {
+        DndStatus::Available {
+            backend: DndBackend::Mako,
+            active,
+        }
     } else {
-        None
+        DndStatus::Unavailable
     }
 }
 
 /// Check if mako is in do-not-disturb mode.
 fn is_mako_dnd() -> Result<bool> {
-    let output = cmd!("makoctl", "mode").read()?;
+    let output = cmd!("makoctl", "mode").stderr_null().read()?;
     Ok(output.lines().any(|line| line.contains("do-not-disturb")))
 }
 
 /// Check if dunst is paused (DnD).
 fn is_dunst_dnd() -> Result<bool> {
-    let output = cmd!("dunstctl", "is-paused").read()?;
+    let output = cmd!("dunstctl", "is-paused").stderr_null().read()?;
     Ok(output.trim() == "true")
 }
 
@@ -449,4 +500,34 @@ fn handle_history_size(db: &NotifyDb) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unavailable_dnd_control_is_visible_but_not_selectable() {
+        let item = OptionsItem::DoNotDisturb(DndStatus::Unavailable);
+
+        assert!(!item.fzf_is_selectable());
+        assert!(item.fzf_display_text().contains("unavailable"));
+        assert_eq!(item.fzf_key(), "dnd");
+    }
+
+    #[test]
+    fn available_dnd_control_renders_from_snapshot() {
+        let item = OptionsItem::DoNotDisturb(DndStatus::Available {
+            backend: DndBackend::Dunst,
+            active: true,
+        });
+
+        assert!(item.fzf_is_selectable());
+        assert!(item.fzf_display_text().contains("(on)"));
+        let FzfPreview::Text(preview) = item.fzf_preview() else {
+            panic!("DND option should have a text preview");
+        };
+        assert!(preview.contains("Dunst"));
+        assert!(preview.contains("Enabled"));
+    }
 }

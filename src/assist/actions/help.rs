@@ -1,7 +1,7 @@
 use crate::assist::registry;
 use crate::assist::utils;
 use crate::common::shell::shell_quote;
-use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper, Header};
+use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper, HeaderBuilder};
 use crate::ui::catppuccin::{colors, format_icon_colored, fzf_mocha_args, hex_to_ansi_fg};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -52,7 +52,7 @@ pub fn show_help_for_path(path: &str) -> Result<()> {
 
     let result = FzfWrapper::builder()
         .prompt(prompt)
-        .header(Header::fancy(&header))
+        .header(header)
         .args(fzf_mocha_args())
         .args(["--no-sort"])
         .responsive_layout()
@@ -103,7 +103,7 @@ fn launch_help_in_terminal(path: &str) -> Result<()> {
     utils::launch_script_in_terminal(&script, "instantCLI Assists Help")
 }
 
-fn build_help_header(path: &str) -> String {
+fn build_help_header(path: &str) -> crate::menu_utils::Header {
     let title = if path.is_empty() {
         "instantCLI Assists".to_string()
     } else {
@@ -115,9 +115,9 @@ fn build_help_header(path: &str) -> String {
         "Tip: Press 'h' in any mode to see available actions"
     };
 
-    let title_color = hex_to_ansi_fg(colors::MAUVE);
-    let tip_color = hex_to_ansi_fg(colors::SUBTEXT0);
-    format!("{title_color}{title}{RESET}\n{tip_color}{tip}{RESET}")
+    HeaderBuilder::new(NerdFont::Help, title)
+        .subtitle(tip)
+        .build()
 }
 
 fn build_help_items(path: &str) -> Vec<AssistHelpItem> {

@@ -8,9 +8,9 @@
 use anyhow::{Context, Result};
 
 use crate::menu_utils::{
-    Header, MenuCursor, select_one_with_style_at, select_one_with_style_at_header,
+    HeaderBuilder, MenuCursor, select_one_with_style_at, select_one_with_style_at_header,
 };
-use crate::ui::catppuccin::{colors, format_icon_colored, hex_to_ansi_fg};
+use crate::ui::catppuccin::colors;
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::prelude::*;
 
@@ -105,17 +105,19 @@ fn run_main_menu(
     }
 
     let initial_index = cursor.initial_index(&items);
-    let bell = format_icon_colored(NerdFont::Bell, colors::MAUVE);
-    let unread_icon = format_icon_colored(NerdFont::EnvelopeOpen, colors::YELLOW);
-    let count_color = hex_to_ansi_fg(if unread > 0 {
+    let count_color = if unread > 0 {
         colors::YELLOW
     } else {
         colors::SUBTEXT0
-    });
-    let header =
-        format!("{bell} Notification Center\n{unread_icon} {count_color}{unread} unread\x1b[0m");
-    let selection =
-        select_one_with_style_at_header(items.clone(), initial_index, Header::fancy(&header))?;
+    };
+    let header = HeaderBuilder::new(NerdFont::Bell, "Notification Center")
+        .status(
+            NerdFont::EnvelopeOpen,
+            format!("{unread} unread"),
+            count_color,
+        )
+        .build();
+    let selection = select_one_with_style_at_header(items.clone(), initial_index, header)?;
 
     let action = match selection {
         Some(NotifyMainItem::Notification(n)) => {

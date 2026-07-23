@@ -14,6 +14,7 @@
 //! settings that may contain unsupported options.
 
 mod builder;
+mod header;
 mod preview;
 mod theme;
 mod types;
@@ -21,6 +22,7 @@ mod utils;
 mod wrapper;
 
 // Re-export public API
+pub use header::HeaderBuilder;
 pub use types::{
     ChecklistAction, ChecklistResult, ConfirmResult, DecodedStreamingMenuItem, FzfResult,
     FzfSelectable, Header, MenuItem, StreamingCommand, StreamingMenuItem, default_fzf_key,

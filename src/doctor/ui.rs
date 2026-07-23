@@ -1,6 +1,6 @@
 use super::{CheckResult, CheckStatus};
 use crate::menu_utils::{
-    ConfirmResult, FzfPreview, FzfResult, FzfSelectable, FzfWrapper, MenuCursor,
+    ConfirmResult, FzfPreview, FzfResult, FzfSelectable, FzfWrapper, HeaderBuilder, MenuCursor,
 };
 use crate::ui::catppuccin::{
     colors, format_back_icon, format_icon_colored, format_with_color, fzf_mocha_args,
@@ -433,7 +433,11 @@ pub fn show_all_check_results(results: &[CheckResult]) -> Result<()> {
 
     FzfWrapper::builder()
         .prompt("View results:")
-        .header("All Check Results - Use arrow keys to navigate, ESC to return")
+        .header(
+            HeaderBuilder::new(NerdFont::List, "All Check Results")
+                .subtitle("Use arrow keys to navigate; Esc returns")
+                .build(),
+        )
         .args(fzf_mocha_args())
         .select(viewable)?;
 
@@ -481,12 +485,17 @@ pub async fn run_success_menu(results: &[CheckResult]) -> Result<()> {
     loop {
         let mut builder = FzfWrapper::builder()
             .prompt("Select:")
-            .header(format!(
-                "{} All systems operational!\n\n✓ {} checks passed\n⊘ {} checks skipped\n\nSelect an option or press Esc to exit",
-                char::from(NerdFont::Check),
-                success_count,
-                skipped_count
-            ))
+            .header(
+                HeaderBuilder::new(NerdFont::CheckCircle, "All Systems Operational")
+                    .status(
+                        NerdFont::Check,
+                        format!("{success_count} checks passed"),
+                        colors::GREEN,
+                    )
+                    .field("Skipped", skipped_count.to_string())
+                    .subtitle("Select an option or press Esc to exit")
+                    .build(),
+            )
             .args(fzf_mocha_args());
 
         if let Some(index) = cursor.initial_index(&menu_items) {

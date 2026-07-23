@@ -1,13 +1,13 @@
 use anyhow::{Context, Result};
 use std::collections::{BTreeSet, HashMap};
 
-use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuItem};
+use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, HeaderBuilder, MenuItem};
 use crate::settings::SettingsContext;
 use crate::settings::installable_packages::{
     self, ARCHIVE_MANAGERS, FILE_MANAGERS, IMAGE_VIEWERS, InstallableApp, PDF_VIEWERS,
     TEXT_EDITORS, VIDEO_PLAYERS, WEB_BROWSERS,
 };
-use crate::ui::catppuccin::fzf_mocha_args;
+use crate::ui::catppuccin::{colors, fzf_mocha_args};
 use crate::ui::prelude::*;
 use crate::ui::preview::FzfPreview;
 
@@ -52,9 +52,11 @@ pub fn manage_default_apps(ctx: &mut SettingsContext) -> Result<()> {
 
     let selected_mime_info = match FzfWrapper::builder()
         .prompt("Select MIME type: ")
-        .header(Header::fancy(
-            "Default Applications\nSelect a MIME type to configure",
-        ))
+        .header(
+            HeaderBuilder::new(NerdFont::Desktop, "Default Applications")
+                .subtitle("Select a MIME type to configure")
+                .build(),
+        )
         .args(fzf_mocha_args())
         .responsive_layout()
         .select(mime_types)?
@@ -85,20 +87,13 @@ pub fn manage_default_apps(ctx: &mut SettingsContext) -> Result<()> {
 
     let current_default = query_default_app(selected_mime)?;
     let current_default_id = current_default.as_deref();
-    let header_text = if let Some(ref default) = current_default {
-        format!(
-            "MIME type: {} {}\nCurrent default: {}",
-            char::from(selected_mime_info.icon),
-            selected_mime,
-            default
+    let header = HeaderBuilder::new(selected_mime_info.icon, "Default Application")
+        .field("MIME type", selected_mime)
+        .field(
+            "Current default",
+            current_default.as_deref().unwrap_or("(none)"),
         )
-    } else {
-        format!(
-            "MIME type: {} {}\nCurrent default: (none)",
-            char::from(selected_mime_info.icon),
-            selected_mime
-        )
-    };
+        .build();
 
     let app_infos: Vec<ApplicationInfo> = apps
         .iter()
@@ -113,7 +108,7 @@ pub fn manage_default_apps(ctx: &mut SettingsContext) -> Result<()> {
 
     let mut app_menu = FzfWrapper::builder()
         .prompt("Select application: ")
-        .header(Header::fancy(&header_text))
+        .header(header)
         .args(fzf_mocha_args())
         .responsive_layout();
 
@@ -226,7 +221,7 @@ fn manage_default_app_for_mimes(
         let mime_map = build_mime_to_apps_map().context("Failed to build MIME type map")?;
         let app_desktop_ids = collect_supported_apps(mime_types, &mime_map);
         let current_default = query_default_app(primary_mime).ok().flatten();
-        let header_text = selection_header(app_name, current_default.clone(), mime_types);
+        let header = selection_header(app_name, current_default.clone(), mime_types);
 
         let mut entries: Vec<MenuItem<DefaultAppMenuEntry>> = Vec::new();
 
@@ -264,7 +259,7 @@ fn manage_default_app_for_mimes(
 
         let mut builder = FzfWrapper::builder()
             .prompt(format!("Select {}: ", app_name))
-            .header(Header::fancy(&header_text))
+            .header(header)
             .args(fzf_mocha_args())
             .responsive_layout();
 
@@ -350,22 +345,19 @@ fn selection_header(
     app_name: &str,
     current_default: Option<String>,
     mime_types: &[&str],
-) -> String {
+) -> crate::menu_utils::Header {
     let current = current_default.as_deref().unwrap_or("(none)");
 
+    let mut header = HeaderBuilder::new(NerdFont::Desktop, format!("Default {app_name}"))
+        .field("Current", current);
     if mime_types.len() > 1 {
-        format!(
-            "Select default {} application\nCurrent: {}\n(Sets default for {} MIME types)",
-            app_name,
-            current,
-            mime_types.len()
-        )
-    } else {
-        format!(
-            "Select default {} application\nCurrent: {}",
-            app_name, current
-        )
+        header = header.status(
+            NerdFont::Info,
+            format!("Applies to {} MIME types", mime_types.len()),
+            colors::BLUE,
+        );
     }
+    header.build()
 }
 
 fn handle_missing_apps(
