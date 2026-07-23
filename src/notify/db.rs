@@ -274,19 +274,7 @@ impl NotifyDb {
                     active, invoked_action
              FROM notifications ORDER BY id DESC",
         )?;
-        let rows = stmt.query_map([], |row| {
-            Ok(Notification {
-                id: row.get(0)?,
-                timestamp: row.get(1)?,
-                app_name: row.get(2)?,
-                title: row.get(3)?,
-                body: row.get(4)?,
-                read: row.get::<_, i64>(5)? != 0,
-                actions: parse_actions(row.get::<_, String>(6)?, 6)?,
-                active: row.get::<_, i64>(7)? != 0,
-                invoked_action: row.get(8)?,
-            })
-        })?;
+        let rows = stmt.query_map([], notification_from_row)?;
         rows.collect::<std::result::Result<Vec<_>, _>>()
             .map_err(Into::into)
     }
@@ -299,21 +287,54 @@ impl NotifyDb {
                         active, invoked_action
                  FROM notifications WHERE id = ?1",
                 params![id],
-                |row| {
-                    Ok(Notification {
-                        id: row.get(0)?,
-                        timestamp: row.get(1)?,
-                        app_name: row.get(2)?,
-                        title: row.get(3)?,
-                        body: row.get(4)?,
-                        read: row.get::<_, i64>(5)? != 0,
-                        actions: parse_actions(row.get::<_, String>(6)?, 6)?,
-                        active: row.get::<_, i64>(7)? != 0,
-                        invoked_action: row.get(8)?,
-                    })
-                },
+                notification_from_row,
             )
             .optional()
+            .map_err(Into::into)
+    }
+
+    /// Notifications whose title or body contains `keyword`, newest first.
+    ///
+    /// Non-destructive counterpart of [`Self::delete_by_keyword`]; use it to
+    /// show the user what would be removed before confirming.
+    pub fn find_by_keyword(&self, keyword: &str) -> Result<Vec<Notification>> {
+        let pattern = format!("%{keyword}%");
+        let mut stmt = self.conn.prepare(
+            "SELECT id, timestamp, app_name, title, body, read, actions_json,
+                    active, invoked_action
+             FROM notifications WHERE title LIKE ?1 OR body LIKE ?1
+             ORDER BY id DESC",
+        )?;
+        let rows = stmt.query_map(params![pattern], notification_from_row)?;
+        rows.collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(Into::into)
+    }
+
+    /// All notifications from `app_name`, newest first.
+    ///
+    /// Non-destructive counterpart of [`Self::delete_by_app`].
+    pub fn find_by_app(&self, app_name: &str) -> Result<Vec<Notification>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, timestamp, app_name, title, body, read, actions_json,
+                    active, invoked_action
+             FROM notifications WHERE app_name = ?1 ORDER BY id DESC",
+        )?;
+        let rows = stmt.query_map(params![app_name], notification_from_row)?;
+        rows.collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(Into::into)
+    }
+
+    /// All notifications that have been read, newest first.
+    ///
+    /// Non-destructive counterpart of [`Self::delete_read`].
+    pub fn find_read(&self) -> Result<Vec<Notification>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, timestamp, app_name, title, body, read, actions_json,
+                    active, invoked_action
+             FROM notifications WHERE read = 1 ORDER BY id DESC",
+        )?;
+        let rows = stmt.query_map([], notification_from_row)?;
+        rows.collect::<std::result::Result<Vec<_>, _>>()
             .map_err(Into::into)
     }
 
@@ -459,6 +480,23 @@ fn parse_actions(json: String, column: usize) -> rusqlite::Result<Vec<Notificati
     })
 }
 
+/// Map a full notification row (id, timestamp, app_name, title, body, read,
+/// actions_json, active, invoked_action) into a [`Notification`]. Shared by
+/// every read query so the column order stays in sync.
+fn notification_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Notification> {
+    Ok(Notification {
+        id: row.get(0)?,
+        timestamp: row.get(1)?,
+        app_name: row.get(2)?,
+        title: row.get(3)?,
+        body: row.get(4)?,
+        read: row.get::<_, i64>(5)? != 0,
+        actions: parse_actions(row.get::<_, String>(6)?, 6)?,
+        active: row.get::<_, i64>(7)? != 0,
+        invoked_action: row.get(8)?,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -544,6 +582,47 @@ mod tests {
         let deleted = db.delete_by_keyword("Hello").unwrap();
         assert_eq!(deleted, 2);
         assert_eq!(db.count().unwrap(), 1);
+    }
+
+    #[test]
+    fn test_find_by_keyword_is_non_destructive() {
+        let (_tmp, db) = test_db();
+        db.add("12:00", "App", "Hello World", "Body").unwrap();
+        db.add("12:01", "App", "Title", "Hello there").unwrap();
+        db.add("12:02", "App", "Other", "Different").unwrap();
+
+        let matches = db.find_by_keyword("Hello").unwrap();
+        assert_eq!(matches.len(), 2);
+        // Newest first
+        assert_eq!(matches[0].title, "Title");
+        assert_eq!(matches[1].title, "Hello World");
+        // Nothing was deleted
+        assert_eq!(db.count().unwrap(), 3);
+    }
+
+    #[test]
+    fn test_find_by_app_is_non_destructive() {
+        let (_tmp, db) = test_db();
+        db.add("12:00", "Discord", "Msg1", "Body1").unwrap();
+        db.add("12:01", "Discord", "Msg2", "Body2").unwrap();
+        db.add("12:02", "Spotify", "Play", "Song").unwrap();
+
+        let matches = db.find_by_app("Discord").unwrap();
+        assert_eq!(matches.len(), 2);
+        assert_eq!(db.count().unwrap(), 3);
+    }
+
+    #[test]
+    fn test_find_read_is_non_destructive() {
+        let (_tmp, db) = test_db();
+        let id1 = db.add("12:00", "App", "T1", "B1").unwrap();
+        db.add("12:01", "App", "T2", "B2").unwrap();
+        db.mark_read(id1).unwrap();
+
+        let matches = db.find_read().unwrap();
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].title, "T1");
+        assert_eq!(db.count().unwrap(), 2);
     }
 
     #[test]
