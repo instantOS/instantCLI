@@ -57,12 +57,18 @@ enum MenuAction {
 }
 
 /// Build the main menu items from the database.
+///
+/// Options are placed at the top so they are always immediately accessible;
+/// individual notifications follow below.
 fn build_main_items(db: &NotifyDb, daemon_running: bool) -> Result<(Vec<NotifyMainItem>, i64)> {
     let notifications = db.list()?;
     let unread = db.unread_count()?;
 
     let mut items: Vec<NotifyMainItem> = Vec::new();
 
+    // Options at the top
+    items.push(NotifyMainItem::Close);
+    items.push(NotifyMainItem::Options);
     if !daemon_running {
         items.push(NotifyMainItem::EnableCapture);
     }
@@ -78,10 +84,6 @@ fn build_main_items(db: &NotifyDb, daemon_running: bool) -> Result<(Vec<NotifyMa
             read: n.read,
         }));
     }
-
-    // Options and close at the bottom
-    items.push(NotifyMainItem::Options);
-    items.push(NotifyMainItem::Close);
 
     Ok((items, unread))
 }
@@ -104,7 +106,12 @@ fn run_main_menu(
         return Ok(MenuAction::Exit);
     }
 
-    let initial_index = cursor.initial_index(&items);
+    // When the menu is opened fresh (no prior cursor state), default to the
+    // first notification — the options at the top are always visible and
+    // immediately accessible via a single up-arrow press.
+    let initial_index = cursor
+        .initial_index(&items)
+        .or_else(|| items.iter().position(|item| matches!(item, NotifyMainItem::Notification(_))));
     let count_color = if unread > 0 {
         colors::YELLOW
     } else {
