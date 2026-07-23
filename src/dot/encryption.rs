@@ -124,6 +124,7 @@ pub fn classify_encrypted_failure(err: &anyhow::Error) -> EncryptedFailureReason
                 | age::DecryptError::InvalidMac
                 | age::DecryptError::KeyDecryptionFailed
                 | age::DecryptError::UnknownFormat => EncryptedFailureReason::CiphertextInvalid,
+                _ => EncryptedFailureReason::Unknown,
             };
         }
     }
@@ -280,9 +281,11 @@ pub fn discover_identity_files() -> Vec<PathBuf> {
 /// parsing is microseconds; calling this once per `apply_all` invocation is
 /// fine. Avoiding caching also sidesteps `Send`/`Sync` issues with the
 /// `dyn age::Identity` trait object.
-pub fn load_identities() -> Result<Vec<Box<dyn age::Identity>>> {
+pub type AgeIdentity = Box<dyn age::Identity + Send + Sync>;
+
+pub fn load_identities() -> Result<Vec<AgeIdentity>> {
     let files = discover_identity_files();
-    let mut all: Vec<Box<dyn age::Identity>> = Vec::new();
+    let mut all: Vec<AgeIdentity> = Vec::new();
     for path in &files {
         let mut parsed = load_identities_from_file(path)
             .with_context(|| format!("loading identity file {}", path.display()))?;
@@ -296,7 +299,7 @@ pub fn load_identities() -> Result<Vec<Box<dyn age::Identity>>> {
 ///
 /// `~/.ssh/id_ed25519` style keys go through `age::ssh::Identity`. Native
 /// age files go through `age::IdentityFile`. The age parser is tried first.
-fn load_identities_from_file(path: &Path) -> Result<Vec<Box<dyn age::Identity>>> {
+fn load_identities_from_file(path: &Path) -> Result<Vec<AgeIdentity>> {
     let name = path.to_string_lossy().into_owned();
 
     // Try native age identity file first. The age parser tolerates blank
@@ -325,7 +328,7 @@ fn load_identities_from_file(path: &Path) -> Result<Vec<Box<dyn age::Identity>>>
     }
 }
 
-fn parse_ssh_identity_file(path: &Path) -> Result<Vec<Box<dyn age::Identity>>> {
+fn parse_ssh_identity_file(path: &Path) -> Result<Vec<AgeIdentity>> {
     let file = File::open(path)
         .with_context(|| format!("opening ssh identity file {}", path.display()))?;
     let reader = BufReader::new(file);
@@ -333,7 +336,7 @@ fn parse_ssh_identity_file(path: &Path) -> Result<Vec<Box<dyn age::Identity>>> {
         .with_context(|| format!("parsing ssh identity file {}", path.display()))?;
 
     match ssh_id {
-        age::ssh::Identity::Unencrypted(_) => Ok(vec![Box::new(ssh_id) as Box<dyn age::Identity>]),
+        age::ssh::Identity::Unencrypted(_) => Ok(vec![Box::new(ssh_id) as AgeIdentity]),
         age::ssh::Identity::Encrypted(_) => {
             // Passphrase-protected SSH keys are skipped; the autostart
             // path can't prompt for a passphrase. The user can place a
@@ -438,10 +441,7 @@ pub fn encrypt_bytes_to_armored(
 /// Decrypt an age-encrypted file at `cipher_path` to an owned byte buffer,
 /// using the given identities. Returns an error if no identity matches the
 /// file's recipients, or if the file is malformed.
-pub fn decrypt_file_to_bytes(
-    cipher_path: &Path,
-    identities: &[Box<dyn age::Identity>],
-) -> Result<Vec<u8>> {
+pub fn decrypt_file_to_bytes(cipher_path: &Path, identities: &[AgeIdentity]) -> Result<Vec<u8>> {
     if identities.is_empty() {
         return Err(anyhow!(
             "No local encryption key found. Please run 'ins dot keys generate' first, or set $AGE_IDENTITY."
@@ -544,7 +544,7 @@ mod tests {
 
         let cipher_file = tempfile::NamedTempFile::new().expect("temp cipher file");
         std::fs::write(cipher_file.path(), ciphertext).expect("write cipher file");
-        let identities: Vec<Box<dyn age::Identity>> = vec![Box::new(identity)];
+        let identities: Vec<AgeIdentity> = vec![Box::new(identity)];
 
         let plaintext =
             decrypt_file_to_bytes(cipher_file.path(), &identities).expect("decrypt payload");

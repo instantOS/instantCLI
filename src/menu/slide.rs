@@ -278,15 +278,12 @@ impl SliderApp {
 
             let vertical = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints(
-                    [
-                        Constraint::Length(3),
-                        Constraint::Length(3),
-                        Constraint::Min(5),
-                        Constraint::Length(2),
-                    ]
-                    .as_ref(),
-                )
+                .constraints([
+                    Constraint::Length(3),
+                    Constraint::Length(3),
+                    Constraint::Min(5),
+                    Constraint::Length(2),
+                ])
                 .split(area);
 
             frame.render_widget(title, vertical[0]);

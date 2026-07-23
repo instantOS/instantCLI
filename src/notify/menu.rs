@@ -1,0 +1,288 @@
+//! Notification center UI
+//!
+//! Main entry point for the interactive notification browser.
+//! Mirrors the `ins settings` UI pattern: FZF-based menus with
+//! `FzfSelectable` items, `MenuCursor` for position tracking, and
+//! `PreviewBuilder` for rich previews.
+
+use anyhow::{Context, Result};
+
+use crate::menu_utils::{
+    Header, MenuCursor, select_one_with_style_at, select_one_with_style_at_header,
+};
+use crate::ui::catppuccin::{colors, format_icon_colored, hex_to_ansi_fg};
+use crate::ui::nerd_font::NerdFont;
+use crate::ui::prelude::*;
+
+use super::db::NotifyDb;
+use super::handlers;
+use super::items::{
+    NotificationDetailAction, NotificationDetailItem, NotificationDetailPreview,
+    NotificationListItem, NotifyMainItem,
+};
+
+/// Run the interactive notification center UI.
+pub fn run_notify_ui(debug: bool, mut daemon_running: bool) -> Result<()> {
+    let db = NotifyDb::open().context("opening notification database")?;
+
+    let mut cursor = MenuCursor::new();
+
+    loop {
+        match run_main_menu(&db, daemon_running, debug, &mut cursor)? {
+            MenuAction::OpenNotification { id, main_cursor } => {
+                cursor = main_cursor;
+                handle_notification_detail(&db, id, debug)?;
+            }
+            MenuAction::OpenOptions { main_cursor } => {
+                cursor = main_cursor;
+                super::options::run_options_menu(&db, debug)?;
+            }
+            MenuAction::EnableCapture { main_cursor } => {
+                cursor = main_cursor;
+                super::service::enable_and_start()?;
+                daemon_running = true;
+            }
+            MenuAction::Exit => break,
+        }
+    }
+
+    Ok(())
+}
+
+enum MenuAction {
+    OpenNotification { id: i64, main_cursor: MenuCursor },
+    OpenOptions { main_cursor: MenuCursor },
+    EnableCapture { main_cursor: MenuCursor },
+    Exit,
+}
+
+/// Build the main menu items from the database.
+fn build_main_items(db: &NotifyDb, daemon_running: bool) -> Result<(Vec<NotifyMainItem>, i64)> {
+    let notifications = db.list()?;
+    let unread = db.unread_count()?;
+
+    let mut items: Vec<NotifyMainItem> = Vec::new();
+
+    if !daemon_running {
+        items.push(NotifyMainItem::EnableCapture);
+    }
+
+    // Individual notifications
+    for n in notifications {
+        items.push(NotifyMainItem::Notification(NotificationListItem {
+            id: n.id,
+            app_name: n.app_name,
+            title: n.title,
+            body: n.body,
+            timestamp: n.timestamp,
+            read: n.read,
+        }));
+    }
+
+    // Options and close at the bottom
+    items.push(NotifyMainItem::Options);
+    items.push(NotifyMainItem::Close);
+
+    Ok((items, unread))
+}
+
+fn run_main_menu(
+    db: &NotifyDb,
+    daemon_running: bool,
+    _debug: bool,
+    cursor: &mut MenuCursor,
+) -> Result<MenuAction> {
+    let (items, unread) = build_main_items(db, daemon_running)?;
+
+    if items.is_empty() {
+        emit(
+            Level::Info,
+            "notify.empty",
+            &format!("{} No notifications.", char::from(NerdFont::Bell)),
+            None,
+        );
+        return Ok(MenuAction::Exit);
+    }
+
+    let initial_index = cursor.initial_index(&items);
+    let bell = format_icon_colored(NerdFont::Bell, colors::MAUVE);
+    let unread_icon = format_icon_colored(NerdFont::EnvelopeOpen, colors::YELLOW);
+    let count_color = hex_to_ansi_fg(if unread > 0 {
+        colors::YELLOW
+    } else {
+        colors::SUBTEXT0
+    });
+    let header =
+        format!("{bell} Notification Center\n{unread_icon} {count_color}{unread} unread\x1b[0m");
+    let selection =
+        select_one_with_style_at_header(items.clone(), initial_index, Header::fancy(&header))?;
+
+    let action = match selection {
+        Some(NotifyMainItem::Notification(n)) => {
+            cursor.update(&NotifyMainItem::Notification(n.clone()), &items);
+            MenuAction::OpenNotification {
+                id: n.id,
+                main_cursor: cursor.clone(),
+            }
+        }
+        Some(NotifyMainItem::Options) => {
+            cursor.update(&NotifyMainItem::Options, &items);
+            MenuAction::OpenOptions {
+                main_cursor: cursor.clone(),
+            }
+        }
+        Some(NotifyMainItem::EnableCapture) => {
+            cursor.update(&NotifyMainItem::EnableCapture, &items);
+            MenuAction::EnableCapture {
+                main_cursor: cursor.clone(),
+            }
+        }
+        None => MenuAction::Exit,
+        Some(NotifyMainItem::Close) => MenuAction::Exit,
+    };
+
+    Ok(action)
+}
+
+/// Handle the detail view for a single notification.
+///
+/// Shows the notification content and actions (back, mark unread, and delete).
+fn handle_notification_detail(db: &NotifyDb, id: i64, _debug: bool) -> Result<()> {
+    let Some(mut notification) = db.get(id)? else {
+        emit(
+            Level::Warn,
+            "notify.not_found",
+            &format!("{} Notification not found.", char::from(NerdFont::Warning)),
+            None,
+        );
+        return Ok(());
+    };
+
+    // Mark as read when viewed
+    db.mark_read(id)?;
+    notification.read = true;
+
+    let items = build_detail_items(&notification);
+    let selection = select_one_with_style_at(items, Some(0))?;
+
+    match selection {
+        Some(item) => match item.action {
+            NotificationDetailAction::Back => Ok(()),
+            NotificationDetailAction::MarkUnread => {
+                db.mark_unread(id)?;
+                emit(
+                    Level::Success,
+                    "notify.marked_unread",
+                    &format!("{} Marked as unread.", char::from(NerdFont::Check)),
+                    None,
+                );
+                Ok(())
+            }
+            NotificationDetailAction::Delete => {
+                handlers::handle_delete(db, id)?;
+                Ok(())
+            }
+        },
+        _ => Ok(()),
+    }
+}
+
+/// Build the detail menu items for a notification.
+fn build_detail_items(notif: &super::db::Notification) -> Vec<NotificationDetailItem> {
+    let action_labels = if notif.actions.is_empty() {
+        None
+    } else {
+        let labels = notif
+            .actions
+            .iter()
+            .map(|action| action.label.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let state = if notif.active { "live" } else { "expired" };
+        Some(format!("{labels} ({state})"))
+    };
+
+    let preview = NotificationDetailPreview {
+        title: notif.title.clone(),
+        app_name: notif.app_name.clone(),
+        timestamp: notif.timestamp.clone(),
+        body: notif.body.clone(),
+        actions: action_labels,
+    };
+
+    let mut items = vec![NotificationDetailItem {
+        action: NotificationDetailAction::Back,
+        preview: preview.clone(),
+    }];
+    if notif.read {
+        items.push(NotificationDetailItem {
+            action: NotificationDetailAction::MarkUnread,
+            preview: preview.clone(),
+        });
+    }
+    items.push(NotificationDetailItem {
+        action: NotificationDetailAction::Delete,
+        preview,
+    });
+
+    items
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::notify::db::{Notification, NotificationAction};
+
+    fn notification() -> Notification {
+        Notification {
+            id: 42,
+            timestamp: "2026-07-22 12:34".to_string(),
+            app_name: "Bluetooth".to_string(),
+            title: "Pair device?".to_string(),
+            body: "Allow the keyboard to pair.".to_string(),
+            read: true,
+            actions: vec![NotificationAction {
+                key: "pair".to_string(),
+                label: "Pair".to_string(),
+            }],
+            active: true,
+            invoked_action: None,
+        }
+    }
+
+    #[test]
+    fn detail_menu_contains_only_actions_with_notification_content() {
+        let items = build_detail_items(&notification());
+
+        let actions = items.iter().map(|item| &item.action).collect::<Vec<_>>();
+        assert_eq!(
+            actions,
+            vec![
+                &NotificationDetailAction::Back,
+                &NotificationDetailAction::MarkUnread,
+                &NotificationDetailAction::Delete,
+            ]
+        );
+        assert!(
+            items
+                .iter()
+                .all(|item| item.preview.title == "Pair device?")
+        );
+        assert!(
+            items
+                .iter()
+                .all(|item| item.preview.body == "Allow the keyboard to pair.")
+        );
+    }
+
+    #[test]
+    fn first_selectable_detail_item_is_back_with_full_content() {
+        let items = build_detail_items(&notification());
+        let first = items.first().expect("detail menu should contain an action");
+
+        assert_eq!(first.action, NotificationDetailAction::Back);
+        assert_eq!(first.preview.title, "Pair device?");
+        assert_eq!(first.preview.body, "Allow the keyboard to pair.");
+        assert_eq!(first.preview.actions.as_deref(), Some("Pair (live)"));
+    }
+}
