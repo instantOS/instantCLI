@@ -145,6 +145,19 @@ impl UnitIndex {
             .collect()
     }
 
+    pub fn modified_unit_statuses(&self) -> Vec<UnitStatus> {
+        let mut statuses: Vec<_> = self
+            .modified_files_by_unit
+            .iter()
+            .map(|(unit_path, modified_files)| UnitStatus {
+                unit_path: unit_path.clone(),
+                modified_files: modified_files.clone(),
+            })
+            .collect();
+        statuses.sort_by(|a, b| a.unit_path.cmp(&b.unit_path));
+        statuses
+    }
+
     pub fn modified_units(&self) -> impl Iterator<Item = &PathBuf> {
         self.modified_files_by_unit.keys()
     }
