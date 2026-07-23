@@ -109,9 +109,11 @@ fn run_main_menu(
     // When the menu is opened fresh (no prior cursor state), default to the
     // first notification — the options at the top are always visible and
     // immediately accessible via a single up-arrow press.
-    let initial_index = cursor
-        .initial_index(&items)
-        .or_else(|| items.iter().position(|item| matches!(item, NotifyMainItem::Notification(_))));
+    let initial_index = cursor.initial_index(&items).or_else(|| {
+        items
+            .iter()
+            .position(|item| matches!(item, NotifyMainItem::Notification(_)))
+    });
     let count_color = if unread > 0 {
         colors::YELLOW
     } else {

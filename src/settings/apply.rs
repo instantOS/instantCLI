@@ -6,6 +6,9 @@ use super::context::SettingsContext;
 use super::store::SettingsStore;
 
 pub fn run_nonpersistent_apply(debug: bool, privileged_flag: bool) -> Result<()> {
+    // `settings apply` is used as the mutating session/bootstrap path. Keep
+    // default-command initialization here rather than in the settings TUI so
+    // merely browsing settings never creates or repairs files.
     super::default_commands::ensure_default_links()
         .context("setting up default application commands")?;
     let store = SettingsStore::load().context("loading settings file")?;

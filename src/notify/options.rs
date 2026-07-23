@@ -372,14 +372,14 @@ fn handle_delete_by_app(db: &NotifyDb) -> Result<()> {
         Header::default("Select an application to review its notifications"),
     )?;
 
-    let (app, matches) = match selection {
-        Some(AppDeletionItem::Application {
-            app_name,
-            notifications,
-        }) => (app_name, notifications),
+    let app = match selection {
+        Some(AppDeletionItem::Application { app_name, .. }) => app_name,
         Some(AppDeletionItem::Back) | None => return Ok(()),
     };
 
+    // Refresh after fzf closes: notifications may have changed while the menu
+    // was open, and confirmation must describe exactly what will be deleted.
+    let matches = db.find_by_app(&app)?;
     if matches.is_empty() {
         // Rare: the app was drawn from list_apps(), but no rows remain by the
         // time we query (e.g. deleted through another path). Stay consistent

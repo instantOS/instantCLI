@@ -5,8 +5,8 @@
 //! paths below `~/.config/instantos/default`.
 
 use std::fs;
-use std::os::unix::fs::symlink;
 use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
@@ -73,6 +73,10 @@ const DESKTOP_DEFAULTS: &[(&str, &[&str])] = &[
     ),
 ];
 
+/// Create missing default-command aliases and repair broken symlinks.
+///
+/// This mutates the user's configuration and therefore belongs in explicit
+/// setup/repair or session-apply paths, not in read-only UI initialization.
 pub fn ensure_default_links() -> Result<()> {
     let default_dir = default_dir()?;
     fs::create_dir_all(&default_dir)
