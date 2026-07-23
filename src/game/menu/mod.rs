@@ -25,7 +25,9 @@ use crate::game::platforms::LaunchCommandBuilderContext;
 use crate::game::restic;
 use crate::game::setup;
 use crate::menu::protocol::FzfPreview;
-use crate::menu_utils::{ConfirmResult, FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
+use crate::menu_utils::{
+    ConfirmResult, FzfResult, FzfSelectable, FzfWrapper, Header, HeaderBuilder, MenuCursor,
+};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -791,10 +793,11 @@ fn handle_open_save_directory_action(game_name: &str, state: &GameState) -> Resu
     ];
 
     let selection = FzfWrapper::builder()
-        .header(Header::fancy(&format!(
-            "Open Save Directory: {}",
-            game_name
-        )))
+        .header(
+            HeaderBuilder::new(NerdFont::FolderOpen, "Open Save Directory")
+                .field("Game", game_name)
+                .build(),
+        )
         .prompt("Open with")
         .args(fzf_mocha_args())
         .responsive_layout()
@@ -873,7 +876,7 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
             let actions = build_action_menu(name, &state);
 
             let mut builder = FzfWrapper::builder()
-                .header(Header::fancy(&format!("Game: {}", name)))
+                .header(HeaderBuilder::new(NerdFont::Gamepad, name).build())
                 .prompt("Select action")
                 .args(fzf_mocha_args())
                 .responsive_layout();
@@ -1014,7 +1017,7 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
                     let actions = build_action_menu(&game_name, &state);
 
                     let mut builder = FzfWrapper::builder()
-                        .header(Header::fancy(&format!("Game: {}", game_name)))
+                        .header(HeaderBuilder::new(NerdFont::Gamepad, &game_name).build())
                         .prompt("Select action")
                         .args(fzf_mocha_args())
                         .responsive_layout();

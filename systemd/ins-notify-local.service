@@ -1,0 +1,11 @@
+[Unit]
+Description=instantCLI notification history monitor
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/ins notify daemon
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target

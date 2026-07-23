@@ -95,7 +95,7 @@ impl SliderPreset {
 
     fn notification_script(stack_tag: &str, icon: &str, label: &str) -> String {
         format!(
-            "dunstify --appname instantCLI \\\n    -h string:x-dunst-stack-tag:{stack_tag} \\\n    -h int:value:\"${{value}}\" \\\n    -i {icon} \\\n    \"{label}\" 2>/dev/null",
+            "dunstify --appname instantCLI --transient \\\n    -h string:x-dunst-stack-tag:{stack_tag} \\\n    -h int:value:\"${{value}}\" \\\n    -i {icon} \\\n    \"{label}\" 2>/dev/null",
             stack_tag = stack_tag,
             icon = icon,
             label = label
@@ -210,7 +210,10 @@ impl SliderApp {
                     }
 
                     if key_event.modifiers.is_empty()
-                        && matches!(key_event.code, KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q'))
+                        && matches!(
+                            key_event.code,
+                            KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q')
+                        )
                     {
                         return Ok(None);
                     }
@@ -275,15 +278,12 @@ impl SliderApp {
 
             let vertical = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints(
-                    [
-                        Constraint::Length(3),
-                        Constraint::Length(3),
-                        Constraint::Min(5),
-                        Constraint::Length(2),
-                    ]
-                    .as_ref(),
-                )
+                .constraints([
+                    Constraint::Length(3),
+                    Constraint::Length(3),
+                    Constraint::Min(5),
+                    Constraint::Length(2),
+                ])
                 .split(area);
 
             frame.render_widget(title, vertical[0]);

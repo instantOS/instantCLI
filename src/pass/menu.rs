@@ -1,7 +1,7 @@
 use anyhow::{Result, anyhow, bail};
 
 use crate::menu::client::MenuClient;
-use crate::menu_utils::{FzfResult, FzfWrapper, Header, MenuCursor};
+use crate::menu_utils::{FzfResult, FzfWrapper, Header, HeaderBuilder, MenuCursor};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -219,10 +219,11 @@ pub(super) fn run_edit_action_menu(entry: &PassEntry) -> Result<()> {
 
         let items = build_edit_action_items(&current_entry);
         let mut builder = FzfWrapper::builder()
-            .header(Header::fancy(&format!(
-                "Edit: {}",
-                current_entry.display_name
-            )))
+            .header(
+                HeaderBuilder::new(NerdFont::Edit, "Edit Password Entry")
+                    .field("Entry", &current_entry.display_name)
+                    .build(),
+            )
             .prompt("Action")
             .args(fzf_mocha_args())
             .responsive_layout();

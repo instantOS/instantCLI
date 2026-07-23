@@ -4,6 +4,11 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT_DIR}"
 
+if ! command -v dpkg-deb >/dev/null 2>&1; then
+	echo "missing dependency: dpkg-deb" >&2
+	exit 1
+fi
+
 VERSION="$(awk -F '"' '/^version =/ {print $2; exit}' Cargo.toml)"
 if [[ -z "${VERSION}" ]]; then
 	echo "failed to extract version from Cargo.toml" >&2
@@ -39,6 +44,7 @@ PKG_DIR="${WORK_DIR}/ins_${VERSION}_${ARCH}"
 rm -rf "${PKG_DIR}"
 mkdir -p "${PKG_DIR}/DEBIAN" \
 	"${PKG_DIR}/usr/bin" \
+	"${PKG_DIR}/usr/lib/systemd/user" \
 	"${PKG_DIR}/usr/share/doc/ins" \
 	"${PKG_DIR}/usr/share/applications"
 
@@ -49,6 +55,9 @@ install -Dm644 "README.md" "${PKG_DIR}/usr/share/doc/ins/README.md"
 for desktop_file in desktop/*.desktop; do
 	install -Dm644 "${desktop_file}" "${PKG_DIR}/usr/share/applications/$(basename "${desktop_file}")"
 done
+
+install -Dm644 "systemd/ins-notify.service" \
+	"${PKG_DIR}/usr/lib/systemd/user/ins-notify.service"
 
 cat >"${PKG_DIR}/DEBIAN/control" <<EOF
 Package: ins

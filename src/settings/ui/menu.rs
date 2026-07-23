@@ -250,8 +250,8 @@ fn navigate_tree(
 }
 
 pub fn handle_search_all(ctx: &mut SettingsContext, mut cursor: MenuCursor) -> Result<bool> {
-    use crate::menu_utils::{FzfResult, FzfWrapper, Header};
-    use crate::ui::catppuccin::{colors, fzf_mocha_args, hex_to_ansi_fg};
+    use crate::menu_utils::{FzfResult, FzfWrapper, HeaderBuilder};
+    use crate::ui::catppuccin::fzf_mocha_args;
 
     loop {
         let items = build_tree_search_items();
@@ -261,12 +261,9 @@ pub fn handle_search_all(ctx: &mut SettingsContext, mut cursor: MenuCursor) -> R
             return Ok(true);
         }
 
-        let title_color = hex_to_ansi_fg(colors::MAUVE);
-        let tip_color = hex_to_ansi_fg(colors::SUBTEXT0);
-        let reset = "\x1b[0m";
-        let header = format!(
-            "{title_color}All Settings{reset}\n{tip_color}Browse all settings organized by category{reset}"
-        );
+        let header = HeaderBuilder::new(crate::ui::nerd_font::NerdFont::Settings, "All Settings")
+            .subtitle("Browse all settings organized by category")
+            .build();
 
         let prompt = format!(
             "{} Search",
@@ -276,7 +273,7 @@ pub fn handle_search_all(ctx: &mut SettingsContext, mut cursor: MenuCursor) -> R
         let initial_cursor = cursor.initial_index(&items);
         let result = FzfWrapper::builder()
             .prompt(prompt)
-            .header(Header::fancy(&header))
+            .header(header)
             .args(fzf_mocha_args())
             .args(["--no-sort"])
             .initial_index(initial_cursor.unwrap_or(0))

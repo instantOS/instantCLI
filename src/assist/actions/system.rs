@@ -75,6 +75,7 @@ pub fn volume_direct(action: &str) -> Result<()> {
                 .args([
                     "--appname",
                     "instantCLI",
+                    "--transient",
                     "-h",
                     "string:x-dunst-stack-tag:instantcli-volume",
                     "-h",
@@ -136,6 +137,7 @@ pub fn brightness_direct(action: &str) -> Result<()> {
                 .args([
                     "--appname",
                     "instantCLI",
+                    "--transient",
                     "-h",
                     "string:x-dunst-stack-tag:instantcli-brightness",
                     "-h",

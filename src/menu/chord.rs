@@ -231,7 +231,8 @@ impl KeyChordNavigator {
                     }
 
                     match key_event.code {
-                        KeyCode::Esc | KeyCode::Backspace
+                        KeyCode::Esc
+                        | KeyCode::Backspace
                         | KeyCode::Char('q')
                         | KeyCode::Char('Q') => {
                             if let Some((node, path)) = self.history.pop() {
@@ -385,15 +386,12 @@ fn render_frame<'a>(
 
         let layout = Layout::default()
             .direction(Direction::Vertical)
-            .constraints(
-                [
-                    Constraint::Length(3),
-                    Constraint::Length(2),
-                    Constraint::Min(5),
-                    Constraint::Length(1),
-                ]
-                .as_ref(),
-            )
+            .constraints([
+                Constraint::Length(3),
+                Constraint::Length(2),
+                Constraint::Min(5),
+                Constraint::Length(1),
+            ])
             .split(area);
 
         let title = Paragraph::new(Line::from(vec![
