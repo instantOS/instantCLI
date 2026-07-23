@@ -3,6 +3,7 @@ pub mod category_tree;
 pub mod commands;
 pub mod constants;
 pub mod context;
+pub mod default_commands;
 pub mod defaultapps;
 pub mod definitions;
 pub mod deps;

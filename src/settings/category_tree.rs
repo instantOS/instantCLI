@@ -121,6 +121,8 @@ pub fn category_tree(category: Category) -> Vec<CategoryNode> {
         ],
         Category::Apps => vec![
             CategoryNode::setting(&apps::ManageAllApps),
+            CategoryNode::setting(&apps::DefaultTerminal),
+            CategoryNode::setting(&apps::DefaultTerminalFileManager),
             CategoryNode::setting(&apps::DefaultBrowser),
             CategoryNode::setting(&apps::DefaultTextEditor),
             CategoryNode::setting(&apps::DefaultFileManager),

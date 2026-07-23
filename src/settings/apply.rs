@@ -6,6 +6,8 @@ use super::context::SettingsContext;
 use super::store::SettingsStore;
 
 pub fn run_nonpersistent_apply(debug: bool, privileged_flag: bool) -> Result<()> {
+    super::default_commands::ensure_default_links()
+        .context("setting up default application commands")?;
     let store = SettingsStore::load().context("loading settings file")?;
     let mut ctx = SettingsContext::new_with_notifications_disabled(store, debug, privileged_flag);
 

@@ -7,10 +7,10 @@ use anyhow::{Context, Result};
 use duct::cmd;
 
 use crate::menu_utils::{
-    ConfirmResult, FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor,
-    select_one_with_style_at, select_one_with_style_at_header,
+    ConfirmResult, FzfSelectable, FzfWrapper, Header, MenuCursor, select_one_with_style_at,
+    select_one_with_style_at_header,
 };
-use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
+use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::prelude::*;
 use crate::ui::preview::{FzfPreview, PreviewBuilder};
@@ -357,25 +357,29 @@ fn handle_delete_by_app(db: &NotifyDb) -> Result<()> {
         return Ok(());
     }
 
-    let mut items: Vec<String> = apps;
-    items.push("__back__".to_string());
+    let mut items = Vec::with_capacity(apps.len() + 1);
+    for app_name in apps {
+        items.push(AppDeletionItem::Application {
+            notifications: db.find_by_app(&app_name)?,
+            app_name,
+        });
+    }
+    items.push(AppDeletionItem::Back);
 
-    // Use FzfWrapper for a simple string selection
-    let result = FzfWrapper::builder()
-        .prompt(format!("{} Application", char::from(NerdFont::Search)))
-        .header(Header::default(
-            "Select an application to delete its notifications",
-        ))
-        .args(fzf_mocha_args())
-        .responsive_layout()
-        .select(items)?;
+    let selection = select_one_with_style_at_header(
+        items,
+        Some(0),
+        Header::default("Select an application to review its notifications"),
+    )?;
 
-    let app = match result {
-        FzfResult::Selected(app) if app != "__back__" => app,
-        _ => return Ok(()),
+    let (app, matches) = match selection {
+        Some(AppDeletionItem::Application {
+            app_name,
+            notifications,
+        }) => (app_name, notifications),
+        Some(AppDeletionItem::Back) | None => return Ok(()),
     };
 
-    let matches = db.find_by_app(&app)?;
     if matches.is_empty() {
         // Rare: the app was drawn from list_apps(), but no rows remain by the
         // time we query (e.g. deleted through another path). Stay consistent
@@ -408,6 +412,93 @@ fn handle_delete_by_app(db: &NotifyDb) -> Result<()> {
     );
 
     Ok(())
+}
+
+/// Application choice in the delete-by-application menu.
+///
+/// The key remains the unstyled application name while the visible row and
+/// preview can provide the same affordances as the rest of the notification UI.
+#[derive(Clone)]
+enum AppDeletionItem {
+    Application {
+        app_name: String,
+        notifications: Vec<Notification>,
+    },
+    Back,
+}
+
+impl FzfSelectable for AppDeletionItem {
+    fn fzf_display_text(&self) -> String {
+        match self {
+            Self::Application {
+                app_name,
+                notifications,
+            } => {
+                let count = notifications.len();
+                format!(
+                    "{} {}  ·  {count} {}",
+                    format_icon_colored(NerdFont::Desktop, colors::PEACH),
+                    app_name,
+                    notification_noun(count)
+                )
+            }
+            Self::Back => format!("{} Back", format_back_icon()),
+        }
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        match self {
+            Self::Application {
+                app_name,
+                notifications,
+            } => {
+                let count = notifications.len();
+                let unread = notifications
+                    .iter()
+                    .filter(|notification| !notification.read)
+                    .count();
+                let mut builder = PreviewBuilder::new()
+                    .header(NerdFont::Desktop, app_name)
+                    .field("Notifications", &count.to_string())
+                    .field("Unread", &unread.to_string())
+                    .blank()
+                    .separator()
+                    .blank()
+                    .subtext("Most recent notifications:")
+                    .blank();
+
+                for notification in notifications.iter().take(DELETION_PREVIEW_EXAMPLES) {
+                    builder =
+                        builder.bullet(&truncate_example(notification_label(notification), 56));
+                }
+
+                if count > DELETION_PREVIEW_EXAMPLES {
+                    builder = builder
+                        .subtext(&format!("…and {} more", count - DELETION_PREVIEW_EXAMPLES));
+                }
+
+                builder
+                    .blank()
+                    .line(
+                        colors::PEACH,
+                        Some(NerdFont::Info),
+                        "Select to review before deleting.",
+                    )
+                    .build()
+            }
+            Self::Back => PreviewBuilder::new()
+                .header(NerdFont::ArrowLeft, "Go Back")
+                .text("Return to notification options.")
+                .build(),
+        }
+    }
+
+    fn fzf_key(&self) -> String {
+        match self {
+            Self::Application { app_name, .. } => format!("app:{app_name}"),
+            Self::Back => "__back__".to_string(),
+        }
+    }
 }
 
 /// Handle deleting notifications by keyword.
@@ -501,10 +592,7 @@ fn handle_delete_all(db: &NotifyDb) -> Result<()> {
         emit(
             Level::Info,
             "notify.no_notifications",
-            &format!(
-                "{} No notifications to delete.",
-                char::from(NerdFont::Info)
-            ),
+            &format!("{} No notifications to delete.", char::from(NerdFont::Info)),
             None,
         );
         return Ok(());
@@ -589,9 +677,7 @@ fn confirm_deletion(matches: &[Notification], postfix: Option<&str>) -> Result<b
     }
 
     let popup = match postfix {
-        Some(scope) => format!(
-            "Delete {count} {noun} {scope}?\n\nThis cannot be undone."
-        ),
+        Some(scope) => format!("Delete {count} {noun} {scope}?\n\nThis cannot be undone."),
         None => format!("Delete {count} {noun}?\n\nThis cannot be undone."),
     };
     let result = FzfWrapper::builder()
@@ -655,7 +741,11 @@ impl FzfSelectable for DeletionReview {
         }
         builder = builder
             .field("Count", &format!("{} {}", self.count, noun))
-            .line(colors::RED, Some(NerdFont::Warning), "This cannot be undone.")
+            .line(
+                colors::RED,
+                Some(NerdFont::Warning),
+                "This cannot be undone.",
+            )
             .blank()
             .separator()
             .blank()
@@ -693,13 +783,20 @@ fn notification_noun(count: usize) -> &'static str {
 
 /// Format a notification as a single-line example for the deletion preview.
 fn example_line(notification: &Notification) -> String {
-    let label = notification.title.trim();
-    let label = if label.is_empty() {
+    format!(
+        "{} — {}",
+        notification.app_name,
+        truncate_example(notification_label(notification), 48)
+    )
+}
+
+fn notification_label(notification: &Notification) -> &str {
+    let title = notification.title.trim();
+    if title.is_empty() {
         notification.body.lines().next().unwrap_or("").trim()
     } else {
-        label
-    };
-    format!("{} — {}", notification.app_name, truncate_example(label, 48))
+        title
+    }
 }
 
 /// Truncate a label to `max` visible characters, appending an ellipsis.
@@ -794,6 +891,38 @@ mod tests {
         };
         assert!(preview.contains("Dunst"));
         assert!(preview.contains("Enabled"));
+    }
+
+    #[test]
+    fn app_deletion_choice_has_styled_label_count_and_preview() {
+        let item = AppDeletionItem::Application {
+            app_name: "Discord".to_string(),
+            notifications: sample_matches(3),
+        };
+
+        let display = item.fzf_display_text();
+        assert!(display.contains(char::from(NerdFont::Desktop)));
+        assert!(display.contains("Discord"));
+        assert!(display.contains("3 notifications"));
+        assert_eq!(item.fzf_key(), "app:Discord");
+
+        let FzfPreview::Text(preview) = item.fzf_preview() else {
+            panic!("application choice should have a text preview");
+        };
+        assert!(preview.contains("Discord"));
+        assert!(preview.contains("Notifications"));
+        assert!(preview.contains('3'));
+        assert!(preview.contains("Message 0"));
+        assert!(preview.contains("Select to review before deleting."));
+    }
+
+    #[test]
+    fn app_deletion_back_choice_does_not_expose_internal_key() {
+        let item = AppDeletionItem::Back;
+
+        assert!(item.fzf_display_text().contains("Back"));
+        assert!(!item.fzf_display_text().contains("__back__"));
+        assert_eq!(item.fzf_key(), "__back__");
     }
 
     fn sample_matches(count: usize) -> Vec<Notification> {

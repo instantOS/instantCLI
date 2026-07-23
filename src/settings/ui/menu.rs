@@ -21,6 +21,8 @@ pub fn run_settings_ui(
     privileged_flag: bool,
     navigation: Option<SettingsNavigation>,
 ) -> Result<()> {
+    crate::settings::default_commands::ensure_default_links()
+        .context("setting up default application commands")?;
     let store = super::super::store::SettingsStore::load().context("loading settings file")?;
     let mut ctx = SettingsContext::new(store, debug, privileged_flag);
 
