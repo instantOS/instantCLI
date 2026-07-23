@@ -231,7 +231,8 @@ impl KeyChordNavigator {
                     }
 
                     match key_event.code {
-                        KeyCode::Esc | KeyCode::Backspace
+                        KeyCode::Esc
+                        | KeyCode::Backspace
                         | KeyCode::Char('q')
                         | KeyCode::Char('Q') => {
                             if let Some((node, path)) = self.history.pop() {
