@@ -16,7 +16,7 @@ jobs:
       CARGO_TERM_COLOR: always
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Setup Arch container
         uses: ./.github/actions/setup-arch
         with:
