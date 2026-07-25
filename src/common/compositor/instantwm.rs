@@ -86,11 +86,13 @@ impl InstantWM {
             if let Some(scratchpad) = get_scratchpad_info(&config.name)? {
                 registration_seen = true;
                 if scratchpad.visible {
+                    configure_scratchpad(config)?;
                     return Ok(());
                 }
                 instantwmctl::run(["scratchpad", "show", config.name.as_str()])?;
                 thread::sleep(Duration::from_millis(30));
                 if get_scratchpad_info(&config.name)?.is_some_and(|scratchpad| scratchpad.visible) {
+                    configure_scratchpad(config)?;
                     return Ok(());
                 }
             }
@@ -100,7 +102,7 @@ impl InstantWM {
         }
 
         match get_scratchpad_info(&config.name)? {
-            Some(scratchpad) if scratchpad.visible => Ok(()),
+            Some(scratchpad) if scratchpad.visible => configure_scratchpad(config),
             Some(_) => Err(anyhow::anyhow!(
                 "instantWM registered the scratchpad but did not make it visible"
             )),
@@ -112,6 +114,20 @@ impl InstantWM {
             )),
         }
     }
+}
+
+fn configure_scratchpad(config: &ScratchpadConfig) -> Result<()> {
+    let width = config.width_pct.to_string();
+    let height = config.height_pct.to_string();
+    instantwmctl::run([
+        "scratchpad",
+        "resize",
+        config.name.as_str(),
+        "--width",
+        width.as_str(),
+        "--height",
+        height.as_str(),
+    ])
 }
 
 fn get_scratchpad_list(name: Option<&str>) -> Result<Vec<InstantWmScratchpadInfo>> {
