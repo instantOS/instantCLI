@@ -166,7 +166,8 @@ pub(super) fn choose_installation_path(
         options.push(SavePathOption::snapshot(path_info.clone()));
     }
 
-    let selected = FzfWrapper::select_one(options)
+    let selected = FzfWrapper::builder()
+        .select_one(options)
         .map_err(|e| anyhow!("Failed to select path option: {e}"))?;
 
     match selected {

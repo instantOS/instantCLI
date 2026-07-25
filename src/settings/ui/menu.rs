@@ -4,7 +4,7 @@
 
 use anyhow::{Context, Result};
 
-use crate::menu_utils::MenuCursor;
+use crate::menu_utils::{FzfWrapper, MenuCursor, MenuPresentation};
 use crate::settings::category_tree::category_tree;
 use crate::settings::setting::Category;
 
@@ -14,7 +14,6 @@ use super::items::{
     MainMenuItem, MenuItem, TreeNode, TreeSearchItem, build_tree_search_items,
     convert_category_tree,
 };
-use crate::menu_utils::select_one_with_style_at;
 
 pub fn run_settings_ui(
     debug: bool,
@@ -158,7 +157,10 @@ fn run_main_menu(_ctx: &mut SettingsContext, mut cursor: MenuCursor) -> Result<M
     menu_items.push(MainMenuItem::Close);
 
     let initial_cursor = cursor.initial_index(&menu_items);
-    let selection = select_one_with_style_at(menu_items.clone(), initial_cursor)?;
+    let selection = FzfWrapper::menu()
+        .cursor(initial_cursor)
+        .presentation(MenuPresentation::Padded)
+        .select_one(menu_items.clone())?;
 
     let action = match selection {
         Some(MainMenuItem::SearchAll) => {
@@ -217,7 +219,11 @@ fn navigate_tree(
         });
 
         let initial_cursor = cursor.initial_index(&entries);
-        match select_one_with_style_at(entries.clone(), initial_cursor)? {
+        match FzfWrapper::menu()
+            .cursor(initial_cursor)
+            .presentation(MenuPresentation::Padded)
+            .select_one(entries.clone())?
+        {
             Some(MenuItem::Folder(folder)) => {
                 cursor.update(&MenuItem::Folder(folder.clone()), &entries);
                 // Recurse into folder, current title becomes parent

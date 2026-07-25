@@ -4,7 +4,9 @@ use std::path::PathBuf;
 use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
 use crate::dot::repo::{DotfileRepositoryManager, cli::RepoCommands};
-use crate::menu_utils::{ConfirmResult, FzfResult, FzfWrapper, Header, MenuCursor};
+use crate::menu_utils::{
+    ConfirmResult, FzfResult, FzfWrapper, Header, MenuCursor, MenuPresentation,
+};
 use crate::ui::catppuccin::fzf_mocha_args;
 
 use super::super::subdir_actions::handle_manage_subdirs;
@@ -50,7 +52,9 @@ fn select_repo_action(
         builder = builder.initial_index(index);
     }
 
-    let result = builder.select_padded(actions.clone())?;
+    let result = builder
+        .presentation(MenuPresentation::Padded)
+        .select(actions.clone())?;
 
     match result {
         FzfResult::Selected(item) => {

@@ -5,7 +5,6 @@ mod keychord;
 mod mock;
 mod path_input;
 mod slider;
-mod style;
 mod text_input;
 
 pub use crate::ui::preview::FzfPreview;
@@ -13,16 +12,12 @@ pub use cursor::MenuCursor;
 pub use file_picker::{FilePickerResult, FilePickerScope, MenuWrapper};
 pub use fzf::{
     ChecklistAction, ChecklistResult, ConfirmResult, DecodedStreamingMenuItem, FzfResult,
-    FzfSelectable, FzfWrapper, Header, HeaderBuilder, MenuItem, StreamingCommand,
+    FzfSelectable, FzfWrapper, Header, HeaderBuilder, MenuItem, MenuPresentation, StreamingCommand,
     StreamingMenuItem, default_fzf_key,
 };
 pub use keychord::{KeyChord, KeyChordAction, KeyChordChild, KeyChordNode};
 pub use path_input::{PathInputBuilder, PathInputSelection};
 pub use slider::{SliderCommand, SliderConfig};
-pub use style::{
-    select_one_compact_at_header, select_one_with_style, select_one_with_style_at,
-    select_one_with_style_at_header,
-};
 pub use text_input::{TextEditOutcome, TextEditPrompt, prompt_text_edit};
 
 #[cfg(test)]

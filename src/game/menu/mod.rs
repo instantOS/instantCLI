@@ -27,6 +27,7 @@ use crate::game::setup;
 use crate::menu::protocol::FzfPreview;
 use crate::menu_utils::{
     ConfirmResult, FzfResult, FzfSelectable, FzfWrapper, Header, HeaderBuilder, MenuCursor,
+    MenuPresentation,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
@@ -801,7 +802,8 @@ fn handle_open_save_directory_action(game_name: &str, state: &GameState) -> Resu
         .prompt("Open with")
         .args(fzf_mocha_args())
         .responsive_layout()
-        .select_padded(items)?;
+        .presentation(MenuPresentation::Padded)
+        .select(items)?;
 
     let method = match selection {
         FzfResult::Selected(item) => item.method,
@@ -885,7 +887,9 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
                 builder = builder.initial_index(index);
             }
 
-            let selection = builder.select_padded(actions.clone())?;
+            let selection = builder
+                .presentation(MenuPresentation::Padded)
+                .select(actions.clone())?;
 
             let result = match selection {
                 FzfResult::Selected(item) => {
@@ -1026,7 +1030,9 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
                         builder = builder.initial_index(index);
                     }
 
-                    let selection = builder.select_padded(actions.clone())?;
+                    let selection = builder
+                        .presentation(MenuPresentation::Padded)
+                        .select(actions.clone())?;
 
                     let result = match selection {
                         FzfResult::Selected(item) => {
@@ -1147,7 +1153,8 @@ fn show_uninitialized_menu() -> Result<()> {
         .prompt("Select action")
         .args(fzf_mocha_args())
         .responsive_layout()
-        .select_padded(options)?;
+        .presentation(MenuPresentation::Padded)
+        .select(options)?;
 
     match selection {
         FzfResult::Selected(item)

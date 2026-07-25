@@ -7,8 +7,7 @@ use anyhow::{Context, Result};
 use duct::cmd;
 
 use crate::menu_utils::{
-    ConfirmResult, FzfSelectable, FzfWrapper, Header, MenuCursor, select_one_with_style_at,
-    select_one_with_style_at_header,
+    ConfirmResult, FzfSelectable, FzfWrapper, Header, MenuCursor, MenuPresentation,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
@@ -24,7 +23,10 @@ pub fn run_options_menu(db: &NotifyDb, _debug: bool) -> Result<()> {
     loop {
         let items = build_options_items();
         let initial_index = cursor.initial_index(&items);
-        let selection = select_one_with_style_at(items.clone(), initial_index)?;
+        let selection = FzfWrapper::menu()
+            .cursor(initial_index)
+            .presentation(MenuPresentation::Padded)
+            .select_one(items.clone())?;
 
         match selection {
             Some(item @ OptionsItem::DoNotDisturb(_)) => {
@@ -366,11 +368,13 @@ fn handle_delete_by_app(db: &NotifyDb) -> Result<()> {
     }
     items.push(AppDeletionItem::Back);
 
-    let selection = select_one_with_style_at_header(
-        items,
-        Some(0),
-        Header::default("Select an application to review its notifications"),
-    )?;
+    let selection = FzfWrapper::menu()
+        .initial_index(0)
+        .header(Header::default(
+            "Select an application to review its notifications",
+        ))
+        .presentation(MenuPresentation::Padded)
+        .select_one(items)?;
 
     let app = match selection {
         Some(AppDeletionItem::Application { app_name, .. }) => app_name,
@@ -668,7 +672,11 @@ fn confirm_deletion(matches: &[Notification], postfix: Option<&str>) -> Result<b
 
     // Default to the delete action so the impact preview is shown immediately;
     // the confirmation popup below is the actual commit gate.
-    let selection = select_one_with_style_at_header(items, Some(0), Header::default(&header_text))?;
+    let selection = FzfWrapper::menu()
+        .initial_index(0)
+        .header(Header::default(&header_text))
+        .presentation(MenuPresentation::Padded)
+        .select_one(items)?;
     let Some(chosen) = selection else {
         return Ok(false);
     };

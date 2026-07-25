@@ -1,8 +1,7 @@
 use anyhow::Result;
 
 use crate::menu_utils::{
-    ConfirmResult, FzfSelectable, FzfWrapper, Header, MenuCursor, select_one_with_style_at,
-    select_one_with_style_at_header,
+    ConfirmResult, FzfSelectable, FzfWrapper, Header, MenuCursor, MenuPresentation,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
@@ -123,7 +122,11 @@ pub fn run(backend: ClipBackend) -> Result<()> {
             SettingsItem::Back,
         ];
         let initial_index = cursor.initial_index(&items);
-        let Some(selection) = select_one_with_style_at(items.clone(), initial_index)? else {
+        let Some(selection) = FzfWrapper::menu()
+            .cursor(initial_index)
+            .presentation(MenuPresentation::Padded)
+            .select_one(items.clone())?
+        else {
             return Ok(());
         };
         cursor.update(&selection, &items);
@@ -233,7 +236,12 @@ fn confirm_clear(entries: &[ClipEntry]) -> Result<bool> {
         },
     ];
     let header = Header::default("Review clipboard history deletion");
-    let Some(selection) = select_one_with_style_at_header(items, Some(0), header)? else {
+    let Some(selection) = FzfWrapper::menu()
+        .initial_index(0)
+        .header(header)
+        .presentation(MenuPresentation::Padded)
+        .select_one(items)?
+    else {
         return Ok(false);
     };
     if selection.action != ClearAction::Clear {

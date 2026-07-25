@@ -3,10 +3,9 @@ use std::iter;
 
 use anyhow::{Result, bail};
 
-use crate::menu_utils::{FzfResult, FzfWrapper};
+use crate::menu_utils::{FzfResult, FzfWrapper, MenuPresentation};
 
 use super::SettingsContext;
-use crate::menu_utils::select_one_with_style;
 
 mod locale_gen;
 mod menu;
@@ -39,7 +38,10 @@ pub fn configure_system_language(ctx: &mut SettingsContext) -> Result<()> {
 
         let menu_items = build_language_menu_items(&state);
 
-        match select_one_with_style(menu_items)? {
+        match FzfWrapper::menu()
+            .presentation(MenuPresentation::Padded)
+            .select_one(menu_items)?
+        {
             Some(LanguageMenuItem::Locale(locale_item)) => {
                 if handle_locale_entry(ctx, &state, locale_item.locale.clone())? {
                     continue;
@@ -93,7 +95,10 @@ fn handle_locale_entry(
 
     actions.push(LocaleActionItem::Back);
 
-    match select_one_with_style(actions)? {
+    match FzfWrapper::menu()
+        .presentation(MenuPresentation::Padded)
+        .select_one(actions)?
+    {
         Some(LocaleActionItem::SetDefault { locale, label }) => {
             set_system_language(ctx, &locale, &label)?;
             Ok(true)

@@ -72,8 +72,9 @@ pub fn select_dependency<'a>(
         .map(|dependency| DependencyOption::new(game_name, dependency))
         .collect();
 
-    let selection =
-        FzfWrapper::select_one(options).context("Failed to select dependency interactively")?;
+    let selection = FzfWrapper::builder()
+        .select_one(options)
+        .context("Failed to select dependency interactively")?;
 
     Ok(selection.map(|option| option.dependency))
 }

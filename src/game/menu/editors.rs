@@ -5,8 +5,8 @@ use crate::game::platforms::LaunchCommandBuilderContext;
 use crate::game::utils::path::{path_selection_to_tilde, prompt_for_save_path};
 use crate::menu::protocol::FzfPreview;
 use crate::menu_utils::{
-    FilePickerScope, FzfResult, FzfSelectable, FzfWrapper, Header, PathInputBuilder,
-    TextEditOutcome, TextEditPrompt, prompt_text_edit,
+    FilePickerScope, FzfResult, FzfSelectable, FzfWrapper, Header, MenuPresentation,
+    PathInputBuilder, TextEditOutcome, TextEditPrompt, prompt_text_edit,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
@@ -137,7 +137,8 @@ fn select_launch_command_input_method(
         .prompt("Method")
         .args(fzf_mocha_args())
         .responsive_layout()
-        .select_padded(items)?;
+        .presentation(MenuPresentation::Padded)
+        .select(items)?;
 
     match result {
         FzfResult::Selected(item) => Ok(item.method),

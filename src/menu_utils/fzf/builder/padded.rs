@@ -2,7 +2,7 @@ use anyhow::Result;
 use std::io::Write;
 use std::process::Command;
 
-use crate::common::shell::shell_quote;
+use base64::{Engine as _, engine::general_purpose};
 
 use super::FzfBuilder;
 use super::shared::{
@@ -17,7 +17,7 @@ use crate::menu_utils::fzf::wrapper::check_fzf_exit;
 const SELECTABLE_MARKER: &str = "\u{2060}";
 
 impl FzfBuilder {
-    pub fn select_padded<T: FzfSelectable + Clone>(
+    pub(crate) fn select_with_padded_presentation<T: FzfSelectable + Clone>(
         mut self,
         items: Vec<T>,
     ) -> Result<FzfResult<T>> {
@@ -60,8 +60,8 @@ impl FzfBuilder {
         let has_preview = items
             .iter()
             .any(|item| !matches!(item.fzf_preview(), FzfPreview::None));
-        let preview_dir = if has_preview {
-            Some(prepare_padded_previews(&items)?)
+        let preview_manifest = if has_preview {
+            Some(prepare_padded_preview_manifest(&items)?)
         } else {
             None
         };
@@ -69,7 +69,7 @@ impl FzfBuilder {
         let result = loop {
             let cmd = configure_padded_cmd(
                 &self,
-                preview_dir.as_deref(),
+                preview_manifest.as_ref().map(tempfile::NamedTempFile::path),
                 has_keywords,
                 has_non_selectable,
             );
@@ -99,10 +99,6 @@ impl FzfBuilder {
             // Pointer selection can still land on a raw, non-matching row.
             // Reopen instead of returning a header as if it were an action.
         };
-
-        if let Some(dir) = preview_dir.as_ref() {
-            let _ = std::fs::remove_dir_all(dir);
-        }
 
         Ok(result)
     }
@@ -162,36 +158,29 @@ fn prepare_padded_input<T: FzfSelectable>(items: &[T], mark_selectable: bool) ->
     input_lines.join("\0")
 }
 
-fn prepare_padded_previews<T: FzfSelectable>(items: &[T]) -> Result<std::path::PathBuf> {
-    let preview_dir = std::env::temp_dir().join(format!("fzf_preview_{}", std::process::id()));
-    std::fs::create_dir_all(&preview_dir)?;
-
-    for (idx, item) in items.iter().enumerate() {
-        match item.fzf_preview() {
-            FzfPreview::Text(preview) => {
-                let preview_path = preview_dir.join(format!("{}.txt", idx));
-                if let Ok(mut file) = std::fs::File::create(&preview_path) {
-                    let _ = file.write_all(preview.as_bytes());
-                }
-            }
-            FzfPreview::Command(cmd) => {
-                let preview_path = preview_dir.join(format!("{}.sh", idx));
-                if let Ok(mut file) = std::fs::File::create(&preview_path) {
-                    let key = shell_quote(&item.fzf_key());
-                    let script = format!("set -- {key}\n{cmd}");
-                    let _ = file.write_all(script.as_bytes());
-                }
-            }
-            FzfPreview::None => {}
-        }
+fn prepare_padded_preview_manifest<T: FzfSelectable>(
+    items: &[T],
+) -> Result<tempfile::NamedTempFile> {
+    let mut manifest = tempfile::NamedTempFile::new()?;
+    for item in items {
+        let (kind, content) = match item.fzf_preview() {
+            FzfPreview::Text(text) => ("T", text),
+            FzfPreview::Command(command) => ("C", command),
+            FzfPreview::None => ("N", String::new()),
+        };
+        writeln!(
+            manifest,
+            "{kind}\t{}\t{}",
+            general_purpose::STANDARD.encode(content),
+            general_purpose::STANDARD.encode(item.fzf_key())
+        )?;
     }
-
-    Ok(preview_dir)
+    Ok(manifest)
 }
 
 fn configure_padded_cmd(
     builder: &FzfBuilder,
-    preview_dir: Option<&std::path::Path>,
+    preview_manifest: Option<&std::path::Path>,
     has_keywords: bool,
     has_non_selectable: bool,
 ) -> Command {
@@ -229,12 +218,8 @@ fn configure_padded_cmd(
             );
     }
 
-    if let Some(dir) = preview_dir {
-        let preview_cmd = format!(
-            "if [ -f {dir}/{{n}}.sh ]; then bash {dir}/{{n}}.sh; elif [ -f {dir}/{{n}}.txt ]; then cat {dir}/{{n}}.txt; fi",
-            dir = dir.display()
-        );
-        cmd.arg("--preview").arg(&preview_cmd);
+    if let Some(manifest) = preview_manifest {
+        cmd.arg("--preview").arg(padded_preview_command(manifest));
     }
 
     let cursor = builder
@@ -257,15 +242,44 @@ fn configure_padded_cmd(
     cmd
 }
 
+fn padded_preview_command(manifest: &std::path::Path) -> String {
+    format!(
+        "row=$(sed -n \"$(({{n}} + 1))p\" {manifest}); \
+         kind=$(printf '%s' \"$row\" | cut -f1); \
+         content=$(printf '%s' \"$row\" | cut -f2 | base64 -d); \
+         if [ \"$kind\" = C ]; then \
+             key=$(printf '%s' \"$row\" | cut -f3 | base64 -d); \
+             printf '%s' \"$content\" | bash -s -- \"$key\"; \
+         elif [ \"$kind\" = T ]; then printf '%s' \"$content\"; fi",
+        manifest = crate::common::shell::shell_quote(&manifest.display().to_string())
+    )
+}
+
 #[cfg(test)]
 mod mock_tests {
-    use crate::menu_utils::FzfSelectable;
     use crate::menu_utils::MockQueue;
+    use crate::menu_utils::{FzfPreview, FzfSelectable, MenuPresentation};
 
     #[derive(Clone)]
     struct Item {
         label: &'static str,
         selectable: bool,
+    }
+
+    #[derive(Clone)]
+    struct PreviewItem {
+        label: &'static str,
+        preview: FzfPreview,
+    }
+
+    impl FzfSelectable for PreviewItem {
+        fn fzf_display_text(&self) -> String {
+            self.label.to_string()
+        }
+
+        fn fzf_preview(&self) -> FzfPreview {
+            self.preview.clone()
+        }
     }
 
     impl FzfSelectable for Item {
@@ -279,16 +293,85 @@ mod mock_tests {
     }
 
     #[test]
-    fn test_mock_select_padded_returns_canned_item() {
+    fn padded_presentation_returns_selected_item() {
         let _guard = MockQueue::new().select_index(0).guard();
         let items = vec!["first".to_string(), "second".to_string()];
         let result = crate::menu_utils::FzfWrapper::builder()
-            .select_padded(items)
+            .presentation(MenuPresentation::Padded)
+            .select(items)
             .unwrap();
         match result {
             crate::menu_utils::FzfResult::Selected(s) => assert_eq!(s, "first"),
             other => panic!("Expected Selected, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn padded_previews_share_one_manifest() {
+        let items = vec![
+            PreviewItem {
+                label: "text",
+                preview: FzfPreview::Text("hello\nworld".to_string()),
+            },
+            PreviewItem {
+                label: "command",
+                preview: FzfPreview::Command("printf command".to_string()),
+            },
+            PreviewItem {
+                label: "none",
+                preview: FzfPreview::None,
+            },
+        ];
+
+        let manifest = super::prepare_padded_preview_manifest(&items).unwrap();
+        assert!(manifest.path().is_file());
+
+        let rows = std::fs::read_to_string(manifest.path()).unwrap();
+        let rows = rows.lines().collect::<Vec<_>>();
+        assert_eq!(rows.len(), items.len());
+        assert!(rows[0].starts_with("T\t"));
+        assert!(rows[1].starts_with("C\t"));
+        assert!(rows[2].starts_with("N\t"));
+    }
+
+    #[test]
+    fn padded_preview_command_reads_selected_row_and_passes_key() {
+        let items = vec![
+            PreviewItem {
+                label: "text",
+                preview: FzfPreview::Text("first\npreview".to_string()),
+            },
+            PreviewItem {
+                label: "command-key",
+                preview: FzfPreview::Command("printf 'command:%s' \"$1\"".to_string()),
+            },
+            PreviewItem {
+                label: "none",
+                preview: FzfPreview::None,
+            },
+        ];
+        let manifest = super::prepare_padded_preview_manifest(&items).unwrap();
+        let command = super::padded_preview_command(manifest.path());
+
+        let run_row = |index: usize| {
+            std::process::Command::new("bash")
+                .arg("-c")
+                .arg(command.replace("{n}", &index.to_string()))
+                .output()
+                .unwrap()
+        };
+
+        let text = run_row(0);
+        assert!(text.status.success());
+        assert_eq!(text.stdout, b"first\npreview");
+
+        let dynamic = run_row(1);
+        assert!(dynamic.status.success());
+        assert_eq!(dynamic.stdout, b"command:command-key");
+
+        let none = run_row(2);
+        assert!(none.status.success());
+        assert!(none.stdout.is_empty());
     }
 
     #[test]

@@ -7,9 +7,7 @@
 
 use anyhow::{Context, Result};
 
-use crate::menu_utils::{
-    HeaderBuilder, MenuCursor, select_one_with_style_at, select_one_with_style_at_header,
-};
+use crate::menu_utils::{FzfWrapper, HeaderBuilder, MenuCursor, MenuPresentation};
 use crate::ui::catppuccin::colors;
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::prelude::*;
@@ -126,7 +124,11 @@ fn run_main_menu(
             count_color,
         )
         .build();
-    let selection = select_one_with_style_at_header(items.clone(), initial_index, header)?;
+    let selection = FzfWrapper::menu()
+        .cursor(initial_index)
+        .header(header)
+        .presentation(MenuPresentation::Padded)
+        .select_one(items.clone())?;
 
     let action = match selection {
         Some(NotifyMainItem::Notification(n)) => {
@@ -174,7 +176,10 @@ fn handle_notification_detail(db: &NotifyDb, id: i64, _debug: bool) -> Result<()
     notification.read = true;
 
     let items = build_detail_items(&notification);
-    let selection = select_one_with_style_at(items, Some(0))?;
+    let selection = FzfWrapper::menu()
+        .initial_index(0)
+        .presentation(MenuPresentation::Padded)
+        .select_one(items)?;
 
     match selection {
         Some(item) => match item.action {

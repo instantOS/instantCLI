@@ -363,6 +363,18 @@ pub enum FzfResult<T> {
     Error(String),
 }
 
+/// Visual treatment of rows in a selection menu.
+///
+/// This affects presentation only. Preview delivery and execution semantics are
+/// identical for every presentation.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum MenuPresentation {
+    #[default]
+    Compact,
+    /// Add vertical breathing room and icon-aware shadows around each row.
+    Padded,
+}
+
 /// Result type for checklist dialogs
 #[derive(Debug, Clone, PartialEq)]
 pub enum ChecklistResult<T> {

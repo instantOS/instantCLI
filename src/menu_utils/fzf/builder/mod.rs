@@ -36,6 +36,7 @@ pub(crate) struct SharedConfig {
     pub initial_cursor: Option<InitialCursor>,
     pub initial_query: Option<String>,
     pub responsive_layout: bool,
+    pub presentation: MenuPresentation,
 }
 
 impl SharedConfig {
@@ -49,6 +50,7 @@ impl SharedConfig {
             initial_cursor: None,
             initial_query: None,
             responsive_layout: false,
+            presentation: MenuPresentation::Compact,
         }
     }
 
@@ -65,7 +67,7 @@ impl SharedConfig {
 /// Entry-point builder. Carries shared configuration and exposes:
 /// - shared setters (`prompt`, `header`, `args`, `initial_index`, `query`,
 ///   `multi_select`, `responsive_layout`)
-/// - selection terminals (`select`, `select_menu`, `select_padded`,
+/// - selection terminals (`select`, `select_one`, `select_menu`,
 ///   `select_encoded_streaming{,_prefilled}`)
 /// - transitions to specialized builders (`input`, `password`, `confirm`,
 ///   `message`, `checklist`)
@@ -264,8 +266,21 @@ impl FzfBuilder {
         self
     }
 
-    pub fn initial_index(mut self, index: usize) -> Self {
-        self.shared.initial_cursor = Some(InitialCursor::Index(index));
+    /// Set a known initial row. Use [`Self::cursor`] when restoring an
+    /// optional cursor position.
+    pub fn initial_index(self, index: usize) -> Self {
+        self.cursor(Some(index))
+    }
+
+    /// Restore an optional initial row. Use [`Self::initial_index`] when the
+    /// position is known.
+    pub fn cursor(mut self, index: Option<usize>) -> Self {
+        self.shared.initial_cursor = index.map(InitialCursor::Index);
+        self
+    }
+
+    pub fn presentation(mut self, presentation: MenuPresentation) -> Self {
+        self.shared.presentation = presentation;
         self
     }
 
@@ -341,38 +356,48 @@ impl FzfBuilder {
     // ---- selection terminals ----
 
     pub fn select<T: FzfSelectable + Clone>(self, items: Vec<T>) -> Result<FzfResult<T>> {
-        FzfWrapper::from_builder(self).select(items)
+        match self.shared.presentation {
+            MenuPresentation::Compact => FzfWrapper::from_builder(self).select(items),
+            MenuPresentation::Padded => self.select_with_padded_presentation(items),
+        }
+    }
+
+    pub fn select_one<T: FzfSelectable + Clone>(self, items: Vec<T>) -> Result<Option<T>> {
+        match self.select(items)? {
+            FzfResult::Selected(item) => Ok(Some(item)),
+            _ => Ok(None),
+        }
     }
 
     pub fn select_menu<T: FzfSelectable + Clone>(
-        self,
+        mut self,
         items: Vec<super::types::MenuItem<T>>,
     ) -> Result<FzfResult<T>> {
         use super::types::MenuItem;
 
-        let mut wrapper = FzfWrapper::from_builder(self);
-
         loop {
-            match wrapper.select(items.clone())? {
+            match self.clone().select(items.clone())? {
                 FzfResult::Selected(MenuItem::Entry(item)) => {
                     return Ok(FzfResult::Selected(item));
                 }
                 FzfResult::Selected(MenuItem::Separator(_)) => {
-                    wrapper.initial_cursor = None;
-                    continue;
+                    // Pointer selection can land on a non-selectable raw row.
+                    // Reopen without forcing the cursor back onto that row.
+                    self.shared.initial_cursor = None;
                 }
                 FzfResult::MultiSelected(selected) => {
-                    let entries: Vec<T> = selected
-                        .into_iter()
-                        .filter_map(|mi| match mi {
-                            MenuItem::Entry(item) => Some(item),
-                            MenuItem::Separator(_) => None,
-                        })
-                        .collect();
-                    return Ok(FzfResult::MultiSelected(entries));
+                    return Ok(FzfResult::MultiSelected(
+                        selected
+                            .into_iter()
+                            .filter_map(|item| match item {
+                                MenuItem::Entry(item) => Some(item),
+                                MenuItem::Separator(_) => None,
+                            })
+                            .collect(),
+                    ));
                 }
                 FzfResult::Cancelled => return Ok(FzfResult::Cancelled),
-                FzfResult::Error(e) => return Ok(FzfResult::Error(e)),
+                FzfResult::Error(error) => return Ok(FzfResult::Error(error)),
             }
         }
     }

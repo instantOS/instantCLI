@@ -1,6 +1,8 @@
 use anyhow::Result;
 
-use crate::menu_utils::{ConfirmResult, FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
+use crate::menu_utils::{
+    ConfirmResult, FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor, MenuPresentation,
+};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -87,7 +89,9 @@ pub fn run_edit_menu(game_name: &str, state: &mut EditState) -> Result<()> {
             builder = builder.initial_index(index);
         }
 
-        let selection = builder.select_padded(menu_items.clone())?;
+        let selection = builder
+            .presentation(MenuPresentation::Padded)
+            .select(menu_items.clone())?;
 
         match selection {
             FzfResult::Selected(item) => {

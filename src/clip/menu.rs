@@ -4,7 +4,7 @@ use crate::assist::utils::copy_to_clipboard;
 use crate::common::display_server::DisplayServer;
 use crate::common::shell::current_exe_command;
 use crate::menu_utils::{
-    FzfPreview, FzfSelectable, HeaderBuilder, MenuCursor, select_one_compact_at_header,
+    FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder, MenuCursor, MenuPresentation,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, hex_to_ansi_fg};
 use crate::ui::nerd_font::NerdFont;
@@ -191,7 +191,11 @@ pub fn run(backend: ClipBackend) -> Result<()> {
             .status(NerdFont::Circle, capture_label, capture_color)
             .build();
 
-        let Some(selection) = select_one_compact_at_header(items.clone(), initial_index, header)?
+        let Some(selection) = FzfWrapper::menu()
+            .cursor(initial_index)
+            .header(header)
+            .presentation(MenuPresentation::Padded)
+            .select_one(items.clone())?
         else {
             return Ok(());
         };

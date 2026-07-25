@@ -14,6 +14,8 @@ use super::preview::PreviewUtils;
 use super::types::ItemDisplayData;
 use super::types::*;
 use super::utils::{handle_old_fzf_error, log_fzf_failure};
+use crate::ui::catppuccin::fzf_mocha_args;
+use crate::ui::nerd_font::NerdFont;
 
 /// Named parts extracted from `FzfBuilder` for constructing `FzfWrapper`.
 pub(crate) struct FzfWrapperParts {
@@ -419,6 +421,18 @@ impl FzfWrapper {
         super::builder::FzfBuilder::new()
     }
 
+    /// Build a selection menu with the standard instantCLI theme, search
+    /// prompt, and responsive preview layout.
+    pub fn menu() -> super::builder::FzfBuilder {
+        Self::builder()
+            .prompt(format!("{} ", char::from(NerdFont::Search)))
+            // The empty default header intentionally renders as vertical
+            // breathing room between the query line and the first row.
+            .header(Header::default(""))
+            .args(fzf_mocha_args())
+            .responsive_layout()
+    }
+
     pub(crate) fn from_builder(b: super::builder::FzfBuilder) -> Self {
         let parts = b.into_wrapper_parts();
         Self {
@@ -682,13 +696,6 @@ impl FzfWrapper {
         parse_fzf_output(output, &item_map, self.multi_select)
     }
 
-    pub fn select_one<T: FzfSelectable + Clone>(items: Vec<T>) -> Result<Option<T>> {
-        match Self::builder().select(items)? {
-            FzfResult::Selected(item) => Ok(Some(item)),
-            _ => Ok(None),
-        }
-    }
-
     pub fn input(prompt: &str) -> Result<String> {
         Self::builder().prompt(prompt).input().input_dialog()
     }
@@ -741,5 +748,11 @@ mod mock_tests {
         let items = vec!["alpha".to_string()];
         let result = FzfWrapper::builder().select(items).unwrap();
         assert_eq!(result, FzfResult::Cancelled);
+    }
+
+    #[test]
+    fn standard_menu_keeps_spacing_header() {
+        let parts = FzfWrapper::menu().into_wrapper_parts();
+        assert!(matches!(parts.header, Some(Header::Default(text)) if text.is_empty()));
     }
 }

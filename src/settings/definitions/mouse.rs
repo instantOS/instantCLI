@@ -10,7 +10,7 @@ use crate::common::compositor::{CompositorType, niri, sway};
 use crate::common::instantwmctl;
 use crate::menu::client::MenuClient;
 use crate::menu::protocol::SliderRequest;
-use crate::menu_utils::{FzfPreview, FzfSelectable, MenuCursor, select_one_with_style_at};
+use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, MenuCursor, MenuPresentation};
 use crate::preview::{PreviewId, preview_command};
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
@@ -205,7 +205,10 @@ impl Setting for AccelProfile {
         loop {
             let items = build_accel_profile_items(&ctx.string(Self::KEY));
             let initial_cursor = cursor.initial_index(&items).or(Some(initial_index));
-            let selection = select_one_with_style_at(items.clone(), initial_cursor)?;
+            let selection = FzfWrapper::menu()
+                .cursor(initial_cursor)
+                .presentation(MenuPresentation::Padded)
+                .select_one(items.clone())?;
 
             match selection {
                 Some(display) => {

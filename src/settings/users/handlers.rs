@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use anyhow::Result;
 
-use crate::menu_utils::{FzfResult, FzfWrapper};
+use crate::menu_utils::{FzfResult, FzfWrapper, MenuPresentation};
 
 use super::super::context::SettingsContext;
 use super::menu_items::{
@@ -17,13 +17,15 @@ use super::utils::{
     prompt_group_name, prompt_password_with_confirmation, remove_user_from_group, select_groups,
     select_shell, set_user_password, validate_group_name, validate_username,
 };
-use crate::menu_utils::select_one_with_style;
 
 pub fn manage_users(ctx: &mut SettingsContext) -> Result<()> {
     loop {
         let items = build_user_menu_items()?;
 
-        match select_one_with_style(items)? {
+        match FzfWrapper::menu()
+            .presentation(MenuPresentation::Padded)
+            .select_one(items)?
+        {
             Some(ManageMenuItem::Add) => {
                 add_user(ctx)?;
             }
@@ -155,7 +157,10 @@ fn handle_user(ctx: &mut SettingsContext, username: &str) -> Result<()> {
             UserActionItem::Back,
         ];
 
-        match select_one_with_style(actions)? {
+        match FzfWrapper::menu()
+            .presentation(MenuPresentation::Padded)
+            .select_one(actions)?
+        {
             Some(UserActionItem::ChangeShell { .. }) => {
                 if let Some(new_shell) = select_shell(ctx, "Select shell")? {
                     change_user_shell(ctx, username, &new_shell)?;
@@ -310,7 +315,10 @@ fn manage_user_groups(ctx: &mut SettingsContext, username: &str) -> Result<()> {
 
         let items = build_group_menu_items(&user_info.groups, user_info.primary_group.as_deref());
 
-        match select_one_with_style(items)? {
+        match FzfWrapper::menu()
+            .presentation(MenuPresentation::Padded)
+            .select_one(items)?
+        {
             Some(GroupMenuItem::ExistingGroup {
                 name: group_name, ..
             }) => {
@@ -475,7 +483,10 @@ fn manage_single_group(
         GroupActionItem::Back,
     ];
 
-    match select_one_with_style(actions)? {
+    match FzfWrapper::menu()
+        .presentation(MenuPresentation::Padded)
+        .select_one(actions)?
+    {
         Some(GroupActionItem::RemoveGroup { is_primary, .. }) => {
             if is_primary {
                 ctx.emit_info(

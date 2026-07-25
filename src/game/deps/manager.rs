@@ -581,7 +581,7 @@ fn resolve_install_path(
         ),
     ];
 
-    match FzfWrapper::select_one(options)? {
+    match FzfWrapper::builder().select_one(options)? {
         Some(selection) => match selection.value {
             Some(value) => Ok(value),
             None => prompt_custom_install_path(game_name, dependency_id, expected_kind),

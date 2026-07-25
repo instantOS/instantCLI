@@ -14,8 +14,7 @@ use crate::common::instantwmctl;
 use crate::menu::client::MenuClient;
 use crate::menu::protocol::SliderRequest;
 use crate::menu_utils::{
-    ChecklistResult, FzfSelectable, FzfWrapper, Header, HeaderBuilder, MenuCursor,
-    select_one_with_style_at,
+    ChecklistResult, FzfSelectable, FzfWrapper, Header, HeaderBuilder, MenuCursor, MenuPresentation,
 };
 use crate::settings::context::SettingsContext;
 use crate::settings::deps::PIPER;
@@ -175,7 +174,10 @@ impl Setting for WindowLayout {
         loop {
             let items = build_layout_items(&layouts, &ctx.string(Self::KEY));
             let initial_cursor = cursor.initial_index(&items).or(Some(initial_index));
-            let selection = select_one_with_style_at(items.clone(), initial_cursor)?;
+            let selection = FzfWrapper::menu()
+                .cursor(initial_cursor)
+                .presentation(MenuPresentation::Padded)
+                .select_one(items.clone())?;
 
             match selection {
                 Some(display) => {
@@ -661,7 +663,10 @@ fn run_audio_source_mode_menu(
         let items = build_audio_source_mode_items(*mode, default_sources, custom_selected);
         let initial_index = mode_to_index(*mode);
 
-        let selection = select_one_with_style_at(items.clone(), initial_index)?;
+        let selection = FzfWrapper::menu()
+            .cursor(initial_index)
+            .presentation(MenuPresentation::Padded)
+            .select_one(items.clone())?;
         let Some(choice) = selection else {
             break;
         };

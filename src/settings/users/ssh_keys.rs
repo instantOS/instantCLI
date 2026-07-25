@@ -7,7 +7,7 @@ use anyhow::{Context, Result, bail};
 use base64::Engine;
 use sha2::{Digest, Sha256};
 
-use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper, select_one_with_style};
+use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper, MenuPresentation};
 use crate::settings::context::SettingsContext;
 use crate::ui::catppuccin::{colors, format_icon, format_icon_colored};
 use crate::ui::prelude::*;
@@ -146,7 +146,10 @@ pub fn manage_ssh_keys(ctx: &mut SettingsContext) -> Result<()> {
         items.push(KeyMenuItem::Add);
         items.push(KeyMenuItem::Back);
 
-        match select_one_with_style(items)? {
+        match FzfWrapper::menu()
+            .presentation(MenuPresentation::Padded)
+            .select_one(items)?
+        {
             Some(KeyMenuItem::Key(key)) => manage_key(ctx, &path, &key)?,
             Some(KeyMenuItem::Add) => add_key(ctx, &path)?,
             _ => break,
@@ -237,11 +240,13 @@ fn validate_key_blob(key_type: &str, key_data: &str) -> Result<()> {
 
 fn manage_key(ctx: &mut SettingsContext, path: &Path, key: &AuthorizedKey) -> Result<()> {
     loop {
-        match select_one_with_style(vec![
-            KeyActionItem::EditComment,
-            KeyActionItem::Remove,
-            KeyActionItem::Back,
-        ])? {
+        match FzfWrapper::menu()
+            .presentation(MenuPresentation::Padded)
+            .select_one(vec![
+                KeyActionItem::EditComment,
+                KeyActionItem::Remove,
+                KeyActionItem::Back,
+            ])? {
             Some(KeyActionItem::EditComment) => {
                 let comment = FzfWrapper::builder()
                     .prompt("SSH key comment")

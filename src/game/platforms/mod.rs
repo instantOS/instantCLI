@@ -33,8 +33,8 @@ use crate::game::launch_command::{
 use crate::game::utils::path::is_valid_wine_prefix;
 use crate::menu::protocol::FzfPreview;
 use crate::menu_utils::{
-    ChecklistResult, FzfResult, FzfSelectable, FzfWrapper, Header, MenuWrapper, TextEditOutcome,
-    TextEditPrompt, prompt_text_edit,
+    ChecklistResult, FzfResult, FzfSelectable, FzfWrapper, Header, MenuPresentation, MenuWrapper,
+    TextEditOutcome, TextEditPrompt, prompt_text_edit,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
@@ -572,7 +572,9 @@ pub fn select_launcher_type(
         builder = builder.initial_index(index);
     }
 
-    let result = builder.select_padded(items)?;
+    let result = builder
+        .presentation(MenuPresentation::Padded)
+        .select(items)?;
 
     match result {
         FzfResult::Selected(item) => {
