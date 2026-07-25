@@ -1,14 +1,20 @@
 use std::env;
 use std::fs;
-use std::io::{self, Write};
+use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result};
 
+use crate::ui::catppuccin::colors;
+use crate::ui::nerd_font::NerdFont;
+use crate::ui::preview::PreviewBuilder;
+
 use super::history::ClipEntry;
 
-const HEADER_LINES: usize = 5;
+// PreviewBuilder emits: padding, header, description, three fields, one
+// language/padding row, separator, and a blank before the payload.
+const BODY_TOP: usize = 9;
 const TEXT_LIMIT: usize = 256 * 1024;
 const HEX_LIMIT: usize = 512;
 
@@ -22,7 +28,10 @@ pub fn render(entry: &ClipEntry) -> Result<()> {
 
     let mime = mime_type(file.path(), &bytes);
     let description = file_description(file.path());
-    print_header(entry, &mime, &description, bytes.len())?;
+    let language = is_text(&mime, &bytes)
+        .then(|| detect_language(&String::from_utf8_lossy(&bytes)))
+        .flatten();
+    print_header(entry, &mime, &description, bytes.len(), language.as_ref());
 
     if mime.starts_with("image/") {
         return preview_image(file.path());
@@ -40,6 +49,11 @@ pub fn render(entry: &ClipEntry) -> Result<()> {
         return preview_archive(file.path());
     }
     if is_text(&mime, &bytes) {
+        if let Some(language) = language
+            && preview_code(file.path(), &language)?
+        {
+            return Ok(());
+        }
         print_text(&bytes);
         return Ok(());
     }
@@ -48,13 +62,51 @@ pub fn render(entry: &ClipEntry) -> Result<()> {
     Ok(())
 }
 
-fn print_header(entry: &ClipEntry, mime: &str, description: &str, size: usize) -> Result<()> {
-    println!("Clipboard entry {}", entry.id);
-    println!("{description}");
-    println!("{mime} · {}", human_size(size));
-    println!("────────────────────────────────────────");
-    println!();
-    io::stdout().flush().context("Failed to flush preview")
+fn print_header(
+    entry: &ClipEntry,
+    mime: &str,
+    description: &str,
+    size: usize,
+    language: Option<&DetectedLanguage>,
+) {
+    let (icon, title, color) = preview_identity(mime, language);
+    let mut preview = PreviewBuilder::streaming()
+        .header(icon, title)
+        .line(color, None, description)
+        .field("ID", &entry.id)
+        .field("Type", mime)
+        .field("Size", &human_size(size));
+    if let Some(language) = language {
+        preview = preview.field("Language", language.label);
+    } else {
+        // Keep the body at a stable row for Kitty placement.
+        preview = preview.blank();
+    }
+    drop(preview.separator().blank());
+}
+
+fn preview_identity(
+    mime: &str,
+    language: Option<&DetectedLanguage>,
+) -> (NerdFont, &'static str, &'static str) {
+    if let Some(language) = language {
+        return (NerdFont::FileCode, language.label, colors::MAUVE);
+    }
+    if mime.starts_with("image/") {
+        (NerdFont::Image, "Image", colors::LAVENDER)
+    } else if mime == "application/pdf" {
+        (NerdFont::FilePdf, "PDF document", colors::RED)
+    } else if mime.starts_with("video/") {
+        (NerdFont::Video, "Video", colors::PEACH)
+    } else if mime.starts_with("audio/") {
+        (NerdFont::Music, "Audio", colors::BLUE)
+    } else if is_archive(mime) {
+        (NerdFont::Archive, "Archive", colors::YELLOW)
+    } else if mime.starts_with("text/") {
+        (NerdFont::FileText, "Text", colors::GREEN)
+    } else {
+        (NerdFont::File, "Binary data", colors::SUBTEXT0)
+    }
 }
 
 fn mime_type(path: &Path, bytes: &[u8]) -> String {
@@ -78,13 +130,18 @@ fn file_description(path: &Path) -> String {
 }
 
 fn preview_image(path: &Path) -> Result<()> {
-    if render_terminal_image(path)? {
+    if render_terminal_image(path, BODY_TOP)? {
         return Ok(());
     }
+    let mut preview = PreviewBuilder::streaming().line(
+        colors::YELLOW,
+        Some(NerdFont::Warning),
+        "Visual preview unavailable",
+    );
     if let Some(details) = command_line("identify", &["-format", "%m · %wx%h", path_str(path)]) {
-        println!("{details}");
+        preview = preview.field("Image", &details);
     }
-    println!("Image preview requires Kitty graphics or the optional `chafa` command.");
+    drop(preview.subtext("Use a Kitty-compatible terminal or install chafa."));
     Ok(())
 }
 
@@ -103,12 +160,20 @@ fn preview_pdf(path: &Path) -> Result<()> {
         .status()
         .is_ok_and(|status| status.success());
     let rendered_path = output_base.with_extension("png");
-    if rendered && render_terminal_image(&rendered_path)? {
+    if rendered && render_terminal_image(&rendered_path, BODY_TOP)? {
         let _ = fs::remove_file(rendered_path);
         return Ok(());
     }
     let _ = fs::remove_file(rendered_path);
-    println!("Install `pdftoppm` and use a Kitty-compatible terminal for a first-page preview.");
+    drop(
+        PreviewBuilder::streaming()
+            .line(
+                colors::YELLOW,
+                Some(NerdFont::Warning),
+                "First-page preview unavailable",
+            )
+            .subtext("Install pdftoppm and use a Kitty-compatible terminal."),
+    );
     Ok(())
 }
 
@@ -126,7 +191,7 @@ fn preview_video(path: &Path) -> Result<()> {
         .status()
         .is_ok_and(|status| status.success());
     if rendered {
-        let _ = render_terminal_image(thumbnail.path())?;
+        let _ = render_terminal_image(thumbnail.path(), BODY_TOP + 7)?;
     }
     Ok(())
 }
@@ -146,7 +211,29 @@ fn preview_media_metadata(path: &Path) -> Result<()> {
     if let Ok(output) = output
         && output.status.success()
     {
-        print!("{}", String::from_utf8_lossy(&output.stdout));
+        let metadata = String::from_utf8_lossy(&output.stdout);
+        let mut preview = PreviewBuilder::streaming().title(colors::BLUE, "Media details");
+        for line in metadata.lines() {
+            let Some((key, value)) = line.split_once('=') else {
+                continue;
+            };
+            let label = match key {
+                "codec_name" => "Codec",
+                "codec_type" => "Stream",
+                "width" => "Width",
+                "height" => "Height",
+                "format_name" => "Container",
+                "duration" => "Duration",
+                _ => continue,
+            };
+            let value = if key == "duration" {
+                format_duration(value).unwrap_or_else(|| value.to_string())
+            } else {
+                value.to_string()
+            };
+            preview = preview.field(label, &value);
+        }
+        drop(preview);
     }
     Ok(())
 }
@@ -156,21 +243,34 @@ fn preview_archive(path: &Path) -> Result<()> {
     match output {
         Ok(output) if output.status.success() => {
             let listing = String::from_utf8_lossy(&output.stdout);
-            for line in listing.lines().take(preview_lines()) {
-                println!("{line}");
+            let mut preview = PreviewBuilder::streaming().title(colors::YELLOW, "Archive contents");
+            for line in listing
+                .lines()
+                .take(preview_lines().saturating_sub(BODY_TOP))
+            {
+                preview = preview.raw(line);
             }
+            drop(preview);
         }
-        _ => println!("Install `bsdtar` to list this archive."),
+        _ => drop(
+            PreviewBuilder::streaming()
+                .line(
+                    colors::YELLOW,
+                    Some(NerdFont::Warning),
+                    "Archive listing unavailable",
+                )
+                .subtext("Install bsdtar to inspect archive contents."),
+        ),
     }
     Ok(())
 }
 
-fn render_terminal_image(path: &Path) -> Result<bool> {
+fn render_terminal_image(path: &Path, top: usize) -> Result<bool> {
     if command_exists("kitten") && kitty_graphics_available() {
         let place = format!(
-            "{}x{}@0x{HEADER_LINES}",
+            "{}x{}@0x{top}",
             preview_columns(),
-            preview_lines().saturating_sub(HEADER_LINES).max(1)
+            preview_lines().saturating_sub(top).max(1)
         );
         let mut kitten = Command::new("kitten")
             .args([
@@ -205,7 +305,7 @@ fn render_terminal_image(path: &Path) -> Result<bool> {
         let size = format!(
             "{}x{}",
             preview_columns(),
-            preview_lines().saturating_sub(HEADER_LINES).max(1)
+            preview_lines().saturating_sub(top).max(1)
         );
         return Ok(Command::new("chafa")
             .args(["--size", &size])
@@ -214,6 +314,17 @@ fn render_terminal_image(path: &Path) -> Result<bool> {
             .is_ok_and(|status| status.success()));
     }
     Ok(false)
+}
+
+fn format_duration(value: &str) -> Option<String> {
+    let seconds = value.parse::<f64>().ok()?;
+    let total = seconds.round() as u64;
+    Some(format!(
+        "{:02}:{:02}:{:02}",
+        total / 3600,
+        total % 3600 / 60,
+        total % 60
+    ))
 }
 
 fn kitty_graphics_available() -> bool {
@@ -231,6 +342,241 @@ fn command_line(command: &str, args: &[&str]) -> Option<String> {
         .status
         .success()
         .then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct DetectedLanguage {
+    bat_name: &'static str,
+    label: &'static str,
+}
+
+fn preview_code(path: &Path, language: &DetectedLanguage) -> Result<bool> {
+    if !command_exists("bat") {
+        return Ok(false);
+    }
+    Ok(Command::new("bat")
+        .args([
+            "--color=always",
+            "--decorations=never",
+            "--paging=never",
+            "--line-range=:500",
+            "--language",
+            language.bat_name,
+        ])
+        .arg(path)
+        .stderr(Stdio::null())
+        .status()
+        .context("Failed to start bat")?
+        .success())
+}
+
+/// Identify only languages with strong clipboard-visible signatures.
+///
+/// Clipboard contents have no filename, and short snippets are inherently
+/// ambiguous. Returning `None` is preferable to misleading highlighting.
+fn detect_language(text: &str) -> Option<DetectedLanguage> {
+    let sample = &text[..floor_char_boundary(text, text.len().min(64 * 1024))];
+    let trimmed = sample.trim_start();
+    let first_line = trimmed.lines().next().unwrap_or_default();
+
+    if let Some(language) = detect_shebang(first_line) {
+        return Some(language);
+    }
+    if serde_json::from_str::<serde_json::Value>(trimmed).is_ok()
+        && matches!(trimmed.as_bytes().first(), Some(b'{' | b'['))
+    {
+        return Some(language("json", "JSON"));
+    }
+    if trimmed.starts_with("diff --git ")
+        || (trimmed.starts_with("--- ") && trimmed.lines().any(|line| line.starts_with("+++ ")))
+    {
+        return Some(language("diff", "Diff"));
+    }
+    if trimmed.starts_with("<!DOCTYPE html")
+        || trimmed.starts_with("<html")
+        || (trimmed.contains("</") && trimmed.contains("<body"))
+    {
+        return Some(language("html", "HTML"));
+    }
+    if trimmed.starts_with("<?xml") {
+        return Some(language("xml", "XML"));
+    }
+    if has_known_fence(trimmed) {
+        return Some(language("markdown", "Markdown"));
+    }
+
+    let candidates = [
+        (
+            score(
+                sample,
+                &["#[derive(", "fn ", "impl ", "use ", "::", "let mut "],
+            ),
+            language("rust", "Rust"),
+        ),
+        (
+            score(
+                sample,
+                &["def ", "from ", " import ", "elif ", "self.", "__name__"],
+            ),
+            language("python", "Python"),
+        ),
+        (
+            score(
+                sample,
+                &["interface ", "type ", " as const", "import type ", "=>"],
+            ),
+            language("typescript", "TypeScript"),
+        ),
+        (
+            score(
+                sample,
+                &["const ", "let ", "function ", "=>", "import ", "export "],
+            ),
+            language("javascript", "JavaScript"),
+        ),
+        (
+            score(sample, &["package ", "func ", "import (", " := ", "defer "]),
+            language("go", "Go"),
+        ),
+        (
+            score(
+                sample,
+                &["#include <", "#include \"", "std::", "int main(", "nullptr"],
+            ),
+            language("cpp", "C++"),
+        ),
+        (
+            score(
+                sample,
+                &[
+                    "SELECT ",
+                    "FROM ",
+                    "WHERE ",
+                    "INSERT INTO ",
+                    "CREATE TABLE ",
+                ],
+            ) + score(
+                &sample.to_ascii_uppercase(),
+                &[
+                    "SELECT ",
+                    "FROM ",
+                    "WHERE ",
+                    "INSERT INTO ",
+                    "CREATE TABLE ",
+                ],
+            ),
+            language("sql", "SQL"),
+        ),
+        (
+            score(
+                sample,
+                &["#!/", "set -e", "case ", " esac", " then", " fi", "${"],
+            ),
+            language("bash", "Shell"),
+        ),
+        (
+            score(
+                sample,
+                &["[package]", "[dependencies]", "[workspace]", "[profile."],
+            ),
+            language("toml", "TOML"),
+        ),
+        (
+            score(
+                sample,
+                &["---\n", "apiVersion:", "kind:", "services:", "jobs:"],
+            ),
+            language("yaml", "YAML"),
+        ),
+        (
+            score(
+                sample,
+                &["@media ", "@import ", "display:", "color:", "font-family:"],
+            ),
+            language("css", "CSS"),
+        ),
+    ];
+
+    candidates
+        .into_iter()
+        .max_by_key(|(confidence, _)| *confidence)
+        .filter(|(confidence, _)| *confidence >= 3)
+        .map(|(_, language)| language)
+}
+
+fn language(bat_name: &'static str, label: &'static str) -> DetectedLanguage {
+    DetectedLanguage { bat_name, label }
+}
+
+fn score(sample: &str, signals: &[&str]) -> usize {
+    signals
+        .iter()
+        .filter(|signal| sample.contains(**signal))
+        .count()
+}
+
+fn detect_shebang(first_line: &str) -> Option<DetectedLanguage> {
+    if !first_line.starts_with("#!") {
+        return None;
+    }
+    [
+        ("python", language("python", "Python")),
+        ("node", language("javascript", "JavaScript")),
+        ("deno", language("typescript", "TypeScript")),
+        ("ruby", language("ruby", "Ruby")),
+        ("perl", language("perl", "Perl")),
+        ("fish", language("fish", "Fish")),
+        ("zsh", language("bash", "Zsh")),
+        ("bash", language("bash", "Shell")),
+        ("/sh", language("bash", "Shell")),
+    ]
+    .into_iter()
+    .find(|(marker, _)| first_line.contains(marker))
+    .map(|(_, language)| language)
+}
+
+fn has_known_fence(text: &str) -> bool {
+    let marker = text.lines().find_map(|line| {
+        line.trim_start()
+            .strip_prefix("```")
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+    });
+    marker.is_some_and(|marker| {
+        matches!(
+            marker
+                .split_whitespace()
+                .next()
+                .unwrap_or_default()
+                .to_ascii_lowercase()
+                .as_str(),
+            "rs" | "rust"
+                | "py"
+                | "python"
+                | "js"
+                | "javascript"
+                | "ts"
+                | "typescript"
+                | "sh"
+                | "shell"
+                | "bash"
+                | "zsh"
+                | "json"
+                | "yaml"
+                | "yml"
+                | "toml"
+                | "sql"
+                | "html"
+                | "css"
+        )
+    })
+}
+
+fn floor_char_boundary(value: &str, mut index: usize) -> usize {
+    while !value.is_char_boundary(index) {
+        index -= 1;
+    }
+    index
 }
 
 fn is_text(mime: &str, bytes: &[u8]) -> bool {
@@ -365,5 +711,35 @@ mod tests {
     fn formats_sizes() {
         assert_eq!(human_size(42), "42 B");
         assert_eq!(human_size(1536), "1.5 KiB");
+        assert_eq!(format_duration("65.4").as_deref(), Some("00:01:05"));
+    }
+
+    #[test]
+    fn detects_unambiguous_languages() {
+        assert_eq!(
+            detect_language(r#"{"hello": "world"}"#),
+            Some(language("json", "JSON"))
+        );
+        assert_eq!(
+            detect_language("#!/usr/bin/env python3\nprint('hello')"),
+            Some(language("python", "Python"))
+        );
+        assert_eq!(
+            detect_language(
+                "use std::path::Path;\n#[derive(Debug)]\nfn main() {\nlet mut x = 1;\n}"
+            ),
+            Some(language("rust", "Rust"))
+        );
+        assert_eq!(
+            detect_language("Some prose.\n\n```typescript\nconst value: number = 1;\n```"),
+            Some(language("markdown", "Markdown"))
+        );
+    }
+
+    #[test]
+    fn leaves_ambiguous_snippets_plain() {
+        assert_eq!(detect_language("name = \"Benjamin\""), None);
+        assert_eq!(detect_language("const value = 1;"), None);
+        assert_eq!(detect_language("hello world"), None);
     }
 }
