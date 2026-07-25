@@ -28,6 +28,8 @@ pub enum ClipCommands {
     Disable,
     /// Show clipboard history capture status
     Status,
+    /// Open clipboard history settings
+    Settings,
     /// Render an entry for the interactive preview pane
     #[command(hide = true)]
     Preview { id: String },
@@ -51,6 +53,7 @@ pub fn handle_clip_command(command: &Option<ClipCommands>, gui: bool, debug: boo
         Some(ClipCommands::Enable) => enable(),
         Some(ClipCommands::Disable) => disable(),
         Some(ClipCommands::Status) => show_status(),
+        Some(ClipCommands::Settings) => settings(),
         Some(ClipCommands::Preview { id }) => preview(id),
     }
 }
@@ -63,25 +66,11 @@ fn preview(id: &str) -> Result<()> {
 
 fn interactive() -> Result<()> {
     let backend = history::ClipBackend::detect()?;
-    let status = service::status(backend);
-    if !status.active {
-        let confirmed = FzfWrapper::confirm(&format!(
-            "{} clipboard history capture is off. Enable it now?",
-            backend.name()
-        ))?;
-        if confirmed != ConfirmResult::Yes || !service::enable(backend)? {
-            return Ok(());
-        }
-    }
+    menu::run(backend)
+}
 
-    let entries = history::load(backend)?;
-    if entries.is_empty() {
-        FzfWrapper::message(
-            "Clipboard history is empty. Copy something, then open this menu again.",
-        )?;
-        return Ok(());
-    }
-    menu::run(entries)
+fn settings() -> Result<()> {
+    super::settings::run(history::ClipBackend::detect()?)
 }
 
 fn list() -> Result<()> {

@@ -3,11 +3,15 @@ use anyhow::Result;
 use crate::assist::utils::copy_to_clipboard;
 use crate::common::display_server::DisplayServer;
 use crate::common::shell::current_exe_command;
-use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper, HeaderBuilder};
-use crate::ui::catppuccin::{colors, format_icon_colored, hex_to_ansi_fg};
+use crate::menu_utils::{
+    FzfPreview, FzfSelectable, HeaderBuilder, MenuCursor, select_one_with_style_at_header,
+};
+use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, hex_to_ansi_fg};
 use crate::ui::nerd_font::NerdFont;
+use crate::ui::preview::PreviewBuilder;
 
-use super::history::ClipEntry;
+use super::history::{self, ClipBackend, ClipEntry};
+use super::service;
 
 const RESET: &str = "\x1b[0m";
 
@@ -76,21 +80,133 @@ fn is_image_format(value: &&str) -> bool {
     )
 }
 
-pub fn run(entries: Vec<ClipEntry>) -> Result<()> {
-    let items = entries.into_iter().map(ClipMenuItem).collect();
-    let header = HeaderBuilder::new(NerdFont::Clipboard, "Clipboard History")
-        .subtitle("Enter restore · Esc close")
-        .build();
-    match FzfWrapper::builder()
-        .prompt("Clipboard")
-        .header(header)
-        .responsive_layout()
-        .select(items)?
-    {
-        FzfResult::Selected(item) => copy_to_clipboard(&item.0.decode()?, &DisplayServer::detect()),
-        FzfResult::Cancelled => Ok(()),
-        FzfResult::Error(error) => Err(anyhow::anyhow!(error)),
-        FzfResult::MultiSelected(_) => Ok(()),
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum ClipMainItem {
+    Entry(ClipMenuItem),
+    EnableCapture(ClipBackend),
+    Settings,
+    Close,
+}
+
+impl FzfSelectable for ClipMainItem {
+    fn fzf_display_text(&self) -> String {
+        match self {
+            Self::Entry(entry) => entry.fzf_display_text(),
+            Self::EnableCapture(_) => format!(
+                "{} Enable clipboard capture",
+                format_icon_colored(NerdFont::PlayCircle, colors::GREEN)
+            ),
+            Self::Settings => format!(
+                "{} Settings",
+                format_icon_colored(NerdFont::Gear, colors::MAUVE)
+            ),
+            Self::Close => format!("{} Close", format_back_icon()),
+        }
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        match self {
+            Self::Entry(entry) => entry.fzf_preview(),
+            Self::EnableCapture(backend) => PreviewBuilder::new()
+                .header(NerdFont::PlayCircle, "Enable Clipboard Capture")
+                .field("Backend", backend.name())
+                .text("Start clipboard capture now and automatically on future")
+                .text("graphical logins.")
+                .blank()
+                .text("Existing clipboard history is preserved.")
+                .build(),
+            Self::Settings => PreviewBuilder::new()
+                .header(NerdFont::Gear, "Clipboard Settings")
+                .text("Manage background capture and clear clipboard history.")
+                .build(),
+            Self::Close => PreviewBuilder::new()
+                .header(NerdFont::Cross, "Close")
+                .text("Exit without changing the clipboard.")
+                .build(),
+        }
+    }
+
+    fn fzf_key(&self) -> String {
+        match self {
+            // The dynamic preview command receives this key as its entry ID.
+            Self::Entry(entry) => entry.fzf_key(),
+            Self::EnableCapture(_) => "__enable_capture__".to_string(),
+            Self::Settings => "__settings__".to_string(),
+            Self::Close => "__close__".to_string(),
+        }
+    }
+}
+
+pub fn run(backend: ClipBackend) -> Result<()> {
+    let mut cursor = MenuCursor::new();
+    loop {
+        let status = service::status(backend);
+        let entries = if status.installed {
+            history::load(backend)?
+        } else {
+            Vec::new()
+        };
+        let entry_count = entries.len();
+        let mut items = vec![ClipMainItem::Close, ClipMainItem::Settings];
+        if !status.active {
+            items.push(ClipMainItem::EnableCapture(backend));
+        }
+        items.extend(
+            entries
+                .into_iter()
+                .map(|entry| ClipMainItem::Entry(ClipMenuItem(entry))),
+        );
+
+        let initial_index = cursor.initial_index(&items).or_else(|| {
+            items
+                .iter()
+                .position(|item| matches!(item, ClipMainItem::Entry(_)))
+                .or_else(|| {
+                    items
+                        .iter()
+                        .position(|item| matches!(item, ClipMainItem::EnableCapture(_)))
+                })
+                .or_else(|| {
+                    items
+                        .iter()
+                        .position(|item| matches!(item, ClipMainItem::Settings))
+                })
+        });
+        let capture_label = if status.active {
+            "capturing"
+        } else {
+            "stopped"
+        };
+        let capture_color = if status.active {
+            colors::GREEN
+        } else {
+            colors::YELLOW
+        };
+        let header = HeaderBuilder::new(NerdFont::Clipboard, "Clipboard History")
+            .status(
+                NerdFont::Database,
+                format!("{entry_count} entries"),
+                colors::BLUE,
+            )
+            .status(NerdFont::Circle, capture_label, capture_color)
+            .build();
+
+        let Some(selection) =
+            select_one_with_style_at_header(items.clone(), initial_index, header)?
+        else {
+            return Ok(());
+        };
+        cursor.update(&selection, &items);
+        match selection {
+            ClipMainItem::Entry(entry) => {
+                return copy_to_clipboard(&entry.0.decode()?, &DisplayServer::detect());
+            }
+            ClipMainItem::EnableCapture(backend) => {
+                service::enable(backend)?;
+            }
+            ClipMainItem::Settings => super::settings::run(backend)?,
+            ClipMainItem::Close => return Ok(()),
+        }
     }
 }
 
@@ -115,6 +231,12 @@ mod tests {
             panic!("expected command preview");
         };
         assert!(preview.contains("clip preview"));
+    }
+
+    #[test]
+    fn main_menu_preserves_entry_id_for_dynamic_preview() {
+        let item = ClipMainItem::Entry(ClipMenuItem(entry()));
+        assert_eq!(item.fzf_key(), "abc123");
     }
 
     #[test]
