@@ -18,6 +18,81 @@ fn package_from_context(ctx: &PreviewContext) -> Option<&str> {
 }
 
 // ============================================================================
+// Installed status detection
+// ============================================================================
+
+/// Check whether a package is currently installed for the given manager.
+///
+/// Runs a fast, manager-specific query. Any failure (missing tool, network,
+/// non-zero exit) is treated as "not installed" so the preview degrades
+/// gracefully rather than erroring.
+fn is_package_installed(manager: PackageManager, package: &str) -> bool {
+    use std::process::{Command, Stdio};
+
+    let status_ok = |command: &mut Command| {
+        command
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false)
+    };
+
+    match manager {
+        // Pacman and AUR packages are both tracked by pacman's local database.
+        PackageManager::Pacman | PackageManager::Aur => {
+            status_ok(Command::new("pacman").arg("-Qq").arg(package))
+        }
+        // APT and Termux's pkg are dpkg-based: the abbreviated status starts
+        // with "ii" when the package is fully installed.
+        PackageManager::Apt | PackageManager::Pkg => Command::new("dpkg-query")
+            .args(["-W", "-f=${db:Status-Abbrev}", package])
+            .stderr(Stdio::null())
+            .output()
+            .map(|output| {
+                output.status.success()
+                    && String::from_utf8_lossy(&output.stdout)
+                        .trim_start()
+                        .starts_with("ii")
+            })
+            .unwrap_or(false),
+        // DNF and Zypper are both RPM-based.
+        PackageManager::Dnf | PackageManager::Zypper => {
+            status_ok(Command::new("rpm").arg("-q").arg(package))
+        }
+        // `flatpak info` succeeds only for locally installed refs.
+        PackageManager::Flatpak => status_ok(Command::new("flatpak").arg("info").arg(package)),
+        // `snap list <name>` exits non-zero when the snap is not installed.
+        PackageManager::Snap => status_ok(Command::new("snap").arg("list").arg(package)),
+        // Cargo has no per-package query, so scan the installed list.
+        PackageManager::Cargo => cmd!("cargo", "install", "--list")
+            .stderr_null()
+            .read()
+            .map(|out| {
+                out.lines().any(|line| {
+                    line.split_whitespace()
+                        .next()
+                        .map(|name| name.trim_end_matches(':'))
+                        == Some(package)
+                })
+            })
+            .unwrap_or(false),
+    }
+}
+
+/// Render an "Installed" / "Not installed" status line for a package.
+///
+/// Used by the "available" package previews so users can see at a glance
+/// whether a package they are browsing is already present on the system.
+fn render_install_status(manager: PackageManager, package: &str, preview: &mut PreviewWriter) {
+    if is_package_installed(manager, package) {
+        preview.line(colors::GREEN, Some(NerdFont::CheckCircle), "Installed");
+    } else {
+        preview.line(colors::OVERLAY1, Some(NerdFont::Circle), "Not installed");
+    }
+}
+
+// ============================================================================
 // Routing helpers
 // ============================================================================
 
@@ -170,6 +245,8 @@ pub(crate) fn render_apt_impl(package: &str, preview: &mut PreviewWriter) -> Res
     preview
         .header(NerdFont::Package, package)
         .line(colors::BLUE, None, "APT Package");
+    render_install_status(PackageManager::Apt, package, preview);
+    preview.blank();
 
     let output = cmd!("apt", "show", package)
         .stderr_null()
@@ -222,6 +299,8 @@ pub(crate) fn render_dnf_impl(package: &str, preview: &mut PreviewWriter) -> Res
     preview
         .header(NerdFont::Package, package)
         .line(colors::YELLOW, None, "DNF Package");
+    render_install_status(PackageManager::Dnf, package, preview);
+    preview.blank();
 
     let output = cmd!("dnf", "info", package)
         .stderr_null()
@@ -274,6 +353,8 @@ pub(crate) fn render_zypper_impl(package: &str, preview: &mut PreviewWriter) -> 
     preview
         .header(NerdFont::Package, package)
         .line(colors::RED, None, "Zypper Package");
+    render_install_status(PackageManager::Zypper, package, preview);
+    preview.blank();
 
     let output = cmd!("zypper", "info", package)
         .stderr_null()
@@ -313,8 +394,9 @@ pub(crate) fn render_zypper_impl(package: &str, preview: &mut PreviewWriter) -> 
 pub(crate) fn render_pacman_impl(package: &str, preview: &mut PreviewWriter) -> Result<()> {
     preview
         .header(NerdFont::Package, package)
-        .line(colors::GREEN, None, "Pacman Package")
-        .blank();
+        .line(colors::GREEN, None, "Pacman Package");
+    render_install_status(PackageManager::Pacman, package, preview);
+    preview.blank();
 
     let output = cmd!("pacman", "-Si", package)
         .stderr_null()
@@ -436,8 +518,9 @@ pub(crate) fn render_snap_impl(package_info: &str, preview: &mut PreviewWriter) 
 
     preview
         .header(NerdFont::Package, name)
-        .line(colors::PEACH, None, "Snap Package")
-        .blank();
+        .line(colors::PEACH, None, "Snap Package");
+    render_install_status(PackageManager::Snap, name, preview);
+    preview.blank();
 
     let output = cmd!("snap", "info", name)
         .stderr_null()
@@ -515,6 +598,8 @@ pub(crate) fn render_pkg_impl(package: &str, preview: &mut PreviewWriter) -> Res
     preview
         .header(NerdFont::Package, package)
         .line(colors::TEAL, None, "Pkg Package");
+    render_install_status(PackageManager::Pkg, package, preview);
+    preview.blank();
 
     let output = cmd!("pkg", "show", package)
         .stderr_null()
@@ -560,12 +645,17 @@ pub(crate) fn render_pkg_impl(package: &str, preview: &mut PreviewWriter) -> Res
 pub(crate) fn render_flatpak_impl(package_info: &str, preview: &mut PreviewWriter) -> Result<()> {
     let (installation_hint, remote_hint, package) = parse_flatpak_preview_arg(package_info);
 
+    let local_output = cmd!("flatpak", "info", package).stderr_null().read().ok();
+
     preview
         .header(NerdFont::Package, package)
-        .line(colors::PINK, None, "Flatpak Package")
-        .blank();
-
-    let local_output = cmd!("flatpak", "info", package).stderr_null().read().ok();
+        .line(colors::PINK, None, "Flatpak Package");
+    if local_output.is_some() {
+        preview.line(colors::GREEN, Some(NerdFont::CheckCircle), "Installed");
+    } else {
+        preview.line(colors::OVERLAY1, Some(NerdFont::Circle), "Not installed");
+    }
+    preview.blank();
 
     let output = if local_output.is_some() {
         local_output
@@ -719,8 +809,9 @@ pub(crate) fn render_aur_impl(package: &str, preview: &mut PreviewWriter) -> Res
 
     preview
         .header(NerdFont::Package, package)
-        .line(colors::MAUVE, None, "AUR Package")
-        .blank();
+        .line(colors::MAUVE, None, "AUR Package");
+    render_install_status(PackageManager::Aur, package, preview);
+    preview.blank();
 
     let output = cmd!(helper, "-Si", package)
         .stderr_null()
@@ -767,6 +858,8 @@ pub(crate) fn render_cargo_impl(package: &str, preview: &mut PreviewWriter) -> R
     preview
         .header(NerdFont::Package, package)
         .line(colors::MAROON, None, "Cargo Package");
+    render_install_status(PackageManager::Cargo, package, preview);
+    preview.blank();
 
     let output = cmd!("cargo", "show", package)
         .stderr_null()
