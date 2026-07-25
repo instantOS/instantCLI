@@ -6,7 +6,7 @@ use anyhow::Result;
 
 use crate::common::display_server::DisplayServer;
 use crate::common::package::InstallResult;
-use crate::common::systemd::SystemdManager;
+use crate::common::systemd::{SystemdManager, ensure_graphical_session_target};
 use crate::settings::context::SettingsContext;
 use crate::settings::deps::{CLIPHIST, CLIPMENU};
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
@@ -74,6 +74,9 @@ impl Setting for ClipboardManager {
             }
 
             let systemd = SystemdManager::user();
+            if service == "cliphist.service" && !systemd.is_active("graphical-session.target") {
+                ensure_graphical_session_target()?;
+            }
             let other_service = if service == "cliphist.service" {
                 "clipmenud.service"
             } else {

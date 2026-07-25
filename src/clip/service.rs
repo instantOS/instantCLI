@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 use crate::common::package::{Dependency, InstallResult};
-use crate::common::systemd::SystemdManager;
+use crate::common::systemd::{SystemdManager, ensure_graphical_session_target};
 use crate::settings::deps::{CLIPHIST, CLIPMENU};
 
 use super::history::ClipBackend;
@@ -54,6 +54,12 @@ pub fn enable(backend: ClipBackend) -> Result<bool> {
     disable_if_present(other)?;
 
     let systemd = SystemdManager::user();
+    // Arch's cliphist unit requires graphical-session.target. Lightweight
+    // compositors do not always activate that standard target themselves,
+    // despite the Wayland session already being usable.
+    if backend == ClipBackend::Cliphist && !systemd.is_active("graphical-session.target") {
+        ensure_graphical_session_target()?;
+    }
     let service = service_name(backend);
     if !systemd.is_enabled(service) {
         systemd.enable_and_start(service)?;

@@ -1,6 +1,44 @@
 use anyhow::{Context, Result};
 use std::process::Command;
 
+const GRAPHICAL_SESSION_ANCHOR: &str = "ins-graphical-session.service";
+
+/// Ensure the standard graphical user-session target is active.
+///
+/// `graphical-session.target` has `RefuseManualStart=yes`, so compositors are
+/// expected to pull it in through a session-specific unit. Use a transient
+/// anchor as a compatibility bridge for lightweight compositors that do not
+/// provide one. The anchor naturally disappears with the user manager.
+pub fn ensure_graphical_session_target() -> Result<()> {
+    let systemd = SystemdManager::user();
+    if systemd.is_active("graphical-session.target") {
+        return Ok(());
+    }
+
+    let output = Command::new("systemd-run")
+        .args([
+            "--user",
+            &format!("--unit={GRAPHICAL_SESSION_ANCHOR}"),
+            "--property=Type=oneshot",
+            "--property=RemainAfterExit=yes",
+            "--property=Wants=graphical-session.target",
+            "--property=Before=graphical-session.target",
+            "/usr/bin/true",
+        ])
+        .output()
+        .context("Failed to activate the graphical user session")?;
+    anyhow::ensure!(
+        output.status.success(),
+        "Failed to activate the graphical user session: {}",
+        String::from_utf8_lossy(&output.stderr).trim()
+    );
+    anyhow::ensure!(
+        systemd.is_active("graphical-session.target"),
+        "graphical-session.target did not become active"
+    );
+    Ok(())
+}
+
 /// Represents the scope of a systemd service (system or user)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ServiceScope {
