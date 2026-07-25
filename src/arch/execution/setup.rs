@@ -173,7 +173,7 @@ fn setup_wallpaper(username: &str, executor: &dyn CommandRunner) -> Result<()> {
 fn enable_services(executor: &dyn CommandRunner, context: &InstallContext) -> Result<()> {
     println!("Enabling services...");
 
-    let mut services = vec!["NetworkManager", "sshd"];
+    let mut services = vec!["NetworkManager", "sshd", "systemd-timesyncd"];
     let desktop = crate::arch::config::DesktopEnvironment::from_context(context);
 
     // Enable VM-specific services

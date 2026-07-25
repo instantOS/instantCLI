@@ -5,6 +5,108 @@ use async_trait::async_trait;
 use tokio::process::Command as TokioCommand;
 
 #[derive(Default)]
+pub struct ClockSynchronizationCheck;
+
+fn clock_status_from_timedatectl(output: &str) -> CheckStatus {
+    let property = |name: &str| {
+        output
+            .lines()
+            .find_map(|line| line.strip_prefix(&format!("{name}=")))
+    };
+
+    match (
+        property("CanNTP"),
+        property("NTP"),
+        property("NTPSynchronized"),
+    ) {
+        (Some("no"), _, _) => CheckStatus::Skipped(
+            "systemd does not have a supported network time synchronization service".to_string(),
+        ),
+        (_, Some("yes"), Some("yes")) => {
+            CheckStatus::Pass("System clock is synchronized over the network".to_string())
+        }
+        (_, Some("yes"), _) => CheckStatus::Warning {
+            message: "Network time is enabled, but the clock is not synchronized".to_string(),
+            fixable: true,
+        },
+        (_, Some("no"), _) => CheckStatus::Fail {
+            message: "Network time synchronization is disabled".to_string(),
+            fixable: true,
+        },
+        _ => CheckStatus::Warning {
+            message: "Could not determine network time synchronization status".to_string(),
+            fixable: false,
+        },
+    }
+}
+
+#[async_trait]
+impl DoctorCheck for ClockSynchronizationCheck {
+    fn name(&self) -> &'static str {
+        "System Clock Synchronization"
+    }
+
+    fn id(&self) -> &'static str {
+        "clock-sync"
+    }
+
+    fn check_privilege_level(&self) -> PrivilegeLevel {
+        PrivilegeLevel::Any
+    }
+
+    fn fix_privilege_level(&self) -> PrivilegeLevel {
+        PrivilegeLevel::Root
+    }
+
+    async fn execute(&self) -> CheckStatus {
+        let output = TokioCommand::new("timedatectl").arg("show").output().await;
+
+        match output {
+            Ok(output) if output.status.success() => {
+                clock_status_from_timedatectl(&String::from_utf8_lossy(&output.stdout))
+            }
+            Ok(output) => {
+                let error = String::from_utf8_lossy(&output.stderr);
+                CheckStatus::Skipped(format!(
+                    "systemd time status is unavailable{}",
+                    if error.trim().is_empty() {
+                        String::new()
+                    } else {
+                        format!(": {}", error.trim())
+                    }
+                ))
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                CheckStatus::Skipped("timedatectl is not installed".to_string())
+            }
+            Err(error) => CheckStatus::Warning {
+                message: format!("Could not query system clock synchronization: {error}"),
+                fixable: false,
+            },
+        }
+    }
+
+    fn fix_message(&self) -> Option<String> {
+        Some("Enable systemd network time synchronization with timedatectl".to_string())
+    }
+
+    async fn fix(&self) -> Result<()> {
+        let status = TokioCommand::new("timedatectl")
+            .args(["set-ntp", "true"])
+            .status()
+            .await?;
+
+        if status.success() {
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!(
+                "timedatectl failed to enable network time synchronization"
+            ))
+        }
+    }
+}
+
+#[derive(Default)]
 pub struct SwapCheck;
 
 #[async_trait]
@@ -208,5 +310,35 @@ impl DoctorCheck for PendingUpdatesCheck {
         } else {
             Err(anyhow::anyhow!("pacman -Syu failed"))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::clock_status_from_timedatectl;
+    use crate::doctor::CheckStatus;
+
+    #[test]
+    fn clock_status_passes_when_ntp_is_synchronized() {
+        let status = clock_status_from_timedatectl("CanNTP=yes\nNTP=yes\nNTPSynchronized=yes\n");
+        assert!(matches!(status, CheckStatus::Pass(_)));
+    }
+
+    #[test]
+    fn clock_status_warns_when_ntp_has_not_synchronized() {
+        let status = clock_status_from_timedatectl("CanNTP=yes\nNTP=yes\nNTPSynchronized=no\n");
+        assert!(matches!(status, CheckStatus::Warning { fixable: true, .. }));
+    }
+
+    #[test]
+    fn clock_status_fails_when_ntp_is_disabled() {
+        let status = clock_status_from_timedatectl("CanNTP=yes\nNTP=no\nNTPSynchronized=no\n");
+        assert!(matches!(status, CheckStatus::Fail { fixable: true, .. }));
+    }
+
+    #[test]
+    fn clock_status_skips_when_systemd_cannot_manage_ntp() {
+        let status = clock_status_from_timedatectl("CanNTP=no\nNTP=no\nNTPSynchronized=no\n");
+        assert!(matches!(status, CheckStatus::Skipped(_)));
     }
 }

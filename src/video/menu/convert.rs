@@ -1,7 +1,9 @@
 use anyhow::Result;
 use std::path::PathBuf;
 
-use crate::menu_utils::{ConfirmResult, FzfPreview, FzfResult, FzfSelectable, FzfWrapper, Header};
+use crate::menu_utils::{
+    ConfirmResult, FzfPreview, FzfResult, FzfSelectable, FzfWrapper, HeaderBuilder,
+};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -107,14 +109,20 @@ pub async fn run_new_project() -> Result<()> {
         }
         entries.push(NewProjectEntry::Back);
 
-        let header_text = if videos.is_empty() {
-            "Add videos to create project".to_string()
+        let header = if videos.is_empty() {
+            HeaderBuilder::new(NerdFont::Video, "Create Video Project")
+                .subtitle("Add videos to create a project")
         } else {
-            format!("{} video(s) selected", videos.len())
-        };
+            HeaderBuilder::new(NerdFont::Video, "Create Video Project").status(
+                NerdFont::Check,
+                format!("{} videos selected", videos.len()),
+                colors::GREEN,
+            )
+        }
+        .build();
 
         let result = FzfWrapper::builder()
-            .header(Header::fancy(&header_text))
+            .header(header)
             .prompt("Select")
             .args(fzf_mocha_args())
             .responsive_layout()

@@ -14,7 +14,8 @@ use crate::common::instantwmctl;
 use crate::menu::client::MenuClient;
 use crate::menu::protocol::SliderRequest;
 use crate::menu_utils::{
-    ChecklistResult, FzfSelectable, FzfWrapper, Header, MenuCursor, select_one_with_style_at,
+    ChecklistResult, FzfSelectable, FzfWrapper, Header, HeaderBuilder, MenuCursor,
+    select_one_with_style_at,
 };
 use crate::settings::context::SettingsContext;
 use crate::settings::deps::PIPER;
@@ -781,11 +782,13 @@ fn build_audio_source_checklist(
 }
 
 fn build_custom_audio_header(default_sources: &[String]) -> Header {
-    let header_text = format!(
-        "Select audio sources to include with recordings.\nEnter toggles, select Save to confirm.\nAuto-detected sources (ignored in custom mode): {}",
-        format_sources_list(default_sources)
-    );
-    Header::default(&header_text)
+    HeaderBuilder::new(NerdFont::VolumeUp, "Recording Audio Sources")
+        .subtitle("Enter toggles; select Save to confirm")
+        .field(
+            "Auto-detected (ignored)",
+            format_sources_list(default_sources),
+        )
+        .build()
 }
 
 fn apply_custom_audio_selection(ctx: &mut SettingsContext, chosen: &[String]) {

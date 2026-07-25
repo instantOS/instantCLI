@@ -25,6 +25,7 @@ impl CheckRegistry {
         registry.register::<SteamCompatdataOrphansCheck>("steam-compatdata-orphans");
         registry.register::<PacmanStaleDownloadsCheck>("pacman-stale-downloads");
         registry.register::<SwapCheck>("swap");
+        registry.register::<ClockSynchronizationCheck>("clock-sync");
         registry.register::<PendingUpdatesCheck>("pending-updates");
         registry.register::<SmartHealthCheck>("smart-health");
         registry.register::<PacmanDbSyncCheck>("pacman-db-sync");

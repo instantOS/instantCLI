@@ -308,14 +308,21 @@ pub fn show_status_summary(
 ) -> Result<()> {
     let home = dirs::home_dir().context("Failed to get home directory")?;
 
-    // Categorize files and get summary
+    // Report each file's own state separately from the effective protection state of its unit.
+    // A modified unit still protects all of its members during apply, but should not make every
+    // unchanged member look individually modified in the status summary.
     let (files_by_status, summary) =
-        categorize_files_and_get_summary(all_dotfiles, cfg, db, unit_index);
+        categorize_files_and_get_summary(all_dotfiles, cfg, db, &UnitIndex::default());
 
     match get_output_format() {
-        OutputFormat::Json => {
-            show_json_status(&files_by_status, &summary, show_all, show_sources, cfg)
-        }
+        OutputFormat::Json => show_json_status(
+            &files_by_status,
+            &summary,
+            show_all,
+            show_sources,
+            cfg,
+            unit_index,
+        ),
         OutputFormat::Text => show_text_status(
             &files_by_status,
             &summary,
@@ -323,6 +330,7 @@ pub fn show_status_summary(
             show_sources,
             &home,
             cfg,
+            unit_index,
         ),
     }
 
@@ -398,6 +406,7 @@ fn show_json_status(
     show_all: bool,
     show_sources: bool,
     cfg: &DotfileConfig,
+    unit_index: &UnitIndex,
 ) {
     let home = dirs::home_dir().unwrap_or_default();
 
@@ -536,14 +545,36 @@ fn show_json_status(
         })
         .collect();
 
+    let modified_units: Vec<_> = unit_index
+        .modified_unit_statuses()
+        .into_iter()
+        .map(|unit_status| {
+            let modified_files: Vec<_> = unit_status
+                .modified_files
+                .iter()
+                .map(|path| {
+                    let relative_path = path.strip_prefix(&home).unwrap_or(path);
+                    format!("~/{}", relative_path.display())
+                })
+                .collect();
+            serde_json::json!({
+                "path": format!("~/{}", unit_status.unit_path.display()),
+                "status": "modified",
+                "modified_files": modified_files
+            })
+        })
+        .collect();
+
     let status_data = serde_json::json!({
         "total_files": summary.total_files,
         "clean_count": summary.clean_count,
         "modified_count": summary.modified_count,
+        "modified_unit_count": modified_units.len(),
         "outdated_count": summary.outdated_count,
         "identity_required_count": summary.identity_required_count,
         "encrypted_error_count": summary.encrypted_error_count,
         "modified_files": modified_files,
+        "modified_units": modified_units,
         "outdated_files": outdated_files,
         "identity_required_files": identity_required_files,
         "encrypted_error_files": encrypted_error_files,
@@ -568,6 +599,7 @@ fn show_text_status(
     show_sources: bool,
     home: &PathBuf,
     cfg: &DotfileConfig,
+    unit_index: &UnitIndex,
 ) {
     // Helper function to get priority number for a repo
     let get_priority = |repo_name: &str| -> usize {
@@ -591,6 +623,21 @@ fn show_text_status(
             "{} Modified: {} files",
             char::from(NerdFont::Edit).to_string().yellow(),
             summary.modified_count
+        );
+    }
+
+    let modified_units = unit_index.modified_unit_statuses();
+    if !modified_units.is_empty() {
+        let label = if modified_units.len() == 1 {
+            "unit"
+        } else {
+            "units"
+        };
+        println!(
+            "{} Modified units: {} {}",
+            char::from(NerdFont::Edit).to_string().yellow(),
+            modified_units.len(),
+            label
         );
     }
 
@@ -622,14 +669,25 @@ fn show_text_status(
 
     // Show files with issues
     if summary.modified_count > 0
+        || !modified_units.is_empty()
         || summary.outdated_count > 0
         || summary.identity_required_count > 0
         || summary.encrypted_error_count > 0
     {
         println!();
 
+        if !modified_units.is_empty() {
+            show_modified_units(&modified_units, home);
+        }
+
         if let Some(modified_files) = files_by_status.get(&DotFileStatus::Modified) {
-            show_modified_files(modified_files, home, show_sources, &get_priority);
+            show_modified_files(
+                modified_files,
+                home,
+                show_sources,
+                &get_priority,
+                unit_index,
+            );
         }
 
         if let Some(outdated_files) = files_by_status.get(&DotFileStatus::Outdated) {
@@ -675,9 +733,18 @@ fn show_modified_files(
     home: &PathBuf,
     show_sources: bool,
     get_priority: &dyn Fn(&str) -> usize,
+    unit_index: &UnitIndex,
 ) {
-    println!("{}", " Modified files:".yellow().bold());
-    for file_info in files {
+    let standalone_files: Vec<_> = files
+        .iter()
+        .filter(|file_info| !unit_index.is_target_in_modified_unit(&file_info.target_path))
+        .collect();
+    if standalone_files.is_empty() {
+        return;
+    }
+
+    println!("{}", " Standalone modified files:".yellow().bold());
+    for file_info in standalone_files {
         let relative_path = file_info
             .target_path
             .strip_prefix(home)
@@ -708,6 +775,22 @@ fn show_modified_files(
                 file_info.dotfile_dir,
                 override_indicator.magenta()
             );
+        }
+    }
+    println!();
+}
+
+fn show_modified_units(modified_units: &[crate::dot::units::UnitStatus], home: &PathBuf) {
+    println!("{}", " Modified units:".yellow().bold());
+    for unit_status in modified_units {
+        println!(
+            "  {}",
+            format!("~/{}", unit_status.unit_path.display()).yellow()
+        );
+        println!("    Modified files causing this unit state:");
+        for path in &unit_status.modified_files {
+            let relative_path = path.strip_prefix(home).unwrap_or(path);
+            println!("      - ~/{}", relative_path.display());
         }
     }
     println!();
@@ -1109,6 +1192,75 @@ mod tests {
             get_dotfile_status(&dotfile, &db, &UnitIndex::default()),
             DotFileStatus::Outdated
         );
+    }
+
+    #[test]
+    #[serial]
+    fn summary_separates_modified_unit_from_unchanged_members() {
+        let dir = tempdir().unwrap();
+        let home = dir.path().join("home");
+        let config_home = dir.path().join("config");
+        let source_dir = dir.path().join("repo/dots/.config/editor");
+        let target_dir = home.join(".config/editor");
+        fs::create_dir_all(&source_dir).unwrap();
+        fs::create_dir_all(&target_dir).unwrap();
+        fs::create_dir_all(&config_home).unwrap();
+
+        let prev_home = std::env::var_os("HOME");
+        let prev_xdg = std::env::var_os("XDG_CONFIG_HOME");
+        // SAFETY: this test is serialised and restores the process env below.
+        unsafe {
+            std::env::set_var("HOME", &home);
+            std::env::set_var("XDG_CONFIG_HOME", &config_home);
+        }
+
+        let modified_source = source_dir.join("modified.lua");
+        let modified_target = target_dir.join("modified.lua");
+        fs::write(&modified_source, "repository version").unwrap();
+        fs::write(&modified_target, "local version").unwrap();
+
+        let clean_source = source_dir.join("clean.lua");
+        let clean_target = target_dir.join("clean.lua");
+        fs::write(&clean_source, "same version").unwrap();
+        fs::write(&clean_target, "same version").unwrap();
+
+        let db = Database::new(dir.path().join("test.db")).unwrap();
+        let modified_dotfile = Dotfile::new(modified_source, modified_target.clone(), false);
+        let clean_dotfile = Dotfile::new(clean_source, clean_target.clone(), false);
+        let all_dotfiles = HashMap::from([
+            (modified_target.clone(), modified_dotfile),
+            (clean_target.clone(), clean_dotfile),
+        ]);
+        let unit_index = crate::dot::units::build_unit_index(
+            &all_dotfiles,
+            &[PathBuf::from(".config/editor")],
+            &db,
+        )
+        .unwrap();
+        let (_, summary) = categorize_files_and_get_summary(
+            &all_dotfiles,
+            &DotfileConfig::default(),
+            &db,
+            &UnitIndex::default(),
+        );
+
+        unsafe {
+            match prev_home {
+                Some(value) => std::env::set_var("HOME", value),
+                None => std::env::remove_var("HOME"),
+            }
+            match prev_xdg {
+                Some(value) => std::env::set_var("XDG_CONFIG_HOME", value),
+                None => std::env::remove_var("XDG_CONFIG_HOME"),
+            }
+        }
+
+        assert_eq!(summary.modified_count, 1);
+        assert_eq!(summary.clean_count, 1);
+        assert!(unit_index.is_target_in_modified_unit(&clean_target));
+        let modified_units = unit_index.modified_unit_statuses();
+        assert_eq!(modified_units.len(), 1);
+        assert_eq!(modified_units[0].modified_files, vec![modified_target]);
     }
 
     #[test]

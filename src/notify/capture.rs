@@ -179,16 +179,22 @@ fn handle_message(
             .deserialize()
             .context("deserializing Notify message body")?;
 
-    let transient = hints
-        .get("transient")
-        .and_then(|value| value.downcast_ref::<bool>().ok())
-        .unwrap_or(false);
-    if transient || config.is_ignored(&app_name) {
+    let ignored_by_config = config.is_ignored(&app_name);
+    let transient = is_transient(&hints);
+    let replacing_progress = is_replacing_progress(&hints);
+    if transient || replacing_progress || ignored_by_config {
         if debug {
+            let reason = if transient {
+                "transient"
+            } else if replacing_progress {
+                "self-replacing progress"
+            } else {
+                "configured application filter"
+            };
             emit(
                 Level::Debug,
                 "notify.daemon.ignored",
-                &format!("Ignored transient or configured notification from {app_name}"),
+                &format!("Ignored {reason} notification from {app_name}"),
                 None,
             );
         }
@@ -324,6 +330,31 @@ fn parse_actions(raw_actions: Vec<String>) -> Vec<NotificationAction> {
         .collect()
 }
 
+/// Whether the sender explicitly requested that this notification not persist.
+fn is_transient(hints: &HashMap<String, OwnedValue>) -> bool {
+    hints
+        .get("transient")
+        .and_then(|value| value.downcast_ref::<bool>().ok())
+        .unwrap_or(false)
+}
+
+/// Detect progress indicators that replace themselves through a daemon-specific
+/// stack tag rather than the standard `replaces_id` argument.
+///
+/// Requiring both hints is deliberate: a progress value alone may describe a
+/// useful long-running job, while a stack tag alone may be a useful latest-state
+/// notification. Together they identify volume/brightness-style status popups.
+fn is_replacing_progress(hints: &HashMap<String, OwnedValue>) -> bool {
+    const STACK_TAG_HINTS: &[&str] = &[
+        "x-dunst-stack-tag",
+        "x-canonical-private-synchronous",
+        "private-synchronous",
+        "synchronous",
+    ];
+
+    hints.contains_key("value") && STACK_TAG_HINTS.iter().any(|hint| hints.contains_key(*hint))
+}
+
 struct NotificationConfig {
     ignore_apps: HashSet<String>,
 }
@@ -355,7 +386,11 @@ fn load_app_list(path: &std::path::Path) -> HashSet<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_actions, sanitize_text};
+    use std::collections::HashMap;
+
+    use zbus::zvariant::OwnedValue;
+
+    use super::{is_replacing_progress, is_transient, parse_actions, sanitize_text};
 
     #[test]
     fn sanitize_text_is_unicode_safe_and_removes_controls() {
@@ -380,5 +415,29 @@ mod tests {
         assert_eq!(actions.len(), 2);
         assert_eq!(actions[0].key, "default");
         assert_eq!(actions[0].label, "Pair");
+    }
+
+    #[test]
+    fn explicit_transient_hint_skips_history() {
+        let hints = HashMap::from([("transient".into(), OwnedValue::from(true))]);
+        assert!(is_transient(&hints));
+    }
+
+    #[test]
+    fn stack_tagged_progress_is_classified_as_ephemeral() {
+        let hints = HashMap::from([
+            ("value".into(), OwnedValue::from(65i32)),
+            ("x-dunst-stack-tag".into(), OwnedValue::from(true)),
+        ]);
+        assert!(is_replacing_progress(&hints));
+    }
+
+    #[test]
+    fn progress_or_stack_tag_alone_remains_in_history() {
+        let progress = HashMap::from([("value".into(), OwnedValue::from(65i32))]);
+        let stacked = HashMap::from([("x-dunst-stack-tag".into(), OwnedValue::from(true))]);
+
+        assert!(!is_replacing_progress(&progress));
+        assert!(!is_replacing_progress(&stacked));
     }
 }

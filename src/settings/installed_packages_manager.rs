@@ -8,9 +8,12 @@ use anyhow::{Context, Result};
 
 use crate::common::distro::OperatingSystem;
 use crate::common::package::{PackageManager, removal_cascade, uninstall_packages};
-use crate::menu_utils::{ConfirmResult, DecodedStreamingMenuItem, FzfResult, FzfWrapper, Header};
+use crate::menu_utils::{
+    ConfirmResult, DecodedStreamingMenuItem, FzfResult, FzfWrapper, HeaderBuilder,
+};
 use crate::settings::package_list::{self, PackageSelectionPayload};
 use crate::ui::catppuccin::fzf_mocha_args;
+use crate::ui::nerd_font::NerdFont;
 
 enum UninstallResult {
     Done,
@@ -52,10 +55,11 @@ fn run_uninstaller(manager: PackageManager, debug: bool) -> Result<()> {
         let result = FzfWrapper::builder()
             .multi_select(true)
             .prompt("Select packages")
-            .header(Header::fancy(&format!(
-                "Manage Installed {}",
-                manager.display_name()
-            )))
+            .header(
+                HeaderBuilder::new(NerdFont::Package, "Manage Installed Packages")
+                    .field("Package manager", manager.display_name())
+                    .build(),
+            )
             .args(fzf_mocha_args())
             .responsive_layout()
             .select_encoded_streaming(package_list::installed_command(manager))

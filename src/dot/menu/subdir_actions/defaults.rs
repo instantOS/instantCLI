@@ -7,7 +7,9 @@ use crate::dot::config::DotfileConfig;
 use crate::dot::dotfilerepo::DotfileRepo;
 use crate::dot::meta;
 use crate::dot::types::RepoMetaData;
-use crate::menu_utils::{ChecklistAction, ChecklistResult, FzfSelectable, FzfWrapper, Header};
+use crate::menu_utils::{
+    ChecklistAction, ChecklistResult, FzfSelectable, FzfWrapper, HeaderBuilder,
+};
 use crate::ui::catppuccin::{colors, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -107,10 +109,12 @@ pub(crate) fn handle_edit_default_subdirs(
 
     let selection = FzfWrapper::builder()
         .prompt("Toggle defaults")
-        .header(Header::fancy(&format!(
-            "Default enabled: {}\nUse Auto to reset | Select none to disable defaults",
-            repo_name
-        )))
+        .header(
+            HeaderBuilder::new(NerdFont::Star, "Default Enabled Subdirectories")
+                .field("Repository", repo_name)
+                .subtitle("Use Auto to reset; select none to disable defaults")
+                .build(),
+        )
         .args(fzf_mocha_args())
         .responsive_layout()
         .checklist("Save Defaults")

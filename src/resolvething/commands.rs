@@ -7,10 +7,10 @@ use crate::common::package::{
 };
 use crate::common::requirements::InstallTest;
 use crate::menu_utils::{
-    FilePickerScope, FzfResult, FzfWrapper, Header, MenuCursor, PathInputBuilder,
+    FilePickerScope, FzfResult, FzfWrapper, HeaderBuilder, MenuCursor, PathInputBuilder,
     PathInputSelection, TextEditOutcome, TextEditPrompt, prompt_text_edit,
 };
-use crate::ui::catppuccin::fzf_mocha_args;
+use crate::ui::catppuccin::{colors, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::prelude::{Level, emit};
 
@@ -633,7 +633,15 @@ fn select_duplicate_keep(
     entries.push(DuplicateChoice::Skip);
 
     let mut builder = FzfWrapper::builder()
-        .header(Header::fancy(&format!("Duplicate Group {index}/{total}")))
+        .header(
+            HeaderBuilder::new(NerdFont::File, "Duplicate Group")
+                .status(
+                    NerdFont::Info,
+                    format!("Group {index} of {total}"),
+                    colors::BLUE,
+                )
+                .build(),
+        )
         .prompt("Keep")
         .args(fzf_mocha_args())
         .responsive_layout();
@@ -665,10 +673,11 @@ fn select_conflict_choice(
     entries.push(ConflictChoice::Close);
 
     let mut builder = FzfWrapper::builder()
-        .header(Header::fancy(&format!(
-            "Syncthing Conflicts: {}",
-            format_path(scan_dir)
-        )))
+        .header(
+            HeaderBuilder::new(NerdFont::GitCompare, "Syncthing Conflicts")
+                .field("Directory", format_path(scan_dir))
+                .build(),
+        )
         .prompt("Resolve")
         .args(fzf_mocha_args())
         .responsive_layout();

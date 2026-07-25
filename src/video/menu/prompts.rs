@@ -3,7 +3,8 @@ use std::path::{Path, PathBuf};
 
 use crate::common::TildePath;
 use crate::menu_utils::{
-    ChecklistResult, ConfirmResult, FzfResult, FzfWrapper, Header, PathInputSelection,
+    ChecklistResult, ConfirmResult, FzfResult, FzfWrapper, Header, HeaderBuilder,
+    PathInputSelection,
 };
 use crate::ui::catppuccin::{colors, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
@@ -309,9 +310,11 @@ pub fn select_render_options() -> Result<Option<RenderOptions>> {
 
     let selection = FzfWrapper::builder()
         .prompt("Toggle")
-        .header(Header::default(
-            "Select render options. Toggle with Enter, then choose Save.",
-        ))
+        .header(
+            HeaderBuilder::new(NerdFont::Sliders, "Render Options")
+                .subtitle("Toggle with Enter, then choose Save")
+                .build(),
+        )
         .args(fzf_mocha_args())
         .responsive_layout()
         .checklist("Save")

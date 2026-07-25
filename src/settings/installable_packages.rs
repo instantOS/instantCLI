@@ -562,7 +562,7 @@ pub static ARCHIVE_MANAGERS: &[InstallableApp] = &[
 // Install More Menu Helper
 // =============================================================================
 
-use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper, Header};
+use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper, HeaderBuilder};
 use crate::ui::catppuccin::{colors, fzf_mocha_args, hex_to_ansi_fg};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -637,10 +637,13 @@ pub fn show_install_more_menu(category_name: &str, apps: &[InstallableApp]) -> R
     let items: Vec<InstallableAppItem> =
         apps.iter().map(|app| InstallableAppItem { app }).collect();
 
-    let header_text = format!("Select an application to install\nConfiguring: {category_name}");
     let selected = FzfWrapper::builder()
         .prompt(format!("Install {}: ", category_name))
-        .header(Header::fancy(&header_text))
+        .header(
+            HeaderBuilder::new(NerdFont::Package, "Install an Application")
+                .field("Configuring", category_name)
+                .build(),
+        )
         .args(fzf_mocha_args())
         .responsive_layout()
         .select(items)?;

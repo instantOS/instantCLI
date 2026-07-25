@@ -19,6 +19,8 @@ pub enum SettingsNavigation {
 pub enum SettingsCommands {
     /// Reapply settings that do not persist across reboots
     Apply,
+    /// Create any missing instantOS default-command symlinks
+    EnsureDefaults,
     /// List available categories and settings
     List {
         /// Show only categories
@@ -82,6 +84,9 @@ pub fn dispatch_settings_command(
     match command {
         None => super::ui::run_settings_ui(debug, privileged_flag, navigation),
         Some(SettingsCommands::Apply) => apply::run_nonpersistent_apply(debug, privileged_flag),
+        Some(SettingsCommands::EnsureDefaults) => {
+            super::default_commands::ensure_default_links_complete()
+        }
         Some(SettingsCommands::List {
             categories_only,
             category_filter,

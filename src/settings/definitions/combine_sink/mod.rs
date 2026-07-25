@@ -8,7 +8,7 @@ use std::collections::HashSet;
 
 use anyhow::Result;
 
-use crate::menu_utils::{ChecklistResult, FzfResult, FzfWrapper, Header};
+use crate::menu_utils::{ChecklistResult, FzfResult, FzfWrapper, HeaderBuilder};
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::ui::prelude::*;
@@ -26,7 +26,7 @@ use actions::{
 use config::{
     combine_sink_config_file, get_current_config, get_current_sink_name, is_combined_sink_enabled,
 };
-use menu::{MenuAction, build_header_text, build_items_with_previews, build_menu_items};
+use menu::{MenuAction, build_header, build_items_with_previews, build_menu_items};
 use model::SinkChecklistItem;
 use wpctl::{is_combined_sink_default, list_sinks, set_combined_sink_as_default};
 
@@ -102,7 +102,7 @@ impl Setting for CombinedAudioSink {
                 build_menu_items(currently_enabled, is_default, device_count, &current_name);
 
             // Build custom previews for each item - show actual sink state
-            let header_text = build_header_text(currently_enabled, &current_name, device_count);
+            let header = build_header(currently_enabled, &current_name, device_count);
 
             // Build items with computed previews
             let items_with_preview = build_items_with_previews(
@@ -116,7 +116,7 @@ impl Setting for CombinedAudioSink {
             // Use FzfWrapper to show menu with previews
             let result = FzfWrapper::builder()
                 .prompt("Select action")
-                .header(Header::default(&header_text))
+                .header(header)
                 .select_padded(items_with_preview)?;
 
             match result {
@@ -167,8 +167,10 @@ impl Setting for CombinedAudioSink {
                             })
                             .collect();
 
-                        let header_text = "Select at least 2 audio devices to combine\nSelected devices will receive audio simultaneously.".to_string();
-                        let header = Header::default(&header_text);
+                        let header = HeaderBuilder::new(NerdFont::VolumeUp, "Select Audio Devices")
+                            .subtitle("Select at least 2 devices to combine")
+                            .subtitle("Selected devices receive audio simultaneously")
+                            .build();
 
                         let result = FzfWrapper::builder()
                             .prompt("Select devices")

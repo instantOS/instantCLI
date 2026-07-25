@@ -8,9 +8,9 @@
 use anyhow::{Context, Result};
 
 use crate::menu_utils::{
-    Header, MenuCursor, select_one_with_style_at, select_one_with_style_at_header,
+    HeaderBuilder, MenuCursor, select_one_with_style_at, select_one_with_style_at_header,
 };
-use crate::ui::catppuccin::{colors, format_icon_colored, hex_to_ansi_fg};
+use crate::ui::catppuccin::colors;
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::prelude::*;
 
@@ -57,12 +57,18 @@ enum MenuAction {
 }
 
 /// Build the main menu items from the database.
+///
+/// Options are placed at the top so they are always immediately accessible;
+/// individual notifications follow below.
 fn build_main_items(db: &NotifyDb, daemon_running: bool) -> Result<(Vec<NotifyMainItem>, i64)> {
     let notifications = db.list()?;
     let unread = db.unread_count()?;
 
     let mut items: Vec<NotifyMainItem> = Vec::new();
 
+    // Options at the top
+    items.push(NotifyMainItem::Close);
+    items.push(NotifyMainItem::Options);
     if !daemon_running {
         items.push(NotifyMainItem::EnableCapture);
     }
@@ -78,10 +84,6 @@ fn build_main_items(db: &NotifyDb, daemon_running: bool) -> Result<(Vec<NotifyMa
             read: n.read,
         }));
     }
-
-    // Options and close at the bottom
-    items.push(NotifyMainItem::Options);
-    items.push(NotifyMainItem::Close);
 
     Ok((items, unread))
 }
@@ -104,18 +106,27 @@ fn run_main_menu(
         return Ok(MenuAction::Exit);
     }
 
-    let initial_index = cursor.initial_index(&items);
-    let bell = format_icon_colored(NerdFont::Bell, colors::MAUVE);
-    let unread_icon = format_icon_colored(NerdFont::EnvelopeOpen, colors::YELLOW);
-    let count_color = hex_to_ansi_fg(if unread > 0 {
+    // When the menu is opened fresh (no prior cursor state), default to the
+    // first notification — the options at the top are always visible and
+    // immediately accessible via a single up-arrow press.
+    let initial_index = cursor.initial_index(&items).or_else(|| {
+        items
+            .iter()
+            .position(|item| matches!(item, NotifyMainItem::Notification(_)))
+    });
+    let count_color = if unread > 0 {
         colors::YELLOW
     } else {
         colors::SUBTEXT0
-    });
-    let header =
-        format!("{bell} Notification Center\n{unread_icon} {count_color}{unread} unread\x1b[0m");
-    let selection =
-        select_one_with_style_at_header(items.clone(), initial_index, Header::fancy(&header))?;
+    };
+    let header = HeaderBuilder::new(NerdFont::Bell, "Notification Center")
+        .status(
+            NerdFont::EnvelopeOpen,
+            format!("{unread} unread"),
+            count_color,
+        )
+        .build();
+    let selection = select_one_with_style_at_header(items.clone(), initial_index, header)?;
 
     let action = match selection {
         Some(NotifyMainItem::Notification(n)) => {

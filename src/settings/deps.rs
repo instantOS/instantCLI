@@ -171,6 +171,15 @@ pub static AWWW: Dependency = Dependency {
     tests: &[InstallTest::WhichSucceeds("awww")],
 };
 
+pub static SWAYBG: Dependency = Dependency {
+    name: "swaybg",
+    packages: &[
+        PackageDefinition::new("swaybg", PackageManager::Pacman),
+        PackageDefinition::new("swaybg", PackageManager::Apt),
+    ],
+    tests: &[InstallTest::WhichSucceeds("swaybg")],
+};
+
 pub static ZENITY: Dependency = Dependency {
     name: "Zenity dialogs",
     packages: &[

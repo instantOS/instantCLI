@@ -5,7 +5,8 @@ use anyhow::{Context, Result};
 use crate::common::shell::shell_quote;
 use crate::common::systemd::{ServiceScope, SystemdManager};
 use crate::menu_utils::{
-    DecodedStreamingMenuItem, FzfPreview, FzfResult, FzfSelectable, FzfWrapper, Header, MenuItem,
+    DecodedStreamingMenuItem, FzfPreview, FzfResult, FzfSelectable, FzfWrapper, Header,
+    HeaderBuilder, MenuItem,
 };
 use crate::settings::systemd_list;
 use crate::settings::systemd_list::SystemdServiceSelectionPayload;
@@ -459,10 +460,17 @@ fn select_service_action(service: &ServiceItem) -> Result<ServiceAction> {
         service,
     )));
 
-    let header = format!("{} ({})", service.name, status_text);
+    let status_color = if is_active {
+        colors::GREEN
+    } else {
+        colors::YELLOW
+    };
+    let header = HeaderBuilder::new(NerdFont::Server, &service.name)
+        .status(NerdFont::Activity, status_text, status_color)
+        .build();
 
     let result = FzfWrapper::builder()
-        .header(Header::fancy(&header))
+        .header(header)
         .prompt("Action")
         .args(crate::ui::catppuccin::fzf_mocha_args())
         .responsive_layout()

@@ -4,7 +4,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
 
-use crate::menu_utils::{ConfirmResult, FzfPreview, FzfResult, FzfSelectable, FzfWrapper, Header};
+use crate::menu_utils::{
+    ConfirmResult, FzfPreview, FzfResult, FzfSelectable, FzfWrapper, Header, HeaderBuilder,
+};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -572,10 +574,11 @@ fn prompt_output_conflict(output_path: &Path) -> Result<Option<OutputConflictCho
     ];
 
     let selection = FzfWrapper::builder()
-        .header(Header::default(&format!(
-            "Output already exists:\n{}",
-            path_display
-        )))
+        .header(
+            HeaderBuilder::new(NerdFont::Warning, "Output Already Exists")
+                .field("Output", &path_display)
+                .build(),
+        )
         .prompt("Select")
         .args(fzf_mocha_args())
         .responsive_layout()
@@ -685,12 +688,15 @@ impl FzfSelectable for PostRenderAction {
 fn show_post_render_menu(output_path: &Path, elapsed: Option<std::time::Duration>) -> Result<()> {
     let path_display = output_path.display().to_string();
 
-    let header_text = if let Some(elapsed) = elapsed {
-        let duration_str = format_render_duration(elapsed);
-        format!("Render complete in {duration_str}\n{path_display}")
-    } else {
-        path_display.clone()
-    };
+    let mut header =
+        HeaderBuilder::new(NerdFont::CheckCircle, "Render Complete").field("Output", &path_display);
+    if let Some(elapsed) = elapsed {
+        header = header.status(
+            NerdFont::Timer,
+            format_render_duration(elapsed),
+            colors::GREEN,
+        );
+    }
 
     let entries = vec![
         PostRenderAction::OpenVideo,
@@ -699,7 +705,7 @@ fn show_post_render_menu(output_path: &Path, elapsed: Option<std::time::Duration
     ];
 
     let result = FzfWrapper::builder()
-        .header(Header::default(&header_text))
+        .header(header.build())
         .prompt("Select")
         .args(fzf_mocha_args())
         .responsive_layout()
