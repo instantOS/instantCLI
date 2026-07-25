@@ -4,10 +4,11 @@
 
 use anyhow::Result;
 
+use crate::common::display_server::DisplayServer;
 use crate::common::package::InstallResult;
 use crate::common::systemd::SystemdManager;
 use crate::settings::context::SettingsContext;
-use crate::settings::deps::CLIPMENU;
+use crate::settings::deps::{CLIPHIST, CLIPMENU};
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::ui::prelude::*;
 
@@ -24,7 +25,6 @@ impl Setting for ClipboardManager {
             .title("Clipboard History")
             .icon(NerdFont::Clipboard)
             .summary("Remember your copy/paste history so you can access previously copied items.\n\nWhen enabled, you can paste from your clipboard history instead of just the last copied item.")
-            .requirements(vec![&CLIPMENU])
             .build()
     }
 
@@ -36,14 +36,13 @@ impl Setting for ClipboardManager {
     fn get_display_state(&self, _ctx: &SettingsContext) -> crate::settings::setting::SettingState {
         use crate::settings::setting::SettingState;
 
-        // Check if package is installed first
-        if !CLIPMENU.is_installed() {
+        let (dependency, service) = clipboard_backend();
+        if !dependency.is_installed() {
             return SettingState::Toggle { enabled: false };
         }
 
-        // Check systemd service status
         let systemd = SystemdManager::user();
-        let enabled = systemd.is_enabled("clipmenud") || systemd.is_active("clipmenud");
+        let enabled = systemd.is_enabled(service) || systemd.is_active(service);
 
         SettingState::Toggle { enabled }
     }
@@ -60,11 +59,10 @@ impl Setting for ClipboardManager {
         // Toggle logic
         let should_enable = !currently_enabled;
 
-        const CLIPMENU_SERVICE: &str = "clipmenud";
+        let (dependency, service) = clipboard_backend();
 
         if should_enable {
-            // Ensure package is installed before trying to enable service
-            match CLIPMENU.ensure()? {
+            match dependency.ensure()? {
                 InstallResult::Installed | InstallResult::AlreadyInstalled => {}
                 _ => {
                     ctx.emit_info(
@@ -76,22 +74,38 @@ impl Setting for ClipboardManager {
             }
 
             let systemd = SystemdManager::user();
-            if !systemd.is_enabled(CLIPMENU_SERVICE) {
-                systemd.enable_and_start(CLIPMENU_SERVICE)?;
-            } else if !systemd.is_active(CLIPMENU_SERVICE) {
-                systemd.start(CLIPMENU_SERVICE)?;
+            let other_service = if service == "cliphist.service" {
+                "clipmenud.service"
+            } else {
+                "cliphist.service"
+            };
+            if systemd.is_enabled(other_service) || systemd.is_active(other_service) {
+                systemd.disable_and_stop(other_service)?;
+            }
+            if !systemd.is_enabled(service) {
+                systemd.enable_and_start(service)?;
+            } else if !systemd.is_active(service) {
+                systemd.start(service)?;
             }
 
             ctx.notify("Clipboard manager", "Clipboard history enabled");
         } else {
             // Disable
             let systemd = SystemdManager::user();
-            if systemd.is_enabled(CLIPMENU_SERVICE) || systemd.is_active(CLIPMENU_SERVICE) {
-                systemd.disable_and_stop(CLIPMENU_SERVICE)?;
+            if systemd.is_enabled(service) || systemd.is_active(service) {
+                systemd.disable_and_stop(service)?;
                 ctx.notify("Clipboard manager", "Clipboard history disabled");
             }
         }
 
         Ok(())
+    }
+}
+
+fn clipboard_backend() -> (&'static crate::common::package::Dependency, &'static str) {
+    if DisplayServer::detect().is_wayland() {
+        (&CLIPHIST, "cliphist.service")
+    } else {
+        (&CLIPMENU, "clipmenud.service")
     }
 }

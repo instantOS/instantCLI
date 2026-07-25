@@ -4,6 +4,7 @@ mod all_menu;
 mod arch;
 mod assist;
 mod autostart;
+mod clip;
 mod common;
 mod completions;
 mod debug;
@@ -158,6 +159,14 @@ enum Commands {
         #[command(subcommand)]
         command: Option<notify::NotifyCommands>,
         /// Open the notification center in a GUI terminal window
+        #[arg(long = "gui")]
+        gui: bool,
+    },
+    /// Clipboard history
+    Clip {
+        #[command(subcommand)]
+        command: Option<clip::ClipCommands>,
+        /// Open clipboard history in a GUI terminal window
         #[arg(long = "gui")]
         gui: bool,
     },
@@ -320,6 +329,12 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
             execute_with_error_handling(
                 notify::handle_notify_command(command, *gui, cli.debug).await,
                 "Error handling notify command",
+            )?;
+        }
+        Some(Commands::Clip { command, gui }) => {
+            execute_with_error_handling(
+                clip::handle_clip_command(command, *gui, cli.debug),
+                "Error handling clip command",
             )?;
         }
         Some(Commands::Preview { id, key }) => {

@@ -15,6 +15,12 @@ pub static CLIPMENU: Dependency = Dependency {
     tests: &[InstallTest::WhichSucceeds("clipmenud")],
 };
 
+pub static CLIPHIST: Dependency = Dependency {
+    name: "cliphist",
+    packages: &[PackageDefinition::new("cliphist", PackageManager::Pacman)],
+    tests: &[InstallTest::WhichSucceeds("cliphist")],
+};
+
 // =============================================================================
 // Storage
 // =============================================================================
