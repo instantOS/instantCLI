@@ -164,7 +164,15 @@ fn load_clipmenu() -> Result<Vec<ClipEntry>> {
 }
 
 pub fn find(backend: ClipBackend, id: &str) -> Result<ClipEntry> {
-    let matches: Vec<_> = load(backend)?
+    find_entry(load(backend)?, id)
+}
+
+pub fn find_entry(entries: Vec<ClipEntry>, id: &str) -> Result<ClipEntry> {
+    if let Some(exact) = entries.iter().find(|entry| entry.id == id) {
+        return Ok(exact.clone());
+    }
+
+    let matches: Vec<_> = entries
         .into_iter()
         .filter(|entry| entry.id.starts_with(id))
         .collect();
@@ -366,5 +374,58 @@ mod tests {
         assert_eq!(timestamp("123 example"), 123);
         assert_eq!(timestamp("bad example"), 0);
         assert_eq!(timestamp("missing"), 0);
+    }
+
+    #[test]
+    fn find_entry_prefers_exact_match_over_prefix_matches() {
+        let entries = vec![
+            ClipEntry {
+                id: "2".into(),
+                summary: "two".into(),
+                source: EntrySource::Memory(b"two".to_vec()),
+            },
+            ClipEntry {
+                id: "20".into(),
+                summary: "twenty".into(),
+                source: EntrySource::Memory(b"twenty".to_vec()),
+            },
+            ClipEntry {
+                id: "21".into(),
+                summary: "twenty-one".into(),
+                source: EntrySource::Memory(b"twenty-one".to_vec()),
+            },
+        ];
+
+        let found = find_entry(entries.clone(), "2").unwrap();
+        assert_eq!(found.id, "2");
+        assert_eq!(found.summary, "two");
+
+        let found_twenty = find_entry(entries, "20").unwrap();
+        assert_eq!(found_twenty.id, "20");
+    }
+
+    #[test]
+    fn find_entry_handles_prefix_and_missing_matches() {
+        let entries = vec![
+            ClipEntry {
+                id: "20".into(),
+                summary: "twenty".into(),
+                source: EntrySource::Memory(b"twenty".to_vec()),
+            },
+            ClipEntry {
+                id: "21".into(),
+                summary: "twenty-one".into(),
+                source: EntrySource::Memory(b"twenty-one".to_vec()),
+            },
+        ];
+
+        let err = find_entry(entries.clone(), "2").unwrap_err();
+        assert!(err.to_string().contains("ambiguous"));
+
+        let found = find_entry(entries.clone(), "20").unwrap();
+        assert_eq!(found.id, "20");
+
+        let err_missing = find_entry(entries, "99").unwrap_err();
+        assert!(err_missing.to_string().contains("was not found"));
     }
 }
