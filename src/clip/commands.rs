@@ -28,6 +28,9 @@ pub enum ClipCommands {
     Disable,
     /// Show clipboard history capture status
     Status,
+    /// Render an entry for the interactive preview pane
+    #[command(hide = true)]
+    Preview { id: String },
 }
 
 pub fn handle_clip_command(command: &Option<ClipCommands>, gui: bool, debug: bool) -> Result<()> {
@@ -48,7 +51,14 @@ pub fn handle_clip_command(command: &Option<ClipCommands>, gui: bool, debug: boo
         Some(ClipCommands::Enable) => enable(),
         Some(ClipCommands::Disable) => disable(),
         Some(ClipCommands::Status) => show_status(),
+        Some(ClipCommands::Preview { id }) => preview(id),
     }
+}
+
+fn preview(id: &str) -> Result<()> {
+    let backend = history::ClipBackend::detect()?;
+    let entry = history::find(backend, id)?;
+    super::preview::render(&entry)
 }
 
 fn interactive() -> Result<()> {

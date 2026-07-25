@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::collections::HashSet;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -108,13 +109,6 @@ impl ClipEntry {
             EntrySource::Memory(content) => Ok(content.clone()),
         }
     }
-
-    pub fn preview_command(&self) -> Option<String> {
-        matches!(self.source, EntrySource::Cliphist(_)).then(|| {
-            "cliphist list | awk -F '\\t' -v id=\"$1\" '$1 == id { print; exit }' | cliphist decode"
-                .to_string()
-        })
-    }
 }
 
 pub fn load(backend: ClipBackend) -> Result<Vec<ClipEntry>> {
@@ -154,7 +148,7 @@ fn load_clipmenu() -> Result<Vec<ClipEntry>> {
     };
 
     let mut lines: Vec<&str> = cache.lines().filter(|line| !line.is_empty()).collect();
-    lines.sort_by(|a, b| timestamp(b).cmp(&timestamp(a)));
+    lines.sort_by_key(|line| Reverse(timestamp(line)));
 
     let mut seen = HashSet::new();
     let mut entries = Vec::new();
@@ -203,6 +197,7 @@ fn delete_clipmenu(summary: &str, backing_file: &Path) -> Result<()> {
         .create(true)
         .read(true)
         .write(true)
+        .truncate(false)
         .open(dir.join("lock"))?;
     let _lock = Flock::lock(lock_file, FlockArg::LockExclusive)
         .map_err(|(_, error)| error)
