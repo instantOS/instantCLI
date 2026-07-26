@@ -640,7 +640,7 @@ impl KeyChordNavigator {
         let node = self.nav.current_node.clone();
         let path = self.nav.path.clone();
         let breadcrumb_hovered = self.breadcrumb_hovered;
-        let mut state = self.list_state.clone();
+        let mut state = self.list_state;
         // Mirror the navigation selection into the list state for rendering;
         // the widget updates the scroll offset, which we keep below.
         state.select(self.nav.selected);
@@ -741,12 +741,16 @@ fn title_line() -> Paragraph<'static> {
         Span::raw("  "),
         Span::styled(
             NerdFont::Keyboard.to_string(),
-            Style::default().fg(rgb(colors::MAUVE)).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(rgb(colors::MAUVE))
+                .add_modifier(Modifier::BOLD),
         ),
         Span::raw("  "),
         Span::styled(
             "Chord Menu",
-            Style::default().fg(rgb(colors::TEXT)).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(rgb(colors::TEXT))
+                .add_modifier(Modifier::BOLD),
         ),
     ]))
 }
@@ -756,7 +760,9 @@ fn breadcrumb_line(path: &[String], hovered: bool) -> Paragraph<'static> {
         Span::raw("  "),
         Span::styled(
             NerdFont::Home.to_string(),
-            Style::default().fg(rgb(colors::MAUVE)).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(rgb(colors::MAUVE))
+                .add_modifier(Modifier::BOLD),
         ),
     ];
 
@@ -795,9 +801,7 @@ fn chord_line(chord: &KeyChord, hovered: bool, layout: &RowLayout) -> Line<'stat
         }
         style
     };
-    let gap = |n: usize| -> Span<'static> {
-        Span::styled(" ".repeat(n), paint(Style::default()))
-    };
+    let gap = |n: usize| -> Span<'static> { Span::styled(" ".repeat(n), paint(Style::default())) };
 
     let pointer = Span::styled(
         "▌",
@@ -808,11 +812,7 @@ fn chord_line(chord: &KeyChord, hovered: bool, layout: &RowLayout) -> Line<'stat
         ),
     );
     // Non-hovered rows use a blank pointer column for alignment.
-    let pointer = if hovered {
-        pointer
-    } else {
-        gap(1)
-    };
+    let pointer = if hovered { pointer } else { gap(1) };
 
     let (is_group, badge_color) = match &chord.child {
         KeyChordChild::Node(_) => (true, colors::SAPPHIRE),
@@ -1046,8 +1046,7 @@ mod tests {
     #[test]
     fn go_back_restores_cursor_to_descended_entry() {
         // Root has a single group 'a' (index 0) whose child is leaf 'ab'.
-        let tree =
-            build_chord_tree(&parse_chord_specs(&["ab:Leaf".to_string()]).unwrap()).unwrap();
+        let tree = build_chord_tree(&parse_chord_specs(&["ab:Leaf".to_string()]).unwrap()).unwrap();
         let mut nav = NavState::new(tree);
 
         // Descend into the group; a fresh level starts with no selection.
@@ -1111,8 +1110,7 @@ mod tests {
 
     #[test]
     fn go_back_at_root_is_noop() {
-        let tree =
-            build_chord_tree(&parse_chord_specs(&["ab:Leaf".to_string()]).unwrap()).unwrap();
+        let tree = build_chord_tree(&parse_chord_specs(&["ab:Leaf".to_string()]).unwrap()).unwrap();
         let mut nav = NavState::new(tree);
         nav.move_cursor(1);
         assert_eq!(nav.selected, Some(0));
