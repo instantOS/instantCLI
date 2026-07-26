@@ -208,7 +208,7 @@ impl ConfirmBuilder {
             };
         }
 
-        let header_text = format_message_header(None, self.shared.header.as_ref());
+        let header_text = format_message_header(self.title.as_deref(), self.shared.header.as_ref());
         if !header_text.is_empty() {
             self.shared.header = Some(Header::Manual(header_text));
         }

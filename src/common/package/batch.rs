@@ -8,7 +8,9 @@ use std::collections::HashMap;
 use anyhow::Result;
 
 use super::{Dependency, PackageDefinition, PackageManager};
-use crate::menu_utils::FzfWrapper;
+use crate::menu_utils::{FzfWrapper, Header, HeaderBuilder};
+use crate::ui::catppuccin::{colors, hex_to_ansi_fg};
+use crate::ui::nerd_font::NerdFont;
 
 /// A batch of packages to install, grouped by package manager.
 #[derive(Debug, Default)]
@@ -75,7 +77,49 @@ impl InstallBatch {
         &self.unresolved
     }
 
-    /// Build a message listing all packages to be installed.
+    /// Build a styled FZF menu header listing all packages to be installed.
+    pub fn build_install_header(&self) -> Header {
+        let count = self.package_count();
+        let title = if count == 1 {
+            "Package Installation"
+        } else {
+            "Package Installations"
+        };
+
+        let mut builder = HeaderBuilder::new(NerdFont::Package, title)
+            .subtitle("The following packages will be installed:");
+
+        // Sort managers by priority
+        let mut managers: Vec<_> = self.batches.keys().collect();
+        managers.sort_by_key(|m| m.priority());
+
+        let subtext_color = hex_to_ansi_fg(colors::SUBTEXT0);
+        let reset = "\x1b[0m";
+
+        for manager in managers {
+            let packages = &self.batches[manager];
+            if packages.is_empty() {
+                continue;
+            }
+
+            builder = builder.section(manager.display_name());
+            for pkg in packages {
+                let pkg_line = if pkg.dependency_name == pkg.package_def.package_name {
+                    format!("  • {}", pkg.dependency_name)
+                } else {
+                    format!(
+                        "  • {} {subtext_color}({}){reset}",
+                        pkg.dependency_name, pkg.package_def.package_name
+                    )
+                };
+                builder = builder.line(pkg_line);
+            }
+        }
+
+        builder.build()
+    }
+
+    /// Build a plain text message listing all packages to be installed.
     pub fn build_install_message(&self) -> String {
         let mut msg = String::from("The following packages will be installed:\n\n");
 
@@ -89,17 +133,21 @@ impl InstallBatch {
                 continue;
             }
 
-            msg.push_str(&format!("**{}**:\n", manager.display_name()));
+            msg.push_str(&format!("{}:\n", manager.display_name()));
             for pkg in packages {
-                msg.push_str(&format!(
-                    "  • {} ({})\n",
-                    pkg.dependency_name, pkg.package_def.package_name
-                ));
+                if pkg.dependency_name == pkg.package_def.package_name {
+                    msg.push_str(&format!("  • {}\n", pkg.dependency_name));
+                } else {
+                    msg.push_str(&format!(
+                        "  • {} ({})\n",
+                        pkg.dependency_name, pkg.package_def.package_name
+                    ));
+                }
             }
             msg.push('\n');
         }
 
-        msg
+        msg.trim_end().to_string()
     }
 
     /// Prompt the user for confirmation to install all packages.
@@ -109,16 +157,16 @@ impl InstallBatch {
             return Ok(true);
         }
 
-        let mut msg = self.build_install_message();
+        let header = self.build_install_header();
         let (question, yes_text) = if count == 1 {
-            ("\nDo you want to install it?", "Install")
+            ("Do you want to install it?", "Install")
         } else {
-            ("\nDo you want to install all of them?", "Install All")
+            ("Do you want to install all of them?", "Install All")
         };
-        msg.push_str(question);
 
         let should_install = FzfWrapper::builder()
-            .confirm(&msg)
+            .header(header)
+            .confirm(question)
             .yes_text(yes_text)
             .no_text("Cancel")
             .confirm_dialog()?;

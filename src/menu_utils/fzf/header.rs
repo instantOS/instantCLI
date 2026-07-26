@@ -42,6 +42,21 @@ impl HeaderBuilder {
         self
     }
 
+    /// Add a custom styled line to the header.
+    pub fn line(mut self, text: impl AsRef<str>) -> Self {
+        self.lines.push(text.as_ref().to_string());
+        self
+    }
+
+    /// Add a section heading (bold accent-colored text with colon).
+    pub fn section(mut self, title: impl AsRef<str>) -> Self {
+        let color = hex_to_ansi_fg(colors::BLUE);
+        let bold = "\x1b[1m";
+        self.lines
+            .push(format!("{bold}{color}{}{RESET}:", title.as_ref()));
+        self
+    }
+
     /// Add a labeled contextual value.
     pub fn field(mut self, label: impl AsRef<str>, value: impl AsRef<str>) -> Self {
         let subtext = hex_to_ansi_fg(colors::SUBTEXT0);

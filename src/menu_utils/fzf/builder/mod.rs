@@ -93,6 +93,7 @@ pub struct ConfirmBuilder {
     pub(crate) shared: SharedConfig,
     pub(crate) yes_text: String,
     pub(crate) no_text: String,
+    pub(crate) title: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -325,11 +326,27 @@ impl FzfBuilder {
 
     pub fn confirm<S: Into<String>>(self, message: S) -> ConfirmBuilder {
         let mut shared = self.shared.with_dialog_args(confirm_args());
-        shared.header = Some(Header::Default(message.into()));
+        let message_str = message.into();
+        if let Some(existing) = shared.header.take() {
+            match existing {
+                Header::Fancy(text) => {
+                    shared.header = Some(Header::Fancy(format!("{text}\n\n{message_str}")));
+                }
+                Header::Default(text) => {
+                    shared.header = Some(Header::Default(format!("{text}\n\n{message_str}")));
+                }
+                Header::Manual(text) => {
+                    shared.header = Some(Header::Manual(format!("{text}\n\n{message_str}")));
+                }
+            }
+        } else {
+            shared.header = Some(Header::Default(message_str));
+        }
         ConfirmBuilder {
             shared,
             yes_text: "Yes".to_string(),
             no_text: "No".to_string(),
+            title: None,
         }
     }
 
@@ -460,6 +477,16 @@ impl ConfirmBuilder {
 
     pub fn no_text<S: Into<String>>(mut self, text: S) -> Self {
         self.no_text = text.into();
+        self
+    }
+
+    pub fn title<S: Into<String>>(mut self, title: S) -> Self {
+        self.title = Some(title.into());
+        self
+    }
+
+    pub fn header<H: Into<Header>>(mut self, header: H) -> Self {
+        self.shared.header = Some(header.into());
         self
     }
 }
