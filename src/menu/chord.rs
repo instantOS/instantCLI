@@ -343,11 +343,102 @@ fn build_node(prefix: &str, nodes: &BTreeMap<String, NodeBuilder>) -> KeyChordNo
     )
 }
 
-struct KeyChordNavigator {
-    terminal: Terminal<CrosstermBackend<std::io::Stdout>>,
-    history: Vec<(KeyChordNode, Vec<String>)>,
+/// Pure navigation state for the chord tree, independent of the terminal.
+///
+/// Keeping the cursor (`selected`) and the back-stack here — rather than on the
+/// terminal-coupled navigator — makes descent/back logic unit-testable. The
+/// navigator mirrors `selected` into a `ListState` purely for rendering, which
+/// is also where the scroll offset lives.
+///
+/// The back-stack remembers the index of the chord each level was descended
+/// from, so going back restores the cursor onto the entry the user just entered
+/// instead of dropping back to "nothing selected".
+struct NavState {
     current_node: KeyChordNode,
     path: Vec<String>,
+    /// Back-stack: (parent node, parent breadcrumb path, index of the chord
+    /// descended from at the parent level).
+    history: Vec<(KeyChordNode, Vec<String>, usize)>,
+    selected: Option<usize>,
+}
+
+impl NavState {
+    fn new(root: KeyChordNode) -> Self {
+        Self {
+            current_node: root,
+            path: Vec::new(),
+            history: Vec::new(),
+            selected: None,
+        }
+    }
+
+    /// Descend into a child node, recording the parent (and the index of the
+    /// chord we came from) so `go_back` can restore the cursor there.
+    fn descend(&mut self, from_idx: usize, description: String, node: KeyChordNode) {
+        let parent = std::mem::replace(&mut self.current_node, node);
+        self.history.push((parent, self.path.clone(), from_idx));
+        self.path.push(description);
+        // A fresh level starts with no selection so the first cursor-down lands
+        // on item 0 rather than pre-selecting an arbitrary row.
+        self.selected = None;
+    }
+
+    /// Navigate back one level. Returns `true` if it moved back, `false` at the
+    /// root. Restores the cursor to the chord the user descended from.
+    fn go_back(&mut self) -> bool {
+        if let Some((node, path, idx)) = self.history.pop() {
+            self.current_node = node;
+            self.path = path;
+            self.selected = Some(idx);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Move the cursor by `delta` positions (clamped). When nothing is selected
+    /// yet the cursor starts "before" the first item so the first step down
+    /// lands on item 0.
+    fn move_cursor(&mut self, delta: i32) {
+        let len = self.current_node.chords.len();
+        if len == 0 {
+            return;
+        }
+        let current = self.selected.map(|i| i as i32).unwrap_or(-1);
+        let next = (current + delta).clamp(0, len as i32 - 1) as usize;
+        self.selected = Some(next);
+    }
+
+    /// Activate the chord at `idx`. Descends into groups, exits on leaves.
+    fn activate_index(&mut self, idx: usize) -> Activation {
+        let Some(chord) = self.current_node.chords.get(idx).cloned() else {
+            return Activation::Continue;
+        };
+        match chord.child {
+            KeyChordChild::Leaf(action) => Activation::Exit(Some(action.id)),
+            KeyChordChild::Node(node) => {
+                self.descend(idx, chord.description, node);
+                Activation::Continue
+            }
+        }
+    }
+
+    /// Activate the chord bound to `key`, if any. Used for letter-key entry.
+    fn activate_by_key(&mut self, key: &KeyCode) -> Option<Activation> {
+        let idx = self
+            .current_node
+            .chords
+            .iter()
+            .position(|c| &c.key == key)?;
+        Some(self.activate_index(idx))
+    }
+}
+
+struct KeyChordNavigator {
+    terminal: Terminal<CrosstermBackend<std::io::Stdout>>,
+    nav: NavState,
+    /// Render mirror: carries the scroll offset (updated by the list widget);
+    /// its `selected` is refreshed from `nav.selected` on every draw.
     list_state: ListState,
     /// List content area from the last draw, used to map mouse rows to items.
     list_area: Rect,
@@ -370,9 +461,7 @@ impl KeyChordNavigator {
 
         Ok(Self {
             terminal,
-            history: Vec::new(),
-            current_node: root,
-            path: Vec::new(),
+            nav: NavState::new(root),
             list_state: ListState::default(),
             list_area: Rect::default(),
             breadcrumb_row: 0,
@@ -407,7 +496,7 @@ impl KeyChordNavigator {
                         | KeyCode::Backspace
                         | KeyCode::Char('q')
                         | KeyCode::Char('Q') => {
-                            if self.go_back() {
+                            if self.nav_go_back() {
                                 needs_redraw = true;
                             } else {
                                 break;
@@ -417,48 +506,51 @@ impl KeyChordNavigator {
                         // NOTE: only non-letter keys are used here — letters are
                         // valid chord keys and must fall through to chord lookup.
                         KeyCode::Up => {
-                            self.move_cursor(-1);
+                            self.nav.move_cursor(-1);
                             needs_redraw = true;
                         }
                         KeyCode::Down => {
-                            self.move_cursor(1);
+                            self.nav.move_cursor(1);
                             needs_redraw = true;
                         }
                         KeyCode::PageUp => {
-                            self.move_cursor(-5);
+                            self.nav.move_cursor(-5);
                             needs_redraw = true;
                         }
                         KeyCode::PageDown => {
-                            self.move_cursor(5);
+                            self.nav.move_cursor(5);
                             needs_redraw = true;
                         }
                         KeyCode::Left => {
                             // Go back one level (no quit at root).
-                            if self.go_back() {
+                            if self.nav_go_back() {
                                 needs_redraw = true;
                             }
                         }
                         KeyCode::Enter | KeyCode::Right => {
-                            let idx = self.list_state.selected().unwrap_or(0);
-                            match self.activate_index(idx) {
+                            let idx = self.nav.selected.unwrap_or(0);
+                            match self.nav.activate_index(idx) {
                                 Activation::Exit(result) => {
                                     self.cleanup()?;
                                     return Ok(result);
                                 }
-                                Activation::Continue => needs_redraw = true,
+                                Activation::Continue => {
+                                    self.breadcrumb_hovered = false;
+                                    needs_redraw = true;
+                                }
                             }
                         }
                         code => {
                             if key_event.modifiers.is_empty()
-                                && let Some(chord) = self.current_node.find_chord(&code).cloned()
+                                && let Some(activation) = self.nav.activate_by_key(&code)
                             {
-                                match chord.child {
-                                    KeyChordChild::Leaf(action) => {
+                                match activation {
+                                    Activation::Exit(result) => {
                                         self.cleanup()?;
-                                        return Ok(Some(action.id));
+                                        return Ok(result);
                                     }
-                                    KeyChordChild::Node(node) => {
-                                        self.descend(node, chord.description);
+                                    Activation::Continue => {
+                                        self.breadcrumb_hovered = false;
                                         needs_redraw = true;
                                     }
                                 }
@@ -475,9 +567,9 @@ impl KeyChordNavigator {
                         // Only take over the highlight when actually hovering an
                         // item; otherwise leave a keyboard/scroll selection intact.
                         if let Some(idx) = self.list_index_at(mouse.row)
-                            && self.list_state.selected() != Some(idx)
+                            && self.nav.selected != Some(idx)
                         {
-                            self.list_state.select(Some(idx));
+                            self.nav.selected = Some(idx);
                             changed = true;
                         }
 
@@ -486,25 +578,28 @@ impl KeyChordNavigator {
                         }
                     }
                     MouseEventKind::Down(MouseButton::Left) => {
-                        if self.is_over_breadcrumb(mouse.row) && !self.path.is_empty() {
-                            self.go_back();
+                        if self.is_over_breadcrumb(mouse.row) && !self.nav.path.is_empty() {
+                            self.nav_go_back();
                             needs_redraw = true;
                         } else if let Some(idx) = self.list_index_at(mouse.row) {
-                            match self.activate_index(idx) {
+                            match self.nav.activate_index(idx) {
                                 Activation::Exit(result) => {
                                     self.cleanup()?;
                                     return Ok(result);
                                 }
-                                Activation::Continue => needs_redraw = true,
+                                Activation::Continue => {
+                                    self.breadcrumb_hovered = false;
+                                    needs_redraw = true;
+                                }
                             }
                         }
                     }
                     MouseEventKind::ScrollDown => {
-                        self.move_cursor(1);
+                        self.nav.move_cursor(1);
                         needs_redraw = true;
                     }
                     MouseEventKind::ScrollUp => {
-                        self.move_cursor(-1);
+                        self.nav.move_cursor(-1);
                         needs_redraw = true;
                     }
                     _ => {}
@@ -518,56 +613,13 @@ impl KeyChordNavigator {
         Ok(None)
     }
 
-    /// Descend into a child node, recording history + breadcrumb segment.
-    fn descend(&mut self, node: KeyChordNode, description: String) {
-        let parent = std::mem::replace(&mut self.current_node, node);
-        self.history.push((parent, self.path.clone()));
-        self.path.push(description);
-        self.reset_cursor();
-    }
-
-    /// Navigate back one level. Returns `true` if it moved back, `false` at root.
-    fn go_back(&mut self) -> bool {
-        if let Some((node, path)) = self.history.pop() {
-            self.current_node = node;
-            self.path = path;
-            self.reset_cursor();
-            true
-        } else {
-            false
+    /// Go back one level, clearing stale breadcrumb hover when the view changes.
+    fn nav_go_back(&mut self) -> bool {
+        let moved = self.nav.go_back();
+        if moved {
+            self.breadcrumb_hovered = false;
         }
-    }
-
-    fn reset_cursor(&mut self) {
-        self.list_state.select(None);
-        self.breadcrumb_hovered = false;
-    }
-
-    /// Move the highlight cursor by `delta` positions (clamped to the list).
-    /// When nothing is selected yet, the cursor starts "before" the first item
-    /// so the first step down lands on item 0.
-    fn move_cursor(&mut self, delta: i32) {
-        let len = self.current_node.chords.len();
-        if len == 0 {
-            return;
-        }
-        let current = self.list_state.selected().map(|i| i as i32).unwrap_or(-1);
-        let next = (current + delta).clamp(0, len as i32 - 1) as usize;
-        self.list_state.select(Some(next));
-    }
-
-    /// Activate the chord at `idx` (from click or Enter). May exit on a leaf.
-    fn activate_index(&mut self, idx: usize) -> Activation {
-        let Some(chord) = self.current_node.chords.get(idx).cloned() else {
-            return Activation::Continue;
-        };
-        match chord.child {
-            KeyChordChild::Leaf(action) => Activation::Exit(Some(action.id)),
-            KeyChordChild::Node(node) => {
-                self.descend(node, chord.description);
-                Activation::Continue
-            }
-        }
+        moved
     }
 
     /// Map an absolute terminal row to a chord index (accounting for scroll).
@@ -577,7 +629,7 @@ impl KeyChordNavigator {
             return None;
         }
         let index = self.list_state.offset() + (row - area.y) as usize;
-        (index < self.current_node.chords.len()).then_some(index)
+        (index < self.nav.current_node.chords.len()).then_some(index)
     }
 
     fn is_over_breadcrumb(&self, row: u16) -> bool {
@@ -585,10 +637,13 @@ impl KeyChordNavigator {
     }
 
     fn draw(&mut self) -> Result<()> {
-        let node = self.current_node.clone();
-        let path = self.path.clone();
+        let node = self.nav.current_node.clone();
+        let path = self.nav.path.clone();
         let breadcrumb_hovered = self.breadcrumb_hovered;
         let mut state = self.list_state.clone();
+        // Mirror the navigation selection into the list state for rendering;
+        // the widget updates the scroll offset, which we keep below.
+        state.select(self.nav.selected);
         let mut list_area = Rect::default();
         let mut breadcrumb_row = 0u16;
 
@@ -986,5 +1041,83 @@ mod tests {
     fn rejects_duplicate_sequences() {
         let specs = vec!["aa:First".to_string(), "aa:Second".to_string()];
         assert!(parse_chord_specs(&specs).is_err());
+    }
+
+    #[test]
+    fn go_back_restores_cursor_to_descended_entry() {
+        // Root has a single group 'a' (index 0) whose child is leaf 'ab'.
+        let tree =
+            build_chord_tree(&parse_chord_specs(&["ab:Leaf".to_string()]).unwrap()).unwrap();
+        let mut nav = NavState::new(tree);
+
+        // Descend into the group; a fresh level starts with no selection.
+        assert!(matches!(nav.activate_index(0), Activation::Continue));
+        assert_eq!(nav.selected, None);
+
+        // Going back must land the cursor on the entry we just entered.
+        assert!(nav.go_back());
+        assert_eq!(nav.selected, Some(0));
+    }
+
+    #[test]
+    fn go_back_restores_nonzero_index() {
+        // Two top-level groups so we can descend from index 1.
+        let tree = build_chord_tree(
+            &parse_chord_specs(&["ab:First".to_string(), "cd:Second".to_string()]).unwrap(),
+        )
+        .unwrap();
+        let mut nav = NavState::new(tree);
+
+        assert!(matches!(nav.activate_index(1), Activation::Continue));
+        assert_eq!(nav.selected, None);
+
+        assert!(nav.go_back());
+        assert_eq!(nav.selected, Some(1));
+    }
+
+    #[test]
+    fn go_back_restores_after_key_descent() {
+        // The letter-key entry path must also remember its source index.
+        let tree = build_chord_tree(
+            &parse_chord_specs(&["ab:First".to_string(), "cd:Second".to_string()]).unwrap(),
+        )
+        .unwrap();
+        let mut nav = NavState::new(tree);
+
+        // Press 'c' to descend into the second group (index 1).
+        assert!(matches!(
+            nav.activate_by_key(&KeyCode::Char('c')),
+            Some(Activation::Continue)
+        ));
+        assert!(nav.go_back());
+        assert_eq!(nav.selected, Some(1));
+    }
+
+    #[test]
+    fn descend_starts_new_level_unselected() {
+        // After descending, the new level must have no preselected entry so the
+        // first cursor-down lands on item 0 (regression guard).
+        let tree = build_chord_tree(
+            &parse_chord_specs(&["ab:First".to_string(), "cd:Second".to_string()]).unwrap(),
+        )
+        .unwrap();
+        let mut nav = NavState::new(tree);
+        nav.move_cursor(1); // root: nothing -> select index 0
+        assert_eq!(nav.selected, Some(0));
+
+        assert!(matches!(nav.activate_index(0), Activation::Continue));
+        assert_eq!(nav.selected, None);
+    }
+
+    #[test]
+    fn go_back_at_root_is_noop() {
+        let tree =
+            build_chord_tree(&parse_chord_specs(&["ab:Leaf".to_string()]).unwrap()).unwrap();
+        let mut nav = NavState::new(tree);
+        nav.move_cursor(1);
+        assert_eq!(nav.selected, Some(0));
+
+        assert!(!nav.go_back()); // at root: nothing to pop
+        assert_eq!(nav.selected, Some(0)); // selection untouched
     }
 }

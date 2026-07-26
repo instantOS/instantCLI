@@ -36,10 +36,6 @@ impl KeyChordNode {
             chords,
         }
     }
-
-    pub fn find_chord(&self, key: &KeyCode) -> Option<&KeyChord> {
-        self.chords.iter().find(|chord| chord.key == *key)
-    }
 }
 
 #[derive(Clone, Debug)]
