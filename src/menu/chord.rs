@@ -3,21 +3,46 @@ use std::io::stdout;
 use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
-use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
+use crossterm::event::{
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers,
+    MouseButton, MouseEventKind,
+};
 use crossterm::execute;
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
-use ratatui::layout::{Alignment, Constraint, Direction, Layout};
+use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, List, ListItem, Paragraph};
+use ratatui::widgets::{Clear, List, ListItem, ListState, Paragraph};
 
 use crate::menu_utils::{KeyChord, KeyChordAction, KeyChordChild, KeyChordNode};
+use crate::ui::catppuccin::colors;
+use crate::ui::nerd_font::NerdFont;
 
 const POLL_TIMEOUT: Duration = Duration::from_millis(200);
+
+/// Converts a Catppuccin hex color (`#RRGGBB`) into a ratatui `Color::Rgb`.
+fn rgb(hex: &str) -> Color {
+    let hex = hex.trim_start_matches('#');
+    if hex.len() != 6 {
+        return Color::Reset;
+    }
+    let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0);
+    let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0);
+    let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0);
+    Color::Rgb(r, g, b)
+}
+
+/// Outcome of activating (clicking / pressing Enter on) a chord entry.
+enum Activation {
+    /// Stay in the menu (e.g. descended into a group).
+    Continue,
+    /// Leave the menu with a result (`Some`) or cancellation (`None`).
+    Exit(Option<String>),
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ChordSpec {
@@ -187,6 +212,13 @@ struct KeyChordNavigator {
     history: Vec<(KeyChordNode, Vec<String>)>,
     current_node: KeyChordNode,
     path: Vec<String>,
+    list_state: ListState,
+    /// List content area from the last draw, used to map mouse rows to items.
+    list_area: Rect,
+    /// Breadcrumb row (absolute y) from the last draw, used for click detection.
+    breadcrumb_row: u16,
+    /// Whether the mouse currently hovers over the (clickable) breadcrumb row.
+    breadcrumb_hovered: bool,
     cleaned_up: bool,
 }
 
@@ -194,7 +226,7 @@ impl KeyChordNavigator {
     fn new(root: KeyChordNode) -> Result<Self> {
         enable_raw_mode()?;
         let mut stdout = stdout();
-        execute!(stdout, EnterAlternateScreen)?;
+        execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend)?;
         terminal.clear()?;
@@ -205,6 +237,10 @@ impl KeyChordNavigator {
             history: Vec::new(),
             current_node: root,
             path: Vec::new(),
+            list_state: ListState::default(),
+            list_area: Rect::default(),
+            breadcrumb_row: 0,
+            breadcrumb_hovered: false,
             cleaned_up: false,
         })
     }
@@ -235,32 +271,58 @@ impl KeyChordNavigator {
                         | KeyCode::Backspace
                         | KeyCode::Char('q')
                         | KeyCode::Char('Q') => {
-                            if let Some((node, path)) = self.history.pop() {
-                                self.current_node = node;
-                                self.path = path;
+                            if self.go_back() {
                                 needs_redraw = true;
                             } else {
                                 break;
+                            }
+                        }
+                        // Cursor navigation (complements hover / scroll).
+                        // NOTE: only non-letter keys are used here — letters are
+                        // valid chord keys and must fall through to chord lookup.
+                        KeyCode::Up => {
+                            self.move_cursor(-1);
+                            needs_redraw = true;
+                        }
+                        KeyCode::Down => {
+                            self.move_cursor(1);
+                            needs_redraw = true;
+                        }
+                        KeyCode::PageUp => {
+                            self.move_cursor(-5);
+                            needs_redraw = true;
+                        }
+                        KeyCode::PageDown => {
+                            self.move_cursor(5);
+                            needs_redraw = true;
+                        }
+                        KeyCode::Left => {
+                            // Go back one level (no quit at root).
+                            if self.go_back() {
+                                needs_redraw = true;
+                            }
+                        }
+                        KeyCode::Enter | KeyCode::Right => {
+                            let idx = self.list_state.selected().unwrap_or(0);
+                            match self.activate_index(idx) {
+                                Activation::Exit(result) => {
+                                    self.cleanup()?;
+                                    return Ok(result);
+                                }
+                                Activation::Continue => needs_redraw = true,
                             }
                         }
                         code => {
                             if key_event.modifiers.is_empty()
                                 && let Some(chord) = self.current_node.find_chord(&code).cloned()
                             {
-                                let label = key_label(&chord.key);
                                 match chord.child {
                                     KeyChordChild::Leaf(action) => {
-                                        let action_id = action.id;
                                         self.cleanup()?;
-                                        return Ok(Some(action_id));
+                                        return Ok(Some(action.id));
                                     }
                                     KeyChordChild::Node(node) => {
-                                        let breadcrumb =
-                                            format!("{} ({})", label, chord.description);
-                                        self.history
-                                            .push((self.current_node.clone(), self.path.clone()));
-                                        self.current_node = node;
-                                        self.path.push(breadcrumb);
+                                        self.descend(node, chord.description);
                                         needs_redraw = true;
                                     }
                                 }
@@ -268,6 +330,49 @@ impl KeyChordNavigator {
                         }
                     }
                 }
+                Event::Mouse(mouse) => match mouse.kind {
+                    MouseEventKind::Moved => {
+                        let breadcrumb_hovered = self.is_over_breadcrumb(mouse.row);
+                        let mut changed = breadcrumb_hovered != self.breadcrumb_hovered;
+                        self.breadcrumb_hovered = breadcrumb_hovered;
+
+                        // Only take over the highlight when actually hovering an
+                        // item; otherwise leave a keyboard/scroll selection intact.
+                        if let Some(idx) = self.list_index_at(mouse.row)
+                            && self.list_state.selected() != Some(idx)
+                        {
+                            self.list_state.select(Some(idx));
+                            changed = true;
+                        }
+
+                        if changed {
+                            needs_redraw = true;
+                        }
+                    }
+                    MouseEventKind::Down(MouseButton::Left) => {
+                        if self.is_over_breadcrumb(mouse.row) && !self.path.is_empty() {
+                            self.go_back();
+                            needs_redraw = true;
+                        } else if let Some(idx) = self.list_index_at(mouse.row) {
+                            match self.activate_index(idx) {
+                                Activation::Exit(result) => {
+                                    self.cleanup()?;
+                                    return Ok(result);
+                                }
+                                Activation::Continue => needs_redraw = true,
+                            }
+                        }
+                    }
+                    MouseEventKind::ScrollDown => {
+                        self.move_cursor(1);
+                        needs_redraw = true;
+                    }
+                    MouseEventKind::ScrollUp => {
+                        self.move_cursor(-1);
+                        needs_redraw = true;
+                    }
+                    _ => {}
+                },
                 Event::Resize(_, _) => needs_redraw = true,
                 _ => {}
             }
@@ -277,19 +382,90 @@ impl KeyChordNavigator {
         Ok(None)
     }
 
-    fn draw(&mut self) -> Result<()> {
-        let path_display = path_display(&self.path);
-        let node_description = self.current_node.description.clone();
-        let items = chord_items(&self.current_node.chords);
-        let instructions = instructions_line();
+    /// Descend into a child node, recording history + breadcrumb segment.
+    fn descend(&mut self, node: KeyChordNode, description: String) {
+        let parent = std::mem::replace(&mut self.current_node, node);
+        self.history.push((parent, self.path.clone()));
+        self.path.push(description);
+        self.reset_cursor();
+    }
 
-        render_frame(
-            &mut self.terminal,
-            node_description,
-            path_display,
-            items,
-            instructions,
-        )
+    /// Navigate back one level. Returns `true` if it moved back, `false` at root.
+    fn go_back(&mut self) -> bool {
+        if let Some((node, path)) = self.history.pop() {
+            self.current_node = node;
+            self.path = path;
+            self.reset_cursor();
+            true
+        } else {
+            false
+        }
+    }
+
+    fn reset_cursor(&mut self) {
+        self.list_state.select(None);
+        self.breadcrumb_hovered = false;
+    }
+
+    /// Move the highlight cursor by `delta` positions (clamped to the list).
+    /// When nothing is selected yet, the cursor starts "before" the first item
+    /// so the first step down lands on item 0.
+    fn move_cursor(&mut self, delta: i32) {
+        let len = self.current_node.chords.len();
+        if len == 0 {
+            return;
+        }
+        let current = self.list_state.selected().map(|i| i as i32).unwrap_or(-1);
+        let next = (current + delta).clamp(0, len as i32 - 1) as usize;
+        self.list_state.select(Some(next));
+    }
+
+    /// Activate the chord at `idx` (from click or Enter). May exit on a leaf.
+    fn activate_index(&mut self, idx: usize) -> Activation {
+        let Some(chord) = self.current_node.chords.get(idx).cloned() else {
+            return Activation::Continue;
+        };
+        match chord.child {
+            KeyChordChild::Leaf(action) => Activation::Exit(Some(action.id)),
+            KeyChordChild::Node(node) => {
+                self.descend(node, chord.description);
+                Activation::Continue
+            }
+        }
+    }
+
+    /// Map an absolute terminal row to a chord index (accounting for scroll).
+    fn list_index_at(&self, row: u16) -> Option<usize> {
+        let area = self.list_area;
+        if area.height == 0 || row < area.y || row >= area.y + area.height {
+            return None;
+        }
+        let index = self.list_state.offset() + (row - area.y) as usize;
+        (index < self.current_node.chords.len()).then_some(index)
+    }
+
+    fn is_over_breadcrumb(&self, row: u16) -> bool {
+        self.breadcrumb_row != 0 && row == self.breadcrumb_row
+    }
+
+    fn draw(&mut self) -> Result<()> {
+        let node = self.current_node.clone();
+        let path = self.path.clone();
+        let breadcrumb_hovered = self.breadcrumb_hovered;
+        let mut state = self.list_state.clone();
+        let mut list_area = Rect::default();
+        let mut breadcrumb_row = 0u16;
+
+        self.terminal.draw(|frame| {
+            let (la, br) = render_chord_ui(frame, &node, &path, breadcrumb_hovered, &mut state);
+            list_area = la;
+            breadcrumb_row = br;
+        })?;
+
+        self.list_state = state;
+        self.list_area = list_area;
+        self.breadcrumb_row = breadcrumb_row;
+        Ok(())
     }
 
     fn cleanup(&mut self) -> Result<()> {
@@ -298,7 +474,11 @@ impl KeyChordNavigator {
         }
 
         disable_raw_mode()?;
-        execute!(self.terminal.backend_mut(), LeaveAlternateScreen)?;
+        execute!(
+            self.terminal.backend_mut(),
+            LeaveAlternateScreen,
+            DisableMouseCapture
+        )?;
         self.terminal.show_cursor()?;
         self.cleaned_up = true;
         Ok(())
@@ -311,124 +491,176 @@ impl Drop for KeyChordNavigator {
     }
 }
 
-fn path_display(path: &[String]) -> String {
-    if path.is_empty() {
-        "<root>".to_string()
+/// Render a single frame. Returns the list content area and breadcrumb row y
+/// (used by the navigator for mouse hit-testing).
+fn render_chord_ui(
+    frame: &mut ratatui::Frame,
+    node: &KeyChordNode,
+    path: &[String],
+    breadcrumb_hovered: bool,
+    state: &mut ListState,
+) -> (Rect, u16) {
+    let area = frame.area();
+    frame.render_widget(Clear, area);
+
+    let [header_area, list_area, footer_area] = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3), // title + breadcrumb + spacer
+            Constraint::Min(5),    // chord list
+            Constraint::Length(1), // instructions
+        ])
+        .areas(area);
+
+    let [title_row, breadcrumb_row_area, _] = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Length(1), Constraint::Length(1)])
+        .areas(header_area);
+
+    frame.render_widget(title_line(), title_row);
+    frame.render_widget(
+        breadcrumb_line(path, breadcrumb_hovered),
+        breadcrumb_row_area,
+    );
+
+    let selected = state.selected();
+    let items: Vec<ListItem> = node
+        .chords
+        .iter()
+        .enumerate()
+        .map(|(idx, chord)| ListItem::new(chord_line(chord, selected == Some(idx))))
+        .collect();
+
+    let list = List::new(items)
+        .style(Style::default().fg(rgb(colors::TEXT)))
+        .highlight_style(
+            Style::default()
+                .bg(rgb(colors::SURFACE0))
+                .add_modifier(Modifier::BOLD),
+        );
+
+    frame.render_stateful_widget(list, list_area, state);
+    frame.render_widget(footer_line(), footer_area);
+
+    (list_area, breadcrumb_row_area.y)
+}
+
+fn title_line() -> Paragraph<'static> {
+    Paragraph::new(Line::from(vec![
+        Span::raw("  "),
+        Span::styled(
+            NerdFont::Keyboard.to_string(),
+            Style::default().fg(rgb(colors::MAUVE)).add_modifier(Modifier::BOLD),
+        ),
+        Span::raw("  "),
+        Span::styled(
+            "Chord Menu",
+            Style::default().fg(rgb(colors::TEXT)).add_modifier(Modifier::BOLD),
+        ),
+    ]))
+}
+
+fn breadcrumb_line(path: &[String], hovered: bool) -> Paragraph<'static> {
+    let mut spans: Vec<Span<'static>> = vec![
+        Span::raw("  "),
+        Span::styled(
+            NerdFont::Home.to_string(),
+            Style::default().fg(rgb(colors::MAUVE)).add_modifier(Modifier::BOLD),
+        ),
+    ];
+
+    let separator = Style::default().fg(rgb(colors::OVERLAY1));
+
+    for (idx, segment) in path.iter().enumerate() {
+        let is_current = idx == path.len() - 1;
+        let color = if is_current {
+            colors::TEXT
+        } else if hovered {
+            colors::LAVENDER
+        } else {
+            colors::SUBTEXT1
+        };
+        let mut style = Style::default().fg(rgb(color));
+        if is_current {
+            style = style.add_modifier(Modifier::BOLD);
+        }
+        spans.push(Span::raw("  "));
+        spans.push(Span::styled(NerdFont::ChevronRight.to_string(), separator));
+        spans.push(Span::raw(" "));
+        spans.push(Span::styled(segment.clone(), style));
+    }
+
+    Paragraph::new(Line::from(spans))
+}
+
+fn chord_line(chord: &KeyChord, hovered: bool) -> Line<'_> {
+    let pointer = if hovered {
+        Span::styled(
+            "▌",
+            Style::default()
+                .fg(rgb(colors::ROSEWATER))
+                .add_modifier(Modifier::BOLD),
+        )
     } else {
-        path.join("  ›  ")
+        Span::raw(" ")
+    };
+
+    let (key_color, is_group) = match &chord.child {
+        KeyChordChild::Node(_) => (colors::SKY, true),
+        KeyChordChild::Leaf(_) => (colors::GREEN, false),
+    };
+
+    let key = Span::styled(
+        format!(" {} ", key_label(&chord.key)),
+        Style::default()
+            .fg(rgb(key_color))
+            .add_modifier(Modifier::BOLD),
+    );
+
+    let desc_style = if is_group {
+        Style::default()
+            .fg(rgb(colors::TEXT))
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(rgb(colors::TEXT))
+    };
+    let description = Span::styled(&chord.description, desc_style);
+
+    let mut spans = vec![pointer, Span::raw(" "), key, Span::raw("  "), description];
+
+    if is_group {
+        spans.push(Span::raw("   "));
+        spans.push(Span::styled(
+            NerdFont::ChevronRight.to_string(),
+            Style::default().fg(rgb(colors::OVERLAY1)),
+        ));
     }
+
+    Line::from(spans)
 }
 
-fn chord_items<'a>(chords: &'a [KeyChord]) -> Vec<ListItem<'a>> {
-    chords.iter().map(chord_item).collect()
-}
+fn footer_line() -> Paragraph<'static> {
+    let key_hint = Style::default().fg(rgb(colors::SKY));
+    let accent = Style::default().fg(rgb(colors::PEACH));
+    let dim = Style::default().fg(rgb(colors::OVERLAY1));
 
-fn chord_item<'a>(chord: &'a KeyChord) -> ListItem<'a> {
-    match &chord.child {
-        KeyChordChild::Node(node) => chord_node_item(chord, node),
-        KeyChordChild::Leaf(_) => chord_leaf_item(chord),
-    }
-}
-
-fn chord_node_item<'a>(chord: &'a KeyChord, node: &'a KeyChordNode) -> ListItem<'a> {
-    let line = Line::from(vec![
-        Span::styled(
-            format!(" {:>4} ", key_label(&chord.key)),
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::raw("  "),
-        Span::raw(&chord.description),
-        Span::styled(
-            format!("  [{}]", node.description),
-            Style::default().fg(Color::DarkGray),
-        ),
-    ]);
-    ListItem::new(line)
-}
-
-fn chord_leaf_item<'a>(chord: &'a KeyChord) -> ListItem<'a> {
-    let line = Line::from(vec![
-        Span::styled(
-            format!(" {:>4} ", key_label(&chord.key)),
-            Style::default()
-                .fg(Color::Green)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::raw("  "),
-        Span::raw(&chord.description),
-    ]);
-    ListItem::new(line)
-}
-
-fn instructions_line() -> Line<'static> {
-    Line::from(vec![
-        Span::styled("Esc", Style::default().fg(Color::Cyan)),
-        Span::raw("/"),
-        Span::styled("Backspace", Style::default().fg(Color::Cyan)),
-        Span::raw("/"),
-        Span::styled("q/Q", Style::default().fg(Color::Cyan)),
-        Span::raw(" to go back or quit"),
-    ])
-}
-
-fn render_frame<'a>(
-    terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
-    node_description: String,
-    path_display: String,
-    items: Vec<ListItem<'a>>,
-    instructions: Line<'static>,
-) -> Result<()> {
-    terminal.draw(|frame| {
-        let area = frame.area();
-        frame.render_widget(Clear, area);
-
-        let layout = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(3),
-                Constraint::Length(2),
-                Constraint::Min(5),
-                Constraint::Length(1),
-            ])
-            .split(area);
-
-        let title = Paragraph::new(Line::from(vec![
-            Span::styled(
-                "Chord Picker",
-                Style::default()
-                    .fg(Color::Magenta)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::raw(" — "),
-            Span::raw(node_description),
-        ]));
-
-        let path = Paragraph::new(Line::from(vec![
-            Span::styled("Path: ", Style::default().fg(Color::DarkGray)),
-            Span::raw(path_display),
-        ]));
-
-        let list = List::new(items)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title(" Available Chords "),
-            )
-            .highlight_symbol("» ");
-
-        let instruction_para = Paragraph::new(instructions)
-            .alignment(Alignment::Center)
-            .style(Style::default().fg(Color::Gray));
-
-        frame.render_widget(title, layout[0]);
-        frame.render_widget(path, layout[1]);
-        frame.render_widget(list, layout[2]);
-        frame.render_widget(instruction_para, layout[3]);
-    })?;
-
-    Ok(())
+    Paragraph::new(Line::from(vec![
+        Span::styled("Hover", accent),
+        Span::styled(" / ", dim),
+        Span::styled("click", accent),
+        Span::styled(" or press a ", dim),
+        Span::styled("key", key_hint),
+        Span::styled("   ·   ", dim),
+        Span::styled("Esc", key_hint),
+        Span::styled(" / ", dim),
+        Span::styled("Backspace", key_hint),
+        Span::styled(" back", dim),
+        Span::styled("   ·   ", dim),
+        Span::styled("q", key_hint),
+        Span::styled(" quit", dim),
+    ]))
+    .alignment(Alignment::Center)
+    .style(Style::default().fg(rgb(colors::OVERLAY2)))
 }
 
 fn key_label(code: &KeyCode) -> String {
