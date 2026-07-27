@@ -1,15 +1,15 @@
 use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
-use crate::dot::menu::repo_actions::build_repo_preview;
 use crate::dot::repo::DotfileRepositoryManager;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header};
+use crate::preview::{DotRepositoryPreviewPayload, PreviewId, preview_command};
 use crate::ui::catppuccin::fzf_mocha_args;
 use anyhow::{Context, Result};
 
 #[derive(Clone)]
 struct RepoSelectionItem {
     name: String,
-    preview: String,
+    preview_key: String,
 }
 
 impl FzfSelectable for RepoSelectionItem {
@@ -17,27 +17,35 @@ impl FzfSelectable for RepoSelectionItem {
         self.name.clone()
     }
 
+    fn fzf_key(&self) -> String {
+        self.preview_key.clone()
+    }
+
     fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
-        crate::menu::protocol::FzfPreview::Text(self.preview.clone())
+        crate::menu::protocol::FzfPreview::Command(preview_command(PreviewId::DotRepository))
     }
 }
 
-fn select_repo_interactive(
-    config: &DotfileConfig,
-    db: &Database,
-    prompt: &str,
-) -> Result<Option<String>> {
+fn select_repo_interactive(config: &DotfileConfig, prompt: &str) -> Result<Option<String>> {
     let items: Vec<RepoSelectionItem> = config
         .repos
         .iter()
-        .map(|r| {
-            let preview = build_repo_preview(&r.name, config, db);
-            RepoSelectionItem {
-                name: r.name.clone(),
-                preview,
-            }
+        .map(|repo| {
+            let preview_key = DotRepositoryPreviewPayload::new(
+                &repo.name,
+                config.repos_path().join(&repo.name),
+                &repo.url,
+                repo.branch.clone(),
+                repo.enabled,
+                repo.read_only,
+            )
+            .to_key()?;
+            Ok(RepoSelectionItem {
+                name: repo.name.clone(),
+                preview_key,
+            })
         })
-        .collect();
+        .collect::<Result<_>>()?;
 
     if items.is_empty() {
         println!("No repositories configured.");
@@ -60,12 +68,10 @@ fn select_repo_interactive(
 pub fn open_repo_lazygit(config: &DotfileConfig, db: &Database, name: Option<&str>) -> Result<()> {
     let repo_name = match name {
         Some(n) => n.to_string(),
-        None => {
-            match select_repo_interactive(config, db, "Select repository to open in Lazygit")? {
-                Some(n) => n,
-                None => return Ok(()),
-            }
-        }
+        None => match select_repo_interactive(config, "Select repository to open in Lazygit")? {
+            Some(n) => n,
+            None => return Ok(()),
+        },
     };
 
     let repo_manager = DotfileRepositoryManager::new(config, db);
@@ -87,7 +93,7 @@ pub(super) fn open_repo_shell(
 ) -> Result<()> {
     let repo_name = match name {
         Some(n) => n.to_string(),
-        None => match select_repo_interactive(config, db, "Select repository to open shell in")? {
+        None => match select_repo_interactive(config, "Select repository to open shell in")? {
             Some(n) => n,
             None => return Ok(()),
         },
