@@ -3,9 +3,12 @@ use crate::common::compositor::{CompositorType, niri};
 use crate::common::instantwmctl;
 use crate::menu::client::MenuClient;
 use crate::menu::protocol::SliderRequest;
+use crate::settings::store::{IntSettingKey, SettingsStore};
 use anyhow::{Context, Result};
 use serde_json::Value;
 use std::process::Command;
+
+const MOUSE_SENSITIVITY_KEY: IntSettingKey = IntSettingKey::new("desktop.mouse.sensitivity", 50);
 
 pub fn mouse_speed_slider() -> Result<()> {
     run_mouse_speed_slider(None)?;
@@ -41,11 +44,12 @@ pub fn run_mouse_speed_slider(initial_value: Option<i64>) -> Result<Option<i64>>
     let start_value = if let Some(v) = initial_value {
         v
     } else {
-        // Detect current speed based on compositor
+        // Detect current live runtime speed based on compositor
         let current_speed = match compositor {
             CompositorType::Sway => get_sway_mouse_speed().unwrap_or(0.0),
             CompositorType::Gnome => get_gnome_mouse_speed().unwrap_or(0.0),
             CompositorType::Niri => niri::current_mouse_speed().unwrap_or(0.0),
+            CompositorType::InstantWM => get_instantwm_mouse_speed().unwrap_or(0.0),
             _ if compositor.is_x11() => get_x11_mouse_speed().unwrap_or(0.0),
             _ => 0.0,
         };
@@ -133,7 +137,37 @@ pub fn set_mouse_speed(value: i64) -> Result<()> {
         }
     }
 
+    // Persist to SettingsStore
+    if let Ok(mut store) = SettingsStore::load() {
+        store.set_int(MOUSE_SENSITIVITY_KEY, value);
+        let _ = store.save();
+    }
+
     Ok(())
+}
+
+pub fn get_instantwm_mouse_speed() -> Result<f64> {
+    if let Ok(output) = instantwmctl::output(["mouse", "list"]) {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.lines() {
+            if line.contains("pointer_accel:")
+                && let Some(val_str) = line.split("Some(").nth(1)
+                && let Some(num_str) = val_str.split(')').next()
+                && let Ok(speed) = num_str.trim().parse::<f64>()
+            {
+                return Ok(speed);
+            }
+        }
+    }
+
+    if let Ok(store) = SettingsStore::load()
+        && store.contains(MOUSE_SENSITIVITY_KEY.key)
+    {
+        let val = store.int(MOUSE_SENSITIVITY_KEY);
+        return Ok((val as f64 / 50.0) - 1.0);
+    }
+
+    Ok(0.0) // Default
 }
 
 pub fn get_sway_mouse_speed() -> Result<f64> {
@@ -297,4 +331,23 @@ pub fn set_scroll_factor(value: i64) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_parse_instantwm_mouse_speed() {
+        let sample_output = "[*]\ntap: Some(Enabled)\npointer_accel: Some(-0.400000)\nscroll_factor: Some(1.0)\n";
+        let mut speed = None;
+        for line in sample_output.lines() {
+            if line.contains("pointer_accel:")
+                && let Some(val_str) = line.split("Some(").nth(1)
+                && let Some(num_str) = val_str.split(')').next()
+                && let Ok(s) = num_str.trim().parse::<f64>()
+            {
+                speed = Some(s);
+            }
+        }
+        assert_eq!(speed, Some(-0.4));
+    }
 }

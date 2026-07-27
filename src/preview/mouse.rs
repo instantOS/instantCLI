@@ -24,6 +24,9 @@ pub(crate) fn render_mouse_sensitivity_preview() -> Result<String> {
                 crate::assist::actions::mouse::get_gnome_mouse_speed().unwrap_or(0.0)
             }
             CompositorType::Niri => niri::current_mouse_speed().unwrap_or(0.0),
+            CompositorType::InstantWM => {
+                crate::assist::actions::mouse::get_instantwm_mouse_speed().unwrap_or(0.0)
+            }
             _ if compositor.is_x11() => {
                 crate::assist::actions::mouse::get_x11_mouse_speed().unwrap_or(0.0)
             }
