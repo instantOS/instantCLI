@@ -21,6 +21,7 @@ mod bluetooth;
 mod cache;
 mod default_apps;
 mod disks;
+mod dot_repository;
 mod file;
 mod game_save;
 mod helpers;
@@ -74,6 +75,8 @@ pub enum PreviewId {
     DefaultPdfViewer,
     #[value(name = "disk")]
     Disk,
+    #[value(name = "dot-repository")]
+    DotRepository,
     #[value(name = "partition")]
     Partition,
     #[value(name = "file-suggestion")]
@@ -118,6 +121,40 @@ impl std::fmt::Display for PreviewId {
 pub fn preview_command(id: PreviewId) -> String {
     let exe = current_exe_command();
     format!("{exe} preview --id {id} --key \"$1\"")
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct DotRepositoryPreviewPayload {
+    repo_name: String,
+    repo_path: std::path::PathBuf,
+    url: String,
+    configured_branch: Option<String>,
+    enabled: bool,
+    read_only: bool,
+}
+
+impl DotRepositoryPreviewPayload {
+    pub(crate) fn new(
+        repo_name: impl Into<String>,
+        repo_path: std::path::PathBuf,
+        url: impl Into<String>,
+        configured_branch: Option<String>,
+        enabled: bool,
+        read_only: bool,
+    ) -> Self {
+        Self {
+            repo_name: repo_name.into(),
+            repo_path,
+            url: url.into(),
+            configured_branch,
+            enabled,
+            read_only,
+        }
+    }
+
+    pub(crate) fn to_key(&self) -> Result<String> {
+        Ok(serde_json::to_string(self)?)
+    }
 }
 
 /// Preview command for a specific setting by ID.
@@ -385,6 +422,7 @@ fn render_preview(id: PreviewId, ctx: &PreviewContext) -> Result<String> {
             PDF_VIEWER_MIME_TYPES,
         ),
         PreviewId::Disk => disks::render_disk_preview(ctx),
+        PreviewId::DotRepository => dot_repository::render_dot_repository_preview(ctx),
         PreviewId::Partition => disks::render_partition_preview(ctx),
         PreviewId::FileSuggestion => file::render_file_suggestion_preview(ctx),
         PreviewId::Setting => render_setting_preview(ctx),
