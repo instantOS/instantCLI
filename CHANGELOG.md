@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.7](https://github.com/instantOS/instantCLI/compare/v0.14.6...v0.14.7) - 2026-07-26
+
+### Added
+
+- init ins clipboard
+
+### Fixed
+
+- fix clip mismatch error
+- fix clipmenu target thingy
+- fix instantWM scratchpad sizing
+- fix daemon installation
+- fix instantWM integration
+
+### Other
+
+- enhance ins clip performance
+- init ins clip settings menu
+- make ins clip preview use preview builder, and do syntax highlighting
+- init better ins clipboard previews
+- add package installed status to preview
+- cleaner TUI UX
+- TUI fixes
+- improve ins notify TUI
+- more ins notify features
+- ins notifiy fixes
+- init ins notify feature
+- Merge branch 'dev' of github.com:instantOS/instantCLI into dev
+
 ## [0.14.6](https://github.com/instantOS/instantCLI/compare/v0.14.5...v0.14.6) - 2026-07-20
 
 ### Fixed
