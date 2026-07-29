@@ -440,33 +440,51 @@ impl AreaSelectionConfig {
     }
 }
 
+fn copy_with_command(mut command: Command, data: &[u8], command_name: &str) -> Result<()> {
+    let mut child = command
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .with_context(|| format!("Failed to start {command_name}"))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(data)
+            .with_context(|| format!("Failed to write to {command_name}"))?;
+    }
+
+    let status = child
+        .wait()
+        .with_context(|| format!("Failed to wait for {command_name}"))?;
+    anyhow::ensure!(
+        status.success(),
+        "{command_name} failed with status {status}"
+    );
+
+    Ok(())
+}
+
+fn copy_to_wayland_clipboard(data: &[u8], mime_type: Option<&str>) -> Result<()> {
+    let mut command = Command::new("wl-copy");
+    if let Some(mime_type) = mime_type {
+        command.args(["--type", mime_type]);
+    }
+
+    // wl-copy forks after acquiring the Wayland selection. Its background
+    // child redirects stdin and stdout, but inherits stderr from the caller.
+    // Detach stderr so it cannot keep a transient terminal window alive.
+    command.stderr(std::process::Stdio::null());
+
+    copy_with_command(command, data, "wl-copy")
+}
+
 /// Copy data to clipboard using the appropriate tool for the display server
 pub fn copy_to_clipboard(data: &[u8], display_server: &DisplayServer) -> Result<()> {
     if display_server.is_wayland() {
-        let mut wl_copy = Command::new("wl-copy")
-            .stdin(std::process::Stdio::piped())
-            .spawn()
-            .context("Failed to start wl-copy")?;
-
-        if let Some(mut stdin) = wl_copy.stdin.take() {
-            stdin
-                .write_all(data)
-                .context("Failed to write to wl-copy")?;
-        }
-
-        wl_copy.wait().context("Failed to wait for wl-copy")?;
+        copy_to_wayland_clipboard(data, None)?;
     } else if display_server.is_x11() {
-        let mut xclip = Command::new("xclip")
-            .args(["-selection", "clipboard"])
-            .stdin(std::process::Stdio::piped())
-            .spawn()
-            .context("Failed to start xclip")?;
-
-        if let Some(mut stdin) = xclip.stdin.take() {
-            stdin.write_all(data).context("Failed to write to xclip")?;
-        }
-
-        xclip.wait().context("Failed to wait for xclip")?;
+        let mut command = Command::new("xclip");
+        command.args(["-selection", "clipboard"]);
+        copy_with_command(command, data, "xclip")?;
     } else {
         anyhow::bail!("Unknown display server - cannot copy to clipboard");
     }
@@ -474,37 +492,18 @@ pub fn copy_to_clipboard(data: &[u8], display_server: &DisplayServer) -> Result<
     Ok(())
 }
 
-/// Copy image data to clipboard with explicit MIME type (X11 only)
+/// Copy image data to clipboard with an explicit MIME type
 pub fn copy_image_to_clipboard(
     data: &[u8],
     mime_type: &str,
     display_server: &DisplayServer,
 ) -> Result<()> {
     if display_server.is_wayland() {
-        let mut wl_copy = Command::new("wl-copy")
-            .stdin(std::process::Stdio::piped())
-            .spawn()
-            .context("Failed to start wl-copy")?;
-
-        if let Some(mut stdin) = wl_copy.stdin.take() {
-            stdin
-                .write_all(data)
-                .context("Failed to write to wl-copy")?;
-        }
-
-        wl_copy.wait().context("Failed to wait for wl-copy")?;
+        copy_to_wayland_clipboard(data, Some(mime_type))?;
     } else if display_server.is_x11() {
-        let mut xclip = Command::new("xclip")
-            .args(["-selection", "clipboard", "-t", mime_type])
-            .stdin(std::process::Stdio::piped())
-            .spawn()
-            .context("Failed to start xclip")?;
-
-        if let Some(mut stdin) = xclip.stdin.take() {
-            stdin.write_all(data).context("Failed to write to xclip")?;
-        }
-
-        xclip.wait().context("Failed to wait for xclip")?;
+        let mut command = Command::new("xclip");
+        command.args(["-selection", "clipboard", "-t", mime_type]);
+        copy_with_command(command, data, "xclip")?;
     } else {
         anyhow::bail!("Unknown display server - cannot copy to clipboard");
     }
