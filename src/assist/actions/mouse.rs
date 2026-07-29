@@ -337,7 +337,8 @@ pub fn set_scroll_factor(value: i64) -> Result<()> {
 mod tests {
     #[test]
     fn test_parse_instantwm_mouse_speed() {
-        let sample_output = "[*]\ntap: Some(Enabled)\npointer_accel: Some(-0.400000)\nscroll_factor: Some(1.0)\n";
+        let sample_output =
+            "[*]\ntap: Some(Enabled)\npointer_accel: Some(-0.400000)\nscroll_factor: Some(1.0)\n";
         let mut speed = None;
         for line in sample_output.lines() {
             if line.contains("pointer_accel:")
