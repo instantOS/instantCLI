@@ -467,6 +467,20 @@ fn parse_pkg_name(line: &str) -> Option<String> {
     line.split('/').next().map(ToString::to_string)
 }
 
+fn parse_cargo_installed_name(line: &str) -> Option<String> {
+    let first = line.split_whitespace().next()?;
+    if first
+        .chars()
+        .next()
+        .map(|c| c.is_ascii_alphabetic())
+        .unwrap_or(false)
+    {
+        Some(first.trim_end_matches(':').to_string())
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -489,19 +503,5 @@ mod tests {
         assert_eq!(parse_dpkg_installed_package_name("iU \tlibexample"), None);
         assert_eq!(parse_dpkg_installed_package_name("un \tlibexample"), None);
         assert_eq!(parse_dpkg_installed_package_name("pn \tlibexample"), None);
-    }
-}
-
-fn parse_cargo_installed_name(line: &str) -> Option<String> {
-    let first = line.split_whitespace().next()?;
-    if first
-        .chars()
-        .next()
-        .map(|c| c.is_ascii_alphabetic())
-        .unwrap_or(false)
-    {
-        Some(first.trim_end_matches(':').to_string())
-    } else {
-        None
     }
 }

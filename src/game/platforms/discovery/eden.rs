@@ -603,7 +603,7 @@ mod tests {
             PathBuf::from("/saves/profile/0123456789ABCDEF"),
         );
 
-        let index = build_rom_index(&[rom.clone()], &saves);
+        let index = build_rom_index(std::slice::from_ref(&rom), &saves);
         assert_eq!(index.get(&tid), Some(&rom));
     }
 

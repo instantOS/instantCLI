@@ -27,8 +27,7 @@ impl ChecklistBuilder {
                         .into_iter()
                         .map(|i| {
                             items
-                                .iter()
-                                .nth(i)
+                                .get(i)
                                 .unwrap_or_else(|| {
                                     panic!("MockResponse::ChecklistConfirm({i}) out of bounds")
                                 })

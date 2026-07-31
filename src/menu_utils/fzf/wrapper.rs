@@ -614,8 +614,7 @@ impl FzfWrapper {
                             .into_iter()
                             .map(|i| {
                                 items
-                                    .iter()
-                                    .nth(i)
+                                    .get(i)
                                     .unwrap_or_else(|| {
                                         panic!(
                                             "MockResponse::MultiSelectIndices({i}) out of bounds"

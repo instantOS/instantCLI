@@ -272,6 +272,36 @@ fn uncomment_servers(content: &str) -> String {
     mirrorlist
 }
 
+// ============================================================================
+// Data Provider
+// ============================================================================
+
+pub struct MirrorlistProvider;
+
+#[async_trait::async_trait]
+impl crate::arch::engine::AsyncDataProvider for MirrorlistProvider {
+    async fn provide(&self, context: &crate::arch::engine::InstallContext) -> Result<()> {
+        match fetch_mirror_regions().await {
+            Ok(regions) => {
+                let mut names: Vec<String> = regions.keys().cloned().collect();
+                names.sort();
+                context.set::<MirrorRegionsKey>(names);
+                context.set::<MirrorRegionsFetchFailed>(false);
+            }
+            Err(e) => {
+                eprintln!("Failed to fetch mirror regions: {}", e);
+                eprintln!(
+                    "Mirror region selection will be skipped; fallback mirrorlist will be used."
+                );
+                // Set empty list - the question will be skipped via should_ask()
+                context.set::<MirrorRegionsKey>(Vec::new());
+                context.set::<MirrorRegionsFetchFailed>(true);
+            }
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -322,35 +352,5 @@ Server = https://already.active/$repo/os/$arch
         let result = uncomment_servers("");
         // empty string has no lines, so output is empty
         assert_eq!(result, "");
-    }
-}
-
-// ============================================================================
-// Data Provider
-// ============================================================================
-
-pub struct MirrorlistProvider;
-
-#[async_trait::async_trait]
-impl crate::arch::engine::AsyncDataProvider for MirrorlistProvider {
-    async fn provide(&self, context: &crate::arch::engine::InstallContext) -> Result<()> {
-        match fetch_mirror_regions().await {
-            Ok(regions) => {
-                let mut names: Vec<String> = regions.keys().cloned().collect();
-                names.sort();
-                context.set::<MirrorRegionsKey>(names);
-                context.set::<MirrorRegionsFetchFailed>(false);
-            }
-            Err(e) => {
-                eprintln!("Failed to fetch mirror regions: {}", e);
-                eprintln!(
-                    "Mirror region selection will be skipped; fallback mirrorlist will be used."
-                );
-                // Set empty list - the question will be skipped via should_ask()
-                context.set::<MirrorRegionsKey>(Vec::new());
-                context.set::<MirrorRegionsFetchFailed>(true);
-            }
-        }
-        Ok(())
     }
 }
