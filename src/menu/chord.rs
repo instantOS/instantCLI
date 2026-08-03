@@ -492,10 +492,7 @@ impl KeyChordNavigator {
                     }
 
                     match key_event.code {
-                        KeyCode::Esc
-                        | KeyCode::Backspace
-                        | KeyCode::Char('q')
-                        | KeyCode::Char('Q') => {
+                        KeyCode::Esc | KeyCode::Backspace => {
                             if self.nav_go_back() {
                                 needs_redraw = true;
                             } else {
@@ -931,7 +928,7 @@ fn footer_line() -> Paragraph<'static> {
         Span::styled("Backspace", key_hint),
         Span::styled(" back", dim),
         Span::styled("   ·   ", dim),
-        Span::styled("q", key_hint),
+        Span::styled("Ctrl+C", key_hint),
         Span::styled(" quit", dim),
     ]))
     .alignment(Alignment::Center)
@@ -1117,5 +1114,17 @@ mod tests {
 
         assert!(!nav.go_back()); // at root: nothing to pop
         assert_eq!(nav.selected, Some(0)); // selection untouched
+    }
+
+    #[test]
+    fn q_remains_available_as_a_chord_key() {
+        let tree =
+            build_chord_tree(&parse_chord_specs(&["q:QR action".to_string()]).unwrap()).unwrap();
+        let mut nav = NavState::new(tree);
+
+        assert!(matches!(
+            nav.activate_by_key(&KeyCode::Char('q')),
+            Some(Activation::Exit(Some(id))) if id == "q"
+        ));
     }
 }

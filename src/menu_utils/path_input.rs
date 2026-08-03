@@ -424,6 +424,26 @@ fn preview_suggestion(_path: &Path) -> FzfPreview {
     FzfPreview::Command(preview_command(PreviewId::FileSuggestion))
 }
 
+impl PathInputSelection {
+    pub fn to_tilde_path(&self) -> Result<Option<TildePath>> {
+        match self {
+            PathInputSelection::Manual(input) => {
+                if input.is_empty() {
+                    return Ok(None);
+                }
+                Ok(Some(TildePath::from_str(input)?))
+            }
+            PathInputSelection::Picker(path) => Ok(Some(TildePath::new(path.clone()))),
+            PathInputSelection::WinePrefix(path) => Ok(Some(TildePath::new(path.clone()))),
+            PathInputSelection::Cancelled => Ok(None),
+        }
+    }
+
+    pub fn to_path_buf(&self) -> Result<Option<PathBuf>> {
+        Ok(self.to_tilde_path()?.map(|tilde| tilde.into_path_buf()))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -447,25 +467,5 @@ mod tests {
         let builder = PathInputBuilder::new().scope(FilePickerScope::Directories);
 
         assert!(!builder.should_open_picker_for_suggestion(Path::new("/tmp")));
-    }
-}
-
-impl PathInputSelection {
-    pub fn to_tilde_path(&self) -> Result<Option<TildePath>> {
-        match self {
-            PathInputSelection::Manual(input) => {
-                if input.is_empty() {
-                    return Ok(None);
-                }
-                Ok(Some(TildePath::from_str(input)?))
-            }
-            PathInputSelection::Picker(path) => Ok(Some(TildePath::new(path.clone()))),
-            PathInputSelection::WinePrefix(path) => Ok(Some(TildePath::new(path.clone()))),
-            PathInputSelection::Cancelled => Ok(None),
-        }
-    }
-
-    pub fn to_path_buf(&self) -> Result<Option<PathBuf>> {
-        Ok(self.to_tilde_path()?.map(|tilde| tilde.into_path_buf()))
     }
 }

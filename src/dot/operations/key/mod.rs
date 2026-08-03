@@ -132,7 +132,8 @@ mod tests {
 
         // 3. Encrypt an initial file for id1
         let plain_bytes = b"super secret password";
-        let parsed_recipients = crate::dot::encryption::parse_recipients(&[pub1.clone()]).unwrap();
+        let parsed_recipients =
+            crate::dot::encryption::parse_recipients(std::slice::from_ref(&pub1)).unwrap();
         let cipher_bytes =
             crate::dot::encryption::encrypt_bytes_to_armored(plain_bytes, &parsed_recipients)
                 .unwrap();
@@ -184,7 +185,7 @@ mod tests {
         .unwrap();
         let mut reader = decryptor
             .decrypt(
-                vec![Box::new(id2.clone()) as Box<dyn age::Identity>]
+                [Box::new(id2.clone()) as Box<dyn age::Identity>]
                     .iter()
                     .map(|i| i.as_ref() as &dyn age::Identity),
             )
@@ -201,7 +202,15 @@ mod tests {
         let _age_guard2 = crate::dot::test_util::EnvGuard::set("AGE_IDENTITY", &identity_file2);
 
         // 9. Test Rotate Operation (only allow id2)
-        handle_rotate(&config, &db, &[pub2.clone()], Some("my-repo"), false, false).unwrap();
+        handle_rotate(
+            &config,
+            &db,
+            std::slice::from_ref(&pub2),
+            Some("my-repo"),
+            false,
+            false,
+        )
+        .unwrap();
 
         let rotated_meta = crate::dot::meta::read_meta(&repo_dir).unwrap();
         assert_eq!(rotated_meta.encryption_recipients, vec![pub2.clone()]);

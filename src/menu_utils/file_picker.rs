@@ -494,7 +494,7 @@ mod mock_tests {
         let builder = FilePickerBuilder::new().scope(FilePickerScope::Files);
 
         let preselect = builder
-            .handle_invalid_entries(&[directory.clone()])
+            .handle_invalid_entries(std::slice::from_ref(&directory))
             .unwrap();
 
         assert_eq!(preselect, Some(directory));
@@ -509,7 +509,9 @@ mod mock_tests {
         let _guard = MockQueue::new().message_ack().guard();
         let builder = FilePickerBuilder::new().scope(FilePickerScope::Directories);
 
-        let preselect = builder.handle_invalid_entries(&[file.clone()]).unwrap();
+        let preselect = builder
+            .handle_invalid_entries(std::slice::from_ref(&file))
+            .unwrap();
 
         assert_eq!(preselect, Some(file));
     }

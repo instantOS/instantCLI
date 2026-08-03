@@ -404,53 +404,35 @@ pub fn find_group_entries(key_sequence: &str) -> Option<&'static [AssistEntry]> 
         return Some(ASSISTS);
     }
 
-    let mut chars = key_sequence.chars();
-    let first_key = chars.next()?;
-
-    let entry = ASSISTS.iter().find(|entry| entry.key() == first_key)?;
-
-    match entry {
+    match find_entry_in(ASSISTS, key_sequence)? {
+        AssistEntry::Group(group) => Some(group.children),
         AssistEntry::Action(_) => None,
-        AssistEntry::Group(group) => {
-            if chars.next().is_none() {
-                Some(group.children)
-            } else {
-                None
-            }
-        }
     }
 }
 
 pub fn find_action(key_sequence: &str) -> Option<&'static AssistAction> {
-    if key_sequence.is_empty() {
-        return None;
+    match find_entry_in(ASSISTS, key_sequence)? {
+        AssistEntry::Action(action) => Some(action),
+        AssistEntry::Group(_) => None,
     }
+}
 
-    let mut chars = key_sequence.chars();
-    let first_key = chars.next()?;
+fn find_entry_in<'a>(entries: &'a [AssistEntry], key_sequence: &str) -> Option<&'a AssistEntry> {
+    let mut entries = entries;
+    let mut keys = key_sequence.chars().peekable();
 
-    let entry = ASSISTS.iter().find(|entry| entry.key() == first_key)?;
-
-    match entry {
-        AssistEntry::Action(action) => {
-            if chars.next().is_none() {
-                Some(action)
-            } else {
-                None
-            }
+    while let Some(key) = keys.next() {
+        let entry = entries.iter().find(|entry| entry.key() == key)?;
+        if keys.peek().is_none() {
+            return Some(entry);
         }
-        AssistEntry::Group(group) => {
-            let second_key = chars.next()?;
-            if chars.next().is_some() {
-                return None;
-            }
-
-            group.children.iter().find_map(|child| match child {
-                AssistEntry::Action(action) if action.key == second_key => Some(action),
-                _ => None,
-            })
+        match entry {
+            AssistEntry::Group(group) => entries = group.children,
+            AssistEntry::Action(_) => return None,
         }
     }
+
+    None
 }
 
 #[cfg(test)]

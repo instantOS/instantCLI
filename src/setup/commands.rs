@@ -4,7 +4,6 @@
 
 use anyhow::{Context, Result};
 use clap::Subcommand;
-use std::io::Write;
 
 use crate::common::compositor::CompositorType;
 use crate::common::compositor::config::{WindowManager, WmConfigManager};
@@ -194,7 +193,7 @@ fn write_config_if_changed(manager: &WmConfigManager) -> Result<bool> {
 }
 
 fn write_instantwm_config_if_changed(manager: &WmConfigManager) -> Result<bool> {
-    let expected_content = generate_instantwm_config()?;
+    let expected_content = crate::assist::mode_config::render_instantwm()?;
     let disk_hash = manager.hash_config().unwrap_or(0);
     let expected_hash = hash_string(&expected_content);
     let changed = disk_hash != expected_hash;
@@ -333,122 +332,12 @@ pub(crate) fn generate_wm_config(wm: WindowManager) -> Result<String> {
 
     // Assist keybinds section
     writeln!(content, "# --- BEGIN assist ---")?;
-    let keybinds = export_assist_keybinds()?;
+    let keybinds = crate::assist::mode_config::render_sway_like(wm.name())?;
     write!(content, "{}", keybinds.trim())?;
     writeln!(content)?;
     writeln!(content, "# --- END assist ---")?;
 
     Ok(content)
-}
-
-/// Generate the full instantWM assist config content (TOML format).
-fn generate_instantwm_config() -> Result<String> {
-    use std::fmt::Write;
-
-    let mut content = String::new();
-
-    writeln!(content, "# instantWM config for instantCLI assists")?;
-    writeln!(
-        content,
-        "# This file is managed by instantCLI. Manual edits may be overwritten."
-    )?;
-    writeln!(content)?;
-    writeln!(
-        content,
-        "# To enter assist mode, add this keybind to your config.toml:"
-    )?;
-    writeln!(content, "#     [[keybinds]]")?;
-    writeln!(content, "#     modifiers = [\"Super\"]")?;
-    writeln!(content, "#     key = \"a\"")?;
-    writeln!(content, "#     action = {{ set_mode = \"instantassist\" }}")?;
-    writeln!(content)?;
-
-    generate_instantwm_modes(
-        &mut content,
-        crate::assist::registry::ASSISTS,
-        "instantassist",
-        "",
-    )?;
-
-    writeln!(content, "# End of instantCLI assists config")?;
-
-    Ok(content)
-}
-
-fn generate_instantwm_modes<W: std::fmt::Write>(
-    output: &mut W,
-    entries: &[crate::assist::registry::AssistEntry],
-    mode_name: &str,
-    prefix: &str,
-) -> Result<()> {
-    writeln!(output, "[modes.{}]", mode_name)?;
-
-    let description = if prefix.is_empty() {
-        "instantassist mode".to_string()
-    } else {
-        let group = crate::assist::registry::find_group_entries(prefix)
-            .and_then(|entries| entries.first())
-            .map(|e| e.description());
-        format!("{} submode", group.unwrap_or(mode_name))
-    };
-    writeln!(output, "description = \"{}\"", description)?;
-    writeln!(output, "keybinds = [")?;
-
-    writeln!(
-        output,
-        "  {{ modifiers = [], key = \"Escape\", action = {{ set_mode = \"default\" }} }},"
-    )?;
-    writeln!(
-        output,
-        "  {{ modifiers = [], key = \"Return\", action = {{ set_mode = \"default\" }} }},"
-    )?;
-
-    if !prefix.is_empty() {
-        let help_cmd = format!("{}h", prefix);
-        writeln!(
-            output,
-            "  {{ modifiers = [], key = \"h\", action = {{ spawn = [\"ins\", \"assist\", \"run\", \"{}\"] }} }},",
-            help_cmd
-        )?;
-    }
-
-    for entry in entries {
-        match entry {
-            crate::assist::registry::AssistEntry::Action(action) => {
-                if !prefix.is_empty() && action.key == 'h' {
-                    continue;
-                }
-
-                let key_sequence = format!("{}{}", prefix, action.key);
-                writeln!(
-                    output,
-                    "  {{ modifiers = [], key = \"{}\", action = {{ spawn = [\"ins\", \"assist\", \"run\", \"{}\"] }} }},",
-                    action.key, key_sequence
-                )?;
-            }
-            crate::assist::registry::AssistEntry::Group(group) => {
-                let sub_mode_name = format!("{}_{}", mode_name, group.key);
-                writeln!(
-                    output,
-                    "  {{ modifiers = [], key = \"{}\", action = {{ set_mode = \"{}\" }} }},",
-                    group.key, sub_mode_name
-                )?;
-            }
-        }
-    }
-
-    writeln!(output, "]")?;
-    writeln!(output)?;
-
-    for entry in entries {
-        if let crate::assist::registry::AssistEntry::Group(group) = entry {
-            let sub_mode_name = format!("{}_{}", mode_name, group.key);
-            let new_prefix = format!("{}{}", prefix, group.key);
-            generate_instantwm_modes(output, group.children, &sub_mode_name, &new_prefix)?;
-        }
-    }
-
-    Ok(())
 }
 
 /// Hash a string for comparison.
@@ -459,192 +348,6 @@ fn hash_string(s: &str) -> u64 {
     let mut hasher = DefaultHasher::new();
     s.hash(&mut hasher);
     hasher.finish()
-}
-
-/// Export assist keybinds to a string for inclusion in sway config.
-///
-/// This generates the same output as `ins assist export --format sway` but
-/// returns it as a string instead of writing to a file.
-fn export_assist_keybinds() -> Result<String> {
-    use crate::assist::registry;
-
-    let mut output = Vec::new();
-
-    // Write header
-    writeln!(
-        output,
-        "# Sway keybinds for instantCLI assists\n# Generated by `ins setup sway`\n"
-    )?;
-
-    // Generate mode for instantassist
-    writeln!(output, "# Enter instantassist mode")?;
-
-    // Collect available keys for the root mode
-    let mut root_keys: Vec<char> = registry::ASSISTS.iter().map(|entry| entry.key()).collect();
-    root_keys.sort_unstable();
-    let root_keys_hint = if root_keys.is_empty() {
-        "".to_string()
-    } else {
-        let keys_str: Vec<String> = root_keys.iter().map(|c| c.to_string()).collect();
-        format!(" (keys: {})", keys_str.join(", "))
-    };
-
-    writeln!(
-        output,
-        "bindsym $mod+a mode \"instantassist{} (h for help)\"\n",
-        root_keys_hint
-    )?;
-
-    // Generate all modes recursively
-    generate_modes(&mut output, registry::ASSISTS, "instantassist", "")?;
-
-    writeln!(output, "# End of instantCLI assists config")?;
-
-    Ok(String::from_utf8(output)?)
-}
-
-/// Helper function to generate modes recursively for groups
-fn generate_modes<W: Write>(
-    output: &mut W,
-    entries: &[crate::assist::registry::AssistEntry],
-    mode_name: &str,
-    prefix: &str,
-) -> Result<()> {
-    let keys_hint = build_keys_hint(entries, prefix);
-    write_mode_header(output, mode_name, &keys_hint)?;
-    write_help_binding(output, prefix)?;
-    write_entry_bindings(output, entries, mode_name, prefix)?;
-    writeln!(output, "}}\n")?;
-    generate_submodes(output, entries, mode_name, prefix)?;
-
-    Ok(())
-}
-
-/// Build a hint string showing available keys, filtering out 'h' in submodes.
-fn build_keys_hint(entries: &[crate::assist::registry::AssistEntry], prefix: &str) -> String {
-    use crate::assist::registry::AssistEntry;
-
-    let mut keys: Vec<char> = entries
-        .iter()
-        .filter_map(|entry| {
-            if !prefix.is_empty() {
-                match entry {
-                    AssistEntry::Action(action) if action.key == 'h' => None,
-                    _ => Some(entry.key()),
-                }
-            } else {
-                Some(entry.key())
-            }
-        })
-        .collect();
-
-    if keys.is_empty() {
-        return String::new();
-    }
-
-    keys.sort_unstable();
-    let keys_str: Vec<String> = keys.iter().map(|c| c.to_string()).collect();
-    format!(" (keys: {})", keys_str.join(", "))
-}
-
-/// Write the mode header with name and exit bindings.
-fn write_mode_header<W: Write>(output: &mut W, mode_name: &str, keys_hint: &str) -> Result<()> {
-    let full_name = format!("{}{} (h for help)", mode_name, keys_hint);
-    writeln!(output, "mode \"{}\" {{", full_name)?;
-    writeln!(output, "    # Exit with Escape or Return")?;
-    writeln!(output, "    bindsym Return mode default")?;
-    writeln!(output, "    bindsym Escape mode default\n")?;
-    Ok(())
-}
-
-/// Write the help binding for submodes (when prefix is not empty).
-fn write_help_binding<W: Write>(output: &mut W, prefix: &str) -> Result<()> {
-    if prefix.is_empty() {
-        return Ok(());
-    }
-    let help_cmd = format!("ins assist run {}h", prefix);
-    writeln!(
-        output,
-        "    # Show help for this mode\n    bindsym h exec --no-startup-id {}; mode default\n",
-        help_cmd
-    )?;
-    Ok(())
-}
-
-/// Write action and group bindings for the current mode.
-fn write_entry_bindings<W: Write>(
-    output: &mut W,
-    entries: &[crate::assist::registry::AssistEntry],
-    mode_name: &str,
-    prefix: &str,
-) -> Result<()> {
-    use crate::assist::registry::AssistEntry;
-
-    for entry in entries {
-        match entry {
-            AssistEntry::Action(action) => {
-                if !prefix.is_empty() && action.key == 'h' {
-                    continue;
-                }
-                let key_sequence = format!("{}{}", prefix, action.key);
-                let cmd = format!("ins assist run {}", key_sequence);
-                writeln!(
-                    output,
-                    "    bindsym {} exec --no-startup-id {}; mode default",
-                    action.key, cmd
-                )?;
-            }
-            AssistEntry::Group(group) => {
-                let sub_keys_hint = build_sub_keys_hint(group.children);
-                writeln!(
-                    output,
-                    "    bindsym {} mode \"{}_{}{} (h for help)\"",
-                    group.key, mode_name, group.key, sub_keys_hint
-                )?;
-            }
-        }
-    }
-    Ok(())
-}
-
-/// Build a keys hint for a group's children (excluding 'h').
-fn build_sub_keys_hint(children: &[crate::assist::registry::AssistEntry]) -> String {
-    use crate::assist::registry::AssistEntry;
-
-    let mut keys: Vec<char> = children
-        .iter()
-        .filter_map(|child| match child {
-            AssistEntry::Action(action) if action.key == 'h' => None,
-            _ => Some(child.key()),
-        })
-        .collect();
-
-    if keys.is_empty() {
-        return String::new();
-    }
-
-    keys.sort_unstable();
-    let keys_str: Vec<String> = keys.iter().map(|c| c.to_string()).collect();
-    format!(" (keys: {})", keys_str.join(", "))
-}
-
-/// Recursively generate submodes for all groups.
-fn generate_submodes<W: Write>(
-    output: &mut W,
-    entries: &[crate::assist::registry::AssistEntry],
-    mode_name: &str,
-    prefix: &str,
-) -> Result<()> {
-    use crate::assist::registry::AssistEntry;
-
-    for entry in entries {
-        if let AssistEntry::Group(group) = entry {
-            let sub_mode_name = format!("{}_{}", mode_name, group.key);
-            let new_prefix = format!("{}{}", prefix, group.key);
-            generate_modes(output, group.children, &sub_mode_name, &new_prefix)?;
-        }
-    }
-    Ok(())
 }
 
 /// Get the current cursor theme from gsettings.

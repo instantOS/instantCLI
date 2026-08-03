@@ -1,13 +1,13 @@
 //! InstantWM control utilities
 //!
 //! Provides a type-safe interface for controlling instantWM settings.
-//! Uses `xsetroot -name` to communicate with instantWM via the underlying
-//! `ctrltoggle` mechanism.
+//! Uses `instantwmctl` to communicate with instantWM over its IPC socket.
 //!
 //! For scratchpad operations, see `crate::common::compositor::instantwm`.
 
-use anyhow::{Context, Result};
-use std::process::Command;
+use anyhow::Result;
+
+use crate::common::instantwmctl;
 
 /// Represents controllable settings in instantWM
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -15,11 +15,7 @@ pub enum InstantWmSetting {
     Animated,
 }
 
-/// Control toggle arguments for instantWM's ctrltoggle function
-///
-/// These map to instantWM's internal ctrltoggle behavior:
-/// - 1: set to 0 (disable)
-/// - 3: set to 1 (enable)
+/// Explicit toggle actions supported by instantWM's IPC interface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ControlAction {
     Disable,
@@ -27,7 +23,7 @@ pub enum ControlAction {
 }
 
 impl InstantWmSetting {
-    fn control_id(&self) -> &'static str {
+    fn command_name(&self) -> &'static str {
         match self {
             InstantWmSetting::Animated => "animated",
         }
@@ -35,10 +31,10 @@ impl InstantWmSetting {
 }
 
 impl ControlAction {
-    fn arg(&self) -> u8 {
+    fn arg(&self) -> &'static str {
         match self {
-            ControlAction::Disable => 1,
-            ControlAction::Enable => 3,
+            ControlAction::Disable => "off",
+            ControlAction::Enable => "on",
         }
     }
 }
@@ -52,21 +48,7 @@ impl InstantWmController {
     }
 
     pub fn apply(&self, setting: InstantWmSetting, action: ControlAction) -> Result<()> {
-        let control_string = format!("c;:;{};{}", setting.control_id(), action.arg());
-
-        let status = Command::new("xsetroot")
-            .args(["-name", &control_string])
-            .status()
-            .context("Failed to execute xsetroot")?;
-
-        if status.success() {
-            Ok(())
-        } else {
-            anyhow::bail!(
-                "xsetroot command failed with exit code {}",
-                status.code().unwrap_or(-1)
-            )
-        }
+        instantwmctl::run(["toggle", setting.command_name(), action.arg()])
     }
 
     pub fn enable_animations(&self) -> Result<()> {
@@ -98,12 +80,12 @@ mod tests {
 
     #[test]
     fn test_control_action_args() {
-        assert_eq!(ControlAction::Disable.arg(), 1);
-        assert_eq!(ControlAction::Enable.arg(), 3);
+        assert_eq!(ControlAction::Disable.arg(), "off");
+        assert_eq!(ControlAction::Enable.arg(), "on");
     }
 
     #[test]
     fn test_setting_control_ids() {
-        assert_eq!(InstantWmSetting::Animated.control_id(), "animated");
+        assert_eq!(InstantWmSetting::Animated.command_name(), "animated");
     }
 }
