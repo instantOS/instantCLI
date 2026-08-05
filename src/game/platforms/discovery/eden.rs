@@ -17,6 +17,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 
 use super::DiscoveredGame;
+use super::utils::{display_name_from_path, parse_game_directories, parse_recent_files};
 use crate::common::TildePath;
 use crate::menu::protocol::FzfPreview;
 use crate::ui::nerd_font::NerdFont;
@@ -157,8 +158,7 @@ impl DiscoveredGame for EdenDiscoveredGame {
 
 /// Check if the Eden emulator data directory exists
 pub fn is_eden_installed() -> bool {
-    let expanded = shellexpand::tilde(EDEN_DATA_DIR);
-    Path::new(expanded.as_ref()).is_dir()
+    TildePath::from_str(EDEN_DATA_DIR).is_dir()
 }
 
 /// Discover Eden games that have existing save data.
@@ -290,7 +290,7 @@ pub(crate) fn collect_rom_files(config_path: &Path) -> Vec<PathBuf> {
     }
 
     // Game directories (non-recursive scan)
-    for dir in parse_game_directories(&config_content) {
+    for dir in parse_game_directories(&config_content, SPECIAL_GAMEDIRS) {
         if let Ok(entries) = fs::read_dir(&dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
@@ -308,75 +308,6 @@ pub(crate) fn collect_rom_files(config_path: &Path) -> Vec<PathBuf> {
 pub(crate) fn collect_configured_rom_files() -> Vec<PathBuf> {
     let config_path = PathBuf::from(shellexpand::tilde(EDEN_CONFIG_PATH).into_owned());
     collect_rom_files(&config_path)
-}
-
-/// Parse the `Paths\recentFiles=` line from Eden's config.
-///
-/// The value is a comma-space separated list of paths, optionally
-/// wrapped in double quotes.
-fn parse_recent_files(config_content: &str) -> Vec<PathBuf> {
-    let mut paths = Vec::new();
-
-    for line in config_content.lines() {
-        let trimmed = line.trim();
-        if !trimmed.starts_with("Paths\\recentFiles=") {
-            continue;
-        }
-
-        let value = match trimmed.split_once('=') {
-            Some((_, v)) => v.trim(),
-            None => continue,
-        };
-
-        let value = value.strip_prefix('"').unwrap_or(value);
-        let value = value.strip_suffix('"').unwrap_or(value);
-
-        if value.is_empty() {
-            continue;
-        }
-
-        for entry in value.split(", ") {
-            let entry = entry.trim();
-            if !entry.is_empty() {
-                paths.push(PathBuf::from(entry));
-            }
-        }
-
-        break;
-    }
-
-    paths
-}
-
-/// Parse `Paths\gamedirs\N\path=` values from Eden's config.
-///
-/// Skips virtual directory names and non-existent paths.
-fn parse_game_directories(config_content: &str) -> Vec<PathBuf> {
-    let mut dirs = Vec::new();
-
-    for line in config_content.lines() {
-        let trimmed = line.trim();
-
-        if !trimmed.starts_with("Paths\\gamedirs\\") || !trimmed.contains("\\path=") {
-            continue;
-        }
-
-        let value = match trimmed.split_once("\\path=") {
-            Some((_, v)) => v.trim(),
-            None => continue,
-        };
-
-        if value.is_empty() || SPECIAL_GAMEDIRS.contains(&value) {
-            continue;
-        }
-
-        let dir_path = PathBuf::from(value);
-        if dir_path.is_dir() {
-            dirs.push(dir_path);
-        }
-    }
-
-    dirs
 }
 
 /// Check if a file has a valid Switch game extension
@@ -422,41 +353,6 @@ fn build_rom_index(
     index
 }
 
-/// Derive a display name from a ROM file path.
-///
-/// Uses the filename stem and strips any `[...]` bracket groups that
-/// some naming conventions include. Falls back to the raw stem.
-fn display_name_from_path(path: &Path) -> String {
-    let stem = match path.file_stem().and_then(|s| s.to_str()) {
-        Some(s) => s,
-        None => return path.to_string_lossy().to_string(),
-    };
-
-    let cleaned = strip_bracket_groups(stem);
-    if cleaned.is_empty() {
-        stem.to_string()
-    } else {
-        cleaned
-    }
-}
-
-/// Remove all `[...]` bracket groups from a string and trim whitespace.
-fn strip_bracket_groups(s: &str) -> String {
-    let mut result = String::with_capacity(s.len());
-    let mut depth = 0u32;
-
-    for ch in s.chars() {
-        match ch {
-            '[' => depth += 1,
-            ']' if depth > 0 => depth -= 1,
-            _ if depth == 0 => result.push(ch),
-            _ => {}
-        }
-    }
-
-    result.trim().to_string()
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -486,49 +382,6 @@ mod tests {
         assert!(!is_valid_title_id("012345678_ABCDEF"));
     }
 
-    // -- bracket stripping --
-
-    #[test]
-    fn strip_brackets_removes_groups() {
-        assert_eq!(strip_bracket_groups("Name [tag1][tag2]"), "Name");
-    }
-
-    #[test]
-    fn strip_brackets_preserves_plain_text() {
-        assert_eq!(strip_bracket_groups("Plain Name"), "Plain Name");
-    }
-
-    #[test]
-    fn strip_brackets_nested() {
-        assert_eq!(strip_bracket_groups("A [outer [inner]] B"), "A  B");
-    }
-
-    #[test]
-    fn strip_brackets_empty_result() {
-        assert_eq!(strip_bracket_groups("[everything]"), "");
-    }
-
-    // -- display name from path --
-
-    #[test]
-    fn display_name_strips_brackets_and_extension() {
-        let path = PathBuf::from("/games/My Title [AABBCCDD11223344][v0].nsp");
-        assert_eq!(display_name_from_path(&path), "My Title");
-    }
-
-    #[test]
-    fn display_name_plain_filename() {
-        let path = PathBuf::from("/roms/cool-game.xci");
-        assert_eq!(display_name_from_path(&path), "cool-game");
-    }
-
-    #[test]
-    fn display_name_all_brackets_falls_back() {
-        let path = PathBuf::from("/games/[AABB][v0].nsp");
-        // stem is "[AABB][v0]", stripped is empty → fallback to raw stem
-        assert_eq!(display_name_from_path(&path), "[AABB][v0]");
-    }
-
     // -- switch game file detection --
 
     #[test]
@@ -546,36 +399,6 @@ mod tests {
         assert!(!is_switch_game_file(Path::new("game")));
     }
 
-    // -- config parsing --
-
-    #[test]
-    fn parse_recent_files_extracts_paths() {
-        let config = concat!(
-            "[UI]\n",
-            "theme=dark\n",
-            "\n",
-            "Paths\\recentFiles=\"/mnt/a/one.nsp, /mnt/b/two.xci\"\n",
-            "\n",
-            "Paths\\gamedirs\\size=1\n",
-        );
-        let paths = parse_recent_files(config);
-        assert_eq!(paths.len(), 2);
-        assert_eq!(paths[0], PathBuf::from("/mnt/a/one.nsp"));
-        assert_eq!(paths[1], PathBuf::from("/mnt/b/two.xci"));
-    }
-
-    #[test]
-    fn parse_recent_files_empty_value() {
-        let paths = parse_recent_files("Paths\\recentFiles=\"\"");
-        assert!(paths.is_empty());
-    }
-
-    #[test]
-    fn parse_recent_files_missing_key() {
-        let paths = parse_recent_files("[UI]\ntheme=dark\n");
-        assert!(paths.is_empty());
-    }
-
     #[test]
     fn parse_game_directories_skips_virtual_names() {
         let config = concat!(
@@ -584,7 +407,7 @@ mod tests {
             "Paths\\gamedirs\\3\\path=SysNAND\n",
             "Paths\\gamedirs\\4\\path=/tmp\n",
         );
-        let dirs = parse_game_directories(config);
+        let dirs = parse_game_directories(config, SPECIAL_GAMEDIRS);
         assert!(dirs.iter().all(|d| {
             let name = d.to_string_lossy();
             !SPECIAL_GAMEDIRS.contains(&name.as_ref())
@@ -618,6 +441,6 @@ mod tests {
         );
 
         let index = build_rom_index(&[rom], &saves);
-        assert!(index.get(&tid).is_none());
+        assert!(!index.contains_key(&tid));
     }
 }

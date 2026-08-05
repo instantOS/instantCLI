@@ -246,8 +246,7 @@ impl GameRepositoryManager {
     ) -> Result<()> {
         // Prompt for restic repository using fzf unless provided
         let repo = if let Some(repo_str) = &options.repo {
-            let tilde_path = TildePath::from_str(repo_str)
-                .map_err(|e| anyhow::anyhow!("Invalid repository path: {}", e))?;
+            let tilde_path = TildePath::from_str(repo_str);
 
             if tilde_path.as_path().is_absolute() && !tilde_path.as_path().exists() {
                 std::fs::create_dir_all(tilde_path.as_path())
@@ -395,7 +394,7 @@ impl GameRepositoryManager {
             Ok(TildePath::new(default_path))
         } else {
             // Use TildePath to handle tilde expansion automatically
-            let path = TildePath::from_str(&repo_input)?;
+            let path = TildePath::from_str(&repo_input);
 
             // Provide guidance for rclone remotes (after interaction, so println is fine)
             if repo_input.starts_with("rclone:") {

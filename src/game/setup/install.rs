@@ -236,8 +236,7 @@ fn finalize_game_setup(
     snapshot_selection: &SnapshotSelection,
 ) -> Result<FinalizeOutcome> {
     let original_selection = selected_path.display_path.clone();
-    let mut save_path =
-        TildePath::from_str(&original_selection).map_err(|e| anyhow!("Invalid save path: {e}"))?;
+    let mut save_path = TildePath::from_str(&original_selection);
     let snapshot_kind = snapshot_selection
         .latest_snapshot_id()
         .and_then(|id| infer_snapshot_kind(game_config, id).ok());

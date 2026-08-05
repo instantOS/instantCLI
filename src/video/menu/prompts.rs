@@ -89,7 +89,7 @@ pub fn resolve_output_path_from_selection(
             if trimmed.is_empty() {
                 return Ok(None);
             }
-            let tilde_path = TildePath::from_str(trimmed)?;
+            let tilde_path = TildePath::from_str(trimmed);
             let mut path = tilde_path.into_path_buf();
             let treat_as_dir = trimmed.ends_with('/')
                 || trimmed.ends_with(std::path::MAIN_SEPARATOR)
@@ -486,7 +486,7 @@ pub fn prompt_optional_path(prompt: &str, ghost: &str) -> Result<PromptOutcome<O
             if trimmed.is_empty() {
                 Ok(PromptOutcome::Value(None))
             } else {
-                let path = TildePath::from_str(trimmed)?.into_path_buf();
+                let path = TildePath::from_str(trimmed).into_path_buf();
                 Ok(PromptOutcome::Value(Some(path)))
             }
         }

@@ -11,13 +11,11 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 
 use super::DiscoveredGame;
+use super::utils::display_name_from_stem;
 use crate::common::TildePath;
 use crate::menu::protocol::FzfPreview;
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
-
-/// PCSX2 Flatpak application ID
-const PCSX2_FLATPAK_ID: &str = "net.pcsx2.PCSX2";
 
 /// Default memcard paths for different installation types
 const MEMCARD_PATHS: &[&str] = &[
@@ -152,19 +150,8 @@ impl DiscoveredGame for Pcsx2DiscoveredMemcard {
 
 /// Check if PCSX2 is installed (either Flatpak or native)
 pub fn is_pcsx2_installed() -> bool {
-    is_flatpak_installed() || is_native_installed()
-}
-
-/// Check if PCSX2 Flatpak is installed
-fn is_flatpak_installed() -> bool {
-    let flatpak_path = shellexpand::tilde("~/.var/app/net.pcsx2.PCSX2");
-    Path::new(flatpak_path.as_ref()).is_dir()
-}
-
-/// Check if native PCSX2 is installed (has memcards directory)
-fn is_native_installed() -> bool {
-    let native_path = shellexpand::tilde("~/.config/PCSX2/memcards");
-    Path::new(native_path.as_ref()).is_dir()
+    TildePath::from_str("~/.var/app/net.pcsx2.PCSX2").is_dir()
+        || TildePath::from_str("~/.config/PCSX2/memcards").is_dir()
 }
 
 /// Discover PCSX2 memory cards from all available installation types.
@@ -225,7 +212,7 @@ fn scan_memcard_directory(
         // Check if it's a .ps2 file
         if let Some(ext) = path.extension()
             && ext.to_str().map(|e| e.to_lowercase()) == Some(MEMCARD_EXTENSION.to_string())
-            && let Some(display_name) = display_name_from_path(&path)
+            && let Some(display_name) = display_name_from_stem(&path)
         {
             memcards.push(Pcsx2DiscoveredMemcard::new(
                 display_name,
@@ -238,17 +225,6 @@ fn scan_memcard_directory(
     Ok(memcards)
 }
 
-/// Derive a display name from a memcard file path.
-/// Uses the filename stem (without extension).
-fn display_name_from_path(path: &Path) -> Option<String> {
-    path.file_stem()
-        .and_then(|s| s.to_str())
-        .map(|s| s.to_string())
-}
-
-/// Get the appropriate PCSX2 launch command for a given installation type.
-/// This is used when pre-filling the launch command in the add game flow.
-// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -257,24 +233,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn display_name_from_path_extracts_stem() {
+    fn display_name_from_stem_extracts_stem() {
         let path = PathBuf::from("/memcards/ffx_1.ps2");
-        assert_eq!(display_name_from_path(&path), Some("ffx_1".to_string()));
+        assert_eq!(display_name_from_stem(&path), Some("ffx_1".to_string()));
     }
 
     #[test]
-    fn display_name_from_path_handles_spaces() {
+    fn display_name_from_stem_handles_spaces() {
         let path = PathBuf::from("/memcards/My Game Save.ps2");
         assert_eq!(
-            display_name_from_path(&path),
+            display_name_from_stem(&path),
             Some("My Game Save".to_string())
         );
     }
 
     #[test]
-    fn display_name_from_path_no_extension() {
+    fn display_name_from_stem_no_extension() {
         let path = PathBuf::from("/memcards/Mcd001");
-        assert_eq!(display_name_from_path(&path), Some("Mcd001".to_string()));
+        assert_eq!(display_name_from_stem(&path), Some("Mcd001".to_string()));
     }
 
     #[test]

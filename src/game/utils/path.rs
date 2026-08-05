@@ -15,9 +15,7 @@ pub fn path_selection_to_tilde(selection: PathInputSelection) -> Result<Option<T
             if trimmed.is_empty() {
                 Ok(None)
             } else {
-                Ok(Some(
-                    TildePath::from_str(trimmed).map_err(|e| anyhow!("Invalid path: {e}"))?,
-                ))
+                Ok(Some(TildePath::from_str(trimmed)))
             }
         }
         PathInputSelection::Picker(path) | PathInputSelection::WinePrefix(path) => {

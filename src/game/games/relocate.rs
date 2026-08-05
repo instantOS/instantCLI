@@ -44,8 +44,7 @@ fn resolve_manual_save_path(path: String) -> Result<TildePath> {
     if !validate_non_empty(trimmed, "Save path")? {
         return Err(anyhow!("Save path cannot be empty"));
     }
-    let tilde_path =
-        TildePath::from_str(trimmed).map_err(|e| anyhow!("Invalid save path: {}", e))?;
+    let tilde_path = TildePath::from_str(trimmed);
 
     ensure_safe_path(tilde_path.as_path(), PathUsage::SaveDirectory)?;
 

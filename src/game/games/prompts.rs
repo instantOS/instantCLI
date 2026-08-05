@@ -49,9 +49,7 @@ pub(crate) fn get_save_path(game_name: &str) -> Result<TildePath> {
                     FzfWrapper::message("Save path cannot be empty.")?;
                     Ok(None)
                 } else {
-                    TildePath::from_str(&input)
-                        .map(Some)
-                        .map_err(|e| anyhow!("Invalid save path: {}", e))
+                    Ok(Some(TildePath::from_str(&input)))
                 }
             }
             PathInputSelection::Picker(path) | PathInputSelection::WinePrefix(path) => {

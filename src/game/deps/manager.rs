@@ -171,12 +171,7 @@ fn prepare_dependency_source(
     let metadata = fs::metadata(&expanded)
         .with_context(|| format!("Failed to read metadata for dependency path: {}", raw))?;
 
-    let tilde = TildePath::from_str(&raw).with_context(|| {
-        format!(
-            "Failed to convert dependency path '{}' into a storable representation",
-            raw
-        )
-    })?;
+    let tilde = TildePath::from_str(&raw);
 
     Ok(DependencySource {
         expanded,
@@ -286,12 +281,7 @@ pub fn install_dependency(options: InstallDependencyOptions) -> Result<()> {
         selected_dependency.source_type,
     )?;
 
-    let install_path_tilde = TildePath::from_str(&target_path_input).with_context(|| {
-        format!(
-            "Invalid install path provided for dependency '{}': {}",
-            dependency_id, target_path_input
-        )
-    })?;
+    let install_path_tilde = TildePath::from_str(&target_path_input);
 
     ensure_safe_path(install_path_tilde.as_path(), PathUsage::DependencyInstall)?;
 

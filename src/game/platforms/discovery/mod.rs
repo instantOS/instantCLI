@@ -10,6 +10,7 @@ pub mod epic;
 pub mod faugus;
 pub mod pcsx2;
 pub mod steam;
+mod utils;
 pub mod wine;
 
 use std::path::PathBuf;

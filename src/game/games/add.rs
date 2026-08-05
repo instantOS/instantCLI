@@ -91,8 +91,7 @@ pub(super) fn resolve_add_game_details(
                 return Err(anyhow!("Save path cannot be empty"));
             }
 
-            let tilde_path =
-                TildePath::from_str(trimmed).map_err(|e| anyhow!("Invalid save path: {}", e))?;
+            let tilde_path = TildePath::from_str(trimmed);
 
             ensure_safe_path(tilde_path.as_path(), PathUsage::SaveDirectory)?;
 
@@ -214,9 +213,7 @@ fn prompt_manual_save_path(game_name: &str) -> Result<Option<TildePath>> {
                     FzfWrapper::message("Save path cannot be empty.")?;
                     Ok(None)
                 } else {
-                    TildePath::from_str(&input)
-                        .map(Some)
-                        .map_err(|e| anyhow!("Invalid save path: {}", e))
+                    Ok(Some(TildePath::from_str(&input)))
                 }
             }
             PathInputSelection::Picker(path) | PathInputSelection::WinePrefix(path) => {

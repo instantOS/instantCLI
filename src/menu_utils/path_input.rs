@@ -431,7 +431,7 @@ impl PathInputSelection {
                 if input.is_empty() {
                     return Ok(None);
                 }
-                Ok(Some(TildePath::from_str(input)?))
+                Ok(Some(TildePath::from_str(input)))
             }
             PathInputSelection::Picker(path) => Ok(Some(TildePath::new(path.clone()))),
             PathInputSelection::WinePrefix(path) => Ok(Some(TildePath::new(path.clone()))),
