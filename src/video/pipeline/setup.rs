@@ -29,6 +29,7 @@ pub async fn handle_setup(args: SetupArgs) -> Result<()> {
         None,
     );
 
+    setup_clearvoice(args.force)?;
     setup_local_enhancer(args.force)?;
     setup_auphonic(args.force).await?;
     setup_whisperx(args.force)?;
@@ -43,14 +44,11 @@ pub async fn handle_setup(args: SetupArgs) -> Result<()> {
 }
 
 fn video_tools_ready() -> Result<bool> {
-    let local_ready = command_exists("uvx")
-        && command_exists("ffmpeg")
-        && cmd!("uvx", "ffmpeg-normalize", "--version").run().is_ok()
-        && {
-            let mut dfn_args: Vec<&str> = DEEPFILTER_UVX_ARGS.to_vec();
-            dfn_args.push("--version");
-            cmd("uvx", &dfn_args).run().is_ok()
-        };
+    let local_ready = command_exists("uvx") && command_exists("ffmpeg") && {
+        let mut dfn_args: Vec<&str> = DEEPFILTER_UVX_ARGS.to_vec();
+        dfn_args.push("--version");
+        cmd("uvx", &dfn_args).run().is_ok()
+    };
 
     let whisper_ready = command_exists("uv") && cmd!("uvx", "whisperx", "--version").run().is_ok();
 
@@ -58,6 +56,45 @@ fn video_tools_ready() -> Result<bool> {
     let auphonic_ready = config.auphonic_api_key.is_some();
 
     Ok(local_ready && whisper_ready && auphonic_ready)
+}
+
+fn setup_clearvoice(_force: bool) -> Result<()> {
+    emit(
+        Level::Info,
+        "video.setup.clearvoice",
+        "Checking ClearVoice enhancer dependencies...",
+        None,
+    );
+
+    if !command_exists("uv") {
+        emit(
+            Level::Warn,
+            "video.setup.clearvoice",
+            "uv is not installed. ClearVoice enhancement requires uv. Install with: curl -LsSf https://astral.sh/uv/install.sh | sh",
+            None,
+        );
+        return Ok(());
+    }
+
+    if !command_exists("ffmpeg") {
+        emit(
+            Level::Warn,
+            "video.setup.clearvoice",
+            "ffmpeg is not installed. ClearVoice enhancement requires ffmpeg.",
+            None,
+        );
+        return Ok(());
+    }
+
+    // ClearVoice runs via `uv run --with clearvoice` (same pattern as Granite
+    // and whisperx). The Python package and model are fetched on first use.
+    emit(
+        Level::Success,
+        "video.setup.clearvoice",
+        "ClearVoice dependencies ready (package + model fetched on first enhance).",
+        None,
+    );
+    Ok(())
 }
 
 fn setup_local_enhancer(_force: bool) -> Result<()> {

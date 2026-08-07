@@ -289,6 +289,18 @@ pub fn select_enhance_backend_choice() -> Result<Option<EnhanceBackendChoice>> {
 
     let items = vec![
         ChoiceItem::new(
+            "clearvoice",
+            format!(
+                "{} ClearVoice enhancement (default)",
+                format_icon_colored(NerdFont::Magic, colors::GREEN)
+            ),
+            EnhanceBackendChoice::ClearVoice,
+            PreviewBuilder::new()
+                .header(NerdFont::Magic, "ClearVoice enhancer")
+                .text("Alibaba DAMO AI speech enhancement (denoise + restoration, 48 kHz fullband), then pure loudness (no compression). Default engine.")
+                .build(),
+        ),
+        ChoiceItem::new(
             "local",
             format!(
                 "{} Local enhancement",

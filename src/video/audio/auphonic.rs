@@ -244,7 +244,7 @@ impl AudioEnhancer for AuphonicEnhancer {
         let cache = EnhanceCache::prepare(input)?;
 
         let raw_cache_path = cache.path("auphonic_raw.mp3");
-        let processed_cache_path = cache.path("auphonic_processed.mp3");
+        let processed_cache_path = cache.path("enhanced_auphonic.mp3");
 
         // Check cache for processed result
         if let Some(cached) = cache.cached(

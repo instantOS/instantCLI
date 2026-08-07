@@ -19,7 +19,7 @@ pub enum VideoCommands {
     Slide(SlideArgs),
     /// Validate and show statistics for a video markdown file
     Check(CheckArgs),
-    /// Enhance audio with the configured enhancer (local or auphonic)
+    /// Enhance audio with the configured enhancer (clearvoice, local, auphonic)
     #[command(alias = "preprocess")]
     Enhance(EnhanceArgs),
     /// Setup video tools (local enhancer, Auphonic, WhisperX)
@@ -220,8 +220,8 @@ pub struct EnhanceArgs {
     #[arg(value_hint = ValueHint::FilePath)]
     pub input_file: PathBuf,
 
-    /// Enhancer backend: local, auphonic, none
-    #[arg(long, default_value = "local")]
+    /// Enhancer backend: auto (configured enhancer), clearvoice, local, auphonic, none
+    #[arg(long, default_value = "auto")]
     pub backend: String,
 
     /// Force reprocessing even if cached

@@ -10,8 +10,10 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum EnhancerType {
-    /// Local enhancer using DeepFilterNet + pure EBU R128 loudness
+    /// ClearVoice (Alibaba DAMO) AI speech enhancement (default)
     #[default]
+    ClearVoice,
+    /// Local enhancer using DeepFilterNet + pure EBU R128 loudness
     Local,
     /// Cloud enhancement via Auphonic API
     Auphonic,
@@ -22,6 +24,7 @@ pub enum EnhancerType {
 impl std::fmt::Display for EnhancerType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            EnhancerType::ClearVoice => write!(f, "ClearVoice (AI enhancement)"),
             EnhancerType::Local => write!(f, "Local (DeepFilterNet + loudness)"),
             EnhancerType::Auphonic => write!(f, "Auphonic (cloud processing)"),
             EnhancerType::None => write!(f, "None (no enhancement)"),

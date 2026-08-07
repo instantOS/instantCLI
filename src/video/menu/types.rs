@@ -272,6 +272,7 @@ impl std::fmt::Display for RenderToggle {
 
 #[derive(Clone, Copy)]
 pub enum EnhanceBackendChoice {
+    ClearVoice,
     Local,
     Auphonic,
     None,
@@ -280,6 +281,7 @@ pub enum EnhanceBackendChoice {
 impl std::fmt::Display for EnhanceBackendChoice {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            EnhanceBackendChoice::ClearVoice => write!(f, "clearvoice"),
             EnhanceBackendChoice::Local => write!(f, "local"),
             EnhanceBackendChoice::Auphonic => write!(f, "auphonic"),
             EnhanceBackendChoice::None => write!(f, "none"),
