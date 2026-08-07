@@ -3,11 +3,11 @@
 //! Pipeline (voice stem, before music is mixed):
 //! 1. Extract audio to WAV if input is video
 //! 2. Run DeepFilterNet for noise reduction
-//! 3. Run a static two-pass EBU R128 loudness normalization (NO compressor)
+//! 3. Run EBU R128 dynamic loudness normalization (compressor on voice only)
 //!
-//! The loudness step deliberately avoids dynamic range processing: `linear=true`
-//! applies a single linear gain, so the voice keeps its dynamics and the music
-//! (mixed later, after this stage) is never double-compressed.
+//! Dynamic compression (ffmpeg-normalize --dynamic) is applied here to the voice
+//! stem only. The music bed is mixed in later and passes through untouched, so
+//! already-mastered MP3s are never double-compressed.
 
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
@@ -77,7 +77,7 @@ impl LocalEnhancer {
 
     /// Run pure two-pass EBU R128 loudness normalization (shared, no compression).
     fn run_loudnorm(input: &Path, output: &Path) -> Result<()> {
-        super::run_static_loudnorm(input, output)
+        super::run_loudnorm(input, output)
     }
 }
 

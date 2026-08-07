@@ -4,7 +4,7 @@
 //! it denoises and levels the voice stem before the music bed is mixed in.
 //! Supports multiple enhancement backends:
 //! - `ClearVoice`: Alibaba DAMO AI speech enhancement (default)
-//! - `Local`: DeepFilterNet noise reduction + pure EBU R128 loudness (no compression)
+//! - `Local`: DeepFilterNet noise reduction + EBU R128 dynamic loudness (voice only)
 //! - `Auphonic`: Cloud-based processing via Auphonic API
 //! - `None`: Skip enhancement
 
@@ -13,7 +13,7 @@ pub mod clearvoice;
 pub mod local;
 mod types;
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
 pub use types::{AudioEnhancer, EnhanceResult, EnhancerType};
@@ -116,116 +116,40 @@ impl EnhanceCache {
     }
 }
 
-/// Pure static 2-pass EBU R128 loudness normalization (no compression).
+/// Dynamic loudness normalization for the voice stem.
 ///
-/// Pass 1 measures the true integrated loudness, pass 2 applies the measured
-/// values with linear normalization so the result lands at `-14 LUFS` with a
-/// `-1.0 dBTP` ceiling. Shared by the ClearVoice and Local backends; the
-/// enhancer (AI model) does the denoising, this only levels the voice stem.
-/// Pure static 2-pass EBU R128 loudness normalization (no compression).
-///
-/// Pass 1 measures the true integrated loudness; pass 2 applies the measured
-/// values with `linear=true`, so ffmpeg rescales by a constant factor instead
-/// of running its dynamic compressor/limiter. The voice keeps its natural
-/// dynamics; only overall level moves toward the target (-14 LUFS, -1.0 dBTP).
-pub(crate) fn run_static_loudnorm(input: &Path, output: &Path) -> Result<()> {
-    use std::process::Command;
-
-    let target_i = "-14";
-    let target_tp = "-1.0";
-    let target_lra = "11";
-
+/// Uses `ffmpeg-normalize` with `--dynamic` (EBU R128 dynamic mode) so the
+/// voice gets real compression: consistent levels, tight loudness range.
+/// This runs on the voice stem *before* the music is mixed in, so the music
+/// (already mastered/compressed MP3s) is never double-compressed.
+pub(crate) fn run_loudnorm(input: &Path, output: &Path) -> Result<()> {
     emit(
         Level::Info,
         "video.enhance.loudnorm",
-        "Running pure EBU R128 loudness normalization (no compression)...",
+        "Running EBU R128 loudness normalization with dynamic compression...",
         None,
     );
 
-    // Pass 1: measure loudness (output printed as JSON on stderr)
-    let measure = Command::new("ffmpeg")
+    let status = std::process::Command::new("uvx")
         .args([
-            "-hide_banner",
-            "-nostdin",
-            "-i",
+            "ffmpeg-normalize",
             &input.to_string_lossy(),
-            "-af",
-            &format!(
-                "loudnorm=I={}:TP={}:LRA={}:print_format=json",
-                target_i, target_tp, target_lra
-            ),
-            "-f",
-            "null",
-            "-",
-        ])
-        .output()
-        .context("Failed to run ffmpeg loudness measurement")?;
-
-    if !measure.status.success() {
-        anyhow::bail!("Loudness measurement failed for {}", input.display());
-    }
-
-    let stderr = String::from_utf8_lossy(&measure.stderr);
-    let json_start = stderr.find('{').ok_or_else(|| {
-        anyhow!(
-            "ffmpeg loudnorm printed no JSON on stderr for {}",
-            input.display()
-        )
-    })?;
-    let json_text = &stderr[json_start..];
-    let json_end = json_text
-        .find("}")
-        .map(|i| i + 1)
-        .ok_or_else(|| anyhow!("ffmpeg loudnorm JSON was truncated for {}", input.display()))?;
-    let parsed: serde_json::Value = serde_json::from_str(&json_text[..json_end])
-        .context("Failed to parse ffmpeg loudnorm JSON")?;
-
-    let get = |key: &str| -> Result<String> {
-        parsed
-            .get(key)
-            .and_then(|v| v.as_str())
-            .map(str::to_string)
-            .ok_or_else(|| anyhow!("ffmpeg loudnorm JSON missing field '{}'", key))
-    };
-    let measured_i = get("input_i")?;
-    let measured_tp = get("input_tp")?;
-    let measured_lra = get("input_lra")?;
-    let measured_thresh = get("input_thresh")?;
-    let target_offset = get("target_offset").unwrap_or_else(|_| "0.0".to_string());
-
-    // Pass 2: apply the static gain (linear=true disables dynamic processing)
-    let loudnorm_filter = format!(
-        "loudnorm=I={}:TP={}:LRA={}:measured_I={}:measured_TP={}:measured_LRA={}:measured_thresh={}:offset={}:linear=true",
-        target_i,
-        target_tp,
-        target_lra,
-        measured_i,
-        measured_tp,
-        measured_lra,
-        measured_thresh,
-        target_offset
-    );
-    let status = Command::new("ffmpeg")
-        .args([
-            "-hide_banner",
-            "-y",
-            "-i",
-            &input.to_string_lossy(),
-            "-af",
-            &loudnorm_filter,
-            "-ar",
-            "48000",
-            "-ac",
-            "1",
-            "-c:a",
-            "pcm_s16le",
+            "--preset",
+            "streaming-video",
+            "--dynamic",
+            "-lrt",
+            "2",
+            "--true-peak",
+            "-1.0",
+            "-o",
             &output.to_string_lossy(),
+            "-f",
         ])
         .status()
-        .context("Failed to run ffmpeg loudness normalization")?;
+        .context("Failed to run ffmpeg-normalize")?;
 
     if !status.success() {
-        anyhow::bail!("Loudness normalization failed for {}", input.display());
+        anyhow::bail!("ffmpeg-normalize failed for {}", input.display());
     }
 
     emit(

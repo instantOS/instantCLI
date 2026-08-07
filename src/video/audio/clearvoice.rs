@@ -112,7 +112,7 @@ impl AudioEnhancer for ClearVoiceEnhancer {
         }
 
         // Step 3: Static loudness normalization (no compression)
-        super::run_static_loudnorm(&cv_raw_path, &enhanced_cache_path)?;
+        super::run_loudnorm(&cv_raw_path, &enhanced_cache_path)?;
 
         Ok(EnhanceResult {
             output_path: enhanced_cache_path,
