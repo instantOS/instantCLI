@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Result, anyhow, bail};
 
 use crate::ui::prelude::Level;
-use crate::video::audio::{PreprocessorType, create_preprocessor};
+use crate::video::audio::{EnhancerType, create_enhancer};
 use crate::video::config::VideoConfig;
 use crate::video::document::VideoDocument;
 use crate::video::document::{VideoMetadata, VideoSource};
@@ -104,35 +104,35 @@ pub(crate) async fn resolve_video_sources(
 }
 
 async fn resolve_audio_path(video_path: &Path, config: &VideoConfig) -> Result<PathBuf> {
-    if matches!(config.preprocessor, PreprocessorType::None) {
+    if matches!(config.enhancer, EnhancerType::None) {
         log_event(
             Level::Info,
             "video.render.audio",
-            "Preprocessing disabled. Using original video audio.",
+            "Enhancement disabled. Using original video audio.",
         );
         return Ok(video_path.to_path_buf());
     }
 
-    let preprocessor = create_preprocessor(&config.preprocessor, config);
+    let enhancer = create_enhancer(&config.enhancer, config);
 
-    if !preprocessor.is_available() {
+    if !enhancer.is_available() {
         log_event(
             Level::Warn,
-            "video.render.audio.preprocess",
+            "video.render.audio.enhance",
             format!(
-                "Preprocessor '{}' not available. Using original video audio.",
-                preprocessor.name()
+                "Enhancer '{}' not available. Using original video audio.",
+                enhancer.name()
             ),
         );
         return Ok(video_path.to_path_buf());
     }
 
-    let result = preprocessor.process(video_path, false).await?;
+    let result = enhancer.enhance(video_path, false).await?;
 
     log_event(
         Level::Info,
-        "video.render.audio.preprocess",
-        format!("Using preprocessed audio: {}", result.output_path.display()),
+        "video.render.audio.enhance",
+        format!("Using enhanced audio: {}", result.output_path.display()),
     );
 
     Ok(result.output_path)

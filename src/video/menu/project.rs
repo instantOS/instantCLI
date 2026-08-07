@@ -22,8 +22,8 @@ use super::file_selection::{
     select_output_path, select_video_file_with_suggestions,
 };
 use super::prompts::{
-    confirm_action, prompt_optional_path, select_audio_preprocessing, select_render_options,
-    select_transcript_choice, select_transcript_language,
+    confirm_action, prompt_optional_path, select_render_options, select_transcript_choice,
+    select_transcript_language,
 };
 use super::types::{PromptOutcome, TranscriptChoice};
 
@@ -129,7 +129,7 @@ impl FzfSelectable for ProjectMenuEntry {
                 .text("Supports:")
                 .bullet("Overlay slides and title cards")
                 .bullet("Reels mode output")
-                .bullet("Audio preprocessing caches")
+                .bullet("Audio enhancement caches")
                 .build(),
             ProjectMenuEntry::Preview => PreviewBuilder::new()
                 .header(NerdFont::Play, "Preview")
@@ -171,7 +171,7 @@ impl FzfSelectable for ProjectMenuEntry {
                 .text("Delete cached files for this project.")
                 .blank()
                 .text("This includes:")
-                .bullet("Preprocessed audio")
+                .bullet("Enhanced voice audio")
                 .bullet("Transcript cache")
                 .bullet("Generated slides")
                 .build(),
@@ -289,17 +289,12 @@ async fn run_add_recording(markdown_path: &Path) -> Result<()> {
         }
     };
 
-    let Some((no_preprocess, preprocessor)) = select_audio_preprocessing()? else {
-        return Ok(());
-    };
-
     convert::handle_append(AppendArgs {
         markdown: markdown_path.to_path_buf(),
         video: video_path,
         transcript: transcript_path,
         force: false,
-        no_preprocess,
-        preprocessor,
+
         language,
     })
     .await

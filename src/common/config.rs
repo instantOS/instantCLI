@@ -8,7 +8,7 @@
 //! ```ignore
 //! documented_config!(VideoConfig,
 //!     music_volume, "Music volume (0.0-1.0)",
-//!     preprocessor, "Audio preprocessor",
+//!     enhancer, "Audio enhancer",
 //!     auphonic_api_key, "Auphonic API key",
 //! );
 //! ```
@@ -235,7 +235,7 @@ pub trait DocumentedConfig: Sized + Default + Serialize {
 /// ```ignore
 /// documented_config!(VideoConfig,
 ///     music_volume, "Music volume (0.0-1.0)",
-///     preprocessor, "Audio preprocessor",
+///     enhancer, "Audio enhancer",
 ///     auphonic_api_key, "Auphonic API key", secret,
 ///     scan_dirs, "Directories to scan", example, r#"
 /// [[scan_dirs]]

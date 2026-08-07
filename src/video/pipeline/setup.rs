@@ -29,7 +29,7 @@ pub async fn handle_setup(args: SetupArgs) -> Result<()> {
         None,
     );
 
-    setup_local_preprocessor(args.force)?;
+    setup_local_enhancer(args.force)?;
     setup_auphonic(args.force).await?;
     setup_whisperx(args.force)?;
 
@@ -60,11 +60,11 @@ fn video_tools_ready() -> Result<bool> {
     Ok(local_ready && whisper_ready && auphonic_ready)
 }
 
-fn setup_local_preprocessor(_force: bool) -> Result<()> {
+fn setup_local_enhancer(_force: bool) -> Result<()> {
     emit(
         Level::Info,
         "video.setup.local",
-        "Checking local preprocessor dependencies...",
+        "Checking local enhancer dependencies...",
         None,
     );
 
@@ -73,7 +73,7 @@ fn setup_local_preprocessor(_force: bool) -> Result<()> {
         emit(
             Level::Warn,
             "video.setup.local",
-            "uvx is not installed. Local preprocessing requires uvx. Install with: curl -LsSf https://astral.sh/uv/install.sh | sh",
+            "uvx is not installed. Local enhancement requires uvx. Install with: curl -LsSf https://astral.sh/uv/install.sh | sh",
             None,
         );
         return Ok(());
@@ -83,7 +83,7 @@ fn setup_local_preprocessor(_force: bool) -> Result<()> {
         emit(
             Level::Warn,
             "video.setup.local",
-            "ffmpeg is not installed. Local preprocessing requires ffmpeg.",
+            "ffmpeg is not installed. Local enhancement requires ffmpeg.",
             None,
         );
         return Ok(());
@@ -96,7 +96,7 @@ fn setup_local_preprocessor(_force: bool) -> Result<()> {
     emit(
         Level::Success,
         "video.setup.local",
-        "Local preprocessor dependencies checked.",
+        "Local enhancer dependencies checked.",
         None,
     );
 
@@ -233,14 +233,14 @@ async fn check_and_emit_account_type(client: &Client, api_key: &str) {
                 emit(
                     Level::Warn,
                     "video.setup.auphonic",
-                    "Free account detected. Consider using local preprocessor (default) to avoid jingle insertion.",
+                    "Free account detected. Consider using local enhancer (default) to avoid jingle insertion.",
                     None,
                 );
             } else {
                 emit(
                     Level::Success,
                     "video.setup.auphonic",
-                    "Premium account detected. You can use 'preprocessor = \"auphonic\"' in config.",
+                    "Premium account detected. You can use 'enhancer = \"auphonic\"' in config.",
                     None,
                 );
             }

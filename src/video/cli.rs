@@ -9,7 +9,7 @@ pub enum VideoCommands {
     Convert(ConvertArgs),
     /// Append another recording to a video markdown file
     Append(AppendArgs),
-    /// Generate a transcript for a video using WhisperX
+    /// Generate a transcript for a video (Granite or WhisperX)
     Transcribe(TranscribeArgs),
     /// Render a video according to edits in a markdown file
     Render(RenderArgs),
@@ -19,9 +19,10 @@ pub enum VideoCommands {
     Slide(SlideArgs),
     /// Validate and show statistics for a video markdown file
     Check(CheckArgs),
-    /// Process audio with the configured preprocessor (local or auphonic)
-    Preprocess(PreprocessArgs),
-    /// Setup video tools (local preprocessor, Auphonic, WhisperX)
+    /// Enhance audio with the configured enhancer (local or auphonic)
+    #[command(alias = "preprocess")]
+    Enhance(EnhanceArgs),
+    /// Setup video tools (local enhancer, Auphonic, WhisperX)
     Setup(SetupArgs),
     /// Interactive video menu (guided workflows)
     Menu {
@@ -56,15 +57,7 @@ pub struct ConvertArgs {
     #[arg(long)]
     pub force: bool,
 
-    /// Skip audio preprocessing entirely
-    #[arg(long)]
-    pub no_preprocess: bool,
-
-    /// Override preprocessor type (local, auphonic, none)
-    #[arg(long)]
-    pub preprocessor: Option<String>,
-
-    /// Transcription language for WhisperX (speech recognition and word alignment)
+    /// Transcription language (speech recognition and word alignment)
     #[arg(long, value_enum, default_value_t = TranscriptLanguage::En)]
     pub language: TranscriptLanguage,
 }
@@ -87,15 +80,7 @@ pub struct AppendArgs {
     #[arg(long)]
     pub force: bool,
 
-    /// Skip audio preprocessing entirely
-    #[arg(long)]
-    pub no_preprocess: bool,
-
-    /// Override preprocessor type (local, auphonic, none)
-    #[arg(long)]
-    pub preprocessor: Option<String>,
-
-    /// Transcription language for WhisperX (speech recognition and word alignment)
+    /// Transcription language (speech recognition and word alignment)
     #[arg(long, value_enum, default_value_t = TranscriptLanguage::En)]
     pub language: TranscriptLanguage,
 }
@@ -230,12 +215,12 @@ pub struct CheckArgs {
 }
 
 #[derive(Args, Debug, Clone)]
-pub struct PreprocessArgs {
-    /// Source video or audio file to process
+pub struct EnhanceArgs {
+    /// Source video or audio file to enhance
     #[arg(value_hint = ValueHint::FilePath)]
     pub input_file: PathBuf,
 
-    /// Preprocessor backend: local, auphonic, none
+    /// Enhancer backend: local, auphonic, none
     #[arg(long, default_value = "local")]
     pub backend: String,
 

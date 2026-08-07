@@ -1,25 +1,37 @@
-//! Local audio preprocessing using DeepFilterNet + ffmpeg-normalize
+//! Local audio enhancement using DeepFilterNet + pure EBU R128 loudness
 //!
-//! Pipeline:
+//! Pipeline (voice stem, before music is mixed):
 //! 1. Extract audio to WAV if input is video
 //! 2. Run DeepFilterNet for noise reduction
-//! 3. Run ffmpeg-normalize with podcast preset for loudness normalization
+//! 3. Run a static two-pass EBU R128 loudness normalization (NO compressor)
+//!
+//! The loudness step deliberately avoids dynamic range processing: `linear=true`
+//! applies a single linear gain, so the voice keeps its dynamics and the music
+//! (mixed later, after this stage) is never double-compressed.
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use super::PreprocessCache;
-use super::types::{AudioPreprocessor, PreprocessResult};
+use super::EnhanceCache;
+use super::types::{AudioEnhancer, EnhanceResult};
 use crate::ui::prelude::{Level, emit};
 use crate::video::support::DEEPFILTER_UVX_ARGS;
 use crate::video::support::ffmpeg::extract_audio_to_wav;
 use crate::video::support::utils::is_audio_file;
 
-/// Local preprocessor using DeepFilterNet + ffmpeg-normalize
-pub struct LocalPreprocessor;
+/// Loudness normalization targets (EBU R128, static gain only).
+/// - Integrated target: -14 LUFS (standard for internet video)
+/// - Loudness range: 11 LU (no hard squeezing of the voice)
+/// - True peak: -1.0 dBTP headroom
+const LOUDNORM_TARGET_LUFS: &str = "-14";
+const LOUDNORM_TRUE_PEAK: &str = "-1.0";
+const LOUDNORM_LRA: &str = "11";
 
-impl LocalPreprocessor {
+/// Local enhancer using DeepFilterNet + pure loudness normalization
+pub struct LocalEnhancer;
+
+impl LocalEnhancer {
     pub fn new() -> Self {
         Self
     }
@@ -28,7 +40,7 @@ impl LocalPreprocessor {
     fn run_deepfilter(input: &Path, output_dir: &Path) -> Result<PathBuf> {
         emit(
             Level::Info,
-            "video.preprocess.deepfilter",
+            "video.enhance.deepfilter",
             "Running DeepFilterNet noise reduction...",
             None,
         );
@@ -63,7 +75,7 @@ impl LocalPreprocessor {
 
         emit(
             Level::Success,
-            "video.preprocess.deepfilter",
+            "video.enhance.deepfilter",
             &format!("Noise reduction complete: {}", output_path.display()),
             None,
         );
@@ -71,46 +83,109 @@ impl LocalPreprocessor {
         Ok(output_path)
     }
 
-    /// Run ffmpeg-normalize for loudness normalization
-    /// Uses aggressive dynamic compression for consistent speech levels
-    fn run_normalize(input: &Path, output: &Path) -> Result<()> {
+    /// Run a pure two-pass EBU R128 loudness normalization with a STATIC gain.
+    ///
+    /// Pass 1 measures the source with `print_format=json`; pass 2 applies the
+    /// measured parameters with `linear=true`, so ffmpeg rescales by a constant
+    /// factor instead of running its dynamic compressor/limiter. The voice keeps
+    /// its natural dynamics; only overall level moves toward the target.
+    fn run_loudnorm(input: &Path, output: &Path) -> Result<()> {
         emit(
             Level::Info,
-            "video.preprocess.normalize",
-            "Running aggressive loudness normalization with heavy compression...",
+            "video.enhance.loudnorm",
+            "Running pure EBU R128 loudness normalization (no compression)...",
             None,
         );
 
-        // AGGRESSIVE normalization settings for consistent speech volume:
-        // - Target -10 LUFS: Louder overall level for speech (was -12)
-        // - Loudness Range 1 LU: Very tight compression (was 3) - keeps volume consistent
-        //   even when moving away from microphone
-        // - True peak -1 dBTP: Prevent clipping
-        let status = Command::new("uvx")
+        // Pass 1: measure loudness (output printed as JSON on stderr)
+        let measure = Command::new("ffmpeg")
             .args([
-                "ffmpeg-normalize",
+                "-hide_banner",
+                "-nostdin",
+                "-i",
                 &input.to_string_lossy(),
-                "--preset",
-                "streaming-video",
-                "--dynamic",
-                "-lrt",
-                "2",
-                "--true-peak",
-                "-1.0",
-                "-o",
+                "-af",
+                &format!(
+                    "loudnorm=I={}:TP={}:LRA={}:print_format=json",
+                    LOUDNORM_TARGET_LUFS, LOUDNORM_TRUE_PEAK, LOUDNORM_LRA
+                ),
+                "-f",
+                "null",
+                "-",
+            ])
+            .output()
+            .context("Failed to run ffmpeg loudness measurement")?;
+
+        if !measure.status.success() {
+            anyhow::bail!("Loudness measurement failed for {}", input.display());
+        }
+
+        let stderr = String::from_utf8_lossy(&measure.stderr);
+        let json_start = stderr.find('{').ok_or_else(|| {
+            anyhow!(
+                "ffmpeg loudnorm printed no JSON on stderr for {}",
+                input.display()
+            )
+        })?;
+        let json_text = &stderr[json_start..];
+        let json_end = json_text
+            .find("}")
+            .map(|i| i + 1)
+            .ok_or_else(|| anyhow!("ffmpeg loudnorm JSON was truncated for {}", input.display()))?;
+        let parsed: serde_json::Value = serde_json::from_str(&json_text[..json_end])
+            .context("Failed to parse ffmpeg loudnorm JSON")?;
+
+        let get = |key: &str| -> Result<String> {
+            parsed
+                .get(key)
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+                .ok_or_else(|| anyhow!("ffmpeg loudnorm JSON missing field '{}'", key))
+        };
+        let measured_i = get("input_i")?;
+        let measured_tp = get("input_tp")?;
+        let measured_lra = get("input_lra")?;
+        let measured_thresh = get("input_thresh")?;
+        let target_offset = get("target_offset").unwrap_or_else(|_| "0.0".to_string());
+
+        // Pass 2: apply the static gain (linear=true disables dynamic processing)
+        let loudnorm_filter = format!(
+            "loudnorm=I={}:TP={}:LRA={}:measured_I={}:measured_TP={}:measured_LRA={}:measured_thresh={}:offset={}:linear=true",
+            LOUDNORM_TARGET_LUFS,
+            LOUDNORM_TRUE_PEAK,
+            LOUDNORM_LRA,
+            measured_i,
+            measured_tp,
+            measured_lra,
+            measured_thresh,
+            target_offset,
+        );
+
+        let status = Command::new("ffmpeg")
+            .args([
+                "-hide_banner",
+                "-nostdin",
+                "-y",
+                "-i",
+                &input.to_string_lossy(),
+                "-af",
+                &loudnorm_filter,
+                "-ar",
+                "48000",
+                "-ac",
+                "1",
                 &output.to_string_lossy(),
-                "-f", // Force overwrite
             ])
             .status()
-            .context("Failed to run ffmpeg-normalize")?;
+            .context("Failed to run ffmpeg loudness normalization")?;
 
         if !status.success() {
-            anyhow::bail!("ffmpeg-normalize failed to process {}", input.display());
+            anyhow::bail!("Loudness normalization failed for {}", input.display());
         }
 
         emit(
             Level::Success,
-            "video.preprocess.normalize",
+            "video.enhance.loudnorm",
             &format!("Loudness normalization complete: {}", output.display()),
             None,
         );
@@ -119,23 +194,23 @@ impl LocalPreprocessor {
     }
 }
 
-impl Default for LocalPreprocessor {
+impl Default for LocalEnhancer {
     fn default() -> Self {
         Self::new()
     }
 }
 
 #[async_trait::async_trait]
-impl AudioPreprocessor for LocalPreprocessor {
-    async fn process(&self, input: &Path, force: bool) -> Result<PreprocessResult> {
-        let cache = PreprocessCache::prepare(input)?;
+impl AudioEnhancer for LocalEnhancer {
+    async fn enhance(&self, input: &Path, force: bool) -> Result<EnhanceResult> {
+        let cache = EnhanceCache::prepare(input)?;
 
-        // Final output path (WAV to avoid lossy transcoding - encoding happens at render)
-        let processed_cache_path = cache.path("local_processed.wav");
+        // Enhanced stem for the render mix (WAV to avoid lossy transcoding;
+        // encoding happens at render)
+        let enhanced_cache_path = cache.path("enhanced.wav");
 
         // Check cache
-        if let Some(cached) =
-            cache.cached(&processed_cache_path, force, "video.preprocess.cached", "")
+        if let Some(cached) = cache.cached(&enhanced_cache_path, force, "video.enhance.cached", "")
         {
             return Ok(cached);
         }
@@ -147,7 +222,7 @@ impl AudioPreprocessor for LocalPreprocessor {
                 // Extract from video
                 emit(
                     Level::Info,
-                    "video.preprocess.extract",
+                    "video.enhance.extract",
                     &format!("Extracting audio from {}...", input.display()),
                     None,
                 );
@@ -158,11 +233,11 @@ impl AudioPreprocessor for LocalPreprocessor {
         // Step 2: Run DeepFilterNet
         let denoised_path = Self::run_deepfilter(&wav_path, &cache.cache_dir)?;
 
-        // Step 3: Run ffmpeg-normalize
-        Self::run_normalize(&denoised_path, &processed_cache_path)?;
+        // Step 3: Run static loudness normalization (no compression)
+        Self::run_loudnorm(&denoised_path, &enhanced_cache_path)?;
 
-        Ok(PreprocessResult {
-            output_path: processed_cache_path,
+        Ok(EnhanceResult {
+            output_path: enhanced_cache_path,
         })
     }
 

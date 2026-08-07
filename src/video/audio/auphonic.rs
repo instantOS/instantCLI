@@ -1,4 +1,4 @@
-//! Auphonic cloud-based audio preprocessing
+//! Auphonic cloud-based audio enhancement
 //!
 //! Uses the Auphonic API for professional audio processing including:
 //! - Noise reduction
@@ -16,8 +16,8 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::time::sleep;
 
-use super::PreprocessCache;
-use super::types::{AudioPreprocessor, PreprocessResult};
+use super::EnhanceCache;
+use super::types::{AudioEnhancer, EnhanceResult};
 use crate::ui::prelude::{Level, emit};
 use crate::video::config::VideoConfig;
 use crate::video::support::ffmpeg::{extract_audio_to_mp3, probe_duration_seconds, trim_audio_mp3};
@@ -107,13 +107,13 @@ pub(crate) async fn verify_api_key(client: &Client, api_key: &str) -> Result<()>
     Ok(())
 }
 
-/// Auphonic-based audio preprocessor
-pub struct AuphonicPreprocessor {
+/// Auphonic-based audio enhancer
+pub struct AuphonicEnhancer {
     api_key: Option<String>,
     preset_uuid: Option<String>,
 }
 
-impl AuphonicPreprocessor {
+impl AuphonicEnhancer {
     pub fn new(api_key: Option<String>, preset_uuid: Option<String>) -> Self {
         Self {
             api_key,
@@ -233,15 +233,15 @@ impl AuphonicPreprocessor {
 }
 
 #[async_trait::async_trait]
-impl AudioPreprocessor for AuphonicPreprocessor {
-    async fn process(&self, input: &Path, force: bool) -> Result<PreprocessResult> {
+impl AudioEnhancer for AuphonicEnhancer {
+    async fn enhance(&self, input: &Path, force: bool) -> Result<EnhanceResult> {
         let api_key = self
             .api_key
             .clone()
             .or_else(|| VideoConfig::load().ok()?.auphonic_api_key)
             .context("Auphonic API key not found. Please provide it via --api-key or run 'ins video setup'")?;
 
-        let cache = PreprocessCache::prepare(input)?;
+        let cache = EnhanceCache::prepare(input)?;
 
         let raw_cache_path = cache.path("auphonic_raw.mp3");
         let processed_cache_path = cache.path("auphonic_processed.mp3");
@@ -302,7 +302,7 @@ impl AudioPreprocessor for AuphonicPreprocessor {
             force,
         )?;
 
-        Ok(PreprocessResult {
+        Ok(EnhanceResult {
             output_path: processed_cache_path,
         })
     }

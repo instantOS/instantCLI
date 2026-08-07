@@ -13,8 +13,8 @@ use crate::ui::preview::PreviewBuilder;
 use crate::video::transcript_language::TranscriptLanguage;
 
 use super::types::{
-    ChoiceItem, ConvertAudioChoice, OutputChoice, PreprocessBackendChoice, PromptOutcome,
-    RenderOptions, RenderToggle, ToggleItem, TranscribeMode, TranscriptChoice,
+    ChoiceItem, EnhanceBackendChoice, OutputChoice, PromptOutcome, RenderOptions, RenderToggle,
+    ToggleItem, TranscribeMode, TranscriptChoice,
 };
 
 pub fn select_transcript_choice() -> Result<Option<TranscriptChoice>> {
@@ -109,87 +109,6 @@ pub fn resolve_output_path_from_selection(
         }
         PathInputSelection::Cancelled => Ok(None),
     }
-}
-
-pub fn select_convert_audio_choice() -> Result<Option<ConvertAudioChoice>> {
-    let config = crate::video::config::VideoConfig::load().ok();
-    let default_preprocessor = crate::video::audio::PreprocessorType::default();
-    let configured_preprocessor = config
-        .as_ref()
-        .map(|cfg| &cfg.preprocessor)
-        .unwrap_or(&default_preprocessor);
-
-    let items = vec![
-        ChoiceItem::new(
-            "config",
-            format!(
-                "{} Use configured preprocessor",
-                format_icon_colored(NerdFont::Settings, colors::TEAL)
-            ),
-            ConvertAudioChoice::UseConfig,
-            PreviewBuilder::new()
-                .header(NerdFont::Settings, "Use configuration")
-                .text(&format!(
-                    "Use the preprocessor configured in video.toml: {}",
-                    configured_preprocessor
-                ))
-                .build(),
-        ),
-        ChoiceItem::new(
-            "local",
-            format!(
-                "{} Force local preprocessing",
-                format_icon_colored(NerdFont::Cpu, colors::GREEN)
-            ),
-            ConvertAudioChoice::Local,
-            PreviewBuilder::new()
-                .header(NerdFont::Cpu, "Local preprocessing")
-                .text("Use DeepFilterNet and ffmpeg-normalize locally.")
-                .build(),
-        ),
-        ChoiceItem::new(
-            "auphonic",
-            format!(
-                "{} Force Auphonic preprocessing",
-                format_icon_colored(NerdFont::CloudSync, colors::BLUE)
-            ),
-            ConvertAudioChoice::Auphonic,
-            PreviewBuilder::new()
-                .header(NerdFont::CloudSync, "Auphonic preprocessing")
-                .text("Use Auphonic cloud processing (requires API key).")
-                .build(),
-        ),
-        ChoiceItem::new(
-            "skip",
-            format!(
-                "{} Skip preprocessing",
-                format_icon_colored(NerdFont::ArrowRight, colors::OVERLAY1)
-            ),
-            ConvertAudioChoice::Skip,
-            PreviewBuilder::new()
-                .header(NerdFont::ArrowRight, "Skip preprocessing")
-                .text("Use raw audio from the video file.")
-                .build(),
-        ),
-    ];
-
-    select_choice("Audio preprocessing", "Select", items)
-}
-
-/// Prompts for the convert-audio backend and maps it to pipeline arguments.
-/// Returns `(no_preprocess, preprocessor_name)` or `None` when cancelled.
-pub fn select_audio_preprocessing() -> Result<Option<(bool, Option<String>)>> {
-    let audio_choice = match select_convert_audio_choice()? {
-        Some(choice) => choice,
-        None => return Ok(None),
-    };
-    let (no_preprocess, preprocessor) = match audio_choice {
-        ConvertAudioChoice::UseConfig => (false, None),
-        ConvertAudioChoice::Local => (false, Some(ConvertAudioChoice::Local.to_string())),
-        ConvertAudioChoice::Auphonic => (false, Some(ConvertAudioChoice::Auphonic.to_string())),
-        ConvertAudioChoice::Skip => (true, None),
-    };
-    Ok(Some((no_preprocess, preprocessor)))
 }
 
 pub fn select_transcript_language() -> Result<Option<TranscriptLanguage>> {
@@ -351,7 +270,7 @@ pub fn select_render_options() -> Result<Option<RenderOptions>> {
     }
 }
 
-pub fn select_preprocess_backend_choice() -> Result<Option<PreprocessBackendChoice>> {
+pub fn select_enhance_backend_choice() -> Result<Option<EnhanceBackendChoice>> {
     let config = crate::video::config::VideoConfig::load().ok();
     let has_api_key = config
         .as_ref()
@@ -372,24 +291,24 @@ pub fn select_preprocess_backend_choice() -> Result<Option<PreprocessBackendChoi
         ChoiceItem::new(
             "local",
             format!(
-                "{} Local preprocessing",
+                "{} Local enhancement",
                 format_icon_colored(NerdFont::Cpu, colors::GREEN)
             ),
-            PreprocessBackendChoice::Local,
+            EnhanceBackendChoice::Local,
             PreviewBuilder::new()
-                .header(NerdFont::Cpu, "Local backend")
-                .text("Run DeepFilterNet and ffmpeg-normalize locally.")
+                .header(NerdFont::Cpu, "Local enhancer")
+                .text("Denoise with DeepFilterNet and level with pure loudness (no compression).")
                 .build(),
         ),
         ChoiceItem::new(
             "auphonic",
             format!(
-                "{} Auphonic backend",
+                "{} Auphonic enhancer",
                 format_icon_colored(NerdFont::CloudSync, colors::BLUE)
             ),
-            PreprocessBackendChoice::Auphonic,
+            EnhanceBackendChoice::Auphonic,
             PreviewBuilder::new()
-                .header(NerdFont::CloudSync, "Auphonic backend")
+                .header(NerdFont::CloudSync, "Auphonic enhancer")
                 .text("Use Auphonic cloud processing.")
                 .blank()
                 .subtext(auphonic_status)
@@ -398,18 +317,18 @@ pub fn select_preprocess_backend_choice() -> Result<Option<PreprocessBackendChoi
         ChoiceItem::new(
             "none",
             format!(
-                "{} No preprocessing",
+                "{} No enhancement",
                 format_icon_colored(NerdFont::ArrowRight, colors::OVERLAY1)
             ),
-            PreprocessBackendChoice::None,
+            EnhanceBackendChoice::None,
             PreviewBuilder::new()
-                .header(NerdFont::ArrowRight, "No preprocessing")
-                .text("Skip preprocessing entirely.")
+                .header(NerdFont::ArrowRight, "No enhancement")
+                .text("Use the voice audio exactly as it is.")
                 .build(),
         ),
     ];
 
-    select_choice("Preprocess", "Select", items)
+    select_choice("Enhance", "Select", items)
 }
 
 pub fn select_choice<T: Clone>(

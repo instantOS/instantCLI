@@ -1,9 +1,11 @@
-//! Audio preprocessing module with pluggable backends
+//! Audio enhancement module with pluggable backends
 //!
-//! Supports multiple audio preprocessing backends:
-//! - `Local`: Uses DeepFilterNet for noise reduction + ffmpeg-normalize for loudness
+//! Enhancement is the finishing stage for the *rendered* video's sound:
+//! it denoises and levels the voice stem before the music bed is mixed in.
+//! Supports multiple enhancement backends:
+//! - `Local`: DeepFilterNet noise reduction + pure EBU R128 loudness (no compression)
 //! - `Auphonic`: Cloud-based processing via Auphonic API
-//! - `None`: Skip preprocessing
+//! - `None`: Skip enhancement
 
 pub mod auphonic;
 pub mod local;
@@ -12,7 +14,7 @@ mod types;
 use anyhow::Result;
 use std::path::{Path, PathBuf};
 
-pub use types::{AudioPreprocessor, PreprocessResult, PreprocessorType};
+pub use types::{AudioEnhancer, EnhanceResult, EnhancerType};
 
 use crate::ui::prelude::{Level, emit};
 use crate::video::config::VideoDirectories;
@@ -21,45 +23,45 @@ use crate::video::transcript_language::TranscriptLanguage;
 
 use super::config::VideoConfig;
 
-/// Create a preprocessor instance based on type
-pub fn create_preprocessor(
-    preprocessor_type: &PreprocessorType,
+/// Create an enhancer instance based on type
+pub fn create_enhancer(
+    enhancer_type: &EnhancerType,
     config: &VideoConfig,
-) -> Box<dyn AudioPreprocessor> {
-    match preprocessor_type {
-        PreprocessorType::Local => Box::new(local::LocalPreprocessor::new()),
-        PreprocessorType::Auphonic => Box::new(auphonic::AuphonicPreprocessor::new(
+) -> Box<dyn AudioEnhancer> {
+    match enhancer_type {
+        EnhancerType::Local => Box::new(local::LocalEnhancer::new()),
+        EnhancerType::Auphonic => Box::new(auphonic::AuphonicEnhancer::new(
             config.auphonic_api_key.clone(),
             config.auphonic_preset_uuid.clone(),
         )),
-        PreprocessorType::None => Box::new(NonePreprocessor),
+        EnhancerType::None => Box::new(NoneEnhancer),
     }
 }
 
-/// Parse preprocessor type from string
-pub fn parse_preprocessor_type(s: &str) -> Result<PreprocessorType> {
+/// Parse enhancer type from string
+pub fn parse_enhancer_type(s: &str) -> Result<EnhancerType> {
     match s.to_lowercase().as_str() {
-        "local" => Ok(PreprocessorType::Local),
-        "auphonic" => Ok(PreprocessorType::Auphonic),
-        "none" => Ok(PreprocessorType::None),
+        "local" => Ok(EnhancerType::Local),
+        "auphonic" => Ok(EnhancerType::Auphonic),
+        "none" => Ok(EnhancerType::None),
         _ => anyhow::bail!(
-            "Unknown preprocessor type: '{}'. Expected: local, auphonic, or none",
+            "Unknown enhancer type: '{}'. Expected: local, auphonic, or none",
             s
         ),
     }
 }
 
-/// Shared cache setup for audio preprocessors.
+/// Shared cache setup for audio enhancers.
 ///
 /// Both backends hash the input, resolve the shared cache directory and check
-/// for an already-processed result before running their own pipeline, so this
+/// for an already-enhanced result before running their own pipeline, so this
 /// keeps that boilerplate in one place.
-pub(crate) struct PreprocessCache {
+pub(crate) struct EnhanceCache {
     pub(crate) input_hash: String,
     pub(crate) cache_dir: PathBuf,
 }
 
-impl PreprocessCache {
+impl EnhanceCache {
     /// Hashes the input and prepares the shared processing cache directory.
     pub(crate) fn prepare(input: &Path) -> Result<Self> {
         let input_hash = compute_file_hash(input)?;
@@ -82,12 +84,12 @@ impl PreprocessCache {
     /// requested), logging reuse of the cache under the given event name.
     pub(crate) fn cached(
         &self,
-        processed_path: &Path,
+        enhanced_path: &Path,
         force: bool,
         event: &str,
         backend: &str,
-    ) -> Option<PreprocessResult> {
-        if !processed_path.exists() || force {
+    ) -> Option<EnhanceResult> {
+        if !enhanced_path.exists() || force {
             return None;
         }
         let backend_prefix = if backend.is_empty() {
@@ -99,24 +101,24 @@ impl PreprocessCache {
             Level::Info,
             event,
             &format!(
-                "Using cached {backend_prefix}result: {}",
-                processed_path.display()
+                "Using cached {backend_prefix}enhanced audio: {}",
+                enhanced_path.display()
             ),
             None,
         );
-        Some(PreprocessResult {
-            output_path: processed_path.to_path_buf(),
+        Some(EnhanceResult {
+            output_path: enhanced_path.to_path_buf(),
         })
     }
 }
 
-/// No-op preprocessor that returns input unchanged
-struct NonePreprocessor;
+/// No-op enhancer that returns input unchanged
+struct NoneEnhancer;
 
 #[async_trait::async_trait]
-impl AudioPreprocessor for NonePreprocessor {
-    async fn process(&self, input: &Path, _force: bool) -> Result<PreprocessResult> {
-        Ok(PreprocessResult {
+impl AudioEnhancer for NoneEnhancer {
+    async fn enhance(&self, input: &Path, _force: bool) -> Result<EnhanceResult> {
+        Ok(EnhanceResult {
             output_path: input.to_path_buf(),
         })
     }
@@ -130,44 +132,44 @@ impl AudioPreprocessor for NonePreprocessor {
     }
 }
 
-/// Handle the preprocess CLI command
-pub async fn handle_preprocess(args: super::cli::PreprocessArgs) -> Result<()> {
+/// Handle the `ins video enhance` CLI command
+pub async fn handle_enhance(args: super::cli::EnhanceArgs) -> Result<()> {
     use crate::video::support::utils::canonicalize_existing;
 
     let input_path = canonicalize_existing(&args.input_file)?;
-    let preprocessor_type = parse_preprocessor_type(&args.backend)?;
+    let enhancer_type = parse_enhancer_type(&args.backend)?;
 
     let config = VideoConfig::load()?;
 
-    let preprocessor: Box<dyn AudioPreprocessor> = match preprocessor_type {
-        PreprocessorType::Auphonic => Box::new(auphonic::AuphonicPreprocessor::new(
+    let enhancer: Box<dyn AudioEnhancer> = match enhancer_type {
+        EnhancerType::Auphonic => Box::new(auphonic::AuphonicEnhancer::new(
             args.api_key.or(config.auphonic_api_key),
             args.preset.or(config.auphonic_preset_uuid),
         )),
-        _ => create_preprocessor(&preprocessor_type, &config),
+        _ => create_enhancer(&enhancer_type, &config),
     };
 
-    if !preprocessor.is_available() {
+    if !enhancer.is_available() {
         anyhow::bail!(
-            "Preprocessor '{}' is not available. Check that required tools are installed.",
-            preprocessor.name()
+            "Enhancer '{}' is not available. Check that required tools are installed.",
+            enhancer.name()
         );
     }
 
     emit(
         Level::Info,
-        "video.preprocess.start",
+        "video.enhance.start",
         &format!(
-            "Processing {} with {} backend...",
+            "Enhancing {} with {} backend...",
             input_path.display(),
-            preprocessor.name()
+            enhancer.name()
         ),
         None,
     );
 
-    let result = preprocessor.process(&input_path, args.force).await?;
+    let result = enhancer.enhance(&input_path, args.force).await?;
 
-    // Copy to output location next to input, preserving the processed file's extension
+    // Copy to output location next to input, preserving the enhanced file's extension
     let output_dir = input_path.parent().unwrap_or_else(|| Path::new("."));
     let input_stem = input_path.file_stem().unwrap_or_default();
     let output_ext = result
@@ -175,7 +177,7 @@ pub async fn handle_preprocess(args: super::cli::PreprocessArgs) -> Result<()> {
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("wav");
-    let output_filename = format!("{}_processed.{}", input_stem.to_string_lossy(), output_ext);
+    let output_filename = format!("{}_enhanced.{}", input_stem.to_string_lossy(), output_ext);
     let output_path = output_dir.join(output_filename);
 
     if result.output_path != output_path {
@@ -184,8 +186,8 @@ pub async fn handle_preprocess(args: super::cli::PreprocessArgs) -> Result<()> {
 
     emit(
         Level::Success,
-        "video.preprocess.success",
-        &format!("Saved processed file to {}", output_path.display()),
+        "video.enhance.success",
+        &format!("Saved enhanced audio to {}", output_path.display()),
         None,
     );
 

@@ -1,19 +1,19 @@
 use anyhow::Result;
 
 use crate::video::audio;
-use crate::video::cli::{PreprocessArgs, SetupArgs, SlideArgs, TranscribeArgs, TranscribeBackend};
+use crate::video::cli::{EnhanceArgs, SetupArgs, SlideArgs, TranscribeArgs, TranscribeBackend};
 use crate::video::pipeline::{setup, transcribe};
 use crate::video::slides;
 
 use super::file_selection::{select_markdown_file, select_output_path};
 use super::prompts::{
     confirm_toggle, default_slide_output_name, prompt_optional, prompt_with_default,
-    select_output_choice, select_preprocess_backend_choice, select_transcribe_mode,
+    select_enhance_backend_choice, select_output_choice, select_transcribe_mode,
     select_transcript_language,
 };
 use super::types::{
     DEFAULT_TRANSCRIBE_COMPUTE_TYPE, DEFAULT_TRANSCRIBE_DEVICE, DEFAULT_TRANSCRIBE_VAD_METHOD,
-    OutputChoice, PreprocessBackendChoice, PromptOutcome, TranscribeMode,
+    EnhanceBackendChoice, OutputChoice, PromptOutcome, TranscribeMode,
 };
 
 pub async fn run_transcribe() -> Result<()> {
@@ -113,24 +113,24 @@ pub async fn run_slide() -> Result<()> {
     })
 }
 
-pub async fn run_preprocess() -> Result<()> {
+pub async fn run_enhance() -> Result<()> {
     let suggestions = super::file_selection::discover_video_file_suggestions()?;
     let Some(input_path) = super::file_selection::select_video_file_with_suggestions(
-        "Select audio or video to preprocess",
+        "Select audio or video to enhance",
         suggestions,
     )?
     else {
         return Ok(());
     };
 
-    let backend_choice = match select_preprocess_backend_choice()? {
+    let backend_choice = match select_enhance_backend_choice()? {
         Some(choice) => choice,
         None => return Ok(()),
     };
 
     let backend = backend_choice.to_string();
 
-    let (api_key, preset) = if matches!(backend_choice, PreprocessBackendChoice::Auphonic) {
+    let (api_key, preset) = if matches!(backend_choice, EnhanceBackendChoice::Auphonic) {
         let api_key = match prompt_optional(
             "Auphonic API key (optional)",
             "Leave empty to use configured API key",
@@ -157,7 +157,7 @@ pub async fn run_preprocess() -> Result<()> {
         PromptOutcome::Cancelled => return Ok(()),
     };
 
-    audio::handle_preprocess(PreprocessArgs {
+    audio::handle_enhance(EnhanceArgs {
         input_file: input_path,
         backend,
         force,
