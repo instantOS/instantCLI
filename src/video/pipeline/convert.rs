@@ -286,6 +286,8 @@ async fn ensure_transcript(
         model: None,
         vad_method: "silero".to_string(),
         force: false,
+        backend: crate::video::cli::TranscribeBackend::Auto,
+        granite_model: None,
         language: args.language,
     })?;
 

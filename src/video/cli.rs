@@ -1,4 +1,4 @@
-use clap::{Args, Subcommand, ValueHint};
+use clap::{Args, Subcommand, ValueEnum, ValueHint};
 use std::path::PathBuf;
 
 use crate::video::transcript_language::TranscriptLanguage;
@@ -100,6 +100,18 @@ pub struct AppendArgs {
     pub language: TranscriptLanguage,
 }
 
+/// Transcription backend for `ins video transcribe`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
+pub enum TranscribeBackend {
+    /// Prefer Granite Speech via transcribe.cpp; falls back to WhisperX when the model is not installed yet
+    #[default]
+    Auto,
+    /// Granite Speech 4.1 (transcribe.cpp, Vulkan/CPU)
+    Granite,
+    /// WhisperX (openai-whisper + wav2vec2 forced alignment)
+    Whisperx,
+}
+
 #[derive(Args, Debug, Clone)]
 pub struct TranscribeArgs {
     /// Source video or audio file to transcribe
@@ -125,6 +137,14 @@ pub struct TranscribeArgs {
     /// Re-generate transcript even if cached
     #[arg(long)]
     pub force: bool,
+
+    /// Transcription backend (auto prefers Granite when its model is installed)
+    #[arg(long, value_enum, default_value_t = TranscribeBackend::Auto)]
+    pub backend: TranscribeBackend,
+
+    /// Granite GGUF model: local file path or download URL (default: Granite Speech 4.1-2b-plus Q8_0)
+    #[arg(long)]
+    pub granite_model: Option<String>,
 
     /// Transcription language for WhisperX (speech recognition and word alignment)
     #[arg(long, value_enum, default_value_t = TranscriptLanguage::En)]

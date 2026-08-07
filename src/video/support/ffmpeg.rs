@@ -199,6 +199,29 @@ pub fn extract_audio_to_mp3(input: &Path, output: &Path) -> Result<()> {
     )
 }
 
+/// Extracts the first audio stream to a 16 kHz mono s16 WAV (input format used
+/// by transcribe.cpp / Granite Speech).
+pub fn extract_audio_16k_mono_wav(input: &Path, output: &Path) -> Result<()> {
+    run_ffmpeg_with_progress(
+        &[
+            "-y",
+            "-i",
+            &input.to_string_lossy(),
+            "-vn",
+            "-map",
+            "0:a:0",
+            "-ac",
+            "1", // Downmix to mono
+            "-c:a",
+            "pcm_s16le",
+            "-ar",
+            "16000",
+            &output.to_string_lossy(),
+        ],
+        &format!("to extract 16 kHz audio from {}", input.display()),
+    )
+}
+
 /// Extracts the first audio stream to a mono WAV file for processing.
 pub fn extract_audio_to_wav(input: &Path, output: &Path) -> Result<()> {
     run_ffmpeg_with_progress(

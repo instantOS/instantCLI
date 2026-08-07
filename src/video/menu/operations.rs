@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 use crate::video::audio;
-use crate::video::cli::{PreprocessArgs, SetupArgs, SlideArgs, TranscribeArgs};
+use crate::video::cli::{PreprocessArgs, SetupArgs, SlideArgs, TranscribeArgs, TranscribeBackend};
 use crate::video::pipeline::{setup, transcribe};
 use crate::video::slides;
 
@@ -71,6 +71,8 @@ pub async fn run_transcribe() -> Result<()> {
         model,
         vad_method,
         force: false,
+        backend: TranscribeBackend::Auto,
+        granite_model: None,
         language,
     })
 }

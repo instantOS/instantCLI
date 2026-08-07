@@ -49,6 +49,11 @@ impl VideoDirectories {
         })
     }
 
+    /// Directory for shared transcription model files (e.g. Granite GGUFs).
+    pub fn models_dir(&self) -> PathBuf {
+        self.cache_root.join("models")
+    }
+
     pub fn cache_paths(&self, video_hash: &str, language: TranscriptLanguage) -> VideoCachePaths {
         let data_dir = self.data_root.join(video_hash);
         let transcript_dir = self.cache_root.join(video_hash);
