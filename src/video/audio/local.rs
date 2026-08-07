@@ -9,10 +9,12 @@ use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use super::PreprocessCache;
 use super::types::{AudioPreprocessor, PreprocessResult};
 use crate::ui::prelude::{Level, emit};
-use crate::video::config::VideoDirectories;
-use crate::video::support::utils::compute_file_hash;
+use crate::video::support::DEEPFILTER_UVX_ARGS;
+use crate::video::support::ffmpeg::extract_audio_to_wav;
+use crate::video::support::utils::is_audio_file;
 
 /// Local preprocessor using DeepFilterNet + ffmpeg-normalize
 pub struct LocalPreprocessor;
@@ -20,39 +22,6 @@ pub struct LocalPreprocessor;
 impl LocalPreprocessor {
     pub fn new() -> Self {
         Self
-    }
-
-    /// Extract audio to WAV format for DeepFilterNet processing
-    fn extract_audio_to_wav(input: &Path, output: &Path) -> Result<()> {
-        let status = Command::new("ffmpeg")
-            .args([
-                "-y",
-                "-i",
-                &input.to_string_lossy(),
-                "-vn",
-                "-map",
-                "0:a:0",
-                "-ac",
-                "1", // Downmix to mono
-                "-c:a",
-                "pcm_s16le",
-                "-ar",
-                "48000",
-                &output.to_string_lossy(),
-            ])
-            .status()
-            .with_context(|| {
-                format!(
-                    "Failed to run ffmpeg to extract audio from {}",
-                    input.display()
-                )
-            })?;
-
-        if !status.success() {
-            anyhow::bail!("ffmpeg failed to extract audio from {}", input.display());
-        }
-
-        Ok(())
     }
 
     /// Run DeepFilterNet for noise reduction
@@ -65,23 +34,15 @@ impl LocalPreprocessor {
         );
 
         let status = Command::new("uvx")
+            .args(DEEPFILTER_UVX_ARGS)
+            .arg(&*input.to_string_lossy())
             .args([
-                "--python",
-                "3.10",
-                "--from",
-                "deepfilternet",
-                "--with",
-                "torch<2.1",
-                "--with",
-                "torchaudio<2.1",
-                "deepFilter",
-                &input.to_string_lossy(),
                 "--atten-lim",
                 "80",   // More aggressive noise attenuation (higher = more reduction)
                 "--pf", // Enable post-filter for additional noise reduction
                 "--output-dir",
-                &output_dir.to_string_lossy(),
             ])
+            .arg(&*output_dir.to_string_lossy())
             .status()
             .context("Failed to run DeepFilterNet")?;
 
@@ -156,17 +117,6 @@ impl LocalPreprocessor {
 
         Ok(())
     }
-
-    /// Check if input is an audio file
-    fn is_audio_file(path: &Path) -> bool {
-        path.extension()
-            .and_then(|e| e.to_str())
-            .map(|e| {
-                ["mp3", "wav", "flac", "m4a", "ogg", "aac", "wma", "aiff"]
-                    .contains(&e.to_lowercase().as_str())
-            })
-            .unwrap_or(false)
-    }
 }
 
 impl Default for LocalPreprocessor {
@@ -178,40 +128,22 @@ impl Default for LocalPreprocessor {
 #[async_trait::async_trait]
 impl AudioPreprocessor for LocalPreprocessor {
     async fn process(&self, input: &Path, force: bool) -> Result<PreprocessResult> {
-        let input_hash = compute_file_hash(input)?;
-
-        let directories = VideoDirectories::new()?;
-        let cache_paths = directories.cache_paths(
-            &input_hash,
-            crate::video::transcript_language::TranscriptLanguage::En,
-        );
-        cache_paths.ensure_directories()?;
-
-        let cache_dir = cache_paths.transcript_dir();
+        let cache = PreprocessCache::prepare(input)?;
 
         // Final output path (WAV to avoid lossy transcoding - encoding happens at render)
-        let processed_cache_path = cache_dir.join(format!("{}_local_processed.wav", input_hash));
+        let processed_cache_path = cache.path("local_processed.wav");
 
         // Check cache
-        if processed_cache_path.exists() && !force {
-            emit(
-                Level::Info,
-                "video.preprocess.cached",
-                &format!("Using cached result: {}", processed_cache_path.display()),
-                None,
-            );
-            return Ok(PreprocessResult {
-                output_path: processed_cache_path,
-            });
+        if let Some(cached) =
+            cache.cached(&processed_cache_path, force, "video.preprocess.cached", "")
+        {
+            return Ok(cached);
         }
 
         // Step 1: Get audio as WAV
-        let wav_path = cache_dir.join(format!("{}_extracted.wav", input_hash));
+        let wav_path = cache.path("extracted.wav");
         if !wav_path.exists() || force {
-            if Self::is_audio_file(input) {
-                // Convert audio to WAV
-                Self::extract_audio_to_wav(input, &wav_path)?;
-            } else {
+            if !is_audio_file(input) {
                 // Extract from video
                 emit(
                     Level::Info,
@@ -219,12 +151,12 @@ impl AudioPreprocessor for LocalPreprocessor {
                     &format!("Extracting audio from {}...", input.display()),
                     None,
                 );
-                Self::extract_audio_to_wav(input, &wav_path)?;
             }
+            extract_audio_to_wav(input, &wav_path)?;
         }
 
         // Step 2: Run DeepFilterNet
-        let denoised_path = Self::run_deepfilter(&wav_path, cache_dir)?;
+        let denoised_path = Self::run_deepfilter(&wav_path, &cache.cache_dir)?;
 
         // Step 3: Run ffmpeg-normalize
         Self::run_normalize(&denoised_path, &processed_cache_path)?;

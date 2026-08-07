@@ -9,7 +9,7 @@ use crate::ui::prelude::{Level, emit};
 use crate::video::audio::auphonic;
 use crate::video::cli::SetupArgs;
 use crate::video::config::VideoConfig;
-use crate::video::support::WHISPERX_UVX_ARGS;
+use crate::video::support::{DEEPFILTER_UVX_ARGS, WHISPERX_UVX_ARGS};
 
 pub async fn handle_setup(args: SetupArgs) -> Result<()> {
     if !args.force && video_tools_ready()? {
@@ -46,21 +46,11 @@ fn video_tools_ready() -> Result<bool> {
     let local_ready = command_exists("uvx")
         && command_exists("ffmpeg")
         && cmd!("uvx", "ffmpeg-normalize", "--version").run().is_ok()
-        && cmd!(
-            "uvx",
-            "--python",
-            "3.10",
-            "--from",
-            "deepfilternet",
-            "--with",
-            "torch<2.1",
-            "--with",
-            "torchaudio<2.1",
-            "deepFilter",
-            "--version"
-        )
-        .run()
-        .is_ok();
+        && {
+            let mut dfn_args: Vec<&str> = DEEPFILTER_UVX_ARGS.to_vec();
+            dfn_args.push("--version");
+            cmd("uvx", &dfn_args).run().is_ok()
+        };
 
     let whisper_ready = command_exists("uv") && cmd!("uvx", "whisperx", "--version").run().is_ok();
 
@@ -113,36 +103,23 @@ fn setup_local_preprocessor(_force: bool) -> Result<()> {
     Ok(())
 }
 
-fn check_deepfilternet() {
+/// Runs a `uvx <args> --version` availability check and reports the outcome.
+fn check_uvx_tool(tool_name: &str, check_args: &[&str], note: &str) {
     emit(
         Level::Info,
         "video.setup.local",
-        "Verifying DeepFilterNet availability (this may download dependencies)...",
+        &format!("Verifying {tool_name} availability{note}..."),
         None,
     );
 
-    let dfn_result = cmd!(
-        "uvx",
-        "--python",
-        "3.10",
-        "--from",
-        "deepfilternet",
-        "--with",
-        "torch<2.1",
-        "--with",
-        "torchaudio<2.1",
-        "deepFilter",
-        "--version"
-    )
-    .stderr_to_stdout()
-    .run();
+    let result = cmd("uvx", check_args).stderr_to_stdout().run();
 
-    if let Err(e) = dfn_result {
+    if let Err(e) = result {
         emit(
             Level::Warn,
             "video.setup.local",
             &format!(
-                "DeepFilterNet check failed: {}. It may still work at runtime.",
+                "{tool_name} check failed: {}. It may still work at runtime.",
                 e
             ),
             None,
@@ -151,42 +128,24 @@ fn check_deepfilternet() {
         emit(
             Level::Success,
             "video.setup.local",
-            "DeepFilterNet is available.",
+            &format!("{tool_name} is available."),
             None,
         );
     }
 }
 
-fn check_ffmpeg_normalize() {
-    emit(
-        Level::Info,
-        "video.setup.local",
-        "Verifying ffmpeg-normalize availability...",
-        None,
+fn check_deepfilternet() {
+    let mut dfn_args: Vec<&str> = DEEPFILTER_UVX_ARGS.to_vec();
+    dfn_args.push("--version");
+    check_uvx_tool(
+        "DeepFilterNet",
+        &dfn_args,
+        " (this may download dependencies)",
     );
+}
 
-    let normalize_result = cmd!("uvx", "ffmpeg-normalize", "--version")
-        .stderr_to_stdout()
-        .run();
-
-    if let Err(e) = normalize_result {
-        emit(
-            Level::Warn,
-            "video.setup.local",
-            &format!(
-                "ffmpeg-normalize check failed: {}. It may still work at runtime.",
-                e
-            ),
-            None,
-        );
-    } else {
-        emit(
-            Level::Success,
-            "video.setup.local",
-            "ffmpeg-normalize is available.",
-            None,
-        );
-    }
+fn check_ffmpeg_normalize() {
+    check_uvx_tool("ffmpeg-normalize", &["ffmpeg-normalize", "--version"], "");
 }
 
 async fn setup_auphonic(force: bool) -> Result<()> {

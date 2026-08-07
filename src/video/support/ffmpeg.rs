@@ -96,6 +96,22 @@ pub fn run_ffmpeg_output(args: &[&str], ctx: &str) -> Result<()> {
     Ok(())
 }
 
+/// Runs ffmpeg with stdout/stderr attached to the terminal so that progress
+/// stays visible for long-running commands (e.g. audio extraction). Unlike
+/// [`run_ffmpeg_output`], nothing is captured internally.
+fn run_ffmpeg_with_progress(args: &[&str], ctx: &str) -> Result<()> {
+    let status = Command::new("ffmpeg")
+        .args(args)
+        .status()
+        .with_context(|| format!("Failed to spawn ffmpeg for {}", ctx))?;
+
+    if !status.success() {
+        bail!("ffmpeg failed {}", ctx);
+    }
+
+    Ok(())
+}
+
 pub fn probe_duration_seconds(path: &Path) -> Result<f64> {
     let output = run_ffprobe(
         &[
@@ -165,7 +181,7 @@ pub fn probe_video_dimensions(video_path: &Path) -> Result<(u32, u32)> {
 }
 
 pub fn extract_audio_to_mp3(input: &Path, output: &Path) -> Result<()> {
-    run_ffmpeg_output(
+    run_ffmpeg_with_progress(
         &[
             "-y",
             "-i",
@@ -183,13 +199,35 @@ pub fn extract_audio_to_mp3(input: &Path, output: &Path) -> Result<()> {
     )
 }
 
+/// Extracts the first audio stream to a mono WAV file for processing.
+pub fn extract_audio_to_wav(input: &Path, output: &Path) -> Result<()> {
+    run_ffmpeg_with_progress(
+        &[
+            "-y",
+            "-i",
+            &input.to_string_lossy(),
+            "-vn",
+            "-map",
+            "0:a:0",
+            "-ac",
+            "1", // Downmix to mono
+            "-c:a",
+            "pcm_s16le",
+            "-ar",
+            "48000",
+            &output.to_string_lossy(),
+        ],
+        &format!("to extract audio from {}", input.display()),
+    )
+}
+
 pub fn trim_audio_mp3(
     input: &Path,
     output: &Path,
     start_seconds: f64,
     end_seconds: f64,
 ) -> Result<()> {
-    run_ffmpeg_output(
+    run_ffmpeg_with_progress(
         &[
             "-y",
             "-i",

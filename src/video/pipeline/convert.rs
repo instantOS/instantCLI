@@ -10,10 +10,10 @@ use crate::video::audio::{PreprocessorType, create_preprocessor, parse_preproces
 use crate::video::cli::{AppendArgs, ConvertArgs, TranscribeArgs};
 use crate::video::config::{VideoCachePaths, VideoConfig, VideoDirectories};
 use crate::video::document::frontmatter::split_frontmatter;
-use crate::video::document::markdown::{build_markdown, format_timestamp};
+use crate::video::document::markdown::{build_markdown, format_cue_line};
 use crate::video::document::{VideoMetadata, VideoSource, parse_video_document};
 use crate::video::support::transcript::{TranscriptCue, parse_whisper_json};
-use crate::video::support::utils::{canonicalize_existing, compute_file_hash};
+use crate::video::support::utils::{canonicalize_existing, compute_file_hash, copy_overwriting};
 use crate::video::transcript_language::TranscriptLanguage;
 
 pub async fn handle_convert(args: ConvertArgs) -> Result<()> {
@@ -204,7 +204,7 @@ fn add_new_source_to_metadata(
     let subtitle_dir = markdown_dir.join("insvideodata");
     let subtitle_output_path = subtitle_dir.join(format!("{video_hash}.json"));
     let relative_subtitle_path = Path::new("./insvideodata").join(format!("{video_hash}.json"));
-    copy_transcript(transcript_path, &subtitle_output_path)?;
+    copy_overwriting(transcript_path, &subtitle_output_path, "transcript")?;
 
     let source_id = next_source_id(metadata)?;
 
@@ -260,7 +260,7 @@ async fn ensure_transcript(
     // If user provided a transcript, use it
     if let Some(provided) = provided_transcript {
         let provided_path = canonicalize_existing(provided)?;
-        copy_transcript(&provided_path, &cached_transcript_path)?;
+        copy_overwriting(&provided_path, &cached_transcript_path, "transcript")?;
         return Ok(cached_transcript_path);
     }
 
@@ -387,7 +387,7 @@ fn relocate_transcript_if_needed(
             ),
             None,
         );
-        copy_transcript(generated_transcript, cached_transcript_path)?;
+        copy_overwriting(generated_transcript, cached_transcript_path, "transcript")?;
     }
 
     Ok(())
@@ -405,7 +405,7 @@ fn generate_markdown_output(
     let subtitle_output_path = subtitle_dir.join(format!("{video_hash}.json"));
     let relative_subtitle_path = Path::new("./insvideodata").join(format!("{video_hash}.json"));
 
-    copy_transcript(transcript_path, &subtitle_output_path)?;
+    copy_overwriting(transcript_path, &subtitle_output_path, "transcript")?;
 
     let transcript_contents = fs::read_to_string(transcript_path)
         .with_context(|| format!("Failed to read transcript at {}", transcript_path.display()))?;
@@ -494,36 +494,10 @@ fn build_source_markdown(
     cues: &[crate::video::support::transcript::TranscriptCue],
     source_id: &str,
 ) -> String {
-    let mut lines = Vec::with_capacity(cues.len());
-    for cue in cues {
-        lines.push(format!(
-            "`{}@{}-{}` {}",
-            source_id,
-            format_timestamp(cue.start),
-            format_timestamp(cue.end),
-            cue.text.trim()
-        ));
-    }
-    lines.join("\n")
-}
-
-fn copy_transcript(src: &Path, dest: &Path) -> Result<()> {
-    if src == dest {
-        return Ok(());
-    }
-    if let Some(parent) = dest.parent() {
-        fs::create_dir_all(parent).with_context(|| {
-            format!("Failed to create transcript directory {}", parent.display())
-        })?;
-    }
-    fs::copy(src, dest).with_context(|| {
-        format!(
-            "Failed to copy transcript from {} to {}",
-            src.display(),
-            dest.display()
-        )
-    })?;
-    Ok(())
+    cues.iter()
+        .map(|cue| format_cue_line(source_id, cue))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn determine_output_path(output: Option<PathBuf>, video_path: &Path) -> Result<PathBuf> {

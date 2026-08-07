@@ -16,9 +16,9 @@ use super::file_selection::{
 };
 use super::project::open_project_for_path;
 use super::prompts::{
-    confirm_action, select_convert_audio_choice, select_output_choice, select_transcript_language,
+    confirm_action, select_audio_preprocessing, select_output_choice, select_transcript_language,
 };
-use super::types::{ConvertAudioChoice, OutputChoice};
+use super::types::OutputChoice;
 
 #[derive(Debug, Clone)]
 enum NewProjectEntry {
@@ -169,16 +169,8 @@ async fn create_multi_source_project(videos: Vec<PathBuf>) -> Result<()> {
         None => return Ok(()),
     };
 
-    let audio_choice = match select_convert_audio_choice()? {
-        Some(choice) => choice,
-        None => return Ok(()),
-    };
-
-    let (no_preprocess, preprocessor) = match audio_choice {
-        ConvertAudioChoice::UseConfig => (false, None),
-        ConvertAudioChoice::Local => (false, Some(ConvertAudioChoice::Local.to_string())),
-        ConvertAudioChoice::Auphonic => (false, Some(ConvertAudioChoice::Auphonic.to_string())),
-        ConvertAudioChoice::Skip => (true, None),
+    let Some((no_preprocess, preprocessor)) = select_audio_preprocessing()? else {
+        return Ok(());
     };
 
     // Use the first video to determine default output path

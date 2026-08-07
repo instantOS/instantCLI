@@ -19,7 +19,7 @@ pub(super) fn resolve_source_path(path: &Path, project_dir: &Path) -> Result<Pat
     }
 }
 
-pub(super) fn find_default_source<'a>(
+pub(crate) fn find_default_source<'a>(
     metadata: &VideoMetadata,
     sources: &'a [VideoSource],
 ) -> Result<&'a VideoSource> {

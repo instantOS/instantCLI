@@ -176,6 +176,22 @@ pub fn select_convert_audio_choice() -> Result<Option<ConvertAudioChoice>> {
     select_choice("Audio preprocessing", "Select", items)
 }
 
+/// Prompts for the convert-audio backend and maps it to pipeline arguments.
+/// Returns `(no_preprocess, preprocessor_name)` or `None` when cancelled.
+pub fn select_audio_preprocessing() -> Result<Option<(bool, Option<String>)>> {
+    let audio_choice = match select_convert_audio_choice()? {
+        Some(choice) => choice,
+        None => return Ok(None),
+    };
+    let (no_preprocess, preprocessor) = match audio_choice {
+        ConvertAudioChoice::UseConfig => (false, None),
+        ConvertAudioChoice::Local => (false, Some(ConvertAudioChoice::Local.to_string())),
+        ConvertAudioChoice::Auphonic => (false, Some(ConvertAudioChoice::Auphonic.to_string())),
+        ConvertAudioChoice::Skip => (true, None),
+    };
+    Ok(Some((no_preprocess, preprocessor)))
+}
+
 pub fn select_transcript_language() -> Result<Option<TranscriptLanguage>> {
     let items = vec![
         ChoiceItem::new(

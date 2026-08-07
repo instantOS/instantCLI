@@ -10,11 +10,14 @@ pub mod local;
 mod types;
 
 use anyhow::Result;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub use types::{AudioPreprocessor, PreprocessResult, PreprocessorType};
 
 use crate::ui::prelude::{Level, emit};
+use crate::video::config::VideoDirectories;
+use crate::video::support::utils::compute_file_hash;
+use crate::video::transcript_language::TranscriptLanguage;
 
 use super::config::VideoConfig;
 
@@ -43,6 +46,67 @@ pub fn parse_preprocessor_type(s: &str) -> Result<PreprocessorType> {
             "Unknown preprocessor type: '{}'. Expected: local, auphonic, or none",
             s
         ),
+    }
+}
+
+/// Shared cache setup for audio preprocessors.
+///
+/// Both backends hash the input, resolve the shared cache directory and check
+/// for an already-processed result before running their own pipeline, so this
+/// keeps that boilerplate in one place.
+pub(crate) struct PreprocessCache {
+    pub(crate) input_hash: String,
+    pub(crate) cache_dir: PathBuf,
+}
+
+impl PreprocessCache {
+    /// Hashes the input and prepares the shared processing cache directory.
+    pub(crate) fn prepare(input: &Path) -> Result<Self> {
+        let input_hash = compute_file_hash(input)?;
+        let directories = VideoDirectories::new()?;
+        let cache_paths = directories.cache_paths(&input_hash, TranscriptLanguage::En);
+        cache_paths.ensure_directories()?;
+        Ok(Self {
+            input_hash,
+            cache_dir: cache_paths.transcript_dir().to_path_buf(),
+        })
+    }
+
+    /// Cache path for a `<hash>_<suffix>` file inside the cache directory.
+    pub(crate) fn path(&self, suffix: &str) -> PathBuf {
+        self.cache_dir
+            .join(format!("{}_{}", self.input_hash, suffix))
+    }
+
+    /// Returns the cached result when present (unless `force` reprocessing is
+    /// requested), logging reuse of the cache under the given event name.
+    pub(crate) fn cached(
+        &self,
+        processed_path: &Path,
+        force: bool,
+        event: &str,
+        backend: &str,
+    ) -> Option<PreprocessResult> {
+        if !processed_path.exists() || force {
+            return None;
+        }
+        let backend_prefix = if backend.is_empty() {
+            String::new()
+        } else {
+            format!("{backend} ")
+        };
+        emit(
+            Level::Info,
+            event,
+            &format!(
+                "Using cached {backend_prefix}result: {}",
+                processed_path.display()
+            ),
+            None,
+        );
+        Some(PreprocessResult {
+            output_path: processed_path.to_path_buf(),
+        })
     }
 }
 

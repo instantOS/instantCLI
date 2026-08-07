@@ -9,7 +9,7 @@ use crate::video::cli::TranscribeArgs;
 use crate::video::config::VideoDirectories;
 use crate::video::support::WHISPERX_UVX_ARGS;
 use crate::video::support::utils::{
-    canonicalize_existing, compute_file_hash, extension_or_default,
+    canonicalize_existing, compute_file_hash, copy_overwriting, extension_or_default,
 };
 
 pub fn handle_transcribe(args: TranscribeArgs) -> Result<()> {
@@ -42,7 +42,7 @@ pub fn handle_transcribe(args: TranscribeArgs) -> Result<()> {
 
     let extension = extension_or_default(&video_path, "mp4");
     let hashed_video_path = cache_paths.hashed_video_input(&extension);
-    prepare_hashed_video_input(&video_path, &hashed_video_path)?;
+    copy_overwriting(&video_path, &hashed_video_path, "temporary video")?;
 
     let run_result = run_whisperx(&hashed_video_path, cache_paths.transcript_dir(), &args);
 
@@ -149,36 +149,6 @@ fn run_whisperx(hashed_video: &Path, output_dir: &Path, args: &TranscribeArgs) -
     cmd("uvx", &full_args)
         .run()
         .with_context(|| format!("Failed to run WhisperX for {}", hashed_video))?;
-
-    Ok(())
-}
-
-fn prepare_hashed_video_input(source: &Path, hashed_path: &Path) -> Result<()> {
-    if hashed_path.exists() {
-        fs::remove_file(hashed_path).with_context(|| {
-            format!(
-                "Failed to remove existing temporary file {}",
-                hashed_path.display()
-            )
-        })?;
-    }
-
-    if let Some(parent) = hashed_path.parent() {
-        fs::create_dir_all(parent).with_context(|| {
-            format!(
-                "Failed to create directory {} for temporary video",
-                parent.display()
-            )
-        })?;
-    }
-
-    fs::copy(source, hashed_path).with_context(|| {
-        format!(
-            "Failed to copy {} to {}",
-            source.display(),
-            hashed_path.display()
-        )
-    })?;
 
     Ok(())
 }

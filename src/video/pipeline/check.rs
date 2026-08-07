@@ -9,7 +9,8 @@ use crate::video::document::VideoSource;
 use crate::video::pipeline::report::{ReportLine, emit_report, format_report_lines};
 use crate::video::planning::TimelinePlanItem;
 use crate::video::render::{
-    build_timeline_plan, load_transcript_cues, load_video_document, resolve_video_sources,
+    build_timeline_plan, find_default_source, load_transcript_cues, load_video_document,
+    resolve_video_sources,
 };
 use crate::video::support::ffmpeg::probe_video_dimensions;
 use crate::video::support::utils::canonicalize_existing;
@@ -46,17 +47,7 @@ async fn build_check_report(args: CheckArgs) -> Result<Vec<ReportLine>> {
     // Build timeline plan using shared helper
     let plan = build_timeline_plan(&document, &cues, &markdown_path)?;
 
-    let default_source = sources
-        .iter()
-        .find(|source| {
-            document
-                .metadata
-                .default_source
-                .as_ref()
-                .map(|id| id == &source.id)
-                .unwrap_or(true)
-        })
-        .unwrap_or(&sources[0]);
+    let default_source = find_default_source(&document.metadata, &sources)?;
     let (video_width, video_height) = probe_video_dimensions(&default_source.source)?;
 
     let duration_seconds = plan_duration_seconds(&plan);

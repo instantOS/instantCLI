@@ -40,8 +40,9 @@ struct RenderJob<'a> {
     runner: &'a dyn FfmpegRunner,
 }
 pub(crate) use self::plan::build_timeline_plan;
+pub(crate) use self::sources::find_default_source;
 pub(crate) use self::sources::resolve_video_sources;
-use self::sources::{find_default_source, validate_timeline_sources};
+use self::sources::validate_timeline_sources;
 use self::subtitles::generate_subtitle_file;
 use self::timeline_builder::{SlideProvider, TimelineStats, build_nle_timeline};
 pub(crate) use self::transcripts::load_transcript_cues;

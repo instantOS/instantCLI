@@ -22,10 +22,10 @@ use super::file_selection::{
     select_output_path, select_video_file_with_suggestions,
 };
 use super::prompts::{
-    confirm_action, prompt_optional_path, select_convert_audio_choice, select_render_options,
+    confirm_action, prompt_optional_path, select_audio_preprocessing, select_render_options,
     select_transcript_choice, select_transcript_language,
 };
-use super::types::{ConvertAudioChoice, PromptOutcome, TranscriptChoice};
+use super::types::{PromptOutcome, TranscriptChoice};
 
 #[derive(Debug, Clone)]
 enum ProjectMenuEntry {
@@ -289,16 +289,8 @@ async fn run_add_recording(markdown_path: &Path) -> Result<()> {
         }
     };
 
-    let audio_choice = match select_convert_audio_choice()? {
-        Some(choice) => choice,
-        None => return Ok(()),
-    };
-
-    let (no_preprocess, preprocessor) = match audio_choice {
-        ConvertAudioChoice::UseConfig => (false, None),
-        ConvertAudioChoice::Local => (false, Some(ConvertAudioChoice::Local.to_string())),
-        ConvertAudioChoice::Auphonic => (false, Some(ConvertAudioChoice::Auphonic.to_string())),
-        ConvertAudioChoice::Skip => (true, None),
+    let Some((no_preprocess, preprocessor)) = select_audio_preprocessing()? else {
+        return Ok(());
     };
 
     convert::handle_append(AppendArgs {

@@ -16,11 +16,12 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::time::sleep;
 
+use super::PreprocessCache;
 use super::types::{AudioPreprocessor, PreprocessResult};
 use crate::ui::prelude::{Level, emit};
-use crate::video::config::{VideoConfig, VideoDirectories};
+use crate::video::config::VideoConfig;
 use crate::video::support::ffmpeg::{extract_audio_to_mp3, probe_duration_seconds, trim_audio_mp3};
-use crate::video::support::utils::compute_file_hash;
+use crate::video::support::utils::{copy_overwriting, is_audio_file};
 
 const BASE_URL: &str = "https://auphonic.com/api";
 
@@ -120,17 +121,6 @@ impl AuphonicPreprocessor {
         }
     }
 
-    /// Check if input is an audio file
-    fn is_audio_file(path: &Path) -> bool {
-        path.extension()
-            .and_then(|e| e.to_str())
-            .map(|e| {
-                ["mp3", "wav", "flac", "m4a", "ogg", "aac", "wma", "aiff"]
-                    .contains(&e.to_lowercase().as_str())
-            })
-            .unwrap_or(false)
-    }
-
     /// Ensures we have an audio file to upload to Auphonic.
     fn ensure_audio_for_upload(
         input_path: &Path,
@@ -138,7 +128,7 @@ impl AuphonicPreprocessor {
         input_hash: &str,
         force: bool,
     ) -> Result<PathBuf> {
-        if Self::is_audio_file(input_path) {
+        if is_audio_file(input_path) {
             return Ok(input_path.to_path_buf());
         }
 
@@ -202,7 +192,7 @@ impl AuphonicPreprocessor {
                 "Auphonic output not longer than original, no trimming needed",
                 None,
             );
-            fs::copy(raw_cache_path, processed_cache_path)?;
+            copy_overwriting(raw_cache_path, processed_cache_path, "Auphonic result")?;
             return Ok(());
         }
 
@@ -219,7 +209,7 @@ impl AuphonicPreprocessor {
                 ),
                 None,
             );
-            fs::copy(raw_cache_path, processed_cache_path)?;
+            copy_overwriting(raw_cache_path, processed_cache_path, "Auphonic result")?;
             return Ok(());
         }
 
@@ -251,40 +241,24 @@ impl AudioPreprocessor for AuphonicPreprocessor {
             .or_else(|| VideoConfig::load().ok()?.auphonic_api_key)
             .context("Auphonic API key not found. Please provide it via --api-key or run 'ins video setup'")?;
 
-        let input_hash = compute_file_hash(input)?;
+        let cache = PreprocessCache::prepare(input)?;
 
-        let directories = VideoDirectories::new()?;
-        let cache_paths = directories.cache_paths(
-            &input_hash,
-            crate::video::transcript_language::TranscriptLanguage::En,
-        );
-        cache_paths.ensure_directories()?;
-
-        let transcript_dir = cache_paths.transcript_dir();
-
-        let raw_cache_path = transcript_dir.join(format!("{}_auphonic_raw.mp3", input_hash));
-        let processed_cache_path =
-            transcript_dir.join(format!("{}_auphonic_processed.mp3", input_hash));
+        let raw_cache_path = cache.path("auphonic_raw.mp3");
+        let processed_cache_path = cache.path("auphonic_processed.mp3");
 
         // Check cache for processed result
-        if processed_cache_path.exists() && !force {
-            emit(
-                Level::Info,
-                "video.auphonic.cached",
-                &format!(
-                    "Using cached Auphonic result: {}",
-                    processed_cache_path.display()
-                ),
-                None,
-            );
-            return Ok(PreprocessResult {
-                output_path: processed_cache_path,
-            });
+        if let Some(cached) = cache.cached(
+            &processed_cache_path,
+            force,
+            "video.auphonic.cached",
+            "Auphonic",
+        ) {
+            return Ok(cached);
         }
 
         // Step 1: Ensure we have audio to upload
         let upload_input_path =
-            Self::ensure_audio_for_upload(input, transcript_dir, &input_hash, force)?;
+            Self::ensure_audio_for_upload(input, &cache.cache_dir, &cache.input_hash, force)?;
 
         // Step 2: Fetch raw Auphonic result (upload, process, download)
         if !raw_cache_path.exists() || force {
