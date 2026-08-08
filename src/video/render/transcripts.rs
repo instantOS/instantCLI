@@ -126,8 +126,8 @@ pub(crate) fn apply_markdown_edits(cues: &mut [TranscriptCue], document: &VideoD
             total_span / new_count as f64
         } else {
             // Fallback: distribute across the cue's overall range.
-            let cue_span = (cue.end - cue.start).as_secs_f64() / new_count as f64;
-            cue_span
+
+            (cue.end - cue.start).as_secs_f64() / new_count as f64
         };
 
         cue.words = new_words

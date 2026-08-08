@@ -22,7 +22,7 @@ pub(crate) mod util;
 
 // Re-export public types for external callers
 pub use types::{
-    BrollBlock, DocumentBlock, HeadingBlock, MusicDirective, SegmentBlock, SegmentKind, TimeRange,
+    BrollBlock, DocumentBlock, HeadingBlock, MusicDirective, SegmentBlock, SegmentKind,
     UnhandledBlock, VideoDocument, VideoMetadata, VideoSource,
 };
 
