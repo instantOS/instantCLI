@@ -45,7 +45,7 @@ pub(crate) use self::sources::resolve_video_sources;
 use self::sources::validate_timeline_sources;
 use self::subtitles::generate_subtitle_file;
 use self::timeline_builder::{SlideProvider, TimelineStats, build_nle_timeline};
-pub(crate) use self::transcripts::load_transcript_cues;
+pub(crate) use self::transcripts::{apply_markdown_edits, load_transcript_cues};
 use super::cli::{PreviewArgs, RenderArgs};
 use super::config::VideoConfig;
 use super::support::ffmpeg::probe_video_dimensions;
@@ -102,7 +102,8 @@ async fn load_render_project(args: &RenderArgs) -> Result<RenderProject> {
     if sources.is_empty() {
         bail!("No video sources configured. Add `sources` in front matter before rendering.");
     }
-    let cues = load_transcript_cues(&sources, &project_dir)?;
+    let mut cues = load_transcript_cues(&sources, &project_dir)?;
+    apply_markdown_edits(&mut cues, &document);
     validate_timeline_sources(&document, &sources, &cues)?;
     let plan = build_timeline_plan(&document, &cues, &markdown_path)?;
     let default_source = find_default_source(&document.metadata, &sources)?.clone();
@@ -387,7 +388,8 @@ async fn load_preview_project(args: &PreviewArgs) -> Result<RenderProject> {
     if sources.is_empty() {
         bail!("No video sources configured. Add `sources` in front matter before rendering.");
     }
-    let cues = load_transcript_cues(&sources, &project_dir)?;
+    let mut cues = load_transcript_cues(&sources, &project_dir)?;
+    apply_markdown_edits(&mut cues, &document);
     validate_timeline_sources(&document, &sources, &cues)?;
     let plan = build_timeline_plan(&document, &cues, &markdown_path)?;
     let default_source = find_default_source(&document.metadata, &sources)?.clone();
