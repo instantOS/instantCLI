@@ -88,7 +88,7 @@ pub struct AppendArgs {
 /// Transcription backend for `ins video transcribe`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
 pub enum TranscribeBackend {
-    /// Prefer Granite Speech via transcribe.cpp; falls back to WhisperX when the model is not installed yet
+    /// Prefer Granite Speech via transcribe.cpp (Granite is the default; model downloads on first use)
     #[default]
     Auto,
     /// Granite Speech 4.1 (transcribe.cpp, Vulkan/CPU)
@@ -123,7 +123,7 @@ pub struct TranscribeArgs {
     #[arg(long)]
     pub force: bool,
 
-    /// Transcription backend (auto prefers Granite when its model is installed)
+    /// Transcription backend (auto = Granite, the default)
     #[arg(long, value_enum, default_value_t = TranscribeBackend::Auto)]
     pub backend: TranscribeBackend,
 

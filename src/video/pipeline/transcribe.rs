@@ -81,7 +81,7 @@ pub fn handle_transcribe(args: TranscribeArgs) -> Result<()> {
             emit(
                 Level::Info,
                 "video.transcribe.backend",
-                "Using WhisperX (fallback)",
+                "Using WhisperX",
                 None,
             );
             run_whisperx(&hashed_video_path, cache_paths.transcript_dir(), &args)

@@ -9,7 +9,8 @@ use crate::ui::prelude::{Level, emit};
 use crate::video::audio::auphonic;
 use crate::video::cli::SetupArgs;
 use crate::video::config::VideoConfig;
-use crate::video::support::{DEEPFILTER_UVX_ARGS, WHISPERX_UVX_ARGS};
+use crate::video::deps;
+use crate::video::support::DEEPFILTER_UVX_ARGS;
 
 pub async fn handle_setup(args: SetupArgs) -> Result<()> {
     if !args.force && video_tools_ready()? {
@@ -22,17 +23,45 @@ pub async fn handle_setup(args: SetupArgs) -> Result<()> {
         return Ok(());
     }
 
+    let config = VideoConfig::load()?;
+
     emit(
         Level::Info,
         "video.setup",
-        "Starting video tools setup...",
+        &format!(
+            "Starting video tools setup (enhancer: {})...",
+            config.enhancer
+        ),
         None,
     );
 
-    setup_clearvoice(args.force)?;
-    setup_local_enhancer(args.force)?;
-    setup_auphonic(args.force).await?;
-    setup_whisperx(args.force)?;
+    // General tools — always useful (slides, music URLs, preview).
+    setup_external_tools()?;
+
+    // Only set up the configured enhancer, not all of them.
+    match config.enhancer {
+        crate::video::audio::EnhancerType::ClearVoice => setup_clearvoice(args.force)?,
+        crate::video::audio::EnhancerType::Local => setup_local_enhancer(args.force)?,
+        crate::video::audio::EnhancerType::Auphonic => setup_auphonic(args.force).await?,
+        crate::video::audio::EnhancerType::None => {
+            emit(
+                Level::Info,
+                "video.setup",
+                "Audio enhancement is disabled in config. Skipping enhancer setup.",
+                None,
+            );
+        }
+    }
+
+    // WhisperX is the ASR fallback (Granite is the default). Only set it up
+    // if the user has explicitly configured it via `--backend whisperx`,
+    // otherwise it just wastes a large download.
+    emit(
+        Level::Info,
+        "video.setup.whisperx",
+        "WhisperX is available as an ASR fallback ( Granite is the default). Use `ins video transcribe --backend whisperx` if you need it.",
+        None,
+    );
 
     emit(
         Level::Success,
@@ -44,18 +73,91 @@ pub async fn handle_setup(args: SetupArgs) -> Result<()> {
 }
 
 fn video_tools_ready() -> Result<bool> {
-    let local_ready = command_exists("uvx") && command_exists("ffmpeg") && {
-        let mut dfn_args: Vec<&str> = DEEPFILTER_UVX_ARGS.to_vec();
-        dfn_args.push("--version");
-        cmd("uvx", &dfn_args).run().is_ok()
+    let config = VideoConfig::load()?;
+
+    let external_ready = deps::ALL.iter().all(|d| d.is_installed());
+
+    // Only check the configured enhancer, not all of them.
+    let enhancer_ready = match config.enhancer {
+        crate::video::audio::EnhancerType::ClearVoice => {
+            command_exists("uv") && command_exists("ffmpeg")
+        }
+        crate::video::audio::EnhancerType::Local => {
+            command_exists("uvx") && command_exists("ffmpeg") && {
+                let mut dfn_args: Vec<&str> = DEEPFILTER_UVX_ARGS.to_vec();
+                dfn_args.push("--version");
+                cmd("uvx", &dfn_args).run().is_ok()
+            }
+        }
+        crate::video::audio::EnhancerType::Auphonic => config.auphonic_api_key.is_some(),
+        crate::video::audio::EnhancerType::None => true,
     };
 
-    let whisper_ready = command_exists("uv") && cmd!("uvx", "whisperx", "--version").run().is_ok();
+    Ok(external_ready && enhancer_ready)
+}
 
-    let config = VideoConfig::load()?;
-    let auphonic_ready = config.auphonic_api_key.is_some();
+/// Check and install external system tools (yt-dlp, chromium, pandoc, mpv)
+/// required by the video pipeline. These are small compared to the ML models
+/// and used across features, so we always ensure they're present.
+fn setup_external_tools() -> Result<()> {
+    emit(
+        Level::Info,
+        "video.setup.tools",
+        "Checking external tools (yt-dlp, chromium, pandoc, mpv)...",
+        None,
+    );
 
-    Ok(local_ready && whisper_ready && auphonic_ready)
+    let missing: Vec<&'static crate::common::package::Dependency> = deps::ALL
+        .iter()
+        .copied()
+        .filter(|d| !d.is_installed())
+        .collect();
+
+    if missing.is_empty() {
+        emit(
+            Level::Success,
+            "video.setup.tools",
+            "All external tools available.",
+            None,
+        );
+        return Ok(());
+    }
+
+    let names: Vec<&str> = missing.iter().map(|d| d.name).collect();
+    emit(
+        Level::Info,
+        "video.setup.tools",
+        &format!("Installing missing tools: {}...", names.join(", ")),
+        None,
+    );
+
+    match crate::common::package::ensure_all(&missing) {
+        Ok(crate::common::package::InstallResult::AlreadyInstalled)
+        | Ok(crate::common::package::InstallResult::Installed) => {
+            emit(
+                Level::Success,
+                "video.setup.tools",
+                "External tools installed.",
+                None,
+            );
+            Ok(())
+        }
+        Ok(crate::common::package::InstallResult::Declined) => {
+            anyhow::bail!(
+                "Required tools declined: {}. These are needed for slides, music URLs, and preview.",
+                names.join(", ")
+            )
+        }
+        Ok(crate::common::package::InstallResult::NotAvailable { name, hint }) => {
+            anyhow::bail!("Required tool {name} not available: {hint}")
+        }
+        Ok(crate::common::package::InstallResult::Failed { reason }) => {
+            anyhow::bail!("Failed to install external tools: {reason}")
+        }
+        Err(e) => {
+            anyhow::bail!("Could not check/install external tools: {e:#}")
+        }
+    }
 }
 
 fn setup_clearvoice(_force: bool) -> Result<()> {
@@ -342,68 +444,6 @@ async fn verify_and_save_new_key(
         "Auphonic configuration saved.",
         None,
     );
-
-    Ok(())
-}
-
-fn setup_whisperx(_force: bool) -> Result<()> {
-    emit(
-        Level::Info,
-        "video.setup.whisperx",
-        "Checking WhisperX setup...",
-        None,
-    );
-
-    // Check if uv is installed
-    if !command_exists("uv") {
-        emit(
-            Level::Warn,
-            "video.setup.whisperx",
-            "uv is not installed. Please install uv first to use WhisperX management.",
-            None,
-        );
-        // We can't really proceed if uv is missing as per current transcribe implementation which uses uvx
-        return Ok(());
-    }
-
-    // Check if whisperx is already runnable
-    // The plan says "Predownload the whisper uv stuff needed if possible."
-    // `uvx` runs tools from ephemeral environments usually, but `uv tool install` installs them.
-    // The `transcribe.rs` uses `uvx`. `uvx` caches tools.
-    // Running `uvx whisperx --version` should trigger the download/cache if not present.
-
-    emit(
-        Level::Info,
-        "video.setup.whisperx",
-        "Verifying WhisperX availability (this may download dependencies)...",
-        None,
-    );
-
-    // Build command with shared uvx args
-    let mut check_args: Vec<&str> = WHISPERX_UVX_ARGS.to_vec();
-    check_args.extend(&["whisperx", "--version"]);
-
-    let output = cmd("uvx", &check_args).stderr_to_stdout().run();
-
-    match output {
-        Ok(_) => {
-            emit(
-                Level::Success,
-                "video.setup.whisperx",
-                "WhisperX is ready.",
-                None,
-            );
-        }
-        Err(e) => {
-            emit(
-                Level::Error,
-                "video.setup.whisperx",
-                &format!("Failed to run WhisperX: {}", e),
-                None,
-            );
-            anyhow::bail!("WhisperX setup failed.");
-        }
-    }
 
     Ok(())
 }

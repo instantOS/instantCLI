@@ -2,6 +2,7 @@ pub mod audio;
 pub mod cli;
 pub mod commands;
 mod config;
+pub mod deps;
 pub mod document;
 pub mod menu;
 mod pipeline;
