@@ -161,8 +161,9 @@ pub(crate) fn apply_markdown_edits(cues: &mut [TranscriptCue], document: &VideoD
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::video::document::types::TimeRange;
     use crate::video::document::{
-        DocumentBlock, SegmentBlock, SegmentKind, TimeRange, VideoDocument, VideoMetadata,
+        DocumentBlock, SegmentBlock, SegmentKind, VideoDocument, VideoMetadata,
     };
     use std::time::Duration;
 
