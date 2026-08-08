@@ -11,7 +11,7 @@ use crate::ui::prelude::{Level, emit};
 use crate::video::cli::{TranscribeArgs, TranscribeBackend};
 use crate::video::config::VideoDirectories;
 use crate::video::support::WHISPERX_UVX_ARGS;
-use crate::video::support::ffmpeg::extract_audio_16k_mono_wav;
+use crate::video::support::ffmpeg::{AudioExtractSpec, extract_audio};
 use crate::video::support::transcript::parse_whisper_json;
 use crate::video::support::utils::{
     canonicalize_existing, compute_file_hash, copy_overwriting, extension_or_default,
@@ -314,7 +314,7 @@ fn run_granite(
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| "audio".to_string())
     ));
-    extract_audio_16k_mono_wav(hashed_video, &wav_path)?;
+    extract_audio(hashed_video, &wav_path, &AudioExtractSpec::MONO_16K_WAV)?;
 
     let language = args.language.whisper_code();
     let result = run_granite_driver(

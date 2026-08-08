@@ -53,12 +53,23 @@ pub fn parse_segment_reference(
     input: &str,
     source_config: &SegmentSourceConfig,
     line: usize,
-) -> Result<(String, TimeRange)> {
+) -> Result<(String, TimeRange, super::transform::TransformSpec)> {
     let trimmed = input.trim();
-    let mut explicit_source: Option<&str> = None;
-    let mut range_str = trimmed;
 
-    if let Some((prefix, rest)) = trimmed.split_once('@') {
+    // Split off transform parameters (everything after the first `|`).
+    let (core, transform) = match trimmed.split_once('|') {
+        Some((core, params)) => {
+            let spec = super::transform::parse_transform_params(params)
+                .with_context(|| format!("Invalid transform parameters at line {}", line))?;
+            (core.trim(), spec)
+        }
+        None => (trimmed, super::transform::TransformSpec::empty()),
+    };
+
+    let mut explicit_source: Option<&str> = None;
+    let mut range_str = core;
+
+    if let Some((prefix, rest)) = core.split_once('@') {
         let prefix = prefix.trim();
         let rest = rest.trim();
         let prefix_valid = is_valid_source_id(prefix);
@@ -104,7 +115,7 @@ pub fn parse_segment_reference(
         )
     })?;
 
-    Ok((source_id.to_string(), range))
+    Ok((source_id.to_string(), range, transform))
 }
 
 pub fn is_valid_source_id(value: &str) -> bool {
@@ -135,5 +146,7 @@ pub fn looks_like_timestamp_reference(value: &str) -> bool {
     } else {
         trimmed
     };
-    range_part.contains(':') && range_part.contains('.')
+    // Strip transform parameters (everything after `|`).
+    let time_part = range_part.split('|').next().unwrap_or(range_part).trim();
+    time_part.contains(':') && time_part.contains('.')
 }

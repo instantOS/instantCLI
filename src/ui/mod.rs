@@ -60,6 +60,9 @@ pub fn is_debug_enabled() -> bool {
 }
 
 pub fn init(format: OutputFormat, color: bool) {
+    // Also disable styling produced directly via the `colored` crate
+    // (path highlighting etc.), not just the renderer's own coloring.
+    colored::control::set_override(color);
     if let Ok(mut r) = RENDERER.write() {
         r.format = format;
         r.color = color;

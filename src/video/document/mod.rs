@@ -17,6 +17,7 @@ pub(crate) mod body;
 pub(crate) mod metadata;
 pub(crate) mod reference;
 pub(crate) mod time;
+pub(crate) mod transform;
 pub(crate) mod types;
 pub(crate) mod util;
 
@@ -308,6 +309,93 @@ mod tests {
                 assert_eq!(broll.source_id, "a");
             }
             other => panic!("Expected Broll block, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn broll_with_transform_preset() {
+        let markdown = concat!(
+            "---\n",
+            "sources:\n",
+            "- id: a\n  source: video_a.mp4\n  transcript: a.json\n",
+            "- id: b\n  source: video_b.mp4\n  transcript: b.json\n",
+            "default_source: a\n",
+            "---\n",
+            "> `b@00:00:00.0-00:00:05.0|pip` gameplay\n",
+        );
+        let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
+        match &document.blocks[0] {
+            DocumentBlock::Broll(broll) => {
+                assert_eq!(broll.transform.scale, Some(0.3));
+                assert_eq!(
+                    broll.transform.position,
+                    Some(super::transform::Position::TopRight)
+                );
+            }
+            other => panic!("Expected Broll, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn broll_with_explicit_transform() {
+        let markdown = concat!(
+            "---\n",
+            "sources:\n",
+            "- id: a\n  source: video_a.mp4\n  transcript: a.json\n",
+            "- id: b\n  source: video_b.mp4\n  transcript: b.json\n",
+            "default_source: a\n",
+            "---\n",
+            "> `b@00:00:00.0-00:00:05.0|scale=0.6|pos=bottom-right` custom\n",
+        );
+        let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
+        match &document.blocks[0] {
+            DocumentBlock::Broll(broll) => {
+                assert_eq!(broll.transform.scale, Some(0.6));
+                assert_eq!(
+                    broll.transform.position,
+                    Some(super::transform::Position::BottomRight)
+                );
+            }
+            other => panic!("Expected Broll, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn broll_without_transform_has_empty_spec() {
+        let markdown = concat!(
+            "---\n",
+            "sources:\n",
+            "- id: a\n  source: video_a.mp4\n  transcript: a.json\n",
+            "default_source: a\n",
+            "---\n",
+            "> `a@00:05.0-00:10.0` plain broll\n",
+        );
+        let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
+        match &document.blocks[0] {
+            DocumentBlock::Broll(broll) => {
+                assert!(broll.transform.is_empty());
+            }
+            other => panic!("Expected Broll, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn segment_timestamps_ignore_transform_params() {
+        let markdown = concat!(
+            "---\n",
+            "sources:\n",
+            "- id: a\n  source: video_a.mp4\n  transcript: a.json\n",
+            "default_source: a\n",
+            "---\n",
+            "`a@00:00.0-00:01.0|pip` segment text\n",
+        );
+        let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
+        assert_eq!(document.blocks.len(), 1);
+        match &document.blocks[0] {
+            DocumentBlock::Segment(segment) => {
+                assert_eq!(segment.text, "segment text");
+            }
+            other => panic!("Expected Segment, got {other:?}"),
         }
     }
 

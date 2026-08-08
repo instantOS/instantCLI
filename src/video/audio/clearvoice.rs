@@ -21,7 +21,7 @@ use super::EnhanceCache;
 use super::types::{AudioEnhancer, EnhanceResult};
 use crate::ui::prelude::{Level, emit};
 use crate::video::config::VideoDirectories;
-use crate::video::support::ffmpeg::extract_audio_to_wav;
+use crate::video::support::ffmpeg::{AudioExtractSpec, extract_audio};
 use crate::video::support::utils::is_audio_file;
 
 /// Speech enhancement model name (fullband 48 kHz, best quality).
@@ -102,7 +102,7 @@ impl AudioEnhancer for ClearVoiceEnhancer {
                     None,
                 );
             }
-            extract_audio_to_wav(input, &wav_path)?;
+            extract_audio(input, &wav_path, &AudioExtractSpec::MONO_48K_WAV)?;
         }
 
         // Step 2: ClearVoice AI enhancement (denoise + restoration)

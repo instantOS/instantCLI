@@ -121,14 +121,28 @@ pub enum SegmentData {
     },
 }
 
-/// Transform operations that can be applied to video or image segments
+/// Semantic screen position for an overlay or b-roll clip.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Position {
+    Center,
+    TopLeft,
+    Top,
+    TopRight,
+    Right,
+    BottomRight,
+    Bottom,
+    BottomLeft,
+    Left,
+}
+
+/// Transform operations that can be applied to video or image segments.
 #[derive(Debug, Clone)]
 pub struct Transform {
     /// Scale factor (e.g., 1.0 = 100%, 0.5 = 50%, 2.0 = 200%)
     pub scale: Option<f32>,
-    /// Rotation in degrees
-    pub rotate: Option<f32>,
-    /// Translation (x, y) in pixels
+    /// Named screen position (computed at render time from overlay dimensions)
+    pub position: Option<Position>,
+    /// Raw pixel translation (x, y) applied on top of the named position
     pub translate: Option<(f32, f32)>,
 }
 
@@ -325,41 +339,9 @@ impl Transform {
     pub fn new() -> Self {
         Transform {
             scale: None,
-            rotate: None,
+            position: None,
             translate: None,
         }
-    }
-
-    /// Create a transform with only scale
-    pub fn with_scale(scale: f32) -> Self {
-        Transform {
-            scale: Some(scale),
-            rotate: None,
-            translate: None,
-        }
-    }
-
-    /// Create a transform with only rotation
-    pub fn with_rotation(degrees: f32) -> Self {
-        Transform {
-            scale: None,
-            rotate: Some(degrees),
-            translate: None,
-        }
-    }
-
-    /// Create a transform with only translation
-    pub fn with_translation(x: f32, y: f32) -> Self {
-        Transform {
-            scale: None,
-            rotate: None,
-            translate: Some((x, y)),
-        }
-    }
-
-    /// Check if this transform has any operations
-    pub fn is_identity(&self) -> bool {
-        self.scale.is_none() && self.rotate.is_none() && self.translate.is_none()
     }
 }
 
@@ -384,16 +366,6 @@ impl SegmentData {
         match self {
             SegmentData::VideoSubset { source, .. } => Some(&source.audio),
             _ => None,
-        }
-    }
-
-    /// Get the transform for this segment data (if applicable)
-    pub fn transform(&self) -> Option<&Transform> {
-        match self {
-            SegmentData::VideoSubset { transform, .. } => transform.as_ref(),
-            SegmentData::Image { transform, .. } => transform.as_ref(),
-            SegmentData::Music { .. } => None,
-            SegmentData::Broll { transform, .. } => transform.as_ref(),
         }
     }
 
@@ -511,15 +483,6 @@ mod tests {
 
         let segments = timeline.segments_in_range(TimeWindow::new(5.0, 12.0));
         assert_eq!(segments.len(), 2);
-    }
-
-    #[test]
-    fn test_transform_identity() {
-        let transform = Transform::new();
-        assert!(transform.is_identity());
-
-        let transform = Transform::with_scale(1.5);
-        assert!(!transform.is_identity());
     }
 
     #[test]

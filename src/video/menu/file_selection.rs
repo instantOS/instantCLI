@@ -20,14 +20,6 @@ pub fn is_video_or_audio_file(path: &Path) -> bool {
     }
 }
 
-pub fn discover_slide_suggestions() -> Result<Vec<PathBuf>> {
-    let mut suggestions = collect_markdown_candidates()?;
-    if suggestions.len() > 60 {
-        suggestions.truncate(60);
-    }
-    Ok(suggestions)
-}
-
 pub fn compute_default_output_path(video_path: &Path) -> PathBuf {
     let parent = video_path.parent().unwrap_or(Path::new("."));
     let stem = video_path
@@ -150,9 +142,12 @@ fn select_path_with_picker(
     selection.to_path_buf()
 }
 
-pub fn discover_video_suggestions() -> Result<Vec<PathBuf>> {
+/// Collect markdown file suggestions, optionally filtering to `.video.md` files.
+pub fn discover_markdown_suggestions(video_only: Option<bool>) -> Result<Vec<PathBuf>> {
     let mut suggestions = collect_markdown_candidates()?;
-    suggestions.retain(|path| is_video_markdown_file(path).unwrap_or(false));
+    if video_only.unwrap_or(false) {
+        suggestions.retain(|path| is_video_markdown_file(path).unwrap_or(false));
+    }
     if suggestions.len() > 60 {
         suggestions.truncate(60);
     }

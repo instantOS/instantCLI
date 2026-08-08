@@ -589,12 +589,6 @@ pub fn select_launcher_type(
     }
 }
 
-/// Main entry point for the launch command builder
-/// Returns the typed launch command if successful
-pub fn build_launch_command() -> Result<Option<LaunchCommand>> {
-    build_launch_command_with_context(None)
-}
-
 pub fn build_launch_command_with_context(
     context: Option<&LaunchCommandBuilderContext>,
 ) -> Result<Option<LaunchCommand>> {

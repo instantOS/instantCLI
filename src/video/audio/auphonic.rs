@@ -20,7 +20,9 @@ use super::EnhanceCache;
 use super::types::{AudioEnhancer, EnhanceResult};
 use crate::ui::prelude::{Level, emit};
 use crate::video::config::VideoConfig;
-use crate::video::support::ffmpeg::{extract_audio_to_mp3, probe_duration_seconds, trim_audio_mp3};
+use crate::video::support::ffmpeg::{
+    AudioExtractSpec, extract_audio, probe_duration_seconds, trim_audio_mp3,
+};
 use crate::video::support::utils::{copy_overwriting, is_audio_file};
 
 const BASE_URL: &str = "https://auphonic.com/api";
@@ -141,7 +143,7 @@ impl AuphonicEnhancer {
                 &format!("Extracting audio from {}...", input_path.display()),
                 None,
             );
-            extract_audio_to_mp3(input_path, &extracted_audio_path)?;
+            extract_audio(input_path, &extracted_audio_path, &AudioExtractSpec::MP3)?;
         }
 
         Ok(extracted_audio_path)

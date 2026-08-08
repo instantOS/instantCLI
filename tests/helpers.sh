@@ -52,18 +52,21 @@ prepare_ins_binary() {
 	export INS_PREPARED=1
 }
 
+# Run `ins` with color disabled so assertions match plain text. The binary
+# renders colors even when piped (unless --no-color), which would otherwise
+# break literal grep assertions on colored substrings.
 ins() {
 	if [[ -z "${INS_BIN:-}" || ! -x "${INS_BIN}" ]]; then
 		prepare_ins_binary
 	fi
-	"${INS_BIN}" "$@"
+	"${INS_BIN}" --no-color "$@"
 }
 
 ins_output() {
 	if [[ -z "${INS_BIN:-}" || ! -x "${INS_BIN}" ]]; then
 		prepare_ins_binary
 	fi
-	"${INS_BIN}" "$@"
+	"${INS_BIN}" --no-color "$@"
 }
 
 create_sample_dot_repo() {
@@ -120,10 +123,15 @@ assert_output_contains() {
 	local output="$1"
 	local needle="$2"
 
-	if ! grep -Fq -- "${needle}" <<<"${output}"; then
+	# Strip ANSI color escapes before matching so colored substrings (e.g.
+	# a highlighted path inside a message) still match the plain needle.
+	local plain
+	plain="$(printf '%s' "${output}" | sed 's/\[[0-9;?]*[A-Za-z]//g')"
+
+	if ! grep -Fq -- "${needle}" <<<"${plain}"; then
 		echo "Expected output to contain: ${needle}" >&2
 		echo "Actual output:" >&2
-		echo "${output}" >&2
+		echo "${plain}" >&2
 		return 1
 	fi
 }

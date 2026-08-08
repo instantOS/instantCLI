@@ -105,11 +105,6 @@ impl SourceMap {
         self.offsets.get(input_index).copied().unwrap_or(0.0)
     }
 
-    /// Source paths in FFmpeg input order.
-    pub fn paths(&self) -> impl Iterator<Item = &PathBuf> {
-        self.order.iter()
-    }
-
     /// Generate input argument pairs for FFmpeg command.
     ///
     /// When input seeking is enabled, emits `-ss <time>` before each `-i`
