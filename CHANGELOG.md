@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.8](https://github.com/instantOS/instantCLI/compare/v0.14.7...v0.14.8) - 2026-08-08
+
+### Fixed
+
+- fix normalizer
+- fix menu chord navigation state tracking
+
+### Other
+
+- Migrate workflows to Blacksmith
+- init clearvoice enhancer
+- rename preprocessor
+- add Granite ASR backend via transcribe.cpp
+- dedupe video module copy-paste
+- remove duplication from previewriter
+- dedupe game disco
+- remove old xsetroot instantwm command
+- clippy
+- better instantwm ins assist
+- bump stuff
+- dedupe wayland copying
+- fmt
+- Merge pull request #157 from instantOS/release-plz-2026-07-22T21-01-58Z
+- bette git repo preview
+- clippy
+- better chord menu columns
+- nicer looking package installation headr
+- init better looking key chord menu
+- rework fzf api
+
 ## [0.14.7](https://github.com/instantOS/instantCLI/compare/v0.14.6...v0.14.7) - 2026-07-26
 
 ### Added
