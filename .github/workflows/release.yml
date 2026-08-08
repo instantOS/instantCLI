@@ -7,7 +7,7 @@ on:
 jobs:
   build:
     name: Build release artifacts
-    runs-on: self-hosted
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     container:
       image: archlinux:latest
     env:
@@ -91,7 +91,7 @@ jobs:
             artifacts/ins-${{ steps.vars.outputs.version }}-x86_64.AppImage.sha256
   cross-compile:
     name: Cross-compile for ARM and musl targets
-    runs-on: self-hosted
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     container:
       image: ubuntu:24.04
     env:
@@ -244,7 +244,7 @@ jobs:
         run: rm -rf /opt/cargo /opt/rustup /opt/android-ndk-* /opt/aarch64-linux-musl-cross
   pkgbuild:
     name: Build Arch package
-    runs-on: self-hosted
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     container:
       image: archlinux:latest
     needs: build
@@ -294,7 +294,7 @@ jobs:
           path: artifacts/
   deb:
     name: Build Debian package
-    runs-on: self-hosted
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     container:
       image: ubuntu:24.04
     needs: build
@@ -341,7 +341,7 @@ jobs:
           path: artifacts/
   release:
     name: Publish GitHub release
-    runs-on: self-hosted
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     container:
       image: ubuntu:24.04
     needs:
