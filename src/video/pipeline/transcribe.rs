@@ -130,24 +130,13 @@ enum BackendChoice {
 
 /// Resolve the effective backend. `auto` prefers Granite only when its model
 /// is already installed, falling back to WhisperX without triggering the
-/// multi-GB model download implicitly.
-fn resolve_backend(args: &TranscribeArgs, models_dir: &Path) -> Result<BackendChoice> {
+/// Resolve which transcription backend to use. `Auto` and `Granite` both
+/// resolve to Granite; the model is downloaded on first use via
+/// `ensure_granite_model`.
+fn resolve_backend(args: &TranscribeArgs, _models_dir: &Path) -> Result<BackendChoice> {
     match args.backend {
-        TranscribeBackend::Granite => Ok(BackendChoice::Granite),
+        TranscribeBackend::Granite | TranscribeBackend::Auto => Ok(BackendChoice::Granite),
         TranscribeBackend::Whisperx => Ok(BackendChoice::WhisperX),
-        TranscribeBackend::Auto => {
-            if granite_model_path(args, models_dir)?.exists() {
-                Ok(BackendChoice::Granite)
-            } else {
-                emit(
-                    Level::Info,
-                    "video.transcribe.backend",
-                    "Granite model not installed; using WhisperX (run with --backend granite to download it)",
-                    None,
-                );
-                Ok(BackendChoice::WhisperX)
-            }
-        }
     }
 }
 
@@ -586,10 +575,10 @@ mod tests {
     }
 
     #[test]
-    fn resolve_backend_auto_falls_back_without_model() {
+    fn resolve_backend_auto_uses_granite() {
         let dir = temp_models("auto");
         let choice = resolve_backend(&args_with(TranscribeBackend::Auto), &dir).unwrap();
-        assert_eq!(choice, BackendChoice::WhisperX);
+        assert_eq!(choice, BackendChoice::Granite);
         fs::remove_dir_all(&dir).ok();
     }
 
