@@ -121,12 +121,28 @@ pub enum SegmentData {
     },
 }
 
-/// Transform operations that can be applied to video or image segments
+/// Semantic screen position for an overlay or b-roll clip.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Position {
+    Center,
+    TopLeft,
+    Top,
+    TopRight,
+    Right,
+    BottomRight,
+    Bottom,
+    BottomLeft,
+    Left,
+}
+
+/// Transform operations that can be applied to video or image segments.
 #[derive(Debug, Clone)]
 pub struct Transform {
     /// Scale factor (e.g., 1.0 = 100%, 0.5 = 50%, 2.0 = 200%)
     pub scale: Option<f32>,
-    /// Translation (x, y) in pixels
+    /// Named screen position (computed at render time from overlay dimensions)
+    pub position: Option<Position>,
+    /// Raw pixel translation (x, y) applied on top of the named position
     pub translate: Option<(f32, f32)>,
 }
 
@@ -323,6 +339,7 @@ impl Transform {
     pub fn new() -> Self {
         Transform {
             scale: None,
+            position: None,
             translate: None,
         }
     }

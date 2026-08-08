@@ -3,7 +3,7 @@ use anyhow::Result;
 use super::FfmpegCompiler;
 use super::FilterChain;
 use super::inputs::SourceMap;
-use crate::video::render::timeline::{Segment, SegmentData, TimeWindow, Transform};
+use crate::video::render::timeline::{Position, Segment, SegmentData, TimeWindow, Transform};
 
 const OVERLAY_FRAME_SCALE: f64 = 0.9;
 const OVERLAY_FRAME_BORDER_WIDTH: u32 = 4;
@@ -46,20 +46,44 @@ impl FfmpegCompiler {
         overlay_width: u32,
         overlay_height: u32,
     ) -> (i32, i32) {
-        let base_x = (self.target_width as i32 - overlay_width as i32) / 2;
-        let base_y = if self.render_mode.requires_padding() {
-            ((self.target_height as i32 - overlay_height as i32) as f64 * 0.3) as i32
-        } else {
-            (self.target_height as i32 - overlay_height as i32) / 2
+        const MARGIN: i32 = 16;
+
+        let tw = self.target_width as i32;
+        let th = self.target_height as i32;
+        let ow = overlay_width as i32;
+        let oh = overlay_height as i32;
+
+        let position = transform
+            .and_then(|t| t.position)
+            .unwrap_or(Position::Center);
+
+        let (mut x, mut y) = match position {
+            Position::Center => {
+                let cy = if self.render_mode.requires_padding() {
+                    ((th - oh) as f64 * 0.3) as i32
+                } else {
+                    (th - oh) / 2
+                };
+                ((tw - ow) / 2, cy)
+            }
+            Position::TopLeft => (MARGIN, MARGIN),
+            Position::Top => ((tw - ow) / 2, MARGIN),
+            Position::TopRight => (tw - ow - MARGIN, MARGIN),
+            Position::Right => (tw - ow - MARGIN, (th - oh) / 2),
+            Position::BottomRight => (tw - ow - MARGIN, th - oh - MARGIN),
+            Position::Bottom => ((tw - ow) / 2, th - oh - MARGIN),
+            Position::BottomLeft => (MARGIN, th - oh - MARGIN),
+            Position::Left => (MARGIN, (th - oh) / 2),
         };
 
         if let Some(t) = transform
             && let Some((tx, ty)) = t.translate
         {
-            (base_x + tx as i32, base_y + ty as i32)
-        } else {
-            (base_x, base_y)
+            x += tx as i32;
+            y += ty as i32;
         }
+
+        (x, y)
     }
 
     fn build_overlay_filter(

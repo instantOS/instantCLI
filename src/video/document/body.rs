@@ -184,13 +184,14 @@ impl<'a> BodyParserState<'a> {
     fn flush_blockquote(&mut self) -> Result<()> {
         if let Some(state) = self.blockquote.take() {
             if let Some(code_span) = state.code_span {
-                let (source_id, range) =
+                let (source_id, range, transform) =
                     parse_segment_reference(&code_span, self.source_config, self.base_line_offset)?;
                 let text = state.following_text.trim().to_string();
                 self.blocks.push(DocumentBlock::Broll(BrollBlock {
                     range,
                     text,
                     source_id,
+                    transform,
                 }));
             } else {
                 let markdown = state
@@ -334,8 +335,8 @@ impl ParagraphState {
                     } else {
                         SegmentKind::Dialogue
                     };
-                    let (source_id, range) = parse_segment_reference(&code, source_config, line)
-                        .with_context(|| {
+                    let (source_id, range, _transform) =
+                        parse_segment_reference(&code, source_config, line).with_context(|| {
                             format!("Invalid timestamp `{}` at line {}", code, line)
                         })?;
                     blocks.push(DocumentBlock::Segment(SegmentBlock {
