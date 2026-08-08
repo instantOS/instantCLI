@@ -1,9 +1,6 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::HashSet,
-    path::{Path, PathBuf},
-};
+use std::{collections::HashSet, path::PathBuf};
 
 use crate::common::TildePath;
 use crate::common::config::DocumentedConfig;
@@ -263,11 +260,6 @@ pub fn installations_config_path() -> Result<PathBuf> {
 impl InstantGameConfig {
     pub fn load() -> Result<Self> {
         let path = games_config_path()?;
-        <Self as DocumentedConfig>::load_from_path_documented(path)
-    }
-
-    pub fn load_from_path(path: impl AsRef<Path>) -> Result<Self> {
-        let path = path.as_ref();
         let config = <Self as DocumentedConfig>::load_from_path_documented(path)?;
         config.validate()?;
         Ok(config)
@@ -299,11 +291,6 @@ impl InstantGameConfig {
 impl InstallationsConfig {
     pub fn load() -> Result<Self> {
         let path = installations_config_path()?;
-        <Self as DocumentedConfig>::load_from_path_documented(path)
-    }
-
-    pub fn load_from_path(path: impl AsRef<Path>) -> Result<Self> {
-        let path = path.as_ref();
         let config = <Self as DocumentedConfig>::load_from_path_documented(path)?;
         config.validate()?;
         Ok(config)

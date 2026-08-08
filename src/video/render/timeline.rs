@@ -329,38 +329,6 @@ impl Transform {
             translate: None,
         }
     }
-
-    /// Create a transform with only scale
-    pub fn with_scale(scale: f32) -> Self {
-        Transform {
-            scale: Some(scale),
-            rotate: None,
-            translate: None,
-        }
-    }
-
-    /// Create a transform with only rotation
-    pub fn with_rotation(degrees: f32) -> Self {
-        Transform {
-            scale: None,
-            rotate: Some(degrees),
-            translate: None,
-        }
-    }
-
-    /// Create a transform with only translation
-    pub fn with_translation(x: f32, y: f32) -> Self {
-        Transform {
-            scale: None,
-            rotate: None,
-            translate: Some((x, y)),
-        }
-    }
-
-    /// Check if this transform has any operations
-    pub fn is_identity(&self) -> bool {
-        self.scale.is_none() && self.rotate.is_none() && self.translate.is_none()
-    }
 }
 
 impl Default for Transform {
@@ -384,16 +352,6 @@ impl SegmentData {
         match self {
             SegmentData::VideoSubset { source, .. } => Some(&source.audio),
             _ => None,
-        }
-    }
-
-    /// Get the transform for this segment data (if applicable)
-    pub fn transform(&self) -> Option<&Transform> {
-        match self {
-            SegmentData::VideoSubset { transform, .. } => transform.as_ref(),
-            SegmentData::Image { transform, .. } => transform.as_ref(),
-            SegmentData::Music { .. } => None,
-            SegmentData::Broll { transform, .. } => transform.as_ref(),
         }
     }
 
@@ -511,15 +469,6 @@ mod tests {
 
         let segments = timeline.segments_in_range(TimeWindow::new(5.0, 12.0));
         assert_eq!(segments.len(), 2);
-    }
-
-    #[test]
-    fn test_transform_identity() {
-        let transform = Transform::new();
-        assert!(transform.is_identity());
-
-        let transform = Transform::with_scale(1.5);
-        assert!(!transform.is_identity());
     }
 
     #[test]

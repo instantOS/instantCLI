@@ -175,15 +175,6 @@ impl WmConfigManager {
         Ok(hasher.finish())
     }
 
-    /// Read the current config file contents.
-    fn read_config(&self) -> Result<String> {
-        if !self.config_path.exists() {
-            return Ok(String::new());
-        }
-        fs::read_to_string(&self.config_path)
-            .with_context(|| format!("Failed to read {}", self.config_path.display()))
-    }
-
     /// Write the full config file contents, replacing any existing content.
     pub fn write_full_config(&self, content: &str) -> Result<()> {
         // Ensure parent directory exists
@@ -355,20 +346,6 @@ impl WmConfigManager {
 
                 Ok(())
             }
-        }
-    }
-
-    /// Reload WM configuration only if the config has changed.
-    ///
-    /// Pass the hash from before making changes. If the current hash differs,
-    /// WM will be reloaded.
-    pub fn reload_if_changed(&self, initial_hash: u64) -> Result<bool> {
-        let current_hash = self.hash_config()?;
-        if current_hash != initial_hash {
-            self.reload()?;
-            Ok(true)
-        } else {
-            Ok(false)
         }
     }
 }

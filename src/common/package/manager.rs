@@ -165,23 +165,6 @@ impl PackageManager {
             Self::Snap => ("sudo", &["snap", "remove"]),
         }
     }
-
-    /// Get the command to show package information.
-    ///
-    /// Returns a shell command template with {package} placeholder.
-    pub fn show_package_command(&self) -> &'static str {
-        match self {
-            Self::Pacman => "pacman -Qi {package}",
-            Self::Apt => "apt show {package} 2>/dev/null",
-            Self::Dnf => "dnf info {package} 2>/dev/null",
-            Self::Zypper => "zypper info {package} 2>/dev/null",
-            Self::Pkg => "pkg show {package} 2>/dev/null",
-            Self::Flatpak => "flatpak info {package} 2>/dev/null",
-            Self::Aur => "pacman -Qi {package}", // AUR packages use pacman for info
-            Self::Cargo => "cargo show {package} 2>/dev/null",
-            Self::Snap => "snap info {package} 2>/dev/null",
-        }
-    }
 }
 
 impl std::fmt::Display for PackageManager {

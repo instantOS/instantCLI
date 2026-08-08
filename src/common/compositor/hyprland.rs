@@ -286,32 +286,6 @@ pub fn is_special_workspace_active(workspace_name: &str) -> Result<bool> {
     Ok(false)
 }
 
-/// Execute a hyprctl dispatcher command
-#[allow(dead_code)]
-pub fn dispatch_command(command: &str) -> Result<()> {
-    let parts: Vec<&str> = command.split_whitespace().collect();
-    if parts.is_empty() {
-        return Err(anyhow::anyhow!("Empty command"));
-    }
-
-    let output = Command::new("hyprctl")
-        .args(["dispatch"])
-        .args(&parts[1..])
-        .output()
-        .context("Failed to execute hyprctl dispatch")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(anyhow::anyhow!(
-            "Failed to dispatch command '{}': {}",
-            command,
-            stderr
-        ));
-    }
-
-    Ok(())
-}
-
 /// Get all scratchpad windows in Hyprland
 pub fn get_all_scratchpad_windows() -> Result<Vec<ScratchpadWindowInfo>> {
     let output = Command::new("hyprctl")

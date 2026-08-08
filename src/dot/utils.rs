@@ -157,11 +157,6 @@ fn normalize_path(path: &Path) -> Result<PathBuf> {
     Ok(result)
 }
 
-pub fn get_active_dotfile_dirs(config: &DotfileConfig, db: &Database) -> Result<Vec<DotfileDir>> {
-    let repo_manager = DotfileRepositoryManager::new(config, db);
-    repo_manager.get_active_dotfile_dirs()
-}
-
 pub fn scan_directory_for_dotfiles(
     dir_path: &Path,
     target_prefix: &Path,
@@ -342,8 +337,6 @@ pub fn persist_file_safely(path: &Path, content: &[u8], description: &str) -> Re
         .map_err(|err| anyhow::anyhow!("persisting {} {}: {}", description, path.display(), err))?;
     Ok(())
 }
-
-use crate::dot::dotfilerepo::DotfileDir;
 
 #[cfg(test)]
 mod tests {

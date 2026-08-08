@@ -360,29 +360,6 @@ impl KWin {
         None
     }
 
-    /// Check if a window is visible by checking if the process is running and not minimized
-    #[allow(dead_code)] // Kept for reference but likely unused if new method works
-    fn is_window_visible_by_process(&self, pid: u32) -> Result<bool> {
-        // For now, assume if the process is running, it's potentially visible
-        // This is a simplified check - a more accurate check would require KWin scripting
-        let output = Command::new("ps")
-            .args(["-p", &pid.to_string(), "-o", "stat="])
-            .output()?;
-
-        if output.status.success() {
-            let stat = String::from_utf8_lossy(&output.stdout);
-            // Process state: 'R' = running, 'S' = sleeping, 'T' = stopped/traced, 'Z' = zombie
-            // Assume running/sleeping processes are visible
-            Ok(stat
-                .trim()
-                .chars()
-                .next()
-                .is_some_and(|c| c == 'R' || c == 'S'))
-        } else {
-            Ok(false)
-        }
-    }
-
     fn run_script(&self, config: &ScratchpadConfig, action: &str) -> Result<()> {
         let class = config.window_class();
         let width_pct = config.width_pct as f64 / 100.0;

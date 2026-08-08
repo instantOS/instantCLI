@@ -30,12 +30,6 @@ impl<'a> RenderPipeline<'a> {
         self.runner.run(&args, options)
     }
 
-    pub(super) fn execute_preview(&self) -> Result<()> {
-        let args = self.build_preview_args()?;
-        let options = FfmpegRunOptions::new(Some(self.timeline.total_duration()), self.verbose);
-        self.runner.run(&args, options)
-    }
-
     pub(super) fn preview(&self, player: &dyn PreviewPlayer) -> Result<()> {
         let args = self.build_preview_args()?;
         player.play(&args)

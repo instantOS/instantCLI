@@ -318,12 +318,6 @@ pub fn add_menu_to_desktop() -> Result<(bool, Option<PathBuf>)> {
     Ok((true, Some(path)))
 }
 
-/// Remove the game menu from the desktop
-pub fn remove_menu_from_desktop() -> Result<bool> {
-    let menu_name = "ins game menu";
-    remove_game_from_desktop(menu_name)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
