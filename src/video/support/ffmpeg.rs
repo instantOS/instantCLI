@@ -180,67 +180,78 @@ pub fn probe_video_dimensions(video_path: &Path) -> Result<(u32, u32)> {
     Ok((width, height))
 }
 
-pub fn extract_audio_to_mp3(input: &Path, output: &Path) -> Result<()> {
-    run_ffmpeg_with_progress(
-        &[
-            "-y",
-            "-i",
-            &input.to_string_lossy(),
-            "-vn",
-            "-map",
-            "0:a:0",
-            "-c:a",
-            "libmp3lame",
-            "-q:a",
-            "2",
-            &output.to_string_lossy(),
-        ],
-        &format!("to extract audio from {}", input.display()),
-    )
+/// Audio extraction specification: codec, sample rate, and optional mono downmix.
+pub struct AudioExtractSpec {
+    pub codec: &'static str,
+    pub sample_rate: u32,
+    pub mono: bool,
+    /// Extra arguments appended after the common flags (e.g. `["-q:a", "2"]`).
+    pub extra_args: &'static [(&'static str, &'static str)],
+    /// Description used in progress messages.
+    pub label: &'static str,
 }
 
-/// Extracts the first audio stream to a 16 kHz mono s16 WAV (input format used
-/// by transcribe.cpp / Granite Speech).
-pub fn extract_audio_16k_mono_wav(input: &Path, output: &Path) -> Result<()> {
-    run_ffmpeg_with_progress(
-        &[
-            "-y",
-            "-i",
-            &input.to_string_lossy(),
-            "-vn",
-            "-map",
-            "0:a:0",
-            "-ac",
-            "1", // Downmix to mono
-            "-c:a",
-            "pcm_s16le",
-            "-ar",
-            "16000",
-            &output.to_string_lossy(),
-        ],
-        &format!("to extract 16 kHz audio from {}", input.display()),
-    )
+impl AudioExtractSpec {
+    /// MP3 at default bitrate, VBR quality 2.
+    pub const MP3: Self = Self {
+        codec: "libmp3lame",
+        sample_rate: 0,
+        mono: false,
+        extra_args: &[("-q:a", "2")],
+        label: "audio",
+    };
+
+    /// 16 kHz mono s16 WAV — input format for transcribe.cpp / Granite Speech.
+    pub const MONO_16K_WAV: Self = Self {
+        codec: "pcm_s16le",
+        sample_rate: 16000,
+        mono: true,
+        extra_args: &[],
+        label: "16 kHz audio",
+    };
+
+    /// 48 kHz mono s16 WAV — for enhancement pipelines.
+    pub const MONO_48K_WAV: Self = Self {
+        codec: "pcm_s16le",
+        sample_rate: 48000,
+        mono: true,
+        extra_args: &[],
+        label: "audio",
+    };
 }
 
-/// Extracts the first audio stream to a mono WAV file for processing.
-pub fn extract_audio_to_wav(input: &Path, output: &Path) -> Result<()> {
+/// Extracts the first audio stream from `input` into `output` using the given spec.
+pub fn extract_audio(input: &Path, output: &Path, spec: &AudioExtractSpec) -> Result<()> {
+    let input_str = input.to_string_lossy();
+    let output_str = output.to_string_lossy();
+    let sr_str;
+    let sr_val: Option<&str> = if spec.sample_rate > 0 {
+        sr_str = spec.sample_rate.to_string();
+        Some(&sr_str)
+    } else {
+        None
+    };
+
+    let mut args: Vec<&str> = vec!["-y", "-i", &input_str, "-vn", "-map", "0:a:0"];
+    if spec.mono {
+        args.push("-ac");
+        args.push("1");
+    }
+    args.push("-c:a");
+    args.push(spec.codec);
+    if let Some(sr) = sr_val {
+        args.push("-ar");
+        args.push(sr);
+    }
+    for (k, v) in spec.extra_args {
+        args.push(k);
+        args.push(v);
+    }
+    args.push(&output_str);
+
     run_ffmpeg_with_progress(
-        &[
-            "-y",
-            "-i",
-            &input.to_string_lossy(),
-            "-vn",
-            "-map",
-            "0:a:0",
-            "-ac",
-            "1", // Downmix to mono
-            "-c:a",
-            "pcm_s16le",
-            "-ar",
-            "48000",
-            &output.to_string_lossy(),
-        ],
-        &format!("to extract audio from {}", input.display()),
+        &args,
+        &format!("to extract {} from {}", spec.label, input.display()),
     )
 }
 

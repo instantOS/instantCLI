@@ -17,7 +17,7 @@ use super::EnhanceCache;
 use super::types::{AudioEnhancer, EnhanceResult};
 use crate::ui::prelude::{Level, emit};
 use crate::video::support::DEEPFILTER_UVX_ARGS;
-use crate::video::support::ffmpeg::extract_audio_to_wav;
+use crate::video::support::ffmpeg::{AudioExtractSpec, extract_audio};
 use crate::video::support::utils::is_audio_file;
 
 /// Local enhancer using DeepFilterNet + pure loudness normalization
@@ -74,11 +74,6 @@ impl LocalEnhancer {
 
         Ok(output_path)
     }
-
-    /// Run pure two-pass EBU R128 loudness normalization (shared, no compression).
-    fn run_loudnorm(input: &Path, output: &Path) -> Result<()> {
-        super::run_loudnorm(input, output)
-    }
 }
 
 impl Default for LocalEnhancer {
@@ -114,14 +109,14 @@ impl AudioEnhancer for LocalEnhancer {
                     None,
                 );
             }
-            extract_audio_to_wav(input, &wav_path)?;
+            extract_audio(input, &wav_path, &AudioExtractSpec::MONO_48K_WAV)?;
         }
 
         // Step 2: Run DeepFilterNet
         let denoised_path = Self::run_deepfilter(&wav_path, &cache.cache_dir)?;
 
         // Step 3: Run static loudness normalization (no compression)
-        Self::run_loudnorm(&denoised_path, &enhanced_cache_path)?;
+        super::run_loudnorm(&denoised_path, &enhanced_cache_path)?;
 
         Ok(EnhanceResult {
             output_path: enhanced_cache_path,

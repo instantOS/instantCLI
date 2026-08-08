@@ -78,7 +78,7 @@ pub async fn run_transcribe() -> Result<()> {
 }
 
 pub async fn run_slide() -> Result<()> {
-    let suggestions = super::file_selection::discover_slide_suggestions()?;
+    let suggestions = super::file_selection::discover_markdown_suggestions(None)?;
     let Some(markdown_path) = select_markdown_file("Select markdown for slide", suggestions)?
     else {
         return Ok(());

@@ -18,7 +18,7 @@ use crate::video::render::paths::resolve_output_path;
 use crate::video::transcript_language::TranscriptLanguage;
 
 use super::file_selection::{
-    discover_video_file_suggestions, discover_video_suggestions, select_markdown_file,
+    discover_markdown_suggestions, discover_video_file_suggestions, select_markdown_file,
     select_output_path, select_video_file_with_suggestions,
 };
 use super::prompts::{
@@ -184,7 +184,7 @@ impl FzfSelectable for ProjectMenuEntry {
 }
 
 pub async fn run_project_menu() -> Result<()> {
-    let suggestions = discover_video_suggestions()?;
+    let suggestions = discover_markdown_suggestions(Some(true))?;
     let Some(markdown_path) = select_markdown_file("Select project", suggestions)? else {
         return Ok(());
     };
@@ -580,23 +580,13 @@ fn prompt_output_conflict(output_path: &Path) -> Result<Option<OutputConflictCho
 fn resolve_default_source_path(markdown_path: &Path, project_dir: &Path) -> Result<PathBuf> {
     let contents = fs::read_to_string(markdown_path)?;
     let document = parse_video_document(&contents, markdown_path)?;
-    let sources = &document.metadata.sources;
 
-    if sources.is_empty() {
+    if document.metadata.sources.is_empty() {
         bail!("No video sources configured. Add `sources` in front matter before rendering.");
     }
 
-    let default_id = document
-        .metadata
-        .default_source
-        .as_ref()
-        .or_else(|| sources.first().map(|source| &source.id))
-        .ok_or_else(|| anyhow!("No video sources available"))?;
-
-    let source = sources
-        .iter()
-        .find(|source| &source.id == default_id)
-        .ok_or_else(|| anyhow!("Default source `{}` not found", default_id))?;
+    let source =
+        crate::video::render::find_default_source(&document.metadata, &document.metadata.sources)?;
 
     let source_path = if source.source.is_absolute() {
         source.source.clone()
