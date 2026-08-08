@@ -7,7 +7,7 @@ on:
 jobs:
   release-plz-release:
     name: Release-plz release
-    runs-on: self-hosted
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     container:
       image: ubuntu:latest
     if: ${{ github.repository_owner == 'instantOS' }}
@@ -42,7 +42,7 @@ jobs:
         run: rm -rf /opt/cargo /opt/rustup
   release-plz-pr:
     name: Release-plz PR
-    runs-on: self-hosted
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     container:
       image: ubuntu:latest
     if: ${{ github.repository_owner == 'instantOS' }}
