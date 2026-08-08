@@ -126,8 +126,6 @@ pub enum SegmentData {
 pub struct Transform {
     /// Scale factor (e.g., 1.0 = 100%, 0.5 = 50%, 2.0 = 200%)
     pub scale: Option<f32>,
-    /// Rotation in degrees
-    pub rotate: Option<f32>,
     /// Translation (x, y) in pixels
     pub translate: Option<(f32, f32)>,
 }
@@ -325,7 +323,6 @@ impl Transform {
     pub fn new() -> Self {
         Transform {
             scale: None,
-            rotate: None,
             translate: None,
         }
     }

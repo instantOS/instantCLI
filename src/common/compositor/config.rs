@@ -70,16 +70,6 @@ impl WindowManager {
             WindowManager::Niri => "niri",
         }
     }
-
-    /// Whether this WM supports cursor theme in config
-    pub fn supports_cursor_theme(&self) -> bool {
-        match self {
-            WindowManager::Sway => true,
-            WindowManager::I3 => false,
-            WindowManager::InstantWM => false,
-            WindowManager::Niri => false,
-        }
-    }
 }
 
 /// Manager for the shared WM configuration file.
