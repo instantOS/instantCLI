@@ -297,9 +297,14 @@ fn run_granite(
 
     let model_path = ensure_granite_model(args, models_dir)?;
 
-    // Materialize the driver script next to the model.
+    // Materialize the driver script next to the model. Refresh an older cached
+    // copy after upgrades; otherwise fixes in the embedded driver never reach
+    // machines that have already used Granite.
     let driver_path = models_dir.join("granite_driver.py");
-    if !driver_path.exists() {
+    let driver_is_current = fs::read_to_string(&driver_path)
+        .map(|contents| contents == GRANITE_DRIVER)
+        .unwrap_or(false);
+    if !driver_is_current {
         fs::write(&driver_path, GRANITE_DRIVER)
             .with_context(|| format!("Failed to write driver script {}", driver_path.display()))?;
     }

@@ -48,21 +48,40 @@ def progress(done_ms: int, total_ms: int) -> None:
     sys.stderr.flush()
 
 
-def transcribe_window(session, pcm, language: str | None, window_ms: int):
-    """Run one window, halving on InputTooLong until the audio fits."""
-    while True:
-        try:
-            return session.run(
-                pcm,
-                task="transcribe",
-                language=language,
-                timestamps="word",
-            )
-        except tc.InputTooLong:
-            window_ms //= 2
-            if window_ms < 5000:
-                raise
-            pcm = pcm[: window_ms * 16000 // 1000]
+MIN_RETRY_SAMPLES = 16000
+
+
+def transcribe_window(session, pcm, language: str | None, off_samples: int = 0):
+    """Run a window, recursively splitting it when the model cannot finish.
+
+    Both errors require retrying shorter audio.  In particular, accepting the
+    partial result from OutputTruncated would silently discard the ungenerated
+    end of the window.  Return every successful sub-window with its sample
+    offset so timestamps remain relative to the complete recording.
+    """
+    try:
+        result = session.run(
+            pcm,
+            task="transcribe",
+            language=language,
+            timestamps="word",
+        )
+        return [(result, off_samples)]
+    except (tc.InputTooLong, tc.OutputTruncated) as exc:
+        if len(pcm) <= MIN_RETRY_SAMPLES:
+            raise
+
+        split = len(pcm) // 2
+        duration_ms = len(pcm) * 1000 // 16000
+        sys.stderr.write(
+            f"TCWARN {type(exc).__name__} for {duration_ms} ms window; "
+            "retrying as two shorter windows\n"
+        )
+        sys.stderr.flush()
+
+        return transcribe_window(
+            session, pcm[:split], language, off_samples
+        ) + transcribe_window(session, pcm[split:], language, off_samples + split)
 
 
 def result_to_segments(result: tc.Result, off_ms: int) -> list[dict]:
@@ -133,8 +152,10 @@ def main() -> int:
                 t1 = min(t0 + win, len(pcm))
                 if t1 <= t0:
                     break
-                r = transcribe_window(session, pcm[t0:t1], args.language, window_ms)
-                all_segments.extend(result_to_segments(r, t0 * 1000 // 16000))
+                results = transcribe_window(session, pcm[t0:t1], args.language)
+                for result, local_off in results:
+                    off_ms = (t0 + local_off) * 1000 // 16000
+                    all_segments.extend(result_to_segments(result, off_ms))
                 progress(t1 * 1000 // 16000, total_ms)
 
     out = {"segments": all_segments}
