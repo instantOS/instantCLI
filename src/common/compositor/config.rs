@@ -70,16 +70,6 @@ impl WindowManager {
             WindowManager::Niri => "niri",
         }
     }
-
-    /// Whether this WM supports cursor theme in config
-    pub fn supports_cursor_theme(&self) -> bool {
-        match self {
-            WindowManager::Sway => true,
-            WindowManager::I3 => false,
-            WindowManager::InstantWM => false,
-            WindowManager::Niri => false,
-        }
-    }
 }
 
 /// Manager for the shared WM configuration file.
@@ -173,15 +163,6 @@ impl WmConfigManager {
         let mut hasher = DefaultHasher::new();
         content.hash(&mut hasher);
         Ok(hasher.finish())
-    }
-
-    /// Read the current config file contents.
-    fn read_config(&self) -> Result<String> {
-        if !self.config_path.exists() {
-            return Ok(String::new());
-        }
-        fs::read_to_string(&self.config_path)
-            .with_context(|| format!("Failed to read {}", self.config_path.display()))
     }
 
     /// Write the full config file contents, replacing any existing content.
@@ -355,20 +336,6 @@ impl WmConfigManager {
 
                 Ok(())
             }
-        }
-    }
-
-    /// Reload WM configuration only if the config has changed.
-    ///
-    /// Pass the hash from before making changes. If the current hash differs,
-    /// WM will be reloaded.
-    pub fn reload_if_changed(&self, initial_hash: u64) -> Result<bool> {
-        let current_hash = self.hash_config()?;
-        if current_hash != initial_hash {
-            self.reload()?;
-            Ok(true)
-        } else {
-            Ok(false)
         }
     }
 }

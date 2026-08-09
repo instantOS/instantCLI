@@ -16,7 +16,7 @@ pub async fn handle_video_command(command: VideoCommands, _debug: bool) -> Resul
         VideoCommands::Preview(args) => render::handle_preview(args).await.map(|_| ()),
         VideoCommands::Slide(args) => slides::cli::handle_slide(args),
         VideoCommands::Check(args) => check::handle_check(args).await,
-        VideoCommands::Preprocess(args) => audio::handle_preprocess(args).await,
+        VideoCommands::Enhance(args) => audio::handle_enhance(args).await,
         VideoCommands::Setup(args) => setup::handle_setup(args).await,
         VideoCommands::Menu { gui } => {
             if gui {

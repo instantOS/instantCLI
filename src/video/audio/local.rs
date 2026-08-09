@@ -1,87 +1,52 @@
-//! Local audio preprocessing using DeepFilterNet + ffmpeg-normalize
+//! Local audio enhancement using DeepFilterNet + pure EBU R128 loudness
 //!
-//! Pipeline:
+//! Pipeline (voice stem, before music is mixed):
 //! 1. Extract audio to WAV if input is video
 //! 2. Run DeepFilterNet for noise reduction
-//! 3. Run ffmpeg-normalize with podcast preset for loudness normalization
+//! 3. Run EBU R128 dynamic loudness normalization (compressor on voice only)
+//!
+//! Dynamic compression (ffmpeg-normalize --dynamic) is applied here to the voice
+//! stem only. The music bed is mixed in later and passes through untouched, so
+//! already-mastered MP3s are never double-compressed.
 
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use super::types::{AudioPreprocessor, PreprocessResult};
+use super::EnhanceCache;
+use super::types::{AudioEnhancer, EnhanceResult};
 use crate::ui::prelude::{Level, emit};
-use crate::video::config::VideoDirectories;
-use crate::video::support::utils::compute_file_hash;
+use crate::video::support::DEEPFILTER_UVX_ARGS;
+use crate::video::support::ffmpeg::{AudioExtractSpec, extract_audio};
+use crate::video::support::utils::is_audio_file;
 
-/// Local preprocessor using DeepFilterNet + ffmpeg-normalize
-pub struct LocalPreprocessor;
+/// Local enhancer using DeepFilterNet + pure loudness normalization
+pub struct LocalEnhancer;
 
-impl LocalPreprocessor {
+impl LocalEnhancer {
     pub fn new() -> Self {
         Self
-    }
-
-    /// Extract audio to WAV format for DeepFilterNet processing
-    fn extract_audio_to_wav(input: &Path, output: &Path) -> Result<()> {
-        let status = Command::new("ffmpeg")
-            .args([
-                "-y",
-                "-i",
-                &input.to_string_lossy(),
-                "-vn",
-                "-map",
-                "0:a:0",
-                "-ac",
-                "1", // Downmix to mono
-                "-c:a",
-                "pcm_s16le",
-                "-ar",
-                "48000",
-                &output.to_string_lossy(),
-            ])
-            .status()
-            .with_context(|| {
-                format!(
-                    "Failed to run ffmpeg to extract audio from {}",
-                    input.display()
-                )
-            })?;
-
-        if !status.success() {
-            anyhow::bail!("ffmpeg failed to extract audio from {}", input.display());
-        }
-
-        Ok(())
     }
 
     /// Run DeepFilterNet for noise reduction
     fn run_deepfilter(input: &Path, output_dir: &Path) -> Result<PathBuf> {
         emit(
             Level::Info,
-            "video.preprocess.deepfilter",
+            "video.enhance.deepfilter",
             "Running DeepFilterNet noise reduction...",
             None,
         );
 
         let status = Command::new("uvx")
+            .args(DEEPFILTER_UVX_ARGS)
+            .arg(&*input.to_string_lossy())
             .args([
-                "--python",
-                "3.10",
-                "--from",
-                "deepfilternet",
-                "--with",
-                "torch<2.1",
-                "--with",
-                "torchaudio<2.1",
-                "deepFilter",
-                &input.to_string_lossy(),
                 "--atten-lim",
                 "80",   // More aggressive noise attenuation (higher = more reduction)
                 "--pf", // Enable post-filter for additional noise reduction
                 "--output-dir",
-                &output_dir.to_string_lossy(),
             ])
+            .arg(&*output_dir.to_string_lossy())
             .status()
             .context("Failed to run DeepFilterNet")?;
 
@@ -102,135 +67,59 @@ impl LocalPreprocessor {
 
         emit(
             Level::Success,
-            "video.preprocess.deepfilter",
+            "video.enhance.deepfilter",
             &format!("Noise reduction complete: {}", output_path.display()),
             None,
         );
 
         Ok(output_path)
     }
-
-    /// Run ffmpeg-normalize for loudness normalization
-    /// Uses aggressive dynamic compression for consistent speech levels
-    fn run_normalize(input: &Path, output: &Path) -> Result<()> {
-        emit(
-            Level::Info,
-            "video.preprocess.normalize",
-            "Running aggressive loudness normalization with heavy compression...",
-            None,
-        );
-
-        // AGGRESSIVE normalization settings for consistent speech volume:
-        // - Target -10 LUFS: Louder overall level for speech (was -12)
-        // - Loudness Range 1 LU: Very tight compression (was 3) - keeps volume consistent
-        //   even when moving away from microphone
-        // - True peak -1 dBTP: Prevent clipping
-        let status = Command::new("uvx")
-            .args([
-                "ffmpeg-normalize",
-                &input.to_string_lossy(),
-                "--preset",
-                "streaming-video",
-                "--dynamic",
-                "-lrt",
-                "2",
-                "--true-peak",
-                "-1.0",
-                "-o",
-                &output.to_string_lossy(),
-                "-f", // Force overwrite
-            ])
-            .status()
-            .context("Failed to run ffmpeg-normalize")?;
-
-        if !status.success() {
-            anyhow::bail!("ffmpeg-normalize failed to process {}", input.display());
-        }
-
-        emit(
-            Level::Success,
-            "video.preprocess.normalize",
-            &format!("Loudness normalization complete: {}", output.display()),
-            None,
-        );
-
-        Ok(())
-    }
-
-    /// Check if input is an audio file
-    fn is_audio_file(path: &Path) -> bool {
-        path.extension()
-            .and_then(|e| e.to_str())
-            .map(|e| {
-                ["mp3", "wav", "flac", "m4a", "ogg", "aac", "wma", "aiff"]
-                    .contains(&e.to_lowercase().as_str())
-            })
-            .unwrap_or(false)
-    }
 }
 
-impl Default for LocalPreprocessor {
+impl Default for LocalEnhancer {
     fn default() -> Self {
         Self::new()
     }
 }
 
 #[async_trait::async_trait]
-impl AudioPreprocessor for LocalPreprocessor {
-    async fn process(&self, input: &Path, force: bool) -> Result<PreprocessResult> {
-        let input_hash = compute_file_hash(input)?;
+impl AudioEnhancer for LocalEnhancer {
+    async fn enhance(&self, input: &Path, force: bool) -> Result<EnhanceResult> {
+        let cache = EnhanceCache::prepare(input)?;
 
-        let directories = VideoDirectories::new()?;
-        let cache_paths = directories.cache_paths(
-            &input_hash,
-            crate::video::transcript_language::TranscriptLanguage::En,
-        );
-        cache_paths.ensure_directories()?;
-
-        let cache_dir = cache_paths.transcript_dir();
-
-        // Final output path (WAV to avoid lossy transcoding - encoding happens at render)
-        let processed_cache_path = cache_dir.join(format!("{}_local_processed.wav", input_hash));
+        // Enhanced stem for the render mix (WAV to avoid lossy transcoding;
+        // encoding happens at render)
+        let enhanced_cache_path = cache.path("enhanced_deepfilter.wav");
 
         // Check cache
-        if processed_cache_path.exists() && !force {
-            emit(
-                Level::Info,
-                "video.preprocess.cached",
-                &format!("Using cached result: {}", processed_cache_path.display()),
-                None,
-            );
-            return Ok(PreprocessResult {
-                output_path: processed_cache_path,
-            });
+        if let Some(cached) = cache.cached(&enhanced_cache_path, force, "video.enhance.cached", "")
+        {
+            return Ok(cached);
         }
 
         // Step 1: Get audio as WAV
-        let wav_path = cache_dir.join(format!("{}_extracted.wav", input_hash));
+        let wav_path = cache.path("extracted.wav");
         if !wav_path.exists() || force {
-            if Self::is_audio_file(input) {
-                // Convert audio to WAV
-                Self::extract_audio_to_wav(input, &wav_path)?;
-            } else {
+            if !is_audio_file(input) {
                 // Extract from video
                 emit(
                     Level::Info,
-                    "video.preprocess.extract",
+                    "video.enhance.extract",
                     &format!("Extracting audio from {}...", input.display()),
                     None,
                 );
-                Self::extract_audio_to_wav(input, &wav_path)?;
             }
+            extract_audio(input, &wav_path, &AudioExtractSpec::MONO_48K_WAV)?;
         }
 
         // Step 2: Run DeepFilterNet
-        let denoised_path = Self::run_deepfilter(&wav_path, cache_dir)?;
+        let denoised_path = Self::run_deepfilter(&wav_path, &cache.cache_dir)?;
 
-        // Step 3: Run ffmpeg-normalize
-        Self::run_normalize(&denoised_path, &processed_cache_path)?;
+        // Step 3: Run static loudness normalization (no compression)
+        super::run_loudnorm(&denoised_path, &enhanced_cache_path)?;
 
-        Ok(PreprocessResult {
-            output_path: processed_cache_path,
+        Ok(EnhanceResult {
+            output_path: enhanced_cache_path,
         })
     }
 

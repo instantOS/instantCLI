@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use sha2::{Digest, Sha256};
+use std::fs;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
@@ -81,4 +82,40 @@ pub fn extension_or_default(path: &Path, default: &str) -> String {
 
 pub fn duration_to_tenths(duration: Duration) -> u64 {
     ((duration.as_secs_f64() * 10.0).round()) as u64
+}
+
+/// File extensions treated as audio by the video pipeline.
+pub const AUDIO_EXTENSIONS: &[&str] = &["mp3", "wav", "flac", "m4a", "ogg", "aac", "wma", "aiff"];
+
+/// Returns true when the path extension is a known audio format.
+pub fn is_audio_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| AUDIO_EXTENSIONS.contains(&e.to_lowercase().as_str()))
+        .unwrap_or(false)
+}
+
+/// Copies a file, removing any existing destination first and creating parent
+/// directories as needed. No-op when source and destination are the same path.
+pub fn copy_overwriting(src: &Path, dest: &Path, what: &str) -> Result<()> {
+    if src == dest {
+        return Ok(());
+    }
+    if dest.exists() {
+        fs::remove_file(dest)
+            .with_context(|| format!("Failed to remove existing {what} at {}", dest.display()))?;
+    }
+    if let Some(parent) = dest.parent() {
+        fs::create_dir_all(parent).with_context(|| {
+            format!("Failed to create directory {} for {what}", parent.display())
+        })?;
+    }
+    fs::copy(src, dest).with_context(|| {
+        format!(
+            "Failed to copy {what} from {} to {}",
+            src.display(),
+            dest.display()
+        )
+    })?;
+    Ok(())
 }

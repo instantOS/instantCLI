@@ -49,6 +49,7 @@ pub struct MusicPlan {
 pub struct BrollClip {
     pub time_window: TimeWindow,
     pub source_id: String,
+    pub transform: crate::video::document::transform::TransformSpec,
 }
 
 #[derive(Debug, Clone)]
@@ -187,6 +188,7 @@ impl TimelinePlanner {
         self.pending_broll.push(BrollClip {
             time_window: TimeWindow::new(broll.range.start_seconds(), broll.range.end_seconds()),
             source_id: broll.source_id.clone(),
+            transform: broll.transform.clone(),
         });
     }
 

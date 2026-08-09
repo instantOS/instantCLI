@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, bail};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -18,14 +18,14 @@ use crate::video::render::paths::resolve_output_path;
 use crate::video::transcript_language::TranscriptLanguage;
 
 use super::file_selection::{
-    discover_video_file_suggestions, discover_video_suggestions, select_markdown_file,
+    discover_markdown_suggestions, discover_video_file_suggestions, select_markdown_file,
     select_output_path, select_video_file_with_suggestions,
 };
 use super::prompts::{
-    confirm_action, prompt_optional_path, select_convert_audio_choice, select_render_options,
-    select_transcript_choice, select_transcript_language,
+    confirm_action, prompt_optional_path, select_render_options, select_transcript_choice,
+    select_transcript_language,
 };
-use super::types::{ConvertAudioChoice, PromptOutcome, TranscriptChoice};
+use super::types::{PromptOutcome, TranscriptChoice};
 
 #[derive(Debug, Clone)]
 enum ProjectMenuEntry {
@@ -129,7 +129,7 @@ impl FzfSelectable for ProjectMenuEntry {
                 .text("Supports:")
                 .bullet("Overlay slides and title cards")
                 .bullet("Reels mode output")
-                .bullet("Audio preprocessing caches")
+                .bullet("Audio enhancement caches")
                 .build(),
             ProjectMenuEntry::Preview => PreviewBuilder::new()
                 .header(NerdFont::Play, "Preview")
@@ -171,7 +171,7 @@ impl FzfSelectable for ProjectMenuEntry {
                 .text("Delete cached files for this project.")
                 .blank()
                 .text("This includes:")
-                .bullet("Preprocessed audio")
+                .bullet("Enhanced voice audio")
                 .bullet("Transcript cache")
                 .bullet("Generated slides")
                 .build(),
@@ -184,7 +184,7 @@ impl FzfSelectable for ProjectMenuEntry {
 }
 
 pub async fn run_project_menu() -> Result<()> {
-    let suggestions = discover_video_suggestions()?;
+    let suggestions = discover_markdown_suggestions(Some(true))?;
     let Some(markdown_path) = select_markdown_file("Select project", suggestions)? else {
         return Ok(());
     };
@@ -289,25 +289,12 @@ async fn run_add_recording(markdown_path: &Path) -> Result<()> {
         }
     };
 
-    let audio_choice = match select_convert_audio_choice()? {
-        Some(choice) => choice,
-        None => return Ok(()),
-    };
-
-    let (no_preprocess, preprocessor) = match audio_choice {
-        ConvertAudioChoice::UseConfig => (false, None),
-        ConvertAudioChoice::Local => (false, Some(ConvertAudioChoice::Local.to_string())),
-        ConvertAudioChoice::Auphonic => (false, Some(ConvertAudioChoice::Auphonic.to_string())),
-        ConvertAudioChoice::Skip => (true, None),
-    };
-
     convert::handle_append(AppendArgs {
         markdown: markdown_path.to_path_buf(),
         video: video_path,
         transcript: transcript_path,
         force: false,
-        no_preprocess,
-        preprocessor,
+
         language,
     })
     .await
@@ -593,23 +580,13 @@ fn prompt_output_conflict(output_path: &Path) -> Result<Option<OutputConflictCho
 fn resolve_default_source_path(markdown_path: &Path, project_dir: &Path) -> Result<PathBuf> {
     let contents = fs::read_to_string(markdown_path)?;
     let document = parse_video_document(&contents, markdown_path)?;
-    let sources = &document.metadata.sources;
 
-    if sources.is_empty() {
+    if document.metadata.sources.is_empty() {
         bail!("No video sources configured. Add `sources` in front matter before rendering.");
     }
 
-    let default_id = document
-        .metadata
-        .default_source
-        .as_ref()
-        .or_else(|| sources.first().map(|source| &source.id))
-        .ok_or_else(|| anyhow!("No video sources available"))?;
-
-    let source = sources
-        .iter()
-        .find(|source| &source.id == default_id)
-        .ok_or_else(|| anyhow!("Default source `{}` not found", default_id))?;
+    let source =
+        crate::video::render::find_default_source(&document.metadata, &document.metadata.sources)?;
 
     let source_path = if source.source.is_absolute() {
         source.source.clone()

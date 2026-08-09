@@ -6,8 +6,6 @@
 use std::fs;
 use std::path::PathBuf;
 
-use anyhow::{Context, Result};
-
 /// Search for AppImages by full path patterns, matching filenames case-insensitively.
 ///
 /// Takes full path patterns (e.g., `~/AppImages/eden.appimage`) and will match
@@ -70,50 +68,6 @@ pub fn find_appimages_by_paths(search_paths: &[&str]) -> Vec<PathBuf> {
     }
 
     found
-}
-
-/// Find all AppImages in a directory with case-insensitive matching.
-///
-/// Searches for any files ending in `.appimage` or `.AppImage` (case-insensitive)
-/// in the specified directory.
-///
-/// # Arguments
-/// * `directory` - Directory path to search (with ~ expansion supported)
-///
-/// # Returns
-/// * `Vec<PathBuf>` - All AppImage files found
-///
-/// # Example
-/// ```rust
-/// let appimages = find_appimages_in_dir("~/AppImages");
-/// ```
-pub fn find_appimages_in_dir(directory: &str) -> Result<Vec<PathBuf>> {
-    let expanded = shellexpand::tilde(directory);
-    let dir_path = PathBuf::from(expanded.as_ref());
-
-    if !dir_path.exists() || !dir_path.is_dir() {
-        return Ok(Vec::new());
-    }
-
-    let mut found = Vec::new();
-
-    let entries = fs::read_dir(&dir_path)
-        .with_context(|| format!("Failed to read directory: {}", dir_path.display()))?;
-
-    for entry in entries.flatten() {
-        let file_name = entry.file_name();
-        let file_name_str = file_name.to_string_lossy();
-
-        // Check if file ends with .appimage (case-insensitive)
-        if file_name_str.to_lowercase().ends_with(".appimage") {
-            let full_path = dir_path.join(&file_name);
-            if full_path.is_file() {
-                found.push(full_path);
-            }
-        }
-    }
-
-    Ok(found)
 }
 
 #[cfg(test)]

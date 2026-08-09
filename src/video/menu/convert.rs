@@ -15,10 +15,8 @@ use super::file_selection::{
     select_video_file_with_suggestions,
 };
 use super::project::open_project_for_path;
-use super::prompts::{
-    confirm_action, select_convert_audio_choice, select_output_choice, select_transcript_language,
-};
-use super::types::{ConvertAudioChoice, OutputChoice};
+use super::prompts::{confirm_action, select_output_choice, select_transcript_language};
+use super::types::OutputChoice;
 
 #[derive(Debug, Clone)]
 enum NewProjectEntry {
@@ -169,18 +167,6 @@ async fn create_multi_source_project(videos: Vec<PathBuf>) -> Result<()> {
         None => return Ok(()),
     };
 
-    let audio_choice = match select_convert_audio_choice()? {
-        Some(choice) => choice,
-        None => return Ok(()),
-    };
-
-    let (no_preprocess, preprocessor) = match audio_choice {
-        ConvertAudioChoice::UseConfig => (false, None),
-        ConvertAudioChoice::Local => (false, Some(ConvertAudioChoice::Local.to_string())),
-        ConvertAudioChoice::Auphonic => (false, Some(ConvertAudioChoice::Auphonic.to_string())),
-        ConvertAudioChoice::Skip => (true, None),
-    };
-
     // Use the first video to determine default output path
     let first_video = &videos[0];
     let default_output = compute_default_output_path(first_video);
@@ -225,8 +211,6 @@ async fn create_multi_source_project(videos: Vec<PathBuf>) -> Result<()> {
         transcript: None,
         out_file: Some(output_path.clone()),
         force,
-        no_preprocess,
-        preprocessor: preprocessor.clone(),
         language,
     })
     .await?;
@@ -238,8 +222,6 @@ async fn create_multi_source_project(videos: Vec<PathBuf>) -> Result<()> {
             video,
             transcript: None,
             force: false,
-            no_preprocess,
-            preprocessor: preprocessor.clone(),
             language,
         })
         .await?;

@@ -17,13 +17,11 @@ use std::time::SystemTime;
 use anyhow::Result;
 
 use super::DiscoveredGame;
+use super::utils::{display_name_from_path, parse_game_directories, parse_recent_files};
 use crate::common::TildePath;
 use crate::menu::protocol::FzfPreview;
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
-
-/// Azahar Flatpak application ID
-pub const AZAHAR_FLATPAK_ID: &str = "org.azahar_emu.Azahar";
 
 /// Native Azahar data directory
 const NATIVE_DATA_DIR: &str = "~/.local/share/azahar-emu";
@@ -187,14 +185,12 @@ pub fn is_azahar_installed() -> bool {
 
 /// Check if native Azahar is installed
 fn is_native_installed() -> bool {
-    let native_path = shellexpand::tilde(NATIVE_DATA_DIR);
-    Path::new(native_path.as_ref()).is_dir()
+    TildePath::from_str(NATIVE_DATA_DIR).is_dir()
 }
 
 /// Check if Azahar Flatpak is installed
 fn is_flatpak_installed() -> bool {
-    let flatpak_path = shellexpand::tilde(FLATPAK_DATA_DIR);
-    Path::new(flatpak_path.as_ref()).is_dir()
+    TildePath::from_str(FLATPAK_DATA_DIR).is_dir()
 }
 
 /// Discover Azahar games that have existing save data.
@@ -375,77 +371,13 @@ fn collect_rom_sources(config_dir: &Path) -> (Vec<PathBuf>, Vec<PathBuf>) {
         Err(_) => return (Vec::new(), Vec::new()),
     };
 
-    let recent = parse_recent_files(&config_content);
-    let dirs = parse_game_directories(&config_content);
+    let recent = parse_recent_files(&config_content)
+        .into_iter()
+        .filter(|path| path.is_file() && is_azahar_game_file(path))
+        .collect();
+    let dirs = parse_game_directories(&config_content, &["INSTALLED", "SYSTEM"]);
 
     (recent, dirs)
-}
-
-/// Parse the `Paths\recentFiles=` line from Azahar's config.
-fn parse_recent_files(config_content: &str) -> Vec<PathBuf> {
-    let mut paths = Vec::new();
-
-    for line in config_content.lines() {
-        let trimmed = line.trim();
-        if !trimmed.starts_with("Paths\\recentFiles=") {
-            continue;
-        }
-
-        let value = match trimmed.split_once('=') {
-            Some((_, v)) => v.trim(),
-            None => continue,
-        };
-
-        let value = value.strip_prefix('"').unwrap_or(value);
-        let value = value.strip_suffix('"').unwrap_or(value);
-
-        if value.is_empty() {
-            continue;
-        }
-
-        for entry in value.split(", ") {
-            let entry = entry.trim();
-            if !entry.is_empty() {
-                let path = PathBuf::from(entry);
-                if path.is_file() && is_azahar_game_file(&path) {
-                    paths.push(path);
-                }
-            }
-        }
-
-        break;
-    }
-
-    paths
-}
-
-/// Parse `Paths\gamedirs\N\path=` values from Azahar's config.
-fn parse_game_directories(config_content: &str) -> Vec<PathBuf> {
-    let mut dirs = Vec::new();
-
-    for line in config_content.lines() {
-        let trimmed = line.trim();
-
-        if !trimmed.starts_with("Paths\\gamedirs\\") || !trimmed.contains("\\path=") {
-            continue;
-        }
-
-        let value = match trimmed.split_once("\\path=") {
-            Some((_, v)) => v.trim(),
-            None => continue,
-        };
-
-        if value.is_empty() || value == "INSTALLED" || value == "SYSTEM" {
-            continue;
-        }
-
-        let dir_path = PathBuf::from(value);
-        if dir_path.is_dir() {
-            dirs.push(dir_path);
-        }
-    }
-
-    dirs
 }
 
 /// Check if a file has a valid 3DS game extension
@@ -587,38 +519,6 @@ fn get_directory_modified_time(dir: &Path) -> Option<SystemTime> {
     latest
 }
 
-/// Derive a display name from a ROM file path.
-fn display_name_from_path(path: &Path) -> String {
-    let stem = match path.file_stem().and_then(|s| s.to_str()) {
-        Some(s) => s,
-        None => return path.to_string_lossy().to_string(),
-    };
-
-    let cleaned = strip_bracket_groups(stem);
-    if cleaned.is_empty() {
-        stem.to_string()
-    } else {
-        cleaned
-    }
-}
-
-/// Remove all `[...]` bracket groups from a string and trim whitespace.
-fn strip_bracket_groups(s: &str) -> String {
-    let mut result = String::with_capacity(s.len());
-    let mut depth = 0u32;
-
-    for ch in s.chars() {
-        match ch {
-            '[' => depth += 1,
-            ']' if depth > 0 => depth -= 1,
-            _ if depth == 0 => result.push(ch),
-            _ => {}
-        }
-    }
-
-    result.trim().to_string()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -640,16 +540,6 @@ mod tests {
         assert_eq!(build_title_id("0004000", "00179800"), None);
         assert_eq!(build_title_id("00040000", "0017980"), None);
         assert_eq!(build_title_id("ZZZZZZZZ", "00179800"), None);
-    }
-
-    #[test]
-    fn strip_brackets_removes_groups() {
-        assert_eq!(strip_bracket_groups("Name [tag1][tag2]"), "Name");
-    }
-
-    #[test]
-    fn strip_brackets_preserves_plain_text() {
-        assert_eq!(strip_bracket_groups("Plain Name"), "Plain Name");
     }
 
     #[test]

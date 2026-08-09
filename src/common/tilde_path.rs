@@ -25,11 +25,18 @@ impl TildePath {
         self.0
     }
 
-    /// Create from a string with tilde expansion
-    pub fn from_str(s: &str) -> Result<Self> {
-        let expanded = shellexpand::tilde(s).to_string();
-        let path = PathBuf::from(expanded);
-        Ok(TildePath(path))
+    /// Check whether the (tilde-expanded) path is an existing directory.
+    pub fn is_dir(&self) -> bool {
+        self.0.is_dir()
+    }
+
+    /// Create from a string with tilde expansion.
+    ///
+    /// Infallible: `shellexpand::tilde` never fails, so an unset
+    /// `HOME` simply leaves the `~` unexpanded (the resulting path
+    /// simply won't exist).
+    pub fn from_str(s: &str) -> Self {
+        TildePath(PathBuf::from(shellexpand::tilde(s).into_owned()))
     }
 
     /// Convert to string with tilde compression (replace home dir with ~)
@@ -82,7 +89,7 @@ impl<'de> Deserialize<'de> for TildePath {
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        TildePath::from_str(&s).map_err(serde::de::Error::custom)
+        Ok(TildePath::from_str(&s))
     }
 }
 
@@ -98,7 +105,7 @@ mod tests {
 
     #[test]
     fn test_tilde_expansion() {
-        let tilde_path = TildePath::from_str("~/test/path").unwrap();
+        let tilde_path = TildePath::from_str("~/test/path");
         let expanded = tilde_path.as_path();
         assert!(
             expanded
@@ -117,8 +124,17 @@ mod tests {
     }
 
     #[test]
+    fn test_is_dir() {
+        let home = TildePath::from_str("~");
+        assert!(home.is_dir());
+
+        let missing = TildePath::from_str("~/.nonexistent-tildepath-dir-xyz");
+        assert!(!missing.is_dir());
+    }
+
+    #[test]
     fn test_serialization_roundtrip() {
-        let original = TildePath::from_str("~/test/path").unwrap();
+        let original = TildePath::from_str("~/test/path");
         let serialized = serde_json::to_string(&original).unwrap();
         let deserialized: TildePath = serde_json::from_str(&serialized).unwrap();
         assert_eq!(original.as_path(), deserialized.as_path());

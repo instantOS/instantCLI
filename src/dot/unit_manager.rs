@@ -21,14 +21,7 @@ impl std::fmt::Display for UnitScope {
     }
 }
 
-impl UnitScope {
-    pub fn repo_name(&self) -> Option<&str> {
-        match self {
-            UnitScope::Repo(name) => Some(name.as_str()),
-            UnitScope::Global => None,
-        }
-    }
-}
+impl UnitScope {}
 
 #[derive(Clone, Debug)]
 pub struct UnitRepoContext {

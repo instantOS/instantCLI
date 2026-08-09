@@ -10,7 +10,7 @@ use crate::common::paths;
 use crate::documented_config;
 use crate::video::transcript_language::TranscriptLanguage;
 
-pub use super::audio::PreprocessorType;
+pub use super::audio::EnhancerType;
 
 /// Data directories for video projects.
 ///
@@ -49,6 +49,11 @@ impl VideoDirectories {
         })
     }
 
+    /// Directory for shared transcription model files (e.g. Granite GGUFs).
+    pub fn models_dir(&self) -> PathBuf {
+        self.cache_root.join("models")
+    }
+
     pub fn cache_paths(&self, video_hash: &str, language: TranscriptLanguage) -> VideoCachePaths {
         let data_dir = self.data_root.join(video_hash);
         let transcript_dir = self.cache_root.join(video_hash);
@@ -82,11 +87,12 @@ pub struct VideoConfig {
     /// Music volume for video processing (0.0-1.0)
     #[serde(default = "crate::video::config::VideoConfig::default_music_volume")]
     pub music_volume: f32,
-    /// Which audio preprocessor to use (local, auphonic, or none)
-    pub preprocessor: PreprocessorType,
-    /// Auphonic API key (only used when preprocessor = auphonic)
+    /// Which audio enhancer to use for the final render (local, auphonic, none)
+    #[serde(default, alias = "preprocessor")]
+    pub enhancer: EnhancerType,
+    /// Auphonic API key (only used when enhancer = auphonic)
     pub auphonic_api_key: Option<String>,
-    /// Auphonic preset UUID (only used when preprocessor = auphonic)
+    /// Auphonic preset UUID (only used when enhancer = auphonic)
     pub auphonic_preset_uuid: Option<String>,
 }
 
@@ -94,7 +100,7 @@ impl Default for VideoConfig {
     fn default() -> Self {
         Self {
             music_volume: Self::DEFAULT_MUSIC_VOLUME,
-            preprocessor: PreprocessorType::default(),
+            enhancer: EnhancerType::default(),
             auphonic_api_key: None,
             auphonic_preset_uuid: None,
         }
@@ -130,10 +136,10 @@ documented_config!(
     VideoConfig,
     music_volume,
     "Music volume for video processing (0.0-1.0)",
-    preprocessor,
-    "Which audio preprocessor to use (local, auphonic, or none)",
+    enhancer,
+    "Which audio enhancer to use (local, auphonic, or none)",
     auphonic_api_key,
-    "Auphonic API key for cloud preprocessing",
+    "Auphonic API key for cloud audio enhancement",
     secret,
     auphonic_preset_uuid,
     "Auphonic preset UUID for consistent processing settings",

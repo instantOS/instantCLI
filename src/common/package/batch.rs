@@ -119,37 +119,6 @@ impl InstallBatch {
         builder.build()
     }
 
-    /// Build a plain text message listing all packages to be installed.
-    pub fn build_install_message(&self) -> String {
-        let mut msg = String::from("The following packages will be installed:\n\n");
-
-        // Sort managers by priority
-        let mut managers: Vec<_> = self.batches.keys().collect();
-        managers.sort_by_key(|m| m.priority());
-
-        for manager in managers {
-            let packages = &self.batches[manager];
-            if packages.is_empty() {
-                continue;
-            }
-
-            msg.push_str(&format!("{}:\n", manager.display_name()));
-            for pkg in packages {
-                if pkg.dependency_name == pkg.package_def.package_name {
-                    msg.push_str(&format!("  • {}\n", pkg.dependency_name));
-                } else {
-                    msg.push_str(&format!(
-                        "  • {} ({})\n",
-                        pkg.dependency_name, pkg.package_def.package_name
-                    ));
-                }
-            }
-            msg.push('\n');
-        }
-
-        msg.trim_end().to_string()
-    }
-
     /// Prompt the user for confirmation to install all packages.
     pub fn prompt_confirmation(&self) -> Result<bool> {
         let count = self.package_count();

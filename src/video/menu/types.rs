@@ -18,7 +18,7 @@ pub enum VideoMenuEntry {
     Transcribe,
     Project,
     Slide,
-    Preprocess,
+    Enhance,
     Setup,
     CloseMenu,
 }
@@ -30,7 +30,7 @@ impl std::fmt::Display for VideoMenuEntry {
             VideoMenuEntry::Transcribe => write!(f, "!__transcribe__"),
             VideoMenuEntry::Project => write!(f, "!__project__"),
             VideoMenuEntry::Slide => write!(f, "!__slide__"),
-            VideoMenuEntry::Preprocess => write!(f, "!__preprocess__"),
+            VideoMenuEntry::Enhance => write!(f, "!__enhance__"),
             VideoMenuEntry::Setup => write!(f, "!__setup__"),
             VideoMenuEntry::CloseMenu => write!(f, "!__close_menu__"),
         }
@@ -56,8 +56,8 @@ impl FzfSelectable for VideoMenuEntry {
                 "{} Generate Slide Image",
                 format_icon_colored(NerdFont::Image, colors::YELLOW)
             ),
-            VideoMenuEntry::Preprocess => format!(
-                "{} Preprocess Audio",
+            VideoMenuEntry::Enhance => format!(
+                "{} Enhance Audio",
                 format_icon_colored(NerdFont::Sliders, colors::LAVENDER)
             ),
             VideoMenuEntry::Setup => format!(
@@ -77,7 +77,7 @@ impl FzfSelectable for VideoMenuEntry {
                 .text("This will:")
                 .bullet("Select one or more video files")
                 .bullet("Choose spoken language (English or German)")
-                .bullet("Optionally preprocess audio")
+                .bullet("Optionally enhance the final audio")
                 .bullet("Transcribe with WhisperX")
                 .bullet("Create a single markdown with all sources")
                 .build(),
@@ -107,19 +107,18 @@ impl FzfSelectable for VideoMenuEntry {
                 .blank()
                 .text("Useful for title cards and overlays.")
                 .build(),
-            VideoMenuEntry::Preprocess => PreviewBuilder::new()
-                .header(NerdFont::Sliders, "Preprocess Audio (Advanced)")
-                .text("Run audio preprocessing independently.")
+            VideoMenuEntry::Enhance => PreviewBuilder::new()
+                .header(NerdFont::Sliders, "Enhance Audio (Advanced)")
+                .text("Enhance an audio/video file independently: denoise + loudness finish.")
                 .blank()
                 .text("Useful for pre-filling the audio cache")
-                .text("or debugging preprocessing settings.")
-                .text("New Project runs this automatically.")
+                .text("or debugging enhancement settings.")
                 .build(),
             VideoMenuEntry::Setup => PreviewBuilder::new()
                 .header(NerdFont::Wrench, "Video Tool Setup")
                 .text("Install or verify video tooling.")
                 .blank()
-                .text("Checks local preprocessors, Auphonic, and WhisperX.")
+                .text("Checks local enhancers, Auphonic, and WhisperX.")
                 .build(),
             VideoMenuEntry::CloseMenu => PreviewBuilder::new()
                 .header(NerdFont::Cross, "Close Menu")
@@ -206,25 +205,6 @@ pub enum PromptOutcome<T> {
 }
 
 #[derive(Clone, Copy)]
-pub enum ConvertAudioChoice {
-    UseConfig,
-    Local,
-    Auphonic,
-    Skip,
-}
-
-impl std::fmt::Display for ConvertAudioChoice {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ConvertAudioChoice::UseConfig => write!(f, "use-config"),
-            ConvertAudioChoice::Local => write!(f, "local"),
-            ConvertAudioChoice::Auphonic => write!(f, "auphonic"),
-            ConvertAudioChoice::Skip => write!(f, "skip"),
-        }
-    }
-}
-
-#[derive(Clone, Copy)]
 pub enum TranscriptChoice {
     Auto,
     Provide,
@@ -291,18 +271,20 @@ impl std::fmt::Display for RenderToggle {
 }
 
 #[derive(Clone, Copy)]
-pub enum PreprocessBackendChoice {
+pub enum EnhanceBackendChoice {
+    ClearVoice,
     Local,
     Auphonic,
     None,
 }
 
-impl std::fmt::Display for PreprocessBackendChoice {
+impl std::fmt::Display for EnhanceBackendChoice {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PreprocessBackendChoice::Local => write!(f, "local"),
-            PreprocessBackendChoice::Auphonic => write!(f, "auphonic"),
-            PreprocessBackendChoice::None => write!(f, "none"),
+            EnhanceBackendChoice::ClearVoice => write!(f, "clearvoice"),
+            EnhanceBackendChoice::Local => write!(f, "local"),
+            EnhanceBackendChoice::Auphonic => write!(f, "auphonic"),
+            EnhanceBackendChoice::None => write!(f, "none"),
         }
     }
 }

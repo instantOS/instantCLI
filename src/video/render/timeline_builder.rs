@@ -5,7 +5,7 @@ use anyhow::{Result, anyhow};
 use crate::video::document::VideoSource;
 use crate::video::planning::{BrollPlan, StandalonePlan, TimelinePlan, TimelinePlanItem};
 use crate::video::render::ffmpeg::services::{DefaultMusicSourceResolver, MusicSourceResolver};
-use crate::video::render::timeline::{AvSourceRef, Segment, Timeline};
+use crate::video::render::timeline::{AvSourceRef, Position, Segment, Timeline, Transform};
 
 pub(super) trait SlideProvider {
     fn overlay_slide_image(&self, markdown: &str) -> Result<std::path::PathBuf>;
@@ -177,7 +177,7 @@ impl TimelineBuildState {
                 clip.time_window.start,
                 source.source.clone(),
                 clip.source_id.clone(),
-                None,
+                to_render_transform(&clip.transform),
             );
             self.timeline.add_segment(segment);
             elapsed += clip_duration;
@@ -260,6 +260,30 @@ impl TimelineBuildState {
             self.current_time,
         );
     }
+}
+
+/// Convert a document-layer TransformSpec into a render-layer Transform.
+fn to_render_transform(
+    spec: &crate::video::document::transform::TransformSpec,
+) -> Option<Transform> {
+    if spec.is_empty() {
+        return None;
+    }
+    Some(Transform {
+        scale: spec.scale,
+        position: spec.position.map(|p| match p {
+            crate::video::document::transform::Position::Center => Position::Center,
+            crate::video::document::transform::Position::TopLeft => Position::TopLeft,
+            crate::video::document::transform::Position::Top => Position::Top,
+            crate::video::document::transform::Position::TopRight => Position::TopRight,
+            crate::video::document::transform::Position::Right => Position::Right,
+            crate::video::document::transform::Position::BottomRight => Position::BottomRight,
+            crate::video::document::transform::Position::Bottom => Position::Bottom,
+            crate::video::document::transform::Position::BottomLeft => Position::BottomLeft,
+            crate::video::document::transform::Position::Left => Position::Left,
+        }),
+        translate: None,
+    })
 }
 
 struct ActiveMusic {

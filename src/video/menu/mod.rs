@@ -11,7 +11,7 @@ use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor
 use crate::ui::catppuccin::fzf_mocha_args;
 
 use convert::run_new_project;
-use operations::{run_preprocess, run_setup, run_slide, run_transcribe};
+use operations::{run_enhance, run_setup, run_slide, run_transcribe};
 use project::run_project_menu;
 use types::VideoMenuEntry;
 
@@ -28,7 +28,7 @@ pub async fn video_menu(_debug: bool) -> Result<()> {
             VideoMenuEntry::Transcribe => run_transcribe().await?,
             VideoMenuEntry::Project => run_project_menu().await?,
             VideoMenuEntry::Slide => run_slide().await?,
-            VideoMenuEntry::Preprocess => run_preprocess().await?,
+            VideoMenuEntry::Enhance => run_enhance().await?,
             VideoMenuEntry::Setup => run_setup().await?,
             VideoMenuEntry::CloseMenu => return Ok(()),
         }
@@ -42,7 +42,7 @@ fn select_video_menu_entry(cursor: &mut MenuCursor) -> Result<Option<VideoMenuEn
         MenuItem::entry(VideoMenuEntry::Slide),
         MenuItem::separator("Advanced"),
         MenuItem::entry(VideoMenuEntry::Transcribe),
-        MenuItem::entry(VideoMenuEntry::Preprocess),
+        MenuItem::entry(VideoMenuEntry::Enhance),
         MenuItem::entry(VideoMenuEntry::Setup),
         MenuItem::line(),
         MenuItem::entry(VideoMenuEntry::CloseMenu),

@@ -54,6 +54,10 @@ enum PreviewSink {
     StreamAndCollect(BufWriter<Stdout>, Vec<PreviewLine>),
 }
 
+pub struct PreviewWriter {
+    sink: PreviewSink,
+}
+
 /// Builder for creating styled FZF preview text.
 ///
 /// Supports both static previews (rendered at build time) and dynamic shell-based
@@ -89,30 +93,26 @@ enum PreviewSink {
 /// builder = builder.text(&info);
 /// ```
 pub struct PreviewBuilder {
-    sink: PreviewSink,
+    writer: PreviewWriter,
 }
 
-pub struct PreviewWriter {
-    builder: Option<PreviewBuilder>,
-}
-
-impl PreviewBuilder {
-    /// Create a new preview builder in **collect** mode.
+impl PreviewWriter {
+    /// Create a preview writer in **collect** mode.
     ///
     /// Starts with a blank line for padding from the preview window border.
-    pub fn new() -> Self {
+    pub fn collect() -> Self {
         Self {
             sink: PreviewSink::Collect(vec![PreviewLine::Static(String::new())]),
         }
     }
 
-    /// Create a new preview builder in **streaming** mode.
+    /// Create a preview writer in **streaming** mode.
     ///
     /// Each line is written to stdout and flushed immediately, allowing fzf
     /// to display partial output while expensive operations run.
     pub fn streaming() -> Self {
         let mut writer = BufWriter::new(std::io::stdout());
-        // Initial blank line matching new()
+        // Initial blank line matching collect()
         let _ = writeln!(writer);
         let _ = writer.flush();
         Self {
@@ -120,7 +120,7 @@ impl PreviewBuilder {
         }
     }
 
-    /// Create a preview builder that streams immediately and also retains the
+    /// Create a preview writer that streams immediately and also retains the
     /// rendered content so callers can cache it afterward.
     pub fn streaming_cached() -> Self {
         let mut writer = BufWriter::new(std::io::stdout());
@@ -152,7 +152,7 @@ impl PreviewBuilder {
     /// - Icon + title in accent color (mauve)
     /// - Separator line below
     /// - Blank line after
-    pub fn header(mut self, icon: NerdFont, title: &str) -> Self {
+    pub fn header(&mut self, icon: NerdFont, title: &str) -> &mut Self {
         let mauve = hex_to_ansi_fg(colors::MAUVE);
         let surface = hex_to_ansi_fg(colors::SURFACE1);
         self.push_static(format!("{mauve}{}  {title}{RESET}", char::from(icon)));
@@ -162,14 +162,14 @@ impl PreviewBuilder {
     }
 
     /// Add primary text line in the standard text color.
-    pub fn text(mut self, content: &str) -> Self {
+    pub fn text(&mut self, content: &str) -> &mut Self {
         let text_color = hex_to_ansi_fg(colors::TEXT);
         self.push_static(format!("{text_color}{content}{RESET}"));
         self
     }
 
     /// Add secondary/muted text line in subtext color.
-    pub fn subtext(mut self, content: &str) -> Self {
+    pub fn subtext(&mut self, content: &str) -> &mut Self {
         let subtext = hex_to_ansi_fg(colors::SUBTEXT0);
         self.push_static(format!("{subtext}{content}{RESET}"));
         self
@@ -178,7 +178,7 @@ impl PreviewBuilder {
     /// Add a labeled field line (e.g., "Status: Active").
     ///
     /// The label appears in subtext color, the value in text color.
-    pub fn field(mut self, label: &str, value: &str) -> Self {
+    pub fn field(&mut self, label: &str, value: &str) -> &mut Self {
         let subtext = hex_to_ansi_fg(colors::SUBTEXT0);
         let text_color = hex_to_ansi_fg(colors::TEXT);
         self.push_static(format!(
@@ -188,7 +188,7 @@ impl PreviewBuilder {
     }
 
     /// Add an indented field line (for nested information).
-    pub fn field_indented(mut self, label: &str, value: &str) -> Self {
+    pub fn field_indented(&mut self, label: &str, value: &str) -> &mut Self {
         let subtext = hex_to_ansi_fg(colors::SUBTEXT0);
         let text_color = hex_to_ansi_fg(colors::TEXT);
         self.push_static(format!(
@@ -203,7 +203,7 @@ impl PreviewBuilder {
     /// * `color` - Hex color string (e.g., `colors::TEAL`)
     /// * `icon` - Optional NerdFont icon
     /// * `content` - The text content
-    pub fn line(mut self, color: &str, icon: Option<NerdFont>, content: &str) -> Self {
+    pub fn line(&mut self, color: &str, icon: Option<NerdFont>, content: &str) -> &mut Self {
         let fg = hex_to_ansi_fg(color);
         let icon_str = icon
             .map(|i| format!("{}  ", char::from(i)))
@@ -213,20 +213,20 @@ impl PreviewBuilder {
     }
 
     /// Add a light separator line.
-    pub fn separator(mut self) -> Self {
+    pub fn separator(&mut self) -> &mut Self {
         let surface = hex_to_ansi_fg(colors::SURFACE1);
         self.push_static(format!("{surface}{LIGHT_SEPARATOR}{RESET}"));
         self
     }
 
     /// Add a blank line.
-    pub fn blank(mut self) -> Self {
+    pub fn blank(&mut self) -> &mut Self {
         self.push_static(String::new());
         self
     }
 
     /// Add a bold title in the specified color.
-    pub fn title(mut self, color: &str, content: &str) -> Self {
+    pub fn title(&mut self, color: &str, content: &str) -> &mut Self {
         let fg = hex_to_ansi_fg(color);
         let bold = "\x1b[1m";
         self.push_static(format!("{bold}{fg}{content}{RESET}"));
@@ -234,13 +234,18 @@ impl PreviewBuilder {
     }
 
     /// Add raw text without any coloring.
-    pub fn raw(mut self, content: &str) -> Self {
+    pub fn raw(&mut self, content: &str) -> &mut Self {
         self.push_static(content.to_string());
         self
     }
 
     /// Add an indented line with icon and color.
-    pub fn indented_line(mut self, color: &str, icon: Option<NerdFont>, content: &str) -> Self {
+    pub fn indented_line(
+        &mut self,
+        color: &str,
+        icon: Option<NerdFont>,
+        content: &str,
+    ) -> &mut Self {
         let fg = hex_to_ansi_fg(color);
         let icon_str = icon
             .map(|i| format!("{} ", char::from(i)))
@@ -250,7 +255,7 @@ impl PreviewBuilder {
     }
 
     /// Add a bullet list item.
-    pub fn bullet(mut self, content: &str) -> Self {
+    pub fn bullet(&mut self, content: &str) -> &mut Self {
         let text_color = hex_to_ansi_fg(colors::TEXT);
         let bullet = char::from(NerdFont::Bullet);
         self.push_static(format!("{text_color}  {bullet} {content}{RESET}"));
@@ -258,13 +263,13 @@ impl PreviewBuilder {
     }
 
     /// Add multiple bullet items from an iterator.
-    pub fn bullets<I, S>(mut self, items: I) -> Self
+    pub fn bullets<I, S>(&mut self, items: I) -> &mut Self
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
         for item in items {
-            self = self.bullet(item.as_ref());
+            self.bullet(item.as_ref());
         }
         self
     }
@@ -278,83 +283,10 @@ impl PreviewBuilder {
     /// Only used when building with `build_shell_script()`.
     /// For static builds, this is converted to a placeholder.
     /// In streaming mode, shell commands are not supported and are ignored.
-    pub fn shell(mut self, command: &str) -> Self {
+    pub fn shell(&mut self, command: &str) -> &mut Self {
         match &mut self.sink {
             PreviewSink::Collect(lines) | PreviewSink::StreamAndCollect(_, lines) => {
                 lines.push(PreviewLine::Shell(command.to_string()));
-            }
-            PreviewSink::Stream(_) => {}
-        }
-        self
-    }
-
-    /// Add a shell loop that iterates over items.
-    ///
-    /// # Arguments
-    /// * `var` - Loop variable name (e.g., "mime")
-    /// * `items` - Items to iterate over
-    /// * `body` - Shell commands to run for each item (can reference $var)
-    pub fn shell_loop<I, S>(mut self, var: &str, items: I, body: &str) -> Self
-    where
-        I: IntoIterator<Item = S>,
-        S: AsRef<str>,
-    {
-        match &mut self.sink {
-            PreviewSink::Collect(lines) | PreviewSink::StreamAndCollect(_, lines) => {
-                let item_list: Vec<_> = items.into_iter().map(|s| s.as_ref().to_string()).collect();
-                let items_str = item_list.join(" ");
-                let cmd = format!("for {var} in {items_str}; do\n{body}\ndone");
-                lines.push(PreviewLine::Shell(cmd));
-            }
-            PreviewSink::Stream(_) => {}
-        }
-        self
-    }
-
-    /// Add a MIME type status display loop.
-    ///
-    /// Generates a shell loop that queries xdg-mime for each type's default app
-    /// and displays it with appropriate coloring.
-    pub fn mime_defaults<I, S>(mut self, mime_types: I) -> Self
-    where
-        I: IntoIterator<Item = S>,
-        S: AsRef<str>,
-    {
-        match &mut self.sink {
-            PreviewSink::Collect(lines) | PreviewSink::StreamAndCollect(_, lines) => {
-                let types: Vec<_> = mime_types
-                    .into_iter()
-                    .map(|s| s.as_ref().to_string())
-                    .collect();
-                let mime_list = types.join(" ");
-
-                let green = hex_to_shell_escape(colors::GREEN);
-                let yellow = hex_to_shell_escape(colors::YELLOW);
-                let subtext = hex_to_shell_escape(colors::SUBTEXT0);
-                let reset = "\\033[0m";
-
-                let cmd = format!(
-                    r#"for mime in {mime_list}; do
-    app=$(xdg-mime query default "$mime" 2>/dev/null)
-    if [ -n "$app" ]; then
-        name=""
-        for dir in "$HOME/.local/share/applications" "/usr/share/applications" "/var/lib/flatpak/exports/share/applications" "$HOME/.local/share/flatpak/exports/share/applications"; do
-            if [ -f "$dir/$app" ]; then
-                name=$(grep "^Name=" "$dir/$app" 2>/dev/null | head -1 | cut -d= -f2)
-                break
-            fi
-        done
-        if [ -n "$name" ]; then
-            echo -e "  {subtext}$mime:{reset} {green}$name{reset}"
-        else
-            echo -e "  {subtext}$mime:{reset} {green}$app{reset}"
-        fi
-    else
-        echo -e "  {subtext}$mime:{reset} {yellow}(not set){reset}"
-    fi
-done"#
-                );
-                lines.push(PreviewLine::Shell(cmd));
             }
             PreviewSink::Stream(_) => {}
         }
@@ -466,155 +398,128 @@ done"#
     }
 }
 
-impl PreviewWriter {
-    pub fn collect() -> Self {
+impl PreviewBuilder {
+    /// Create a new preview builder in **collect** mode.
+    ///
+    /// Starts with a blank line for padding from the preview window border.
+    pub fn new() -> Self {
         Self {
-            builder: Some(PreviewBuilder::new()),
+            writer: PreviewWriter::collect(),
         }
     }
 
+    /// Create a new preview builder in **streaming** mode.
+    ///
+    /// Each line is written to stdout and flushed immediately, allowing fzf
+    /// to display partial output while expensive operations run.
     pub fn streaming() -> Self {
         Self {
-            builder: Some(PreviewBuilder::streaming()),
+            writer: PreviewWriter::streaming(),
         }
     }
 
-    pub fn streaming_cached() -> Self {
-        Self {
-            builder: Some(PreviewBuilder::streaming_cached()),
-        }
-    }
-
-    fn map(&mut self, f: impl FnOnce(PreviewBuilder) -> PreviewBuilder) -> &mut Self {
-        let builder = self
-            .builder
-            .take()
-            .expect("preview writer already finalized");
-        self.builder = Some(f(builder));
+    /// Add a styled header with icon and title. See [`PreviewWriter::header`].
+    pub fn header(mut self, icon: NerdFont, title: &str) -> Self {
+        self.writer.header(icon, title);
         self
     }
 
-    pub fn header(&mut self, icon: NerdFont, title: &str) -> &mut Self {
-        self.map(|builder| builder.header(icon, title))
+    /// Add primary text line in the standard text color. See [`PreviewWriter::text`].
+    pub fn text(mut self, content: &str) -> Self {
+        self.writer.text(content);
+        self
     }
 
-    pub fn text(&mut self, content: &str) -> &mut Self {
-        self.map(|builder| builder.text(content))
+    /// Add secondary/muted text line in subtext color. See [`PreviewWriter::subtext`].
+    pub fn subtext(mut self, content: &str) -> Self {
+        self.writer.subtext(content);
+        self
     }
 
-    pub fn subtext(&mut self, content: &str) -> &mut Self {
-        self.map(|builder| builder.subtext(content))
+    /// Add a labeled field line (e.g., "Status: Active"). See [`PreviewWriter::field`].
+    pub fn field(mut self, label: &str, value: &str) -> Self {
+        self.writer.field(label, value);
+        self
     }
 
-    pub fn field(&mut self, label: &str, value: &str) -> &mut Self {
-        self.map(|builder| builder.field(label, value))
+    /// Add an indented field line (for nested information). See [`PreviewWriter::field_indented`].
+    pub fn field_indented(mut self, label: &str, value: &str) -> Self {
+        self.writer.field_indented(label, value);
+        self
     }
 
-    pub fn field_indented(&mut self, label: &str, value: &str) -> &mut Self {
-        self.map(|builder| builder.field_indented(label, value))
+    /// Add an icon + colored text line. See [`PreviewWriter::line`].
+    pub fn line(mut self, color: &str, icon: Option<NerdFont>, content: &str) -> Self {
+        self.writer.line(color, icon, content);
+        self
     }
 
-    pub fn line(&mut self, color: &str, icon: Option<NerdFont>, content: &str) -> &mut Self {
-        self.map(|builder| builder.line(color, icon, content))
+    /// Add a light separator line. See [`PreviewWriter::separator`].
+    pub fn separator(mut self) -> Self {
+        self.writer.separator();
+        self
     }
 
-    pub fn separator(&mut self) -> &mut Self {
-        self.map(PreviewBuilder::separator)
+    /// Add a blank line. See [`PreviewWriter::blank`].
+    pub fn blank(mut self) -> Self {
+        self.writer.blank();
+        self
     }
 
-    pub fn blank(&mut self) -> &mut Self {
-        self.map(PreviewBuilder::blank)
+    /// Add a bold title in the specified color. See [`PreviewWriter::title`].
+    pub fn title(mut self, color: &str, content: &str) -> Self {
+        self.writer.title(color, content);
+        self
     }
 
-    pub fn title(&mut self, color: &str, content: &str) -> &mut Self {
-        self.map(|builder| builder.title(color, content))
+    /// Add raw text without any coloring. See [`PreviewWriter::raw`].
+    pub fn raw(mut self, content: &str) -> Self {
+        self.writer.raw(content);
+        self
     }
 
-    pub fn raw(&mut self, content: &str) -> &mut Self {
-        self.map(|builder| builder.raw(content))
+    /// Add an indented line with icon and color. See [`PreviewWriter::indented_line`].
+    pub fn indented_line(mut self, color: &str, icon: Option<NerdFont>, content: &str) -> Self {
+        self.writer.indented_line(color, icon, content);
+        self
     }
 
-    pub fn indented_line(
-        &mut self,
-        color: &str,
-        icon: Option<NerdFont>,
-        content: &str,
-    ) -> &mut Self {
-        self.map(|builder| builder.indented_line(color, icon, content))
+    /// Add a bullet list item. See [`PreviewWriter::bullet`].
+    pub fn bullet(mut self, content: &str) -> Self {
+        self.writer.bullet(content);
+        self
     }
 
-    pub fn bullet(&mut self, content: &str) -> &mut Self {
-        self.map(|builder| builder.bullet(content))
-    }
-
-    pub fn bullets<I, S>(&mut self, items: I) -> &mut Self
+    /// Add multiple bullet items from an iterator. See [`PreviewWriter::bullets`].
+    pub fn bullets<I, S>(mut self, items: I) -> Self
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        self.map(|builder| builder.bullets(items))
+        self.writer.bullets(items);
+        self
     }
 
-    pub fn shell(&mut self, command: &str) -> &mut Self {
-        self.map(|builder| builder.shell(command))
+    /// Add raw shell command(s) for dynamic content. See [`PreviewWriter::shell`].
+    pub fn shell(mut self, command: &str) -> Self {
+        self.writer.shell(command);
+        self
     }
 
-    pub fn shell_loop<I, S>(&mut self, var: &str, items: I, body: &str) -> &mut Self
-    where
-        I: IntoIterator<Item = S>,
-        S: AsRef<str>,
-    {
-        self.map(|builder| builder.shell_loop(var, items, body))
+    /// Build the final FzfPreview (static text). See [`PreviewWriter::build`].
+    pub fn build(self) -> FzfPreview {
+        self.writer.build()
     }
 
-    pub fn mime_defaults<I, S>(&mut self, mime_types: I) -> &mut Self
-    where
-        I: IntoIterator<Item = S>,
-        S: AsRef<str>,
-    {
-        self.map(|builder| builder.mime_defaults(mime_types))
+    /// Build and extract just the text content. See [`PreviewWriter::build_string`].
+    pub fn build_string(self) -> String {
+        self.writer.build_string()
     }
 
-    pub fn section<F>(&mut self, render: F) -> anyhow::Result<&mut Self>
-    where
-        F: FnOnce(&mut PreviewWriter) -> anyhow::Result<()>,
-    {
-        render(self)?;
-        Ok(self)
+    /// Build a bash-compatible script body. See [`PreviewWriter::build_shell_script`].
+    pub fn build_shell_script(self) -> String {
+        self.writer.build_shell_script()
     }
-
-    pub fn build(mut self) -> FzfPreview {
-        self.builder
-            .take()
-            .expect("preview writer already finalized")
-            .build()
-    }
-
-    pub fn build_string(mut self) -> String {
-        self.builder
-            .take()
-            .expect("preview writer already finalized")
-            .build_string()
-    }
-
-    pub fn build_shell_script(mut self) -> String {
-        self.builder
-            .take()
-            .expect("preview writer already finalized")
-            .build_shell_script()
-    }
-}
-
-/// Convert hex color to shell escape sequence for use in echo -e
-fn hex_to_shell_escape(hex: &str) -> String {
-    let hex = hex.trim_start_matches('#');
-    if hex.len() != 6 {
-        return String::new();
-    }
-    let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0);
-    let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0);
-    let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0);
-    format!("\\033[38;2;{r};{g};{b}m")
 }
 
 impl Default for PreviewBuilder {

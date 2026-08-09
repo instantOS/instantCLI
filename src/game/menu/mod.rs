@@ -1113,10 +1113,7 @@ pub fn open_prefilled_add_editor(options: AddGameOptions) -> Result<()> {
     let save_path = options
         .save_path
         .filter(|value| !value.trim().is_empty())
-        .map(|path| {
-            TildePath::from_str(path.trim()).map_err(|e| anyhow!("Invalid save path: {}", e))
-        })
-        .transpose()?
+        .map(|path| TildePath::from_str(path.trim()))
         .unwrap_or_else(|| TildePath::new(std::path::PathBuf::new()));
 
     let save_path_type = if save_path.as_path().exists() {

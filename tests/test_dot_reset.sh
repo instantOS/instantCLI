@@ -23,6 +23,21 @@ main() {
 
 	assert_file_equals "${target_file}" "test configuration content"
 	echo "Dot reset restored the original content"
+
+	# A tracked file whose target is missing is restored from the repo,
+	# even when referenced by basename only (like `ins dot reset models.json`
+	# from ~/.prime/agent).
+	local missing_target="${HOME}/.config/instanttest/settings.conf"
+	rm -f "${missing_target}"
+
+	ins dot reset "settings.conf"
+	assert_file_equals "${missing_target}" "another config file"
+	echo "Dot reset restored a missing target by basename"
+
+	rm -f "${missing_target}"
+	ins dot reset "${missing_target}"
+	assert_file_equals "${missing_target}" "another config file"
+	echo "Dot reset restored a missing target by full path"
 }
 
 main "$@"

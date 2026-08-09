@@ -5,6 +5,17 @@ use std::time::Duration;
 
 use super::VideoMetadata;
 
+/// Formats a transcript cue as a video-markdown line: `` `source@start-end` text ``.
+pub fn format_cue_line(source_id: &str, cue: &TranscriptCue) -> String {
+    format!(
+        "`{}@{}-{}` {}",
+        source_id,
+        format_timestamp(cue.start),
+        format_timestamp(cue.end),
+        cue.text.trim()
+    )
+}
+
 pub fn build_markdown(cues: &[TranscriptCue], metadata: &VideoMetadata) -> String {
     let default_source = metadata.default_source.as_deref().unwrap_or("a");
     let mut lines = Vec::with_capacity(cues.len() * 2);
@@ -22,13 +33,7 @@ pub fn build_markdown(cues: &[TranscriptCue], metadata: &VideoMetadata) -> Strin
                 insert_silence_lines(&mut lines, previous_end, cue.start, source_id);
             }
         }
-        lines.push(format!(
-            "`{}@{}-{}` {}",
-            source_id,
-            format_timestamp(cue.start),
-            format_timestamp(cue.end),
-            cue.text.trim()
-        ));
+        lines.push(format_cue_line(source_id, cue));
 
         previous_end = cue.end;
     }

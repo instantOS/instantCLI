@@ -26,11 +26,22 @@ impl FfmpegCompiler {
             let music_label = self.build_music_filters(filters, music_segments, source_map)?;
             audio_label = Some(match audio_label {
                 Some(base) => {
+                    // Duck the music bed against the (already enhanced) voice:
+                    // the music dips only while someone speaks, then returns
+                    // untouched. Deliberate, musical ducking - not a compressor
+                    // that re-masters the track (music is already mastered).
+                    let ducked = "a_duck".to_string();
+                    filters.push(format!(
+                        "[{music}][{base}]sidechaincompress=threshold=0.05:ratio=8:attack=15:release=300[{ducked}]",
+                        music = music_label,
+                        base = base,
+                        ducked = ducked,
+                    ));
                     let mixed = "a_mix".to_string();
                     filters.push(format!(
-                        "[{base}][{music}]amix=inputs=2:normalize=0:dropout_transition=0[{mixed}]",
+                        "[{base}][{ducked}]amix=inputs=2:normalize=0:dropout_transition=0[{mixed}]",
                         base = base,
-                        music = music_label,
+                        ducked = ducked,
                         mixed = mixed,
                     ));
                     mixed
@@ -49,7 +60,15 @@ impl FfmpegCompiler {
             "a_silence".to_string()
         };
 
-        filters.push(format!("[{label}]anull[outa]", label = final_audio));
+        // Safety true-peak-style limiter on the *sum*: only catches peaks that
+        // would clip after mixing voice and music; no makeup gain (level=false),
+        // so untouched stems pass straight through. This is protection for the
+        // safety for the codec, not dynamics processing. `limit` is a linear
+        // amplitude in modern ffmpeg (-1 dBTP = 10^(-1/20) = 0.8913).
+        filters.push(format!(
+            "[{label}]alimiter=limit=0.8913:level=false[outa]",
+            label = final_audio
+        ));
         Ok(())
     }
 

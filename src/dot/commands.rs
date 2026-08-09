@@ -34,7 +34,8 @@ pub enum DotCommands {
     /// Clone a new repository (alias for 'repo clone')
     Clone(CloneArgs),
     Reset {
-        /// Path to reset (relative to ~)
+        /// Path to reset (relative to ~). If the target does not exist, it is
+        /// restored from its tracked source in the repository.
         #[arg(value_hint = ValueHint::AnyPath)]
         path: String,
         #[command(flatten)]

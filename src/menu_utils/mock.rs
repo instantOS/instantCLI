@@ -6,19 +6,12 @@
 //!
 //! ## Production build
 //!
-//! `pop_mock()` returns `Option<Infallible>` which can never be `Some`.
-//! The compiler elides the entire `if let Some(resp) = pop_mock()` block.
+//! `pop_mock()` is `#[cfg(test)]`-only and call sites are guarded with
+//! `#[cfg(test)]`, so production builds have zero mock overhead.
 
 // ---------------------------------------------------------------------------
-// pop_mock() — the function called from production code
+// pop_mock() — test-only, called from #[cfg(test)] blocks in fzf dialogs
 // ---------------------------------------------------------------------------
-
-/// Production stub: returns `Option<Infallible>` which can never be `Some`.
-/// The compiler elides the entire `if let Some(resp) = pop_mock()` block.
-#[cfg(not(test))]
-pub(crate) fn pop_mock() -> Option<std::convert::Infallible> {
-    None
-}
 
 /// Test implementation: pops from the thread-local queue.
 #[cfg(test)]

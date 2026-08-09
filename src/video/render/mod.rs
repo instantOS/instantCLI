@@ -40,11 +40,12 @@ struct RenderJob<'a> {
     runner: &'a dyn FfmpegRunner,
 }
 pub(crate) use self::plan::build_timeline_plan;
+pub(crate) use self::sources::find_default_source;
 pub(crate) use self::sources::resolve_video_sources;
-use self::sources::{find_default_source, validate_timeline_sources};
+use self::sources::validate_timeline_sources;
 use self::subtitles::generate_subtitle_file;
 use self::timeline_builder::{SlideProvider, TimelineStats, build_nle_timeline};
-pub(crate) use self::transcripts::load_transcript_cues;
+pub(crate) use self::transcripts::{apply_markdown_edits, load_transcript_cues};
 use super::cli::{PreviewArgs, RenderArgs};
 use super::config::VideoConfig;
 use super::support::ffmpeg::probe_video_dimensions;
@@ -82,14 +83,24 @@ struct RenderProject {
     project_dir: PathBuf,
 }
 
-async fn load_render_project(args: &RenderArgs) -> Result<RenderProject> {
+/// Load and validate all render project data from a markdown file.
+///
+/// Shared by both the render and preview entry points.
+async fn load_render_project_from_markdown(
+    markdown_path: &Path,
+    is_preview: bool,
+) -> Result<RenderProject> {
     log_event(
         Level::Info,
         "video.render.start",
-        "Preparing render (reading markdown, transcript, and assets)",
+        if is_preview {
+            "Preparing preview (reading markdown, transcript, and assets)"
+        } else {
+            "Preparing render (reading markdown, transcript, and assets)"
+        },
     );
 
-    let markdown_path = canonicalize_existing(&args.markdown)?;
+    let markdown_path = canonicalize_existing(markdown_path)?;
     let project_dir = markdown_path
         .parent()
         .unwrap_or_else(|| Path::new("."))
@@ -101,7 +112,8 @@ async fn load_render_project(args: &RenderArgs) -> Result<RenderProject> {
     if sources.is_empty() {
         bail!("No video sources configured. Add `sources` in front matter before rendering.");
     }
-    let cues = load_transcript_cues(&sources, &project_dir)?;
+    let mut cues = load_transcript_cues(&sources, &project_dir)?;
+    apply_markdown_edits(&mut cues, &document);
     validate_timeline_sources(&document, &sources, &cues)?;
     let plan = build_timeline_plan(&document, &cues, &markdown_path)?;
     let default_source = find_default_source(&document.metadata, &sources)?.clone();
@@ -214,7 +226,7 @@ async fn handle_render_with_services(
     args: RenderArgs,
     runner: &dyn FfmpegRunner,
 ) -> Result<Option<PathBuf>> {
-    let project = load_render_project(&args).await?;
+    let project = load_render_project_from_markdown(&args.markdown, false).await?;
 
     let render_mode = if args.common.reels {
         RenderMode::Reels
@@ -271,7 +283,7 @@ async fn handle_preview_with_services(
     args: PreviewArgs,
     runner: &dyn FfmpegRunner,
 ) -> Result<Option<PathBuf>> {
-    let project = load_preview_project(&args).await?;
+    let project = load_render_project_from_markdown(&args.markdown, true).await?;
 
     let render_mode = if args.common.reels {
         RenderMode::Reels
@@ -365,40 +377,6 @@ fn execute_preview_render(job: RenderJob<'_>) -> Result<Option<PathBuf>> {
     );
 
     Ok(None)
-}
-
-async fn load_preview_project(args: &PreviewArgs) -> Result<RenderProject> {
-    log_event(
-        Level::Info,
-        "video.render.start",
-        "Preparing preview (reading markdown, transcript, and assets)",
-    );
-
-    let markdown_path = canonicalize_existing(&args.markdown)?;
-    let project_dir = markdown_path
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .to_path_buf();
-
-    let document = load_video_document(&markdown_path)?;
-    let video_config = VideoConfig::load()?;
-    let sources = resolve_video_sources(&document.metadata, &project_dir, &video_config).await?;
-    if sources.is_empty() {
-        bail!("No video sources configured. Add `sources` in front matter before rendering.");
-    }
-    let cues = load_transcript_cues(&sources, &project_dir)?;
-    validate_timeline_sources(&document, &sources, &cues)?;
-    let plan = build_timeline_plan(&document, &cues, &markdown_path)?;
-    let default_source = find_default_source(&document.metadata, &sources)?.clone();
-
-    Ok(RenderProject {
-        sources,
-        cues,
-        plan,
-        default_source,
-        video_config,
-        project_dir,
-    })
 }
 
 fn report_timeline_stats(stats: &TimelineStats) {
