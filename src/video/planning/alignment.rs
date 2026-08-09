@@ -19,6 +19,10 @@ pub fn align_plan_with_subtitles(plan: &mut TimelinePlan, cues: &[TranscriptCue]
 }
 
 const MAX_SILENCE_STRETCH_RATIO: f64 = 2.5;
+/// Cue padding may move the dialogue surrounding an authored silence slightly,
+/// but a large boundary change means a source interval was moved elsewhere in
+/// document order and must not be swallowed back into the silence.
+const MAX_SILENCE_BOUNDARY_ADJUSTMENT_SECONDS: f64 = 0.5;
 
 #[derive(Debug, Clone, Copy)]
 struct ClipTimeUpdate {
@@ -224,6 +228,14 @@ impl SilenceRun {
         prev_end: f64,
         next_start: f64,
     ) -> Option<Vec<ClipTimeUpdate>> {
+        let authored_start = clip_start(items, self.start_idx)?;
+        let authored_end = clip_end(items, self.end_idx.checked_sub(1)?)?;
+        if (prev_end - authored_start).abs() > MAX_SILENCE_BOUNDARY_ADJUSTMENT_SECONDS
+            || (next_start - authored_end).abs() > MAX_SILENCE_BOUNDARY_ADJUSTMENT_SECONDS
+        {
+            return None;
+        }
+
         let actual_gap = (next_start - prev_end).max(0.0);
         if self.approximate_total <= 0.0 || actual_gap <= 0.0 {
             return None;
@@ -1015,6 +1027,54 @@ mod tests {
         assert!((silence1.time_window.end - 2.0).abs() < 1e-6);
         assert!((silence2.time_window.start - 2.0).abs() < 1e-6);
         assert!((silence2.time_window.end - 3.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn reordered_dialogue_is_not_absorbed_into_later_silence() {
+        let markdown = concat!(
+            "`a@00:00:02.0-00:00:03.0` moved earlier\n",
+            "`a@00:00:00.0-00:00:01.0` intro\n",
+            "`a@00:00:01.0-00:00:02.0` SILENCE\n",
+            "`a@00:00:03.0-00:00:04.0` outro\n",
+        );
+        let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
+        let mut plan = document.plan_timeline().unwrap();
+        let cues = vec![
+            TranscriptCue {
+                start: Duration::from_secs(0),
+                end: Duration::from_secs(1),
+                text: "intro".to_string(),
+                words: vec![],
+                source_id: "a".to_string(),
+            },
+            TranscriptCue {
+                start: Duration::from_secs(2),
+                end: Duration::from_secs(3),
+                text: "moved earlier".to_string(),
+                words: vec![],
+                source_id: "a".to_string(),
+            },
+            TranscriptCue {
+                start: Duration::from_secs(3),
+                end: Duration::from_secs(4),
+                text: "outro".to_string(),
+                words: vec![],
+                source_id: "a".to_string(),
+            },
+        ];
+
+        align_plan_with_subtitles(&mut plan, &cues).unwrap();
+
+        let silence = plan
+            .items
+            .iter()
+            .find_map(|item| match item {
+                TimelinePlanItem::Clip(clip) if clip.kind == SegmentKind::Silence => Some(clip),
+                _ => None,
+            })
+            .unwrap();
+        assert!((silence.time_window.start - 1.0).abs() < 1e-6);
+        assert!((silence.time_window.end - 2.0).abs() < 1e-6);
     }
 
     #[test]

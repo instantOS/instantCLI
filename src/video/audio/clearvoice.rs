@@ -29,8 +29,16 @@ use crate::video::support::utils::is_audio_file;
 const CLEARVOICE_MODEL: &str = "MossFormer2_SE_48K";
 const CLEARVOICE_PACKAGE: &str = "clearvoice==0.1.2";
 const CLEARVOICE_DRIVER: &str = include_str!("clearvoice_driver.py");
+const CLEARVOICE_INPUT_RECIPE: &str = "mono:s16:48000:highpass=80Hz:2pole";
 const CLEARVOICE_POSTPROCESS_RECIPE: &str =
     "ffmpeg-normalize:streaming-video:dynamic:lrt=2:true-peak=-1:sample-rate=48000";
+const CLEARVOICE_INPUT_SPEC: AudioExtractSpec = AudioExtractSpec {
+    codec: "pcm_s16le",
+    sample_rate: 48_000,
+    mono: true,
+    extra_args: &[("-af", "highpass=f=80:p=2")],
+    label: "DC-filtered voice audio",
+};
 
 fn cache_tag(parts: &[&[u8]]) -> String {
     let mut hasher = Sha256::new();
@@ -41,13 +49,18 @@ fn cache_tag(parts: &[&[u8]]) -> String {
 }
 
 fn driver_cache_tag() -> String {
-    cache_tag(&[CLEARVOICE_PACKAGE.as_bytes(), CLEARVOICE_DRIVER.as_bytes()])
+    cache_tag(&[
+        CLEARVOICE_INPUT_RECIPE.as_bytes(),
+        CLEARVOICE_PACKAGE.as_bytes(),
+        CLEARVOICE_DRIVER.as_bytes(),
+    ])
 }
 
 fn enhanced_cache_tag() -> String {
     cache_tag(&[
         CLEARVOICE_DRIVER.as_bytes(),
         CLEARVOICE_PACKAGE.as_bytes(),
+        CLEARVOICE_INPUT_RECIPE.as_bytes(),
         CLEARVOICE_POSTPROCESS_RECIPE.as_bytes(),
     ])
 }
@@ -121,7 +134,10 @@ impl AudioEnhancer for ClearVoiceEnhancer {
         }
 
         // Step 1: Get audio as WAV
-        let wav_path = cache.path("extracted.wav");
+        let wav_path = cache.path(&format!(
+            "extracted_clearvoice_{}.wav",
+            cache_tag(&[CLEARVOICE_INPUT_RECIPE.as_bytes()])
+        ));
         if !wav_path.exists() || force {
             if !is_audio_file(input) {
                 emit(
@@ -131,7 +147,7 @@ impl AudioEnhancer for ClearVoiceEnhancer {
                     None,
                 );
             }
-            extract_audio(input, &wav_path, &AudioExtractSpec::MONO_48K_WAV)?;
+            extract_audio(input, &wav_path, &CLEARVOICE_INPUT_SPEC)?;
         }
 
         // Step 2: ClearVoice AI enhancement (denoise + restoration)
@@ -140,7 +156,7 @@ impl AudioEnhancer for ClearVoiceEnhancer {
             Self::run_driver(&wav_path, &cv_raw_path)?;
         }
 
-        // Step 3: Static loudness normalization (no compression)
+        // Step 3: Dynamic loudness normalization for consistent mic levels.
         super::run_loudnorm(&cv_raw_path, &enhanced_cache_path)?;
 
         Ok(EnhanceResult {

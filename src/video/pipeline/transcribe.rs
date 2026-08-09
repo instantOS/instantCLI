@@ -198,7 +198,7 @@ fn download_default_granite_model(models_dir: &Path) -> Result<PathBuf> {
         Level::Info,
         "video.transcribe.model_download",
         &format!(
-            "Downloading Granite model from Hugging Face (one-time, ~2.4 GB; revision {})...",
+            "Resolving Granite model through Hugging Face (downloads once, ~2.4 GB; revision {})...",
             GRANITE_MODEL_REVISION
         ),
         None,
@@ -563,6 +563,9 @@ fn spawn_output_reader(stream: impl Read + Send + 'static) -> thread::JoinHandle
                 }
                 continue;
             }
+            if is_diagnostic_warning(&line) {
+                emit(Level::Warn, "video.transcribe.warning", &line, None);
+            }
             if tail.len() >= OUTPUT_TAIL_LINES {
                 tail.remove(0);
             }
@@ -570,6 +573,11 @@ fn spawn_output_reader(stream: impl Read + Send + 'static) -> thread::JoinHandle
         }
         tail
     })
+}
+
+fn is_diagnostic_warning(line: &str) -> bool {
+    let lowercase = line.to_ascii_lowercase();
+    lowercase.contains("warning") || lowercase.contains("warn:") || lowercase.starts_with("error:")
 }
 
 fn run_whisperx(hashed_video: &Path, output_dir: &Path, args: &TranscribeArgs) -> Result<()> {
@@ -727,6 +735,16 @@ mod tests {
     fn elapsed_time_is_human_readable() {
         assert_eq!(format_elapsed(Duration::from_secs(30)), "30s");
         assert_eq!(format_elapsed(Duration::from_secs(125)), "2m 05s");
+    }
+
+    #[test]
+    fn diagnostic_lines_are_distinguished_from_backend_chatter() {
+        assert!(is_diagnostic_warning("WARNING: fallback in use"));
+        assert!(is_diagnostic_warning("backend warn: slow path"));
+        assert!(is_diagnostic_warning("error: recoverable decode issue"));
+        assert!(!is_diagnostic_warning(
+            "ggml_vulkan: Found 1 Vulkan devices"
+        ));
     }
 
     #[test]

@@ -146,6 +146,8 @@ fn contiguous_audio_is_not_crossfaded_at_internal_segment_boundary() {
     // The contiguous join at source time 6.0 remains sample-for-sample
     // unchanged: no extension and no crossfade.
     assert!(!filter_complex.contains("acrossfade="));
+    assert!(!filter_complex.contains("alimiter="));
+    assert!(filter_complex.contains("[a_base]anull[outa]"));
     assert!(filter_complex.contains("atrim=start=5.000000:end=6.000000"));
     assert!(filter_complex.contains("atrim=start=6.000000:end=7.000000"));
     assert!(filter_complex.contains("[a0][a1]concat=n=2:v=0:a=1[concat_a]"));
@@ -191,6 +193,7 @@ fn voice_is_mono_and_music_mix_is_stereo() {
     assert!(filter_complex.contains("[music_0]"));
     assert!(filter_complex.contains("channel_layouts=stereo[a_base_stereo]"));
     assert!(filter_complex.contains("[a_base_stereo][a_duck]amix="));
+    assert!(filter_complex.contains("alimiter=limit=0.8913:level=false:latency=true[outa]"));
 }
 
 #[test]

@@ -17,6 +17,12 @@ pub(super) fn prepare_output_destination(
         );
     }
 
+    // A dry run only plans and prints the command. It must not remove an
+    // existing output or create its parent directory, even with --force.
+    if args.dry_run {
+        return Ok(());
+    }
+
     if output_path.exists() {
         if args.force {
             fs::remove_file(output_path).with_context(|| {
@@ -39,4 +45,34 @@ pub(super) fn prepare_output_destination(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::video::cli::VideoProcessArgs;
+
+    #[test]
+    fn forced_dry_run_preserves_existing_output() {
+        let dir = tempfile::tempdir().unwrap();
+        let output = dir.path().join("edit.mp4");
+        let source = dir.path().join("source.mp4");
+        fs::write(&output, b"existing render").unwrap();
+        let args = RenderArgs {
+            markdown: dir.path().join("video.md"),
+            out_file: None,
+            force: true,
+            dry_run: true,
+            common: VideoProcessArgs {
+                precache_slides: false,
+                reels: false,
+                subtitles: false,
+                verbose: false,
+            },
+        };
+
+        prepare_output_destination(&output, &args, &source).unwrap();
+
+        assert_eq!(fs::read(&output).unwrap(), b"existing render");
+    }
 }

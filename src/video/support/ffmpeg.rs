@@ -2,6 +2,8 @@ use anyhow::{Context, Result, bail};
 use std::path::Path;
 use std::process::{Command, Output};
 
+use crate::ui::prelude::{Level, emit};
+
 #[derive(Debug, Clone, Copy)]
 pub struct EncodingProfile {
     pub video_codec: &'static str,
@@ -93,6 +95,29 @@ pub fn run_ffmpeg_output(args: &[&str], ctx: &str) -> Result<()> {
         );
     }
 
+    Ok(())
+}
+
+/// Capture routine ffmpeg output while preserving warnings on successful runs
+/// and the complete captured diagnostics on failure.
+fn run_ffmpeg_with_diagnostics(args: &[&str], ctx: &str) -> Result<()> {
+    let output = Command::new("ffmpeg")
+        .args(args)
+        .output()
+        .with_context(|| format!("Failed to spawn ffmpeg for {ctx}"))?;
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    if !output.status.success() {
+        bail!("ffmpeg failed {ctx}: {}", stderr.trim());
+    }
+
+    for warning in stderr
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+    {
+        emit(Level::Warn, "video.ffmpeg.warning", warning, None);
+    }
     Ok(())
 }
 
@@ -238,7 +263,7 @@ pub fn extract_audio(input: &Path, output: &Path, spec: &AudioExtractSpec) -> Re
     let mut args: Vec<&str> = vec![
         "-hide_banner",
         "-loglevel",
-        "error",
+        "warning",
         "-nostats",
         "-y",
         "-i",
@@ -263,7 +288,7 @@ pub fn extract_audio(input: &Path, output: &Path, spec: &AudioExtractSpec) -> Re
     }
     args.push(&output_str);
 
-    run_ffmpeg_output(
+    run_ffmpeg_with_diagnostics(
         &args,
         &format!("to extract {} from {}", spec.label, input.display()),
     )

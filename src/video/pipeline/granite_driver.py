@@ -49,6 +49,115 @@ def progress(done_ms: int, total_ms: int) -> None:
 
 
 MIN_RETRY_SAMPLES = 16000
+SAMPLE_RATE = 16000
+VAD_FRAME_SAMPLES = 320  # 20 ms
+VAD_MIN_SILENCE_FRAMES = 40  # 800 ms
+VAD_PADDING_SAMPLES = 4000  # 250 ms
+
+
+def speech_windows(pcm: np.ndarray) -> list[tuple[int, int, int | None, int | None]]:
+    """Split audio around sustained acoustic silence.
+
+    Granite Speech can return internally consistent words while compressing a
+    long silent interval in its timestamp clock.  Feeding speech islands
+    separately anchors every island to its real source offset and prevents that
+    drift.  The threshold is relative to this recording's noise floor, so this
+    also works for microphones recorded at different levels and distances.
+
+    Boundaries include a little context to avoid clipping quiet consonants.
+    Only sustained silence is split; ordinary pauses remain with the sentence.
+    """
+    if len(pcm) < SAMPLE_RATE:
+        return [(0, len(pcm), None, None)]
+
+    # Remove DC and very-low-frequency room/mechanical noise before measuring
+    # energy.  A centered 100 ms moving average is inexpensive and sufficient
+    # for VAD; this does not alter the samples sent to the model.
+    radius = SAMPLE_RATE // 20
+    cumulative = np.concatenate(
+        (np.zeros(1, dtype=np.float64), np.cumsum(pcm, dtype=np.float64))
+    )
+    indices = np.arange(len(pcm))
+    left = np.maximum(0, indices - radius)
+    right = np.minimum(len(pcm), indices + radius + 1)
+    local_mean = (cumulative[right] - cumulative[left]) / (right - left)
+    filtered = pcm - local_mean
+
+    frame_count = len(filtered) // VAD_FRAME_SAMPLES
+    if frame_count == 0:
+        return [(0, len(pcm), None, None)]
+    frames = filtered[: frame_count * VAD_FRAME_SAMPLES].reshape(
+        frame_count, VAD_FRAME_SAMPLES
+    )
+    rms = np.sqrt(np.mean(frames * frames, axis=1) + 1e-12)
+    db = 20.0 * np.log10(rms)
+    noise_floor = float(np.percentile(db, 20))
+    speech_level = float(np.percentile(db, 90))
+    threshold = min(noise_floor + 15.0, speech_level - 15.0)
+    silent = db < threshold
+
+    silences: list[tuple[int, int]] = []
+    start = None
+    for index, is_silent in enumerate(silent):
+        if is_silent and start is None:
+            start = index
+        elif not is_silent and start is not None:
+            if index - start >= VAD_MIN_SILENCE_FRAMES:
+                silences.append(
+                    (start * VAD_FRAME_SAMPLES, index * VAD_FRAME_SAMPLES)
+                )
+            start = None
+    if start is not None and frame_count - start >= VAD_MIN_SILENCE_FRAMES:
+        silences.append((start * VAD_FRAME_SAMPLES, len(pcm)))
+
+    if not silences:
+        return [(0, len(pcm), None, None)]
+
+    windows: list[tuple[int, int, int | None, int | None]] = []
+    cursor = 0
+    speech_start = None
+    for silence_start, silence_end in silences:
+        end = min(len(pcm), silence_start + VAD_PADDING_SAMPLES)
+        if end > cursor:
+            windows.append((cursor, end, speech_start, silence_start))
+        cursor = max(0, silence_end - VAD_PADDING_SAMPLES)
+        speech_start = silence_end
+    if cursor < len(pcm):
+        windows.append((cursor, len(pcm), speech_start, None))
+
+    # A leading/trailing all-silent island has no value to the recognizer.
+    return [
+        window
+        for window in windows
+        if window[1] - window[0] >= SAMPLE_RATE // 2
+    ]
+
+
+def align_segments_to_speech_boundaries(
+    segments: list[dict], speech_start: int | None, speech_end: int | None
+) -> None:
+    """Affine-align Granite's word clock to acoustic island boundaries."""
+    words = [word for segment in segments for word in segment["words"]]
+    if not words or speech_start is None or speech_end is None:
+        return
+    model_start = words[0]["start"]
+    model_end = words[-1]["end"]
+    actual_start = speech_start / SAMPLE_RATE
+    actual_end = speech_end / SAMPLE_RATE
+    if model_end <= model_start or actual_end <= actual_start:
+        return
+    scale = (actual_end - actual_start) / (model_end - model_start)
+
+    def aligned(value: float) -> float:
+        return round(actual_start + (value - model_start) * scale, 3)
+
+    for segment in segments:
+        for word in segment["words"]:
+            word["start"] = aligned(word["start"])
+            word["end"] = aligned(word["end"])
+        if segment["words"]:
+            segment["start"] = segment["words"][0]["start"]
+            segment["end"] = segment["words"][-1]["end"]
 
 
 def transcribe_window(session, pcm, language: str | None, off_samples: int = 0):
@@ -144,19 +253,32 @@ def main() -> int:
 
         window_ms = args.window_ms or caps.max_audio_ms or 200000
         window_ms = max(1000, min(window_ms, 600000))
-        win = window_ms * 16000 // 1000
+        win = window_ms * SAMPLE_RATE // 1000
 
         all_segments = []
         with model.session(n_threads=args.threads) as session:
-            for t0 in range(0, len(pcm), win):
-                t1 = min(t0 + win, len(pcm))
-                if t1 <= t0:
-                    break
-                results = transcribe_window(session, pcm[t0:t1], args.language)
-                for result, local_off in results:
-                    off_ms = (t0 + local_off) * 1000 // 16000
-                    all_segments.extend(result_to_segments(result, off_ms))
-                progress(t1 * 1000 // 16000, total_ms)
+            windows = speech_windows(pcm)
+            sys.stderr.write(
+                f"TC_VAD speech_islands={len(windows)} "
+                f"covered_ms={sum(end - start for start, end, _, _ in windows) * 1000 // SAMPLE_RATE}\n"
+            )
+            sys.stderr.flush()
+            for island_start, island_end, speech_start, speech_end in windows:
+                island_segments = []
+                for t0 in range(island_start, island_end, win):
+                    t1 = min(t0 + win, island_end)
+                    if t1 <= t0:
+                        break
+                    results = transcribe_window(session, pcm[t0:t1], args.language)
+                    for result, local_off in results:
+                        off_ms = (t0 + local_off) * 1000 // SAMPLE_RATE
+                        island_segments.extend(result_to_segments(result, off_ms))
+                    progress(t1 * 1000 // SAMPLE_RATE, total_ms)
+                align_segments_to_speech_boundaries(
+                    island_segments, speech_start, speech_end
+                )
+                all_segments.extend(island_segments)
+            progress(total_ms, total_ms)
 
     out = {"segments": all_segments}
     tmp = tempfile.NamedTemporaryFile(

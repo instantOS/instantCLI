@@ -68,15 +68,17 @@ impl FfmpegCompiler {
             "a_silence".to_string()
         };
 
-        // Safety true-peak-style limiter on the *sum*: only catches peaks that
-        // would clip after mixing voice and music; no makeup gain (level=false),
-        // so untouched stems pass straight through. This is protection for the
-        // safety for the codec, not dynamics processing. `limit` is a linear
-        // amplitude in modern ffmpeg (-1 dBTP = 10^(-1/20) = 0.8913).
-        filters.push(format!(
-            "[{label}]alimiter=limit=0.8913:level=false[outa]",
-            label = final_audio
-        ));
+        if has_base_track && !music_segments.is_empty() {
+            // Limit only the voice+music sum. The enhanced voice stem is
+            // already normalized to -1 dBTP, so processing it again adds no
+            // protection and needlessly changes timing/state.
+            filters.push(format!(
+                "[{label}]alimiter=limit=0.8913:level=false:latency=true[outa]",
+                label = final_audio
+            ));
+        } else {
+            filters.push(format!("[{final_audio}]anull[outa]"));
+        }
         Ok(())
     }
 
