@@ -25,10 +25,20 @@ pub fn bruh() -> Result<()> {
             println!("Downloading bruh sound...");
         }
 
-        // Download the file
+        // Download the file on a dedicated OS thread.
+        //
+        // `reqwest::blocking` creates its own runtime, which cannot be created
+        // or dropped inside an async context (ins runs under #[tokio::main] and
+        // panics with "Cannot drop a runtime in a context where blocking is not
+        // allowed"). A fresh OS thread has no runtime context, so the blocking
+        // client is safe there.
         let url = "http://bruhsound.surge.sh/bruh.m4a";
-        let response = reqwest::blocking::get(url)?;
-        let content = response.bytes()?;
+        let content = std::thread::spawn(move || -> Result<Vec<u8>> {
+            let response = reqwest::blocking::get(url)?;
+            Ok(response.bytes()?.to_vec())
+        })
+        .join()
+        .map_err(|_| anyhow::anyhow!("Bruh sound download thread panicked"))??;
         std::fs::write(&bruh_file, content)?;
     }
 
