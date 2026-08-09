@@ -116,17 +116,36 @@ impl EnhanceCache {
     }
 }
 
-/// Dynamic loudness normalization for the voice stem.
+/// Conservative podcast-style mastering applied after speech enhancement.
 ///
-/// Uses `ffmpeg-normalize` with `--dynamic` (EBU R128 dynamic mode) so the
-/// voice gets real compression: consistent levels, tight loudness range.
-/// This runs on the voice stem *before* the music is mixed in, so the music
-/// (already mastered/compressed MP3s) is never double-compressed.
+/// ClearVoice/DeepFilterNet handle restoration; this stage supplies deliberate
+/// tonal shaping, RMS compression, and final loudness/true-peak control. It is
+/// intentionally restrained so different microphones remain natural:
+/// - a small 250 Hz cut reduces proximity/mud;
+/// - a small 3.2 kHz boost improves speech intelligibility;
+/// - soft-knee 3:1 RMS compression evens out mic distance and delivery;
+/// - EBU normalization targets streaming-video loudness at -14 LUFS/-1 dBTP.
+///
+/// This runs on the mono voice stem before music is mixed, so mastered music is
+/// never EQed or compressed a second time.
+pub(crate) const VOICE_MASTERING_FILTER: &str = concat!(
+    "equalizer=f=250:t=q:w=0.9:g=-1.2,",
+    "equalizer=f=3200:t=q:w=0.9:g=1.4,",
+    "acompressor=threshold=0.02:ratio=3:attack=10:release=140:",
+    "knee=4:detection=rms"
+);
+
+pub(crate) const VOICE_MASTERING_RECIPE: &str = concat!(
+    "podcast-eq:v1:250Hz=-1.2dB:q0.9:3200Hz=+1.4dB:q0.9;",
+    "compressor:rms:threshold=-34dB:ratio=3:1:attack=10ms:",
+    "release=140ms:knee=4;ebu:target=-14LUFS:lra=4:true-peak=-1dBTP:48kHz"
+);
+
 pub(crate) fn run_loudnorm(input: &Path, output: &Path) -> Result<()> {
     emit(
         Level::Info,
         "video.enhance.loudnorm",
-        "Running EBU R128 loudness normalization with dynamic compression...",
+        "Mastering voice (podcast EQ, compression, and -14 LUFS normalization)...",
         None,
     );
 
@@ -137,8 +156,10 @@ pub(crate) fn run_loudnorm(input: &Path, output: &Path) -> Result<()> {
             "--preset",
             "streaming-video",
             "--dynamic",
+            "--pre-filter",
+            VOICE_MASTERING_FILTER,
             "-lrt",
-            "2",
+            "4",
             "--true-peak",
             "-1.0",
             "--sample-rate",
@@ -157,7 +178,7 @@ pub(crate) fn run_loudnorm(input: &Path, output: &Path) -> Result<()> {
     emit(
         Level::Success,
         "video.enhance.loudnorm",
-        &format!("Loudness normalization complete: {}", output.display()),
+        &format!("Voice mastering complete: {}", output.display()),
         None,
     );
 

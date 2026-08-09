@@ -1,15 +1,15 @@
-//! Local audio enhancement using DeepFilterNet + pure EBU R128 loudness
+//! Local audio enhancement using DeepFilterNet + podcast voice mastering
 //!
 //! Pipeline (voice stem, before music is mixed):
 //! 1. Extract audio to WAV if input is video
 //! 2. Run DeepFilterNet for noise reduction
-//! 3. Run EBU R128 dynamic loudness normalization (compressor on voice only)
+//! 3. Apply podcast EQ, voice compression, and EBU R128 normalization
 //!
-//! Dynamic compression (ffmpeg-normalize --dynamic) is applied here to the voice
-//! stem only. The music bed is mixed in later and passes through untouched, so
-//! already-mastered MP3s are never double-compressed.
+//! Mastering is applied to the voice stem only. The music bed is mixed later and
+//! passes through untouched, so mastered music is never double-compressed.
 
 use anyhow::{Context, Result};
+use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -89,7 +89,9 @@ impl AudioEnhancer for LocalEnhancer {
 
         // Enhanced stem for the render mix (WAV to avoid lossy transcoding;
         // encoding happens at render)
-        let enhanced_cache_path = cache.path("enhanced_deepfilter.wav");
+        let mastering_tag =
+            &hex::encode(Sha256::digest(super::VOICE_MASTERING_RECIPE.as_bytes()))[..12];
+        let enhanced_cache_path = cache.path(&format!("enhanced_deepfilter_{mastering_tag}.wav"));
 
         // Check cache
         if let Some(cached) = cache.cached(&enhanced_cache_path, force, "video.enhance.cached", "")
@@ -115,7 +117,7 @@ impl AudioEnhancer for LocalEnhancer {
         // Step 2: Run DeepFilterNet
         let denoised_path = Self::run_deepfilter(&wav_path, &cache.cache_dir)?;
 
-        // Step 3: Run static loudness normalization (no compression)
+        // Step 3: Apply voice EQ, compression, and loudness normalization.
         super::run_loudnorm(&denoised_path, &enhanced_cache_path)?;
 
         Ok(EnhanceResult {

@@ -30,8 +30,6 @@ const CLEARVOICE_MODEL: &str = "MossFormer2_SE_48K";
 const CLEARVOICE_PACKAGE: &str = "clearvoice==0.1.2";
 const CLEARVOICE_DRIVER: &str = include_str!("clearvoice_driver.py");
 const CLEARVOICE_INPUT_RECIPE: &str = "mono:s16:48000:highpass=80Hz:2pole";
-const CLEARVOICE_POSTPROCESS_RECIPE: &str =
-    "ffmpeg-normalize:streaming-video:dynamic:lrt=2:true-peak=-1:sample-rate=48000";
 const CLEARVOICE_INPUT_SPEC: AudioExtractSpec = AudioExtractSpec {
     codec: "pcm_s16le",
     sample_rate: 48_000,
@@ -61,7 +59,7 @@ fn enhanced_cache_tag() -> String {
         CLEARVOICE_DRIVER.as_bytes(),
         CLEARVOICE_PACKAGE.as_bytes(),
         CLEARVOICE_INPUT_RECIPE.as_bytes(),
-        CLEARVOICE_POSTPROCESS_RECIPE.as_bytes(),
+        super::VOICE_MASTERING_RECIPE.as_bytes(),
     ])
 }
 
