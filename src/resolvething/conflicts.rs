@@ -8,12 +8,14 @@ use walkdir::WalkDir;
 use crate::menu_utils::FzfSelectable;
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
+use crate::ui::prelude::{Level, emit};
 use crate::ui::preview::{FzfPreview, PreviewBuilder};
 
 use super::config::format_path;
 use super::utils::{
     STVERSIONS_DIR, SYNC_CONFLICT_REGEX, SYNC_CONFLICT_REPLACE_REGEX, editor_command,
-    sync_conflict_regex_for_type, sync_conflict_replace_regex_for_type, trash_path,
+    rename_noreplace, sync_conflict_regex_for_type, sync_conflict_replace_regex_for_type,
+    trash_path,
 };
 
 const MAX_FILE_SIZE: u64 = 1_000_000;
@@ -31,6 +33,8 @@ impl Conflict {
             && file_is_valid(&self.modified)
     }
 
+    /// Resolve this conflict. The caller validates the editor before the loop,
+    /// so a missing editor fails fast rather than failing per conflict.
     pub fn resolve(&self, configured_editor: Option<&str>) -> Result<ConflictResolution> {
         if !self.is_valid() {
             return Ok(ConflictResolution::SkippedInvalid);
@@ -48,12 +52,51 @@ impl Conflict {
             .wait()
             .context("waiting for diff editor to exit")?;
 
-        if files_equal(&self.original, &self.modified)? {
-            trash_path(&self.modified)?;
-            Ok(ConflictResolution::Resolved)
-        } else {
-            Ok(ConflictResolution::Unresolved)
+        // The user (or Syncthing) may have deleted or recreated files while the
+        // editor was open. Classify the outcome by re-checking the filesystem;
+        // a file vanishing mid-comparison loops back to re-classify. The
+        // attempt cap guards against pathological filesystem churn.
+        for _ in 0..3 {
+            match (self.original.exists(), self.modified.exists()) {
+                // The conflict file is gone (with or without the original):
+                // the user discarded it themselves.
+                (_, false) => return Ok(ConflictResolution::Resolved),
+                // The original is gone but the conflict copy remains: the user
+                // deleted the original because they prefer the conflict
+                // version, so promote the conflict file to the original path.
+                // `rename_noreplace` refuses to clobber if the original
+                // reappeared (e.g. Syncthing) mid-rename.
+                (false, true) => {
+                    emit(
+                        Level::Info,
+                        "resolvething.conflicts.promote_leftover",
+                        &format!(
+                            "{} Original {} was deleted during merge; promoting conflict copy to {}",
+                            char::from(NerdFont::Info),
+                            format_path(&self.original),
+                            format_path(&self.modified)
+                        ),
+                        None,
+                    );
+                    if rename_noreplace(&self.modified, &self.original)? {
+                        return Ok(ConflictResolution::Resolved);
+                    }
+                    // The original reappeared mid-rename; re-classify.
+                }
+                // Both remain: compare and trash the conflict copy if equal.
+                (true, true) => match files_equal(&self.original, &self.modified)? {
+                    CompareOutcome::Equal => {
+                        trash_path(&self.modified)?;
+                        return Ok(ConflictResolution::Resolved);
+                    }
+                    CompareOutcome::Different => return Ok(ConflictResolution::Unresolved),
+                    // One side vanished mid-comparison; re-classify.
+                    CompareOutcome::Vanished => {}
+                },
+            }
         }
+
+        Ok(ConflictResolution::Unresolved)
     }
 
     pub fn preview(&self) -> String {
@@ -238,14 +281,36 @@ fn file_is_valid(path: &Path) -> bool {
     }
 }
 
-/// Returns `Ok(true)` when both files have identical content, `Ok(false)` when
-/// they differ, and `Err` when either file cannot be read. Propagating errors
-/// (rather than silently treating unreadable files as equal) prevents the
-/// conflict resolution logic from discarding a file that it cannot verify.
-fn files_equal(a: &Path, b: &Path) -> Result<bool> {
-    let content_a =
-        std::fs::read_to_string(a).with_context(|| format!("reading {}", a.display()))?;
-    let content_b =
-        std::fs::read_to_string(b).with_context(|| format!("reading {}", b.display()))?;
-    Ok(content_a == content_b)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CompareOutcome {
+    Equal,
+    Different,
+    /// One side vanished while being read; the caller re-classifies.
+    Vanished,
+}
+
+/// Compares both files, returning `Vanished` (rather than `Different`) when
+/// either file disappears mid-read so the caller can re-classify instead of
+/// reporting a false "unresolved". Other read failures still propagate.
+fn files_equal(a: &Path, b: &Path) -> Result<CompareOutcome> {
+    let Some(content_a) = read_text(a)? else {
+        return Ok(CompareOutcome::Vanished);
+    };
+    let Some(content_b) = read_text(b)? else {
+        return Ok(CompareOutcome::Vanished);
+    };
+    Ok(if content_a == content_b {
+        CompareOutcome::Equal
+    } else {
+        CompareOutcome::Different
+    })
+}
+
+/// Read `path` as UTF-8, returning `Ok(None)` when it no longer exists.
+fn read_text(path: &Path) -> Result<Option<String>> {
+    match std::fs::read_to_string(path) {
+        Ok(contents) => Ok(Some(contents)),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(err).with_context(|| format!("reading {}", path.display())),
+    }
 }

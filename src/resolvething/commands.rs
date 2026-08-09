@@ -1,5 +1,6 @@
 use anyhow::{Context, Result, bail};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use crate::common::deps::FZF;
 use crate::common::package::{
@@ -19,7 +20,7 @@ use super::config::{ResolvedScanDir, ResolvethingConfig, ScanDir, format_path};
 use super::conflicts::{ConflictChoice, ConflictResolution, scan_conflicts};
 use super::duplicates::{DuplicateChoice, DuplicateGroup, GroupPlan, SkipReason, scan_duplicates};
 use super::menu::resolvething_menu;
-use super::utils::plain_editor_command;
+use super::utils::{editor_command, plain_editor_command};
 
 static FCLONES_DEP: Dependency = Dependency {
     name: "fclones",
@@ -319,6 +320,12 @@ pub fn resolve_conflicts(scan_dir: &ResolvedScanDir, dry_run: bool) -> Result<()
     ensure_menu_dependencies()?;
     let config = ResolvethingConfig::load()?;
 
+    // Build and validate the diff editor once, before any resolution, so a
+    // missing or misconfigured editor fails fast instead of producing a
+    // warning per conflict.
+    let editor = editor_command(config.editor_command.as_deref())?;
+    ensure_editor_available(&editor)?;
+
     let mut resolved = 0usize;
     let mut unresolved = 0usize;
     let mut skipped = 0usize;
@@ -336,8 +343,9 @@ pub fn resolve_conflicts(scan_dir: &ResolvedScanDir, dry_run: bool) -> Result<()
 
         match choice {
             ConflictChoice::Resolve(conflict) => {
-                tally_resolution(
-                    conflict.resolve(config.editor_command.as_deref())?,
+                tally_conflict_resolution(
+                    conflict.resolve(config.editor_command.as_deref()),
+                    &conflict,
                     &mut resolved,
                     &mut unresolved,
                     &mut skipped,
@@ -345,8 +353,9 @@ pub fn resolve_conflicts(scan_dir: &ResolvedScanDir, dry_run: bool) -> Result<()
             }
             ConflictChoice::ResolveAll => {
                 for conflict in conflicts.clone() {
-                    tally_resolution(
-                        conflict.resolve(config.editor_command.as_deref())?,
+                    tally_conflict_resolution(
+                        conflict.resolve(config.editor_command.as_deref()),
+                        &conflict,
                         &mut resolved,
                         &mut unresolved,
                         &mut skipped,
@@ -585,16 +594,48 @@ pub fn configure_scan_directory_extensions(index: usize) -> Result<bool> {
     }
 }
 
-fn tally_resolution(
-    resolution: ConflictResolution,
+fn ensure_editor_available(editor: &Command) -> Result<()> {
+    let program = editor.get_program();
+    let available = if Path::new(program).components().count() > 1 {
+        Path::new(program).is_file()
+    } else {
+        which::which(program).is_ok()
+    };
+    if !available {
+        bail!(
+            "diff editor not found: {}. Install it or set EDITOR.",
+            program.to_string_lossy()
+        );
+    }
+    Ok(())
+}
+
+fn tally_conflict_resolution(
+    resolution: Result<ConflictResolution>,
+    conflict: &super::conflicts::Conflict,
     resolved: &mut usize,
     unresolved: &mut usize,
     skipped: &mut usize,
 ) {
     match resolution {
-        ConflictResolution::Resolved => *resolved += 1,
-        ConflictResolution::Unresolved => *unresolved += 1,
-        ConflictResolution::SkippedInvalid => *skipped += 1,
+        Ok(ConflictResolution::Resolved) => *resolved += 1,
+        Ok(ConflictResolution::Unresolved) => *unresolved += 1,
+        Ok(ConflictResolution::SkippedInvalid) => *skipped += 1,
+        // A single conflict failing must not abort the rest of the run; it
+        // counts as unresolved so the summary stays accurate.
+        Err(err) => {
+            *unresolved += 1;
+            emit(
+                Level::Warn,
+                "resolvething.conflicts.failed",
+                &format!(
+                    "{} Failed to resolve {}: {err:#}",
+                    char::from(NerdFont::Warning),
+                    format_path(&conflict.modified)
+                ),
+                None,
+            );
+        }
     }
 }
 
