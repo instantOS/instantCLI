@@ -57,6 +57,7 @@ pub enum NerdFont {
     VolumeUp,
     VolumeDown,
     VolumeMute,
+    MicMute,
     Play,
     PlayCircle,
     Pause,
@@ -340,14 +341,15 @@ impl NerdFont {
             Self::Continue => '',          // fa-play
 
             // Media and audio
-            Self::VolumeUp => '󰝝',     // fa-volume-up
-            Self::VolumeDown => '󰝞',   // fa-volume-down
-            Self::VolumeMute => '',   // fa-volume-mute
-            Self::Play => '\u{f04b}',  // fa-play
-            Self::PlayCircle => '',   // fa-play-circle
-            Self::Pause => '\u{f04c}', // fa-pause
-            Self::PauseCircle => '',  // fa-pause-circle
-            Self::Stop => '\u{f04d}',  // fa-stop
+            Self::VolumeUp => '󰝝',       // fa-volume-up
+            Self::VolumeDown => '󰝞',     // fa-volume-down
+            Self::VolumeMute => '',     // fa-volume-mute
+            Self::MicMute => '\u{f131}', // fa-microphone-slash
+            Self::Play => '\u{f04b}',    // fa-play
+            Self::PlayCircle => '',     // fa-play-circle
+            Self::Pause => '\u{f04c}',   // fa-pause
+            Self::PauseCircle => '',    // fa-pause-circle
+            Self::Stop => '\u{f04d}',    // fa-stop
 
             // Communication and network
             Self::Bluetooth => '',    // fa-bluetooth

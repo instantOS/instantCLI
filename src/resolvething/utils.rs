@@ -41,8 +41,12 @@ pub fn sync_conflict_replace_regex_for_type(file_type: &str) -> Regex {
 }
 
 /// Move `path` to the user's trash using `trash`, `gio trash`, or a manual
-/// XDG fallback in that order.
+/// XDG fallback in that order. A path that no longer exists is a no-op.
 pub fn trash_path(path: &Path) -> Result<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+
     if which::which("trash").is_ok() {
         let status = Command::new("trash").arg(path).status()?;
         if status.success() {
@@ -147,4 +151,37 @@ pub fn plain_editor_command(configured_editor: Option<&str>) -> Result<Command> 
     let mut command = Command::new(program);
     command.args(args);
     Ok(command)
+}
+
+/// Rename `from` to `to` without replacing an existing `to`. Returns
+/// `Ok(true)` when the rename happened and `Ok(false)` when `to` already
+/// exists (nothing was clobbered). Uses `renameat2(RENAME_NOREPLACE)` on
+/// Linux glibc; other platforms fall back to a checked rename with a narrow
+/// race window.
+pub fn rename_noreplace(from: &Path, to: &Path) -> Result<bool> {
+    rename_noreplace_impl(from, to)
+}
+
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+fn rename_noreplace_impl(from: &Path, to: &Path) -> Result<bool> {
+    use nix::errno::Errno;
+    use nix::fcntl::{AT_FDCWD, RenameFlags, renameat2};
+
+    match renameat2(AT_FDCWD, from, AT_FDCWD, to, RenameFlags::RENAME_NOREPLACE) {
+        Ok(()) => Ok(true),
+        Err(Errno::EEXIST) => Ok(false),
+        Err(err) => {
+            Err(err).with_context(|| format!("renaming {} to {}", from.display(), to.display()))
+        }
+    }
+}
+
+#[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+fn rename_noreplace_impl(from: &Path, to: &Path) -> Result<bool> {
+    if to.exists() {
+        return Ok(false);
+    }
+    std::fs::rename(from, to)
+        .with_context(|| format!("renaming {} to {}", from.display(), to.display()))?;
+    Ok(true)
 }

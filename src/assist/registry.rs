@@ -339,9 +339,16 @@ pub const ASSISTS: &[AssistEntry] = &[
     }),
     AssistEntry::Group(AssistGroup {
         key: 'v',
-        description: "Media Navigation: Control media playback tracks",
+        description: "Media & Audio: Playback and microphone controls",
         icon: NerdFont::Music,
         children: &[
+            AssistEntry::Action(AssistAction {
+                key: 'm',
+                description: "Mic Mute: Toggle microphone mute",
+                icon: NerdFont::MicMute,
+                dependencies: &[],
+                execute: actions::system::mic_mute,
+            }),
             AssistEntry::Action(AssistAction {
                 key: 'c',
                 description: "Control Media: Select player to play/pause",

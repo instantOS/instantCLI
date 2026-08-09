@@ -91,6 +91,80 @@ pub fn volume_direct(action: &str) -> Result<()> {
     Ok(())
 }
 
+/// Toggle the microphone mute state.
+///
+/// Toggles the first ALSA capture switch found on any sound card; the
+/// hardware mic-mute LED follows automatically (audio-micmute LED trigger).
+/// The PipeWire default source mute is synced afterwards so desktop mixers
+/// show the same state.
+pub fn mic_mute() -> Result<()> {
+    use std::process::Command;
+
+    for card in 0..10 {
+        let Ok(out) = Command::new("amixer")
+            .args(["-c", &card.to_string(), "sget", "Capture"])
+            .output()
+        else {
+            continue;
+        };
+        let info = String::from_utf8_lossy(&out.stdout);
+        if !out.status.success() || !info.contains("cswitch") {
+            continue;
+        }
+
+        Command::new("amixer")
+            .args(["-c", &card.to_string(), "sset", "Capture", "toggle"])
+            .status()
+            .context("Failed to toggle the ALSA capture switch")?;
+
+        let muted = if let Ok(after) = Command::new("amixer")
+            .args(["-c", &card.to_string(), "sget", "Capture"])
+            .output()
+        {
+            !String::from_utf8_lossy(&after.stdout).contains("[on]")
+        } else {
+            false
+        };
+        let _ = Command::new("wpctl")
+            .args([
+                "set-mute",
+                "@DEFAULT_AUDIO_SOURCE@",
+                if muted { "1" } else { "0" },
+            ])
+            .status();
+        notify_mic_mute(muted);
+        return Ok(());
+    }
+
+    // No ALSA capture switch found: fall back to the PipeWire source mute.
+    let _ = Command::new("wpctl")
+        .args(["set-mute", "@DEFAULT_AUDIO_SOURCE@", "toggle"])
+        .status();
+    Ok(())
+}
+
+fn notify_mic_mute(muted: bool) {
+    use std::process::Command;
+
+    let (icon, text) = if muted {
+        ("microphone-sensitivity-muted-symbolic", "Microphone muted")
+    } else {
+        ("microphone-sensitivity-high-symbolic", "Microphone unmuted")
+    };
+    let _ = Command::new("dunstify")
+        .args([
+            "--appname",
+            "instantCLI",
+            "--transient",
+            "-h",
+            "string:x-dunst-stack-tag:instantcli-micmute",
+            "-i",
+            icon,
+            text,
+        ])
+        .spawn();
+}
+
 /// Direct brightness control: + or -, or absolute percentage
 pub fn brightness_direct(action: &str) -> Result<()> {
     use std::process::Command;
