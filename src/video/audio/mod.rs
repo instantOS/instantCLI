@@ -141,6 +141,8 @@ pub(crate) fn run_loudnorm(input: &Path, output: &Path) -> Result<()> {
             "2",
             "--true-peak",
             "-1.0",
+            "--sample-rate",
+            "48000",
             "-o",
             &output.to_string_lossy(),
             "-f",

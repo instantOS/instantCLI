@@ -6,6 +6,13 @@ use super::inputs::SourceMap;
 use super::util::format_time;
 use crate::video::render::timeline::{Segment, SegmentData};
 
+/// Crossfade discontinuous edits using real audio immediately outside the cut.
+/// Half comes from each side, so the joined audio keeps its original duration.
+const AUDIO_CUT_CROSSFADE_SECONDS: f64 = 0.010;
+
+/// Source timestamps within half a 48 kHz sample are effectively contiguous.
+const AUDIO_CONTIGUITY_TOLERANCE_SECONDS: f64 = 0.5 / 48_000.0;
+
 struct VideoSubsetFilters {
     filters: Vec<String>,
     video_label: String,
@@ -47,31 +54,44 @@ impl FfmpegCompiler {
         }
 
         let mut concat_inputs = String::new();
+        let mut audio_labels = Vec::new();
         let mut concat_count = 0usize;
 
-        for segment in video_segments.iter().copied() {
-            if segment.duration <= 0.0 {
-                continue;
-            }
+        let playable_segments = video_segments
+            .iter()
+            .copied()
+            .filter(|segment| segment.duration > 0.0)
+            .collect::<Vec<_>>();
+        if playable_segments.is_empty() {
+            return Ok(false);
+        }
 
-            if let Some(output) =
-                self.build_video_subset_filters(segment, source_map, concat_count)?
-            {
+        for (idx, segment) in playable_segments.iter().copied().enumerate() {
+            let discontinuity_before =
+                idx > 0 && !audio_is_contiguous(playable_segments[idx - 1], segment);
+            let discontinuity_after = idx + 1 < playable_segments.len()
+                && !audio_is_contiguous(segment, playable_segments[idx + 1]);
+
+            if let Some(output) = self.build_video_subset_filters(
+                segment,
+                source_map,
+                concat_count,
+                discontinuity_before,
+                discontinuity_after,
+            )? {
                 filters.extend(output.filters);
-                concat_inputs.push_str(&format!(
-                    "[{video}][{audio}]",
-                    video = output.video_label,
-                    audio = output.audio_label
-                ));
+                concat_inputs.push_str(&format!("[{video}]", video = output.video_label));
+                audio_labels.push(output.audio_label);
                 concat_count += 1;
             }
         }
 
         filters.push(format!(
-            "{inputs}concat=n={count}:v=1:a=1[concat_v][concat_a]",
+            "{inputs}concat=n={count}:v=1:a=0[concat_v]",
             inputs = concat_inputs,
             count = concat_count
         ));
+        self.build_audio_joins(filters, &playable_segments, audio_labels);
 
         Ok(true)
     }
@@ -81,6 +101,8 @@ impl FfmpegCompiler {
         segment: &Segment,
         source_map: &SourceMap,
         idx: usize,
+        extend_before: bool,
+        extend_after: bool,
     ) -> Result<Option<VideoSubsetFilters>> {
         let SegmentData::VideoSubset {
             start_time,
@@ -124,6 +146,8 @@ impl FfmpegCompiler {
             audio_adj_end,
             segment.duration,
             &audio_label,
+            extend_before,
+            extend_after,
         ));
 
         Ok(Some(VideoSubsetFilters {
@@ -169,21 +193,96 @@ impl FfmpegCompiler {
         end_time: f64,
         segment_duration: f64,
         audio_label: &str,
+        extend_before: bool,
+        extend_after: bool,
     ) -> String {
         if mute_audio {
             format!(
-                "anullsrc=r=48000:cl=stereo,atrim=duration={dur}[{audio}]",
+                "anullsrc=r=48000:cl=mono,atrim=duration={dur}[{audio}]",
                 dur = format_time(segment_duration),
                 audio = audio_label,
             )
         } else {
+            let half_crossfade = AUDIO_CUT_CROSSFADE_SECONDS / 2.0;
+            let trim_start = if extend_before {
+                (start_time - half_crossfade).max(0.0)
+            } else {
+                start_time
+            };
+            let trim_end = if extend_after {
+                end_time + half_crossfade
+            } else {
+                end_time
+            };
             format!(
-                "[{input}:a]atrim=start={start}:end={end},asetpts=PTS-STARTPTS[{audio}]",
+                "[{input}:a]atrim=start={start}:end={end},asetpts=PTS-STARTPTS,aformat=sample_rates=48000:channel_layouts=mono[{audio}]",
                 input = audio_input_index,
-                start = format_time(start_time),
-                end = format_time(end_time),
+                start = format_time(trim_start),
+                end = format_time(trim_end),
                 audio = audio_label,
             )
         }
     }
+
+    fn build_audio_joins(
+        &self,
+        filters: &mut FilterChain,
+        segments: &[&Segment],
+        audio_labels: Vec<String>,
+    ) {
+        if audio_labels.len() == 1 {
+            filters.push(format!("[{}]anull[concat_a]", audio_labels[0]));
+            return;
+        }
+        let mut current = audio_labels[0].clone();
+        for idx in 1..audio_labels.len() {
+            let joined = if idx + 1 == audio_labels.len() {
+                "concat_a".to_string()
+            } else {
+                format!("a_join_{idx}")
+            };
+            if audio_is_contiguous(segments[idx - 1], segments[idx]) {
+                filters.push(format!(
+                    "[{current}][{next}]concat=n=2:v=0:a=1[{joined}]",
+                    next = audio_labels[idx]
+                ));
+            } else {
+                filters.push(format!(
+                    "[{current}][{next}]acrossfade=d={duration}:c1=tri:c2=tri[{joined}]",
+                    next = audio_labels[idx],
+                    duration = format_time(AUDIO_CUT_CROSSFADE_SECONDS),
+                ));
+            }
+            current = joined;
+        }
+    }
+}
+
+fn audio_is_contiguous(left: &Segment, right: &Segment) -> bool {
+    let (
+        SegmentData::VideoSubset {
+            start_time: left_start,
+            source: left_source,
+            mute_audio: left_muted,
+            ..
+        },
+        SegmentData::VideoSubset {
+            start_time: right_start,
+            source: right_source,
+            mute_audio: right_muted,
+            ..
+        },
+    ) = (&left.data, &right.data)
+    else {
+        return false;
+    };
+
+    if *left_muted && *right_muted {
+        return true;
+    }
+    if *left_muted || *right_muted || left_source.audio != right_source.audio {
+        return false;
+    }
+
+    (left_start + left.duration - right_start).abs() <= AUDIO_CONTIGUITY_TOLERANCE_SECONDS
 }

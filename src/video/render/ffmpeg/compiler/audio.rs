@@ -18,7 +18,11 @@ impl FfmpegCompiler {
         let mut audio_label: Option<String> = None;
 
         if has_base_track {
-            filters.push("[concat_a]anull[a_base]".to_string());
+            // Voice is always a centered mono stem, regardless of how the
+            // recording device labelled or duplicated its input channels.
+            filters.push(
+                "[concat_a]aformat=sample_rates=48000:channel_layouts=mono[a_base]".to_string(),
+            );
             audio_label = Some("a_base".to_string());
         }
 
@@ -26,6 +30,10 @@ impl FfmpegCompiler {
             let music_label = self.build_music_filters(filters, music_segments, source_map)?;
             audio_label = Some(match audio_label {
                 Some(base) => {
+                    let stereo_base = "a_base_stereo".to_string();
+                    filters.push(format!(
+                        "[{base}]aformat=sample_rates=48000:channel_layouts=stereo[{stereo_base}]"
+                    ));
                     // Duck the music bed against the (already enhanced) voice:
                     // the music dips only while someone speaks, then returns
                     // untouched. Deliberate, musical ducking - not a compressor
@@ -34,13 +42,13 @@ impl FfmpegCompiler {
                     filters.push(format!(
                         "[{music}][{base}]sidechaincompress=threshold=0.05:ratio=8:attack=15:release=300[{ducked}]",
                         music = music_label,
-                        base = base,
+                        base = stereo_base,
                         ducked = ducked,
                     ));
                     let mixed = "a_mix".to_string();
                     filters.push(format!(
                         "[{base}][{ducked}]amix=inputs=2:normalize=0:dropout_transition=0[{mixed}]",
-                        base = base,
+                        base = stereo_base,
                         ducked = ducked,
                         mixed = mixed,
                     ));
@@ -127,7 +135,7 @@ fn build_single_music_filter(
     let delay_ms = ((segment.start_time * 1000.0).round()).max(0.0) as u64;
 
     format!(
-        "[{input}:a]atrim=start=0:end={duration},asetpts=PTS-STARTPTS,apad=pad_dur={duration},atrim=duration={duration},aresample=async=1:first_pts=0,adelay={delay}|{delay},volume={volume:.6}[{label}]",
+        "[{input}:a]atrim=start=0:end={duration},asetpts=PTS-STARTPTS,apad=pad_dur={duration},atrim=duration={duration},aresample=async=1:first_pts=0,aformat=sample_rates=48000:channel_layouts=stereo,adelay={delay}|{delay},volume={volume:.6}[{label}]",
         input = input_index,
         duration = duration_str,
         delay = delay_ms,

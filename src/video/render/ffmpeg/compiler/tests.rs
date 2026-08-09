@@ -82,9 +82,7 @@ fn concat_order_respects_timeline_order() {
         .unwrap();
     let filter_complex = &output.args[filter_complex_idx + 1];
 
-    let concat_pos = filter_complex
-        .find("concat=n=3:v=1:a=1[concat_v][concat_a]")
-        .unwrap();
+    let concat_pos = filter_complex.find("concat=n=3:v=1:a=0[concat_v]").unwrap();
     let before_concat = &filter_complex[..concat_pos];
 
     let pos_v0 = before_concat.find("[v0]").unwrap();
@@ -98,6 +96,101 @@ fn concat_order_respects_timeline_order() {
     let pos_start_3 = before_concat.find("trim=start=3.000000").unwrap();
     assert!(pos_start_5 < pos_start_1);
     assert!(pos_start_1 < pos_start_3);
+
+    // Every source jump is a real edit. Each side contributes 5 ms of
+    // surrounding audio to a 10 ms crossfade, preserving total duration.
+    assert_eq!(filter_complex.matches("acrossfade=d=0.010000").count(), 2);
+    assert!(filter_complex.contains("atrim=start=5.000000:end=6.005000"));
+    assert!(filter_complex.contains("atrim=start=0.995000:end=2.005000"));
+    assert!(filter_complex.contains("atrim=start=2.995000:end=4.000000"));
+}
+
+#[test]
+fn contiguous_audio_is_not_crossfaded_at_internal_segment_boundary() {
+    let dimensions = VideoDimensions::new(1920, 1080);
+    let render_config = RenderConfig::new(RenderMode::Standard, VideoConfig::default(), None);
+    let compiler = FfmpegCompiler::new(dimensions, render_config);
+    let source = AvSourceRef {
+        video: PathBuf::from("video.mp4"),
+        audio: PathBuf::from("audio.wav"),
+        id: "a".to_string(),
+    };
+
+    let mut timeline = Timeline::new();
+    timeline.add_segment(Segment::new_video_subset(
+        0.0,
+        1.0,
+        5.0,
+        source.clone(),
+        None,
+        false,
+    ));
+    timeline.add_segment(Segment::new_video_subset(
+        1.0, 1.0, 6.0, source, None, false,
+    ));
+
+    let output = compiler
+        .compile(
+            PathBuf::from("out.mp4"),
+            &timeline,
+            PathBuf::from("audio.wav"),
+        )
+        .unwrap();
+    let filter_complex_idx = output
+        .args
+        .iter()
+        .position(|arg| arg == "-filter_complex")
+        .unwrap();
+    let filter_complex = &output.args[filter_complex_idx + 1];
+
+    // The contiguous join at source time 6.0 remains sample-for-sample
+    // unchanged: no extension and no crossfade.
+    assert!(!filter_complex.contains("acrossfade="));
+    assert!(filter_complex.contains("atrim=start=5.000000:end=6.000000"));
+    assert!(filter_complex.contains("atrim=start=6.000000:end=7.000000"));
+    assert!(filter_complex.contains("[a0][a1]concat=n=2:v=0:a=1[concat_a]"));
+}
+
+#[test]
+fn voice_is_mono_and_music_mix_is_stereo() {
+    let compiler = FfmpegCompiler::new(
+        VideoDimensions::new(1920, 1080),
+        RenderConfig::new(RenderMode::Standard, VideoConfig::default(), None),
+    );
+    let mut timeline = Timeline::new();
+    timeline.add_segment(Segment::new_video_subset(
+        0.0,
+        2.0,
+        0.0,
+        AvSourceRef {
+            video: PathBuf::from("video.mp4"),
+            audio: PathBuf::from("voice.wav"),
+            id: "a".to_string(),
+        },
+        None,
+        false,
+    ));
+    timeline.add_segment(Segment::new_music(0.0, 2.0, PathBuf::from("music.mp3")));
+
+    let output = compiler
+        .compile(
+            PathBuf::from("out.mp4"),
+            &timeline,
+            PathBuf::from("voice.wav"),
+        )
+        .unwrap();
+    let filter_complex = &output.args[output
+        .args
+        .iter()
+        .position(|arg| arg == "-filter_complex")
+        .unwrap()
+        + 1];
+
+    assert!(filter_complex.contains("channel_layouts=mono[a_base]"));
+    assert!(filter_complex.matches("channel_layouts=stereo").count() >= 2);
+    assert!(filter_complex.contains("[music_0]"));
+    assert!(filter_complex.contains("channel_layouts=stereo[a_base_stereo]"));
+    assert!(filter_complex.contains("[a_base_stereo][a_duck]amix="));
 }
 
 #[test]

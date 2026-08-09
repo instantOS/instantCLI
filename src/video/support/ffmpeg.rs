@@ -232,7 +232,21 @@ pub fn extract_audio(input: &Path, output: &Path, spec: &AudioExtractSpec) -> Re
         None
     };
 
-    let mut args: Vec<&str> = vec!["-y", "-i", &input_str, "-vn", "-map", "0:a:0"];
+    // Extraction is normally much faster than the processing it feeds. Keep
+    // ffmpeg's banner and stream inventory from burying the next useful status
+    // message; failures are still captured with their diagnostic output.
+    let mut args: Vec<&str> = vec![
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-nostats",
+        "-y",
+        "-i",
+        &input_str,
+        "-vn",
+        "-map",
+        "0:a:0",
+    ];
     if spec.mono {
         args.push("-ac");
         args.push("1");
@@ -249,7 +263,7 @@ pub fn extract_audio(input: &Path, output: &Path, spec: &AudioExtractSpec) -> Re
     }
     args.push(&output_str);
 
-    run_ffmpeg_with_progress(
+    run_ffmpeg_output(
         &args,
         &format!("to extract {} from {}", spec.label, input.display()),
     )

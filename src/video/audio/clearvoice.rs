@@ -2,7 +2,7 @@
 //!
 //! This is the default enhancer: fullband 48 kHz speech enhancement
 //! (denoise + restoration) using MossFormer2_SE_48K, followed by the same
-//! pure static EBU R128 loudness step as the Local backend.
+//! dynamic EBU R128 loudness step as the Local backend.
 //!
 //! The heavy Python stack (torch + clearvoice) runs via `uv run --with`,
 //! matching the Granite/whisperx driver pattern. Model checkpoints are
@@ -11,11 +11,12 @@
 //! Pipeline (voice stem, before music is mixed):
 //! 1. Extract audio to WAV if input is video
 //! 2. ClearVoice AI enhancement (denoise + restoration)
-//! 3. Static two-pass EBU R128 loudness normalization (no compression)
+//! 3. Dynamic two-pass EBU R128 loudness normalization
 
 use std::path::Path;
 
 use anyhow::{Context, Result};
+use sha2::{Digest, Sha256};
 
 use super::EnhanceCache;
 use super::types::{AudioEnhancer, EnhanceResult};
@@ -26,6 +27,30 @@ use crate::video::support::utils::is_audio_file;
 
 /// Speech enhancement model name (fullband 48 kHz, best quality).
 const CLEARVOICE_MODEL: &str = "MossFormer2_SE_48K";
+const CLEARVOICE_PACKAGE: &str = "clearvoice==0.1.2";
+const CLEARVOICE_DRIVER: &str = include_str!("clearvoice_driver.py");
+const CLEARVOICE_POSTPROCESS_RECIPE: &str =
+    "ffmpeg-normalize:streaming-video:dynamic:lrt=2:true-peak=-1:sample-rate=48000";
+
+fn cache_tag(parts: &[&[u8]]) -> String {
+    let mut hasher = Sha256::new();
+    for part in parts {
+        hasher.update(part);
+    }
+    hex::encode(hasher.finalize())[..12].to_string()
+}
+
+fn driver_cache_tag() -> String {
+    cache_tag(&[CLEARVOICE_PACKAGE.as_bytes(), CLEARVOICE_DRIVER.as_bytes()])
+}
+
+fn enhanced_cache_tag() -> String {
+    cache_tag(&[
+        CLEARVOICE_DRIVER.as_bytes(),
+        CLEARVOICE_PACKAGE.as_bytes(),
+        CLEARVOICE_POSTPROCESS_RECIPE.as_bytes(),
+    ])
+}
 
 /// ClearVoice enhancer driven by `uv run --with clearvoice`.
 pub struct ClearVoiceEnhancer;
@@ -50,12 +75,15 @@ impl ClearVoiceEnhancer {
         std::fs::create_dir_all(&models_dir)?;
 
         let driver_path = models_dir.join("clearvoice_driver.py");
-        if !driver_path.exists() {
-            std::fs::write(&driver_path, include_str!("clearvoice_driver.py"))?;
+        let driver_is_current = std::fs::read_to_string(&driver_path)
+            .map(|contents| contents == CLEARVOICE_DRIVER)
+            .unwrap_or(false);
+        if !driver_is_current {
+            std::fs::write(&driver_path, CLEARVOICE_DRIVER)?;
         }
 
         let status = std::process::Command::new("uv")
-            .args(["run", "--with", "clearvoice", "python"])
+            .args(["run", "--with", CLEARVOICE_PACKAGE, "python"])
             .arg(&driver_path)
             .arg(input)
             .arg(output)
@@ -83,7 +111,8 @@ impl AudioEnhancer for ClearVoiceEnhancer {
 
         // Enhanced stem for the render mix. Engine-tagged so switching
         // backends never serves a stale result produced by another engine.
-        let enhanced_cache_path = cache.path("enhanced_clearvoice.wav");
+        let enhanced_cache_path =
+            cache.path(&format!("enhanced_clearvoice_{}.wav", enhanced_cache_tag()));
 
         // Check cache
         if let Some(cached) = cache.cached(&enhanced_cache_path, force, "video.enhance.cached", "")
@@ -106,7 +135,7 @@ impl AudioEnhancer for ClearVoiceEnhancer {
         }
 
         // Step 2: ClearVoice AI enhancement (denoise + restoration)
-        let cv_raw_path = cache.path("clearvoice_raw.wav");
+        let cv_raw_path = cache.path(&format!("clearvoice_raw_{}.wav", driver_cache_tag()));
         if !cv_raw_path.exists() || force {
             Self::run_driver(&wav_path, &cv_raw_path)?;
         }

@@ -5,6 +5,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread;
+use std::time::{Duration, Instant};
 
 use crate::ui::prelude::{Level, emit};
 
@@ -21,8 +22,11 @@ use crate::video::support::utils::{
 const GRANITE_DRIVER: &str = include_str!("granite_driver.py");
 
 /// Default Granite model: IBM Granite Speech 4.1-2b-plus, Q8_0 (2.35 GB, Apache-2.0).
-const GRANITE_MODEL_URL: &str = "https://huggingface.co/handy-computer/granite-speech-4.1-2b-plus-gguf/resolve/main/granite-speech-4.1-2b-plus-Q8_0.gguf";
+const GRANITE_MODEL_REPO: &str = "handy-computer/granite-speech-4.1-2b-plus-gguf";
 const GRANITE_MODEL_FILENAME: &str = "granite-speech-4.1-2b-plus-Q8_0.gguf";
+/// Pin both the Hub snapshot and CLI so first-time setup is reproducible.
+const GRANITE_MODEL_REVISION: &str = "f73a59df77fef89ac0a34bc539d09d756793b065";
+const HF_CLI_VERSION: &str = "1.27.0";
 
 /// Python version requested from uv for the driver environment.
 const GRANITE_DRIVER_PYTHON: &str = "3.12";
@@ -128,8 +132,6 @@ enum BackendChoice {
     WhisperX,
 }
 
-/// Resolve the effective backend. `auto` prefers Granite only when its model
-/// is already installed, falling back to WhisperX without triggering the
 /// Resolve which transcription backend to use. `Auto` and `Granite` both
 /// resolve to Granite; the model is downloaded on first use via
 /// `ensure_granite_model`.
@@ -140,42 +142,35 @@ fn resolve_backend(args: &TranscribeArgs, _models_dir: &Path) -> Result<BackendC
     }
 }
 
-/// The Granite GGUF path: `--granite-model` local file or download target, or
-/// the default model under the shared models directory.
-fn granite_model_path(args: &TranscribeArgs, models_dir: &Path) -> Result<PathBuf> {
-    if let Some(spec) = &args.granite_model {
-        let local = Path::new(spec);
-        if local.is_file() {
-            return Ok(local.to_path_buf());
-        }
-        if spec.starts_with("http://") || spec.starts_with("https://") {
-            let name = spec
-                .rsplit(['/', '?'])
-                .find(|part| !part.is_empty())
-                .unwrap_or(GRANITE_MODEL_FILENAME);
-            return Ok(models_dir.join(name));
-        }
-        bail!("--granite-model must be an existing file or an http(s) URL (got {spec:?})");
+/// Resolve an explicit `--granite-model` local file or URL download target.
+fn custom_granite_model_path(spec: &str, models_dir: &Path) -> Result<PathBuf> {
+    let local = Path::new(spec);
+    if local.is_file() {
+        return Ok(local.to_path_buf());
     }
-    Ok(models_dir.join(GRANITE_MODEL_FILENAME))
+    if spec.starts_with("http://") || spec.starts_with("https://") {
+        let name = spec
+            .rsplit(['/', '?'])
+            .find(|part| !part.is_empty())
+            .unwrap_or(GRANITE_MODEL_FILENAME);
+        return Ok(models_dir.join(name));
+    }
+    bail!("--granite-model must be an existing file or an http(s) URL (got {spec:?})");
 }
 
 /// Ensure the Granite GGUF exists, downloading it on demand.
+///
+/// The built-in model uses Hugging Face's content-addressed cache and returns
+/// its snapshot path directly, avoiding a second 2.4 GB copy. Explicit HTTP
+/// URLs use the generic downloader because they need not point at the Hub.
 fn ensure_granite_model(args: &TranscribeArgs, models_dir: &Path) -> Result<PathBuf> {
-    let target = granite_model_path(args, models_dir)?;
+    let Some(url) = args.granite_model.as_deref() else {
+        return download_default_granite_model(models_dir);
+    };
+    let target = custom_granite_model_path(url, models_dir)?;
     if target.exists() {
         return Ok(target);
     }
-
-    let url = if let Some(spec) = &args.granite_model {
-        if spec.starts_with("http://") || spec.starts_with("https://") {
-            spec.clone()
-        } else {
-            GRANITE_MODEL_URL.to_string()
-        }
-    } else {
-        GRANITE_MODEL_URL.to_string()
-    };
 
     emit(
         Level::Info,
@@ -186,8 +181,77 @@ fn ensure_granite_model(args: &TranscribeArgs, models_dir: &Path) -> Result<Path
         ),
         None,
     );
-    download_file(&url, &target, "Granite model")?;
+    download_file(url, &target, "Granite model")?;
     Ok(target)
+}
+
+fn download_default_granite_model(models_dir: &Path) -> Result<PathBuf> {
+    let cache_dir = models_dir.join("huggingface");
+    fs::create_dir_all(&cache_dir).with_context(|| {
+        format!(
+            "Failed to create Hugging Face cache directory {}",
+            cache_dir.display()
+        )
+    })?;
+
+    emit(
+        Level::Info,
+        "video.transcribe.model_download",
+        &format!(
+            "Downloading Granite model from Hugging Face (one-time, ~2.4 GB; revision {})...",
+            GRANITE_MODEL_REVISION
+        ),
+        None,
+    );
+
+    let output = Command::new("uvx")
+        .args(["--from", &format!("hf=={HF_CLI_VERSION}"), "hf", "download"])
+        .arg(GRANITE_MODEL_REPO)
+        .arg(GRANITE_MODEL_FILENAME)
+        .args(["--revision", GRANITE_MODEL_REVISION, "--cache-dir"])
+        .arg(&cache_dir)
+        .arg("--quiet")
+        .output()
+        .context("Failed to run `uvx hf download` for the Granite model")?;
+
+    if !output.status.success() {
+        bail!(
+            "Hugging Face download of Granite failed (exit {}):\n{}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+
+    let stdout = String::from_utf8(output.stdout)
+        .context("`hf download --quiet` returned a non-UTF-8 model path")?;
+    let downloaded = stdout
+        .lines()
+        .rev()
+        .find(|line| !line.trim().is_empty())
+        .map(str::trim)
+        .map(PathBuf::from)
+        .context("`hf download --quiet` did not return the downloaded model path")?;
+    if downloaded.file_name() != Some(std::ffi::OsStr::new(GRANITE_MODEL_FILENAME)) {
+        bail!(
+            "Hugging Face returned unexpected Granite model path {}",
+            downloaded.display()
+        );
+    }
+    let downloaded = canonicalize_existing(&downloaded)
+        .context("Hugging Face returned a model path that does not exist")?;
+    let canonical_cache = fs::canonicalize(&cache_dir).with_context(|| {
+        format!(
+            "Failed to resolve Hugging Face cache directory {}",
+            cache_dir.display()
+        )
+    })?;
+    if !downloaded.starts_with(&canonical_cache) {
+        bail!(
+            "Hugging Face returned unexpected Granite model path {}",
+            downloaded.display()
+        );
+    }
+    Ok(downloaded)
 }
 
 /// Stream `url` to `dest` atomically via a `.part` temp file, emitting
@@ -321,6 +385,13 @@ fn run_granite(
     ));
     extract_audio(hashed_video, &wav_path, &AudioExtractSpec::MONO_16K_WAV)?;
 
+    emit(
+        Level::Info,
+        "video.transcribe.inference_start",
+        "Audio prepared. Transcribing with Granite now; this may take several minutes...",
+        None,
+    );
+
     let language = args.language.whisper_code();
     let result = run_granite_driver(
         &driver_path,
@@ -414,7 +485,30 @@ fn run_granite_driver(
     let stdout_reader = spawn_output_reader(stdout);
     let stderr_reader = spawn_output_reader(stderr);
 
-    let status = child.wait().context("Failed to wait for transcription")?;
+    let started = Instant::now();
+    let mut next_heartbeat = Duration::from_secs(30);
+    let status = loop {
+        if let Some(status) = child
+            .try_wait()
+            .context("Failed to poll transcription process")?
+        {
+            break status;
+        }
+        let elapsed = started.elapsed();
+        if elapsed >= next_heartbeat {
+            emit(
+                Level::Info,
+                "video.transcribe.heartbeat",
+                &format!(
+                    "Still transcribing with Granite... {} elapsed",
+                    format_elapsed(elapsed)
+                ),
+                None,
+            );
+            next_heartbeat += Duration::from_secs(30);
+        }
+        thread::sleep(Duration::from_millis(500));
+    };
     let stdout_lines = stdout_reader
         .join()
         .map_err(|_| anyhow::anyhow!("stdout reader thread panicked"))?;
@@ -430,6 +524,17 @@ fn run_granite_driver(
     }
     let _ = stdout_lines;
     Ok(())
+}
+
+fn format_elapsed(elapsed: Duration) -> String {
+    let total_seconds = elapsed.as_secs();
+    let minutes = total_seconds / 60;
+    let seconds = total_seconds % 60;
+    if minutes == 0 {
+        format!("{seconds}s")
+    } else {
+        format!("{minutes}m {seconds:02}s")
+    }
 }
 
 fn format_tail(lines: &[String]) -> String {
@@ -588,15 +693,6 @@ mod tests {
     }
 
     #[test]
-    fn resolve_backend_auto_prefers_installed_granite() {
-        let dir = temp_models("auto2");
-        fs::write(dir.join(GRANITE_MODEL_FILENAME), b"gguf").unwrap();
-        let choice = resolve_backend(&args_with(TranscribeBackend::Auto), &dir).unwrap();
-        assert_eq!(choice, BackendChoice::Granite);
-        fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
     fn resolve_backend_explicit_wins() {
         let dir = temp_models("explicit");
         assert_eq!(
@@ -611,32 +707,26 @@ mod tests {
     }
 
     #[test]
-    fn granite_model_path_defaults_under_models_dir() {
-        let dir = temp_models("path");
-        let p = granite_model_path(&args_with(TranscribeBackend::Auto), &dir).unwrap();
-        assert!(p.ends_with(GRANITE_MODEL_FILENAME));
-        fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn granite_model_path_accepts_local_file() {
+    fn custom_granite_model_path_accepts_local_file() {
         let dir = temp_models("local");
         let gguf = dir.join("custom.gguf");
         fs::write(&gguf, b"x").unwrap();
-        let mut args = args_with(TranscribeBackend::Granite);
-        args.granite_model = Some(gguf.to_string_lossy().to_string());
-        let p = granite_model_path(&args, &dir).unwrap();
+        let p = custom_granite_model_path(&gguf.to_string_lossy(), &dir).unwrap();
         assert_eq!(p, gguf);
         fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
-    fn granite_model_path_rejects_invalid_spec() {
+    fn custom_granite_model_path_rejects_invalid_spec() {
         let dir = temp_models("bad");
-        let mut args = args_with(TranscribeBackend::Granite);
-        args.granite_model = Some("not-a-file".into());
-        assert!(granite_model_path(&args, &dir).is_err());
+        assert!(custom_granite_model_path("not-a-file", &dir).is_err());
         fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn elapsed_time_is_human_readable() {
+        assert_eq!(format_elapsed(Duration::from_secs(30)), "30s");
+        assert_eq!(format_elapsed(Duration::from_secs(125)), "2m 05s");
     }
 
     #[test]
