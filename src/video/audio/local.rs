@@ -118,7 +118,7 @@ impl AudioEnhancer for LocalEnhancer {
         let denoised_path = Self::run_deepfilter(&wav_path, &cache.cache_dir)?;
 
         // Step 3: Apply voice EQ, compression, and loudness normalization.
-        super::run_loudnorm(&denoised_path, &enhanced_cache_path)?;
+        super::run_voice_mastering(&denoised_path, &enhanced_cache_path)?;
 
         Ok(EnhanceResult {
             output_path: enhanced_cache_path,

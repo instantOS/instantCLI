@@ -2,7 +2,7 @@
 //!
 //! This is the default enhancer: fullband 48 kHz speech enhancement
 //! (denoise + restoration) using MossFormer2_SE_48K, followed by the same
-//! dynamic EBU R128 loudness step as the Local backend.
+//! boundary-safe podcast mastering step as the Local backend.
 //!
 //! The heavy Python stack (torch + clearvoice) runs via `uv run --with`,
 //! matching the Granite/whisperx driver pattern. Model checkpoints are
@@ -11,7 +11,7 @@
 //! Pipeline (voice stem, before music is mixed):
 //! 1. Extract audio to WAV if input is video
 //! 2. ClearVoice AI enhancement (denoise + restoration)
-//! 3. Dynamic two-pass EBU R128 loudness normalization
+//! 3. Podcast EQ, distance leveling, compression, and limiting
 
 use std::path::Path;
 
@@ -154,8 +154,8 @@ impl AudioEnhancer for ClearVoiceEnhancer {
             Self::run_driver(&wav_path, &cv_raw_path)?;
         }
 
-        // Step 3: Dynamic loudness normalization for consistent mic levels.
-        super::run_loudnorm(&cv_raw_path, &enhanced_cache_path)?;
+        // Step 3: Stable podcast mastering for consistent mic levels.
+        super::run_voice_mastering(&cv_raw_path, &enhanced_cache_path)?;
 
         Ok(EnhanceResult {
             output_path: enhanced_cache_path,

@@ -116,73 +116,97 @@ impl EnhanceCache {
     }
 }
 
-/// Conservative podcast-style mastering applied after speech enhancement.
+/// Podcast-style mastering applied after speech enhancement.
 ///
 /// ClearVoice/DeepFilterNet handle restoration; this stage supplies deliberate
 /// tonal shaping, RMS compression, and final loudness/true-peak control. It is
 /// intentionally restrained so different microphones remain natural:
 /// - a small 250 Hz cut reduces proximity/mud;
 /// - a small 3.2 kHz boost improves speech intelligibility;
-/// - soft-knee 3:1 RMS compression evens out mic distance and delivery;
-/// - EBU normalization targets streaming-video loudness at -14 LUFS/-1 dBTP.
+/// - a short, boundary-safe dynamic stage evens out mic distance;
+/// - soft-knee compression controls peaks;
+/// - fixed gain plus a limiter produces stable streaming-video loudness.
 ///
 /// This runs on the mono voice stem before music is mixed, so mastered music is
 /// never EQed or compressed a second time.
 pub(crate) const VOICE_MASTERING_FILTER: &str = concat!(
     "equalizer=f=250:t=q:w=0.9:g=-1.2,",
     "equalizer=f=3200:t=q:w=0.9:g=1.4,",
-    "acompressor=threshold=0.02:ratio=3:attack=10:release=140:",
-    "knee=4:detection=rms"
+    // FFmpeg's default dynamic/loudnorm smoothing caused a roughly 20-second
+    // startup fade. A five-frame (1.25 s) window reacts to mic distance while
+    // alternative boundary handling gives the beginning and end a full gain
+    // window instead of slowly ramping it in.
+    "dynaudnorm=f=250:g=5:p=0.891:m=15:r=0.12:b=1:c=1:t=0.01,",
+    "acompressor=threshold=0.10:ratio=2.5:attack=10:release=140:",
+    "knee=4:detection=rms:makeup=1.5,",
+    "volume=9dB,",
+    // Leave enough sample-peak headroom that reconstructed true peak remains
+    // at approximately -1 dBTP after resampling/encoding.
+    "alimiter=limit=0.708:level=false:latency=true"
 );
 
 pub(crate) const VOICE_MASTERING_RECIPE: &str = concat!(
-    "podcast-eq:v1:250Hz=-1.2dB:q0.9:3200Hz=+1.4dB:q0.9;",
-    "compressor:rms:threshold=-34dB:ratio=3:1:attack=10ms:",
-    "release=140ms:knee=4;ebu:target=-14LUFS:lra=4:true-peak=-1dBTP:48kHz"
+    "podcast-master:v2;eq:250Hz=-1.2dB:q0.9:3200Hz=+1.4dB:q0.9;",
+    "distance-leveler:250ms:5frames:alt-boundary:maxgain=15:target-rms=0.12;",
+    "compressor:rms:threshold=-20dB:ratio=2.5:1:attack=10ms:",
+    "release=140ms:knee=4:makeup=1.5;gain=9dB;limit=0.708;48kHz-mono"
 );
 
-pub(crate) fn run_loudnorm(input: &Path, output: &Path) -> Result<()> {
+pub(crate) fn run_voice_mastering(input: &Path, output: &Path) -> Result<()> {
     emit(
         Level::Info,
-        "video.enhance.loudnorm",
-        "Mastering voice (podcast EQ, compression, and -14 LUFS normalization)...",
+        "video.enhance.mastering",
+        "Mastering voice (podcast EQ, distance leveling, compression, and limiting)...",
         None,
     );
 
-    let status = std::process::Command::new("uvx")
+    let status = std::process::Command::new("ffmpeg")
         .args([
-            "ffmpeg-normalize",
+            "-hide_banner",
+            "-y",
+            "-i",
             &input.to_string_lossy(),
-            "--preset",
-            "streaming-video",
-            "--dynamic",
-            "--pre-filter",
+            "-af",
             VOICE_MASTERING_FILTER,
-            "-lrt",
-            "4",
-            "--true-peak",
-            "-1.0",
-            "--sample-rate",
+            "-ar",
             "48000",
-            "-o",
+            "-ac",
+            "1",
             &output.to_string_lossy(),
-            "-f",
         ])
         .status()
-        .context("Failed to run ffmpeg-normalize")?;
+        .context("Failed to run ffmpeg voice mastering")?;
 
     if !status.success() {
-        anyhow::bail!("ffmpeg-normalize failed for {}", input.display());
+        anyhow::bail!("ffmpeg voice mastering failed for {}", input.display());
     }
 
     emit(
         Level::Success,
-        "video.enhance.loudnorm",
+        "video.enhance.mastering",
         &format!("Voice mastering complete: {}", output.display()),
         None,
     );
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mastering_uses_short_boundary_safe_leveling() {
+        assert!(VOICE_MASTERING_FILTER.contains("dynaudnorm=f=250:g=5"));
+        assert!(VOICE_MASTERING_FILTER.contains(":b=1:"));
+        assert!(!VOICE_MASTERING_FILTER.contains("loudnorm"));
+        assert!(!VOICE_MASTERING_FILTER.contains("gausssize=31"));
+    }
+
+    #[test]
+    fn mastering_recipe_versions_cached_outputs() {
+        assert!(VOICE_MASTERING_RECIPE.contains("podcast-master:v2"));
+    }
 }
 
 /// No-op enhancer that returns input unchanged

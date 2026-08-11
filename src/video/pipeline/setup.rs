@@ -230,7 +230,6 @@ fn setup_local_enhancer(_force: bool) -> Result<()> {
 
     // Check optional tools
     check_deepfilternet();
-    check_ffmpeg_normalize();
 
     emit(
         Level::Success,
@@ -281,10 +280,6 @@ fn check_deepfilternet() {
         &dfn_args,
         " (this may download dependencies)",
     );
-}
-
-fn check_ffmpeg_normalize() {
-    check_uvx_tool("ffmpeg-normalize", &["ffmpeg-normalize", "--version"], "");
 }
 
 async fn setup_auphonic(force: bool) -> Result<()> {
