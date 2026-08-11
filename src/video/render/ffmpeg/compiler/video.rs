@@ -1,10 +1,10 @@
-use anyhow::{Result, bail};
+use anyhow::Result;
 
 use super::FfmpegCompiler;
 use super::graph::{AudioInput, AudioPad, FilterGraph, VideoInput, VideoPad};
 use super::inputs::SourceMap;
 use super::util::format_time;
-use crate::video::render::timeline::{AvSourceRef, Segment, SegmentData};
+use crate::video::render::timeline::BaseAvClip;
 
 /// Fade each side of a discontinuous edit to zero. Keeping the fades inside
 /// the segment means audio and video retain exactly the same nominal duration.
@@ -15,14 +15,6 @@ const AUDIO_CONTIGUITY_TOLERANCE_SECONDS: f64 = 0.5 / 48_000.0;
 
 /// A validated base-track unit. Video and dialogue audio cannot be represented
 /// independently once they enter the compiler.
-struct PairedAvSegment<'a> {
-    output_start: f64,
-    duration: f64,
-    source_start: f64,
-    source: &'a AvSourceRef,
-    mute_audio: bool,
-}
-
 impl FfmpegCompiler {
     #[cfg(test)]
     pub(super) fn build_padding_filter(
@@ -51,7 +43,7 @@ impl FfmpegCompiler {
     pub(super) fn build_base_track_filters(
         &self,
         graph: &mut FilterGraph,
-        video_segments: &[&Segment],
+        video_segments: &[BaseAvClip],
         source_map: &SourceMap,
     ) -> Result<Option<(VideoPad, AudioPad)>> {
         if video_segments.is_empty() {
@@ -62,20 +54,16 @@ impl FfmpegCompiler {
 
         let playable_segments = video_segments
             .iter()
-            .copied()
-            .filter(|segment| segment.duration > 0.0)
-            .map(PairedAvSegment::try_from)
-            .collect::<Result<Vec<_>>>()?;
+            .filter(|segment| segment.duration.seconds() > 0.0)
+            .collect::<Vec<_>>();
         if playable_segments.is_empty() {
             return Ok(None);
         }
-        validate_base_track(&playable_segments)?;
-
         for (idx, segment) in playable_segments.iter().enumerate() {
             let discontinuity_before =
-                idx > 0 && !audio_is_contiguous(&playable_segments[idx - 1], segment);
+                idx > 0 && !audio_is_contiguous(playable_segments[idx - 1], segment);
             let discontinuity_after = idx + 1 < playable_segments.len()
-                && !audio_is_contiguous(segment, &playable_segments[idx + 1]);
+                && !audio_is_contiguous(segment, playable_segments[idx + 1]);
 
             let output = self.build_paired_segment_filters(
                 graph,
@@ -94,7 +82,7 @@ impl FfmpegCompiler {
     fn build_paired_segment_filters(
         &self,
         graph: &mut FilterGraph,
-        segment: &PairedAvSegment<'_>,
+        segment: &BaseAvClip,
         source_map: &SourceMap,
         idx: usize,
         extend_before: bool,
@@ -108,8 +96,8 @@ impl FfmpegCompiler {
         let video_offset = source_map.offset(input_index);
         let audio_offset = source_map.offset(audio_input_index);
 
-        let adj_start = segment.source_start - video_offset;
-        let adj_end = adj_start + segment.duration;
+        let adj_start = segment.source_start.seconds() - video_offset;
+        let adj_end = adj_start + segment.duration.seconds();
 
         let trimmed = graph.video_from_input(
             VideoInput(input_index),
@@ -123,15 +111,15 @@ impl FfmpegCompiler {
         let normalized =
             graph.video_filter(trimmed, self.normalized_video_chain(), format!("v{idx}"));
 
-        let audio_adj_start = segment.source_start - audio_offset;
-        let audio_adj_end = audio_adj_start + segment.duration;
+        let audio_adj_start = segment.source_start.seconds() - audio_offset;
+        let audio_adj_end = audio_adj_start + segment.duration.seconds();
         let audio = self.build_audio_filter(
             graph,
             segment.mute_audio,
             audio_input_index,
             audio_adj_start,
             audio_adj_end,
-            segment.duration,
+            segment.duration.seconds(),
             format!("a{idx}"),
             extend_before,
             extend_after,
@@ -204,45 +192,7 @@ impl FfmpegCompiler {
     }
 }
 
-impl<'a> TryFrom<&'a Segment> for PairedAvSegment<'a> {
-    type Error = anyhow::Error;
-
-    fn try_from(segment: &'a Segment) -> Result<Self> {
-        let SegmentData::VideoSubset {
-            start_time,
-            source,
-            mute_audio,
-            ..
-        } = &segment.data
-        else {
-            bail!("Only paired video/audio segments may enter the base A/V track");
-        };
-        Ok(Self {
-            output_start: segment.start_time,
-            duration: segment.duration,
-            source_start: *start_time,
-            source,
-            mute_audio: *mute_audio,
-        })
-    }
-}
-
-fn validate_base_track(segments: &[PairedAvSegment<'_>]) -> Result<()> {
-    let mut expected_start = 0.0;
-    for segment in segments {
-        if (segment.output_start - expected_start).abs() > AUDIO_CONTIGUITY_TOLERANCE_SECONDS {
-            bail!(
-                "Base A/V timeline is not contiguous: expected a segment at {:.6}s, found one at {:.6}s",
-                expected_start,
-                segment.output_start,
-            );
-        }
-        expected_start += segment.duration;
-    }
-    Ok(())
-}
-
-fn audio_is_contiguous(left: &PairedAvSegment<'_>, right: &PairedAvSegment<'_>) -> bool {
+fn audio_is_contiguous(left: &BaseAvClip, right: &BaseAvClip) -> bool {
     if left.mute_audio && right.mute_audio {
         return true;
     }
@@ -250,6 +200,6 @@ fn audio_is_contiguous(left: &PairedAvSegment<'_>, right: &PairedAvSegment<'_>) 
         return false;
     }
 
-    (left.source_start + left.duration - right.source_start).abs()
+    (left.source_start.seconds() + left.duration.seconds() - right.source_start.seconds()).abs()
         <= AUDIO_CONTIGUITY_TOLERANCE_SECONDS
 }

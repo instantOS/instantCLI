@@ -42,6 +42,9 @@ pub enum SegmentKind {
 
 #[derive(Debug)]
 pub struct SegmentBlock {
+    /// Stable transcript cue identity. `None` is accepted only for manually
+    /// authored/legacy markdown and uses timestamp-overlap fallback matching.
+    pub cue_id: Option<usize>,
     pub range: TimeRange,
     pub text: String,
     pub kind: SegmentKind,

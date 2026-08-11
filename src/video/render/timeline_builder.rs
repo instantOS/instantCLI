@@ -5,17 +5,14 @@ use anyhow::{Result, anyhow};
 use crate::video::document::VideoSource;
 use crate::video::planning::{BrollPlan, StandalonePlan, TimelinePlan, TimelinePlanItem};
 use crate::video::render::ffmpeg::services::{DefaultMusicSourceResolver, MusicSourceResolver};
-use crate::video::render::timeline::{AvSourceRef, Position, Segment, Timeline, Transform};
+use crate::video::render::timeline::{
+    AvSourceRef, BaseAvClip, BrollClip, ImageOverlay, MediaDuration, MusicClip, Position,
+    SourceTime, Timeline, TimelineTime, Transform,
+};
 
 pub(super) trait SlideProvider {
     fn overlay_slide_image(&self, markdown: &str) -> Result<std::path::PathBuf>;
     fn standalone_slide_video(&self, markdown: &str, duration: f64) -> Result<std::path::PathBuf>;
-}
-
-pub(super) struct TimelineStats {
-    pub(super) standalone_count: usize,
-    pub(super) overlay_count: usize,
-    pub(super) ignored_count: usize,
 }
 
 /// Build an NLE timeline from the timeline plan
@@ -24,13 +21,7 @@ pub(super) fn build_nle_timeline(
     generator: &dyn SlideProvider,
     sources: &[VideoSource],
     project_dir: &Path,
-) -> Result<(Timeline, TimelineStats)> {
-    let stats = TimelineStats {
-        standalone_count: plan.standalone_count,
-        overlay_count: plan.overlay_count,
-        ignored_count: plan.ignored_count,
-    };
-
+) -> Result<Timeline> {
     let mut state = TimelineBuildState::new(project_dir);
 
     for item in plan.items {
@@ -39,12 +30,8 @@ pub(super) fn build_nle_timeline(
 
     state.finalize();
 
-    // Set has_overlays flag based on plan
-    let has_overlays = plan.overlay_count > 0;
-    let mut timeline = state.timeline;
-    timeline.has_overlays = has_overlays;
-
-    Ok((timeline, stats))
+    state.timeline.validate()?;
+    Ok(state.timeline)
 }
 
 struct TimelineBuildState {
@@ -96,19 +83,17 @@ impl TimelineBuildState {
             })?;
         let duration = clip_plan.time_window.duration();
 
-        let segment = Segment::new_video_subset(
-            self.current_time,
-            duration,
-            clip_plan.time_window.start,
-            AvSourceRef {
+        self.timeline.add_base(BaseAvClip {
+            timeline_start: TimelineTime::from(self.current_time),
+            duration: MediaDuration::from(duration),
+            source_start: SourceTime::from(clip_plan.time_window.start),
+            source: AvSourceRef {
                 video: source.source.clone(),
                 audio: source.audio.clone(),
                 id: clip_plan.source_id.clone(),
             },
-            None,
-            false,
-        );
-        self.timeline.add_segment(segment);
+            mute_audio: false,
+        });
 
         if let Some(overlay_plan) = clip_plan.overlay {
             self.add_overlay(&overlay_plan.markdown, duration, generator)?;
@@ -171,15 +156,13 @@ impl TimelineBuildState {
                 break;
             }
 
-            let segment = Segment::new_broll(
-                broll_start + elapsed,
-                clip_duration,
-                clip.time_window.start,
-                source.source.clone(),
-                clip.source_id.clone(),
-                to_render_transform(&clip.transform),
-            );
-            self.timeline.add_segment(segment);
+            self.timeline.add_broll(BrollClip {
+                timeline_start: TimelineTime::from(broll_start + elapsed),
+                duration: MediaDuration::from(clip_duration),
+                source_start: SourceTime::from(clip.time_window.start),
+                source_video: source.source.clone(),
+                transform: to_render_transform(&clip.transform),
+            });
             elapsed += clip_duration;
 
             if elapsed >= available_duration {
@@ -197,8 +180,12 @@ impl TimelineBuildState {
         generator: &dyn SlideProvider,
     ) -> Result<()> {
         let image_path = generator.overlay_slide_image(markdown)?;
-        let overlay_segment = Segment::new_image(self.current_time, duration, image_path, None);
-        self.timeline.add_segment(overlay_segment);
+        self.timeline.add_overlay(ImageOverlay {
+            timeline_start: TimelineTime::from(self.current_time),
+            duration: MediaDuration::from(duration),
+            source_image: image_path,
+            transform: None,
+        });
         Ok(())
     }
 
@@ -222,19 +209,17 @@ impl TimelineBuildState {
     ) -> Result<()> {
         let video_path = generator.standalone_slide_video(markdown, duration)?;
 
-        let segment = Segment::new_video_subset(
-            self.current_time,
-            duration,
-            0.0,
-            AvSourceRef {
+        self.timeline.add_base(BaseAvClip {
+            timeline_start: TimelineTime::from(self.current_time),
+            duration: MediaDuration::from(duration),
+            source_start: SourceTime::from(0.0),
+            source: AvSourceRef {
                 video: video_path.clone(),
                 audio: video_path,
                 id: "__slide".to_string(),
             },
-            None,
-            true,
-        );
-        self.timeline.add_segment(segment);
+            mute_audio: true,
+        });
         self.current_time += duration;
         Ok(())
     }
@@ -269,9 +254,9 @@ fn to_render_transform(
     if spec.is_empty() {
         return None;
     }
-    Some(Transform {
-        scale: spec.scale,
-        position: spec.position.map(|p| match p {
+    Some(Transform::from_parts(
+        spec.scale,
+        spec.position.map(|p| match p {
             crate::video::document::transform::Position::Center => Position::Center,
             crate::video::document::transform::Position::TopLeft => Position::TopLeft,
             crate::video::document::transform::Position::Top => Position::Top,
@@ -282,8 +267,8 @@ fn to_render_transform(
             crate::video::document::transform::Position::BottomLeft => Position::BottomLeft,
             crate::video::document::transform::Position::Left => Position::Left,
         }),
-        translate: None,
-    })
+        None,
+    ))
 }
 
 struct ActiveMusic {
@@ -300,6 +285,11 @@ fn finalize_music_segment(
         && end_time > state.start_time
     {
         let duration = end_time - state.start_time;
-        timeline.add_segment(Segment::new_music(state.start_time, duration, state.path));
+        timeline.add_music(MusicClip {
+            timeline_start: TimelineTime::from(state.start_time),
+            duration: MediaDuration::from(duration),
+            source_start: SourceTime::from(0.0),
+            audio_source: state.path,
+        });
     }
 }

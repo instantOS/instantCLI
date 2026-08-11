@@ -5,11 +5,13 @@ use std::time::Duration;
 
 use super::VideoMetadata;
 
-/// Formats a transcript cue as a video-markdown line: `` `source@start-end` text ``.
+/// Formats a transcript cue as a video-markdown line. The compact `#N`
+/// component is stable identity; rounded timestamps remain human-readable.
 pub fn format_cue_line(source_id: &str, cue: &TranscriptCue) -> String {
     format!(
-        "`{}@{}-{}` {}",
+        "`{}#{}@{}-{}` {}",
         source_id,
+        cue.cue_id,
         format_timestamp(cue.start),
         format_timestamp(cue.end),
         cue.text.trim()
@@ -125,6 +127,7 @@ mod tests {
 
     fn cue(start: u64, end: u64, text: &str) -> TranscriptCue {
         TranscriptCue {
+            cue_id: 0,
             start: Duration::from_millis(start),
             end: Duration::from_millis(end),
             text: text.to_string(),

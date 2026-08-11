@@ -35,7 +35,7 @@ pub(super) fn generate_subtitle_file(
 
     // Select style based on render mode
     let style = match render_mode {
-        RenderMode::Reels => AssStyle::for_reels(timeline.has_overlays),
+        RenderMode::Reels => AssStyle::for_reels(timeline.has_overlays()),
         RenderMode::Standard => AssStyle::for_standard(),
     };
     let ass_content = generate_ass_file(&remapped, &style, (play_res.width, play_res.height));

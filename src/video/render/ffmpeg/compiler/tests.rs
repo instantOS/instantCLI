@@ -6,7 +6,7 @@ use super::util::escape_ffmpeg_path;
 use super::{FfmpegCompiler, RenderConfig, VideoDimensions};
 use crate::video::config::VideoConfig;
 use crate::video::render::mode::RenderMode;
-use crate::video::render::timeline::{AvSourceRef, Segment, Timeline};
+use crate::video::render::timeline::{AvSourceRef, BaseAvClip, MusicClip, Timeline};
 
 #[test]
 fn compiler_includes_output_path_in_args() {
@@ -14,7 +14,7 @@ fn compiler_includes_output_path_in_args() {
     let render_config = RenderConfig::new(RenderMode::Standard, VideoConfig::default(), None);
     let compiler = FfmpegCompiler::new(dimensions, render_config);
     let mut timeline = Timeline::new();
-    timeline.add_segment(Segment::new_video_subset(
+    timeline.add_base(BaseAvClip::new(
         0.0,
         1.0,
         0.0,
@@ -23,15 +23,10 @@ fn compiler_includes_output_path_in_args() {
             audio: PathBuf::from("audio.mp4"),
             id: "a".to_string(),
         },
-        None,
         false,
     ));
     let output = compiler
-        .compile(
-            PathBuf::from("out.mp4"),
-            &timeline,
-            PathBuf::from("audio.mp4"),
-        )
+        .compile(PathBuf::from("out.mp4"), &timeline)
         .unwrap();
     assert_eq!(output.args.last().unwrap(), "out.mp4");
 }
@@ -43,7 +38,7 @@ fn concat_order_respects_timeline_order() {
     let compiler = FfmpegCompiler::new(dimensions, render_config);
 
     let mut timeline = Timeline::new();
-    timeline.add_segment(Segment::new_video_subset(
+    timeline.add_base(BaseAvClip::new(
         0.0,
         1.0,
         5.0,
@@ -52,10 +47,9 @@ fn concat_order_respects_timeline_order() {
             audio: PathBuf::from("audio.mp4"),
             id: "a".to_string(),
         },
-        None,
         false,
     ));
-    timeline.add_segment(Segment::new_video_subset(
+    timeline.add_base(BaseAvClip::new(
         1.0,
         1.0,
         1.0,
@@ -64,10 +58,9 @@ fn concat_order_respects_timeline_order() {
             audio: PathBuf::from("audio.mp4"),
             id: "a".to_string(),
         },
-        None,
         false,
     ));
-    timeline.add_segment(Segment::new_video_subset(
+    timeline.add_base(BaseAvClip::new(
         2.0,
         1.0,
         3.0,
@@ -76,16 +69,11 @@ fn concat_order_respects_timeline_order() {
             audio: PathBuf::from("audio.mp4"),
             id: "a".to_string(),
         },
-        None,
         false,
     ));
 
     let output = compiler
-        .compile(
-            PathBuf::from("out.mp4"),
-            &timeline,
-            PathBuf::from("audio.mp4"),
-        )
+        .compile(PathBuf::from("out.mp4"), &timeline)
         .unwrap();
 
     let filter_complex_idx = output
@@ -140,24 +128,11 @@ fn contiguous_audio_is_not_crossfaded_at_internal_segment_boundary() {
     };
 
     let mut timeline = Timeline::new();
-    timeline.add_segment(Segment::new_video_subset(
-        0.0,
-        1.0,
-        5.0,
-        source.clone(),
-        None,
-        false,
-    ));
-    timeline.add_segment(Segment::new_video_subset(
-        1.0, 1.0, 6.0, source, None, false,
-    ));
+    timeline.add_base(BaseAvClip::new(0.0, 1.0, 5.0, source.clone(), false));
+    timeline.add_base(BaseAvClip::new(1.0, 1.0, 6.0, source, false));
 
     let output = compiler
-        .compile(
-            PathBuf::from("out.mp4"),
-            &timeline,
-            PathBuf::from("audio.wav"),
-        )
+        .compile(PathBuf::from("out.mp4"), &timeline)
         .unwrap();
     let filter_complex_idx = output
         .args
@@ -189,29 +164,16 @@ fn compiler_rejects_a_gapped_base_av_timeline() {
         id: "a".to_string(),
     };
     let mut timeline = Timeline::new();
-    timeline.add_segment(Segment::new_video_subset(
-        0.0,
-        1.0,
-        0.0,
-        source.clone(),
-        None,
-        false,
-    ));
-    timeline.add_segment(Segment::new_video_subset(
-        2.0, 1.0, 2.0, source, None, false,
-    ));
+    timeline.add_base(BaseAvClip::new(0.0, 1.0, 0.0, source.clone(), false));
+    timeline.add_base(BaseAvClip::new(2.0, 1.0, 2.0, source, false));
 
     let error = compiler
-        .compile(
-            PathBuf::from("out.mp4"),
-            &timeline,
-            PathBuf::from("audio.wav"),
-        )
+        .compile(PathBuf::from("out.mp4"), &timeline)
         .unwrap_err();
     assert!(
         error
             .to_string()
-            .contains("Base A/V timeline is not contiguous")
+            .contains("Base A/V track is not contiguous")
     );
 }
 
@@ -260,22 +222,21 @@ fn rendered_repeated_cuts_keep_audio_and_video_on_the_same_source_interval() {
     };
     let mut timeline = Timeline::new();
     for (output_start, source_start) in [(0.0, 0.0), (1.0, 2.0), (2.0, 4.0)] {
-        timeline.add_segment(Segment::new_video_subset(
+        timeline.add_base(BaseAvClip::new(
             output_start,
             1.0,
             source_start,
             source.clone(),
-            None,
             false,
         ));
     }
-    timeline.add_segment(Segment::new_music(0.0, 3.0, music));
+    timeline.add_music(MusicClip::new(0.0, 3.0, music));
 
     let compiler = FfmpegCompiler::new(
         VideoDimensions::new(64, 64),
         RenderConfig::new(RenderMode::Standard, VideoConfig::default(), None),
     );
-    let compiled = compiler.compile(output.clone(), &timeline, voice).unwrap();
+    let compiled = compiler.compile(output.clone(), &timeline).unwrap();
     let mut args = compiled.args;
     args.insert(args.len() - 1, "-y".to_string());
     let status = Command::new("ffmpeg")
@@ -368,7 +329,7 @@ fn voice_is_mono_and_music_mix_is_stereo() {
         RenderConfig::new(RenderMode::Standard, VideoConfig::default(), None),
     );
     let mut timeline = Timeline::new();
-    timeline.add_segment(Segment::new_video_subset(
+    timeline.add_base(BaseAvClip::new(
         0.0,
         2.0,
         0.0,
@@ -377,17 +338,12 @@ fn voice_is_mono_and_music_mix_is_stereo() {
             audio: PathBuf::from("voice.wav"),
             id: "a".to_string(),
         },
-        None,
         false,
     ));
-    timeline.add_segment(Segment::new_music(0.0, 2.0, PathBuf::from("music.mp3")));
+    timeline.add_music(MusicClip::new(0.0, 2.0, PathBuf::from("music.mp3")));
 
     let output = compiler
-        .compile(
-            PathBuf::from("out.mp4"),
-            &timeline,
-            PathBuf::from("voice.wav"),
-        )
+        .compile(PathBuf::from("out.mp4"), &timeline)
         .unwrap();
     let filter_complex = &output.args[output
         .args
@@ -458,7 +414,7 @@ fn test_filter_complex_includes_subtitles() {
     let compiler = FfmpegCompiler::new(dimensions, render_config);
 
     let mut timeline = Timeline::new();
-    timeline.add_segment(Segment::new_video_subset(
+    timeline.add_base(BaseAvClip::new(
         0.0,
         5.0,
         5.0,
@@ -467,11 +423,10 @@ fn test_filter_complex_includes_subtitles() {
             audio: PathBuf::from("audio.mp4"),
             id: "a".to_string(),
         },
-        None,
         false,
     ));
 
-    let source_map = SourceMap::build(&timeline, PathBuf::from("audio.mp4").as_path(), false);
+    let source_map = SourceMap::build(&timeline, false);
     let filter_complex = compiler
         .build_filter_complex(&timeline, &source_map, 5.0)
         .unwrap();

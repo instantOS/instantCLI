@@ -11,7 +11,6 @@ pub(super) struct RenderPipeline<'a> {
     pub(super) timeline: Timeline,
     pub(super) dimensions: VideoDimensions,
     pub(super) render_config: RenderConfig,
-    pub(super) audio_source: PathBuf,
     pub(super) runner: &'a dyn FfmpegRunner,
     pub(super) verbose: bool,
 }
@@ -37,19 +36,11 @@ impl<'a> RenderPipeline<'a> {
 
     fn build_args(&self) -> Result<Vec<String>> {
         let compiler = FfmpegCompiler::new(self.dimensions, self.render_config.clone());
-        Ok(compiler
-            .compile(
-                self.output.clone(),
-                &self.timeline,
-                self.audio_source.clone(),
-            )?
-            .args)
+        Ok(compiler.compile(self.output.clone(), &self.timeline)?.args)
     }
 
     fn build_preview_args(&self) -> Result<Vec<String>> {
         let compiler = FfmpegCompiler::new(self.dimensions, self.render_config.clone());
-        compiler
-            .compile_preview(&self.timeline, self.audio_source.clone())
-            .map(|o| o.args)
+        compiler.compile_preview(&self.timeline).map(|o| o.args)
     }
 }

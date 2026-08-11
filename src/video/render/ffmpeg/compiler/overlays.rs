@@ -3,7 +3,7 @@ use anyhow::Result;
 use super::FfmpegCompiler;
 use super::graph::{FilterGraph, VideoInput, VideoPad};
 use super::inputs::SourceMap;
-use crate::video::render::timeline::{Position, Segment, SegmentData, TimeWindow, Transform};
+use crate::video::render::timeline::{BrollClip, ImageOverlay, Position, TimelineRange, Transform};
 
 const OVERLAY_FRAME_SCALE: f64 = 0.9;
 const OVERLAY_FRAME_BORDER_WIDTH: u32 = 4;
@@ -95,7 +95,7 @@ impl FfmpegCompiler {
         graph: &mut FilterGraph,
         prep: VideoPad,
         transform: Option<&Transform>,
-        time_window: TimeWindow,
+        time_window: TimelineRange,
         current_video: VideoPad,
         prefix: &str,
         idx: usize,
@@ -133,41 +133,34 @@ impl FfmpegCompiler {
     pub(super) fn apply_broll_overlays(
         &self,
         graph: &mut FilterGraph,
-        broll_segments: &[&Segment],
+        broll_segments: &[BrollClip],
         source_map: &SourceMap,
         input: VideoPad,
     ) -> Result<VideoPad> {
         let mut current_video = input;
 
         for (idx, segment) in broll_segments.iter().enumerate() {
-            let SegmentData::Broll {
-                start_time: source_start,
-                source_video,
-                transform,
-                ..
-            } = &segment.data
-            else {
-                continue;
-            };
-
-            let input_index = source_map.index(source_video)?;
+            let input_index = source_map.index(&segment.source_video)?;
             let offset = source_map.offset(input_index);
-            let adj_start = source_start - offset;
+            let adj_start = segment.source_start.seconds() - offset;
 
             let prep = self.build_broll_prep(
                 graph,
                 input_index,
                 adj_start,
-                segment.duration,
-                segment.start_time,
+                segment.duration.seconds(),
+                segment.timeline_start.seconds(),
                 idx,
             );
 
             current_video = self.apply_overlay_segment(
                 graph,
                 prep,
-                transform.as_ref(),
-                segment.time_window(),
+                segment.transform.as_ref(),
+                TimelineRange::new(
+                    segment.timeline_start.seconds(),
+                    segment.timeline_start.seconds() + segment.duration.seconds(),
+                ),
                 current_video,
                 "broll",
                 idx,
@@ -180,29 +173,24 @@ impl FfmpegCompiler {
     pub(super) fn apply_overlays(
         &self,
         graph: &mut FilterGraph,
-        overlay_segments: &[&Segment],
+        overlay_segments: &[ImageOverlay],
         source_map: &SourceMap,
         input: VideoPad,
     ) -> Result<VideoPad> {
         let mut current_video = input;
 
         for (idx, segment) in overlay_segments.iter().enumerate() {
-            let SegmentData::Image {
-                source_image,
-                transform,
-            } = &segment.data
-            else {
-                continue;
-            };
-
-            let input_index = source_map.index(source_image)?;
+            let input_index = source_map.index(&segment.source_image)?;
             let prep = self.build_image_prep(graph, input_index, idx);
 
             current_video = self.apply_overlay_segment(
                 graph,
                 prep,
-                transform.as_ref(),
-                segment.time_window(),
+                segment.transform.as_ref(),
+                TimelineRange::new(
+                    segment.timeline_start.seconds(),
+                    segment.timeline_start.seconds() + segment.duration.seconds(),
+                ),
                 current_video,
                 "overlay",
                 idx,

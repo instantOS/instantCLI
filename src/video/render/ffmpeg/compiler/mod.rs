@@ -81,15 +81,11 @@ impl FfmpegCompiler {
         }
     }
 
-    pub fn compile(
-        &self,
-        output: PathBuf,
-        timeline: &Timeline,
-        audio_source: PathBuf,
-    ) -> Result<FfmpegCompileOutput> {
+    pub fn compile(&self, output: PathBuf, timeline: &Timeline) -> Result<FfmpegCompileOutput> {
         let mut args = Vec::new();
 
-        let source_map = SourceMap::build(timeline, &audio_source, false);
+        timeline.validate()?;
+        let source_map = SourceMap::build(timeline, false);
         args.extend(source_map.input_args());
 
         let total_duration = timeline.total_duration();
@@ -113,14 +109,11 @@ impl FfmpegCompiler {
         Ok(FfmpegCompileOutput { args })
     }
 
-    pub fn compile_preview(
-        &self,
-        timeline: &Timeline,
-        audio_source: PathBuf,
-    ) -> Result<FfmpegCompileOutput> {
+    pub fn compile_preview(&self, timeline: &Timeline) -> Result<FfmpegCompileOutput> {
         let mut args = Vec::new();
 
-        let source_map = SourceMap::build(timeline, &audio_source, true);
+        timeline.validate()?;
+        let source_map = SourceMap::build(timeline, true);
         args.extend(source_map.input_args());
 
         let total_duration = timeline.total_duration();
@@ -162,25 +155,20 @@ impl FfmpegCompiler {
     ) -> Result<String> {
         let mut graph = FilterGraph::new();
 
-        let video_segments = timeline.video_segments();
-        let overlay_segments = timeline.overlay_segments();
-        let music_segments = timeline.music_segments();
-        let broll_segments = timeline.broll_segments();
-
         let Some((mut current_video, base_audio)) =
-            self.build_base_track_filters(&mut graph, &video_segments, source_map)?
+            self.build_base_track_filters(&mut graph, &timeline.base, source_map)?
         else {
             anyhow::bail!("Cannot render a timeline without a playable base video track");
         };
 
-        if !broll_segments.is_empty() {
+        if !timeline.broll.is_empty() {
             current_video =
-                self.apply_broll_overlays(&mut graph, &broll_segments, source_map, current_video)?;
+                self.apply_broll_overlays(&mut graph, &timeline.broll, source_map, current_video)?;
         }
 
-        if !overlay_segments.is_empty() {
+        if !timeline.overlays.is_empty() {
             current_video =
-                self.apply_overlays(&mut graph, &overlay_segments, source_map, current_video)?;
+                self.apply_overlays(&mut graph, &timeline.overlays, source_map, current_video)?;
         }
 
         if let Some(ass_path) = &self.subtitle_path {
@@ -196,7 +184,7 @@ impl FfmpegCompiler {
 
         self.build_audio_mix_filters(
             &mut graph,
-            &music_segments,
+            &timeline.music,
             source_map,
             Some(base_audio),
             total_duration,

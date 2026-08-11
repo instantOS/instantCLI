@@ -12,6 +12,9 @@ pub struct WordTiming {
 
 #[derive(Debug, Clone)]
 pub struct TranscriptCue {
+    /// Stable identity within one source transcript. Generated markdown keeps
+    /// this ID even when clips are reordered or their text is corrected.
+    pub cue_id: usize,
     pub start: Duration,
     pub end: Duration,
     pub text: String,
@@ -114,6 +117,9 @@ pub fn parse_whisper_json(json_str: &str) -> Result<Vec<TranscriptCue>> {
             .partial_cmp(&b.start)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
+    for (cue_id, cue) in cues.iter_mut().enumerate() {
+        cue.cue_id = cue_id;
+    }
     Ok(cues)
 }
 
@@ -137,6 +143,7 @@ fn create_cue_from_cluster(cluster: &[WhisperWord]) -> TranscriptCue {
         .collect();
 
     TranscriptCue {
+        cue_id: 0,
         start: Duration::from_secs_f64(start),
         end: Duration::from_secs_f64(end),
         text,

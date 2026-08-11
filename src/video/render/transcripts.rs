@@ -57,7 +57,7 @@ pub(crate) fn load_transcript_cues(
 /// When `ins video convert` generates a `.video.md`, each segment line contains
 /// the ASR-transcribed text with a time range reference:
 ///
-/// ````a@00:01.500-00:04.200` the quick brown fox````
+/// ````a#17@00:01.5-00:04.2` the quick brown fox````
 ///
 /// If the user edits that text (e.g. fixing an ASR error), the render pipeline
 /// should use the corrected text for subtitles instead of the original transcript.
@@ -77,20 +77,25 @@ pub(crate) fn apply_markdown_edits(cues: &mut [TranscriptCue], document: &VideoD
             continue;
         }
 
-        // Find the cue whose time range overlaps most with this segment.
-        // Segments and cues share the same source-time coordinates.
-        let best = cues
-            .iter_mut()
-            .filter(|c| c.source_id == segment.source_id)
-            .max_by_key(|c| {
-                let overlap_start = c.start.max(segment.range.start);
-                let overlap_end = c.end.min(segment.range.end);
-                if overlap_end > overlap_start {
-                    (overlap_end - overlap_start).as_millis()
-                } else {
-                    0
-                }
-            });
+        // Generated documents carry stable cue identity. Timestamp overlap is
+        // intentionally only a fallback for legacy or hand-written markdown.
+        let best = match segment.cue_id {
+            Some(cue_id) => cues
+                .iter_mut()
+                .find(|cue| cue.source_id == segment.source_id && cue.cue_id == cue_id),
+            None => cues
+                .iter_mut()
+                .filter(|cue| cue.source_id == segment.source_id)
+                .max_by_key(|cue| {
+                    let overlap_start = cue.start.max(segment.range.start);
+                    let overlap_end = cue.end.min(segment.range.end);
+                    if overlap_end > overlap_start {
+                        (overlap_end - overlap_start).as_millis()
+                    } else {
+                        0
+                    }
+                }),
+        };
 
         let Some(cue) = best else {
             continue;
@@ -172,6 +177,7 @@ mod tests {
             .into_iter()
             .map(|(source_id, start, end, text)| {
                 DocumentBlock::Segment(SegmentBlock {
+                    cue_id: None,
                     range: TimeRange { start, end },
                     text,
                     kind: SegmentKind::Dialogue,
@@ -196,6 +202,7 @@ mod tests {
         words: Vec<(&str, Duration, Duration)>,
     ) -> TranscriptCue {
         TranscriptCue {
+            cue_id: 0,
             start,
             end,
             text: text.to_string(),

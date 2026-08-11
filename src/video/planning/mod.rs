@@ -1,6 +1,6 @@
 mod alignment;
+mod assignment_solver;
 mod core;
-mod graph;
 
 pub use self::alignment::align_plan_with_subtitles;
 pub use self::core::{

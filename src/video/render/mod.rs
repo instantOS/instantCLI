@@ -33,7 +33,6 @@ struct RenderJob<'a> {
     render_mode: RenderMode,
     target_dims: VideoDimensions,
     video_config: VideoConfig,
-    audio_source: PathBuf,
     burn_subtitles: bool,
     dry_run: bool,
     verbose: bool,
@@ -44,7 +43,7 @@ pub(crate) use self::sources::find_default_source;
 pub(crate) use self::sources::resolve_video_sources;
 use self::sources::validate_timeline_sources;
 use self::subtitles::generate_subtitle_file;
-use self::timeline_builder::{SlideProvider, TimelineStats, build_nle_timeline};
+use self::timeline_builder::{SlideProvider, build_nle_timeline};
 pub(crate) use self::transcripts::{apply_markdown_edits, load_transcript_cues};
 use super::cli::{PreviewArgs, RenderArgs};
 use super::config::VideoConfig;
@@ -148,14 +147,13 @@ fn build_render_timeline(
         "video.render.timeline.build",
         "Building render timeline (may generate slides)",
     );
-    let (nle_timeline, stats) = build_nle_timeline(
+    report_timeline_stats(&project.plan);
+    let nle_timeline = build_nle_timeline(
         project.plan.clone(),
         &generator,
         &project.sources,
         &project.project_dir,
     )?;
-
-    report_timeline_stats(&stats);
 
     Ok((nle_timeline, target_dims))
 }
@@ -185,7 +183,6 @@ fn execute_render(job: RenderJob<'_>) -> Result<Option<PathBuf>> {
         timeline: job.timeline,
         dimensions: job.target_dims,
         render_config,
-        audio_source: job.audio_source,
         runner: job.runner,
         verbose: job.verbose,
     };
@@ -271,7 +268,6 @@ async fn handle_render_with_services(
         render_mode,
         target_dims,
         video_config: project.video_config,
-        audio_source: project.default_source.source.clone(),
         burn_subtitles: args.common.subtitles,
         dry_run: args.dry_run,
         verbose: args.common.verbose,
@@ -309,9 +305,6 @@ async fn handle_preview_with_services(
         return Ok(None);
     }
 
-    // Use same audio source as render
-    let audio_source = project.default_source.source.clone();
-
     // Use temporary output for preview (will be piped to mpv)
     let output_path = project.project_dir.join("preview_temp.mkv");
 
@@ -322,7 +315,6 @@ async fn handle_preview_with_services(
         render_mode,
         target_dims,
         video_config: project.video_config,
-        audio_source,
         burn_subtitles: args.common.subtitles,
         dry_run: false, // Always execute for preview
         verbose: args.common.verbose,
@@ -355,7 +347,6 @@ fn execute_preview_render(job: RenderJob<'_>) -> Result<Option<PathBuf>> {
         timeline: job.timeline,
         dimensions: job.target_dims,
         render_config,
-        audio_source: job.audio_source,
         runner: job.runner,
         verbose: job.verbose,
     };
@@ -379,7 +370,7 @@ fn execute_preview_render(job: RenderJob<'_>) -> Result<Option<PathBuf>> {
     Ok(None)
 }
 
-fn report_timeline_stats(stats: &TimelineStats) {
+fn report_timeline_stats(stats: &crate::video::planning::TimelinePlan) {
     if stats.standalone_count > 0 {
         log_event(
             Level::Info,
@@ -421,7 +412,7 @@ mod tests {
     use crate::video::document::VideoSource;
     use crate::video::planning::ClipPlan;
     use crate::video::planning::{StandalonePlan, TimelinePlan, TimelinePlanItem};
-    use crate::video::render::timeline::{SegmentData, TimeWindow};
+    use crate::video::render::timeline::SourceRange;
     use std::path::{Path, PathBuf};
 
     struct StubSlides;
@@ -444,7 +435,8 @@ mod tests {
         let plan = TimelinePlan {
             items: vec![
                 TimelinePlanItem::Clip(ClipPlan {
-                    time_window: TimeWindow::new(0.0, 12.0),
+                    cue_id: None,
+                    time_window: SourceRange::new(0.0, 12.0),
                     kind: SegmentKind::Dialogue,
                     text: "hello world".to_string(),
                     overlay: None,
@@ -456,7 +448,8 @@ mod tests {
                     duration_seconds: 2.0,
                 }),
                 TimelinePlanItem::Clip(ClipPlan {
-                    time_window: TimeWindow::new(12.0, 20.0),
+                    cue_id: None,
+                    time_window: SourceRange::new(12.0, 20.0),
                     kind: SegmentKind::Dialogue,
                     text: "this is a test".to_string(),
                     overlay: None,
@@ -480,55 +473,30 @@ mod tests {
             hash: None,
         }];
 
-        let (timeline, _stats) =
-            build_nle_timeline(plan, &StubSlides, &sources, project_dir).unwrap();
+        let timeline = build_nle_timeline(plan, &StubSlides, &sources, project_dir).unwrap();
 
-        assert_eq!(timeline.segments.len(), 3);
+        assert_eq!(timeline.base.len(), 3);
 
-        let SegmentData::VideoSubset {
-            start_time: clip1_source_start,
-            source,
-            mute_audio: clip1_mute,
-            ..
-        } = &timeline.segments[0].data
-        else {
-            panic!("expected first segment to be a video subset")
-        };
-        assert!((timeline.segments[0].start_time - 0.0).abs() < 1e-6);
-        assert!((timeline.segments[0].duration - 12.0).abs() < 1e-6);
-        assert!((*clip1_source_start - 0.0).abs() < 1e-6);
-        assert_eq!(&source.video, &PathBuf::from("source.mp4"));
-        assert!(!clip1_mute);
+        let clip1 = &timeline.base[0];
+        assert!((clip1.timeline_start.seconds() - 0.0).abs() < 1e-6);
+        assert!((clip1.duration.seconds() - 12.0).abs() < 1e-6);
+        assert!((clip1.source_start.seconds() - 0.0).abs() < 1e-6);
+        assert_eq!(&clip1.source.video, &PathBuf::from("source.mp4"));
+        assert!(!clip1.mute_audio);
 
-        let SegmentData::VideoSubset {
-            start_time: card_source_start,
-            source: card_source,
-            mute_audio: card_mute,
-            ..
-        } = &timeline.segments[1].data
-        else {
-            panic!("expected second segment to be a video subset")
-        };
-        assert!((timeline.segments[1].start_time - 12.0).abs() < 1e-6);
-        assert!((timeline.segments[1].duration - 2.0).abs() < 1e-6);
-        assert!((*card_source_start - 0.0).abs() < 1e-6);
-        assert_eq!(&card_source.video, &PathBuf::from("card.mp4"));
-        assert!(*card_mute);
+        let card = &timeline.base[1];
+        assert!((card.timeline_start.seconds() - 12.0).abs() < 1e-6);
+        assert!((card.duration.seconds() - 2.0).abs() < 1e-6);
+        assert!((card.source_start.seconds() - 0.0).abs() < 1e-6);
+        assert_eq!(&card.source.video, &PathBuf::from("card.mp4"));
+        assert!(card.mute_audio);
 
-        let SegmentData::VideoSubset {
-            start_time: clip2_source_start,
-            source: clip2_source,
-            mute_audio: clip2_mute,
-            ..
-        } = &timeline.segments[2].data
-        else {
-            panic!("expected third segment to be a video subset")
-        };
-        assert!((timeline.segments[2].start_time - 14.0).abs() < 1e-6);
-        assert!((timeline.segments[2].duration - 8.0).abs() < 1e-6);
-        assert!((*clip2_source_start - 12.0).abs() < 1e-6);
-        assert_eq!(&clip2_source.video, &PathBuf::from("source.mp4"));
-        assert!(!clip2_mute);
+        let clip2 = &timeline.base[2];
+        assert!((clip2.timeline_start.seconds() - 14.0).abs() < 1e-6);
+        assert!((clip2.duration.seconds() - 8.0).abs() < 1e-6);
+        assert!((clip2.source_start.seconds() - 12.0).abs() < 1e-6);
+        assert_eq!(&clip2.source.video, &PathBuf::from("source.mp4"));
+        assert!(!clip2.mute_audio);
     }
 
     #[test]

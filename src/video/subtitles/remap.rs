@@ -6,7 +6,7 @@
 
 use std::time::Duration;
 
-use crate::video::render::timeline::{SegmentData, TimeWindow, Timeline};
+use crate::video::render::timeline::{BaseAvClip, SourceRange, Timeline, TimelineRange};
 use crate::video::support::transcript::TranscriptCue;
 
 /// A remapped word with timing adjusted to the final timeline.
@@ -36,35 +36,26 @@ const MIN_SUBTITLE_DURATION_SECS: f64 = 0.5;
 #[derive(Debug, Clone, Copy)]
 struct SegmentTiming<'a> {
     source_id: &'a str,
-    source_window: TimeWindow,
+    source_window: SourceRange,
     time_offset: f64,
     segment_end: f64,
 }
 
-fn video_segment_timing(
-    segment: &crate::video::render::timeline::Segment,
-) -> Option<SegmentTiming<'_>> {
-    let SegmentData::VideoSubset {
-        start_time: source_start,
-        mute_audio,
-        source,
-        ..
-    } = &segment.data
-    else {
-        return None;
-    };
-
-    if *mute_audio {
+fn video_segment_timing(segment: &BaseAvClip) -> Option<SegmentTiming<'_>> {
+    if segment.mute_audio {
         return None;
     }
 
-    let source_end = *source_start + segment.duration;
-    let time_offset = segment.start_time - *source_start;
-    let segment_end = segment.start_time + segment.duration;
+    let source_start = segment.source_start.seconds();
+    let duration = segment.duration.seconds();
+    let timeline_start = segment.timeline_start.seconds();
+    let source_end = source_start + duration;
+    let time_offset = timeline_start - source_start;
+    let segment_end = timeline_start + duration;
 
     Some(SegmentTiming {
-        source_id: &source.id,
-        source_window: TimeWindow::new(*source_start, source_end),
+        source_id: &segment.source.id,
+        source_window: SourceRange::new(source_start, source_end),
         time_offset,
         segment_end,
     })
@@ -72,7 +63,7 @@ fn video_segment_timing(
 
 fn remap_words_to_segment(
     cue: &TranscriptCue,
-    source_window: TimeWindow,
+    source_window: SourceRange,
     time_offset: f64,
 ) -> Vec<RemappedWord> {
     cue.words
@@ -80,7 +71,7 @@ fn remap_words_to_segment(
         .filter_map(|word| {
             let word_start = word.start.as_secs_f64();
             let word_end = word.end.as_secs_f64();
-            let word_window = TimeWindow::new(word_start, word_end);
+            let word_window = SourceRange::new(word_start, word_end);
 
             if !word_window.overlaps(source_window) {
                 return None;
@@ -97,10 +88,10 @@ fn remap_words_to_segment(
         .collect()
 }
 
-fn ensure_min_duration(window: TimeWindow, segment_end: f64) -> TimeWindow {
+fn ensure_min_duration(window: TimelineRange, segment_end: f64) -> TimelineRange {
     let duration = window.duration();
     if duration < MIN_SUBTITLE_DURATION_SECS {
-        TimeWindow::new(
+        TimelineRange::new(
             window.start,
             (window.start + MIN_SUBTITLE_DURATION_SECS).min(segment_end),
         )
@@ -139,7 +130,7 @@ pub fn remap_subtitles_to_timeline(
 ) -> Vec<RemappedSubtitle> {
     let mut subtitles = Vec::new();
 
-    for segment in &timeline.segments {
+    for segment in &timeline.base {
         let Some(segment_timing) = video_segment_timing(segment) else {
             continue;
         };
@@ -149,14 +140,14 @@ pub fn remap_subtitles_to_timeline(
             if cue.source_id != segment_timing.source_id {
                 continue;
             }
-            let cue_window = TimeWindow::new(cue.start.as_secs_f64(), cue.end.as_secs_f64());
+            let cue_window = SourceRange::new(cue.start.as_secs_f64(), cue.end.as_secs_f64());
 
             if !cue_window.overlaps(segment_timing.source_window) {
                 continue;
             }
 
             let overlap = cue_window.overlap_window(segment_timing.source_window);
-            let final_window = TimeWindow::new(
+            let final_window = TimelineRange::new(
                 overlap.start + segment_timing.time_offset,
                 overlap.end + segment_timing.time_offset,
             );
@@ -230,11 +221,12 @@ fn merge_overlapping_subtitles(subtitles: Vec<RemappedSubtitle>) -> Vec<Remapped
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::video::render::timeline::{AvSourceRef, Segment, SegmentData, Timeline};
+    use crate::video::render::timeline::{AvSourceRef, BaseAvClip, Timeline};
     use std::path::PathBuf;
 
     fn make_cue(start_ms: u64, end_ms: u64, text: &str) -> TranscriptCue {
         TranscriptCue {
+            cue_id: 0,
             start: Duration::from_millis(start_ms),
             end: Duration::from_millis(end_ms),
             text: text.to_string(),
@@ -248,21 +240,18 @@ mod tests {
         duration: f64,
         source_start: f64,
         mute: bool,
-    ) -> Segment {
-        Segment {
+    ) -> BaseAvClip {
+        BaseAvClip::new(
             start_time,
             duration,
-            data: SegmentData::VideoSubset {
-                start_time: source_start,
-                source: AvSourceRef {
-                    video: PathBuf::from("test.mp4"),
-                    audio: PathBuf::from("test.mp4"),
-                    id: "a".to_string(),
-                },
-                transform: None,
-                mute_audio: mute,
+            source_start,
+            AvSourceRef {
+                video: PathBuf::from("test.mp4"),
+                audio: PathBuf::from("test.mp4"),
+                id: "a".to_string(),
             },
-        }
+            mute,
+        )
     }
 
     #[test]
@@ -272,7 +261,7 @@ mod tests {
         let cues = vec![make_cue(0, 2000, "Hello")];
 
         let mut timeline = Timeline::new();
-        timeline.add_segment(make_video_segment(0.0, 2.0, 0.0, false));
+        timeline.add_base(make_video_segment(0.0, 2.0, 0.0, false));
 
         let subtitles = remap_subtitles_to_timeline(&timeline, &cues);
 
@@ -293,9 +282,9 @@ mod tests {
 
         let mut timeline = Timeline::new();
         // Play source 5-7s at final 0-2s
-        timeline.add_segment(make_video_segment(0.0, 2.0, 5.0, false));
+        timeline.add_base(make_video_segment(0.0, 2.0, 5.0, false));
         // Play source 0-2s at final 2-4s
-        timeline.add_segment(make_video_segment(2.0, 2.0, 0.0, false));
+        timeline.add_base(make_video_segment(2.0, 2.0, 0.0, false));
 
         let subtitles = remap_subtitles_to_timeline(&timeline, &cues);
 
@@ -317,7 +306,7 @@ mod tests {
         let cues = vec![make_cue(0, 2000, "Delayed")];
 
         let mut timeline = Timeline::new();
-        timeline.add_segment(make_video_segment(5.0, 2.0, 0.0, false));
+        timeline.add_base(make_video_segment(5.0, 2.0, 0.0, false));
 
         let subtitles = remap_subtitles_to_timeline(&timeline, &cues);
 
@@ -334,7 +323,7 @@ mod tests {
         let cues = vec![make_cue(0, 2000, "Should not appear")];
 
         let mut timeline = Timeline::new();
-        timeline.add_segment(make_video_segment(0.0, 2.0, 0.0, true)); // muted
+        timeline.add_base(make_video_segment(0.0, 2.0, 0.0, true)); // muted
 
         let subtitles = remap_subtitles_to_timeline(&timeline, &cues);
 
@@ -349,8 +338,8 @@ mod tests {
         let cues = vec![make_cue(1000, 4000, "Spanning")];
 
         let mut timeline = Timeline::new();
-        timeline.add_segment(make_video_segment(0.0, 2.0, 0.0, false)); // source 0-2
-        timeline.add_segment(make_video_segment(2.0, 2.0, 3.0, false)); // source 3-5
+        timeline.add_base(make_video_segment(0.0, 2.0, 0.0, false)); // source 0-2
+        timeline.add_base(make_video_segment(2.0, 2.0, 3.0, false)); // source 3-5
 
         let subtitles = remap_subtitles_to_timeline(&timeline, &cues);
 
@@ -372,7 +361,7 @@ mod tests {
         let cues = vec![make_cue(0, 100, "Quick")];
 
         let mut timeline = Timeline::new();
-        timeline.add_segment(make_video_segment(0.0, 2.0, 0.0, false));
+        timeline.add_base(make_video_segment(0.0, 2.0, 0.0, false));
 
         let subtitles = remap_subtitles_to_timeline(&timeline, &cues);
 

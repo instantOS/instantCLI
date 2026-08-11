@@ -24,25 +24,25 @@ pub struct SourceMap {
 }
 
 impl SourceMap {
-    /// Build a SourceMap from a timeline and global audio source.
+    /// Derive every FFmpeg input exclusively from the timeline's tracks.
     ///
     /// When `input_seeking` is false (render path), no `-ss` is emitted and
     /// `offset()` always returns 0. When true (preview path), the earliest
     /// source timestamp per input is tracked; `-ss` is emitted before `-i`
     /// and trim filters must subtract `offset()` from their timestamps.
-    pub fn build(timeline: &Timeline, audio_source: &Path, input_seeking: bool) -> Self {
+    pub fn build(timeline: &Timeline, input_seeking: bool) -> Self {
         let mut map: HashMap<PathBuf, usize> = HashMap::new();
         let mut order: Vec<PathBuf> = Vec::new();
         let mut offsets: Vec<f64> = Vec::new();
         let mut next_index = 0;
 
-        for segment in &timeline.segments {
-            if let Some(source) = segment.data.source_path() {
-                let source_start = if input_seeking {
-                    segment.data.source_start_time().unwrap_or(0.0)
-                } else {
-                    0.0
-                };
+        for segment in &timeline.base {
+            let source_start = if input_seeking {
+                segment.source_start.seconds()
+            } else {
+                0.0
+            };
+            for source in [&segment.source.video, &segment.source.audio] {
                 if let Some(&idx) = map.get(source) {
                     if input_seeking {
                         offsets[idx] = offsets[idx].min(source_start);
@@ -54,29 +54,33 @@ impl SourceMap {
                     next_index += 1;
                 }
             }
-            if let Some(audio) = segment.data.audio_source() {
-                let source_start = if input_seeking {
-                    segment.data.source_start_time().unwrap_or(0.0)
-                } else {
-                    0.0
-                };
-                if let Some(&idx) = map.get(audio) {
-                    if input_seeking {
-                        offsets[idx] = offsets[idx].min(source_start);
-                    }
-                } else {
-                    map.insert(audio.clone(), next_index);
-                    order.push(audio.clone());
-                    offsets.push(source_start);
-                    next_index += 1;
-                }
-            }
         }
-
-        if !map.contains_key(audio_source) {
-            map.insert(audio_source.to_path_buf(), next_index);
-            order.push(audio_source.to_path_buf());
-            offsets.push(0.0);
+        for (source, source_start) in timeline
+            .overlays
+            .iter()
+            .map(|clip| (&clip.source_image, 0.0))
+            .chain(timeline.broll.iter().map(|clip| {
+                (
+                    &clip.source_video,
+                    if input_seeking {
+                        clip.source_start.seconds()
+                    } else {
+                        0.0
+                    },
+                )
+            }))
+            .chain(timeline.music.iter().map(|clip| (&clip.audio_source, 0.0)))
+        {
+            if let Some(&idx) = map.get(source) {
+                if input_seeking {
+                    offsets[idx] = offsets[idx].min(source_start);
+                }
+            } else {
+                map.insert(source.clone(), next_index);
+                order.push(source.clone());
+                offsets.push(source_start);
+                next_index += 1;
+            }
         }
 
         Self {

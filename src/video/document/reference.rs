@@ -53,7 +53,12 @@ pub fn parse_segment_reference(
     input: &str,
     source_config: &SegmentSourceConfig,
     line: usize,
-) -> Result<(String, TimeRange, super::transform::TransformSpec)> {
+) -> Result<(
+    String,
+    Option<usize>,
+    TimeRange,
+    super::transform::TransformSpec,
+)> {
     let trimmed = input.trim();
 
     // Split off transform parameters (everything after the first `|`).
@@ -90,7 +95,16 @@ pub fn parse_segment_reference(
         bail!("Missing source id for timestamp at line {}", line);
     }
 
-    let source_id = explicit_source.unwrap_or(source_config.default_source.as_str());
+    let source_token = explicit_source.unwrap_or(source_config.default_source.as_str());
+    let (source_id, cue_id) = match source_token.rsplit_once('#') {
+        Some((source_id, cue_id)) => {
+            let cue_id = cue_id
+                .parse::<usize>()
+                .with_context(|| format!("Invalid cue id `{cue_id}` at line {line}"))?;
+            (source_id, Some(cue_id))
+        }
+        None => (source_token, None),
+    };
 
     let source_id = source_id.trim();
     if source_id.is_empty() {
@@ -115,10 +129,11 @@ pub fn parse_segment_reference(
         )
     })?;
 
-    Ok((source_id.to_string(), range, transform))
+    Ok((source_id.to_string(), cue_id, range, transform))
 }
 
 pub fn is_valid_source_id(value: &str) -> bool {
+    let value = value.split_once('#').map_or(value, |(source, _)| source);
     let mut chars = value.chars();
     let Some(first) = chars.next() else {
         return false;

@@ -4,13 +4,13 @@ use super::FfmpegCompiler;
 use super::graph::{AudioInput, AudioPad, FilterGraph};
 use super::inputs::SourceMap;
 use super::util::format_time;
-use crate::video::render::timeline::{Segment, SegmentData};
+use crate::video::render::timeline::MusicClip;
 
 impl FfmpegCompiler {
     pub(super) fn build_audio_mix_filters(
         &self,
         graph: &mut FilterGraph,
-        music_segments: &[&Segment],
+        music_segments: &[MusicClip],
         source_map: &SourceMap,
         base_audio: Option<AudioPad>,
         total_duration: f64,
@@ -95,7 +95,7 @@ impl FfmpegCompiler {
     fn build_music_filters(
         &self,
         graph: &mut FilterGraph,
-        music_segments: &[&Segment],
+        music_segments: &[MusicClip],
         source_map: &SourceMap,
     ) -> Result<AudioPad> {
         let music_volume = f64::from(self.config.music_volume());
@@ -106,22 +106,17 @@ impl FfmpegCompiler {
 
 fn collect_music_segment_labels(
     graph: &mut FilterGraph,
-    music_segments: &[&Segment],
+    music_segments: &[MusicClip],
     source_map: &SourceMap,
     music_volume: f64,
 ) -> Result<Vec<AudioPad>> {
     let mut labels = Vec::new();
 
     for (idx, segment) in music_segments.iter().enumerate() {
-        if segment.duration <= 0.0 {
+        if segment.duration.seconds() <= 0.0 {
             continue;
         }
-
-        let SegmentData::Music { audio_source } = &segment.data else {
-            continue;
-        };
-
-        let input_index = source_map.index(audio_source)?;
+        let input_index = source_map.index(&segment.audio_source)?;
 
         let label = format!("music_{idx}");
         labels.push(build_single_music_filter(
@@ -138,18 +133,20 @@ fn collect_music_segment_labels(
 
 fn build_single_music_filter(
     graph: &mut FilterGraph,
-    segment: &Segment,
+    segment: &MusicClip,
     input_index: usize,
     music_volume: f64,
     label: &str,
 ) -> AudioPad {
-    let duration_str = format_time(segment.duration);
-    let delay_ms = ((segment.start_time * 1000.0).round()).max(0.0) as u64;
+    let duration_str = format_time(segment.duration.seconds());
+    let delay_ms = ((segment.timeline_start.seconds() * 1000.0).round()).max(0.0) as u64;
 
     graph.audio_from_input(
         AudioInput(input_index),
         format!(
-        "atrim=start=0:end={duration},asetpts=PTS-STARTPTS,apad=pad_dur={duration},atrim=duration={duration},aresample=async=1:first_pts=0,aformat=sample_rates=48000:channel_layouts=stereo,adelay={delay}|{delay},volume={volume:.6}",
+        "atrim=start={source_start}:end={source_end},asetpts=PTS-STARTPTS,apad=pad_dur={duration},atrim=duration={duration},aresample=async=1:first_pts=0,aformat=sample_rates=48000:channel_layouts=stereo,adelay={delay}|{delay},volume={volume:.6}",
+        source_start = format_time(segment.source_start.seconds()),
+        source_end = format_time(segment.source_start.seconds() + segment.duration.seconds()),
         duration = duration_str,
         delay = delay_ms,
         volume = music_volume,

@@ -1,16 +1,18 @@
+use super::assignment_solver::{McmfEdge, add_edge, min_cost_max_flow};
 use super::core::{TimelinePlan, TimelinePlanItem};
-use super::graph::{McmfEdge, add_edge, min_cost_max_flow};
 use crate::video::document::SegmentKind;
-use crate::video::render::timeline::TimeWindow;
+use crate::video::render::timeline::SourceRange;
 use crate::video::support::transcript::TranscriptCue;
 use anyhow::{Result, bail};
 use std::collections::{HashMap, HashSet};
 
 pub fn align_plan_with_subtitles(plan: &mut TimelinePlan, cues: &[TranscriptCue]) -> Result<()> {
-    let dialogue_indices = align_dialogue_clips_to_cues(plan, cues)?;
+    let dialogue_indices = match_dialogue_clips_to_cues(plan, cues)?;
     if dialogue_indices.is_empty() {
         return Ok(());
     }
+
+    pad_dialogue_clips(plan, cues, &dialogue_indices)?;
 
     let silence_updates = collect_silence_time_updates(&plan.items, &dialogue_indices);
     apply_clip_time_updates(plan, silence_updates);
@@ -27,13 +29,13 @@ const MAX_SILENCE_BOUNDARY_ADJUSTMENT_SECONDS: f64 = 0.5;
 #[derive(Debug, Clone, Copy)]
 struct ClipTimeUpdate {
     idx: usize,
-    time_window: TimeWindow,
+    time_window: SourceRange,
 }
 
 const DEFAULT_DIALOGUE_PADDING_SECONDS: f64 = 0.08;
 const DEFAULT_PADDING_GUARD_SECONDS: f64 = 0.0;
 
-fn align_dialogue_clips_to_cues(
+fn match_dialogue_clips_to_cues(
     plan: &mut TimelinePlan,
     cues: &[TranscriptCue],
 ) -> Result<Vec<usize>> {
@@ -75,38 +77,119 @@ fn align_dialogue_clips_to_cues(
             bail!("No transcript cues loaded for source `{}`", source_id);
         };
 
-        let mut dialogue_clips: Vec<(usize, TimeWindow, String)> = Vec::new();
+        let mut dialogue_clips: Vec<(usize, SourceRange, String)> = Vec::new();
+        let mut identity_assignments = Vec::new();
+        let mut fallback_clips = Vec::new();
         for idx in clip_indices {
             let Some(TimelinePlanItem::Clip(clip)) = plan.items.get(idx) else {
                 continue;
             };
-            dialogue_clips.push((idx, clip.time_window, clip.text.clone()));
+            let entry = (idx, clip.time_window, clip.text.clone());
+            if let Some(cue_id) = clip.cue_id {
+                let cue_idx = source_cues
+                    .iter()
+                    .position(|cue| cue.cue_id == cue_id)
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "Source `{source_id}` has no transcript cue #{cue_id} referenced by `{}`",
+                            clip.text
+                        )
+                    })?;
+                identity_assignments.push((idx, cue_idx));
+            } else {
+                fallback_clips.push(entry.clone());
+            }
+            dialogue_clips.push(entry);
         }
 
         if dialogue_clips.is_empty() {
             continue;
         }
 
-        let assignments = assign_cues_max_overlap(&dialogue_clips, source_cues)?;
+        let mut claimed = HashSet::new();
+        for (_, cue_idx) in &identity_assignments {
+            if !claimed.insert(*cue_idx) {
+                bail!(
+                    "Transcript cue #{} from source `{source_id}` is referenced more than once",
+                    source_cues[*cue_idx].cue_id
+                );
+            }
+        }
+        let fallback_cues = source_cues
+            .iter()
+            .enumerate()
+            .filter(|(cue_idx, _)| !claimed.contains(cue_idx))
+            .map(|(cue_idx, cue)| (cue_idx, cue.clone()))
+            .collect::<Vec<_>>();
+        let mut assignments = identity_assignments;
+        if !fallback_clips.is_empty() {
+            let fallback_values = fallback_cues
+                .iter()
+                .map(|(_, cue)| cue.clone())
+                .collect::<Vec<_>>();
+            assignments.extend(
+                assign_cues_max_overlap(&fallback_clips, &fallback_values)?
+                    .into_iter()
+                    .map(|(clip_idx, local_cue_idx)| (clip_idx, fallback_cues[local_cue_idx].0)),
+            );
+        }
 
         for (clip_idx, cue_idx) in assignments {
             let Some(TimelinePlanItem::Clip(clip)) = plan.items.get_mut(clip_idx) else {
                 continue;
             };
 
-            let bounds = padded_cue_bounds(
-                source_cues,
-                cue_idx,
-                DEFAULT_DIALOGUE_PADDING_SECONDS,
-                DEFAULT_PADDING_GUARD_SECONDS,
-            );
-
-            clip.time_window = bounds;
+            let cue = &source_cues[cue_idx];
+            clip.cue_id = Some(cue.cue_id);
+            clip.time_window = SourceRange::new(cue.start.as_secs_f64(), cue.end.as_secs_f64());
             dialogue_indices.push(clip_idx);
         }
     }
 
     Ok(dialogue_indices)
+}
+
+fn pad_dialogue_clips(
+    plan: &mut TimelinePlan,
+    cues: &[TranscriptCue],
+    dialogue_indices: &[usize],
+) -> Result<()> {
+    let mut cues_by_source: HashMap<&str, Vec<&TranscriptCue>> = HashMap::new();
+    for cue in cues {
+        cues_by_source.entry(&cue.source_id).or_default().push(cue);
+    }
+    for source_cues in cues_by_source.values_mut() {
+        source_cues.sort_by_key(|cue| cue.start);
+    }
+
+    for &idx in dialogue_indices {
+        let Some(TimelinePlanItem::Clip(clip)) = plan.items.get_mut(idx) else {
+            continue;
+        };
+        let cue_id = clip
+            .cue_id
+            .ok_or_else(|| anyhow::anyhow!("Matched dialogue clip has no cue identity"))?;
+        let source_cues = cues_by_source
+            .get(clip.source_id.as_str())
+            .ok_or_else(|| anyhow::anyhow!("No transcript cues loaded for `{}`", clip.source_id))?;
+        let cue_idx = source_cues
+            .iter()
+            .position(|cue| cue.cue_id == cue_id)
+            .ok_or_else(|| {
+                anyhow::anyhow!("Transcript cue #{cue_id} disappeared during padding")
+            })?;
+        let owned_cues = source_cues
+            .iter()
+            .map(|cue| (*cue).clone())
+            .collect::<Vec<_>>();
+        clip.time_window = padded_cue_bounds(
+            &owned_cues,
+            cue_idx,
+            DEFAULT_DIALOGUE_PADDING_SECONDS,
+            DEFAULT_PADDING_GUARD_SECONDS,
+        );
+    }
+    Ok(())
 }
 
 fn collect_silence_time_updates(
@@ -148,7 +231,7 @@ fn collect_silence_time_updates(
 fn apply_clip_time_updates(plan: &mut TimelinePlan, updates: Vec<ClipTimeUpdate>) {
     for update in updates {
         if let Some(TimelinePlanItem::Clip(clip)) = plan.items.get_mut(update.idx) {
-            clip.time_window = TimeWindow::new(
+            clip.time_window = SourceRange::new(
                 update.time_window.start,
                 update.time_window.end.max(update.time_window.start),
             );
@@ -263,7 +346,7 @@ impl SilenceRun {
             let actual_duration = actual_gap * fraction;
             updates.push(ClipTimeUpdate {
                 idx,
-                time_window: TimeWindow::new(current, current + actual_duration),
+                time_window: SourceRange::new(current, current + actual_duration),
             });
             current += actual_duration;
         }
@@ -281,7 +364,7 @@ fn padded_cue_bounds(
     cue_idx: usize,
     padding_seconds: f64,
     guard_seconds: f64,
-) -> TimeWindow {
+) -> SourceRange {
     let cue = &cues[cue_idx];
 
     let cue_start = cue.start.as_secs_f64();
@@ -303,14 +386,14 @@ fn padded_cue_bounds(
     }
 
     if padded_end <= padded_start {
-        TimeWindow::new(padded_start, padded_start)
+        SourceRange::new(padded_start, padded_start)
     } else {
-        TimeWindow::new(padded_start, padded_end)
+        SourceRange::new(padded_start, padded_end)
     }
 }
 
 fn assign_cues_max_overlap(
-    dialogue_clips: &[(usize, TimeWindow, String)],
+    dialogue_clips: &[(usize, SourceRange, String)],
     cues: &[TranscriptCue],
 ) -> Result<Vec<(usize, usize)>> {
     validate_alignment_inputs(dialogue_clips, cues)?;
@@ -337,7 +420,7 @@ fn assign_cues_max_overlap(
 }
 
 fn validate_alignment_inputs(
-    dialogue_clips: &[(usize, TimeWindow, String)],
+    dialogue_clips: &[(usize, SourceRange, String)],
     cues: &[TranscriptCue],
 ) -> Result<()> {
     if cues.is_empty() {
@@ -414,7 +497,7 @@ impl AssignmentGraphBuilder {
 
     fn add_overlap_options(
         &mut self,
-        dialogue_clips: &[(usize, TimeWindow, String)],
+        dialogue_clips: &[(usize, SourceRange, String)],
         cues: &[TranscriptCue],
     ) {
         for (clip_idx, (_timeline_idx, clip_window, _text)) in dialogue_clips.iter().enumerate() {
@@ -426,7 +509,7 @@ impl AssignmentGraphBuilder {
             for (cue_idx, cue) in cues.iter().enumerate() {
                 let cue_start = cue.start.as_secs_f64();
                 let cue_end = cue.end.as_secs_f64();
-                let overlap = clip_window.overlap_seconds(TimeWindow::new(cue_start, cue_end));
+                let overlap = clip_window.overlap_seconds(SourceRange::new(cue_start, cue_end));
 
                 if overlap <= 0.0 {
                     continue;
@@ -456,7 +539,7 @@ impl AssignmentGraphBuilder {
 
     fn extract_assignments(
         &self,
-        dialogue_clips: &[(usize, TimeWindow, String)],
+        dialogue_clips: &[(usize, SourceRange, String)],
     ) -> Result<Vec<(usize, usize)>> {
         let clip_count = dialogue_clips.len();
         let mut result: Vec<(usize, usize)> = Vec::with_capacity(clip_count);
@@ -494,7 +577,7 @@ impl AssignmentGraphBuilder {
 }
 
 fn diagnose_alignment_failure(
-    dialogue_clips: &[(usize, TimeWindow, String)],
+    dialogue_clips: &[(usize, SourceRange, String)],
     cues: &[TranscriptCue],
 ) -> Result<()> {
     for (_timeline_idx, clip_window, text) in dialogue_clips {
@@ -507,7 +590,7 @@ fn diagnose_alignment_failure(
         for cue in cues {
             let cue_start = cue.start.as_secs_f64();
             let cue_end = cue.end.as_secs_f64();
-            let overlap = clip_window.overlap_seconds(TimeWindow::new(cue_start, cue_end));
+            let overlap = clip_window.overlap_seconds(SourceRange::new(cue_start, cue_end));
             if overlap <= 0.0 {
                 continue;
             }
@@ -655,6 +738,7 @@ mod tests {
 
         let cues = vec![
             TranscriptCue {
+                cue_id: 0,
                 start: Duration::from_millis(0),
                 end: Duration::from_millis(950),
                 text: "first".to_string(),
@@ -662,6 +746,7 @@ mod tests {
                 source_id: "a".to_string(),
             },
             TranscriptCue {
+                cue_id: 1,
                 start: Duration::from_millis(1200),
                 end: Duration::from_millis(2450),
                 text: "second".to_string(),
@@ -693,6 +778,69 @@ mod tests {
     }
 
     #[test]
+    fn cue_identity_survives_reordering_text_edits_and_inaccurate_display_times() {
+        let markdown = concat!(
+            "`a#1@00:00:00.0-00:00:00.1` corrected second\n",
+            "`a#0@00:00:09.0-00:00:09.1` corrected first\n",
+        );
+        let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
+        let mut plan = document.plan_timeline().unwrap();
+        let cues = vec![
+            TranscriptCue {
+                cue_id: 0,
+                start: Duration::from_secs_f64(1.0),
+                end: Duration::from_secs_f64(2.0),
+                text: "first".into(),
+                words: vec![],
+                source_id: "a".into(),
+            },
+            TranscriptCue {
+                cue_id: 1,
+                start: Duration::from_secs_f64(5.0),
+                end: Duration::from_secs_f64(6.0),
+                text: "second".into(),
+                words: vec![],
+                source_id: "a".into(),
+            },
+        ];
+
+        align_plan_with_subtitles(&mut plan, &cues).unwrap();
+        let clips = plan
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                TimelinePlanItem::Clip(clip) => Some(clip),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(clips[0].cue_id, Some(1));
+        assert!(clips[0].time_window.start > 4.8);
+        assert_eq!(clips[1].cue_id, Some(0));
+        assert!(clips[1].time_window.start < 1.1);
+    }
+
+    #[test]
+    fn duplicate_authoritative_cue_references_are_rejected() {
+        let markdown = concat!(
+            "`a#0@00:00:00.0-00:00:01.0` first\n",
+            "`a#0@00:00:01.0-00:00:02.0` duplicate\n",
+        );
+        let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
+        let mut plan = document.plan_timeline().unwrap();
+        let cues = vec![TranscriptCue {
+            cue_id: 0,
+            start: Duration::from_secs_f64(0.0),
+            end: Duration::from_secs_f64(1.0),
+            text: "first".into(),
+            words: vec![],
+            source_id: "a".into(),
+        }];
+
+        let error = align_plan_with_subtitles(&mut plan, &cues).unwrap_err();
+        assert!(error.to_string().contains("referenced more than once"));
+    }
+
+    #[test]
     fn aligns_using_time_overlap_not_text() {
         let markdown = "`a@00:00:00.0-00:00:01.0` hello\n`a@00:00:01.0-00:00:02.0` world\n";
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
@@ -700,6 +848,7 @@ mod tests {
 
         let cues = vec![
             TranscriptCue {
+                cue_id: 0,
                 start: Duration::from_millis(0),
                 end: Duration::from_millis(1100),
                 text: "completely different".to_string(),
@@ -707,6 +856,7 @@ mod tests {
                 source_id: "a".to_string(),
             },
             TranscriptCue {
+                cue_id: 1,
                 start: Duration::from_millis(1100),
                 end: Duration::from_millis(2000),
                 text: "also different".to_string(),
@@ -748,6 +898,7 @@ mod tests {
         // Cues are tightly packed with a 20ms gap.
         let cues = vec![
             TranscriptCue {
+                cue_id: 0,
                 start: Duration::from_millis(0),
                 end: Duration::from_millis(1000),
                 text: "first".to_string(),
@@ -755,6 +906,7 @@ mod tests {
                 source_id: "a".to_string(),
             },
             TranscriptCue {
+                cue_id: 1,
                 start: Duration::from_millis(1020),
                 end: Duration::from_millis(2000),
                 text: "mid".to_string(),
@@ -762,6 +914,7 @@ mod tests {
                 source_id: "a".to_string(),
             },
             TranscriptCue {
+                cue_id: 2,
                 start: Duration::from_millis(2020),
                 end: Duration::from_millis(3000),
                 text: "third".to_string(),
@@ -800,6 +953,7 @@ mod tests {
         let mut plan = document.plan_timeline().unwrap();
 
         let cues = vec![TranscriptCue {
+            cue_id: 0,
             start: Duration::from_millis(0),
             end: Duration::from_millis(1000),
             text: "only".to_string(),
@@ -832,6 +986,7 @@ mod tests {
 
         let cues = vec![
             TranscriptCue {
+                cue_id: 0,
                 start: Duration::from_millis(866),
                 end: Duration::from_millis(7274),
                 text: "Hello".to_string(),
@@ -839,6 +994,7 @@ mod tests {
                 source_id: "a".to_string(),
             },
             TranscriptCue {
+                cue_id: 1,
                 start: Duration::from_millis(9677),
                 end: Duration::from_millis(11559),
                 text: "I do not want".to_string(),
@@ -846,6 +1002,7 @@ mod tests {
                 source_id: "a".to_string(),
             },
             TranscriptCue {
+                cue_id: 2,
                 start: Duration::from_millis(14403),
                 end: Duration::from_millis(16005),
                 text: "A big pile".to_string(),
@@ -853,6 +1010,7 @@ mod tests {
                 source_id: "a".to_string(),
             },
             TranscriptCue {
+                cue_id: 3,
                 start: Duration::from_millis(19189),
                 end: Duration::from_millis(20730),
                 text: "Goodbye".to_string(),
@@ -860,6 +1018,7 @@ mod tests {
                 source_id: "a".to_string(),
             },
             TranscriptCue {
+                cue_id: 4,
                 start: Duration::from_millis(20791),
                 end: Duration::from_millis(26898),
                 text: "No, you don't say".to_string(),
@@ -928,6 +1087,7 @@ mod tests {
 
         let cues = vec![
             TranscriptCue {
+                cue_id: 0,
                 start: Duration::from_millis(0),
                 end: Duration::from_millis(1234),
                 text: "intro".to_string(),
@@ -935,6 +1095,7 @@ mod tests {
                 source_id: "a".to_string(),
             },
             TranscriptCue {
+                cue_id: 1,
                 start: Duration::from_millis(6789),
                 end: Duration::from_millis(8000),
                 text: "outro".to_string(),
@@ -983,6 +1144,7 @@ mod tests {
 
         let cues = vec![
             TranscriptCue {
+                cue_id: 0,
                 start: Duration::from_millis(0),
                 end: Duration::from_millis(1000),
                 text: "intro".to_string(),
@@ -990,6 +1152,7 @@ mod tests {
                 source_id: "a".to_string(),
             },
             TranscriptCue {
+                cue_id: 1,
                 start: Duration::from_millis(50_000),
                 end: Duration::from_millis(51_000),
                 text: "outro".to_string(),
@@ -1041,6 +1204,7 @@ mod tests {
         let mut plan = document.plan_timeline().unwrap();
         let cues = vec![
             TranscriptCue {
+                cue_id: 0,
                 start: Duration::from_secs(0),
                 end: Duration::from_secs(1),
                 text: "intro".to_string(),
@@ -1048,6 +1212,7 @@ mod tests {
                 source_id: "a".to_string(),
             },
             TranscriptCue {
+                cue_id: 1,
                 start: Duration::from_secs(2),
                 end: Duration::from_secs(3),
                 text: "moved earlier".to_string(),
@@ -1055,6 +1220,7 @@ mod tests {
                 source_id: "a".to_string(),
             },
             TranscriptCue {
+                cue_id: 2,
                 start: Duration::from_secs(3),
                 end: Duration::from_secs(4),
                 text: "outro".to_string(),
