@@ -213,6 +213,10 @@ fn run_assist_selector(use_instantmenu: bool) -> Result<()> {
 
     match client.chord(chord_specs) {
         Ok(Some(selected_key)) => {
+            if let Some(path) = contextual_help_path(&selected_key) {
+                return super::actions::help::show_help_for_path(path);
+            }
+
             let action = registry::find_action(&selected_key)
                 .ok_or_else(|| anyhow::anyhow!("Assist not found for key: {}", selected_key))?;
 
@@ -254,8 +258,19 @@ fn build_chord_specs(entries: &[registry::AssistEntry]) -> Vec<String> {
                     group.description
                 ));
 
+                // `h` is contextual inside a group: selecting it leaves the
+                // chord navigator and opens searchable help for this subtree.
+                specs.push(format!(
+                    "{}h:{} Help: Search assists in this group",
+                    key,
+                    char::from(crate::ui::nerd_font::NerdFont::Question)
+                ));
+
                 // Add all children with the group key as prefix
                 for child in group.children {
+                    if child.key() == 'h' {
+                        continue;
+                    }
                     add_entry_specs(specs, child, &key);
                 }
             }
@@ -267,6 +282,30 @@ fn build_chord_specs(entries: &[registry::AssistEntry]) -> Vec<String> {
     }
 
     specs
+}
+
+fn contextual_help_path(key_sequence: &str) -> Option<&str> {
+    let path = key_sequence.strip_suffix('h')?;
+    (!path.is_empty() && registry::find_group_entries(path).is_some()).then_some(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chord_specs_include_contextual_help_for_submenus() {
+        let specs = build_chord_specs(registry::ASSISTS);
+
+        assert!(
+            specs
+                .iter()
+                .any(|spec| spec.starts_with("sh:") && spec.contains("Search assists"))
+        );
+        assert_eq!(contextual_help_path("sh"), Some("s"));
+        assert_eq!(contextual_help_path("h"), None);
+        assert_eq!(contextual_help_path("not-a-grouph"), None);
+    }
 }
 
 /// Export assists to Window Manager config format
