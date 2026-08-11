@@ -124,6 +124,10 @@ impl FfmpegCompiler {
         args.push("-map".to_string());
         args.push("[outa]".to_string());
 
+        // A filter with multiple inputs (notably sidechaincompress/amix) may
+        // otherwise keep the mux alive after the edited video timeline ends.
+        args.push("-shortest".to_string());
+
         PROFILE_H264_AAC_QUALITY_FASTSTART.push_to(&mut args);
         args.push(output.to_string_lossy().into_owned());
 
@@ -150,6 +154,7 @@ impl FfmpegCompiler {
         args.push("[outv]".to_string());
         args.push("-map".to_string());
         args.push("[outa]".to_string());
+        args.push("-shortest".to_string());
 
         // Fast encoding settings for real-time preview
         args.push("-c:v".to_string());

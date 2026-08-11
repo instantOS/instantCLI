@@ -11,7 +11,9 @@ use crate::video::config::{VideoCachePaths, VideoDirectories};
 use crate::video::document::frontmatter::split_frontmatter;
 use crate::video::document::markdown::{build_markdown, format_cue_line};
 use crate::video::document::{VideoMetadata, VideoSource, parse_video_document};
-use crate::video::support::transcript::{TranscriptCue, parse_whisper_json};
+use crate::video::support::transcript::{
+    TranscriptCue, is_transcriber_control_text, parse_whisper_json,
+};
 use crate::video::support::utils::{canonicalize_existing, compute_file_hash, copy_overwriting};
 
 pub async fn handle_convert(args: ConvertArgs) -> Result<()> {
@@ -308,6 +310,7 @@ fn generate_markdown_output(
         .with_context(|| format!("Failed to read transcript at {}", transcript_path.display()))?;
 
     let mut cues = parse_whisper_json(&transcript_contents)?;
+    cues.retain(|cue| !is_transcriber_control_text(&cue.text));
     for cue in &mut cues {
         cue.source_id = "a".to_string();
     }
@@ -361,7 +364,9 @@ fn generate_markdown_output(
 fn load_transcript_cues(path: &Path) -> Result<Vec<TranscriptCue>> {
     let transcript_contents = fs::read_to_string(path)
         .with_context(|| format!("Failed to read transcript at {}", path.display()))?;
-    parse_whisper_json(&transcript_contents)
+    let mut cues = parse_whisper_json(&transcript_contents)?;
+    cues.retain(|cue| !is_transcriber_control_text(&cue.text));
+    Ok(cues)
 }
 
 fn next_source_id(metadata: &crate::video::document::VideoMetadata) -> Result<String> {

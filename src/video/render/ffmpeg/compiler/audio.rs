@@ -30,9 +30,10 @@ impl FfmpegCompiler {
             let music_label = self.build_music_filters(filters, music_segments, source_map)?;
             audio_label = Some(match audio_label {
                 Some(base) => {
-                    let stereo_base = "a_base_stereo".to_string();
+                    let voice_mix = "a_voice_mix";
+                    let voice_sidechain = "a_voice_sidechain";
                     filters.push(format!(
-                        "[{base}]aformat=sample_rates=48000:channel_layouts=stereo[{stereo_base}]"
+                        "[{base}]aformat=sample_rates=48000:channel_layouts=stereo,asplit=2[{voice_mix}][{voice_sidechain}]"
                     ));
                     // Duck the music bed against the (already enhanced) voice:
                     // the music dips only while someone speaks, then returns
@@ -40,15 +41,15 @@ impl FfmpegCompiler {
                     // that re-masters the track (music is already mastered).
                     let ducked = "a_duck".to_string();
                     filters.push(format!(
-                        "[{music}][{base}]sidechaincompress=threshold=0.05:ratio=8:attack=15:release=300[{ducked}]",
+                        "[{music}][{sidechain}]sidechaincompress=threshold=0.05:ratio=8:attack=15:release=300[{ducked}]",
                         music = music_label,
-                        base = stereo_base,
+                        sidechain = voice_sidechain,
                         ducked = ducked,
                     ));
                     let mixed = "a_mix".to_string();
                     filters.push(format!(
-                        "[{base}][{ducked}]amix=inputs=2:normalize=0:dropout_transition=0[{mixed}]",
-                        base = stereo_base,
+                        "[{voice}][{ducked}]amix=inputs=2:duration=first:normalize=0:dropout_transition=0[{mixed}]",
+                        voice = voice_mix,
                         ducked = ducked,
                         mixed = mixed,
                     ));
@@ -73,11 +74,16 @@ impl FfmpegCompiler {
             // already normalized to -1 dBTP, so processing it again adds no
             // protection and needlessly changes timing/state.
             filters.push(format!(
-                "[{label}]alimiter=limit=0.8913:level=false:latency=true[outa]",
-                label = final_audio
+                "[{label}]alimiter=limit=0.8913:level=false:latency=true,asetpts=PTS-STARTPTS[outa]",
+                label = final_audio,
             ));
+        } else if has_base_track {
+            filters.push(format!("[{final_audio}]asetpts=PTS-STARTPTS[outa]",));
         } else {
-            filters.push(format!("[{final_audio}]anull[outa]"));
+            filters.push(format!(
+                "[{final_audio}]atrim=duration={duration},asetpts=PTS-STARTPTS[outa]",
+                duration = format_time(total_duration),
+            ));
         }
         Ok(())
     }

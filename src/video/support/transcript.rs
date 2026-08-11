@@ -52,6 +52,17 @@ struct WhisperWord {
 const MAX_CLUSTER_SIZE: usize = 10;
 const PAUSE_THRESHOLD_SECONDS: f64 = 0.6;
 
+pub(crate) fn is_transcriber_control_text(text: &str) -> bool {
+    let trimmed = text.trim();
+    let Some(rest) = trimmed.strip_prefix("_ [T:") else {
+        return false;
+    };
+    let Some(number) = rest.strip_suffix(']') else {
+        return false;
+    };
+    !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit())
+}
+
 pub fn parse_whisper_json(json_str: &str) -> Result<Vec<TranscriptCue>> {
     let output: WhisperOutput =
         serde_json::from_str(json_str).context("Failed to parse WhisperX JSON output")?;
@@ -209,6 +220,13 @@ mod tests {
         assert_eq!(cues[1].text, "Word2 Word3");
         assert_eq!(cues[1].start.as_secs_f64(), 2.0);
         assert_eq!(cues[1].end.as_secs_f64(), 3.5);
+    }
+
+    #[test]
+    fn identifies_granite_control_text_without_hiding_normal_fallbacks() {
+        assert!(is_transcriber_control_text("_ [T:63]"));
+        assert!(!is_transcriber_control_text("spoken fallback"));
+        assert!(!is_transcriber_control_text("_ [T:x]"));
     }
 
     #[test]

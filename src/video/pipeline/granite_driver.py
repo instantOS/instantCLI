@@ -19,12 +19,16 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import tempfile
 import wave
 
 import numpy as np
 import transcribe_cpp as tc
+
+
+CONTROL_TEXT = re.compile(r"^_ \[T:\d+\]$")
 
 
 def read_pcm_16k(path: str) -> np.ndarray:
@@ -207,6 +211,8 @@ def result_to_segments(result: tc.Result, off_ms: int) -> list[dict]:
             for w in words
         ]
         text = " ".join(w.text.strip() for w in words) or seg.text.strip()
+        if not rows and CONTROL_TEXT.fullmatch(text):
+            continue
         segments.append(
             {
                 "start": round((off_ms + seg.t0_ms) / 1000.0, 3),
