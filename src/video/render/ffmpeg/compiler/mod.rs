@@ -1,4 +1,5 @@
 mod audio;
+mod graph;
 mod inputs;
 mod overlays;
 mod util;
@@ -11,6 +12,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 
+use self::graph::FilterGraph;
 use self::inputs::SourceMap;
 
 use super::super::mode::RenderMode;
@@ -23,29 +25,6 @@ use self::util::escape_ffmpeg_path;
 #[derive(Debug, Clone)]
 pub struct FfmpegCompileOutput {
     pub args: Vec<String>,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct FilterChain {
-    filters: Vec<String>,
-}
-
-impl FilterChain {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn push(&mut self, filter: String) {
-        self.filters.push(filter);
-    }
-
-    pub fn extend(&mut self, filters: Vec<String>) {
-        self.filters.extend(filters);
-    }
-
-    pub fn join(&self) -> String {
-        self.filters.join("; ")
-    }
 }
 
 /// Video dimensions (width x height in pixels).
@@ -181,58 +160,48 @@ impl FfmpegCompiler {
         source_map: &SourceMap,
         total_duration: f64,
     ) -> Result<String> {
-        let mut filters = FilterChain::new();
+        let mut graph = FilterGraph::new();
 
         let video_segments = timeline.video_segments();
         let overlay_segments = timeline.overlay_segments();
         let music_segments = timeline.music_segments();
         let broll_segments = timeline.broll_segments();
 
-        let has_base_track =
-            self.build_base_track_filters(&mut filters, &video_segments, source_map)?;
-
-        let mut current_video_label = "concat_v".to_string();
+        let Some((mut current_video, base_audio)) =
+            self.build_base_track_filters(&mut graph, &video_segments, source_map)?
+        else {
+            anyhow::bail!("Cannot render a timeline without a playable base video track");
+        };
 
         if !broll_segments.is_empty() {
-            current_video_label = self.apply_broll_overlays(
-                &mut filters,
-                &broll_segments,
-                source_map,
-                &current_video_label,
-            )?;
+            current_video =
+                self.apply_broll_overlays(&mut graph, &broll_segments, source_map, current_video)?;
         }
 
         if !overlay_segments.is_empty() {
-            current_video_label = self.apply_overlays(
-                &mut filters,
-                &overlay_segments,
-                source_map,
-                &current_video_label,
-            )?;
+            current_video =
+                self.apply_overlays(&mut graph, &overlay_segments, source_map, current_video)?;
         }
 
         if let Some(ass_path) = &self.subtitle_path {
             let escaped_path = escape_ffmpeg_path(ass_path);
-            let next_label = "subtitled_v";
-            filters.push(format!(
-                "[{input}]ass='{path}'[{output}]",
-                input = current_video_label,
-                path = escaped_path,
-                output = next_label
-            ));
-            current_video_label = next_label.to_string();
+            current_video = graph.video_filter(
+                current_video,
+                format!("ass='{escaped_path}'"),
+                "subtitled_v",
+            );
         }
 
-        filters.push(format!("[{}]copy[outv]", current_video_label));
+        graph.output_video(current_video);
 
         self.build_audio_mix_filters(
-            &mut filters,
+            &mut graph,
             &music_segments,
             source_map,
-            has_base_track,
+            Some(base_audio),
             total_duration,
         )?;
 
-        Ok(filters.join())
+        Ok(graph.finish())
     }
 }

@@ -1,7 +1,7 @@
 use anyhow::{Result, bail};
 
 use super::FfmpegCompiler;
-use super::FilterChain;
+use super::graph::{AudioInput, AudioPad, FilterGraph};
 use super::inputs::SourceMap;
 use super::util::format_time;
 use crate::video::render::timeline::{Segment, SegmentData};
@@ -9,104 +9,107 @@ use crate::video::render::timeline::{Segment, SegmentData};
 impl FfmpegCompiler {
     pub(super) fn build_audio_mix_filters(
         &self,
-        filters: &mut FilterChain,
+        graph: &mut FilterGraph,
         music_segments: &[&Segment],
         source_map: &SourceMap,
-        has_base_track: bool,
+        base_audio: Option<AudioPad>,
         total_duration: f64,
     ) -> Result<()> {
-        let mut audio_label: Option<String> = None;
-
-        if has_base_track {
+        let has_base_track = base_audio.is_some();
+        let mut audio = base_audio.map(|base| {
             // Voice is always a centered mono stem, regardless of how the
             // recording device labelled or duplicated its input channels.
-            filters.push(
-                "[concat_a]aformat=sample_rates=48000:channel_layouts=mono[a_base]".to_string(),
-            );
-            audio_label = Some("a_base".to_string());
-        }
+            graph.audio_filter(
+                base,
+                "aformat=sample_rates=48000:channel_layouts=mono",
+                "a_base",
+            )
+        });
 
         if !music_segments.is_empty() {
-            let music_label = self.build_music_filters(filters, music_segments, source_map)?;
-            audio_label = Some(match audio_label {
+            let music = self.build_music_filters(graph, music_segments, source_map)?;
+            audio = Some(match audio {
                 Some(base) => {
-                    let voice_mix = "a_voice_mix";
-                    let voice_sidechain = "a_voice_sidechain";
-                    filters.push(format!(
-                        "[{base}]aformat=sample_rates=48000:channel_layouts=stereo,asplit=2[{voice_mix}][{voice_sidechain}]"
-                    ));
+                    let stereo = graph.audio_filter(
+                        base,
+                        "aformat=sample_rates=48000:channel_layouts=stereo",
+                        "a_voice_stereo",
+                    );
+                    let (voice_mix, voice_sidechain) =
+                        graph.split_audio(stereo, "a_voice_mix", "a_voice_sidechain");
                     // Duck the music bed against the (already enhanced) voice:
                     // the music dips only while someone speaks, then returns
                     // untouched. Deliberate, musical ducking - not a compressor
                     // that re-masters the track (music is already mastered).
-                    let ducked = "a_duck".to_string();
-                    filters.push(format!(
-                        "[{music}][{sidechain}]sidechaincompress=threshold=0.05:ratio=8:attack=15:release=300[{ducked}]",
-                        music = music_label,
-                        sidechain = voice_sidechain,
-                        ducked = ducked,
-                    ));
-                    let mixed = "a_mix".to_string();
-                    filters.push(format!(
-                        "[{voice}][{ducked}]amix=inputs=2:duration=first:normalize=0:dropout_transition=0[{mixed}]",
-                        voice = voice_mix,
-                        ducked = ducked,
-                        mixed = mixed,
-                    ));
-                    mixed
+                    let ducked = graph.audio_two_input_filter(
+                        music,
+                        voice_sidechain,
+                        "sidechaincompress=threshold=0.05:ratio=8:attack=15:release=300",
+                        "a_duck",
+                    );
+                    graph.mix_audio(
+                        vec![voice_mix, ducked],
+                        "duration=first:normalize=0:dropout_transition=0",
+                        "a_mix",
+                    )
                 }
-                None => music_label,
+                None => music,
             });
         }
 
-        let final_audio = if let Some(label) = audio_label {
-            label
+        let final_audio = if let Some(audio) = audio {
+            audio
         } else {
             let duration = format_time(total_duration);
-            filters.push(format!(
-                "anullsrc=r=48000:cl=stereo,atrim=duration={duration}[a_silence]",
-            ));
-            "a_silence".to_string()
+            graph.audio_source(
+                format!("anullsrc=r=48000:cl=stereo,atrim=duration={duration}"),
+                "a_silence",
+            )
         };
 
-        if has_base_track && !music_segments.is_empty() {
+        let final_audio = if has_base_track && !music_segments.is_empty() {
             // Limit only the voice+music sum. The enhanced voice stem is
             // already normalized to -1 dBTP, so processing it again adds no
             // protection and needlessly changes timing/state.
-            filters.push(format!(
-                "[{label}]alimiter=limit=0.8913:level=false:latency=true,asetpts=PTS-STARTPTS[outa]",
-                label = final_audio,
-            ));
+            graph.audio_filter(
+                final_audio,
+                "alimiter=limit=0.8913:level=false:latency=true,asetpts=PTS-STARTPTS",
+                "a_final",
+            )
         } else if has_base_track {
-            filters.push(format!("[{final_audio}]asetpts=PTS-STARTPTS[outa]",));
+            graph.audio_filter(final_audio, "asetpts=PTS-STARTPTS", "a_final")
         } else {
-            filters.push(format!(
-                "[{final_audio}]atrim=duration={duration},asetpts=PTS-STARTPTS[outa]",
-                duration = format_time(total_duration),
-            ));
-        }
+            graph.audio_filter(
+                final_audio,
+                format!(
+                    "atrim=duration={},asetpts=PTS-STARTPTS",
+                    format_time(total_duration)
+                ),
+                "a_final",
+            )
+        };
+        graph.output_audio(final_audio);
         Ok(())
     }
 
     fn build_music_filters(
         &self,
-        filters: &mut FilterChain,
+        graph: &mut FilterGraph,
         music_segments: &[&Segment],
         source_map: &SourceMap,
-    ) -> Result<String> {
+    ) -> Result<AudioPad> {
         let music_volume = f64::from(self.config.music_volume());
-        let labels =
-            collect_music_segment_labels(filters, music_segments, source_map, music_volume)?;
-        mix_music_labels(filters, labels)
+        let labels = collect_music_segment_labels(graph, music_segments, source_map, music_volume)?;
+        mix_music_labels(graph, labels)
     }
 }
 
 fn collect_music_segment_labels(
-    filters: &mut FilterChain,
+    graph: &mut FilterGraph,
     music_segments: &[&Segment],
     source_map: &SourceMap,
     music_volume: f64,
-) -> Result<Vec<String>> {
+) -> Result<Vec<AudioPad>> {
     let mut labels = Vec::new();
 
     for (idx, segment) in music_segments.iter().enumerate() {
@@ -121,54 +124,44 @@ fn collect_music_segment_labels(
         let input_index = source_map.index(audio_source)?;
 
         let label = format!("music_{idx}");
-        filters.push(build_single_music_filter(
+        labels.push(build_single_music_filter(
+            graph,
             segment,
             input_index,
             music_volume,
             &label,
         ));
-        labels.push(label);
     }
 
     Ok(labels)
 }
 
 fn build_single_music_filter(
+    graph: &mut FilterGraph,
     segment: &Segment,
     input_index: usize,
     music_volume: f64,
     label: &str,
-) -> String {
+) -> AudioPad {
     let duration_str = format_time(segment.duration);
     let delay_ms = ((segment.start_time * 1000.0).round()).max(0.0) as u64;
 
-    format!(
-        "[{input}:a]atrim=start=0:end={duration},asetpts=PTS-STARTPTS,apad=pad_dur={duration},atrim=duration={duration},aresample=async=1:first_pts=0,aformat=sample_rates=48000:channel_layouts=stereo,adelay={delay}|{delay},volume={volume:.6}[{label}]",
-        input = input_index,
+    graph.audio_from_input(
+        AudioInput(input_index),
+        format!(
+        "atrim=start=0:end={duration},asetpts=PTS-STARTPTS,apad=pad_dur={duration},atrim=duration={duration},aresample=async=1:first_pts=0,aformat=sample_rates=48000:channel_layouts=stereo,adelay={delay}|{delay},volume={volume:.6}",
         duration = duration_str,
         delay = delay_ms,
         volume = music_volume,
-        label = label,
+        ),
+        label,
     )
 }
 
-fn mix_music_labels(filters: &mut FilterChain, labels: Vec<String>) -> Result<String> {
-    match labels.as_slice() {
-        [] => bail!("No music segments available to build audio filters"),
-        [label] => Ok(label.to_string()),
-        _ => {
-            let inputs = labels
-                .iter()
-                .map(|label| format!("[{label}]"))
-                .collect::<String>();
-            let output_label = "music_mix".to_string();
-            filters.push(format!(
-                "{inputs}amix=inputs={count}:normalize=0:dropout_transition=0[{output}]",
-                inputs = inputs,
-                count = labels.len(),
-                output = output_label,
-            ));
-            Ok(output_label)
-        }
+fn mix_music_labels(graph: &mut FilterGraph, mut labels: Vec<AudioPad>) -> Result<AudioPad> {
+    match labels.len() {
+        0 => bail!("No music segments available to build audio filters"),
+        1 => Ok(labels.remove(0)),
+        _ => Ok(graph.mix_audio(labels, "normalize=0:dropout_transition=0", "music_mix")),
     }
 }

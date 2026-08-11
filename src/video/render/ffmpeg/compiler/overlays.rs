@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 use super::FfmpegCompiler;
-use super::FilterChain;
+use super::graph::{FilterGraph, VideoInput, VideoPad};
 use super::inputs::SourceMap;
 use crate::video::render::timeline::{Position, Segment, SegmentData, TimeWindow, Transform};
 
@@ -10,36 +10,7 @@ const OVERLAY_FRAME_BORDER_WIDTH: u32 = 4;
 const OVERLAY_FRAME_BORDER_COLOR: &str = "0x89B4FA";
 const OVERLAY_FRAME_BACKGROUND_COLOR: &str = "0x1E1E2E";
 
-struct OverlayPrep {
-    filters: Vec<String>,
-    input_label: String,
-}
-
 impl FfmpegCompiler {
-    pub(super) fn build_scaled_overlay_filters(
-        &self,
-        input_label: &str,
-        output_label: &str,
-        scale: f64,
-    ) -> String {
-        let outer_width = (self.target_width as f64 * scale) as u32;
-        let outer_height = (self.target_height as f64 * scale) as u32;
-        let inner_width = outer_width - (OVERLAY_FRAME_BORDER_WIDTH * 2);
-        let inner_height = outer_height - (OVERLAY_FRAME_BORDER_WIDTH * 2);
-
-        format!(
-            "[{input}]scale={iw}:{ih}:force_original_aspect_ratio=decrease,pad={iw}:{ih}:(ow-iw)/2:(oh-ih)/2:{background},setsar=1,pad={ow}:{oh}:(ow-iw)/2:(oh-ih)/2:{border}[{out}]",
-            input = input_label,
-            iw = inner_width,
-            ih = inner_height,
-            ow = outer_width,
-            oh = outer_height,
-            background = OVERLAY_FRAME_BACKGROUND_COLOR,
-            border = OVERLAY_FRAME_BORDER_COLOR,
-            out = output_label,
-        )
-    }
-
     fn compute_overlay_position(
         &self,
         transform: Option<&Transform>,
@@ -86,79 +57,49 @@ impl FfmpegCompiler {
         (x, y)
     }
 
-    fn build_overlay_filter(
-        &self,
-        base_label: &str,
-        overlay_scaled_label: &str,
-        output_label: &str,
-        transform: Option<&Transform>,
-        scale_factor: f64,
-        time_window: TimeWindow,
-    ) -> String {
-        let enable_condition = format!("between(t,{},{})", time_window.start, time_window.end);
-        let overlay_width = (self.target_width as f64 * scale_factor) as u32;
-        let overlay_height = (self.target_height as f64 * scale_factor) as u32;
-        let (x_offset, y_offset) =
-            self.compute_overlay_position(transform, overlay_width, overlay_height);
-
-        format!(
-            "[{video}][{overlay}]overlay=x={x}:y={y}:enable='{condition}'[{output}]",
-            video = base_label,
-            overlay = overlay_scaled_label,
-            x = x_offset,
-            y = y_offset,
-            condition = enable_condition,
-            output = output_label,
-        )
-    }
-
     fn build_broll_prep(
         &self,
+        graph: &mut FilterGraph,
         input_index: usize,
         source_start: f64,
         duration: f64,
         timeline_start: f64,
         idx: usize,
-    ) -> OverlayPrep {
+    ) -> VideoPad {
         let trimmed_label = format!("broll_trim_{idx}");
         let trim_end = source_start + duration;
-        let filter = format!(
-            "[{input}:v]trim=start={start}:end={end},setpts=PTS-STARTPTS+{offset}/TB[{out}]",
-            input = input_index,
-            start = source_start,
-            end = trim_end,
-            offset = timeline_start,
-            out = trimmed_label,
-        );
-        OverlayPrep {
-            filters: vec![filter],
-            input_label: trimmed_label,
-        }
+        graph.video_from_input(
+            VideoInput(input_index),
+            format!(
+                "trim=start={start}:end={end},setpts=PTS-STARTPTS+{offset}/TB",
+                start = source_start,
+                end = trim_end,
+                offset = timeline_start,
+            ),
+            trimmed_label,
+        )
     }
 
-    fn build_image_prep(&self, input_index: usize, idx: usize) -> OverlayPrep {
+    fn build_image_prep(
+        &self,
+        graph: &mut FilterGraph,
+        input_index: usize,
+        idx: usize,
+    ) -> VideoPad {
         let overlay_input = format!("overlay_raw_{idx}");
-        let filter = format!(
-            "[{input}:v]format=rgba[{output}]",
-            input = input_index,
-            output = overlay_input,
-        );
-        OverlayPrep {
-            filters: vec![filter],
-            input_label: overlay_input,
-        }
+        graph.video_from_input(VideoInput(input_index), "format=rgba", overlay_input)
     }
 
     fn apply_overlay_segment(
         &self,
-        filters: &mut FilterChain,
-        prep: OverlayPrep,
+        graph: &mut FilterGraph,
+        prep: VideoPad,
         transform: Option<&Transform>,
         time_window: TimeWindow,
-        current_video_label: &str,
+        current_video: VideoPad,
         prefix: &str,
         idx: usize,
-    ) -> String {
+    ) -> VideoPad {
         let scaled_label = format!("{prefix}_{idx}");
         let output_label = format!("{prefix}_out_{idx}");
 
@@ -167,32 +108,36 @@ impl FfmpegCompiler {
             .map(|s| s as f64)
             .unwrap_or(OVERLAY_FRAME_SCALE);
 
-        filters.extend(prep.filters);
-        filters.push(self.build_scaled_overlay_filters(
-            &prep.input_label,
-            &scaled_label,
-            scale_factor,
-        ));
-        filters.push(self.build_overlay_filter(
-            current_video_label,
-            &scaled_label,
-            &output_label,
-            transform,
-            scale_factor,
-            time_window,
-        ));
-
-        output_label
+        let outer_width = (self.target_width as f64 * scale_factor) as u32;
+        let outer_height = (self.target_height as f64 * scale_factor) as u32;
+        let inner_width = outer_width - (OVERLAY_FRAME_BORDER_WIDTH * 2);
+        let inner_height = outer_height - (OVERLAY_FRAME_BORDER_WIDTH * 2);
+        let scaled = graph.video_filter(
+            prep,
+            format!(
+                "scale={inner_width}:{inner_height}:force_original_aspect_ratio=decrease,pad={inner_width}:{inner_height}:(ow-iw)/2:(oh-ih)/2:{OVERLAY_FRAME_BACKGROUND_COLOR},setsar=1,pad={outer_width}:{outer_height}:(ow-iw)/2:(oh-ih)/2:{OVERLAY_FRAME_BORDER_COLOR}"
+            ),
+            scaled_label,
+        );
+        let enable_condition = format!("between(t,{},{})", time_window.start, time_window.end);
+        let (x_offset, y_offset) =
+            self.compute_overlay_position(transform, outer_width, outer_height);
+        graph.overlay(
+            current_video,
+            scaled,
+            format!("overlay=x={x_offset}:y={y_offset}:enable='{enable_condition}'"),
+            output_label,
+        )
     }
 
     pub(super) fn apply_broll_overlays(
         &self,
-        filters: &mut FilterChain,
+        graph: &mut FilterGraph,
         broll_segments: &[&Segment],
         source_map: &SourceMap,
-        input_label: &str,
-    ) -> Result<String> {
-        let mut current_video_label = input_label.to_string();
+        input: VideoPad,
+    ) -> Result<VideoPad> {
+        let mut current_video = input;
 
         for (idx, segment) in broll_segments.iter().enumerate() {
             let SegmentData::Broll {
@@ -210,6 +155,7 @@ impl FfmpegCompiler {
             let adj_start = source_start - offset;
 
             let prep = self.build_broll_prep(
+                graph,
                 input_index,
                 adj_start,
                 segment.duration,
@@ -217,28 +163,28 @@ impl FfmpegCompiler {
                 idx,
             );
 
-            current_video_label = self.apply_overlay_segment(
-                filters,
+            current_video = self.apply_overlay_segment(
+                graph,
                 prep,
                 transform.as_ref(),
                 segment.time_window(),
-                &current_video_label,
+                current_video,
                 "broll",
                 idx,
             );
         }
 
-        Ok(current_video_label)
+        Ok(current_video)
     }
 
     pub(super) fn apply_overlays(
         &self,
-        filters: &mut FilterChain,
+        graph: &mut FilterGraph,
         overlay_segments: &[&Segment],
         source_map: &SourceMap,
-        input_label: &str,
-    ) -> Result<String> {
-        let mut current_video_label = input_label.to_string();
+        input: VideoPad,
+    ) -> Result<VideoPad> {
+        let mut current_video = input;
 
         for (idx, segment) in overlay_segments.iter().enumerate() {
             let SegmentData::Image {
@@ -250,19 +196,19 @@ impl FfmpegCompiler {
             };
 
             let input_index = source_map.index(source_image)?;
-            let prep = self.build_image_prep(input_index, idx);
+            let prep = self.build_image_prep(graph, input_index, idx);
 
-            current_video_label = self.apply_overlay_segment(
-                filters,
+            current_video = self.apply_overlay_segment(
+                graph,
                 prep,
                 transform.as_ref(),
                 segment.time_window(),
-                &current_video_label,
+                current_video,
                 "overlay",
                 idx,
             );
         }
 
-        Ok(current_video_label)
+        Ok(current_video)
     }
 }

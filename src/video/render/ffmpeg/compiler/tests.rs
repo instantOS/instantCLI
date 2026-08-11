@@ -13,7 +13,19 @@ fn compiler_includes_output_path_in_args() {
     let dimensions = VideoDimensions::new(1920, 1080);
     let render_config = RenderConfig::new(RenderMode::Standard, VideoConfig::default(), None);
     let compiler = FfmpegCompiler::new(dimensions, render_config);
-    let timeline = Timeline::new();
+    let mut timeline = Timeline::new();
+    timeline.add_segment(Segment::new_video_subset(
+        0.0,
+        1.0,
+        0.0,
+        AvSourceRef {
+            video: PathBuf::from("video.mp4"),
+            audio: PathBuf::from("audio.mp4"),
+            id: "a".to_string(),
+        },
+        None,
+        false,
+    ));
     let output = compiler
         .compile(
             PathBuf::from("out.mp4"),
@@ -158,7 +170,8 @@ fn contiguous_audio_is_not_crossfaded_at_internal_segment_boundary() {
     // unchanged: no extension and no crossfade.
     assert!(!filter_complex.contains("acrossfade="));
     assert!(!filter_complex.contains("alimiter="));
-    assert!(filter_complex.contains("[a_base]asetpts=PTS-STARTPTS[outa]"));
+    assert!(filter_complex.contains("[a_base]asetpts=PTS-STARTPTS[a_final]"));
+    assert!(filter_complex.contains("[a_final]anull[outa]"));
     assert!(filter_complex.contains("atrim=start=5.000000:end=6.000000"));
     assert!(filter_complex.contains("atrim=start=6.000000:end=7.000000"));
     assert!(filter_complex.contains("[v0][a0][v1][a1]concat=n=2:v=1:a=1[concat_v][concat_a]"));
@@ -386,16 +399,17 @@ fn voice_is_mono_and_music_mix_is_stereo() {
     assert!(filter_complex.contains("channel_layouts=mono[a_base]"));
     assert!(filter_complex.matches("channel_layouts=stereo").count() >= 2);
     assert!(filter_complex.contains("[music_0]"));
-    assert!(
-        filter_complex.contains("channel_layouts=stereo,asplit=2[a_voice_mix][a_voice_sidechain]")
-    );
+    assert!(filter_complex.contains("channel_layouts=stereo[a_voice_stereo]"));
+    assert!(filter_complex.contains("[a_voice_stereo]asplit=2[a_voice_mix][a_voice_sidechain]"));
     assert!(filter_complex.contains("[music_0][a_voice_sidechain]sidechaincompress="));
     assert!(filter_complex.contains("[a_voice_mix][a_duck]amix=inputs=2:duration=first"));
     assert!(filter_complex.contains("alimiter=limit=0.8913:level=false:latency=true"));
     assert!(
-        filter_complex
-            .contains("alimiter=limit=0.8913:level=false:latency=true,asetpts=PTS-STARTPTS[outa]")
+        filter_complex.contains(
+            "alimiter=limit=0.8913:level=false:latency=true,asetpts=PTS-STARTPTS[a_final]"
+        )
     );
+    assert!(filter_complex.contains("[a_final]anull[outa]"));
     assert!(output.args.iter().any(|arg| arg == "-shortest"));
 }
 
@@ -446,7 +460,7 @@ fn test_filter_complex_includes_subtitles() {
     let mut timeline = Timeline::new();
     timeline.add_segment(Segment::new_video_subset(
         0.0,
-        0.0,
+        5.0,
         5.0,
         AvSourceRef {
             video: PathBuf::from("video.mp4"),
