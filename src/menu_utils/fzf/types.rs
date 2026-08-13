@@ -151,8 +151,6 @@ pub struct StreamingMenuItem<T> {
 #[derive(Debug, Clone)]
 pub struct DecodedStreamingMenuItem<T> {
     pub kind: String,
-    pub key: String,
-    pub display: String,
     pub payload: T,
 }
 
@@ -197,15 +195,6 @@ impl StreamingCommand {
 
     pub fn arg(mut self, arg: impl AsRef<OsStr>) -> Self {
         self.command.arg(arg);
-        self
-    }
-
-    pub fn args<I, S>(mut self, args: I) -> Self
-    where
-        I: IntoIterator<Item = S>,
-        S: AsRef<OsStr>,
-    {
-        self.command.args(args);
         self
     }
 
@@ -259,12 +248,14 @@ fn shell_quote(s: &str) -> String {
 
 impl<T: DeserializeOwned> DecodedStreamingMenuItem<T> {
     pub fn decode(line: &str) -> Result<Self> {
+        // Streaming row format: kind\tkey\tdisplay\tpreview_kind\tpreview_b64\tpayload_b64
+        // We only retain `kind` (used by callers to discriminate row types) and `payload`.
+        // The remaining fields exist on the wire for the live fzf UI but are not consumed
+        // after decoding.
         let mut fields = line.splitn(6, '\t');
         let kind = fields.next().unwrap_or_default().to_string();
-        let key = fields.next().unwrap_or_default().to_string();
-        let display = fields.next().unwrap_or_default().to_string();
-        let _preview_kind = fields.next().unwrap_or_default();
-        let _preview_b64 = fields.next().unwrap_or_default();
+        // Skip key, display, preview_kind, preview_b64.
+        let _ = fields.nth(3);
         let payload_b64 = fields
             .next()
             .ok_or_else(|| anyhow!("Invalid streaming menu row: missing payload field"))?;
@@ -275,12 +266,7 @@ impl<T: DeserializeOwned> DecodedStreamingMenuItem<T> {
         let payload = serde_json::from_slice(&payload_json)
             .context("Failed to parse streaming menu payload")?;
 
-        Ok(Self {
-            kind,
-            key,
-            display,
-            payload,
-        })
+        Ok(Self { kind, payload })
     }
 }
 
@@ -409,11 +395,6 @@ pub enum Header {
 }
 
 impl Header {
-    /// Create a manual header (passed verbatim to fzf)
-    pub fn manual(text: &str) -> Self {
-        Header::Manual(text.to_string())
-    }
-
     /// Create a default header (with standard wrapper padding)
     pub fn default(text: &str) -> Self {
         Header::Default(text.to_string())
@@ -482,11 +463,6 @@ impl<T: FzfSelectable> ChecklistItem<T> {
     pub fn toggle(&mut self) {
         self.checked = !self.checked;
         self.display_text = Self::format_display(&self.item, self.checked);
-    }
-
-    pub fn set_checked(&mut self, checked: bool) {
-        self.checked = checked;
-        self.display_text = Self::format_display(&self.item, checked);
     }
 
     fn format_display(item: &T, checked: bool) -> String {
@@ -632,28 +608,6 @@ pub struct ItemDisplayData {
     pub keywords: String,
     /// Whether this item is selectable (false for separators)
     pub is_selectable: bool,
-}
-
-impl ItemDisplayData {
-    /// Create new display data for a selectable item.
-    pub fn new(display_text: String, key: String, keywords: String) -> Self {
-        Self {
-            display_text,
-            key,
-            keywords,
-            is_selectable: true,
-        }
-    }
-
-    /// Create new display data for a non-selectable separator.
-    pub fn separator(display_text: String) -> Self {
-        Self {
-            display_text,
-            key: String::new(),
-            keywords: String::new(),
-            is_selectable: false,
-        }
-    }
 }
 
 #[cfg(test)]

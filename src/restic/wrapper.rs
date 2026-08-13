@@ -450,13 +450,11 @@ impl ResticWrapper {
 #[derive(Debug, Deserialize)]
 pub struct BackupProgress {
     pub summary: Option<BackupSummary>,
-    pub errors: Vec<BackupError>,
 }
 
 impl BackupProgress {
     fn parse(output: &str) -> Result<Self, ResticError> {
         let mut summary = None;
-        let mut errors = Vec::new();
 
         for line in output.lines() {
             if line.trim().is_empty() {
@@ -465,59 +463,14 @@ impl BackupProgress {
 
             let value: serde_json::Value = serde_json::from_str(line)?;
 
-            if let Some(msg_type) = value.get("message_type") {
-                match msg_type.as_str() {
-                    Some("summary") => {
-                        summary = Some(serde_json::from_value(value)?);
-                    }
-                    Some("error") => {
-                        // Error messages have nested structure according to docs
-                        if let Some(error_msg) = value.get("error").and_then(|e| e.get("message")) {
-                            let during = value
-                                .get("during")
-                                .and_then(|d| d.as_str())
-                                .unwrap_or("backup")
-                                .to_string();
-                            let item = value
-                                .get("item")
-                                .and_then(|i| i.as_str())
-                                .map(|s| s.to_string());
-
-                            errors.push(BackupError {
-                                message: error_msg.as_str().unwrap_or("Unknown error").to_string(),
-                                during,
-                                item,
-                            });
-                        } else {
-                            // Fallback for different error structure
-                            let message = value
-                                .get("message")
-                                .and_then(|m| m.as_str())
-                                .unwrap_or("Unknown error")
-                                .to_string();
-                            let during = value
-                                .get("during")
-                                .and_then(|d| d.as_str())
-                                .unwrap_or("backup")
-                                .to_string();
-                            let item = value
-                                .get("item")
-                                .and_then(|i| i.as_str())
-                                .map(|s| s.to_string());
-
-                            errors.push(BackupError {
-                                message,
-                                during,
-                                item,
-                            });
-                        }
-                    }
-                    _ => {}
-                }
+            if let Some(msg_type) = value.get("message_type")
+                && msg_type.as_str() == Some("summary")
+            {
+                summary = Some(serde_json::from_value(value)?);
             }
         }
 
-        Ok(BackupProgress { summary, errors })
+        Ok(BackupProgress { summary })
     }
 }
 
@@ -542,14 +495,6 @@ pub struct BackupSummary {
     pub backup_end: String,
     pub total_duration: f64,
     pub snapshot_id: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[allow(dead_code)]
-pub struct BackupError {
-    pub message: String,
-    pub during: String,
-    pub item: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]

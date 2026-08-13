@@ -42,7 +42,6 @@ impl KeyboardLayoutKeys {
 pub struct LayoutChoice {
     pub code: String,
     pub name: String,
-    pub checked: bool,
 }
 
 impl FzfSelectable for LayoutChoice {
@@ -92,11 +91,7 @@ pub fn parse_xkb_layouts() -> Result<Vec<LayoutChoice>> {
             if parts.len() == 2 {
                 let code = parts[0].trim().to_string();
                 let name = parts[1].trim().to_string();
-                layouts.push(LayoutChoice {
-                    code,
-                    name,
-                    checked: false,
-                });
+                layouts.push(LayoutChoice { code, name });
             }
         }
     }

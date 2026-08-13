@@ -479,16 +479,6 @@ impl ConfirmBuilder {
         self.no_text = text.into();
         self
     }
-
-    pub fn title<S: Into<String>>(mut self, title: S) -> Self {
-        self.title = Some(title.into());
-        self
-    }
-
-    pub fn header<H: Into<Header>>(mut self, header: H) -> Self {
-        self.shared.header = Some(header.into());
-        self
-    }
 }
 
 // ---------------------------------------------------------------------------

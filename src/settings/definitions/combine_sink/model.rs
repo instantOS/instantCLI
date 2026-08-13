@@ -7,7 +7,6 @@ use crate::ui::preview::{FzfPreview, PreviewBuilder};
 #[derive(Debug, Clone)]
 pub(super) struct SinkInfo {
     pub(super) id: String,
-    pub(super) name: String,
     pub(super) node_name: String,
     pub(super) description: String,
     pub(super) volume: Option<String>,

@@ -98,7 +98,6 @@ fn parse_sink_line(line: &str) -> Option<SinkInfo> {
 
     Some(SinkInfo {
         id,
-        name: description.clone(),
         node_name,
         description,
         volume,

@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 /// Lightweight enum containing only display name and identifier
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LaunchItem {
@@ -10,12 +8,9 @@ pub enum LaunchItem {
 /// Desktop app details loaded lazily when needed for execution
 #[derive(Debug, Clone, Default)]
 pub struct DesktopAppDetails {
-    pub exec: String,            // Exec command with field codes
-    pub icon: Option<String>,    // Icon name
-    pub categories: Vec<String>, // Application categories
-    pub no_display: bool,        // Should be hidden
-    pub terminal: bool,          // Run in terminal
-    pub file_path: PathBuf,      // Path to .desktop file
+    pub exec: String,     // Exec command with field codes
+    pub no_display: bool, // Should be hidden
+    pub terminal: bool,   // Run in terminal
 }
 
 impl LaunchItem {

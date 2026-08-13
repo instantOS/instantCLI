@@ -31,13 +31,6 @@ pub(crate) fn push_raw_lines(mut builder: PreviewBuilder, lines: &[String]) -> P
     builder
 }
 
-pub(crate) fn push_bullets(mut builder: PreviewBuilder, lines: &[String]) -> PreviewBuilder {
-    for line in lines {
-        builder = builder.bullet(line);
-    }
-    builder
-}
-
 pub(crate) fn truncate_label(label: &str, limit: usize) -> String {
     let mut chars = label.chars();
     let count = label.chars().count();

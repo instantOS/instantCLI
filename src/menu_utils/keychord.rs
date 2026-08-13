@@ -25,16 +25,12 @@ pub enum KeyChordChild {
 
 #[derive(Clone, Debug)]
 pub struct KeyChordNode {
-    pub description: String,
     pub chords: Vec<KeyChord>,
 }
 
 impl KeyChordNode {
-    pub fn new(description: impl Into<String>, chords: Vec<KeyChord>) -> Self {
-        Self {
-            description: description.into(),
-            chords,
-        }
+    pub fn new(chords: Vec<KeyChord>) -> Self {
+        Self { chords }
     }
 }
 

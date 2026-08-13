@@ -334,13 +334,7 @@ fn build_node(prefix: &str, nodes: &BTreeMap<String, NodeBuilder>) -> KeyChordNo
         chords.push(KeyChord::new(label, key, child));
     }
 
-    KeyChordNode::new(
-        builder
-            .description
-            .clone()
-            .unwrap_or_else(|| "Chord Menu".to_string()),
-        chords,
-    )
+    KeyChordNode::new(chords)
 }
 
 /// Pure navigation state for the chord tree, independent of the terminal.
@@ -972,7 +966,6 @@ mod tests {
         let parsed = parse_chord_specs(&specs).unwrap();
         let tree = build_chord_tree(&parsed).unwrap();
 
-        assert_eq!(tree.description, "Chord Menu");
         assert_eq!(tree.chords.len(), 1);
 
         let chord = &tree.chords[0];
@@ -980,7 +973,6 @@ mod tests {
 
         match &chord.child {
             KeyChordChild::Node(node) => {
-                assert_eq!(node.description, "A group");
                 assert_eq!(node.chords.len(), 2);
 
                 let ids: Vec<_> = node
@@ -1014,7 +1006,6 @@ mod tests {
         let parsed = parse_chord_specs(&specs).unwrap();
         let tree = build_chord_tree(&parsed).unwrap();
 
-        assert_eq!(tree.description, "Chord Menu");
         assert_eq!(tree.chords.len(), 1);
 
         let chord = &tree.chords[0];
@@ -1023,7 +1014,6 @@ mod tests {
 
         match &chord.child {
             KeyChordChild::Node(node) => {
-                assert_eq!(node.description, "a");
                 assert_eq!(node.chords.len(), 1);
                 match &node.chords[0].child {
                     KeyChordChild::Leaf(action) => assert_eq!(action.id, "ab"),

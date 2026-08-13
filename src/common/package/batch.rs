@@ -17,8 +17,6 @@ use crate::ui::nerd_font::NerdFont;
 pub struct InstallBatch {
     /// Packages grouped by manager
     batches: HashMap<PackageManager, Vec<PackageToInstall>>,
-    /// Dependencies that couldn't be resolved
-    unresolved: Vec<&'static str>,
 }
 
 /// Information about a package to install
@@ -57,7 +55,6 @@ impl InstallBatch {
             Ok(true)
         } else {
             // No suitable package found
-            self.unresolved.push(dep.name);
             Ok(false)
         }
     }
@@ -70,11 +67,6 @@ impl InstallBatch {
     /// Get the total number of packages to install.
     pub fn package_count(&self) -> usize {
         self.batches.values().map(|v| v.len()).sum()
-    }
-
-    /// Get a list of unresolved dependencies.
-    pub fn unresolved(&self) -> &[&'static str] {
-        &self.unresolved
     }
 
     /// Build a styled FZF menu header listing all packages to be installed.

@@ -168,12 +168,6 @@ pub enum MainMenuItem {
     Close,
 }
 
-/// Search result item (state computed lazily in preview)
-#[derive(Clone)]
-pub struct SearchItem {
-    pub setting: &'static dyn Setting,
-}
-
 /// Tree search item - displays settings and categories in a tree structure
 #[derive(Clone)]
 pub enum TreeSearchItem {
@@ -381,33 +375,6 @@ impl FzfSelectable for MainMenuItem {
     }
 }
 
-impl FzfSelectable for SearchItem {
-    fn fzf_display_text(&self) -> String {
-        let meta = self.setting.metadata();
-        let path = format_setting_path(self.setting);
-        let category = crate::settings::category_tree::get_category_for_setting(meta.id)
-            .unwrap_or(Category::System);
-        let icon_color = meta.icon_color.unwrap_or_else(|| category.meta().color);
-
-        format!(
-            "{} {} {}",
-            format_icon_colored(meta.icon, icon_color),
-            meta.title,
-            path
-        )
-    }
-
-    fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
-        crate::menu_utils::FzfPreview::Command(crate::preview::preview_command_for_setting(
-            self.setting.metadata().id,
-        ))
-    }
-
-    fn fzf_key(&self) -> String {
-        self.setting.metadata().id.to_string()
-    }
-}
-
 const RESET: &str = "\x1b[0m";
 const BOLD: &str = "\x1b[1m";
 
@@ -611,20 +578,6 @@ fn format_setting_line(setting: &dyn Setting, state: &SettingState) -> String {
         meta.title,
         state_suffix
     )
-}
-
-/// Format the breadcrumb path for a setting
-fn format_setting_path(setting: &dyn Setting) -> String {
-    let meta = setting.metadata();
-    let subtext = crate::ui::catppuccin::hex_to_ansi_fg(colors::SUBTEXT0);
-    let reset = "\x1b[0m";
-
-    if let Some(category) = crate::settings::category_tree::get_category_for_setting(meta.id) {
-        let cat_meta = category.meta();
-        format!("{subtext}({}){reset}", cat_meta.title)
-    } else {
-        String::new()
-    }
 }
 
 /// Build preview for a setting

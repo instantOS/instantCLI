@@ -21,10 +21,6 @@ impl SyncSummary {
     pub fn total(&self) -> usize {
         self.synced + self.skipped + self.errors
     }
-
-    pub fn is_success(&self) -> bool {
-        self.errors == 0
-    }
 }
 
 pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<SyncSummary> {

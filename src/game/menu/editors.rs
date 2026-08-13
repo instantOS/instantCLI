@@ -315,7 +315,6 @@ fn edit_game_launch_command(state: &mut EditState) -> Result<bool> {
         source_label: "device-specific override",
     });
     let context = LaunchCommandBuilderContext::from_game(
-        Some(&state.game().name.0),
         state
             .installation()
             .map(|install| install.save_path.as_path()),
@@ -404,7 +403,6 @@ fn edit_installation_launch_command(state: &mut EditState) -> Result<bool> {
         source_label: "shared command",
     });
     let context = LaunchCommandBuilderContext::from_game(
-        Some(&state.game().name.0),
         state
             .installation()
             .map(|install| install.save_path.as_path()),

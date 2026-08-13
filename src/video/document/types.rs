@@ -65,7 +65,6 @@ pub struct UnhandledBlock {
 #[derive(Debug)]
 pub struct BrollBlock {
     pub range: TimeRange,
-    pub text: String,
     pub source_id: String,
     pub transform: super::transform::TransformSpec,
 }

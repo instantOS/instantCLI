@@ -51,7 +51,6 @@ pub use umu::UmuBuilder;
 
 #[derive(Debug, Clone, Default)]
 pub struct LaunchCommandBuilderContext {
-    pub game_name: Option<String>,
     pub save_path: Option<PathBuf>,
     pub executable_path: Option<PathBuf>,
     pub presets: Vec<LaunchCommandBuilderPreset>,
@@ -73,12 +72,10 @@ pub enum BuilderPresetData {
 
 impl LaunchCommandBuilderContext {
     pub fn from_game(
-        game_name: Option<&str>,
         save_path: Option<&Path>,
         existing_launch_command: Option<&LaunchCommand>,
     ) -> Self {
         let mut context = Self {
-            game_name: game_name.map(str::to_string),
             save_path: save_path.map(Path::to_path_buf),
             executable_path: None,
             presets: Vec::new(),
@@ -730,7 +727,7 @@ mod tests {
             }),
         };
 
-        let context = LaunchCommandBuilderContext::from_game(None, None, Some(&command));
+        let context = LaunchCommandBuilderContext::from_game(None, Some(&command));
 
         assert_eq!(context.recommended_launcher(), Some(LauncherType::Eden));
     }
@@ -740,7 +737,7 @@ mod tests {
         let save_path =
             Path::new("/home/test/.local/share/eden/nand/user/save/0000000000000000/abcdef");
 
-        let context = LaunchCommandBuilderContext::from_game(None, Some(save_path), None);
+        let context = LaunchCommandBuilderContext::from_game(Some(save_path), None);
 
         assert_eq!(context.recommended_launcher(), Some(LauncherType::Eden));
     }
@@ -754,7 +751,7 @@ mod tests {
         let save_path =
             Path::new("/home/test/.local/share/eden/nand/user/save/0000000000000000/abcdef");
 
-        let context = LaunchCommandBuilderContext::from_game(None, Some(save_path), Some(&command));
+        let context = LaunchCommandBuilderContext::from_game(Some(save_path), Some(&command));
 
         assert_eq!(context.recommended_launcher(), Some(LauncherType::Steam));
     }

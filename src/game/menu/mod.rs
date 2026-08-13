@@ -575,7 +575,6 @@ fn ensure_launch_command(game_name: &str, state: &GameState) -> Result<Option<St
         .iter()
         .find(|install| install.game_name.0 == game_name);
     let context = LaunchCommandBuilderContext::from_game(
-        Some(game_name),
         installation.map(|install| install.save_path.as_path()),
         installation
             .and_then(|install| install.launch_command.as_ref())

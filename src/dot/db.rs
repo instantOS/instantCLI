@@ -260,17 +260,6 @@ impl Database {
         Ok(result.next().is_some())
     }
 
-    pub fn source_hash_exists(&self, hash: &str, path: &Path) -> Result<bool> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT 1 FROM file_hashes WHERE hash = ? AND path = ? AND source_file = 1")?;
-        let path_str = path
-            .to_str()
-            .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 path: {}", path.display()))?;
-        let mut result = stmt.query_map([hash, path_str], |row| row.get::<_, i32>(0))?;
-        Ok(result.next().is_some())
-    }
-
     pub fn source_hash_exists_anywhere(&self, hash: &str) -> Result<bool> {
         let result: Option<i32> = self
             .conn
@@ -534,26 +523,6 @@ mod tests {
     }
 
     #[test]
-    fn test_source_hash_exists() {
-        let dir = tempdir().unwrap();
-        let test_path = dir.path().join("test_file");
-        std::fs::write(&test_path, "test content").unwrap();
-
-        let db_path = dir.path().join("test.db");
-        let db = Database::new(db_path).unwrap();
-
-        // Add hash as source file
-        db.add_hash("test_hash", &test_path, DotFileType::SourceFile)
-            .unwrap();
-
-        // Source hash should exist
-        assert!(db.source_hash_exists("test_hash", &test_path).unwrap());
-
-        // Should not exist as target hash
-        assert!(!db.target_hash_exists("test_hash", &test_path).unwrap());
-    }
-
-    #[test]
     fn test_source_hash_exists_anywhere() {
         let dir = tempdir().unwrap();
         let test_path = dir.path().join("test_file");
@@ -572,7 +541,6 @@ mod tests {
 
         // Ensure it does not require a matching path
         assert!(db.source_hash_exists_anywhere("test_hash").unwrap());
-        assert!(!db.source_hash_exists("test_hash", &other_path).unwrap());
     }
 
     #[test]
@@ -591,8 +559,8 @@ mod tests {
         // Target hash should exist
         assert!(db.target_hash_exists("test_hash", &test_path).unwrap());
 
-        // Should not exist as source hash
-        assert!(!db.source_hash_exists("test_hash", &test_path).unwrap());
+        // Should not exist as source hash anywhere
+        assert!(!db.source_hash_exists_anywhere("test_hash").unwrap());
     }
 
     #[test]

@@ -1,5 +1,4 @@
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use anyhow::{Result, anyhow};
 
@@ -9,9 +8,6 @@ use crate::common::TildePath;
 use crate::preview::{PreviewId, preview_command};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::{FzfPreview, PreviewBuilder};
-
-/// A function that generates a custom preview for a suggested path
-pub type SuggestionPreviewFn = Arc<dyn Fn(&Path) -> FzfPreview + Send + Sync>;
 
 #[derive(Debug, Clone)]
 enum PathInputChoice {
@@ -83,7 +79,6 @@ pub struct PathInputBuilder {
     picker_option_label: String,
     wine_prefix_option_label: Option<String>,
     suggested_paths: Vec<PathBuf>,
-    suggestion_preview_fn: Option<SuggestionPreviewFn>,
 }
 
 impl PathInputBuilder {
@@ -104,7 +99,6 @@ impl PathInputBuilder {
             picker_option_label: format!("{picker_icon} Browse with the picker"),
             wine_prefix_option_label: None,
             suggested_paths: Vec::new(),
-            suggestion_preview_fn: None,
         }
     }
 
@@ -159,16 +153,6 @@ impl PathInputBuilder {
         P: Into<PathBuf>,
     {
         self.suggested_paths = paths.into_iter().map(Into::into).collect();
-        self
-    }
-
-    /// Set a custom preview function for suggested paths.
-    /// When set, this function is called instead of the default preview_suggestion.
-    pub fn suggestion_preview<F>(mut self, f: F) -> Self
-    where
-        F: Fn(&Path) -> FzfPreview + Send + Sync + 'static,
-    {
-        self.suggestion_preview_fn = Some(Arc::new(f));
         self
     }
 
@@ -232,13 +216,6 @@ impl PathInputBuilder {
         }
     }
 
-    fn suggestion_preview_for(&self, path: &Path) -> FzfPreview {
-        match &self.suggestion_preview_fn {
-            Some(f) => f(path),
-            None => preview_suggestion(path),
-        }
-    }
-
     fn normalize_suggested_path(&self, path: &Path) -> (PathBuf, String) {
         if let Ok(canonical) = path.canonicalize()
             && canonical.exists()
@@ -260,7 +237,7 @@ impl PathInputBuilder {
                 continue;
             }
 
-            let preview = self.suggestion_preview_for(&path);
+            let preview = preview_suggestion(&path);
             options.push(PathInputOption::new_with_preview(
                 format_suggested_label(&path),
                 PathInputChoice::Suggestion(path),

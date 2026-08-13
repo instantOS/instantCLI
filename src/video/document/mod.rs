@@ -305,7 +305,6 @@ mod tests {
             DocumentBlock::Broll(broll) => {
                 assert!((broll.range.start_seconds() - 5.0).abs() < f64::EPSILON);
                 assert!((broll.range.end_seconds() - 10.0).abs() < f64::EPSILON);
-                assert_eq!(broll.text, "some optional text");
                 assert_eq!(broll.source_id, "a");
             }
             other => panic!("Expected Broll block, got {:?}", other),

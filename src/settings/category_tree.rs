@@ -231,22 +231,3 @@ fn find_setting_in_tree(nodes: &[CategoryNode], setting_id: &str) -> bool {
     }
     false
 }
-
-fn find_setting_path(nodes: &[CategoryNode], setting_id: &str, path: &mut Vec<String>) -> bool {
-    for node in nodes {
-        if let Some(setting) = node.setting {
-            if setting.metadata().id == setting_id {
-                return true;
-            }
-        } else if !node.children.is_empty()
-            && let Some(name) = node.name
-        {
-            path.push(name.to_string());
-            if find_setting_path(&node.children, setting_id, path) {
-                return true;
-            }
-            path.pop();
-        }
-    }
-    false
-}

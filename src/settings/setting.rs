@@ -227,15 +227,6 @@ pub struct SettingMetadataBuilder {
 }
 
 impl SettingMetadataBuilder {
-    pub fn new(id: &'static str, title: &'static str, icon: NerdFont) -> Self {
-        Self {
-            id: Some(id),
-            title: Some(title),
-            icon: Some(icon),
-            ..Default::default()
-        }
-    }
-
     pub fn id(mut self, id: &'static str) -> Self {
         self.id = Some(id);
         self

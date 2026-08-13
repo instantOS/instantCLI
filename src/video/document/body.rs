@@ -186,10 +186,8 @@ impl<'a> BodyParserState<'a> {
             if let Some(code_span) = state.code_span {
                 let (source_id, _cue_id, range, transform) =
                     parse_segment_reference(&code_span, self.source_config, self.base_line_offset)?;
-                let text = state.following_text.trim().to_string();
                 self.blocks.push(DocumentBlock::Broll(BrollBlock {
                     range,
-                    text,
                     source_id,
                     transform,
                 }));

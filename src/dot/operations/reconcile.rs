@@ -337,11 +337,7 @@ mod tests {
 
         assert_eq!(fs::read_to_string(&target).unwrap(), "local change");
         assert!(env.db.get_managed_targets(false).unwrap().is_empty());
-        assert!(
-            !env.db
-                .source_hash_exists(&applied_hash, &env.source)
-                .unwrap()
-        );
+        assert!(!env.db.source_hash_exists_anywhere(&applied_hash).unwrap());
     }
 
     #[test]

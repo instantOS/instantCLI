@@ -100,10 +100,6 @@ impl BoolSettingKey {
     }
 }
 
-pub fn all_bool_sources() -> &'static [(&'static BoolSettingKey, &'static dyn BoolStateSource)] {
-    &BOOL_SOURCES
-}
-
 impl StringSettingKey {
     pub fn source(&self) -> Option<&'static dyn StringStateSource> {
         STRING_SOURCES
@@ -111,9 +107,4 @@ impl StringSettingKey {
             .find(|(candidate, _)| candidate.key == self.key)
             .map(|(_, source)| *source)
     }
-}
-
-pub fn all_string_sources() -> &'static [(&'static StringSettingKey, &'static dyn StringStateSource)]
-{
-    &STRING_SOURCES
 }

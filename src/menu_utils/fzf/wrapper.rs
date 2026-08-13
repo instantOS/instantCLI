@@ -710,19 +710,6 @@ impl FzfWrapper {
     pub fn password(prompt: &str) -> Result<FzfResult<String>> {
         Self::builder().prompt(prompt).password().password_dialog()
     }
-
-    /// Convenience method for checklist dialogs.
-    /// Returns Some(checked_items) or None if cancelled.
-    pub fn checklist<T: FzfSelectable + Clone>(items: Vec<T>) -> Result<Option<Vec<T>>> {
-        match Self::builder()
-            .checklist("Continue")
-            .checklist_dialog(items)?
-        {
-            ChecklistResult::Confirmed(items) => Ok(Some(items)),
-            ChecklistResult::Cancelled => Ok(None),
-            ChecklistResult::Action(_) => Ok(None),
-        }
-    }
 }
 
 #[cfg(test)]

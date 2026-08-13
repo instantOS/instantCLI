@@ -20,7 +20,6 @@ pub struct GameSelectionResult {
 /// Result of security validation
 #[derive(Clone)]
 pub struct SecurityValidationResult {
-    pub save_path_exists: bool,
     pub has_local_saves: bool,
     pub save_info: Option<crate::game::utils::save_files::SaveDirectoryInfo>,
 }
@@ -105,11 +104,7 @@ pub fn validate_restore_environment(
 
     let has_local_saves = save_info.file_count > 0;
 
-    // Check if save path exists (not an error for restore - will be created)
-    let save_path_exists = save_path.exists();
-
     Ok(SecurityValidationResult {
-        save_path_exists,
         has_local_saves,
         save_info: Some(save_info),
     })

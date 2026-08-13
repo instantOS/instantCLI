@@ -149,25 +149,3 @@ fn is_scratchpad_registered(name: &str) -> Result<bool> {
 pub fn reload_config() -> Result<()> {
     instantwmctl::run(["reload"])
 }
-
-pub fn set_mode(mode_name: &str) -> Result<()> {
-    instantwmctl::run(["mode", "set", mode_name])
-}
-
-pub fn list_modes() -> Result<String> {
-    let output = instantwmctl::output(["mode", "list"])?;
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
-}
-
-pub fn get_current_mode() -> Result<String> {
-    let output = list_modes()?;
-    for line in output.lines() {
-        if line.starts_with("* ") || line.contains("(current)") {
-            return Ok(line
-                .trim_start_matches("* ")
-                .trim_end_matches(" (current)")
-                .to_string());
-        }
-    }
-    Ok("default".to_string())
-}

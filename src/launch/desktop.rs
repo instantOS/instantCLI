@@ -35,35 +35,19 @@ impl DesktopLoader {
         let content = std::fs::read_to_string(&file_path).context("Failed to read desktop file")?;
         let desktop_file = parse(&content).context("Failed to parse desktop file")?;
 
-        let (exec, _name, terminal, categories, icon) = match &desktop_file.entry.entry_type {
+        let (exec, terminal) = match &desktop_file.entry.entry_type {
             EntryType::Application(app) => {
                 let exec = app.exec.clone().unwrap_or_default();
-                let name = desktop_file.entry.name.default.clone();
                 let terminal = app.terminal.unwrap_or(false);
-                let categories = app.categories.clone().unwrap_or_default();
-                let icon = desktop_file
-                    .entry
-                    .icon
-                    .as_ref()
-                    .map(|icon_str| icon_str.content.clone());
-                (exec, name, terminal, categories, icon)
+                (exec, terminal)
             }
-            _ => (
-                String::new(),
-                desktop_id.to_string(),
-                false,
-                Vec::new(),
-                None,
-            ), // Fallback for non-application types
+            _ => (String::new(), false), // Fallback for non-application types
         };
 
         Ok(DesktopAppDetails {
             exec,
-            icon,
-            categories,
             no_display: desktop_file.entry.no_display.unwrap_or(false),
             terminal,
-            file_path,
         })
     }
 
