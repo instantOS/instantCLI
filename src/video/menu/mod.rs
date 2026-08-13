@@ -8,7 +8,6 @@ mod types;
 use anyhow::Result;
 
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor, MenuItem};
-use crate::ui::catppuccin::fzf_mocha_args;
 
 use convert::run_new_project;
 use operations::{run_enhance, run_setup, run_slide, run_transcribe};
@@ -51,7 +50,6 @@ fn select_video_menu_entry(cursor: &mut MenuCursor) -> Result<Option<VideoMenuEn
     let mut builder = FzfWrapper::builder()
         .header(Header::fancy("Video Menu"))
         .prompt("Select")
-        .args(fzf_mocha_args())
         .responsive_layout();
 
     if let Some(index) = cursor.initial_index(&entries) {

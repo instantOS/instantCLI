@@ -5,7 +5,7 @@ use anyhow::Result;
 use crate::dot::config::DotfileConfig;
 use crate::dot::dotfilerepo::DotfileRepo;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header};
-use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
+use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 
@@ -125,7 +125,6 @@ pub(crate) fn handle_delete_subdir(
     let result = FzfWrapper::builder()
         .header(Header::fancy(&format!("Delete '{}'?", subdir_name)))
         .prompt("How do you want to remove this directory?")
-        .args(fzf_mocha_args())
         .responsive_layout()
         .select(choices)?;
 

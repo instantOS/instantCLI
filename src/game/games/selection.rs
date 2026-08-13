@@ -348,7 +348,6 @@ pub fn select_game_interactive(prompt_message: Option<&str>) -> Result<Option<St
     }
 
     let result = FzfWrapper::builder()
-        .args(crate::ui::catppuccin::fzf_mocha_args())
         .responsive_layout()
         .select(config.games.clone())
         .map_err(|e| anyhow::anyhow!("Failed to select game: {}", e))?;
@@ -396,7 +395,6 @@ pub fn select_game_menu_entry(cursor: &mut MenuCursor) -> Result<Option<GameMenu
     let mut builder = FzfWrapper::builder()
         .header(Header::fancy("Game Menu"))
         .prompt("Select")
-        .args(crate::ui::catppuccin::fzf_mocha_args())
         .responsive_layout();
 
     if let Some(index) = cursor.initial_index(&entries) {

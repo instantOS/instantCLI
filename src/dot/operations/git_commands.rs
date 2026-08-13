@@ -5,7 +5,6 @@ use crate::dot::git::repo_ops::{run_git_command, run_interactive_git_command};
 use crate::dot::menu::repo_actions::build_repo_preview;
 use crate::dot::types::RepoMenuItem;
 use crate::menu_utils::{FzfResult, FzfWrapper, Header};
-use crate::ui::catppuccin::fzf_mocha_args;
 use crate::ui::prelude::*;
 use anyhow::Result;
 use colored::*;
@@ -221,7 +220,6 @@ pub fn git_run_any(config: &DotfileConfig, args: &[String], debug: bool) -> Resu
         match FzfWrapper::builder()
             .header(Header::fancy("Select Repository"))
             .prompt("Select")
-            .args(fzf_mocha_args())
             .responsive_layout()
             .select(items)
             .map_err(|e| anyhow::anyhow!("Selection error: {}", e))?

@@ -6,7 +6,7 @@ use crate::dot::config::{DotfileConfig, Repo};
 use crate::dot::db::Database;
 use crate::dot::dotfilerepo::DotfileRepo;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
-use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
+use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 
@@ -344,7 +344,6 @@ fn select_subdir(
     let mut builder = FzfWrapper::builder()
         .header(Header::fancy(header_text))
         .prompt("Select subdirectory")
-        .args(fzf_mocha_args())
         .responsive_layout();
 
     if let Some(index) = cursor.initial_index(subdir_items) {

@@ -3,7 +3,6 @@ use crate::dot::db::Database;
 use crate::dot::repo::DotfileRepositoryManager;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header};
 use crate::preview::{DotRepositoryPreviewPayload, PreviewId, preview_command};
-use crate::ui::catppuccin::fzf_mocha_args;
 use anyhow::{Context, Result};
 
 #[derive(Clone)]
@@ -55,7 +54,6 @@ fn select_repo_interactive(config: &DotfileConfig, prompt: &str) -> Result<Optio
     let result = FzfWrapper::builder()
         .header(Header::fancy("Select Repository"))
         .prompt(prompt)
-        .args(fzf_mocha_args())
         .responsive_layout()
         .select(items)?;
 

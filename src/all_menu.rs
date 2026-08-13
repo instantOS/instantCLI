@@ -3,7 +3,7 @@ use anyhow::Result;
 use crate::menu_utils::{
     FzfPreview, FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor, MenuItem,
 };
-use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
+use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::{dot, game, settings, video};
 
@@ -76,7 +76,6 @@ pub async fn run_all_menu(debug: bool) -> Result<i32> {
         let mut builder = FzfWrapper::builder()
             .header(Header::fancy("InstantCLI Menus"))
             .prompt("Select interface")
-            .args(fzf_mocha_args())
             .responsive_layout();
 
         if let Some(index) = cursor.initial_index(&entries) {

@@ -3,7 +3,7 @@ use anyhow::Result;
 use crate::menu_utils::{
     ConfirmResult, FzfPreview, FzfResult, FzfSelectable, FzfWrapper, Header, MenuPresentation,
 };
-use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
+use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 
@@ -359,7 +359,6 @@ impl QuestionEngine {
         let review = FzfWrapper::builder()
             .header(Header::fancy("Select a question to modify"))
             .prompt("Search")
-            .args(fzf_mocha_args())
             .responsive_layout()
             .select(review_items)?;
 
@@ -548,7 +547,6 @@ impl QuestionEngine {
         let nav = FzfWrapper::builder()
             .header(Header::fancy("Installation Configuration Complete"))
             .prompt("Select")
-            .args(fzf_mocha_args())
             .responsive_layout()
             .select(options)?;
 

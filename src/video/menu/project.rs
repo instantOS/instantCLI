@@ -7,7 +7,7 @@ use std::time::Instant;
 use crate::menu_utils::{
     ConfirmResult, FzfPreview, FzfResult, FzfSelectable, FzfWrapper, Header, HeaderBuilder,
 };
-use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
+use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 use crate::video::cli::{AppendArgs, CheckArgs, RenderArgs};
@@ -220,7 +220,6 @@ pub async fn open_project_for_path(markdown_path: &Path) -> Result<()> {
         let result = FzfWrapper::builder()
             .header(Header::fancy(project_name))
             .prompt("Select")
-            .args(fzf_mocha_args())
             .responsive_layout()
             .select(entries)?;
 
@@ -567,7 +566,6 @@ fn prompt_output_conflict(output_path: &Path) -> Result<Option<OutputConflictCho
                 .build(),
         )
         .prompt("Select")
-        .args(fzf_mocha_args())
         .responsive_layout()
         .select(options)?;
 
@@ -684,7 +682,6 @@ fn show_post_render_menu(output_path: &Path, elapsed: Option<std::time::Duration
     let result = FzfWrapper::builder()
         .header(header.build())
         .prompt("Select")
-        .args(fzf_mocha_args())
         .responsive_layout()
         .select(entries)?;
 

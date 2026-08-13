@@ -13,7 +13,6 @@ use crate::settings::context::SettingsContext;
 use crate::settings::deps::FLATPAK;
 use crate::settings::flatpak_list::FlatpakSelectionPayload;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
-use crate::ui::catppuccin::fzf_mocha_args;
 use crate::ui::prelude::*;
 
 /// Action that can be performed on a selected Flatpak
@@ -110,7 +109,6 @@ fn run_installed_flatpaks_manager() -> Result<()> {
         let result = FzfWrapper::builder()
             .prompt("Select a Flatpak app")
             .header(Header::fancy("Manage Installed Flatpaks"))
-            .args(fzf_mocha_args())
             .responsive_layout()
             .select_encoded_streaming::<FlatpakSelectionPayload, _>(list_command)?;
 

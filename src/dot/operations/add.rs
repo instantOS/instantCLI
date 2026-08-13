@@ -7,7 +7,6 @@ use crate::dot::menu::repo_actions::build_repo_preview;
 use crate::dot::types::{DotsDirSelectItem, RepoMenuItem};
 use crate::dot::utils::{filter_dotfiles_by_path, get_all_dotfiles, resolve_dotfile_path};
 use crate::menu_utils::{ConfirmResult, FzfResult, FzfWrapper, Header};
-use crate::ui::catppuccin::fzf_mocha_args;
 use crate::ui::prelude::*;
 use anyhow::Result;
 use colored::*;
@@ -97,7 +96,6 @@ fn select_repo(config: &DotfileConfig, db: &Database, target_path: &Path) -> Res
     match FzfWrapper::builder()
         .header(Header::fancy("Select Repository"))
         .prompt("Select")
-        .args(fzf_mocha_args())
         .responsive_layout()
         .select(items)
         .map_err(|e| anyhow::anyhow!("Selection error: {}", e))?
@@ -185,7 +183,6 @@ fn select_dots_dir(
             dotfile_repo.name
         )))
         .prompt("Select")
-        .args(fzf_mocha_args())
         .responsive_layout()
         .select(items)
         .map_err(|e| anyhow::anyhow!("Selection error: {}", e))?

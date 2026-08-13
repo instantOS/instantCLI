@@ -9,7 +9,6 @@ use crate::dot::config::DotfileConfig;
 use crate::dot::override_config::{DotfileSource, OverrideConfig};
 use crate::dot::sources;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
-use crate::ui::catppuccin::fzf_mocha_args;
 use crate::ui::prelude::*;
 
 use super::apply::{is_safe_to_switch, remove_override, set_alternative};
@@ -92,7 +91,6 @@ fn handle_single_source(
                 display
             )))
             .prompt("Action: ")
-            .args(fzf_mocha_args())
             .responsive_layout()
             .select(vec![Choice::Remove, Choice::Back])?
         {
@@ -202,7 +200,6 @@ fn run_source_selection_menu(
         let config = DotfileConfig::load(None)?;
         let mut builder = FzfWrapper::builder()
             .prompt(format!("Select source for {}: ", display))
-            .args(fzf_mocha_args())
             .responsive_layout();
 
         if let Some(index) = cursor.initial_index(&menu) {

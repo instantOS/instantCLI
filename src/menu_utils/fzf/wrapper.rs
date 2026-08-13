@@ -14,7 +14,6 @@ use super::preview::PreviewUtils;
 use super::types::ItemDisplayData;
 use super::types::*;
 use super::utils::{handle_old_fzf_error, log_fzf_failure};
-use crate::ui::catppuccin::fzf_mocha_args;
 use crate::ui::nerd_font::NerdFont;
 
 /// Named parts extracted from `FzfBuilder` for constructing `FzfWrapper`.
@@ -429,7 +428,6 @@ impl FzfWrapper {
             // The empty default header intentionally renders as vertical
             // breathing room between the query line and the first row.
             .header(Header::default(""))
-            .args(fzf_mocha_args())
             .responsive_layout()
     }
 

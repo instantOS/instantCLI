@@ -29,7 +29,7 @@ use crate::menu_utils::{
     ConfirmResult, FzfResult, FzfSelectable, FzfWrapper, Header, HeaderBuilder, MenuCursor,
     MenuPresentation,
 };
-use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
+use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 
@@ -800,7 +800,6 @@ fn handle_open_save_directory_action(game_name: &str, state: &GameState) -> Resu
                 .build(),
         )
         .prompt("Open with")
-        .args(fzf_mocha_args())
         .responsive_layout()
         .presentation(MenuPresentation::Padded)
         .select(items)?;
@@ -880,7 +879,6 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
             let mut builder = FzfWrapper::builder()
                 .header(HeaderBuilder::new(NerdFont::Gamepad, name).build())
                 .prompt("Select action")
-                .args(fzf_mocha_args())
                 .responsive_layout();
 
             if let Some(index) = cursor.initial_index(&actions) {
@@ -1023,7 +1021,6 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
                     let mut builder = FzfWrapper::builder()
                         .header(HeaderBuilder::new(NerdFont::Gamepad, &game_name).build())
                         .prompt("Select action")
-                        .args(fzf_mocha_args())
                         .responsive_layout();
 
                     if let Some(index) = cursor.initial_index(&actions) {
@@ -1148,7 +1145,6 @@ fn show_uninitialized_menu() -> Result<()> {
     let selection = FzfWrapper::builder()
         .header(Header::fancy("Game save manager is not initialized"))
         .prompt("Select action")
-        .args(fzf_mocha_args())
         .responsive_layout()
         .presentation(MenuPresentation::Padded)
         .select(options)?;

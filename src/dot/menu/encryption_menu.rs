@@ -4,9 +4,7 @@ use std::path::PathBuf;
 use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
 use crate::menu_utils::{ConfirmResult, FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
-use crate::ui::catppuccin::{
-    colors, format_back_icon, format_icon_colored, format_with_color, fzf_mocha_args,
-};
+use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, format_with_color};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 
@@ -274,7 +272,6 @@ fn handle_key_action_menu(
         let mut builder = FzfWrapper::builder()
             .header(Header::fancy(&format!("Key: {}", key.display_name())))
             .prompt("Select action")
-            .args(fzf_mocha_args())
             .responsive_layout();
 
         if let Some(index) = cursor.initial_index(&actions) {
@@ -398,7 +395,6 @@ fn handle_authorize_key_to_repo(
     let builder = FzfWrapper::builder()
         .header(Header::fancy("Select Repository"))
         .prompt("Repository")
-        .args(fzf_mocha_args())
         .responsive_layout();
 
     let result = builder.select(repo_entries)?;
@@ -528,7 +524,6 @@ pub fn handle_encryption_keys_menu(
         let mut builder = FzfWrapper::builder()
             .header(Header::fancy("Encryption Keys"))
             .prompt("Select key")
-            .args(fzf_mocha_args())
             .responsive_layout();
 
         if let Some(index) = cursor.initial_index(&items) {

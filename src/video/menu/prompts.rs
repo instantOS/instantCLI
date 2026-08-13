@@ -6,7 +6,7 @@ use crate::menu_utils::{
     ChecklistResult, ConfirmResult, FzfResult, FzfWrapper, Header, HeaderBuilder,
     PathInputSelection,
 };
-use crate::ui::catppuccin::{colors, format_icon_colored, fzf_mocha_args};
+use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 
@@ -250,7 +250,6 @@ pub fn select_render_options() -> Result<Option<RenderOptions>> {
                 .subtitle("Toggle with Enter, then choose Save")
                 .build(),
         )
-        .args(fzf_mocha_args())
         .responsive_layout()
         .checklist("Save")
         .checklist_dialog(items)?;
@@ -351,7 +350,6 @@ pub fn select_choice<T: Clone>(
     let result = FzfWrapper::builder()
         .header(Header::fancy(title))
         .prompt(prompt)
-        .args(fzf_mocha_args())
         .responsive_layout()
         .select(items)?;
 

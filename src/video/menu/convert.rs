@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use crate::menu_utils::{
     ConfirmResult, FzfPreview, FzfResult, FzfSelectable, FzfWrapper, HeaderBuilder,
 };
-use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
+use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 use crate::video::cli::{AppendArgs, ConvertArgs};
@@ -122,7 +122,6 @@ pub async fn run_new_project() -> Result<()> {
         let result = FzfWrapper::builder()
             .header(header)
             .prompt("Select")
-            .args(fzf_mocha_args())
             .responsive_layout()
             .select(entries)?;
 

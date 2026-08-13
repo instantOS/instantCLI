@@ -9,7 +9,7 @@ use crate::menu_utils::{
     ConfirmResult, FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor, MenuPresentation,
     TextEditOutcome, TextEditPrompt, prompt_text_edit,
 };
-use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
+use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 
@@ -97,7 +97,6 @@ pub fn handle_global_units_menu(config: &mut DotfileConfig, db: &Database) -> Re
         let mut builder = FzfWrapper::builder()
             .header(Header::fancy("Global Units"))
             .prompt("Select unit")
-            .args(fzf_mocha_args())
             .responsive_layout();
 
         if let Some(index) = cursor.initial_index(&items) {
@@ -204,7 +203,6 @@ fn select_detail_action(
     let mut builder = FzfWrapper::builder()
         .header(Header::fancy(&format!("Edit Details: {}", repo_name)))
         .prompt("Select field to edit")
-        .args(fzf_mocha_args())
         .responsive_layout();
 
     if let Some(index) = cursor.initial_index(&actions) {
@@ -264,7 +262,6 @@ fn handle_manage_units(
         let mut builder = FzfWrapper::builder()
             .header(Header::fancy(&format!("Units: {}", repo_name)))
             .prompt("Select unit")
-            .args(fzf_mocha_args())
             .responsive_layout();
 
         if let Some(index) = cursor.initial_index(&items) {

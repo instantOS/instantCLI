@@ -7,7 +7,7 @@ use crate::menu_utils::{
     DecodedStreamingMenuItem, FilePickerScope, FzfResult, FzfWrapper, Header, PathInputBuilder,
     PathInputSelection, StreamingCommand, StreamingMenuItem,
 };
-use crate::ui::catppuccin::{colors, format_icon_colored, fzf_mocha_args};
+use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 use anyhow::{Result, anyhow};
@@ -123,7 +123,6 @@ pub(super) fn maybe_prefill_from_emulators(
         let result = FzfWrapper::builder()
             .header(Header::fancy("Games"))
             .prompt("Select")
-            .args(fzf_mocha_args())
             .responsive_layout()
             .select_encoded_streaming_prefilled::<MenuSelectionPayload, _>(
                 build_discover_command(None, options.no_cache),
@@ -183,7 +182,6 @@ fn select_from_scanned_directory(
     let result = FzfWrapper::builder()
         .header(Header::fancy("Scanned Games"))
         .prompt("Select")
-        .args(fzf_mocha_args())
         .responsive_layout()
         .select_encoded_streaming_prefilled::<MenuSelectionPayload, _>(
             build_discover_command(Some(scan_path), no_cache),

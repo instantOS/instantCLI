@@ -12,7 +12,7 @@ use crate::settings::definitions::appearance::common::{find_icon_theme_path, fin
 use crate::settings::installable_packages::{self, GTK_ICON_THEMES, GTK_THEMES};
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::store::{BoolSettingKey, GTK_ICON_THEME_KEY, GTK_THEME_KEY, StringSettingKey};
-use crate::ui::catppuccin::{colors, format_icon_colored, fzf_mocha_args};
+use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::prelude::*;
 
 use super::common::{apply_gtk4_overrides, list_gtk_themes, list_icon_themes, update_gtk_config};
@@ -261,7 +261,6 @@ impl Setting for GtkIconTheme {
             let mut builder = FzfWrapper::builder()
                 .prompt("Select Icon Theme")
                 .header(Header::fancy("Choose an icon theme to apply globally"))
-                .args(fzf_mocha_args())
                 .responsive_layout();
 
             if let Some(index) = options.iter().position(|m| {
@@ -378,7 +377,6 @@ impl Setting for GtkTheme {
             let mut builder = FzfWrapper::builder()
                 .prompt("Select GTK Theme")
                 .header(Header::fancy("Choose a GTK theme to apply globally"))
-                .args(fzf_mocha_args())
                 .responsive_layout();
 
             if let Some(index) = options.iter().position(|m| {

@@ -8,7 +8,6 @@ use colored::Colorize;
 use crate::dot::config::DotfileConfig;
 use crate::dot::sources;
 use crate::menu_utils::{FzfResult, FzfWrapper, MenuCursor};
-use crate::ui::catppuccin::fzf_mocha_args;
 use crate::ui::prelude::*;
 
 use super::create_flow::run_create_flow;
@@ -84,7 +83,6 @@ pub(crate) fn run_browse_menu(dir: &Path, display: &str, mode: BrowseMode) -> Re
 
         let mut builder = FzfWrapper::builder()
             .prompt(format!("Select dotfile in {}: ", display))
-            .args(fzf_mocha_args())
             .responsive_layout();
 
         if let Some(index) = cursor.initial_index(&menu) {
@@ -205,7 +203,6 @@ fn offer_create_alternative(dir: &Path, display: &str) -> Result<()> {
     match FzfWrapper::builder()
         .header(crate::menu_utils::Header::fancy("No alternatives found"))
         .prompt("Select action: ")
-        .args(fzf_mocha_args())
         .responsive_layout()
         .select(vec![Choice::Create, Choice::Cancel])?
     {

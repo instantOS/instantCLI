@@ -2,7 +2,7 @@ use anyhow::{Result, anyhow, bail};
 
 use crate::menu::client::MenuClient;
 use crate::menu_utils::{FzfResult, FzfWrapper, Header, HeaderBuilder, MenuCursor};
-use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
+use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 
@@ -29,7 +29,6 @@ pub(super) fn interactive_pass_quick_access() -> Result<i32> {
         let mut builder = FzfWrapper::builder()
             .header(Header::fancy("Pass"))
             .prompt("Copy")
-            .args(fzf_mocha_args())
             .responsive_layout();
 
         if let Some(index) = cursor.initial_index(&quick_access_items) {
@@ -126,7 +125,6 @@ pub(super) fn run_add_menu(current_prefix: Option<&str>) -> Result<()> {
     if let FzfResult::Selected(item) = FzfWrapper::builder()
         .header(Header::fancy("Pass Add"))
         .prompt("Create")
-        .args(fzf_mocha_args())
         .responsive_layout()
         .select(items)?
     {
@@ -167,7 +165,6 @@ pub(crate) fn run_edit_browser(initial_prefix: Option<&str>) -> Result<()> {
         let mut builder = FzfWrapper::builder()
             .header(Header::fancy(&title))
             .prompt("Select")
-            .args(fzf_mocha_args())
             .responsive_layout();
 
         if let Some(index) = cursor.initial_index(&browser_items) {
@@ -225,7 +222,6 @@ pub(super) fn run_edit_action_menu(entry: &PassEntry) -> Result<()> {
                     .build(),
             )
             .prompt("Action")
-            .args(fzf_mocha_args())
             .responsive_layout();
 
         if let Some(index) = cursor.initial_index(&items) {

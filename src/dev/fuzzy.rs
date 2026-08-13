@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use crate::dev::github::GitHubRepo;
 use crate::dev::package::Package;
 use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, Header};
-use crate::ui::catppuccin::{colors, format_icon_colored, fzf_mocha_args};
+use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 use anyhow::Result;
@@ -198,7 +198,6 @@ pub fn select_repository(
     match FzfWrapper::builder()
         .header(Header::fancy("Clone Repository"))
         .prompt("Select")
-        .args(fzf_mocha_args())
         .responsive_layout()
         .select(items)
         .map_err(|e| FzfError::Process(format!("Selection error: {e}")))?
@@ -223,7 +222,6 @@ pub fn select_package(packages: Vec<Package>) -> Result<Package, FzfError> {
     match FzfWrapper::builder()
         .header(Header::fancy("Install Package"))
         .prompt("Select")
-        .args(fzf_mocha_args())
         .responsive_layout()
         .select(items)
         .map_err(|e| FzfError::Process(format!("Selection error: {e}")))?
