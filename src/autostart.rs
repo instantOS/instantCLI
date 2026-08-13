@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
+const NOTIFICATIONS_BUS_NAME: &str = "org.freedesktop.Notifications";
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AutostartConfig {
     #[serde(default)]
@@ -94,6 +96,8 @@ pub async fn run(debug: bool) -> Result<()> {
             eprintln!("Failed to run nvidia-settings: {}", e);
         }
     }
+
+    ensure_notification_daemon(debug).await;
 
     if debug {
         println!("Applying settings");
@@ -191,6 +195,88 @@ pub async fn run(debug: bool) -> Result<()> {
     }
 
     Ok(())
+}
+
+async fn notification_daemon_running() -> Result<bool> {
+    let connection = zbus::Connection::session()
+        .await
+        .context("connecting to the session D-Bus")?;
+    let reply = connection
+        .call_method(
+            Some("org.freedesktop.DBus"),
+            "/org/freedesktop/DBus",
+            Some("org.freedesktop.DBus"),
+            "NameHasOwner",
+            &(NOTIFICATIONS_BUS_NAME,),
+        )
+        .await
+        .context("checking for a notification daemon")?;
+    reply
+        .body()
+        .deserialize()
+        .context("reading notification daemon status")
+}
+
+async fn ensure_notification_daemon(debug: bool) {
+    use crate::common::display_server::DisplayServer;
+
+    match notification_daemon_running().await {
+        Ok(true) => {
+            if debug {
+                println!("A notification daemon already owns {NOTIFICATIONS_BUS_NAME}");
+            }
+            return;
+        }
+        Err(e) => {
+            // If ownership cannot be checked, starting another implementation
+            // risks replacing or conflicting with the user's daemon.
+            if debug {
+                eprintln!("Could not inspect the notification D-Bus service: {e}");
+            }
+            return;
+        }
+        Ok(false) => {}
+    }
+
+    let Some(service) = notification_service_for(&DisplayServer::detect()) else {
+        if debug {
+            println!("No graphical display server detected; skipping notification daemon");
+        }
+        return;
+    };
+
+    if let Err(e) = systemd::ensure_graphical_session_target() {
+        if debug {
+            eprintln!("Could not activate graphical-session.target: {e}");
+        }
+        return;
+    }
+
+    let manager = systemd::SystemdManager::user();
+    if !manager.service_exists(service) {
+        if debug {
+            eprintln!("Preferred notification service is not installed: {service}");
+        }
+        return;
+    }
+
+    if let Err(e) = manager.start(service) {
+        eprintln!("Failed to start notification daemon {service}: {e}");
+    } else if debug {
+        println!("Started notification daemon through {service}");
+    }
+}
+
+fn notification_service_for(
+    display_server: &crate::common::display_server::DisplayServer,
+) -> Option<&'static str> {
+    use crate::common::display_server::DisplayServer;
+
+    match display_server {
+        DisplayServer::Wayland => Some("mako.service"),
+        DisplayServer::X11 => Some("dunst.service"),
+        DisplayServer::Unknown => None,
+    }
 }
 
 async fn ensure_polkit_agent(debug: bool) {
@@ -302,5 +388,24 @@ fn should_show_welcome() -> bool {
             // If we can't load settings, default to true (show welcome on first boot)
             true
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::notification_service_for;
+    use crate::common::display_server::DisplayServer;
+
+    #[test]
+    fn chooses_notification_daemon_for_display_server() {
+        assert_eq!(
+            notification_service_for(&DisplayServer::Wayland),
+            Some("mako.service")
+        );
+        assert_eq!(
+            notification_service_for(&DisplayServer::X11),
+            Some("dunst.service")
+        );
+        assert_eq!(notification_service_for(&DisplayServer::Unknown), None);
     }
 }
