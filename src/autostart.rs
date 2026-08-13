@@ -65,6 +65,23 @@ pub async fn run(debug: bool) -> Result<()> {
         return Ok(());
     }
 
+    if crate::common::distro::is_live_iso() {
+        if debug {
+            println!("Applying live-session setup");
+        }
+        match std::process::Command::new("liveautostart").status() {
+            Ok(status) if !status.success() => {
+                eprintln!("Live-session setup exited with status: {}", status);
+            }
+            Err(e) => eprintln!("Failed to run live-session setup: {}", e),
+            Ok(_) => {}
+        }
+
+        if let Err(e) = std::process::Command::new("installapplet").spawn() {
+            eprintln!("Failed to launch installer applet: {}", e);
+        }
+    }
+
     if which::which("nvidia-settings").is_ok() {
         if debug {
             println!("Found nvidia-settings, loading settings");
