@@ -64,6 +64,15 @@ impl DesktopEnvironment {
         }
     }
 
+    /// Session desktop ID used by GDM. instantWM has a separate native
+    /// Wayland entry; the generic session name remains its X11/LightDM ID.
+    pub fn gdm_session_name(&self) -> Option<&'static str> {
+        match self {
+            Self::InstantWM => Some("instantwm-wayland"),
+            _ => self.session_name(),
+        }
+    }
+
     pub fn package_names(&self) -> &'static [&'static str] {
         match self {
             Self::Sway => &["sway", "swayidle", "swaylock"],
@@ -266,6 +275,18 @@ mod tests {
         assert_eq!(
             DesktopEnvironment::from_answer("unknown"),
             DesktopEnvironment::Sway
+        );
+    }
+
+    #[test]
+    fn instantwm_uses_wayland_session_with_gdm() {
+        assert_eq!(
+            DesktopEnvironment::InstantWM.session_name(),
+            Some("instantwm")
+        );
+        assert_eq!(
+            DesktopEnvironment::InstantWM.gdm_session_name(),
+            Some("instantwm-wayland")
         );
     }
 

@@ -502,7 +502,7 @@ fn setup_backlight_udev_rule(executor: &dyn CommandRunner) -> Result<()> {
 
 fn configure_gdm_session(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
     let desktop = crate::arch::config::DesktopEnvironment::from_context(context);
-    let Some(session_name) = desktop.session_name() else {
+    let Some(session_name) = desktop.gdm_session_name() else {
         return Ok(());
     };
     let username = context
