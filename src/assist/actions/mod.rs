@@ -1,5 +1,6 @@
 pub mod ai;
 pub mod color_picker;
+pub mod docs;
 pub mod emoji;
 pub mod help;
 pub mod joke;
