@@ -9,6 +9,60 @@ use super::super::utils::ensure_root;
 use super::ask::{AskOutcome, handle_ask_command};
 use super::{build_questions, handle_arch_command};
 
+fn confirm_battery_power() -> Result<bool> {
+    use crate::menu_utils::{ConfirmResult, FzfWrapper};
+
+    let discharging = std::process::Command::new("acpi")
+        .output()
+        .map(|output| {
+            String::from_utf8_lossy(&output.stdout)
+                .to_ascii_lowercase()
+                .contains("discharging")
+        })
+        .unwrap_or(false);
+
+    if !discharging {
+        return Ok(true);
+    }
+
+    Ok(matches!(
+        FzfWrapper::builder()
+            .confirm(
+                "The computer is running on battery power. Connect it to power or make sure it has enough charge before installing.\n\nContinue anyway?",
+            )
+            .yes_text("Continue")
+            .no_text("Abort installation")
+            .confirm_dialog()?,
+        ConfirmResult::Yes
+    ))
+}
+
+fn ensure_interactive_internet() -> Result<bool> {
+    use crate::menu_utils::{ConfirmResult, FzfWrapper};
+
+    while !crate::common::network::check_internet() {
+        let choice = FzfWrapper::builder()
+            .confirm(
+                "No internet connection was detected. instantOS installation requires internet.\n\nOpen the network configuration now?",
+            )
+            .yes_text("Open nmtui")
+            .no_text("Abort installation")
+            .confirm_dialog()?;
+
+        if choice != ConfirmResult::Yes {
+            println!("Installation aborted: no internet connection.");
+            return Ok(false);
+        }
+
+        let status = std::process::Command::new("nmtui").status()?;
+        if !status.success() {
+            eprintln!("nmtui exited unsuccessfully; internet connectivity will be checked again.");
+        }
+    }
+
+    Ok(true)
+}
+
 /// Handle the Install command - orchestrates the full installation process
 pub(super) async fn handle_install_command(debug: bool) -> Result<()> {
     // The installer is interactive. Graphical launchers should normally open a
@@ -22,6 +76,17 @@ pub(super) async fn handle_install_command(debug: bool) -> Result<()> {
             .class("ins-install")
             .title("instantOS Installation")
             .launch()?;
+        return Ok(());
+    }
+
+    if !confirm_battery_power()? {
+        println!("Installation aborted.");
+        return Ok(());
+    }
+
+    // Network configuration must run as the desktop user. Keep this before
+    // privilege escalation and re-check after every nmtui session.
+    if !ensure_interactive_internet()? {
         return Ok(());
     }
 
