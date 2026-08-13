@@ -466,6 +466,11 @@ impl PasswordBuilder {
 // ---------------------------------------------------------------------------
 
 impl ConfirmBuilder {
+    pub fn title<S: Into<String>>(mut self, title: S) -> Self {
+        self.title = Some(title.into());
+        self
+    }
+
     pub fn yes_text<S: Into<String>>(mut self, text: S) -> Self {
         self.yes_text = text.into();
         self

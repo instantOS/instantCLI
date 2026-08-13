@@ -39,7 +39,7 @@ pub const ASSISTS: &[AssistEntry] = &[
     }),
     AssistEntry::Group(AssistGroup {
         key: 'i',
-        description: "Info: AI assistants and man pages",
+        description: "Info: AI assistants, documentation, and man pages",
         icon: NerdFont::Info,
         children: &[
             AssistEntry::Action(AssistAction {
@@ -55,6 +55,13 @@ pub const ASSISTS: &[AssistEntry] = &[
                 icon: NerdFont::Lightbulb,
                 dependencies: &[],
                 execute: actions::ai::ask_chatgpt,
+            }),
+            AssistEntry::Action(AssistAction {
+                key: 'd',
+                description: "Documentation: Open instantOS documentation",
+                icon: NerdFont::Globe,
+                dependencies: &[],
+                execute: actions::docs::open_docs,
             }),
             AssistEntry::Action(AssistAction {
                 key: 'g',
@@ -640,6 +647,16 @@ mod tests {
         assert_eq!(
             action.unwrap().description,
             "Settings: Open instantOS settings manager"
+        );
+    }
+
+    #[test]
+    fn test_find_docs_action() {
+        let action = find_action("id");
+        assert!(action.is_some());
+        assert_eq!(
+            action.unwrap().description,
+            "Documentation: Open instantOS documentation"
         );
     }
 }
