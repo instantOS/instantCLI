@@ -15,27 +15,33 @@ fn try_prepare_disk(device_name: &str) -> Result<bool> {
         return Ok(true); // Disk is ready
     }
 
-    // Show what needs to be unmounted/disabled
-    println!(
-        "\n{} The disk {} is currently in use:",
-        NerdFont::Warning,
-        device_name
-    );
+    // Build a detailed confirmation message explaining what is in use and why.
+    let mut details =
+        format!("The selected disk {device_name} has active mounts or swap partitions.\n\n");
+
     for part in &mounted {
-        println!("  • {} (mounted)", part);
+        details.push_str(&format!("  {part}  (mounted)\n"));
     }
     for part in &swap {
-        println!("  • {} (swap)", part);
+        details.push_str(&format!("  {part}  (swap active)\n"));
     }
 
-    // Ask for confirmation
+    details.push_str(
+        "\nThe installer needs exclusive access to this disk. It will unmount the partition(s)\nand disable swap so the disk can be safely repartitioned.",
+    );
+
     let confirmed = matches!(
-        FzfWrapper::confirm("Unmount partitions and disable swap automatically?"),
+        FzfWrapper::builder()
+            .confirm(&details)
+            .title(format!("Disk {device_name} is in use"))
+            .yes_text("Unmount and continue")
+            .no_text("Go back")
+            .confirm_dialog(),
         Ok(crate::menu_utils::ConfirmResult::Yes)
     );
 
     if !confirmed {
-        println!("Please prepare the disk manually and try again.");
+        println!("Disk not prepared. Please prepare the disk manually or select another disk.");
         return Ok(false);
     }
 

@@ -4,9 +4,7 @@ use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
 use crate::dot::menu::encryption_menu::{EncryptionKeyKind, discover_all_keys};
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header};
-use crate::ui::catppuccin::{
-    colors, format_back_icon, format_icon_colored, format_with_color, fzf_mocha_args,
-};
+use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, format_with_color};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 
@@ -189,7 +187,6 @@ pub(super) fn handle_repo_encryption(
         let builder = FzfWrapper::builder()
             .header(Header::fancy(&format!("Encryption: {}", repo_name)))
             .prompt("Select action")
-            .args(fzf_mocha_args())
             .responsive_layout();
 
         let result = builder.select(items)?;

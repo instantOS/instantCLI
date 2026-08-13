@@ -18,7 +18,6 @@ use crate::settings::definitions::installed_flatpaks::{
 use crate::settings::deps::FLATPAK;
 use crate::settings::flatpak_list::FlatpakSelectionPayload;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
-use crate::ui::catppuccin::fzf_mocha_args;
 use crate::ui::prelude::*;
 
 // ============================================================================
@@ -70,7 +69,6 @@ fn select_flatpak_apps() -> Result<Vec<String>> {
         .multi_select(true)
         .prompt("Select packages")
         .header(Header::fancy("Install Flatpak Apps"))
-        .args(fzf_mocha_args())
         .responsive_layout()
         .select_encoded_streaming(list_cmd)?;
 

@@ -10,7 +10,7 @@ use crate::dot::types::RepoMetaData;
 use crate::menu_utils::{
     ChecklistAction, ChecklistResult, FzfSelectable, FzfWrapper, HeaderBuilder,
 };
-use crate::ui::catppuccin::{colors, fzf_mocha_args};
+use crate::ui::catppuccin::colors;
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 
@@ -115,7 +115,6 @@ pub(crate) fn handle_edit_default_subdirs(
                 .subtitle("Use Auto to reset; select none to disable defaults")
                 .build(),
         )
-        .args(fzf_mocha_args())
         .responsive_layout()
         .checklist("Save Defaults")
         .checklist_actions(vec![auto_action])

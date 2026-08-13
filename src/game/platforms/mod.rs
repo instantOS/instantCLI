@@ -36,7 +36,7 @@ use crate::menu_utils::{
     ChecklistResult, FzfResult, FzfSelectable, FzfWrapper, Header, MenuPresentation, MenuWrapper,
     TextEditOutcome, TextEditPrompt, prompt_text_edit,
 };
-use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
+use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 
@@ -562,7 +562,6 @@ pub fn select_launcher_type(
     let mut builder = FzfWrapper::builder()
         .header(Header::fancy("Select Launcher Type"))
         .prompt("Launcher")
-        .args(fzf_mocha_args())
         .responsive_layout();
 
     if let Some(index) = initial_index {

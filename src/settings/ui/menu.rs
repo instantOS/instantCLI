@@ -257,7 +257,6 @@ fn navigate_tree(
 
 pub fn handle_search_all(ctx: &mut SettingsContext, mut cursor: MenuCursor) -> Result<bool> {
     use crate::menu_utils::{FzfResult, FzfWrapper, HeaderBuilder};
-    use crate::ui::catppuccin::fzf_mocha_args;
 
     loop {
         let items = build_tree_search_items();
@@ -280,7 +279,6 @@ pub fn handle_search_all(ctx: &mut SettingsContext, mut cursor: MenuCursor) -> R
         let result = FzfWrapper::builder()
             .prompt(prompt)
             .header(header)
-            .args(fzf_mocha_args())
             .args(["--no-sort"])
             .initial_index(initial_cursor.unwrap_or(0))
             .responsive_layout()

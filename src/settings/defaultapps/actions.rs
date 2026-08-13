@@ -7,7 +7,7 @@ use crate::settings::installable_packages::{
     self, ARCHIVE_MANAGERS, FILE_MANAGERS, IMAGE_VIEWERS, InstallableApp, PDF_VIEWERS,
     TEXT_EDITORS, VIDEO_PLAYERS, WEB_BROWSERS,
 };
-use crate::ui::catppuccin::{colors, fzf_mocha_args};
+use crate::ui::catppuccin::colors;
 use crate::ui::prelude::*;
 use crate::ui::preview::FzfPreview;
 
@@ -57,7 +57,6 @@ pub fn manage_default_apps(ctx: &mut SettingsContext) -> Result<()> {
                 .subtitle("Select a MIME type to configure")
                 .build(),
         )
-        .args(fzf_mocha_args())
         .responsive_layout()
         .select(mime_types)?
     {
@@ -109,7 +108,6 @@ pub fn manage_default_apps(ctx: &mut SettingsContext) -> Result<()> {
     let mut app_menu = FzfWrapper::builder()
         .prompt("Select application: ")
         .header(header)
-        .args(fzf_mocha_args())
         .responsive_layout();
 
     if let Some(index) = initial_index {
@@ -260,7 +258,6 @@ fn manage_default_app_for_mimes(
         let mut builder = FzfWrapper::builder()
             .prompt(format!("Select {}: ", app_name))
             .header(header)
-            .args(fzf_mocha_args())
             .responsive_layout();
 
         if let Some(index) = initial_index {

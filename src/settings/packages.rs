@@ -6,7 +6,6 @@ use crate::common::distro::OperatingSystem;
 use crate::common::package::{PackageManager, detect_aur_helper, install_package_names};
 use crate::menu_utils::{ConfirmResult, DecodedStreamingMenuItem, FzfResult, FzfWrapper, Header};
 use crate::settings::package_list::{self, PackageSelectionPayload};
-use crate::ui::catppuccin::fzf_mocha_args;
 use anyhow::{Context, Result};
 
 use super::SettingsContext;
@@ -47,7 +46,6 @@ fn run_simple_installer(manager: PackageManager, debug: bool) -> Result<()> {
         .multi_select(true)
         .prompt("Select packages")
         .header(Header::fancy("Install Packages"))
-        .args(fzf_mocha_args())
         .responsive_layout()
         .select_encoded_streaming(package_list::available_command(manager))
         .context("Failed to run package selector")?;
@@ -78,7 +76,6 @@ pub fn run_snap_installer(debug: bool) -> Result<()> {
         .multi_select(true)
         .prompt("Search snaps")
         .header(Header::fancy("Type to search Snap Store"))
-        .args(fzf_mocha_args())
         .args([
             "--bind",
             &format!("change:reload:{}", reload_cmd),
@@ -116,7 +113,6 @@ fn run_arch_installer(debug: bool) -> Result<()> {
         .multi_select(true)
         .prompt("Select packages")
         .header(Header::fancy("Install Packages"))
-        .args(fzf_mocha_args())
         .responsive_layout()
         .select_encoded_streaming(package_list::arch_available_command())
         .context("Failed to run package selector")?;

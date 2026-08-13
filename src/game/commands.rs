@@ -132,7 +132,7 @@ fn handle_scan_wine_prefix(prefix: Option<String>, list: bool) -> Result<()> {
     use crate::game::platforms::ludusavi;
     use crate::game::utils::path::is_valid_wine_prefix;
     use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuPresentation};
-    use crate::ui::catppuccin::{colors, format_icon_colored, fzf_mocha_args};
+    use crate::ui::catppuccin::{colors, format_icon_colored};
     use crate::ui::nerd_font::NerdFont;
     use crate::ui::preview::PreviewBuilder;
     use std::path::PathBuf;
@@ -280,7 +280,6 @@ fn handle_scan_wine_prefix(prefix: Option<String>, list: bool) -> Result<()> {
     let result = FzfWrapper::builder()
         .header(Header::fancy("Discovered Saves"))
         .prompt("Select")
-        .args(fzf_mocha_args())
         .responsive_layout()
         .presentation(MenuPresentation::Padded)
         .select(items)?;

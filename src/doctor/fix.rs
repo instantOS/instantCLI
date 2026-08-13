@@ -6,7 +6,6 @@ use super::ui::{
 };
 use super::{CheckStatus, DoctorCheck, PrivilegeLevel, run_all_checks};
 use crate::menu_utils::{FzfResult, FzfWrapper};
-use crate::ui::catppuccin::fzf_mocha_args;
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::{Level, prelude::*};
 use anyhow::{Result, anyhow};
@@ -635,7 +634,6 @@ pub async fn fix_interactive(max_concurrency: usize) -> Result<()> {
             .multi_select(true)
             .prompt("Select issues to fix:")
             .header("System Diagnostics - Fixable Issues\n\nSelect issues to fix or press Esc to cancel")
-            .args(fzf_mocha_args())
             .args(["--preview-window=right:50%:wrap"])
             .select(menu_items)?
         {

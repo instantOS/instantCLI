@@ -563,7 +563,7 @@ pub static ARCHIVE_MANAGERS: &[InstallableApp] = &[
 // =============================================================================
 
 use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper, HeaderBuilder};
-use crate::ui::catppuccin::{colors, fzf_mocha_args, hex_to_ansi_fg};
+use crate::ui::catppuccin::{colors, hex_to_ansi_fg};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 use anyhow::Result;
@@ -644,7 +644,6 @@ pub fn show_install_more_menu(category_name: &str, apps: &[InstallableApp]) -> R
                 .field("Configuring", category_name)
                 .build(),
         )
-        .args(fzf_mocha_args())
         .responsive_layout()
         .select(items)?;
 

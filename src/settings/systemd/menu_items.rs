@@ -298,7 +298,6 @@ pub fn run_systemd_menu() -> Result<()> {
         let builder = FzfWrapper::builder()
             .header(Header::fancy("Systemd Manager"))
             .prompt("Select")
-            .args(crate::ui::catppuccin::fzf_mocha_args())
             .responsive_layout();
 
         let result = builder.select_menu(entries.clone())?;
@@ -349,7 +348,6 @@ fn run_services_menu(scope: ServiceScope) -> Result<()> {
         let result = FzfWrapper::builder()
             .header(Header::fancy(title))
             .prompt("Select service")
-            .args(crate::ui::catppuccin::fzf_mocha_args())
             .responsive_layout()
             .select_encoded_streaming(systemd_list::list_command(scope_str))?;
 
@@ -472,7 +470,6 @@ fn select_service_action(service: &ServiceItem) -> Result<ServiceAction> {
     let result = FzfWrapper::builder()
         .header(header)
         .prompt("Action")
-        .args(crate::ui::catppuccin::fzf_mocha_args())
         .responsive_layout()
         .select_menu(actions)?;
 

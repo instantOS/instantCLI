@@ -8,7 +8,7 @@ use crate::menu_utils::{
     FilePickerScope, FzfResult, FzfSelectable, FzfWrapper, Header, MenuPresentation,
     PathInputBuilder, TextEditOutcome, TextEditPrompt, prompt_text_edit,
 };
-use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
+use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 
@@ -135,7 +135,6 @@ fn select_launch_command_input_method(
     let result = FzfWrapper::builder()
         .header(Header::fancy("How do you want to set the launch command?"))
         .prompt("Method")
-        .args(fzf_mocha_args())
         .responsive_layout()
         .presentation(MenuPresentation::Padded)
         .select(items)?;
@@ -284,7 +283,6 @@ pub fn edit_launch_command(state: &mut EditState) -> Result<bool> {
 
     let selection = FzfWrapper::builder()
         .header("Choose which launch command to edit")
-        .args(crate::ui::catppuccin::fzf_mocha_args())
         .responsive_layout()
         .select(options)?;
 

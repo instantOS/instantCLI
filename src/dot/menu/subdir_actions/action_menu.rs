@@ -8,7 +8,7 @@ use crate::dot::repo::cli::RepoCommands;
 use crate::menu_utils::{
     FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor, MenuPresentation,
 };
-use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
+use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 
@@ -56,7 +56,6 @@ pub(crate) fn handle_subdir_actions(
         let mut builder = FzfWrapper::builder()
             .header(Header::fancy(&format!("{} / {}", repo_name, subdir_name)))
             .prompt("Select action")
-            .args(fzf_mocha_args())
             .responsive_layout();
 
         if let Some(index) = cursor.initial_index(&actions) {

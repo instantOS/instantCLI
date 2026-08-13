@@ -12,7 +12,6 @@ use crate::menu_utils::{
     ConfirmResult, DecodedStreamingMenuItem, FzfResult, FzfWrapper, HeaderBuilder,
 };
 use crate::settings::package_list::{self, PackageSelectionPayload};
-use crate::ui::catppuccin::fzf_mocha_args;
 use crate::ui::nerd_font::NerdFont;
 
 enum UninstallResult {
@@ -60,7 +59,6 @@ fn run_uninstaller(manager: PackageManager, debug: bool) -> Result<()> {
                     .field("Package manager", manager.display_name())
                     .build(),
             )
-            .args(fzf_mocha_args())
             .responsive_layout()
             .select_encoded_streaming(package_list::installed_command(manager))
             .context("Failed to run package selector")?;

@@ -3,7 +3,6 @@ mod types;
 use anyhow::Result;
 
 use crate::menu_utils::{FzfResult, FzfWrapper, Header, MenuCursor};
-use crate::ui::catppuccin::fzf_mocha_args;
 
 use types::DevMenuEntry;
 
@@ -46,7 +45,6 @@ fn select_dev_menu_entry(cursor: &mut MenuCursor) -> Result<Option<DevMenuEntry>
     let mut builder = FzfWrapper::builder()
         .header(Header::fancy("Dev Menu"))
         .prompt("Select")
-        .args(fzf_mocha_args())
         .responsive_layout();
 
     if let Some(index) = cursor.initial_index(&entries) {

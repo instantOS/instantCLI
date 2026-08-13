@@ -5,7 +5,7 @@ use std::process::Command;
 use crate::menu_utils::{
     ConfirmResult, FzfResult, FzfSelectable, FzfWrapper, Header, HeaderBuilder, MenuCursor,
 };
-use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
+use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::{FzfPreview, PreviewBuilder};
 
@@ -203,7 +203,6 @@ pub fn resolvething_menu(debug: bool) -> Result<()> {
         let mut builder = FzfWrapper::builder()
             .header(Header::fancy("Resolvething"))
             .prompt("Select")
-            .args(fzf_mocha_args())
             .responsive_layout();
 
         if let Some(index) = cursor.initial_index(&items) {
@@ -339,7 +338,6 @@ fn run_scan_dir_menu(index: usize) -> Result<(ActionResult, bool)> {
                     .build(),
             )
             .prompt("Action")
-            .args(fzf_mocha_args())
             .responsive_layout();
 
         if let Some(idx) = cursor.initial_index(&actions) {

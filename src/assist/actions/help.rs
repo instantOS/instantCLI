@@ -2,7 +2,7 @@ use crate::assist::registry;
 use crate::assist::utils;
 use crate::common::shell::shell_quote;
 use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper, HeaderBuilder};
-use crate::ui::catppuccin::{colors, format_icon_colored, fzf_mocha_args, hex_to_ansi_fg};
+use crate::ui::catppuccin::{colors, format_icon_colored, hex_to_ansi_fg};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 use anyhow::{Result, anyhow};
@@ -53,7 +53,6 @@ pub fn show_help_for_path(path: &str) -> Result<()> {
     let result = FzfWrapper::builder()
         .prompt(prompt)
         .header(header)
-        .args(fzf_mocha_args())
         .args(["--no-sort"])
         .responsive_layout()
         .select(items)?;

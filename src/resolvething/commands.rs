@@ -11,7 +11,7 @@ use crate::menu_utils::{
     FilePickerScope, FzfResult, FzfWrapper, HeaderBuilder, MenuCursor, PathInputBuilder,
     PathInputSelection, TextEditOutcome, TextEditPrompt, prompt_text_edit,
 };
-use crate::ui::catppuccin::{colors, fzf_mocha_args};
+use crate::ui::catppuccin::colors;
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::prelude::{Level, emit};
 
@@ -684,7 +684,6 @@ fn select_duplicate_keep(
                 .build(),
         )
         .prompt("Keep")
-        .args(fzf_mocha_args())
         .responsive_layout();
 
     if let Some(initial_index) = cursor.initial_index(&entries) {
@@ -720,7 +719,6 @@ fn select_conflict_choice(
                 .build(),
         )
         .prompt("Resolve")
-        .args(fzf_mocha_args())
         .responsive_layout();
 
     if let Some(index) = cursor.initial_index(&entries) {

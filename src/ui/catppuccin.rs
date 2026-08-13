@@ -110,31 +110,3 @@ pub fn format_with_color(text: &str, color: &str) -> String {
     let reset = "\x1b[39m";
     format!("{fg}{text}{reset}")
 }
-
-pub fn fzf_mocha_args() -> Vec<String> {
-    vec![
-        // Visual styling
-        "--no-separator".to_string(),
-        "--no-bold".to_string(),
-        "--padding=1,2".to_string(),
-        "--list-border=none".to_string(),
-        "--input-border=none".to_string(),
-        "--preview-border=left".to_string(),
-        "--pointer=▌".to_string(),
-        // Search behavior
-        "--ignore-case".to_string(),
-        // Catppuccin Mocha color scheme
-        format!("--color=bg:{}", colors::BASE),
-        format!("--color=bg+:{}", colors::SURFACE0),
-        format!("--color=fg:{}", colors::TEXT),
-        format!("--color=fg+:{}", colors::TEXT),
-        format!("--color=preview-bg:{}", colors::MANTLE),
-        format!("--color=hl:{}", colors::YELLOW),
-        format!("--color=hl+:{}", colors::YELLOW),
-        format!("--color=prompt:{}", colors::TEXT),
-        format!("--color=pointer:{}", colors::ROSEWATER),
-        format!("--color=header:{}", colors::TEXT),
-        format!("--color=border:{}", colors::SURFACE1),
-        format!("--color=gutter:{}", colors::BASE),
-    ]
-}

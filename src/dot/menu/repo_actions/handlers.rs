@@ -7,7 +7,6 @@ use crate::dot::repo::{DotfileRepositoryManager, cli::RepoCommands};
 use crate::menu_utils::{
     ConfirmResult, FzfResult, FzfWrapper, Header, MenuCursor, MenuPresentation,
 };
-use crate::ui::catppuccin::fzf_mocha_args;
 
 use super::super::subdir_actions::handle_manage_subdirs;
 use super::action_menu::{RepoAction, build_repo_action_menu};
@@ -45,7 +44,6 @@ fn select_repo_action(
     let mut builder = FzfWrapper::builder()
         .header(Header::fancy(&format!("Repository: {}", repo_name)))
         .prompt("Select action")
-        .args(fzf_mocha_args())
         .responsive_layout();
 
     if let Some(index) = cursor.initial_index(&actions) {

@@ -11,7 +11,6 @@ use crate::dot::db::Database;
 use crate::dot::override_config::{DotfileSource, OverrideConfig};
 use crate::dot::sources;
 use crate::menu_utils::{FzfResult, FzfWrapper, MenuCursor};
-use crate::ui::catppuccin::fzf_mocha_args;
 use crate::ui::prelude::*;
 
 use super::apply::add_to_destination;
@@ -124,7 +123,6 @@ pub(crate) fn run_create_flow(
 
         let mut builder = FzfWrapper::builder()
             .prompt(format!("Select destination for {}: ", display))
-            .args(fzf_mocha_args())
             .responsive_layout();
 
         if let Some(index) = cursor.initial_index(&menu) {
@@ -278,7 +276,6 @@ fn create_new_subdir(
         } else {
             "New dotfile directory name: "
         })
-        .args(fzf_mocha_args())
         .input()
         .input_result()?
     {

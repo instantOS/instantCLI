@@ -2,9 +2,7 @@ use super::{CheckResult, CheckStatus};
 use crate::menu_utils::{
     ConfirmResult, FzfPreview, FzfResult, FzfSelectable, FzfWrapper, HeaderBuilder, MenuCursor,
 };
-use crate::ui::catppuccin::{
-    colors, format_back_icon, format_icon_colored, format_with_color, fzf_mocha_args,
-};
+use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, format_with_color};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::prelude::*;
 use anyhow::Result;
@@ -438,7 +436,6 @@ pub fn show_all_check_results(results: &[CheckResult]) -> Result<()> {
                 .subtitle("Use arrow keys to navigate; Esc returns")
                 .build(),
         )
-        .args(fzf_mocha_args())
         .select(viewable)?;
 
     Ok(())
@@ -483,20 +480,17 @@ pub async fn run_success_menu(results: &[CheckResult]) -> Result<()> {
     let mut cursor = MenuCursor::new();
 
     loop {
-        let mut builder = FzfWrapper::builder()
-            .prompt("Select:")
-            .header(
-                HeaderBuilder::new(NerdFont::CheckCircle, "All Systems Operational")
-                    .status(
-                        NerdFont::Check,
-                        format!("{success_count} checks passed"),
-                        colors::GREEN,
-                    )
-                    .field("Skipped", skipped_count.to_string())
-                    .subtitle("Select an option or press Esc to exit")
-                    .build(),
-            )
-            .args(fzf_mocha_args());
+        let mut builder = FzfWrapper::builder().prompt("Select:").header(
+            HeaderBuilder::new(NerdFont::CheckCircle, "All Systems Operational")
+                .status(
+                    NerdFont::Check,
+                    format!("{success_count} checks passed"),
+                    colors::GREEN,
+                )
+                .field("Skipped", skipped_count.to_string())
+                .subtitle("Select an option or press Esc to exit")
+                .build(),
+        );
 
         if let Some(index) = cursor.initial_index(&menu_items) {
             builder = builder.initial_index(index);

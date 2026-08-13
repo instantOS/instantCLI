@@ -111,7 +111,6 @@ impl UmuBuilder {
         match FzfWrapper::builder()
             .header(crate::menu_utils::Header::fancy("Select Wine Runner"))
             .prompt("Runner")
-            .args(crate::ui::catppuccin::fzf_mocha_args())
             .responsive_layout()
             .presentation(MenuPresentation::Padded)
             .select(options)?
@@ -243,7 +242,6 @@ impl UmuBuilder {
         let result = FzfWrapper::builder()
             .header(crate::menu_utils::Header::fancy("Select Proton Version"))
             .prompt("Proton")
-            .args(crate::ui::catppuccin::fzf_mocha_args())
             .responsive_layout()
             .presentation(MenuPresentation::Padded)
             .select(options.clone())?;

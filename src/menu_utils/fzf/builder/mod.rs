@@ -188,11 +188,7 @@ pub(crate) fn base_args(margin: &str) -> Vec<String> {
         "--min-height".to_string(),
         "10".to_string(),
     ];
-    args.extend(
-        super::theme::theme_args()
-            .into_iter()
-            .map(|s| s.to_string()),
-    );
+    args.extend(super::theme::theme_args());
     args
 }
 
@@ -526,5 +522,24 @@ mod tests {
             .checklist("Save");
         assert_eq!(checklist.shared.default_args, checklist_args());
         assert_eq!(checklist.shared.user_args, vec!["--color=fg:green"]);
+    }
+
+    #[test]
+    fn selection_defaults_include_standard_style() {
+        let builder = FzfBuilder::new();
+
+        assert!(
+            builder
+                .shared
+                .default_args
+                .contains(&"--no-bold".to_string())
+        );
+        assert!(
+            builder
+                .shared
+                .default_args
+                .contains(&"--padding=1,2".to_string())
+        );
+        assert_eq!(builder.shared.presentation, MenuPresentation::Compact);
     }
 }
