@@ -351,17 +351,15 @@ fn scan_disk_for_candidates(
             report.push(format!(
                 "Found Linux filesystem partition {root}; probing as plaintext root."
             ));
-            if let Some((root_device, evidence, root_mount_option)) =
-                probe_block_device(child, report)?
-            {
+            if let Some(probe) = probe_block_device(child, report)? {
                 candidates.push(ChrootCandidate {
-                    root_device,
-                    root_mount_option,
+                    root_device: probe.device,
+                    root_mount_option: probe.mount_option,
                     disk: Some(disk.path()),
                     fs_type: child.fstype.clone(),
                     size_bytes: child.size,
                     encrypted: false,
-                    evidence,
+                    evidence: probe.evidence,
                     opened_mappers: Vec::new(),
                     boot_device: boot_device.clone(),
                 });
@@ -445,16 +443,15 @@ fn scan_luks_partition(
     let mut candidates = Vec::new();
 
     for root in roots {
-        if let Some((root_device, evidence, root_mount_option)) = probe_block_device(&root, report)?
-        {
+        if let Some(probe) = probe_block_device(&root, report)? {
             candidates.push(ChrootCandidate {
-                root_device,
-                root_mount_option,
+                root_device: probe.device,
+                root_mount_option: probe.mount_option,
                 disk: Some(disk.path()),
                 fs_type: root.fstype.clone(),
                 size_bytes: root.size,
                 encrypted: true,
-                evidence,
+                evidence: probe.evidence,
                 opened_mappers: opened_mappers.clone(),
                 boot_device: boot_device.clone(),
             });
@@ -589,10 +586,7 @@ fn choose_boot_mount_relative(root: &Path) -> &'static str {
     }
 }
 
-fn probe_block_device(
-    device: &BlockDevice,
-    report: &mut ScanReport,
-) -> Result<Option<(String, Vec<String>, Option<String>)>> {
+fn probe_block_device(device: &BlockDevice, report: &mut ScanReport) -> Result<Option<ProbeRoot>> {
     let paths = probe_paths_for_device(device);
     if paths.len() > 1 {
         report.push(format!(
@@ -609,11 +603,22 @@ fn probe_block_device(
         }
 
         if let Some(result) = probe_instantos_device(&path, device.fstype.as_deref(), report)? {
-            return Ok(Some((path, result.evidence, result.mount_option)));
+            return Ok(Some(ProbeRoot {
+                device: path,
+                evidence: result.evidence,
+                mount_option: result.mount_option,
+            }));
         }
     }
 
     Ok(None)
+}
+
+/// A block device verified as an instantOS root, plus the evidence.
+struct ProbeRoot {
+    device: String,
+    evidence: Vec<String>,
+    mount_option: Option<String>,
 }
 
 struct ProbeResult {
