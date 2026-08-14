@@ -1,7 +1,8 @@
 use anyhow::Result;
 
 use super::FfmpegCompiler;
-use super::graph::{AudioInput, AudioPad, FilterGraph, VideoInput, VideoPad};
+use super::FilterGraphBuilder;
+use super::graph::{AudioInput, AudioPad, VideoInput, VideoPad};
 use super::inputs::SourceMap;
 use super::util::format_time;
 use crate::video::render::timeline::BaseAvClip;
@@ -42,7 +43,7 @@ impl FfmpegCompiler {
 
     pub(super) fn build_base_track_filters(
         &self,
-        graph: &mut FilterGraph,
+        ctx: &mut FilterGraphBuilder,
         video_segments: &[BaseAvClip],
         source_map: &SourceMap,
     ) -> Result<Option<(VideoPad, AudioPad)>> {
@@ -66,7 +67,7 @@ impl FfmpegCompiler {
                 && !audio_is_contiguous(segment, playable_segments[idx + 1]);
 
             let output = self.build_paired_segment_filters(
-                graph,
+                ctx,
                 segment,
                 source_map,
                 idx,
@@ -76,12 +77,16 @@ impl FfmpegCompiler {
             concat_inputs.push(output);
         }
 
-        Ok(Some(graph.concat_av(concat_inputs, "concat_v", "concat_a")))
+        Ok(Some(ctx.graph().concat_av(
+            concat_inputs,
+            "concat_v",
+            "concat_a",
+        )))
     }
 
     fn build_paired_segment_filters(
         &self,
-        graph: &mut FilterGraph,
+        ctx: &mut FilterGraphBuilder,
         segment: &BaseAvClip,
         source_map: &SourceMap,
         idx: usize,
@@ -89,17 +94,15 @@ impl FfmpegCompiler {
         extend_after: bool,
     ) -> Result<(VideoPad, AudioPad)> {
         let input_index = source_map.index(&segment.source.video)?;
-        let audio_input_index = source_map.index(&segment.source.audio)?;
 
         // Subtract per-input -ss offset so trim times are relative to the
         // seeked input position. For render (no input seeking), offset is 0.
         let video_offset = source_map.offset(input_index);
-        let audio_offset = source_map.offset(audio_input_index);
 
         let adj_start = segment.source_start.seconds() - video_offset;
         let adj_end = adj_start + segment.duration.seconds();
 
-        let trimmed = graph.video_from_input(
+        let trimmed = ctx.graph().video_from_input(
             VideoInput(input_index),
             format!(
                 "trim=start={}:end={},setpts=PTS-STARTPTS",
@@ -109,21 +112,17 @@ impl FfmpegCompiler {
             format!("v{idx}_raw"),
         );
         let normalized =
-            graph.video_filter(trimmed, self.normalized_video_chain(), format!("v{idx}"));
+            ctx.graph()
+                .video_filter(trimmed, self.normalized_video_chain(), format!("v{idx}"));
 
-        let audio_adj_start = segment.source_start.seconds() - audio_offset;
-        let audio_adj_end = audio_adj_start + segment.duration.seconds();
         let audio = self.build_audio_filter(
-            graph,
-            segment.mute_audio,
-            audio_input_index,
-            audio_adj_start,
-            audio_adj_end,
-            segment.duration.seconds(),
-            format!("a{idx}"),
+            ctx,
+            source_map,
+            segment,
+            &format!("a{idx}"),
             extend_before,
             extend_after,
-        );
+        )?;
 
         Ok((normalized, audio))
     }
@@ -143,18 +142,22 @@ impl FfmpegCompiler {
 
     fn build_audio_filter(
         &self,
-        graph: &mut FilterGraph,
-        mute_audio: bool,
-        audio_input_index: usize,
-        start_time: f64,
-        end_time: f64,
-        segment_duration: f64,
-        audio_label: String,
+        ctx: &mut FilterGraphBuilder,
+        source_map: &SourceMap,
+        segment: &BaseAvClip,
+        label: &str,
         extend_before: bool,
         extend_after: bool,
-    ) -> AudioPad {
-        if mute_audio {
-            graph.audio_source(
+    ) -> Result<AudioPad> {
+        let audio_input_index = source_map.index(&segment.source.audio)?;
+        let audio_offset = source_map.offset(audio_input_index);
+        let start_time = segment.source_start.seconds() - audio_offset;
+        let end_time = start_time + segment.duration.seconds();
+        let segment_duration = segment.duration.seconds();
+        let audio_label = label.to_string();
+
+        Ok(if segment.mute_audio {
+            ctx.graph().audio_source(
                 format!(
                     "anullsrc=r=48000:cl=mono,atrim=duration={}",
                     format_time(segment_duration)
@@ -177,7 +180,7 @@ impl FfmpegCompiler {
                     format_time(fade_duration)
                 ));
             }
-            graph.audio_from_input(
+            ctx.graph().audio_from_input(
                 AudioInput(audio_input_index),
                 format!(
                 "atrim=start={start}:end={end},asetpts=PTS-STARTPTS,aformat=sample_rates=48000:channel_layouts=mono,apad,atrim=duration={duration}{fades}",
@@ -188,7 +191,7 @@ impl FfmpegCompiler {
                 ),
                 audio_label,
             )
-        }
+        })
     }
 }
 

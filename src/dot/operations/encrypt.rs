@@ -8,24 +8,34 @@ use anyhow::{Context, Result, anyhow};
 use colored::Colorize;
 use std::fs;
 
+/// Options shared by the encrypt/decrypt (plaintext <-> `.age`) operations.
+#[derive(Debug, Default, Clone)]
+pub struct ConvertOptions {
+    /// Convert the source from this repository instead of the default source
+    pub repo: Option<String>,
+    /// Convert the source from this subdirectory (requires `repo`)
+    pub subdir: Option<String>,
+    /// Show what would be converted without writing files
+    pub dry_run: bool,
+    /// Process root-owned dotfiles
+    pub include_root: bool,
+}
+
 pub fn encrypt_dotfile(
     config: &DotfileConfig,
     db: &Database,
     path: &str,
-    repo: Option<&str>,
-    subdir: Option<&str>,
-    dry_run: bool,
-    include_root: bool,
+    options: &ConvertOptions,
     debug: bool,
 ) -> Result<()> {
-    let target_path = resolve_dotfile_path(path, include_root, false)?;
+    let target_path = resolve_dotfile_path(path, options.include_root, false)?;
     let dotfile = crate::dot::utils::resolve_dotfile_to_source(
         config,
         db,
         &target_path,
-        repo,
-        subdir,
-        include_root,
+        options.repo.as_deref(),
+        options.subdir.as_deref(),
+        options.include_root,
     )?;
 
     // Issue #1 (TOCTOU recovery): detect "both plaintext and ciphertext on
@@ -168,7 +178,7 @@ plaintext file and re-run; otherwise delete the ciphertext file and re-run.",
     })?;
     let plain_hash = Dotfile::hash_bytes(&plaintext);
 
-    if dry_run {
+    if options.dry_run {
         emit(
             Level::Info,
             "dot.encrypt.dry_run",
@@ -435,7 +445,19 @@ mod tests {
         };
         let db = Database::new(config.database_path().to_path_buf()).unwrap();
 
-        encrypt_dotfile(&config, &db, "secret.txt", None, None, false, false, false).unwrap();
+        encrypt_dotfile(
+            &config,
+            &db,
+            "secret.txt",
+            &ConvertOptions {
+                repo: None,
+                subdir: None,
+                dry_run: false,
+                include_root: false,
+            },
+            false,
+        )
+        .unwrap();
 
         assert!(!dots_dir.join("secret.txt").exists());
         let encrypted_source = dots_dir.join("secret.txt.age");
@@ -511,7 +533,18 @@ mod tests {
         .unwrap();
 
         // Attempting to encrypt should fail because the target is modified relative to source
-        let result = encrypt_dotfile(&config, &db, "secret.txt", None, None, false, false, false);
+        let result = encrypt_dotfile(
+            &config,
+            &db,
+            "secret.txt",
+            &ConvertOptions {
+                repo: None,
+                subdir: None,
+                dry_run: false,
+                include_root: false,
+            },
+            false,
+        );
         assert!(result.is_err());
         let err_msg = result.err().unwrap().to_string();
         assert!(err_msg.contains("has local modifications"));
@@ -548,10 +581,12 @@ mod tests {
             &env.config,
             &env.db,
             "secret.txt",
-            None,
-            None,
-            false,
-            false,
+            &ConvertOptions {
+                repo: None,
+                subdir: None,
+                dry_run: false,
+                include_root: false,
+            },
             false,
         )
         .unwrap();
@@ -589,10 +624,12 @@ mod tests {
             &env.config,
             &env.db,
             "secret.txt",
-            None,
-            None,
-            false,
-            false,
+            &ConvertOptions {
+                repo: None,
+                subdir: None,
+                dry_run: false,
+                include_root: false,
+            },
             false,
         );
         let err = result.expect_err("divergent recovery must bail");

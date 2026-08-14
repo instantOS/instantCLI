@@ -70,6 +70,32 @@ pub struct FfmpegCompiler {
     subtitle_path: Option<PathBuf>,
 }
 
+/// Mutable assembly context threaded through filter-construction methods.
+///
+/// Owns the in-progress ffmpeg `filter_complex` graph so build methods no
+/// longer take `&mut FilterGraph` as a repeated parameter. The immutable
+/// `SourceMap` (used only to resolve clip inputs) is passed separately.
+struct FilterGraphBuilder {
+    graph: FilterGraph,
+}
+
+impl FilterGraphBuilder {
+    fn new(graph: FilterGraph) -> Self {
+        Self { graph }
+    }
+
+    #[inline]
+    fn graph(&mut self) -> &mut FilterGraph {
+        &mut self.graph
+    }
+
+    /// Recover the finished graph so the caller can render the filter string.
+    #[inline]
+    fn into_graph(self) -> FilterGraph {
+        self.graph
+    }
+}
+
 impl FfmpegCompiler {
     pub fn new(target_dimensions: VideoDimensions, render_config: RenderConfig) -> Self {
         Self {
@@ -153,43 +179,47 @@ impl FfmpegCompiler {
         source_map: &SourceMap,
         total_duration: f64,
     ) -> Result<String> {
-        let mut graph = FilterGraph::new();
+        let mut builder = FilterGraphBuilder::new(FilterGraph::new());
 
         let Some((mut current_video, base_audio)) =
-            self.build_base_track_filters(&mut graph, &timeline.base, source_map)?
+            self.build_base_track_filters(&mut builder, &timeline.base, source_map)?
         else {
             anyhow::bail!("Cannot render a timeline without a playable base video track");
         };
 
         if !timeline.broll.is_empty() {
-            current_video =
-                self.apply_broll_overlays(&mut graph, &timeline.broll, source_map, current_video)?;
+            current_video = self.apply_broll_overlays(
+                &mut builder,
+                &timeline.broll,
+                source_map,
+                current_video,
+            )?;
         }
 
         if !timeline.overlays.is_empty() {
             current_video =
-                self.apply_overlays(&mut graph, &timeline.overlays, source_map, current_video)?;
+                self.apply_overlays(&mut builder, &timeline.overlays, source_map, current_video)?;
         }
 
         if let Some(ass_path) = &self.subtitle_path {
             let escaped_path = escape_ffmpeg_path(ass_path);
-            current_video = graph.video_filter(
+            current_video = builder.graph().video_filter(
                 current_video,
                 format!("ass='{escaped_path}'"),
                 "subtitled_v",
             );
         }
 
-        graph.output_video(current_video);
+        builder.graph().output_video(current_video);
 
         self.build_audio_mix_filters(
-            &mut graph,
+            &mut builder,
             &timeline.music,
             source_map,
             Some(base_audio),
             total_duration,
         )?;
 
-        Ok(graph.finish())
+        Ok(builder.into_graph().finish())
     }
 }

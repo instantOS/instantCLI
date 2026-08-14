@@ -2,6 +2,7 @@ use crate::dot::config::DotfileConfig;
 use crate::dot::db::{Database, DotFileType};
 use crate::dot::dotfile::{Dotfile, SourceKind};
 use crate::dot::dotfilerepo::DotfileRepo;
+use crate::dot::operations::encrypt::ConvertOptions;
 use crate::dot::utils::resolve_dotfile_path;
 use crate::ui::prelude::*;
 use anyhow::{Context, Result, anyhow};
@@ -12,20 +13,17 @@ pub fn decrypt_dotfile(
     config: &DotfileConfig,
     db: &Database,
     path: &str,
-    repo: Option<&str>,
-    subdir: Option<&str>,
-    dry_run: bool,
-    include_root: bool,
+    options: &ConvertOptions,
     debug: bool,
 ) -> Result<()> {
-    let target_path = resolve_dotfile_path(path, include_root, false)?;
+    let target_path = resolve_dotfile_path(path, options.include_root, false)?;
     let dotfile = crate::dot::utils::resolve_dotfile_to_source(
         config,
         db,
         &target_path,
-        repo,
-        subdir,
-        include_root,
+        options.repo.as_deref(),
+        options.subdir.as_deref(),
+        options.include_root,
     )?;
 
     // Issue #1 (TOCTOU recovery): detect "both plaintext and ciphertext on
@@ -164,7 +162,7 @@ delete the plaintext file and re-run.",
             )
         })?;
 
-    if dry_run {
+    if options.dry_run {
         emit(
             Level::Info,
             "dot.decrypt.dry_run",
@@ -346,7 +344,7 @@ mod tests {
     use super::*;
     use crate::common::TildePath;
     use crate::dot::config::Repo;
-    use crate::dot::operations::encrypt::encrypt_dotfile;
+    use crate::dot::operations::encrypt::{ConvertOptions, encrypt_dotfile};
     use crate::dot::test_util::{EnvGuard, setup_encrypt_test_env};
     use crate::dot::types::RepoMetaData;
     use age::secrecy::ExposeSecret;
@@ -408,13 +406,37 @@ mod tests {
         let db = Database::new(config.database_path().to_path_buf()).unwrap();
 
         // 1. Encrypt first
-        encrypt_dotfile(&config, &db, "secret.txt", None, None, false, false, false).unwrap();
+        encrypt_dotfile(
+            &config,
+            &db,
+            "secret.txt",
+            &ConvertOptions {
+                repo: None,
+                subdir: None,
+                dry_run: false,
+                include_root: false,
+            },
+            false,
+        )
+        .unwrap();
 
         assert!(!dots_dir.join("secret.txt").exists());
         assert!(dots_dir.join("secret.txt.age").exists());
 
         // 2. Decrypt back
-        decrypt_dotfile(&config, &db, "secret.txt", None, None, false, false, false).unwrap();
+        decrypt_dotfile(
+            &config,
+            &db,
+            "secret.txt",
+            &ConvertOptions {
+                repo: None,
+                subdir: None,
+                dry_run: false,
+                include_root: false,
+            },
+            false,
+        )
+        .unwrap();
 
         assert!(dots_dir.join("secret.txt").exists());
         assert!(!dots_dir.join("secret.txt.age").exists());
@@ -460,10 +482,12 @@ mod tests {
             &env.config,
             &env.db,
             "secret.txt",
-            None,
-            None,
-            false,
-            false,
+            &ConvertOptions {
+                repo: None,
+                subdir: None,
+                dry_run: false,
+                include_root: false,
+            },
             false,
         )
         .unwrap();
@@ -501,10 +525,12 @@ mod tests {
             &env.config,
             &env.db,
             "secret.txt",
-            None,
-            None,
-            false,
-            false,
+            &ConvertOptions {
+                repo: None,
+                subdir: None,
+                dry_run: false,
+                include_root: false,
+            },
             false,
         );
         let err = result.expect_err("divergent recovery must bail");
