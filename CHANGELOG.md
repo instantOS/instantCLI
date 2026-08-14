@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.9](https://github.com/instantOS/instantCLI/compare/v0.14.8...v0.14.9) - 2026-08-14
+
+### Fixed
+
+- fix gdm session name
+- fix normalizer
+- fix timing issues
+- fix timing issue
+- fix granite driver
+- fix joke assist
+
+### Other
+
+- make autostart ensure notification daemon
+- auto launch live iso autostart if necessary
+- install pre-flight checks
+- Merge branch 'dev' of github.com:instantOS/instantCLI into dev
+- remove dead code
+- add help submenus
+- refactor old video systems
+- type safe ffmpeg graph
+- eq
+- get rid of audio popping issue
+- Merge branch 'dev'
+- better conflict resolution
+
 ## [0.14.8](https://github.com/instantOS/instantCLI/compare/v0.14.7...v0.14.8) - 2026-08-08
 
 ### Fixed
