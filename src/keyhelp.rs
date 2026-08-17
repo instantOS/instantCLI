@@ -6,35 +6,28 @@
 //! `instantwmctl action --list`). Selecting an entry opens a small action
 //! menu: run the action, open the config file in the editor, or go back to
 //! the keybind list.
+//!
+//! The binding preview is rendered lazily by a hidden `ins preview --id
+//! keyhelp` subcommand so we only build preview text for the highlighted row.
 
 use crate::common::compositor::CompositorType;
 use crate::common::instantwmctl;
-use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, HeaderBuilder};
-use crate::ui::catppuccin::{colors, format_icon_colored, hex_to_ansi_fg};
+use crate::menu_utils::{
+    FzfResult, FzfSelectable, FzfWrapper, HeaderBuilder, MenuItem, MenuPresentation,
+};
+use crate::preview::{PreviewId, preview_command};
+use crate::ui::catppuccin::{colors, format_icon, format_icon_colored, format_with_color};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::{PreviewBuilder, PreviewWriter};
 use anyhow::{Context, Result, anyhow};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::process::Command;
-use std::sync::Arc;
-
-const RESET: &str = "\x1b[0m";
 
 /// Mode tag used for bindings that are active in every mode.
 const GLOBAL_MODE: &str = "global";
-
-/// Documentation for one named WM action, sourced from
-/// `instantwmctl --json action --list`.
-#[derive(Debug, Clone)]
-struct ActionDoc {
-    description: String,
-    arg_example: Option<String>,
-}
-
-type ActionDocs = Arc<HashMap<String, ActionDoc>>;
 
 #[derive(Debug, Clone, Deserialize)]
 struct KeybindRowJson {
@@ -45,13 +38,11 @@ struct KeybindRowJson {
     origin: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-struct ActionDocJson {
-    name: String,
-    description: Option<String>,
-    arg_example: Option<String>,
-}
-
+/// One keybinding as it appears in the fzf menu.
+///
+/// `fzf_preview()` returns a *command* (not text), so per-row preview work is
+/// done by the `ins preview --id keyhelp` child process on highlight — see
+/// [`KeybindPreviewPayload`] and `crate::preview::keyhelp::render_keyhelp_preview`.
 #[derive(Debug, Clone)]
 struct KeybindRow {
     modifiers: String,
@@ -59,14 +50,24 @@ struct KeybindRow {
     action: String,
     mode: String,
     origin: String,
-    docs: ActionDocs,
 }
 
-impl KeybindRow {
+/// Serializable snapshot of a keybinding. The fzf `key` field carries this
+/// JSON; the preview child deserializes it to render the binding's preview
+/// without a second `instantwmctl keybinds` round-trip.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeybindPreviewPayload {
+    pub modifiers: String,
+    pub key: String,
+    pub action: String,
+    pub mode: String,
+    pub origin: String,
+}
+
+impl KeybindPreviewPayload {
     /// Render the chord as the user would type it: empty modifiers → just the
-    /// key, otherwise `Modifiers + Key`. Kept as a method (not a stored field)
-    /// so the composition can't drift from the renderer — both call this.
-    fn binding(&self) -> String {
+    /// key, otherwise `Modifiers + Key`.
+    pub fn binding(&self) -> String {
         if self.modifiers.is_empty() {
             self.key.clone()
         } else {
@@ -74,25 +75,9 @@ impl KeybindRow {
         }
     }
 
-    fn from_json(j: KeybindRowJson) -> Self {
-        Self {
-            modifiers: j.modifiers,
-            key: j.key,
-            action: j.action,
-            mode: j.mode.unwrap_or_else(|| GLOBAL_MODE.to_string()),
-            origin: j.origin,
-            docs: Arc::new(HashMap::new()),
-        }
-    }
-
-    fn with_docs(mut self, docs: ActionDocs) -> Self {
-        self.docs = docs;
-        self
-    }
-
     /// The individual actions of a `sequence [...]` binding, or `None` for a
     /// plain (non-sequence) action.
-    fn sequence_steps(&self) -> Option<Vec<String>> {
+    pub fn sequence_steps(&self) -> Option<Vec<String>> {
         let inner = self.action.strip_prefix("sequence [")?.strip_suffix(']')?;
         Some(
             inner
@@ -104,7 +89,7 @@ impl KeybindRow {
     }
 
     /// Human-readable origin label, shown only in the preview.
-    fn origin_label(&self) -> &'static str {
+    pub fn origin_label(&self) -> &'static str {
         if self.origin == "user" {
             "your config"
         } else {
@@ -112,64 +97,10 @@ impl KeybindRow {
         }
     }
 
-    /// Headline "what it does" line + usage for a plain action.
-    fn build_action_doc(&self, builder: &mut PreviewWriter) {
-        let name = action_name(&self.action);
-        match self.docs.get(name) {
-            Some(doc) => {
-                builder.line(colors::SKY, Some(NerdFont::Info), &doc.description);
-                if let Some(arg) = &doc.arg_example {
-                    builder.field_indented("Usage", &format!("{name} {arg}"));
-                }
-            }
-            None => {
-                builder.subtext(&format!("No built-in description for '{name}'."));
-            }
-        }
-    }
-
-    /// Per-step bullets for `sequence [...]` bindings.
-    fn build_sequence_doc(&self, builder: &mut PreviewWriter) {
-        builder.title(colors::BLUE, "Sequence");
-        match self.sequence_steps() {
-            Some(steps) => {
-                for step in &steps {
-                    match self.docs.get(action_name(step)) {
-                        Some(doc) => {
-                            builder.bullet(&format!("{step} — {}", doc.description));
-                        }
-                        None => {
-                            builder.bullet(step);
-                        }
-                    }
-                }
-            }
-            None => {
-                builder.subtext("Malformed sequence.");
-            }
-        }
-    }
-}
-
-/// First token of an action string: the named action (`inc_master_count 1` →
-/// `inc_master_count`). The whole string is returned when it has no args.
-fn action_name(action: &str) -> &str {
-    action.split_whitespace().next().unwrap_or(action)
-}
-
-impl FzfSelectable for KeybindRow {
-    fn fzf_display_text(&self) -> String {
-        let binding_fg = hex_to_ansi_fg(colors::GREEN);
-        let action_fg = hex_to_ansi_fg(colors::TEXT);
-        format!(
-            "{binding_fg}{} {binding}{RESET}   {action_fg}{action}{RESET}",
-            char::from(NerdFont::Keyboard),
-            binding = self.binding(),
-            action = self.action,
-        )
-    }
-
-    fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
+    /// Build the full preview text. `docs` is the action-name → description
+    /// map from `instantwmctl --json action --list` (an empty map is fine —
+    /// the preview simply omits the docs section).
+    pub fn render_preview(&self, docs: &HashMap<String, ActionDoc>) -> String {
         let mut w = PreviewWriter::collect();
 
         // Mode + availability. Global bindings fire in every mode; the rest
@@ -194,11 +125,11 @@ impl FzfSelectable for KeybindRow {
         w.field("Origin", self.origin_label());
         w.blank();
 
-        if !self.docs.is_empty() {
+        if !docs.is_empty() {
             if self.sequence_steps().is_some() {
-                self.build_sequence_doc(&mut w);
+                self.build_sequence_doc(docs, &mut w);
             } else {
-                self.build_action_doc(&mut w);
+                self.build_action_doc(docs, &mut w);
             }
         }
 
@@ -210,101 +141,244 @@ impl FzfSelectable for KeybindRow {
             w.subtext("Built-in default — override it in ~/.config/instantwm/config.toml.");
         }
 
-        crate::menu_utils::FzfPreview::Text(w.build_string())
+        w.build_string()
+    }
+
+    fn build_action_doc(&self, docs: &HashMap<String, ActionDoc>, builder: &mut PreviewWriter) {
+        let name = action_name(&self.action);
+        match docs.get(name) {
+            Some(doc) => {
+                builder.line(colors::SKY, Some(NerdFont::Info), &doc.description);
+                if let Some(arg) = &doc.arg_example {
+                    builder.field_indented("Usage", &format!("{name} {arg}"));
+                }
+            }
+            None => {
+                builder.subtext(&format!("No built-in description for '{name}'."));
+            }
+        }
+    }
+
+    fn build_sequence_doc(&self, docs: &HashMap<String, ActionDoc>, builder: &mut PreviewWriter) {
+        builder.title(colors::BLUE, "Sequence");
+        match self.sequence_steps() {
+            Some(steps) => {
+                for step in &steps {
+                    match docs.get(action_name(step)) {
+                        Some(doc) => {
+                            builder.bullet(&format!("{step} — {}", doc.description));
+                        }
+                        None => {
+                            builder.bullet(step);
+                        }
+                    }
+                }
+            }
+            None => {
+                builder.subtext("Malformed sequence.");
+            }
+        }
     }
 }
 
-/// Choice made in the per-binding action menu.
+/// Documentation for one named WM action, sourced from
+/// `instantwmctl --json action --list`.
+#[derive(Debug, Clone)]
+pub struct ActionDoc {
+    pub description: String,
+    pub arg_example: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ActionDocJson {
+    name: String,
+    description: Option<String>,
+    arg_example: Option<String>,
+}
+
+impl KeybindRow {
+    fn from_json(j: KeybindRowJson) -> Self {
+        Self {
+            modifiers: j.modifiers,
+            key: j.key,
+            action: j.action,
+            mode: j.mode.unwrap_or_else(|| GLOBAL_MODE.to_string()),
+            origin: j.origin,
+        }
+    }
+
+    /// Snapshot used as the fzf key field — the preview child parses this
+    /// back out to render the binding's preview.
+    fn to_payload(&self) -> KeybindPreviewPayload {
+        KeybindPreviewPayload {
+            modifiers: self.modifiers.clone(),
+            key: self.key.clone(),
+            action: self.action.clone(),
+            mode: self.mode.clone(),
+            origin: self.origin.clone(),
+        }
+    }
+
+    /// Convenience wrapper used by [`KeybindPreviewPayload::binding`].
+    fn binding(&self) -> String {
+        self.to_payload().binding()
+    }
+
+    /// Forwarded so the action submenu can keep using `row.sequence_steps()`
+    /// without converting to a payload first.
+    fn sequence_steps(&self) -> Option<Vec<String>> {
+        self.to_payload().sequence_steps()
+    }
+
+    /// Forwarded so the action submenu can keep using `row.origin_label()`.
+    fn origin_label(&self) -> &'static str {
+        self.to_payload().origin_label()
+    }
+}
+
+/// First token of an action string: the named action (`inc_master_count 1` →
+/// `inc_master_count`). The whole string is returned when it has no args.
+fn action_name(action: &str) -> &str {
+    action.split_whitespace().next().unwrap_or(action)
+}
+
+impl FzfSelectable for KeybindRow {
+    fn fzf_display_text(&self) -> String {
+        // `format_icon` and `format_with_color` both emit their own ANSI
+        // reset, so we never need to juggle a raw `\x1b[0m` by hand here.
+        format!(
+            "{} {}   {}",
+            format_icon(NerdFont::Keyboard),
+            format_with_color(&self.binding(), colors::GREEN),
+            self.action,
+        )
+    }
+
+    fn fzf_key(&self) -> String {
+        // The fzf field is opaque to users but must be unique per row and
+        // round-trippable into a [`KeybindPreviewPayload`]. JSON does both.
+        serde_json::to_string(&self.to_payload()).unwrap_or_default()
+    }
+
+    fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
+        // Lazy preview: fzf runs this command on highlight, passing the
+        // payload as `$1`. `ins preview --id keyhelp` rebuilds the sectioned
+        // preview (mode/origin/availability + action docs) on demand.
+        crate::menu_utils::FzfPreview::Command(preview_command(PreviewId::Keyhelp))
+    }
+}
+
+/// Choice made in the per-binding action menu. Mirrors the systemd
+/// submenu shape: a small enum carried by a thin `SubmenuActionItem`
+/// wrapper that renders the row + its preview.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SubmenuChoice {
+enum SubmenuAction {
     Run,
     Edit,
     Back,
 }
 
+/// One row in the per-binding action menu.
+///
+/// `run_action` carries the action string for the `Run` variant so the
+/// preview can show the `instantwmctl action ...` command that will run.
+/// `Edit`/`Back` don't need it.
 #[derive(Debug, Clone)]
-struct ActionOption {
-    label: String,
-    key: String,
-    badge: String,
-    preview: String,
+struct SubmenuActionItem {
+    action: SubmenuAction,
+    run_action: Option<String>,
 }
 
-impl ActionOption {
-    fn new(label: String, key: &str, icon: NerdFont, color: &str, preview: String) -> Self {
+impl SubmenuActionItem {
+    fn run(action: String) -> Self {
         Self {
-            label,
-            key: key.to_string(),
-            badge: format_icon_colored(icon, color),
-            preview,
+            action: SubmenuAction::Run,
+            run_action: Some(action),
         }
     }
 
-    fn run(row: &KeybindRow) -> Self {
-        // The compositor executes the action as `instantwmctl action
-        // <name> <args>` — same split `run_binding` relies on.
-        let name = action_name(&row.action);
-        let args = row.action[name.len()..].trim_start();
-        let command = if args.is_empty() {
-            format!("instantwmctl action {name}")
-        } else {
-            format!("instantwmctl action {name} {args}")
-        };
-        Self::new(
-            format!("Run: {}", row.action),
-            "run",
-            NerdFont::Bolt,
-            colors::GREEN,
-            PreviewBuilder::new()
-                .title(colors::GREEN, "Run this action")
-                .blank()
-                .text("Executes the binding's action right now.")
-                .field("Command", &command)
-                .build_string(),
-        )
-    }
-
     fn edit() -> Self {
-        let path = config_path();
-        Self::new(
-            "Edit config.toml".to_string(),
-            "edit",
-            NerdFont::Edit,
-            colors::BLUE,
-            PreviewBuilder::new()
-                .title(colors::BLUE, "Edit config")
-                .blank()
-                .text("Open your instantWM config so you can change or remove this binding.")
-                .field("File", &path.display().to_string())
-                .field("Editor", "$EDITOR (nvim by default)")
-                .build_string(),
-        )
+        Self {
+            action: SubmenuAction::Edit,
+            run_action: None,
+        }
     }
 
     fn back() -> Self {
-        Self::new(
-            "Back".to_string(),
-            "back",
-            NerdFont::ArrowLeft,
-            colors::OVERLAY1,
-            PreviewBuilder::new()
-                .subtext("Return to the keybind list")
-                .build_string(),
-        )
+        Self {
+            action: SubmenuAction::Back,
+            run_action: None,
+        }
     }
 }
 
-impl FzfSelectable for ActionOption {
+impl FzfSelectable for SubmenuActionItem {
     fn fzf_display_text(&self) -> String {
-        format!("{}{}", self.badge, self.label)
+        match self.action {
+            // Bolt on a green badge for the active action — same semantic
+            // pair systemd uses for Start (green play) / Stop (red stop).
+            SubmenuAction::Run => format!(
+                "{} Run: {}",
+                format_icon_colored(NerdFont::Bolt, colors::GREEN),
+                self.run_action.as_deref().unwrap_or(""),
+            ),
+            // Edit and Back get the default Catppuccin blue badge via
+            // `format_icon`, matching how systemd renders View Logs / Back.
+            SubmenuAction::Edit => format!("{} Edit config.toml", format_icon(NerdFont::Edit)),
+            SubmenuAction::Back => format!("{} Back", format_icon(NerdFont::ArrowLeft)),
+        }
     }
 
     fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
-        crate::menu_utils::FzfPreview::Text(self.preview.clone())
+        match self.action {
+            SubmenuAction::Run => {
+                let action = self.run_action.as_deref().unwrap_or("");
+                // Mirror `run_binding`: first token is the action name, the
+                // rest are its args, joined back into the same shell call.
+                let name = action_name(action);
+                let args = action[name.len()..].trim_start();
+                let command = if args.is_empty() {
+                    format!("instantwmctl action {name}")
+                } else {
+                    format!("instantwmctl action {name} {args}")
+                };
+                crate::menu_utils::FzfPreview::Text(
+                    PreviewBuilder::new()
+                        .title(colors::GREEN, "Run this action")
+                        .blank()
+                        .text("Executes the binding's action right now.")
+                        .field("Command", &command)
+                        .build_string(),
+                )
+            }
+            SubmenuAction::Edit => {
+                let path = config_path();
+                crate::menu_utils::FzfPreview::Text(
+                    PreviewBuilder::new()
+                        .title(colors::BLUE, "Edit config")
+                        .blank()
+                        .text(
+                            "Open your instantWM config so you can change or remove this binding.",
+                        )
+                        .field("File", &path.display().to_string())
+                        .field("Editor", "$EDITOR (nvim by default)")
+                        .build_string(),
+                )
+            }
+            SubmenuAction::Back => crate::menu_utils::FzfPreview::Text(
+                PreviewBuilder::new()
+                    .subtext("Return to the keybind list")
+                    .build_string(),
+            ),
+        }
     }
 
     fn fzf_key(&self) -> String {
-        self.key.clone()
+        match self.action {
+            SubmenuAction::Run => "run".to_string(),
+            SubmenuAction::Edit => "edit".to_string(),
+            SubmenuAction::Back => "back".to_string(),
+        }
     }
 }
 
@@ -330,14 +404,6 @@ pub fn run_keyhelp() -> Result<()> {
         return Ok(());
     }
 
-    // Attach built-in action documentation (`instantwmctl action --list`
-    // works even without a compositor; silently degrade if it's unavailable).
-    let docs = fetch_action_docs();
-    let rows: Vec<KeybindRow> = rows
-        .into_iter()
-        .map(|row| row.with_docs(docs.clone()))
-        .collect();
-
     // The action menu can send the user back here, so loop until they cancel.
     loop {
         let header = HeaderBuilder::new(
@@ -351,13 +417,14 @@ pub fn run_keyhelp() -> Result<()> {
             .prompt(format!("{} ", char::from(NerdFont::Search)))
             .header(header)
             .responsive_layout()
+            .presentation(MenuPresentation::Padded)
             .select(rows.clone())?;
 
         match result {
             FzfResult::Selected(row) => match handle_select(&row)? {
-                SubmenuChoice::Run => run_binding(&row)?,
-                SubmenuChoice::Edit => open_config()?,
-                SubmenuChoice::Back => continue,
+                SubmenuAction::Run => run_binding(&row)?,
+                SubmenuAction::Edit => open_config()?,
+                SubmenuAction::Back => continue,
             },
             FzfResult::Cancelled | FzfResult::MultiSelected(_) => return Ok(()),
             FzfResult::Error(err) => return Err(anyhow!(err)),
@@ -390,45 +457,21 @@ fn fetch_keybinds() -> Result<Vec<KeybindRow>> {
     Ok(rows.into_iter().map(KeybindRow::from_json).collect())
 }
 
-/// Built-in documentation for every named action, keyed by action name.
-/// Best-effort: an empty map degrades the preview to "no description".
-fn fetch_action_docs() -> ActionDocs {
-    match instantwmctl::json::<Vec<ActionDocJson>, _, _>(["action", "--list"]) {
-        Ok(entries) => Arc::new(
-            entries
-                .into_iter()
-                .filter_map(|entry| {
-                    entry.description.map(|description| {
-                        (
-                            entry.name,
-                            ActionDoc {
-                                description,
-                                arg_example: entry.arg_example,
-                            },
-                        )
-                    })
-                })
-                .collect(),
-        ),
-        Err(_) => Arc::new(HashMap::new()),
-    }
-}
-
 /// Let the user pick what to do with a selected binding.
-fn handle_select(row: &KeybindRow) -> Result<SubmenuChoice> {
-    let mut options = Vec::new();
+fn handle_select(row: &KeybindRow) -> Result<SubmenuAction> {
     // Sequences can't be triggered individually, so offer edit/back only.
+    let mut options: Vec<MenuItem<SubmenuActionItem>> = Vec::new();
     if row.sequence_steps().is_none() {
-        options.push(ActionOption::run(row));
+        options.push(MenuItem::Entry(SubmenuActionItem::run(row.action.clone())));
     }
-    options.push(ActionOption::edit());
-    options.push(ActionOption::back());
+    options.push(MenuItem::Entry(SubmenuActionItem::edit()));
+    options.push(MenuItem::Entry(SubmenuActionItem::back()));
 
     let mut header = HeaderBuilder::new(NerdFont::Keyboard, row.binding())
         .subtitle(&row.action)
         .field("Mode", &row.mode);
     if row.mode != GLOBAL_MODE {
-        header = header.field("Availability", &format!("only in '{}' mode", row.mode));
+        header = header.field("Availability", format!("only in '{}' mode", row.mode));
     }
     header = header.field("Origin", row.origin_label());
     let header = header.build();
@@ -437,16 +480,13 @@ fn handle_select(row: &KeybindRow) -> Result<SubmenuChoice> {
         .prompt(format!("{} ", char::from(NerdFont::Wrench)))
         .header(header)
         .responsive_layout()
-        .select(options)?;
+        .presentation(MenuPresentation::Padded)
+        .select_menu(options)?;
 
     match result {
-        FzfResult::Selected(o) => match o.key.as_str() {
-            "run" => Ok(SubmenuChoice::Run),
-            "edit" => Ok(SubmenuChoice::Edit),
-            // Unknown keys and cancellation both fall back to the list.
-            _ => Ok(SubmenuChoice::Back),
-        },
-        FzfResult::Cancelled | FzfResult::MultiSelected(_) => Ok(SubmenuChoice::Back),
+        FzfResult::Selected(item) => Ok(item.action),
+        // Cancellation (Esc) falls back to the list — same as picking Back.
+        FzfResult::Cancelled | FzfResult::MultiSelected(_) => Ok(SubmenuAction::Back),
         FzfResult::Error(err) => Err(anyhow!(err)),
     }
 }
@@ -555,6 +595,29 @@ fn print_text_list() -> Result<()> {
     Ok(())
 }
 
+/// Fetch `instantwmctl --json action --list` and return an action-name →
+/// description map. Best-effort: an empty map degrades the preview to "no
+/// description".
+pub fn fetch_action_docs() -> HashMap<String, ActionDoc> {
+    match instantwmctl::json::<Vec<ActionDocJson>, _, _>(["action", "--list"]) {
+        Ok(entries) => entries
+            .into_iter()
+            .filter_map(|entry| {
+                entry.description.map(|description| {
+                    (
+                        entry.name,
+                        ActionDoc {
+                            description,
+                            arg_example: entry.arg_example,
+                        },
+                    )
+                })
+            })
+            .collect(),
+        Err(_) => HashMap::new(),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -603,14 +666,28 @@ mod tests {
             action: action.to_string(),
             mode: mode.unwrap_or(GLOBAL_MODE).to_string(),
             origin: origin.to_string(),
-            docs: Arc::new(HashMap::new()),
         }
     }
 
-    /// Row with a docs map, for preview tests.
-    fn docs_row(docs: &[(&str, &str)]) -> KeybindRow {
+    fn payload(
+        modifiers: &str,
+        key: &str,
+        action: &str,
+        mode: Option<&str>,
+        origin: &str,
+    ) -> KeybindPreviewPayload {
+        KeybindPreviewPayload {
+            modifiers: modifiers.to_string(),
+            key: key.to_string(),
+            action: action.to_string(),
+            mode: mode.unwrap_or(GLOBAL_MODE).to_string(),
+            origin: origin.to_string(),
+        }
+    }
+
+    fn docs(pairs: &[(&str, &str)]) -> HashMap<String, ActionDoc> {
         let mut map = HashMap::new();
-        for (name, description) in docs {
+        for (name, description) in pairs {
             map.insert(
                 (*name).to_string(),
                 ActionDoc {
@@ -619,21 +696,7 @@ mod tests {
                 },
             );
         }
-        KeybindRow {
-            modifiers: "Super".to_string(),
-            key: "i".to_string(),
-            action: "inc_master_count 1".to_string(),
-            mode: GLOBAL_MODE.to_string(),
-            origin: "compiled_default".to_string(),
-            docs: Arc::new(map),
-        }
-    }
-
-    fn preview_text(row: &KeybindRow) -> String {
-        match row.fzf_preview() {
-            FzfPreview::Text(text) => text,
-            other => panic!("expected Text preview, got {other:?}"),
-        }
+        map
     }
 
     #[test]
@@ -677,21 +740,49 @@ mod tests {
     }
 
     #[test]
+    fn fzf_key_round_trips_into_payload() {
+        let row = row("Super", "h", "focus_left", None, "compiled_default");
+        let key = row.fzf_key();
+        let parsed: KeybindPreviewPayload =
+            serde_json::from_str(&key).expect("fzf_key must be valid JSON");
+        assert_eq!(parsed.modifiers, "Super");
+        assert_eq!(parsed.key, "h");
+        assert_eq!(parsed.action, "focus_left");
+        assert_eq!(parsed.mode, GLOBAL_MODE);
+        assert_eq!(parsed.origin, "compiled_default");
+    }
+
+    #[test]
+    fn fzf_preview_is_a_lazy_command() {
+        let row = row("Super", "h", "focus_left", None, "compiled_default");
+        // The per-row preview is rendered on demand by `ins preview --id
+        // keyhelp`, not baked into the fzf input — keeps the keybind list
+        // light even when there are dozens of bindings.
+        match row.fzf_preview() {
+            FzfPreview::Command(cmd) => {
+                assert!(cmd.contains("preview --id keyhelp"));
+                assert!(cmd.contains("$1"));
+            }
+            other => panic!("expected Command preview, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn preview_shows_origin_in_preview_not_item() {
-        let user = row(
+        let user = payload(
             "Super",
             "Return",
             "spawn kitty --single-instance",
             None,
             "user",
         );
-        let default = row("Super", "h", "focus_left", None, "compiled_default");
+        let default = payload("Super", "h", "focus_left", None, "compiled_default");
 
-        let user_text = preview_text(&user);
+        let user_text = user.render_preview(&HashMap::new());
         assert!(user_text.contains("your config"));
         assert!(user_text.contains("Defined in ~/.config/instantwm/config.toml"));
 
-        let default_text = preview_text(&default);
+        let default_text = default.render_preview(&HashMap::new());
         assert!(default_text.contains("default"));
         assert!(default_text.contains("Built-in default"));
 
@@ -702,45 +793,39 @@ mod tests {
 
     #[test]
     fn non_global_mode_preview_notes_availability() {
-        let row = row(
+        let row = payload(
             "",
             "Return",
             "spawn .config/instantos/default/terminal",
             Some("desktop"),
             "compiled_default",
         );
-        let text = preview_text(&row);
+        let text = row.render_preview(&HashMap::new());
         assert!(text.contains("desktop"));
         assert!(text.contains("Only available when the 'desktop' mode is enabled"));
     }
 
     #[test]
     fn global_mode_preview_has_no_availability_note() {
-        let row = row("Super", "h", "focus_left", None, "compiled_default");
-        let text = preview_text(&row);
+        let row = payload("Super", "h", "focus_left", None, "compiled_default");
+        let text = row.render_preview(&HashMap::new());
         assert!(text.contains("global"));
         assert!(!text.contains("Only available"));
     }
 
     #[test]
     fn preview_includes_action_docs_and_usage() {
-        let row = docs_row(&[("inc_master_count", "increase master window count")]);
-        let row_with_arg = KeybindRow {
-            docs: Arc::new(
-                [(
-                    "inc_master_count".to_string(),
-                    ActionDoc {
-                        description: "increase master window count".to_string(),
-                        arg_example: Some("1".to_string()),
-                    },
-                )]
-                .into_iter()
-                .collect(),
-            ),
-            ..row
-        };
+        let mut docs = docs(&[("inc_master_count", "increase master window count")]);
+        docs.insert(
+            "inc_master_count".to_string(),
+            ActionDoc {
+                description: "increase master window count".to_string(),
+                arg_example: Some("1".to_string()),
+            },
+        );
 
-        let text = preview_text(&row_with_arg);
+        let row = payload("Super", "i", "inc_master_count 1", None, "compiled_default");
+        let text = row.render_preview(&docs);
         assert!(text.contains("increase master window count"));
         // The value is wrapped in instantCLI's own ANSI color codes (added
         // by PreviewWriter for fzf's --ansi preview), so check the label and
@@ -751,35 +836,20 @@ mod tests {
 
     #[test]
     fn sequence_preview_lists_steps_with_docs() {
-        let row = row(
+        let docs = docs(&[
+            ("set_mode", "set WM mode (sway-like modes)"),
+            ("spawn", "spawn a command without shell expansion"),
+        ]);
+
+        let row = payload(
             "Super + Ctrl",
             "Shift",
             "sequence [set_mode default, spawn ins assist run sf]",
             None,
             "compiled_default",
-        )
-        .with_docs(Arc::new(
-            [
-                (
-                    "set_mode".to_string(),
-                    ActionDoc {
-                        description: "set WM mode (sway-like modes)".to_string(),
-                        arg_example: Some("resize".to_string()),
-                    },
-                ),
-                (
-                    "spawn".to_string(),
-                    ActionDoc {
-                        description: "spawn a command without shell expansion".to_string(),
-                        arg_example: Some("COMMAND [ARG ...]".to_string()),
-                    },
-                ),
-            ]
-            .into_iter()
-            .collect(),
-        ));
+        );
 
-        let text = preview_text(&row);
+        let text = row.render_preview(&docs);
         assert!(text.contains("Sequence"));
         assert!(text.contains("set_mode default — set WM mode (sway-like modes)"));
         assert!(text.contains("spawn ins assist run sf — spawn a command without shell expansion"));
@@ -787,7 +857,7 @@ mod tests {
 
     #[test]
     fn sequence_actions_are_detected() {
-        let row = row(
+        let row = payload(
             "Super + Ctrl",
             "Shift",
             "sequence [set_mode default, spawn ins assist run sf]",
@@ -812,39 +882,39 @@ mod tests {
     fn submenu_back_selection_returns_back() {
         let _guard = MockQueue::new().select_index(2).guard();
         let row = row("Super", "h", "focus_left", None, "compiled_default");
-        assert_eq!(handle_select(&row).unwrap(), SubmenuChoice::Back);
+        assert_eq!(handle_select(&row).unwrap(), SubmenuAction::Back);
     }
 
     #[test]
     fn submenu_cancel_returns_back() {
         let _guard = MockQueue::new().cancel_selection().guard();
         let row = row("Super", "h", "focus_left", None, "compiled_default");
-        assert_eq!(handle_select(&row).unwrap(), SubmenuChoice::Back);
+        assert_eq!(handle_select(&row).unwrap(), SubmenuAction::Back);
     }
 
     #[test]
-    fn submenu_run_option_sits_first_for_plain_actions() {
-        // Index 0 in the action menu is "Run", index 1 is "Edit".
-        let _guard = MockQueue::new().select_index(0).guard();
-        let row = row("Super", "h", "focus_left", None, "compiled_default");
-        // handle_select would execute the action via instantwmctl; assert the
-        // option ordering instead by checking the option list construction.
-        let options_with_run = {
-            let mut opts = Vec::new();
-            opts.push(ActionOption::run(&row));
-            opts.push(ActionOption::edit());
-            opts.push(ActionOption::back());
-            opts
-        };
-        assert_eq!(options_with_run[0].key, "run");
-        assert_eq!(options_with_run[1].key, "edit");
-        assert_eq!(options_with_run[2].key, "back");
-        assert!(options_with_run[0].label.starts_with("Run:"));
-        assert!(
-            options_with_run[0]
-                .badge
-                .contains(char::from(NerdFont::Bolt))
-        );
+    fn submenu_run_uses_green_bolt_and_blue_back() {
+        // Same icon conventions as the systemd action submenu:
+        // green bolt for the active action, blue back arrow for Back.
+        let run = SubmenuActionItem::run("focus_left".to_string());
+        let back = SubmenuActionItem::back();
+
+        let run_display = run.fzf_display_text();
+        assert!(run_display.contains("Run: focus_left"));
+        assert!(run_display.contains(char::from(NerdFont::Bolt)));
+
+        let back_display = back.fzf_display_text();
+        assert!(back_display.contains("Back"));
+        assert!(back_display.contains(char::from(NerdFont::ArrowLeft)));
+    }
+
+    #[test]
+    fn submenu_keys_are_stable_short_strings() {
+        // fzf matches items via these keys, so they must be unique and
+        // round-trip cleanly through the wrapper enum.
+        assert_eq!(SubmenuActionItem::run("x".into()).fzf_key(), "run");
+        assert_eq!(SubmenuActionItem::edit().fzf_key(), "edit");
+        assert_eq!(SubmenuActionItem::back().fzf_key(), "back");
     }
 
     #[test]
@@ -856,16 +926,9 @@ mod tests {
             None,
             "compiled_default",
         );
-        // The submenu for a sequence offers edit + back only.
+        // The submenu for a sequence offers edit + back only. Index 1 is
+        // therefore Back, not Edit — verify the menu shrinks correctly.
         let _guard = MockQueue::new().select_index(1).guard();
-        assert_eq!(handle_select(&row).unwrap(), SubmenuChoice::Back);
-    }
-
-    #[test]
-    fn back_option_appears_after_edit() {
-        let back = ActionOption::back();
-        assert_eq!(back.key, "back");
-        assert!(back.label.contains("Back"));
-        assert!(back.badge.contains(char::from(NerdFont::ArrowLeft)));
+        assert_eq!(handle_select(&row).unwrap(), SubmenuAction::Back);
     }
 }
