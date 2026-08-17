@@ -1,0 +1,100 @@
+[
+  {
+    "modifiers": "Super",
+    "key": "Return",
+    "action": "spawn kitty --single-instance",
+    "mode": null,
+    "origin": "user"
+  },
+  {
+    "modifiers": "Super + Ctrl",
+    "key": "l",
+    "action": "spawn hyprlock",
+    "mode": null,
+    "origin": "user"
+  },
+  {
+    "modifiers": "Super + Ctrl",
+    "key": "v",
+    "action": "spawn handy --toggle-transcription",
+    "mode": null,
+    "origin": "user"
+  },
+  {
+    "modifiers": "Super",
+    "key": "h",
+    "action": "focus_left",
+    "mode": null,
+    "origin": "compiled_default"
+  },
+  {
+    "modifiers": "Super",
+    "key": "i",
+    "action": "inc_master_count 1",
+    "mode": null,
+    "origin": "compiled_default"
+  },
+  {
+    "modifiers": "Super",
+    "key": "c",
+    "action": "set_layout grid",
+    "mode": null,
+    "origin": "compiled_default"
+  },
+  {
+    "modifiers": "Super + Ctrl",
+    "key": "Shift",
+    "action": "sequence [set_mode default, spawn ins assist run sf]",
+    "mode": null,
+    "origin": "compiled_default"
+  },
+  {
+    "modifiers": "",
+    "key": "BrightnessUp",
+    "action": "spawn ins assist bright +",
+    "mode": null,
+    "origin": "compiled_default"
+  },
+  {
+    "modifiers": "Super",
+    "key": "1",
+    "action": "view_tag 1",
+    "mode": null,
+    "origin": "compiled_default"
+  },
+  {
+    "modifiers": "",
+    "key": "Return",
+    "action": "spawn .config/instantos/default/terminal",
+    "mode": "desktop",
+    "origin": "compiled_default"
+  },
+  {
+    "modifiers": "",
+    "key": "Left",
+    "action": "placement_left",
+    "mode": "placement",
+    "origin": "compiled_default"
+  },
+  {
+    "modifiers": "",
+    "key": "Esc",
+    "action": "placement_cancel",
+    "mode": "placement",
+    "origin": "compiled_default"
+  },
+  {
+    "modifiers": "Super",
+    "key": "Esc",
+    "action": "reset_mode",
+    "mode": "prefix",
+    "origin": "compiled_default"
+  },
+  {
+    "modifiers": "Super",
+    "key": "Esc",
+    "action": "reset_mode",
+    "mode": "overview",
+    "origin": "compiled_default"
+  }
+]
