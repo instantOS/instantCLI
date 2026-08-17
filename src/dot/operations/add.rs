@@ -194,6 +194,21 @@ fn select_dots_dir(
     }
 }
 
+/// Options controlling the `add` (track/update) operation.
+#[derive(Debug, Default, Clone)]
+pub struct AddOptions {
+    /// Recursively add all files in a directory, including untracked ones
+    pub add_all: bool,
+    /// Choose which repository/subdirectory to add the file to
+    pub choose: bool,
+    /// Override .insignore rules when adding files
+    pub force: bool,
+    /// Encrypt the file while adding it to the repository (stores a `.age` file)
+    pub encrypt: bool,
+    /// Allow adding/updating root-owned dotfiles
+    pub include_root: bool,
+}
+
 /// Add dotfiles to tracking or update existing tracked files
 ///
 /// Behavior:
@@ -206,25 +221,21 @@ pub fn add_dotfile(
     config: &DotfileConfig,
     db: &Database,
     path: &str,
-    add_all: bool,
-    choose: bool,
-    force: bool,
-    encrypt: bool,
-    include_root: bool,
+    options: &AddOptions,
     config_path: Option<&str>,
     debug: bool,
 ) -> Result<()> {
-    let all_dotfiles = get_all_dotfiles(config, db, include_root)?;
-    let target_path = resolve_dotfile_path(path, include_root, true)?;
+    let all_dotfiles = get_all_dotfiles(config, db, options.include_root)?;
+    let target_path = resolve_dotfile_path(path, options.include_root, true)?;
     let home = home_dir();
 
     // Get tracked dotfiles within the specified path
     let tracked_dotfiles = filter_dotfiles_by_path(&all_dotfiles, &target_path);
 
     // Handle --choose flag for single files
-    if choose && target_path.is_file() {
+    if options.choose && target_path.is_file() {
         if tracked_dotfiles.is_empty()
-            && !force
+            && !options.force
             && let Some(ignore_file) = crate::dot::insignore::match_home_path(&target_path)?
         {
             println!(
@@ -234,7 +245,7 @@ pub fn add_dotfile(
             return Ok(());
         }
 
-        return add_with_destination_picker(config, db, &target_path, force, config_path);
+        return add_with_destination_picker(config, db, &target_path, options.force, config_path);
     }
 
     let mut stats = DirectoryAddStats::new();
@@ -245,20 +256,23 @@ pub fn add_dotfile(
     }
 
     // Handle untracked files
-    if add_all {
+    if options.add_all {
         // Scan for untracked files and add them
-        let (_, untracked_files) = scan_and_categorize_files(&target_path, &all_dotfiles, force)?;
+        let (_, untracked_files) =
+            scan_and_categorize_files(&target_path, &all_dotfiles, options.force)?;
         add_untracked_files(
             &untracked_files,
             config,
             db,
             &mut stats,
-            force,
-            encrypt,
+            options.force,
+            options.encrypt,
             config_path,
         )?;
     } else if target_path.is_file() && tracked_dotfiles.is_empty() {
-        if !force && let Some(ignore_file) = crate::dot::insignore::match_home_path(&target_path)? {
+        if !options.force
+            && let Some(ignore_file) = crate::dot::insignore::match_home_path(&target_path)?
+        {
             println!(
                 "{}",
                 crate::dot::insignore::format_skip_message(&target_path, &ignore_file)
@@ -267,9 +281,14 @@ pub fn add_dotfile(
         }
 
         // Single untracked file - prompt to add it
-        if let Some(repo_path) =
-            add_new_file(config, db, &target_path, force, encrypt, config_path)?
-        {
+        if let Some(repo_path) = add_new_file(
+            config,
+            db,
+            &target_path,
+            options.force,
+            options.encrypt,
+            config_path,
+        )? {
             stats.added_count += 1;
             stats.modified_repos.insert(repo_path);
         }

@@ -43,17 +43,7 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
             stdin,
             gui,
         } => handle_chord(chords, stdin, gui),
-        MenuCommands::Slide {
-            min,
-            max,
-            value,
-            step,
-            big_step,
-            label,
-            command,
-            gui,
-            preset,
-        } => handle_slide(min, max, value, step, big_step, label, command, gui, preset),
+        MenuCommands::Slide { spec, gui } => handle_slide(spec, gui),
         MenuCommands::Pick {
             ref start,
             dirs,
@@ -188,47 +178,61 @@ fn handle_chord(chords: &[String], stdin: bool, gui: bool) -> Result<i32> {
     }
 }
 
-fn handle_slide(
+/// The user-facing slider spec, before preset defaults are applied.
+///
+/// Flattened into `MenuCommands::Slide` so the CLI arguments and the slider
+/// options are one and the same type (no field-by-field repacking).
+#[derive(clap::Args, Debug, Clone)]
+pub struct SliderSpec {
+    /// Minimum slider value
+    #[arg(long, default_value_t = 0)]
     min: i64,
+    /// Maximum slider value
+    #[arg(long, default_value_t = 100)]
     max: i64,
+    /// Initial slider value
+    #[arg(long = "value")]
     value: Option<i64>,
+    /// Small step increment for h/l and arrow keys
+    #[arg(long = "step")]
     step: Option<i64>,
+    /// Large step increment for j/k and vertical arrows
+    #[arg(long = "big-step")]
     big_step: Option<i64>,
+    /// Optional label displayed above the slider
+    #[arg(long)]
     label: Option<String>,
+    /// Command to execute on value changes (value appended as final arg)
+    #[arg(long = "command", value_name = "CMD", num_args = 1..)]
     command: Vec<String>,
-    gui: bool,
+    /// Use a preconfigured slider preset
+    #[arg(long, value_enum)]
     preset: Option<SliderPreset>,
-) -> Result<i32> {
-    let mut min_value = min;
-    let mut max_value = max;
-    let mut initial_value = value;
-    let mut step_value = step;
-    let mut big_step_value = big_step;
-    let mut label_value = label;
-    let mut command_args = command;
+}
 
-    if let Some(preset_kind) = preset {
+fn handle_slide(spec: SliderSpec, gui: bool) -> Result<i32> {
+    let mut request = protocol::SliderRequest {
+        min: spec.min,
+        max: spec.max,
+        value: spec.value,
+        step: spec.step,
+        big_step: spec.big_step,
+        label: spec.label,
+        command: spec.command,
+    };
+
+    if let Some(preset_kind) = spec.preset {
         let preset_config = preset_kind.config();
-        min_value = preset_config.min;
-        max_value = preset_config.max;
-        initial_value = initial_value.or(preset_config.value);
-        step_value = step_value.or(preset_config.step);
-        big_step_value = big_step_value.or(preset_config.big_step);
-        label_value = label_value.or(preset_config.label);
-        if command_args.is_empty() {
-            command_args = preset_config.command;
+        request.min = preset_config.min;
+        request.max = preset_config.max;
+        request.value = request.value.or(preset_config.value);
+        request.step = request.step.or(preset_config.step);
+        request.big_step = request.big_step.or(preset_config.big_step);
+        request.label = request.label.or(preset_config.label);
+        if request.command.is_empty() {
+            request.command = preset_config.command;
         }
     }
-
-    let request = protocol::SliderRequest {
-        min: min_value,
-        max: max_value,
-        value: initial_value,
-        step: step_value,
-        big_step: big_step_value,
-        label: label_value,
-        command: command_args,
-    };
 
     if gui {
         let client = MenuClient::new();
@@ -557,30 +561,8 @@ pub enum MenuCommands {
     },
     /// Show a slider prompt similar to the legacy islide utility
     Slide {
-        /// Minimum slider value
-        #[arg(long, default_value_t = 0)]
-        min: i64,
-        /// Maximum slider value
-        #[arg(long, default_value_t = 100)]
-        max: i64,
-        /// Initial slider value
-        #[arg(long = "value")]
-        value: Option<i64>,
-        /// Small step increment for h/l and arrow keys
-        #[arg(long = "step")]
-        step: Option<i64>,
-        /// Large step increment for j/k and vertical arrows
-        #[arg(long = "big-step")]
-        big_step: Option<i64>,
-        /// Optional label displayed above the slider
-        #[arg(long)]
-        label: Option<String>,
-        /// Command to execute on value changes (value appended as final arg)
-        #[arg(long = "command", value_name = "CMD", num_args = 1..)]
-        command: Vec<String>,
-        /// Use a preconfigured slider preset
-        #[arg(long, value_enum)]
-        preset: Option<SliderPreset>,
+        #[command(flatten)]
+        spec: SliderSpec,
         /// Use GUI menu server instead of local slider
         #[arg(long)]
         gui: bool,

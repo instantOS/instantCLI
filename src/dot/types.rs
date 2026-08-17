@@ -84,11 +84,11 @@ pub struct RepoMenuItem {
 
 impl FzfSelectable for RepoMenuItem {
     fn fzf_display_text(&self) -> String {
-        use crate::ui::catppuccin::{colors, format_icon_colored};
+        use crate::ui::catppuccin::{colors, format_icon_colored, format_with_color};
         use crate::ui::nerd_font::NerdFont;
 
         let badge = if self.repo.is_external() {
-            " \x1b[33m[external]\x1b[0m".to_string()
+            format!(" {}", format_with_color("[external]", colors::YELLOW))
         } else {
             String::new()
         };

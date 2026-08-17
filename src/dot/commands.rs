@@ -4,6 +4,7 @@ use colored::Colorize;
 
 use super::config::DotfileConfig;
 use super::db::Database;
+use super::operations::{AddOptions, ConvertOptions};
 use super::repo::cli::{CloneArgs, RepoCommands};
 use crate::ui::prelude::*;
 
@@ -752,18 +753,14 @@ pub fn handle_dot_command(
             // Auto-detect root path handling is inside add_dotfile.
             // include_root parameter is removed from CLI args for add.
             // We pass true here to allow adding root files, since Add should handle both automatically.
-            super::add_dotfile(
-                &config,
-                &db,
-                path,
-                *all,
-                *choose,
-                *force,
-                *encrypt,
-                true, // include_root = true allows absolute paths outside home
-                config_path,
-                debug,
-            )?;
+            let options = AddOptions {
+                add_all: *all,
+                choose: *choose,
+                force: *force,
+                encrypt: *encrypt,
+                include_root: true, // include_root = true allows absolute paths outside home
+            };
+            super::add_dotfile(&config, &db, path, &options, config_path, debug)?;
         }
         DotCommands::Encrypt {
             path,
@@ -772,16 +769,13 @@ pub fn handle_dot_command(
             dry_run,
             root_flags,
         } => {
-            super::encrypt_dotfile(
-                &config,
-                &db,
-                path,
-                repo.as_deref(),
-                subdir.as_deref(),
-                *dry_run,
-                root_flags.include_root,
-                debug,
-            )?;
+            let options = ConvertOptions {
+                repo: repo.clone(),
+                subdir: subdir.clone(),
+                dry_run: *dry_run,
+                include_root: root_flags.include_root,
+            };
+            super::encrypt_dotfile(&config, &db, path, &options, debug)?;
         }
         DotCommands::Decrypt {
             path,
@@ -790,16 +784,13 @@ pub fn handle_dot_command(
             dry_run,
             root_flags,
         } => {
-            super::decrypt_dotfile(
-                &config,
-                &db,
-                path,
-                repo.as_deref(),
-                subdir.as_deref(),
-                *dry_run,
-                root_flags.include_root,
-                debug,
-            )?;
+            let options = ConvertOptions {
+                repo: repo.clone(),
+                subdir: subdir.clone(),
+                dry_run: *dry_run,
+                include_root: root_flags.include_root,
+            };
+            super::decrypt_dotfile(&config, &db, path, &options, debug)?;
         }
         DotCommands::Update {
             no_apply,

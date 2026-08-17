@@ -4,7 +4,7 @@ use crate::game::utils::save_files::{
 };
 use crate::menu::protocol::FzfPreview;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
-use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
+use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, format_with_color};
 use crate::ui::nerd_font::NerdFont;
 use anyhow::{Context, Result};
 
@@ -25,9 +25,9 @@ impl FzfSelectable for GameMenuEntry {
         match self {
             GameMenuEntry::Game(name, is_installed) => {
                 let badge = if *is_installed {
-                    " \x1b[32m[installed]\x1b[0m".to_string()
+                    format!(" {}", format_with_color("[installed]", colors::GREEN))
                 } else {
-                    " \x1b[33m[not set up]\x1b[0m".to_string()
+                    format!(" {}", format_with_color("[not set up]", colors::YELLOW))
                 };
                 format!(
                     "{} {}{}",

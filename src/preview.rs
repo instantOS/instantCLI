@@ -26,6 +26,7 @@ mod file;
 mod game_save;
 mod helpers;
 mod keyboard;
+mod keyhelp;
 mod mime;
 mod mouse;
 mod package;
@@ -109,6 +110,9 @@ pub enum PreviewId {
     SystemdService,
     #[value(name = "game-save")]
     GameSave,
+    /// Per-keybind rich preview for `ins keyhelp`.
+    #[value(name = "keyhelp")]
+    Keyhelp,
 }
 
 impl std::fmt::Display for PreviewId {
@@ -428,6 +432,7 @@ fn render_preview(id: PreviewId, ctx: &PreviewContext) -> Result<String> {
         PreviewId::Setting => render_setting_preview(ctx),
         PreviewId::SystemdService => render_systemd_service_preview(ctx),
         PreviewId::GameSave => game_save::render_game_save_preview(ctx),
+        PreviewId::Keyhelp => keyhelp::render_keyhelp_preview(ctx),
         // Package previews are always handled by try_render_streaming
         _ => unreachable!("preview {id} should be handled by streaming path"),
     }

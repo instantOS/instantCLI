@@ -3,7 +3,7 @@ use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DevMenuEntry {
     Clone,
     Chroot,
@@ -12,19 +12,16 @@ pub enum DevMenuEntry {
     CloseMenu,
 }
 
-impl std::fmt::Display for DevMenuEntry {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl FzfSelectable for DevMenuEntry {
+    fn fzf_key(&self) -> String {
         match self {
-            DevMenuEntry::Clone => write!(f, "!__clone__"),
-            DevMenuEntry::Chroot => write!(f, "!__chroot__"),
-            DevMenuEntry::Install => write!(f, "!__install__"),
-            DevMenuEntry::Setup => write!(f, "!__setup__"),
-            DevMenuEntry::CloseMenu => write!(f, "!__close_menu__"),
+            DevMenuEntry::Clone => "clone".to_string(),
+            DevMenuEntry::Chroot => "chroot".to_string(),
+            DevMenuEntry::Install => "install".to_string(),
+            DevMenuEntry::Setup => "setup".to_string(),
+            DevMenuEntry::CloseMenu => "close".to_string(),
         }
     }
-}
-
-impl FzfSelectable for DevMenuEntry {
     fn fzf_display_text(&self) -> String {
         match self {
             DevMenuEntry::Clone => format!(

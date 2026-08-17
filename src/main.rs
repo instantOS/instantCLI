@@ -12,6 +12,7 @@ mod dev;
 mod doctor;
 mod dot;
 mod game;
+mod keyhelp;
 mod launch;
 mod menu;
 mod menu_utils;
@@ -106,6 +107,8 @@ enum Commands {
         #[command(subcommand)]
         command: game::GameCommands,
     },
+    /// Explore and memorize instantWM keybinds
+    Keyhelp,
     /// Resolve duplicate files and Syncthing conflicts
     Resolvething {
         #[command(subcommand)]
@@ -276,6 +279,9 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
                 game::handle_game_command(command.clone(), cli.debug),
                 "Error handling game command",
             )?;
+        }
+        Some(Commands::Keyhelp) => {
+            execute_with_error_handling(keyhelp::run_keyhelp(), "Error running keyhelp")?;
         }
         Some(Commands::Resolvething { command }) => {
             execute_with_error_handling(

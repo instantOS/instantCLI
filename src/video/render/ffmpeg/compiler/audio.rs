@@ -1,6 +1,7 @@
 use anyhow::{Result, bail};
 
 use super::FfmpegCompiler;
+use super::FilterGraphBuilder;
 use super::graph::{AudioInput, AudioPad, FilterGraph};
 use super::inputs::SourceMap;
 use super::util::format_time;
@@ -9,12 +10,13 @@ use crate::video::render::timeline::MusicClip;
 impl FfmpegCompiler {
     pub(super) fn build_audio_mix_filters(
         &self,
-        graph: &mut FilterGraph,
+        ctx: &mut FilterGraphBuilder,
         music_segments: &[MusicClip],
         source_map: &SourceMap,
         base_audio: Option<AudioPad>,
         total_duration: f64,
     ) -> Result<()> {
+        let graph = ctx.graph();
         let has_base_track = base_audio.is_some();
         let mut audio = base_audio.map(|base| {
             // Voice is always a centered mono stem, regardless of how the

@@ -2,7 +2,8 @@ mod types;
 
 use anyhow::Result;
 
-use crate::menu_utils::{FzfResult, FzfWrapper, Header, MenuCursor};
+use crate::menu_utils::{FzfWrapper, HeaderBuilder, MenuCursor};
+use crate::ui::nerd_font::NerdFont;
 
 use types::DevMenuEntry;
 
@@ -42,23 +43,19 @@ fn select_dev_menu_entry(cursor: &mut MenuCursor) -> Result<Option<DevMenuEntry>
         DevMenuEntry::CloseMenu,
     ];
 
-    let mut builder = FzfWrapper::builder()
-        .header(Header::fancy("Dev Menu"))
+    let header = HeaderBuilder::new(NerdFont::Wrench, "instantOS Development")
+        .subtitle("Development tools, chroot environments, and packaging")
+        .build();
+
+    let selection = FzfWrapper::builder()
+        .header(header)
         .prompt("Select")
-        .responsive_layout();
+        .responsive_layout()
+        .cursor(cursor.initial_index(&entries))
+        .select_one(entries.clone())?;
 
-    if let Some(index) = cursor.initial_index(&entries) {
-        builder = builder.initial_index(index);
+    if let Some(ref entry) = selection {
+        cursor.update(entry, &entries);
     }
-
-    let result = builder.select(entries.clone())?;
-
-    match result {
-        FzfResult::Selected(entry) => {
-            cursor.update(&entry, &entries);
-            Ok(Some(entry))
-        }
-        FzfResult::Cancelled => Ok(None),
-        _ => Ok(None),
-    }
+    Ok(selection)
 }

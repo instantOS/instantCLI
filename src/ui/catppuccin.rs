@@ -110,3 +110,10 @@ pub fn format_with_color(text: &str, color: &str) -> String {
     let reset = "\x1b[39m";
     format!("{fg}{text}{reset}")
 }
+
+/// Render text as bold for fzf rows. Uses SGR 1 + 22 (disable bold) so any
+/// surrounding styling (e.g. ANSI color codes from `format_with_color`)
+/// isn't disturbed by a blanket `\x1b[0m` reset.
+pub fn format_bold(text: &str) -> String {
+    format!("\x1b[1m{text}\x1b[22m")
+}
