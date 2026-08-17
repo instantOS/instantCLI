@@ -281,35 +281,26 @@ pub fn derive_keywords(action: &str, mode: &str) -> Vec<&'static str> {
     let lower = action.to_ascii_lowercase();
 
     // Application spawns & system tools
-    if lower.contains("terminal") || lower.contains("kitty") || lower.contains("st") {
-        kw.extend_from_slice(&["terminal", "console", "shell", "prompt", "cli", "kitty"]);
-    }
-    if lower.contains("filemanager") || lower.contains("termfilemanager") {
-        kw.extend_from_slice(&[
-            "file manager",
-            "files",
-            "explorer",
-            "directory",
-            "folders",
-            "nautilus",
-            "ranger",
-            "yazi",
-        ]);
-    }
-    if lower.contains("appmenu")
-        || lower.contains("dmenu")
-        || lower.contains("smart")
-        || lower.contains("menu")
+    if lower.contains("default/terminal")
+        || lower.contains("kitty")
+        || lower.contains("st")
+        || lower.ends_with("terminal")
     {
+        kw.extend_from_slice(&["terminal", "console", "shell", "cli", "kitty"]);
+    }
+    if lower.contains("termfilemanager") {
+        kw.extend_from_slice(&["termfilemanager", "ranger", "yazi", "nnn"]);
+    } else if lower.contains("filemanager") {
+        kw.extend_from_slice(&["file manager", "files", "explorer", "directory", "folders"]);
+    }
+    if lower.contains("appmenu") || lower.contains("dmenu") || lower.contains("smart") {
         kw.extend_from_slice(&[
             "app launcher",
             "applications",
             "app menu",
             "dmenu",
             "rofi",
-            "search apps",
-            "start menu",
-            "run program",
+            "apps",
         ]);
     }
     if lower.contains("browser") {
@@ -323,7 +314,7 @@ pub fn derive_keywords(action: &str, mode: &str) -> Vec<&'static str> {
         ]);
     }
     if lower.contains("editor") {
-        kw.extend_from_slice(&["text editor", "code", "nvim", "nano", "vim", "edit"]);
+        kw.extend_from_slice(&["text editor", "code", "nvim", "nano", "vim"]);
     }
     if lower.contains("systemmonitor") || lower.contains("htop") || lower.contains("btop") {
         kw.extend_from_slice(&[
@@ -337,22 +328,10 @@ pub fn derive_keywords(action: &str, mode: &str) -> Vec<&'static str> {
         ]);
     }
     if lower.contains("lockscreen") || lower.contains("hyprlock") || lower.contains("instantlock") {
-        kw.extend_from_slice(&[
-            "lock screen",
-            "screenlock",
-            "lock",
-            "security",
-            "protect session",
-        ]);
+        kw.extend_from_slice(&["lock screen", "screenlock", "lock"]);
     }
     if lower.contains("settings") {
-        kw.extend_from_slice(&[
-            "settings",
-            "control center",
-            "preferences",
-            "system config",
-            "options",
-        ]);
+        kw.extend_from_slice(&["settings", "control center", "preferences", "config"]);
     }
     if lower.contains("keyhelp") {
         kw.extend_from_slice(&[
@@ -365,13 +344,7 @@ pub fn derive_keywords(action: &str, mode: &str) -> Vec<&'static str> {
         ]);
     }
     if lower.contains("assist") {
-        kw.extend_from_slice(&[
-            "assist",
-            "assistant",
-            "quick actions",
-            "tools menu",
-            "instantassist",
-        ]);
+        kw.extend_from_slice(&["assist", "assistant", "quick actions", "tools"]);
     }
     if lower.contains("shutdown") || lower.contains("instantshutdown") {
         kw.extend_from_slice(&[
@@ -382,70 +355,32 @@ pub fn derive_keywords(action: &str, mode: &str) -> Vec<&'static str> {
             "logout",
             "exit session",
             "sleep",
-            "suspend",
         ]);
     }
     if lower.contains("search") || lower.contains("instantsearch") {
-        kw.extend_from_slice(&["web search", "find online", "google", "query"]);
+        kw.extend_from_slice(&["web search", "find online", "google"]);
     }
     if lower.contains("clip") {
-        kw.extend_from_slice(&[
-            "clipboard history",
-            "clipmenu",
-            "copy",
-            "paste",
-            "clipboard",
-        ]);
+        kw.extend_from_slice(&["clipboard", "clipmenu", "copy", "paste"]);
     }
     if lower.contains("iswitch")
         || lower.contains("rofi_window_switch")
         || lower.contains("window_switch")
     {
-        kw.extend_from_slice(&[
-            "alt tab",
-            "switch window",
-            "window switcher",
-            "task switcher",
-            "find window",
-            "tasks",
-        ]);
+        kw.extend_from_slice(&["alt tab", "switch window", "window switcher", "tasks"]);
     }
     if lower.contains("screenshot") || lower.contains("print") {
-        kw.extend_from_slice(&[
-            "screenshot",
-            "screen capture",
-            "snip",
-            "flameshot",
-            "grab screen",
-            "snapshot",
-        ]);
+        kw.extend_from_slice(&["screenshot", "screen capture", "snip", "flameshot"]);
     }
     if lower.contains("vol")
         || lower.contains("volume")
         || lower.contains("mute")
         || lower.contains("audio")
     {
-        kw.extend_from_slice(&[
-            "volume control",
-            "audio",
-            "sound",
-            "louder",
-            "quieter",
-            "mute mic",
-            "unmute",
-            "speaker",
-            "headphones",
-        ]);
+        kw.extend_from_slice(&["volume control", "audio", "sound", "mute", "mic"]);
     }
     if lower.contains("bright") {
-        kw.extend_from_slice(&[
-            "brightness",
-            "display light",
-            "backlight",
-            "dim screen",
-            "screen brightness",
-            "monitor",
-        ]);
+        kw.extend_from_slice(&["brightness", "backlight", "dim screen", "screen brightness"]);
     }
     if lower.contains("playerctl") || lower.contains("music") || lower.contains("play-pause") {
         kw.extend_from_slice(&[
@@ -453,8 +388,6 @@ pub fn derive_keywords(action: &str, mode: &str) -> Vec<&'static str> {
             "playback",
             "media control",
             "play pause",
-            "next track",
-            "previous track",
             "song",
             "spotify",
         ]);
@@ -462,42 +395,19 @@ pub fn derive_keywords(action: &str, mode: &str) -> Vec<&'static str> {
 
     // Window management actions
     if lower.contains("focus") {
-        kw.extend_from_slice(&[
-            "focus window",
-            "switch active",
-            "navigate windows",
-            "select window",
-        ]);
+        kw.extend_from_slice(&["focus window", "navigate windows", "select window"]);
     }
     if lower.contains("move") || lower.contains("push") || lower.contains("swap") {
-        kw.extend_from_slice(&[
-            "move window",
-            "rearrange",
-            "swap positions",
-            "shift window",
-            "reorder",
-        ]);
+        kw.extend_from_slice(&["move window", "rearrange", "swap positions"]);
     }
     if lower.contains("resize") || lower.contains("grow") || lower.contains("shrink") {
-        kw.extend_from_slice(&[
-            "resize window",
-            "make bigger",
-            "make smaller",
-            "expand",
-            "shrink",
-            "dimensions",
-        ]);
+        kw.extend_from_slice(&["resize window", "expand", "shrink", "dimensions"]);
     }
     if lower.contains("layout") || lower.contains("grid") || lower.contains("monocle") {
-        kw.extend_from_slice(&[
-            "layout switch",
-            "tiling mode",
-            "window arrangement",
-            "grid layout",
-        ]);
+        kw.extend_from_slice(&["layout switch", "tiling mode", "grid layout"]);
     }
     if lower.contains("float") {
-        kw.extend_from_slice(&["floating window", "toggle float", "unfloat", "tile window"]);
+        kw.extend_from_slice(&["floating window", "toggle float", "unfloat"]);
     }
     if lower.contains("maximize") || lower.contains("zoom") {
         kw.extend_from_slice(&[
@@ -505,95 +415,206 @@ pub fn derive_keywords(action: &str, mode: &str) -> Vec<&'static str> {
             "fullscreen",
             "toggle fullscreen",
             "zoom master",
-            "fill screen",
         ]);
     }
     if lower.contains("sticky") {
         kw.extend_from_slice(&[
             "sticky window",
             "pin window",
-            "show on all tags",
             "show on all workspaces",
             "pin",
         ]);
     }
     if lower.contains("overview") || lower.contains("win_view") {
-        kw.extend_from_slice(&[
-            "window overview",
-            "expose",
-            "show all windows",
-            "mission control",
-            "grid view",
-        ]);
+        kw.extend_from_slice(&["window overview", "expose", "mission control", "grid view"]);
     }
     if lower.contains("scratchpad") {
         kw.extend_from_slice(&[
-            "scratchpad terminal",
-            "dropdown terminal",
+            "scratchpad",
+            "dropdown",
             "drawer",
-            "quick terminal",
+            "quake",
             "toggle scratchpad",
-            "quake terminal",
         ]);
     }
     if lower.contains("bar") {
-        kw.extend_from_slice(&[
-            "status bar",
-            "taskbar",
-            "panel",
-            "toggle bar",
-            "top bar",
-            "bottom bar",
-        ]);
+        kw.extend_from_slice(&["status bar", "taskbar", "panel", "toggle bar"]);
     }
     if lower.contains("keyboard") || lower.contains("layout") {
-        kw.extend_from_slice(&["keyboard language", "switch layout", "input method", "xkb"]);
+        kw.extend_from_slice(&["keyboard language", "switch layout", "xkb"]);
     }
     if lower.contains("hide") || lower.contains("unhide") {
-        kw.extend_from_slice(&[
-            "minimize window",
-            "hide window",
-            "unhide windows",
-            "restore hidden",
-        ]);
+        kw.extend_from_slice(&["minimize window", "hide window", "unhide windows"]);
     }
     if lower.contains("kill") || lower.contains("shut_kill") {
-        kw.extend_from_slice(&[
-            "close window",
-            "kill application",
-            "close app",
-            "terminate",
-            "quit window",
-        ]);
+        kw.extend_from_slice(&["close window", "kill application", "close app", "terminate"]);
     }
     if lower == "quit" {
-        kw.extend_from_slice(&["exit instantwm", "logout", "leave session", "shutdown wm"]);
+        kw.extend_from_slice(&["exit instantwm", "logout"]);
     }
     if lower.contains("tag") || lower.contains("view") {
-        kw.extend_from_slice(&[
-            "workspace",
-            "virtual desktop",
-            "switch desktop",
-            "move to workspace",
-            "tag",
-        ]);
+        kw.extend_from_slice(&["workspace", "virtual desktop", "tag"]);
     }
     if lower.contains("mon") {
-        kw.extend_from_slice(&["monitor", "screen switch", "multi monitor", "display"]);
+        kw.extend_from_slice(&["monitor", "screen switch", "display"]);
     }
 
     if mode != GLOBAL_MODE {
         match mode {
-            "desktop" => kw.extend_from_slice(&["desktop mode", "desktop navigation"]),
-            "placement" => kw.extend_from_slice(&["placement mode", "tree placement"]),
-            "prefix" => kw.extend_from_slice(&["prefix mode", "modal bindings"]),
-            "overview" => kw.extend_from_slice(&["overview mode", "window grid"]),
+            "desktop" => kw.extend_from_slice(&["desktop mode"]),
+            "placement" => kw.extend_from_slice(&["placement mode"]),
+            "prefix" => kw.extend_from_slice(&["prefix mode"]),
+            "overview" => kw.extend_from_slice(&["overview mode"]),
             _ => {}
         }
     }
 
     kw.dedup();
     kw
+}
+
+/// Heuristic priority for keybindings in the initial menu view.
+/// Returns `(tier, sub_priority)`.
+///
+/// Tiers:
+/// - 0: User-defined bindings (from `config.toml`)
+/// - 1: Core application spawns and primary launchers (terminal, app menu, keyhelp, filemanager, browser, settings...)
+/// - 2: Essential window lifecycle & state toggles (kill/close, alt-tab switcher, maximize, float, scratchpad, overview...)
+/// - 3: Navigation & Focus (focus directions, monitor switching, tag back/forth)
+/// - 4: Window movement, resizing & layout selection (move, resize, split ratio, layout cycling)
+/// - 5: Workspaces & Tags (view tag, set tag, toggle tag)
+/// - 6: Hardware, media, screenshots & system controls (volume, brightness, media, screenshot, power...)
+/// - 7: Modal/secondary modes (desktop, placement, prefix, overview modes)
+fn keybind_tier(row: &KeybindRow) -> (u8, u8) {
+    if row.origin == "user" {
+        return (0, 0);
+    }
+
+    if row.mode != GLOBAL_MODE {
+        return (7, 0);
+    }
+
+    let lower = row.action.to_ascii_lowercase();
+
+    // Tier 1: Core application spawns and primary system launchers
+    if lower.contains("default/terminal")
+        || lower.contains("kitty")
+        || lower.contains("st")
+        || lower.ends_with("terminal")
+    {
+        return (1, 0);
+    }
+    if lower.contains("appmenu") || lower.contains("smart") || lower.contains("dmenu") {
+        return (1, 1);
+    }
+    if lower.contains("keyhelp") {
+        return (1, 2);
+    }
+    if lower.contains("assist") {
+        return (1, 3);
+    }
+    if lower.contains("filemanager") || lower.contains("termfilemanager") {
+        return (1, 4);
+    }
+    if lower.contains("browser") {
+        return (1, 5);
+    }
+    if lower.contains("editor") {
+        return (1, 6);
+    }
+    if lower.contains("settings") {
+        return (1, 7);
+    }
+    if lower.contains("search") || lower.contains("clip") {
+        return (1, 8);
+    }
+
+    // Tier 2: Essential window lifecycle & state toggles
+    if lower.contains("shut_kill") || lower == "kill" {
+        return (2, 0);
+    }
+    if lower.contains("iswitch") || lower.contains("rofi_window_switch") {
+        return (2, 1);
+    }
+    if lower.contains("tiling_maximized") || lower.contains("fullscreen") || lower == "zoom" {
+        return (2, 2);
+    }
+    if lower.contains("float") {
+        return (2, 3);
+    }
+    if lower.contains("scratchpad") {
+        return (2, 4);
+    }
+    if lower.contains("overview") || lower.contains("win_view") {
+        return (2, 5);
+    }
+    if lower.contains("sticky") {
+        return (2, 6);
+    }
+    if lower.contains("hide") || lower.contains("unhide") {
+        return (2, 7);
+    }
+
+    // Tier 3: Navigation & Focus
+    if lower.starts_with("focus_") || lower.contains("focus") {
+        return (3, 0);
+    }
+    if lower == "last_view" || lower == "follow_view" {
+        return (3, 1);
+    }
+    if lower.contains("focus_mon") || lower.contains("follow_mon") {
+        return (3, 2);
+    }
+
+    // Tier 4: Window movement, resizing & layout selection
+    if lower.starts_with("key_move")
+        || lower.contains("move_client")
+        || lower.contains("push")
+        || lower.contains("swap")
+    {
+        return (4, 0);
+    }
+    if lower.starts_with("key_resize")
+        || lower.contains("tree_grow")
+        || lower.contains("tree_shrink")
+    {
+        return (4, 1);
+    }
+    if lower.contains("layout") || lower.contains("inc_master") {
+        return (4, 2);
+    }
+
+    // Tier 5: Workspaces & Tags
+    if lower.contains("tag") || lower.contains("view_all") {
+        return (5, 0);
+    }
+
+    // Tier 6: Hardware, media, screenshots & system controls
+    if lower.contains("vol")
+        || lower.contains("mute")
+        || lower.contains("bright")
+        || lower.contains("playerctl")
+    {
+        return (6, 0);
+    }
+    if lower.contains("screenshot") || lower.contains("print") {
+        return (6, 1);
+    }
+    if lower.contains("lockscreen")
+        || lower.contains("systemmonitor")
+        || lower.contains("shutdown")
+        || lower == "quit"
+    {
+        return (6, 2);
+    }
+
+    // Fallback for any other action
+    (6, 9)
+}
+
+/// Sort keybindings stably using the heuristic priority ranking.
+fn sort_keybinds(rows: &mut [KeybindRow]) {
+    rows.sort_by_key(keybind_tier);
 }
 
 impl FzfSelectable for KeybindRow {
@@ -844,7 +865,9 @@ fn fetch_keybinds() -> Result<Vec<KeybindRow>> {
             )
         }
     })?;
-    Ok(rows.into_iter().map(KeybindRow::from_json).collect())
+    let mut keybinds: Vec<KeybindRow> = rows.into_iter().map(KeybindRow::from_json).collect();
+    sort_keybinds(&mut keybinds);
+    Ok(keybinds)
 }
 
 /// Let the user pick what to do with a selected binding.
@@ -1362,8 +1385,9 @@ mod tests {
 
         let scratchpad = row("Super", "s", "scratchpad_toggle", None, "compiled_default");
         let kw = scratchpad.fzf_search_keywords();
-        assert!(kw.contains(&"scratchpad terminal"));
-        assert!(kw.contains(&"dropdown terminal"));
+        assert!(kw.contains(&"scratchpad"));
+        assert!(kw.contains(&"dropdown"));
+        assert!(!kw.contains(&"terminal"));
 
         let sysmon = row(
             "Super + Shift",
@@ -1385,5 +1409,63 @@ mod tests {
         );
         let kw = desktop_mode.fzf_search_keywords();
         assert!(kw.contains(&"desktop mode"));
+    }
+
+    #[test]
+    fn keybind_ranking_heuristics_orders_essentials_first() {
+        let user_custom = row("Super", "b", "spawn custom_script", None, "user");
+        let terminal = row(
+            "Super",
+            "Return",
+            "spawn .config/instantos/default/terminal",
+            None,
+            "compiled_default",
+        );
+        let close_win = row("Super", "q", "shut_kill", None, "compiled_default");
+        let focus_left = row("Super", "h", "focus_left", None, "compiled_default");
+        let resize_down = row(
+            "Super + Alt",
+            "j",
+            "key_resize_down",
+            None,
+            "compiled_default",
+        );
+        let tag_1 = row("Super", "1", "view_tag 1", None, "compiled_default");
+        let vol_up = row(
+            "",
+            "XF86AudioRaiseVolume",
+            "volume_up",
+            None,
+            "compiled_default",
+        );
+        let desktop_mode = row(
+            "",
+            "Return",
+            "spawn terminal",
+            Some("desktop"),
+            "compiled_default",
+        );
+
+        let mut rows = vec![
+            desktop_mode.clone(),
+            vol_up.clone(),
+            tag_1.clone(),
+            resize_down.clone(),
+            focus_left.clone(),
+            close_win.clone(),
+            terminal.clone(),
+            user_custom.clone(),
+        ];
+
+        sort_keybinds(&mut rows);
+
+        assert_eq!(rows[0].action, "spawn custom_script"); // Tier 0 (user)
+        assert_eq!(rows[1].action, "spawn .config/instantos/default/terminal"); // Tier 1 (terminal/app)
+        assert_eq!(rows[2].action, "shut_kill"); // Tier 2 (close window)
+        assert_eq!(rows[3].action, "focus_left"); // Tier 3 (focus)
+        assert_eq!(rows[4].action, "key_resize_down"); // Tier 4 (resize)
+        assert_eq!(rows[5].action, "view_tag 1"); // Tier 5 (tags)
+        assert_eq!(rows[6].action, "volume_up"); // Tier 6 (hardware/vol)
+        assert_eq!(rows[7].mode, "desktop"); // Tier 7 (modal mode)
     }
 }
