@@ -271,6 +271,8 @@ pub enum NerdFont {
     Bullet,
     ArrowSubItem,
     ArrowPointer,
+    /// Thin vertical bar `│` — used as a column separator in menu rows.
+    Pipe,
 
     // Boot and Firmware
     Efi,
@@ -558,6 +560,7 @@ impl NerdFont {
             Self::Bullet => '•',       // bullet point
             Self::ArrowSubItem => '↳', // arrow hook (sub-item indicator)
             Self::ArrowPointer => '→', // arrow pointer
+            Self::Pipe => '│',         // U+2502 BOX DRAWINGS LIGHT VERTICAL
 
             // Boot and Firmware
             Self::Efi => '󰒘', // cod-circuit-board (UEFI/firmware icon)

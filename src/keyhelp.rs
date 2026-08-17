@@ -9,14 +9,18 @@
 //!
 //! The binding preview is rendered lazily by a hidden `ins preview --id
 //! keyhelp` subcommand so we only build preview text for the highlighted row.
+//!
+//! The main menu tracks the cursor with [`MenuCursor`] so the user's place
+//! is restored after returning from the per-binding action submenu (same
+//! pattern as the notification center and `ins settings`).
 
 use crate::common::compositor::CompositorType;
 use crate::common::instantwmctl;
 use crate::menu_utils::{
-    FzfResult, FzfSelectable, FzfWrapper, HeaderBuilder, MenuItem, MenuPresentation,
+    FzfResult, FzfSelectable, FzfWrapper, HeaderBuilder, MenuCursor, MenuItem, MenuPresentation,
 };
 use crate::preview::{PreviewId, preview_command};
-use crate::ui::catppuccin::{colors, format_icon, format_icon_colored, format_with_color};
+use crate::ui::catppuccin::{colors, format_bold, format_icon, format_with_color};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::{PreviewBuilder, PreviewWriter};
 use anyhow::{Context, Result, anyhow};
@@ -314,19 +318,18 @@ impl SubmenuActionItem {
 
 impl FzfSelectable for SubmenuActionItem {
     fn fzf_display_text(&self) -> String {
-        match self.action {
-            // Bolt on a green badge for the active action — same semantic
-            // pair systemd uses for Start (green play) / Stop (red stop).
-            SubmenuAction::Run => format!(
-                "{} Run: {}",
-                format_icon_colored(NerdFont::Bolt, colors::GREEN),
-                self.run_action.as_deref().unwrap_or(""),
-            ),
-            // Edit and Back get the default Catppuccin blue badge via
-            // `format_icon`, matching how systemd renders View Logs / Back.
-            SubmenuAction::Edit => format!("{} Edit config.toml", format_icon(NerdFont::Edit)),
-            SubmenuAction::Back => format!("{} Back", format_icon(NerdFont::ArrowLeft)),
-        }
+        // Bold verb, padded so the pipe aligns across rows, then a
+        // vertical-bar separator and the dynamic part (the row's action
+        // for Run, nothing for Edit/Back). The verb width is fixed at 6
+        // so `Run `, `Edit`, `Back` all end with the separator in the
+        // same column.
+        let pipe = char::from(NerdFont::Pipe);
+        let (verb, content) = match self.action {
+            SubmenuAction::Run => ("Run", self.run_action.as_deref().unwrap_or("")),
+            SubmenuAction::Edit => ("Edit", ""),
+            SubmenuAction::Back => ("Back", ""),
+        };
+        format!("{} {} {content}", format_bold(&format!("{verb:<6}")), pipe)
     }
 
     fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
@@ -344,7 +347,7 @@ impl FzfSelectable for SubmenuActionItem {
                 };
                 crate::menu_utils::FzfPreview::Text(
                     PreviewBuilder::new()
-                        .title(colors::GREEN, "Run this action")
+                        .title(colors::BLUE, "Run this action")
                         .blank()
                         .text("Executes the binding's action right now.")
                         .field("Command", &command)
@@ -404,7 +407,12 @@ pub fn run_keyhelp() -> Result<()> {
         return Ok(());
     }
 
-    // The action menu can send the user back here, so loop until they cancel.
+    // Track the user's place across the action submenu, same pattern as
+    // `ins settings` and the notification center. After they pick an
+    // action (or hit Back), the next open of the keybind list lands on
+    // the same row.
+    let mut cursor = MenuCursor::new();
+
     loop {
         let header = HeaderBuilder::new(
             NerdFont::Keyboard,
@@ -413,21 +421,24 @@ pub fn run_keyhelp() -> Result<()> {
         .subtitle("Select a binding to run it, edit its config, or learn about it")
         .build();
 
-        let result = FzfWrapper::builder()
+        let selection = FzfWrapper::builder()
             .prompt(format!("{} ", char::from(NerdFont::Search)))
             .header(header)
             .responsive_layout()
             .presentation(MenuPresentation::Padded)
-            .select(rows.clone())?;
+            .cursor(cursor.initial_index(&rows))
+            .select_one(rows.clone())?;
 
-        match result {
-            FzfResult::Selected(row) => match handle_select(&row)? {
-                SubmenuAction::Run => run_binding(&row)?,
-                SubmenuAction::Edit => open_config()?,
-                SubmenuAction::Back => continue,
-            },
-            FzfResult::Cancelled | FzfResult::MultiSelected(_) => return Ok(()),
-            FzfResult::Error(err) => return Err(anyhow!(err)),
+        match selection {
+            Some(row) => {
+                cursor.update(&row, &rows);
+                match handle_select(&row)? {
+                    SubmenuAction::Run => run_binding(&row)?,
+                    SubmenuAction::Edit => open_config()?,
+                    SubmenuAction::Back => continue,
+                }
+            }
+            None => return Ok(()),
         }
     }
 }
@@ -893,19 +904,60 @@ mod tests {
     }
 
     #[test]
-    fn submenu_run_uses_green_bolt_and_blue_back() {
-        // Same icon conventions as the systemd action submenu:
-        // green bolt for the active action, blue back arrow for Back.
+    fn submenu_uses_bold_verb_and_pipe_separator() {
+        // The verb is bolded (no colored badge), padded to 6 chars so the
+        // pipe sits in the same column across Run / Edit / Back, and the
+        // dynamic part for Run is the row's action.
         let run = SubmenuActionItem::run("focus_left".to_string());
+        let edit = SubmenuActionItem::edit();
         let back = SubmenuActionItem::back();
 
         let run_display = run.fzf_display_text();
-        assert!(run_display.contains("Run: focus_left"));
-        assert!(run_display.contains(char::from(NerdFont::Bolt)));
+        assert!(run_display.contains("Run"));
+        assert!(run_display.contains("focus_left"));
+        assert!(run_display.contains(char::from(NerdFont::Pipe)));
+        // SGR 1 enables bold; SGR 22 disables it without disturbing
+        // surrounding color state.
+        assert!(run_display.contains("\x1b[1m"));
+        assert!(run_display.contains("\x1b[22m"));
+
+        let edit_display = edit.fzf_display_text();
+        assert!(edit_display.contains("Edit"));
+        assert!(edit_display.contains(char::from(NerdFont::Pipe)));
 
         let back_display = back.fzf_display_text();
         assert!(back_display.contains("Back"));
-        assert!(back_display.contains(char::from(NerdFont::ArrowLeft)));
+        assert!(back_display.contains(char::from(NerdFont::Pipe)));
+    }
+
+    #[test]
+    fn submenu_verbs_align_pipe_column() {
+        // All three verbs are padded to 6 chars + 1 separator space so the
+        // pipe sits at the same visible column for every item, regardless
+        // of how the verb word sizes line up.
+        let run = SubmenuActionItem::run("focus_left".to_string());
+        let edit = SubmenuActionItem::edit();
+        let back = SubmenuActionItem::back();
+
+        let pipe = char::from(NerdFont::Pipe);
+        let strip_bold = |s: &str| -> String { s.replace("\x1b[1m", "").replace("\x1b[22m", "") };
+        let pipe_columns: Vec<usize> = [run, edit, back]
+            .iter()
+            .map(|item| {
+                let visible = strip_bold(&item.fzf_display_text());
+                visible
+                    .find(pipe)
+                    .unwrap_or_else(|| panic!("no pipe in {visible:?}"))
+            })
+            .collect();
+        assert_eq!(
+            pipe_columns
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>()
+                .len(),
+            1,
+            "pipe column should be identical across items"
+        );
     }
 
     #[test]
