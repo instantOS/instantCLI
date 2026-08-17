@@ -281,10 +281,7 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
             )?;
         }
         Some(Commands::Keyhelp) => {
-            execute_with_error_handling(
-                keyhelp::run_keyhelp(),
-                "Error running keyhelp",
-            )?;
+            execute_with_error_handling(keyhelp::run_keyhelp(), "Error running keyhelp")?;
         }
         Some(Commands::Resolvething { command }) => {
             execute_with_error_handling(
