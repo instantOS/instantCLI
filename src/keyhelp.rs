@@ -401,6 +401,34 @@ impl FzfSelectable for SubmenuActionItem {
     }
 }
 
+/// Dispatch entry point for `ins keyhelp` with `--gui` support.
+pub fn run_keyhelp_command(gui: bool, debug: bool) -> Result<()> {
+    if gui {
+        return launch_keyhelp_in_terminal(debug);
+    }
+    run_keyhelp()
+}
+
+/// Launch `ins keyhelp` in a dedicated GUI terminal window.
+pub fn launch_keyhelp_in_terminal(debug: bool) -> Result<()> {
+    let mut args: Vec<String> = vec![];
+
+    if debug {
+        args.push("--debug".to_string());
+    }
+
+    args.push("keyhelp".to_string());
+
+    let current_exe = std::env::current_exe()?;
+    let exe_str = current_exe.to_string_lossy();
+
+    crate::common::terminal::TerminalLauncher::new(exe_str.as_ref())
+        .class("ins-keyhelp")
+        .title("Keyhelp")
+        .args(&args)
+        .launch()
+}
+
 /// Entry point for `ins keyhelp`.
 pub fn run_keyhelp() -> Result<()> {
     if !std::io::stdout().is_terminal() {

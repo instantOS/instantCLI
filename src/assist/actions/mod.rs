@@ -4,6 +4,7 @@ pub mod docs;
 pub mod emoji;
 pub mod help;
 pub mod joke;
+pub mod keyhelp;
 pub mod man;
 pub mod media;
 pub mod mirror;

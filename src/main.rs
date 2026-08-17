@@ -108,7 +108,11 @@ enum Commands {
         command: game::GameCommands,
     },
     /// Explore and memorize instantWM keybinds
-    Keyhelp,
+    Keyhelp {
+        /// Open keyhelp in a GUI terminal window (uses kitty)
+        #[arg(long = "gui")]
+        gui: bool,
+    },
     /// Resolve duplicate files and Syncthing conflicts
     Resolvething {
         #[command(subcommand)]
@@ -280,8 +284,11 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
                 "Error handling game command",
             )?;
         }
-        Some(Commands::Keyhelp) => {
-            execute_with_error_handling(keyhelp::run_keyhelp(), "Error running keyhelp")?;
+        Some(Commands::Keyhelp { gui }) => {
+            execute_with_error_handling(
+                keyhelp::run_keyhelp_command(*gui, cli.debug),
+                "Error running keyhelp",
+            )?;
         }
         Some(Commands::Resolvething { command }) => {
             execute_with_error_handling(

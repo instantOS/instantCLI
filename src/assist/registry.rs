@@ -71,6 +71,13 @@ pub const ASSISTS: &[AssistEntry] = &[
                 execute: actions::ai::ask_gemini,
             }),
             AssistEntry::Action(AssistAction {
+                key: 'k',
+                description: "Keyhelp: Explore and search instantWM keybinds",
+                icon: NerdFont::Keyboard,
+                dependencies: &[],
+                execute: actions::keyhelp::open_keyhelp,
+            }),
+            AssistEntry::Action(AssistAction {
                 key: 'm',
                 description: "Man Pages: Search and view man pages",
                 icon: NerdFont::FileText,
@@ -657,6 +664,16 @@ mod tests {
         assert_eq!(
             action.unwrap().description,
             "Documentation: Open instantOS documentation"
+        );
+    }
+
+    #[test]
+    fn test_find_keyhelp_action() {
+        let action = find_action("ik");
+        assert!(action.is_some());
+        assert_eq!(
+            action.unwrap().description,
+            "Keyhelp: Explore and search instantWM keybinds"
         );
     }
 }
