@@ -16,11 +16,11 @@
 
 use crate::common::compositor::CompositorType;
 use crate::common::instantwmctl;
-use crate::menu_utils::{
-    FzfResult, FzfSelectable, FzfWrapper, HeaderBuilder, MenuCursor, MenuItem, MenuPresentation,
-};
+use crate::menu_utils::{FzfSelectable, FzfWrapper, HeaderBuilder, MenuCursor, MenuPresentation};
 use crate::preview::{PreviewId, preview_command};
-use crate::ui::catppuccin::{colors, format_bold, format_icon, format_with_color};
+use crate::ui::catppuccin::{
+    colors, format_back_icon, format_bold, format_icon, format_icon_colored, format_with_color,
+};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::{PreviewBuilder, PreviewWriter};
 use anyhow::{Context, Result, anyhow};
@@ -248,12 +248,13 @@ fn action_name(action: &str) -> &str {
 
 impl FzfSelectable for KeybindRow {
     fn fzf_display_text(&self) -> String {
-        // `format_icon` and `format_with_color` both emit their own ANSI
-        // reset, so we never need to juggle a raw `\x1b[0m` by hand here.
+        // `format_icon` emits its own ANSI reset. The keybinding is bolded,
+        // followed by a subtle separator arrow and the WM action name.
         format!(
-            "{} {}   {}",
+            "{} {}  {}  {}",
             format_icon(NerdFont::Keyboard),
-            format_with_color(&self.binding(), colors::GREEN),
+            format_bold(&self.binding()),
+            format_with_color("→", colors::OVERLAY0),
             self.action,
         )
     }
@@ -318,18 +319,13 @@ impl SubmenuActionItem {
 
 impl FzfSelectable for SubmenuActionItem {
     fn fzf_display_text(&self) -> String {
-        // Bold verb, padded so the pipe aligns across rows, then a
-        // vertical-bar separator and the dynamic part (the row's action
-        // for Run, nothing for Edit/Back). The verb width is fixed at 6
-        // so `Run `, `Edit`, `Back` all end with the separator in the
-        // same column.
-        let pipe = char::from(NerdFont::Pipe);
-        let (verb, content) = match self.action {
-            SubmenuAction::Run => ("Run", self.run_action.as_deref().unwrap_or("")),
-            SubmenuAction::Edit => ("Edit", ""),
-            SubmenuAction::Back => ("Back", ""),
-        };
-        format!("{} {} {content}", format_bold(&format!("{verb:<6}")), pipe)
+        match self.action {
+            SubmenuAction::Run => {
+                format!("{} Run", format_icon_colored(NerdFont::Play, colors::GREEN),)
+            }
+            SubmenuAction::Edit => format!("{} Edit config", format_icon(NerdFont::Edit),),
+            SubmenuAction::Back => format!("{} Back", format_back_icon()),
+        }
     }
 
     fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
@@ -471,12 +467,12 @@ fn fetch_keybinds() -> Result<Vec<KeybindRow>> {
 /// Let the user pick what to do with a selected binding.
 fn handle_select(row: &KeybindRow) -> Result<SubmenuAction> {
     // Sequences can't be triggered individually, so offer edit/back only.
-    let mut options: Vec<MenuItem<SubmenuActionItem>> = Vec::new();
+    let mut options: Vec<SubmenuActionItem> = Vec::new();
     if row.sequence_steps().is_none() {
-        options.push(MenuItem::Entry(SubmenuActionItem::run(row.action.clone())));
+        options.push(SubmenuActionItem::run(row.action.clone()));
     }
-    options.push(MenuItem::Entry(SubmenuActionItem::edit()));
-    options.push(MenuItem::Entry(SubmenuActionItem::back()));
+    options.push(SubmenuActionItem::edit());
+    options.push(SubmenuActionItem::back());
 
     let mut header = HeaderBuilder::new(NerdFont::Keyboard, row.binding())
         .subtitle(&row.action)
@@ -487,18 +483,16 @@ fn handle_select(row: &KeybindRow) -> Result<SubmenuAction> {
     header = header.field("Origin", row.origin_label());
     let header = header.build();
 
-    let result = FzfWrapper::builder()
+    let selection = FzfWrapper::builder()
         .prompt(format!("{} ", char::from(NerdFont::Wrench)))
         .header(header)
         .responsive_layout()
         .presentation(MenuPresentation::Padded)
-        .select_menu(options)?;
+        .select_one(options)?;
 
-    match result {
-        FzfResult::Selected(item) => Ok(item.action),
-        // Cancellation (Esc) falls back to the list — same as picking Back.
-        FzfResult::Cancelled | FzfResult::MultiSelected(_) => Ok(SubmenuAction::Back),
-        FzfResult::Error(err) => Err(anyhow!(err)),
+    match selection {
+        Some(item) => Ok(item.action),
+        None => Ok(SubmenuAction::Back),
     }
 }
 
@@ -743,6 +737,10 @@ mod tests {
         let display = row.fzf_display_text();
         assert!(display.contains("Super + Return"));
         assert!(display.contains("spawn kitty --single-instance"));
+        assert!(display.contains("→"));
+        // Bold chord
+        assert!(display.contains("\x1b[1m"));
+        assert!(display.contains("\x1b[22m"));
         // Mode and origin belong in the preview, not in the list item.
         assert!(!display.contains("desktop"));
         assert!(!display.contains("global"));
@@ -904,60 +902,22 @@ mod tests {
     }
 
     #[test]
-    fn submenu_uses_bold_verb_and_pipe_separator() {
-        // The verb is bolded (no colored badge), padded to 6 chars so the
-        // pipe sits in the same column across Run / Edit / Back, and the
-        // dynamic part for Run is the row's action.
+    fn submenu_uses_proper_icons_and_labels() {
         let run = SubmenuActionItem::run("focus_left".to_string());
         let edit = SubmenuActionItem::edit();
         let back = SubmenuActionItem::back();
 
         let run_display = run.fzf_display_text();
         assert!(run_display.contains("Run"));
-        assert!(run_display.contains("focus_left"));
-        assert!(run_display.contains(char::from(NerdFont::Pipe)));
-        // SGR 1 enables bold; SGR 22 disables it without disturbing
-        // surrounding color state.
-        assert!(run_display.contains("\x1b[1m"));
-        assert!(run_display.contains("\x1b[22m"));
+        assert!(run_display.contains(char::from(NerdFont::Play)));
 
         let edit_display = edit.fzf_display_text();
-        assert!(edit_display.contains("Edit"));
-        assert!(edit_display.contains(char::from(NerdFont::Pipe)));
+        assert!(edit_display.contains("Edit config"));
+        assert!(edit_display.contains(char::from(NerdFont::Edit)));
 
         let back_display = back.fzf_display_text();
         assert!(back_display.contains("Back"));
-        assert!(back_display.contains(char::from(NerdFont::Pipe)));
-    }
-
-    #[test]
-    fn submenu_verbs_align_pipe_column() {
-        // All three verbs are padded to 6 chars + 1 separator space so the
-        // pipe sits at the same visible column for every item, regardless
-        // of how the verb word sizes line up.
-        let run = SubmenuActionItem::run("focus_left".to_string());
-        let edit = SubmenuActionItem::edit();
-        let back = SubmenuActionItem::back();
-
-        let pipe = char::from(NerdFont::Pipe);
-        let strip_bold = |s: &str| -> String { s.replace("\x1b[1m", "").replace("\x1b[22m", "") };
-        let pipe_columns: Vec<usize> = [run, edit, back]
-            .iter()
-            .map(|item| {
-                let visible = strip_bold(&item.fzf_display_text());
-                visible
-                    .find(pipe)
-                    .unwrap_or_else(|| panic!("no pipe in {visible:?}"))
-            })
-            .collect();
-        assert_eq!(
-            pipe_columns
-                .iter()
-                .collect::<std::collections::BTreeSet<_>>()
-                .len(),
-            1,
-            "pipe column should be identical across items"
-        );
+        assert!(back_display.contains(char::from(NerdFont::ArrowLeft)));
     }
 
     #[test]
