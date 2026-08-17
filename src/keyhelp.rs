@@ -54,6 +54,7 @@ struct KeybindRow {
     action: String,
     mode: String,
     origin: String,
+    keywords: Vec<&'static str>,
 }
 
 /// Serializable snapshot of a keybinding. The fzf `key` field carries this
@@ -97,52 +98,61 @@ impl KeybindPreviewPayload {
         if self.origin == "user" {
             "your config"
         } else {
-            "default"
+            "built-in default"
         }
     }
 
-    /// Build the full preview text. `docs` is the action-name → description
-    /// map from `instantwmctl --json action --list` (an empty map is fine —
-    /// the preview simply omits the docs section).
+    /// Build the full preview text with prominent action description,
+    /// structured Details section, and origin explanation.
     pub fn render_preview(&self, docs: &HashMap<String, ActionDoc>) -> String {
         let mut w = PreviewWriter::collect();
 
-        // Mode + availability. Global bindings fire in every mode; the rest
-        // only while their named mode (desktop, placement, prefix, …) is
-        // active — surface that in the preview, not in the list item.
-        w.header(NerdFont::Keyboard, "Keybinding");
-        w.field("Binding", &self.binding());
-        w.field("Action", &self.action);
+        // 1. Header with the keybinding chord
+        w.header(NerdFont::Keyboard, &self.binding());
+
+        // 2. Action description right under the header (primary information)
+        if self.sequence_steps().is_some() {
+            self.build_sequence_doc(docs, &mut w);
+        } else if !docs.is_empty() {
+            self.build_action_doc(docs, &mut w);
+        }
+
         w.blank();
+        w.separator();
+        w.blank();
+
+        // 3. Structured Details section
+        w.title(colors::BLUE, "Details");
+        w.field("Action", &self.action);
+
+        let name = action_name(&self.action);
+        if let Some(doc) = docs.get(name) {
+            if let Some(arg) = &doc.arg_example {
+                w.field("Usage", &format!("{name} {arg}"));
+            }
+        }
 
         if self.mode == GLOBAL_MODE {
             w.field("Mode", "global (all modes)");
         } else {
-            w.field("Mode", &self.mode);
+            w.field("Mode", &format!("{} mode", self.mode));
             w.line(
                 colors::MAUVE,
                 Some(NerdFont::Info),
-                &format!("Only available when the '{}' mode is enabled", self.mode),
+                &format!("Only available when '{}' mode is active", self.mode),
             );
         }
 
         w.field("Origin", self.origin_label());
         w.blank();
 
-        if !docs.is_empty() {
-            if self.sequence_steps().is_some() {
-                self.build_sequence_doc(docs, &mut w);
-            } else {
-                self.build_action_doc(docs, &mut w);
-            }
-        }
-
+        // 4. Clear footer explanation
         if self.origin == "user" {
             w.subtext(
-                "Defined in ~/.config/instantwm/config.toml — edit it to change this binding.",
+                "Defined in ~/.config/instantwm/config.toml — select 'Edit config' to change it.",
             );
         } else {
-            w.subtext("Built-in default — override it in ~/.config/instantwm/config.toml.");
+            w.subtext("Built-in default — you can override it in ~/.config/instantwm/config.toml.");
         }
 
         w.build_string()
@@ -153,12 +163,9 @@ impl KeybindPreviewPayload {
         match docs.get(name) {
             Some(doc) => {
                 builder.line(colors::SKY, Some(NerdFont::Info), &doc.description);
-                if let Some(arg) = &doc.arg_example {
-                    builder.field_indented("Usage", &format!("{name} {arg}"));
-                }
             }
             None => {
-                builder.subtext(&format!("No built-in description for '{name}'."));
+                builder.subtext(&format!("Executes `{name}`."));
             }
         }
     }
@@ -202,12 +209,15 @@ struct ActionDocJson {
 
 impl KeybindRow {
     fn from_json(j: KeybindRowJson) -> Self {
+        let mode = j.mode.unwrap_or_else(|| GLOBAL_MODE.to_string());
+        let keywords = derive_keywords(&j.action, &mode);
         Self {
             modifiers: j.modifiers,
             key: j.key,
             action: j.action,
-            mode: j.mode.unwrap_or_else(|| GLOBAL_MODE.to_string()),
+            mode,
             origin: j.origin,
+            keywords,
         }
     }
 
@@ -265,6 +275,327 @@ fn action_name(action: &str) -> &str {
     action.split_whitespace().next().unwrap_or(action)
 }
 
+/// Derive search keywords from action and mode to help users find bindings by intent/synonym.
+pub fn derive_keywords(action: &str, mode: &str) -> Vec<&'static str> {
+    let mut kw = Vec::new();
+    let lower = action.to_ascii_lowercase();
+
+    // Application spawns & system tools
+    if lower.contains("terminal") || lower.contains("kitty") || lower.contains("st") {
+        kw.extend_from_slice(&["terminal", "console", "shell", "prompt", "cli", "kitty"]);
+    }
+    if lower.contains("filemanager") || lower.contains("termfilemanager") {
+        kw.extend_from_slice(&[
+            "file manager",
+            "files",
+            "explorer",
+            "directory",
+            "folders",
+            "nautilus",
+            "ranger",
+            "yazi",
+        ]);
+    }
+    if lower.contains("appmenu")
+        || lower.contains("dmenu")
+        || lower.contains("smart")
+        || lower.contains("menu")
+    {
+        kw.extend_from_slice(&[
+            "app launcher",
+            "applications",
+            "app menu",
+            "dmenu",
+            "rofi",
+            "search apps",
+            "start menu",
+            "run program",
+        ]);
+    }
+    if lower.contains("browser") {
+        kw.extend_from_slice(&[
+            "web browser",
+            "internet",
+            "firefox",
+            "chrome",
+            "chromium",
+            "web",
+        ]);
+    }
+    if lower.contains("editor") {
+        kw.extend_from_slice(&["text editor", "code", "nvim", "nano", "vim", "edit"]);
+    }
+    if lower.contains("systemmonitor") || lower.contains("htop") || lower.contains("btop") {
+        kw.extend_from_slice(&[
+            "task manager",
+            "system monitor",
+            "processes",
+            "activity monitor",
+            "resources",
+            "cpu",
+            "ram",
+        ]);
+    }
+    if lower.contains("lockscreen") || lower.contains("hyprlock") || lower.contains("instantlock") {
+        kw.extend_from_slice(&[
+            "lock screen",
+            "screenlock",
+            "lock",
+            "security",
+            "protect session",
+        ]);
+    }
+    if lower.contains("settings") {
+        kw.extend_from_slice(&[
+            "settings",
+            "control center",
+            "preferences",
+            "system config",
+            "options",
+        ]);
+    }
+    if lower.contains("keyhelp") {
+        kw.extend_from_slice(&[
+            "keyhelp",
+            "shortcuts",
+            "hotkeys",
+            "keyboard shortcuts",
+            "cheat sheet",
+            "help",
+        ]);
+    }
+    if lower.contains("assist") {
+        kw.extend_from_slice(&[
+            "assist",
+            "assistant",
+            "quick actions",
+            "tools menu",
+            "instantassist",
+        ]);
+    }
+    if lower.contains("shutdown") || lower.contains("instantshutdown") {
+        kw.extend_from_slice(&[
+            "power off",
+            "shutdown",
+            "reboot",
+            "restart",
+            "logout",
+            "exit session",
+            "sleep",
+            "suspend",
+        ]);
+    }
+    if lower.contains("search") || lower.contains("instantsearch") {
+        kw.extend_from_slice(&["web search", "find online", "google", "query"]);
+    }
+    if lower.contains("clip") {
+        kw.extend_from_slice(&[
+            "clipboard history",
+            "clipmenu",
+            "copy",
+            "paste",
+            "clipboard",
+        ]);
+    }
+    if lower.contains("iswitch")
+        || lower.contains("rofi_window_switch")
+        || lower.contains("window_switch")
+    {
+        kw.extend_from_slice(&[
+            "alt tab",
+            "switch window",
+            "window switcher",
+            "task switcher",
+            "find window",
+            "tasks",
+        ]);
+    }
+    if lower.contains("screenshot") || lower.contains("print") {
+        kw.extend_from_slice(&[
+            "screenshot",
+            "screen capture",
+            "snip",
+            "flameshot",
+            "grab screen",
+            "snapshot",
+        ]);
+    }
+    if lower.contains("vol")
+        || lower.contains("volume")
+        || lower.contains("mute")
+        || lower.contains("audio")
+    {
+        kw.extend_from_slice(&[
+            "volume control",
+            "audio",
+            "sound",
+            "louder",
+            "quieter",
+            "mute mic",
+            "unmute",
+            "speaker",
+            "headphones",
+        ]);
+    }
+    if lower.contains("bright") {
+        kw.extend_from_slice(&[
+            "brightness",
+            "display light",
+            "backlight",
+            "dim screen",
+            "screen brightness",
+            "monitor",
+        ]);
+    }
+    if lower.contains("playerctl") || lower.contains("music") || lower.contains("play-pause") {
+        kw.extend_from_slice(&[
+            "music player",
+            "playback",
+            "media control",
+            "play pause",
+            "next track",
+            "previous track",
+            "song",
+            "spotify",
+        ]);
+    }
+
+    // Window management actions
+    if lower.contains("focus") {
+        kw.extend_from_slice(&[
+            "focus window",
+            "switch active",
+            "navigate windows",
+            "select window",
+        ]);
+    }
+    if lower.contains("move") || lower.contains("push") || lower.contains("swap") {
+        kw.extend_from_slice(&[
+            "move window",
+            "rearrange",
+            "swap positions",
+            "shift window",
+            "reorder",
+        ]);
+    }
+    if lower.contains("resize") || lower.contains("grow") || lower.contains("shrink") {
+        kw.extend_from_slice(&[
+            "resize window",
+            "make bigger",
+            "make smaller",
+            "expand",
+            "shrink",
+            "dimensions",
+        ]);
+    }
+    if lower.contains("layout") || lower.contains("grid") || lower.contains("monocle") {
+        kw.extend_from_slice(&[
+            "layout switch",
+            "tiling mode",
+            "window arrangement",
+            "grid layout",
+        ]);
+    }
+    if lower.contains("float") {
+        kw.extend_from_slice(&["floating window", "toggle float", "unfloat", "tile window"]);
+    }
+    if lower.contains("maximize") || lower.contains("zoom") {
+        kw.extend_from_slice(&[
+            "maximize window",
+            "fullscreen",
+            "toggle fullscreen",
+            "zoom master",
+            "fill screen",
+        ]);
+    }
+    if lower.contains("sticky") {
+        kw.extend_from_slice(&[
+            "sticky window",
+            "pin window",
+            "show on all tags",
+            "show on all workspaces",
+            "pin",
+        ]);
+    }
+    if lower.contains("overview") || lower.contains("win_view") {
+        kw.extend_from_slice(&[
+            "window overview",
+            "expose",
+            "show all windows",
+            "mission control",
+            "grid view",
+        ]);
+    }
+    if lower.contains("scratchpad") {
+        kw.extend_from_slice(&[
+            "scratchpad terminal",
+            "dropdown terminal",
+            "drawer",
+            "quick terminal",
+            "toggle scratchpad",
+            "quake terminal",
+        ]);
+    }
+    if lower.contains("bar") {
+        kw.extend_from_slice(&[
+            "status bar",
+            "taskbar",
+            "panel",
+            "toggle bar",
+            "top bar",
+            "bottom bar",
+        ]);
+    }
+    if lower.contains("keyboard") || lower.contains("layout") {
+        kw.extend_from_slice(&["keyboard language", "switch layout", "input method", "xkb"]);
+    }
+    if lower.contains("hide") || lower.contains("unhide") {
+        kw.extend_from_slice(&[
+            "minimize window",
+            "hide window",
+            "unhide windows",
+            "restore hidden",
+        ]);
+    }
+    if lower.contains("kill") || lower.contains("shut_kill") {
+        kw.extend_from_slice(&[
+            "close window",
+            "kill application",
+            "close app",
+            "terminate",
+            "quit window",
+        ]);
+    }
+    if lower == "quit" {
+        kw.extend_from_slice(&["exit instantwm", "logout", "leave session", "shutdown wm"]);
+    }
+    if lower.contains("tag") || lower.contains("view") {
+        kw.extend_from_slice(&[
+            "workspace",
+            "virtual desktop",
+            "switch desktop",
+            "move to workspace",
+            "tag",
+        ]);
+    }
+    if lower.contains("mon") {
+        kw.extend_from_slice(&["monitor", "screen switch", "multi monitor", "display"]);
+    }
+
+    if mode != GLOBAL_MODE {
+        match mode {
+            "desktop" => kw.extend_from_slice(&["desktop mode", "desktop navigation"]),
+            "placement" => kw.extend_from_slice(&["placement mode", "tree placement"]),
+            "prefix" => kw.extend_from_slice(&["prefix mode", "modal bindings"]),
+            "overview" => kw.extend_from_slice(&["overview mode", "window grid"]),
+            _ => {}
+        }
+    }
+
+    kw.dedup();
+    kw
+}
+
 impl FzfSelectable for KeybindRow {
     fn fzf_display_text(&self) -> String {
         // `format_icon` emits its own ANSI reset. Key tokens are bolded with
@@ -277,6 +608,10 @@ impl FzfSelectable for KeybindRow {
             format_with_color("→", colors::OVERLAY0),
             self.action,
         )
+    }
+
+    fn fzf_search_keywords(&self) -> &[&str] {
+        &self.keywords
     }
 
     fn fzf_key(&self) -> String {
@@ -713,12 +1048,15 @@ mod tests {
         mode: Option<&str>,
         origin: &str,
     ) -> KeybindRow {
+        let mode_str = mode.unwrap_or(GLOBAL_MODE).to_string();
+        let keywords = derive_keywords(action, &mode_str);
         KeybindRow {
             modifiers: modifiers.to_string(),
             key: key.to_string(),
             action: action.to_string(),
-            mode: mode.unwrap_or(GLOBAL_MODE).to_string(),
+            mode: mode_str,
             origin: origin.to_string(),
+            keywords,
         }
     }
 
@@ -856,7 +1194,7 @@ mod tests {
         assert!(user_text.contains("Defined in ~/.config/instantwm/config.toml"));
 
         let default_text = default.render_preview(&HashMap::new());
-        assert!(default_text.contains("default"));
+        assert!(default_text.contains("built-in default"));
         assert!(default_text.contains("Built-in default"));
 
         // Both previews carry the binding and action.
@@ -875,7 +1213,7 @@ mod tests {
         );
         let text = row.render_preview(&HashMap::new());
         assert!(text.contains("desktop"));
-        assert!(text.contains("Only available when the 'desktop' mode is enabled"));
+        assert!(text.contains("Only available when 'desktop' mode is active"));
     }
 
     #[test]
@@ -1006,5 +1344,46 @@ mod tests {
         // therefore Back, not Edit — verify the menu shrinks correctly.
         let _guard = MockQueue::new().select_index(1).guard();
         assert_eq!(handle_select(&row).unwrap(), SubmenuAction::Back);
+    }
+
+    #[test]
+    fn derive_keywords_provides_rich_search_aliases() {
+        let terminal = row(
+            "Super",
+            "Return",
+            "spawn .config/instantos/default/terminal",
+            None,
+            "compiled_default",
+        );
+        let kw = terminal.fzf_search_keywords();
+        assert!(kw.contains(&"terminal"));
+        assert!(kw.contains(&"shell"));
+        assert!(kw.contains(&"cli"));
+
+        let scratchpad = row("Super", "s", "scratchpad_toggle", None, "compiled_default");
+        let kw = scratchpad.fzf_search_keywords();
+        assert!(kw.contains(&"scratchpad terminal"));
+        assert!(kw.contains(&"dropdown terminal"));
+
+        let sysmon = row(
+            "Super + Shift",
+            "Escape",
+            "spawn defaults::SYSTEMMONITOR",
+            None,
+            "compiled_default",
+        );
+        let kw = sysmon.fzf_search_keywords();
+        assert!(kw.contains(&"task manager"));
+        assert!(kw.contains(&"cpu"));
+
+        let desktop_mode = row(
+            "",
+            "Return",
+            "spawn .config/instantos/default/terminal",
+            Some("desktop"),
+            "compiled_default",
+        );
+        let kw = desktop_mode.fzf_search_keywords();
+        assert!(kw.contains(&"desktop mode"));
     }
 }

@@ -73,7 +73,8 @@ mod tests {
     fn renders_non_global_mode_availability() {
         let key = payload_json("", "Return", "spawn foo", "desktop", "compiled_default");
         let text = render_keyhelp_preview(&ctx_with_key(&key)).unwrap();
-        assert!(text.contains("Only available when the 'desktop' mode is enabled"));
+        assert!(text.contains("Only available when 'desktop' mode is active"));
+        assert!(text.contains("built-in default"));
     }
 
     #[test]
