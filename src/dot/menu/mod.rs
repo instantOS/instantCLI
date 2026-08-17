@@ -10,7 +10,7 @@ use anyhow::Result;
 use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
-use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
+use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, format_with_color};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 
@@ -33,7 +33,7 @@ impl FzfSelectable for DotMenuEntry {
         match self {
             DotMenuEntry::Repo(name, is_external) => {
                 let badge = if *is_external {
-                    " \x1b[33m[external]\x1b[0m".to_string()
+                    format!(" {}", format_with_color("[external]", colors::YELLOW))
                 } else {
                     String::new()
                 };

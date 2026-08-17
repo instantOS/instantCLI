@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use crate::dev::github::GitHubRepo;
 use crate::dev::package::Package;
 use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, Header};
-use crate::ui::catppuccin::{colors, format_icon_colored};
+use crate::ui::catppuccin::{colors, format_icon_colored, format_with_color};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 use anyhow::Result;
@@ -56,10 +56,11 @@ impl FzfSelectable for GitHubRepoSelectItem {
         let desc = self.repo.description.as_deref().unwrap_or("No description");
         if self.cloned {
             format!(
-                "{} {} - {} \x1b[32m[cloned]\x1b[0m",
+                "{} {} - {} {}",
                 format_icon_colored(NerdFont::GitBranch, colors::MAUVE),
                 self.repo.name,
-                desc
+                desc,
+                format_with_color("[cloned]", colors::GREEN)
             )
         } else {
             format!(

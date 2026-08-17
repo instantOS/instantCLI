@@ -122,11 +122,15 @@ pub(super) fn interactive_pass_tree_menu() -> Result<i32> {
 pub(super) fn run_add_menu(current_prefix: Option<&str>) -> Result<()> {
     let items = build_add_menu_items();
 
-    if let FzfResult::Selected(item) = FzfWrapper::builder()
-        .header(Header::fancy("Pass Add"))
+    let header = HeaderBuilder::new(NerdFont::Plus, "Add Password Store Entry")
+        .subtitle("Create a new password, generated secret, or OTP key")
+        .build();
+
+    if let Some(item) = FzfWrapper::builder()
+        .header(header)
         .prompt("Create")
         .responsive_layout()
-        .select(items)?
+        .select_one(items)?
     {
         match item.action {
             AddMenuAction::AddPassword => {

@@ -228,6 +228,25 @@ impl KeybindRow {
         self.to_payload().binding()
     }
 
+    /// Render the chord with bold key tokens and dimmed, unbolded plus separators
+    /// so that combination `+` signs are easily distinguished from literal `+` keys.
+    fn formatted_binding(&self) -> String {
+        let separator = format!(" {} ", format_with_color("+", colors::OVERLAY0));
+        let mut tokens: Vec<String> = self
+            .modifiers
+            .split('+')
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .map(format_bold)
+            .collect();
+
+        if !self.key.is_empty() {
+            tokens.push(format_bold(&self.key));
+        }
+
+        tokens.join(&separator)
+    }
+
     /// Forwarded so the action submenu can keep using `row.sequence_steps()`
     /// without converting to a payload first.
     fn sequence_steps(&self) -> Option<Vec<String>> {
@@ -248,12 +267,13 @@ fn action_name(action: &str) -> &str {
 
 impl FzfSelectable for KeybindRow {
     fn fzf_display_text(&self) -> String {
-        // `format_icon` emits its own ANSI reset. The keybinding is bolded,
-        // followed by a subtle separator arrow and the WM action name.
+        // `format_icon` emits its own ANSI reset. Key tokens are bolded with
+        // subtle, unbolded plus separators, followed by an arrow separator
+        // and the WM action name.
         format!(
             "{} {}  {}  {}",
             format_icon(NerdFont::Keyboard),
-            format_bold(&self.binding()),
+            self.formatted_binding(),
             format_with_color("→", colors::OVERLAY0),
             self.action,
         )
@@ -735,10 +755,12 @@ mod tests {
             "user",
         );
         let display = row.fzf_display_text();
-        assert!(display.contains("Super + Return"));
+        assert!(display.contains("Super"));
+        assert!(display.contains("Return"));
+        assert!(display.contains("+"));
         assert!(display.contains("spawn kitty --single-instance"));
         assert!(display.contains("→"));
-        // Bold chord
+        // Bold chord tokens
         assert!(display.contains("\x1b[1m"));
         assert!(display.contains("\x1b[22m"));
         // Mode and origin belong in the preview, not in the list item.
@@ -746,6 +768,20 @@ mod tests {
         assert!(!display.contains("global"));
         assert!(!display.contains("your config"));
         assert!(!display.contains("default"));
+    }
+
+    #[test]
+    fn plus_sign_separators_are_dimmed_and_keys_are_bold() {
+        let row = row("Super + Shift", "+", "zoom_in", None, "user");
+        let display = row.fzf_display_text();
+        // The literal key '+' is bolded:
+        assert!(display.contains("\x1b[1m+\x1b[22m"));
+        // The combination '+' separator uses the subtle OVERLAY0 color:
+        let dimmed_plus = format_with_color("+", colors::OVERLAY0);
+        assert!(display.contains(&dimmed_plus));
+        // All key tokens are bold:
+        assert!(display.contains("\x1b[1mSuper\x1b[22m"));
+        assert!(display.contains("\x1b[1mShift\x1b[22m"));
     }
 
     #[test]

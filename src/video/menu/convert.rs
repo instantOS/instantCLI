@@ -2,7 +2,7 @@ use anyhow::Result;
 use std::path::PathBuf;
 
 use crate::menu_utils::{
-    ConfirmResult, FzfPreview, FzfResult, FzfSelectable, FzfWrapper, HeaderBuilder,
+    ConfirmResult, FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder, MenuCursor,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
@@ -94,6 +94,7 @@ impl FzfSelectable for NewProjectEntry {
 /// This creates a single markdown file with all videos as sources.
 pub async fn run_new_project() -> Result<()> {
     let mut videos: Vec<PathBuf> = Vec::new();
+    let mut cursor = MenuCursor::new();
 
     loop {
         let mut entries: Vec<NewProjectEntry> = videos
@@ -119,42 +120,47 @@ pub async fn run_new_project() -> Result<()> {
         }
         .build();
 
-        let result = FzfWrapper::builder()
+        let selection = FzfWrapper::builder()
             .header(header)
             .prompt("Select")
             .responsive_layout()
-            .select(entries)?;
+            .cursor(cursor.initial_index(&entries))
+            .select_one(entries.clone())?;
 
-        match result {
-            FzfResult::Selected(entry) => match entry {
-                NewProjectEntry::Video(path) => {
-                    let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("video");
-                    if let ConfirmResult::Yes =
-                        confirm_action(&format!("Remove '{name}' from list?"), "Remove", "Keep")?
-                    {
-                        videos.retain(|p| p != &path);
+        match selection {
+            Some(entry) => {
+                cursor.update(&entry, &entries);
+                match entry {
+                    NewProjectEntry::Video(path) => {
+                        let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("video");
+                        if let ConfirmResult::Yes = confirm_action(
+                            &format!("Remove '{name}' from list?"),
+                            "Remove",
+                            "Keep",
+                        )? {
+                            videos.retain(|p| p != &path);
+                        }
                     }
-                }
-                NewProjectEntry::Add => {
-                    let suggestions = discover_video_file_suggestions()?;
-                    if let Some(path) =
-                        select_video_file_with_suggestions("Select video to add", suggestions)?
-                        && !videos.contains(&path)
-                    {
-                        videos.push(path);
+                    NewProjectEntry::Add => {
+                        let suggestions = discover_video_file_suggestions()?;
+                        if let Some(path) =
+                            select_video_file_with_suggestions("Select video to add", suggestions)?
+                            && !videos.contains(&path)
+                        {
+                            videos.push(path);
+                        }
                     }
-                }
-                NewProjectEntry::Create => {
-                    if videos.is_empty() {
-                        FzfWrapper::message("No videos selected")?;
-                        continue;
+                    NewProjectEntry::Create => {
+                        if videos.is_empty() {
+                            FzfWrapper::message("No videos selected")?;
+                            continue;
+                        }
+                        return create_multi_source_project(videos).await;
                     }
-                    return create_multi_source_project(videos).await;
+                    NewProjectEntry::Back => return Ok(()),
                 }
-                NewProjectEntry::Back => return Ok(()),
-            },
-            FzfResult::Cancelled => return Ok(()),
-            _ => return Ok(()),
+            }
+            None => return Ok(()),
         }
     }
 }
