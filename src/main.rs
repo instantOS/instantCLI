@@ -11,6 +11,7 @@ mod debug;
 mod dev;
 mod doctor;
 mod dot;
+mod frecency;
 mod game;
 mod keyhelp;
 mod launch;

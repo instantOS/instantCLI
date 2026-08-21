@@ -1,13 +1,12 @@
 use anyhow::{Context, Result};
-use fre::args::SortMethod;
-use fre::store::{FrecencyStore, read_store, write_store};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 use tokio::task;
 
+use crate::frecency::FrecencyStore;
 use crate::launch::types::LaunchItem;
 
 /// Application launcher cache for fast startup with background refresh
@@ -15,7 +14,7 @@ pub struct LaunchCache {
     frecency_path: PathBuf,
     launch_items_path: PathBuf,
     frecency_sorted_path: PathBuf,
-    frecency_store: Option<FrecencyStore>,
+    frecency_store: FrecencyStore,
 }
 
 impl LaunchCache {
@@ -38,12 +37,13 @@ impl LaunchCache {
         let frecency_path = cache_dir.join("frecency_store.json");
         let launch_items_path = cache_dir.join("launch_items_cache");
         let frecency_sorted_path = cache_dir.join("frecency_sorted_cache");
+        let frecency_store = FrecencyStore::load(&frecency_path);
 
         Ok(Self {
             frecency_path,
             launch_items_path,
             frecency_sorted_path,
-            frecency_store: None,
+            frecency_store,
         })
     }
 
@@ -76,30 +76,12 @@ impl LaunchCache {
             items = Self::build_item_list_simple();
         }
 
-        self.sort_by_frecency_launch_items(&mut items)?;
+        let items = Self::sort_items_by_frecency(items, &self.frecency_store);
 
         // Cache the sorted result for future use
         self.save_frecency_sorted_cache(&items)?;
 
         Ok(items)
-    }
-
-    /// Get or initialize frecency store
-    fn get_frecency_store(&mut self) -> Result<&mut FrecencyStore> {
-        if self.frecency_store.is_none() {
-            self.frecency_store = Some(read_store(&self.frecency_path).unwrap_or_default());
-        }
-        Ok(self.frecency_store.as_mut().unwrap())
-    }
-
-    /// Save frecency store to disk
-    fn save_frecency_store(&mut self) -> Result<()> {
-        if let Some(store) = self.frecency_store.take() {
-            write_store(store, &self.frecency_path).context("Failed to save frecency store")?;
-            // Reload the store after saving
-            self.frecency_store = Some(read_store(&self.frecency_path).unwrap_or_default());
-        }
-        Ok(())
     }
 
     // === Desktop Support Methods ===
@@ -192,7 +174,7 @@ impl LaunchCache {
     fn background_refresh_and_sort(&self) {
         let launch_cache_path = self.launch_items_path.clone();
         let frecency_cache_path = self.frecency_sorted_path.clone();
-        let frecency_store_path = self.frecency_path.clone();
+        let frecency_store = self.frecency_store.clone();
 
         task::spawn_blocking(move || {
             // Refresh the base launch items cache
@@ -202,38 +184,8 @@ impl LaunchCache {
                 return;
             }
 
-            // Load frecency store and resort the items
-            let frecency_store = read_store(&frecency_store_path).unwrap_or_default();
-            let sorted_items = frecency_store.sorted(fre::args::SortMethod::Frecent);
-            let frecency_rank: HashMap<_, _> = sorted_items
-                .iter()
-                .enumerate()
-                .map(|(index, item)| (item.item.as_str(), index))
-                .collect();
-
-            let frequent_keys: std::collections::HashSet<_> =
-                sorted_items.iter().map(|item| &item.item).collect();
-
-            // Sort items by frecency
-            let mut sorted_launch_items = items;
-            sorted_launch_items.sort_by(|a, b| {
-                let a_key = Self::get_frecency_key_static(a);
-                let b_key = Self::get_frecency_key_static(b);
-
-                let a_is_frequent = frequent_keys.contains(&a_key);
-                let b_is_frequent = frequent_keys.contains(&b_key);
-
-                match (a_is_frequent, b_is_frequent) {
-                    (true, true) => {
-                        let a_index = frecency_rank.get(a_key.as_str()).copied().unwrap_or(0);
-                        let b_index = frecency_rank.get(b_key.as_str()).copied().unwrap_or(0);
-                        a_index.cmp(&b_index)
-                    }
-                    (true, false) => std::cmp::Ordering::Less,
-                    (false, true) => std::cmp::Ordering::Greater,
-                    (false, false) => a.sort_key().cmp(&b.sort_key()),
-                }
-            });
+            // Resort the items against the frecency snapshot and cache the result
+            let sorted_launch_items = Self::sort_items_by_frecency(items, &frecency_store);
 
             // Save the frecency-sorted cache
             if let Err(e) = Self::save_sorted_cache(frecency_cache_path, &sorted_launch_items) {
@@ -383,43 +335,32 @@ impl LaunchCache {
         Ok(())
     }
 
-    /// Sort launch items by frecency
-    fn sort_by_frecency_launch_items(&mut self, items: &mut [LaunchItem]) -> Result<()> {
-        let frecency_store = self.get_frecency_store()?;
-        let sorted_items = frecency_store.sorted(SortMethod::Frecent);
-        let frecency_rank: HashMap<_, _> = sorted_items
-            .iter()
-            .enumerate()
-            .map(|(index, item)| (item.item.as_str(), index))
+    /// Sort launch items by frecency score, highest first.
+    ///
+    /// Items never launched keep their relative `sort_key()` order after all
+    /// items with recorded usage.
+    fn sort_items_by_frecency(items: Vec<LaunchItem>, store: &FrecencyStore) -> Vec<LaunchItem> {
+        let mut scored: Vec<(f64, LaunchItem)> = items
+            .into_iter()
+            .map(|item| {
+                let key = Self::frecency_key(&item);
+                (store.score(&key), item)
+            })
             .collect();
 
-        let frequent_keys: std::collections::HashSet<_> =
-            sorted_items.iter().map(|item| &item.item).collect();
-
-        items.sort_by(|a, b| {
-            let a_key = self.get_frecency_key(a);
-            let b_key = self.get_frecency_key(b);
-
-            let a_is_frequent = frequent_keys.contains(&a_key);
-            let b_is_frequent = frequent_keys.contains(&b_key);
-
-            match (a_is_frequent, b_is_frequent) {
-                (true, true) => {
-                    let a_index = frecency_rank.get(a_key.as_str()).copied().unwrap_or(0);
-                    let b_index = frecency_rank.get(b_key.as_str()).copied().unwrap_or(0);
-                    a_index.cmp(&b_index)
-                }
-                (true, false) => std::cmp::Ordering::Less,
-                (false, true) => std::cmp::Ordering::Greater,
-                (false, false) => a.sort_key().cmp(&b.sort_key()),
-            }
+        scored.sort_by(|left, right| {
+            right
+                .0
+                .partial_cmp(&left.0)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| left.1.sort_key().cmp(&right.1.sort_key()))
         });
 
-        Ok(())
+        scored.into_iter().map(|(_, item)| item).collect()
     }
 
-    /// Get frecency key for a launch item
-    fn get_frecency_key(&self, item: &LaunchItem) -> String {
+    /// Stable identifier used for frecency tracking of a launch item
+    fn frecency_key(item: &LaunchItem) -> String {
         match item {
             LaunchItem::DesktopApp(desktop_id) => desktop_id.clone(),
             LaunchItem::PathExecutable(name) => {
@@ -431,10 +372,11 @@ impl LaunchCache {
 
     /// Record launch item usage in frecency store
     pub fn record_launch_item(&mut self, item: &LaunchItem) -> Result<()> {
-        let key = self.get_frecency_key(item);
-        let frecency_store = self.get_frecency_store()?;
-        frecency_store.add(&key);
-        self.save_frecency_store()?;
+        let key = Self::frecency_key(item);
+        self.frecency_store.record(&key);
+        self.frecency_store
+            .save(&self.frecency_path)
+            .context("Failed to save frecency store")?;
 
         // Invalidate frecency-sorted cache when new launch is recorded
         self.invalidate_frecency_sorted_cache()?;
@@ -513,17 +455,6 @@ impl LaunchCache {
                 .context("Failed to remove frecency sorted cache file")?;
         }
         Ok(())
-    }
-
-    /// Static version of get_frecency_key for background processing
-    fn get_frecency_key_static(item: &LaunchItem) -> String {
-        match item {
-            LaunchItem::DesktopApp(desktop_id) => desktop_id.clone(),
-            LaunchItem::PathExecutable(name) => {
-                // Remove "path:" prefix if present for frecency tracking
-                name.strip_prefix("path:").unwrap_or(name).to_string()
-            }
-        }
     }
 
     /// Static version of save_frecency_sorted_cache for background processing

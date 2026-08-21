@@ -1,11 +1,11 @@
+use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Context, Result, anyhow, bail};
-use fre::args::SortMethod;
-use fre::store::{FrecencyStore, read_store, write_store};
 use walkdir::WalkDir;
 
 use super::types::{EXPORT_THRESHOLD_BYTES, PASS_OTP_DEP, PassEntry};
@@ -14,6 +14,7 @@ use crate::assist::deps::{LIBNOTIFY, WL_CLIPBOARD, XCLIP};
 use crate::assist::utils::{copy_to_clipboard, show_notification};
 use crate::common::display_server::DisplayServer;
 use crate::common::package::{Dependency, InstallResult, ensure_all};
+use crate::frecency::FrecencyStore;
 use crate::menu_utils::{ConfirmResult, FzfResult, FzfWrapper};
 
 pub(super) fn prompt_password_with_confirmation(prompt: &str) -> Result<String> {
@@ -323,29 +324,29 @@ pub(super) fn load_entries(store_dir: &Path) -> Result<Vec<PassEntry>> {
 
 pub(super) fn sort_entries_by_frecency(entries: &mut [PassEntry]) -> Result<()> {
     let path = frecency_store_path()?;
-    let store: FrecencyStore = read_store(&path).unwrap_or_default();
-    let sorted_items = store.sorted(SortMethod::Frecent);
-    let frecency_rank: std::collections::HashMap<_, _> = sorted_items
+    let store = FrecencyStore::load(&path);
+    // Precompute scores so the comparator stays cheap; keys are owned to
+    // keep the map alive while `entries` is sorted in place.
+    let scores: HashMap<String, f64> = entries
         .iter()
-        .enumerate()
-        .map(|(index, item)| (item.item.as_str().to_owned(), index))
+        .map(|entry| {
+            let name = &entry.display_name;
+            (name.clone(), store.score(name))
+        })
         .collect();
 
     entries.sort_by(|left, right| {
-        let left_index = frecency_rank
-            .get(left.display_name.as_str())
-            .copied()
-            .unwrap_or(usize::MAX);
-        let right_index = frecency_rank
-            .get(right.display_name.as_str())
-            .copied()
-            .unwrap_or(usize::MAX);
+        let left_score = scores.get(&left.display_name).copied().unwrap_or_default();
+        let right_score = scores.get(&right.display_name).copied().unwrap_or_default();
 
-        left_index.cmp(&right_index).then_with(|| {
-            left.display_name
-                .to_lowercase()
-                .cmp(&right.display_name.to_lowercase())
-        })
+        right_score
+            .partial_cmp(&left_score)
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| {
+                left.display_name
+                    .to_lowercase()
+                    .cmp(&right.display_name.to_lowercase())
+            })
     });
 
     Ok(())
@@ -353,9 +354,11 @@ pub(super) fn sort_entries_by_frecency(entries: &mut [PassEntry]) -> Result<()> 
 
 pub(super) fn record_frecency(item: &str) -> Result<()> {
     let path = frecency_store_path()?;
-    let mut store: FrecencyStore = read_store(&path).unwrap_or_default();
-    store.add(item);
-    write_store(store, &path).context("Failed to save pass frecency store")
+    let mut store = FrecencyStore::load(&path);
+    store.record(item);
+    store
+        .save(&path)
+        .context("Failed to save pass frecency store")
 }
 
 fn frecency_store_path() -> Result<PathBuf> {

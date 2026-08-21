@@ -47,7 +47,6 @@ serde_json = "1.0.149"             # For JSON parsing
 duct = "1.1.1"                  # For non-git shell commands (makepkg, etc.)
 tempfile = "3.27.0"            # For temporary files
 rand = "0.10.1"                    # For request ID generation
-fre = "0.4.1"
 freedesktop-file-parser = "0.3.1"
 which = "8.0.2"
 ratatui = "0.30.1"

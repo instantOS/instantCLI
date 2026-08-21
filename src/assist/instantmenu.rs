@@ -69,11 +69,11 @@ fn show_top_level_instantmenu(assists: &[registry::AssistEntry]) -> Result<Strin
             "--insensitive", // Case insensitive search
             "--prompt",
             "instantASSIST", // Prompt text
-            "--instant", // Instantly select the only match
+            "--instant",     // Instantly select the only match
             "--line-height",
             "32", // Minimum height of one menu line (C: -h)
             "--match-mode",
-            "dmenu", // C: -F disables fuzzy matching
+            "dmenu",       // C: -F disables fuzzy matching
             "--commented", // instantASSIST single-letter mode (C: -ct)
         ])
         .stdin(Stdio::piped())
@@ -153,11 +153,11 @@ fn show_group_options_instantmenu(
             "--insensitive", // Case insensitive search
             "--prompt",
             &format!("instantASSIST - {}", group_prefix), // Prompt text with group prefix
-            "--instant", // Instantly select the only match
+            "--instant",                                  // Instantly select the only match
             "--line-height",
             "32", // Minimum height of one menu line (C: -h)
             "--match-mode",
-            "dmenu", // C: -F disables fuzzy matching
+            "dmenu",       // C: -F disables fuzzy matching
             "--commented", // instantASSIST single-letter mode (C: -ct)
         ])
         .stdin(Stdio::piped())

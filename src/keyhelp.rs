@@ -126,10 +126,10 @@ impl KeybindPreviewPayload {
         w.field("Action", &self.action);
 
         let name = action_name(&self.action);
-        if let Some(doc) = docs.get(name) {
-            if let Some(arg) = &doc.arg_example {
-                w.field("Usage", &format!("{name} {arg}"));
-            }
+        if let Some(doc) = docs.get(name)
+            && let Some(arg) = &doc.arg_example
+        {
+            w.field("Usage", &format!("{name} {arg}"));
         }
 
         if self.mode == GLOBAL_MODE {

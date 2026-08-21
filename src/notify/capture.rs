@@ -322,7 +322,9 @@ fn sanitize_text(text: &str, max_chars: usize) -> String {
 
 fn parse_actions(raw_actions: Vec<String>) -> Vec<NotificationAction> {
     raw_actions
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|pair| NotificationAction {
             key: sanitize_text(&pair[0], 200),
             label: sanitize_text(&pair[1], 300),
