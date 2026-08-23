@@ -44,7 +44,7 @@ pub fn run_nonpersistent_apply(debug: bool, privileged_flag: bool) -> Result<()>
 
 fn apply_wallpaper_if_configured() -> Result<()> {
     use crate::common::compositor::CompositorType;
-    use crate::wallpaper::{awww, gnome, instantwm, kwin, sway, x11};
+    use crate::wallpaper::{awww, gnome, hyprpaper, instantwm, kwin, sway, x11};
 
     let store = SettingsStore::load().context("loading settings")?;
     let path = match store.optional_string(crate::settings::store::WALLPAPER_PATH_KEY) {
@@ -58,7 +58,8 @@ fn apply_wallpaper_if_configured() -> Result<()> {
         CompositorType::I3 | CompositorType::Dwm => x11::apply_wallpaper(&path)?,
         CompositorType::InstantWM => instantwm::apply_wallpaper(&path)?,
         CompositorType::Gnome => gnome::apply_wallpaper(&path)?,
-        CompositorType::Hyprland | CompositorType::Niri => awww::apply_wallpaper(&path)?,
+        CompositorType::Hyprland => hyprpaper::apply_wallpaper(&path)?,
+        CompositorType::Niri => awww::apply_wallpaper(&path)?,
         CompositorType::KWin => kwin::apply_wallpaper(&path)?,
         _ => {} // Unsupported compositor, silently skip
     }

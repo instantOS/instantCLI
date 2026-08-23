@@ -10,7 +10,7 @@ use crate::common::format::format_size;
 use crate::common::package::{InstallResult, ensure_all};
 use crate::menu_utils::{FzfWrapper, MenuWrapper};
 use crate::settings::context::SettingsContext;
-use crate::settings::deps::{AWWW, SWAYBG, YAZI, ZENITY};
+use crate::settings::deps::{AWWW, HYPRPAPER, SWAYBG, YAZI, ZENITY};
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::store::{
     BoolSettingKey, OptionalStringSettingKey, SettingsStore, WALLPAPER_PATH_KEY,
@@ -20,11 +20,11 @@ use crate::ui::prelude::*;
 
 use super::common::pick_color_with_zenity;
 
-/// Ensure awww is installed if running on a compositor that needs it (Hyprland, niri).
-/// Returns Ok(true) if deps are satisfied, Ok(false) if user declined installation
+/// Ensure wallpaper deps are installed for the current compositor.
+/// Hyprland uses hyprpaper (native), Niri uses awww. Returns Ok(true) if satisfied.
 fn ensure_awww_deps() -> Result<bool> {
     let compositor = CompositorType::detect();
-    if matches!(compositor, CompositorType::Hyprland | CompositorType::Niri) {
+    if matches!(compositor, CompositorType::Niri) {
         match ensure_all(&[&AWWW])? {
             InstallResult::Installed | InstallResult::AlreadyInstalled => Ok(true),
             InstallResult::Declined
@@ -33,6 +33,29 @@ fn ensure_awww_deps() -> Result<bool> {
         }
     } else {
         Ok(true)
+    }
+}
+
+fn ensure_hyprpaper_deps() -> Result<bool> {
+    let compositor = CompositorType::detect();
+    if matches!(compositor, CompositorType::Hyprland) {
+        match ensure_all(&[&HYPRPAPER])? {
+            InstallResult::Installed | InstallResult::AlreadyInstalled => Ok(true),
+            InstallResult::Declined
+            | InstallResult::NotAvailable { .. }
+            | InstallResult::Failed { .. } => Ok(false),
+        }
+    } else {
+        Ok(true)
+    }
+}
+
+fn ensure_wallpaper_deps() -> Result<bool> {
+    let compositor = CompositorType::detect();
+    match compositor {
+        CompositorType::Hyprland => ensure_hyprpaper_deps(),
+        CompositorType::Niri => ensure_awww_deps(),
+        _ => Ok(true),
     }
 }
 
@@ -110,7 +133,7 @@ impl Setting for SetWallpaper {
 
     fn apply(&self, _ctx: &mut SettingsContext) -> Result<()> {
         // Ensure awww is installed if on Hyprland or niri
-        if !ensure_awww_deps()? {
+        if !ensure_wallpaper_deps()? {
             return Ok(());
         }
         // Ensure swaybg is installed if on instantWM
@@ -243,7 +266,7 @@ impl Setting for RandomWallpaper {
 
     fn apply(&self, _ctx: &mut SettingsContext) -> Result<()> {
         // Ensure awww is installed if on Hyprland or niri
-        if !ensure_awww_deps()? {
+        if !ensure_wallpaper_deps()? {
             return Ok(());
         }
         // Ensure swaybg is installed if on instantWM
@@ -406,7 +429,7 @@ impl Setting for ApplyColoredWallpaper {
 
     fn apply(&self, _ctx: &mut SettingsContext) -> Result<()> {
         // Ensure awww is installed if on Hyprland or niri
-        if !ensure_awww_deps()? {
+        if !ensure_wallpaper_deps()? {
             return Ok(());
         }
         // Ensure swaybg is installed if on instantWM

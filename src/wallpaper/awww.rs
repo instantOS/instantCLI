@@ -22,11 +22,16 @@ pub fn apply_wallpaper(path: &str) -> Result<()> {
         .context("Failed to run awww query")?;
 
     if !query.status.success() {
-        Command::new("awww-daemon")
-            .spawn()
+        // Daemonize properly so it survives the parent terminal closing.
+        // `awww-daemon` forks but stays in the same session by default; closing
+        // the terminal sends SIGHUP to the session and kills it, reverting the
+        // wallpaper. Use nohup + setsid to detach.
+        Command::new("sh")
+            .args(["-c", "nohup awww-daemon >/dev/null 2>&1 &"])
+            .output()
             .context("Failed to start awww-daemon")?;
 
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        std::thread::sleep(std::time::Duration::from_millis(500));
     }
 
     let output = Command::new("awww")
