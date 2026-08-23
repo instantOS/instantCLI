@@ -3,6 +3,7 @@ use crate::scratchpad::config::ScratchpadConfig;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::process::Command;
+use std::sync::OnceLock;
 
 pub struct Hyprland;
 
@@ -11,7 +12,7 @@ impl ScratchpadProvider for Hyprland {
         let workspace_name = config.workspace_name();
 
         if !self.is_window_running(config)? {
-            self.create_and_wait(config)?;
+            self.spawn_scratchpad(config)?;
         }
 
         show_special_workspace(&workspace_name)
@@ -28,7 +29,7 @@ impl ScratchpadProvider for Hyprland {
         if self.is_window_running(config)? {
             toggle_special_workspace(&workspace_name)?;
         } else {
-            self.create_and_wait(config)?;
+            self.spawn_scratchpad(config)?;
             show_special_workspace(&workspace_name)?;
         }
         Ok(())
@@ -69,21 +70,51 @@ impl ScratchpadProvider for Hyprland {
 }
 
 impl Hyprland {
-    fn create_and_wait(&self, config: &ScratchpadConfig) -> Result<()> {
-        let workspace_name = config.workspace_name();
+    fn spawn_scratchpad(&self, config: &ScratchpadConfig) -> Result<()> {
         let window_class = config.window_class();
+        let workspace_name = config.workspace_name();
 
-        setup_window_rules(&workspace_name, &window_class)?;
-        super::create_terminal_process(config)?;
+        ensure_scratchpad_rules()?;
 
-        // Wait for window
+        // Spawn terminal directly on the special workspace via Hyprland's exec dispatcher.
+        // This is cleaner than spawning via nohup + polling + move: Hyprland itself
+        // places the window on `special:<workspace>` with the generic floating/size/center rules.
+        let term_cmd = config.terminal_command();
+        // Escape single quotes for lua string literal
+        let escaped = term_cmd.replace('\'', "\\'");
+        let exec_lua = format!(
+            "hl.dsp.exec_cmd('{}', {{workspace='special:{}'}})",
+            escaped, workspace_name
+        );
+
+        let output = Command::new("hyprctl")
+            .args(["dispatch", &exec_lua])
+            .output()
+            .context("Failed to execute hyprctl dispatch exec_cmd")?;
+
+        if !output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(anyhow::anyhow!(
+                "Failed to spawn scratchpad terminal: {} {}",
+                stdout.trim(),
+                stderr.trim()
+            ));
+        }
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stdout.contains("error:") || stderr.contains("error:") {
+            return Err(anyhow::anyhow!(
+                "Failed to spawn scratchpad terminal: {} {}",
+                stdout.trim(),
+                stderr.trim()
+            ));
+        }
+
+        // Wait for window to appear (floating rules are already applied generically)
         let mut attempts = 0;
         while attempts < 30 {
-            if let Some(client) = get_client_by_class(&window_class)? {
-                let expected_workspace = format!("special:{}", workspace_name);
-                if client.workspace.name != expected_workspace {
-                    move_window_to_special(&client.address, &workspace_name)?;
-                }
+            if get_client_by_class(&window_class)?.is_some() {
                 return Ok(());
             }
             std::thread::sleep(std::time::Duration::from_millis(200));
@@ -92,6 +123,52 @@ impl Hyprland {
 
         Err(anyhow::anyhow!("Terminal window did not appear"))
     }
+}
+
+/// Ensure generic floating/size/center rules for all `scratchpad_*` windows.
+/// This replaces the previous per-scratchpad batch of 4 window_rules. Workspace
+/// assignment is now handled directly by `exec_cmd`'s `workspace` param.
+fn ensure_scratchpad_rules() -> Result<()> {
+    static DONE: OnceLock<()> = OnceLock::new();
+    if DONE.get().is_some() {
+        return Ok(());
+    }
+
+    // These rules are idempotent; re-evaluating with the same name overwrites the previous.
+    // Note: size must be a table { "monitor_w * 0.8", "monitor_h * 0.8" } in lua, not the old string '80% 80%'.
+    let batch = [
+        "eval hl.window_rule({name='scratch-generic-float', match={class='scratchpad_.*'}, float=true})",
+        "eval hl.window_rule({name='scratch-generic-size', match={class='scratchpad_.*'}, size={ 'monitor_w * 0.8', 'monitor_h * 0.8' }})",
+        "eval hl.window_rule({name='scratch-generic-center', match={class='scratchpad_.*'}, center=true})",
+    ]
+    .join(" ; ");
+
+    let output = Command::new("hyprctl")
+        .args(["--batch", &batch])
+        .output()
+        .context("Failed to set generic scratchpad window rules")?;
+
+    if !output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow::anyhow!(
+            "Failed to set generic scratchpad rules: {} {}",
+            stdout.trim(),
+            stderr.trim()
+        ));
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if stdout.contains("error:") || stderr.contains("error:") {
+        return Err(anyhow::anyhow!(
+            "Failed to set generic scratchpad rules: {} {}",
+            stdout.trim(),
+            stderr.trim()
+        ));
+    }
+
+    let _ = DONE.set(());
+    Ok(())
 }
 
 /// Client information from hyprctl clients -j
@@ -135,67 +212,6 @@ pub fn get_client_by_class(window_class: &str) -> Result<Option<HyprlandClient>>
     Ok(None)
 }
 
-/// Move window to special workspace
-pub fn move_window_to_special(address: &str, workspace_name: &str) -> Result<()> {
-    // Modern Hyprland (0.56+) uses lua dispatchers via `hl.dsp`.
-    // Focus the target window by address then move the focused window to the special workspace.
-    let focus_cmd = format!("hl.dsp.focus({{window='address:{}'}})", address);
-    let focus_output = Command::new("hyprctl")
-        .args(["dispatch", &focus_cmd])
-        .output()
-        .context("Failed to execute hyprctl dispatch focus")?;
-
-    if !focus_output.status.success() {
-        let stdout = String::from_utf8_lossy(&focus_output.stdout);
-        let stderr = String::from_utf8_lossy(&focus_output.stderr);
-        let msg = format!("{} {}", stdout, stderr);
-        return Err(anyhow::anyhow!(
-            "Failed to move window to special workspace (focus): {}",
-            msg.trim()
-        ));
-    }
-    let focus_stdout = String::from_utf8_lossy(&focus_output.stdout);
-    let focus_stderr = String::from_utf8_lossy(&focus_output.stderr);
-    if focus_stdout.contains("error:") || focus_stderr.contains("error:") {
-        return Err(anyhow::anyhow!(
-            "Failed to move window to special workspace (focus): {} {}",
-            focus_stdout.trim(),
-            focus_stderr.trim()
-        ));
-    }
-
-    let move_cmd = format!(
-        "hl.dsp.window.move({{workspace='special:{}'}})",
-        workspace_name
-    );
-
-    let move_output = Command::new("hyprctl")
-        .args(["dispatch", &move_cmd])
-        .output()
-        .context("Failed to execute hyprctl dispatch window.move")?;
-
-    if !move_output.status.success() {
-        let stdout = String::from_utf8_lossy(&move_output.stdout);
-        let stderr = String::from_utf8_lossy(&move_output.stderr);
-        return Err(anyhow::anyhow!(
-            "Failed to move window to special workspace: {} {}",
-            stdout.trim(),
-            stderr.trim()
-        ));
-    }
-    let move_stdout = String::from_utf8_lossy(&move_output.stdout);
-    let move_stderr = String::from_utf8_lossy(&move_output.stderr);
-    if move_stdout.contains("error:") || move_stderr.contains("error:") {
-        return Err(anyhow::anyhow!(
-            "Failed to move window to special workspace: {} {}",
-            move_stdout.trim(),
-            move_stderr.trim()
-        ));
-    }
-
-    Ok(())
-}
-
 /// Check if a window with specific class exists in Hyprland using hyprctl
 pub fn window_exists(window_class: &str) -> Result<bool> {
     let output = Command::new("hyprctl")
@@ -218,61 +234,6 @@ pub fn window_exists(window_class: &str) -> Result<bool> {
     }
 
     Ok(false)
-}
-
-/// Setup window rules for Hyprland scratchpad using hyprctl
-pub fn setup_window_rules(workspace_name: &str, window_class: &str) -> Result<()> {
-    // Hyprland 0.56+ uses lua config via `eval hl.window_rule`.
-    let lua_rules = vec![
-        format!(
-            "hl.window_rule({{name='scratch-{}-workspace', match={{class='{}'}}, workspace='special:{}'}})",
-            workspace_name, window_class, workspace_name
-        ),
-        format!(
-            "hl.window_rule({{name='scratch-{}-float', match={{class='{}'}}, float=true}})",
-            workspace_name, window_class
-        ),
-        format!(
-            "hl.window_rule({{name='scratch-{}-size', match={{class='{}'}}, size='80% 80%'}})",
-            workspace_name, window_class
-        ),
-        format!(
-            "hl.window_rule({{name='scratch-{}-center', match={{class='{}'}}, center=true}})",
-            workspace_name, window_class
-        ),
-    ];
-    let batch_str = lua_rules
-        .into_iter()
-        .map(|r| format!("eval {}", r))
-        .collect::<Vec<_>>()
-        .join(" ; ");
-
-    let output = Command::new("hyprctl")
-        .args(["--batch", &batch_str])
-        .output()
-        .context("Failed to execute hyprctl batch for window rules")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        return Err(anyhow::anyhow!(
-            "Failed to set window rules: {} {}",
-            stdout.trim(),
-            stderr.trim()
-        ));
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    if stdout.contains("error:") || stderr.contains("error:") {
-        return Err(anyhow::anyhow!(
-            "Failed to set window rules: {} {}",
-            stdout.trim(),
-            stderr.trim()
-        ));
-    }
-
-    Ok(())
 }
 
 /// Toggle special workspace visibility using hyprctl
@@ -335,7 +296,6 @@ struct HyprlandMonitorInfo {
 
 /// Check if special workspace is active using hyprctl
 pub fn is_special_workspace_active(workspace_name: &str) -> Result<bool> {
-    // Get monitors to check which special workspace is currently active
     let monitors_output = Command::new("hyprctl")
         .args(["monitors", "-j"])
         .output()
@@ -349,7 +309,6 @@ pub fn is_special_workspace_active(workspace_name: &str) -> Result<bool> {
     let monitors: Vec<HyprlandMonitorInfo> = serde_json::from_slice(&monitors_output.stdout)
         .context("Failed to parse hyprctl monitors JSON output")?;
 
-    // Check if any monitor has the special workspace active
     let special_workspace_name = format!("special:{workspace_name}");
     for monitor in monitors.iter() {
         if monitor.special_workspace.name == special_workspace_name {
@@ -378,11 +337,8 @@ pub fn get_all_scratchpad_windows() -> Result<Vec<ScratchpadWindowInfo>> {
     let mut scratchpads = Vec::new();
 
     for client in clients.iter() {
-        // Check if this is a scratchpad window (class starts with "scratchpad_")
         if let Some(scratchpad_name) = client.class.strip_prefix("scratchpad_") {
-            // Use the improved workspace activity detection
             let is_visible = is_special_workspace_active(&format!("scratchpad_{scratchpad_name}"))?;
-
             scratchpads.push(ScratchpadWindowInfo {
                 name: scratchpad_name.to_string(),
                 window_class: client.class.clone(),
@@ -399,8 +355,6 @@ pub fn get_all_scratchpad_windows() -> Result<Vec<ScratchpadWindowInfo>> {
 mod tests {
     #[test]
     fn test_command_construction() {
-        // Test that commands are constructed correctly
-        // This doesn't actually run hyprctl, just tests the logic
         let command = "focusworkspace special:term";
         let parts: Vec<&str> = command.split_whitespace().collect();
         assert_eq!(parts, vec!["focusworkspace", "special:term"]);
