@@ -1,4 +1,4 @@
-//! `ins keyhelp` — explore and memorize instantWM keybinds.
+//! `ins keyhelp` - explore and memorize instantWM keybinds.
 //!
 //! Fetches the live binding list over `instantwmctl keybinds --json` and
 //! presents it as a searchable fzf menu. Each binding shows a rich preview
@@ -45,7 +45,7 @@ struct KeybindRowJson {
 /// One keybinding as it appears in the fzf menu.
 ///
 /// `fzf_preview()` returns a *command* (not text), so per-row preview work is
-/// done by the `ins preview --id keyhelp` child process on highlight — see
+/// done by the `ins preview --id keyhelp` child process on highlight - see
 /// [`KeybindPreviewPayload`] and `crate::preview::keyhelp::render_keyhelp_preview`.
 #[derive(Debug, Clone)]
 struct KeybindRow {
@@ -149,10 +149,10 @@ impl KeybindPreviewPayload {
         // 4. Clear footer explanation
         if self.origin == "user" {
             w.subtext(
-                "Defined in ~/.config/instantwm/config.toml — select 'Edit config' to change it.",
+                "Defined in ~/.config/instantwm/config.toml. Select 'Edit config' to change it.",
             );
         } else {
-            w.subtext("Built-in default — you can override it in ~/.config/instantwm/config.toml.");
+            w.subtext("Built-in default. You can override it in ~/.config/instantwm/config.toml.");
         }
 
         w.build_string()
@@ -177,7 +177,7 @@ impl KeybindPreviewPayload {
                 for step in &steps {
                     match docs.get(action_name(step)) {
                         Some(doc) => {
-                            builder.bullet(&format!("{step} — {}", doc.description));
+                            builder.bullet(&format!("{step}: {}", doc.description));
                         }
                         None => {
                             builder.bullet(step);
@@ -792,18 +792,24 @@ pub fn run_keyhelp() -> Result<()> {
     }
 
     let compositor = CompositorType::detect();
-    if !matches!(compositor, CompositorType::InstantWM) {
-        eprintln!(
-            "ins keyhelp: keybind listing is only supported on instantWM \
-             (detected: {}).",
-            compositor.name()
-        );
-        return Ok(());
-    }
-
-    let rows = fetch_keybinds()?;
+    let (rows, is_hyprland) = match compositor {
+        CompositorType::InstantWM => (fetch_keybinds()?, false),
+        CompositorType::Hyprland => (fetch_hyprland_keybinds()?, true),
+        _ => {
+            eprintln!(
+                "ins keyhelp: keybind listing is only supported on instantWM and Hyprland \
+                 (detected: {}).",
+                compositor.name()
+            );
+            return Ok(());
+        }
+    };
     if rows.is_empty() {
-        println!("No keybindings found — is instantWM running?");
+        if is_hyprland {
+            println!("No keybindings found. Is Hyprland running?");
+        } else {
+            println!("No keybindings found. Is instantWM running?");
+        }
         return Ok(());
     }
 
@@ -812,18 +818,25 @@ pub fn run_keyhelp() -> Result<()> {
     // action (or hit Back), the next open of the keybind list lands on
     // the same row.
     let mut cursor = MenuCursor::new();
+    let header_title = if is_hyprland {
+        format!("Hyprland keybinds  ·  {} bindings", rows.len())
+    } else {
+        format!("instantWM keybinds  ·  {} bindings", rows.len())
+    };
+    let header_subtitle = if is_hyprland {
+        "Select a binding to view it or edit hyprland.lua (descriptions show if set)"
+    } else {
+        "Select a binding to run it, edit its config, or learn about it"
+    };
 
     loop {
-        let header = HeaderBuilder::new(
-            NerdFont::Keyboard,
-            format!("instantWM keybinds  ·  {} bindings", rows.len()),
-        )
-        .subtitle("Select a binding to run it, edit its config, or learn about it")
-        .build();
+        let header = HeaderBuilder::new(NerdFont::Keyboard, header_title.clone())
+            .subtitle(header_subtitle)
+            .build();
 
         let selection = FzfWrapper::builder()
             .prompt(format!("{} ", char::from(NerdFont::Search)))
-            .header(header)
+            .header(header.clone())
             .responsive_layout()
             .presentation(MenuPresentation::Padded)
             .cursor(cursor.initial_index(&rows))
@@ -832,10 +845,25 @@ pub fn run_keyhelp() -> Result<()> {
         match selection {
             Some(row) => {
                 cursor.update(&row, &rows);
-                match handle_select(&row)? {
-                    SubmenuAction::Run => run_binding(&row)?,
-                    SubmenuAction::Edit => open_config()?,
-                    SubmenuAction::Back => continue,
+                // Hyprland binds are Lua closures (dispatcher __lua). They can't be
+                // triggered via instantwmctl. Offer view/edit only, and show a hint
+                // for undocumented binds.
+                if is_hyprland {
+                    match handle_select_hyprland(&row)? {
+                        SubmenuAction::Edit => open_hyprland_config()?,
+                        SubmenuAction::Back => continue,
+                        SubmenuAction::Run => {
+                            crate::menu_utils::FzfWrapper::message(
+                                "Hyprland binds can't be triggered from keyhelp. Open hyprland.lua to run or test the dispatcher manually.",
+                            )?;
+                        }
+                    }
+                } else {
+                    match handle_select(&row)? {
+                        SubmenuAction::Run => run_binding(&row)?,
+                        SubmenuAction::Edit => open_config()?,
+                        SubmenuAction::Back => continue,
+                    }
                 }
             }
             None => return Ok(()),
@@ -843,20 +871,20 @@ pub fn run_keyhelp() -> Result<()> {
     }
 }
 
-/// Fetch the live binding list. Fails loudly if instantWM isn't running —
+/// Fetch the live binding list. Fails loudly if instantWM isn't running -
 /// keyhelp is about the *running* config, not the file on disk.
 fn fetch_keybinds() -> Result<Vec<KeybindRow>> {
     let rows: Vec<KeybindRowJson> = instantwmctl::json(["keybinds"]).map_err(|err| {
         let msg = err.to_string();
         if msg.contains("version mismatch") {
             anyhow!(
-                "`instantwmctl` and instantWM are different builds — \
-                 restart instantWM, then run `ins keyhelp`."
+                "`instantwmctl` and instantWM are different builds. \
+                 Restart instantWM, then run `ins keyhelp`."
             )
         } else if msg.contains("deserialize") {
             anyhow!(
-                "instantWM doesn't support `instantwmctl keybinds` — \
-                 it's an older build. Restart instantWM, then run `ins keyhelp`."
+                "instantWM doesn't support `instantwmctl keybinds`. \
+                 It's an older build. Restart instantWM, then run `ins keyhelp`."
             )
         } else {
             anyhow!(
@@ -868,6 +896,118 @@ fn fetch_keybinds() -> Result<Vec<KeybindRow>> {
     let mut keybinds: Vec<KeybindRow> = rows.into_iter().map(KeybindRow::from_json).collect();
     sort_keybinds(&mut keybinds);
     Ok(keybinds)
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct HyprlandBindJson {
+    #[serde(default)]
+    key: String,
+    #[serde(default)]
+    keycode: i32,
+    modmask: u32,
+    #[serde(default)]
+    dispatcher: String,
+    #[serde(default)]
+    arg: String,
+    #[serde(default)]
+    description: String,
+    #[serde(default)]
+    has_description: bool,
+    #[serde(default)]
+    submap: String,
+}
+
+fn decode_hyprland_modmask(modmask: u32) -> String {
+    // Hyprland modmask: 1=SHIFT, 4=CTRL, 8=ALT (Mod1), 64=SUPER (Mod4)
+    // Keep order SUPER, CTRL, ALT, SHIFT to match `SUPER + CTRL + X` style in hyprland.lua
+    let mut parts = Vec::new();
+    if modmask & 64 != 0 {
+        parts.push("SUPER");
+    }
+    if modmask & 4 != 0 {
+        parts.push("CTRL");
+    }
+    if modmask & 8 != 0 {
+        parts.push("ALT");
+    }
+    if modmask & 1 != 0 {
+        parts.push("SHIFT");
+    }
+    if modmask & 2 != 0 {
+        parts.push("CAPS");
+    }
+    parts.join("+")
+}
+
+fn hyprland_config_path() -> PathBuf {
+    dirs::config_dir()
+        .unwrap_or_else(|| PathBuf::from("~"))
+        .join("hypr")
+        .join("hyprland.lua")
+}
+
+fn fetch_hyprland_keybinds() -> Result<Vec<KeybindRow>> {
+    let output = Command::new("hyprctl")
+        .args(["binds", "-j"])
+        .output()
+        .context("Failed to execute hyprctl binds")?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("hyprctl binds failed: {}", stderr);
+    }
+    let binds: Vec<HyprlandBindJson> = serde_json::from_slice(&output.stdout)
+        .context("Failed to parse hyprctl binds JSON")?;
+
+    let lua_path = hyprland_config_path().display().to_string();
+    let mut rows = Vec::new();
+    for b in binds {
+        let modifiers = decode_hyprland_modmask(b.modmask);
+        // hyprctl gives key as e.g. "RETURN", "mouse:272", "F12"
+        let key = if !b.key.is_empty() {
+            b.key
+        } else if b.keycode != 0 {
+            format!("code:{}", b.keycode)
+        } else {
+            String::new()
+        };
+        // Skip empty binds (should not happen)
+        if key.is_empty() && modifiers.is_empty() {
+            continue;
+        }
+        let mode = if b.submap.is_empty() {
+            GLOBAL_MODE.to_string()
+        } else {
+            b.submap
+        };
+
+        let (action, origin) = if b.has_description && !b.description.is_empty() {
+            (b.description.clone(), "hyprland.lua (described)".to_string())
+        } else {
+            // Undocumented: keep dispatcher/arg but annotate
+            let fallback = if b.dispatcher == "__lua" {
+                format!("Undocumented (__lua arg {}) see {}", b.arg, lua_path)
+            } else if b.dispatcher.is_empty() {
+                format!("Undocumented see {}", lua_path)
+            } else if b.arg.is_empty() {
+                format!("{} not described. See {}", b.dispatcher, lua_path)
+            } else {
+                format!("{} {} not described. See {}", b.dispatcher, b.arg, lua_path)
+            };
+            (fallback, "hyprland.lua".to_string())
+        };
+
+        let keywords = derive_keywords(&action, &mode);
+        rows.push(KeybindRow {
+            modifiers,
+            key,
+            action,
+            mode,
+            origin,
+            keywords,
+        });
+    }
+    sort_keybinds(&mut rows);
+    Ok(rows)
 }
 
 /// Let the user pick what to do with a selected binding.
@@ -902,13 +1042,62 @@ fn handle_select(row: &KeybindRow) -> Result<SubmenuAction> {
     }
 }
 
+fn handle_select_hyprland(row: &KeybindRow) -> Result<SubmenuAction> {
+    // Hyprland binds are Lua closures (dispatcher __lua). Can't be triggered via instantwmctl.
+    // Only offer Edit config / Back, and annotate undocumented binds in the preview.
+    let mut options: Vec<SubmenuActionItem> = Vec::new();
+    options.push(SubmenuActionItem::edit());
+    options.push(SubmenuActionItem::back());
+
+    let mut header = HeaderBuilder::new(NerdFont::Keyboard, row.binding())
+        .subtitle(&row.action)
+        .field("Mode", &row.mode);
+    if row.mode != GLOBAL_MODE {
+        header = header.field("Availability", format!("only in '{}' submap", row.mode));
+    }
+    header = header.field("Origin", &row.origin);
+    if row.origin == "hyprland.lua" {
+        header = header.field(
+            "Note",
+            "Not described. Add {description='...'} to hl.bind in hyprland.lua",
+        );
+    }
+    let header = header.build();
+
+    let selection = FzfWrapper::builder()
+        .prompt(format!("{} ", char::from(NerdFont::Wrench)))
+        .header(header)
+        .responsive_layout()
+        .presentation(MenuPresentation::Padded)
+        .select_one(options)?;
+
+    match selection {
+        Some(item) => Ok(item.action),
+        None => Ok(SubmenuAction::Back),
+    }
+}
+
+fn open_hyprland_config() -> Result<()> {
+    let path = hyprland_config_path();
+    let editor = std::env::var("EDITOR").unwrap_or_else(|_| "nvim".to_string());
+    FzfWrapper::message(&format!("Opening {} in {}…", path.display(), editor))?;
+    let status = Command::new(&editor)
+        .arg(&path)
+        .status()
+        .with_context(|| format!("Failed to open editor '{editor}'"))?;
+    if !status.success() {
+        anyhow::bail!("Editor exited with non-zero status: {status:?}");
+    }
+    Ok(())
+}
+
 /// Translate the config-style action string back into an `instantwmctl
 /// action` call. `describe()` renders actions as `name arg1 arg2 ...`, so the
 /// first token is the action name and the rest are its args.
 fn run_binding(row: &KeybindRow) -> Result<()> {
     if row.action.starts_with("sequence [") {
         crate::menu_utils::FzfWrapper::message(
-            "Sequences can't be triggered individually — edit the config to change them.",
+            "Sequences can't be triggered individually. Edit the config to change them.",
         )?;
         return Ok(());
     }
@@ -955,18 +1144,24 @@ fn config_path() -> PathBuf {
 /// Non-tty fallback: print a plain-text table, like `ins assist list`.
 fn print_text_list() -> Result<()> {
     let compositor = CompositorType::detect();
-    if !matches!(compositor, CompositorType::InstantWM) {
-        eprintln!(
-            "ins keyhelp: keybind listing is only supported on instantWM \
-             (detected: {}).",
-            compositor.name()
-        );
-        return Ok(());
-    }
-
-    let rows = fetch_keybinds()?;
+    let rows = match compositor {
+        CompositorType::InstantWM => fetch_keybinds()?,
+        CompositorType::Hyprland => fetch_hyprland_keybinds()?,
+        _ => {
+            eprintln!(
+                "ins keyhelp: keybind listing is only supported on instantWM and Hyprland \
+                 (detected: {}).",
+                compositor.name()
+            );
+            return Ok(());
+        }
+    };
     if rows.is_empty() {
-        println!("No keybindings found — is instantWM running?");
+        if matches!(compositor, CompositorType::Hyprland) {
+            println!("No keybindings found. Is Hyprland running?");
+        } else {
+            println!("No keybindings found. Is instantWM running?");
+        }
         return Ok(());
     }
 
@@ -990,6 +1185,8 @@ fn print_text_list() -> Result<()> {
     for r in &rows {
         let origin = if r.origin == "user" {
             "config"
+        } else if r.origin.starts_with("hyprland") {
+            r.origin.as_str()
         } else {
             "default"
         };
