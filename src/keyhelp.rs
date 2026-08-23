@@ -955,8 +955,8 @@ fn fetch_hyprland_keybinds() -> Result<Vec<KeybindRow>> {
         let stderr = String::from_utf8_lossy(&output.stderr);
         anyhow::bail!("hyprctl binds failed: {}", stderr);
     }
-    let binds: Vec<HyprlandBindJson> = serde_json::from_slice(&output.stdout)
-        .context("Failed to parse hyprctl binds JSON")?;
+    let binds: Vec<HyprlandBindJson> =
+        serde_json::from_slice(&output.stdout).context("Failed to parse hyprctl binds JSON")?;
 
     let lua_path = hyprland_config_path().display().to_string();
     let mut rows = Vec::new();
@@ -981,7 +981,10 @@ fn fetch_hyprland_keybinds() -> Result<Vec<KeybindRow>> {
         };
 
         let (action, origin) = if b.has_description && !b.description.is_empty() {
-            (b.description.clone(), "hyprland.lua (described)".to_string())
+            (
+                b.description.clone(),
+                "hyprland.lua (described)".to_string(),
+            )
         } else {
             // Undocumented: keep dispatcher/arg but annotate
             let fallback = if b.dispatcher == "__lua" {
