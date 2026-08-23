@@ -137,20 +137,59 @@ pub fn get_client_by_class(window_class: &str) -> Result<Option<HyprlandClient>>
 
 /// Move window to special workspace
 pub fn move_window_to_special(address: &str, workspace_name: &str) -> Result<()> {
-    let output = Command::new("hyprctl")
-        .args([
-            "dispatch",
-            "movetoworkspacesilent",
-            &format!("special:{},address:{}", workspace_name, address),
-        ])
+    // Modern Hyprland (0.56+) uses lua dispatchers via `hl.dsp`.
+    // Focus the target window by address then move the focused window to the special workspace.
+    let focus_cmd = format!("hl.dsp.focus({{window='address:{}'}})", address);
+    let focus_output = Command::new("hyprctl")
+        .args(["dispatch", &focus_cmd])
         .output()
-        .context("Failed to execute hyprctl dispatch movetoworkspacesilent")?;
+        .context("Failed to execute hyprctl dispatch focus")?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+    if !focus_output.status.success() {
+        let stdout = String::from_utf8_lossy(&focus_output.stdout);
+        let stderr = String::from_utf8_lossy(&focus_output.stderr);
+        let msg = format!("{} {}", stdout, stderr);
         return Err(anyhow::anyhow!(
-            "Failed to move window to special workspace: {}",
-            stderr
+            "Failed to move window to special workspace (focus): {}",
+            msg.trim()
+        ));
+    }
+    let focus_stdout = String::from_utf8_lossy(&focus_output.stdout);
+    let focus_stderr = String::from_utf8_lossy(&focus_output.stderr);
+    if focus_stdout.contains("error:") || focus_stderr.contains("error:") {
+        return Err(anyhow::anyhow!(
+            "Failed to move window to special workspace (focus): {} {}",
+            focus_stdout.trim(),
+            focus_stderr.trim()
+        ));
+    }
+
+    let move_cmd = format!(
+        "hl.dsp.window.move({{workspace='special:{}'}})",
+        workspace_name
+    );
+
+    let move_output = Command::new("hyprctl")
+        .args(["dispatch", &move_cmd])
+        .output()
+        .context("Failed to execute hyprctl dispatch window.move")?;
+
+    if !move_output.status.success() {
+        let stdout = String::from_utf8_lossy(&move_output.stdout);
+        let stderr = String::from_utf8_lossy(&move_output.stderr);
+        return Err(anyhow::anyhow!(
+            "Failed to move window to special workspace: {} {}",
+            stdout.trim(),
+            stderr.trim()
+        ));
+    }
+    let move_stdout = String::from_utf8_lossy(&move_output.stdout);
+    let move_stderr = String::from_utf8_lossy(&move_output.stderr);
+    if move_stdout.contains("error:") || move_stderr.contains("error:") {
+        return Err(anyhow::anyhow!(
+            "Failed to move window to special workspace: {} {}",
+            move_stdout.trim(),
+            move_stderr.trim()
         ));
     }
 
@@ -183,24 +222,30 @@ pub fn window_exists(window_class: &str) -> Result<bool> {
 
 /// Setup window rules for Hyprland scratchpad using hyprctl
 pub fn setup_window_rules(workspace_name: &str, window_class: &str) -> Result<()> {
-    let rules = vec![
+    // Hyprland 0.56+ uses lua config via `eval hl.window_rule`.
+    let lua_rules = vec![
         format!(
-            "workspace special:{},class:^({})$",
+            "hl.window_rule({{name='scratch-{}-workspace', match={{class='{}'}}, workspace='special:{}'}})",
+            workspace_name, window_class, workspace_name
+        ),
+        format!(
+            "hl.window_rule({{name='scratch-{}-float', match={{class='{}'}}, float=true}})",
             workspace_name, window_class
         ),
-        //TODO: figure out which ones of these are actually necessary
-        format!("float,class:^({})$", window_class),
-        format!("size 80% 80%,class:^({})$", window_class),
-        format!("center,class:^({})$", window_class),
+        format!(
+            "hl.window_rule({{name='scratch-{}-size', match={{class='{}'}}, size='80% 80%'}})",
+            workspace_name, window_class
+        ),
+        format!(
+            "hl.window_rule({{name='scratch-{}-center', match={{class='{}'}}, center=true}})",
+            workspace_name, window_class
+        ),
     ];
-
-    // Use batch command for efficiency
-    let batch_commands: Vec<String> = rules
+    let batch_str = lua_rules
         .into_iter()
-        .map(|rule| format!("keyword windowrulev2 {rule}"))
-        .collect();
-
-    let batch_str = batch_commands.join(" ; ");
+        .map(|r| format!("eval {}", r))
+        .collect::<Vec<_>>()
+        .join(" ; ");
 
     let output = Command::new("hyprctl")
         .args(["--batch", &batch_str])
@@ -209,7 +254,22 @@ pub fn setup_window_rules(workspace_name: &str, window_class: &str) -> Result<()
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(anyhow::anyhow!("Failed to set window rules: {}", stderr));
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        return Err(anyhow::anyhow!(
+            "Failed to set window rules: {} {}",
+            stdout.trim(),
+            stderr.trim()
+        ));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if stdout.contains("error:") || stderr.contains("error:") {
+        return Err(anyhow::anyhow!(
+            "Failed to set window rules: {} {}",
+            stdout.trim(),
+            stderr.trim()
+        ));
     }
 
     Ok(())
@@ -217,17 +277,31 @@ pub fn setup_window_rules(workspace_name: &str, window_class: &str) -> Result<()
 
 /// Toggle special workspace visibility using hyprctl
 pub fn toggle_special_workspace(workspace_name: &str) -> Result<()> {
+    let lua = format!("hl.dsp.workspace.toggle_special('{}')", workspace_name);
     let output = Command::new("hyprctl")
-        .args(["dispatch", "togglespecialworkspace", workspace_name])
+        .args(["dispatch", &lua])
         .output()
-        .context("Failed to execute hyprctl togglespecialworkspace")?;
+        .context("Failed to execute hyprctl dispatch toggle_special")?;
 
     if !output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(anyhow::anyhow!(
-            "Failed to toggle special workspace '{}': {}",
+            "Failed to toggle special workspace '{}': {} {}",
             workspace_name,
-            stderr
+            stdout.trim(),
+            stderr.trim()
+        ));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if stdout.contains("error:") || stderr.contains("error:") {
+        return Err(anyhow::anyhow!(
+            "Failed to toggle special workspace '{}': {} {}",
+            workspace_name,
+            stdout.trim(),
+            stderr.trim()
         ));
     }
 
