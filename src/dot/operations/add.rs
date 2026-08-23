@@ -6,7 +6,7 @@ use crate::dot::dotfilerepo::{DotfileDir, DotfileRepo};
 use crate::dot::menu::repo_actions::build_repo_preview;
 use crate::dot::types::{DotsDirSelectItem, RepoMenuItem};
 use crate::dot::utils::{filter_dotfiles_by_path, get_all_dotfiles, resolve_dotfile_path};
-use crate::menu_utils::{ConfirmResult, FzfResult, FzfWrapper, Header};
+use crate::menu_utils::{ConfirmResult, FzfResult, FzfWrapper, HeaderBuilder};
 use crate::ui::prelude::*;
 use anyhow::Result;
 use colored::*;
@@ -35,6 +35,14 @@ impl DirectoryAddStats {
     pub fn has_changes(&self) -> bool {
         self.updated_count > 0 || self.unchanged_count > 0 || self.added_count > 0
     }
+}
+
+fn format_target_display(target_path: &Path) -> String {
+    let home = crate::dot::sources::home_dir();
+    target_path
+        .strip_prefix(&home)
+        .map(|p| format!("~/{}", p.display()))
+        .unwrap_or_else(|_| target_path.display().to_string())
 }
 
 /// Prompt the user to select one of the configured repositories
@@ -93,8 +101,13 @@ fn select_repo(config: &DotfileConfig, db: &Database, target_path: &Path) -> Res
         ));
     }
 
+    let display = format_target_display(target_path);
+    let header = HeaderBuilder::new(NerdFont::Folder, "Select Repository")
+        .subtitle(display)
+        .build();
+
     match FzfWrapper::builder()
-        .header(Header::fancy("Select Repository"))
+        .header(header)
         .prompt("Select")
         .responsive_layout()
         .select(items)
@@ -177,11 +190,16 @@ fn select_dots_dir(
         })
         .collect();
 
+    let display = format_target_display(target_path);
+    let header = HeaderBuilder::new(
+        NerdFont::Folder,
+        format!("Select Directory in '{}'", dotfile_repo.name),
+    )
+    .subtitle(display)
+    .build();
+
     match FzfWrapper::builder()
-        .header(Header::fancy(&format!(
-            "Select Directory in '{}'",
-            dotfile_repo.name
-        )))
+        .header(header)
         .prompt("Select")
         .responsive_layout()
         .select(items)
