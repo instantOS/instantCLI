@@ -177,6 +177,12 @@ pub static AWWW: Dependency = Dependency {
     tests: &[InstallTest::WhichSucceeds("awww")],
 };
 
+pub static HYPRPAPER: Dependency = Dependency {
+    name: "hyprpaper",
+    packages: &[PackageDefinition::new("hyprpaper", PackageManager::Pacman)],
+    tests: &[InstallTest::WhichSucceeds("hyprpaper")],
+};
+
 pub static SWAYBG: Dependency = Dependency {
     name: "swaybg",
     packages: &[
