@@ -270,11 +270,16 @@ pub fn launch_detached(program: &str, args: &[&str]) -> Result<()> {
 
 /// Execute an ins menu command
 pub fn menu_command(args: &[&str]) -> Result<()> {
-    Command::new(std::env::current_exe()?)
+    let status = Command::new(std::env::current_exe()?)
         .arg("menu")
         .args(args)
-        .spawn()
+        .status()
         .context("Failed to execute menu command")?;
+
+    if !status.success() && status.code() != Some(1) {
+        anyhow::bail!("Menu command failed with status {status}");
+    }
+
     Ok(())
 }
 
