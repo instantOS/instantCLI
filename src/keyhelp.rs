@@ -1485,8 +1485,8 @@ mod tests {
 
         let text = row.render_preview(&docs);
         assert!(text.contains("Sequence"));
-        assert!(text.contains("set_mode default — set WM mode (sway-like modes)"));
-        assert!(text.contains("spawn ins assist run sf — spawn a command without shell expansion"));
+        assert!(text.contains("set_mode default: set WM mode (sway-like modes)"));
+        assert!(text.contains("spawn ins assist run sf: spawn a command without shell expansion"));
     }
 
     #[test]

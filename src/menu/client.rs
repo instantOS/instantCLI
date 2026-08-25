@@ -419,16 +419,16 @@ pub fn force_fallback_mode() {
     }
 }
 
-/// Handle GUI menu requests by routing through client
-pub fn handle_gui_request(command: &MenuCommands) -> Result<i32> {
+/// Handle scratchpad menu requests by routing through client
+pub fn handle_scratchpad_request(command: &MenuCommands) -> Result<i32> {
     let client = MenuClient::new();
 
     match command {
-        MenuCommands::Confirm { message, gui: true } => {
+        MenuCommands::Confirm { message, .. } => {
             match client.confirm(message.clone()) {
                 Ok(result) => Ok(result.into()),
                 Err(e) => {
-                    eprintln!("GUI menu error: {e}");
+                    eprintln!("Scratchpad menu error: {e}");
                     Ok(3) // Error exit code
                 }
             }
@@ -437,7 +437,7 @@ pub fn handle_gui_request(command: &MenuCommands) -> Result<i32> {
             prompt,
             items,
             multi,
-            gui: true,
+            ..
         } => {
             let item_list: Vec<SerializableMenuItem> = if items.is_empty() {
                 // Read from stdin if items is empty
@@ -463,31 +463,31 @@ pub fn handle_gui_request(command: &MenuCommands) -> Result<i32> {
                     }
                 }
                 Err(e) => {
-                    eprintln!("GUI menu error: {e}");
+                    eprintln!("Scratchpad menu error: {e}");
                     Ok(3) // Error exit code
                 }
             }
         }
-        MenuCommands::Input { prompt, gui: true } => {
+        MenuCommands::Input { prompt, .. } => {
             match client.input(prompt.clone()) {
                 Ok(text) => {
                     println!("{text}");
                     Ok(0) // Success
                 }
                 Err(e) => {
-                    eprintln!("GUI menu error: {e}");
+                    eprintln!("Scratchpad menu error: {e}");
                     Ok(3) // Error exit code
                 }
             }
         }
-        MenuCommands::Password { prompt, gui: true } => {
+        MenuCommands::Password { prompt, .. } => {
             match client.password(prompt.clone()) {
                 Ok(text) => {
                     println!("{text}");
                     Ok(0) // Success
                 }
                 Err(e) => {
-                    eprintln!("GUI menu error: {e}");
+                    eprintln!("Scratchpad menu error: {e}");
                     Ok(3) // Error exit code
                 }
             }
@@ -497,7 +497,7 @@ pub fn handle_gui_request(command: &MenuCommands) -> Result<i32> {
             dirs,
             files,
             multi,
-            gui: true,
+            ..
         } => {
             let scope = match (*dirs, *files) {
                 (true, false) => FilePickerScope::Directories,
@@ -518,12 +518,12 @@ pub fn handle_gui_request(command: &MenuCommands) -> Result<i32> {
                     }
                 }
                 Err(e) => {
-                    eprintln!("GUI menu error: {e}");
+                    eprintln!("Scratchpad menu error: {e}");
                     Ok(3)
                 }
             }
         }
-        _ => anyhow::bail!("Not a GUI menu command"),
+        _ => anyhow::bail!("Not a scratchpad menu command"),
     }
 }
 
