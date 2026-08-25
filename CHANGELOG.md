@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.10](https://github.com/instantOS/instantCLI/compare/v0.14.9...v0.14.10) - 2026-08-23
+
+### Added
+
+- add hyprland support for keyhelp
+
+### Fixed
+
+- fix repo add menu not showing file path
+- fix some menus not following best practices, make keyhelp prettier
+- fix keyhelp appearance
+- fix back state for keyhelp
+- fix keyhelp
+
+### Other
+
+- switch to hyprpaper
+- fmt
+- rework hyprland lua thingy
+- bump stuff
+- make compatible with new hyprland
+- new instantmenu
+- rank heuristic
+- add extra keyhelp keywords
+- async and better practice previews for keyhelp
+- prettier key help
+- init keyhelp
+- refactor large arg groups
+- proberoot struct
+
 ## [0.14.9](https://github.com/instantOS/instantCLI/compare/v0.14.8...v0.14.9) - 2026-08-14
 
 ### Fixed
