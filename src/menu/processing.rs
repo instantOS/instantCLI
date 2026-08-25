@@ -75,7 +75,9 @@ impl RequestProcessor {
         scope: FilePickerScope,
         allow_multiple: bool,
     ) -> Result<MenuResponse> {
-        let mut builder = MenuWrapper::file_picker().scope(scope).multi(allow_multiple);
+        let mut builder = MenuWrapper::file_picker()
+            .scope(scope)
+            .multi(allow_multiple);
 
         if let Some(start_dir) = start.as_ref().filter(|s| !s.is_empty()) {
             builder = builder.start_dir(start_dir);

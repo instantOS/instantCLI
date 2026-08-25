@@ -502,7 +502,9 @@ fn handle_pick(
             client::handle_scratchpad_request(command)
         }
         ResolvedBackend::Tui => {
-            let mut builder = MenuWrapper::file_picker().scope(scope).multi(allow_multiple);
+            let mut builder = MenuWrapper::file_picker()
+                .scope(scope)
+                .multi(allow_multiple);
 
             if let Some(start_dir) = start.as_ref().filter(|s| !s.is_empty()) {
                 builder = builder.start_dir(PathBuf::from(start_dir));
@@ -1137,14 +1139,9 @@ mod tests {
 
     #[test]
     fn test_choice_and_pick_allow_multiple_flag() {
-        let choice_allow_multiple = MenuCli::try_parse_from([
-            "ins-menu",
-            "choice",
-            "--allow-multiple",
-            "--items",
-            "a b c",
-        ])
-        .unwrap();
+        let choice_allow_multiple =
+            MenuCli::try_parse_from(["ins-menu", "choice", "--allow-multiple", "--items", "a b c"])
+                .unwrap();
         let MenuCommands::Choice { allow_multiple, .. } = choice_allow_multiple.command else {
             panic!("Expected Choice command");
         };

@@ -201,11 +201,15 @@ impl InstantmenuBackend {
         Ok(Some(text))
     }
 
-    /// Show choice dialog and return selected item
+    /// Show choice dialog and return selected item(s)
+    ///
+    /// With `allow_multiple` the user can confirm additional items with
+    /// ctrl+return before finishing with return; every confirmed line is
+    /// collected from stdout.
     pub fn choice(
         prompt: &str,
         items: &[SerializableMenuItem],
-        _allow_multiple: bool,
+        allow_multiple: bool,
     ) -> Result<Vec<String>> {
         let mut cmd = Command::new("instantmenu");
         cmd.arg("--border-width")
@@ -218,7 +222,11 @@ impl InstantmenuBackend {
             .arg("20")
             .arg("--insensitive")
             .arg("--prompt")
-            .arg(prompt)
+            .arg(if allow_multiple {
+                format!("{prompt} (ctrl+return adds more)")
+            } else {
+                prompt.to_string()
+            })
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
@@ -241,14 +249,14 @@ impl InstantmenuBackend {
             return Ok(vec![]);
         }
 
-        let selected = String::from_utf8_lossy(&output.stdout)
-            .trim_end_matches('\n')
-            .to_string();
-        if selected.is_empty() {
-            Ok(vec![])
-        } else {
-            Ok(vec![selected])
-        }
+        let selected = String::from_utf8_lossy(&output.stdout);
+        let selected: Vec<String> = selected
+            .lines()
+            .map(str::trim_end)
+            .filter(|line| !line.is_empty())
+            .map(ToString::to_string)
+            .collect();
+        Ok(selected)
     }
 
     /// Show slider prompt via instantmenu slide
