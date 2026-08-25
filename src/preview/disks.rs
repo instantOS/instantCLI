@@ -26,11 +26,17 @@ pub(crate) fn render_disk_preview(ctx: &PreviewContext) -> Result<String> {
 
     let mount_lines = disk_mount_status(disk);
 
+    let (mount_status_color, mount_status_icon) = if mount_lines.is_empty() {
+        (colors::GREEN, NerdFont::Check)
+    } else {
+        (colors::YELLOW, NerdFont::Warning)
+    };
+
     let mut builder = PreviewBuilder::new()
         .header(NerdFont::HardDrive, "Disk Overview")
         .subtext("Selecting a disk will erase all data on it.")
         .blank()
-        .line(colors::YELLOW, Some(NerdFont::Warning), "Mount Status");
+        .line(mount_status_color, Some(mount_status_icon), "Mount Status");
 
     if mount_lines.is_empty() {
         builder = builder.raw(&format!("{ok}  No mounted partitions detected{reset}"));
