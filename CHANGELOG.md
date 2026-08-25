@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.11](https://github.com/instantOS/instantCLI/compare/v0.14.10...v0.14.11) - 2026-08-25
+
+### Fixed
+
+- fix tty a assist slider
+- fixes
+- fixes
+- fix mount message color
+- fix new instantMENU
+
+### Other
+
+- bump stuff
+- add menu server toast
+- add `ins menu toast`
+- add instantmenu menu backend
+- switch to hyprpaper
+
 ## [0.14.10](https://github.com/instantOS/instantCLI/compare/v0.14.9...v0.14.10) - 2026-08-23
 
 ### Added
