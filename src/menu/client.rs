@@ -343,6 +343,15 @@ impl MenuClient {
         }
     }
 
+    /// Show toast notification popup via server
+    pub fn toast(&self, message: String, duration: f64) -> Result<()> {
+        match self.send_request(MenuRequest::Toast { message, duration })? {
+            MenuResponse::ToastResult | MenuResponse::MessageResult => Ok(()),
+            MenuResponse::Error(error) => anyhow::bail!("Server error: {}", error),
+            _ => anyhow::bail!("Unexpected response type for toast request"),
+        }
+    }
+
     /// Get server status information
     pub fn status(&self) -> Result<MenuStatus> {
         match self.send_request(MenuRequest::Status)? {
@@ -520,6 +529,19 @@ pub fn handle_scratchpad_request(command: &MenuCommands) -> Result<i32> {
                 Err(e) => {
                     eprintln!("Scratchpad menu error: {e}");
                     Ok(3)
+                }
+            }
+        }
+        MenuCommands::Toast {
+            message,
+            duration,
+            ..
+        } => {
+            match client.toast(message.clone(), *duration) {
+                Ok(()) => Ok(0),
+                Err(e) => {
+                    eprintln!("Scratchpad menu error: {e}");
+                    Ok(1)
                 }
             }
         }

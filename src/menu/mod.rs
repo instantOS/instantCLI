@@ -138,7 +138,7 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
             ref message,
             duration,
             backend,
-        } => handle_toast(message, duration, backend),
+        } => handle_toast(message, duration, backend, &command),
         MenuCommands::Server { command } => handle_server_command(command).await,
     }
 }
@@ -691,7 +691,12 @@ fn handle_spin(message: &str, command: &[String], backend: MenuBackend) -> Resul
     }
 }
 
-fn handle_toast(message: &str, duration: f64, backend: MenuBackend) -> Result<i32> {
+fn handle_toast(
+    message: &str,
+    duration: f64,
+    backend: MenuBackend,
+    command: &MenuCommands,
+) -> Result<i32> {
     match backend.resolve(true) {
         ResolvedBackend::Instantmenu => {
             match instantmenu::InstantmenuBackend::toast(message, duration) {
@@ -702,7 +707,8 @@ fn handle_toast(message: &str, duration: f64, backend: MenuBackend) -> Result<i3
                 }
             }
         }
-        ResolvedBackend::Scratchpad | ResolvedBackend::Tui => {
+        ResolvedBackend::Scratchpad => client::handle_scratchpad_request(command),
+        ResolvedBackend::Tui => {
             eprintln!("{message}");
             Ok(0)
         }

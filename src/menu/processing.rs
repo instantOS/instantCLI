@@ -44,6 +44,7 @@ impl RequestProcessor {
             } => self.handle_file_picker_request(start, scope, multi),
             MenuRequest::Slide(request) => self.handle_slider_request(request),
             MenuRequest::Message { title, message } => self.handle_message_request(title, message),
+            MenuRequest::Toast { message, duration } => self.handle_toast_request(message, duration),
             MenuRequest::Status => Ok(self.get_status_info()),
             MenuRequest::Stop => self.handle_stop_request(),
             MenuRequest::Show => Ok(MenuResponse::ShowResult),
@@ -108,6 +109,54 @@ impl RequestProcessor {
                 "Failed to show message dialog: {e}"
             ))),
         }
+    }
+
+    /// Handle toast notification request
+    fn handle_toast_request(&self, message: String, duration: f64) -> Result<MenuResponse> {
+        use crossterm::{
+            cursor,
+            event::{self, Event},
+            execute,
+            style::{Color, Print, ResetColor, SetForegroundColor},
+            terminal::{self, ClearType},
+        };
+        use std::io::stdout;
+        use std::time::{Duration, Instant};
+
+        let mut out = stdout();
+        let _ = terminal::enable_raw_mode();
+        let _ = execute!(
+            out,
+            cursor::Hide,
+            terminal::Clear(ClearType::All),
+            cursor::MoveTo(2, 2),
+            SetForegroundColor(Color::Cyan),
+            Print("  "),
+            SetForegroundColor(Color::White),
+            Print(&message),
+            ResetColor,
+            cursor::MoveTo(2, 4),
+            SetForegroundColor(Color::DarkGrey),
+            Print(format!("(Dismisses automatically in {:.1}s or press any key)", duration)),
+            ResetColor,
+        );
+
+        let start = Instant::now();
+        let timeout = Duration::from_secs_f64(duration.max(0.1));
+
+        while start.elapsed() < timeout {
+            let remaining = timeout.saturating_sub(start.elapsed());
+            if event::poll(remaining.min(Duration::from_millis(100))).unwrap_or(false)
+                && let Ok(Event::Key(_)) = event::read()
+            {
+                break;
+            }
+        }
+
+        let _ = execute!(out, terminal::Clear(ClearType::All), cursor::Show);
+        let _ = terminal::disable_raw_mode();
+
+        Ok(MenuResponse::ToastResult)
     }
 
     /// Handle choice selection request

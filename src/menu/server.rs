@@ -288,6 +288,7 @@ impl MenuServer {
                 | MenuRequest::FilePicker { .. }
                 | MenuRequest::Slide(_)
                 | MenuRequest::Message { .. }
+                | MenuRequest::Toast { .. }
         );
 
         if should_manage_scratchpad

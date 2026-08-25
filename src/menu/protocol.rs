@@ -116,6 +116,8 @@ pub enum MenuRequest {
     Slide(SliderRequest),
     /// Show message dialog with OK button
     Message { title: String, message: String },
+    /// Show an ephemeral toast notification popup
+    Toast { message: String, duration: f64 },
     /// Get server status information
     Status,
     /// Stop the server
@@ -153,6 +155,8 @@ pub enum MenuResponse {
     SlideResult(i64),
     /// Message dialog acknowledged
     MessageResult,
+    /// Toast notification completed
+    ToastResult,
 }
 
 /// Message envelope for requests
