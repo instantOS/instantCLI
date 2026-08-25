@@ -405,5 +405,35 @@ impl InstantmenuBackend {
             }
         }
     }
+
+    /// Show an ephemeral toast notification popup
+    pub fn toast(message: &str, duration: f64) -> Result<()> {
+        let input_data = format!("{{heading}} {message}\n");
+        let mut cmd = Command::new("instantmenu");
+        cmd.arg("--toast")
+            .arg(duration.to_string())
+            .arg("--width")
+            .arg("auto")
+            .arg("--lines")
+            .arg("10")
+            .arg("--border-width")
+            .arg("5")
+            .arg("--x-offset")
+            .arg("1000000")
+            .arg("--y-offset")
+            .arg("-1")
+            .arg("--placeholder")
+            .arg("alert")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+
+        let mut child = cmd.spawn().context("Failed to spawn instantmenu for toast")?;
+        if let Some(mut stdin) = child.stdin.take() {
+            let _ = stdin.write_all(input_data.as_bytes());
+        }
+        Ok(())
+    }
 }
+
 

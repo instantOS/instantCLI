@@ -134,6 +134,11 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
             ref command,
             backend,
         } => handle_spin(message, command, backend),
+        MenuCommands::Toast {
+            ref message,
+            duration,
+            backend,
+        } => handle_toast(message, duration, backend),
         MenuCommands::Server { command } => handle_server_command(command).await,
     }
 }
@@ -686,6 +691,24 @@ fn handle_spin(message: &str, command: &[String], backend: MenuBackend) -> Resul
     }
 }
 
+fn handle_toast(message: &str, duration: f64, backend: MenuBackend) -> Result<i32> {
+    match backend.resolve(true) {
+        ResolvedBackend::Instantmenu => {
+            match instantmenu::InstantmenuBackend::toast(message, duration) {
+                Ok(()) => Ok(0),
+                Err(e) => {
+                    eprintln!("instantmenu error: {e}");
+                    Ok(1)
+                }
+            }
+        }
+        ResolvedBackend::Scratchpad | ResolvedBackend::Tui => {
+            eprintln!("{message}");
+            Ok(0)
+        }
+    }
+}
+
 /// Handle server commands
 pub async fn handle_server_command(command: ServerCommands) -> Result<i32> {
     match command {
@@ -860,6 +883,17 @@ pub enum MenuCommands {
         #[arg(short = 'b', long = "backend", value_enum, default_value_t = MenuBackend::Auto)]
         backend: MenuBackend,
     },
+    /// Show an ephemeral toast notification popup
+    Toast {
+        /// Message to display in the toast notification
+        message: String,
+        /// Duration in seconds for the toast to remain visible
+        #[arg(long, short = 't', default_value_t = 3.5)]
+        duration: f64,
+        /// Menu backend choice (auto, instantmenu/im, tui, scratchpad/sp)
+        #[arg(short = 'b', long = "backend", value_enum, default_value_t = MenuBackend::Auto)]
+        backend: MenuBackend,
+    },
 }
 
 #[derive(clap::Subcommand, Debug, Clone)]
@@ -960,11 +994,36 @@ mod tests {
     }
 
     #[test]
+    fn test_menu_toast_cli_parsing() {
+        let cli = MenuCli::try_parse_from([
+            "ins-menu",
+            "toast",
+            "-t",
+            "5.0",
+            "Copied to clipboard",
+        ])
+        .unwrap();
+        if let MenuCommands::Toast {
+            message,
+            duration,
+            backend,
+        } = cli.command
+        {
+            assert_eq!(message, "Copied to clipboard");
+            assert_eq!(duration, 5.0);
+            assert_eq!(backend, MenuBackend::Auto);
+        } else {
+            panic!("Expected Toast command");
+        }
+    }
+
+    #[test]
     fn test_menu_backend_resolution() {
         assert_eq!(MenuBackend::Instantmenu.resolve(true), ResolvedBackend::Instantmenu);
         assert_eq!(MenuBackend::Tui.resolve(true), ResolvedBackend::Tui);
         assert_eq!(MenuBackend::Scratchpad.resolve(true), ResolvedBackend::Scratchpad);
     }
 }
+
 
 
