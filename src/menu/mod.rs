@@ -94,7 +94,7 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
             ref message,
             ref title,
             backend,
-        } => handle_message(message, title.as_deref(), backend),
+        } => handle_message(message.as_deref(), title.as_deref(), backend),
         MenuCommands::Choice {
             ref prompt,
             ref items,
@@ -144,9 +144,21 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
 }
 
 fn handle_confirm(message: &str, backend: MenuBackend, command: &MenuCommands) -> Result<i32> {
+    let effective_message = if message == "Are you sure?" && !std::io::stdin().is_terminal() {
+        use std::io::{self, Read};
+        let mut buffer = String::new();
+        if io::stdin().read_to_string(&mut buffer).is_ok() && !buffer.trim().is_empty() {
+            buffer.trim().to_string()
+        } else {
+            message.to_string()
+        }
+    } else {
+        message.to_string()
+    };
+
     match backend.resolve(true) {
         ResolvedBackend::Instantmenu => {
-            match instantmenu::InstantmenuBackend::confirm(message) {
+            match instantmenu::InstantmenuBackend::confirm(&effective_message) {
                 Ok(ConfirmResult::Yes) => Ok(0),
                 Ok(ConfirmResult::No) => Ok(1),
                 Ok(ConfirmResult::Cancelled) => Ok(2),
@@ -157,7 +169,7 @@ fn handle_confirm(message: &str, backend: MenuBackend, command: &MenuCommands) -
             }
         }
         ResolvedBackend::Scratchpad => client::handle_scratchpad_request(command),
-        ResolvedBackend::Tui => match FzfWrapper::confirm(message) {
+        ResolvedBackend::Tui => match FzfWrapper::confirm(&effective_message) {
             Ok(ConfirmResult::Yes) => Ok(0),
             Ok(ConfirmResult::No) => Ok(1),
             Ok(ConfirmResult::Cancelled) => Ok(2),
@@ -169,10 +181,20 @@ fn handle_confirm(message: &str, backend: MenuBackend, command: &MenuCommands) -
     }
 }
 
-fn handle_message(message: &str, title: Option<&str>, backend: MenuBackend) -> Result<i32> {
+fn handle_message(message: Option<&str>, title: Option<&str>, backend: MenuBackend) -> Result<i32> {
+    let effective_message = match message {
+        Some(m) if !m.is_empty() => m.to_string(),
+        _ => {
+            use std::io::{self, Read};
+            let mut buffer = String::new();
+            io::stdin().read_to_string(&mut buffer).unwrap_or_default();
+            buffer.trim_end_matches('\n').to_string()
+        }
+    };
+
     match backend.resolve(true) {
         ResolvedBackend::Instantmenu => {
-            match instantmenu::InstantmenuBackend::message(title, message) {
+            match instantmenu::InstantmenuBackend::message(title, &effective_message) {
                 Ok(_) => Ok(0),
                 Err(e) => {
                     eprintln!("instantmenu error: {e}");
@@ -181,7 +203,7 @@ fn handle_message(message: &str, title: Option<&str>, backend: MenuBackend) -> R
             }
         }
         ResolvedBackend::Scratchpad | ResolvedBackend::Tui => {
-            let mut builder = FzfWrapper::builder().message(message);
+            let mut builder = FzfWrapper::builder().message(&effective_message);
             if let Some(t) = title {
                 builder = builder.title(t);
             }
@@ -766,7 +788,7 @@ pub enum MenuCommands {
     /// Show confirmation dialog and exit with code 0 for Yes, 1 for No, 2 for Cancelled
     Confirm {
         /// Confirmation message to display
-        #[arg(long, default_value = "Are you sure?")]
+        #[arg(default_value = "Are you sure?")]
         message: String,
         /// Menu backend choice (auto, instantmenu/im, tui, scratchpad/sp)
         #[arg(short = 'b', long = "backend", value_enum, default_value_t = MenuBackend::Auto)]
@@ -776,8 +798,8 @@ pub enum MenuCommands {
     All,
     /// Show a message dialog with an OK button
     Message {
-        /// Message to display
-        message: String,
+        /// Message to display (if omitted, reads from stdin)
+        message: Option<String>,
         /// Optional title for the message
         #[arg(long)]
         title: Option<String>,
@@ -788,7 +810,7 @@ pub enum MenuCommands {
     /// Show selection menu and output choice(s) to stdout
     Choice {
         /// Selection prompt message
-        #[arg(long, default_value = "Select an item:")]
+        #[arg(default_value = "Select an item:")]
         prompt: String,
         /// Items to choose from (space-separated). If empty, reads from stdin.
         #[arg(long, default_value = "")]
@@ -803,7 +825,7 @@ pub enum MenuCommands {
     /// Show text input dialog and output input to stdout
     Input {
         /// Input prompt message
-        #[arg(long, default_value = "Type a value:")]
+        #[arg(default_value = "Type a value:")]
         prompt: String,
         /// Menu backend choice (auto, instantmenu/im, tui, scratchpad/sp)
         #[arg(short = 'b', long = "backend", value_enum, default_value_t = MenuBackend::Auto)]
@@ -812,7 +834,7 @@ pub enum MenuCommands {
     /// Show password input dialog and output password to stdout
     Password {
         /// Password prompt message
-        #[arg(long, default_value = "Enter password:")]
+        #[arg(default_value = "Enter password:")]
         prompt: String,
         /// Menu backend choice (auto, instantmenu/im, tui, scratchpad/sp)
         #[arg(short = 'b', long = "backend", value_enum, default_value_t = MenuBackend::Auto)]
