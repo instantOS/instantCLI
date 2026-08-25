@@ -205,7 +205,7 @@ impl InstantmenuBackend {
     pub fn choice(
         prompt: &str,
         items: &[SerializableMenuItem],
-        _multi: bool,
+        _allow_multiple: bool,
     ) -> Result<Vec<String>> {
         let mut cmd = Command::new("instantmenu");
         cmd.arg("--border-width")

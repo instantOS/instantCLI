@@ -99,7 +99,7 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
             ref prompt,
             ref prompt_option,
             ref items,
-            multi,
+            allow_multiple,
             backend,
         } => handle_choice(
             prompt_option
@@ -107,7 +107,7 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
                 .or(prompt.as_deref())
                 .unwrap_or("Select an item:"),
             items,
-            multi,
+            allow_multiple,
             backend,
         ),
         MenuCommands::Chord {
@@ -120,9 +120,9 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
             ref start,
             dirs,
             files,
-            multi,
+            allow_multiple,
             backend,
-        } => handle_pick(start, dirs, files, multi, backend, &command),
+        } => handle_pick(start, dirs, files, allow_multiple, backend, &command),
         MenuCommands::Input {
             ref prompt,
             backend,
@@ -246,7 +246,12 @@ fn handle_message(message: Option<&str>, title: Option<&str>, backend: MenuBacke
     }
 }
 
-fn handle_choice(prompt: &str, items: &str, multi: bool, backend: MenuBackend) -> Result<i32> {
+fn handle_choice(
+    prompt: &str,
+    items: &str,
+    allow_multiple: bool,
+    backend: MenuBackend,
+) -> Result<i32> {
     let item_list: Vec<SerializableMenuItem> = if items.is_empty() {
         use std::io::{self, Read};
         let mut buffer = String::new();
@@ -260,7 +265,7 @@ fn handle_choice(prompt: &str, items: &str, multi: bool, backend: MenuBackend) -
 
     match backend.resolve(true) {
         ResolvedBackend::Instantmenu => {
-            match instantmenu::InstantmenuBackend::choice(prompt, &item_list, multi) {
+            match instantmenu::InstantmenuBackend::choice(prompt, &item_list, allow_multiple) {
                 Ok(selected) => {
                     if selected.is_empty() {
                         Ok(1)
@@ -279,7 +284,7 @@ fn handle_choice(prompt: &str, items: &str, multi: bool, backend: MenuBackend) -
         }
         ResolvedBackend::Scratchpad => {
             let client = MenuClient::new();
-            match client.choice(prompt.to_string(), item_list, multi) {
+            match client.choice(prompt.to_string(), item_list, allow_multiple) {
                 Ok(selected) if selected.is_empty() => Ok(1),
                 Ok(selected) => {
                     for item in selected {
@@ -296,7 +301,7 @@ fn handle_choice(prompt: &str, items: &str, multi: bool, backend: MenuBackend) -
         ResolvedBackend::Tui => {
             match FzfWrapper::builder()
                 .prompt(prompt.to_string())
-                .multi_select(multi)
+                .multi_select(allow_multiple)
                 .select(item_list)?
             {
                 crate::menu_utils::FzfResult::Selected(item) => {
@@ -481,7 +486,7 @@ fn handle_pick(
     start: &Option<String>,
     dirs: bool,
     files: bool,
-    multi: bool,
+    allow_multiple: bool,
     backend: MenuBackend,
     command: &MenuCommands,
 ) -> Result<i32> {
@@ -497,7 +502,7 @@ fn handle_pick(
             client::handle_scratchpad_request(command)
         }
         ResolvedBackend::Tui => {
-            let mut builder = MenuWrapper::file_picker().scope(scope).multi(multi);
+            let mut builder = MenuWrapper::file_picker().scope(scope).multi(allow_multiple);
 
             if let Some(start_dir) = start.as_ref().filter(|s| !s.is_empty()) {
                 builder = builder.start_dir(PathBuf::from(start_dir));
@@ -836,8 +841,8 @@ pub enum MenuCommands {
         #[arg(long, default_value = "")]
         items: String,
         /// Allow multiple selections
-        #[arg(long)]
-        multi: bool,
+        #[arg(long = "allow-multiple", visible_alias = "multi")]
+        allow_multiple: bool,
         /// Menu backend choice (auto, instantmenu/im, tui, scratchpad/sp)
         #[arg(short = 'b', long = "backend", value_enum, default_value_t = MenuBackend::Auto)]
         backend: MenuBackend,
@@ -872,8 +877,8 @@ pub enum MenuCommands {
         #[arg(long)]
         files: bool,
         /// Allow multiple selections
-        #[arg(long)]
-        multi: bool,
+        #[arg(long = "allow-multiple", visible_alias = "multi")]
+        allow_multiple: bool,
         /// Menu backend choice (auto, tui, scratchpad/sp)
         #[arg(short = 'b', long = "backend", value_enum, default_value_t = MenuBackend::Auto)]
         backend: MenuBackend,
@@ -1128,5 +1133,41 @@ mod tests {
             MenuBackend::Scratchpad.resolve(true),
             ResolvedBackend::Scratchpad
         );
+    }
+
+    #[test]
+    fn test_choice_and_pick_allow_multiple_flag() {
+        let choice_allow_multiple = MenuCli::try_parse_from([
+            "ins-menu",
+            "choice",
+            "--allow-multiple",
+            "--items",
+            "a b c",
+        ])
+        .unwrap();
+        let MenuCommands::Choice { allow_multiple, .. } = choice_allow_multiple.command else {
+            panic!("Expected Choice command");
+        };
+        assert!(allow_multiple);
+
+        let choice_multi_alias =
+            MenuCli::try_parse_from(["ins-menu", "choice", "--multi", "--items", "a b c"]).unwrap();
+        let MenuCommands::Choice { allow_multiple, .. } = choice_multi_alias.command else {
+            panic!("Expected Choice command");
+        };
+        assert!(allow_multiple);
+
+        let pick_allow_multiple =
+            MenuCli::try_parse_from(["ins-menu", "pick", "--allow-multiple"]).unwrap();
+        let MenuCommands::Pick { allow_multiple, .. } = pick_allow_multiple.command else {
+            panic!("Expected Pick command");
+        };
+        assert!(allow_multiple);
+
+        let pick_multi_alias = MenuCli::try_parse_from(["ins-menu", "pick", "--multi"]).unwrap();
+        let MenuCommands::Pick { allow_multiple, .. } = pick_multi_alias.command else {
+            panic!("Expected Pick command");
+        };
+        assert!(allow_multiple);
     }
 }
