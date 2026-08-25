@@ -35,7 +35,7 @@ runs:
         # Standard Rust build + cargo test dependency set.
         # Keep this list in sync with the project's actual build/test needs;
         # adding a package here covers every Arch job that runs cargo test.
-        TEST_BASE="base-devel rust pkgconf openssl git cmake ntfs-3g ntfsprogs"
+        TEST_BASE="base-devel rust pkgconf openssl git cmake ntfs-3g ntfsprogs ffmpeg"
         packages=""
         if [[ "$INCLUDE_TEST_BASE" == "true" ]]; then
           packages="$TEST_BASE"

@@ -273,6 +273,8 @@ pub enum NerdFont {
     ArrowPointer,
     /// Thin vertical bar `│` — used as a column separator in menu rows.
     Pipe,
+    /// Diamond `󰮊` — used as a decorative separator between label parts.
+    Diamond,
 
     // Boot and Firmware
     Efi,
@@ -561,6 +563,7 @@ impl NerdFont {
             Self::ArrowSubItem => '↳', // arrow hook (sub-item indicator)
             Self::ArrowPointer => '→', // arrow pointer
             Self::Pipe => '│',         // U+2502 BOX DRAWINGS LIGHT VERTICAL
+            Self::Diamond => '󰮊',      // md-diamond
 
             // Boot and Firmware
             Self::Efi => '󰒘', // cod-circuit-board (UEFI/firmware icon)
