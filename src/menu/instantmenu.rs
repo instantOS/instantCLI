@@ -6,6 +6,27 @@ use super::SliderSpec;
 use super::protocol::SerializableMenuItem;
 use crate::menu_utils::ConfirmResult;
 
+fn shell_escape(value: &str) -> String {
+    if !value.is_empty()
+        && value.chars().all(|character| {
+            character.is_ascii_alphanumeric()
+                || matches!(character, '/' | '.' | '_' | '-' | ':' | '+' | '=')
+        })
+    {
+        value.to_string()
+    } else {
+        format!("'{}'", value.replace('\'', "'\"'\"'"))
+    }
+}
+
+fn shell_command(arguments: &[String]) -> String {
+    arguments
+        .iter()
+        .map(|argument| shell_escape(argument))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// Native instantmenu GUI backend for instantCLI dialog commands
 pub struct InstantmenuBackend;
 
@@ -191,6 +212,8 @@ impl InstantmenuBackend {
             .arg("4")
             .arg("--position")
             .arg("center")
+            .arg("--width")
+            .arg("auto")
             .arg("--lines")
             .arg("20")
             .arg("--insensitive")
@@ -250,14 +273,12 @@ impl InstantmenuBackend {
             cmd.arg("--prompt").arg(lbl);
         }
         if !spec.command.is_empty() {
-            cmd.arg("--command").arg(spec.command.join(" "));
+            cmd.arg("--command").arg(shell_command(&spec.command));
         }
 
         cmd.stdout(Stdio::piped()).stderr(Stdio::null());
 
-        let child = cmd
-            .spawn()
-            .context("Failed to spawn instantmenu slide")?;
+        let child = cmd.spawn().context("Failed to spawn instantmenu slide")?;
         let output = child
             .wait_with_output()
             .context("Failed to wait on instantmenu")?;
@@ -274,7 +295,7 @@ impl InstantmenuBackend {
     }
 
     /// Show checklist multi-select dialog
-    pub fn checklist(items: &[String], confirm_label: &str) -> Result<Vec<String>> {
+    pub fn checklist(items: &[String], confirm_label: &str) -> Result<Option<Vec<String>>> {
         let mut selected_indices = std::collections::HashSet::new();
 
         loop {
@@ -312,7 +333,7 @@ impl InstantmenuBackend {
                 .wait_with_output()
                 .context("Failed to wait on instantmenu")?;
             if !output.status.success() {
-                return Ok(vec![]);
+                return Ok(None);
             }
 
             let raw_choice = String::from_utf8_lossy(&output.stdout)
@@ -326,7 +347,7 @@ impl InstantmenuBackend {
                         result.push(item.clone());
                     }
                 }
-                return Ok(result);
+                return Ok(Some(result));
             }
 
             let mut found = false;
@@ -343,7 +364,7 @@ impl InstantmenuBackend {
             }
 
             if !found {
-                return Ok(vec![]);
+                return Ok(None);
             }
         }
     }
@@ -368,7 +389,9 @@ impl InstantmenuBackend {
             .stdout(Stdio::null())
             .stderr(Stdio::null());
 
-        let mut child = cmd.spawn().context("Failed to spawn instantmenu for spin")?;
+        let mut child = cmd
+            .spawn()
+            .context("Failed to spawn instantmenu for spin")?;
         if let Some(mut stdin) = child.stdin.take() {
             let _ = stdin.write_all(input_data.as_bytes());
         }
@@ -428,7 +451,9 @@ impl InstantmenuBackend {
             .stdout(Stdio::null())
             .stderr(Stdio::null());
 
-        let mut child = cmd.spawn().context("Failed to spawn instantmenu for toast")?;
+        let mut child = cmd
+            .spawn()
+            .context("Failed to spawn instantmenu for toast")?;
         if let Some(mut stdin) = child.stdin.take() {
             let _ = stdin.write_all(input_data.as_bytes());
         }
@@ -436,4 +461,22 @@ impl InstantmenuBackend {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::shell_command;
 
+    #[test]
+    fn slider_command_preserves_argv_boundaries_for_the_shell() {
+        let command = vec![
+            "sh".to_string(),
+            "-c".to_string(),
+            "printf '%s\\n' \"$1\"".to_string(),
+            "slider command".to_string(),
+        ];
+
+        assert_eq!(
+            shell_command(&command),
+            "sh -c 'printf '\"'\"'%s\\n'\"'\"' \"$1\"' 'slider command'"
+        );
+    }
+}

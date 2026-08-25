@@ -18,6 +18,19 @@ enum MenuTransport {
     KittyTransient,
 }
 
+const DEFAULT_READ_TIMEOUT: Duration = Duration::from_secs(30);
+
+fn read_timeout_for_request(request: &MenuRequest) -> Duration {
+    let MenuRequest::Toast { duration, .. } = request else {
+        return DEFAULT_READ_TIMEOUT;
+    };
+    if !duration.is_finite() || *duration <= 25.0 {
+        return DEFAULT_READ_TIMEOUT;
+    }
+
+    Duration::from_secs((duration.ceil() as u64).saturating_add(5))
+}
+
 fn transport_override() -> &'static RwLock<Option<MenuTransport>> {
     static MENU_TRANSPORT_OVERRIDE: OnceLock<RwLock<Option<MenuTransport>>> = OnceLock::new();
     MENU_TRANSPORT_OVERRIDE.get_or_init(|| RwLock::new(None))
@@ -66,7 +79,7 @@ impl MenuClient {
         ))?;
 
         // Set read timeout
-        stream.set_read_timeout(Some(Duration::from_secs(30)))?;
+        stream.set_read_timeout(Some(DEFAULT_READ_TIMEOUT))?;
         stream.set_write_timeout(Some(Duration::from_secs(5)))?;
 
         Ok(stream)
@@ -135,6 +148,7 @@ impl MenuClient {
         self.ensure_server_running()?;
 
         let mut stream = self.connect()?;
+        stream.set_read_timeout(Some(read_timeout_for_request(&request)))?;
 
         let message = MenuMessage {
             request_id: generate_request_id(),
@@ -444,6 +458,7 @@ pub fn handle_scratchpad_request(command: &MenuCommands) -> Result<i32> {
         }
         MenuCommands::Choice {
             prompt,
+            prompt_option,
             items,
             multi,
             ..
@@ -460,7 +475,13 @@ pub fn handle_scratchpad_request(command: &MenuCommands) -> Result<i32> {
                 items.split(' ').map(SerializableMenuItem::plain).collect()
             };
 
-            match client.choice(prompt.clone(), item_list, *multi) {
+            let prompt = prompt_option
+                .as_ref()
+                .or(prompt.as_ref())
+                .cloned()
+                .unwrap_or_else(|| "Select an item:".to_string());
+
+            match client.choice(prompt, item_list, *multi) {
                 Ok(selected) => {
                     if selected.is_empty() {
                         Ok(1) // Cancelled
@@ -533,18 +554,14 @@ pub fn handle_scratchpad_request(command: &MenuCommands) -> Result<i32> {
             }
         }
         MenuCommands::Toast {
-            message,
-            duration,
-            ..
-        } => {
-            match client.toast(message.clone(), *duration) {
-                Ok(()) => Ok(0),
-                Err(e) => {
-                    eprintln!("Scratchpad menu error: {e}");
-                    Ok(1)
-                }
+            message, duration, ..
+        } => match client.toast(message.clone(), *duration) {
+            Ok(()) => Ok(0),
+            Err(e) => {
+                eprintln!("Scratchpad menu error: {e}");
+                Ok(1)
             }
-        }
+        },
         _ => anyhow::bail!("Not a scratchpad menu command"),
     }
 }
@@ -592,5 +609,19 @@ mod tests {
         let id2 = generate_request_id();
         assert_ne!(id1, id2);
         assert!(id1.starts_with("req_"));
+    }
+
+    #[test]
+    fn long_toast_extends_the_server_read_timeout() {
+        let request = MenuRequest::Toast {
+            message: "Still here".to_string(),
+            duration: 60.0,
+        };
+
+        assert_eq!(read_timeout_for_request(&request), Duration::from_secs(65));
+        assert_eq!(
+            read_timeout_for_request(&MenuRequest::Status),
+            DEFAULT_READ_TIMEOUT
+        );
     }
 }

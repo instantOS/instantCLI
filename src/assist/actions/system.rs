@@ -17,11 +17,11 @@ pub fn caffeine() -> Result<()> {
 }
 
 pub fn volume() -> Result<()> {
-    crate::assist::utils::menu_command(&["slide", "--preset", "audio", "--gui"])
+    crate::assist::utils::menu_command(&["slide", "--preset", "audio"])
 }
 
 pub fn brightness() -> Result<()> {
-    crate::assist::utils::menu_command(&["slide", "--preset", "brightness", "--gui"])
+    crate::assist::utils::menu_command(&["slide", "--preset", "brightness"])
 }
 
 pub fn theme_settings() -> Result<()> {

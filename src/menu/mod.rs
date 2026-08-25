@@ -89,7 +89,7 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
         MenuCommands::Confirm {
             ref message,
             backend,
-        } => handle_confirm(message, backend, &command),
+        } => handle_confirm(message, backend),
         MenuCommands::Message {
             ref message,
             ref title,
@@ -97,10 +97,19 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
         } => handle_message(message.as_deref(), title.as_deref(), backend),
         MenuCommands::Choice {
             ref prompt,
+            ref prompt_option,
             ref items,
             multi,
             backend,
-        } => handle_choice(prompt, items, multi, backend, &command),
+        } => handle_choice(
+            prompt_option
+                .as_deref()
+                .or(prompt.as_deref())
+                .unwrap_or("Select an item:"),
+            items,
+            multi,
+            backend,
+        ),
         MenuCommands::Chord {
             ref chords,
             stdin,
@@ -143,7 +152,7 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
     }
 }
 
-fn handle_confirm(message: &str, backend: MenuBackend, command: &MenuCommands) -> Result<i32> {
+fn handle_confirm(message: &str, backend: MenuBackend) -> Result<i32> {
     let effective_message = if message == "Are you sure?" && !std::io::stdin().is_terminal() {
         use std::io::{self, Read};
         let mut buffer = String::new();
@@ -168,7 +177,16 @@ fn handle_confirm(message: &str, backend: MenuBackend, command: &MenuCommands) -
                 }
             }
         }
-        ResolvedBackend::Scratchpad => client::handle_scratchpad_request(command),
+        ResolvedBackend::Scratchpad => {
+            let client = MenuClient::new();
+            match client.confirm(effective_message) {
+                Ok(result) => Ok(result.into()),
+                Err(e) => {
+                    eprintln!("Scratchpad menu error: {e}");
+                    Ok(3)
+                }
+            }
+        }
         ResolvedBackend::Tui => match FzfWrapper::confirm(&effective_message) {
             Ok(ConfirmResult::Yes) => Ok(0),
             Ok(ConfirmResult::No) => Ok(1),
@@ -202,7 +220,17 @@ fn handle_message(message: Option<&str>, title: Option<&str>, backend: MenuBacke
                 }
             }
         }
-        ResolvedBackend::Scratchpad | ResolvedBackend::Tui => {
+        ResolvedBackend::Scratchpad => {
+            let client = MenuClient::new();
+            match client.message(title.unwrap_or("Notice").to_string(), effective_message) {
+                Ok(()) => Ok(0),
+                Err(e) => {
+                    eprintln!("Scratchpad menu error: {e}");
+                    Ok(1)
+                }
+            }
+        }
+        ResolvedBackend::Tui => {
             let mut builder = FzfWrapper::builder().message(&effective_message);
             if let Some(t) = title {
                 builder = builder.title(t);
@@ -218,26 +246,20 @@ fn handle_message(message: Option<&str>, title: Option<&str>, backend: MenuBacke
     }
 }
 
-fn handle_choice(
-    prompt: &str,
-    items: &str,
-    multi: bool,
-    backend: MenuBackend,
-    command: &MenuCommands,
-) -> Result<i32> {
+fn handle_choice(prompt: &str, items: &str, multi: bool, backend: MenuBackend) -> Result<i32> {
+    let item_list: Vec<SerializableMenuItem> = if items.is_empty() {
+        use std::io::{self, Read};
+        let mut buffer = String::new();
+        io::stdin()
+            .read_to_string(&mut buffer)
+            .map_err(|e| anyhow::anyhow!("Failed to read from stdin: {}", e))?;
+        protocol::plain_choice_items_from_input(&buffer)
+    } else {
+        items.split(' ').map(SerializableMenuItem::plain).collect()
+    };
+
     match backend.resolve(true) {
         ResolvedBackend::Instantmenu => {
-            let item_list: Vec<SerializableMenuItem> = if items.is_empty() {
-                use std::io::{self, Read};
-                let mut buffer = String::new();
-                io::stdin()
-                    .read_to_string(&mut buffer)
-                    .map_err(|e| anyhow::anyhow!("Failed to read from stdin: {}", e))?;
-                protocol::plain_choice_items_from_input(&buffer)
-            } else {
-                items.split(' ').map(SerializableMenuItem::plain).collect()
-            };
-
             match instantmenu::InstantmenuBackend::choice(prompt, &item_list, multi) {
                 Ok(selected) => {
                     if selected.is_empty() {
@@ -255,19 +277,23 @@ fn handle_choice(
                 }
             }
         }
-        ResolvedBackend::Scratchpad => client::handle_scratchpad_request(command),
+        ResolvedBackend::Scratchpad => {
+            let client = MenuClient::new();
+            match client.choice(prompt.to_string(), item_list, multi) {
+                Ok(selected) if selected.is_empty() => Ok(1),
+                Ok(selected) => {
+                    for item in selected {
+                        println!("{}", item.display_text);
+                    }
+                    Ok(0)
+                }
+                Err(e) => {
+                    eprintln!("Scratchpad menu error: {e}");
+                    Ok(3)
+                }
+            }
+        }
         ResolvedBackend::Tui => {
-            let item_list: Vec<SerializableMenuItem> = if items.is_empty() {
-                use std::io::{self, Read};
-                let mut buffer = String::new();
-                io::stdin()
-                    .read_to_string(&mut buffer)
-                    .map_err(|e| anyhow::anyhow!("Failed to read from stdin: {}", e))?;
-                protocol::plain_choice_items_from_input(&buffer)
-            } else {
-                items.split(' ').map(SerializableMenuItem::plain).collect()
-            };
-
             match FzfWrapper::builder()
                 .prompt(prompt.to_string())
                 .multi_select(multi)
@@ -367,23 +393,42 @@ pub struct SliderSpec {
     pub preset: Option<SliderPreset>,
 }
 
-fn handle_slide(spec: SliderSpec, backend: MenuBackend) -> Result<i32> {
-    match backend.resolve(true) {
-        ResolvedBackend::Instantmenu => {
-            match instantmenu::InstantmenuBackend::slide(&spec) {
-                Ok(Some(result)) => {
-                    println!("{result}");
-                    Ok(0)
-                }
-                Ok(None) => Ok(1),
-                Err(e) => {
-                    eprintln!("instantmenu error: {e}");
-                    Ok(3)
-                }
+impl SliderSpec {
+    fn apply_preset(mut self) -> Self {
+        if let Some(preset_kind) = self.preset {
+            let preset_config = preset_kind.config();
+            self.min = preset_config.min;
+            self.max = preset_config.max;
+            self.value = self.value.or(preset_config.value);
+            self.step = self.step.or(preset_config.step);
+            self.big_step = self.big_step.or(preset_config.big_step);
+            self.label = self.label.or(preset_config.label);
+            if self.command.is_empty() {
+                self.command = preset_config.command;
             }
         }
+
+        self
+    }
+}
+
+fn handle_slide(spec: SliderSpec, backend: MenuBackend) -> Result<i32> {
+    let spec = spec.apply_preset();
+
+    match backend.resolve(true) {
+        ResolvedBackend::Instantmenu => match instantmenu::InstantmenuBackend::slide(&spec) {
+            Ok(Some(result)) => {
+                println!("{result}");
+                Ok(0)
+            }
+            Ok(None) => Ok(1),
+            Err(e) => {
+                eprintln!("instantmenu error: {e}");
+                Ok(3)
+            }
+        },
         ResolvedBackend::Scratchpad => {
-            let mut request = protocol::SliderRequest {
+            let request = protocol::SliderRequest {
                 min: spec.min,
                 max: spec.max,
                 value: spec.value,
@@ -392,19 +437,6 @@ fn handle_slide(spec: SliderSpec, backend: MenuBackend) -> Result<i32> {
                 label: spec.label,
                 command: spec.command,
             };
-
-            if let Some(preset_kind) = spec.preset {
-                let preset_config = preset_kind.config();
-                request.min = preset_config.min;
-                request.max = preset_config.max;
-                request.value = request.value.or(preset_config.value);
-                request.step = request.step.or(preset_config.step);
-                request.big_step = request.big_step.or(preset_config.big_step);
-                request.label = request.label.or(preset_config.label);
-                if request.command.is_empty() {
-                    request.command = preset_config.command;
-                }
-            }
 
             let client = MenuClient::new();
             match client.slide(request) {
@@ -420,7 +452,7 @@ fn handle_slide(spec: SliderSpec, backend: MenuBackend) -> Result<i32> {
             }
         }
         ResolvedBackend::Tui => {
-            let mut request = protocol::SliderRequest {
+            let request = protocol::SliderRequest {
                 min: spec.min,
                 max: spec.max,
                 value: spec.value,
@@ -429,19 +461,6 @@ fn handle_slide(spec: SliderSpec, backend: MenuBackend) -> Result<i32> {
                 label: spec.label,
                 command: spec.command,
             };
-
-            if let Some(preset_kind) = spec.preset {
-                let preset_config = preset_kind.config();
-                request.min = preset_config.min;
-                request.max = preset_config.max;
-                request.value = request.value.or(preset_config.value);
-                request.step = request.step.or(preset_config.step);
-                request.big_step = request.big_step.or(preset_config.big_step);
-                request.label = request.label.or(preset_config.label);
-                if request.command.is_empty() {
-                    request.command = preset_config.command;
-                }
-            }
 
             match slide::run_slider_command(&request) {
                 Ok(Some(result)) => {
@@ -532,19 +551,17 @@ fn handle_input(prompt: &str, backend: MenuBackend, command: &MenuCommands) -> R
 
 fn handle_password(prompt: &str, backend: MenuBackend, command: &MenuCommands) -> Result<i32> {
     match backend.resolve(true) {
-        ResolvedBackend::Instantmenu => {
-            match instantmenu::InstantmenuBackend::password(prompt) {
-                Ok(Some(text)) => {
-                    println!("{text}");
-                    Ok(0)
-                }
-                Ok(None) => Ok(1),
-                Err(e) => {
-                    eprintln!("instantmenu error: {e}");
-                    Ok(3)
-                }
+        ResolvedBackend::Instantmenu => match instantmenu::InstantmenuBackend::password(prompt) {
+            Ok(Some(text)) => {
+                println!("{text}");
+                Ok(0)
             }
-        }
+            Ok(None) => Ok(1),
+            Err(e) => {
+                eprintln!("instantmenu error: {e}");
+                Ok(3)
+            }
+        },
         ResolvedBackend::Scratchpad => client::handle_scratchpad_request(command),
         ResolvedBackend::Tui => match FzfWrapper::password(prompt) {
             Ok(crate::menu_utils::FzfResult::Selected(password)) => {
@@ -627,12 +644,13 @@ fn handle_checklist(items: &str, confirm: &str, backend: MenuBackend) -> Result<
     match backend.resolve(true) {
         ResolvedBackend::Instantmenu => {
             match instantmenu::InstantmenuBackend::checklist(&item_list, confirm) {
-                Ok(selected) => {
+                Ok(Some(selected)) => {
                     for item in selected {
                         println!("{item}");
                     }
                     Ok(0)
                 }
+                Ok(None) => Ok(1),
                 Err(e) => {
                     eprintln!("instantmenu error: {e}");
                     Ok(3)
@@ -809,9 +827,11 @@ pub enum MenuCommands {
     },
     /// Show selection menu and output choice(s) to stdout
     Choice {
-        /// Selection prompt message
-        #[arg(default_value = "Select an item:")]
-        prompt: String,
+        /// Selection prompt message (positional form)
+        prompt: Option<String>,
+        /// Selection prompt message (compatible long-option form)
+        #[arg(long = "prompt", value_name = "PROMPT")]
+        prompt_option: Option<String>,
         /// Items to choose from (space-separated). If empty, reads from stdin.
         #[arg(long, default_value = "")]
         items: String,
@@ -952,7 +972,8 @@ mod tests {
 
     #[test]
     fn test_menu_backend_cli_parsing() {
-        let cli = MenuCli::try_parse_from(["ins-menu", "confirm", "--backend", "instantmenu"]).unwrap();
+        let cli =
+            MenuCli::try_parse_from(["ins-menu", "confirm", "--backend", "instantmenu"]).unwrap();
         if let MenuCommands::Confirm { backend, .. } = cli.command {
             assert_eq!(backend, MenuBackend::Instantmenu);
         } else {
@@ -996,6 +1017,62 @@ mod tests {
     }
 
     #[test]
+    fn slider_preset_is_applied_before_backend_dispatch() {
+        let cli = MenuCli::try_parse_from([
+            "ins-menu",
+            "slide",
+            "--preset",
+            "audio",
+            "--step",
+            "2",
+            "--label",
+            "Custom volume",
+            "--backend",
+            "instantmenu",
+        ])
+        .unwrap();
+        let MenuCommands::Slide { spec, .. } = cli.command else {
+            panic!("Expected Slide command");
+        };
+
+        let spec = spec.apply_preset();
+        assert_eq!(spec.min, 0);
+        assert_eq!(spec.max, 100);
+        assert_eq!(spec.step, Some(2));
+        assert_eq!(spec.big_step, Some(5));
+        assert_eq!(spec.label.as_deref(), Some("Custom volume"));
+        assert_eq!(spec.command.first().map(String::as_str), Some("sh"));
+    }
+
+    #[test]
+    fn choice_accepts_positional_and_compatible_prompt_option() {
+        let positional = MenuCli::try_parse_from(["ins-menu", "choice", "Pick one"]).unwrap();
+        let MenuCommands::Choice {
+            prompt,
+            prompt_option,
+            ..
+        } = positional.command
+        else {
+            panic!("Expected Choice command");
+        };
+        assert_eq!(prompt.as_deref(), Some("Pick one"));
+        assert_eq!(prompt_option, None);
+
+        let compatible =
+            MenuCli::try_parse_from(["ins-menu", "choice", "--prompt", "Pick another"]).unwrap();
+        let MenuCommands::Choice {
+            prompt,
+            prompt_option,
+            ..
+        } = compatible.command
+        else {
+            panic!("Expected Choice command");
+        };
+        assert_eq!(prompt, None);
+        assert_eq!(prompt_option.as_deref(), Some("Pick another"));
+    }
+
+    #[test]
     fn test_menu_spin_cli_parsing() {
         let cli = MenuCli::try_parse_from([
             "ins-menu",
@@ -1023,14 +1100,9 @@ mod tests {
 
     #[test]
     fn test_menu_toast_cli_parsing() {
-        let cli = MenuCli::try_parse_from([
-            "ins-menu",
-            "toast",
-            "-t",
-            "5.0",
-            "Copied to clipboard",
-        ])
-        .unwrap();
+        let cli =
+            MenuCli::try_parse_from(["ins-menu", "toast", "-t", "5.0", "Copied to clipboard"])
+                .unwrap();
         if let MenuCommands::Toast {
             message,
             duration,
@@ -1047,11 +1119,14 @@ mod tests {
 
     #[test]
     fn test_menu_backend_resolution() {
-        assert_eq!(MenuBackend::Instantmenu.resolve(true), ResolvedBackend::Instantmenu);
+        assert_eq!(
+            MenuBackend::Instantmenu.resolve(true),
+            ResolvedBackend::Instantmenu
+        );
         assert_eq!(MenuBackend::Tui.resolve(true), ResolvedBackend::Tui);
-        assert_eq!(MenuBackend::Scratchpad.resolve(true), ResolvedBackend::Scratchpad);
+        assert_eq!(
+            MenuBackend::Scratchpad.resolve(true),
+            ResolvedBackend::Scratchpad
+        );
     }
 }
-
-
-

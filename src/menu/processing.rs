@@ -44,7 +44,9 @@ impl RequestProcessor {
             } => self.handle_file_picker_request(start, scope, multi),
             MenuRequest::Slide(request) => self.handle_slider_request(request),
             MenuRequest::Message { title, message } => self.handle_message_request(title, message),
-            MenuRequest::Toast { message, duration } => self.handle_toast_request(message, duration),
+            MenuRequest::Toast { message, duration } => {
+                self.handle_toast_request(message, duration)
+            }
             MenuRequest::Status => Ok(self.get_status_info()),
             MenuRequest::Stop => self.handle_stop_request(),
             MenuRequest::Show => Ok(MenuResponse::ShowResult),
@@ -137,7 +139,10 @@ impl RequestProcessor {
             ResetColor,
             cursor::MoveTo(2, 4),
             SetForegroundColor(Color::DarkGrey),
-            Print(format!("(Dismisses automatically in {:.1}s or press any key)", duration)),
+            Print(format!(
+                "(Dismisses automatically in {:.1}s or press any key)",
+                duration
+            )),
             ResetColor,
         );
 
