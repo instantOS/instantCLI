@@ -54,10 +54,18 @@ fn show_top_level_instantmenu(assists: &[registry::AssistEntry]) -> Result<Strin
     for entry in assists {
         match entry {
             registry::AssistEntry::Action(action) => {
-                options.push(format!("{}:{}", action.key, action.description));
+                // `key=` metadata drives --single-key mode; activation prints
+                // the label, so it leads with the key for reliable parsing
+                options.push(format!(
+                    "{{key={}}} {}: {}",
+                    action.key, action.key, action.description
+                ));
             }
             registry::AssistEntry::Group(group) => {
-                options.push(format!("{}:{} →", group.key, group.description));
+                options.push(format!(
+                    "{{key={}}} {}: {} →",
+                    group.key, group.key, group.description
+                ));
             }
         }
     }
@@ -66,15 +74,11 @@ fn show_top_level_instantmenu(assists: &[registry::AssistEntry]) -> Result<Strin
 
     let output = Command::new("instantmenu")
         .args([
-            "--insensitive", // Case insensitive search
             "--prompt",
             "instantASSIST", // Prompt text
-            "--instant",     // Instantly select the only match
             "--line-height",
-            "32", // Minimum height of one menu line (C: -h)
-            "--match-mode",
-            "dmenu",       // C: -F disables fuzzy matching
-            "--commented", // instantASSIST single-letter mode (C: -ct)
+            "32",           // Minimum height of one menu line (C: -h)
+            "--single-key", // instantASSIST single-letter mode (C: -ct)
         ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -101,11 +105,11 @@ fn show_top_level_instantmenu(assists: &[registry::AssistEntry]) -> Result<Strin
         return Ok(String::new());
     }
 
-    // Extract the key (first character before the colon)
+    // --single-key prints the item label; its first character is the key
     let selected_key = selection
-        .split_once(':')
-        .map(|(key, _)| key.trim())
-        .unwrap_or(selection.trim())
+        .chars()
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("Empty selection"))?
         .to_string();
 
     Ok(selected_key)
@@ -138,9 +142,10 @@ fn show_group_options_instantmenu(
         let instantmenu_key = char::from(b'a' + i as u8);
         let actual_chord = format!("{}{}", group_prefix, action.key);
 
+        // the label leads with the key because --single-key prints the label
         options.push(format!(
-            "{}:{} ({})",
-            instantmenu_key, action.description, actual_chord
+            "{{key={}}} {}: {} ({})",
+            instantmenu_key, instantmenu_key, action.description, actual_chord
         ));
 
         key_map.push((instantmenu_key, actual_chord));
@@ -150,15 +155,11 @@ fn show_group_options_instantmenu(
 
     let output = Command::new("instantmenu")
         .args([
-            "--insensitive", // Case insensitive search
             "--prompt",
             &format!("instantASSIST - {}", group_prefix), // Prompt text with group prefix
-            "--instant",                                  // Instantly select the only match
             "--line-height",
-            "32", // Minimum height of one menu line (C: -h)
-            "--match-mode",
-            "dmenu",       // C: -F disables fuzzy matching
-            "--commented", // instantASSIST single-letter mode (C: -ct)
+            "32",           // Minimum height of one menu line (C: -h)
+            "--single-key", // instantASSIST single-letter mode (C: -ct)
         ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -185,7 +186,7 @@ fn show_group_options_instantmenu(
         return Ok(());
     }
 
-    // Extract the single character key (before the first colon)
+    // --single-key prints the item label; its first character is the key
     let instantmenu_key = selection.chars().next().unwrap_or('\0');
 
     // Find the actual chord corresponding to this key
