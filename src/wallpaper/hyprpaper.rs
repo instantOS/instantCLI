@@ -61,11 +61,26 @@ fn apply_via_hyprpaper(path: &str) -> Result<()> {
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stdout = String::from_utf8_lossy(&output.stdout);
-        anyhow::bail!(
-            "hyprpaper failed to set wallpaper: {} {}",
-            stdout.trim(),
-            stderr.trim()
-        );
+        // hyprpaper IPC returns error in stdout/stderr, try fallback to preload+wallpaper old syntax
+        let msg = format!("{} {}", stdout, stderr);
+        if msg.contains("invalid") || msg.contains("not running") || msg.contains("error") {
+            // Try old preload flow: `hyprctl hyprpaper preload <path>` then wallpaper
+            let _ = Command::new("hyprctl")
+                .args(["hyprpaper", "preload", &abs_str])
+                .output();
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            let retry = Command::new("hyprctl")
+                .args(["hyprpaper", "wallpaper", &wallpaper_arg])
+                .output()
+                .context("Failed to set wallpaper with hyprctl hyprpaper (retry)")?;
+            if !retry.status.success() {
+                let s = String::from_utf8_lossy(&retry.stderr);
+                let o = String::from_utf8_lossy(&retry.stdout);
+                anyhow::bail!("hyprpaper failed to set wallpaper: {} {}", o, s);
+            }
+            return Ok(());
+        }
+        anyhow::bail!("hyprpaper failed to set wallpaper: {}", msg.trim());
     }
 
     Ok(())
