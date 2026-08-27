@@ -49,6 +49,16 @@ pub fn run_assist_selector_instantmenu() -> Result<()> {
     }
 }
 
+/// Short display name from a registry description. Descriptions follow a
+/// `"Name: detail"` shape (e.g. "Help: Show all available assists" →
+/// "Help"); the detail is reserved for the help menu so it fits the
+/// single-key hover prompt.
+fn short_name(description: &str) -> &str {
+    description
+        .split_once(": ")
+        .map_or(description, |(name, _)| name)
+}
+
 /// Show top-level assist options using instantmenu
 fn show_top_level_instantmenu(assists: &[registry::AssistEntry]) -> Result<String> {
     let mut options = Vec::new();
@@ -57,11 +67,16 @@ fn show_top_level_instantmenu(assists: &[registry::AssistEntry]) -> Result<Strin
     for entry in assists {
         // `key=` drives --single-key activation and `icon=` draws the gutter
         // glyph in the menu row; both are hidden from the label and output.
-        // The label (shown in the single-key hover prompt) is diamond + clean
-        // description — no redundant key prefix.
+        // The label (shown in the single-key hover prompt) is a compact
+        // `key ◆ name`; the full description lives in the help menu (h).
         match entry {
             registry::AssistEntry::Action(action) => {
-                let label = format!("{} {}", NerdFont::Diamond, action.description);
+                let label = format!(
+                    "{} {} {}",
+                    action.key,
+                    NerdFont::Diamond,
+                    short_name(action.description)
+                );
                 label_to_key.insert(label.clone(), action.key.to_string());
                 options.push(format!(
                     "{{key={} icon={}}} {}",
@@ -69,7 +84,12 @@ fn show_top_level_instantmenu(assists: &[registry::AssistEntry]) -> Result<Strin
                 ));
             }
             registry::AssistEntry::Group(group) => {
-                let label = format!("{} {} →", NerdFont::Diamond, group.description);
+                let label = format!(
+                    "{} {} {} →",
+                    group.key,
+                    NerdFont::Diamond,
+                    short_name(group.description)
+                );
                 label_to_key.insert(label.clone(), group.key.to_string());
                 options.push(format!(
                     "{{key={} icon={}}} {}",
@@ -147,8 +167,13 @@ fn show_group_options_instantmenu(
         let instantmenu_key = char::from(b'a' + i as u8);
         let actual_chord = format!("{}{}", group_prefix, action.key);
 
-        // Build a clean label: diamond + description (no redundant key)
-        let label = format!("{} {}", NerdFont::Diamond, action.description);
+        // Compact `key ◆ name` label; the full description lives in help (h)
+        let label = format!(
+            "{} {} {}",
+            instantmenu_key,
+            NerdFont::Diamond,
+            short_name(action.description)
+        );
         label_to_chord.insert(label.clone(), actual_chord);
 
         options.push(format!(
