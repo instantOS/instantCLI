@@ -3,211 +3,28 @@
 //! Window layout and other desktop settings.
 
 use anyhow::Result;
-use serde::Deserialize;
 
 use crate::common::audio::{
     AudioDefaults, AudioSourceInfo, default_source_names, list_audio_sources_short, pactl_defaults,
 };
 use crate::common::compositor::CompositorType;
 use crate::common::display::SwayDisplayProvider;
-use crate::common::instantwmctl;
 use crate::menu::client::MenuClient;
 use crate::menu::protocol::SliderRequest;
 use crate::menu_utils::{
-    ChecklistResult, FzfSelectable, FzfWrapper, Header, HeaderBuilder, MenuCursor, MenuPresentation,
+    ChecklistResult, FzfSelectable, FzfWrapper, Header, HeaderBuilder, MenuPresentation,
 };
 use crate::settings::context::SettingsContext;
 use crate::settings::deps::PIPER;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::store::{
     IntSettingKey, OptionalStringSettingKey, SCREEN_RECORD_AUDIO_SOURCES_DEFAULT,
-    SCREEN_RECORD_AUDIO_SOURCES_KEY, SCREEN_RECORD_FRAMERATE_KEY, StringSettingKey,
-    is_audio_sources_default, parse_audio_source_selection,
+    SCREEN_RECORD_AUDIO_SOURCES_KEY, SCREEN_RECORD_FRAMERATE_KEY, is_audio_sources_default,
+    parse_audio_source_selection,
 };
-use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
+use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::prelude::*;
 use crate::ui::preview::{FzfPreview, PreviewBuilder};
-
-// ============================================================================
-// Window Layout (interactive selection, can't use macro)
-// ============================================================================
-
-pub struct WindowLayout;
-
-impl WindowLayout {
-    const KEY: StringSettingKey = StringSettingKey::new("desktop.layout", "tile");
-}
-
-#[derive(Clone)]
-struct LayoutChoice {
-    value: String,
-    label: String,
-    description: String,
-}
-
-#[derive(Clone)]
-struct LayoutChoiceDisplay {
-    choice: Option<LayoutChoice>,
-    is_current: bool,
-}
-
-#[derive(Deserialize)]
-struct InstantWmLayoutInfo {
-    name: String,
-    label: String,
-    description: String,
-}
-
-impl FzfSelectable for LayoutChoiceDisplay {
-    fn fzf_display_text(&self) -> String {
-        match &self.choice {
-            Some(choice) => {
-                let icon = if self.is_current {
-                    format_icon_colored(NerdFont::CheckSquare, colors::GREEN)
-                } else {
-                    format_icon_colored(NerdFont::Square, colors::OVERLAY1)
-                };
-                format!("{} {}", icon, choice.label)
-            }
-            None => format!("{} Back", format_back_icon()),
-        }
-    }
-
-    fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
-        match self.choice {
-            Some(ref choice) => crate::menu_utils::FzfPreview::Text(choice.description.clone()),
-            None => crate::menu_utils::FzfPreview::Text("Go back to the previous menu".to_string()),
-        }
-    }
-
-    fn fzf_key(&self) -> String {
-        match self.choice {
-            Some(ref choice) => choice.value.clone(),
-            None => "__back__".to_string(),
-        }
-    }
-}
-
-/// Apply a window layout via instantwmctl
-fn apply_window_layout(ctx: &mut SettingsContext, layout: &str) -> Result<()> {
-    let compositor = CompositorType::detect();
-    if !matches!(compositor, CompositorType::InstantWM) {
-        ctx.emit_unsupported(
-            "settings.desktop.layout.unsupported",
-            &format!(
-                "Window layout configuration is only supported on instantwm. Detected: {}. Setting saved but not applied.",
-                compositor.name()
-            ),
-        );
-        return Ok(());
-    }
-
-    match instantwmctl::run(["layout", layout]) {
-        Ok(()) => {
-            ctx.notify("Window Layout", &format!("Set to: {layout}"));
-        }
-        Err(err) => {
-            ctx.emit_failure(
-                "settings.desktop.layout.apply_failed",
-                &format!("Failed to apply layout '{layout}': {err}"),
-            );
-        }
-    }
-
-    Ok(())
-}
-
-/// Build the display items list with current selection marked
-fn build_layout_items(layouts: &[LayoutChoice], current: &str) -> Vec<LayoutChoiceDisplay> {
-    let mut items: Vec<LayoutChoiceDisplay> = layouts
-        .iter()
-        .map(|choice| LayoutChoiceDisplay {
-            choice: Some(choice.clone()),
-            is_current: choice.value == current,
-        })
-        .collect();
-
-    // Add Back entry at bottom
-    items.push(LayoutChoiceDisplay {
-        choice: None,
-        is_current: false,
-    });
-
-    items
-}
-
-fn load_layout_options() -> Result<Vec<LayoutChoice>> {
-    let layouts: Vec<InstantWmLayoutInfo> = instantwmctl::json(["layout", "list"])?;
-
-    Ok(layouts
-        .into_iter()
-        .map(|layout| LayoutChoice {
-            value: layout.name,
-            label: layout.label,
-            description: layout.description,
-        })
-        .collect())
-}
-
-impl Setting for WindowLayout {
-    fn metadata(&self) -> SettingMetadata {
-        SettingMetadata::builder()
-            .id("desktop.layout")
-            .title("Window Layout")
-            .icon(NerdFont::List)
-            .summary("Choose how windows are arranged on your screen by default.\n\nOnly supported on instantWM. You can always change the layout temporarily with keyboard shortcuts.")
-            .requires_reapply(true)
-            .build()
-    }
-
-    fn setting_type(&self) -> SettingType {
-        SettingType::Choice { key: Self::KEY }
-    }
-
-    fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
-        let layouts = load_layout_options()?;
-        let current = ctx.string(Self::KEY);
-        let initial_index = layouts.iter().position(|l| l.value == current).unwrap_or(0);
-
-        let mut cursor = MenuCursor::new();
-
-        loop {
-            let items = build_layout_items(&layouts, &ctx.string(Self::KEY));
-            let initial_cursor = cursor.initial_index(&items).or(Some(initial_index));
-            let selection = FzfWrapper::menu()
-                .cursor(initial_cursor)
-                .presentation(MenuPresentation::Padded)
-                .select_one(items.clone())?;
-
-            match selection {
-                Some(display) => {
-                    cursor.update(&display, &items);
-
-                    match display.choice {
-                        Some(choice) => {
-                            ctx.set_string(Self::KEY, &choice.value);
-                            apply_window_layout(ctx, &choice.value)?;
-                        }
-                        None => break, // Back selected
-                    }
-                }
-                None => break,
-            }
-        }
-
-        Ok(())
-    }
-
-    fn restore(&self, ctx: &mut SettingsContext) -> Option<Result<()>> {
-        let compositor = CompositorType::detect();
-        if !matches!(compositor, CompositorType::InstantWM) {
-            return None;
-        }
-
-        let layout = ctx.string(Self::KEY);
-        Some(apply_window_layout(ctx, &layout))
-    }
-}
 
 // ============================================================================
 // Gaming Mouse (GUI app)
