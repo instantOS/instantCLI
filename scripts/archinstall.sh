@@ -490,14 +490,21 @@ instantos_logo_animation() {
 	reset="${csi}0m"
 	bold="${csi}1m"
 	dim="${csi}2m"
-	orange="${csi}38;5;208m"
-	amber="${csi}38;5;214m"
-	yellow="${csi}38;5;220m"
 	white="${csi}1;37m"
 	clear_home="${csi}H"
 	clear_screen="${csi}2J${csi}H"
 	hide="${csi}?25l"
 	show="${csi}?25h"
+
+	# Rainbow spectrum palette
+	c_red="${csi}38;5;196m"
+	c_orange="${csi}38;5;208m"
+	c_yellow="${csi}38;5;226m"
+	c_green="${csi}38;5;46m"
+	c_cyan="${csi}38;5;51m"
+	c_blue="${csi}38;5;39m"
+	c_purple="${csi}38;5;135m"
+	c_magenta="${csi}38;5;201m"
 
 	if [ ! -t 1 ] || [ "${TERM:-}" = "dumb" ]; then
 		printf "%s" "$white"
@@ -528,19 +535,12 @@ instantos_logo_animation() {
 		loop=$((loop + 1))
 	done
 
-	# Flash pulse in colors on final resting logo
-	printf "%s%s" "$clear_home" "$orange"
-	f30
-	sleep 0.09
-	printf "%s%s" "$clear_home" "$yellow"
-	f30
-	sleep 0.09
-	printf "%s%s" "$clear_home" "$amber"
-	f30
-	sleep 0.08
-	printf "%s%s" "$clear_home" "$white"
-	f30
-	sleep 0.15
+	# Rainbow spectrum flash on final resting logo
+	for color in "$c_red" "$c_orange" "$c_yellow" "$c_green" "$c_cyan" "$c_blue" "$c_purple" "$c_magenta" "$white"; do
+		printf "%s%s" "$clear_home" "$color"
+		f30
+		sleep 0.02
+	done
 
 	printf "%s" "$reset"
 	printf "\n%s  instantOS Installer%s\n" "$bold" "$reset"
