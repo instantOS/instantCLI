@@ -399,4 +399,20 @@ mod tests {
             "[NotUser]\nSession=before\n\n[User]\nSession=new\n"
         );
     }
+
+    #[test]
+    fn lightdm_defaults_only_change_the_wildcard_seat() {
+        let input = "[Seat:*]\n#user-session=\n#autologin-user=\n\n[Seat:seat0]\nuser-session=custom\nautologin-user=alice\n";
+
+        let edit = set_keys_in_section(
+            input,
+            "Seat:*",
+            &[("user-session", "sway"), ("autologin-user", "bob")],
+        );
+
+        assert_eq!(
+            edit.content,
+            "[Seat:*]\nuser-session=sway\nautologin-user=bob\n\n[Seat:seat0]\nuser-session=custom\nautologin-user=alice\n"
+        );
+    }
 }

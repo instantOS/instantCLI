@@ -332,8 +332,9 @@ fn configure_lightdm_session(context: &InstallContext, executor: &dyn CommandRun
     }
 
     let changed = update_file(config_path, |content| {
-        set_keys(
+        set_keys_in_section(
             content,
+            "Seat:*",
             &[
                 ("user-session", session_name),
                 ("autologin-session", session_name),
@@ -390,7 +391,7 @@ fn configure_lightdm_autologin(
         if let Some(session_name) = session_name {
             keys.push(("autologin-session", session_name));
         }
-        set_keys(content, &keys)
+        set_keys_in_section(content, "Seat:*", &keys)
     })?;
 
     if changed {

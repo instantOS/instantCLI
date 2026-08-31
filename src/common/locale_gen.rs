@@ -154,10 +154,14 @@ pub(crate) fn apply_enable_disable(
         new_lines.push(line.to_string());
     }
 
-    for locale in enable_set {
-        if !seen_enabled.contains(&locale) {
+    // Preserve the caller's order for entries that are not already present.
+    // HashSet iteration order is randomized and would make repeated updates
+    // produce needlessly different locale.gen files.
+    for locale in enable {
+        if !seen_enabled.contains(locale) {
             changed = true;
             new_lines.push(format!("{locale} UTF-8"));
+            seen_enabled.insert(locale.clone());
         }
     }
 
@@ -234,6 +238,25 @@ mod tests {
         assert_eq!(
             updated,
             "  en_US.UTF-8 UTF-8\n#de_DE.UTF-8 UTF-8\n#fr_FR.UTF-8 UTF-8\nnl_NL.UTF-8 UTF-8\n"
+        );
+    }
+
+    #[test]
+    fn appends_missing_locales_in_requested_order_without_duplicates() {
+        let updated = apply_enable_disable(
+            "#en_US.UTF-8 UTF-8\n",
+            &[
+                "fr_FR.UTF-8".to_string(),
+                "de_DE.UTF-8".to_string(),
+                "fr_FR.UTF-8".to_string(),
+            ],
+            &[],
+        )
+        .expect("changes expected");
+
+        assert_eq!(
+            updated,
+            "#en_US.UTF-8 UTF-8\nfr_FR.UTF-8 UTF-8\nde_DE.UTF-8 UTF-8\n"
         );
     }
 
