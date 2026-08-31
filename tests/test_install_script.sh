@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC1090,SC2034,SC2154,SC2329
+# shellcheck disable=SC1090,SC2030,SC2031,SC2034,SC2154,SC2329
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -182,6 +182,66 @@ test_arm_cli_target_detection() (
 	assert_equals "https://example.invalid/ins-armv7-unknown-linux-gnueabihf-v1.2.3.tgz" "${asset_url}"
 )
 
+# Release selection (find_working_release) and asset extraction (find_asset_urls)
+# apply the asset filters in separate awk programs, so they can drift apart. Pin
+# them to the same decision: for every supported mode, selection must accept a
+# release AND extraction must return its matching asset, skipping checksum,
+# debug, and distribution-package assets regardless of their position.
+test_release_selection_and_extraction_agree() (
+	local releases
+	releases='[
+  {
+    "tag_name": "v2.6.0-rc1",
+    "draft": false,
+    "prerelease": true,
+    "assets": [
+      {"browser_download_url": "https://example.invalid/ins-x86_64-unknown-linux-gnu-v2.6.0-rc1.tgz"}
+    ]
+  },
+  {
+    "tag_name": "v2.5.0",
+    "draft": false,
+    "prerelease": false,
+    "assets": [
+      {"browser_download_url": "https://example.invalid/ins-x86_64-unknown-linux-gnu-v2.5.0.tgz.sha256"},
+      {"browser_download_url": "https://example.invalid/ins-x86_64-unknown-linux-gnu-debug-v2.5.0.tgz"},
+      {"browser_download_url": "https://example.invalid/ins-x86_64-unknown-linux-gnu-v2.5.0.pkg.tar.zst"},
+      {"browser_download_url": "https://example.invalid/ins-x86_64-unknown-linux-gnu-v2.5.0.tgz"},
+      {"browser_download_url": "https://example.invalid/ins-aarch64-unknown-linux-gnu-v2.5.0.tgz"},
+      {"browser_download_url": "https://example.invalid/ins-aarch64-unknown-linux-gnu-v2.5.0.tgz.sha256"},
+      {"browser_download_url": "https://example.invalid/ins-armv7-unknown-linux-gnueabihf-v2.5.0.tgz"},
+      {"browser_download_url": "https://example.invalid/ins-armv7-unknown-linux-gnueabihf-v2.5.0.tgz.sha256"},
+      {"browser_download_url": "https://example.invalid/InstantOS-v2.5.0-x86_64.AppImage.sha256"},
+      {"browser_download_url": "https://example.invalid/InstantOS-v2.5.0-x86_64.AppImage"}
+    ]
+  }
+]'
+
+	select_and_extract() {
+		(
+			TARGET="$1"
+			USE_APPIMAGE="$2"
+			release_json="$(find_working_release "${releases}")" || {
+				echo "Release selection found nothing for TARGET=$1 USE_APPIMAGE=$2" >&2
+				return 1
+			}
+			find_asset_urls
+			if [[ -z "${asset_url}" ]]; then
+				echo "Extraction returned no asset for TARGET=$1 USE_APPIMAGE=$2" >&2
+				return 1
+			fi
+			assert_equals "$3" "${asset_url}"
+			assert_equals "${asset_url}.sha256" "${sha_url}"
+			assert_equals "2.5.0" "${version}"
+		)
+	}
+
+	select_and_extract "x86_64-unknown-linux-gnu" 0 "https://example.invalid/ins-x86_64-unknown-linux-gnu-v2.5.0.tgz"
+	select_and_extract "aarch64-unknown-linux-gnu" 0 "https://example.invalid/ins-aarch64-unknown-linux-gnu-v2.5.0.tgz"
+	select_and_extract "armv7-unknown-linux-gnueabihf" 0 "https://example.invalid/ins-armv7-unknown-linux-gnueabihf-v2.5.0.tgz"
+	select_and_extract "x86_64-unknown-linux-gnu" 1 "https://example.invalid/InstantOS-v2.5.0-x86_64.AppImage"
+)
+
 test_unsupported_termux_arm_does_not_use_glibc_target() (
 	local mock_arch
 	mock_arch="armv7l"
@@ -215,3 +275,4 @@ test_local_validation_precedes_animation
 test_arm_cli_target_detection
 test_unsupported_termux_arm_does_not_use_glibc_target
 test_help_documents_install_dir_environment
+test_release_selection_and_extraction_agree
