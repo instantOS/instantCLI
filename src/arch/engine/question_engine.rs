@@ -9,12 +9,27 @@ use crate::ui::preview::PreviewBuilder;
 
 use super::context::InstallContext;
 use super::question::{Question, QuestionResult};
-use super::summary::{InstallSummary, PartitioningKind, build_install_summary};
+use super::summary::{
+    InstallSummary, PartitioningKind, build_install_summary, build_setup_summary,
+};
+
+/// Which wizard is driving the engine. Controls whether optional questions
+/// are asked in the main flow and how the final review screen is presented.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FlowKind {
+    /// Full installation wizard. Optional questions are only reachable via
+    /// Advanced Options; the final review talks about installing.
+    Install,
+    /// Focused setup wizard (e.g. `ins arch setup`). Every provided question
+    /// is asked in the main flow; the final review talks about applying setup.
+    Setup,
+}
 
 pub struct QuestionEngine {
     questions: Vec<Box<dyn Question>>,
     pub context: InstallContext,
     is_tty: bool,
+    flow: FlowKind,
 }
 
 #[derive(Clone)]
@@ -22,6 +37,7 @@ enum PauseMenuItem {
     Resume,
     ReviewAnswers,
     GoBack,
+    UseDefault,
     AbortInstallation,
 }
 
@@ -31,6 +47,7 @@ impl std::fmt::Display for PauseMenuItem {
             PauseMenuItem::Resume => write!(f, "resume"),
             PauseMenuItem::ReviewAnswers => write!(f, "review_answers"),
             PauseMenuItem::GoBack => write!(f, "go_back"),
+            PauseMenuItem::UseDefault => write!(f, "use_default"),
             PauseMenuItem::AbortInstallation => write!(f, "abort_installation"),
         }
     }
@@ -40,7 +57,7 @@ impl PauseMenuItem {
     fn preview(&self) -> FzfPreview {
         match self {
             PauseMenuItem::Resume => PreviewBuilder::new()
-                .header(NerdFont::Play, "Resume Installation")
+                .header(NerdFont::Play, "Resume")
                 .text("Continue the current question flow.")
                 .blank()
                 .line(
@@ -58,6 +75,16 @@ impl PauseMenuItem {
                     colors::PEACH,
                     Some(NerdFont::ArrowLeft),
                     "Re-answer the previous step.",
+                )
+                .build(),
+            PauseMenuItem::UseDefault => PreviewBuilder::new()
+                .header(NerdFont::Check, "Use Default")
+                .text("Continue without answering; the default value will be applied.")
+                .blank()
+                .line(
+                    colors::GREEN,
+                    Some(NerdFont::Check),
+                    "The wizard continues with the default answer.",
                 )
                 .build(),
             PauseMenuItem::AbortInstallation => abort_installation_preview(),
@@ -79,8 +106,12 @@ impl FzfSelectable for PauseMenuItem {
                 format_icon_colored(NerdFont::List, colors::BLUE)
             ),
             PauseMenuItem::GoBack => format!("{} Go Back", format_back_icon()),
+            PauseMenuItem::UseDefault => format!(
+                "{} Use Default",
+                format_icon_colored(NerdFont::Check, colors::TEAL)
+            ),
             PauseMenuItem::AbortInstallation => format!(
-                "{} Abort Installation",
+                "{} Abort",
                 format_icon_colored(NerdFont::CrossCircle, colors::RED)
             ),
         }
@@ -113,18 +144,23 @@ impl std::fmt::Display for FinalReviewItem {
 #[derive(Clone)]
 struct FinalReviewOption {
     kind: FinalReviewItem,
+    label: String,
     preview: FzfPreview,
 }
 
 impl FinalReviewOption {
-    fn new(kind: FinalReviewItem, preview: FzfPreview) -> Self {
-        Self { kind, preview }
+    fn new(kind: FinalReviewItem, label: impl Into<String>, preview: FzfPreview) -> Self {
+        Self {
+            kind,
+            label: label.into(),
+            preview,
+        }
     }
 }
 
 impl FzfSelectable for FinalReviewOption {
     fn fzf_display_text(&self) -> String {
-        self.kind.fzf_display_text()
+        self.label.clone()
     }
 
     fn fzf_preview(&self) -> FzfPreview {
@@ -174,13 +210,13 @@ fn review_answers_preview() -> FzfPreview {
 
 fn abort_installation_preview() -> FzfPreview {
     PreviewBuilder::new()
-        .header(NerdFont::CrossCircle, "Abort Installation")
-        .text("Stop the installer and return to the shell.")
+        .header(NerdFont::CrossCircle, "Abort")
+        .text("Stop the wizard and return to the shell.")
         .blank()
         .line(
             colors::RED,
             Some(NerdFont::Warning),
-            "Exits before installation starts.",
+            "Exits before any changes are made.",
         )
         .build()
 }
@@ -201,7 +237,7 @@ impl FzfSelectable for ReviewItem {
     fn fzf_display_text(&self) -> String {
         match self {
             ReviewItem::Continue => format!(
-                "{} Continue with installation",
+                "{} Continue",
                 format_icon_colored(NerdFont::ArrowRight, colors::GREEN)
             ),
             ReviewItem::Question {
@@ -233,8 +269,8 @@ impl FzfSelectable for ReviewItem {
     fn fzf_preview(&self) -> FzfPreview {
         match self {
             ReviewItem::Continue => PreviewBuilder::new()
-                .header(NerdFont::ArrowRight, "Continue with installation")
-                .text("Resume the installation flow.")
+                .header(NerdFont::ArrowRight, "Continue")
+                .text("Resume the wizard.")
                 .blank()
                 .line(
                     colors::GREEN,
@@ -314,10 +350,19 @@ fn build_final_review_preview(item: &FinalReviewItem, summary: &InstallSummary) 
 
 impl QuestionEngine {
     pub fn new(questions: Vec<Box<dyn Question>>) -> Self {
+        Self::for_flow(FlowKind::Install, questions)
+    }
+
+    /// Create an engine for a specific wizard flow.
+    ///
+    /// The flow decides whether optional questions are asked in the main flow
+    /// and how the final review screen is worded. See [`FlowKind`].
+    pub fn for_flow(flow: FlowKind, questions: Vec<Box<dyn Question>>) -> Self {
         Self {
             questions,
             context: InstallContext::new(),
             is_tty: is_tty_environment(),
+            flow,
         }
     }
 
@@ -459,8 +504,10 @@ impl QuestionEngine {
                 continue;
             }
 
-            // Skip optional questions in the main flow
-            if q.is_optional() {
+            // In the install flow, optional questions are skipped in the main
+            // flow (their default is applied) and only reachable via Advanced
+            // Options. Other flows ask them like required questions.
+            if q.is_optional() && self.flow == FlowKind::Install {
                 // If not answered, try to set default
                 if !self.context.is_answered(q.id())
                     && let Some(default) = q.get_default(&self.context)
@@ -483,14 +530,23 @@ impl QuestionEngine {
     }
 
     async fn handle_navigation_menu(&mut self, current_idx: usize) -> Result<bool> {
-        let options = vec![
+        let mut options = vec![
             PauseMenuItem::Resume,
             PauseMenuItem::ReviewAnswers,
             PauseMenuItem::GoBack,
-            PauseMenuItem::AbortInstallation,
         ];
+
+        // Skipping only makes sense for optional questions with a default to
+        // fall back on. In the install flow those are never asked inline, so
+        // this entry effectively only shows up in other flows.
+        let current_question = &self.questions[current_idx];
+        if current_question.is_optional() && current_question.get_default(&self.context).is_some() {
+            options.push(PauseMenuItem::UseDefault);
+        }
+        options.push(PauseMenuItem::AbortInstallation);
+
         let nav = FzfWrapper::menu()
-            .header(Header::fancy("Installation Paused"))
+            .header(Header::fancy(self.pause_menu_title()))
             .presentation(MenuPresentation::Padded)
             .select(options)?;
 
@@ -512,6 +568,15 @@ impl QuestionEngine {
                     Ok(false)
                 }
             }
+            FzfResult::Selected(PauseMenuItem::UseDefault) => {
+                if let Some(default) = self.questions[current_idx].get_default(&self.context) {
+                    let q_id = self.questions[current_idx].id();
+                    self.context.answers.insert(q_id, default);
+                    Ok(true)
+                } else {
+                    Ok(false)
+                }
+            }
             FzfResult::Selected(PauseMenuItem::AbortInstallation) => {
                 if let Ok(ConfirmResult::Yes) =
                     FzfWrapper::confirm("Are you sure you want to abort?")
@@ -525,27 +590,9 @@ impl QuestionEngine {
     }
 
     async fn handle_final_review(&mut self) -> Result<bool> {
-        let summary = build_install_summary(&self.context);
-        let options = vec![
-            FinalReviewOption::new(
-                FinalReviewItem::Install,
-                build_final_review_preview(&FinalReviewItem::Install, &summary),
-            ),
-            FinalReviewOption::new(
-                FinalReviewItem::ReviewAnswers,
-                build_final_review_preview(&FinalReviewItem::ReviewAnswers, &summary),
-            ),
-            FinalReviewOption::new(
-                FinalReviewItem::AdvancedOptions,
-                build_final_review_preview(&FinalReviewItem::AdvancedOptions, &summary),
-            ),
-            FinalReviewOption::new(
-                FinalReviewItem::AbortInstallation,
-                build_final_review_preview(&FinalReviewItem::AbortInstallation, &summary),
-            ),
-        ];
+        let options = self.final_review_options();
         let nav = FzfWrapper::builder()
-            .header(Header::fancy("Installation Configuration Complete"))
+            .header(Header::fancy(self.final_review_title()))
             .prompt("Select")
             .responsive_layout()
             .select(options)?;
@@ -575,6 +622,80 @@ impl QuestionEngine {
                 }
             },
             _ => Ok(false),
+        }
+    }
+
+    fn final_review_title(&self) -> &'static str {
+        match self.flow {
+            FlowKind::Install => "Installation Configuration Complete",
+            FlowKind::Setup => "Setup Configuration Complete",
+        }
+    }
+
+    fn pause_menu_title(&self) -> &'static str {
+        match self.flow {
+            FlowKind::Install => "Installation Paused",
+            FlowKind::Setup => "Setup Paused",
+        }
+    }
+
+    fn final_review_options(&self) -> Vec<FinalReviewOption> {
+        match self.flow {
+            FlowKind::Install => {
+                let summary = build_install_summary(&self.context);
+                vec![
+                    FinalReviewOption::new(
+                        FinalReviewItem::Install,
+                        "Install",
+                        build_final_review_preview(&FinalReviewItem::Install, &summary),
+                    ),
+                    FinalReviewOption::new(
+                        FinalReviewItem::ReviewAnswers,
+                        "Review Answers",
+                        build_final_review_preview(&FinalReviewItem::ReviewAnswers, &summary),
+                    ),
+                    FinalReviewOption::new(
+                        FinalReviewItem::AdvancedOptions,
+                        "Advanced Options",
+                        build_final_review_preview(&FinalReviewItem::AdvancedOptions, &summary),
+                    ),
+                    FinalReviewOption::new(
+                        FinalReviewItem::AbortInstallation,
+                        "Abort",
+                        build_final_review_preview(&FinalReviewItem::AbortInstallation, &summary),
+                    ),
+                ]
+            }
+            FlowKind::Setup => {
+                let summary_text = build_setup_summary(&self.context);
+                vec![
+                    FinalReviewOption::new(
+                        FinalReviewItem::Install,
+                        "Apply Setup",
+                        PreviewBuilder::new()
+                            .header(NerdFont::Download, "Apply Setup")
+                            .text("Configure this system with instantOS.")
+                            .blank()
+                            .raw(&summary_text)
+                            .build(),
+                    ),
+                    FinalReviewOption::new(
+                        FinalReviewItem::ReviewAnswers,
+                        "Review Answers",
+                        PreviewBuilder::new()
+                            .header(NerdFont::List, "Review Answers")
+                            .text("Browse and edit your previous responses.")
+                            .blank()
+                            .raw(&summary_text)
+                            .build(),
+                    ),
+                    FinalReviewOption::new(
+                        FinalReviewItem::AbortInstallation,
+                        "Abort",
+                        abort_installation_preview(),
+                    ),
+                ]
+            }
         }
     }
 
@@ -651,7 +772,8 @@ fn is_tty_environment() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::arch::engine::DataKey;
+    use crate::arch::engine::{DataKey, QuestionId};
+    use anyhow::Result;
 
     struct TestKey;
     impl DataKey for TestKey {
@@ -663,6 +785,61 @@ mod tests {
     impl DataKey for IntKey {
         type Value = i32;
         const KEY: &'static str = "int_key";
+    }
+
+    /// Minimal optional question with a default, for flow behavior tests.
+    struct StubOptionalQuestion {
+        id: QuestionId,
+        default: Option<String>,
+    }
+
+    #[async_trait::async_trait]
+    impl Question for StubOptionalQuestion {
+        fn id(&self) -> QuestionId {
+            self.id.clone()
+        }
+
+        async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
+            Ok(QuestionResult::Answer("answered".to_string()))
+        }
+
+        fn is_optional(&self) -> bool {
+            true
+        }
+
+        fn get_default(&self, _context: &InstallContext) -> Option<String> {
+            self.default.clone()
+        }
+    }
+
+    #[test]
+    fn install_flow_applies_optional_defaults_without_asking() {
+        let question = StubOptionalQuestion {
+            id: QuestionId::Autologin,
+            default: Some("no".to_string()),
+        };
+        let mut engine = QuestionEngine::for_flow(FlowKind::Install, vec![Box::new(question)]);
+
+        assert_eq!(engine.find_next_question_index(), None);
+        assert_eq!(
+            engine
+                .context
+                .get_answer(&QuestionId::Autologin)
+                .map(String::as_str),
+            Some("no")
+        );
+    }
+
+    #[test]
+    fn setup_flow_asks_optional_questions_in_main_flow() {
+        let question = StubOptionalQuestion {
+            id: QuestionId::Autologin,
+            default: Some("no".to_string()),
+        };
+        let mut engine = QuestionEngine::for_flow(FlowKind::Setup, vec![Box::new(question)]);
+
+        assert_eq!(engine.find_next_question_index(), Some(0));
+        assert!(engine.context.get_answer(&QuestionId::Autologin).is_none());
     }
 
     #[test]

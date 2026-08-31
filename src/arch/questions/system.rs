@@ -235,15 +235,13 @@ fn desktop_environment_preview(environment: DesktopEnvironment) -> FzfPreview {
             ]),
         DesktopEnvironment::InstantWM => PreviewBuilder::new()
             .header(NerdFont::Desktop, "instantWM")
-            .subtext("The instantOS compositor/window-manager stack.")
-            .blank()
-            .line(colors::YELLOW, None, "Status")
-            .bullet("instantWM is in the middle of a rewrite and currently very experimental.")
+            .subtext("The instantOS compositor and the default instantOS desktop.")
             .blank()
             .line(colors::TEAL, None, "Good fit for")
             .bullets([
-                "Testing the latest instantOS desktop work",
-                "Users comfortable with rough edges",
+                "The classic instantOS tiling workflow",
+                "An integrated, ready-to-use instantOS experience",
+                "Both X11 and Wayland sessions",
             ]),
         DesktopEnvironment::Hyprland => PreviewBuilder::new()
             .header(NerdFont::Desktop, "Hyprland")
@@ -300,9 +298,9 @@ impl Question for DesktopEnvironmentQuestion {
 
     async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
         let options = vec![
+            DesktopEnvironment::InstantWM,
             DesktopEnvironment::Sway,
             DesktopEnvironment::Niri,
-            DesktopEnvironment::InstantWM,
             DesktopEnvironment::Hyprland,
             DesktopEnvironment::Tty,
         ];
@@ -318,6 +316,10 @@ impl Question for DesktopEnvironmentQuestion {
             crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
             _ => Ok(QuestionResult::Cancelled),
         }
+    }
+
+    fn get_default(&self, _context: &InstallContext) -> Option<String> {
+        Some(DesktopEnvironment::DEFAULT.answer_value().to_string())
     }
 
     fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
