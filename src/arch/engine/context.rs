@@ -41,7 +41,12 @@ impl DataKey for DualBootPartitions {
 /// Holds the state of the installation wizard
 #[derive(Default, Clone)]
 pub struct InstallContext {
-    pub answers: HashMap<QuestionId, String>,
+    pub(super) answers: HashMap<QuestionId, String>,
+    /// Fingerprint of each answer's dependency values when it was recorded.
+    ///
+    /// Older or deliberately hand-authored context files do not contain this
+    /// map and remain valid as explicit user input.
+    pub(super) answer_dependency_fingerprints: HashMap<QuestionId, String>,
     pub system_info: SystemInfo,
     // We use Arc<Mutex> for interior mutability across threads
     pub data: Arc<Mutex<HashMap<String, Box<dyn Any + Send + Sync>>>>,
@@ -54,8 +59,12 @@ impl Serialize for InstallContext {
         S: serde::Serializer,
     {
         use serde::ser::SerializeStruct;
-        let mut state = serializer.serialize_struct("InstallContext", 2)?;
+        let mut state = serializer.serialize_struct("InstallContext", 3)?;
         state.serialize_field("answers", &self.answers)?;
+        state.serialize_field(
+            "answer_dependency_fingerprints",
+            &self.answer_dependency_fingerprints,
+        )?;
         state.serialize_field("system_info", &self.system_info)?;
         state.end()
     }
@@ -70,12 +79,15 @@ impl<'de> Deserialize<'de> for InstallContext {
         #[derive(Deserialize)]
         struct Helper {
             answers: HashMap<QuestionId, String>,
+            #[serde(default)]
+            answer_dependency_fingerprints: HashMap<QuestionId, String>,
             system_info: SystemInfo,
         }
 
         let helper = Helper::deserialize(deserializer)?;
         Ok(InstallContext {
             answers: helper.answers,
+            answer_dependency_fingerprints: helper.answer_dependency_fingerprints,
             system_info: helper.system_info,
             data: Arc::new(Mutex::new(HashMap::new())),
         })
@@ -96,6 +108,7 @@ impl InstallContext {
     pub fn new() -> Self {
         Self {
             answers: HashMap::new(),
+            answer_dependency_fingerprints: HashMap::new(),
             system_info: SystemInfo::default(),
             data: Arc::new(Mutex::new(HashMap::new())),
         }
@@ -103,6 +116,22 @@ impl InstallContext {
 
     pub fn set_answer(&mut self, id: QuestionId, answer: String) {
         self.answers.insert(id, answer);
+        // Direct callers do not have the question graph needed to establish
+        // provenance. A hand-authored answer without provenance is treated as
+        // explicit input; answers recorded by the engine remain verifiable.
+        self.answer_dependency_fingerprints.remove(&id);
+    }
+
+    pub fn answers(&self) -> impl Iterator<Item = (&QuestionId, &String)> {
+        self.answers.iter()
+    }
+
+    pub fn answer_count(&self) -> usize {
+        self.answers.len()
+    }
+
+    pub fn has_answers(&self) -> bool {
+        !self.answers.is_empty()
     }
 
     pub fn get_answer(&self, id: &QuestionId) -> Option<&String> {
@@ -204,4 +233,57 @@ fn detect_system_keymap() -> Option<String> {
                 .find(|l| l.starts_with("KEYMAP="))
                 .map(|l| l.trim_start_matches("KEYMAP=").trim().to_string())
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{DataKey, InstallContext};
+    use crate::arch::engine::QuestionId;
+
+    struct StringKey;
+
+    impl DataKey for StringKey {
+        type Value = String;
+        const KEY: &'static str = "string_key";
+    }
+
+    struct IntKey;
+
+    impl DataKey for IntKey {
+        type Value = i32;
+        const KEY: &'static str = "int_key";
+    }
+
+    #[test]
+    fn typed_data_round_trips_and_missing_keys_return_none() {
+        let context = InstallContext::new();
+        context.set::<StringKey>("hello".to_string());
+        context.set::<IntKey>(42);
+
+        assert_eq!(context.get::<StringKey>(), Some("hello".to_string()));
+        assert_eq!(context.get::<IntKey>(), Some(42));
+
+        struct MissingKey;
+        impl DataKey for MissingKey {
+            type Value = bool;
+            const KEY: &'static str = "missing";
+        }
+        assert_eq!(context.get::<MissingKey>(), None);
+    }
+
+    #[test]
+    fn contexts_without_dependency_provenance_remain_readable() {
+        let mut context = InstallContext::new();
+        context.set_answer(QuestionId::Disk, "/dev/sda".to_string());
+        let current = context.to_toml().unwrap();
+        let legacy = current.replace("[answer_dependency_fingerprints]\n", "");
+
+        let restored: InstallContext = toml::from_str(&legacy).unwrap();
+
+        assert_eq!(
+            restored.get_answer(&QuestionId::Disk).map(String::as_str),
+            Some("/dev/sda")
+        );
+        assert!(restored.answer_dependency_fingerprints.is_empty());
+    }
 }

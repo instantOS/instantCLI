@@ -6,7 +6,7 @@ use crate::common::shell::shell_quote;
 use crate::common::systemd::{ServiceScope, SystemdManager};
 use crate::menu_utils::{
     DecodedStreamingMenuItem, FzfPreview, FzfResult, FzfSelectable, FzfWrapper, Header,
-    HeaderBuilder, MenuItem,
+    HeaderBuilder, MenuItem, MenuPresentation,
 };
 use crate::settings::systemd_list;
 use crate::settings::systemd_list::SystemdServiceSelectionPayload;
@@ -471,6 +471,7 @@ fn select_service_action(service: &ServiceItem) -> Result<ServiceAction> {
         .header(header)
         .prompt("Action")
         .responsive_layout()
+        .presentation(MenuPresentation::Padded)
         .select_menu(actions)?;
 
     match result {

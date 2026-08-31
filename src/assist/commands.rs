@@ -289,25 +289,6 @@ fn contextual_help_path(key_sequence: &str) -> Option<&str> {
     (!path.is_empty() && registry::find_group_entries(path).is_some()).then_some(path)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn chord_specs_include_contextual_help_for_submenus() {
-        let specs = build_chord_specs(registry::ASSISTS);
-
-        assert!(
-            specs
-                .iter()
-                .any(|spec| spec.starts_with("sh:") && spec.contains("Search assists"))
-        );
-        assert_eq!(contextual_help_path("sh"), Some("s"));
-        assert_eq!(contextual_help_path("h"), None);
-        assert_eq!(contextual_help_path("not-a-grouph"), None);
-    }
-}
-
 /// Export assists to Window Manager config format
 ///
 /// Generates a tree-like mode structure that mirrors the assist hierarchy:
@@ -388,4 +369,23 @@ fn export_instantwm_config(output_path: Option<std::path::PathBuf>) -> Result<()
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chord_specs_include_contextual_help_for_submenus() {
+        let specs = build_chord_specs(registry::ASSISTS);
+
+        assert!(
+            specs
+                .iter()
+                .any(|spec| spec.starts_with("sh:") && spec.contains("Search assists"))
+        );
+        assert_eq!(contextual_help_path("sh"), Some("s"));
+        assert_eq!(contextual_help_path("h"), None);
+        assert_eq!(contextual_help_path("not-a-grouph"), None);
+    }
 }

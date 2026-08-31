@@ -6,6 +6,7 @@ use std::time::Instant;
 
 use crate::menu_utils::{
     ConfirmResult, FzfPreview, FzfResult, FzfSelectable, FzfWrapper, Header, HeaderBuilder,
+    MenuPresentation,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
@@ -567,6 +568,7 @@ fn prompt_output_conflict(output_path: &Path) -> Result<Option<OutputConflictCho
         )
         .prompt("Select")
         .responsive_layout()
+        .presentation(MenuPresentation::Padded)
         .select(options)?;
 
     match selection {
@@ -683,6 +685,7 @@ fn show_post_render_menu(output_path: &Path, elapsed: Option<std::time::Duration
         .header(header.build())
         .prompt("Select")
         .responsive_layout()
+        .presentation(MenuPresentation::Padded)
         .select(entries)?;
 
     if let FzfResult::Selected(action) = result {

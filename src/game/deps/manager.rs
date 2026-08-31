@@ -15,7 +15,8 @@ use crate::game::utils::safeguards::{PathUsage, ensure_safe_path};
 use crate::game::utils::save_files::get_save_directory_info;
 use crate::game::utils::validation;
 use crate::menu_utils::{
-    ConfirmResult, FilePickerScope, FzfSelectable, FzfWrapper, PathInputBuilder, PathInputSelection,
+    ConfirmResult, FilePickerScope, FzfSelectable, FzfWrapper, HeaderBuilder, PathInputBuilder,
+    PathInputSelection,
 };
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::prelude::*;
@@ -515,10 +516,9 @@ fn resolve_source_path(path: Option<String>, game_name: &str) -> Result<String> 
     }
 
     let selection = PathInputBuilder::new()
-        .header(format!(
-            "{} Select the dependency path for '{}'",
-            char::from(NerdFont::Package),
-            game_name
+        .header(HeaderBuilder::new(
+            NerdFont::Package,
+            format!("Select the dependency path for '{game_name}'"),
         ))
         .manual_prompt("Enter dependency path (file or directory):")
         .scope(FilePickerScope::FilesAndDirectories)
@@ -585,16 +585,15 @@ fn prompt_custom_install_path(
     dependency_id: &str,
     expected_kind: PathContentKind,
 ) -> Result<String> {
+    let kind = if expected_kind.is_file() {
+        "file"
+    } else {
+        "directory"
+    };
     let selection = PathInputBuilder::new()
-        .header(format!(
-            "{} Choose install {} for dependency '{}'",
-            char::from(NerdFont::Folder),
-            if expected_kind.is_file() {
-                "file"
-            } else {
-                "directory"
-            },
-            dependency_id
+        .header(HeaderBuilder::new(
+            NerdFont::Folder,
+            format!("Choose install {kind} for dependency '{dependency_id}'"),
         ))
         .manual_prompt(format!(
             "Enter destination {} for '{}' dependency of '{}'",

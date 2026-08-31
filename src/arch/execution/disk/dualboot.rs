@@ -3,7 +3,7 @@ use super::probe::{get_current_partitions, get_partition_size_bytes};
 use super::util::{align_down, parse_partition_number};
 use crate::arch::dualboot::parsing::{PartitionLayout, get_free_regions, get_partition_layout};
 use crate::arch::dualboot::types::{FreeRegion, MIN_ESP_SIZE};
-use crate::arch::dualboot::{DisksKey, PartitionTableType};
+use crate::arch::dualboot::{DualBootDisksKey, PartitionTableType};
 use crate::arch::engine::{
     DualBootPartitionPaths, DualBootPartitions, EspNeedsFormat, InstallContext, QuestionId,
 };
@@ -26,7 +26,7 @@ pub fn prepare_dualboot_disk(
 
     let detected = crate::arch::dualboot::detect_disks()
         .context("Disk detection data not available and re-detection failed")?;
-    context.set::<DisksKey>(detected.clone());
+    context.set::<DualBootDisksKey>(detected.clone());
     let mut disks = detected;
 
     let mut disk_info = disks
@@ -63,7 +63,7 @@ pub fn prepare_dualboot_disk(
 
             let detected = crate::arch::dualboot::detect_disks()
                 .context("Failed to refresh disk information after resize")?;
-            context.set::<DisksKey>(detected.clone());
+            context.set::<DualBootDisksKey>(detected.clone());
             disks = detected;
             disk_info = disks
                 .iter()
@@ -91,7 +91,7 @@ pub fn prepare_dualboot_disk(
     if esp_needs_format {
         let detected = crate::arch::dualboot::detect_disks()
             .context("Failed to refresh disk information after ESP creation")?;
-        context.set::<DisksKey>(detected.clone());
+        context.set::<DualBootDisksKey>(detected.clone());
         disks = detected;
         disk_info = disks
             .iter()

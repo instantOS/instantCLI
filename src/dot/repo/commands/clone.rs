@@ -104,6 +104,21 @@ pub struct CloneOptions<'a> {
     pub root_flags: &'a crate::dot::commands::RootFlags,
 }
 
+impl<'a> CloneOptions<'a> {
+    /// Build options from CLI args.
+    pub fn from_args(args: &'a crate::dot::repo::cli::CloneArgs, debug: bool) -> Self {
+        Self {
+            url: &args.url,
+            name: args.name.as_deref(),
+            branch: args.branch.as_deref(),
+            read_only: args.read_only,
+            force_write: args.force_write,
+            debug,
+            root_flags: &args.root_flags,
+        }
+    }
+}
+
 /// Clone a new repository
 pub fn clone_repository(
     config: &mut DotfileConfig,

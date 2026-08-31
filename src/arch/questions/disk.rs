@@ -1,5 +1,5 @@
 use crate::arch::engine::{DataKey, InstallContext, Question, QuestionId, QuestionResult};
-use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper};
+use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper, HeaderBuilder};
 use crate::ui::catppuccin::colors;
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -199,7 +199,7 @@ impl Question for DiskQuestion {
 
         loop {
             let result = FzfWrapper::builder()
-                .header(format!("{} Select Installation Disk", NerdFont::HardDrive))
+                .header(HeaderBuilder::new(NerdFont::HardDrive, "Select Installation Disk").build())
                 .select(selections.clone())?;
 
             let selection = match result {
@@ -363,6 +363,10 @@ impl Question for PartitioningMethodQuestion {
         Some("Choose how to partition the disk")
     }
 
+    fn depends_on(&self) -> &[QuestionId] {
+        &[QuestionId::Disk]
+    }
+
     async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
         let mut options = vec![
             PartitioningMethodOption::Automatic,
@@ -397,19 +401,12 @@ impl Question for PartitioningMethodQuestion {
         }
 
         let result = FzfWrapper::builder()
-            .header(format!(
-                "{} Select Partitioning Method",
-                NerdFont::HardDrive
-            ))
+            .header(HeaderBuilder::new(NerdFont::HardDrive, "Select Partitioning Method").build())
             .select(options)?;
 
-        match result {
-            crate::menu_utils::FzfResult::Selected(option) => {
-                Ok(QuestionResult::Answer(option.label().to_string()))
-            }
-            crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
-            _ => Ok(QuestionResult::Cancelled),
-        }
+        Ok(QuestionResult::from_selection(result, |option| {
+            option.label().to_string()
+        }))
     }
 }
 
@@ -430,6 +427,10 @@ impl Question for RunCfdiskQuestion {
             .get_answer(&QuestionId::PartitioningMethod)
             .map(|s| s.contains("Manual"))
             .unwrap_or(false)
+    }
+
+    fn depends_on(&self) -> &[QuestionId] {
+        &[QuestionId::Disk, QuestionId::PartitioningMethod]
     }
 
     async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {

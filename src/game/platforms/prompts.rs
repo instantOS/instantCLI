@@ -4,8 +4,8 @@ use anyhow::Result;
 
 use crate::menu::protocol::FzfPreview;
 use crate::menu_utils::{
-    ConfirmResult, FilePickerScope, FzfResult, FzfSelectable, FzfWrapper, PathInputBuilder,
-    PathInputSelection,
+    ConfirmResult, FilePickerScope, FzfResult, FzfSelectable, FzfWrapper, HeaderBuilder,
+    PathInputBuilder, PathInputSelection,
 };
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -222,7 +222,7 @@ pub(super) fn select_detected_appimage(
                 .collect();
 
             match FzfWrapper::builder()
-                .header(format!("{} {}", char::from(icon), header))
+                .header(HeaderBuilder::new(icon, &header).build())
                 .prompt(product_name)
                 .select(items)?
             {

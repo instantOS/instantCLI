@@ -4,6 +4,21 @@ use std::path::Path;
 
 use crate::arch::engine::DataKey;
 
+/// Non-timezone entries: metadata files, plus the `posix` and `right`
+/// compatibility trees, which duplicate every zone under a different root
+/// (identical copies / leap-second variants) and are never valid answers.
+const NON_TIMEZONE_ENTRIES: &[&str] = &[
+    "posix",
+    "right",
+    "posixrules",
+    "tzdata.zi",
+    "leapseconds",
+    "iso3166.tab",
+    "zone.tab",
+    "zone1970.tab",
+    "+VERSION",
+];
+
 pub struct TimezonesKey;
 
 impl DataKey for TimezonesKey {
@@ -26,18 +41,12 @@ fn fetch_timezones() -> Result<Vec<String>> {
     let zoneinfo_path = Path::new("/usr/share/zoneinfo");
     let mut timezones = Vec::new();
 
-    // Files/directories to skip
-    let skip_names = [
-        "posixrules",
-        "tzdata.zi",
-        "leapseconds",
-        "iso3166.tab",
-        "zone.tab",
-        "zone1970.tab",
-        "+VERSION",
-    ];
-
-    collect_timezones(zoneinfo_path, zoneinfo_path, &mut timezones, &skip_names)?;
+    collect_timezones(
+        zoneinfo_path,
+        zoneinfo_path,
+        &mut timezones,
+        NON_TIMEZONE_ENTRIES,
+    )?;
 
     // Sort for better UX
     timezones.sort();
@@ -61,7 +70,7 @@ fn collect_timezones(
         let file_name = entry.file_name();
         let name_str = file_name.to_string_lossy();
 
-        // Skip special files and uppercase directories (like Etc, SystemV, etc.)
+        // Skip known non-timezone entries
         if skip_names.contains(&name_str.as_ref()) {
             continue;
         }
@@ -83,4 +92,36 @@ fn collect_timezones(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn collect_skips_compatibility_trees_and_metadata() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let zoneinfo = dir.path();
+
+        for relative in [
+            "America/New_York",
+            "Europe/Berlin",
+            "posix/America/New_York",
+            "right/Europe/Berlin",
+        ] {
+            let path = zoneinfo.join(relative);
+            fs::create_dir_all(path.parent().expect("parent exists"))?;
+            fs::write(path, "")?;
+        }
+        for metadata in ["zone.tab", "localtime", "tzdata.zi"] {
+            fs::write(zoneinfo.join(metadata), "")?;
+        }
+
+        let mut timezones = Vec::new();
+        collect_timezones(zoneinfo, zoneinfo, &mut timezones, NON_TIMEZONE_ENTRIES)?;
+        timezones.sort();
+
+        assert_eq!(timezones, vec!["America/New_York", "Europe/Berlin"]);
+        Ok(())
+    }
 }

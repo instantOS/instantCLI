@@ -2,7 +2,7 @@ mod types;
 
 use anyhow::Result;
 
-use crate::menu_utils::{FzfWrapper, HeaderBuilder, MenuCursor};
+use crate::menu_utils::{FzfWrapper, HeaderBuilder, MenuCursor, MenuPresentation};
 use crate::ui::nerd_font::NerdFont;
 
 use types::DevMenuEntry;
@@ -51,6 +51,7 @@ fn select_dev_menu_entry(cursor: &mut MenuCursor) -> Result<Option<DevMenuEntry>
         .header(header)
         .prompt("Select")
         .responsive_layout()
+        .presentation(MenuPresentation::Padded)
         .cursor(cursor.initial_index(&entries))
         .select_one(entries.clone())?;
 

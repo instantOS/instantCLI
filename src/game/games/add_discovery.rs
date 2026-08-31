@@ -4,8 +4,8 @@ use super::manager::GameCreationContext;
 use crate::common::shell::resolve_current_binary;
 use crate::game::platforms::EdenBuilder;
 use crate::menu_utils::{
-    DecodedStreamingMenuItem, FilePickerScope, FzfResult, FzfWrapper, Header, PathInputBuilder,
-    PathInputSelection, StreamingCommand, StreamingMenuItem,
+    DecodedStreamingMenuItem, FilePickerScope, FzfResult, FzfWrapper, Header, HeaderBuilder,
+    PathInputBuilder, PathInputSelection, StreamingCommand, StreamingMenuItem,
 };
 use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
@@ -205,9 +205,9 @@ fn select_from_scanned_directory(
 
 fn prompt_scan_directory() -> Result<Option<String>> {
     let selection = PathInputBuilder::new()
-        .header(format!(
-            "{} Choose a directory or Wine prefix to scan",
-            char::from(NerdFont::FolderOpen)
+        .header(HeaderBuilder::new(
+            NerdFont::FolderOpen,
+            "Choose a directory or Wine prefix to scan",
         ))
         .manual_prompt(format!(
             "{} Enter a directory to scan",

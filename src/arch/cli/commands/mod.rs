@@ -68,10 +68,10 @@ pub(super) fn build_questions() -> Vec<Box<dyn Question>> {
     use crate::arch::questions::{
         BooleanQuestion, DesktopEnvironmentQuestion, DiskQuestion, DualBootEspWarning,
         DualBootPartitionQuestion, DualBootSizeQuestion, EncryptionPasswordQuestion,
-        EspPartitionValidator, HostnameQuestion, KernelQuestion, KeymapQuestion, LocaleQuestion,
+        EspPartitionValidator, KernelQuestion, KeymapQuestion, LocaleQuestion,
         MirrorRegionQuestion, PartitionSelectorQuestion, PartitioningMethodQuestion,
         PasswordQuestion, ResizeInstructionsQuestion, RunCfdiskQuestion, TimezoneQuestion,
-        UsernameQuestion, VirtualBoxWarning, WeakPasswordWarning,
+        VirtualBoxWarning, WeakPasswordWarning, hostname_question, username_question,
     };
     use crate::arch::questions::{
         BtrfsCompressionQuestion, DisplayManagerQuestion, RootFilesystemQuestion,
@@ -118,8 +118,8 @@ pub(super) fn build_questions() -> Vec<Box<dyn Question>> {
             )
             .optional(),
         ),
-        Box::new(HostnameQuestion),
-        Box::new(UsernameQuestion),
+        Box::new(hostname_question()),
+        Box::new(username_question()),
         Box::new(PasswordQuestion),
         Box::new(
             BooleanQuestion::new(
@@ -127,21 +127,27 @@ pub(super) fn build_questions() -> Vec<Box<dyn Question>> {
                 "Encrypt the installation disk?",
                 crate::ui::nerd_font::NerdFont::Lock,
             )
-            .dynamic_default(|context| {
-                // Encryption features are only available for automatic partitioning
-                // If manual partitioning is selected, encryption is not supported
-                context
-                    .get_answer(&crate::arch::engine::QuestionId::PartitioningMethod)
-                    .map(|method| !method.contains("Manual"))
-                    .unwrap_or(false)
-            })
-            .should_ask(|context| {
-                // Only ask about encryption if automatic partitioning is selected
-                context
-                    .get_answer(&crate::arch::engine::QuestionId::PartitioningMethod)
-                    .map(|method| !method.contains("Manual"))
-                    .unwrap_or(true) // Default to true if partitioning method not yet answered
-            }),
+            .default_from(
+                [crate::arch::engine::QuestionId::PartitioningMethod],
+                |context| {
+                    // Encryption features are only available for automatic partitioning
+                    // If manual partitioning is selected, encryption is not supported
+                    context
+                        .get_answer(&crate::arch::engine::QuestionId::PartitioningMethod)
+                        .map(|method| !method.contains("Manual"))
+                        .unwrap_or(false)
+                },
+            )
+            .relevant_when(
+                [crate::arch::engine::QuestionId::PartitioningMethod],
+                |context| {
+                    // Only ask about encryption if automatic partitioning is selected
+                    context
+                        .get_answer(&crate::arch::engine::QuestionId::PartitioningMethod)
+                        .map(|method| !method.contains("Manual"))
+                        .unwrap_or(true) // Default to true if partitioning method not yet answered
+                },
+            ),
         ),
         Box::new(EncryptionPasswordQuestion),
         Box::new(WeakPasswordWarning),
@@ -162,21 +168,7 @@ pub(super) fn build_questions() -> Vec<Box<dyn Question>> {
             .optional()
             .default_yes(),
         ),
-        Box::new(
-            BooleanQuestion::new(
-                crate::arch::engine::QuestionId::Autologin,
-                "Enable Display Manager Autologin?",
-                crate::ui::nerd_font::NerdFont::User,
-            )
-            .optional()
-            .should_ask(|context| {
-                crate::arch::config::DesktopEnvironment::from_context(context)
-                    .requires_display_manager()
-            })
-            .dynamic_default(|context| {
-                context.get_answer_bool(crate::arch::engine::QuestionId::UseEncryption)
-            }),
-        ),
+        Box::new(autologin_question(AutologinDefault::MatchEncryption)),
         Box::new(
             BooleanQuestion::new(
                 crate::arch::engine::QuestionId::LogUpload,
@@ -195,4 +187,44 @@ pub(super) fn build_questions() -> Vec<Box<dyn Question>> {
             .optional(),
         ),
     ]
+}
+
+pub(super) enum AutologinDefault {
+    Disabled,
+    MatchEncryption,
+}
+
+pub(super) fn autologin_question(
+    default: AutologinDefault,
+) -> crate::arch::questions::BooleanQuestion {
+    use crate::arch::engine::QuestionId;
+
+    let question = crate::arch::questions::BooleanQuestion::new(
+        QuestionId::Autologin,
+        "Enable Display Manager Autologin?",
+        crate::ui::nerd_font::NerdFont::User,
+    )
+    .optional()
+    .relevant_when([QuestionId::DesktopEnvironment], |context| {
+        crate::arch::config::DesktopEnvironment::from_context(context).requires_display_manager()
+    });
+
+    match default {
+        AutologinDefault::MatchEncryption => question
+            .default_from([QuestionId::UseEncryption], |context| {
+                context.get_answer_bool(QuestionId::UseEncryption)
+            }),
+        AutologinDefault::Disabled => question,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_questions;
+    use crate::arch::engine::QuestionEngine;
+
+    #[test]
+    fn install_question_graph_is_valid() {
+        QuestionEngine::new(build_questions()).unwrap();
+    }
 }

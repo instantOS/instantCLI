@@ -1,9 +1,12 @@
+use super::text_input::{TextInputQuestion, validators};
 use crate::arch::annotations::AnnotatedValue;
 use crate::arch::config::DesktopEnvironment;
 use crate::arch::engine::{DataKey, InstallContext, Question, QuestionId, QuestionResult};
-use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper};
+use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder, MenuPresentation};
 use crate::preview::{PreviewId, preview_command};
-use crate::ui::catppuccin::colors;
+use crate::settings::definitions::system::validate_hostname;
+use crate::settings::users::validate_username;
+use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 use anyhow::Result;
@@ -55,22 +58,60 @@ impl FzfSelectable for TimezoneOption {
     }
 }
 
-#[derive(Clone)]
-struct LocaleOption {
-    value: String,
-    annotation: Option<String>,
+/// Presentation metadata for a list of [`AnnotatedOption`]s. The values and
+/// annotations come from the context; this describes only the preview prose.
+struct AnnotatedOptionStyle {
+    icon: NerdFont,
+    title: &'static str,
+    subtext: &'static str,
+    field: &'static str,
+    annotation_field: &'static str,
+    notes_label: &'static str,
+    notes: &'static [&'static str],
 }
 
-impl From<AnnotatedValue<String>> for LocaleOption {
-    fn from(value: AnnotatedValue<String>) -> Self {
+const LOCALE_OPTION_STYLE: AnnotatedOptionStyle = AnnotatedOptionStyle {
+    icon: NerdFont::Language,
+    title: "Locale",
+    subtext: "Sets system language and formatting.",
+    field: "Locale",
+    annotation_field: "Language",
+    notes_label: "Used for",
+    notes: &["System messages", "Date and number formatting"],
+};
+
+const KEYMAP_OPTION_STYLE: AnnotatedOptionStyle = AnnotatedOptionStyle {
+    icon: NerdFont::Keyboard,
+    title: "Keymap",
+    subtext: "Sets the console keyboard layout for the system.",
+    field: "Keymap",
+    annotation_field: "Layout",
+    notes_label: "Notes",
+    notes: &[
+        "Affects the installer and TTYs",
+        "Desktop layout can be changed later",
+    ],
+};
+
+/// A selectable entry backed by an annotated value (e.g. locales, keymaps).
+#[derive(Clone)]
+struct AnnotatedOption {
+    value: String,
+    annotation: Option<String>,
+    style: &'static AnnotatedOptionStyle,
+}
+
+impl AnnotatedOption {
+    fn new(value: AnnotatedValue<String>, style: &'static AnnotatedOptionStyle) -> Self {
         Self {
             value: value.value,
             annotation: value.annotation,
+            style,
         }
     }
 }
 
-impl FzfSelectable for LocaleOption {
+impl FzfSelectable for AnnotatedOption {
     fn fzf_display_text(&self) -> String {
         match &self.annotation {
             Some(label) => format!("{} - {}", label, self.value),
@@ -79,69 +120,21 @@ impl FzfSelectable for LocaleOption {
     }
 
     fn fzf_preview(&self) -> FzfPreview {
+        let style = self.style;
         let mut builder = PreviewBuilder::new()
-            .header(NerdFont::Language, "Locale")
-            .subtext("Sets system language and formatting.")
+            .header(style.icon, style.title)
+            .subtext(style.subtext)
             .blank()
-            .field("Locale", &self.value);
+            .field(style.field, &self.value);
 
         if let Some(label) = &self.annotation {
-            builder = builder.field("Language", label);
+            builder = builder.field(style.annotation_field, label);
         }
 
         builder
             .blank()
-            .line(colors::TEAL, None, "Used for")
-            .bullets(["System messages", "Date and number formatting"])
-            .build()
-    }
-
-    fn fzf_key(&self) -> String {
-        self.value.clone()
-    }
-}
-
-#[derive(Clone)]
-struct KeymapOption {
-    value: String,
-    annotation: Option<String>,
-}
-
-impl From<AnnotatedValue<String>> for KeymapOption {
-    fn from(value: AnnotatedValue<String>) -> Self {
-        Self {
-            value: value.value,
-            annotation: value.annotation,
-        }
-    }
-}
-
-impl FzfSelectable for KeymapOption {
-    fn fzf_display_text(&self) -> String {
-        match &self.annotation {
-            Some(label) => format!("{} - {}", label, self.value),
-            None => self.value.clone(),
-        }
-    }
-
-    fn fzf_preview(&self) -> FzfPreview {
-        let mut builder = PreviewBuilder::new()
-            .header(NerdFont::Keyboard, "Keymap")
-            .subtext("Sets the console keyboard layout for the system.")
-            .blank()
-            .field("Keymap", &self.value);
-
-        if let Some(label) = &self.annotation {
-            builder = builder.field("Layout", label);
-        }
-
-        builder
-            .blank()
-            .line(colors::TEAL, None, "Notes")
-            .bullets([
-                "Affects the installer and TTYs",
-                "Desktop layout can be changed later",
-            ])
+            .line(colors::TEAL, None, style.notes_label)
+            .bullets(style.notes.iter().copied())
             .build()
     }
 
@@ -195,7 +188,12 @@ impl KernelOption {
 
 impl FzfSelectable for KernelOption {
     fn fzf_display_text(&self) -> String {
-        self.label().to_string()
+        let icon = match self {
+            Self::Linux => format_icon_colored(NerdFont::LinuxTux, colors::TEXT),
+            Self::Lts => format_icon_colored(NerdFont::Shield, colors::TEAL),
+            Self::Zen => format_icon_colored(NerdFont::Performance, colors::MAUVE),
+        };
+        format!("{icon} {}", self.label())
     }
 
     fn fzf_preview(&self) -> FzfPreview {
@@ -235,15 +233,13 @@ fn desktop_environment_preview(environment: DesktopEnvironment) -> FzfPreview {
             ]),
         DesktopEnvironment::InstantWM => PreviewBuilder::new()
             .header(NerdFont::Desktop, "instantWM")
-            .subtext("The instantOS compositor/window-manager stack.")
-            .blank()
-            .line(colors::YELLOW, None, "Status")
-            .bullet("instantWM is in the middle of a rewrite and currently very experimental.")
+            .subtext("The instantOS compositor and the default instantOS desktop.")
             .blank()
             .line(colors::TEAL, None, "Good fit for")
             .bullets([
-                "Testing the latest instantOS desktop work",
-                "Users comfortable with rough edges",
+                "The classic instantOS tiling workflow",
+                "An integrated, ready-to-use instantOS experience",
+                "Both X11 and Wayland sessions",
             ]),
         DesktopEnvironment::Hyprland => PreviewBuilder::new()
             .header(NerdFont::Desktop, "Hyprland")
@@ -270,7 +266,14 @@ fn desktop_environment_preview(environment: DesktopEnvironment) -> FzfPreview {
 
 impl FzfSelectable for DesktopEnvironment {
     fn fzf_display_text(&self) -> String {
-        self.label().to_string()
+        let icon = match self {
+            Self::InstantWM => format_icon_colored(NerdFont::ViewQuilt, colors::PEACH),
+            Self::Sway => format_icon_colored(NerdFont::Waves, colors::BLUE),
+            Self::Niri => format_icon_colored(NerdFont::Columns, colors::TEAL),
+            Self::Hyprland => format_icon_colored(NerdFont::Desktop, colors::MAUVE),
+            Self::Tty => format_icon_colored(NerdFont::Terminal, colors::OVERLAY0),
+        };
+        format!("{icon} {}", self.label())
     }
 
     fn fzf_preview(&self) -> FzfPreview {
@@ -300,24 +303,25 @@ impl Question for DesktopEnvironmentQuestion {
 
     async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
         let options = vec![
+            DesktopEnvironment::InstantWM,
             DesktopEnvironment::Sway,
             DesktopEnvironment::Niri,
-            DesktopEnvironment::InstantWM,
             DesktopEnvironment::Hyprland,
             DesktopEnvironment::Tty,
         ];
 
         let result = FzfWrapper::builder()
-            .header(format!("{} Select Desktop Environment", NerdFont::Desktop))
+            .header(HeaderBuilder::new(NerdFont::Desktop, "Select Desktop Environment").build())
+            .presentation(MenuPresentation::Padded)
             .select(options)?;
 
-        match result {
-            crate::menu_utils::FzfResult::Selected(environment) => Ok(QuestionResult::Answer(
-                environment.answer_value().to_string(),
-            )),
-            crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
-            _ => Ok(QuestionResult::Cancelled),
-        }
+        Ok(QuestionResult::from_selection(result, |environment| {
+            environment.answer_value().to_string()
+        }))
+    }
+
+    fn get_default(&self, _context: &InstallContext) -> Option<String> {
+        Some(DesktopEnvironment::DEFAULT.answer_value().to_string())
     }
 
     fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
@@ -328,85 +332,29 @@ impl Question for DesktopEnvironmentQuestion {
     }
 }
 
-pub struct HostnameQuestion;
-
-#[async_trait::async_trait]
-impl Question for HostnameQuestion {
-    fn id(&self) -> QuestionId {
-        QuestionId::Hostname
-    }
-
-    fn description(&self) -> Option<&str> {
-        Some("Set the system's network hostname")
-    }
-
-    async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
-        let result = FzfWrapper::builder()
-            .prompt(format!(
-                "{} Please enter the hostname for the new system",
-                NerdFont::Desktop
-            ))
-            .input()
-            .input_result()?;
-
-        match result {
-            crate::menu_utils::FzfResult::Selected(s) => Ok(QuestionResult::Answer(s)),
-            crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
-            _ => Ok(QuestionResult::Cancelled),
-        }
-    }
-
-    fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
-        if answer.trim().is_empty() {
-            return Err("Hostname cannot be empty.".to_string());
-        }
-        if answer.contains(' ') {
-            return Err("Hostname cannot contain spaces.".to_string());
-        }
-        Ok(())
-    }
+/// Hostname rules live in `settings::definitions::system::validate_hostname`
+/// (same rules as `ins settings` hostname editing).
+pub fn hostname_question() -> TextInputQuestion {
+    TextInputQuestion::new(
+        QuestionId::Hostname,
+        "Please enter the hostname for the new system",
+        NerdFont::Desktop,
+    )
+    .description("Set the system's network hostname")
+    .validator(|answer| validate_hostname(answer).map_err(|error| error.to_string()))
 }
 
-pub struct UsernameQuestion;
-
-#[async_trait::async_trait]
-impl Question for UsernameQuestion {
-    fn id(&self) -> QuestionId {
-        QuestionId::Username
-    }
-
-    fn description(&self) -> Option<&str> {
-        Some("Create the main user account")
-    }
-
-    async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
-        let result = FzfWrapper::builder()
-            .prompt(format!(
-                "{} Please enter the username for the new user",
-                NerdFont::User
-            ))
-            .input()
-            .input_result()?;
-
-        match result {
-            crate::menu_utils::FzfResult::Selected(s) => Ok(QuestionResult::Answer(s)),
-            crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
-            _ => Ok(QuestionResult::Cancelled),
-        }
-    }
-
-    fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
-        if answer.trim().is_empty() {
-            return Err("Username cannot be empty.".to_string());
-        }
-        if answer.contains(' ') {
-            return Err("Username cannot contain spaces.".to_string());
-        }
-        if answer == "root" {
-            return Err("Username cannot be 'root'.".to_string());
-        }
-        Ok(())
-    }
+/// Username rules live in `settings::users::validate_username` (same rules as
+/// user management in `ins settings`).
+pub fn username_question() -> TextInputQuestion {
+    TextInputQuestion::new(
+        QuestionId::Username,
+        "Please enter the username for the new user",
+        NerdFont::User,
+    )
+    .description("Create the main user account")
+    .validator(|answer| validate_username(answer).map_err(|error| error.to_string()))
+    .validator(validators::forbidden_value("Username", "root"))
 }
 
 pub struct MirrorRegionQuestion;
@@ -448,16 +396,10 @@ impl Question for MirrorRegionQuestion {
             regions.into_iter().map(MirrorRegionOption::new).collect();
 
         let result = FzfWrapper::builder()
-            .header(format!("{} Select Mirror Region", NerdFont::Globe))
+            .header(HeaderBuilder::new(NerdFont::Globe, "Select Mirror Region").build())
             .select(options)?;
 
-        match result {
-            crate::menu_utils::FzfResult::Selected(region) => {
-                Ok(QuestionResult::Answer(region.name))
-            }
-            crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
-            _ => Ok(QuestionResult::Cancelled),
-        }
+        Ok(QuestionResult::from_selection(result, |region| region.name))
     }
 
     fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
@@ -499,14 +441,10 @@ impl Question for TimezoneQuestion {
             .collect();
 
         let result = FzfWrapper::builder()
-            .header(format!("{} Select Timezone", NerdFont::Clock))
+            .header(HeaderBuilder::new(NerdFont::Clock, "Select Timezone").build())
             .select(options)?;
 
-        match result {
-            crate::menu_utils::FzfResult::Selected(tz) => Ok(QuestionResult::Answer(tz.value)),
-            crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
-            _ => Ok(QuestionResult::Cancelled),
-        }
+        Ok(QuestionResult::from_selection(result, |tz| tz.value))
     }
 
     fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
@@ -546,17 +484,16 @@ impl Question for KeymapQuestion {
             return Ok(QuestionResult::Cancelled);
         }
 
-        let options: Vec<KeymapOption> = keymaps.into_iter().map(KeymapOption::from).collect();
+        let options: Vec<AnnotatedOption> = keymaps
+            .into_iter()
+            .map(|value| AnnotatedOption::new(value, &KEYMAP_OPTION_STYLE))
+            .collect();
 
         let result = FzfWrapper::builder()
-            .header(format!("{} Select Keymap", NerdFont::Keyboard))
+            .header(HeaderBuilder::new(NerdFont::Keyboard, "Select Keymap").build())
             .select(options)?;
 
-        match result {
-            crate::menu_utils::FzfResult::Selected(val) => Ok(QuestionResult::Answer(val.value)),
-            crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
-            _ => Ok(QuestionResult::Cancelled),
-        }
+        Ok(QuestionResult::from_selection(result, |val| val.value))
     }
 
     fn data_providers(&self) -> Vec<Box<dyn crate::arch::engine::AsyncDataProvider>> {
@@ -589,17 +526,16 @@ impl Question for LocaleQuestion {
             return Ok(QuestionResult::Cancelled);
         }
 
-        let options: Vec<LocaleOption> = locales.into_iter().map(LocaleOption::from).collect();
+        let options: Vec<AnnotatedOption> = locales
+            .into_iter()
+            .map(|value| AnnotatedOption::new(value, &LOCALE_OPTION_STYLE))
+            .collect();
 
         let result = FzfWrapper::builder()
-            .header(format!("{} Select System Locale", NerdFont::Language))
+            .header(HeaderBuilder::new(NerdFont::Language, "Select System Locale").build())
             .select(options)?;
 
-        match result {
-            crate::menu_utils::FzfResult::Selected(val) => Ok(QuestionResult::Answer(val.value)),
-            crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
-            _ => Ok(QuestionResult::Cancelled),
-        }
+        Ok(QuestionResult::from_selection(result, |val| val.value))
     }
 
     fn data_providers(&self) -> Vec<Box<dyn crate::arch::engine::AsyncDataProvider>> {
@@ -633,11 +569,7 @@ impl Question for PasswordQuestion {
             .with_confirmation()
             .password_dialog()?;
 
-        match result {
-            crate::menu_utils::FzfResult::Selected(p) => Ok(QuestionResult::Answer(p)),
-            crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
-            _ => Ok(QuestionResult::Cancelled),
-        }
+        Ok(QuestionResult::from_selection(result, |p| p))
     }
 }
 
@@ -661,16 +593,13 @@ impl Question for KernelQuestion {
         let kernels = vec![KernelOption::Linux, KernelOption::Lts, KernelOption::Zen];
 
         let result = FzfWrapper::builder()
-            .header(format!("{} Select Kernel", NerdFont::Gear))
+            .header(HeaderBuilder::new(NerdFont::Gear, "Select Kernel").build())
+            .presentation(MenuPresentation::Padded)
             .select(kernels)?;
 
-        match result {
-            crate::menu_utils::FzfResult::Selected(k) => {
-                Ok(QuestionResult::Answer(k.label().to_string()))
-            }
-            crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
-            _ => Ok(QuestionResult::Cancelled),
-        }
+        Ok(QuestionResult::from_selection(result, |k| {
+            k.label().to_string()
+        }))
     }
 
     fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
@@ -701,6 +630,10 @@ impl Question for EncryptionPasswordQuestion {
         context.get_answer_bool(QuestionId::UseEncryption)
     }
 
+    fn depends_on(&self) -> &[QuestionId] {
+        &[QuestionId::UseEncryption]
+    }
+
     async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
         let result = FzfWrapper::builder()
             .prompt(format!(
@@ -711,10 +644,38 @@ impl Question for EncryptionPasswordQuestion {
             .with_confirmation()
             .password_dialog()?;
 
-        match result {
-            crate::menu_utils::FzfResult::Selected(p) => Ok(QuestionResult::Answer(p)),
-            crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
-            _ => Ok(QuestionResult::Cancelled),
-        }
+        Ok(QuestionResult::from_selection(result, |p| p))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hostname_question_enforces_shared_hostname_rules() {
+        let question = hostname_question();
+        assert!(question.validate(&InstallContext::new(), "archbox").is_ok());
+        assert!(
+            question
+                .validate(&InstallContext::new(), "my_host")
+                .is_err()
+        );
+        assert!(question.validate(&InstallContext::new(), "-lead").is_err());
+        assert!(question.validate(&InstallContext::new(), "").is_err());
+    }
+
+    #[test]
+    fn username_question_enforces_shared_username_rules() {
+        let question = username_question();
+        assert!(question.validate(&InstallContext::new(), "ben").is_ok());
+        assert!(question.validate(&InstallContext::new(), "9lives").is_err());
+        assert!(question.validate(&InstallContext::new(), "").is_err());
+        assert_eq!(
+            question
+                .validate(&InstallContext::new(), "root")
+                .map(|_| ()),
+            Err("Username cannot be 'root'.".to_string())
+        );
     }
 }

@@ -2,7 +2,7 @@ use anyhow::Result;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::menu_utils::{FilePickerScope, PathInputBuilder};
+use crate::menu_utils::{FilePickerScope, Header, HeaderBuilder, PathInputBuilder};
 use crate::ui::nerd_font::NerdFont;
 use crate::video::document::{frontmatter::split_frontmatter, parse_video_document};
 
@@ -33,7 +33,7 @@ pub fn select_video_file_with_suggestions(
     title: &str,
     suggestions: Vec<PathBuf>,
 ) -> Result<Option<PathBuf>> {
-    let header = format!("{} {title}", char::from(NerdFont::Video));
+    let header = HeaderBuilder::new(NerdFont::Video, title).build();
     let manual_prompt = format!("{} Enter file path:", char::from(NerdFont::Edit));
     let picker_hint = format!(
         "{} Select a video or audio file",
@@ -52,7 +52,7 @@ pub fn select_video_file_with_suggestions(
 }
 
 pub fn select_transcript_file() -> Result<Option<PathBuf>> {
-    let header = format!("{} Select transcript file", char::from(NerdFont::FileText));
+    let header = HeaderBuilder::new(NerdFont::FileText, "Select transcript file").build();
     let manual_prompt = format!("{} Enter transcript path:", char::from(NerdFont::Edit));
     let picker_hint = format!(
         "{} Select a transcript file (WhisperX JSON)",
@@ -70,7 +70,7 @@ pub fn select_transcript_file() -> Result<Option<PathBuf>> {
 }
 
 pub fn select_markdown_file(title: &str, suggestions: Vec<PathBuf>) -> Result<Option<PathBuf>> {
-    let header = format!("{} {title}", char::from(NerdFont::FileText));
+    let header = HeaderBuilder::new(NerdFont::FileText, title).build();
     let manual_prompt = format!("{} Enter markdown path:", char::from(NerdFont::Edit));
     let picker_hint = format!("{} Select a markdown file", char::from(NerdFont::Info));
 
@@ -88,7 +88,7 @@ pub fn select_output_path(
     default_name: &str,
     start_dir: Option<PathBuf>,
 ) -> Result<Option<PathBuf>> {
-    let header = format!("{} Choose output path", char::from(NerdFont::Folder));
+    let header = HeaderBuilder::new(NerdFont::Folder, "Choose output path").build();
     let manual_prompt = format!("{} Enter output path:", char::from(NerdFont::Edit));
     let picker_hint = format!(
         "{} Pick a file or folder (folders use default name)",
@@ -115,7 +115,7 @@ pub fn select_output_path(
 }
 
 fn select_path_with_picker(
-    header: String,
+    header: Header,
     manual_prompt: String,
     picker_hint: String,
     scope: FilePickerScope,

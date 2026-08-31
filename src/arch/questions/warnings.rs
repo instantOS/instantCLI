@@ -102,6 +102,10 @@ impl Question for WeakPasswordWarning {
         }
     }
 
+    fn depends_on(&self) -> &[QuestionId] {
+        &[QuestionId::UseEncryption, QuestionId::EncryptionPassword]
+    }
+
     async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
         FzfWrapper::message(&format!(
             "{} Weak Password Warning\n\n\
@@ -152,13 +156,12 @@ impl Question for DualBootEspWarning {
         };
 
         let disks = context
-            .get::<crate::arch::dualboot::DisksKey>()
+            .get::<crate::arch::dualboot::DualBootDisksKey>()
             .unwrap_or_default();
 
         if disks.is_empty() {
             return false;
         }
-
         let Some(disk_info) = disks.iter().find(|d| d.device == *disk_path) else {
             return false;
         };
@@ -174,17 +177,21 @@ impl Question for DualBootEspWarning {
             .all(|p| p.size_bytes < crate::arch::dualboot::types::MIN_ESP_SIZE)
     }
 
+    fn depends_on(&self) -> &[QuestionId] {
+        &[QuestionId::Disk, QuestionId::PartitioningMethod]
+    }
+
     async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
         let disk_path = context
             .get_answer(&QuestionId::Disk)
             .context("No disk selected")?;
 
-        let disks = if let Some(cached) = context.get::<crate::arch::dualboot::DisksKey>() {
+        let disks = if let Some(cached) = context.get::<crate::arch::dualboot::DualBootDisksKey>() {
             cached
         } else {
             let detected =
                 tokio::task::spawn_blocking(crate::arch::dualboot::detect_disks).await??;
-            context.set::<crate::arch::dualboot::DisksKey>(detected.clone());
+            context.set::<crate::arch::dualboot::DualBootDisksKey>(detected.clone());
             detected
         };
 

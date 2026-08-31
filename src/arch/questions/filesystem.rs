@@ -1,7 +1,7 @@
 use crate::arch::config::{BtrfsCompression, RootFilesystem};
 use crate::arch::engine::{InstallContext, Question, QuestionId, QuestionResult};
-use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper};
-use crate::ui::catppuccin::colors;
+use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder, MenuPresentation};
+use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 use anyhow::Result;
@@ -10,6 +10,13 @@ use anyhow::Result;
 struct RootFilesystemOption(RootFilesystem);
 
 impl RootFilesystemOption {
+    fn icon(&self) -> String {
+        match self.0 {
+            RootFilesystem::Btrfs => format_icon_colored(NerdFont::HardDrive, colors::GREEN),
+            RootFilesystem::Ext4 => format_icon_colored(NerdFont::HardDrive, colors::BLUE),
+        }
+    }
+
     fn preview(&self) -> FzfPreview {
         match self.0 {
             RootFilesystem::Btrfs => PreviewBuilder::new()
@@ -47,7 +54,7 @@ impl RootFilesystemOption {
 
 impl FzfSelectable for RootFilesystemOption {
     fn fzf_display_text(&self) -> String {
-        self.0.label().to_string()
+        format!("{} {}", self.icon(), self.0.label())
     }
 
     fn fzf_preview(&self) -> FzfPreview {
@@ -86,15 +93,13 @@ impl Question for RootFilesystemQuestion {
         ];
 
         let result = FzfWrapper::builder()
-            .header(format!("{} Select Root Filesystem", NerdFont::HardDrive))
+            .header(HeaderBuilder::new(NerdFont::HardDrive, "Select Root Filesystem").build())
+            .presentation(MenuPresentation::Padded)
             .select(options)?;
 
-        match result {
-            crate::menu_utils::FzfResult::Selected(option) => {
-                Ok(QuestionResult::Answer(option.0.answer_value().to_string()))
-            }
-            _ => Ok(QuestionResult::Cancelled),
-        }
+        Ok(QuestionResult::from_selection(result, |option| {
+            option.0.answer_value().to_string()
+        }))
     }
 
     fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
@@ -109,6 +114,15 @@ impl Question for RootFilesystemQuestion {
 struct BtrfsCompressionOption(BtrfsCompression);
 
 impl BtrfsCompressionOption {
+    fn icon(&self) -> String {
+        match self.0 {
+            BtrfsCompression::None => format_icon_colored(NerdFont::Archive, colors::OVERLAY0),
+            BtrfsCompression::Zstd => format_icon_colored(NerdFont::Archive, colors::GREEN),
+            BtrfsCompression::Lzo => format_icon_colored(NerdFont::Archive, colors::YELLOW),
+            BtrfsCompression::Zlib => format_icon_colored(NerdFont::Archive, colors::BLUE),
+        }
+    }
+
     fn preview(&self) -> FzfPreview {
         let builder = PreviewBuilder::new()
             .header(NerdFont::Sliders, "btrfs Compression")
@@ -140,7 +154,7 @@ impl BtrfsCompressionOption {
 
 impl FzfSelectable for BtrfsCompressionOption {
     fn fzf_display_text(&self) -> String {
-        self.0.label().to_string()
+        format!("{} {}", self.icon(), self.0.label())
     }
 
     fn fzf_preview(&self) -> FzfPreview {
@@ -173,6 +187,10 @@ impl Question for BtrfsCompressionQuestion {
         RootFilesystem::from_context(context).is_btrfs()
     }
 
+    fn depends_on(&self) -> &[QuestionId] {
+        &[QuestionId::RootFilesystem]
+    }
+
     fn get_default(&self, _context: &InstallContext) -> Option<String> {
         Some(BtrfsCompression::DEFAULT.answer_value().to_string())
     }
@@ -186,15 +204,13 @@ impl Question for BtrfsCompressionQuestion {
         ];
 
         let result = FzfWrapper::builder()
-            .header(format!("{} Select btrfs Compression", NerdFont::Sliders))
+            .header(HeaderBuilder::new(NerdFont::Sliders, "Select btrfs Compression").build())
+            .presentation(MenuPresentation::Padded)
             .select(options)?;
 
-        match result {
-            crate::menu_utils::FzfResult::Selected(option) => {
-                Ok(QuestionResult::Answer(option.0.answer_value().to_string()))
-            }
-            _ => Ok(QuestionResult::Cancelled),
-        }
+        Ok(QuestionResult::from_selection(result, |option| {
+            option.0.answer_value().to_string()
+        }))
     }
 
     fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {

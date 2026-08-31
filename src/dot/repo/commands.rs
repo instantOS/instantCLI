@@ -25,19 +25,9 @@ pub fn handle_repo_command(
 ) -> Result<()> {
     match command {
         RepoCommands::List => list::list_repositories(config, db),
-        RepoCommands::Clone(args) => clone::clone_repository(
-            config,
-            db,
-            CloneOptions {
-                url: &args.url,
-                name: args.name.as_deref(),
-                branch: args.branch.as_deref(),
-                read_only: args.read_only,
-                force_write: args.force_write,
-                debug,
-                root_flags: &args.root_flags,
-            },
-        ),
+        RepoCommands::Clone(args) => {
+            clone::clone_repository(config, db, CloneOptions::from_args(args, debug))
+        }
         RepoCommands::Remove { name, keep_files } => {
             remove::remove_repository(config, db, name, !*keep_files)
         }

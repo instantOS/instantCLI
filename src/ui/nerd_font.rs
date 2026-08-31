@@ -292,6 +292,11 @@ pub enum NerdFont {
     Fullscreen,
     Fish,
     Steam,
+
+    // Platforms and Layouts
+    LinuxTux,
+    ViewQuilt,
+    Columns,
 }
 
 impl NerdFont {
@@ -581,6 +586,9 @@ impl NerdFont {
             Self::Fullscreen => '\u{f065}', // fa-expand (fullscreen)
             Self::Fish => '󰈺',              // md-fish (dolphin)
             Self::Steam => '\u{f1b6}',      // fa-steam
+            Self::LinuxTux => '\u{f31a}',   // linux-tux
+            Self::ViewQuilt => '\u{f0574}', // md-view-quilt
+            Self::Columns => '\u{f0db}',    // fa-columns
         }
     }
 }

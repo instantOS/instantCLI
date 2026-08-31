@@ -2,10 +2,11 @@ use anyhow::{Result, bail};
 
 use crate::arch::cli::DEFAULT_QUESTIONS_FILE;
 use crate::arch::engine::{
-    InstallContext, InstallSummary, QuestionEngine, QuestionId, SystemInfo, build_install_summary,
+    EngineOutcome, InstallContext, InstallSummary, QuestionEngine, QuestionId, SystemInfo,
+    build_install_summary,
 };
 use crate::common::distro::is_live_iso;
-use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper};
+use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper, MenuPresentation};
 use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -110,6 +111,7 @@ fn prompt_existing_answers(
         .header("Existing configuration found")
         .prompt("Select")
         .responsive_layout()
+        .presentation(MenuPresentation::Padded)
         .select(options)?;
 
     match selection {
@@ -124,7 +126,7 @@ pub(super) enum AskOutcome {
 }
 
 enum ExistingContextOutcome {
-    Continue(Option<InstallContext>),
+    Continue(Option<Box<InstallContext>>),
     Cancelled,
 }
 
@@ -204,16 +206,16 @@ fn load_existing_context(
 
     match InstallContext::load(config_path) {
         Ok(mut context) => {
-            if context.answers.is_empty() {
+            if !context.has_answers() {
                 return Ok(ExistingContextOutcome::Continue(None));
             }
 
             context.system_info = system_info.clone();
             let summary = build_install_summary(&context);
-            let answers_count = context.answers.len();
+            let answers_count = context.answer_count();
             match prompt_existing_answers(&summary, config_path, answers_count)? {
                 Some(ExistingAnswersChoice::UseExisting) => {
-                    Ok(ExistingContextOutcome::Continue(Some(context)))
+                    Ok(ExistingContextOutcome::Continue(Some(Box::new(context))))
                 }
                 Some(ExistingAnswersChoice::StartOver) => {
                     std::fs::remove_file(config_path)?;
@@ -235,14 +237,11 @@ fn load_existing_context(
 fn build_question_engine(
     questions: Vec<Box<dyn crate::arch::engine::Question>>,
     system_info: SystemInfo,
-    existing_context: Option<InstallContext>,
-) -> QuestionEngine {
-    let mut engine = QuestionEngine::new(questions);
-    if let Some(context) = existing_context {
-        engine.context = context;
-    }
-    engine.context.system_info = system_info;
-    engine
+    existing_context: Option<Box<InstallContext>>,
+) -> Result<QuestionEngine> {
+    let mut context = existing_context.map_or_else(InstallContext::default, |context| *context);
+    context.system_info = system_info;
+    Ok(QuestionEngine::new(questions)?.with_context(context))
 }
 
 fn print_completion_summary(context: &InstallContext) {
@@ -280,7 +279,7 @@ fn save_config(context: &InstallContext, config_path: &std::path::Path) -> Resul
 async fn run_single_question(
     id: QuestionId,
     questions: Vec<Box<dyn crate::arch::engine::Question>>,
-) -> Result<()> {
+) -> Result<AskOutcome> {
     // Ask a single question
     // Escalate if the question requires root (e.g. Disk)
     if matches!(id, QuestionId::Disk) {
@@ -292,18 +291,16 @@ async fn run_single_question(
         .find(|q| q.id() == id)
         .ok_or_else(|| anyhow::anyhow!("Question not found"))?;
 
-    let engine = QuestionEngine::new(vec![question]);
+    let engine = QuestionEngine::new(vec![question])?;
 
-    // Initialize data providers so questions that need data (like MirrorRegion) work
-    engine.initialize_providers();
-
-    // Run the engine with just this single question
-    let context = engine.run().await?;
+    let EngineOutcome::Completed(context) = engine.run().await? else {
+        return Ok(AskOutcome::Cancelled);
+    };
 
     if let Some(answer) = context.get_answer(&id) {
         println!("Answer: {}", answer);
     }
-    Ok(())
+    Ok(AskOutcome::Completed)
 }
 
 async fn run_full_wizard(
@@ -329,12 +326,11 @@ async fn run_full_wizard(
         ExistingContextOutcome::Cancelled => return Ok(AskOutcome::Cancelled),
     };
 
-    let engine = build_question_engine(questions, system_info, existing_context);
+    let engine = build_question_engine(questions, system_info, existing_context)?;
 
-    // Initialize data providers
-    engine.initialize_providers();
-
-    let context = engine.run().await?;
+    let EngineOutcome::Completed(context) = engine.run().await? else {
+        return Ok(AskOutcome::Cancelled);
+    };
 
     print_completion_summary(&context);
     save_config(&context, &config_path)?;
@@ -349,8 +345,7 @@ pub(super) async fn handle_ask_command(
     questions: Vec<Box<dyn crate::arch::engine::Question>>,
 ) -> Result<AskOutcome> {
     if let Some(id) = id {
-        run_single_question(id, questions).await?;
-        return Ok(AskOutcome::Completed);
+        return run_single_question(id, questions).await;
     }
 
     run_full_wizard(output_config, questions).await

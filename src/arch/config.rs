@@ -14,7 +14,7 @@ pub enum DesktopEnvironment {
 }
 
 impl DesktopEnvironment {
-    pub const DEFAULT: Self = Self::Sway;
+    pub const DEFAULT: Self = Self::InstantWM;
 
     pub fn from_answer(answer: &str) -> Self {
         match answer {
@@ -274,7 +274,7 @@ mod tests {
         );
         assert_eq!(
             DesktopEnvironment::from_answer("unknown"),
-            DesktopEnvironment::Sway
+            DesktopEnvironment::InstantWM
         );
     }
 

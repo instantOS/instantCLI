@@ -1,7 +1,7 @@
 use crate::arch::config::DisplayManager;
 use crate::arch::engine::{InstallContext, Question, QuestionId, QuestionResult};
-use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper};
-use crate::ui::catppuccin::colors;
+use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder, MenuPresentation};
+use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 use anyhow::Result;
@@ -10,6 +10,13 @@ use anyhow::Result;
 struct DisplayManagerOption(DisplayManager);
 
 impl DisplayManagerOption {
+    fn icon(&self) -> String {
+        match self.0 {
+            DisplayManager::Gdm => format_icon_colored(NerdFont::Desktop, colors::GREEN),
+            DisplayManager::Lightdm => format_icon_colored(NerdFont::Desktop, colors::BLUE),
+        }
+    }
+
     fn preview(&self) -> FzfPreview {
         match self.0 {
             DisplayManager::Gdm => PreviewBuilder::new()
@@ -40,7 +47,7 @@ impl DisplayManagerOption {
 
 impl FzfSelectable for DisplayManagerOption {
     fn fzf_display_text(&self) -> String {
-        self.0.label().to_string()
+        format!("{} {}", self.icon(), self.0.label())
     }
 
     fn fzf_preview(&self) -> FzfPreview {
@@ -72,6 +79,10 @@ impl Question for DisplayManagerQuestion {
         crate::arch::config::DesktopEnvironment::from_context(context).requires_display_manager()
     }
 
+    fn depends_on(&self) -> &[QuestionId] {
+        &[QuestionId::DesktopEnvironment]
+    }
+
     fn get_default(&self, _context: &InstallContext) -> Option<String> {
         Some(DisplayManager::DEFAULT.answer_value().to_string())
     }
@@ -83,15 +94,13 @@ impl Question for DisplayManagerQuestion {
         ];
 
         let result = FzfWrapper::builder()
-            .header(format!("{} Select Display Manager", NerdFont::Desktop))
+            .header(HeaderBuilder::new(NerdFont::Desktop, "Select Display Manager").build())
+            .presentation(MenuPresentation::Padded)
             .select(options)?;
 
-        match result {
-            crate::menu_utils::FzfResult::Selected(option) => {
-                Ok(QuestionResult::Answer(option.0.answer_value().to_string()))
-            }
-            _ => Ok(QuestionResult::Cancelled),
-        }
+        Ok(QuestionResult::from_selection(result, |option| {
+            option.0.answer_value().to_string()
+        }))
     }
 
     fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {

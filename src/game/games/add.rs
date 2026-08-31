@@ -4,7 +4,7 @@ use crate::game::config::PathContentKind;
 use crate::game::utils::path::prompt_for_save_path;
 use crate::game::utils::safeguards::{PathUsage, ensure_safe_path};
 use crate::menu_utils::{
-    FilePickerScope, FzfResult, FzfWrapper, PathInputBuilder, PathInputSelection,
+    FilePickerScope, FzfResult, FzfWrapper, HeaderBuilder, PathInputBuilder, PathInputSelection,
 };
 use crate::ui::nerd_font::NerdFont;
 use anyhow::{Context, Result, anyhow};
@@ -186,9 +186,9 @@ fn prompt_optional_text(prompt: &str) -> Result<Option<String>> {
 fn prompt_manual_save_path(game_name: &str) -> Result<Option<TildePath>> {
     prompt_for_save_path(game_name, None, || {
         let selection = PathInputBuilder::new()
-            .header(format!(
-                "{} Choose the save path for '{game_name}'",
-                char::from(NerdFont::Folder)
+            .header(HeaderBuilder::new(
+                NerdFont::Folder,
+                format!("Choose the save path for '{game_name}'"),
             ))
             .manual_prompt(format!(
                 "{} Enter the save path (e.g., ~/.local/share/{}/saves)",

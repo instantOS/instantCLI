@@ -8,7 +8,8 @@ use crate::game::utils::path::{
 };
 use crate::menu::protocol;
 use crate::menu_utils::{
-    FilePickerScope, FzfResult, FzfSelectable, FzfWrapper, PathInputBuilder, PathInputSelection,
+    FilePickerScope, FzfResult, FzfSelectable, FzfWrapper, HeaderBuilder, MenuPresentation,
+    PathInputBuilder, PathInputSelection,
 };
 use crate::restic::wrapper::Snapshot;
 use crate::ui::nerd_font::NerdFont;
@@ -88,9 +89,9 @@ pub(super) fn prompt_manual_save_path(
         );
 
         let mut path_builder = PathInputBuilder::new()
-            .header(format!(
-                "{} Choose the save path for '{game_name}'",
-                char::from(NerdFont::Folder)
+            .header(HeaderBuilder::new(
+                NerdFont::Folder,
+                format!("Choose the save path for '{game_name}'"),
             ))
             .manual_prompt(prompt)
             .scope(FilePickerScope::FilesAndDirectories)
@@ -384,23 +385,39 @@ fn handle_differently_named_folders(
     if selected_folder_name != original_folder_name {
         let alternative_path = selected_path.join(original_folder_name);
 
-        let header = format!(
-            "{} Directory name mismatch detected\n\nSelected: {} (ends with '{}')\nSnapshot: (ends with '{}')",
-            char::from(NerdFont::Info),
-            selected_path.display(),
-            selected_folder_name,
-            original_folder_name
-        );
+        let header = HeaderBuilder::new(NerdFont::Info, "Directory name mismatch detected")
+            .field(
+                "Selected",
+                format!(
+                    "{} (ends with '{}')",
+                    selected_path.display(),
+                    selected_folder_name
+                ),
+            )
+            .field(
+                "Snapshot",
+                format!("(ends with '{}')", original_folder_name),
+            )
+            .build();
 
         let options = vec![
-            format!("Use selected path as is: {}", selected_path.display()),
             format!(
-                "Append original directory name: {}",
+                "{} Use selected path as is: {}",
+                NerdFont::Folder,
+                selected_path.display()
+            ),
+            format!(
+                "{} Append original directory name: {}",
+                NerdFont::FolderOpen,
                 alternative_path.display()
             ),
         ];
 
-        match FzfWrapper::builder().header(header).select(options)? {
+        match FzfWrapper::builder()
+            .header(header)
+            .presentation(MenuPresentation::Padded)
+            .select(options)?
+        {
             FzfResult::Selected(option) => {
                 if option.contains("as is") {
                     Ok(Some(selected_path.to_path_buf()))

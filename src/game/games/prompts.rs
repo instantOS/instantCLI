@@ -1,7 +1,9 @@
 use crate::common::TildePath;
 use crate::game::games::validation::validate_non_empty;
 use crate::game::utils::path::prompt_for_save_path;
-use crate::menu_utils::{FilePickerScope, FzfWrapper, PathInputBuilder, PathInputSelection};
+use crate::menu_utils::{
+    FilePickerScope, FzfWrapper, HeaderBuilder, PathInputBuilder, PathInputSelection,
+};
 use crate::ui::nerd_font::NerdFont;
 use anyhow::{Result, anyhow};
 
@@ -22,9 +24,9 @@ pub(crate) fn get_launch_command() -> Result<String> {
 pub(crate) fn get_save_path(game_name: &str) -> Result<TildePath> {
     prompt_for_save_path(game_name, None, || {
         let selection = PathInputBuilder::new()
-            .header(format!(
-                "{} Choose the save path for '{game_name}'",
-                char::from(NerdFont::Folder)
+            .header(HeaderBuilder::new(
+                NerdFont::Folder,
+                format!("Choose the save path for '{game_name}'"),
             ))
             .manual_prompt(format!(
                 "{} Enter the save path (e.g., ~/.local/share/{}/saves)",

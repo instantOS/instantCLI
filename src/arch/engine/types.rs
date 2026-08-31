@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Represents a unique identifier for a question
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, clap::ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, clap::ValueEnum)]
 pub enum QuestionId {
     Hostname,
     Username,

@@ -6,13 +6,14 @@ use anyhow::Result;
 type ContextPredicate = dyn Fn(&InstallContext) -> bool + Send + Sync;
 
 pub struct BooleanQuestion {
-    pub id: QuestionId,
-    pub prompt: String,
-    pub icon: NerdFont,
-    pub is_optional: bool,
-    pub default_yes: bool,
-    pub dynamic_default: Option<Box<ContextPredicate>>,
-    pub should_ask_predicate: Option<Box<ContextPredicate>>,
+    id: QuestionId,
+    prompt: String,
+    icon: NerdFont,
+    is_optional: bool,
+    default_yes: bool,
+    dynamic_default: Option<Box<ContextPredicate>>,
+    should_ask_predicate: Option<Box<ContextPredicate>>,
+    dependencies: Vec<QuestionId>,
 }
 
 impl BooleanQuestion {
@@ -25,6 +26,7 @@ impl BooleanQuestion {
             default_yes: false,
             dynamic_default: None,
             should_ask_predicate: None,
+            dependencies: Vec::new(),
         }
     }
 
@@ -38,27 +40,49 @@ impl BooleanQuestion {
         self
     }
 
-    pub fn dynamic_default<F>(mut self, func: F) -> Self
+    /// Derive the default from earlier answers and declare those dependencies
+    /// in the same operation so invalidation cannot drift from the closure.
+    pub fn default_from<F>(
+        mut self,
+        dependencies: impl IntoIterator<Item = QuestionId>,
+        func: F,
+    ) -> Self
     where
         F: Fn(&InstallContext) -> bool + 'static + Send + Sync,
     {
+        self.add_dependencies(dependencies);
         self.dynamic_default = Some(Box::new(func));
         self
     }
 
-    pub fn should_ask<F>(mut self, func: F) -> Self
+    /// Make relevance depend on earlier answers and declare those dependencies
+    /// in the same operation so invalidation cannot drift from the closure.
+    pub fn relevant_when<F>(
+        mut self,
+        dependencies: impl IntoIterator<Item = QuestionId>,
+        func: F,
+    ) -> Self
     where
         F: Fn(&InstallContext) -> bool + 'static + Send + Sync,
     {
+        self.add_dependencies(dependencies);
         self.should_ask_predicate = Some(Box::new(func));
         self
+    }
+
+    fn add_dependencies(&mut self, dependencies: impl IntoIterator<Item = QuestionId>) {
+        for dependency in dependencies {
+            if !self.dependencies.contains(&dependency) {
+                self.dependencies.push(dependency);
+            }
+        }
     }
 }
 
 #[async_trait::async_trait]
 impl Question for BooleanQuestion {
     fn id(&self) -> QuestionId {
-        self.id.clone()
+        self.id
     }
 
     fn description(&self) -> Option<&str> {
@@ -75,6 +99,10 @@ impl Question for BooleanQuestion {
         } else {
             true
         }
+    }
+
+    fn depends_on(&self) -> &[QuestionId] {
+        &self.dependencies
     }
 
     fn get_default(&self, context: &InstallContext) -> Option<String> {

@@ -1,5 +1,7 @@
 use anyhow::Result;
 
+use crate::menu_utils::FzfResult;
+
 use super::context::{DataKey, InstallContext};
 use super::types::QuestionId;
 
@@ -7,6 +9,26 @@ use super::types::QuestionId;
 pub enum QuestionResult {
     Answer(String),
     Cancelled,
+}
+
+impl QuestionResult {
+    /// Map a single-select fzf result into a question result using
+    /// `extract` to turn the selected option into the stored answer.
+    ///
+    /// This is the single place defining how non-selection results are
+    /// treated: cancellation and fzf errors both degrade to
+    /// [`QuestionResult::Cancelled`] (which sends the wizard to its pause
+    /// menu). Fzf errors are logged instead of being silently swallowed.
+    pub fn from_selection<T>(result: FzfResult<T>, extract: impl FnOnce(T) -> String) -> Self {
+        match result {
+            FzfResult::Selected(item) => QuestionResult::Answer(extract(item)),
+            FzfResult::Error(message) => {
+                eprintln!("Menu error: {message}");
+                QuestionResult::Cancelled
+            }
+            _ => QuestionResult::Cancelled,
+        }
+    }
 }
 
 /// Trait for providing async data to the install context
@@ -57,6 +79,13 @@ pub trait Question: Send + Sync {
     async fn ask(&self, context: &InstallContext) -> Result<QuestionResult>;
 
     /// Returns true if the question is relevant/active given the current context
+    ///
+    /// Ordering contract: predicates may only read answers of questions that
+    /// appear *earlier* in the wizard's question list, and must tolerate their
+    /// absence (falling back to a sensible default). The engine does not
+    /// enforce reads at runtime. The answer graph validates every declared
+    /// dependency and its ordering, so implementations must keep
+    /// [`Question::depends_on`] in sync with their predicates and validators.
     fn should_ask(&self, _context: &InstallContext) -> bool {
         true
     }
@@ -96,6 +125,19 @@ pub trait Question: Send + Sync {
     /// Returns the default value for this question if one exists
     fn get_default(&self, _context: &InstallContext) -> Option<String> {
         None
+    }
+
+    /// Returns the questions whose answers this question's answer is derived
+    /// from or whose change can make this answer stale.
+    ///
+    /// When any of these answers is set or removed, the engine removes this
+    /// question's stored answer (transitively) so it gets asked again. Declare
+    /// every answer that `ask`, `should_ask`, `dynamic_default`, or `validate`
+    /// reads for decision-making. Dependencies that are not part of the
+    /// current wizard's question list are permitted (e.g. pre-seeded contexts)
+    /// but must still appear earlier in the list when they are present.
+    fn depends_on(&self) -> &[QuestionId] {
+        &[]
     }
 
     /// Returns a fatal error message if this question cannot proceed due to a required

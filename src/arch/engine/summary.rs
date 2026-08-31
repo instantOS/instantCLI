@@ -55,7 +55,7 @@ fn format_disk_label(context: &InstallContext) -> String {
         return format!("{} ({})", disk, entry.size);
     }
 
-    if let Some(entries) = context.get::<crate::arch::dualboot::DisksKey>()
+    if let Some(entries) = context.get::<crate::arch::dualboot::DualBootDisksKey>()
         && let Some(info) = entries.iter().find(|info| info.device == disk)
     {
         return format!("{} ({})", disk, info.size_human());
@@ -325,4 +325,40 @@ pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary 
         text: summary,
         partitioning_kind,
     }
+}
+
+/// Compact summary for the setup flow's final review screen.
+///
+/// Unlike the install summary, there is no partitioning or package plan to
+/// describe: `ins arch setup` only converts an existing system to instantOS.
+pub(crate) fn build_setup_summary(context: &InstallContext) -> String {
+    let username = answer_or(context, QuestionId::Username, "<not set>");
+
+    let desktop = crate::arch::config::DesktopEnvironment::from_context(context);
+    let dm_label = if desktop.requires_display_manager() {
+        crate::arch::config::DisplayManager::from_context(context)
+            .label()
+            .to_string()
+    } else {
+        "Not required".to_string()
+    };
+    let autologin_label = if desktop.requires_display_manager() {
+        if context.get_answer_bool(QuestionId::Autologin) {
+            "Enabled".to_string()
+        } else {
+            "Disabled".to_string()
+        }
+    } else {
+        "Not required".to_string()
+    };
+
+    let summary = PreviewBuilder::new()
+        .line(colors::TEAL, Some(NerdFont::User), "Setup")
+        .field_indented("User", &username)
+        .field_indented("Desktop", desktop.label())
+        .field_indented("Display manager", &dm_label)
+        .field_indented("Autologin", &autologin_label)
+        .build_string();
+
+    summary.trim_start_matches('\n').to_string()
 }

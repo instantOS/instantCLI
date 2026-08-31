@@ -7,7 +7,7 @@ use colored::Colorize;
 
 use crate::dot::config::DotfileConfig;
 use crate::dot::sources;
-use crate::menu_utils::{FzfResult, FzfWrapper, MenuCursor};
+use crate::menu_utils::{FzfResult, FzfWrapper, MenuCursor, MenuPresentation};
 use crate::ui::prelude::*;
 
 use super::create_flow::run_create_flow;
@@ -204,6 +204,7 @@ fn offer_create_alternative(dir: &Path, display: &str) -> Result<()> {
         .header(crate::menu_utils::Header::fancy("No alternatives found"))
         .prompt("Select action: ")
         .responsive_layout()
+        .presentation(MenuPresentation::Padded)
         .select(vec![Choice::Create, Choice::Cancel])?
     {
         FzfResult::Selected(Choice::Create) => {

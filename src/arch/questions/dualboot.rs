@@ -1,7 +1,8 @@
 use crate::arch::engine::{InstallContext, Question, QuestionId, QuestionResult};
+use crate::arch::questions::partition::partition_belongs_to_disk;
 use crate::common::format::format_size;
 use crate::menu::slide::run_slider;
-use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, SliderConfig};
+use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder, SliderConfig};
 use crate::ui::catppuccin::colors;
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -113,6 +114,30 @@ impl Question for DualBootPartitionQuestion {
             .unwrap_or(false)
     }
 
+    fn depends_on(&self) -> &[QuestionId] {
+        &[QuestionId::Disk, QuestionId::PartitioningMethod]
+    }
+
+    fn validate(&self, context: &InstallContext, answer: &str) -> Result<(), String> {
+        // The "use existing free space" marker is disk-independent
+        if answer == "__free_space__" {
+            return Ok(());
+        }
+
+        // ask() only offers partitions of the selected disk, so a mismatch
+        // means the answer was given for a different disk.
+        if let Some(disk) = context.get_answer(&QuestionId::Disk)
+            && !partition_belongs_to_disk(answer, disk)
+        {
+            return Err(format!(
+                "Partition {} is not on the selected disk {}",
+                answer, disk
+            ));
+        }
+
+        Ok(())
+    }
+
     async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
         // disk_path is now just the device path (e.g., "/dev/sda")
         let disk_path = context
@@ -120,12 +145,12 @@ impl Question for DualBootPartitionQuestion {
             .context("No disk selected")?;
 
         // Get disks from cache or detect
-        let disks = if let Some(cached) = context.get::<crate::arch::dualboot::DisksKey>() {
+        let disks = if let Some(cached) = context.get::<crate::arch::dualboot::DualBootDisksKey>() {
             cached
         } else {
             let detected =
                 tokio::task::spawn_blocking(crate::arch::dualboot::detect_disks).await??;
-            context.set::<crate::arch::dualboot::DisksKey>(detected.clone());
+            context.set::<crate::arch::dualboot::DualBootDisksKey>(detected.clone());
             detected
         };
 
@@ -198,19 +223,12 @@ impl Question for DualBootPartitionQuestion {
             .collect();
 
         let result = FzfWrapper::builder()
-            .header(format!(
-                "{} Select Partition to Resize",
-                NerdFont::HardDrive
-            ))
+            .header(HeaderBuilder::new(NerdFont::HardDrive, "Select Partition to Resize").build())
             .select(options)?;
 
-        match result {
-            crate::menu_utils::FzfResult::Selected(option) => {
-                Ok(QuestionResult::Answer(option.info.device))
-            }
-            crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
-            _ => Ok(QuestionResult::Cancelled),
-        }
+        Ok(QuestionResult::from_selection(result, |option| {
+            option.info.device
+        }))
     }
 }
 
@@ -233,6 +251,16 @@ impl Question for DualBootSizeQuestion {
             .unwrap_or(false)
     }
 
+    fn depends_on(&self) -> &[QuestionId] {
+        // The size is derived from the partition (or the disk's free space),
+        // so any change upstream invalidates it.
+        &[
+            QuestionId::Disk,
+            QuestionId::PartitioningMethod,
+            QuestionId::DualBootPartition,
+        ]
+    }
+
     async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
         let part_path = context
             .get_answer(&QuestionId::DualBootPartition)
@@ -245,14 +273,15 @@ impl Question for DualBootSizeQuestion {
                 .get_answer(&QuestionId::Disk)
                 .context("No disk selected")?;
 
-            let disks = if let Some(cached) = context.get::<crate::arch::dualboot::DisksKey>() {
-                cached
-            } else {
-                let detected =
-                    tokio::task::spawn_blocking(crate::arch::dualboot::detect_disks).await??;
-                context.set::<crate::arch::dualboot::DisksKey>(detected.clone());
-                detected
-            };
+            let disks =
+                if let Some(cached) = context.get::<crate::arch::dualboot::DualBootDisksKey>() {
+                    cached
+                } else {
+                    let detected =
+                        tokio::task::spawn_blocking(crate::arch::dualboot::detect_disks).await??;
+                    context.set::<crate::arch::dualboot::DualBootDisksKey>(detected.clone());
+                    detected
+                };
 
             let disk_info = disks
                 .iter()
@@ -271,12 +300,12 @@ impl Question for DualBootSizeQuestion {
             .context("No disk selected")?;
 
         // Get disks from cache or detect (should be cached by previous question)
-        let disks = if let Some(cached) = context.get::<crate::arch::dualboot::DisksKey>() {
+        let disks = if let Some(cached) = context.get::<crate::arch::dualboot::DualBootDisksKey>() {
             cached
         } else {
             let detected =
                 tokio::task::spawn_blocking(crate::arch::dualboot::detect_disks).await??;
-            context.set::<crate::arch::dualboot::DisksKey>(detected.clone());
+            context.set::<crate::arch::dualboot::DualBootDisksKey>(detected.clone());
             detected
         };
 
@@ -346,5 +375,54 @@ impl Question for DualBootSizeQuestion {
             Ok(None) => Ok(QuestionResult::Cancelled),
             Err(e) => Err(e).context("Slider failed")?,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::arch::engine::InstallContext;
+
+    fn context_with_disk(disk: &str) -> InstallContext {
+        let mut context = InstallContext::new();
+        context.set_answer(QuestionId::Disk, disk.to_string());
+        context
+    }
+
+    #[test]
+    fn validate_rejects_partitions_from_another_disk() {
+        let context = context_with_disk("/dev/sda");
+        let result = DualBootPartitionQuestion.validate(&context, "/dev/nvme0n1p3");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn validate_accepts_partitions_on_the_selected_disk() {
+        let context = context_with_disk("/dev/nvme0n1");
+        assert!(
+            DualBootPartitionQuestion
+                .validate(&context, "/dev/nvme0n1p3")
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn validate_accepts_the_free_space_marker_for_any_disk() {
+        let context = context_with_disk("/dev/sda");
+        assert!(
+            DualBootPartitionQuestion
+                .validate(&context, "__free_space__")
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn validate_tolerates_a_missing_disk_answer() {
+        let context = InstallContext::new();
+        assert!(
+            DualBootPartitionQuestion
+                .validate(&context, "/dev/sda2")
+                .is_ok()
+        );
     }
 }

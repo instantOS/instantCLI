@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Result, anyhow};
 
 use super::file_picker::{FilePickerScope, MenuWrapper};
-use super::fzf::{FzfResult, FzfSelectable, FzfWrapper};
+use super::fzf::{FzfResult, FzfSelectable, FzfWrapper, Header, HeaderBuilder};
 use crate::common::TildePath;
 use crate::preview::{PreviewId, preview_command};
 use crate::ui::nerd_font::NerdFont;
@@ -69,7 +69,7 @@ impl FzfSelectable for PathInputOption {
 
 #[derive(Clone)]
 pub struct PathInputBuilder {
-    header: String,
+    header: Header,
     manual_prompt: String,
     scope: FilePickerScope,
     start_dir: Option<PathBuf>,
@@ -86,10 +86,7 @@ impl PathInputBuilder {
         let manual_icon = char::from(NerdFont::Edit);
         let picker_icon = char::from(NerdFont::FolderOpen);
         Self {
-            header: format!(
-                "{} Choose the path you want to use",
-                char::from(NerdFont::Folder)
-            ),
+            header: HeaderBuilder::new(NerdFont::Folder, "Choose the path you want to use").build(),
             manual_prompt: format!("{manual_icon} Enter the path:"),
             scope: FilePickerScope::FilesAndDirectories,
             start_dir: dirs::home_dir(),
@@ -102,7 +99,7 @@ impl PathInputBuilder {
         }
     }
 
-    pub fn header<S: Into<String>>(mut self, header: S) -> Self {
+    pub fn header<H: Into<Header>>(mut self, header: H) -> Self {
         self.header = header.into();
         self
     }
