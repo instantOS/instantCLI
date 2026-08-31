@@ -6,10 +6,8 @@ mod tests;
 
 use std::collections::HashMap;
 use std::io::Write;
-use std::time::Duration;
 
 use anyhow::{Result, bail};
-use tokio::sync::mpsc;
 
 use self::answer_graph::AnswerGraph;
 use self::presentation::{
@@ -55,7 +53,7 @@ impl FlowKind {
 /// Result of running an interactive question flow.
 pub enum EngineOutcome {
     /// The user accepted the final review.
-    Completed(InstallContext),
+    Completed(Box<InstallContext>),
     /// The user confirmed that the wizard should stop without applying changes.
     Aborted,
 }
@@ -73,6 +71,12 @@ enum QuestionInteraction {
     Cancelled,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum QuestionReadiness {
+    Ready,
+    Irrelevant,
+}
+
 enum NavigationAction {
     Stay,
     ContinueFlow,
@@ -85,34 +89,60 @@ enum FinalReviewResult {
     Abort,
 }
 
-struct ProviderFailure {
-    question_id: super::QuestionId,
-    message: String,
-}
-
 struct ProviderRuntime {
-    tasks: Vec<tokio::task::JoinHandle<()>>,
-    failures: mpsc::UnboundedReceiver<ProviderFailure>,
+    tasks: Vec<ProviderTask>,
     failures_by_question: HashMap<super::QuestionId, String>,
 }
 
+struct ProviderTask {
+    question_id: super::QuestionId,
+    handle: tokio::task::JoinHandle<std::result::Result<(), String>>,
+}
+
 impl ProviderRuntime {
-    fn failure_for(&mut self, question_id: super::QuestionId) -> Option<&str> {
-        while let Ok(failure) = self.failures.try_recv() {
-            self.failures_by_question
-                .entry(failure.question_id)
-                .or_insert(failure.message);
+    fn has_tasks_for(&self, question_id: super::QuestionId) -> bool {
+        self.tasks
+            .iter()
+            .any(|task| task.question_id == question_id)
+    }
+
+    async fn finish_tasks_for(&mut self, question_id: super::QuestionId) -> Result<()> {
+        while let Some(index) = self
+            .tasks
+            .iter()
+            .position(|task| task.question_id == question_id)
+        {
+            self.finish_task_at(index).await;
         }
+        if let Some(message) = self.failures_by_question.get(&question_id) {
+            bail!("{message}");
+        }
+        Ok(())
+    }
+
+    async fn finish_all(&mut self) {
+        while !self.tasks.is_empty() {
+            self.finish_task_at(0).await;
+        }
+    }
+
+    async fn finish_task_at(&mut self, index: usize) {
+        let task = self.tasks.swap_remove(index);
+        let failure = match task.handle.await {
+            Ok(Ok(())) => return,
+            Ok(Err(message)) => message,
+            Err(error) => format!("data provider task failed: {error}"),
+        };
         self.failures_by_question
-            .get(&question_id)
-            .map(String::as_str)
+            .entry(task.question_id)
+            .or_insert(failure);
     }
 }
 
 impl Drop for ProviderRuntime {
     fn drop(&mut self) {
         for task in &self.tasks {
-            task.abort();
+            task.handle.abort();
         }
     }
 }
@@ -144,20 +174,35 @@ impl QuestionEngine {
     /// Data providers are started here so every entry point gets identical
     /// initialization and callers cannot accidentally omit it.
     pub async fn run(mut self) -> Result<EngineOutcome> {
+        self.normalize_context();
         let mut providers = self.start_providers();
 
         loop {
             let Some(index) = self.find_next_question_index() else {
+                // Resolve every provider before the final review so provider-
+                // driven relevance (notably mirror fallback) is reflected in
+                // the context that will be saved. Failures for already valid
+                // answers remain dormant unless that question must be asked.
+                providers.finish_all().await;
+                self.normalize_context();
+                if self.find_next_question_index().is_some() {
+                    continue;
+                }
                 match self.handle_final_review(&mut providers).await? {
                     FinalReviewResult::Continue => continue,
                     FinalReviewResult::Complete => {
-                        return Ok(EngineOutcome::Completed(self.context));
+                        return Ok(EngineOutcome::Completed(Box::new(self.context)));
                     }
                     FinalReviewResult::Abort => return Ok(EngineOutcome::Aborted),
                 }
             };
 
-            self.wait_until_ready(index, &mut providers).await?;
+            if matches!(
+                self.wait_until_ready(index, &mut providers).await?,
+                QuestionReadiness::Irrelevant
+            ) {
+                continue;
+            }
             loop {
                 match self.ask_question(index).await? {
                     QuestionInteraction::Answered => break,
@@ -174,50 +219,65 @@ impl QuestionEngine {
     }
 
     fn start_providers(&self) -> ProviderRuntime {
-        let (failure_sender, failures) = mpsc::unbounded_channel();
         let mut tasks = Vec::new();
         for question in &self.questions {
             for provider in question.data_providers() {
                 let context = self.context.clone();
                 let question_id = question.id();
-                let failure_sender = failure_sender.clone();
-                tasks.push(tokio::spawn(async move {
-                    if let Err(error) = provider.provide(&context).await {
-                        let _ = failure_sender.send(ProviderFailure {
-                            question_id,
-                            message: error.to_string(),
-                        });
-                    }
-                }));
+                tasks.push(ProviderTask {
+                    question_id,
+                    handle: tokio::spawn(async move {
+                        provider
+                            .provide(&context)
+                            .await
+                            .map_err(|error| format!("{error:#}"))
+                    }),
+                });
             }
         }
-        drop(failure_sender);
         ProviderRuntime {
             tasks,
-            failures,
             failures_by_question: HashMap::new(),
         }
     }
 
-    async fn wait_until_ready(&self, index: usize, providers: &mut ProviderRuntime) -> Result<()> {
-        loop {
-            let question_id = self.questions[index].id();
-            if let Some(message) = providers.failure_for(question_id) {
-                self.show_fatal_error(&format!(
-                    "Data required for {question_id:?} could not be loaded: {message}"
-                ))?;
-            }
-            if let Some(message) = self.questions[index].fatal_error_message(&self.context) {
-                self.show_fatal_error(&message)?;
-            }
-            if self.questions[index].is_ready(&self.context) {
-                return Ok(());
-            }
-            tokio::time::sleep(Duration::from_millis(100)).await;
+    async fn wait_until_ready(
+        &mut self,
+        index: usize,
+        providers: &mut ProviderRuntime,
+    ) -> Result<QuestionReadiness> {
+        let question_id = self.questions[index].id();
+        let had_providers = providers.has_tasks_for(question_id);
+        if let Err(error) = providers.finish_tasks_for(question_id).await {
+            self.show_fatal_error(&format!(
+                "Data required for {question_id:?} could not be loaded: {error}"
+            ))?;
         }
+
+        // A provider may make a question irrelevant while populating its data
+        // (the mirror provider uses this for its fallback path).
+        if !self.questions[index].should_ask(&self.context) {
+            self.answer_graph
+                .drop_answer(&mut self.context, question_id);
+            return Ok(QuestionReadiness::Irrelevant);
+        }
+        if let Some(message) = self.questions[index].fatal_error_message(&self.context) {
+            self.show_fatal_error(&message)?;
+        }
+        if self.questions[index].is_ready(&self.context) {
+            return Ok(QuestionReadiness::Ready);
+        }
+        let source = if had_providers {
+            "provider completed without supplying"
+        } else {
+            "question has no provider for"
+        };
+        self.show_fatal_error(&format!(
+            "Data unavailable for {question_id:?}: {source} the required data"
+        ))
     }
 
-    fn show_fatal_error(&self, message: &str) -> Result<()> {
+    fn show_fatal_error<T>(&self, message: &str) -> Result<T> {
         let full_message = format!(
             "{} Fatal Error\n\n{message}\n\nThe wizard cannot continue.",
             NerdFont::CrossCircle
@@ -260,6 +320,8 @@ impl QuestionEngine {
         for index in 0..self.questions.len() {
             let question = &self.questions[index];
             if !question.should_ask(&self.context) {
+                let id = question.id();
+                self.answer_graph.drop_answer(&mut self.context, id);
                 continue;
             }
 
@@ -285,6 +347,37 @@ impl QuestionEngine {
             }
         }
         None
+    }
+
+    /// Reconcile imported answers with the current question graph.
+    ///
+    /// Root answers can be validated directly. Dependent answers additionally
+    /// use provenance, when present, to prove that they were recorded against
+    /// the current upstream values. Legacy and hand-authored contexts without
+    /// provenance remain supported as explicit user input.
+    fn normalize_context(&mut self) {
+        for index in 0..self.questions.len() {
+            let question = &self.questions[index];
+            let id = question.id();
+
+            if !question.should_ask(&self.context) {
+                self.answer_graph.drop_answer(&mut self.context, id);
+                continue;
+            }
+
+            if let Some(answer) = self.context.get_answer(&id).cloned() {
+                if question.validate(&self.context, &answer).is_err()
+                    || !self.answer_graph.answer_is_current(&self.context, id)
+                {
+                    self.answer_graph.drop_answer(&mut self.context, id);
+                } else {
+                    // Upgrade legacy or hand-authored answers with provenance
+                    // without invalidating their dependents when unchanged.
+                    self.answer_graph
+                        .record_answer(&mut self.context, id, answer);
+                }
+            }
+        }
     }
 
     async fn handle_navigation_menu(&mut self, current_index: usize) -> Result<NavigationAction> {
@@ -360,8 +453,12 @@ impl QuestionEngine {
                 Ok(FinalReviewResult::Continue)
             }
             FinalReviewAction::AdvancedOptions => {
-                if let Some(index) = self.select_advanced_option()? {
-                    self.wait_until_ready(index, providers).await?;
+                if let Some(index) = self.select_advanced_option()?
+                    && matches!(
+                        self.wait_until_ready(index, providers).await?,
+                        QuestionReadiness::Ready
+                    )
+                {
                     let _ = self.ask_question(index).await?;
                 }
                 Ok(FinalReviewResult::Continue)

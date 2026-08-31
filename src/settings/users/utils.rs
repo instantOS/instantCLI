@@ -234,7 +234,7 @@ pub(super) fn select_groups(header: &str) -> Result<Vec<String>> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum UnixNameValidationError {
+pub(crate) enum UnixNameValidationError {
     Empty,
     TooLong,
     InvalidStart,
@@ -287,10 +287,10 @@ fn validate_unix_name(name: &str) -> Result<(), UnixNameValidationError> {
     Ok(())
 }
 
-pub(super) type UsernameValidationError = UnixNameValidationError;
+pub(crate) type UsernameValidationError = UnixNameValidationError;
 pub(super) type GroupNameValidationError = UnixNameValidationError;
 
-pub(super) fn validate_username(username: &str) -> Result<(), UsernameValidationError> {
+pub(crate) fn validate_username(username: &str) -> Result<(), UsernameValidationError> {
     validate_unix_name(username)
 }
 

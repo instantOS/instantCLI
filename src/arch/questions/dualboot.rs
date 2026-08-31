@@ -145,12 +145,12 @@ impl Question for DualBootPartitionQuestion {
             .context("No disk selected")?;
 
         // Get disks from cache or detect
-        let disks = if let Some(cached) = context.get::<crate::arch::dualboot::DisksKey>() {
+        let disks = if let Some(cached) = context.get::<crate::arch::dualboot::DualBootDisksKey>() {
             cached
         } else {
             let detected =
                 tokio::task::spawn_blocking(crate::arch::dualboot::detect_disks).await??;
-            context.set::<crate::arch::dualboot::DisksKey>(detected.clone());
+            context.set::<crate::arch::dualboot::DualBootDisksKey>(detected.clone());
             detected
         };
 
@@ -226,13 +226,9 @@ impl Question for DualBootPartitionQuestion {
             .header(HeaderBuilder::new(NerdFont::HardDrive, "Select Partition to Resize").build())
             .select(options)?;
 
-        match result {
-            crate::menu_utils::FzfResult::Selected(option) => {
-                Ok(QuestionResult::Answer(option.info.device))
-            }
-            crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
-            _ => Ok(QuestionResult::Cancelled),
-        }
+        Ok(QuestionResult::from_selection(result, |option| {
+            option.info.device
+        }))
     }
 }
 
@@ -277,14 +273,15 @@ impl Question for DualBootSizeQuestion {
                 .get_answer(&QuestionId::Disk)
                 .context("No disk selected")?;
 
-            let disks = if let Some(cached) = context.get::<crate::arch::dualboot::DisksKey>() {
-                cached
-            } else {
-                let detected =
-                    tokio::task::spawn_blocking(crate::arch::dualboot::detect_disks).await??;
-                context.set::<crate::arch::dualboot::DisksKey>(detected.clone());
-                detected
-            };
+            let disks =
+                if let Some(cached) = context.get::<crate::arch::dualboot::DualBootDisksKey>() {
+                    cached
+                } else {
+                    let detected =
+                        tokio::task::spawn_blocking(crate::arch::dualboot::detect_disks).await??;
+                    context.set::<crate::arch::dualboot::DualBootDisksKey>(detected.clone());
+                    detected
+                };
 
             let disk_info = disks
                 .iter()
@@ -303,12 +300,12 @@ impl Question for DualBootSizeQuestion {
             .context("No disk selected")?;
 
         // Get disks from cache or detect (should be cached by previous question)
-        let disks = if let Some(cached) = context.get::<crate::arch::dualboot::DisksKey>() {
+        let disks = if let Some(cached) = context.get::<crate::arch::dualboot::DualBootDisksKey>() {
             cached
         } else {
             let detected =
                 tokio::task::spawn_blocking(crate::arch::dualboot::detect_disks).await??;
-            context.set::<crate::arch::dualboot::DisksKey>(detected.clone());
+            context.set::<crate::arch::dualboot::DualBootDisksKey>(detected.clone());
             detected
         };
 

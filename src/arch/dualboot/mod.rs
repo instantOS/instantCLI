@@ -25,9 +25,9 @@ pub use resize::{ResizeStatus, ResizeVerifier};
 /// Minimum size for a Linux installation in bytes (30 GB)
 pub const MIN_LINUX_SIZE: u64 = 30 * 1024 * 1024 * 1024;
 
-pub struct DisksKey;
+pub struct DualBootDisksKey;
 
-impl crate::arch::engine::DataKey for DisksKey {
+impl crate::arch::engine::DataKey for DualBootDisksKey {
     type Value = Vec<types::DiskInfo>;
-    const KEY: &'static str = "disks";
+    const KEY: &'static str = "dualboot_disks";
 }

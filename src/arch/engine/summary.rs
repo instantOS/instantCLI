@@ -55,7 +55,7 @@ fn format_disk_label(context: &InstallContext) -> String {
         return format!("{} ({})", disk, entry.size);
     }
 
-    if let Some(entries) = context.get::<crate::arch::dualboot::DisksKey>()
+    if let Some(entries) = context.get::<crate::arch::dualboot::DualBootDisksKey>()
         && let Some(info) = entries.iter().find(|info| info.device == disk)
     {
         return format!("{} ({})", disk, info.size_human());

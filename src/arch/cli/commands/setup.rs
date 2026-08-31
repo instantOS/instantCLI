@@ -8,6 +8,7 @@ use crate::arch::engine::{
 };
 use crate::arch::questions::{DesktopEnvironmentQuestion, DisplayManagerQuestion};
 use crate::common::distro::is_live_iso;
+use crate::settings::users::validate_username;
 
 use super::super::utils::{detect_single_user, ensure_root};
 use super::{AutologinDefault, autologin_question};
@@ -16,6 +17,18 @@ pub(super) async fn handle_setup_command(user: Option<String>, dry_run: bool) ->
     // Check if running on live CD
     if is_live_iso() {
         anyhow::bail!("This command cannot be run on a live CD/ISO.");
+    }
+
+    // Validate the explicit `--user` override up front: setup targets an
+    // existing account, and an invalid name would otherwise only surface as a
+    // `usermod`/`su` failure mid-flow. The same Unix name rules apply as in
+    // `ins settings` and the installer's username question. `SUDO_USER` and
+    // auto-detected users are intentionally not re-validated: they refer to
+    // accounts that already exist.
+    if let Some(user) = &user
+        && let Err(error) = validate_username(user)
+    {
+        anyhow::bail!("Invalid --user '{user}': {error}");
     }
 
     // The setup wizard is interactive. Like `ins arch install`, relaunch inside

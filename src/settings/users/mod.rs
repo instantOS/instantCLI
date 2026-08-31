@@ -12,3 +12,7 @@ mod utils;
 
 pub(super) use handlers::manage_users;
 pub(super) use ssh_keys::manage_ssh_keys;
+
+/// Shared with the installer's username question so both flows enforce the
+/// same Unix name rules.
+pub(crate) use utils::validate_username;

@@ -97,12 +97,9 @@ impl Question for RootFilesystemQuestion {
             .presentation(MenuPresentation::Padded)
             .select(options)?;
 
-        match result {
-            crate::menu_utils::FzfResult::Selected(option) => {
-                Ok(QuestionResult::Answer(option.0.answer_value().to_string()))
-            }
-            _ => Ok(QuestionResult::Cancelled),
-        }
+        Ok(QuestionResult::from_selection(result, |option| {
+            option.0.answer_value().to_string()
+        }))
     }
 
     fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
@@ -211,12 +208,9 @@ impl Question for BtrfsCompressionQuestion {
             .presentation(MenuPresentation::Padded)
             .select(options)?;
 
-        match result {
-            crate::menu_utils::FzfResult::Selected(option) => {
-                Ok(QuestionResult::Answer(option.0.answer_value().to_string()))
-            }
-            _ => Ok(QuestionResult::Cancelled),
-        }
+        Ok(QuestionResult::from_selection(result, |option| {
+            option.0.answer_value().to_string()
+        }))
     }
 
     fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {

@@ -126,7 +126,7 @@ pub(super) enum AskOutcome {
 }
 
 enum ExistingContextOutcome {
-    Continue(Option<InstallContext>),
+    Continue(Option<Box<InstallContext>>),
     Cancelled,
 }
 
@@ -215,7 +215,7 @@ fn load_existing_context(
             let answers_count = context.answer_count();
             match prompt_existing_answers(&summary, config_path, answers_count)? {
                 Some(ExistingAnswersChoice::UseExisting) => {
-                    Ok(ExistingContextOutcome::Continue(Some(context)))
+                    Ok(ExistingContextOutcome::Continue(Some(Box::new(context))))
                 }
                 Some(ExistingAnswersChoice::StartOver) => {
                     std::fs::remove_file(config_path)?;
@@ -237,9 +237,9 @@ fn load_existing_context(
 fn build_question_engine(
     questions: Vec<Box<dyn crate::arch::engine::Question>>,
     system_info: SystemInfo,
-    existing_context: Option<InstallContext>,
+    existing_context: Option<Box<InstallContext>>,
 ) -> Result<QuestionEngine> {
-    let mut context = existing_context.unwrap_or_default();
+    let mut context = existing_context.map_or_else(InstallContext::default, |context| *context);
     context.system_info = system_info;
     Ok(QuestionEngine::new(questions)?.with_context(context))
 }

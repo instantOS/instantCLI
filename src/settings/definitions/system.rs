@@ -65,7 +65,9 @@ fn current_hostname() -> Result<Option<String>> {
         .into())
 }
 
-fn validate_hostname(name: &str) -> Result<()> {
+/// Also used by the installer's hostname question (`arch::questions`) so both
+/// flows enforce the same RFC 1123 label rules.
+pub(crate) fn validate_hostname(name: &str) -> Result<()> {
     if name.is_empty() {
         bail!("hostname cannot be empty");
     }

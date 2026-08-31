@@ -404,13 +404,9 @@ impl Question for PartitioningMethodQuestion {
             .header(HeaderBuilder::new(NerdFont::HardDrive, "Select Partitioning Method").build())
             .select(options)?;
 
-        match result {
-            crate::menu_utils::FzfResult::Selected(option) => {
-                Ok(QuestionResult::Answer(option.label().to_string()))
-            }
-            crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
-            _ => Ok(QuestionResult::Cancelled),
-        }
+        Ok(QuestionResult::from_selection(result, |option| {
+            option.label().to_string()
+        }))
     }
 }
 

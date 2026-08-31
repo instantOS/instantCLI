@@ -199,12 +199,8 @@ impl Question for PartitionSelectorQuestion {
             .header(HeaderBuilder::new(self.icon, &self.prompt).build())
             .select(partitions)?;
 
-        match result {
-            // Store just the path, not the formatted display string
-            crate::menu_utils::FzfResult::Selected(entry) => Ok(QuestionResult::Answer(entry.path)),
-            crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
-            _ => Ok(QuestionResult::Cancelled),
-        }
+        // Store just the path, not the formatted display string
+        Ok(QuestionResult::from_selection(result, |entry| entry.path))
     }
 
     fn validate(&self, context: &InstallContext, answer: &str) -> Result<(), String> {

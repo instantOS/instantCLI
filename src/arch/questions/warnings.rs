@@ -156,7 +156,7 @@ impl Question for DualBootEspWarning {
         };
 
         let disks = context
-            .get::<crate::arch::dualboot::DisksKey>()
+            .get::<crate::arch::dualboot::DualBootDisksKey>()
             .unwrap_or_default();
 
         if disks.is_empty() {
@@ -186,12 +186,12 @@ impl Question for DualBootEspWarning {
             .get_answer(&QuestionId::Disk)
             .context("No disk selected")?;
 
-        let disks = if let Some(cached) = context.get::<crate::arch::dualboot::DisksKey>() {
+        let disks = if let Some(cached) = context.get::<crate::arch::dualboot::DualBootDisksKey>() {
             cached
         } else {
             let detected =
                 tokio::task::spawn_blocking(crate::arch::dualboot::detect_disks).await??;
-            context.set::<crate::arch::dualboot::DisksKey>(detected.clone());
+            context.set::<crate::arch::dualboot::DualBootDisksKey>(detected.clone());
             detected
         };
 
