@@ -1,4 +1,4 @@
-use crate::arch::engine::{BootMode, InstallContext, Question, QuestionId, QuestionResult};
+use crate::arch::engine::{BootMode, InstallContext, StepId, StepOutcome, WizardStep};
 use crate::common::format::format_size;
 use crate::menu_utils::FzfWrapper;
 use crate::ui::nerd_font::NerdFont;
@@ -7,9 +7,9 @@ use anyhow::{Context, Result};
 pub struct LowRamWarning;
 
 #[async_trait::async_trait]
-impl Question for LowRamWarning {
-    fn id(&self) -> QuestionId {
-        QuestionId::LowRamWarning
+impl WizardStep for LowRamWarning {
+    fn id(&self) -> StepId {
+        StepId::LowRamWarning
     }
 
     fn description(&self) -> Option<&str> {
@@ -25,7 +25,7 @@ impl Question for LowRamWarning {
         context.system_info.total_ram_gb.is_some_and(|ram| ram < 1)
     }
 
-    async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
+    async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {
         let ram_gb = context.system_info.total_ram_gb.unwrap_or(0);
         FzfWrapper::message(&format!(
             "{} Low Memory Warning\n\n\
@@ -35,16 +35,16 @@ impl Question for LowRamWarning {
             NerdFont::Warning,
             ram_gb
         ))?;
-        Ok(QuestionResult::Answer("acknowledged".to_string()))
+        Ok(StepOutcome::Completed)
     }
 }
 
 pub struct VirtualBoxWarning;
 
 #[async_trait::async_trait]
-impl Question for VirtualBoxWarning {
-    fn id(&self) -> QuestionId {
-        QuestionId::VirtualBoxWarning
+impl WizardStep for VirtualBoxWarning {
+    fn id(&self) -> StepId {
+        StepId::VirtualBoxWarning
     }
 
     fn description(&self) -> Option<&str> {
@@ -64,23 +64,23 @@ impl Question for VirtualBoxWarning {
         }
     }
 
-    async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
+    async fn run(&self, _context: &InstallContext) -> Result<StepOutcome> {
         FzfWrapper::message(&format!(
             "{} VirtualBox Detected!\n\n\
              Wayland does not work properly in VirtualBox.\n\
              Please use X11 or another hypervisor for the best experience.",
             NerdFont::Warning
         ))?;
-        Ok(QuestionResult::Answer("acknowledged".to_string()))
+        Ok(StepOutcome::Completed)
     }
 }
 
 pub struct WeakPasswordWarning;
 
 #[async_trait::async_trait]
-impl Question for WeakPasswordWarning {
-    fn id(&self) -> QuestionId {
-        QuestionId::WeakPasswordWarning
+impl WizardStep for WeakPasswordWarning {
+    fn id(&self) -> StepId {
+        StepId::WeakPasswordWarning
     }
 
     fn description(&self) -> Option<&str> {
@@ -92,37 +92,37 @@ impl Question for WeakPasswordWarning {
     }
 
     fn should_ask(&self, context: &InstallContext) -> bool {
-        if !context.get_answer_bool(QuestionId::UseEncryption) {
+        if !context.get_answer_bool(StepId::UseEncryption) {
             return false;
         }
-        if let Some(pass) = context.get_answer(&QuestionId::EncryptionPassword) {
+        if let Some(pass) = context.get_answer(&StepId::EncryptionPassword) {
             pass.len() < 4
         } else {
             false
         }
     }
 
-    fn depends_on(&self) -> &[QuestionId] {
-        &[QuestionId::UseEncryption, QuestionId::EncryptionPassword]
+    fn depends_on(&self) -> &[StepId] {
+        &[StepId::UseEncryption, StepId::EncryptionPassword]
     }
 
-    async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
+    async fn run(&self, _context: &InstallContext) -> Result<StepOutcome> {
         FzfWrapper::message(&format!(
             "{} Weak Password Warning\n\n\
              The encryption password is shorter than 4 characters.\n\
              This is considered insecure.",
             NerdFont::Warning
         ))?;
-        Ok(QuestionResult::Answer("acknowledged".to_string()))
+        Ok(StepOutcome::Completed)
     }
 }
 
 pub struct DualBootEspWarning;
 
 #[async_trait::async_trait]
-impl Question for DualBootEspWarning {
-    fn id(&self) -> QuestionId {
-        QuestionId::DualBootEspWarning
+impl WizardStep for DualBootEspWarning {
+    fn id(&self) -> StepId {
+        StepId::DualBootEspWarning
     }
 
     fn description(&self) -> Option<&str> {
@@ -135,7 +135,7 @@ impl Question for DualBootEspWarning {
 
     fn should_ask(&self, context: &InstallContext) -> bool {
         let is_dualboot = context
-            .get_answer(&QuestionId::PartitioningMethod)
+            .get_answer(&StepId::PartitioningMethod)
             .map(|s| s.contains("Dual Boot"))
             .unwrap_or(false);
 
@@ -150,7 +150,7 @@ impl Question for DualBootEspWarning {
             return false;
         }
 
-        let disk_path = match context.get_answer(&QuestionId::Disk) {
+        let disk_path = match context.get_answer(&StepId::Disk) {
             Some(path) => path,
             None => return false,
         };
@@ -177,13 +177,13 @@ impl Question for DualBootEspWarning {
             .all(|p| p.size_bytes < crate::arch::dualboot::types::MIN_ESP_SIZE)
     }
 
-    fn depends_on(&self) -> &[QuestionId] {
-        &[QuestionId::Disk, QuestionId::PartitioningMethod]
+    fn depends_on(&self) -> &[StepId] {
+        &[StepId::Disk, StepId::PartitioningMethod]
     }
 
-    async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
+    async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {
         let disk_path = context
-            .get_answer(&QuestionId::Disk)
+            .get_answer(&StepId::Disk)
             .context("No disk selected")?;
 
         let disks = if let Some(cached) = context.get::<crate::arch::dualboot::DualBootDisksKey>() {
@@ -226,6 +226,6 @@ impl Question for DualBootEspWarning {
         }
 
         FzfWrapper::message(&message)?;
-        Ok(QuestionResult::Answer("acknowledged".to_string()))
+        Ok(StepOutcome::Completed)
     }
 }

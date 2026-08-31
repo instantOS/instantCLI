@@ -2,7 +2,7 @@ use super::CommandRunner;
 use anyhow::{Context, Result};
 use std::process::Command;
 
-use crate::arch::engine::{InstallContext, QuestionId};
+use crate::arch::engine::{InstallContext, StepId};
 use crate::common::config_edit::{set_keys, set_keys_in_section, update_file};
 
 /// URL for the instantOS dotfiles repository
@@ -22,7 +22,7 @@ pub async fn setup_instantos(
 ) -> Result<()> {
     println!("Setting up instantOS...");
 
-    let minimal_mode = context.get_answer_bool(QuestionId::MinimalMode);
+    let minimal_mode = context.get_answer_bool(StepId::MinimalMode);
 
     if !minimal_mode {
         // Enable multilib for 32-bit support (Steam, Wine, etc.)
@@ -45,7 +45,7 @@ pub async fn setup_instantos(
     }
 
     // Determine username: override > context > SUDO_USER
-    let username = override_user.or_else(|| context.get_answer(&QuestionId::Username).cloned());
+    let username = override_user.or_else(|| context.get_answer(&StepId::Username).cloned());
 
     // Configure user groups (create groups and add user to them)
     // This reuses the same functions as ins arch install for consistency
@@ -220,7 +220,7 @@ fn enable_services(executor: &dyn CommandRunner, context: &InstallContext) -> Re
     }
 
     if !other_dm_enabled
-        && !context.get_answer_bool(QuestionId::MinimalMode)
+        && !context.get_answer_bool(StepId::MinimalMode)
         && desktop.requires_display_manager()
     {
         services.push(selected_dm_service);
@@ -228,13 +228,13 @@ fn enable_services(executor: &dyn CommandRunner, context: &InstallContext) -> Re
         match selected_dm {
             crate::arch::config::DisplayManager::Gdm => {
                 configure_gdm_session(context, executor)?;
-                if context.get_answer_bool(QuestionId::Autologin) {
+                if context.get_answer_bool(StepId::Autologin) {
                     configure_gdm_autologin(context, executor)?;
                 }
             }
             crate::arch::config::DisplayManager::Lightdm => {
                 configure_lightdm_session(context, executor)?;
-                if context.get_answer_bool(QuestionId::Autologin) {
+                if context.get_answer_bool(StepId::Autologin) {
                     configure_lightdm_autologin(context, executor)?;
                 }
             }
@@ -244,7 +244,7 @@ fn enable_services(executor: &dyn CommandRunner, context: &InstallContext) -> Re
             "Skipping {} setup because another display manager is enabled.",
             selected_dm_service
         );
-    } else if context.get_answer_bool(QuestionId::MinimalMode) {
+    } else if context.get_answer_bool(StepId::MinimalMode) {
         println!(
             "Skipping {} setup because minimal mode is enabled.",
             selected_dm_service
@@ -358,7 +358,7 @@ fn configure_lightdm_autologin(
     println!("Configuring LightDM autologin...");
 
     let username = context
-        .get_answer(&QuestionId::Username)
+        .get_answer(&StepId::Username)
         .context("Username not set for autologin")?;
     let session_name =
         crate::arch::config::DesktopEnvironment::from_context(context).session_name();
@@ -440,7 +440,7 @@ fn configure_gdm_session(context: &InstallContext, executor: &dyn CommandRunner)
         return Ok(());
     };
     let username = context
-        .get_answer(&QuestionId::Username)
+        .get_answer(&StepId::Username)
         .context("Username not set for GDM session configuration")?;
 
     println!(
@@ -479,7 +479,7 @@ fn configure_gdm_autologin(context: &InstallContext, executor: &dyn CommandRunne
     println!("Configuring GDM autologin...");
 
     let username = context
-        .get_answer(&QuestionId::Username)
+        .get_answer(&StepId::Username)
         .context("Username not set for GDM autologin")?;
 
     if executor.dry_run() {

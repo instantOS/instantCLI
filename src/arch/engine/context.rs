@@ -1,10 +1,10 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, Mutex};
 
-use super::types::{QuestionId, SystemInfo};
+use super::types::{StepId, SystemInfo};
 
 /// Trait for defining type-safe keys for the data map
 pub trait DataKey: Send + Sync + 'static {
@@ -41,12 +41,11 @@ impl DataKey for DualBootPartitions {
 /// Holds the state of the installation wizard
 #[derive(Default, Clone)]
 pub struct InstallContext {
-    pub(super) answers: HashMap<QuestionId, String>,
-    /// Fingerprint of each answer's dependency values when it was recorded.
-    ///
-    /// Older or deliberately hand-authored context files do not contain this
-    /// map and remain valid as explicit user input.
-    pub(super) answer_dependency_fingerprints: HashMap<QuestionId, String>,
+    pub(super) answers: HashMap<StepId, String>,
+    /// Steps which completed without producing configuration data.
+    pub(super) completed_steps: BTreeSet<StepId>,
+    /// Fingerprint of each step's dependency state when it completed.
+    pub(super) step_dependency_fingerprints: HashMap<StepId, String>,
     pub system_info: SystemInfo,
     // We use Arc<Mutex> for interior mutability across threads
     pub data: Arc<Mutex<HashMap<String, Box<dyn Any + Send + Sync>>>>,
@@ -59,11 +58,12 @@ impl Serialize for InstallContext {
         S: serde::Serializer,
     {
         use serde::ser::SerializeStruct;
-        let mut state = serializer.serialize_struct("InstallContext", 3)?;
+        let mut state = serializer.serialize_struct("InstallContext", 4)?;
         state.serialize_field("answers", &self.answers)?;
+        state.serialize_field("completed_steps", &self.completed_steps)?;
         state.serialize_field(
-            "answer_dependency_fingerprints",
-            &self.answer_dependency_fingerprints,
+            "step_dependency_fingerprints",
+            &self.step_dependency_fingerprints,
         )?;
         state.serialize_field("system_info", &self.system_info)?;
         state.end()
@@ -78,16 +78,17 @@ impl<'de> Deserialize<'de> for InstallContext {
     {
         #[derive(Deserialize)]
         struct Helper {
-            answers: HashMap<QuestionId, String>,
-            #[serde(default)]
-            answer_dependency_fingerprints: HashMap<QuestionId, String>,
+            answers: HashMap<StepId, String>,
+            completed_steps: BTreeSet<StepId>,
+            step_dependency_fingerprints: HashMap<StepId, String>,
             system_info: SystemInfo,
         }
 
         let helper = Helper::deserialize(deserializer)?;
         Ok(InstallContext {
             answers: helper.answers,
-            answer_dependency_fingerprints: helper.answer_dependency_fingerprints,
+            completed_steps: helper.completed_steps,
+            step_dependency_fingerprints: helper.step_dependency_fingerprints,
             system_info: helper.system_info,
             data: Arc::new(Mutex::new(HashMap::new())),
         })
@@ -108,21 +109,23 @@ impl InstallContext {
     pub fn new() -> Self {
         Self {
             answers: HashMap::new(),
-            answer_dependency_fingerprints: HashMap::new(),
+            completed_steps: BTreeSet::new(),
+            step_dependency_fingerprints: HashMap::new(),
             system_info: SystemInfo::default(),
             data: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
-    pub fn set_answer(&mut self, id: QuestionId, answer: String) {
+    pub fn set_answer(&mut self, id: StepId, answer: String) {
         self.answers.insert(id, answer);
-        // Direct callers do not have the question graph needed to establish
-        // provenance. A hand-authored answer without provenance is treated as
-        // explicit input; answers recorded by the engine remain verifiable.
-        self.answer_dependency_fingerprints.remove(&id);
+        self.completed_steps.remove(&id);
+        // Direct callers do not have the step graph needed to establish
+        // provenance. The engine must record dependency provenance before a
+        // dependent answer can be considered current.
+        self.step_dependency_fingerprints.remove(&id);
     }
 
-    pub fn answers(&self) -> impl Iterator<Item = (&QuestionId, &String)> {
+    pub fn answers(&self) -> impl Iterator<Item = (&StepId, &String)> {
         self.answers.iter()
     }
 
@@ -134,15 +137,15 @@ impl InstallContext {
         !self.answers.is_empty()
     }
 
-    pub fn get_answer(&self, id: &QuestionId) -> Option<&String> {
+    pub fn get_answer(&self, id: &StepId) -> Option<&String> {
         self.answers.get(id)
     }
 
-    pub fn is_answered(&self, id: QuestionId) -> bool {
-        self.answers.contains_key(&id)
+    pub fn is_step_completed(&self, id: StepId) -> bool {
+        self.answers.contains_key(&id) || self.completed_steps.contains(&id)
     }
 
-    pub fn get_answer_bool(&self, id: QuestionId) -> bool {
+    pub fn get_answer_bool(&self, id: StepId) -> bool {
         self.answers
             .get(&id)
             .map(|s| s == "true" || s == "yes")
@@ -172,29 +175,29 @@ impl InstallContext {
 
         // Set username if provided
         if let Some(user) = username {
-            ctx.set_answer(QuestionId::Username, user);
+            ctx.set_answer(StepId::Username, user);
         }
 
         // Auto-detect locale from /etc/locale.conf
         if let Some(locale) = detect_system_locale() {
-            ctx.set_answer(QuestionId::Locale, locale);
+            ctx.set_answer(StepId::Locale, locale);
         }
 
         // Auto-detect timezone from /etc/localtime symlink
         if let Some(tz) = detect_system_timezone() {
-            ctx.set_answer(QuestionId::Timezone, tz);
+            ctx.set_answer(StepId::Timezone, tz);
         }
 
         // Auto-detect keymap from /etc/vconsole.conf
         if let Some(keymap) = detect_system_keymap() {
-            ctx.set_answer(QuestionId::Keymap, keymap);
+            ctx.set_answer(StepId::Keymap, keymap);
         }
 
         // Read hostname from /etc/hostname
         if let Ok(hostname) = std::fs::read_to_string("/etc/hostname") {
             let hostname = hostname.trim().to_string();
             if !hostname.is_empty() {
-                ctx.set_answer(QuestionId::Hostname, hostname);
+                ctx.set_answer(StepId::Hostname, hostname);
             }
         }
 
@@ -238,7 +241,7 @@ fn detect_system_keymap() -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{DataKey, InstallContext};
-    use crate::arch::engine::QuestionId;
+    use crate::arch::engine::StepId;
 
     struct StringKey;
 
@@ -272,18 +275,34 @@ mod tests {
     }
 
     #[test]
-    fn contexts_without_dependency_provenance_remain_readable() {
+    fn contexts_without_wizard_state_are_rejected() {
+        let context = InstallContext::new();
+        let mut serialized = toml::Value::try_from(&context).unwrap();
+        let table = serialized.as_table_mut().unwrap();
+        table.remove("completed_steps");
+        table.remove("step_dependency_fingerprints");
+
+        assert!(toml::from_str::<InstallContext>(&serialized.to_string()).is_err());
+    }
+
+    #[test]
+    fn completion_state_round_trips_separately_from_answers() {
         let mut context = InstallContext::new();
-        context.set_answer(QuestionId::Disk, "/dev/sda".to_string());
-        let current = context.to_toml().unwrap();
-        let legacy = current.replace("[answer_dependency_fingerprints]\n", "");
+        context.completed_steps.insert(StepId::LowRamWarning);
+        context
+            .step_dependency_fingerprints
+            .insert(StepId::LowRamWarning, "fingerprint".to_string());
 
-        let restored: InstallContext = toml::from_str(&legacy).unwrap();
+        let restored: InstallContext = toml::from_str(&context.to_toml().unwrap()).unwrap();
 
+        assert!(restored.is_step_completed(StepId::LowRamWarning));
+        assert!(restored.get_answer(&StepId::LowRamWarning).is_none());
         assert_eq!(
-            restored.get_answer(&QuestionId::Disk).map(String::as_str),
-            Some("/dev/sda")
+            restored
+                .step_dependency_fingerprints
+                .get(&StepId::LowRamWarning)
+                .map(String::as_str),
+            Some("fingerprint")
         );
-        assert!(restored.answer_dependency_fingerprints.is_empty());
     }
 }

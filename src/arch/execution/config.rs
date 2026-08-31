@@ -1,5 +1,5 @@
 use super::CommandRunner;
-use crate::arch::engine::{InstallContext, QuestionId};
+use crate::arch::engine::{InstallContext, StepId};
 use crate::arch::mkinitcpio::MkinitcpioConfig;
 use crate::common::locale_gen::apply_enable_disable;
 use anyhow::{Context, Result};
@@ -141,13 +141,12 @@ async fn configure_pacman_target(executor: &dyn CommandRunner) -> Result<()> {
 pub fn config_package_list(context: &InstallContext) -> Vec<String> {
     let mut packages = Vec::new();
 
-    if context.get_answer_bool(QuestionId::UseEncryption) {
+    if context.get_answer_bool(StepId::UseEncryption) {
         packages.push("lvm2".to_string());
         packages.push("cryptsetup".to_string());
     }
 
-    if context.get_answer_bool(QuestionId::UsePlymouth)
-        && !context.get_answer_bool(QuestionId::MinimalMode)
+    if context.get_answer_bool(StepId::UsePlymouth) && !context.get_answer_bool(StepId::MinimalMode)
     {
         packages.push("plymouth".to_string());
     }
@@ -156,8 +155,8 @@ pub fn config_package_list(context: &InstallContext) -> Vec<String> {
 }
 
 fn configure_mkinitcpio(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
-    let use_encryption = context.get_answer_bool(QuestionId::UseEncryption);
-    let use_plymouth = context.get_answer_bool(QuestionId::UsePlymouth);
+    let use_encryption = context.get_answer_bool(StepId::UseEncryption);
+    let use_plymouth = context.get_answer_bool(StepId::UsePlymouth);
     let use_btrfs = crate::arch::config::RootFilesystem::from_context(context).is_btrfs();
 
     if !use_encryption && !use_plymouth && !use_btrfs {
@@ -167,7 +166,7 @@ fn configure_mkinitcpio(context: &InstallContext, executor: &dyn CommandRunner) 
     if use_encryption {
         println!("Configuring mkinitcpio for encryption...");
     }
-    if use_plymouth && !context.get_answer_bool(QuestionId::MinimalMode) {
+    if use_plymouth && !context.get_answer_bool(StepId::MinimalMode) {
         println!("Configuring mkinitcpio for Plymouth...");
     }
 
@@ -175,7 +174,7 @@ fn configure_mkinitcpio(context: &InstallContext, executor: &dyn CommandRunner) 
         if use_btrfs {
             println!("[DRY RUN] Adding 'btrfs' to MODULES in /etc/mkinitcpio.conf");
         }
-        if use_plymouth && !context.get_answer_bool(QuestionId::MinimalMode) {
+        if use_plymouth && !context.get_answer_bool(StepId::MinimalMode) {
             println!("[DRY RUN] Adding 'plymouth' to HOOKS in /etc/mkinitcpio.conf");
         }
         if use_encryption {
@@ -201,7 +200,7 @@ fn configure_mkinitcpio(context: &InstallContext, executor: &dyn CommandRunner) 
 
     // Plymouth should be after systemd but before encrypt/sd-encrypt
     // And definitely before sd-encrypt to show password prompt
-    if use_plymouth && !context.get_answer_bool(QuestionId::MinimalMode) {
+    if use_plymouth && !context.get_answer_bool(StepId::MinimalMode) {
         config.ensure_hook_position(
             "plymouth",
             &["base", "systemd", "udev"],       // After these
@@ -247,7 +246,7 @@ fn configure_mkinitcpio(context: &InstallContext, executor: &dyn CommandRunner) 
 
 fn configure_vconsole(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
     let keymap = context
-        .get_answer(&QuestionId::Keymap)
+        .get_answer(&StepId::Keymap)
         .context("Keymap not selected")?;
 
     println!("Setting console keymap to {}", keymap);
@@ -263,7 +262,7 @@ fn configure_vconsole(context: &InstallContext, executor: &dyn CommandRunner) ->
 
 fn configure_timezone(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
     let timezone = context
-        .get_answer(&QuestionId::Timezone)
+        .get_answer(&StepId::Timezone)
         .context("Timezone not selected")?;
 
     println!("Setting timezone to {}", timezone);
@@ -309,7 +308,7 @@ fn configure_timezone(context: &InstallContext, executor: &dyn CommandRunner) ->
 
 fn configure_locale(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
     let locale = context
-        .get_answer(&QuestionId::Locale)
+        .get_answer(&StepId::Locale)
         .context("Locale not selected")?;
 
     println!("Setting locale to {}", locale);
@@ -350,7 +349,7 @@ fn configure_locale(context: &InstallContext, executor: &dyn CommandRunner) -> R
 
 fn configure_network(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
     let hostname = context
-        .get_answer(&QuestionId::Hostname)
+        .get_answer(&StepId::Hostname)
         .context("Hostname not set")?;
 
     println!("Setting hostname to {}", hostname);
@@ -373,10 +372,10 @@ fn configure_network(context: &InstallContext, executor: &dyn CommandRunner) -> 
 
 fn configure_users(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
     let username = context
-        .get_answer(&QuestionId::Username)
+        .get_answer(&StepId::Username)
         .context("Username not set")?;
     let password = context
-        .get_answer(&QuestionId::Password)
+        .get_answer(&StepId::Password)
         .context("Password not set")?;
 
     println!("Configuring user: {}", username);
@@ -483,8 +482,7 @@ pub fn configure_sudo(_context: &InstallContext, executor: &dyn CommandRunner) -
 }
 
 pub fn configure_plymouth(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
-    if !context.get_answer_bool(QuestionId::UsePlymouth)
-        || context.get_answer_bool(QuestionId::MinimalMode)
+    if !context.get_answer_bool(StepId::UsePlymouth) || context.get_answer_bool(StepId::MinimalMode)
     {
         return Ok(());
     }

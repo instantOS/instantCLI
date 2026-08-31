@@ -1,4 +1,4 @@
-use crate::arch::engine::{InstallContext, Question, QuestionId, QuestionResult};
+use crate::arch::engine::{InstallContext, StepId, StepOutcome, WizardStep};
 use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder};
 use crate::preview::{PreviewId, preview_command};
 use crate::ui::nerd_font::NerdFont;
@@ -17,6 +17,46 @@ impl PartitionEntry {
     pub fn new(path: String, size: String) -> Self {
         Self { path, size }
     }
+}
+
+/// Discover the current partitions belonging to a whole-disk device.
+///
+/// This is shared by the manual partitioning action and the role selectors so
+/// both use the same fresh view of kernel device state.
+pub(crate) fn list_partitions(disk_path: &str) -> Result<Vec<PartitionEntry>> {
+    let output = std::process::Command::new("lsblk")
+        .args(["-n", "-o", "NAME,SIZE,TYPE", "-r", disk_path])
+        .output()
+        .context("Failed to run lsblk to get partitions")?;
+
+    anyhow::ensure!(
+        output.status.success(),
+        "lsblk failed while inspecting {disk_path}: {}",
+        String::from_utf8_lossy(&output.stderr).trim()
+    );
+
+    Ok(parse_lsblk_partitions(&String::from_utf8_lossy(
+        &output.stdout,
+    )))
+}
+
+fn parse_lsblk_partitions(stdout: &str) -> Vec<PartitionEntry> {
+    stdout
+        .lines()
+        .filter_map(|line| {
+            let mut parts = line.split_whitespace();
+            let name = parts.next()?;
+            let size = parts.next()?;
+            (parts.next()? == "part").then(|| {
+                let path = if name.starts_with('/') {
+                    name.to_string()
+                } else {
+                    format!("/dev/{name}")
+                };
+                PartitionEntry::new(path, size.to_string())
+            })
+        })
+        .collect()
 }
 
 impl FzfSelectable for PartitionEntry {
@@ -97,7 +137,7 @@ impl PartitionValidator for EspPartitionValidator {
 }
 
 pub struct PartitionSelectorQuestion {
-    pub id: QuestionId,
+    pub id: StepId,
     pub prompt: String,
     pub icon: NerdFont,
     pub is_optional: bool,
@@ -106,7 +146,7 @@ pub struct PartitionSelectorQuestion {
 
 impl PartitionSelectorQuestion {
     pub fn new(
-        id: QuestionId,
+        id: StepId,
         prompt: impl Into<String>,
         icon: NerdFont,
         validator: Option<Box<dyn PartitionValidator>>,
@@ -127,8 +167,8 @@ impl PartitionSelectorQuestion {
 }
 
 #[async_trait::async_trait]
-impl Question for PartitionSelectorQuestion {
-    fn id(&self) -> QuestionId {
+impl WizardStep for PartitionSelectorQuestion {
+    fn id(&self) -> StepId {
         self.id
     }
 
@@ -142,57 +182,30 @@ impl Question for PartitionSelectorQuestion {
 
     fn should_ask(&self, context: &InstallContext) -> bool {
         context
-            .get_answer(&QuestionId::PartitioningMethod)
+            .get_answer(&StepId::PartitioningMethod)
             .map(|s| s.contains("Manual"))
             .unwrap_or(false)
     }
 
-    fn depends_on(&self) -> &[QuestionId] {
-        &[QuestionId::Disk, QuestionId::PartitioningMethod]
+    fn depends_on(&self) -> &[StepId] {
+        &[StepId::Disk, StepId::PartitioningMethod, StepId::RunCfdisk]
     }
 
-    async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
+    async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {
         // disk is now just the device path (e.g., "/dev/sda")
         let disk_path = context
-            .get_answer(&QuestionId::Disk)
+            .get_answer(&StepId::Disk)
             .context("No disk selected")?;
 
-        // Run lsblk to get partitions on this disk
-        // We do this here to get fresh data after cfdisk
-        let output = std::process::Command::new("lsblk")
-            .args(["-n", "-o", "NAME,SIZE,TYPE", "-r", disk_path])
-            .output()
-            .context("Failed to run lsblk to get partitions")?;
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let mut partitions: Vec<PartitionEntry> = Vec::new();
-
-        for line in stdout.lines() {
-            let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() >= 3 {
-                let name = parts[0];
-                let size = parts[1];
-                let type_ = parts[2];
-
-                if type_ == "part" {
-                    // Full path
-                    let path = if name.starts_with('/') {
-                        name.to_string()
-                    } else {
-                        format!("/dev/{}", name)
-                    };
-                    partitions.push(PartitionEntry::new(path, size.to_string()));
-                }
-            }
-        }
+        let partitions = list_partitions(disk_path)?;
 
         if partitions.is_empty() {
-            FzfWrapper::message(&format!(
-                "{} No partitions found on {}.\nDid you save your changes in cfdisk?",
-                NerdFont::Warning,
-                disk_path
-            ))?;
-            return Ok(QuestionResult::Cancelled);
+            return Ok(StepOutcome::revisit(
+                StepId::RunCfdisk,
+                format!(
+                    "No partitions were found on {disk_path}. Reopen cfdisk and write a partition layout."
+                ),
+            ));
         }
 
         let result = FzfWrapper::builder()
@@ -200,7 +213,7 @@ impl Question for PartitionSelectorQuestion {
             .select(partitions)?;
 
         // Store just the path, not the formatted display string
-        Ok(QuestionResult::from_selection(result, |entry| entry.path))
+        Ok(StepOutcome::from_selection(result, |entry| entry.path))
     }
 
     fn validate(&self, context: &InstallContext, answer: &str) -> Result<(), String> {
@@ -217,10 +230,10 @@ impl Question for PartitionSelectorQuestion {
             // val is now just the device path, no parsing needed
             if matches!(
                 id,
-                QuestionId::RootPartition
-                    | QuestionId::BootPartition
-                    | QuestionId::HomePartition
-                    | QuestionId::SwapPartition
+                StepId::RootPartition
+                    | StepId::BootPartition
+                    | StepId::HomePartition
+                    | StepId::SwapPartition
             ) && part_path == val
             {
                 return Err(format!(
@@ -236,7 +249,7 @@ impl Question for PartitionSelectorQuestion {
         // The partition must live on the currently selected disk. ask() only
         // offers partitions of that disk, so a mismatch means the answer was
         // given for a different disk (e.g. before a review edit).
-        if let Some(disk) = context.get_answer(&QuestionId::Disk)
+        if let Some(disk) = context.get_answer(&StepId::Disk)
             && !partition_belongs_to_disk(part_path, disk)
         {
             return Err(format!(
@@ -280,7 +293,24 @@ fn get_partition_size(partition_path: &str) -> Option<PartitionSize> {
 
 #[cfg(test)]
 mod tests {
-    use super::partition_belongs_to_disk;
+    use super::{parse_lsblk_partitions, partition_belongs_to_disk};
+
+    #[test]
+    fn parses_only_partition_rows_from_lsblk() {
+        let partitions = parse_lsblk_partitions(
+            "vda 20G disk\nvda1 512M part\nvda2 19.5G part\nloop0 1G loop\n",
+        );
+
+        assert_eq!(partitions.len(), 2);
+        assert_eq!(partitions[0].path, "/dev/vda1");
+        assert_eq!(partitions[0].size, "512M");
+        assert_eq!(partitions[1].path, "/dev/vda2");
+    }
+
+    #[test]
+    fn empty_disk_lsblk_output_has_no_partitions() {
+        assert!(parse_lsblk_partitions("vda 20G disk\n").is_empty());
+    }
 
     #[test]
     fn sata_partitions_match_their_disk() {

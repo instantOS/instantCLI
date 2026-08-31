@@ -1,7 +1,7 @@
 use super::text_input::{TextInputQuestion, validators};
 use crate::arch::annotations::AnnotatedValue;
 use crate::arch::config::DesktopEnvironment;
-use crate::arch::engine::{DataKey, InstallContext, Question, QuestionId, QuestionResult};
+use crate::arch::engine::{DataKey, InstallContext, StepId, StepOutcome, WizardStep};
 use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder, MenuPresentation};
 use crate::preview::{PreviewId, preview_command};
 use crate::settings::definitions::system::validate_hostname;
@@ -288,9 +288,9 @@ impl FzfSelectable for DesktopEnvironment {
 pub struct DesktopEnvironmentQuestion;
 
 #[async_trait::async_trait]
-impl Question for DesktopEnvironmentQuestion {
-    fn id(&self) -> QuestionId {
-        QuestionId::DesktopEnvironment
+impl WizardStep for DesktopEnvironmentQuestion {
+    fn id(&self) -> StepId {
+        StepId::DesktopEnvironment
     }
 
     fn is_optional(&self) -> bool {
@@ -301,7 +301,7 @@ impl Question for DesktopEnvironmentQuestion {
         Some("Choose your desktop environment")
     }
 
-    async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
+    async fn run(&self, _context: &InstallContext) -> Result<StepOutcome> {
         let options = vec![
             DesktopEnvironment::InstantWM,
             DesktopEnvironment::Sway,
@@ -315,7 +315,7 @@ impl Question for DesktopEnvironmentQuestion {
             .presentation(MenuPresentation::Padded)
             .select(options)?;
 
-        Ok(QuestionResult::from_selection(result, |environment| {
+        Ok(StepOutcome::from_selection(result, |environment| {
             environment.answer_value().to_string()
         }))
     }
@@ -336,7 +336,7 @@ impl Question for DesktopEnvironmentQuestion {
 /// (same rules as `ins settings` hostname editing).
 pub fn hostname_question() -> TextInputQuestion {
     TextInputQuestion::new(
-        QuestionId::Hostname,
+        StepId::Hostname,
         "Please enter the hostname for the new system",
         NerdFont::Desktop,
     )
@@ -348,7 +348,7 @@ pub fn hostname_question() -> TextInputQuestion {
 /// user management in `ins settings`).
 pub fn username_question() -> TextInputQuestion {
     TextInputQuestion::new(
-        QuestionId::Username,
+        StepId::Username,
         "Please enter the username for the new user",
         NerdFont::User,
     )
@@ -360,9 +360,9 @@ pub fn username_question() -> TextInputQuestion {
 pub struct MirrorRegionQuestion;
 
 #[async_trait::async_trait]
-impl Question for MirrorRegionQuestion {
-    fn id(&self) -> QuestionId {
-        QuestionId::MirrorRegion
+impl WizardStep for MirrorRegionQuestion {
+    fn id(&self) -> StepId {
+        StepId::MirrorRegion
     }
 
     fn description(&self) -> Option<&str> {
@@ -382,14 +382,14 @@ impl Question for MirrorRegionQuestion {
             .unwrap_or(false)
     }
 
-    async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
+    async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {
         let regions = context
             .get::<crate::arch::mirrors::MirrorRegionsKey>()
             .unwrap_or_default();
 
         // Defensive: if somehow we got here with no regions, cancel
         if regions.is_empty() {
-            return Ok(QuestionResult::Cancelled);
+            return Ok(StepOutcome::Pause);
         }
 
         let options: Vec<MirrorRegionOption> =
@@ -399,7 +399,7 @@ impl Question for MirrorRegionQuestion {
             .header(HeaderBuilder::new(NerdFont::Globe, "Select Mirror Region").build())
             .select(options)?;
 
-        Ok(QuestionResult::from_selection(result, |region| region.name))
+        Ok(StepOutcome::from_selection(result, |region| region.name))
     }
 
     fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
@@ -417,9 +417,9 @@ impl Question for MirrorRegionQuestion {
 pub struct TimezoneQuestion;
 
 #[async_trait::async_trait]
-impl Question for TimezoneQuestion {
-    fn id(&self) -> QuestionId {
-        QuestionId::Timezone
+impl WizardStep for TimezoneQuestion {
+    fn id(&self) -> StepId {
+        StepId::Timezone
     }
 
     fn description(&self) -> Option<&str> {
@@ -430,7 +430,7 @@ impl Question for TimezoneQuestion {
         vec![crate::arch::timezones::TimezonesKey::KEY.to_string()]
     }
 
-    async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
+    async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {
         let timezones = context
             .get::<crate::arch::timezones::TimezonesKey>()
             .unwrap_or_default();
@@ -444,7 +444,7 @@ impl Question for TimezoneQuestion {
             .header(HeaderBuilder::new(NerdFont::Clock, "Select Timezone").build())
             .select(options)?;
 
-        Ok(QuestionResult::from_selection(result, |tz| tz.value))
+        Ok(StepOutcome::from_selection(result, |tz| tz.value))
     }
 
     fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
@@ -462,9 +462,9 @@ impl Question for TimezoneQuestion {
 pub struct KeymapQuestion;
 
 #[async_trait::async_trait]
-impl Question for KeymapQuestion {
-    fn id(&self) -> QuestionId {
-        QuestionId::Keymap
+impl WizardStep for KeymapQuestion {
+    fn id(&self) -> StepId {
+        StepId::Keymap
     }
 
     fn description(&self) -> Option<&str> {
@@ -475,13 +475,13 @@ impl Question for KeymapQuestion {
         vec![crate::arch::keymaps::KeymapsKey::KEY.to_string()]
     }
 
-    async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
+    async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {
         let keymaps = context
             .get::<crate::arch::keymaps::KeymapsKey>()
             .unwrap_or_default();
 
         if keymaps.is_empty() {
-            return Ok(QuestionResult::Cancelled);
+            return Ok(StepOutcome::Pause);
         }
 
         let options: Vec<AnnotatedOption> = keymaps
@@ -493,7 +493,7 @@ impl Question for KeymapQuestion {
             .header(HeaderBuilder::new(NerdFont::Keyboard, "Select Keymap").build())
             .select(options)?;
 
-        Ok(QuestionResult::from_selection(result, |val| val.value))
+        Ok(StepOutcome::from_selection(result, |val| val.value))
     }
 
     fn data_providers(&self) -> Vec<Box<dyn crate::arch::engine::AsyncDataProvider>> {
@@ -504,9 +504,9 @@ impl Question for KeymapQuestion {
 pub struct LocaleQuestion;
 
 #[async_trait::async_trait]
-impl Question for LocaleQuestion {
-    fn id(&self) -> QuestionId {
-        QuestionId::Locale
+impl WizardStep for LocaleQuestion {
+    fn id(&self) -> StepId {
+        StepId::Locale
     }
 
     fn description(&self) -> Option<&str> {
@@ -517,13 +517,13 @@ impl Question for LocaleQuestion {
         vec![crate::arch::locales::LocalesKey::KEY.to_string()]
     }
 
-    async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
+    async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {
         let locales = context
             .get::<crate::arch::locales::LocalesKey>()
             .unwrap_or_default();
 
         if locales.is_empty() {
-            return Ok(QuestionResult::Cancelled);
+            return Ok(StepOutcome::Pause);
         }
 
         let options: Vec<AnnotatedOption> = locales
@@ -535,7 +535,7 @@ impl Question for LocaleQuestion {
             .header(HeaderBuilder::new(NerdFont::Language, "Select System Locale").build())
             .select(options)?;
 
-        Ok(QuestionResult::from_selection(result, |val| val.value))
+        Ok(StepOutcome::from_selection(result, |val| val.value))
     }
 
     fn data_providers(&self) -> Vec<Box<dyn crate::arch::engine::AsyncDataProvider>> {
@@ -546,9 +546,9 @@ impl Question for LocaleQuestion {
 pub struct PasswordQuestion;
 
 #[async_trait::async_trait]
-impl Question for PasswordQuestion {
-    fn id(&self) -> QuestionId {
-        QuestionId::Password
+impl WizardStep for PasswordQuestion {
+    fn id(&self) -> StepId {
+        StepId::Password
     }
 
     fn description(&self) -> Option<&str> {
@@ -559,7 +559,7 @@ impl Question for PasswordQuestion {
         true
     }
 
-    async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
+    async fn run(&self, _context: &InstallContext) -> Result<StepOutcome> {
         let result = FzfWrapper::builder()
             .prompt(format!(
                 "{} Please enter the password for the new user (and root)",
@@ -569,16 +569,16 @@ impl Question for PasswordQuestion {
             .with_confirmation()
             .password_dialog()?;
 
-        Ok(QuestionResult::from_selection(result, |p| p))
+        Ok(StepOutcome::from_selection(result, |p| p))
     }
 }
 
 pub struct KernelQuestion;
 
 #[async_trait::async_trait]
-impl Question for KernelQuestion {
-    fn id(&self) -> QuestionId {
-        QuestionId::Kernel
+impl WizardStep for KernelQuestion {
+    fn id(&self) -> StepId {
+        StepId::Kernel
     }
 
     fn description(&self) -> Option<&str> {
@@ -589,7 +589,7 @@ impl Question for KernelQuestion {
         true
     }
 
-    async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
+    async fn run(&self, _context: &InstallContext) -> Result<StepOutcome> {
         let kernels = vec![KernelOption::Linux, KernelOption::Lts, KernelOption::Zen];
 
         let result = FzfWrapper::builder()
@@ -597,7 +597,7 @@ impl Question for KernelQuestion {
             .presentation(MenuPresentation::Padded)
             .select(kernels)?;
 
-        Ok(QuestionResult::from_selection(result, |k| {
+        Ok(StepOutcome::from_selection(result, |k| {
             k.label().to_string()
         }))
     }
@@ -613,9 +613,9 @@ impl Question for KernelQuestion {
 pub struct EncryptionPasswordQuestion;
 
 #[async_trait::async_trait]
-impl Question for EncryptionPasswordQuestion {
-    fn id(&self) -> QuestionId {
-        QuestionId::EncryptionPassword
+impl WizardStep for EncryptionPasswordQuestion {
+    fn id(&self) -> StepId {
+        StepId::EncryptionPassword
     }
 
     fn description(&self) -> Option<&str> {
@@ -627,14 +627,14 @@ impl Question for EncryptionPasswordQuestion {
     }
 
     fn should_ask(&self, context: &InstallContext) -> bool {
-        context.get_answer_bool(QuestionId::UseEncryption)
+        context.get_answer_bool(StepId::UseEncryption)
     }
 
-    fn depends_on(&self) -> &[QuestionId] {
-        &[QuestionId::UseEncryption]
+    fn depends_on(&self) -> &[StepId] {
+        &[StepId::UseEncryption]
     }
 
-    async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
+    async fn run(&self, _context: &InstallContext) -> Result<StepOutcome> {
         let result = FzfWrapper::builder()
             .prompt(format!(
                 "{} Please enter the encryption password",
@@ -644,7 +644,7 @@ impl Question for EncryptionPasswordQuestion {
             .with_confirmation()
             .password_dialog()?;
 
-        Ok(QuestionResult::from_selection(result, |p| p))
+        Ok(StepOutcome::from_selection(result, |p| p))
     }
 }
 

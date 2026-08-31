@@ -5,7 +5,7 @@ use crate::arch::dualboot::parsing::{PartitionLayout, get_free_regions, get_part
 use crate::arch::dualboot::types::{FreeRegion, MIN_ESP_SIZE};
 use crate::arch::dualboot::{DualBootDisksKey, PartitionTableType};
 use crate::arch::engine::{
-    DualBootPartitionPaths, DualBootPartitions, EspNeedsFormat, InstallContext, QuestionId,
+    DualBootPartitionPaths, DualBootPartitions, EspNeedsFormat, InstallContext, StepId,
 };
 use crate::arch::execution::CommandRunner;
 use crate::common::format::format_size;
@@ -37,19 +37,19 @@ pub fn prepare_dualboot_disk(
     let mut resized_partition: Option<String> = None;
     let mut resize_plan: Option<ResizePlan> = None;
     let resize_choice = context
-        .get_answer(&QuestionId::DualBootInstructions)
+        .get_answer(&StepId::DualBootInstructions)
         .map(|choice| choice.as_str())
         .unwrap_or("manual");
     let auto_resize_selected = resize_choice == "auto";
 
-    if let Some(partition_path) = context.get_answer(&QuestionId::DualBootPartition)
+    if let Some(partition_path) = context.get_answer(&StepId::DualBootPartition)
         && partition_path != "__free_space__"
     {
         resized_partition = Some(partition_path.to_string());
 
         if auto_resize_selected {
             let size_str = context
-                .get_answer(&QuestionId::DualBootSize)
+                .get_answer(&StepId::DualBootSize)
                 .context("No size selected for dual boot")?;
             let desired_free_space_bytes: u64 = size_str.parse()?;
 

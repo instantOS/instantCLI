@@ -1,4 +1,4 @@
-use crate::arch::engine::{InstallContext, Question, QuestionId, QuestionResult};
+use crate::arch::engine::{InstallContext, StepId, StepOutcome, WizardStep};
 use crate::menu_utils::{ConfirmResult, FzfWrapper};
 use crate::ui::nerd_font::NerdFont;
 use anyhow::Result;
@@ -6,18 +6,18 @@ use anyhow::Result;
 type ContextPredicate = dyn Fn(&InstallContext) -> bool + Send + Sync;
 
 pub struct BooleanQuestion {
-    id: QuestionId,
+    id: StepId,
     prompt: String,
     icon: NerdFont,
     is_optional: bool,
     default_yes: bool,
     dynamic_default: Option<Box<ContextPredicate>>,
     should_ask_predicate: Option<Box<ContextPredicate>>,
-    dependencies: Vec<QuestionId>,
+    dependencies: Vec<StepId>,
 }
 
 impl BooleanQuestion {
-    pub fn new(id: QuestionId, prompt: impl Into<String>, icon: NerdFont) -> Self {
+    pub fn new(id: StepId, prompt: impl Into<String>, icon: NerdFont) -> Self {
         Self {
             id,
             prompt: prompt.into(),
@@ -44,7 +44,7 @@ impl BooleanQuestion {
     /// in the same operation so invalidation cannot drift from the closure.
     pub fn default_from<F>(
         mut self,
-        dependencies: impl IntoIterator<Item = QuestionId>,
+        dependencies: impl IntoIterator<Item = StepId>,
         func: F,
     ) -> Self
     where
@@ -59,7 +59,7 @@ impl BooleanQuestion {
     /// in the same operation so invalidation cannot drift from the closure.
     pub fn relevant_when<F>(
         mut self,
-        dependencies: impl IntoIterator<Item = QuestionId>,
+        dependencies: impl IntoIterator<Item = StepId>,
         func: F,
     ) -> Self
     where
@@ -70,7 +70,7 @@ impl BooleanQuestion {
         self
     }
 
-    fn add_dependencies(&mut self, dependencies: impl IntoIterator<Item = QuestionId>) {
+    fn add_dependencies(&mut self, dependencies: impl IntoIterator<Item = StepId>) {
         for dependency in dependencies {
             if !self.dependencies.contains(&dependency) {
                 self.dependencies.push(dependency);
@@ -80,8 +80,8 @@ impl BooleanQuestion {
 }
 
 #[async_trait::async_trait]
-impl Question for BooleanQuestion {
-    fn id(&self) -> QuestionId {
+impl WizardStep for BooleanQuestion {
+    fn id(&self) -> StepId {
         self.id
     }
 
@@ -101,7 +101,7 @@ impl Question for BooleanQuestion {
         }
     }
 
-    fn depends_on(&self) -> &[QuestionId] {
+    fn depends_on(&self) -> &[StepId] {
         &self.dependencies
     }
 
@@ -118,16 +118,16 @@ impl Question for BooleanQuestion {
         })
     }
 
-    async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
+    async fn run(&self, _context: &InstallContext) -> Result<StepOutcome> {
         // Use FzfWrapper's confirmation dialog for consistent yes/no prompts
         let result = FzfWrapper::builder()
             .confirm(format!("{} {}", self.icon, self.prompt))
             .confirm_dialog()?;
 
         match result {
-            ConfirmResult::Yes => Ok(QuestionResult::Answer("yes".to_string())),
-            ConfirmResult::No => Ok(QuestionResult::Answer("no".to_string())),
-            ConfirmResult::Cancelled => Ok(QuestionResult::Cancelled),
+            ConfirmResult::Yes => Ok(StepOutcome::Answer("yes".to_string())),
+            ConfirmResult::No => Ok(StepOutcome::Answer("no".to_string())),
+            ConfirmResult::Cancelled => Ok(StepOutcome::Pause),
         }
     }
 }

@@ -161,7 +161,7 @@ mod tests {
         let mock = crate::arch::execution::mock::MockRunner::new();
         let mut context = crate::arch::engine::InstallContext::new();
         context.set_answer(
-            crate::arch::engine::QuestionId::RootFilesystem,
+            crate::arch::engine::StepId::RootFilesystem,
             "ext4".to_string(),
         );
         super::format_uefi(&context, "/dev/sda", &mock).unwrap();

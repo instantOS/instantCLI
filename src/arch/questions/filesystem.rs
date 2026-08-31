@@ -1,5 +1,5 @@
 use crate::arch::config::{BtrfsCompression, RootFilesystem};
-use crate::arch::engine::{InstallContext, Question, QuestionId, QuestionResult};
+use crate::arch::engine::{InstallContext, StepId, StepOutcome, WizardStep};
 use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder, MenuPresentation};
 use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
@@ -69,9 +69,9 @@ impl FzfSelectable for RootFilesystemOption {
 pub struct RootFilesystemQuestion;
 
 #[async_trait::async_trait]
-impl Question for RootFilesystemQuestion {
-    fn id(&self) -> QuestionId {
-        QuestionId::RootFilesystem
+impl WizardStep for RootFilesystemQuestion {
+    fn id(&self) -> StepId {
+        StepId::RootFilesystem
     }
 
     fn description(&self) -> Option<&str> {
@@ -86,7 +86,7 @@ impl Question for RootFilesystemQuestion {
         Some(RootFilesystem::DEFAULT.answer_value().to_string())
     }
 
-    async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
+    async fn run(&self, _context: &InstallContext) -> Result<StepOutcome> {
         let options = vec![
             RootFilesystemOption(RootFilesystem::Btrfs),
             RootFilesystemOption(RootFilesystem::Ext4),
@@ -97,7 +97,7 @@ impl Question for RootFilesystemQuestion {
             .presentation(MenuPresentation::Padded)
             .select(options)?;
 
-        Ok(QuestionResult::from_selection(result, |option| {
+        Ok(StepOutcome::from_selection(result, |option| {
             option.0.answer_value().to_string()
         }))
     }
@@ -169,9 +169,9 @@ impl FzfSelectable for BtrfsCompressionOption {
 pub struct BtrfsCompressionQuestion;
 
 #[async_trait::async_trait]
-impl Question for BtrfsCompressionQuestion {
-    fn id(&self) -> QuestionId {
-        QuestionId::BtrfsCompression
+impl WizardStep for BtrfsCompressionQuestion {
+    fn id(&self) -> StepId {
+        StepId::BtrfsCompression
     }
 
     fn description(&self) -> Option<&str> {
@@ -187,15 +187,15 @@ impl Question for BtrfsCompressionQuestion {
         RootFilesystem::from_context(context).is_btrfs()
     }
 
-    fn depends_on(&self) -> &[QuestionId] {
-        &[QuestionId::RootFilesystem]
+    fn depends_on(&self) -> &[StepId] {
+        &[StepId::RootFilesystem]
     }
 
     fn get_default(&self, _context: &InstallContext) -> Option<String> {
         Some(BtrfsCompression::DEFAULT.answer_value().to_string())
     }
 
-    async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
+    async fn run(&self, _context: &InstallContext) -> Result<StepOutcome> {
         let options = vec![
             BtrfsCompressionOption(BtrfsCompression::Zstd),
             BtrfsCompressionOption(BtrfsCompression::Lzo),
@@ -208,7 +208,7 @@ impl Question for BtrfsCompressionQuestion {
             .presentation(MenuPresentation::Padded)
             .select(options)?;
 
-        Ok(QuestionResult::from_selection(result, |option| {
+        Ok(StepOutcome::from_selection(result, |option| {
             option.0.answer_value().to_string()
         }))
     }

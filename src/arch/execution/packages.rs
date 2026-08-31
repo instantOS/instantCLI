@@ -1,4 +1,4 @@
-use crate::arch::engine::{GpuKind, InstallContext, QuestionId};
+use crate::arch::engine::{GpuKind, InstallContext, StepId};
 use anyhow::Result;
 use std::collections::HashSet;
 
@@ -40,7 +40,7 @@ pub fn build_standard_package_plan(context: &InstallContext) -> Result<Vec<Strin
 /// - `ins arch install` (in Post step, after [instant] repo is configured)
 /// - `ins arch setup` (on existing Arch installations converting to instantOS)
 pub fn build_instant_package_plan(context: &InstallContext) -> Vec<String> {
-    if context.get_answer_bool(QuestionId::MinimalMode) {
+    if context.get_answer_bool(StepId::MinimalMode) {
         return Vec::new();
     }
     strings(&["instantdepend", "instantos", "instantextra"])
@@ -49,7 +49,7 @@ pub fn build_instant_package_plan(context: &InstallContext) -> Vec<String> {
 fn collect_language_packages(context: &InstallContext) -> Vec<String> {
     let mut packages = Vec::new();
 
-    if let Some(locale) = context.get_answer(&QuestionId::Locale) {
+    if let Some(locale) = context.get_answer(&StepId::Locale) {
         let locale_lower = locale.to_lowercase();
         // Extract language and region/country
         // e.g. "de_DE.UTF-8" -> "de_de"
@@ -101,10 +101,10 @@ fn collect_language_packages(context: &InstallContext) -> Vec<String> {
 }
 
 fn collect_extended_packages(context: &InstallContext) -> Result<Vec<String>> {
-    let minimal_mode = context.get_answer_bool(QuestionId::MinimalMode);
+    let minimal_mode = context.get_answer_bool(StepId::MinimalMode);
 
     let kernel = context
-        .get_answer(&QuestionId::Kernel)
+        .get_answer(&StepId::Kernel)
         .map(|s| s.as_str())
         .unwrap_or("linux");
 
@@ -184,7 +184,7 @@ fn collect_extended_packages(context: &InstallContext) -> Result<Vec<String>> {
     }
 
     // Plymouth support
-    if context.get_answer_bool(QuestionId::UsePlymouth) && !minimal_mode {
+    if context.get_answer_bool(StepId::UsePlymouth) && !minimal_mode {
         println!("Plymouth enabled, adding plymouth package");
         packages.push("plymouth".to_owned());
     }
@@ -204,14 +204,14 @@ fn collect_extended_packages(context: &InstallContext) -> Result<Vec<String>> {
 mod tests {
     use super::build_standard_package_plan;
     use crate::arch::config::DesktopEnvironment;
-    use crate::arch::engine::{BootMode, InstallContext, QuestionId};
+    use crate::arch::engine::{BootMode, InstallContext, StepId};
 
     fn base_context() -> InstallContext {
         let mut context = InstallContext::new();
         context.system_info.boot_mode = BootMode::UEFI64;
-        context.set_answer(QuestionId::Kernel, "linux".to_string());
+        context.set_answer(StepId::Kernel, "linux".to_string());
         context.set_answer(
-            QuestionId::DesktopEnvironment,
+            StepId::DesktopEnvironment,
             DesktopEnvironment::Tty.answer_value().to_string(),
         );
         context
@@ -232,7 +232,7 @@ mod tests {
     fn hyprland_selection_adds_hyprland_and_gdm_by_default() {
         let mut context = base_context();
         context.set_answer(
-            QuestionId::DesktopEnvironment,
+            StepId::DesktopEnvironment,
             DesktopEnvironment::Hyprland.answer_value().to_string(),
         );
 
@@ -247,11 +247,11 @@ mod tests {
     fn hyprland_selection_adds_hyprland_and_lightdm_when_selected() {
         let mut context = base_context();
         context.set_answer(
-            QuestionId::DesktopEnvironment,
+            StepId::DesktopEnvironment,
             DesktopEnvironment::Hyprland.answer_value().to_string(),
         );
         context.set_answer(
-            QuestionId::DisplayManager,
+            StepId::DisplayManager,
             crate::arch::config::DisplayManager::Lightdm
                 .answer_value()
                 .to_string(),
@@ -267,9 +267,9 @@ mod tests {
     #[test]
     fn selecting_german_locale_adds_german_firefox_i18n_package() {
         let mut context = base_context();
-        context.set_answer(QuestionId::Locale, "de_DE.UTF-8".to_string());
+        context.set_answer(StepId::Locale, "de_DE.UTF-8".to_string());
         context.set_answer(
-            QuestionId::DesktopEnvironment,
+            StepId::DesktopEnvironment,
             DesktopEnvironment::Sway.answer_value().to_string(),
         );
 

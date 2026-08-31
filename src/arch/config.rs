@@ -1,4 +1,4 @@
-use crate::arch::engine::{InstallContext, QuestionId};
+use crate::arch::engine::{InstallContext, StepId};
 
 /// Subvolume layout created for btrfs installations.
 pub const BTRFS_ROOT_SUBVOLUME: &str = "@";
@@ -29,7 +29,7 @@ impl DesktopEnvironment {
 
     pub fn from_context(context: &InstallContext) -> Self {
         context
-            .get_answer(&QuestionId::DesktopEnvironment)
+            .get_answer(&StepId::DesktopEnvironment)
             .map(|answer| Self::from_answer(answer))
             .unwrap_or(Self::DEFAULT)
     }
@@ -122,7 +122,7 @@ impl RootFilesystem {
 
     pub fn from_context(context: &InstallContext) -> Self {
         context
-            .get_answer(&QuestionId::RootFilesystem)
+            .get_answer(&StepId::RootFilesystem)
             .map(|answer| Self::from_answer(answer))
             .unwrap_or(Self::DEFAULT)
     }
@@ -171,7 +171,7 @@ impl BtrfsCompression {
 
     pub fn from_context(context: &InstallContext) -> Self {
         context
-            .get_answer(&QuestionId::BtrfsCompression)
+            .get_answer(&StepId::BtrfsCompression)
             .map(|answer| Self::from_answer(answer))
             .unwrap_or(Self::DEFAULT)
     }
@@ -226,7 +226,7 @@ impl DisplayManager {
 
     pub fn from_context(context: &InstallContext) -> Self {
         context
-            .get_answer(&QuestionId::DisplayManager)
+            .get_answer(&StepId::DisplayManager)
             .map(|answer| Self::from_answer(answer))
             .unwrap_or(Self::DEFAULT)
     }

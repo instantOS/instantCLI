@@ -1,7 +1,5 @@
 use super::filesystem;
-use crate::arch::engine::{
-    BootMode, DualBootPartitions, EspNeedsFormat, InstallContext, QuestionId,
-};
+use crate::arch::engine::{BootMode, DualBootPartitions, EspNeedsFormat, InstallContext, StepId};
 use crate::arch::execution::CommandRunner;
 use anyhow::{Context, Result};
 use std::process::Command;
@@ -20,7 +18,7 @@ pub fn format_and_mount_partitions(
         paths.root.clone()
     } else {
         context
-            .get_answer(&QuestionId::RootPartition)
+            .get_answer(&StepId::RootPartition)
             .context("Root partition not set")?
             .to_string()
     };
@@ -29,14 +27,14 @@ pub fn format_and_mount_partitions(
     filesystem::format_root(context, &root_path, executor)?;
 
     println!("Mounting Root partition...");
-    let has_separate_home = context.get_answer(&QuestionId::HomePartition).is_some();
+    let has_separate_home = context.get_answer(&StepId::HomePartition).is_some();
     filesystem::mount_root(context, &root_path, !has_separate_home, executor)?;
 
     let boot_path = if let Some(ref paths) = dualboot_paths {
         Some(paths.boot.clone())
     } else {
         context
-            .get_answer(&QuestionId::BootPartition)
+            .get_answer(&StepId::BootPartition)
             .map(|s| s.to_string())
     };
 
@@ -74,7 +72,7 @@ pub fn format_and_mount_partitions(
         Some(paths.swap.clone())
     } else {
         context
-            .get_answer(&QuestionId::SwapPartition)
+            .get_answer(&StepId::SwapPartition)
             .map(|s| s.to_string())
     };
 
@@ -85,7 +83,7 @@ pub fn format_and_mount_partitions(
         executor.run(Command::new("swapon").arg(&swap_path))?;
     }
 
-    if let Some(home_path) = context.get_answer(&QuestionId::HomePartition) {
+    if let Some(home_path) = context.get_answer(&StepId::HomePartition) {
         println!("Formatting Home partition: {}", home_path);
         executor.run(Command::new("mkfs.ext4").args(["-F", home_path]))?;
         println!("Mounting Home partition...");

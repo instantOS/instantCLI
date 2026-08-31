@@ -4,7 +4,7 @@ use anyhow::Result;
 
 use crate::arch::config::DesktopEnvironment;
 use crate::arch::engine::{
-    EngineOutcome, FlowKind, InstallContext, Question, QuestionEngine, QuestionId,
+    FlowKind, InstallContext, StepId, WizardEngine, WizardOutcome, WizardStep,
 };
 use crate::arch::questions::{DesktopEnvironmentQuestion, DisplayManagerQuestion};
 use crate::common::distro::is_live_iso;
@@ -63,9 +63,8 @@ pub(super) async fn handle_setup_command(user: Option<String>, dry_run: bool) ->
     // Run the desktop-related questions from `ins arch install` as a small
     // setup wizard. The setup flow asks optional questions in the main flow
     // and reuses the engine's pause/review/back navigation.
-    let engine =
-        QuestionEngine::for_flow(FlowKind::Setup, setup_questions())?.with_context(context);
-    let EngineOutcome::Completed(context) = engine.run().await? else {
+    let engine = WizardEngine::for_flow(FlowKind::Setup, setup_questions())?.with_context(context);
+    let WizardOutcome::Completed(context) = engine.run().await? else {
         return Ok(());
     };
 
@@ -87,7 +86,7 @@ fn setup_relaunch_args(user: Option<&str>, dry_run: bool) -> Vec<String> {
 }
 
 fn print_setup_configuration(context: &InstallContext) {
-    let answer = |id: QuestionId| -> String {
+    let answer = |id: StepId| -> String {
         context
             .get_answer(&id)
             .cloned()
@@ -100,15 +99,15 @@ fn print_setup_configuration(context: &InstallContext) {
         DesktopEnvironment::from_context(context).label()
     );
     if DesktopEnvironment::from_context(context).requires_display_manager() {
-        println!("  Display manager: {}", answer(QuestionId::DisplayManager));
-        println!("  Autologin: {}", answer(QuestionId::Autologin));
+        println!("  Display manager: {}", answer(StepId::DisplayManager));
+        println!("  Autologin: {}", answer(StepId::Autologin));
     }
     println!();
 }
 
 /// The desktop-related questions of the `ins arch install` wizard, asked
 /// inline by the setup flow.
-fn setup_questions() -> Vec<Box<dyn Question>> {
+fn setup_questions() -> Vec<Box<dyn WizardStep>> {
     vec![
         Box::new(DesktopEnvironmentQuestion),
         Box::new(DisplayManagerQuestion),
@@ -119,7 +118,7 @@ fn setup_questions() -> Vec<Box<dyn Question>> {
 #[cfg(test)]
 mod tests {
     use super::{setup_questions, setup_relaunch_args};
-    use crate::arch::engine::{FlowKind, QuestionEngine};
+    use crate::arch::engine::{FlowKind, WizardEngine};
 
     #[test]
     fn relaunch_preserves_setup_options() {
@@ -131,6 +130,6 @@ mod tests {
 
     #[test]
     fn setup_question_graph_is_valid() {
-        QuestionEngine::for_flow(FlowKind::Setup, setup_questions()).unwrap();
+        WizardEngine::for_flow(FlowKind::Setup, setup_questions()).unwrap();
     }
 }

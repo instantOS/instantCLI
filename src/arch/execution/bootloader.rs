@@ -1,5 +1,5 @@
 use super::CommandRunner;
-use crate::arch::engine::{BootMode, InstallContext, QuestionId};
+use crate::arch::engine::{BootMode, InstallContext, StepId};
 use crate::common::config_edit::set_keys;
 use anyhow::{Context, Result};
 use std::process::Command;
@@ -70,7 +70,7 @@ fn install_grub_bios(context: &InstallContext, executor: &dyn CommandRunner) -> 
 
     // disk is now just the device path (e.g., "/dev/sda")
     let disk = context
-        .get_answer(&QuestionId::Disk)
+        .get_answer(&StepId::Disk)
         .context("Disk not selected")?;
 
     println!("Installing GRUB to MBR of {}", disk);
@@ -87,17 +87,16 @@ fn install_grub_bios(context: &InstallContext, executor: &dyn CommandRunner) -> 
 fn configure_grub(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
     println!("Generating GRUB configuration...");
 
-    if context.get_answer_bool(QuestionId::UseEncryption) {
+    if context.get_answer_bool(StepId::UseEncryption) {
         configure_grub_encryption(context, executor)?;
     }
 
-    if context.get_answer_bool(QuestionId::UsePlymouth)
-        && !context.get_answer_bool(QuestionId::MinimalMode)
+    if context.get_answer_bool(StepId::UsePlymouth) && !context.get_answer_bool(StepId::MinimalMode)
     {
         configure_grub_plymouth(context, executor)?;
     }
 
-    if !context.get_answer_bool(QuestionId::MinimalMode) {
+    if !context.get_answer_bool(StepId::MinimalMode) {
         configure_grub_theme(context, executor)?;
     }
 
@@ -134,7 +133,7 @@ fn configure_grub_encryption(context: &InstallContext, executor: &dyn CommandRun
 
 fn luks_partition_path(context: &InstallContext) -> Result<String> {
     let disk = context
-        .get_answer(&QuestionId::Disk)
+        .get_answer(&StepId::Disk)
         .context("Disk not selected")?;
 
     Ok(crate::arch::execution::disk::get_part_path(disk, 2))

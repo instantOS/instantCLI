@@ -1,6 +1,6 @@
 use std::fmt;
 
-use super::super::{InstallContext, Question, QuestionId};
+use super::super::{InstallContext, StepId, WizardStep};
 use super::FlowKind;
 use crate::arch::engine::summary::{
     InstallSummary, PartitioningKind, build_install_summary, build_setup_summary,
@@ -141,9 +141,9 @@ impl FzfSelectable for FinalReviewOption {
 #[derive(Clone)]
 pub(super) enum ReviewItem {
     Continue,
-    Question {
+    Answer {
         index: usize,
-        id: QuestionId,
+        id: StepId,
         description: String,
         answer: String,
         is_sensitive: bool,
@@ -157,7 +157,7 @@ impl FzfSelectable for ReviewItem {
                 "{} Continue",
                 format_icon_colored(NerdFont::ArrowRight, colors::GREEN)
             ),
-            Self::Question {
+            Self::Answer {
                 id,
                 answer,
                 is_sensitive,
@@ -185,7 +185,7 @@ impl FzfSelectable for ReviewItem {
                     "All reviewed answers will be kept.",
                 )
                 .build(),
-            Self::Question {
+            Self::Answer {
                 id,
                 description,
                 answer,
@@ -211,7 +211,7 @@ impl FzfSelectable for ReviewItem {
     fn fzf_key(&self) -> String {
         match self {
             Self::Continue => "continue".to_string(),
-            Self::Question { index, .. } => format!("question_{index}"),
+            Self::Answer { index, .. } => format!("question_{index}"),
         }
     }
 }
@@ -219,9 +219,9 @@ impl FzfSelectable for ReviewItem {
 #[derive(Clone)]
 pub(super) enum AdvancedOption {
     Back,
-    Question {
+    Answer {
         index: usize,
-        id: QuestionId,
+        id: StepId,
         description: String,
         answer: Option<String>,
         is_sensitive: bool,
@@ -229,22 +229,19 @@ pub(super) enum AdvancedOption {
 }
 
 impl AdvancedOption {
-    pub(super) fn from_questions(
-        questions: &[Box<dyn Question>],
-        context: &InstallContext,
-    ) -> Vec<Self> {
+    pub(super) fn from_steps(steps: &[Box<dyn WizardStep>], context: &InstallContext) -> Vec<Self> {
         let mut options = vec![Self::Back];
         options.extend(
-            questions
+            steps
                 .iter()
                 .enumerate()
-                .filter(|(_, question)| question.is_optional() && question.should_ask(context))
-                .map(|(index, question)| Self::Question {
+                .filter(|(_, step)| step.is_optional() && step.should_ask(context))
+                .map(|(index, step)| Self::Answer {
                     index,
-                    id: question.id(),
-                    description: question.description().unwrap_or_default().to_string(),
-                    answer: context.get_answer(&question.id()).cloned(),
-                    is_sensitive: question.is_sensitive(),
+                    id: step.id(),
+                    description: step.description().unwrap_or_default().to_string(),
+                    answer: context.get_answer(&step.id()).cloned(),
+                    is_sensitive: step.is_sensitive(),
                 }),
         );
         options
@@ -255,7 +252,7 @@ impl FzfSelectable for AdvancedOption {
     fn fzf_display_text(&self) -> String {
         match self {
             Self::Back => format!("{} Back", NerdFont::ArrowLeft),
-            Self::Question {
+            Self::Answer {
                 id,
                 answer,
                 is_sensitive,
@@ -277,7 +274,7 @@ impl FzfSelectable for AdvancedOption {
                 .header(NerdFont::ArrowLeft, "Back")
                 .text("Return to the final review.")
                 .build(),
-            Self::Question {
+            Self::Answer {
                 id,
                 description,
                 answer,
@@ -301,7 +298,7 @@ impl FzfSelectable for AdvancedOption {
     fn fzf_key(&self) -> String {
         match self {
             Self::Back => "back".to_string(),
-            Self::Question { index, .. } => format!("question_{index}"),
+            Self::Answer { index, .. } => format!("question_{index}"),
         }
     }
 }

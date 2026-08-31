@@ -3,30 +3,54 @@ use anyhow::Result;
 use crate::menu_utils::FzfResult;
 
 use super::context::{DataKey, InstallContext};
-use super::types::QuestionId;
+use super::types::StepId;
 
-/// Result of asking a question
-pub enum QuestionResult {
+/// Result of running one interactive wizard step.
+pub enum StepOutcome {
+    /// Store configuration data and complete the step.
     Answer(String),
-    Cancelled,
+    /// Complete a side-effect or informational step without inventing an answer.
+    Completed,
+    /// Show the message and run the current step again.
+    Retry(String),
+    /// Return directly to the previous relevant step, optionally explaining why.
+    Back { message: Option<String> },
+    /// Invalidate and revisit a specific earlier step.
+    Revisit {
+        step: StepId,
+        message: Option<String>,
+    },
+    /// Open the wizard's pause menu.
+    Pause,
 }
 
-impl QuestionResult {
-    /// Map a single-select fzf result into a question result using
+impl StepOutcome {
+    /// Map a single-select menu result into a step outcome using
     /// `extract` to turn the selected option into the stored answer.
     ///
     /// This is the single place defining how non-selection results are
     /// treated: cancellation and fzf errors both degrade to
-    /// [`QuestionResult::Cancelled`] (which sends the wizard to its pause
+    /// [`StepOutcome::Pause`] (which sends the wizard to its pause
     /// menu). Fzf errors are logged instead of being silently swallowed.
     pub fn from_selection<T>(result: FzfResult<T>, extract: impl FnOnce(T) -> String) -> Self {
         match result {
-            FzfResult::Selected(item) => QuestionResult::Answer(extract(item)),
+            FzfResult::Selected(item) => StepOutcome::Answer(extract(item)),
             FzfResult::Error(message) => {
                 eprintln!("Menu error: {message}");
-                QuestionResult::Cancelled
+                StepOutcome::Pause
             }
-            _ => QuestionResult::Cancelled,
+            _ => StepOutcome::Pause,
+        }
+    }
+
+    pub fn back() -> Self {
+        Self::Back { message: None }
+    }
+
+    pub fn revisit(step: StepId, message: impl Into<String>) -> Self {
+        Self::Revisit {
+            step,
+            message: Some(message.into()),
         }
     }
 }
@@ -55,17 +79,17 @@ pub trait AsyncDataProvider: Send + Sync {
     }
 }
 
-/// Trait that every question must implement
+/// A navigable unit in the interactive configuration wizard.
 #[async_trait::async_trait]
-pub trait Question: Send + Sync {
-    fn id(&self) -> QuestionId;
+pub trait WizardStep: Send + Sync {
+    fn id(&self) -> StepId;
 
-    /// Returns a list of keys that must exist in context.data before this question is ready
+    /// Returns data keys that must exist before this step can run.
     fn required_data_keys(&self) -> Vec<String> {
         vec![]
     }
 
-    /// Returns true if the question is ready to be asked (dependencies met)
+    /// Returns true if the step is ready to run.
     fn is_ready(&self, context: &InstallContext) -> bool {
         let keys = self.required_data_keys();
         if keys.is_empty() {
@@ -75,17 +99,17 @@ pub trait Question: Send + Sync {
         keys.iter().all(|k| data.contains_key(k))
     }
 
-    /// Asks the question and returns the answer or cancellation
-    async fn ask(&self, context: &InstallContext) -> Result<QuestionResult>;
+    /// Run the step and report an explicit navigation or completion outcome.
+    async fn run(&self, context: &InstallContext) -> Result<StepOutcome>;
 
-    /// Returns true if the question is relevant/active given the current context
+    /// Returns true if the step is relevant/active given the current context.
     ///
     /// Ordering contract: predicates may only read answers of questions that
-    /// appear *earlier* in the wizard's question list, and must tolerate their
+    /// appear *earlier* in the wizard's step list, and must tolerate their
     /// absence (falling back to a sensible default). The engine does not
-    /// enforce reads at runtime. The answer graph validates every declared
+    /// enforce reads at runtime. The step graph validates every declared
     /// dependency and its ordering, so implementations must keep
-    /// [`Question::depends_on`] in sync with their predicates and validators.
+    /// [`WizardStep::depends_on`] in sync with their predicates and validators.
     fn should_ask(&self, _context: &InstallContext) -> bool {
         true
     }
@@ -100,13 +124,13 @@ pub trait Question: Send + Sync {
         false
     }
 
-    /// Returns true if this question is an informational message or warning
+    /// Returns true if this step is an informational message or warning
     /// and should be skipped when navigating backwards
     fn is_info_only(&self) -> bool {
         false
     }
 
-    /// A short human-readable description of what this question is for.
+    /// A short human-readable description of what this step is for.
     /// Shown in the review menu preview when browsing answers.
     fn description(&self) -> Option<&str> {
         None
@@ -117,31 +141,37 @@ pub trait Question: Send + Sync {
         Ok(())
     }
 
-    /// Returns a list of data providers required by this question
+    /// Recheck whether an answerless completion marker still reflects reality.
+    /// Side-effect and check steps backed by mutable external state should
+    /// override this; informational steps can keep the default.
+    fn completion_is_current(&self, _context: &InstallContext) -> bool {
+        true
+    }
+
+    /// Returns a list of data providers required by this step.
     fn data_providers(&self) -> Vec<Box<dyn AsyncDataProvider>> {
         vec![]
     }
 
-    /// Returns the default value for this question if one exists
+    /// Returns the default value for this step if one exists.
     fn get_default(&self, _context: &InstallContext) -> Option<String> {
         None
     }
 
-    /// Returns the questions whose answers this question's answer is derived
-    /// from or whose change can make this answer stale.
+    /// Returns the steps whose state this step is derived from.
     ///
-    /// When any of these answers is set or removed, the engine removes this
-    /// question's stored answer (transitively) so it gets asked again. Declare
-    /// every answer that `ask`, `should_ask`, `dynamic_default`, or `validate`
+    /// When any dependency changes, the engine removes this step's answer or
+    /// completion marker transitively so it runs again. Declare every state
+    /// that `run`, `should_ask`, `get_default`, or `validate`
     /// reads for decision-making. Dependencies that are not part of the
-    /// current wizard's question list are permitted (e.g. pre-seeded contexts)
+    /// current wizard's step list are permitted (e.g. pre-seeded contexts)
     /// but must still appear earlier in the list when they are present.
-    fn depends_on(&self) -> &[QuestionId] {
+    fn depends_on(&self) -> &[StepId] {
         &[]
     }
 
-    /// Returns a fatal error message if this question cannot proceed due to a required
-    /// data provider failure. Override this for questions where provider failure is fatal
+    /// Returns a fatal error message if this step cannot proceed due to a required
+    /// data provider failure. Override this for steps where provider failure is fatal
     /// (e.g., disk selection). Return None for questions that handle failures gracefully
     /// (e.g., mirror regions with fallback).
     fn fatal_error_message(&self, _context: &InstallContext) -> Option<String> {

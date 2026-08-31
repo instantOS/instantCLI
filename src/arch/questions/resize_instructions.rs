@@ -1,18 +1,18 @@
 use crate::arch::dualboot::types::ResizeInfo;
 use crate::arch::dualboot::{ResizeStatus, ResizeVerifier};
-use crate::arch::engine::{InstallContext, Question, QuestionId, QuestionResult};
+use crate::arch::engine::{InstallContext, StepId, StepOutcome, WizardStep};
 use crate::common::format::format_size;
 use crate::menu_utils::{ConfirmResult, FzfResult, FzfWrapper, MenuPresentation};
 use crate::ui::nerd_font::NerdFont;
 use anyhow::{Context, Result};
 use colored::Colorize;
 
-pub struct ResizeInstructionsQuestion;
+pub struct ResizeWorkflowStep;
 
 #[async_trait::async_trait]
-impl Question for ResizeInstructionsQuestion {
-    fn id(&self) -> QuestionId {
-        QuestionId::DualBootInstructions
+impl WizardStep for ResizeWorkflowStep {
+    fn id(&self) -> StepId {
+        StepId::DualBootInstructions
     }
 
     fn description(&self) -> Option<&str> {
@@ -21,39 +21,39 @@ impl Question for ResizeInstructionsQuestion {
 
     fn should_ask(&self, context: &InstallContext) -> bool {
         let is_dualboot = context
-            .get_answer(&QuestionId::PartitioningMethod)
+            .get_answer(&StepId::PartitioningMethod)
             .map(|s| s.contains("Dual Boot"))
             .unwrap_or(false);
 
         let needs_resize = context
-            .get_answer(&QuestionId::DualBootPartition)
+            .get_answer(&StepId::DualBootPartition)
             .map(|s| s != "__free_space__")
             .unwrap_or(true);
 
         is_dualboot && needs_resize
     }
 
-    fn depends_on(&self) -> &[QuestionId] {
+    fn depends_on(&self) -> &[StepId] {
         &[
-            QuestionId::Disk,
-            QuestionId::PartitioningMethod,
-            QuestionId::DualBootPartition,
-            QuestionId::DualBootSize,
+            StepId::Disk,
+            StepId::PartitioningMethod,
+            StepId::DualBootPartition,
+            StepId::DualBootSize,
         ]
     }
 
-    async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
+    async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {
         let partition_path = context
-            .get_answer(&QuestionId::DualBootPartition)
+            .get_answer(&StepId::DualBootPartition)
             .context("No partition selected")?;
 
         let size_str = context
-            .get_answer(&QuestionId::DualBootSize)
+            .get_answer(&StepId::DualBootSize)
             .context("No size selected")?;
 
         let new_linux_size_bytes: u64 = size_str.parse()?;
 
-        let disk_path = context.get_answer(&QuestionId::Disk).context("No disk")?;
+        let disk_path = context.get_answer(&StepId::Disk).context("No disk")?;
         let disk_path_owned = disk_path.to_string();
 
         let disks_result = tokio::task::spawn_blocking(crate::arch::dualboot::detect_disks).await?;
@@ -75,10 +75,10 @@ impl Question for ResizeInstructionsQuestion {
             .unwrap_or("unknown");
 
         if fs_type.eq_ignore_ascii_case("bitlocker") {
-            FzfWrapper::message(
-                "BitLocker encryption detected. Disable BitLocker in Windows before continuing.",
-            )?;
-            return Ok(QuestionResult::Cancelled);
+            return Ok(StepOutcome::revisit(
+                StepId::DualBootPartition,
+                "BitLocker encryption must be disabled in Windows before this partition can be resized.",
+            ));
         }
 
         let resize_info = partition
@@ -87,8 +87,10 @@ impl Question for ResizeInstructionsQuestion {
             .context("No resize info for partition")?;
 
         if !resize_info.can_shrink {
-            FzfWrapper::message("This partition cannot be resized.")?;
-            return Ok(QuestionResult::Cancelled);
+            return Ok(StepOutcome::revisit(
+                StepId::DualBootPartition,
+                "The selected partition cannot be resized. Choose a different partition.",
+            ));
         }
 
         let original_size = partition.size_bytes;
@@ -97,12 +99,13 @@ impl Question for ResizeInstructionsQuestion {
         if let Some(min_size) = resize_info.min_size_bytes
             && target_size < min_size
         {
-            FzfWrapper::message(&format!(
-                "{} Selected size is too small. Minimum size for this partition is {}.",
-                NerdFont::Warning,
-                format_size(min_size)
-            ))?;
-            return Ok(QuestionResult::Cancelled);
+            return Ok(StepOutcome::revisit(
+                StepId::DualBootSize,
+                format!(
+                    "Selected size is too small. Minimum remaining size for this partition is {}.",
+                    format_size(min_size)
+                ),
+            ));
         }
 
         let auto_resize =
@@ -195,7 +198,7 @@ fn confirm_auto_resize(
     Ok(matches!(FzfWrapper::confirm(&message)?, ConfirmResult::Yes))
 }
 
-async fn run_manual_resize_flow(ctx: ResizeFlowContext<'_>) -> Result<QuestionResult> {
+async fn run_manual_resize_flow(ctx: ResizeFlowContext<'_>) -> Result<StepOutcome> {
     let verifier = ResizeVerifier::with_target(ctx.disk_info, ctx.partition, ctx.target_size);
 
     let target_size_gb = ctx.target_size as f64 / 1024.0 / 1024.0 / 1024.0;
@@ -255,7 +258,7 @@ async fn run_manual_resize_flow(ctx: ResizeFlowContext<'_>) -> Result<QuestionRe
                             auto_resize.mount_point.as_deref(),
                         )?
                     {
-                        return Ok(QuestionResult::Answer("auto".to_string()));
+                        return Ok(StepOutcome::Answer("auto".to_string()));
                     }
                 } else if opt.contains("Open cfdisk") {
                     let _ =
@@ -265,17 +268,17 @@ async fn run_manual_resize_flow(ctx: ResizeFlowContext<'_>) -> Result<QuestionRe
                     let status = verifier.check_async().await?;
 
                     if status.resize_detected {
-                        return Ok(QuestionResult::Answer("confirmed".to_string()));
+                        return Ok(StepOutcome::Answer("confirmed".to_string()));
                     }
 
                     if confirm_proceed_without_resize(&status)? {
-                        return Ok(QuestionResult::Answer("confirmed".to_string()));
+                        return Ok(StepOutcome::Answer("confirmed".to_string()));
                     }
                 } else if opt.contains("Go Back") {
-                    return Ok(QuestionResult::Cancelled);
+                    return Ok(StepOutcome::back());
                 }
             }
-            _ => return Ok(QuestionResult::Cancelled),
+            _ => return Ok(StepOutcome::Pause),
         }
     }
 }

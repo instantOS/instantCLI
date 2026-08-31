@@ -1,5 +1,5 @@
 use super::CommandRunner;
-use crate::arch::engine::{InstallContext, QuestionId};
+use crate::arch::engine::{InstallContext, StepId};
 use anyhow::{Context, Result};
 
 pub async fn install_base(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
@@ -17,7 +17,7 @@ pub async fn install_base(context: &InstallContext, executor: &dyn CommandRunner
 
 async fn setup_mirrors(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
     // Check if a region was selected (question may have been skipped if fetch failed)
-    let region_name = context.get_answer(&QuestionId::MirrorRegion);
+    let region_name = context.get_answer(&StepId::MirrorRegion);
 
     if executor.dry_run() {
         match region_name {
@@ -73,12 +73,12 @@ async fn fetch_fallback_mirrorlist() -> Result<String> {
 fn run_pacstrap(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
     // Get selected kernel or default to "linux"
     let kernel = context
-        .get_answer(&QuestionId::Kernel)
+        .get_answer(&StepId::Kernel)
         .map(|s| s.as_str())
         .unwrap_or("linux");
-    let use_encryption = context.get_answer_bool(QuestionId::UseEncryption);
-    let use_plymouth = context.get_answer_bool(QuestionId::UsePlymouth);
-    let minimal_mode = context.get_answer_bool(QuestionId::MinimalMode);
+    let use_encryption = context.get_answer_bool(StepId::UseEncryption);
+    let use_plymouth = context.get_answer_bool(StepId::UsePlymouth);
+    let minimal_mode = context.get_answer_bool(StepId::MinimalMode);
 
     let mut packages: Vec<String> = vec!["base", "linux-firmware"]
         .into_iter()

@@ -2,7 +2,7 @@ use anyhow::{Result, bail};
 
 use crate::arch::cli::DEFAULT_QUESTIONS_FILE;
 use crate::arch::engine::{
-    EngineOutcome, InstallContext, InstallSummary, QuestionEngine, QuestionId, SystemInfo,
+    InstallContext, InstallSummary, StepId, SystemInfo, WizardEngine, WizardOutcome,
     build_install_summary,
 };
 use crate::common::distro::is_live_iso;
@@ -234,14 +234,14 @@ fn load_existing_context(
     }
 }
 
-fn build_question_engine(
-    questions: Vec<Box<dyn crate::arch::engine::Question>>,
+fn build_wizard_engine(
+    steps: Vec<Box<dyn crate::arch::engine::WizardStep>>,
     system_info: SystemInfo,
     existing_context: Option<Box<InstallContext>>,
-) -> Result<QuestionEngine> {
+) -> Result<WizardEngine> {
     let mut context = existing_context.map_or_else(InstallContext::default, |context| *context);
     context.system_info = system_info;
-    Ok(QuestionEngine::new(questions)?.with_context(context))
+    Ok(WizardEngine::new(steps)?.with_context(context))
 }
 
 fn print_completion_summary(context: &InstallContext) {
@@ -249,13 +249,13 @@ fn print_completion_summary(context: &InstallContext) {
     println!(
         "Hostname: {}",
         context
-            .get_answer(&QuestionId::Hostname)
+            .get_answer(&StepId::Hostname)
             .map_or("<not set>".to_string(), |v| v.clone())
     );
     println!(
         "Username: {}",
         context
-            .get_answer(&QuestionId::Username)
+            .get_answer(&StepId::Username)
             .map_or("<not set>".to_string(), |v| v.clone())
     );
 }
@@ -277,23 +277,23 @@ fn save_config(context: &InstallContext, config_path: &std::path::Path) -> Resul
 }
 
 async fn run_single_question(
-    id: QuestionId,
-    questions: Vec<Box<dyn crate::arch::engine::Question>>,
+    id: StepId,
+    steps: Vec<Box<dyn crate::arch::engine::WizardStep>>,
 ) -> Result<AskOutcome> {
     // Ask a single question
     // Escalate if the question requires root (e.g. Disk)
-    if matches!(id, QuestionId::Disk) {
+    if matches!(id, StepId::Disk) {
         ensure_root()?;
     }
 
-    let question = questions
+    let step = steps
         .into_iter()
         .find(|q| q.id() == id)
-        .ok_or_else(|| anyhow::anyhow!("Question not found"))?;
+        .ok_or_else(|| anyhow::anyhow!("Wizard step not found"))?;
 
-    let engine = QuestionEngine::new(vec![question])?;
+    let engine = WizardEngine::new(vec![step])?;
 
-    let EngineOutcome::Completed(context) = engine.run().await? else {
+    let WizardOutcome::Completed(context) = engine.run().await? else {
         return Ok(AskOutcome::Cancelled);
     };
 
@@ -305,7 +305,7 @@ async fn run_single_question(
 
 async fn run_full_wizard(
     output_config: Option<std::path::PathBuf>,
-    questions: Vec<Box<dyn crate::arch::engine::Question>>,
+    steps: Vec<Box<dyn crate::arch::engine::WizardStep>>,
 ) -> Result<AskOutcome> {
     // Installation requires root privileges
     ensure_root()?;
@@ -326,9 +326,9 @@ async fn run_full_wizard(
         ExistingContextOutcome::Cancelled => return Ok(AskOutcome::Cancelled),
     };
 
-    let engine = build_question_engine(questions, system_info, existing_context)?;
+    let engine = build_wizard_engine(steps, system_info, existing_context)?;
 
-    let EngineOutcome::Completed(context) = engine.run().await? else {
+    let WizardOutcome::Completed(context) = engine.run().await? else {
         return Ok(AskOutcome::Cancelled);
     };
 
@@ -338,17 +338,17 @@ async fn run_full_wizard(
     Ok(AskOutcome::Completed)
 }
 
-/// Handle the Ask command - either ask a single question or run the full questionnaire
+/// Handle the Ask command - either run a single step or the full wizard.
 pub(super) async fn handle_ask_command(
-    id: Option<crate::arch::engine::QuestionId>,
+    id: Option<crate::arch::engine::StepId>,
     output_config: Option<std::path::PathBuf>,
-    questions: Vec<Box<dyn crate::arch::engine::Question>>,
+    steps: Vec<Box<dyn crate::arch::engine::WizardStep>>,
 ) -> Result<AskOutcome> {
     if let Some(id) = id {
-        return run_single_question(id, questions).await;
+        return run_single_question(id, steps).await;
     }
 
-    run_full_wizard(output_config, questions).await
+    run_full_wizard(output_config, steps).await
 }
 
 #[cfg(test)]

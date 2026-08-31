@@ -1,77 +1,101 @@
-use crate::arch::engine::{DataKey, InstallContext, Question, QuestionId, QuestionResult};
-use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper, HeaderBuilder};
+use crate::arch::engine::{DataKey, InstallContext, StepId, StepOutcome, WizardStep};
+use crate::menu_utils::{
+    ConfirmResult, FzfPreview, FzfResult, FzfSelectable, FzfWrapper, HeaderBuilder,
+    MenuPresentation,
+};
 use crate::ui::catppuccin::colors;
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 use anyhow::{Context, Result};
 
-/// Attempts to prepare a disk for installation.
-/// Returns Ok(true) if disk is ready, Ok(false) if user declined preparation.
-fn try_prepare_disk(device_name: &str) -> Result<bool> {
-    let mounted = crate::arch::disks::get_mounted_partitions(device_name).unwrap_or_default();
-    let swap = crate::arch::disks::get_swap_partitions(device_name).unwrap_or_default();
+pub struct PrepareDiskStep;
 
-    if mounted.is_empty() && swap.is_empty() {
-        return Ok(true); // Disk is ready
+#[async_trait::async_trait]
+impl WizardStep for PrepareDiskStep {
+    fn id(&self) -> StepId {
+        StepId::PrepareDisk
     }
 
-    // Build a detailed confirmation message explaining what is in use and why.
-    let mut details =
-        format!("The selected disk {device_name} has active mounts or swap partitions.\n\n");
-
-    for part in &mounted {
-        details.push_str(&format!("  {part}  (mounted)\n"));
-    }
-    for part in &swap {
-        details.push_str(&format!("  {part}  (swap active)\n"));
+    fn description(&self) -> Option<&str> {
+        Some("Prepare the selected disk for exclusive installer access")
     }
 
-    details.push_str(
-        "\nThe installer needs exclusive access to this disk. It will unmount the partition(s)\nand disable swap so the disk can be safely repartitioned.",
-    );
+    fn depends_on(&self) -> &[StepId] {
+        &[StepId::Disk]
+    }
 
-    let confirmed = matches!(
-        FzfWrapper::builder()
+    fn completion_is_current(&self, context: &InstallContext) -> bool {
+        let Some(device_name) = context.get_answer(&StepId::Disk) else {
+            return false;
+        };
+        crate::arch::disks::get_mounted_partitions(device_name).is_ok_and(|parts| parts.is_empty())
+            && crate::arch::disks::get_swap_partitions(device_name)
+                .is_ok_and(|parts| parts.is_empty())
+    }
+
+    async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {
+        let device_name = context
+            .get_answer(&StepId::Disk)
+            .context("No disk selected")?;
+        let mounted = crate::arch::disks::get_mounted_partitions(device_name)
+            .context("Failed to inspect mounted partitions")?;
+        let swap = crate::arch::disks::get_swap_partitions(device_name)
+            .context("Failed to inspect active swap partitions")?;
+
+        if mounted.is_empty() && swap.is_empty() {
+            return Ok(StepOutcome::Completed);
+        }
+
+        // Build a detailed confirmation message explaining what is in use and why.
+        let mut details =
+            format!("The selected disk {device_name} has active mounts or swap partitions.\n\n");
+
+        for part in &mounted {
+            details.push_str(&format!("  {part}  (mounted)\n"));
+        }
+        for part in &swap {
+            details.push_str(&format!("  {part}  (swap active)\n"));
+        }
+
+        details.push_str(
+            "\nThe installer needs exclusive access to this disk. It will unmount the partition(s)\nand disable swap so the disk can be safely repartitioned.",
+        );
+
+        let confirmed = FzfWrapper::builder()
             .confirm(&details)
             .title(format!("Disk {device_name} is in use"))
             .yes_text("Unmount and continue")
             .no_text("Go back")
-            .confirm_dialog(),
-        Ok(crate::menu_utils::ConfirmResult::Yes)
-    );
+            .confirm_dialog()?;
 
-    if !confirmed {
-        println!("Disk not prepared. Please prepare the disk manually or select another disk.");
-        return Ok(false);
-    }
-
-    // Prepare the disk
-    match crate::arch::disks::prepare_disk(device_name) {
-        Ok(result) => {
-            if !result.unmounted.is_empty() {
-                println!(
-                    "{} Unmounted {} partition(s)",
-                    NerdFont::Check,
-                    result.unmounted.len()
-                );
-            }
-            if !result.swapoff.is_empty() {
-                println!(
-                    "{} Disabled swap on {} partition(s)",
-                    NerdFont::Check,
-                    result.swapoff.len()
-                );
-            }
-            Ok(true)
+        match confirmed {
+            ConfirmResult::Yes => {}
+            ConfirmResult::No => return Ok(StepOutcome::back()),
+            ConfirmResult::Cancelled => return Ok(StepOutcome::Pause),
         }
-        Err(e) => {
-            let message = format!(
+        // Prepare the disk
+        match crate::arch::disks::prepare_disk(device_name) {
+            Ok(result) => {
+                if !result.unmounted.is_empty() {
+                    println!(
+                        "{} Unmounted {} partition(s)",
+                        NerdFont::Check,
+                        result.unmounted.len()
+                    );
+                }
+                if !result.swapoff.is_empty() {
+                    println!(
+                        "{} Disabled swap on {} partition(s)",
+                        NerdFont::Check,
+                        result.swapoff.len()
+                    );
+                }
+                Ok(StepOutcome::Completed)
+            }
+            Err(e) => Ok(StepOutcome::Retry(format!(
                 "Failed to prepare disk {}:\n{}\n\nPlease prepare the disk manually and try again.",
                 device_name, e
-            );
-            // Show the error via the menu UI so the user cannot miss it
-            let _ = FzfWrapper::message(&message);
-            Ok(false)
+            ))),
         }
     }
 }
@@ -158,17 +182,15 @@ impl DiskQuestion {
 
             *last_custom_path = Some(path.clone());
 
-            if try_prepare_disk(&path)? {
-                return Ok(Some(path));
-            }
+            return Ok(Some(path));
         }
     }
 }
 
 #[async_trait::async_trait]
-impl Question for DiskQuestion {
-    fn id(&self) -> QuestionId {
-        QuestionId::Disk
+impl WizardStep for DiskQuestion {
+    fn id(&self) -> StepId {
+        StepId::Disk
     }
 
     fn description(&self) -> Option<&str> {
@@ -179,7 +201,7 @@ impl Question for DiskQuestion {
         vec![crate::arch::disks::DisksKey::KEY.to_string()]
     }
 
-    async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
+    async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {
         let disks = context
             .get::<crate::arch::disks::DisksKey>()
             .unwrap_or_default();
@@ -204,25 +226,21 @@ impl Question for DiskQuestion {
 
             let selection = match result {
                 crate::menu_utils::FzfResult::Selected(d) => d,
-                _ => return Ok(QuestionResult::Cancelled),
+                _ => return Ok(StepOutcome::Pause),
             };
 
             match selection {
                 DiskSelection::Detected(disk) => {
-                    if try_prepare_disk(&disk.path)? {
-                        // Store just the path, not the formatted display string
-                        return Ok(QuestionResult::Answer(disk.path));
-                    }
+                    return Ok(StepOutcome::Answer(disk.path));
                 }
                 DiskSelection::CustomPath => {
                     if let Some(path) =
                         self.prompt_custom_disk_path(context, &mut last_custom_path)?
                     {
-                        return Ok(QuestionResult::Answer(path));
+                        return Ok(StepOutcome::Answer(path));
                     }
                 }
             }
-            // User declined or preparation failed - loop back to disk selection
         }
     }
 
@@ -354,27 +372,27 @@ impl FzfSelectable for PartitioningMethodOption {
 }
 
 #[async_trait::async_trait]
-impl Question for PartitioningMethodQuestion {
-    fn id(&self) -> QuestionId {
-        QuestionId::PartitioningMethod
+impl WizardStep for PartitioningMethodQuestion {
+    fn id(&self) -> StepId {
+        StepId::PartitioningMethod
     }
 
     fn description(&self) -> Option<&str> {
         Some("Choose how to partition the disk")
     }
 
-    fn depends_on(&self) -> &[QuestionId] {
-        &[QuestionId::Disk]
+    fn depends_on(&self) -> &[StepId] {
+        &[StepId::Disk]
     }
 
-    async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
+    async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {
         let mut options = vec![
             PartitioningMethodOption::Automatic,
             PartitioningMethodOption::Manual,
         ];
 
         // Check for dual boot possibility using shared feasibility logic
-        if let Some(disk_path) = context.get_answer(&QuestionId::Disk) {
+        if let Some(disk_path) = context.get_answer(&StepId::Disk) {
             // disk_path is now just the device path (e.g., "/dev/sda")
             let disk_path_owned = disk_path.to_string();
             let feasibility_result = tokio::task::spawn_blocking(
@@ -404,18 +422,49 @@ impl Question for PartitioningMethodQuestion {
             .header(HeaderBuilder::new(NerdFont::HardDrive, "Select Partitioning Method").build())
             .select(options)?;
 
-        Ok(QuestionResult::from_selection(result, |option| {
+        Ok(StepOutcome::from_selection(result, |option| {
             option.label().to_string()
         }))
     }
 }
 
-pub struct RunCfdiskQuestion;
+pub struct RunCfdiskStep;
+
+#[derive(Clone)]
+enum EmptyLayoutAction {
+    ReopenCfdisk,
+    ChangePartitioningMethod,
+    PauseInstaller,
+}
+
+impl FzfSelectable for EmptyLayoutAction {
+    fn fzf_display_text(&self) -> String {
+        match self {
+            Self::ReopenCfdisk => format!("{} Reopen cfdisk", NerdFont::HardDrive),
+            Self::ChangePartitioningMethod => {
+                format!("{} Change partitioning method", NerdFont::ArrowLeft)
+            }
+            Self::PauseInstaller => format!("{} Pause installer", NerdFont::Pause),
+        }
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        match self {
+            Self::ReopenCfdisk => FzfPreview::Text(
+                "Open cfdisk again and create the required partitions.".to_string(),
+            ),
+            Self::ChangePartitioningMethod => {
+                FzfPreview::Text("Return directly to partitioning-method selection.".to_string())
+            }
+            Self::PauseInstaller => FzfPreview::Text("Open the installer pause menu.".to_string()),
+        }
+    }
+}
 
 #[async_trait::async_trait]
-impl Question for RunCfdiskQuestion {
-    fn id(&self) -> QuestionId {
-        QuestionId::RunCfdisk
+impl WizardStep for RunCfdiskStep {
+    fn id(&self) -> StepId {
+        StepId::RunCfdisk
     }
 
     fn description(&self) -> Option<&str> {
@@ -424,19 +473,26 @@ impl Question for RunCfdiskQuestion {
 
     fn should_ask(&self, context: &InstallContext) -> bool {
         context
-            .get_answer(&QuestionId::PartitioningMethod)
+            .get_answer(&StepId::PartitioningMethod)
             .map(|s| s.contains("Manual"))
             .unwrap_or(false)
     }
 
-    fn depends_on(&self) -> &[QuestionId] {
-        &[QuestionId::Disk, QuestionId::PartitioningMethod]
+    fn depends_on(&self) -> &[StepId] {
+        &[StepId::Disk, StepId::PartitioningMethod]
     }
 
-    async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
+    fn completion_is_current(&self, context: &InstallContext) -> bool {
+        context
+            .get_answer(&StepId::Disk)
+            .and_then(|disk| super::partition::list_partitions(disk).ok())
+            .is_some_and(|partitions| !partitions.is_empty())
+    }
+
+    async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {
         // disk is now just the device path (e.g., "/dev/sda")
         let disk_path = context
-            .get_answer(&QuestionId::Disk)
+            .get_answer(&StepId::Disk)
             .context("No disk selected")?;
 
         // Check for cfdisk
@@ -446,17 +502,55 @@ impl Question for RunCfdiskQuestion {
                 .context("cfdisk is required for manual partitioning but could not be installed")?;
         }
 
-        println!("Starting cfdisk on {}...", disk_path);
-        println!("Please create your partitions and save changes before exiting.");
+        loop {
+            println!("Starting cfdisk on {}...", disk_path);
+            println!("Please create your partitions and write changes before exiting.");
 
-        // Use the shared TUI program runner that handles tokio/terminal issues
-        match crate::common::terminal::run_tui_program("cfdisk", &[disk_path]).await {
-            Ok(true) => Ok(QuestionResult::Answer("done".to_string())),
-            Ok(false) => {
-                println!("\ncfdisk cancelled by user.");
-                Ok(QuestionResult::Cancelled)
+            if !crate::common::terminal::run_tui_program("cfdisk", &[disk_path]).await? {
+                return Ok(StepOutcome::Pause);
             }
-            Err(e) => Err(e),
+
+            if which::which("udevadm").is_ok() {
+                let status = std::process::Command::new("udevadm")
+                    .arg("settle")
+                    .status()
+                    .context("Failed to wait for partition device state")?;
+                anyhow::ensure!(status.success(), "udevadm settle failed after cfdisk");
+            }
+
+            if !super::partition::list_partitions(disk_path)?.is_empty() {
+                return Ok(StepOutcome::Completed);
+            }
+
+            let result = FzfWrapper::builder()
+                .header(
+                    HeaderBuilder::new(
+                        NerdFont::Warning,
+                        format!("No partitions found on {disk_path}"),
+                    )
+                    .build(),
+                )
+                .presentation(MenuPresentation::Padded)
+                .select(vec![
+                    EmptyLayoutAction::ReopenCfdisk,
+                    EmptyLayoutAction::ChangePartitioningMethod,
+                    EmptyLayoutAction::PauseInstaller,
+                ])?;
+
+            match result {
+                FzfResult::Selected(EmptyLayoutAction::ReopenCfdisk) => continue,
+                FzfResult::Selected(EmptyLayoutAction::ChangePartitioningMethod) => {
+                    return Ok(StepOutcome::revisit(
+                        StepId::PartitioningMethod,
+                        "Choose a different partitioning method.",
+                    ));
+                }
+                FzfResult::Selected(EmptyLayoutAction::PauseInstaller) | FzfResult::Cancelled => {
+                    return Ok(StepOutcome::Pause);
+                }
+                FzfResult::Error(message) => anyhow::bail!("Recovery menu failed: {message}"),
+                _ => return Ok(StepOutcome::Pause),
+            }
         }
     }
 }

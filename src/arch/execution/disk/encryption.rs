@@ -1,6 +1,6 @@
 use super::filesystem;
 use super::util::get_part_path;
-use crate::arch::engine::{InstallContext, QuestionId};
+use crate::arch::engine::{InstallContext, StepId};
 use crate::arch::execution::CommandRunner;
 use anyhow::{Context, Result};
 use std::process::Command;
@@ -50,7 +50,7 @@ pub fn format_luks(
     let p2 = get_part_path(disk, 2);
 
     let password = context
-        .get_answer(&QuestionId::EncryptionPassword)
+        .get_answer(&StepId::EncryptionPassword)
         .context("Encryption password not set")?;
 
     println!("Formatting partitions (LVM on LUKS)...");

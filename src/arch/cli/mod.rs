@@ -23,7 +23,7 @@ pub enum ArchCommands {
     Ask {
         /// The ID of the question to ask
         #[arg(value_enum)]
-        id: Option<crate::arch::engine::QuestionId>,
+        id: Option<crate::arch::engine::StepId>,
         /// Optional path to save the configuration TOML file
         #[arg(short = 'o', long)]
         output_config: Option<std::path::PathBuf>,

@@ -7,14 +7,14 @@ mod probe;
 mod util;
 
 use super::CommandRunner;
-use crate::arch::engine::{BootMode, InstallContext, QuestionId};
+use crate::arch::engine::{BootMode, InstallContext, StepId};
 use anyhow::{Context, Result};
 
 pub use util::get_part_path;
 
 pub fn prepare_disk(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
     let disk_path = context
-        .get_answer(&QuestionId::Disk)
+        .get_answer(&StepId::Disk)
         .context("No disk selected")?;
 
     println!("Preparing disk: {}", disk_path);
@@ -29,7 +29,7 @@ pub fn prepare_disk(context: &InstallContext, executor: &dyn CommandRunner) -> R
     );
 
     let partitioning_method = context
-        .get_answer(&QuestionId::PartitioningMethod)
+        .get_answer(&StepId::PartitioningMethod)
         .map(|s| s.as_str())
         .unwrap_or("Automatic");
 
@@ -38,7 +38,7 @@ pub fn prepare_disk(context: &InstallContext, executor: &dyn CommandRunner) -> R
     } else if partitioning_method.contains("Manual") {
         mount::format_and_mount_partitions(context, executor)?;
     } else {
-        let use_encryption = context.get_answer_bool(QuestionId::UseEncryption);
+        let use_encryption = context.get_answer_bool(StepId::UseEncryption);
 
         match (boot_mode, use_encryption) {
             (BootMode::UEFI64 | BootMode::UEFI32, false) => {

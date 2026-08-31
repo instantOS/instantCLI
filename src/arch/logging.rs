@@ -15,7 +15,7 @@ qcboKxIG+1854C9xH8nuAAAADWJlbmphbWluQHJ4cGM=
 
 pub fn process_log_upload(context: &crate::arch::engine::InstallContext) {
     let force_upload = std::path::Path::new("/etc/instantos/uploadlogs").exists();
-    if force_upload || context.get_answer_bool(crate::arch::engine::QuestionId::LogUpload) {
+    if force_upload || context.get_answer_bool(crate::arch::engine::StepId::LogUpload) {
         if force_upload {
             println!("Uploading installation logs (forced by /etc/instantos/uploadlogs)...");
         } else {

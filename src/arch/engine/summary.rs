@@ -4,7 +4,7 @@ use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 
 use super::context::InstallContext;
-use super::types::{BootMode, QuestionId};
+use super::types::{BootMode, StepId};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PartitioningKind {
@@ -43,7 +43,7 @@ fn partitioning_kind_from(method: &str) -> PartitioningKind {
 }
 
 fn format_disk_label(context: &InstallContext) -> String {
-    let Some(disk) = context.get_answer(&QuestionId::Disk) else {
+    let Some(disk) = context.get_answer(&StepId::Disk) else {
         return "<not set>".to_string();
     };
 
@@ -64,7 +64,7 @@ fn format_disk_label(context: &InstallContext) -> String {
     disk
 }
 
-fn answer_or(context: &InstallContext, id: QuestionId, fallback: &str) -> String {
+fn answer_or(context: &InstallContext, id: StepId, fallback: &str) -> String {
     context
         .get_answer(&id)
         .cloned()
@@ -72,7 +72,7 @@ fn answer_or(context: &InstallContext, id: QuestionId, fallback: &str) -> String
 }
 
 fn format_dualboot_size(context: &InstallContext) -> Option<String> {
-    context.get_answer(&QuestionId::DualBootSize).map(|value| {
+    context.get_answer(&StepId::DualBootSize).map(|value| {
         value
             .parse::<u64>()
             .map(format_size)
@@ -86,7 +86,7 @@ fn format_dualboot_resize_method(context: &InstallContext, uses_free_space: bool
     }
 
     match context
-        .get_answer(&QuestionId::DualBootInstructions)
+        .get_answer(&StepId::DualBootInstructions)
         .map(|value| value.as_str())
     {
         Some("auto") => "Installer resize".to_string(),
@@ -109,24 +109,24 @@ fn format_automatic_layout(context: &InstallContext, use_encryption: bool) -> St
 }
 
 pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary {
-    let hostname = answer_or(context, QuestionId::Hostname, "<not set>");
-    let username = answer_or(context, QuestionId::Username, "<not set>");
+    let hostname = answer_or(context, StepId::Hostname, "<not set>");
+    let username = answer_or(context, StepId::Username, "<not set>");
 
-    let timezone = answer_or(context, QuestionId::Timezone, "<not set>");
-    let locale = answer_or(context, QuestionId::Locale, "<not set>");
-    let keymap = answer_or(context, QuestionId::Keymap, "<not set>");
+    let timezone = answer_or(context, StepId::Timezone, "<not set>");
+    let locale = answer_or(context, StepId::Locale, "<not set>");
+    let keymap = answer_or(context, StepId::Keymap, "<not set>");
 
-    let partitioning_method = answer_or(context, QuestionId::PartitioningMethod, "<not set>");
+    let partitioning_method = answer_or(context, StepId::PartitioningMethod, "<not set>");
     let partitioning_kind = partitioning_kind_from(&partitioning_method);
 
     let disk = format_disk_label(context);
 
     let mirror_region = context
-        .get_answer(&QuestionId::MirrorRegion)
+        .get_answer(&StepId::MirrorRegion)
         .cloned()
         .unwrap_or_else(|| "Fallback (auto)".to_string());
 
-    let minimal_mode = context.get_answer_bool(QuestionId::MinimalMode);
+    let minimal_mode = context.get_answer_bool(StepId::MinimalMode);
     let profile = if minimal_mode {
         "Minimal (vanilla Arch)".to_string()
     } else {
@@ -134,7 +134,7 @@ pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary 
     };
 
     let kernel = context
-        .get_answer(&QuestionId::Kernel)
+        .get_answer(&StepId::Kernel)
         .cloned()
         .unwrap_or_else(|| "linux (default)".to_string());
 
@@ -149,7 +149,7 @@ pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary 
     let root_filesystem = crate::arch::config::RootFilesystem::from_context(context);
     let filesystem_label = if root_filesystem.is_btrfs() {
         let compression = crate::arch::config::BtrfsCompression::from_context(context);
-        let subvolumes = if context.get_answer(&QuestionId::HomePartition).is_some() {
+        let subvolumes = if context.get_answer(&StepId::HomePartition).is_some() {
             "@"
         } else {
             "@, @home"
@@ -159,7 +159,7 @@ pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary 
         "ext4".to_string()
     };
 
-    let use_plymouth = context.get_answer_bool(QuestionId::UsePlymouth);
+    let use_plymouth = context.get_answer_bool(StepId::UsePlymouth);
     let plymouth_label = if minimal_mode {
         "Disabled (minimal mode)".to_string()
     } else if use_plymouth {
@@ -169,7 +169,7 @@ pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary 
     };
     let autologin_label = if minimal_mode {
         "Disabled (minimal mode)".to_string()
-    } else if context.get_answer_bool(QuestionId::Autologin) {
+    } else if context.get_answer_bool(StepId::Autologin) {
         "Enabled".to_string()
     } else {
         "Disabled".to_string()
@@ -187,7 +187,7 @@ pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary 
         "Not required".to_string()
     };
 
-    let log_upload_label = if context.get_answer_bool(QuestionId::LogUpload) {
+    let log_upload_label = if context.get_answer_bool(StepId::LogUpload) {
         "Upload to snips.sh".to_string()
     } else {
         "Do not upload".to_string()
@@ -195,7 +195,7 @@ pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary 
 
     let encryption_label = match partitioning_kind {
         PartitioningKind::Automatic => {
-            if context.get_answer_bool(QuestionId::UseEncryption) {
+            if context.get_answer_bool(StepId::UseEncryption) {
                 "Enabled (LUKS)".to_string()
             } else {
                 "Disabled".to_string()
@@ -204,7 +204,7 @@ pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary 
         PartitioningKind::DualBoot => "Not supported for dual boot".to_string(),
         PartitioningKind::Manual => "Not supported for manual partitioning".to_string(),
         PartitioningKind::Unknown => {
-            if context.get_answer_bool(QuestionId::UseEncryption) {
+            if context.get_answer_bool(StepId::UseEncryption) {
                 "Enabled (LUKS)".to_string()
             } else {
                 "Disabled".to_string()
@@ -212,16 +212,13 @@ pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary 
         }
     };
 
-    let user_password_status = if context.get_answer(&QuestionId::Password).is_some() {
+    let user_password_status = if context.get_answer(&StepId::Password).is_some() {
         "Set"
     } else {
         "Not set"
     };
 
-    let encryption_password_status = if context
-        .get_answer(&QuestionId::EncryptionPassword)
-        .is_some()
-    {
+    let encryption_password_status = if context.get_answer(&StepId::EncryptionPassword).is_some() {
         "Set"
     } else {
         "Not set"
@@ -244,16 +241,14 @@ pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary 
 
     match partitioning_kind {
         PartitioningKind::Automatic => {
-            let layout = format_automatic_layout(
-                context,
-                context.get_answer_bool(QuestionId::UseEncryption),
-            );
+            let layout =
+                format_automatic_layout(context, context.get_answer_bool(StepId::UseEncryption));
             builder = builder
                 .field_indented("Layout", &layout)
                 .field_indented("Swap", "Auto (RAM-based)");
         }
         PartitioningKind::DualBoot => {
-            let resize_target = match context.get_answer(&QuestionId::DualBootPartition) {
+            let resize_target = match context.get_answer(&StepId::DualBootPartition) {
                 Some(value) if value == "__free_space__" => "Use existing free space".to_string(),
                 Some(value) => value.clone(),
                 None => "<not set>".to_string(),
@@ -272,14 +267,14 @@ pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary 
                 .field_indented("Swap", "Auto (RAM-based)");
         }
         PartitioningKind::Manual => {
-            let root_partition = answer_or(context, QuestionId::RootPartition, "<not set>");
-            let boot_partition = answer_or(context, QuestionId::BootPartition, "<not set>");
+            let root_partition = answer_or(context, StepId::RootPartition, "<not set>");
+            let boot_partition = answer_or(context, StepId::BootPartition, "<not set>");
             let swap_partition = context
-                .get_answer(&QuestionId::SwapPartition)
+                .get_answer(&StepId::SwapPartition)
                 .cloned()
                 .unwrap_or_else(|| "none".to_string());
             let home_partition = context
-                .get_answer(&QuestionId::HomePartition)
+                .get_answer(&StepId::HomePartition)
                 .cloned()
                 .unwrap_or_else(|| "none".to_string());
 
@@ -301,7 +296,7 @@ pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary 
         .field_indented("User password", user_password_status);
 
     if partitioning_kind == PartitioningKind::Automatic
-        && context.get_answer_bool(QuestionId::UseEncryption)
+        && context.get_answer_bool(StepId::UseEncryption)
     {
         builder = builder.field_indented("LUKS passphrase", encryption_password_status);
     }
@@ -332,7 +327,7 @@ pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary 
 /// Unlike the install summary, there is no partitioning or package plan to
 /// describe: `ins arch setup` only converts an existing system to instantOS.
 pub(crate) fn build_setup_summary(context: &InstallContext) -> String {
-    let username = answer_or(context, QuestionId::Username, "<not set>");
+    let username = answer_or(context, StepId::Username, "<not set>");
 
     let desktop = crate::arch::config::DesktopEnvironment::from_context(context);
     let dm_label = if desktop.requires_display_manager() {
@@ -343,7 +338,7 @@ pub(crate) fn build_setup_summary(context: &InstallContext) -> String {
         "Not required".to_string()
     };
     let autologin_label = if desktop.requires_display_manager() {
-        if context.get_answer_bool(QuestionId::Autologin) {
+        if context.get_answer_bool(StepId::Autologin) {
             "Enabled".to_string()
         } else {
             "Disabled".to_string()

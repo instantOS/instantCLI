@@ -1,4 +1,4 @@
-use crate::arch::engine::{InstallContext, Question, QuestionId, QuestionResult};
+use crate::arch::engine::{InstallContext, StepId, StepOutcome, WizardStep};
 use crate::arch::questions::partition::partition_belongs_to_disk;
 use crate::common::format::format_size;
 use crate::menu::slide::run_slider;
@@ -98,9 +98,9 @@ impl FzfSelectable for DualBootPartitionOption {
 }
 
 #[async_trait::async_trait]
-impl Question for DualBootPartitionQuestion {
-    fn id(&self) -> QuestionId {
-        QuestionId::DualBootPartition
+impl WizardStep for DualBootPartitionQuestion {
+    fn id(&self) -> StepId {
+        StepId::DualBootPartition
     }
 
     fn description(&self) -> Option<&str> {
@@ -109,13 +109,13 @@ impl Question for DualBootPartitionQuestion {
 
     fn should_ask(&self, context: &InstallContext) -> bool {
         context
-            .get_answer(&QuestionId::PartitioningMethod)
+            .get_answer(&StepId::PartitioningMethod)
             .map(|s| s.contains("Dual Boot"))
             .unwrap_or(false)
     }
 
-    fn depends_on(&self) -> &[QuestionId] {
-        &[QuestionId::Disk, QuestionId::PartitioningMethod]
+    fn depends_on(&self) -> &[StepId] {
+        &[StepId::Disk, StepId::PartitioningMethod]
     }
 
     fn validate(&self, context: &InstallContext, answer: &str) -> Result<(), String> {
@@ -126,7 +126,7 @@ impl Question for DualBootPartitionQuestion {
 
         // ask() only offers partitions of the selected disk, so a mismatch
         // means the answer was given for a different disk.
-        if let Some(disk) = context.get_answer(&QuestionId::Disk)
+        if let Some(disk) = context.get_answer(&StepId::Disk)
             && !partition_belongs_to_disk(answer, disk)
         {
             return Err(format!(
@@ -138,10 +138,10 @@ impl Question for DualBootPartitionQuestion {
         Ok(())
     }
 
-    async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
+    async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {
         // disk_path is now just the device path (e.g., "/dev/sda")
         let disk_path = context
-            .get_answer(&QuestionId::Disk)
+            .get_answer(&StepId::Disk)
             .context("No disk selected")?;
 
         // Get disks from cache or detect
@@ -195,7 +195,7 @@ impl Question for DualBootPartitionQuestion {
                     format_size(free_space_bytes),
                     NerdFont::ArrowRight
                 ))?;
-                return Ok(QuestionResult::Answer("__free_space__".to_string()));
+                return Ok(StepOutcome::Answer("__free_space__".to_string()));
             } else {
                 let mut message = format!(
                     "{} No shrinkable partitions found on {} and not enough contiguous free space.\n\
@@ -212,8 +212,7 @@ impl Question for DualBootPartitionQuestion {
                 }
                 message.push_str("\n\nSupported auto-resize filesystems: NTFS, ext4/ext3/ext2.");
 
-                FzfWrapper::message(&message)?;
-                return Ok(QuestionResult::Cancelled);
+                return Ok(StepOutcome::revisit(StepId::PartitioningMethod, message));
             }
         }
 
@@ -226,7 +225,7 @@ impl Question for DualBootPartitionQuestion {
             .header(HeaderBuilder::new(NerdFont::HardDrive, "Select Partition to Resize").build())
             .select(options)?;
 
-        Ok(QuestionResult::from_selection(result, |option| {
+        Ok(StepOutcome::from_selection(result, |option| {
             option.info.device
         }))
     }
@@ -235,9 +234,9 @@ impl Question for DualBootPartitionQuestion {
 pub struct DualBootSizeQuestion;
 
 #[async_trait::async_trait]
-impl Question for DualBootSizeQuestion {
-    fn id(&self) -> QuestionId {
-        QuestionId::DualBootSize
+impl WizardStep for DualBootSizeQuestion {
+    fn id(&self) -> StepId {
+        StepId::DualBootSize
     }
 
     fn description(&self) -> Option<&str> {
@@ -246,31 +245,31 @@ impl Question for DualBootSizeQuestion {
 
     fn should_ask(&self, context: &InstallContext) -> bool {
         context
-            .get_answer(&QuestionId::PartitioningMethod)
+            .get_answer(&StepId::PartitioningMethod)
             .map(|s| s.contains("Dual Boot"))
             .unwrap_or(false)
     }
 
-    fn depends_on(&self) -> &[QuestionId] {
+    fn depends_on(&self) -> &[StepId] {
         // The size is derived from the partition (or the disk's free space),
         // so any change upstream invalidates it.
         &[
-            QuestionId::Disk,
-            QuestionId::PartitioningMethod,
-            QuestionId::DualBootPartition,
+            StepId::Disk,
+            StepId::PartitioningMethod,
+            StepId::DualBootPartition,
         ]
     }
 
-    async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
+    async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {
         let part_path = context
-            .get_answer(&QuestionId::DualBootPartition)
+            .get_answer(&StepId::DualBootPartition)
             .context("No partition selected")?;
 
         // Handle free space case - no resize needed
         if part_path == "__free_space__" {
             // disk_path is now just the device path (e.g., "/dev/sda")
             let disk_path = context
-                .get_answer(&QuestionId::Disk)
+                .get_answer(&StepId::Disk)
                 .context("No disk selected")?;
 
             let disks =
@@ -289,14 +288,14 @@ impl Question for DualBootSizeQuestion {
                 .context("Selected disk not found")?;
 
             // Return the largest contiguous free space as the Linux size
-            return Ok(QuestionResult::Answer(
+            return Ok(StepOutcome::Answer(
                 disk_info.max_contiguous_free_space_bytes.to_string(),
             ));
         }
 
         // disk_path is now just the device path (e.g., "/dev/sda")
         let disk_path = context
-            .get_answer(&QuestionId::Disk)
+            .get_answer(&StepId::Disk)
             .context("No disk selected")?;
 
         // Get disks from cache or detect (should be cached by previous question)
@@ -341,13 +340,14 @@ impl Question for DualBootSizeQuestion {
         let max_linux = partition_size.saturating_sub(min_existing);
 
         if max_linux < min_total {
-            FzfWrapper::message(&format!(
-                "{} Not enough free space on partition for Linux.\nNeed at least {}, but only {} available (after preserving existing OS).",
-                NerdFont::Warning,
-                format_size(min_total),
-                format_size(max_linux)
-            ))?;
-            return Ok(QuestionResult::Cancelled);
+            return Ok(StepOutcome::revisit(
+                StepId::DualBootPartition,
+                format!(
+                    "Not enough free space on this partition for Linux. Need at least {}, but only {} is available after preserving the existing OS.",
+                    format_size(min_total),
+                    format_size(max_linux)
+                ),
+            ));
         }
 
         // Convert to GB for slider (easier to read/manage)
@@ -370,9 +370,9 @@ impl Question for DualBootSizeQuestion {
         match result {
             Ok(Some(gb)) => {
                 let bytes = gb as u64 * GB;
-                Ok(QuestionResult::Answer(bytes.to_string()))
+                Ok(StepOutcome::Answer(bytes.to_string()))
             }
-            Ok(None) => Ok(QuestionResult::Cancelled),
+            Ok(None) => Ok(StepOutcome::Pause),
             Err(e) => Err(e).context("Slider failed")?,
         }
     }
@@ -385,7 +385,7 @@ mod tests {
 
     fn context_with_disk(disk: &str) -> InstallContext {
         let mut context = InstallContext::new();
-        context.set_answer(QuestionId::Disk, disk.to_string());
+        context.set_answer(StepId::Disk, disk.to_string());
         context
     }
 

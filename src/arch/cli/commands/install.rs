@@ -7,7 +7,7 @@ use crate::arch::cli::{ArchCommands, DEFAULT_QUESTIONS_FILE};
 
 use super::super::utils::ensure_root;
 use super::ask::{AskOutcome, handle_ask_command};
-use super::{build_questions, handle_arch_command};
+use super::{build_steps, handle_arch_command};
 
 fn confirm_battery_power() -> Result<bool> {
     use crate::menu_utils::{ConfirmResult, FzfWrapper};
@@ -131,7 +131,7 @@ pub(super) async fn handle_install_command(debug: bool) -> Result<()> {
     state.save()?;
 
     // 1. Ask questions
-    let questions = build_questions();
+    let questions = build_steps();
     match Box::pin(handle_ask_command(None, None, questions)).await? {
         AskOutcome::Completed => {}
         AskOutcome::Cancelled => return Ok(()),

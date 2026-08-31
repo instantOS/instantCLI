@@ -1,4 +1,4 @@
-use crate::arch::engine::{InstallContext, Question, QuestionId, QuestionResult};
+use crate::arch::engine::{InstallContext, StepId, StepOutcome, WizardStep};
 use crate::menu_utils::FzfWrapper;
 use crate::ui::nerd_font::NerdFont;
 use anyhow::Result;
@@ -11,7 +11,7 @@ type AnswerValidator = dyn Fn(&str) -> Result<(), String> + Send + Sync;
 /// behavior, with the prompt and validation rules supplied at construction.
 /// See [`validators`] for the common rules.
 pub struct TextInputQuestion {
-    id: QuestionId,
+    id: StepId,
     prompt: String,
     icon: NerdFont,
     description: Option<String>,
@@ -19,7 +19,7 @@ pub struct TextInputQuestion {
 }
 
 impl TextInputQuestion {
-    pub fn new(id: QuestionId, prompt: impl Into<String>, icon: NerdFont) -> Self {
+    pub fn new(id: StepId, prompt: impl Into<String>, icon: NerdFont) -> Self {
         Self {
             id,
             prompt: prompt.into(),
@@ -48,8 +48,8 @@ impl TextInputQuestion {
 }
 
 #[async_trait::async_trait]
-impl Question for TextInputQuestion {
-    fn id(&self) -> QuestionId {
+impl WizardStep for TextInputQuestion {
+    fn id(&self) -> StepId {
         self.id
     }
 
@@ -57,13 +57,13 @@ impl Question for TextInputQuestion {
         self.description.as_deref()
     }
 
-    async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
+    async fn run(&self, _context: &InstallContext) -> Result<StepOutcome> {
         let result = FzfWrapper::builder()
             .prompt(format!("{} {}", self.icon, self.prompt))
             .input()
             .input_result()?;
 
-        Ok(QuestionResult::from_selection(result, |answer| answer))
+        Ok(StepOutcome::from_selection(result, |answer| answer))
     }
 
     fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
@@ -97,7 +97,7 @@ mod tests {
 
     #[test]
     fn validators_run_in_order_and_report_the_first_failure() {
-        let question = TextInputQuestion::new(QuestionId::Username, "prompt", NerdFont::User)
+        let question = TextInputQuestion::new(StepId::Username, "prompt", NerdFont::User)
             .validator(validators::forbidden_value("Username", "root"))
             .validator(validators::forbidden_value("Username", "admin"));
 

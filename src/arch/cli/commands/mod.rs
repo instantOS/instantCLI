@@ -10,7 +10,7 @@ mod upload_logs;
 use anyhow::Result;
 
 use crate::arch::cli::{ArchCommands, DualbootCommands};
-use crate::arch::engine::Question;
+use crate::arch::engine::WizardStep;
 use crate::common::distro::OperatingSystem;
 
 use self::ask::{AskOutcome, handle_ask_command};
@@ -33,18 +33,18 @@ pub async fn handle_arch_command(command: ArchCommands, debug: bool) -> Result<(
         );
     }
 
-    let questions = build_questions();
+    let steps = build_steps();
 
     match command {
         ArchCommands::List => {
-            println!("Available questions:");
-            for question in questions {
-                println!("- {:?}", question.id());
+            println!("Available wizard steps:");
+            for step in steps {
+                println!("- {:?}", step.id());
             }
             Ok(())
         }
         ArchCommands::Ask { id, output_config } => {
-            match handle_ask_command(id, output_config, questions).await? {
+            match handle_ask_command(id, output_config, steps).await? {
                 AskOutcome::Completed | AskOutcome::Cancelled => Ok(()),
             }
         }
@@ -64,13 +64,13 @@ pub async fn handle_arch_command(command: ArchCommands, debug: bool) -> Result<(
     }
 }
 
-pub(super) fn build_questions() -> Vec<Box<dyn Question>> {
+pub(super) fn build_steps() -> Vec<Box<dyn WizardStep>> {
     use crate::arch::questions::{
         BooleanQuestion, DesktopEnvironmentQuestion, DiskQuestion, DualBootEspWarning,
         DualBootPartitionQuestion, DualBootSizeQuestion, EncryptionPasswordQuestion,
         EspPartitionValidator, KernelQuestion, KeymapQuestion, LocaleQuestion,
         MirrorRegionQuestion, PartitionSelectorQuestion, PartitioningMethodQuestion,
-        PasswordQuestion, ResizeInstructionsQuestion, RunCfdiskQuestion, TimezoneQuestion,
+        PasswordQuestion, PrepareDiskStep, ResizeWorkflowStep, RunCfdiskStep, TimezoneQuestion,
         VirtualBoxWarning, WeakPasswordWarning, hostname_question, username_question,
     };
     use crate::arch::questions::{
@@ -82,27 +82,28 @@ pub(super) fn build_questions() -> Vec<Box<dyn Question>> {
         Box::new(crate::arch::questions::warnings::LowRamWarning),
         Box::new(KeymapQuestion),
         Box::new(DiskQuestion),
+        Box::new(PrepareDiskStep),
         Box::new(PartitioningMethodQuestion),
-        Box::new(RunCfdiskQuestion),
+        Box::new(RunCfdiskStep),
         Box::new(DualBootPartitionQuestion),
         Box::new(DualBootSizeQuestion),
         Box::new(DualBootEspWarning),
-        Box::new(ResizeInstructionsQuestion),
+        Box::new(ResizeWorkflowStep),
         Box::new(PartitionSelectorQuestion::new(
-            crate::arch::engine::QuestionId::RootPartition,
+            crate::arch::engine::StepId::RootPartition,
             "Select Root Partition",
             crate::ui::nerd_font::NerdFont::HardDrive,
             None,
         )),
         Box::new(PartitionSelectorQuestion::new(
-            crate::arch::engine::QuestionId::BootPartition,
+            crate::arch::engine::StepId::BootPartition,
             "Select Boot/EFI Partition",
             crate::ui::nerd_font::NerdFont::Folder,
             Some(Box::new(EspPartitionValidator)),
         )),
         Box::new(
             PartitionSelectorQuestion::new(
-                crate::arch::engine::QuestionId::SwapPartition,
+                crate::arch::engine::StepId::SwapPartition,
                 "Select Swap Partition",
                 crate::ui::nerd_font::NerdFont::File,
                 None,
@@ -111,7 +112,7 @@ pub(super) fn build_questions() -> Vec<Box<dyn Question>> {
         ),
         Box::new(
             PartitionSelectorQuestion::new(
-                crate::arch::engine::QuestionId::HomePartition,
+                crate::arch::engine::StepId::HomePartition,
                 "Select Home Partition",
                 crate::ui::nerd_font::NerdFont::Home,
                 None,
@@ -123,27 +124,27 @@ pub(super) fn build_questions() -> Vec<Box<dyn Question>> {
         Box::new(PasswordQuestion),
         Box::new(
             BooleanQuestion::new(
-                crate::arch::engine::QuestionId::UseEncryption,
+                crate::arch::engine::StepId::UseEncryption,
                 "Encrypt the installation disk?",
                 crate::ui::nerd_font::NerdFont::Lock,
             )
             .default_from(
-                [crate::arch::engine::QuestionId::PartitioningMethod],
+                [crate::arch::engine::StepId::PartitioningMethod],
                 |context| {
                     // Encryption features are only available for automatic partitioning
                     // If manual partitioning is selected, encryption is not supported
                     context
-                        .get_answer(&crate::arch::engine::QuestionId::PartitioningMethod)
+                        .get_answer(&crate::arch::engine::StepId::PartitioningMethod)
                         .map(|method| !method.contains("Manual"))
                         .unwrap_or(false)
                 },
             )
             .relevant_when(
-                [crate::arch::engine::QuestionId::PartitioningMethod],
+                [crate::arch::engine::StepId::PartitioningMethod],
                 |context| {
                     // Only ask about encryption if automatic partitioning is selected
                     context
-                        .get_answer(&crate::arch::engine::QuestionId::PartitioningMethod)
+                        .get_answer(&crate::arch::engine::StepId::PartitioningMethod)
                         .map(|method| !method.contains("Manual"))
                         .unwrap_or(true) // Default to true if partitioning method not yet answered
                 },
@@ -161,7 +162,7 @@ pub(super) fn build_questions() -> Vec<Box<dyn Question>> {
         Box::new(DisplayManagerQuestion),
         Box::new(
             BooleanQuestion::new(
-                crate::arch::engine::QuestionId::UsePlymouth,
+                crate::arch::engine::StepId::UsePlymouth,
                 "Enable Plymouth boot splash screen?",
                 crate::ui::nerd_font::NerdFont::Monitor,
             )
@@ -171,7 +172,7 @@ pub(super) fn build_questions() -> Vec<Box<dyn Question>> {
         Box::new(autologin_question(AutologinDefault::MatchEncryption)),
         Box::new(
             BooleanQuestion::new(
-                crate::arch::engine::QuestionId::LogUpload,
+                crate::arch::engine::StepId::LogUpload,
                 "Upload installation logs to snips.sh?",
                 crate::ui::nerd_font::NerdFont::Debug,
             )
@@ -180,7 +181,7 @@ pub(super) fn build_questions() -> Vec<Box<dyn Question>> {
         ),
         Box::new(
             BooleanQuestion::new(
-                crate::arch::engine::QuestionId::MinimalMode,
+                crate::arch::engine::StepId::MinimalMode,
                 "Enable Minimal Mode (Vanilla Arch Install)?",
                 crate::ui::nerd_font::NerdFont::Package,
             )
@@ -197,22 +198,22 @@ pub(super) enum AutologinDefault {
 pub(super) fn autologin_question(
     default: AutologinDefault,
 ) -> crate::arch::questions::BooleanQuestion {
-    use crate::arch::engine::QuestionId;
+    use crate::arch::engine::StepId;
 
     let question = crate::arch::questions::BooleanQuestion::new(
-        QuestionId::Autologin,
+        StepId::Autologin,
         "Enable Display Manager Autologin?",
         crate::ui::nerd_font::NerdFont::User,
     )
     .optional()
-    .relevant_when([QuestionId::DesktopEnvironment], |context| {
+    .relevant_when([StepId::DesktopEnvironment], |context| {
         crate::arch::config::DesktopEnvironment::from_context(context).requires_display_manager()
     });
 
     match default {
         AutologinDefault::MatchEncryption => question
-            .default_from([QuestionId::UseEncryption], |context| {
-                context.get_answer_bool(QuestionId::UseEncryption)
+            .default_from([StepId::UseEncryption], |context| {
+                context.get_answer_bool(StepId::UseEncryption)
             }),
         AutologinDefault::Disabled => question,
     }
@@ -220,11 +221,11 @@ pub(super) fn autologin_question(
 
 #[cfg(test)]
 mod tests {
-    use super::build_questions;
-    use crate::arch::engine::QuestionEngine;
+    use super::build_steps;
+    use crate::arch::engine::WizardEngine;
 
     #[test]
     fn install_question_graph_is_valid() {
-        QuestionEngine::new(build_questions()).unwrap();
+        WizardEngine::new(build_steps()).unwrap();
     }
 }

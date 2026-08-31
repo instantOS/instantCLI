@@ -87,7 +87,7 @@ pub fn mount_root(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::arch::engine::QuestionId;
+    use crate::arch::engine::StepId;
     use crate::arch::execution::mock::MockRunner;
     use std::process::Output;
 
@@ -124,8 +124,8 @@ mod tests {
 
     fn context(filesystem: &str, compression: &str) -> InstallContext {
         let mut context = InstallContext::new();
-        context.set_answer(QuestionId::RootFilesystem, filesystem.into());
-        context.set_answer(QuestionId::BtrfsCompression, compression.into());
+        context.set_answer(StepId::RootFilesystem, filesystem.into());
+        context.set_answer(StepId::BtrfsCompression, compression.into());
         context
     }
 

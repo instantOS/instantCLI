@@ -1,13 +1,26 @@
 use serde::{Deserialize, Serialize};
 
-/// Represents a unique identifier for a question
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, clap::ValueEnum)]
-pub enum QuestionId {
+/// Identifies a configuration wizard step or stored answer.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    clap::ValueEnum,
+)]
+pub enum StepId {
     Hostname,
     Username,
     Password,
     Keymap,
     Disk,
+    PrepareDisk,
     MirrorRegion,
     Timezone,
     Locale,

@@ -1,5 +1,5 @@
-mod answer_graph;
 mod presentation;
+mod step_graph;
 
 #[cfg(test)]
 mod tests;
@@ -9,11 +9,11 @@ use std::io::Write;
 
 use anyhow::{Result, bail};
 
-use self::answer_graph::AnswerGraph;
 use self::presentation::{
     AdvancedOption, FinalReviewAction, PauseMenuItem, ReviewItem, final_review_options,
 };
-use super::{InstallContext, Question, QuestionResult};
+use self::step_graph::StepGraph;
+use super::{InstallContext, StepOutcome, WizardStep};
 use crate::menu_utils::{ConfirmResult, FzfResult, FzfWrapper, Header, MenuPresentation};
 use crate::ui::nerd_font::NerdFont;
 
@@ -51,28 +51,35 @@ impl FlowKind {
 }
 
 /// Result of running an interactive question flow.
-pub enum EngineOutcome {
+pub enum WizardOutcome {
     /// The user accepted the final review.
     Completed(Box<InstallContext>),
     /// The user confirmed that the wizard should stop without applying changes.
     Aborted,
 }
 
-pub struct QuestionEngine {
-    questions: Vec<Box<dyn Question>>,
-    answer_graph: AnswerGraph,
+pub struct WizardEngine {
+    steps: Vec<Box<dyn WizardStep>>,
+    step_graph: StepGraph,
     context: InstallContext,
     is_tty: bool,
     flow: FlowKind,
 }
 
-enum QuestionInteraction {
-    Answered,
-    Cancelled,
+enum StepInteraction {
+    Completed,
+    Paused,
+    Back {
+        message: Option<String>,
+    },
+    Revisit {
+        step: super::StepId,
+        message: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum QuestionReadiness {
+enum StepReadiness {
     Ready,
     Irrelevant,
 }
@@ -91,22 +98,22 @@ enum FinalReviewResult {
 
 struct ProviderRuntime {
     tasks: Vec<ProviderTask>,
-    failures_by_question: HashMap<super::QuestionId, String>,
+    failures_by_question: HashMap<super::StepId, String>,
 }
 
 struct ProviderTask {
-    question_id: super::QuestionId,
+    question_id: super::StepId,
     handle: tokio::task::JoinHandle<std::result::Result<(), String>>,
 }
 
 impl ProviderRuntime {
-    fn has_tasks_for(&self, question_id: super::QuestionId) -> bool {
+    fn has_tasks_for(&self, question_id: super::StepId) -> bool {
         self.tasks
             .iter()
             .any(|task| task.question_id == question_id)
     }
 
-    async fn finish_tasks_for(&mut self, question_id: super::QuestionId) -> Result<()> {
+    async fn finish_tasks_for(&mut self, question_id: super::StepId) -> Result<()> {
         while let Some(index) = self
             .tasks
             .iter()
@@ -147,17 +154,17 @@ impl Drop for ProviderRuntime {
     }
 }
 
-impl QuestionEngine {
-    pub fn new(questions: Vec<Box<dyn Question>>) -> Result<Self> {
-        Self::for_flow(FlowKind::Install, questions)
+impl WizardEngine {
+    pub fn new(steps: Vec<Box<dyn WizardStep>>) -> Result<Self> {
+        Self::for_flow(FlowKind::Install, steps)
     }
 
     /// Create an engine for a specific wizard flow.
-    pub fn for_flow(flow: FlowKind, questions: Vec<Box<dyn Question>>) -> Result<Self> {
-        let answer_graph = AnswerGraph::new(&questions)?;
+    pub fn for_flow(flow: FlowKind, steps: Vec<Box<dyn WizardStep>>) -> Result<Self> {
+        let step_graph = StepGraph::new(&steps)?;
         Ok(Self {
-            questions,
-            answer_graph,
+            steps,
+            step_graph,
             context: InstallContext::new(),
             is_tty: is_tty_environment(),
             flow,
@@ -173,46 +180,54 @@ impl QuestionEngine {
     ///
     /// Data providers are started here so every entry point gets identical
     /// initialization and callers cannot accidentally omit it.
-    pub async fn run(mut self) -> Result<EngineOutcome> {
+    pub async fn run(mut self) -> Result<WizardOutcome> {
         self.normalize_context();
         let mut providers = self.start_providers();
 
         loop {
-            let Some(index) = self.find_next_question_index() else {
+            let Some(index) = self.find_next_step_index() else {
                 // Resolve every provider before the final review so provider-
                 // driven relevance (notably mirror fallback) is reflected in
                 // the context that will be saved. Failures for already valid
                 // answers remain dormant unless that question must be asked.
                 providers.finish_all().await;
                 self.normalize_context();
-                if self.find_next_question_index().is_some() {
+                if self.find_next_step_index().is_some() {
                     continue;
                 }
                 match self.handle_final_review(&mut providers).await? {
                     FinalReviewResult::Continue => continue,
                     FinalReviewResult::Complete => {
-                        return Ok(EngineOutcome::Completed(Box::new(self.context)));
+                        return Ok(WizardOutcome::Completed(Box::new(self.context)));
                     }
-                    FinalReviewResult::Abort => return Ok(EngineOutcome::Aborted),
+                    FinalReviewResult::Abort => return Ok(WizardOutcome::Aborted),
                 }
             };
 
             if matches!(
                 self.wait_until_ready(index, &mut providers).await?,
-                QuestionReadiness::Irrelevant
+                StepReadiness::Irrelevant
             ) {
                 continue;
             }
             loop {
-                match self.ask_question(index).await? {
-                    QuestionInteraction::Answered => break,
-                    QuestionInteraction::Cancelled => {
-                        match self.handle_navigation_menu(index).await? {
-                            NavigationAction::Stay => continue,
-                            NavigationAction::ContinueFlow => break,
-                            NavigationAction::Abort => return Ok(EngineOutcome::Aborted),
-                        }
+                match self.run_step(index).await? {
+                    StepInteraction::Completed => break,
+                    StepInteraction::Back { message } => {
+                        self.show_navigation_message(message)?;
+                        self.go_back_from(index);
+                        break;
                     }
+                    StepInteraction::Revisit { step, message } => {
+                        self.show_navigation_message(message)?;
+                        self.revisit_from(index, step)?;
+                        break;
+                    }
+                    StepInteraction::Paused => match self.handle_navigation_menu(index).await? {
+                        NavigationAction::Stay => continue,
+                        NavigationAction::ContinueFlow => break,
+                        NavigationAction::Abort => return Ok(WizardOutcome::Aborted),
+                    },
                 }
             }
         }
@@ -220,10 +235,10 @@ impl QuestionEngine {
 
     fn start_providers(&self) -> ProviderRuntime {
         let mut tasks = Vec::new();
-        for question in &self.questions {
-            for provider in question.data_providers() {
+        for step in &self.steps {
+            for provider in step.data_providers() {
                 let context = self.context.clone();
-                let question_id = question.id();
+                let question_id = step.id();
                 tasks.push(ProviderTask {
                     question_id,
                     handle: tokio::spawn(async move {
@@ -245,8 +260,8 @@ impl QuestionEngine {
         &mut self,
         index: usize,
         providers: &mut ProviderRuntime,
-    ) -> Result<QuestionReadiness> {
-        let question_id = self.questions[index].id();
+    ) -> Result<StepReadiness> {
+        let question_id = self.steps[index].id();
         let had_providers = providers.has_tasks_for(question_id);
         if let Err(error) = providers.finish_tasks_for(question_id).await {
             self.show_fatal_error(&format!(
@@ -256,16 +271,16 @@ impl QuestionEngine {
 
         // A provider may make a question irrelevant while populating its data
         // (the mirror provider uses this for its fallback path).
-        if !self.questions[index].should_ask(&self.context) {
-            self.answer_graph
-                .drop_answer(&mut self.context, question_id);
-            return Ok(QuestionReadiness::Irrelevant);
+        if !self.steps[index].should_ask(&self.context) {
+            self.step_graph
+                .drop_step_state(&mut self.context, question_id);
+            return Ok(StepReadiness::Irrelevant);
         }
-        if let Some(message) = self.questions[index].fatal_error_message(&self.context) {
+        if let Some(message) = self.steps[index].fatal_error_message(&self.context) {
             self.show_fatal_error(&message)?;
         }
-        if self.questions[index].is_ready(&self.context) {
-            return Ok(QuestionReadiness::Ready);
+        if self.steps[index].is_ready(&self.context) {
+            return Ok(StepReadiness::Ready);
         }
         let source = if had_providers {
             "provider completed without supplying"
@@ -288,22 +303,33 @@ impl QuestionEngine {
         bail!("{message}")
     }
 
-    async fn ask_question(&mut self, index: usize) -> Result<QuestionInteraction> {
+    async fn run_step(&mut self, index: usize) -> Result<StepInteraction> {
         loop {
             self.clear_terminal()?;
-            match self.questions[index].ask(&self.context).await? {
-                QuestionResult::Answer(answer) => {
-                    if let Err(message) = self.questions[index].validate(&self.context, &answer) {
+            match self.steps[index].run(&self.context).await? {
+                StepOutcome::Answer(answer) => {
+                    if let Err(message) = self.steps[index].validate(&self.context, &answer) {
                         FzfWrapper::message(&format!("{} {message}", NerdFont::Warning))?;
                         continue;
                     }
 
-                    let id = self.questions[index].id();
-                    self.answer_graph
-                        .record_answer(&mut self.context, id, answer);
-                    return Ok(QuestionInteraction::Answered);
+                    let id = self.steps[index].id();
+                    self.step_graph.record_answer(&mut self.context, id, answer);
+                    return Ok(StepInteraction::Completed);
                 }
-                QuestionResult::Cancelled => return Ok(QuestionInteraction::Cancelled),
+                StepOutcome::Completed => {
+                    let id = self.steps[index].id();
+                    self.step_graph.record_completion(&mut self.context, id);
+                    return Ok(StepInteraction::Completed);
+                }
+                StepOutcome::Retry(message) => {
+                    FzfWrapper::message(&format!("{} {message}", NerdFont::Warning))?;
+                }
+                StepOutcome::Back { message } => return Ok(StepInteraction::Back { message }),
+                StepOutcome::Revisit { step, message } => {
+                    return Ok(StepInteraction::Revisit { step, message });
+                }
+                StepOutcome::Pause => return Ok(StepInteraction::Paused),
             }
         }
     }
@@ -316,32 +342,38 @@ impl QuestionEngine {
         Ok(())
     }
 
-    fn find_next_question_index(&mut self) -> Option<usize> {
-        for index in 0..self.questions.len() {
-            let question = &self.questions[index];
-            if !question.should_ask(&self.context) {
-                let id = question.id();
-                self.answer_graph.drop_answer(&mut self.context, id);
+    fn find_next_step_index(&mut self) -> Option<usize> {
+        for index in 0..self.steps.len() {
+            let step = &self.steps[index];
+            if !step.should_ask(&self.context) {
+                let id = step.id();
+                self.step_graph.drop_step_state(&mut self.context, id);
                 continue;
             }
 
-            if question.is_optional() && self.flow == FlowKind::Install {
-                if !self.context.is_answered(question.id())
-                    && let Some(default) = question.get_default(&self.context)
+            if step.is_optional() && self.flow == FlowKind::Install {
+                if !self.context.is_step_completed(step.id())
+                    && let Some(default) = step.get_default(&self.context)
                 {
-                    let id = question.id();
-                    self.answer_graph
+                    let id = step.id();
+                    self.step_graph
                         .record_answer(&mut self.context, id, default);
                 }
                 continue;
             }
 
-            let id = question.id();
+            let id = step.id();
             if let Some(answer) = self.context.get_answer(&id) {
-                if question.validate(&self.context, answer).is_err() {
-                    self.answer_graph.drop_answer(&mut self.context, id);
+                if step.validate(&self.context, answer).is_err() {
+                    self.step_graph.drop_step_state(&mut self.context, id);
                     return Some(index);
                 }
+            } else if self.context.is_step_completed(id) {
+                if step.completion_is_current(&self.context) {
+                    continue;
+                }
+                self.step_graph.drop_step_state(&mut self.context, id);
+                return Some(index);
             } else {
                 return Some(index);
             }
@@ -351,30 +383,34 @@ impl QuestionEngine {
 
     /// Reconcile imported answers with the current question graph.
     ///
-    /// Root answers can be validated directly. Dependent answers additionally
-    /// use provenance, when present, to prove that they were recorded against
-    /// the current upstream values. Legacy and hand-authored contexts without
-    /// provenance remain supported as explicit user input.
+    /// Root answers can be validated directly. Dependent step state must carry
+    /// provenance proving that it was recorded against the current upstream
+    /// values.
     fn normalize_context(&mut self) {
-        for index in 0..self.questions.len() {
-            let question = &self.questions[index];
-            let id = question.id();
+        for index in 0..self.steps.len() {
+            let step = &self.steps[index];
+            let id = step.id();
 
-            if !question.should_ask(&self.context) {
-                self.answer_graph.drop_answer(&mut self.context, id);
+            if !step.should_ask(&self.context) {
+                self.step_graph.drop_step_state(&mut self.context, id);
                 continue;
             }
 
             if let Some(answer) = self.context.get_answer(&id).cloned() {
-                if question.validate(&self.context, &answer).is_err()
-                    || !self.answer_graph.answer_is_current(&self.context, id)
+                if step.validate(&self.context, &answer).is_err()
+                    || !self.step_graph.step_state_is_current(&self.context, id)
                 {
-                    self.answer_graph.drop_answer(&mut self.context, id);
+                    self.step_graph.drop_step_state(&mut self.context, id);
                 } else {
-                    // Upgrade legacy or hand-authored answers with provenance
-                    // without invalidating their dependents when unchanged.
-                    self.answer_graph
-                        .record_answer(&mut self.context, id, answer);
+                    self.step_graph.record_answer(&mut self.context, id, answer);
+                }
+            } else if self.context.completed_steps.contains(&id) {
+                if step.completion_is_current(&self.context)
+                    && self.step_graph.step_state_is_current(&self.context, id)
+                {
+                    self.step_graph.record_completion(&mut self.context, id);
+                } else {
+                    self.step_graph.drop_step_state(&mut self.context, id);
                 }
             }
         }
@@ -386,8 +422,8 @@ impl QuestionEngine {
             PauseMenuItem::ReviewAnswers,
             PauseMenuItem::GoBack,
         ];
-        let current_question = &self.questions[current_index];
-        if current_question.is_optional() && current_question.get_default(&self.context).is_some() {
+        let current_step = &self.steps[current_index];
+        if current_step.is_optional() && current_step.get_default(&self.context).is_some() {
             options.push(PauseMenuItem::UseDefault);
         }
         options.push(PauseMenuItem::Abort);
@@ -404,21 +440,16 @@ impl QuestionEngine {
                 Ok(NavigationAction::Stay)
             }
             FzfResult::Selected(PauseMenuItem::GoBack) => {
-                let previous_index = self.previous_question_index(current_index);
-                if previous_index == current_index {
-                    return Ok(NavigationAction::Stay);
-                }
-                let id = self.questions[previous_index].id();
-                self.answer_graph.drop_answer(&mut self.context, id);
+                self.go_back_from(current_index);
                 Ok(NavigationAction::ContinueFlow)
             }
             FzfResult::Selected(PauseMenuItem::UseDefault) => {
-                let question = &self.questions[current_index];
-                let Some(default) = question.get_default(&self.context) else {
+                let step = &self.steps[current_index];
+                let Some(default) = step.get_default(&self.context) else {
                     return Ok(NavigationAction::Stay);
                 };
-                self.answer_graph
-                    .record_answer(&mut self.context, question.id(), default);
+                self.step_graph
+                    .record_answer(&mut self.context, step.id(), default);
                 Ok(NavigationAction::ContinueFlow)
             }
             FzfResult::Selected(PauseMenuItem::Abort) => {
@@ -449,17 +480,27 @@ impl QuestionEngine {
         match option.action {
             FinalReviewAction::Complete => Ok(FinalReviewResult::Complete),
             FinalReviewAction::ReviewAnswers => {
-                self.review_answers(self.questions.len()).await?;
+                self.review_answers(self.steps.len()).await?;
                 Ok(FinalReviewResult::Continue)
             }
             FinalReviewAction::AdvancedOptions => {
                 if let Some(index) = self.select_advanced_option()?
                     && matches!(
                         self.wait_until_ready(index, providers).await?,
-                        QuestionReadiness::Ready
+                        StepReadiness::Ready
                     )
                 {
-                    let _ = self.ask_question(index).await?;
+                    match self.run_step(index).await? {
+                        StepInteraction::Completed | StepInteraction::Paused => {}
+                        StepInteraction::Back { message } => {
+                            self.show_navigation_message(message)?;
+                            self.go_back_from(index);
+                        }
+                        StepInteraction::Revisit { step, message } => {
+                            self.show_navigation_message(message)?;
+                            self.revisit_from(index, step)?;
+                        }
+                    }
                 }
                 Ok(FinalReviewResult::Continue)
             }
@@ -475,21 +516,34 @@ impl QuestionEngine {
 
     async fn review_answers(&mut self, before_index: usize) -> Result<()> {
         while let Some(index) = self.select_answer_to_review(before_index)? {
-            let _ = self.ask_question(index).await?;
+            match self.run_step(index).await? {
+                StepInteraction::Completed => {}
+                StepInteraction::Paused => return Ok(()),
+                StepInteraction::Back { message } => {
+                    self.show_navigation_message(message)?;
+                    self.go_back_from(index);
+                    return Ok(());
+                }
+                StepInteraction::Revisit { step, message } => {
+                    self.show_navigation_message(message)?;
+                    self.revisit_from(index, step)?;
+                    return Ok(());
+                }
+            }
         }
         Ok(())
     }
 
     fn select_answer_to_review(&self, before_index: usize) -> Result<Option<usize>> {
         let mut items = vec![ReviewItem::Continue];
-        for (index, question) in self.questions.iter().enumerate().take(before_index) {
-            if let Some(answer) = self.context.get_answer(&question.id()) {
-                items.push(ReviewItem::Question {
+        for (index, step) in self.steps.iter().enumerate().take(before_index) {
+            if let Some(answer) = self.context.get_answer(&step.id()) {
+                items.push(ReviewItem::Answer {
                     index,
-                    id: question.id(),
-                    description: question.description().unwrap_or_default().to_string(),
+                    id: step.id(),
+                    description: step.description().unwrap_or_default().to_string(),
                     answer: answer.clone(),
-                    is_sensitive: question.is_sensitive(),
+                    is_sensitive: step.is_sensitive(),
                 });
             }
         }
@@ -506,7 +560,7 @@ impl QuestionEngine {
             .presentation(MenuPresentation::Padded)
             .select(items)?;
         match result {
-            FzfResult::Selected(ReviewItem::Question { index, .. }) => Ok(Some(index)),
+            FzfResult::Selected(ReviewItem::Answer { index, .. }) => Ok(Some(index)),
             _ => Ok(None),
         }
     }
@@ -515,29 +569,51 @@ impl QuestionEngine {
         let result = FzfWrapper::builder()
             .header(Header::fancy("Advanced Options"))
             .presentation(MenuPresentation::Padded)
-            .select(AdvancedOption::from_questions(
-                &self.questions,
-                &self.context,
-            ))?;
+            .select(AdvancedOption::from_steps(&self.steps, &self.context))?;
         match result {
-            FzfResult::Selected(AdvancedOption::Question { index, .. }) => Ok(Some(index)),
+            FzfResult::Selected(AdvancedOption::Answer { index, .. }) => Ok(Some(index)),
             _ => Ok(None),
         }
     }
 
-    fn previous_question_index(&self, current_index: usize) -> usize {
+    fn previous_step_index(&self, current_index: usize) -> usize {
         if current_index == 0 {
             return 0;
         }
 
         let mut index = current_index - 1;
         while index > 0
-            && (!self.questions[index].should_ask(&self.context)
-                || self.questions[index].is_info_only())
+            && (!self.steps[index].should_ask(&self.context) || self.steps[index].is_info_only())
         {
             index -= 1;
         }
         index
+    }
+
+    fn go_back_from(&mut self, current_index: usize) {
+        let previous_index = self.previous_step_index(current_index);
+        if previous_index != current_index {
+            let id = self.steps[previous_index].id();
+            self.step_graph.drop_step_state(&mut self.context, id);
+        }
+    }
+
+    fn revisit_from(&mut self, current_index: usize, target: super::StepId) -> Result<()> {
+        let Some(target_index) = self.steps.iter().position(|step| step.id() == target) else {
+            bail!("step {target:?} requested navigation to a step outside this wizard");
+        };
+        if target_index >= current_index {
+            bail!("step {target:?} must precede the step requesting navigation");
+        }
+        self.step_graph.drop_step_state(&mut self.context, target);
+        Ok(())
+    }
+
+    fn show_navigation_message(&self, message: Option<String>) -> Result<()> {
+        if let Some(message) = message {
+            FzfWrapper::message(&format!("{} {message}", NerdFont::Warning))?;
+        }
+        Ok(())
     }
 
     fn confirm_abort(&self) -> Result<bool> {

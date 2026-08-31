@@ -325,7 +325,7 @@ pub async fn execute_installation(
 
     println!(
         "Loaded configuration for user: {:?}",
-        context.get_answer(&crate::arch::engine::QuestionId::Username)
+        context.get_answer(&crate::arch::engine::StepId::Username)
     );
 
     if let Some(step_name) = step {
