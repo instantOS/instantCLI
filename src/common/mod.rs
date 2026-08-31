@@ -12,6 +12,7 @@ pub mod format;
 pub mod git;
 pub mod instantwm;
 pub mod instantwmctl;
+pub mod locale_gen;
 pub mod network;
 pub mod package;
 pub mod pacman;

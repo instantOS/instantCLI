@@ -1,6 +1,7 @@
 use super::CommandRunner;
 use crate::arch::engine::{InstallContext, QuestionId};
 use crate::arch::mkinitcpio::MkinitcpioConfig;
+use crate::common::locale_gen::apply_enable_disable;
 use anyhow::{Context, Result};
 use std::process::Command;
 
@@ -325,30 +326,12 @@ fn configure_locale(context: &InstallContext, executor: &dyn CommandRunner) -> R
         let content =
             std::fs::read_to_string(locale_gen_path).context("Failed to read /etc/locale.gen")?;
 
-        // Uncomment the selected locale
-        let mut new_lines = Vec::new();
-        let mut found = false;
-
-        for line in content.lines() {
-            if line.contains(locale) && line.trim().starts_with('#') {
-                // Uncomment it
-                new_lines.push(line.replacen('#', "", 1));
-                found = true;
-            } else if line.contains(locale) && !line.trim().starts_with('#') {
-                // Already uncommented
-                new_lines.push(line.to_string());
-                found = true;
-            } else {
-                new_lines.push(line.to_string());
-            }
+        // Enable the selected locale, preserving the file's formatting. The
+        // answer is always an available locale, so this only ever uncomments;
+        // the write is skipped when nothing changed.
+        if let Some(updated) = apply_enable_disable(&content, std::slice::from_ref(locale), &[]) {
+            std::fs::write(locale_gen_path, updated)?;
         }
-
-        if !found {
-            // Append it if not found
-            new_lines.push(locale.clone());
-        }
-
-        std::fs::write(locale_gen_path, new_lines.join("\n"))?;
 
         // Run locale-gen
         let mut cmd = Command::new("locale-gen");

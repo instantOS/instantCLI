@@ -312,7 +312,9 @@ fn sample_audio_frequency(path: &std::path::Path, center: f64) -> f64 {
     assert!(output.status.success());
     let samples = output
         .stdout
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|bytes| i16::from_le_bytes([bytes[0], bytes[1]]))
         .collect::<Vec<_>>();
     let crossings = samples

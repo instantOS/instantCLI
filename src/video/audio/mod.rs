@@ -191,24 +191,6 @@ pub(crate) fn run_voice_mastering(input: &Path, output: &Path) -> Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn mastering_uses_short_boundary_safe_leveling() {
-        assert!(VOICE_MASTERING_FILTER.contains("dynaudnorm=f=250:g=5"));
-        assert!(VOICE_MASTERING_FILTER.contains(":b=1:"));
-        assert!(!VOICE_MASTERING_FILTER.contains("loudnorm"));
-        assert!(!VOICE_MASTERING_FILTER.contains("gausssize=31"));
-    }
-
-    #[test]
-    fn mastering_recipe_versions_cached_outputs() {
-        assert!(VOICE_MASTERING_RECIPE.contains("podcast-master:v2"));
-    }
-}
-
 /// No-op enhancer that returns input unchanged
 struct NoneEnhancer;
 
@@ -294,4 +276,22 @@ pub async fn handle_enhance(args: super::cli::EnhanceArgs) -> Result<()> {
     );
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mastering_uses_short_boundary_safe_leveling() {
+        assert!(VOICE_MASTERING_FILTER.contains("dynaudnorm=f=250:g=5"));
+        assert!(VOICE_MASTERING_FILTER.contains(":b=1:"));
+        assert!(!VOICE_MASTERING_FILTER.contains("loudnorm"));
+        assert!(!VOICE_MASTERING_FILTER.contains("gausssize=31"));
+    }
+
+    #[test]
+    fn mastering_recipe_versions_cached_outputs() {
+        assert!(VOICE_MASTERING_RECIPE.contains("podcast-master:v2"));
+    }
 }
