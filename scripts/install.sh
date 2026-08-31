@@ -5,8 +5,13 @@ set -eu
 REPO="instantOS/instantCLI"
 API_URL="https://api.github.com/repos/$REPO/releases"
 BIN_NAME="ins"
+SOURCE_BIN_NAME="ins"
 
 INSTALL_DIR=${INSTALL_DIR:-}
+CLI_ONLY=0
+OS_INSTALL=0
+ONLY_ANIMATION=0
+NO_ANIMATION=0
 
 log() {
 	printf '%s\n' "$1"
@@ -21,17 +26,577 @@ fatal() {
 	exit 1
 }
 
+# -------------------------------------------------------------
+# Logo animation frames (from Plymouth theme throbber)
+# -------------------------------------------------------------
+f1() {
+	cat <<'FRM'
+       ▄▄▄▄
+   ▄▄████████▄
+  ▄████▀▀▀▀████▄
+  ████     ▄████
+  ▀████▄▄▄██████
+    ▀▀██████████▄▄▄▄
+               ██████▄
+               ███████
+                ▀▀▀▀▀
+
+FRM
+}
+
+f2() {
+	cat <<'FRM'
+       ▄▄▄▄
+   ▄▄████████▄
+  ▄████▀▀▀▀████▄
+  ████      ████
+  ▀████▄▄▄██████
+    ▀▀██████████▄▄▄▄
+               ██████▄
+               ███████
+                ▀▀▀▀▀
+
+FRM
+}
+
+f3() {
+	cat <<'FRM'
+       ▄▄▄▄
+    ▄█████████▄
+  ▄████▀▀▀▀▀███▄
+  ████▄     ████
+   █████▄▄██████
+    ▀▀██████████▄▄▄
+               ██████▄
+               ███████
+                ▀▀▀▀▀
+
+FRM
+}
+
+f4() {
+	cat <<'FRM'
+       ▄▄▄▄▄
+    ▄█████████▄
+   ████▀▀  ▀████
+   ████     ████
+   ▀████████████
+     ▀▀▀████████▄
+               ██████▄
+               ███████
+                ▀▀█▀▀
+
+FRM
+}
+
+f5() {
+	cat <<'FRM'
+       ▄▄▄▄▄▄
+    ▄██████████▄
+   ▄████▀   ▀████
+   ▀███▄    ▄████
+    ▀███████████
+      ▀▀▀▀██████
+               ██████▄
+              ████████
+               ▀████▀
+
+FRM
+}
+
+f6() {
+	cat <<'FRM'
+       ▄▄▄▄▄▄▄
+     ▄██████████▄
+    ████▀    ████
+    ████▄   ▄████
+     ▀███████████
+        ▀▀▀▀████
+               ▄█████▄
+               ████████
+               ▀▀████▀
+
+FRM
+}
+
+f7() {
+	cat <<'FRM'
+        ▄▄▄▄▄▄▄
+      ▄██████████▄
+     ████▀    ████
+     ▀███▄▄  ▄████
+      ▀██████████
+         ▀▀▀▀███
+               ▄████▄▄
+               ███████▄
+               ▀█████▀
+                  ▀
+FRM
+}
+
+f8() {
+	cat <<'FRM'
+         ▄▄▄██▄▄
+        ▄██████████
+       ████     ████
+       ▀███▄▄▄▄▄████
+        ▀▀████████▀
+            ▀▀▀██▀
+               ████▄▄
+              ████████
+              ▀██████▀
+                ▀▀▀▀
+FRM
+}
+
+f9() {
+	cat <<'FRM'
+           ▄▄▄█▄▄▄
+         ▄██████████
+        ▄███▀    ████
+         ████▄▄▄▄███▀
+          ▀████████▀
+             ▀▀██▀
+              ▄████▄
+             ▄███████▄
+             ▀███████▀
+               ▀▀▀▀▀
+FRM
+}
+
+f10() {
+	cat <<'FRM'
+           ▄▄▄▄▄▄▄
+         ▄██████████
+         ███▀    ████
+         ████▄▄▄▄███▀
+          ▀████████▀
+             ▀██▀
+             ▄███▄▄
+           ▄████████
+           ▀████████
+             ▀███▀▀
+FRM
+}
+
+f11() {
+	cat <<'FRM'
+             ▄▄▄▄▄▄
+           ▄████████▄
+          ████    ████
+          ████▄▄▄▄████
+            ▀████████▀
+              ▀██▀▀
+             ▄▄███▄
+           ▄████████
+           ▀████████
+            ▀▀████▀
+FRM
+}
+
+f12() {
+	cat <<'FRM'
+                ▄▄
+            ▄████████▄
+           ▄███▀▀▀▀████
+           ▀███▄▄▄▄████
+            ▀████████▀
+              ███▀▀
+           ▄▄███▄
+         ▄████████▄
+         ▀████████▀
+          ▀██████▀
+FRM
+}
+
+f13() {
+	cat <<'FRM'
+
+              ▄██████▄
+             ████▀▀████▄
+            ▀████▄ ▄████
+             ▀████████▀
+              ███▀▀▀
+           ▄▄████▄
+         ▄████████▄
+         ██████████
+          ▀██████▀
+FRM
+}
+
+f14() {
+	cat <<'FRM'
+
+                ▄▄▄▄▄▄
+              ▄█████████
+              ████  █████
+              ██████████
+              ▄████▀▀▀
+        ▄▄██████
+       ██████████
+       ██████████
+        ▀██████▀
+FRM
+}
+
+f15() {
+	cat <<'FRM'
+
+                   ▄▄
+               ▄███████▄▄
+               ████▀▀████
+               ██████████
+             ▄▄███████▀▀
+       ▄████████
+      ████▀█████
+      ██████████
+       ▀▀████▀▀
+FRM
+}
+
+f16() {
+	cat <<'FRM'
+
+
+                 ▄▄███▄▄
+               ▄█████████▄
+               ███████████
+        ▄▄▄▄▄▄▄█████████▀
+     ▄██████████
+     ████▀▀████
+     ██████████
+       ▀▀██▀▀
+FRM
+}
+
+f17() {
+	cat <<'FRM'
+
+
+                   ▄▄▄▄
+                ▄████████▄
+                ██████████
+     ▄▄████▄▄▄▄██████████▀
+    ███████████▀ ▀▀▀▀▀▀▀
+    ████  ▄████
+    ▀████████▀
+       ▀▀▀▀▀
+FRM
+}
+
+f18() {
+	cat <<'FRM'
+
+
+
+                  ▄████▄▄
+        ▄       ▄█████████
+    ▄████████▄▄▄██████████
+   ████▀▀▀█████▀▀▀▀████▀▀
+   ████▄▄▄████
+    ▀███████▀
+
+FRM
+}
+
+f19() {
+	cat <<'FRM'
+
+
+
+                   ▄▄▄▄▄
+    ▄▄▄▄▄▄▄▄     ▄███████▄
+  ▄███████████▄▄██████████
+  ████    ████▀ ▀▀██████▀
+  ▀████▄▄████▀
+    ▀▀████▀▀
+
+FRM
+}
+
+f20() {
+	cat <<'FRM'
+
+
+
+
+   ▄███████▄▄    ▄▄█████▄
+ ▄███▀▀▀▀▀████▄▄██████████
+ ▀███▄   ▄████▀ ▀████████▀
+  ▀█████████▀      ▀▀▀▀▀
+     ▀▀▀▀▀
+
+FRM
+}
+
+f21() {
+	cat <<'FRM'
+
+
+
+    ▄▄▄▄▄▄▄
+  ██████████▄     ▄▄▄▄▄▄
+ ████    ▀████▄▄▄████████
+ ▀███▄▄▄▄████▀▀▀▀████████
+   ▀██████▀▀      ▀▀██▀▀
+
+
+FRM
+}
+
+f22() {
+	cat <<'FRM'
+
+
+
+  ▄████████▄
+ ████▀▀▀▀████▄     ▄▄▄
+ ████    ▄█████▄▄███████▄
+ ▀███████████▀▀▀█████████
+   ▀▀▀▀▀▀▀▀      ▀▀████▀
+
+
+FRM
+}
+
+f23() {
+	cat <<'FRM'
+
+
+    ▄▄▄▄▄▄▄
+ ▄██████████▄
+ ████    ▀████
+ ████▄▄ ▄▄█████▄▄▄█████▄
+  ▀█████████▀▀▀▀████████
+     ▀▀▀▀        ▀█████▀
+
+
+FRM
+}
+
+f24() {
+	cat <<'FRM'
+
+
+   ▄███████▄
+ ▄████▀▀▀████▄
+ ████     ████▄
+ ▀████▄▄▄██████▄▄▄████▄
+   ▀███████▀▀▀ ▀████████
+                ▀██████▀
+                   ▀▀
+
+FRM
+}
+
+f25() {
+	cat <<'FRM'
+
+     ▄▄▄▄▄
+  ▄█████████▄
+ ████▀▀  ▀████
+ ████▄    █████
+  ▀████████████▄▄▄▄▄▄▄
+    ▀▀▀█▀▀▀▀▀▀ ████████▄
+                ███████
+                  ▀▀▀
+
+FRM
+}
+
+f26() {
+	cat <<'FRM'
+
+    ▄▄▄██▄▄▄
+  ▄██████████▄
+ ████▀    ▀████
+ ▀████▄  ▄▄████
+  ▀█████████████▄▄▄▄▄▄
+     ▀▀▀▀▀▀▀▀  ████████
+                ███████
+                 ▀▀▀▀
+
+FRM
+}
+
+f27() {
+	cat <<'FRM'
+
+    ▄██████▄▄
+  ▄████▀▀▀████▄
+  ████     ████
+  ████▄▄▄▄▄████
+   ▀████████████▄▄▄▄▄
+       ▀▀▀▀    ███████▄
+               ▀██████▀
+                 ▀▀▀▀
+
+FRM
+}
+
+f28() {
+	cat <<'FRM'
+
+   ▄▄███████▄▄
+  ▄████▀▀▀▀████
+  ████     ████▄
+  ▀████▄▄▄▄█████
+   ▀▀███████████▄▄▄▄
+               ███████
+               ▀██████
+                 ▀▀▀▀
+
+FRM
+}
+
+f29() {
+	cat <<'FRM'
+        ▄▄
+   ▄▄████████▄
+  ▄████▀▀▀▀████
+  ████     ▄████
+  ▀████▄▄▄██████
+    ▀███████████▄▄▄▄
+               ███████
+               ███████
+                ▀▀▀▀▀
+
+FRM
+}
+
+f30() {
+	cat <<'FRM'
+       ▄▄▄▄
+   ▄▄████████▄
+  ▄████▀▀▀▀████▄
+  ████     ▄████
+  ▀████▄▄▄██████
+    ▀▀██████████▄▄▄▄
+               ██████▄
+               ███████
+                ▀▀▀▀▀
+
+FRM
+}
+
+instantos_logo_animation() {
+	[ "$NO_ANIMATION" -eq 0 ] || return 0
+
+	esc=$(printf '\033')
+	csi="${esc}["
+	reset="${csi}0m"
+	bold="${csi}1m"
+	dim="${csi}2m"
+	white="${csi}1;37m"
+	clear_home="${csi}H${csi}J"
+	clear_screen="${csi}2J${csi}H"
+	hide="${csi}?25l"
+	show="${csi}?25h"
+
+	# Rainbow spectrum palette
+	c_red="${csi}38;5;196m"
+	c_orange="${csi}38;5;208m"
+	c_yellow="${csi}38;5;226m"
+	c_green="${csi}38;5;46m"
+	c_cyan="${csi}38;5;51m"
+	c_blue="${csi}38;5;39m"
+	c_purple="${csi}38;5;135m"
+	c_magenta="${csi}38;5;201m"
+
+	if [ ! -t 1 ] || [ "${TERM:-}" = "dumb" ]; then
+		f30
+		printf "\n  instantOS Installer\n"
+		printf "  Arch Linux, but instant\n\n"
+		return 0
+	fi
+
+	cleanup_anim() {
+		printf "%s%s\n" "$reset" "$show"
+	}
+	interrupt_anim() {
+		status=$1
+		cleanup_anim
+		trap - INT TERM
+		exit "$status"
+	}
+	trap 'interrupt_anim 130' INT
+	trap 'interrupt_anim 143' TERM
+
+	printf "%s%s" "$hide" "$clear_screen"
+
+	# Play rotating and blob-morphing animation in white (2 full cycles)
+	loop=1
+	while [ "$loop" -le 2 ]; do
+		frame_idx=1
+		while [ "$frame_idx" -le 30 ]; do
+			printf "%s%s" "$clear_home" "$white"
+			eval "f$frame_idx"
+			sleep 0.035
+			frame_idx=$((frame_idx + 1))
+		done
+		loop=$((loop + 1))
+	done
+
+	# Rainbow spectrum flash on final resting logo
+	for color in "$c_red" "$c_orange" "$c_yellow" "$c_green" "$c_cyan" "$c_blue" "$c_purple" "$c_magenta" "$white"; do
+		printf "%s%s" "$clear_home" "$color"
+		f30
+		sleep 0.02
+	done
+
+	printf "%s" "$reset"
+	printf "\n%s  instantOS Installer%s\n" "$bold" "$reset"
+	printf "%s  Arch Linux, but instant%s\n\n" "$dim" "$reset"
+	printf "%s" "$show"
+
+	trap - INT TERM
+}
+
+# -------------------------------------------------------------
+# Environment & Command checks
+# -------------------------------------------------------------
+is_live_disk() {
+	[ -e /run/archiso/cowspace ] ||
+		[ -d /run/archiso ] ||
+		[ -e /etc/instantos/liveversion ] ||
+		[ -e /usr/share/liveutils ] ||
+		grep -q "archiso" /proc/cmdline 2>/dev/null
+}
+
+should_launch_os_installer() {
+	[ "$OS_INSTALL" -eq 1 ] || { [ "$CLI_ONLY" -eq 0 ] && is_live_disk; }
+}
+
+prepare_live_keyring() {
+	command -v pacman-key >/dev/null 2>&1 || fatal "required command 'pacman-key' not found"
+	command -v pacman >/dev/null 2>&1 || fatal "required command 'pacman' not found"
+
+	log "Preparing the Arch Linux package keyring..."
+	if [ "$(id -u)" -eq 0 ]; then
+		pacman-key --init || fatal "failed to initialize the package keyring"
+		pacman-key --populate archlinux || fatal "failed to populate the package keyring"
+		pacman -Sy --needed archlinux-keyring --noconfirm || fatal "failed to update the Arch Linux keyring"
+	elif command -v sudo >/dev/null 2>&1; then
+		sudo pacman-key --init || fatal "failed to initialize the package keyring"
+		sudo pacman-key --populate archlinux || fatal "failed to populate the package keyring"
+		sudo pacman -Sy --needed archlinux-keyring --noconfirm || fatal "failed to update the Arch Linux keyring"
+	else
+		fatal "preparing the package keyring requires root permissions"
+	fi
+}
+
 usage() {
 	cat <<EOF
-Usage: install.sh [--install-dir <path>] [--bin-name <name>]
-
-Environment variables:
-  INSTALL_DIR  Destination directory (default: first user bin in PATH, else /usr/local/bin)
+Usage: install.sh [OPTIONS]
 
 Options:
-  --install-dir <path>  Set installation directory
-  --bin-name <name>     Override installed binary name (default: ins)
-  -h, --help            Show this help message
+  --install-dir <path>                Set installation directory
+  --bin-name <name>                   Override installed binary name (default: ins)
+  --cli-only, --no-launch             Install ins CLI only (do not launch OS installer on live disk)
+  --os-install, --arch-install        Launch instantOS installer after installing ins
+  --only-animation, --animation-only  Play the logo animation and exit
+  --no-animation                      Skip the logo animation
+  -h, --help                          Show this help message
 EOF
 	exit 0
 }
@@ -42,12 +607,28 @@ parse_args() {
 		--install-dir)
 			shift
 			[ $# -gt 0 ] || fatal "--install-dir requires a value"
+			[ -n "$1" ] || fatal "--install-dir requires a non-empty value"
 			INSTALL_DIR=$1
 			;;
 		--bin-name)
 			shift
 			[ $# -gt 0 ] || fatal "--bin-name requires a value"
+			case "$1" in
+			"" | . | .. | */*) fatal "--bin-name must be a file name, not a path" ;;
+			esac
 			BIN_NAME=$1
+			;;
+		--cli-only | --no-launch)
+			CLI_ONLY=1
+			;;
+		--os-install | --arch-install)
+			OS_INSTALL=1
+			;;
+		--only-animation | --animation-only)
+			ONLY_ANIMATION=1
+			;;
+		--no-animation)
+			NO_ANIMATION=1
 			;;
 		-h | --help)
 			usage
@@ -58,6 +639,13 @@ parse_args() {
 		esac
 		shift
 	done
+
+	if [ "$CLI_ONLY" -eq 1 ] && [ "$OS_INSTALL" -eq 1 ]; then
+		fatal "--cli-only and --os-install cannot be used together"
+	fi
+	if [ "$ONLY_ANIMATION" -eq 1 ] && [ "$NO_ANIMATION" -eq 1 ]; then
+		fatal "--only-animation and --no-animation cannot be used together"
+	fi
 }
 
 choose_install_dir() {
@@ -65,6 +653,19 @@ choose_install_dir() {
 		return
 	fi
 
+	# On a live ISO or when explicitly running OS install, install system-wide to /usr/local/bin
+	if should_launch_os_installer; then
+		INSTALL_DIR="/usr/local/bin"
+		return
+	fi
+
+	# If already root, install to /usr/local/bin
+	if [ "$(id -u)" -eq 0 ]; then
+		INSTALL_DIR="/usr/local/bin"
+		return
+	fi
+
+	# Standard user installation
 	for candidate in "$HOME/.local/bin" "$HOME/bin"; do
 		case ":$PATH:" in
 		*:"$candidate":*)
@@ -74,7 +675,7 @@ choose_install_dir() {
 		esac
 	done
 
-	INSTALL_DIR="/usr/local/bin"
+	INSTALL_DIR="$HOME/.local/bin"
 }
 
 require_commands() {
@@ -134,80 +735,90 @@ fetch_release_json() {
 		-H "Accept: application/vnd.github+json" \
 		-H "User-Agent: instantcli-installer" \
 		"$API_URL") || fatal "failed to fetch releases metadata"
-	
+
 	# Try each release until we find one with our asset
 	release_json=$(find_working_release "$all_releases") || fatal "no working release found with assets for $TARGET"
 }
 
 find_working_release() {
 	all_releases="$1"
-	
-	# AWK-only parsing - process the JSON array to find a valid release
+
+	# Extract complete top-level release objects. Counting braces avoids splitting
+	# on nested asset objects and works with both compact and formatted JSON.
 	printf '%s' "$all_releases" | awk -v target="$TARGET" -v use_appimage="$USE_APPIMAGE" '
-	BEGIN {
-		json = ""
+	function release_has_asset(release,    rest, url_end, url) {
+		if (release ~ /"draft"[[:space:]]*:[[:space:]]*true/ ||
+		    release ~ /"prerelease"[[:space:]]*:[[:space:]]*true/) {
+			return 0
 	}
+
+		rest = release
+		while (match(rest, /"browser_download_url"[[:space:]]*:[[:space:]]*"/)) {
+			rest = substr(rest, RSTART + RLENGTH)
+			url_end = index(rest, "\"")
+			if (url_end == 0) {
+				return 0
+			}
+			url = substr(rest, 1, url_end - 1)
+
+			if (use_appimage == 1) {
+				if (url ~ /\.AppImage$/ && url !~ /\.sha256$/) {
+					return 1
+				}
+			} else if (index(url, target) > 0 && url !~ /\.sha256$/ &&
+			           url !~ /\.pkg\.tar\.zst$/ && url !~ /-debug-/) {
+				return 1
+			}
+
+			rest = substr(rest, url_end + 1)
+		}
+		return 0
+	}
+
 	{
-		json = json $0
-	}
-	END {
-		# Remove outer array brackets
-		gsub(/^[[:space:]]*\[/, "", json)
-		gsub(/\][[:space:]]*$/, "", json)
-		
-		# Split on "},{"  to separate releases
-		n = split(json, parts, /\},\{/)
-		
-		for (i = 1; i <= n; i++) {
-			release = parts[i]
-			# Restore braces
-			if (i > 1) release = "{" release
-			if (i < n) release = release "}"
-			if (i == 1 && substr(release, 1, 1) != "{") release = "{" release
-			if (i == n && substr(release, length(release), 1) != "}") release = release "}"
-			
-			# Skip drafts and prereleases
-			if (index(release, "\"draft\":true") > 0 || index(release, "\"prerelease\":true") > 0) {
+		line = $0 "\n"
+		for (i = 1; i <= length(line); i++) {
+			char = substr(line, i, 1)
+
+			if (depth > 0) {
+				object = object char
+			}
+
+			if (in_string) {
+				if (escaped) {
+					escaped = 0
+				} else if (char == "\\") {
+					escaped = 1
+				} else if (char == "\"") {
+					in_string = 0
+				}
 				continue
 			}
-			
-			# Look for matching asset URL
-			found = 0
-			pos = 1
-			while (1) {
-				# Find next browser_download_url
-				url_start = index(substr(release, pos), "\"browser_download_url\":\"")
-				if (url_start == 0) break
-				
-				url_start = pos + url_start + 23
-				url_end = index(substr(release, url_start), "\"")
-				if (url_end == 0) break
-				
-				url = substr(release, url_start, url_end - 1)
-				
-				# Check if this URL matches our criteria
-				if (use_appimage == 1) {
-					if (match(url, /\.AppImage$/) && index(url, ".sha256") == 0) {
-						found = 1
-						break
-					}
-				} else {
-					if (index(url, target) > 0 && index(url, ".sha256") == 0 && index(url, ".pkg.tar.zst") == 0 && index(url, "-debug-") == 0) {
-						found = 1
-						break
-					}
+
+			if (char == "\"") {
+				in_string = 1
+			} else if (char == "{") {
+				if (depth == 0) {
+					object = "{"
 				}
-				
-				pos = url_start + url_end
-			}
-			
-			if (found) {
-				print release
-				exit 0
+				depth++
+			} else if (char == "}") {
+				depth--
+				if (depth == 0) {
+					if (release_has_asset(object)) {
+						found = 1
+						print object
+						exit 0
+					}
+					object = ""
+				}
 			}
 		}
-		
-		exit 1
+	}
+	END {
+		if (!found) {
+			exit 1
+		}
 	}
 	'
 }
@@ -215,64 +826,64 @@ find_working_release() {
 find_asset_urls() {
 	if [ "$USE_APPIMAGE" -eq 1 ]; then
 		asset_url=$(printf '%s\n' "$release_json" | awk '
-            {
-                rest = $0
-                while (match(rest, /"browser_download_url":"([^"]+)"/)) {
-                    url_start = index(rest, "\"browser_download_url\":\"") + 24
-                    url_end = index(substr(rest, url_start), "\"")
-                    url = substr(rest, url_start, url_end - 1)
-                    if (url ~ /\.AppImage$/ && url !~ /\.sha256$/) {
-                        print url
-                        exit
-                    }
-                    rest = substr(rest, RSTART + RLENGTH)
-                }
-            }
-        ')
+	            {
+	                rest = $0
+	                while (match(rest, /"browser_download_url"[[:space:]]*:[[:space:]]*"/)) {
+	                    rest = substr(rest, RSTART + RLENGTH)
+	                    url_end = index(rest, "\"")
+	                    url = substr(rest, 1, url_end - 1)
+	                    if (url ~ /\.AppImage$/ && url !~ /\.sha256$/) {
+	                        print url
+	                        exit
+	                    }
+	                    rest = substr(rest, url_end + 1)
+	                }
+	            }
+	        ')
 		[ -n "$asset_url" ] || fatal "no AppImage found in release"
 	else
 		asset_url=$(printf '%s\n' "$release_json" | awk -v target="$TARGET" '
-            {
-                rest = $0
-                while (match(rest, /"browser_download_url":"([^"]+)"/)) {
-                    url_start = index(rest, "\"browser_download_url\":\"") + 24
-                    url_end = index(substr(rest, url_start), "\"")
-                    url = substr(rest, url_start, url_end - 1)
-                    if (index(url, target) && url !~ /\.sha256$/ && url !~ /\.pkg\.tar\.zst$/ && url !~ /-debug-/) {
-                        print url
-                        exit
-                    }
-                    rest = substr(rest, RSTART + RLENGTH)
-                }
-            }
-        ')
+	            {
+	                rest = $0
+	                while (match(rest, /"browser_download_url"[[:space:]]*:[[:space:]]*"/)) {
+	                    rest = substr(rest, RSTART + RLENGTH)
+	                    url_end = index(rest, "\"")
+	                    url = substr(rest, 1, url_end - 1)
+	                    if (index(url, target) && url !~ /\.sha256$/ && url !~ /\.pkg\.tar\.zst$/ && url !~ /-debug-/) {
+	                        print url
+	                        exit
+	                    }
+	                    rest = substr(rest, url_end + 1)
+	                }
+	            }
+	        ')
 		[ -n "$asset_url" ] || fatal "no prebuilt binary or archive found for $TARGET"
 	fi
 
 	sha_url=$(printf '%s\n' "$release_json" | awk -v archive="$asset_url" '
-        {
-            rest = $0
-            target_sha = archive ".sha256"
-            while (match(rest, /"browser_download_url":"([^"]+)"/)) {
-                url_start = index(rest, "\"browser_download_url\":\"") + 24
-                url_end = index(substr(rest, url_start), "\"")
-                url = substr(rest, url_start, url_end - 1)
-                if (url == target_sha) {
-                    print url
-                    exit
-                }
-                rest = substr(rest, RSTART + RLENGTH)
-            }
-        }
-    ')
+	        {
+	            rest = $0
+	            target_sha = archive ".sha256"
+	            while (match(rest, /"browser_download_url"[[:space:]]*:[[:space:]]*"/)) {
+	                rest = substr(rest, RSTART + RLENGTH)
+	                url_end = index(rest, "\"")
+	                url = substr(rest, 1, url_end - 1)
+	                if (url == target_sha) {
+	                    print url
+	                    exit
+	                }
+	                rest = substr(rest, url_end + 1)
+	            }
+	        }
+	    ')
 
 	version=$(printf '%s\n' "$release_json" | awk '
-        match($0, /"tag_name":"v?([^"]+)"/) {
-            tag_start = index($0, "\"tag_name\":\"") + 12
-            tag_end = index(substr($0, tag_start), "\"")
-            tag = substr($0, tag_start, tag_end - 1)
-            sub(/^v/, "", tag)
-            print tag
+	        match($0, /"tag_name"[[:space:]]*:[[:space:]]*"/) {
+	            rest = substr($0, RSTART + RLENGTH)
+	            tag_end = index(rest, "\"")
+	            tag = substr(rest, 1, tag_end - 1)
+	            sub(/^v/, "", tag)
+	            print tag
             exit
         }
     ')
@@ -317,7 +928,7 @@ extract_archive() {
 
 	case "$archive_path" in
 	*.tar.zst)
-		if tar --help 2>/dev/null | grep -q "--zstd"; then
+		if tar --help 2>/dev/null | grep -q -- "--zstd"; then
 			tar --zstd -xf "$archive_path" -C "$dest_dir"
 		elif command -v unzstd >/dev/null 2>&1; then
 			unzstd -c "$archive_path" | tar -xf - -C "$dest_dir"
@@ -339,9 +950,9 @@ extract_archive() {
 find_binary_path() {
 	search_root=$1
 
-	binary_path=$(find "$search_root" -type f -name "$BIN_NAME" 2>/dev/null | head -n 1)
+	binary_path=$(find "$search_root" -type f -name "$SOURCE_BIN_NAME" 2>/dev/null | head -n 1)
 
-	[ -n "$binary_path" ] || fatal "failed to locate $BIN_NAME in extracted archive"
+	[ -n "$binary_path" ] || fatal "failed to locate $SOURCE_BIN_NAME in extracted archive"
 
 	printf '%s\n' "$binary_path"
 }
@@ -389,11 +1000,29 @@ install_binary() {
 	fi
 }
 
-print_summary() {
-	if [ -n "$version" ]; then
-		log "Installed $BIN_NAME v$version to $INSTALL_DIR"
+is_arch_linux() {
+	if [ -f /etc/os-release ]; then
+		grep -qiE '^ID(_LIKE)?=.*(arch|instantos|manjaro|endeavouros)' /etc/os-release
+	elif [ -f /etc/arch-release ]; then
+		return 0
 	else
-		log "Installed $BIN_NAME to $INSTALL_DIR"
+		return 1
+	fi
+}
+
+print_summary() {
+	if [ -t 1 ] && [ "${TERM:-}" != "dumb" ]; then
+		bold="$(printf '\033[1m')"
+		dim="$(printf '\033[2m')"
+		reset="$(printf '\033[0m')"
+		cyan="$(printf '\033[38;5;45m')"
+		orange="$(printf '\033[38;5;208m')"
+	else
+		bold=""
+		dim=""
+		reset=""
+		cyan=""
+		orange=""
 	fi
 
 	case ":$PATH:" in
@@ -402,19 +1031,69 @@ print_summary() {
 		warn "$INSTALL_DIR is not in PATH; add 'export PATH=\$PATH:$INSTALL_DIR' to your shell profile"
 		;;
 	esac
+
+	printf '\n'
+	if [ -n "$version" ]; then
+		log "${bold}✓ ${BIN_NAME} v${version} installed successfully to ${INSTALL_DIR}/${BIN_NAME}${reset}"
+	else
+		log "${bold}✓ ${BIN_NAME} installed successfully to ${INSTALL_DIR}/${BIN_NAME}${reset}"
+	fi
+
+	printf '\n%sNext steps:%s\n' "$bold" "$reset"
+	if is_arch_linux; then
+		printf '  • Convert this Arch installation to %sinstantOS%s (adds [instant] repo, instantWM & tools):\n' "$orange" "$reset"
+		printf '      %ssudo %s arch setup%s\n' "$cyan" "$BIN_NAME" "$reset"
+	else
+		printf '  • Build or install instantOS tools from source:\n'
+		printf '      %s%s dev install%s\n' "$cyan" "$BIN_NAME" "$reset"
+	fi
+
+	printf '  • Manage dotfiles, system settings, and health checks:\n'
+	printf '      %s%s --help%s\n' "$cyan" "$BIN_NAME" "$reset"
+
+	printf '\n%sTip:%s To install a fresh %sinstantOS%s system on a computer, boot an Arch Linux live ISO and run:\n' "$dim" "$reset" "$orange" "$reset"
+	printf '     %s%scurl -fsSL instantos.io/install | sh%s\n\n' "$dim" "$cyan" "$reset"
 }
 
+# -------------------------------------------------------------
+# Main workflow
+# -------------------------------------------------------------
 main() {
 	parse_args "$@"
+
+	instantos_logo_animation
+
+	if [ "$ONLY_ANIMATION" -eq 1 ]; then
+		exit 0
+	fi
+
 	choose_install_dir
 	require_commands
 	detect_target
+
+	# A fresh instantOS installation currently supports x86_64 only. Other
+	# architectures can still use the CLI-only installation path.
+	if should_launch_os_installer && [ "$TARGET" != "x86_64-unknown-linux-gnu" ]; then
+		fatal "the instantOS system installer currently supports x86_64 only; use --cli-only to install the CLI"
+	fi
+
+	# If live disk or forced OS install, prepare the keyring before downloading.
+	if should_launch_os_installer; then
+		prepare_live_keyring
+	fi
+
 	fetch_release_json
 
 	find_asset_urls
 
 	TMPDIR=$(mktemp -d)
-	trap 'rm -rf "$TMPDIR"' EXIT INT TERM HUP
+	cleanup_tmpdir() {
+		rm -rf "$TMPDIR"
+	}
+	trap cleanup_tmpdir EXIT
+	trap 'exit 130' INT
+	trap 'exit 143' TERM
+	trap 'exit 129' HUP
 
 	archive="$TMPDIR/$(basename "$asset_url")"
 	curl -fsSL -H "User-Agent: instantcli-installer" "$asset_url" -o "$archive" || fatal "failed to download release archive"
@@ -440,7 +1119,18 @@ main() {
 			;;
 		esac
 	fi
+
 	install_binary "$binary_path"
+	cleanup_tmpdir
+	trap - EXIT INT TERM HUP
+
+	# Launch instantOS installer if on live disk or requested
+	if should_launch_os_installer; then
+		log "Starting instantOS installer..."
+		# The CLI configures networking as the desktop user, then escalates itself.
+		exec "$INSTALL_DIR/$BIN_NAME" arch install
+	fi
+
 	print_summary
 }
 

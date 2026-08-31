@@ -20,13 +20,13 @@ appimage:
 stuff:
     cargo build --profile upload
     rsync ./target/upload/ins ubuntu@stuff.paperbenni.xyz:/data/stuff/ins
-    rsync ./scripts/archinstall.sh ubuntu@stuff.paperbenni.xyz:/data/stuff/install
+    rsync ./scripts/install.sh ubuntu@stuff.paperbenni.xyz:/data/stuff/install
     rsync ./scripts/dev.sh ubuntu@stuff.paperbenni.xyz:/data/stuff/dev
 
 armstuff:
     cargo build --profile upload --target aarch64-unknown-linux-gnu
     rsync ./target/aarch64-unknown-linux-gnu/upload/ins ubuntu@stuff.paperbenni.xyz:/data/stuff/insarm
-    rsync ./scripts/archinstall.sh ubuntu@stuff.paperbenni.xyz:/data/stuff/install
+    rsync ./scripts/install.sh ubuntu@stuff.paperbenni.xyz:/data/stuff/install
     rsync ./scripts/dev.sh ubuntu@stuff.paperbenni.xyz:/data/stuff/dev
 
 format:
