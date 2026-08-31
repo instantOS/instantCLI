@@ -141,6 +141,31 @@ test_published_checksum_download_failure_is_fatal() (
 	fi
 )
 
+test_non_tty_download_is_quiet() {
+	local args_file archive output args asset_url version BIN_NAME
+	args_file="$(mktemp)"
+	archive="$(mktemp)"
+
+	asset_url="https://example.invalid/ins-v1.2.3.tgz"
+	version="1.2.3"
+	BIN_NAME="ins"
+	curl() { printf '%s\n' "$*" >"${args_file}"; }
+
+	output="$(download_release_asset "${archive}" 2>/dev/null)"
+	args="$(<"${args_file}")"
+	rm -f "${args_file}" "${archive}"
+	assert_equals "Downloading ins v1.2.3..." "${output}"
+
+	if ! grep -q -- '-fsSL' <<<"${args}"; then
+		echo "Non-TTY download did not use curl's quiet mode" >&2
+		return 1
+	fi
+	if grep -q -- '--progress-bar' <<<"${args}"; then
+		echo "Non-TTY download unexpectedly enabled the progress bar" >&2
+		return 1
+	fi
+}
+
 test_local_validation_precedes_animation() (
 	local animation_marker status
 	animation_marker="$(mktemp)"
@@ -211,6 +236,7 @@ test_non_tty_animation_is_plain
 test_launch_mode_selection
 test_keyring_failure_is_fatal
 test_published_checksum_download_failure_is_fatal
+test_non_tty_download_is_quiet
 test_local_validation_precedes_animation
 test_arm_cli_target_detection
 test_unsupported_termux_arm_does_not_use_glibc_target
