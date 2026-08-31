@@ -94,15 +94,29 @@ pub async fn handle_update_command(debug: bool) -> Result<()> {
         None,
     );
 
-    // We pass None for game_name to sync all games, and false for force
-    let _summary = sync_game_saves(None, false)?;
+    // We pass None for game_name to sync all games, and false for force.
+    // Per-game errors (e.g. an unmounted drive) are reported by the sync
+    // itself and must not abort the whole system update.
+    let report = sync_game_saves(None, false)?;
 
-    emit(
-        Level::Success,
-        "update.game.finish",
-        "Game saves synced successfully",
-        None,
-    );
+    if report.summary.errors > 0 {
+        emit(
+            Level::Warn,
+            "update.game.errors",
+            &format!(
+                "Game save sync completed with {} errors",
+                report.summary.errors
+            ),
+            None,
+        );
+    } else {
+        emit(
+            Level::Success,
+            "update.game.finish",
+            "Game saves synced successfully",
+            None,
+        );
+    }
 
     // 5. Run ins self-update
     emit(

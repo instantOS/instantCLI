@@ -943,7 +943,8 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
             }
             GameMenuEntry::SyncAll => {
                 match sync_game_saves(None, false) {
-                    Ok(summary) => {
+                    Ok(report) => {
+                        let summary = report.summary;
                         // Show summary in a message dialog
                         let message = if summary.total() == 0 {
                             "No games configured for syncing.".to_string()

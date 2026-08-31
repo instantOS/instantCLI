@@ -11,7 +11,7 @@ use crate::game::launch_command::LaunchCommand;
 use crate::game::platforms::deps::dependencies_for_launch_command;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
 
-use super::sync::sync_game_saves;
+use super::sync::{SyncReport, sync_game_saves};
 
 const POST_LAUNCH_SYNC_DELAY: Duration = Duration::from_secs(5);
 
@@ -51,7 +51,8 @@ pub fn launch_game(game_name: Option<String>) -> Result<()> {
         selected.source.label()
     );
 
-    let _summary = sync_game_saves(None, false)?;
+    let report = sync_game_saves(None, false)?;
+    ensure_game_synced(&report, &selected.name, "Pre-launch")?;
 
     run_launch_command(&selected)?;
 
@@ -61,7 +62,8 @@ pub fn launch_game(game_name: Option<String>) -> Result<()> {
     );
     sleep(POST_LAUNCH_SYNC_DELAY);
 
-    let _summary = sync_game_saves(None, false)?;
+    let report = sync_game_saves(None, false)?;
+    ensure_game_synced(&report, &selected.name, "Post-launch")?;
 
     println!("Finished launch workflow for {}", selected.name);
 
@@ -191,6 +193,18 @@ fn select_launchable_game(launchables: &[LaunchableGame]) -> Result<Option<Launc
         FzfResult::Cancelled => Ok(None),
         FzfResult::Error(message) => Err(anyhow!(message)),
         FzfResult::MultiSelected(mut games) => Ok(games.pop()),
+    }
+}
+
+fn ensure_game_synced(report: &SyncReport, game_name: &str, phase: &str) -> Result<()> {
+    match report.failure_for(game_name) {
+        Some(error) => Err(anyhow!(
+            "{} save sync failed for '{}': {}",
+            phase,
+            game_name,
+            error
+        )),
+        None => Ok(()),
     }
 }
 

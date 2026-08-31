@@ -394,12 +394,12 @@ pub fn report_no_games_configured() {
     );
 }
 
-pub fn report_summary(total_synced: i32, total_skipped: i32, total_errors: i32) {
+pub fn report_summary(summary: &super::SyncSummary) {
     emit_separator();
     let summary_data = serde_json::json!({
-        "synced": total_synced,
-        "skipped": total_skipped,
-        "errors": total_errors
+        "synced": summary.synced,
+        "skipped": summary.skipped,
+        "errors": summary.errors
     });
 
     let summary_title = if matches!(get_output_format(), OutputFormat::Json) {
@@ -416,7 +416,7 @@ pub fn report_summary(total_synced: i32, total_skipped: i32, total_errors: i32) 
         emit(Level::Info, "game.sync.summary.title", &summary_title, None);
         let summary_text = format!(
             "  Synced: {}\n  Skipped: {}\n  Errors: {}",
-            total_synced, total_skipped, total_errors
+            summary.synced, summary.skipped, summary.errors
         );
         emit(
             Level::Info,
@@ -438,21 +438,21 @@ pub fn report_summary(total_synced: i32, total_skipped: i32, total_errors: i32) 
                 Level::Success,
                 Some(char::from(NerdFont::Check)),
                 "Synced",
-                total_synced,
+                summary.synced,
                 "game.sync.summary.synced",
             ),
             (
                 Level::Info,
                 Some(char::from(NerdFont::Flag)),
                 "Skipped",
-                total_skipped,
+                summary.skipped,
                 "game.sync.summary.skipped",
             ),
             (
                 Level::Error,
                 Some(char::from(NerdFont::CrossCircle)),
                 "Errors",
-                total_errors,
+                summary.errors,
                 "game.sync.summary.errors",
             ),
         ];

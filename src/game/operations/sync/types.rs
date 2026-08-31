@@ -28,3 +28,21 @@ pub enum ToleranceDirection {
     LocalNewer,
     SnapshotNewer,
 }
+
+/// Outcome status for a single game's sync
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GameSyncStatus {
+    /// Backup or restore completed
+    Synced,
+    /// No action taken (in sync, within tolerance, or checkpoint skip)
+    Skipped,
+    /// Sync failed with an error message
+    Failed(String),
+}
+
+/// Per-game result recorded during a sync run
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GameSyncOutcome {
+    pub game: String,
+    pub status: GameSyncStatus,
+}

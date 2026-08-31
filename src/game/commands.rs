@@ -317,7 +317,13 @@ fn handle_add(options: AddGameOptions) -> Result<()> {
 }
 
 fn handle_sync(game_name: Option<String>, force: bool) -> Result<()> {
-    let _summary = sync_game_saves(game_name, force)?;
+    let report = sync_game_saves(game_name, force)?;
+    if report.summary.errors > 0 {
+        return Err(anyhow::anyhow!(
+            "sync completed with {} errors",
+            report.summary.errors
+        ));
+    }
     Ok(())
 }
 

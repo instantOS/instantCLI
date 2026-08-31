@@ -1,6 +1,6 @@
 //! `ins keyhelp` - explore and memorize instantWM keybinds.
 //!
-//! Fetches the live binding list over `instantwmctl keybinds --json` and
+//! Fetches the live binding list over `instantwmctl --json keybinds` and
 //! presents it as a searchable fzf menu. Each binding shows a rich preview
 //! (mode availability, origin, and the built-in action description from
 //! `instantwmctl action --list`). Selecting an entry opens a small action
