@@ -101,7 +101,9 @@ regardless of file modification times.
 curl -fsSL https://raw.githubusercontent.com/instantOS/instantCLI/main/scripts/install.sh | sh
 ```
 
-Set `INSTALL_DIR` to override the destination directory (defaults to a writable user bin in your `PATH`, otherwise `/usr/local/bin`).
+Set `INSTALL_DIR` to override the destination directory. Non-root installs use
+`~/.local/bin` or `~/bin` when either is already in `PATH`, otherwise
+`~/.local/bin`. Root and instantOS live-system installs use `/usr/local/bin`.
 
 Check before you pipe `:)`
 

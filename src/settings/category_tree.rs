@@ -109,7 +109,6 @@ pub fn category_tree(category: Category) -> Vec<CategoryNode> {
             CategoryNode::setting(&desktop::GamingMouse),
         ],
         Category::Desktop => vec![
-            CategoryNode::setting(&desktop::WindowLayout),
             CategoryNode::setting(&clipboard::ClipboardManager),
             CategoryNode::setting(&desktop::ScreenRecordFramerate),
             CategoryNode::setting(&desktop::ScreenRecordAudioSources),
