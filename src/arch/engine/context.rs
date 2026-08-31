@@ -217,3 +217,39 @@ fn detect_system_keymap() -> Option<String> {
                 .map(|l| l.trim_start_matches("KEYMAP=").trim().to_string())
         })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{DataKey, InstallContext};
+
+    struct StringKey;
+
+    impl DataKey for StringKey {
+        type Value = String;
+        const KEY: &'static str = "string_key";
+    }
+
+    struct IntKey;
+
+    impl DataKey for IntKey {
+        type Value = i32;
+        const KEY: &'static str = "int_key";
+    }
+
+    #[test]
+    fn typed_data_round_trips_and_missing_keys_return_none() {
+        let context = InstallContext::new();
+        context.set::<StringKey>("hello".to_string());
+        context.set::<IntKey>(42);
+
+        assert_eq!(context.get::<StringKey>(), Some("hello".to_string()));
+        assert_eq!(context.get::<IntKey>(), Some(42));
+
+        struct MissingKey;
+        impl DataKey for MissingKey {
+            type Value = bool;
+            const KEY: &'static str = "missing";
+        }
+        assert_eq!(context.get::<MissingKey>(), None);
+    }
+}

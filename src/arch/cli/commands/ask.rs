@@ -2,7 +2,8 @@ use anyhow::{Result, bail};
 
 use crate::arch::cli::DEFAULT_QUESTIONS_FILE;
 use crate::arch::engine::{
-    InstallContext, InstallSummary, QuestionEngine, QuestionId, SystemInfo, build_install_summary,
+    EngineOutcome, InstallContext, InstallSummary, QuestionEngine, QuestionId, SystemInfo,
+    build_install_summary,
 };
 use crate::common::distro::is_live_iso;
 use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper};
@@ -277,7 +278,7 @@ fn save_config(context: &InstallContext, config_path: &std::path::Path) -> Resul
 async fn run_single_question(
     id: QuestionId,
     questions: Vec<Box<dyn crate::arch::engine::Question>>,
-) -> Result<()> {
+) -> Result<AskOutcome> {
     // Ask a single question
     // Escalate if the question requires root (e.g. Disk)
     if matches!(id, QuestionId::Disk) {
@@ -291,16 +292,14 @@ async fn run_single_question(
 
     let engine = QuestionEngine::new(vec![question])?;
 
-    // Initialize data providers so questions that need data (like MirrorRegion) work
-    engine.initialize_providers();
-
-    // Run the engine with just this single question
-    let context = engine.run().await?;
+    let EngineOutcome::Completed(context) = engine.run().await? else {
+        return Ok(AskOutcome::Cancelled);
+    };
 
     if let Some(answer) = context.get_answer(&id) {
         println!("Answer: {}", answer);
     }
-    Ok(())
+    Ok(AskOutcome::Completed)
 }
 
 async fn run_full_wizard(
@@ -328,10 +327,9 @@ async fn run_full_wizard(
 
     let engine = build_question_engine(questions, system_info, existing_context)?;
 
-    // Initialize data providers
-    engine.initialize_providers();
-
-    let context = engine.run().await?;
+    let EngineOutcome::Completed(context) = engine.run().await? else {
+        return Ok(AskOutcome::Cancelled);
+    };
 
     print_completion_summary(&context);
     save_config(&context, &config_path)?;
@@ -346,8 +344,7 @@ pub(super) async fn handle_ask_command(
     questions: Vec<Box<dyn crate::arch::engine::Question>>,
 ) -> Result<AskOutcome> {
     if let Some(id) = id {
-        run_single_question(id, questions).await?;
-        return Ok(AskOutcome::Completed);
+        return run_single_question(id, questions).await;
     }
 
     run_full_wizard(output_config, questions).await

@@ -3,7 +3,9 @@ use std::io::IsTerminal;
 use anyhow::Result;
 
 use crate::arch::config::DesktopEnvironment;
-use crate::arch::engine::{FlowKind, InstallContext, Question, QuestionEngine, QuestionId};
+use crate::arch::engine::{
+    EngineOutcome, FlowKind, InstallContext, Question, QuestionEngine, QuestionId,
+};
 use crate::arch::questions::{DesktopEnvironmentQuestion, DisplayManagerQuestion};
 use crate::common::distro::is_live_iso;
 
@@ -50,7 +52,9 @@ pub(super) async fn handle_setup_command(user: Option<String>, dry_run: bool) ->
     // and reuses the engine's pause/review/back navigation.
     let engine =
         QuestionEngine::for_flow(FlowKind::Setup, setup_questions())?.with_context(context);
-    let context = engine.run().await?;
+    let EngineOutcome::Completed(context) = engine.run().await? else {
+        return Ok(());
+    };
 
     print_setup_configuration(&context);
 
