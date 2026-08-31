@@ -53,5 +53,5 @@ print_summary() {
 	printf '      %s%s --help%s\n' "$cyan" "$BIN_NAME" "$reset"
 
 	printf '\n%sTip:%s To install a fresh %sinstantOS%s system on a computer, boot an Arch Linux live ISO and run:\n' "$dim" "$reset" "$orange" "$reset"
-	printf '     %s%scurl -fsSL instantos.io/install | sh%s\n\n' "$dim" "$cyan" "$reset"
+	printf '     %s%sbash <(curl -fsSL instantos.io/install)%s\n\n' "$dim" "$cyan" "$reset"
 }

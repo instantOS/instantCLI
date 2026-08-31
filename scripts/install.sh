@@ -482,6 +482,8 @@ f30() {
 FRM
 }
 
+# Render a static logo for redirected output or a terminal animation for TTYs.
+# Signal handlers restore terminal state before aborting an interrupted run.
 instantos_logo_animation() {
 	[ "$NO_ANIMATION" -eq 0 ] || return 0
 
@@ -560,6 +562,7 @@ instantos_logo_animation() {
 # -------------------------------------------------------------
 # Environment & Command checks
 # -------------------------------------------------------------
+# Return success when runtime markers identify an ArchISO or instantOS live system.
 is_live_disk() {
 	[ -e /run/archiso/cowspace ] ||
 		[ -e /etc/instantos/liveversion ] ||
@@ -567,10 +570,14 @@ is_live_disk() {
 		grep -q "archiso" /proc/cmdline 2>/dev/null
 }
 
+# Decide whether this invocation should continue from CLI setup into OS install.
+# An explicit OS request wins; --cli-only suppresses automatic live-media launch.
 should_launch_os_installer() {
 	[ "$OS_INSTALL" -eq 1 ] || { [ "$CLI_ONLY" -eq 0 ] && is_live_disk; }
 }
 
+# Initialize and refresh the Arch keyring, escalating only these commands when needed.
+# Any failure is fatal because the following OS installation depends on pacman.
 prepare_live_keyring() {
 	command -v pacman-key >/dev/null 2>&1 || fatal "required command 'pacman-key' not found"
 	command -v pacman >/dev/null 2>&1 || fatal "required command 'pacman' not found"
@@ -655,6 +662,8 @@ parse_args() {
 	fi
 }
 
+# Select a destination without mutating PATH. OS installs and root use the system
+# directory; regular users prefer an existing user bin from PATH.
 choose_install_dir() {
 	if [ -n "$INSTALL_DIR" ]; then
 		return
@@ -691,6 +700,7 @@ require_commands() {
 	done
 }
 
+# Return success for SteamOS/Steam Deck, where the AppImage artifact is preferred.
 detect_steam_deck() {
 	if [ -f /etc/os-release ]; then
 		if grep -q "steamdeck" /etc/os-release 2>/dev/null || grep -q "SteamOS" /etc/os-release 2>/dev/null; then
@@ -703,6 +713,8 @@ detect_steam_deck() {
 	return 1
 }
 
+# Map the runtime architecture to release-asset naming and choose archive/AppImage.
+# Termux is handled separately to avoid installing glibc binaries into Android.
 detect_target() {
 	arch=$(uname -m)
 
@@ -742,6 +754,8 @@ detect_target() {
 	fi
 }
 
+# Fetch release metadata and retain the first stable release containing a usable
+# artifact for TARGET in the global release_json value.
 fetch_release_json() {
 	# Fetch all releases and find first one with our assets
 	all_releases=$(curl -fsSL \
@@ -753,6 +767,8 @@ fetch_release_json() {
 	release_json=$(find_working_release "$all_releases") || fatal "no working release found with assets for $TARGET"
 }
 
+# Print the first complete, non-draft release object with an artifact matching
+# TARGET/USE_APPIMAGE. The brace scanner ignores braces inside JSON strings.
 find_working_release() {
 	all_releases="$1"
 
@@ -836,6 +852,8 @@ find_working_release() {
 	'
 }
 
+# Populate asset_url, optional sha_url, and version from the selected release.
+# Distribution-package, debug, and checksum assets are excluded from selection.
 find_asset_urls() {
 	if [ "$USE_APPIMAGE" -eq 1 ]; then
 		asset_url=$(printf '%s\n' "$release_json" | awk '
@@ -902,6 +920,8 @@ find_asset_urls() {
     ')
 }
 
+# Verify archive_path when the release publishes a sibling .sha256 asset. Missing
+# published checksums remain backward-compatible; expected verification fails closed.
 verify_checksum() {
 	archive_path=$1
 
@@ -930,6 +950,7 @@ verify_checksum() {
 	(cd "$INSTALL_WORK_DIR" && sha256sum -c "$(basename "$checksum_file")") || fatal "checksum verification failed"
 }
 
+# Extract supported release archives, selecting an available zstd implementation.
 extract_archive() {
 	archive_path=$1
 	dest_dir=$2
@@ -955,6 +976,7 @@ extract_archive() {
 	esac
 }
 
+# Print the packaged source binary path; BIN_NAME may differ only at installation.
 find_binary_path() {
 	search_root=$1
 
@@ -965,6 +987,8 @@ find_binary_path() {
 	printf '%s\n' "$binary_path"
 }
 
+# Copy binary_path with executable permissions, requesting sudo only when the
+# chosen destination cannot be written by the current user.
 install_binary() {
 	binary_path=$1
 	needs_sudo=0
@@ -1008,6 +1032,7 @@ install_binary() {
 	fi
 }
 
+# Return success for Arch and closely related distributions used by `ins arch setup`.
 is_arch_linux() {
 	if [ -f /etc/os-release ]; then
 		grep -qiE '^ID(_LIKE)?=.*(arch|instantos|manjaro|endeavouros)' /etc/os-release
@@ -1018,6 +1043,8 @@ is_arch_linux() {
 	fi
 }
 
+# Report the installed version and context-sensitive next steps without emitting
+# terminal escapes into redirected output.
 print_summary() {
 	if [ -t 1 ] && [ "${TERM:-}" != "dumb" ]; then
 		bold="$(printf '\033[1m')"
@@ -1060,12 +1087,13 @@ print_summary() {
 	printf '      %s%s --help%s\n' "$cyan" "$BIN_NAME" "$reset"
 
 	printf '\n%sTip:%s To install a fresh %sinstantOS%s system on a computer, boot an Arch Linux live ISO and run:\n' "$dim" "$reset" "$orange" "$reset"
-	printf '     %s%scurl -fsSL instantos.io/install | sh%s\n\n' "$dim" "$cyan" "$reset"
+	printf '     %s%sbash <(curl -fsSL instantos.io/install)%s\n\n' "$dim" "$cyan" "$reset"
 }
 
 # -------------------------------------------------------------
 # Main workflow
 # -------------------------------------------------------------
+# Coordinate validation, artifact installation, cleanup, and optional OS handoff.
 main() {
 	parse_args "$@"
 
