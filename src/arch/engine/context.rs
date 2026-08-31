@@ -41,7 +41,7 @@ impl DataKey for DualBootPartitions {
 /// Holds the state of the installation wizard
 #[derive(Default, Clone)]
 pub struct InstallContext {
-    pub answers: HashMap<QuestionId, String>,
+    pub(super) answers: HashMap<QuestionId, String>,
     pub system_info: SystemInfo,
     // We use Arc<Mutex> for interior mutability across threads
     pub data: Arc<Mutex<HashMap<String, Box<dyn Any + Send + Sync>>>>,
@@ -103,6 +103,18 @@ impl InstallContext {
 
     pub fn set_answer(&mut self, id: QuestionId, answer: String) {
         self.answers.insert(id, answer);
+    }
+
+    pub fn answers(&self) -> impl Iterator<Item = (&QuestionId, &String)> {
+        self.answers.iter()
+    }
+
+    pub fn answer_count(&self) -> usize {
+        self.answers.len()
+    }
+
+    pub fn has_answers(&self) -> bool {
+        !self.answers.is_empty()
     }
 
     pub fn get_answer(&self, id: &QuestionId) -> Option<&String> {

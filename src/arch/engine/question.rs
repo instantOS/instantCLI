@@ -113,8 +113,8 @@ pub trait Question: Send + Sync {
     /// reads for decision-making. Dependencies that are not part of the
     /// current wizard's question list are permitted (e.g. pre-seeded contexts)
     /// but must still appear earlier in the list when they are present.
-    fn depends_on(&self) -> Vec<QuestionId> {
-        vec![]
+    fn depends_on(&self) -> &[QuestionId] {
+        &[]
     }
 
     /// Returns a fatal error message if this question cannot proceed due to a required

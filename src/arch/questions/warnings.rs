@@ -102,8 +102,8 @@ impl Question for WeakPasswordWarning {
         }
     }
 
-    fn depends_on(&self) -> Vec<QuestionId> {
-        vec![QuestionId::UseEncryption, QuestionId::EncryptionPassword]
+    fn depends_on(&self) -> &[QuestionId] {
+        &[QuestionId::UseEncryption, QuestionId::EncryptionPassword]
     }
 
     async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
@@ -177,8 +177,8 @@ impl Question for DualBootEspWarning {
             .all(|p| p.size_bytes < crate::arch::dualboot::types::MIN_ESP_SIZE)
     }
 
-    fn depends_on(&self) -> Vec<QuestionId> {
-        vec![QuestionId::Disk, QuestionId::PartitioningMethod]
+    fn depends_on(&self) -> &[QuestionId] {
+        &[QuestionId::Disk, QuestionId::PartitioningMethod]
     }
 
     async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {

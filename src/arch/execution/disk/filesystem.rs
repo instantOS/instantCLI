@@ -124,12 +124,8 @@ mod tests {
 
     fn context(filesystem: &str, compression: &str) -> InstallContext {
         let mut context = InstallContext::new();
-        context
-            .answers
-            .insert(QuestionId::RootFilesystem, filesystem.into());
-        context
-            .answers
-            .insert(QuestionId::BtrfsCompression, compression.into());
+        context.set_answer(QuestionId::RootFilesystem, filesystem.into());
+        context.set_answer(QuestionId::BtrfsCompression, compression.into());
         context
     }
 

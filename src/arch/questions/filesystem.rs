@@ -173,8 +173,8 @@ impl Question for BtrfsCompressionQuestion {
         RootFilesystem::from_context(context).is_btrfs()
     }
 
-    fn depends_on(&self) -> Vec<QuestionId> {
-        vec![QuestionId::RootFilesystem]
+    fn depends_on(&self) -> &[QuestionId] {
+        &[QuestionId::RootFilesystem]
     }
 
     fn get_default(&self, _context: &InstallContext) -> Option<String> {

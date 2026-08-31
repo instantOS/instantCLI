@@ -4,11 +4,11 @@ use anyhow::Result;
 
 use crate::arch::config::DesktopEnvironment;
 use crate::arch::engine::{FlowKind, InstallContext, Question, QuestionEngine, QuestionId};
-use crate::arch::questions::{BooleanQuestion, DesktopEnvironmentQuestion, DisplayManagerQuestion};
+use crate::arch::questions::{DesktopEnvironmentQuestion, DisplayManagerQuestion};
 use crate::common::distro::is_live_iso;
-use crate::ui::nerd_font::NerdFont;
 
 use super::super::utils::{detect_single_user, ensure_root};
+use super::{AutologinDefault, autologin_question};
 
 pub(super) async fn handle_setup_command(user: Option<String>, dry_run: bool) -> Result<()> {
     // Check if running on live CD
@@ -20,16 +20,12 @@ pub(super) async fn handle_setup_command(user: Option<String>, dry_run: bool) ->
     // a terminal so fzf prompts are never started invisibly.
     if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
         let current_exe = std::env::current_exe()?;
-        let mut launcher = crate::common::terminal::TerminalLauncher::new(
+        let launcher = crate::common::terminal::TerminalLauncher::new(
             current_exe.to_string_lossy().to_string(),
         )
-        .arg("arch")
-        .arg("setup")
+        .args(setup_relaunch_args(user.as_deref(), dry_run))
         .class("ins-setup")
         .title("instantOS Setup");
-        if let Some(user) = &user {
-            launcher = launcher.arg("--user").arg(user);
-        }
         launcher.launch()?;
         return Ok(());
     }
@@ -52,14 +48,25 @@ pub(super) async fn handle_setup_command(user: Option<String>, dry_run: bool) ->
     // Run the desktop-related questions from `ins arch install` as a small
     // setup wizard. The setup flow asks optional questions in the main flow
     // and reuses the engine's pause/review/back navigation.
-    let mut engine = QuestionEngine::for_flow(FlowKind::Setup, setup_questions());
-    engine.context = context;
+    let engine =
+        QuestionEngine::for_flow(FlowKind::Setup, setup_questions())?.with_context(context);
     let context = engine.run().await?;
 
     print_setup_configuration(&context);
 
     let executor = crate::arch::execution::CommandExecutor::new(dry_run, None);
     crate::arch::execution::setup::setup_instantos(&context, &executor, target_user).await
+}
+
+fn setup_relaunch_args(user: Option<&str>, dry_run: bool) -> Vec<String> {
+    let mut args = vec!["arch".to_string(), "setup".to_string()];
+    if let Some(user) = user {
+        args.extend(["--user".to_string(), user.to_string()]);
+    }
+    if dry_run {
+        args.push("--dry-run".to_string());
+    }
+    args
 }
 
 fn print_setup_configuration(context: &InstallContext) {
@@ -88,50 +95,25 @@ fn setup_questions() -> Vec<Box<dyn Question>> {
     vec![
         Box::new(DesktopEnvironmentQuestion),
         Box::new(DisplayManagerQuestion),
-        Box::new(
-            BooleanQuestion::new(
-                QuestionId::Autologin,
-                "Enable Display Manager Autologin?",
-                NerdFont::User,
-            )
-            .optional()
-            .should_ask(|context| {
-                DesktopEnvironment::from_context(context).requires_display_manager()
-            })
-            .depends_on(vec![
-                QuestionId::DesktopEnvironment,
-                QuestionId::UseEncryption,
-            ]),
-        ),
+        Box::new(autologin_question(AutologinDefault::Disabled)),
     ]
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{setup_questions, setup_relaunch_args};
+    use crate::arch::engine::{FlowKind, QuestionEngine};
 
-    /// Dependencies that appear in a wizard's question list must precede the
-    /// question that declares them, or predicates would silently read absent
-    /// answers. Dependencies outside the list (e.g. pre-seeded contexts) are
-    /// allowed.
-    fn assert_dependencies_precede(questions: &[Box<dyn Question>]) {
-        let ids: Vec<QuestionId> = questions.iter().map(|q| q.id()).collect();
-        for (index, question) in questions.iter().enumerate() {
-            for dependency in question.depends_on() {
-                if let Some(dep_index) = ids.iter().position(|id| *id == dependency) {
-                    assert!(
-                        dep_index < index,
-                        "{:?} declares a dependency on {:?}, which appears later in the question list",
-                        question.id(),
-                        dependency
-                    );
-                }
-            }
-        }
+    #[test]
+    fn relaunch_preserves_setup_options() {
+        assert_eq!(
+            setup_relaunch_args(Some("alice"), true),
+            ["arch", "setup", "--user", "alice", "--dry-run"]
+        );
     }
 
     #[test]
-    fn setup_question_dependencies_precede_their_questions() {
-        assert_dependencies_precede(&setup_questions());
+    fn setup_question_graph_is_valid() {
+        QuestionEngine::for_flow(FlowKind::Setup, setup_questions()).unwrap();
     }
 }

@@ -1,5 +1,5 @@
-use anyhow::Result;
-use std::collections::HashMap;
+use anyhow::{Result, bail};
+use std::collections::{HashMap, HashSet};
 
 use crate::menu_utils::{
     ConfirmResult, FzfPreview, FzfResult, FzfSelectable, FzfWrapper, Header, MenuPresentation,
@@ -29,7 +29,7 @@ pub enum FlowKind {
 
 pub struct QuestionEngine {
     questions: Vec<Box<dyn Question>>,
-    pub context: InstallContext,
+    context: InstallContext,
     is_tty: bool,
     flow: FlowKind,
 }
@@ -368,7 +368,7 @@ impl QuestionEngine {
         if answers.get(&id) == Some(&answer) {
             return;
         }
-        answers.insert(id.clone(), answer);
+        answers.insert(id, answer);
         Self::invalidate_dependents(questions, answers, &id);
     }
 
@@ -391,23 +391,20 @@ impl QuestionEngine {
         answers: &mut HashMap<QuestionId, String>,
         changed: &QuestionId,
     ) {
-        let mut queue = vec![changed.clone()];
+        let mut queue = vec![*changed];
+        let mut visited = HashSet::from([*changed]);
         while let Some(current) = queue.pop() {
             for question in questions {
                 let dependent_id = question.id();
-                if dependent_id == current || !answers.contains_key(&dependent_id) {
-                    continue;
-                }
-                if question.depends_on().contains(&current)
-                    && answers.remove(&dependent_id).is_some()
-                {
+                if question.depends_on().contains(&current) && visited.insert(dependent_id) {
+                    answers.remove(&dependent_id);
                     queue.push(dependent_id);
                 }
             }
         }
     }
 
-    pub fn new(questions: Vec<Box<dyn Question>>) -> Self {
+    pub fn new(questions: Vec<Box<dyn Question>>) -> Result<Self> {
         Self::for_flow(FlowKind::Install, questions)
     }
 
@@ -415,13 +412,52 @@ impl QuestionEngine {
     ///
     /// The flow decides whether optional questions are asked in the main flow
     /// and how the final review screen is worded. See [`FlowKind`].
-    pub fn for_flow(flow: FlowKind, questions: Vec<Box<dyn Question>>) -> Self {
-        Self {
+    pub fn for_flow(flow: FlowKind, questions: Vec<Box<dyn Question>>) -> Result<Self> {
+        Self::validate_question_graph(&questions)?;
+        Ok(Self {
             questions,
             context: InstallContext::new(),
             is_tty: is_tty_environment(),
             flow,
+        })
+    }
+
+    pub fn with_context(mut self, context: InstallContext) -> Self {
+        self.context = context;
+        self
+    }
+
+    fn validate_question_graph(questions: &[Box<dyn Question>]) -> Result<()> {
+        let mut positions = HashMap::new();
+        for (index, question) in questions.iter().enumerate() {
+            let id = question.id();
+            if positions.insert(id, index).is_some() {
+                bail!("question graph contains duplicate id {id:?}");
+            }
         }
+
+        for (index, question) in questions.iter().enumerate() {
+            let mut dependencies = HashSet::new();
+            for dependency in question.depends_on() {
+                if !dependencies.insert(*dependency) {
+                    bail!(
+                        "question {:?} declares duplicate dependency {:?}",
+                        question.id(),
+                        dependency
+                    );
+                }
+                if let Some(dependency_index) = positions.get(dependency)
+                    && *dependency_index >= index
+                {
+                    bail!(
+                        "question {:?} depends on {:?}, which must appear earlier",
+                        question.id(),
+                        dependency
+                    );
+                }
+            }
+        }
+        Ok(())
     }
 
     pub fn initialize_providers(&self) {
@@ -853,6 +889,7 @@ fn is_tty_environment() -> bool {
 mod tests {
     use super::*;
     use crate::arch::engine::{DataKey, QuestionId};
+    use crate::arch::questions::{EncryptionPasswordQuestion, PartitioningMethodQuestion};
     use anyhow::Result;
 
     struct TestKey;
@@ -876,7 +913,7 @@ mod tests {
     #[async_trait::async_trait]
     impl Question for StubOptionalQuestion {
         fn id(&self) -> QuestionId {
-            self.id.clone()
+            self.id
         }
 
         async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
@@ -898,7 +935,8 @@ mod tests {
             id: QuestionId::Autologin,
             default: Some("no".to_string()),
         };
-        let mut engine = QuestionEngine::for_flow(FlowKind::Install, vec![Box::new(question)]);
+        let mut engine =
+            QuestionEngine::for_flow(FlowKind::Install, vec![Box::new(question)]).unwrap();
 
         assert_eq!(engine.find_next_question_index(), None);
         assert_eq!(
@@ -916,7 +954,8 @@ mod tests {
             id: QuestionId::Autologin,
             default: Some("no".to_string()),
         };
-        let mut engine = QuestionEngine::for_flow(FlowKind::Setup, vec![Box::new(question)]);
+        let mut engine =
+            QuestionEngine::for_flow(FlowKind::Setup, vec![Box::new(question)]).unwrap();
 
         assert_eq!(engine.find_next_question_index(), Some(0));
         assert!(engine.context.get_answer(&QuestionId::Autologin).is_none());
@@ -932,15 +971,15 @@ mod tests {
     #[async_trait::async_trait]
     impl Question for StubDependentQuestion {
         fn id(&self) -> QuestionId {
-            self.id.clone()
+            self.id
         }
 
         async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
             Ok(QuestionResult::Answer("answered".to_string()))
         }
 
-        fn depends_on(&self) -> Vec<QuestionId> {
-            self.deps.clone()
+        fn depends_on(&self) -> &[QuestionId] {
+            &self.deps
         }
     }
 
@@ -962,7 +1001,8 @@ mod tests {
         let mut engine = QuestionEngine::for_flow(
             FlowKind::Setup,
             vec![Box::new(disk), Box::new(partition), Box::new(size)],
-        );
+        )
+        .unwrap();
         let answers = &mut engine.context.answers;
 
         QuestionEngine::record_answer(
@@ -1002,6 +1042,164 @@ mod tests {
     }
 
     #[test]
+    fn invalidation_crosses_an_unanswered_intermediate_question() {
+        let disk = StubDependentQuestion {
+            id: QuestionId::Disk,
+            deps: vec![],
+        };
+        let partition = StubDependentQuestion {
+            id: QuestionId::DualBootPartition,
+            deps: vec![QuestionId::Disk],
+        };
+        let size = StubDependentQuestion {
+            id: QuestionId::DualBootSize,
+            deps: vec![QuestionId::DualBootPartition],
+        };
+        let mut engine = QuestionEngine::for_flow(
+            FlowKind::Setup,
+            vec![Box::new(disk), Box::new(partition), Box::new(size)],
+        )
+        .unwrap();
+
+        QuestionEngine::record_answer(
+            &engine.questions,
+            &mut engine.context.answers,
+            QuestionId::Disk,
+            "/dev/sda".to_string(),
+        );
+        QuestionEngine::record_answer(
+            &engine.questions,
+            &mut engine.context.answers,
+            QuestionId::DualBootSize,
+            "800".to_string(),
+        );
+        QuestionEngine::record_answer(
+            &engine.questions,
+            &mut engine.context.answers,
+            QuestionId::Disk,
+            "/dev/sdb".to_string(),
+        );
+
+        assert!(
+            engine
+                .context
+                .get_answer(&QuestionId::DualBootSize)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn changing_disk_invalidates_real_partitioning_method_question() {
+        let disk = StubDependentQuestion {
+            id: QuestionId::Disk,
+            deps: vec![],
+        };
+        let mut engine = QuestionEngine::for_flow(
+            FlowKind::Install,
+            vec![Box::new(disk), Box::new(PartitioningMethodQuestion)],
+        )
+        .unwrap();
+
+        QuestionEngine::record_answer(
+            &engine.questions,
+            &mut engine.context.answers,
+            QuestionId::Disk,
+            "/dev/sda".to_string(),
+        );
+        QuestionEngine::record_answer(
+            &engine.questions,
+            &mut engine.context.answers,
+            QuestionId::PartitioningMethod,
+            "Dual Boot".to_string(),
+        );
+        QuestionEngine::record_answer(
+            &engine.questions,
+            &mut engine.context.answers,
+            QuestionId::Disk,
+            "/dev/sdb".to_string(),
+        );
+
+        assert!(
+            engine
+                .context
+                .get_answer(&QuestionId::PartitioningMethod)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn disabling_encryption_removes_the_stored_password() {
+        let encryption = StubDependentQuestion {
+            id: QuestionId::UseEncryption,
+            deps: vec![],
+        };
+        let mut engine = QuestionEngine::for_flow(
+            FlowKind::Install,
+            vec![Box::new(encryption), Box::new(EncryptionPasswordQuestion)],
+        )
+        .unwrap();
+
+        QuestionEngine::record_answer(
+            &engine.questions,
+            &mut engine.context.answers,
+            QuestionId::UseEncryption,
+            "yes".to_string(),
+        );
+        QuestionEngine::record_answer(
+            &engine.questions,
+            &mut engine.context.answers,
+            QuestionId::EncryptionPassword,
+            "secret".to_string(),
+        );
+        QuestionEngine::record_answer(
+            &engine.questions,
+            &mut engine.context.answers,
+            QuestionId::UseEncryption,
+            "no".to_string(),
+        );
+
+        assert!(
+            engine
+                .context
+                .get_answer(&QuestionId::EncryptionPassword)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn graph_validation_rejects_duplicate_and_misordered_questions() {
+        let duplicate = QuestionEngine::for_flow(
+            FlowKind::Install,
+            vec![
+                Box::new(StubDependentQuestion {
+                    id: QuestionId::Disk,
+                    deps: vec![],
+                }),
+                Box::new(StubDependentQuestion {
+                    id: QuestionId::Disk,
+                    deps: vec![],
+                }),
+            ],
+        );
+        assert!(duplicate.is_err());
+
+        let misordered = QuestionEngine::for_flow(
+            FlowKind::Install,
+            vec![
+                Box::new(StubDependentQuestion {
+                    id: QuestionId::PartitioningMethod,
+                    deps: vec![QuestionId::Disk],
+                }),
+                Box::new(StubDependentQuestion {
+                    id: QuestionId::Disk,
+                    deps: vec![],
+                }),
+            ],
+        );
+        assert!(misordered.is_err());
+    }
+
+    #[test]
     fn re_answering_with_the_same_value_keeps_dependents() {
         let disk = StubDependentQuestion {
             id: QuestionId::Disk,
@@ -1013,7 +1211,8 @@ mod tests {
         };
 
         let mut engine =
-            QuestionEngine::for_flow(FlowKind::Setup, vec![Box::new(disk), Box::new(partition)]);
+            QuestionEngine::for_flow(FlowKind::Setup, vec![Box::new(disk), Box::new(partition)])
+                .unwrap();
         let answers = &mut engine.context.answers;
 
         QuestionEngine::record_answer(
@@ -1055,7 +1254,8 @@ mod tests {
         };
 
         let mut engine =
-            QuestionEngine::for_flow(FlowKind::Setup, vec![Box::new(disk), Box::new(partition)]);
+            QuestionEngine::for_flow(FlowKind::Setup, vec![Box::new(disk), Box::new(partition)])
+                .unwrap();
         let answers = &mut engine.context.answers;
 
         QuestionEngine::record_answer(

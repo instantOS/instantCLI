@@ -703,6 +703,10 @@ impl Question for EncryptionPasswordQuestion {
         context.get_answer_bool(QuestionId::UseEncryption)
     }
 
+    fn depends_on(&self) -> &[QuestionId] {
+        &[QuestionId::UseEncryption]
+    }
+
     async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
         let result = FzfWrapper::builder()
             .prompt(format!(

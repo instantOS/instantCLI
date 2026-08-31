@@ -160,7 +160,7 @@ mod tests {
     fn test_format_uefi_commands() {
         let mock = crate::arch::execution::mock::MockRunner::new();
         let mut context = crate::arch::engine::InstallContext::new();
-        context.answers.insert(
+        context.set_answer(
             crate::arch::engine::QuestionId::RootFilesystem,
             "ext4".to_string(),
         );

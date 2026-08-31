@@ -32,8 +32,8 @@ impl BooleanQuestion {
 
     /// Declare the questions whose answers this boolean answer is derived from.
     /// See [`crate::arch::engine::Question::depends_on`].
-    pub fn depends_on(mut self, ids: Vec<QuestionId>) -> Self {
-        self.depends_on = ids;
+    pub fn depends_on(mut self, ids: impl IntoIterator<Item = QuestionId>) -> Self {
+        self.depends_on = ids.into_iter().collect();
         self
     }
 
@@ -67,7 +67,7 @@ impl BooleanQuestion {
 #[async_trait::async_trait]
 impl Question for BooleanQuestion {
     fn id(&self) -> QuestionId {
-        self.id.clone()
+        self.id
     }
 
     fn description(&self) -> Option<&str> {
@@ -86,8 +86,8 @@ impl Question for BooleanQuestion {
         }
     }
 
-    fn depends_on(&self) -> Vec<QuestionId> {
-        self.depends_on.clone()
+    fn depends_on(&self) -> &[QuestionId] {
+        &self.depends_on
     }
 
     fn get_default(&self, context: &InstallContext) -> Option<String> {

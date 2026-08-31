@@ -33,8 +33,8 @@ impl Question for ResizeInstructionsQuestion {
         is_dualboot && needs_resize
     }
 
-    fn depends_on(&self) -> Vec<QuestionId> {
-        vec![
+    fn depends_on(&self) -> &[QuestionId] {
+        &[
             QuestionId::Disk,
             QuestionId::PartitioningMethod,
             QuestionId::DualBootPartition,

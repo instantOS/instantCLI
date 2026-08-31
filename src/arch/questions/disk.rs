@@ -363,6 +363,10 @@ impl Question for PartitioningMethodQuestion {
         Some("Choose how to partition the disk")
     }
 
+    fn depends_on(&self) -> &[QuestionId] {
+        &[QuestionId::Disk]
+    }
+
     async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
         let mut options = vec![
             PartitioningMethodOption::Automatic,
@@ -432,8 +436,8 @@ impl Question for RunCfdiskQuestion {
             .unwrap_or(false)
     }
 
-    fn depends_on(&self) -> Vec<QuestionId> {
-        vec![QuestionId::Disk, QuestionId::PartitioningMethod]
+    fn depends_on(&self) -> &[QuestionId] {
+        &[QuestionId::Disk, QuestionId::PartitioningMethod]
     }
 
     async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {

@@ -72,8 +72,8 @@ impl Question for DisplayManagerQuestion {
         crate::arch::config::DesktopEnvironment::from_context(context).requires_display_manager()
     }
 
-    fn depends_on(&self) -> Vec<QuestionId> {
-        vec![QuestionId::DesktopEnvironment]
+    fn depends_on(&self) -> &[QuestionId] {
+        &[QuestionId::DesktopEnvironment]
     }
 
     fn get_default(&self, _context: &InstallContext) -> Option<String> {

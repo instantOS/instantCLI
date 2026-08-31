@@ -204,13 +204,13 @@ fn load_existing_context(
 
     match InstallContext::load(config_path) {
         Ok(mut context) => {
-            if context.answers.is_empty() {
+            if !context.has_answers() {
                 return Ok(ExistingContextOutcome::Continue(None));
             }
 
             context.system_info = system_info.clone();
             let summary = build_install_summary(&context);
-            let answers_count = context.answers.len();
+            let answers_count = context.answer_count();
             match prompt_existing_answers(&summary, config_path, answers_count)? {
                 Some(ExistingAnswersChoice::UseExisting) => {
                     Ok(ExistingContextOutcome::Continue(Some(context)))
@@ -236,13 +236,10 @@ fn build_question_engine(
     questions: Vec<Box<dyn crate::arch::engine::Question>>,
     system_info: SystemInfo,
     existing_context: Option<InstallContext>,
-) -> QuestionEngine {
-    let mut engine = QuestionEngine::new(questions);
-    if let Some(context) = existing_context {
-        engine.context = context;
-    }
-    engine.context.system_info = system_info;
-    engine
+) -> Result<QuestionEngine> {
+    let mut context = existing_context.unwrap_or_default();
+    context.system_info = system_info;
+    Ok(QuestionEngine::new(questions)?.with_context(context))
 }
 
 fn print_completion_summary(context: &InstallContext) {
@@ -292,7 +289,7 @@ async fn run_single_question(
         .find(|q| q.id() == id)
         .ok_or_else(|| anyhow::anyhow!("Question not found"))?;
 
-    let engine = QuestionEngine::new(vec![question]);
+    let engine = QuestionEngine::new(vec![question])?;
 
     // Initialize data providers so questions that need data (like MirrorRegion) work
     engine.initialize_providers();
@@ -329,7 +326,7 @@ async fn run_full_wizard(
         ExistingContextOutcome::Cancelled => return Ok(AskOutcome::Cancelled),
     };
 
-    let engine = build_question_engine(questions, system_info, existing_context);
+    let engine = build_question_engine(questions, system_info, existing_context)?;
 
     // Initialize data providers
     engine.initialize_providers();

@@ -114,8 +114,8 @@ impl Question for DualBootPartitionQuestion {
             .unwrap_or(false)
     }
 
-    fn depends_on(&self) -> Vec<QuestionId> {
-        vec![QuestionId::Disk, QuestionId::PartitioningMethod]
+    fn depends_on(&self) -> &[QuestionId] {
+        &[QuestionId::Disk, QuestionId::PartitioningMethod]
     }
 
     fn validate(&self, context: &InstallContext, answer: &str) -> Result<(), String> {
@@ -258,10 +258,10 @@ impl Question for DualBootSizeQuestion {
             .unwrap_or(false)
     }
 
-    fn depends_on(&self) -> Vec<QuestionId> {
+    fn depends_on(&self) -> &[QuestionId] {
         // The size is derived from the partition (or the disk's free space),
         // so any change upstream invalidates it.
-        vec![
+        &[
             QuestionId::Disk,
             QuestionId::PartitioningMethod,
             QuestionId::DualBootPartition,

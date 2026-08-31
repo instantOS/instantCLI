@@ -129,7 +129,7 @@ impl PartitionSelectorQuestion {
 #[async_trait::async_trait]
 impl Question for PartitionSelectorQuestion {
     fn id(&self) -> QuestionId {
-        self.id.clone()
+        self.id
     }
 
     fn description(&self) -> Option<&str> {
@@ -147,8 +147,8 @@ impl Question for PartitionSelectorQuestion {
             .unwrap_or(false)
     }
 
-    fn depends_on(&self) -> Vec<QuestionId> {
-        vec![QuestionId::Disk, QuestionId::PartitioningMethod]
+    fn depends_on(&self) -> &[QuestionId] {
+        &[QuestionId::Disk, QuestionId::PartitioningMethod]
     }
 
     async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
@@ -212,7 +212,7 @@ impl Question for PartitionSelectorQuestion {
         let part_path = answer;
         let current_id = self.id();
 
-        for (id, val) in &context.answers {
+        for (id, val) in context.answers() {
             if id == &current_id {
                 continue;
             }

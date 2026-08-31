@@ -163,25 +163,7 @@ pub(super) fn build_questions() -> Vec<Box<dyn Question>> {
             .optional()
             .default_yes(),
         ),
-        Box::new(
-            BooleanQuestion::new(
-                crate::arch::engine::QuestionId::Autologin,
-                "Enable Display Manager Autologin?",
-                crate::ui::nerd_font::NerdFont::User,
-            )
-            .optional()
-            .should_ask(|context| {
-                crate::arch::config::DesktopEnvironment::from_context(context)
-                    .requires_display_manager()
-            })
-            .dynamic_default(|context| {
-                context.get_answer_bool(crate::arch::engine::QuestionId::UseEncryption)
-            })
-            .depends_on(vec![
-                crate::arch::engine::QuestionId::DesktopEnvironment,
-                crate::arch::engine::QuestionId::UseEncryption,
-            ]),
-        ),
+        Box::new(autologin_question(AutologinDefault::MatchEncryption)),
         Box::new(
             BooleanQuestion::new(
                 crate::arch::engine::QuestionId::LogUpload,
@@ -202,29 +184,41 @@ pub(super) fn build_questions() -> Vec<Box<dyn Question>> {
     ]
 }
 
+pub(super) enum AutologinDefault {
+    Disabled,
+    MatchEncryption,
+}
+
+pub(super) fn autologin_question(
+    default: AutologinDefault,
+) -> crate::arch::questions::BooleanQuestion {
+    use crate::arch::engine::QuestionId;
+
+    let question = crate::arch::questions::BooleanQuestion::new(
+        QuestionId::Autologin,
+        "Enable Display Manager Autologin?",
+        crate::ui::nerd_font::NerdFont::User,
+    )
+    .optional()
+    .should_ask(|context| {
+        crate::arch::config::DesktopEnvironment::from_context(context).requires_display_manager()
+    });
+
+    match default {
+        AutologinDefault::MatchEncryption => question
+            .dynamic_default(|context| context.get_answer_bool(QuestionId::UseEncryption))
+            .depends_on([QuestionId::DesktopEnvironment, QuestionId::UseEncryption]),
+        AutologinDefault::Disabled => question.depends_on([QuestionId::DesktopEnvironment]),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::build_questions;
+    use crate::arch::engine::QuestionEngine;
 
-    /// Dependencies that appear in a wizard's question list must precede the
-    /// question that declares them, or predicates would silently read absent
-    /// answers at runtime.
     #[test]
-    fn question_dependencies_come_before_their_questions() {
-        let questions = build_questions();
-        let ids: Vec<crate::arch::engine::QuestionId> = questions.iter().map(|q| q.id()).collect();
-
-        for (index, question) in questions.iter().enumerate() {
-            for dependency in question.depends_on() {
-                if let Some(dep_index) = ids.iter().position(|id| *id == dependency) {
-                    assert!(
-                        dep_index < index,
-                        "{:?} declares a dependency on {:?}, which appears later in the question list",
-                        question.id(),
-                        dependency
-                    );
-                }
-            }
-        }
+    fn install_question_graph_is_valid() {
+        QuestionEngine::new(build_questions()).unwrap();
     }
 }
