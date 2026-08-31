@@ -1,6 +1,6 @@
 use crate::arch::config::DisplayManager;
 use crate::arch::engine::{InstallContext, Question, QuestionId, QuestionResult};
-use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, MenuPresentation};
+use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder, MenuPresentation};
 use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -94,7 +94,7 @@ impl Question for DisplayManagerQuestion {
         ];
 
         let result = FzfWrapper::builder()
-            .header(format!("{} Select Display Manager", NerdFont::Desktop))
+            .header(HeaderBuilder::new(NerdFont::Desktop, "Select Display Manager").build())
             .presentation(MenuPresentation::Padded)
             .select(options)?;
 

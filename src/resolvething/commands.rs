@@ -409,10 +409,7 @@ pub fn add_scan_directory() -> Result<bool> {
     let mut config = ResolvethingConfig::load()?;
 
     let mut builder = PathInputBuilder::new()
-        .header(format!(
-            "{} Add a scan directory",
-            char::from(NerdFont::Folder)
-        ))
+        .header(HeaderBuilder::new(NerdFont::Folder, "Add a scan directory").build())
         .manual_prompt(format!(
             "{} Enter the directory to scan",
             char::from(NerdFont::Edit)
@@ -496,10 +493,7 @@ pub fn change_scan_directory_path(index: usize) -> Result<bool> {
         .ok_or_else(|| anyhow::anyhow!("scan_dir index {} out of range", index))?;
 
     let builder = PathInputBuilder::new()
-        .header(format!(
-            "{} Change scan directory path",
-            char::from(NerdFont::Folder)
-        ))
+        .header(HeaderBuilder::new(NerdFont::Folder, "Change scan directory path").build())
         .manual_prompt(format!(
             "{} Enter the new directory",
             char::from(NerdFont::Edit)

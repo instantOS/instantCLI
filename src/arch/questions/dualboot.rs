@@ -2,7 +2,7 @@ use crate::arch::engine::{InstallContext, Question, QuestionId, QuestionResult};
 use crate::arch::questions::partition::partition_belongs_to_disk;
 use crate::common::format::format_size;
 use crate::menu::slide::run_slider;
-use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, SliderConfig};
+use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder, SliderConfig};
 use crate::ui::catppuccin::colors;
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -223,10 +223,7 @@ impl Question for DualBootPartitionQuestion {
             .collect();
 
         let result = FzfWrapper::builder()
-            .header(format!(
-                "{} Select Partition to Resize",
-                NerdFont::HardDrive
-            ))
+            .header(HeaderBuilder::new(NerdFont::HardDrive, "Select Partition to Resize").build())
             .select(options)?;
 
         match result {

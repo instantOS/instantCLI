@@ -86,6 +86,12 @@ impl HeaderBuilder {
     }
 }
 
+impl From<HeaderBuilder> for Header {
+    fn from(builder: HeaderBuilder) -> Self {
+        builder.build()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

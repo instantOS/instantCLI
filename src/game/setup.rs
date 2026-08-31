@@ -11,7 +11,7 @@ use crate::game::games::validation::validate_game_manager_initialized;
 use crate::game::games::{AddGameOptions, GameManager};
 use crate::game::launch_command::LaunchCommand;
 use crate::menu::protocol;
-use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
+use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, HeaderBuilder};
 use crate::ui::nerd_font::NerdFont;
 use install::SetupStepOutcome;
 
@@ -389,10 +389,13 @@ fn prompt_task_choice(game_name: &str, tasks: &[SetupTask]) -> Result<Option<Set
 
     match FzfWrapper::builder()
         .prompt("step")
-        .header(format!(
-            "{} Select the next setup step for '{game_name}'.",
-            char::from(NerdFont::Info)
-        ))
+        .header(
+            HeaderBuilder::new(
+                NerdFont::Info,
+                format!("Select the next setup step for '{game_name}'"),
+            )
+            .build(),
+        )
         .select(options)?
     {
         FzfResult::Selected(option) => Ok(Some(option.task)),
@@ -441,16 +444,13 @@ fn prompt_installation_choice(candidates: &[SetupCandidate]) -> Result<Selection
     options.push(CandidateOption::done());
 
     let header = if candidates.is_empty() {
-        format!(
-            "{} No pending games detected. Choose an option below.",
-            char::from(NerdFont::Info)
-        )
+        HeaderBuilder::new(NerdFont::Info, "No pending games detected")
+            .subtitle("Choose an option below.")
+            .build()
     } else {
-        format!(
-            "{} Select a game to configure. Pending games: {}.",
-            char::from(NerdFont::Info),
-            candidates.len()
-        )
+        HeaderBuilder::new(NerdFont::Info, "Select a game to configure")
+            .subtitle(format!("Pending games: {}.", candidates.len()))
+            .build()
     };
 
     match FzfWrapper::builder()

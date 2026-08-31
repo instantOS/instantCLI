@@ -1,5 +1,5 @@
 use crate::arch::engine::{InstallContext, Question, QuestionId, QuestionResult};
-use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper};
+use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder};
 use crate::preview::{PreviewId, preview_command};
 use crate::ui::nerd_font::NerdFont;
 use anyhow::{Context, Result};
@@ -196,7 +196,7 @@ impl Question for PartitionSelectorQuestion {
         }
 
         let result = FzfWrapper::builder()
-            .header(format!("{} {}", self.icon, self.prompt))
+            .header(HeaderBuilder::new(self.icon, &self.prompt).build())
             .select(partitions)?;
 
         match result {

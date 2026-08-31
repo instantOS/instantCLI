@@ -5,7 +5,7 @@ use crate::game::platforms::LaunchCommandBuilderContext;
 use crate::game::utils::path::{path_selection_to_tilde, prompt_for_save_path};
 use crate::menu::protocol::FzfPreview;
 use crate::menu_utils::{
-    FilePickerScope, FzfResult, FzfSelectable, FzfWrapper, Header, MenuPresentation,
+    FilePickerScope, FzfResult, FzfSelectable, FzfWrapper, Header, HeaderBuilder, MenuPresentation,
     PathInputBuilder, TextEditOutcome, TextEditPrompt, prompt_text_edit,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
@@ -490,11 +490,11 @@ pub fn edit_save_path(state: &mut EditState) -> Result<bool> {
 
     match prompt_for_save_path(&state.game().name.0, Some(current_path), || {
         let mut path_builder = PathInputBuilder::new()
-            .header(format!(
-                "{} Choose new save path\nCurrent: {}",
-                char::from(NerdFont::Folder),
-                current_path_str
-            ))
+            .header(
+                HeaderBuilder::new(NerdFont::Folder, "Choose new save path")
+                    .field("Current", &current_path_str)
+                    .build(),
+            )
             .manual_prompt(format!(
                 "{} Enter the new save path:",
                 char::from(NerdFont::Edit)

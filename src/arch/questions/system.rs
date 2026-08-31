@@ -1,7 +1,7 @@
 use crate::arch::annotations::AnnotatedValue;
 use crate::arch::config::DesktopEnvironment;
 use crate::arch::engine::{DataKey, InstallContext, Question, QuestionId, QuestionResult};
-use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, MenuPresentation};
+use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder, MenuPresentation};
 use crate::preview::{PreviewId, preview_command};
 use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
@@ -318,7 +318,7 @@ impl Question for DesktopEnvironmentQuestion {
         ];
 
         let result = FzfWrapper::builder()
-            .header(format!("{} Select Desktop Environment", NerdFont::Desktop))
+            .header(HeaderBuilder::new(NerdFont::Desktop, "Select Desktop Environment").build())
             .presentation(MenuPresentation::Padded)
             .select(options)?;
 
@@ -463,7 +463,7 @@ impl Question for MirrorRegionQuestion {
             regions.into_iter().map(MirrorRegionOption::new).collect();
 
         let result = FzfWrapper::builder()
-            .header(format!("{} Select Mirror Region", NerdFont::Globe))
+            .header(HeaderBuilder::new(NerdFont::Globe, "Select Mirror Region").build())
             .select(options)?;
 
         match result {
@@ -514,7 +514,7 @@ impl Question for TimezoneQuestion {
             .collect();
 
         let result = FzfWrapper::builder()
-            .header(format!("{} Select Timezone", NerdFont::Clock))
+            .header(HeaderBuilder::new(NerdFont::Clock, "Select Timezone").build())
             .select(options)?;
 
         match result {
@@ -564,7 +564,7 @@ impl Question for KeymapQuestion {
         let options: Vec<KeymapOption> = keymaps.into_iter().map(KeymapOption::from).collect();
 
         let result = FzfWrapper::builder()
-            .header(format!("{} Select Keymap", NerdFont::Keyboard))
+            .header(HeaderBuilder::new(NerdFont::Keyboard, "Select Keymap").build())
             .select(options)?;
 
         match result {
@@ -607,7 +607,7 @@ impl Question for LocaleQuestion {
         let options: Vec<LocaleOption> = locales.into_iter().map(LocaleOption::from).collect();
 
         let result = FzfWrapper::builder()
-            .header(format!("{} Select System Locale", NerdFont::Language))
+            .header(HeaderBuilder::new(NerdFont::Language, "Select System Locale").build())
             .select(options)?;
 
         match result {
@@ -676,7 +676,7 @@ impl Question for KernelQuestion {
         let kernels = vec![KernelOption::Linux, KernelOption::Lts, KernelOption::Zen];
 
         let result = FzfWrapper::builder()
-            .header(format!("{} Select Kernel", NerdFont::Gear))
+            .header(HeaderBuilder::new(NerdFont::Gear, "Select Kernel").build())
             .presentation(MenuPresentation::Padded)
             .select(kernels)?;
 

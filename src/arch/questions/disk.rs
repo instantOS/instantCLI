@@ -1,5 +1,5 @@
 use crate::arch::engine::{DataKey, InstallContext, Question, QuestionId, QuestionResult};
-use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper};
+use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper, HeaderBuilder};
 use crate::ui::catppuccin::colors;
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -199,7 +199,7 @@ impl Question for DiskQuestion {
 
         loop {
             let result = FzfWrapper::builder()
-                .header(format!("{} Select Installation Disk", NerdFont::HardDrive))
+                .header(HeaderBuilder::new(NerdFont::HardDrive, "Select Installation Disk").build())
                 .select(selections.clone())?;
 
             let selection = match result {
@@ -401,10 +401,7 @@ impl Question for PartitioningMethodQuestion {
         }
 
         let result = FzfWrapper::builder()
-            .header(format!(
-                "{} Select Partitioning Method",
-                NerdFont::HardDrive
-            ))
+            .header(HeaderBuilder::new(NerdFont::HardDrive, "Select Partitioning Method").build())
             .select(options)?;
 
         match result {

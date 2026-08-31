@@ -148,10 +148,13 @@ fn handle_scan_wine_prefix(prefix: Option<String>, list: bool) -> Result<()> {
         None => {
             // Prompt for prefix path
             let path_input = crate::menu_utils::PathInputBuilder::new()
-                .header(format!(
-                    "{} Choose a Wine prefix to scan",
-                    char::from(NerdFont::Wine)
-                ))
+                .header(
+                    crate::menu_utils::HeaderBuilder::new(
+                        NerdFont::Wine,
+                        "Choose a Wine prefix to scan",
+                    )
+                    .build(),
+                )
                 .manual_prompt(format!(
                     "{} Enter Wine prefix path (e.g., ~/.wine or ~/Games/prefix):",
                     char::from(NerdFont::Wine)
