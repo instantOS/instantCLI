@@ -13,6 +13,7 @@ pub struct BooleanQuestion {
     pub default_yes: bool,
     pub dynamic_default: Option<Box<ContextPredicate>>,
     pub should_ask_predicate: Option<Box<ContextPredicate>>,
+    pub depends_on: Vec<QuestionId>,
 }
 
 impl BooleanQuestion {
@@ -25,7 +26,15 @@ impl BooleanQuestion {
             default_yes: false,
             dynamic_default: None,
             should_ask_predicate: None,
+            depends_on: Vec::new(),
         }
+    }
+
+    /// Declare the questions whose answers this boolean answer is derived from.
+    /// See [`crate::arch::engine::Question::depends_on`].
+    pub fn depends_on(mut self, ids: Vec<QuestionId>) -> Self {
+        self.depends_on = ids;
+        self
     }
 
     pub fn optional(mut self) -> Self {
@@ -75,6 +84,10 @@ impl Question for BooleanQuestion {
         } else {
             true
         }
+    }
+
+    fn depends_on(&self) -> Vec<QuestionId> {
+        self.depends_on.clone()
     }
 
     fn get_default(&self, context: &InstallContext) -> Option<String> {

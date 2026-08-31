@@ -1,4 +1,5 @@
 use anyhow::Result;
+use std::collections::HashMap;
 
 use crate::menu_utils::{
     ConfirmResult, FzfPreview, FzfResult, FzfSelectable, FzfWrapper, Header, MenuPresentation,
@@ -12,6 +13,7 @@ use super::question::{Question, QuestionResult};
 use super::summary::{
     InstallSummary, PartitioningKind, build_install_summary, build_setup_summary,
 };
+use super::types::QuestionId;
 
 /// Which wizard is driving the engine. Controls whether optional questions
 /// are asked in the main flow and how the final review screen is presented.
@@ -349,6 +351,62 @@ fn build_final_review_preview(item: &FinalReviewItem, summary: &InstallSummary) 
 }
 
 impl QuestionEngine {
+    /// Record an answer and invalidate any stored answers derived from it.
+    ///
+    /// All answer mutations must go through here (or [`Self::drop_answer`])
+    /// so that `depends_on` invalidation stays consistent. Setting the same
+    /// value again is a no-op and keeps dependent answers intact.
+    ///
+    /// Takes the question list and answer map separately so callers iterating
+    /// over `self.questions` can split-borrow the context.
+    fn record_answer(
+        questions: &[Box<dyn Question>],
+        answers: &mut HashMap<QuestionId, String>,
+        id: QuestionId,
+        answer: String,
+    ) {
+        if answers.get(&id) == Some(&answer) {
+            return;
+        }
+        answers.insert(id.clone(), answer);
+        Self::invalidate_dependents(questions, answers, &id);
+    }
+
+    /// Remove an answer and invalidate any stored answers derived from it.
+    fn drop_answer(
+        questions: &[Box<dyn Question>],
+        answers: &mut HashMap<QuestionId, String>,
+        id: &QuestionId,
+    ) {
+        if answers.remove(id).is_none() {
+            return;
+        }
+        Self::invalidate_dependents(questions, answers, id);
+    }
+
+    /// Transitively remove answers of questions that declared a dependency on
+    /// `changed` (directly or through another invalidated answer).
+    fn invalidate_dependents(
+        questions: &[Box<dyn Question>],
+        answers: &mut HashMap<QuestionId, String>,
+        changed: &QuestionId,
+    ) {
+        let mut queue = vec![changed.clone()];
+        while let Some(current) = queue.pop() {
+            for question in questions {
+                let dependent_id = question.id();
+                if dependent_id == current || !answers.contains_key(&dependent_id) {
+                    continue;
+                }
+                if question.depends_on().contains(&current)
+                    && answers.remove(&dependent_id).is_some()
+                {
+                    queue.push(dependent_id);
+                }
+            }
+        }
+    }
+
     pub fn new(questions: Vec<Box<dyn Question>>) -> Self {
         Self::for_flow(FlowKind::Install, questions)
     }
@@ -455,7 +513,12 @@ impl QuestionEngine {
                                 match self.questions[idx].validate(&self.context, &answer) {
                                     Ok(()) => {
                                         let id = self.questions[idx].id();
-                                        self.context.answers.insert(id, answer);
+                                        QuestionEngine::record_answer(
+                                            &self.questions,
+                                            &mut self.context.answers,
+                                            id,
+                                            answer,
+                                        );
                                         break;
                                     }
                                     Err(msg) => {
@@ -512,14 +575,21 @@ impl QuestionEngine {
                 if !self.context.is_answered(q.id())
                     && let Some(default) = q.get_default(&self.context)
                 {
-                    self.context.answers.insert(q.id(), default);
+                    let id = q.id();
+                    QuestionEngine::record_answer(
+                        &self.questions,
+                        &mut self.context.answers,
+                        id,
+                        default,
+                    );
                 }
                 continue;
             }
 
             if let Some(ans) = self.context.get_answer(&q.id()) {
                 if q.validate(&self.context, ans).is_err() {
-                    self.context.answers.remove(&q.id());
+                    let id = q.id();
+                    QuestionEngine::drop_answer(&self.questions, &mut self.context.answers, &id);
                     return Some(i);
                 }
             } else {
@@ -562,7 +632,7 @@ impl QuestionEngine {
                 let prev_idx = self.handle_go_back(current_idx);
                 if prev_idx != current_idx {
                     let q_id = self.questions[prev_idx].id();
-                    self.context.answers.remove(&q_id);
+                    QuestionEngine::drop_answer(&self.questions, &mut self.context.answers, &q_id);
                     Ok(true)
                 } else {
                     Ok(false)
@@ -571,7 +641,12 @@ impl QuestionEngine {
             FzfResult::Selected(PauseMenuItem::UseDefault) => {
                 if let Some(default) = self.questions[current_idx].get_default(&self.context) {
                     let q_id = self.questions[current_idx].id();
-                    self.context.answers.insert(q_id, default);
+                    QuestionEngine::record_answer(
+                        &self.questions,
+                        &mut self.context.answers,
+                        q_id,
+                        default,
+                    );
                     Ok(true)
                 } else {
                     Ok(false)
@@ -749,7 +824,12 @@ impl QuestionEngine {
                     match self.questions[idx].validate(&self.context, &answer) {
                         Ok(()) => {
                             let id = self.questions[idx].id();
-                            self.context.answers.insert(id, answer);
+                            QuestionEngine::record_answer(
+                                &self.questions,
+                                &mut self.context.answers,
+                                id,
+                                answer,
+                            );
                             break;
                         }
                         Err(msg) => {
@@ -840,6 +920,159 @@ mod tests {
 
         assert_eq!(engine.find_next_question_index(), Some(0));
         assert!(engine.context.get_answer(&QuestionId::Autologin).is_none());
+    }
+
+    /// Minimal question whose answer is derived from declared dependencies,
+    /// for invalidation-cascade tests.
+    struct StubDependentQuestion {
+        id: QuestionId,
+        deps: Vec<QuestionId>,
+    }
+
+    #[async_trait::async_trait]
+    impl Question for StubDependentQuestion {
+        fn id(&self) -> QuestionId {
+            self.id.clone()
+        }
+
+        async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
+            Ok(QuestionResult::Answer("answered".to_string()))
+        }
+
+        fn depends_on(&self) -> Vec<QuestionId> {
+            self.deps.clone()
+        }
+    }
+
+    #[test]
+    fn changing_an_answer_invalidates_dependents_transitively() {
+        let disk = StubDependentQuestion {
+            id: QuestionId::Disk,
+            deps: vec![],
+        };
+        let partition = StubDependentQuestion {
+            id: QuestionId::DualBootPartition,
+            deps: vec![QuestionId::Disk],
+        };
+        let size = StubDependentQuestion {
+            id: QuestionId::DualBootSize,
+            deps: vec![QuestionId::DualBootPartition],
+        };
+
+        let mut engine = QuestionEngine::for_flow(
+            FlowKind::Setup,
+            vec![Box::new(disk), Box::new(partition), Box::new(size)],
+        );
+        let answers = &mut engine.context.answers;
+
+        QuestionEngine::record_answer(
+            &engine.questions,
+            answers,
+            QuestionId::Disk,
+            "/dev/nvme0n1".to_string(),
+        );
+        QuestionEngine::record_answer(
+            &engine.questions,
+            answers,
+            QuestionId::DualBootPartition,
+            "/dev/nvme0n1p3".to_string(),
+        );
+        QuestionEngine::record_answer(
+            &engine.questions,
+            answers,
+            QuestionId::DualBootSize,
+            "800".to_string(),
+        );
+
+        // User re-answers Disk in review: the partition answer derived from
+        // the old disk and the size derived from that partition must go.
+        QuestionEngine::record_answer(
+            &engine.questions,
+            answers,
+            QuestionId::Disk,
+            "/dev/sda".to_string(),
+        );
+
+        assert!(answers.get(&QuestionId::DualBootPartition).is_none());
+        assert!(answers.get(&QuestionId::DualBootSize).is_none());
+        assert_eq!(
+            answers.get(&QuestionId::Disk).map(String::as_str),
+            Some("/dev/sda")
+        );
+    }
+
+    #[test]
+    fn re_answering_with_the_same_value_keeps_dependents() {
+        let disk = StubDependentQuestion {
+            id: QuestionId::Disk,
+            deps: vec![],
+        };
+        let partition = StubDependentQuestion {
+            id: QuestionId::DualBootPartition,
+            deps: vec![QuestionId::Disk],
+        };
+
+        let mut engine =
+            QuestionEngine::for_flow(FlowKind::Setup, vec![Box::new(disk), Box::new(partition)]);
+        let answers = &mut engine.context.answers;
+
+        QuestionEngine::record_answer(
+            &engine.questions,
+            answers,
+            QuestionId::Disk,
+            "/dev/sda".to_string(),
+        );
+        QuestionEngine::record_answer(
+            &engine.questions,
+            answers,
+            QuestionId::DualBootPartition,
+            "/dev/sda2".to_string(),
+        );
+        QuestionEngine::record_answer(
+            &engine.questions,
+            answers,
+            QuestionId::Disk,
+            "/dev/sda".to_string(),
+        );
+
+        assert_eq!(
+            answers
+                .get(&QuestionId::DualBootPartition)
+                .map(String::as_str),
+            Some("/dev/sda2")
+        );
+    }
+
+    #[test]
+    fn removing_an_answer_invalidates_dependents() {
+        let disk = StubDependentQuestion {
+            id: QuestionId::Disk,
+            deps: vec![],
+        };
+        let partition = StubDependentQuestion {
+            id: QuestionId::DualBootPartition,
+            deps: vec![QuestionId::Disk],
+        };
+
+        let mut engine =
+            QuestionEngine::for_flow(FlowKind::Setup, vec![Box::new(disk), Box::new(partition)]);
+        let answers = &mut engine.context.answers;
+
+        QuestionEngine::record_answer(
+            &engine.questions,
+            answers,
+            QuestionId::Disk,
+            "/dev/sda".to_string(),
+        );
+        QuestionEngine::record_answer(
+            &engine.questions,
+            answers,
+            QuestionId::DualBootPartition,
+            "/dev/sda2".to_string(),
+        );
+        QuestionEngine::drop_answer(&engine.questions, answers, &QuestionId::Disk);
+
+        assert!(answers.get(&QuestionId::DualBootPartition).is_none());
     }
 
     #[test]

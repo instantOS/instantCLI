@@ -102,6 +102,10 @@ impl Question for WeakPasswordWarning {
         }
     }
 
+    fn depends_on(&self) -> Vec<QuestionId> {
+        vec![QuestionId::UseEncryption, QuestionId::EncryptionPassword]
+    }
+
     async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
         FzfWrapper::message(&format!(
             "{} Weak Password Warning\n\n\
@@ -158,7 +162,6 @@ impl Question for DualBootEspWarning {
         if disks.is_empty() {
             return false;
         }
-
         let Some(disk_info) = disks.iter().find(|d| d.device == *disk_path) else {
             return false;
         };
@@ -172,6 +175,10 @@ impl Question for DualBootEspWarning {
         esp_partitions
             .iter()
             .all(|p| p.size_bytes < crate::arch::dualboot::types::MIN_ESP_SIZE)
+    }
+
+    fn depends_on(&self) -> Vec<QuestionId> {
+        vec![QuestionId::Disk, QuestionId::PartitioningMethod]
     }
 
     async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {

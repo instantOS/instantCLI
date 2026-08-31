@@ -432,6 +432,10 @@ impl Question for RunCfdiskQuestion {
             .unwrap_or(false)
     }
 
+    fn depends_on(&self) -> Vec<QuestionId> {
+        vec![QuestionId::Disk, QuestionId::PartitioningMethod]
+    }
+
     async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
         // disk is now just the device path (e.g., "/dev/sda")
         let disk_path = context

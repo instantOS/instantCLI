@@ -1,4 +1,5 @@
 use crate::arch::engine::{InstallContext, Question, QuestionId, QuestionResult};
+use crate::arch::questions::partition::partition_belongs_to_disk;
 use crate::common::format::format_size;
 use crate::menu::slide::run_slider;
 use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, SliderConfig};
@@ -111,6 +112,30 @@ impl Question for DualBootPartitionQuestion {
             .get_answer(&QuestionId::PartitioningMethod)
             .map(|s| s.contains("Dual Boot"))
             .unwrap_or(false)
+    }
+
+    fn depends_on(&self) -> Vec<QuestionId> {
+        vec![QuestionId::Disk, QuestionId::PartitioningMethod]
+    }
+
+    fn validate(&self, context: &InstallContext, answer: &str) -> Result<(), String> {
+        // The "use existing free space" marker is disk-independent
+        if answer == "__free_space__" {
+            return Ok(());
+        }
+
+        // ask() only offers partitions of the selected disk, so a mismatch
+        // means the answer was given for a different disk.
+        if let Some(disk) = context.get_answer(&QuestionId::Disk)
+            && !partition_belongs_to_disk(answer, disk)
+        {
+            return Err(format!(
+                "Partition {} is not on the selected disk {}",
+                answer, disk
+            ));
+        }
+
+        Ok(())
     }
 
     async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
@@ -233,6 +258,16 @@ impl Question for DualBootSizeQuestion {
             .unwrap_or(false)
     }
 
+    fn depends_on(&self) -> Vec<QuestionId> {
+        // The size is derived from the partition (or the disk's free space),
+        // so any change upstream invalidates it.
+        vec![
+            QuestionId::Disk,
+            QuestionId::PartitioningMethod,
+            QuestionId::DualBootPartition,
+        ]
+    }
+
     async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
         let part_path = context
             .get_answer(&QuestionId::DualBootPartition)
@@ -346,5 +381,54 @@ impl Question for DualBootSizeQuestion {
             Ok(None) => Ok(QuestionResult::Cancelled),
             Err(e) => Err(e).context("Slider failed")?,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::arch::engine::InstallContext;
+
+    fn context_with_disk(disk: &str) -> InstallContext {
+        let mut context = InstallContext::new();
+        context.set_answer(QuestionId::Disk, disk.to_string());
+        context
+    }
+
+    #[test]
+    fn validate_rejects_partitions_from_another_disk() {
+        let context = context_with_disk("/dev/sda");
+        let result = DualBootPartitionQuestion.validate(&context, "/dev/nvme0n1p3");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn validate_accepts_partitions_on_the_selected_disk() {
+        let context = context_with_disk("/dev/nvme0n1");
+        assert!(
+            DualBootPartitionQuestion
+                .validate(&context, "/dev/nvme0n1p3")
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn validate_accepts_the_free_space_marker_for_any_disk() {
+        let context = context_with_disk("/dev/sda");
+        assert!(
+            DualBootPartitionQuestion
+                .validate(&context, "__free_space__")
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn validate_tolerates_a_missing_disk_answer() {
+        let context = InstallContext::new();
+        assert!(
+            DualBootPartitionQuestion
+                .validate(&context, "/dev/sda2")
+                .is_ok()
+        );
     }
 }

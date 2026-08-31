@@ -147,6 +147,10 @@ impl Question for PartitionSelectorQuestion {
             .unwrap_or(false)
     }
 
+    fn depends_on(&self) -> Vec<QuestionId> {
+        vec![QuestionId::Disk, QuestionId::PartitioningMethod]
+    }
+
     async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
         // disk is now just the device path (e.g., "/dev/sda")
         let disk_path = context
@@ -233,11 +237,36 @@ impl Question for PartitionSelectorQuestion {
         // Get partition size from lsblk for validation
         let size = get_partition_size(part_path);
 
+        // The partition must live on the currently selected disk. ask() only
+        // offers partitions of that disk, so a mismatch means the answer was
+        // given for a different disk (e.g. before a review edit).
+        if let Some(disk) = context.get_answer(&QuestionId::Disk)
+            && !partition_belongs_to_disk(part_path, disk)
+        {
+            return Err(format!(
+                "Partition {} is not on the selected disk {}",
+                part_path, disk
+            ));
+        }
+
         // Use the injected validator
         self.validator.validate_partition(part_path, size)?;
 
         Ok(())
     }
+}
+
+/// Check whether a partition device path belongs to the given disk.
+///
+/// Based on Linux device naming: a partition is the disk path plus a numeric
+/// suffix, optionally separated by a "p" when the disk name ends in a digit
+/// (`/dev/sda1`, `/dev/nvme0n1p1`, `/dev/mmcblk0p2`).
+pub fn partition_belongs_to_disk(partition: &str, disk: &str) -> bool {
+    let Some(suffix) = partition.strip_prefix(disk) else {
+        return false;
+    };
+    let digits = suffix.strip_prefix('p').unwrap_or(suffix);
+    !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit())
 }
 
 /// Get partition size from lsblk
@@ -251,4 +280,44 @@ fn get_partition_size(partition_path: &str) -> Option<PartitionSize> {
     let size_bytes: u64 = stdout.trim().parse().ok()?;
     // Convert bytes to MB
     Some(PartitionSize::from_bytes(size_bytes))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::partition_belongs_to_disk;
+
+    #[test]
+    fn sata_partitions_match_their_disk() {
+        assert!(partition_belongs_to_disk("/dev/sda1", "/dev/sda"));
+        assert!(partition_belongs_to_disk("/dev/sda10", "/dev/sda"));
+    }
+
+    #[test]
+    fn nvme_partitions_match_their_disk() {
+        assert!(partition_belongs_to_disk("/dev/nvme0n1p3", "/dev/nvme0n1"));
+    }
+
+    #[test]
+    fn mmc_partitions_match_their_disk() {
+        assert!(partition_belongs_to_disk("/dev/mmcblk0p2", "/dev/mmcblk0"));
+    }
+
+    #[test]
+    fn partitions_on_other_disks_do_not_match() {
+        assert!(!partition_belongs_to_disk("/dev/nvme0n1p3", "/dev/sda"));
+        assert!(!partition_belongs_to_disk("/dev/sdb1", "/dev/sda"));
+        assert!(!partition_belongs_to_disk("/dev/sda1", "/dev/nvme0n1"));
+    }
+
+    #[test]
+    fn whole_disks_and_non_partitions_do_not_match() {
+        assert!(!partition_belongs_to_disk("/dev/sda", "/dev/sda"));
+        assert!(!partition_belongs_to_disk("/dev/sda", "/dev/sdb"));
+        assert!(!partition_belongs_to_disk("/dev/sdaX", "/dev/sda"));
+    }
+
+    #[test]
+    fn dual_boot_free_space_marker_is_not_a_partition() {
+        assert!(!partition_belongs_to_disk("__free_space__", "/dev/sda"));
+    }
 }

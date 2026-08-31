@@ -141,7 +141,8 @@ pub(super) fn build_questions() -> Vec<Box<dyn Question>> {
                     .get_answer(&crate::arch::engine::QuestionId::PartitioningMethod)
                     .map(|method| !method.contains("Manual"))
                     .unwrap_or(true) // Default to true if partitioning method not yet answered
-            }),
+            })
+            .depends_on(vec![crate::arch::engine::QuestionId::PartitioningMethod]),
         ),
         Box::new(EncryptionPasswordQuestion),
         Box::new(WeakPasswordWarning),
@@ -175,7 +176,11 @@ pub(super) fn build_questions() -> Vec<Box<dyn Question>> {
             })
             .dynamic_default(|context| {
                 context.get_answer_bool(crate::arch::engine::QuestionId::UseEncryption)
-            }),
+            })
+            .depends_on(vec![
+                crate::arch::engine::QuestionId::DesktopEnvironment,
+                crate::arch::engine::QuestionId::UseEncryption,
+            ]),
         ),
         Box::new(
             BooleanQuestion::new(
@@ -195,4 +200,31 @@ pub(super) fn build_questions() -> Vec<Box<dyn Question>> {
             .optional(),
         ),
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Dependencies that appear in a wizard's question list must precede the
+    /// question that declares them, or predicates would silently read absent
+    /// answers at runtime.
+    #[test]
+    fn question_dependencies_come_before_their_questions() {
+        let questions = build_questions();
+        let ids: Vec<crate::arch::engine::QuestionId> = questions.iter().map(|q| q.id()).collect();
+
+        for (index, question) in questions.iter().enumerate() {
+            for dependency in question.depends_on() {
+                if let Some(dep_index) = ids.iter().position(|id| *id == dependency) {
+                    assert!(
+                        dep_index < index,
+                        "{:?} declares a dependency on {:?}, which appears later in the question list",
+                        question.id(),
+                        dependency
+                    );
+                }
+            }
+        }
+    }
 }

@@ -33,6 +33,15 @@ impl Question for ResizeInstructionsQuestion {
         is_dualboot && needs_resize
     }
 
+    fn depends_on(&self) -> Vec<QuestionId> {
+        vec![
+            QuestionId::Disk,
+            QuestionId::PartitioningMethod,
+            QuestionId::DualBootPartition,
+            QuestionId::DualBootSize,
+        ]
+    }
+
     async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
         let partition_path = context
             .get_answer(&QuestionId::DualBootPartition)

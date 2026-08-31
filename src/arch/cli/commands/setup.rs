@@ -52,22 +52,7 @@ pub(super) async fn handle_setup_command(user: Option<String>, dry_run: bool) ->
     // Run the desktop-related questions from `ins arch install` as a small
     // setup wizard. The setup flow asks optional questions in the main flow
     // and reuses the engine's pause/review/back navigation.
-    let questions: Vec<Box<dyn Question>> = vec![
-        Box::new(DesktopEnvironmentQuestion),
-        Box::new(DisplayManagerQuestion),
-        Box::new(
-            BooleanQuestion::new(
-                QuestionId::Autologin,
-                "Enable Display Manager Autologin?",
-                NerdFont::User,
-            )
-            .optional()
-            .should_ask(|context| {
-                DesktopEnvironment::from_context(context).requires_display_manager()
-            }),
-        ),
-    ];
-    let mut engine = QuestionEngine::for_flow(FlowKind::Setup, questions);
+    let mut engine = QuestionEngine::for_flow(FlowKind::Setup, setup_questions());
     engine.context = context;
     let context = engine.run().await?;
 
@@ -95,4 +80,58 @@ fn print_setup_configuration(context: &InstallContext) {
         println!("  Autologin: {}", answer(QuestionId::Autologin));
     }
     println!();
+}
+
+/// The desktop-related questions of the `ins arch install` wizard, asked
+/// inline by the setup flow.
+fn setup_questions() -> Vec<Box<dyn Question>> {
+    vec![
+        Box::new(DesktopEnvironmentQuestion),
+        Box::new(DisplayManagerQuestion),
+        Box::new(
+            BooleanQuestion::new(
+                QuestionId::Autologin,
+                "Enable Display Manager Autologin?",
+                NerdFont::User,
+            )
+            .optional()
+            .should_ask(|context| {
+                DesktopEnvironment::from_context(context).requires_display_manager()
+            })
+            .depends_on(vec![
+                QuestionId::DesktopEnvironment,
+                QuestionId::UseEncryption,
+            ]),
+        ),
+    ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Dependencies that appear in a wizard's question list must precede the
+    /// question that declares them, or predicates would silently read absent
+    /// answers. Dependencies outside the list (e.g. pre-seeded contexts) are
+    /// allowed.
+    fn assert_dependencies_precede(questions: &[Box<dyn Question>]) {
+        let ids: Vec<QuestionId> = questions.iter().map(|q| q.id()).collect();
+        for (index, question) in questions.iter().enumerate() {
+            for dependency in question.depends_on() {
+                if let Some(dep_index) = ids.iter().position(|id| *id == dependency) {
+                    assert!(
+                        dep_index < index,
+                        "{:?} declares a dependency on {:?}, which appears later in the question list",
+                        question.id(),
+                        dependency
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn setup_question_dependencies_precede_their_questions() {
+        assert_dependencies_precede(&setup_questions());
+    }
 }

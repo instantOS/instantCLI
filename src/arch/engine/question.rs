@@ -57,6 +57,12 @@ pub trait Question: Send + Sync {
     async fn ask(&self, context: &InstallContext) -> Result<QuestionResult>;
 
     /// Returns true if the question is relevant/active given the current context
+    ///
+    /// Ordering contract: predicates may only read answers of questions that
+    /// appear *earlier* in the wizard's question list, and must tolerate their
+    /// absence (falling back to a sensible default). The engine does not
+    /// enforce this at runtime — the `question_dependencies_come_before_*`
+    /// tests verify it together with [`Question::depends_on`] declarations.
     fn should_ask(&self, _context: &InstallContext) -> bool {
         true
     }
@@ -96,6 +102,19 @@ pub trait Question: Send + Sync {
     /// Returns the default value for this question if one exists
     fn get_default(&self, _context: &InstallContext) -> Option<String> {
         None
+    }
+
+    /// Returns the questions whose answers this question's answer is derived
+    /// from or whose change can make this answer stale.
+    ///
+    /// When any of these answers is set or removed, the engine removes this
+    /// question's stored answer (transitively) so it gets asked again. Declare
+    /// every answer that `ask`, `should_ask`, `dynamic_default`, or `validate`
+    /// reads for decision-making. Dependencies that are not part of the
+    /// current wizard's question list are permitted (e.g. pre-seeded contexts)
+    /// but must still appear earlier in the list when they are present.
+    fn depends_on(&self) -> Vec<QuestionId> {
+        vec![]
     }
 
     /// Returns a fatal error message if this question cannot proceed due to a required
