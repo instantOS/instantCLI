@@ -519,11 +519,13 @@ instantos_logo_animation() {
 	interrupt_anim() {
 		status=$1
 		cleanup_anim
-		trap - INT TERM
+		trap - INT TERM HUP QUIT
 		exit "$status"
 	}
 	trap 'interrupt_anim 130' INT
 	trap 'interrupt_anim 143' TERM
+	trap 'interrupt_anim 129' HUP
+	trap 'interrupt_anim 131' QUIT
 
 	printf "%s%s" "$hide" "$clear_screen"
 
@@ -552,7 +554,7 @@ instantos_logo_animation() {
 	printf "%s  Arch Linux, but instant%s\n\n" "$dim" "$reset"
 	printf "%s" "$show"
 
-	trap - INT TERM
+	trap - INT TERM HUP QUIT
 }
 
 # -------------------------------------------------------------
@@ -560,7 +562,6 @@ instantos_logo_animation() {
 # -------------------------------------------------------------
 is_live_disk() {
 	[ -e /run/archiso/cowspace ] ||
-		[ -d /run/archiso ] ||
 		[ -e /etc/instantos/liveversion ] ||
 		[ -e /usr/share/liveutils ] ||
 		grep -q "archiso" /proc/cmdline 2>/dev/null
@@ -591,6 +592,9 @@ prepare_live_keyring() {
 usage() {
 	cat <<EOF
 Usage: install.sh [OPTIONS]
+
+Environment:
+  INSTALL_DIR                         Override the destination directory
 
 Options:
   --install-dir <path>                Set installation directory
@@ -709,6 +713,9 @@ detect_target() {
 			USE_APPIMAGE=0
 			return
 			;;
+		*)
+			fatal "unsupported Termux architecture: $arch"
+			;;
 		esac
 	fi
 
@@ -718,6 +725,9 @@ detect_target() {
 		;;
 	aarch64 | arm64)
 		TARGET="aarch64-unknown-linux-gnu"
+		;;
+	armv7l | armv8l)
+		TARGET="armv7-unknown-linux-gnueabihf"
 		;;
 	*)
 		fatal "unsupported architecture: $arch"
@@ -901,15 +911,11 @@ verify_checksum() {
 	fi
 
 	if ! command -v sha256sum >/dev/null 2>&1; then
-		warn "sha256sum not available; skipping checksum verification"
-		return 0
+		fatal "a checksum is published for this asset, but sha256sum is not available"
 	fi
 
-	checksum_file="$TMPDIR/$(basename "$archive_path").sha256"
-	curl -fsSL -H "User-Agent: instantcli-installer" "$sha_url" -o "$checksum_file" || {
-		warn "failed to download checksum file; skipping verification"
-		return 0
-	}
+	checksum_file="$INSTALL_WORK_DIR/$(basename "$archive_path").sha256"
+	curl -fsSL -H "User-Agent: instantcli-installer" "$sha_url" -o "$checksum_file" || fatal "failed to download published checksum"
 
 	checksum_basename=$(basename "$archive_path")
 	if ! grep -q "  $checksum_basename$" "$checksum_file" 2>/dev/null; then
@@ -917,12 +923,11 @@ verify_checksum() {
 		if awk -v name="$checksum_basename" '{print $1 "  " name}' "$checksum_file" >"$tmp_checksum_file" 2>/dev/null; then
 			mv "$tmp_checksum_file" "$checksum_file"
 		else
-			warn "failed to normalize checksum file; skipping verification"
-			return 0
+			fatal "failed to normalize published checksum"
 		fi
 	fi
 
-	(cd "$TMPDIR" && sha256sum -c "$(basename "$checksum_file")") || fatal "checksum verification failed"
+	(cd "$INSTALL_WORK_DIR" && sha256sum -c "$(basename "$checksum_file")") || fatal "checksum verification failed"
 }
 
 extract_archive() {
@@ -1064,9 +1069,8 @@ print_summary() {
 main() {
 	parse_args "$@"
 
-	instantos_logo_animation
-
 	if [ "$ONLY_ANIMATION" -eq 1 ]; then
+		instantos_logo_animation
 		exit 0
 	fi
 
@@ -1080,6 +1084,8 @@ main() {
 		fatal "the instantOS system installer currently supports x86_64 only; use --cli-only to install the CLI"
 	fi
 
+	instantos_logo_animation
+
 	# If live disk or forced OS install, prepare the keyring before downloading.
 	if should_launch_os_installer; then
 		prepare_live_keyring
@@ -1089,16 +1095,16 @@ main() {
 
 	find_asset_urls
 
-	TMPDIR=$(mktemp -d)
+	INSTALL_WORK_DIR=$(mktemp -d)
 	cleanup_tmpdir() {
-		rm -rf "$TMPDIR"
+		rm -rf "$INSTALL_WORK_DIR"
 	}
 	trap cleanup_tmpdir EXIT
 	trap 'exit 130' INT
 	trap 'exit 143' TERM
 	trap 'exit 129' HUP
 
-	archive="$TMPDIR/$(basename "$asset_url")"
+	archive="$INSTALL_WORK_DIR/$(basename "$asset_url")"
 	curl -fsSL -H "User-Agent: instantcli-installer" "$asset_url" -o "$archive" || fatal "failed to download release archive"
 
 	verify_checksum "$archive"
@@ -1110,7 +1116,7 @@ main() {
 		# Check if it's an archive or a bare binary
 		case "$archive" in
 		*.tar.zst | *.tgz | *.tar.gz)
-			extract_dir="$TMPDIR/extracted"
+			extract_dir="$INSTALL_WORK_DIR/extracted"
 			mkdir "$extract_dir"
 			extract_archive "$archive" "$extract_dir"
 			binary_path=$(find_binary_path "$extract_dir")

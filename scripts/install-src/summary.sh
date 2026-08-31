@@ -1,3 +1,4 @@
+# Return success for Arch and closely related distributions used by `ins arch setup`.
 is_arch_linux() {
 	if [ -f /etc/os-release ]; then
 		grep -qiE '^ID(_LIKE)?=.*(arch|instantos|manjaro|endeavouros)' /etc/os-release
@@ -8,6 +9,8 @@ is_arch_linux() {
 	fi
 }
 
+# Report the installed version and context-sensitive next steps without emitting
+# terminal escapes into redirected output.
 print_summary() {
 	if [ -t 1 ] && [ "${TERM:-}" != "dumb" ]; then
 		bold="$(printf '\033[1m')"

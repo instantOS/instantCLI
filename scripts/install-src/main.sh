@@ -1,12 +1,12 @@
 # -------------------------------------------------------------
 # Main workflow
 # -------------------------------------------------------------
+# Coordinate validation, artifact installation, cleanup, and optional OS handoff.
 main() {
 	parse_args "$@"
 
-	instantos_logo_animation
-
 	if [ "$ONLY_ANIMATION" -eq 1 ]; then
+		instantos_logo_animation
 		exit 0
 	fi
 
@@ -20,6 +20,8 @@ main() {
 		fatal "the instantOS system installer currently supports x86_64 only; use --cli-only to install the CLI"
 	fi
 
+	instantos_logo_animation
+
 	# If live disk or forced OS install, prepare the keyring before downloading.
 	if should_launch_os_installer; then
 		prepare_live_keyring
@@ -29,16 +31,16 @@ main() {
 
 	find_asset_urls
 
-	TMPDIR=$(mktemp -d)
+	INSTALL_WORK_DIR=$(mktemp -d)
 	cleanup_tmpdir() {
-		rm -rf "$TMPDIR"
+		rm -rf "$INSTALL_WORK_DIR"
 	}
 	trap cleanup_tmpdir EXIT
 	trap 'exit 130' INT
 	trap 'exit 143' TERM
 	trap 'exit 129' HUP
 
-	archive="$TMPDIR/$(basename "$asset_url")"
+	archive="$INSTALL_WORK_DIR/$(basename "$asset_url")"
 	curl -fsSL -H "User-Agent: instantcli-installer" "$asset_url" -o "$archive" || fatal "failed to download release archive"
 
 	verify_checksum "$archive"
@@ -50,7 +52,7 @@ main() {
 		# Check if it's an archive or a bare binary
 		case "$archive" in
 		*.tar.zst | *.tgz | *.tar.gz)
-			extract_dir="$TMPDIR/extracted"
+			extract_dir="$INSTALL_WORK_DIR/extracted"
 			mkdir "$extract_dir"
 			extract_archive "$archive" "$extract_dir"
 			binary_path=$(find_binary_path "$extract_dir")

@@ -1,3 +1,5 @@
+# Fetch release metadata and retain the first stable release containing a usable
+# artifact for TARGET in the global release_json value.
 fetch_release_json() {
 	# Fetch all releases and find first one with our assets
 	all_releases=$(curl -fsSL \
@@ -9,6 +11,8 @@ fetch_release_json() {
 	release_json=$(find_working_release "$all_releases") || fatal "no working release found with assets for $TARGET"
 }
 
+# Print the first complete, non-draft release object with an artifact matching
+# TARGET/USE_APPIMAGE. The brace scanner ignores braces inside JSON strings.
 find_working_release() {
 	all_releases="$1"
 
@@ -92,6 +96,8 @@ find_working_release() {
 	'
 }
 
+# Populate asset_url, optional sha_url, and version from the selected release.
+# Distribution-package, debug, and checksum assets are excluded from selection.
 find_asset_urls() {
 	if [ "$USE_APPIMAGE" -eq 1 ]; then
 		asset_url=$(printf '%s\n' "$release_json" | awk '
@@ -158,6 +164,8 @@ find_asset_urls() {
     ')
 }
 
+# Verify archive_path when the release publishes a sibling .sha256 asset. Missing
+# published checksums remain backward-compatible; expected verification fails closed.
 verify_checksum() {
 	archive_path=$1
 
@@ -167,15 +175,11 @@ verify_checksum() {
 	fi
 
 	if ! command -v sha256sum >/dev/null 2>&1; then
-		warn "sha256sum not available; skipping checksum verification"
-		return 0
+		fatal "a checksum is published for this asset, but sha256sum is not available"
 	fi
 
-	checksum_file="$TMPDIR/$(basename "$archive_path").sha256"
-	curl -fsSL -H "User-Agent: instantcli-installer" "$sha_url" -o "$checksum_file" || {
-		warn "failed to download checksum file; skipping verification"
-		return 0
-	}
+	checksum_file="$INSTALL_WORK_DIR/$(basename "$archive_path").sha256"
+	curl -fsSL -H "User-Agent: instantcli-installer" "$sha_url" -o "$checksum_file" || fatal "failed to download published checksum"
 
 	checksum_basename=$(basename "$archive_path")
 	if ! grep -q "  $checksum_basename$" "$checksum_file" 2>/dev/null; then
@@ -183,10 +187,9 @@ verify_checksum() {
 		if awk -v name="$checksum_basename" '{print $1 "  " name}' "$checksum_file" >"$tmp_checksum_file" 2>/dev/null; then
 			mv "$tmp_checksum_file" "$checksum_file"
 		else
-			warn "failed to normalize checksum file; skipping verification"
-			return 0
+			fatal "failed to normalize published checksum"
 		fi
 	fi
 
-	(cd "$TMPDIR" && sha256sum -c "$(basename "$checksum_file")") || fatal "checksum verification failed"
+	(cd "$INSTALL_WORK_DIR" && sha256sum -c "$(basename "$checksum_file")") || fatal "checksum verification failed"
 }

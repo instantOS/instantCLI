@@ -451,6 +451,8 @@ f30() {
 FRM
 }
 
+# Render a static logo for redirected output or a terminal animation for TTYs.
+# Signal handlers restore terminal state before aborting an interrupted run.
 instantos_logo_animation() {
 	[ "$NO_ANIMATION" -eq 0 ] || return 0
 
@@ -488,11 +490,13 @@ instantos_logo_animation() {
 	interrupt_anim() {
 		status=$1
 		cleanup_anim
-		trap - INT TERM
+		trap - INT TERM HUP QUIT
 		exit "$status"
 	}
 	trap 'interrupt_anim 130' INT
 	trap 'interrupt_anim 143' TERM
+	trap 'interrupt_anim 129' HUP
+	trap 'interrupt_anim 131' QUIT
 
 	printf "%s%s" "$hide" "$clear_screen"
 
@@ -521,5 +525,5 @@ instantos_logo_animation() {
 	printf "%s  Arch Linux, but instant%s\n\n" "$dim" "$reset"
 	printf "%s" "$show"
 
-	trap - INT TERM
+	trap - INT TERM HUP QUIT
 }

@@ -1,3 +1,4 @@
+# Extract supported release archives, selecting an available zstd implementation.
 extract_archive() {
 	archive_path=$1
 	dest_dir=$2
@@ -23,6 +24,7 @@ extract_archive() {
 	esac
 }
 
+# Print the packaged source binary path; BIN_NAME may differ only at installation.
 find_binary_path() {
 	search_root=$1
 
@@ -33,6 +35,8 @@ find_binary_path() {
 	printf '%s\n' "$binary_path"
 }
 
+# Copy binary_path with executable permissions, requesting sudo only when the
+# chosen destination cannot be written by the current user.
 install_binary() {
 	binary_path=$1
 	needs_sudo=0

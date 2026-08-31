@@ -9,7 +9,12 @@ INSTALL_SCRIPT="${REPO_ROOT}/scripts/install.sh"
 "${REPO_ROOT}/scripts/build-install.sh" --check
 
 # Load the installer functions without executing main.
-source <(sed '$d' "${INSTALL_SCRIPT}")
+entrypoint_count="$(grep -c '^main "\$@"$' "${INSTALL_SCRIPT}" || true)"
+if [[ "${entrypoint_count}" != 1 ]]; then
+	echo "Expected exactly one installer entrypoint, found ${entrypoint_count}" >&2
+	exit 1
+fi
+source <(sed '/^main "\$@"$/d' "${INSTALL_SCRIPT}")
 
 assert_equals() {
 	local expected="$1"
@@ -120,9 +125,93 @@ test_keyring_failure_is_fatal() {
 	fi
 }
 
+test_published_checksum_download_failure_is_fatal() (
+	local work_dir
+	work_dir="$(mktemp -d)"
+	trap 'rm -rf "${work_dir}"' EXIT
+	touch "${work_dir}/archive.tgz"
+
+	INSTALL_WORK_DIR="${work_dir}"
+	sha_url="https://example.invalid/archive.tgz.sha256"
+	curl() { return 1; }
+
+	if (verify_checksum "${work_dir}/archive.tgz") >/dev/null 2>&1; then
+		echo "A published checksum download failure should abort installation" >&2
+		return 1
+	fi
+)
+
+test_local_validation_precedes_animation() (
+	local animation_marker status
+	animation_marker="$(mktemp)"
+	rm -f "${animation_marker}"
+	trap 'rm -f "${animation_marker}"' EXIT
+
+	parse_args() { :; }
+	choose_install_dir() { :; }
+	require_commands() { exit 23; }
+	instantos_logo_animation() { touch "${animation_marker}"; }
+
+	set +e
+	(main) >/dev/null 2>&1
+	status=$?
+	set -e
+
+	assert_equals 23 "${status}"
+	if [[ -e "${animation_marker}" ]]; then
+		echo "Animation ran before local validation completed" >&2
+		return 1
+	fi
+)
+
+test_arm_cli_target_detection() (
+	local mock_arch releases
+	unset TERMUX_VERSION STEAM_DECK
+	detect_steam_deck() { return 1; }
+	uname() { printf '%s\n' "${mock_arch}"; }
+
+	for mock_arch in armv7l armv8l; do
+		detect_target
+		assert_equals "armv7-unknown-linux-gnueabihf" "${TARGET}"
+		assert_equals 0 "${USE_APPIMAGE}"
+	done
+
+	releases='[{"tag_name":"v1.2.3","draft":false,"prerelease":false,"assets":[{"browser_download_url":"https://example.invalid/ins-armv7-unknown-linux-gnueabihf-v1.2.3.tgz"}]}]'
+	release_json="$(find_working_release "${releases}")"
+	find_asset_urls
+	assert_equals "https://example.invalid/ins-armv7-unknown-linux-gnueabihf-v1.2.3.tgz" "${asset_url}"
+)
+
+test_unsupported_termux_arm_does_not_use_glibc_target() (
+	local mock_arch
+	mock_arch="armv7l"
+	TERMUX_VERSION=1
+	uname() { printf '%s\n' "${mock_arch}"; }
+
+	if (detect_target) >/dev/null 2>&1; then
+		echo "Unsupported Termux ARM selected a GNU/Linux release target" >&2
+		return 1
+	fi
+)
+
+test_help_documents_install_dir_environment() {
+	local output
+	output="$(sh "${INSTALL_SCRIPT}" --help)"
+
+	if [[ "${output}" != *"INSTALL_DIR"* ]]; then
+		echo "Installer help does not document INSTALL_DIR" >&2
+		return 1
+	fi
+}
+
 test_release_selection
 test_renamed_binary
 test_argument_conflicts
 test_non_tty_animation_is_plain
 test_launch_mode_selection
 test_keyring_failure_is_fatal
+test_published_checksum_download_failure_is_fatal
+test_local_validation_precedes_animation
+test_arm_cli_target_detection
+test_unsupported_termux_arm_does_not_use_glibc_target
+test_help_documents_install_dir_environment
