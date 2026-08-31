@@ -14,16 +14,22 @@ rootinstall:
 test:
     ./tests/run_all.sh
 
+build-install:
+    ./scripts/build-install.sh
+
+check-install:
+    ./scripts/build-install.sh --check
+
 appimage:
     ./utils/build_appimage.sh
 
-stuff:
+stuff: build-install
     cargo build --profile upload
     rsync ./target/upload/ins ubuntu@stuff.paperbenni.xyz:/data/stuff/ins
     rsync ./scripts/install.sh ubuntu@stuff.paperbenni.xyz:/data/stuff/install
     rsync ./scripts/dev.sh ubuntu@stuff.paperbenni.xyz:/data/stuff/dev
 
-armstuff:
+armstuff: build-install
     cargo build --profile upload --target aarch64-unknown-linux-gnu
     rsync ./target/aarch64-unknown-linux-gnu/upload/ins ubuntu@stuff.paperbenni.xyz:/data/stuff/insarm
     rsync ./scripts/install.sh ubuntu@stuff.paperbenni.xyz:/data/stuff/install
@@ -34,6 +40,7 @@ format:
     cargo clippy --fix --allow-dirty
     cargo fmt
     find . -name "*.sh" -exec shfmt -w {} \;
+    ./scripts/build-install.sh
 
 # Format slide assets (JS with deno fmt, CSS with prettier)
 format-slides:

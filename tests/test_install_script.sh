@@ -6,6 +6,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 INSTALL_SCRIPT="${REPO_ROOT}/scripts/install.sh"
 
+"${REPO_ROOT}/scripts/build-install.sh" --check
+
 # Load the installer functions without executing main.
 source <(sed '$d' "${INSTALL_SCRIPT}")
 
