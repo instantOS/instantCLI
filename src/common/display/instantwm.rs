@@ -13,19 +13,14 @@ pub struct InstantWMDisplayProvider;
 impl InstantWMDisplayProvider {
     /// Get all connected outputs with their modes via instantwmctl
     pub fn get_outputs_sync() -> Result<Vec<OutputInfo>> {
-        // Get available modes
-        let modes_output = instantwmctl::output(["monitor", "modes", "--json"])
+        // Get available modes (`--json` is a top-level instantwmctl flag and must
+        // precede the subcommand)
+        let display_modes: Vec<serde_json::Value> = instantwmctl::json(["monitor", "modes"])
             .context("Failed to execute instantwmctl monitor modes")?;
 
-        let modes_stdout = String::from_utf8_lossy(&modes_output.stdout);
-        let display_modes: Vec<serde_json::Value> = serde_json::from_str(&modes_stdout)
-            .context("Failed to parse instantwmctl monitor modes JSON")?;
-
         // Get current monitor state
-        let monitors: Vec<serde_json::Value> = instantwmctl::output(["monitor", "list", "--json"])
-            .ok()
-            .and_then(|output| serde_json::from_slice(&output.stdout).ok())
-            .unwrap_or_default();
+        let monitors: Vec<serde_json::Value> =
+            instantwmctl::json(["monitor", "list"]).unwrap_or_default();
 
         let mut outputs = Vec::new();
 
