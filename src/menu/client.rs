@@ -271,12 +271,12 @@ impl MenuClient {
         &self,
         prompt: String,
         items: Vec<SerializableMenuItem>,
-        multi: bool,
+        allow_multiple: bool,
     ) -> Result<Vec<SerializableMenuItem>> {
         match self.send_request(MenuRequest::Choice {
             prompt,
             items,
-            multi,
+            allow_multiple,
         })? {
             MenuResponse::ChoiceResult(selected) => Ok(selected),
             MenuResponse::Error(error) => anyhow::bail!("Server error: {}", error),
@@ -310,12 +310,12 @@ impl MenuClient {
         &self,
         start: Option<String>,
         scope: FilePickerScope,
-        multi: bool,
+        allow_multiple: bool,
     ) -> Result<Vec<PathBuf>> {
         match self.send_request(MenuRequest::FilePicker {
             start,
             scope,
-            multi,
+            allow_multiple,
         })? {
             MenuResponse::FilePickerResult(paths) => Ok(paths),
             MenuResponse::Error(error) => anyhow::bail!("Server error: {}", error),
@@ -460,7 +460,7 @@ pub fn handle_scratchpad_request(command: &MenuCommands) -> Result<i32> {
             prompt,
             prompt_option,
             items,
-            multi,
+            allow_multiple,
             ..
         } => {
             let item_list: Vec<SerializableMenuItem> = if items.is_empty() {
@@ -481,7 +481,7 @@ pub fn handle_scratchpad_request(command: &MenuCommands) -> Result<i32> {
                 .cloned()
                 .unwrap_or_else(|| "Select an item:".to_string());
 
-            match client.choice(prompt, item_list, *multi) {
+            match client.choice(prompt, item_list, *allow_multiple) {
                 Ok(selected) => {
                     if selected.is_empty() {
                         Ok(1) // Cancelled
@@ -526,7 +526,7 @@ pub fn handle_scratchpad_request(command: &MenuCommands) -> Result<i32> {
             start,
             dirs,
             files,
-            multi,
+            allow_multiple,
             ..
         } => {
             let scope = match (*dirs, *files) {
@@ -536,7 +536,7 @@ pub fn handle_scratchpad_request(command: &MenuCommands) -> Result<i32> {
                 (false, false) => FilePickerScope::Files,
             };
 
-            match client.file_picker(start.clone(), scope, *multi) {
+            match client.file_picker(start.clone(), scope, *allow_multiple) {
                 Ok(paths) => {
                     if paths.is_empty() {
                         Ok(1)

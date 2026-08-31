@@ -98,7 +98,7 @@ pub enum MenuRequest {
     Choice {
         prompt: String,
         items: Vec<SerializableMenuItem>,
-        multi: bool,
+        allow_multiple: bool,
     },
     /// Show chord navigator using provided chord definitions
     Chord { chords: Vec<String> },
@@ -110,7 +110,7 @@ pub enum MenuRequest {
     FilePicker {
         start: Option<String>,
         scope: FilePickerScope,
-        multi: bool,
+        allow_multiple: bool,
     },
     /// Show slider interface
     Slide(SliderRequest),
@@ -360,14 +360,14 @@ mod tests {
         let request = MenuRequest::Choice {
             prompt: "Select an option:".to_string(),
             items,
-            multi: false,
+            allow_multiple: false,
         };
 
         let json = serde_json::to_string(&request).unwrap();
         let deserialized: MenuRequest = serde_json::from_str(&json).unwrap();
 
         assert!(
-            matches!(deserialized, MenuRequest::Choice { prompt, items, multi: false }
+            matches!(deserialized, MenuRequest::Choice { prompt, items, allow_multiple: false }
                 if prompt == "Select an option:" && items.len() == 2)
         );
     }

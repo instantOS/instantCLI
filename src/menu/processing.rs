@@ -32,16 +32,16 @@ impl RequestProcessor {
             MenuRequest::Choice {
                 prompt,
                 items,
-                multi,
-            } => self.handle_choice_request(prompt, items, multi),
+                allow_multiple,
+            } => self.handle_choice_request(prompt, items, allow_multiple),
             MenuRequest::Chord { chords } => self.handle_chord_request(chords),
             MenuRequest::Input { prompt } => self.handle_input_request(prompt),
             MenuRequest::Password { prompt } => self.handle_password_request(prompt),
             MenuRequest::FilePicker {
                 start,
                 scope,
-                multi,
-            } => self.handle_file_picker_request(start, scope, multi),
+                allow_multiple,
+            } => self.handle_file_picker_request(start, scope, allow_multiple),
             MenuRequest::Slide(request) => self.handle_slider_request(request),
             MenuRequest::Message { title, message } => self.handle_message_request(title, message),
             MenuRequest::Toast { message, duration } => {
@@ -73,9 +73,11 @@ impl RequestProcessor {
         &self,
         start: Option<String>,
         scope: FilePickerScope,
-        multi: bool,
+        allow_multiple: bool,
     ) -> Result<MenuResponse> {
-        let mut builder = MenuWrapper::file_picker().scope(scope).multi(multi);
+        let mut builder = MenuWrapper::file_picker()
+            .scope(scope)
+            .multi(allow_multiple);
 
         if let Some(start_dir) = start.as_ref().filter(|s| !s.is_empty()) {
             builder = builder.start_dir(start_dir);
@@ -169,7 +171,7 @@ impl RequestProcessor {
         &self,
         prompt: String,
         items: Vec<SerializableMenuItem>,
-        multi: bool,
+        allow_multiple: bool,
     ) -> Result<MenuResponse> {
         if items.is_empty() {
             return Ok(MenuResponse::Error("No items to choose from".to_string()));
@@ -177,7 +179,7 @@ impl RequestProcessor {
 
         match FzfWrapper::builder()
             .prompt(prompt)
-            .multi_select(multi)
+            .multi_select(allow_multiple)
             .select(items)
         {
             Ok(crate::menu_utils::FzfResult::Selected(item)) => {

@@ -1,8 +1,10 @@
 use anyhow::{Context, Result};
+use std::collections::HashMap;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
 use super::registry;
+use crate::ui::prelude::NerdFont;
 
 /// Run assist selector using instantmenu with multi-stage key selection
 ///
@@ -47,24 +49,51 @@ pub fn run_assist_selector_instantmenu() -> Result<()> {
     }
 }
 
+/// Short display name from a registry description. Descriptions follow a
+/// `"Name: detail"` shape (e.g. "Help: Show all available assists" →
+/// "Help"); the detail is reserved for the help menu so it fits the
+/// single-key hover prompt.
+fn short_name(description: &str) -> &str {
+    description
+        .split_once(": ")
+        .map_or(description, |(name, _)| name)
+}
+
 /// Show top-level assist options using instantmenu
 fn show_top_level_instantmenu(assists: &[registry::AssistEntry]) -> Result<String> {
     let mut options = Vec::new();
+    let mut label_to_key: HashMap<String, String> = HashMap::new();
 
     for entry in assists {
+        // `key=` drives --single-key activation and `icon=` draws the gutter
+        // glyph in the menu row; both are hidden from the label and output.
+        // The label (shown in the single-key hover prompt) is a compact
+        // `key ◆ name`; the full description lives in the help menu (h).
         match entry {
             registry::AssistEntry::Action(action) => {
-                // `key=` metadata drives --single-key mode; activation prints
-                // the label, so it leads with the key for reliable parsing
+                let label = format!(
+                    "{} {} {}",
+                    action.key,
+                    NerdFont::Diamond,
+                    short_name(action.description)
+                );
+                label_to_key.insert(label.clone(), action.key.to_string());
                 options.push(format!(
-                    "{{key={}}} {}: {}",
-                    action.key, action.key, action.description
+                    "{{key={} icon={}}} {}",
+                    action.key, action.icon, label
                 ));
             }
             registry::AssistEntry::Group(group) => {
+                let label = format!(
+                    "{} {} {} →",
+                    group.key,
+                    NerdFont::Diamond,
+                    short_name(group.description)
+                );
+                label_to_key.insert(label.clone(), group.key.to_string());
                 options.push(format!(
-                    "{{key={}}} {}: {} →",
-                    group.key, group.key, group.description
+                    "{{key={} icon={}}} {}",
+                    group.key, group.icon, label
                 ));
             }
         }
@@ -105,12 +134,8 @@ fn show_top_level_instantmenu(assists: &[registry::AssistEntry]) -> Result<Strin
         return Ok(String::new());
     }
 
-    // --single-key prints the item label; its first character is the key
-    let selected_key = selection
-        .chars()
-        .next()
-        .ok_or_else(|| anyhow::anyhow!("Empty selection"))?
-        .to_string();
+    // --single-key prints the item label; look it up in our map
+    let selected_key = label_to_key.get(&selection).cloned().unwrap_or_default();
 
     Ok(selected_key)
 }
@@ -121,7 +146,7 @@ fn show_group_options_instantmenu(
     entries: &[registry::AssistEntry],
 ) -> Result<()> {
     let mut options = Vec::new();
-    let mut key_map: Vec<(char, String)> = Vec::new(); // (instantmenu_key, actual_chord)
+    let mut label_to_chord: HashMap<String, String> = HashMap::new();
 
     // Filter only actions from the group
     let actions: Vec<_> = entries
@@ -142,13 +167,19 @@ fn show_group_options_instantmenu(
         let instantmenu_key = char::from(b'a' + i as u8);
         let actual_chord = format!("{}{}", group_prefix, action.key);
 
-        // the label leads with the key because --single-key prints the label
-        options.push(format!(
-            "{{key={}}} {}: {} ({})",
-            instantmenu_key, instantmenu_key, action.description, actual_chord
-        ));
+        // Compact `key ◆ name` label; the full description lives in help (h)
+        let label = format!(
+            "{} {} {}",
+            instantmenu_key,
+            NerdFont::Diamond,
+            short_name(action.description)
+        );
+        label_to_chord.insert(label.clone(), actual_chord);
 
-        key_map.push((instantmenu_key, actual_chord));
+        options.push(format!(
+            "{{key={} icon={}}} {}",
+            instantmenu_key, action.icon, label
+        ));
     }
 
     let input = options.join("\n");
@@ -186,15 +217,11 @@ fn show_group_options_instantmenu(
         return Ok(());
     }
 
-    // --single-key prints the item label; its first character is the key
-    let instantmenu_key = selection.chars().next().unwrap_or('\0');
-
-    // Find the actual chord corresponding to this key
-    let actual_chord = key_map
-        .iter()
-        .find(|(key, _)| *key == instantmenu_key)
-        .map(|(_, chord)| chord.clone())
-        .ok_or_else(|| anyhow::anyhow!("Invalid selection: {}", instantmenu_key))?;
+    // --single-key prints the item label; look it up in our map
+    let actual_chord = label_to_chord
+        .get(&selection)
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!("Invalid selection: {}", selection))?;
 
     // Execute the selected action
     let action = registry::find_action(&actual_chord)
