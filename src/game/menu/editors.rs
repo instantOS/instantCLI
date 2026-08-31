@@ -284,6 +284,7 @@ pub fn edit_launch_command(state: &mut EditState) -> Result<bool> {
     let selection = FzfWrapper::builder()
         .header("Choose which launch command to edit")
         .responsive_layout()
+        .presentation(MenuPresentation::Padded)
         .select(options)?;
 
     match selection {

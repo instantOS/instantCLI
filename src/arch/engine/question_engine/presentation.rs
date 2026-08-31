@@ -321,20 +321,36 @@ fn install_review_options(context: &InstallContext) -> Vec<FinalReviewOption> {
     vec![
         FinalReviewOption::new(
             FinalReviewAction::Complete,
-            "Install",
+            format!(
+                "{} Install",
+                format_icon_colored(NerdFont::Download, colors::GREEN)
+            ),
             install_review_preview(&FinalReviewAction::Complete, &summary),
         ),
         FinalReviewOption::new(
             FinalReviewAction::ReviewAnswers,
-            "Review Answers",
+            format!(
+                "{} Review Answers",
+                format_icon_colored(NerdFont::List, colors::BLUE)
+            ),
             install_review_preview(&FinalReviewAction::ReviewAnswers, &summary),
         ),
         FinalReviewOption::new(
             FinalReviewAction::AdvancedOptions,
-            "Advanced Options",
+            format!(
+                "{} Advanced Options",
+                format_icon_colored(NerdFont::Sliders, colors::LAVENDER)
+            ),
             install_review_preview(&FinalReviewAction::AdvancedOptions, &summary),
         ),
-        FinalReviewOption::new(FinalReviewAction::Abort, "Abort", abort_preview()),
+        FinalReviewOption::new(
+            FinalReviewAction::Abort,
+            format!(
+                "{} Abort",
+                format_icon_colored(NerdFont::CrossCircle, colors::RED)
+            ),
+            abort_preview(),
+        ),
     ]
 }
 
@@ -343,7 +359,10 @@ fn setup_review_options(context: &InstallContext) -> Vec<FinalReviewOption> {
     vec![
         FinalReviewOption::new(
             FinalReviewAction::Complete,
-            "Apply Setup",
+            format!(
+                "{} Apply Setup",
+                format_icon_colored(NerdFont::Download, colors::GREEN)
+            ),
             PreviewBuilder::new()
                 .header(NerdFont::Download, "Apply Setup")
                 .text("Configure this system with instantOS.")
@@ -353,7 +372,10 @@ fn setup_review_options(context: &InstallContext) -> Vec<FinalReviewOption> {
         ),
         FinalReviewOption::new(
             FinalReviewAction::ReviewAnswers,
-            "Review Answers",
+            format!(
+                "{} Review Answers",
+                format_icon_colored(NerdFont::List, colors::BLUE)
+            ),
             PreviewBuilder::new()
                 .header(NerdFont::List, "Review Answers")
                 .text("Browse and edit your previous responses.")
@@ -361,7 +383,14 @@ fn setup_review_options(context: &InstallContext) -> Vec<FinalReviewOption> {
                 .raw(&summary)
                 .build(),
         ),
-        FinalReviewOption::new(FinalReviewAction::Abort, "Abort", abort_preview()),
+        FinalReviewOption::new(
+            FinalReviewAction::Abort,
+            format!(
+                "{} Abort",
+                format_icon_colored(NerdFont::CrossCircle, colors::RED)
+            ),
+            abort_preview(),
+        ),
     ]
 }
 

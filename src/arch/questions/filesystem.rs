@@ -1,7 +1,7 @@
 use crate::arch::config::{BtrfsCompression, RootFilesystem};
 use crate::arch::engine::{InstallContext, Question, QuestionId, QuestionResult};
-use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper};
-use crate::ui::catppuccin::colors;
+use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, MenuPresentation};
+use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 use anyhow::Result;
@@ -10,6 +10,13 @@ use anyhow::Result;
 struct RootFilesystemOption(RootFilesystem);
 
 impl RootFilesystemOption {
+    fn icon(&self) -> String {
+        match self.0 {
+            RootFilesystem::Btrfs => format_icon_colored(NerdFont::HardDrive, colors::GREEN),
+            RootFilesystem::Ext4 => format_icon_colored(NerdFont::HardDrive, colors::BLUE),
+        }
+    }
+
     fn preview(&self) -> FzfPreview {
         match self.0 {
             RootFilesystem::Btrfs => PreviewBuilder::new()
@@ -47,7 +54,7 @@ impl RootFilesystemOption {
 
 impl FzfSelectable for RootFilesystemOption {
     fn fzf_display_text(&self) -> String {
-        self.0.label().to_string()
+        format!("{} {}", self.icon(), self.0.label())
     }
 
     fn fzf_preview(&self) -> FzfPreview {
@@ -87,6 +94,7 @@ impl Question for RootFilesystemQuestion {
 
         let result = FzfWrapper::builder()
             .header(format!("{} Select Root Filesystem", NerdFont::HardDrive))
+            .presentation(MenuPresentation::Padded)
             .select(options)?;
 
         match result {
@@ -109,6 +117,15 @@ impl Question for RootFilesystemQuestion {
 struct BtrfsCompressionOption(BtrfsCompression);
 
 impl BtrfsCompressionOption {
+    fn icon(&self) -> String {
+        match self.0 {
+            BtrfsCompression::None => format_icon_colored(NerdFont::Archive, colors::OVERLAY0),
+            BtrfsCompression::Zstd => format_icon_colored(NerdFont::Archive, colors::GREEN),
+            BtrfsCompression::Lzo => format_icon_colored(NerdFont::Archive, colors::YELLOW),
+            BtrfsCompression::Zlib => format_icon_colored(NerdFont::Archive, colors::BLUE),
+        }
+    }
+
     fn preview(&self) -> FzfPreview {
         let builder = PreviewBuilder::new()
             .header(NerdFont::Sliders, "btrfs Compression")
@@ -140,7 +157,7 @@ impl BtrfsCompressionOption {
 
 impl FzfSelectable for BtrfsCompressionOption {
     fn fzf_display_text(&self) -> String {
-        self.0.label().to_string()
+        format!("{} {}", self.icon(), self.0.label())
     }
 
     fn fzf_preview(&self) -> FzfPreview {
@@ -191,6 +208,7 @@ impl Question for BtrfsCompressionQuestion {
 
         let result = FzfWrapper::builder()
             .header(format!("{} Select btrfs Compression", NerdFont::Sliders))
+            .presentation(MenuPresentation::Padded)
             .select(options)?;
 
         match result {

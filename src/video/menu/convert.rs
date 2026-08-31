@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use crate::menu_utils::{
     ConfirmResult, FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder, MenuCursor,
+    MenuPresentation,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
@@ -124,6 +125,7 @@ pub async fn run_new_project() -> Result<()> {
             .header(header)
             .prompt("Select")
             .responsive_layout()
+            .presentation(MenuPresentation::Padded)
             .cursor(cursor.initial_index(&entries))
             .select_one(entries.clone())?;
 

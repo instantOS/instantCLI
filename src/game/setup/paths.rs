@@ -8,7 +8,8 @@ use crate::game::utils::path::{
 };
 use crate::menu::protocol;
 use crate::menu_utils::{
-    FilePickerScope, FzfResult, FzfSelectable, FzfWrapper, PathInputBuilder, PathInputSelection,
+    FilePickerScope, FzfResult, FzfSelectable, FzfWrapper, MenuPresentation, PathInputBuilder,
+    PathInputSelection,
 };
 use crate::restic::wrapper::Snapshot;
 use crate::ui::nerd_font::NerdFont;
@@ -393,14 +394,23 @@ fn handle_differently_named_folders(
         );
 
         let options = vec![
-            format!("Use selected path as is: {}", selected_path.display()),
             format!(
-                "Append original directory name: {}",
+                "{} Use selected path as is: {}",
+                NerdFont::Folder,
+                selected_path.display()
+            ),
+            format!(
+                "{} Append original directory name: {}",
+                NerdFont::FolderOpen,
                 alternative_path.display()
             ),
         ];
 
-        match FzfWrapper::builder().header(header).select(options)? {
+        match FzfWrapper::builder()
+            .header(header)
+            .presentation(MenuPresentation::Padded)
+            .select(options)?
+        {
             FzfResult::Selected(option) => {
                 if option.contains("as is") {
                     Ok(Some(selected_path.to_path_buf()))

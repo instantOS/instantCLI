@@ -1,9 +1,9 @@
 use crate::arch::annotations::AnnotatedValue;
 use crate::arch::config::DesktopEnvironment;
 use crate::arch::engine::{DataKey, InstallContext, Question, QuestionId, QuestionResult};
-use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper};
+use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, MenuPresentation};
 use crate::preview::{PreviewId, preview_command};
-use crate::ui::catppuccin::colors;
+use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 use anyhow::Result;
@@ -195,7 +195,12 @@ impl KernelOption {
 
 impl FzfSelectable for KernelOption {
     fn fzf_display_text(&self) -> String {
-        self.label().to_string()
+        let icon = match self {
+            Self::Linux => format_icon_colored(NerdFont::LinuxTux, colors::TEXT),
+            Self::Lts => format_icon_colored(NerdFont::Shield, colors::TEAL),
+            Self::Zen => format_icon_colored(NerdFont::Performance, colors::MAUVE),
+        };
+        format!("{icon} {}", self.label())
     }
 
     fn fzf_preview(&self) -> FzfPreview {
@@ -268,7 +273,14 @@ fn desktop_environment_preview(environment: DesktopEnvironment) -> FzfPreview {
 
 impl FzfSelectable for DesktopEnvironment {
     fn fzf_display_text(&self) -> String {
-        self.label().to_string()
+        let icon = match self {
+            Self::InstantWM => format_icon_colored(NerdFont::ViewQuilt, colors::PEACH),
+            Self::Sway => format_icon_colored(NerdFont::Waves, colors::BLUE),
+            Self::Niri => format_icon_colored(NerdFont::Columns, colors::TEAL),
+            Self::Hyprland => format_icon_colored(NerdFont::Desktop, colors::MAUVE),
+            Self::Tty => format_icon_colored(NerdFont::Terminal, colors::OVERLAY0),
+        };
+        format!("{icon} {}", self.label())
     }
 
     fn fzf_preview(&self) -> FzfPreview {
@@ -307,6 +319,7 @@ impl Question for DesktopEnvironmentQuestion {
 
         let result = FzfWrapper::builder()
             .header(format!("{} Select Desktop Environment", NerdFont::Desktop))
+            .presentation(MenuPresentation::Padded)
             .select(options)?;
 
         match result {
@@ -664,6 +677,7 @@ impl Question for KernelQuestion {
 
         let result = FzfWrapper::builder()
             .header(format!("{} Select Kernel", NerdFont::Gear))
+            .presentation(MenuPresentation::Padded)
             .select(kernels)?;
 
         match result {

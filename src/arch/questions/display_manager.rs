@@ -1,7 +1,7 @@
 use crate::arch::config::DisplayManager;
 use crate::arch::engine::{InstallContext, Question, QuestionId, QuestionResult};
-use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper};
-use crate::ui::catppuccin::colors;
+use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, MenuPresentation};
+use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 use anyhow::Result;
@@ -10,6 +10,13 @@ use anyhow::Result;
 struct DisplayManagerOption(DisplayManager);
 
 impl DisplayManagerOption {
+    fn icon(&self) -> String {
+        match self.0 {
+            DisplayManager::Gdm => format_icon_colored(NerdFont::Desktop, colors::GREEN),
+            DisplayManager::Lightdm => format_icon_colored(NerdFont::Desktop, colors::BLUE),
+        }
+    }
+
     fn preview(&self) -> FzfPreview {
         match self.0 {
             DisplayManager::Gdm => PreviewBuilder::new()
@@ -40,7 +47,7 @@ impl DisplayManagerOption {
 
 impl FzfSelectable for DisplayManagerOption {
     fn fzf_display_text(&self) -> String {
-        self.0.label().to_string()
+        format!("{} {}", self.icon(), self.0.label())
     }
 
     fn fzf_preview(&self) -> FzfPreview {
@@ -88,6 +95,7 @@ impl Question for DisplayManagerQuestion {
 
         let result = FzfWrapper::builder()
             .header(format!("{} Select Display Manager", NerdFont::Desktop))
+            .presentation(MenuPresentation::Padded)
             .select(options)?;
 
         match result {

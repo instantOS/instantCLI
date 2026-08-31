@@ -347,6 +347,7 @@ impl QuestionEngine {
             .header(Header::fancy(self.flow.final_review_title()))
             .prompt("Select")
             .responsive_layout()
+            .presentation(MenuPresentation::Padded)
             .select(final_review_options(self.flow, &self.context))?;
 
         let FzfResult::Selected(option) = result else {
@@ -405,6 +406,7 @@ impl QuestionEngine {
             .header(Header::fancy("Select a question to modify"))
             .prompt("Search")
             .responsive_layout()
+            .presentation(MenuPresentation::Padded)
             .select(items)?;
         match result {
             FzfResult::Selected(ReviewItem::Question { index, .. }) => Ok(Some(index)),
@@ -413,9 +415,13 @@ impl QuestionEngine {
     }
 
     fn select_advanced_option(&self) -> Result<Option<usize>> {
-        let result = FzfWrapper::builder().header("Advanced Options").select(
-            AdvancedOption::from_questions(&self.questions, &self.context),
-        )?;
+        let result = FzfWrapper::builder()
+            .header(Header::fancy("Advanced Options"))
+            .presentation(MenuPresentation::Padded)
+            .select(AdvancedOption::from_questions(
+                &self.questions,
+                &self.context,
+            ))?;
         match result {
             FzfResult::Selected(AdvancedOption::Question { index, .. }) => Ok(Some(index)),
             _ => Ok(None),
