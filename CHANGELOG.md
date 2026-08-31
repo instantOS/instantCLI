@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.12](https://github.com/instantOS/instantCLI/compare/v0.14.11...v0.14.12) - 2026-08-31
+
+### Added
+
+- better header styling
+- better menu styling with icons
+
+### Fixed
+
+- fix lightdm config editing
+- fix install resuming
+- fix summary
+- fix instantassist icons
+- fix pkgbuild
+- fix stuff
+- fix allow_multiple
+
+### Other
+
+- Merge branch 'dev'
+- unify locale handling
+- unify config editing
+- improve install script tests
+- refactor question engine
+- improve question architecture, fix oversights
+- more solid question invalidation
+- rewrite setup flow
+- dont trigger releases on non release paths
+- Merge branch 'main' of github.com:instantOS/instantCLI
+- minor fixes
+- refactor install script
+- merge install script
+- rainbow thingy
+- add logo anim
+- remove redundant setting
+- rename arg
+
 ## [0.14.11](https://github.com/instantOS/instantCLI/compare/v0.14.10...v0.14.11) - 2026-08-25
 
 ### Fixed
