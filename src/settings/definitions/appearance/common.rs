@@ -5,6 +5,8 @@
 use anyhow::{Context, Result};
 use std::process::Command;
 
+use crate::common::config_edit::set_keys_in_section;
+
 // ============================================================================
 // GTK Theme Helpers
 // ============================================================================
@@ -271,61 +273,13 @@ pub(crate) fn update_gtk_config(version: &str, key: &str, value: &str) -> Result
         String::new()
     };
 
-    let mut new_lines = Vec::new();
-    let mut found_section = false;
-    let mut found_key = false;
-    let mut in_settings_section = false;
+    let edit = set_keys_in_section(&content, "Settings", &[(key, value)]);
 
-    // Simple parser to update INI file
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed == "[Settings]" {
-            found_section = true;
-            in_settings_section = true;
-            new_lines.push(line.to_string());
-            continue;
-        }
-
-        if trimmed.starts_with('[') && trimmed.ends_with(']') {
-            in_settings_section = false;
-        }
-
-        if in_settings_section && trimmed.starts_with(key) {
-            new_lines.push(format!("{}={}", key, value));
-            found_key = true;
-        } else {
-            new_lines.push(line.to_string());
-        }
-    }
-
-    if !found_section {
-        if !new_lines.is_empty() && !new_lines.last().unwrap().is_empty() {
-            new_lines.push("".to_string());
-        }
-        new_lines.push("[Settings]".to_string());
-        new_lines.push(format!("{}={}", key, value));
-    } else if !found_key {
-        // Find where to insert the key in the [Settings] section
-        // We'll just append it after the [Settings] line for simplicity in this case
-        // But since we are rebuilding the list, we need to be careful.
-        // Let's re-scan new_lines to find [Settings] and insert after it.
-        let mut final_lines = Vec::new();
-        for line in new_lines {
-            final_lines.push(line.clone());
-            if line.trim() == "[Settings]" && !found_key {
-                final_lines.push(format!("{}={}", key, value));
-                found_key = true;
-            }
-        }
-        new_lines = final_lines;
-    }
-
-    let new_content = new_lines.join("\n");
-    // Ensure trailing newline
-    let final_content = if new_content.ends_with('\n') {
-        new_content
+    // Keep the historical guarantee that settings.ini ends with a newline.
+    let final_content = if edit.content.is_empty() || edit.content.ends_with('\n') {
+        edit.content
     } else {
-        format!("{}\n", new_content)
+        format!("{}\n", edit.content)
     };
 
     std::fs::write(settings_path, final_content)?;

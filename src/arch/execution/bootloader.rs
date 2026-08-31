@@ -1,5 +1,6 @@
 use super::CommandRunner;
 use crate::arch::engine::{BootMode, InstallContext, QuestionId};
+use crate::common::config_edit::set_keys;
 use anyhow::{Context, Result};
 use std::process::Command;
 
@@ -123,8 +124,10 @@ fn configure_grub_encryption(context: &InstallContext, executor: &dyn CommandRun
     let grub_default = "/etc/default/grub";
     let content = std::fs::read_to_string(grub_default)?;
     let param = build_grub_encryption_param(&uuid);
-    let new_content = set_grub_cryptodisk_enabled(&add_grub_kernel_param(&content, &param));
-    std::fs::write(grub_default, new_content)?;
+    let with_param = add_grub_kernel_param(&content, &param);
+    // Reactivates the stock commented `#GRUB_ENABLE_CRYPTODISK=y` default.
+    let edit = set_keys(&with_param, &[("GRUB_ENABLE_CRYPTODISK", "y")]);
+    std::fs::write(grub_default, edit.content)?;
 
     Ok(())
 }
@@ -165,26 +168,6 @@ fn build_grub_encryption_param(uuid: &str) -> String {
     )
 }
 
-fn set_grub_cryptodisk_enabled(content: &str) -> String {
-    if content.contains("GRUB_ENABLE_CRYPTODISK=y") {
-        return content.to_string();
-    }
-
-    if content.contains("GRUB_ENABLE_CRYPTODISK=") {
-        let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
-        for line in &mut lines {
-            if line.trim().starts_with("GRUB_ENABLE_CRYPTODISK=") {
-                *line = "GRUB_ENABLE_CRYPTODISK=y".to_string();
-            }
-        }
-        return lines.join("\n");
-    }
-
-    let mut new_content = content.to_string();
-    new_content.push_str("\nGRUB_ENABLE_CRYPTODISK=y\n");
-    new_content
-}
-
 fn configure_grub_plymouth(_context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
     if executor.dry_run() {
         println!("[DRY RUN] Adding 'splash quiet' to GRUB_CMDLINE_LINUX");
@@ -222,27 +205,11 @@ pub fn configure_grub_theme(_context: &InstallContext, executor: &dyn CommandRun
     // boot phase (GRUB password prompt) because /usr is on the encrypted partition.
     let theme_path = "/usr/share/grub/themes/instantos/theme.txt";
 
-    let mut new_lines = Vec::new();
-    let mut theme_set = false;
-
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with("GRUB_THEME=") || trimmed.starts_with("#GRUB_THEME=") {
-            new_lines.push(format!("GRUB_THEME=\"{}\"", theme_path));
-            theme_set = true;
-        } else {
-            new_lines.push(line.to_string());
-        }
-    }
-
-    if !theme_set {
-        new_lines.push(format!("GRUB_THEME=\"{}\"", theme_path));
-    }
+    let edit = set_keys(&content, &[("GRUB_THEME", &format!("\"{theme_path}\""))]);
 
     // Only write if changed to ensure idempotency
-    let new_content = new_lines.join("\n");
-    if new_content != content {
-        std::fs::write(grub_default, new_content)?;
+    if edit.changed {
+        std::fs::write(grub_default, &edit.content)?;
         println!("Updated GRUB theme configuration.");
 
         // Update grub config

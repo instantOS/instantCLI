@@ -3,6 +3,7 @@ use anyhow::{Context, Result};
 use std::process::Command;
 
 use crate::arch::engine::{InstallContext, QuestionId};
+use crate::common::config_edit::{set_keys, set_keys_in_section, update_file};
 
 /// URL for the instantOS dotfiles repository
 const INSTANTOS_DOTFILES_REPO: &str = "https://github.com/instantOS/dotfiles";
@@ -278,56 +279,25 @@ fn update_os_release(executor: &dyn CommandRunner) -> Result<()> {
         return Ok(());
     }
 
-    let path = std::path::Path::new("/etc/os-release");
-    if !path.exists() {
+    let path = "/etc/os-release";
+    if !std::path::Path::new(path).exists() {
         println!("Warning: /etc/os-release not found");
         return Ok(());
     }
 
-    let content = std::fs::read_to_string(path)?;
-    let mut new_lines = Vec::new();
+    let changed = update_file(path, |content| {
+        set_keys(
+            content,
+            &[
+                ("NAME", "\"instantOS\""),
+                ("ID", "\"instantos\""),
+                ("PRETTY_NAME", "\"instantOS\""),
+                ("ID_LIKE", "\"arch\""),
+            ],
+        )
+    })?;
 
-    let mut found_name = false;
-    let mut found_id = false;
-    let mut found_pretty_name = false;
-    let mut found_id_like = false;
-
-    for line in content.lines() {
-        if line.starts_with("NAME=") {
-            new_lines.push("NAME=\"instantOS\"".to_string());
-            found_name = true;
-        } else if line.starts_with("ID=") {
-            new_lines.push("ID=\"instantos\"".to_string());
-            found_id = true;
-        } else if line.starts_with("PRETTY_NAME=") {
-            new_lines.push("PRETTY_NAME=\"instantOS\"".to_string());
-            found_pretty_name = true;
-        } else if line.starts_with("ID_LIKE=") {
-            new_lines.push("ID_LIKE=\"arch\"".to_string());
-            found_id_like = true;
-        } else {
-            new_lines.push(line.to_string());
-        }
-    }
-
-    if !found_name {
-        new_lines.push("NAME=\"instantOS\"".to_string());
-    }
-    if !found_id {
-        new_lines.push("ID=\"instantos\"".to_string());
-    }
-    if !found_pretty_name {
-        new_lines.push("PRETTY_NAME=\"instantOS\"".to_string());
-    }
-    if !found_id_like {
-        new_lines.push("ID_LIKE=\"arch\"".to_string());
-    }
-
-    let new_content = new_lines.join("\n");
-
-    // Only write if changed
-    if new_content != content {
-        std::fs::write(path, new_content)?;
+    if changed {
         println!("Updated /etc/os-release");
     } else {
         println!("/etc/os-release already up to date");
@@ -361,11 +331,17 @@ fn configure_lightdm_session(context: &InstallContext, executor: &dyn CommandRun
         return Ok(());
     }
 
-    let content = std::fs::read_to_string(config_path)?;
-    let new_content = update_lightdm_conf_session(&content, session_name);
+    let changed = update_file(config_path, |content| {
+        set_keys(
+            content,
+            &[
+                ("user-session", session_name),
+                ("autologin-session", session_name),
+            ],
+        )
+    })?;
 
-    if content != new_content {
-        std::fs::write(config_path, new_content)?;
+    if changed {
         println!("Updated lightdm.conf with default session settings");
     } else {
         println!("lightdm.conf already configured for the selected session");
@@ -406,67 +382,24 @@ fn configure_lightdm_autologin(
         return Ok(());
     }
 
-    let content = std::fs::read_to_string(config_path)?;
-    let new_content = update_lightdm_conf_autologin(&content, username, session_name);
+    let changed = update_file(config_path, |content| {
+        let mut keys = vec![
+            ("autologin-user", username.as_str()),
+            ("autologin-user-timeout", "0"),
+        ];
+        if let Some(session_name) = session_name {
+            keys.push(("autologin-session", session_name));
+        }
+        set_keys(content, &keys)
+    })?;
 
-    if content != new_content {
-        std::fs::write(config_path, new_content)?;
+    if changed {
         println!("Updated lightdm.conf with autologin settings");
     } else {
         println!("lightdm.conf already configured or keys not found");
     }
 
     Ok(())
-}
-
-fn update_lightdm_conf_session(content: &str, session_name: &str) -> String {
-    let mut new_lines = Vec::new();
-
-    for line in content.lines() {
-        let trimmed = line.trim_start();
-        if trimmed.starts_with("user-session=") || trimmed.starts_with("#user-session=") {
-            new_lines.push(format!("user-session={}", session_name));
-        } else if trimmed.starts_with("autologin-session=")
-            || trimmed.starts_with("#autologin-session=")
-        {
-            new_lines.push(format!("autologin-session={}", session_name));
-        } else {
-            new_lines.push(line.to_string());
-        }
-    }
-
-    new_lines.join("\n")
-}
-
-fn update_lightdm_conf_autologin(
-    content: &str,
-    username: &str,
-    session_name: Option<&str>,
-) -> String {
-    let mut new_lines = Vec::new();
-
-    for line in content.lines() {
-        let trimmed = line.trim_start();
-        // Check for autologin-user (commented or not)
-        if trimmed.starts_with("autologin-user=") || trimmed.starts_with("#autologin-user=") {
-            new_lines.push(format!("autologin-user={}", username));
-        }
-        // Check for autologin-user-timeout (commented or not)
-        else if trimmed.starts_with("autologin-user-timeout=")
-            || trimmed.starts_with("#autologin-user-timeout=")
-        {
-            new_lines.push("autologin-user-timeout=0".to_string());
-        } else if let Some(session_name) = session_name
-            && (trimmed.starts_with("autologin-session=")
-                || trimmed.starts_with("#autologin-session="))
-        {
-            new_lines.push(format!("autologin-session={}", session_name));
-        } else {
-            new_lines.push(line.to_string());
-        }
-    }
-
-    new_lines.join("\n")
 }
 
 fn setup_backlight_udev_rule(executor: &dyn CommandRunner) -> Result<()> {
@@ -534,9 +467,10 @@ fn configure_gdm_session(context: &InstallContext, executor: &dyn CommandRunner)
         String::new()
     };
 
-    let new_content = update_accountsservice_session(&content, session_name);
-
-    std::fs::write(&file_path, new_content)?;
+    let edit = set_keys_in_section(&content, "User", &[("Session", session_name)]);
+    if edit.changed {
+        std::fs::write(&file_path, edit.content)?;
+    }
     Ok(())
 }
 
@@ -564,223 +498,22 @@ fn configure_gdm_autologin(context: &InstallContext, executor: &dyn CommandRunne
         return Ok(());
     }
 
-    let content = std::fs::read_to_string(config_path)?;
-    let new_content = update_gdm_conf_autologin(&content, username);
+    let changed = update_file(config_path, |content| {
+        set_keys_in_section(
+            content,
+            "daemon",
+            &[
+                ("AutomaticLoginEnable", "true"),
+                ("AutomaticLogin", username),
+            ],
+        )
+    })?;
 
-    if content != new_content {
-        std::fs::write(config_path, new_content)?;
+    if changed {
         println!("Updated custom.conf with GDM autologin settings");
     } else {
         println!("custom.conf already configured for GDM autologin");
     }
 
     Ok(())
-}
-
-fn update_gdm_conf_autologin(content: &str, username: &str) -> String {
-    let mut new_lines = Vec::new();
-    let mut inside_daemon = false;
-    let mut replaced = false;
-
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with("[") {
-            if inside_daemon && !replaced {
-                new_lines.push("AutomaticLoginEnable=true".to_string());
-                new_lines.push(format!("AutomaticLogin={}", username));
-                replaced = true;
-            }
-            if trimmed == "[daemon]" {
-                inside_daemon = true;
-                replaced = false;
-            } else {
-                inside_daemon = false;
-            }
-            new_lines.push(line.to_string());
-        } else if inside_daemon {
-            let clean_line = trimmed.replace(" ", "");
-            if clean_line.starts_with("AutomaticLoginEnable=")
-                || clean_line.starts_with("#AutomaticLoginEnable=")
-            {
-                if !replaced {
-                    new_lines.push("AutomaticLoginEnable=true".to_string());
-                    new_lines.push(format!("AutomaticLogin={}", username));
-                    replaced = true;
-                }
-            } else if clean_line.starts_with("AutomaticLogin=")
-                || clean_line.starts_with("#AutomaticLogin=")
-            {
-                // skip
-            } else {
-                new_lines.push(line.to_string());
-            }
-        } else {
-            new_lines.push(line.to_string());
-        }
-    }
-
-    if inside_daemon && !replaced {
-        new_lines.push("AutomaticLoginEnable=true".to_string());
-        new_lines.push(format!("AutomaticLogin={}", username));
-    }
-
-    new_lines.join("\n")
-}
-
-fn update_accountsservice_session(content: &str, session_name: &str) -> String {
-    let mut new_lines = Vec::new();
-    let mut inside_user = false;
-    let mut has_session = false;
-
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with("[") {
-            if inside_user {
-                new_lines.push(format!("Session={}", session_name));
-                has_session = true;
-                inside_user = false;
-            }
-            if trimmed == "[User]" {
-                inside_user = true;
-            }
-            new_lines.push(line.to_string());
-        } else if inside_user {
-            let clean_line = trimmed.replace(" ", "");
-            if clean_line.starts_with("Session=") {
-                // skip
-            } else {
-                new_lines.push(line.to_string());
-            }
-        } else {
-            new_lines.push(line.to_string());
-        }
-    }
-
-    if inside_user && !has_session {
-        new_lines.push(format!("Session={}", session_name));
-        has_session = true;
-    }
-
-    if !has_session {
-        if !new_lines.iter().any(|l| l.trim() == "[User]") {
-            new_lines.push("[User]".to_string());
-        }
-        new_lines.push(format!("Session={}", session_name));
-    }
-
-    new_lines.join("\n")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_update_lightdm_conf() {
-        let input = r#"
-[Seat:*]
-#autologin-guest=false
-#autologin-user=
-#autologin-user-timeout=0
-#autologin-session=
-"#;
-        let expected = r#"
-[Seat:*]
-#autologin-guest=false
-autologin-user=testuser
-autologin-user-timeout=0
-autologin-session=sway
-"#;
-        let result = update_lightdm_conf_autologin(input, "testuser", Some("sway"));
-        assert_eq!(result.trim(), expected.trim());
-    }
-
-    #[test]
-    fn test_update_lightdm_conf_already_set() {
-        let input = "autologin-user=olduser\nautologin-user-timeout=5\nautologin-session=hyprland";
-        let expected =
-            "autologin-user=newuser\nautologin-user-timeout=0\nautologin-session=instantwm";
-        let result = update_lightdm_conf_autologin(input, "newuser", Some("instantwm"));
-        assert_eq!(result, expected);
-    }
-
-    #[test]
-    fn test_update_lightdm_conf_session() {
-        let input = r#"
-[Seat:*]
-#user-session=default
-#autologin-session=
-"#;
-        let expected = r#"
-[Seat:*]
-user-session=niri
-autologin-session=niri
-"#;
-        let result = update_lightdm_conf_session(input, "niri");
-        assert_eq!(result.trim(), expected.trim());
-    }
-
-    #[test]
-    fn test_update_gdm_conf_autologin() {
-        let input = r#"
-[daemon]
-#WaylandEnable=false
-#AutomaticLoginEnable = true
-#AutomaticLogin = user1
-
-[security]
-"#;
-        let expected = r#"
-[daemon]
-#WaylandEnable=false
-AutomaticLoginEnable=true
-AutomaticLogin=testuser
-
-[security]
-"#;
-        let result = update_gdm_conf_autologin(input, "testuser");
-        assert_eq!(result.trim(), expected.trim());
-    }
-
-    #[test]
-    fn test_update_accountsservice_session() {
-        let input = r#"
-[User]
-SystemAccount=false
-"#;
-        let expected = r#"
-[User]
-SystemAccount=false
-Session=sway
-"#;
-        let result = update_accountsservice_session(input, "sway");
-        assert_eq!(result.trim(), expected.trim());
-    }
-
-    #[test]
-    fn test_update_gdm_conf_autologin_real_default() {
-        let input = r#"# GDM configuration storage
-
-[daemon]
-
-[security]
-
-[debug]
-# Uncomment the line below to turn on debugging
-#Enable=true
-"#;
-        let expected = r#"# GDM configuration storage
-
-[daemon]
-
-AutomaticLoginEnable=true
-AutomaticLogin=testuser
-[security]
-
-[debug]
-# Uncomment the line below to turn on debugging
-#Enable=true"#;
-        let result = update_gdm_conf_autologin(input, "testuser");
-        assert_eq!(result.trim(), expected.trim());
-    }
 }
