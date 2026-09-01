@@ -247,9 +247,8 @@ fn build_launch_command_menu(
 ) -> Vec<LaunchCommandOption> {
     let mut options = vec![LaunchCommandOption {
         display: format!(
-            "{} Edit shared command (games.toml): {}",
-            char::from(NerdFont::Edit),
-            game_cmd.unwrap_or("<not set>")
+            "{} Edit shared command (games.toml)",
+            format_icon_colored(NerdFont::Edit, colors::BLUE)
         ),
         preview: format!(
             "Edit the launch command in games.toml\n\nCurrent value: {}\n\nThis command is shared across all devices.",
@@ -274,9 +273,8 @@ fn build_launch_command_menu(
     if has_installation {
         options.push(LaunchCommandOption {
             display: format!(
-                "{} Edit device-specific override (installations.toml): {}",
-                char::from(NerdFont::Desktop),
-                inst_cmd.unwrap_or("<not set>")
+                "{} Edit device-specific override (installations.toml)",
+                format_icon_colored(NerdFont::Desktop, colors::LAVENDER)
             ),
             preview: format!(
                 "Edit the launch command override in installations.toml\n\nCurrent value: {}\n\nThis command is device-specific and overrides the shared command.",
@@ -300,7 +298,7 @@ fn build_launch_command_menu(
     }
 
     options.push(LaunchCommandOption {
-        display: format!("{} Back", char::from(NerdFont::ArrowLeft)),
+        display: format!("{} Back", format_back_icon()),
         preview: "Go back to main menu".to_string(),
         target: LaunchCommandTarget::Back,
     });
@@ -752,6 +750,17 @@ mod tests {
             options[3].target,
             LaunchCommandTarget::CopyOverrideToClipboard
         ));
+    }
+
+    #[test]
+    fn edit_entries_leave_command_values_to_the_preview() {
+        let options = build_launch_command_menu(Some("shared_cmd"), true, Some("override_cmd"));
+
+        // The current values belong in the preview pane, not the item labels
+        assert!(!options[0].display.contains("shared_cmd"));
+        assert!(options[0].preview.contains("shared_cmd"));
+        assert!(!options[2].display.contains("override_cmd"));
+        assert!(options[2].preview.contains("override_cmd"));
     }
 
     #[test]
