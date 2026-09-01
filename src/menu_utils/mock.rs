@@ -29,6 +29,9 @@ use std::cell::RefCell;
 use std::collections::VecDeque;
 
 #[cfg(test)]
+use crate::menu_utils::fzf::FzfResult;
+
+#[cfg(test)]
 thread_local! {
     pub(crate) static MOCK_QUEUE: RefCell<VecDeque<MockResponse>> = const { RefCell::new(VecDeque::new()) };
 }
@@ -203,6 +206,34 @@ impl MockQueue {
             queue.extend(self.responses);
         });
         MockQueueGuard { _private: () }
+    }
+}
+
+/// Resolve a selection-style response against `items`, shared by every
+/// selection dialog so the index handling lives in one place.
+///
+/// Panics when `response` is not a selection response.
+#[cfg(test)]
+pub(crate) fn resolve_selection<T: Clone>(response: MockResponse, items: Vec<T>) -> FzfResult<T> {
+    match response {
+        MockResponse::SelectIndex(i) => FzfResult::Selected(
+            items
+                .into_iter()
+                .nth(i)
+                .unwrap_or_else(|| panic!("MockResponse::SelectIndex({i}) out of bounds")),
+        ),
+        MockResponse::MultiSelectIndices(indices) => FzfResult::MultiSelected(
+            indices
+                .into_iter()
+                .map(|i| {
+                    items.get(i).cloned().unwrap_or_else(|| {
+                        panic!("MockResponse::MultiSelectIndices({i}) out of bounds")
+                    })
+                })
+                .collect(),
+        ),
+        MockResponse::CancelSelection => FzfResult::Cancelled,
+        other => panic!("Mock: expected select response, got {other:?}"),
     }
 }
 

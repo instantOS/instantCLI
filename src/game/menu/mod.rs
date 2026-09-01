@@ -950,10 +950,15 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
                             "No games configured for syncing.".to_string()
                         } else {
                             format!(
-                                "{} Sync Summary\n\n✅ Synced: {}\n🔶 Skipped: {}\n❌ Errors: {}",
+                                "{} Sync Summary\n\n{} Backed up: {}\n{} Restored: {}\n{} Skipped: {}\n{} Errors: {}",
                                 char::from(NerdFont::Chart),
-                                summary.synced,
+                                char::from(NerdFont::Upload),
+                                summary.backed_up,
+                                char::from(NerdFont::Download),
+                                summary.restored,
+                                char::from(NerdFont::Flag),
                                 summary.skipped,
+                                char::from(NerdFont::CrossCircle),
                                 summary.errors
                             )
                         };

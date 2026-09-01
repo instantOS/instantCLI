@@ -12,14 +12,15 @@ use types::{GameSyncOutcome, GameSyncStatus, SyncAction};
 /// Summary of sync operation results
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SyncSummary {
-    pub synced: usize,
+    pub backed_up: usize,
+    pub restored: usize,
     pub skipped: usize,
     pub errors: usize,
 }
 
 impl SyncSummary {
     pub fn total(&self) -> usize {
-        self.synced + self.skipped + self.errors
+        self.backed_up + self.restored + self.skipped + self.errors
     }
 }
 
@@ -122,7 +123,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<SyncRep
                     let result = execution::perform_backup(&installation, &game_config);
                     spinner.finish_and_clear();
                     ui::report_backup_result(&game_name_plain, &result);
-                    sync_status(result)
+                    sync_status(result, GameSyncStatus::BackedUp)
                 }
                 SyncAction::RestoreFromSnapshot(snapshot_id) => {
                     let spinner =
@@ -131,7 +132,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<SyncRep
                         execution::perform_restore(&installation, &game_config, &snapshot_id);
                     spinner.finish_and_clear();
                     ui::report_restore_result(&game_name_plain, &snapshot_id, &result);
-                    sync_status(result)
+                    sync_status(result, GameSyncStatus::Restored)
                 }
                 SyncAction::RestoreFromLatest(snapshot_id) => {
                     let spinner =
@@ -140,7 +141,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<SyncRep
                         execution::perform_restore(&installation, &game_config, &snapshot_id);
                     spinner.finish_and_clear();
                     ui::report_restore_latest_result(&game_name_plain, &snapshot_id, &result);
-                    sync_status(result)
+                    sync_status(result, GameSyncStatus::Restored)
                 }
                 SyncAction::CreateInitialBackup => {
                     let spinner =
@@ -148,7 +149,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<SyncRep
                     let result = execution::perform_backup(&installation, &game_config);
                     spinner.finish_and_clear();
                     ui::report_initial_backup_result(&game_name_plain, &result);
-                    sync_status(result)
+                    sync_status(result, GameSyncStatus::BackedUp)
                 }
                 SyncAction::Error(msg) => {
                     ui::report_error(&game_name_plain, &msg);
@@ -162,7 +163,8 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<SyncRep
         };
 
         match status {
-            GameSyncStatus::Synced => report.summary.synced += 1,
+            GameSyncStatus::BackedUp => report.summary.backed_up += 1,
+            GameSyncStatus::Restored => report.summary.restored += 1,
             GameSyncStatus::Skipped => report.summary.skipped += 1,
             GameSyncStatus::Failed(_) => report.summary.errors += 1,
         }
@@ -178,9 +180,9 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<SyncRep
     Ok(report)
 }
 
-fn sync_status(result: Result<()>) -> GameSyncStatus {
+fn sync_status(result: Result<()>, completed: GameSyncStatus) -> GameSyncStatus {
     match result {
-        Ok(()) => GameSyncStatus::Synced,
+        Ok(()) => completed,
         Err(e) => GameSyncStatus::Failed(e.to_string()),
     }
 }
@@ -193,14 +195,15 @@ mod tests {
     fn failure_for_returns_only_failed_game_errors() {
         let report = SyncReport {
             summary: SyncSummary {
-                synced: 1,
+                backed_up: 1,
+                restored: 0,
                 skipped: 1,
                 errors: 1,
             },
             games: vec![
                 GameSyncOutcome {
                     game: "Fine Game".to_string(),
-                    status: GameSyncStatus::Synced,
+                    status: GameSyncStatus::BackedUp,
                 },
                 GameSyncOutcome {
                     game: "Skipped Game".to_string(),
@@ -224,10 +227,29 @@ mod tests {
 
     #[test]
     fn sync_status_maps_results() {
-        assert_eq!(sync_status(Ok(())), GameSyncStatus::Synced);
         assert_eq!(
-            sync_status(Err(anyhow::anyhow!("restic failed"))),
+            sync_status(Ok(()), GameSyncStatus::BackedUp),
+            GameSyncStatus::BackedUp
+        );
+        assert_eq!(
+            sync_status(Ok(()), GameSyncStatus::Restored),
+            GameSyncStatus::Restored
+        );
+        assert_eq!(
+            sync_status(Err(anyhow::anyhow!("restic failed")), GameSyncStatus::BackedUp),
             GameSyncStatus::Failed("restic failed".to_string())
         );
+    }
+
+    #[test]
+    fn summary_counts_backups_and_restores_separately() {
+        let summary = SyncSummary {
+            backed_up: 2,
+            restored: 1,
+            skipped: 3,
+            errors: 1,
+        };
+
+        assert_eq!(summary.total(), 7);
     }
 }

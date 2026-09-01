@@ -32,8 +32,10 @@ pub enum ToleranceDirection {
 /// Outcome status for a single game's sync
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GameSyncStatus {
-    /// Backup or restore completed
-    Synced,
+    /// Local saves were pushed to the repository
+    BackedUp,
+    /// A snapshot was restored to this device
+    Restored,
     /// No action taken (in sync, within tolerance, or checkpoint skip)
     Skipped,
     /// Sync failed with an error message

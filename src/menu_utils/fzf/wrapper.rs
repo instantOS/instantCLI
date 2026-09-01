@@ -6,7 +6,10 @@ use serde::de::DeserializeOwned;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
+use std::sync::mpsc::{Receiver, RecvTimeoutError};
+use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Duration;
 
 use super::preview::MixedPreviewContent;
 use super::preview::PreviewStrategy;
@@ -304,9 +307,32 @@ pub(crate) fn configure_preview_and_input(
     }
 }
 
-/// Execute the fzf command with the given input and return the raw output.
-fn execute_fzf_command(mut cmd: Command, input_text: &str) -> Result<std::process::Output> {
-    let mut child = cmd
+/// Apply the standard menu arguments shared by `select` and
+/// `select_streaming`.
+fn configure_menu_args(cmd: &mut Command, wrapper: &FzfWrapper) {
+    cmd.arg("--ansi"); // Enable ANSI color interpretation in display text
+    cmd.arg("--tiebreak=index");
+
+    if wrapper.multi_select {
+        cmd.arg("--multi");
+    }
+    if let Some(prompt) = &wrapper.prompt {
+        cmd.arg("--prompt").arg(format!("{prompt} > "));
+    }
+    if let Some(header) = &wrapper.header {
+        cmd.arg("--header").arg(header);
+    }
+}
+
+/// Force every item's preview through the `Mixed` strategy so items
+/// streamed in later can carry either text or command previews.
+fn force_mixed_preview_strategy<T: FzfSelectable>(items: &[T]) -> PreviewStrategy {
+    PreviewUtils::force_mixed_preview_strategy(items)
+}
+
+/// Spawn fzf with piped stdio and register it with the menu server.
+fn spawn_menu_child(mut cmd: Command) -> Result<(std::process::Child, u32)> {
+    let child = cmd
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -314,18 +340,33 @@ fn execute_fzf_command(mut cmd: Command, input_text: &str) -> Result<std::proces
 
     let pid = child.id();
     let _ = crate::menu::server::register_menu_process(pid);
+    Ok((child, pid))
+}
+
+/// Wait for fzf to exit, unregister it, and map wait failures through the
+/// standard fzf error handling.
+fn finish_menu_child(child: std::process::Child, pid: u32) -> Result<std::process::Output> {
+    let output = child.wait_with_output();
+    crate::menu::server::unregister_menu_process(pid);
+
+    match output {
+        Ok(result) => Ok(result),
+        Err(e) => {
+            super::utils::handle_fzf_spawn_error(&e);
+            Err(anyhow!("fzf execution failed: {e}"))
+        }
+    }
+}
+
+/// Execute the fzf command with the given input and return the raw output.
+fn execute_fzf_command(cmd: Command, input_text: &str) -> Result<std::process::Output> {
+    let (mut child, pid) = spawn_menu_child(cmd)?;
 
     if let Some(stdin) = child.stdin.as_mut() {
         stdin.write_all(input_text.as_bytes())?;
     }
 
-    let output = child.wait_with_output();
-    crate::menu::server::unregister_menu_process(pid);
-
-    if let Err(e) = &output {
-        super::utils::handle_fzf_spawn_error(e)
-    }
-    output.map_err(Into::into)
+    finish_menu_child(child, pid)
 }
 
 /// Parse fzf output and map selected lines back to items using the fzf_key field.
@@ -494,14 +535,7 @@ impl FzfWrapper {
             fzf.arg(arg);
         }
 
-        let mut fzf_child = fzf
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
-
-        let pid = fzf_child.id();
-        let _ = crate::menu::server::register_menu_process(pid);
+        let (mut fzf_child, pid) = spawn_menu_child(fzf)?;
 
         let mut producer = producer.into().into_command();
         producer
@@ -546,19 +580,11 @@ impl FzfWrapper {
             Ok(())
         });
 
-        let output = fzf_child.wait_with_output();
-        crate::menu::server::unregister_menu_process(pid);
+        let result = finish_menu_child(fzf_child, pid);
         let _ = producer_child.kill();
         let _ = producer_child.wait();
         let _ = pump.join();
-
-        match output {
-            Ok(result) => Ok(result),
-            Err(e) => {
-                super::utils::handle_fzf_spawn_error(&e);
-                Err(anyhow!("fzf execution failed: {e}"))
-            }
-        }
+        result
     }
 
     fn streaming_fzf_args(&self, base_args: &[&str]) -> Vec<String> {
@@ -599,33 +625,7 @@ impl FzfWrapper {
     pub fn select<T: FzfSelectable + Clone>(&self, items: Vec<T>) -> Result<FzfResult<T>> {
         #[cfg(test)]
         if let Some(resp) = crate::menu_utils::mock::pop_mock() {
-            return match resp {
-                crate::menu_utils::mock::MockResponse::SelectIndex(i) => Ok(FzfResult::Selected(
-                    items
-                        .into_iter()
-                        .nth(i)
-                        .unwrap_or_else(|| panic!("MockResponse::SelectIndex({i}) out of bounds")),
-                )),
-                crate::menu_utils::mock::MockResponse::MultiSelectIndices(indices) => {
-                    Ok(FzfResult::MultiSelected(
-                        indices
-                            .into_iter()
-                            .map(|i| {
-                                items
-                                    .get(i)
-                                    .unwrap_or_else(|| {
-                                        panic!(
-                                            "MockResponse::MultiSelectIndices({i}) out of bounds"
-                                        )
-                                    })
-                                    .clone()
-                            })
-                            .collect(),
-                    ))
-                }
-                crate::menu_utils::mock::MockResponse::CancelSelection => Ok(FzfResult::Cancelled),
-                other => panic!("Mock: expected select response, got {other:?}"),
-            };
+            return Ok(crate::menu_utils::mock::resolve_selection(resp, items));
         }
         if items.is_empty() {
             return Ok(FzfResult::Cancelled);
@@ -650,18 +650,7 @@ impl FzfWrapper {
         // Configure fzf command
         let mut cmd = Command::new("fzf");
         cmd.env_remove("FZF_DEFAULT_OPTS");
-        cmd.arg("--ansi"); // Enable ANSI color interpretation in display text
-        cmd.arg("--tiebreak=index");
-
-        if self.multi_select {
-            cmd.arg("--multi");
-        }
-        if let Some(prompt) = &self.prompt {
-            cmd.arg("--prompt").arg(format!("{prompt} > "));
-        }
-        if let Some(header) = &self.header {
-            cmd.arg("--header").arg(header);
-        }
+        configure_menu_args(&mut cmd, self);
 
         // Build input text and configure preview
         let input_text =
@@ -690,6 +679,134 @@ impl FzfWrapper {
         let output = execute_fzf_command(cmd, &input_text)?;
 
         // Parse output and map back to items
+        parse_fzf_output(output, &item_map, self.multi_select)
+    }
+
+    /// Like [`FzfWrapper::select`], but further items stream in while the
+    /// menu is open.
+    ///
+    /// `initial_items` are shown immediately; additional items are pulled
+    /// from `late_items` and appended live until the channel closes. The
+    /// preview strategy is forced to `Mixed` because the preview kind of
+    /// late items is not known when fzf is spawned.
+    pub fn select_streaming<T: FzfSelectable + Clone + Send + 'static>(
+        &self,
+        initial_items: Vec<T>,
+        late_items: Receiver<T>,
+    ) -> Result<FzfResult<T>> {
+        #[cfg(test)]
+        if let Some(resp) = crate::menu_utils::mock::pop_mock() {
+            let mut items = initial_items;
+            while let Ok(item) = late_items.try_recv() {
+                items.push(item);
+            }
+            return Ok(crate::menu_utils::mock::resolve_selection(resp, items));
+        }
+
+        let (item_map, display_data) = build_item_map(&initial_items);
+        let separator_mode = display_data.iter().any(|d| !d.is_selectable);
+        let preview_strategy = force_mixed_preview_strategy(&initial_items);
+
+        // Configure fzf command
+        let mut cmd = Command::new("fzf");
+        cmd.env_remove("FZF_DEFAULT_OPTS");
+        configure_menu_args(&mut cmd, self);
+        let input_text =
+            configure_preview_and_input(&mut cmd, preview_strategy, &display_data, separator_mode);
+
+        for arg in &self.additional_args {
+            cmd.arg(arg);
+        }
+        if separator_mode {
+            configure_separator_mode(&mut cmd);
+        }
+        if self.responsive_layout {
+            let layout = super::utils::get_responsive_layout();
+            cmd.arg(layout.preview_window);
+            cmd.arg("--margin").arg(layout.margin);
+        }
+
+        let (mut child, pid) = spawn_menu_child(cmd)?;
+
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| anyhow!("Failed to capture fzf stdin"))?;
+        stdin.write_all(input_text.as_bytes())?;
+        stdin.flush()?;
+
+        // Late items are appended to fzf's stdin as they arrive; the shared
+        // map lets the final selection be resolved back to an item.
+        let shared_map = Arc::new(Mutex::new(item_map));
+        let late_items = Arc::new(Mutex::new(Some(late_items)));
+        let pump_map = Arc::clone(&shared_map);
+        let pump_late_items = Arc::clone(&late_items);
+        let pump = thread::spawn(move || {
+            let mut stdin = stdin;
+            loop {
+                // Poll so the pump can notice when the menu is gone even if
+                // the producer keeps the channel open.
+                let received = {
+                    let Ok(guard) = pump_late_items.lock() else {
+                        break;
+                    };
+                    match guard.as_ref() {
+                        Some(receiver) => receiver.recv_timeout(Duration::from_millis(50)),
+                        None => break,
+                    }
+                };
+                let item = match received {
+                    Ok(item) => item,
+                    Err(RecvTimeoutError::Timeout) => continue,
+                    Err(RecvTimeoutError::Disconnected) => break,
+                };
+
+                let key = item.fzf_key();
+                let (marker, content) = match item.fzf_preview() {
+                    FzfPreview::Text(text) => ("T", text),
+                    FzfPreview::Command(command) => ("C", command),
+                    FzfPreview::None => ("T", String::new()),
+                };
+                let encoded = general_purpose::STANDARD.encode(content.as_bytes());
+                let line = format_fzf_line(
+                    &item.fzf_display_text(),
+                    &key,
+                    &item.fzf_search_keywords().join(" "),
+                    &[marker, &encoded],
+                    &FzfLineContext { separator_mode },
+                    item.fzf_is_selectable(),
+                );
+
+                let Ok(mut map) = pump_map.lock() else {
+                    break;
+                };
+                if map.contains_key(&key) {
+                    continue;
+                }
+
+                let written = stdin
+                    .write_all(line.as_bytes())
+                    .and_then(|_| stdin.write_all(b"\n"))
+                    .and_then(|_| stdin.flush());
+                if written.is_err() {
+                    break;
+                }
+                map.insert(key, item);
+            }
+        });
+
+        // Close the channel so the pump exits even if the producer is still
+        // streaming into a menu nobody is watching.
+        if let Ok(mut guard) = late_items.lock() {
+            *guard = None;
+        }
+        let output = finish_menu_child(child, pid);
+        let _ = pump.join();
+        let output = output?;
+
+        let item_map = shared_map
+            .lock()
+            .map_err(|_| anyhow!("fzf streaming item map poisoned"))?;
         parse_fzf_output(output, &item_map, self.multi_select)
     }
 
@@ -732,6 +849,22 @@ mod mock_tests {
         let items = vec!["alpha".to_string()];
         let result = FzfWrapper::builder().select(items).unwrap();
         assert_eq!(result, FzfResult::Cancelled);
+    }
+
+    #[test]
+    fn test_mock_select_streaming_merges_streamed_items() {
+        let (tx, rx) = std::sync::mpsc::channel::<String>();
+        tx.send("late".to_string()).unwrap();
+        let _tx = tx; // keep the channel open, mirroring a live producer
+
+        let _guard = MockQueue::new().select_index(1).guard();
+        let result = FzfWrapper::builder()
+            .select_streaming(vec!["static".to_string()], rx)
+            .unwrap();
+        match result {
+            FzfResult::Selected(s) => assert_eq!(s, "late"),
+            other => panic!("Expected Selected, got {other:?}"),
+        }
     }
 
     #[test]

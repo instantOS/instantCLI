@@ -5,7 +5,7 @@ use anyhow::Result;
 use crate::menu::protocol::FzfPreview;
 use crate::menu_utils::{
     ConfirmResult, FilePickerScope, FzfResult, FzfSelectable, FzfWrapper, HeaderBuilder,
-    PathInputBuilder, PathInputSelection,
+    PathInputBuilder, PathInputSelection, SuggestionProducer,
 };
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -18,6 +18,7 @@ pub(super) struct FileSelectionPrompt {
     pub start_dir: Option<PathBuf>,
     pub start_path: Option<PathBuf>,
     pub suggested_paths: Vec<PathBuf>,
+    pub streaming_suggestions: Option<SuggestionProducer>,
 }
 
 pub(super) struct AppImageSelectionPrompt {
@@ -39,6 +40,7 @@ impl FileSelectionPrompt {
             start_dir: None,
             start_path: None,
             suggested_paths: Vec::new(),
+            streaming_suggestions: None,
         }
     }
 
@@ -56,6 +58,7 @@ impl FileSelectionPrompt {
             start_dir: None,
             start_path: None,
             suggested_paths: Vec::new(),
+            streaming_suggestions: None,
         }
     }
 
@@ -75,6 +78,11 @@ impl FileSelectionPrompt {
         P: Into<PathBuf>,
     {
         self.suggested_paths = paths.into_iter().map(Into::into).collect();
+        self
+    }
+
+    pub(super) fn streaming_suggestions(mut self, producer: SuggestionProducer) -> Self {
+        self.streaming_suggestions = Some(producer);
         self
     }
 }
@@ -118,6 +126,10 @@ where
 
         if let Some(start_path) = &prompt.start_path {
             builder = builder.start_path(start_path.clone());
+        }
+
+        if let Some(producer) = &prompt.streaming_suggestions {
+            builder = builder.streaming_suggestions(producer.clone());
         }
 
         let selection = builder.choose()?;

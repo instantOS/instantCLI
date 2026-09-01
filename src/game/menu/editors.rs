@@ -1,12 +1,13 @@
 use anyhow::{Result, anyhow};
 
+use crate::common::display_server::DisplayServer;
 use crate::game::launch_command::LaunchCommand;
 use crate::game::platforms::LaunchCommandBuilderContext;
 use crate::game::utils::path::{path_selection_to_tilde, prompt_for_save_path};
 use crate::menu::protocol::FzfPreview;
 use crate::menu_utils::{
-    FilePickerScope, FzfResult, FzfSelectable, FzfWrapper, Header, HeaderBuilder, MenuPresentation,
-    PathInputBuilder, TextEditOutcome, TextEditPrompt, prompt_text_edit,
+    FilePickerScope, FzfResult, FzfSelectable, FzfWrapper, Header, HeaderBuilder, MenuCursor,
+    MenuPresentation, PathInputBuilder, TextEditOutcome, TextEditPrompt, prompt_text_edit,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
@@ -207,72 +208,95 @@ pub fn edit_description(state: &mut EditState) -> Result<bool> {
     .run()
 }
 
-/// Edit launch command (shows submenu for shared vs installation override)
-pub fn edit_launch_command(state: &mut EditState) -> Result<bool> {
-    let game_cmd = state
-        .game()
-        .launch_command
-        .as_ref()
-        .map(ToString::to_string);
-    let inst_cmd = state
-        .installation()
-        .and_then(|i| i.launch_command.as_ref().map(ToString::to_string));
+/// Where a selection in the launch command submenu should route
+#[derive(Debug, Clone)]
+enum LaunchCommandTarget {
+    GameConfig,
+    Installation,
+    CopySharedToClipboard,
+    CopyOverrideToClipboard,
+    Back,
+}
 
-    // Build submenu
-    #[derive(Debug, Clone)]
-    enum LaunchCommandTarget {
-        GameConfig,
-        Installation,
-        Back,
+#[derive(Debug, Clone)]
+struct LaunchCommandOption {
+    display: String,
+    preview: String,
+    target: LaunchCommandTarget,
+}
+
+impl FzfSelectable for LaunchCommandOption {
+    fn fzf_display_text(&self) -> String {
+        self.display.clone()
     }
 
-    #[derive(Debug, Clone)]
-    struct LaunchCommandOption {
-        display: String,
-        preview: String,
-        target: LaunchCommandTarget,
+    fn fzf_key(&self) -> String {
+        self.display.clone()
     }
 
-    impl FzfSelectable for LaunchCommandOption {
-        fn fzf_display_text(&self) -> String {
-            self.display.clone()
-        }
-
-        fn fzf_key(&self) -> String {
-            self.display.clone()
-        }
-
-        fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
-            crate::menu::protocol::FzfPreview::Text(self.preview.clone())
-        }
+    fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
+        crate::menu::protocol::FzfPreview::Text(self.preview.clone())
     }
+}
 
+/// Build the launch command submenu entries, in display order
+fn build_launch_command_menu(
+    game_cmd: Option<&str>,
+    has_installation: bool,
+    inst_cmd: Option<&str>,
+) -> Vec<LaunchCommandOption> {
     let mut options = vec![LaunchCommandOption {
         display: format!(
             "{} Edit shared command (games.toml): {}",
             char::from(NerdFont::Edit),
-            game_cmd.as_deref().unwrap_or("<not set>")
+            game_cmd.unwrap_or("<not set>")
         ),
         preview: format!(
             "Edit the launch command in games.toml\n\nCurrent value: {}\n\nThis command is shared across all devices.",
-            game_cmd.as_deref().unwrap_or("<not set>")
+            game_cmd.unwrap_or("<not set>")
         ),
         target: LaunchCommandTarget::GameConfig,
     }];
 
-    if state.installation_index.is_some() {
+    if let Some(cmd) = game_cmd {
+        options.push(LaunchCommandOption {
+            display: format!(
+                "{} Copy shared launch command to clipboard",
+                format_icon_colored(NerdFont::Clipboard, colors::GREEN)
+            ),
+            preview: format!(
+                "Copy the shared launch command to the clipboard.\n\nCommand: {cmd}\n\nThe menu stays open afterwards."
+            ),
+            target: LaunchCommandTarget::CopySharedToClipboard,
+        });
+    }
+
+    if has_installation {
         options.push(LaunchCommandOption {
             display: format!(
                 "{} Edit device-specific override (installations.toml): {}",
                 char::from(NerdFont::Desktop),
-                inst_cmd.as_deref().unwrap_or("<not set>")
+                inst_cmd.unwrap_or("<not set>")
             ),
             preview: format!(
                 "Edit the launch command override in installations.toml\n\nCurrent value: {}\n\nThis command is device-specific and overrides the shared command.",
-                inst_cmd.as_deref().unwrap_or("<not set>")
+                inst_cmd.unwrap_or("<not set>")
             ),
             target: LaunchCommandTarget::Installation,
         });
+
+        if let Some(cmd) = inst_cmd {
+            options.push(LaunchCommandOption {
+                display: format!(
+                    "{} Copy device-specific launch command to clipboard",
+                    format_icon_colored(NerdFont::Clipboard, colors::GREEN)
+                ),
+                preview: format!(
+                    "Copy the device-specific launch command override to the clipboard.\n\nCommand: {cmd}\n\nThe menu stays open afterwards."
+                ),
+                target: LaunchCommandTarget::CopyOverrideToClipboard,
+            });
+        }
     }
 
     options.push(LaunchCommandOption {
@@ -281,20 +305,86 @@ pub fn edit_launch_command(state: &mut EditState) -> Result<bool> {
         target: LaunchCommandTarget::Back,
     });
 
-    let selection = FzfWrapper::builder()
-        .header("Choose which launch command to edit")
-        .responsive_layout()
-        .presentation(MenuPresentation::Padded)
-        .select(options)?;
+    options
+}
 
-    match selection {
-        FzfResult::Selected(option) => match option.target {
-            LaunchCommandTarget::GameConfig => edit_game_launch_command(state),
-            LaunchCommandTarget::Installation => edit_installation_launch_command(state),
-            LaunchCommandTarget::Back => Ok(false),
-        },
-        _ => Ok(false),
+/// Edit launch command (shows submenu for shared vs installation override)
+pub fn edit_launch_command(state: &mut EditState) -> Result<bool> {
+    let mut cursor = MenuCursor::new();
+
+    loop {
+        let game_cmd = state
+            .game()
+            .launch_command
+            .as_ref()
+            .map(ToString::to_string);
+        let inst_cmd = state
+            .installation()
+            .and_then(|i| i.launch_command.as_ref().map(ToString::to_string));
+
+        let options = build_launch_command_menu(
+            game_cmd.as_deref(),
+            state.installation_index.is_some(),
+            inst_cmd.as_deref(),
+        );
+
+        let mut builder = FzfWrapper::builder()
+            .header("Choose which launch command to edit")
+            .responsive_layout();
+
+        if let Some(index) = cursor.initial_index(&options) {
+            builder = builder.initial_index(index);
+        }
+
+        let selection = builder
+            .presentation(MenuPresentation::Padded)
+            .select(options.clone())?;
+
+        match selection {
+            FzfResult::Selected(option) => {
+                cursor.update(&option, &options);
+                match option.target {
+                    LaunchCommandTarget::GameConfig => return edit_game_launch_command(state),
+                    LaunchCommandTarget::Installation => {
+                        return edit_installation_launch_command(state);
+                    }
+                    // Copy actions stay in the menu so several commands
+                    // can be copied in one visit.
+                    LaunchCommandTarget::CopySharedToClipboard => {
+                        copy_launch_command_to_clipboard("Shared", game_cmd.as_deref())?;
+                    }
+                    LaunchCommandTarget::CopyOverrideToClipboard => {
+                        copy_launch_command_to_clipboard("Device-specific", inst_cmd.as_deref())?;
+                    }
+                    LaunchCommandTarget::Back => return Ok(false),
+                }
+            }
+            _ => return Ok(false),
+        }
     }
+}
+
+/// Copy a launch command to the system clipboard and confirm the result
+fn copy_launch_command_to_clipboard(label: &str, command: Option<&str>) -> Result<()> {
+    let Some(command) = command else {
+        FzfWrapper::message(&format!("{label} launch command is not set."))?;
+        return Ok(());
+    };
+
+    let display_server = DisplayServer::detect();
+    match crate::assist::utils::copy_to_clipboard(command.as_bytes(), &display_server) {
+        Ok(()) => FzfWrapper::message(&format!(
+            "{} {label} launch command copied to clipboard:\n\n{}",
+            char::from(NerdFont::Check),
+            command
+        ))?,
+        Err(error) => FzfWrapper::message(&format!(
+            "{} Failed to copy to clipboard: {error}\n\nEnsure wl-copy (Wayland) or xclip (X11) is installed.",
+            char::from(NerdFont::CrossCircle)
+        ))?,
+    }
+
+    Ok(())
 }
 
 /// Edit the shared launch command in games.toml
@@ -593,5 +683,121 @@ impl<'a, F: FnMut(Option<String>)> OptionalTextEditor<'a, F> {
                 Ok(true)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::TildePath;
+    use crate::game::config::{
+        Game, GameInstallation, GameName, InstallationsConfig, InstantGameConfig, PathContentKind,
+    };
+    use crate::menu_utils::MockQueue;
+    use std::path::PathBuf;
+
+    fn edit_state(game_cmd: Option<&str>, inst_cmd: Option<&str>) -> EditState {
+        let mut game = Game::new("Test Game");
+        game.launch_command = game_cmd.map(LaunchCommand::from_shell_or_manual);
+
+        let game_config = InstantGameConfig {
+            games: vec![game],
+            ..Default::default()
+        };
+
+        let installations = if inst_cmd.is_some() {
+            let mut installation = GameInstallation::with_kind(
+                GameName("Test Game".to_string()),
+                TildePath::new(PathBuf::from("/tmp/saves")),
+                PathContentKind::Directory,
+            );
+            installation.launch_command = inst_cmd.map(LaunchCommand::from_shell_or_manual);
+            InstallationsConfig {
+                installations: vec![installation],
+            }
+        } else {
+            InstallationsConfig {
+                installations: Vec::new(),
+            }
+        };
+
+        EditState::new(
+            game_config,
+            installations,
+            0,
+            if inst_cmd.is_some() { Some(0) } else { None },
+        )
+    }
+
+    #[test]
+    fn menu_offers_copy_actions_below_each_edit_entry() {
+        let options = build_launch_command_menu(Some("shared_cmd"), true, Some("override_cmd"));
+
+        let displays: Vec<&str> = options
+            .iter()
+            .map(|option| option.display.as_str())
+            .collect();
+
+        assert_eq!(displays.len(), 5);
+        assert!(displays[0].contains("Edit shared command"));
+        assert!(displays[1].contains("Copy shared launch command to clipboard"));
+        assert!(displays[2].contains("Edit device-specific override"));
+        assert!(displays[3].contains("Copy device-specific launch command to clipboard"));
+        assert!(displays[4].contains("Back"));
+        assert!(matches!(
+            options[1].target,
+            LaunchCommandTarget::CopySharedToClipboard
+        ));
+        assert!(matches!(
+            options[3].target,
+            LaunchCommandTarget::CopyOverrideToClipboard
+        ));
+    }
+
+    #[test]
+    fn copy_actions_hidden_when_commands_unset() {
+        let options = build_launch_command_menu(None, false, None);
+
+        assert_eq!(options.len(), 2);
+        assert!(options[0].display.contains("Edit shared command"));
+        assert!(matches!(options[1].target, LaunchCommandTarget::Back));
+    }
+
+    #[test]
+    fn selecting_copy_shared_reopens_menu_instead_of_leaving() {
+        let mut state = edit_state(Some("shared_cmd"), None);
+
+        // 1. Pick "Copy shared launch command to clipboard" (index 1)
+        // 2. Ack the copy confirmation message
+        // 3. Pick "Back" (index 2) on the reopened menu
+        let _guard = MockQueue::new()
+            .select_index(1)
+            .message_ack()
+            .select_index(2)
+            .guard();
+
+        let result = edit_launch_command(&mut state).unwrap();
+
+        assert!(!result);
+        assert!(!state.is_dirty());
+    }
+
+    #[test]
+    fn selecting_copy_override_reopens_menu_instead_of_leaving() {
+        let mut state = edit_state(Some("shared_cmd"), Some("override_cmd"));
+
+        // 1. Pick "Copy device-specific launch command to clipboard" (index 3)
+        // 2. Ack the copy confirmation message
+        // 3. Pick "Back" (index 4) on the reopened menu
+        let _guard = MockQueue::new()
+            .select_index(3)
+            .message_ack()
+            .select_index(4)
+            .guard();
+
+        let result = edit_launch_command(&mut state).unwrap();
+
+        assert!(!result);
+        assert!(!state.is_dirty());
     }
 }
