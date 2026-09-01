@@ -375,6 +375,24 @@ impl FzfBuilder {
         }
     }
 
+    /// Like [`FzfBuilder::select`], but further items stream in while the
+    /// menu is open. See [`FzfWrapper::select_streaming`].
+    ///
+    /// Only supports the `Compact` presentation: the `Padded` protocol parses
+    /// an index from pre-built input and cannot accept late items.
+    pub fn select_streaming<T: FzfSelectable + Clone + Send + 'static>(
+        self,
+        initial_items: Vec<T>,
+        late_items: std::sync::mpsc::Receiver<T>,
+    ) -> Result<FzfResult<T>> {
+        debug_assert_eq!(
+            self.shared.presentation,
+            MenuPresentation::Compact,
+            "select_streaming does not support padded presentation"
+        );
+        FzfWrapper::from_builder(self).select_streaming(initial_items, late_items)
+    }
+
     pub fn select_one<T: FzfSelectable + Clone>(self, items: Vec<T>) -> Result<Option<T>> {
         match self.select(items)? {
             FzfResult::Selected(item) => Ok(Some(item)),

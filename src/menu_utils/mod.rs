@@ -16,7 +16,7 @@ pub use fzf::{
     StreamingMenuItem, default_fzf_key,
 };
 pub use keychord::{KeyChord, KeyChordAction, KeyChordChild, KeyChordNode};
-pub use path_input::{PathInputBuilder, PathInputSelection};
+pub use path_input::{PathInputBuilder, PathInputSelection, SuggestionProducer};
 pub use slider::{SliderCommand, SliderConfig};
 pub use text_input::{TextEditOutcome, TextEditPrompt, prompt_text_edit};
 

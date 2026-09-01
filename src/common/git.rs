@@ -116,16 +116,99 @@ fn run_git_network_in(current_dir: Option<&Path>, args: &[&str]) -> Result<()> {
     }
 
     apply_noninteractive_git_env(&mut cmd);
-    let output = cmd
+    run_captured_with_timeout(&mut cmd, args)
+}
+
+/// Upper bound for non-interactive network git operations.
+///
+/// SSH prompts are already disabled (see [`apply_noninteractive_git_env`]),
+/// but that cannot save an established connection that stalls silently —
+/// which has been observed to hang `git fetch` forever and wedge session
+/// startup behind it.
+const GIT_NETWORK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+
+/// Run `cmd` capturing its output, killing it (and its transport children) if
+/// it outlives [`GIT_NETWORK_TIMEOUT`]. The command must have been configured
+/// with `process_group(0)` so the negative-PID kill reaches git's children.
+fn run_captured_with_timeout(cmd: &mut Command, args: &[&str]) -> Result<()> {
+    use std::io::Read;
+    use std::os::unix::process::CommandExt;
+    use wait_timeout::ChildExt;
+
+    // Own process group so the timeout kill can take down git's transport
+    // children (ssh) along with it instead of orphaning them.
+    cmd.process_group(0);
+    let mut child = cmd
         .stdin(Stdio::null())
-        .output()
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .context("Failed to execute git")?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+    // Drain both pipes concurrently so chatty progress output can never fill
+    // one of them and deadlock the child while we wait on the process.
+    let mut stdout_pipe = child.stdout.take().expect("git stdout is piped");
+    let mut stderr_pipe = child.stderr.take().expect("git stderr is piped");
+    let stdout_reader = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = stdout_pipe.read_to_end(&mut buf);
+        buf
+    });
+    let stderr_reader = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = stderr_pipe.read_to_end(&mut buf);
+        buf
+    });
+
+    let timed_out = || {
+        anyhow::anyhow!(
+            "git {} timed out after {}s (stalled network connection?)",
+            args.join(" "),
+            GIT_NETWORK_TIMEOUT.as_secs()
+        )
+    };
+
+    let status = match child
+        .wait_timeout(GIT_NETWORK_TIMEOUT)
+        .context("Failed to wait for git")?
+    {
+        Some(status) => status,
+        None => {
+            // SIGTERM first so git can clean up its ref lock files; SIGKILL
+            // as the hammer if it ignores that. Either way the operation
+            // failed.
+            kill_child_process_group(child.id(), nix::sys::signal::Signal::SIGTERM);
+            if child
+                .wait_timeout(std::time::Duration::from_secs(5))
+                .context("Failed to wait for git")?
+                .is_none()
+            {
+                kill_child_process_group(child.id(), nix::sys::signal::Signal::SIGKILL);
+                let _ = child.wait().context("Failed to wait for git")?;
+            }
+            return Err(timed_out());
+        }
+    };
+
+    let stderr = stderr_reader
+        .join()
+        .map(|buf| String::from_utf8_lossy(&buf).into_owned())
+        .unwrap_or_default();
+    drop(stdout_reader);
+
+    if !status.success() {
         anyhow::bail!("{}", summarize_git_network_failure(args, &stderr));
     }
     Ok(())
+}
+
+/// Kill a child's whole process group (the child was spawned with
+/// `process_group(0)`, so its PID is that group's ID).
+fn kill_child_process_group(pid: u32, signal: nix::sys::signal::Signal) {
+    let _ = nix::sys::signal::kill(
+        nix::unistd::Pid::from_raw(-(pid as i32)),
+        signal,
+    );
 }
 
 /// Run a git command in the given repo directory, returning stdout on success.

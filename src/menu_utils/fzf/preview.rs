@@ -28,6 +28,24 @@ pub(crate) enum PreviewStrategy {
 }
 
 impl PreviewUtils {
+    /// Force every item's preview through the `Mixed` strategy so items
+    /// streamed in later can carry either text or command previews.
+    pub fn force_mixed_preview_strategy<T: FzfSelectable>(items: &[T]) -> PreviewStrategy {
+        PreviewStrategy::Mixed(
+            items
+                .iter()
+                .map(|item| {
+                    let content = match item.fzf_preview() {
+                        FzfPreview::Text(text) => MixedPreviewContent::Text(text),
+                        FzfPreview::Command(command) => MixedPreviewContent::Command(command),
+                        FzfPreview::None => MixedPreviewContent::Text(String::new()),
+                    };
+                    (item.fzf_key(), content)
+                })
+                .collect(),
+        )
+    }
+
     /// Analyze preview types and determine optimal strategy
     pub fn analyze_preview_strategy<T: FzfSelectable>(items: &[T]) -> Result<PreviewStrategy> {
         if items.is_empty() {

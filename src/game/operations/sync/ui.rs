@@ -397,7 +397,8 @@ pub fn report_no_games_configured() {
 pub fn report_summary(summary: &super::SyncSummary) {
     emit_separator();
     let summary_data = serde_json::json!({
-        "synced": summary.synced,
+        "backed_up": summary.backed_up,
+        "restored": summary.restored,
         "skipped": summary.skipped,
         "errors": summary.errors
     });
@@ -415,8 +416,8 @@ pub fn report_summary(summary: &super::SyncSummary) {
     if matches!(get_output_format(), OutputFormat::Json) {
         emit(Level::Info, "game.sync.summary.title", &summary_title, None);
         let summary_text = format!(
-            "  Synced: {}\n  Skipped: {}\n  Errors: {}",
-            summary.synced, summary.skipped, summary.errors
+            "  Backed up: {}\n  Restored: {}\n  Skipped: {}\n  Errors: {}",
+            summary.backed_up, summary.restored, summary.skipped, summary.errors
         );
         emit(
             Level::Info,
@@ -436,10 +437,17 @@ pub fn report_summary(summary: &super::SyncSummary) {
         let entries = [
             (
                 Level::Success,
-                Some(char::from(NerdFont::Check)),
-                "Synced",
-                summary.synced,
-                "game.sync.summary.synced",
+                Some(char::from(NerdFont::Upload)),
+                "Backed up",
+                summary.backed_up,
+                "game.sync.summary.backed_up",
+            ),
+            (
+                Level::Success,
+                Some(char::from(NerdFont::Download)),
+                "Restored",
+                summary.restored,
+                "game.sync.summary.restored",
             ),
             (
                 Level::Info,

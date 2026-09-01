@@ -1,4 +1,6 @@
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, mpsc};
+use std::thread;
 
 use anyhow::{Result, anyhow};
 
@@ -8,6 +10,9 @@ use crate::common::TildePath;
 use crate::preview::{PreviewId, preview_command};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::{FzfPreview, PreviewBuilder};
+
+/// Producer that discovers suggestion paths while the menu is open.
+pub type SuggestionProducer = Arc<dyn Fn(SuggestionSink) + Send + Sync>;
 
 #[derive(Debug, Clone)]
 enum PathInputChoice {
@@ -79,6 +84,7 @@ pub struct PathInputBuilder {
     picker_option_label: String,
     wine_prefix_option_label: Option<String>,
     suggested_paths: Vec<PathBuf>,
+    streaming_suggestions: Option<SuggestionProducer>,
 }
 
 impl PathInputBuilder {
@@ -96,6 +102,7 @@ impl PathInputBuilder {
             picker_option_label: format!("{picker_icon} Browse with the picker"),
             wine_prefix_option_label: None,
             suggested_paths: Vec::new(),
+            streaming_suggestions: None,
         }
     }
 
@@ -150,6 +157,16 @@ impl PathInputBuilder {
         P: Into<PathBuf>,
     {
         self.suggested_paths = paths.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Register a producer that pushes additional suggestion paths while the
+    /// menu is open.
+    ///
+    /// The menu renders immediately; suggestions appear as the producer
+    /// discovers them, without blocking on filesystem scans.
+    pub fn streaming_suggestions(mut self, producer: SuggestionProducer) -> Self {
+        self.streaming_suggestions = Some(producer);
         self
     }
 
@@ -213,33 +230,17 @@ impl PathInputBuilder {
         }
     }
 
-    fn normalize_suggested_path(&self, path: &Path) -> (PathBuf, String) {
-        if let Ok(canonical) = path.canonicalize()
-            && canonical.exists()
-        {
-            let key = canonical.to_string_lossy().to_string();
-            return (canonical, key);
-        }
-
-        (path.to_path_buf(), path.to_string_lossy().to_string())
-    }
-
     fn build_options(&self) -> Vec<PathInputOption> {
         let mut options = Vec::new();
         let mut seen = std::collections::HashSet::new();
 
         for path in &self.suggested_paths {
-            let (path, key) = self.normalize_suggested_path(path);
+            let (_, key) = normalize_suggested_path(path);
             if !seen.insert(key) {
                 continue;
             }
 
-            let preview = preview_suggestion(&path);
-            options.push(PathInputOption::new_with_preview(
-                format_suggested_label(&path),
-                PathInputChoice::Suggestion(path),
-                preview,
-            ));
+            options.push(suggestion_option(path));
         }
 
         options.push(PathInputOption::new(
@@ -293,9 +294,14 @@ impl PathInputBuilder {
         let options = self.build_options();
 
         loop {
-            let selection = FzfWrapper::builder()
-                .header(self.header.clone())
-                .select(options.clone())?;
+            let selection = match &self.streaming_suggestions {
+                Some(producer) => {
+                    self.select_with_streaming_suggestions(&options, Arc::clone(producer))?
+                }
+                None => FzfWrapper::builder()
+                    .header(self.header.clone())
+                    .select(options.clone())?,
+            };
 
             match selection {
                 FzfResult::Selected(option) => match option.choice {
@@ -337,6 +343,27 @@ impl PathInputBuilder {
             }
         }
     }
+
+    /// Open the menu with `options` shown immediately, then stream further
+    /// suggestions in from `producer` as they are discovered.
+    fn select_with_streaming_suggestions(
+        &self,
+        options: &[PathInputOption],
+        producer: SuggestionProducer,
+    ) -> Result<FzfResult<PathInputOption>> {
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || producer(SuggestionSink { tx }));
+
+        // Jump to the first streamed suggestion once fzf finished loading its
+        // input; before that the cursor rests on the first static option.
+        FzfWrapper::builder()
+            .header(self.header.clone())
+            .args([
+                "--bind".to_string(),
+                format!("load:pos({})", options.len() + 1),
+            ])
+            .select_streaming(options.to_vec(), rx)
+    }
 }
 
 enum ManualPathOutcome {
@@ -345,7 +372,7 @@ enum ManualPathOutcome {
     Cancelled,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum PathInputSelection {
     Manual(String),
     Picker(PathBuf),
@@ -353,8 +380,49 @@ pub enum PathInputSelection {
     Cancelled,
 }
 
+fn normalize_suggested_path(path: &Path) -> (PathBuf, String) {
+    if let Ok(canonical) = path.canonicalize()
+        && canonical.exists()
+    {
+        let key = canonical.to_string_lossy().to_string();
+        return (canonical, key);
+    }
+
+    (path.to_path_buf(), path.to_string_lossy().to_string())
+}
+
+/// Build a selectable suggestion entry for `path`.
+fn suggestion_option(path: &Path) -> PathInputOption {
+    let (path, _) = normalize_suggested_path(path);
+    let preview = preview_suggestion(&path);
+    PathInputOption::new_with_preview(
+        format_suggested_label(&path),
+        PathInputChoice::Suggestion(path),
+        preview,
+    )
+}
+
+/// Handle producers use to push suggestion paths into an open menu.
+///
+/// Pushes are best-effort: once the menu has closed, pushes are silently
+/// dropped so producers stop as soon as they notice.
+pub struct SuggestionSink {
+    tx: mpsc::Sender<PathInputOption>,
+}
+
+impl SuggestionSink {
+    /// Suggest `path` as a selectable entry in the open menu.
+    pub fn push(&self, path: PathBuf) {
+        let _ = self.tx.send(suggestion_option(&path));
+    }
+}
+
 fn format_suggested_label(path: &Path) -> String {
-    let icon = char::from(NerdFont::Star);
+    let icon = if path.is_dir() {
+        char::from(NerdFont::Folder)
+    } else {
+        char::from(NerdFont::File)
+    };
     let display = path.to_string_lossy();
     let short = if display.len() > 80 {
         format!("{}...", &display[..79])
@@ -441,5 +509,38 @@ mod tests {
         let builder = PathInputBuilder::new().scope(FilePickerScope::Directories);
 
         assert!(!builder.should_open_picker_for_suggestion(Path::new("/tmp")));
+    }
+
+    #[test]
+    fn suggestion_options_distinguish_directories_from_files() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join("Games");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = temp.path().join("Game.exe");
+        std::fs::write(&file, b"").unwrap();
+
+        let dir_label = suggestion_option(&dir).fzf_display_text();
+        let file_label = suggestion_option(&file).fzf_display_text();
+
+        assert!(dir_label.starts_with(char::from(NerdFont::Folder)));
+        assert!(file_label.starts_with(char::from(NerdFont::File)));
+        assert_ne!(dir_label, file_label);
+    }
+
+    #[test]
+    fn streaming_suggestions_menu_wires_producer_and_cancels_cleanly() {
+        use crate::menu_utils::MockQueue;
+
+        let temp = tempfile::tempdir().unwrap();
+        let game_exe = temp.path().join("Game.exe");
+        std::fs::write(&game_exe, b"").unwrap();
+
+        let builder = PathInputBuilder::new().streaming_suggestions(Arc::new(move |sink| {
+            sink.push(game_exe.clone());
+        }));
+
+        let _guard = MockQueue::new().cancel_selection().guard();
+        let selection = builder.choose().unwrap();
+        assert_eq!(selection, PathInputSelection::Cancelled);
     }
 }
