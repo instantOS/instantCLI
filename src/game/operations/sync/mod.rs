@@ -236,7 +236,10 @@ mod tests {
             GameSyncStatus::Restored
         );
         assert_eq!(
-            sync_status(Err(anyhow::anyhow!("restic failed")), GameSyncStatus::BackedUp),
+            sync_status(
+                Err(anyhow::anyhow!("restic failed")),
+                GameSyncStatus::BackedUp
+            ),
             GameSyncStatus::Failed("restic failed".to_string())
         );
     }
