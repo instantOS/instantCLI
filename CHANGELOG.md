@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.13](https://github.com/instantOS/instantCLI/compare/v0.14.12...v0.14.13) - 2026-09-03
+
+### Added
+
+- better model non-question steps in install wizards
+
+### Fixed
+
+- fix command edit buttons
+- fix autostart, copy thingy and streaming suggestions
+- non fatal game launches when another one is missing
+- fix instantwm monitor settings
+
 ## [0.14.12](https://github.com/instantOS/instantCLI/compare/v0.14.11...v0.14.12) - 2026-08-31
 
 ### Added
