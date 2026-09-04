@@ -15,6 +15,7 @@
 
 mod builder;
 mod header;
+mod keybind;
 mod preview;
 mod theme;
 mod types;

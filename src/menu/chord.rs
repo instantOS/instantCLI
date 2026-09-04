@@ -44,35 +44,7 @@ enum Activation {
     Exit(Option<String>),
 }
 
-/// Display width of a string (cells), accounting for nerd-font/wide glyphs.
-fn str_width(s: &str) -> usize {
-    unicode_width::UnicodeWidthStr::width(s)
-}
-
-/// Truncate `s` to fit within `max` display cells, appending an ellipsis when
-/// characters are dropped.
-fn truncate_to_width(s: &str, max: usize) -> String {
-    if max == 0 {
-        return String::new();
-    }
-    if str_width(s) <= max {
-        return s.to_string();
-    }
-    let ellipsis = '…';
-    let ellipsis_w = unicode_width::UnicodeWidthChar::width(ellipsis).unwrap_or(1);
-    let mut out = String::new();
-    let mut used = 0usize;
-    for ch in s.chars() {
-        let w = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(0);
-        if used + w > max.saturating_sub(ellipsis_w) {
-            break;
-        }
-        out.push(ch);
-        used += w;
-    }
-    out.push(ellipsis);
-    out
-}
+use crate::ui::text::{display_width as str_width, truncate_to_width};
 
 /// A chord description split into its visual parts.
 ///

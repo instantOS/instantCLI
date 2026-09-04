@@ -1,6 +1,6 @@
 //! FZF wrapper and selection logic
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Result, anyhow};
 use base64::{Engine as _, engine::general_purpose};
 use crossbeam_channel::{Receiver, TryRecvError, bounded, select};
 use serde::de::DeserializeOwned;
@@ -9,7 +9,6 @@ use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use super::preview::MixedPreviewContent;
 use super::preview::PreviewStrategy;
@@ -17,7 +16,6 @@ use super::preview::PreviewUtils;
 use super::types::ItemDisplayData;
 use super::types::*;
 use super::utils::{handle_old_fzf_error, log_fzf_failure};
-use crate::ui::catppuccin::{colors, hex_to_ansi_bg, hex_to_ansi_fg};
 use crate::ui::nerd_font::NerdFont;
 
 /// Named parts extracted from `FzfBuilder` for constructing `FzfWrapper`.
@@ -132,170 +130,8 @@ fn calculate_separator_aware_cursor(
     display_data[..pos].iter().rposition(|d| d.is_selectable)
 }
 
-const ANSI_RESET: &str = "\x1b[0m";
-const KEYBIND_HINT_MAX_WIDTH: usize = 96;
-const KEYBIND_HINT_MIN_WIDTH: usize = 12;
-
-struct KeybindHintSegment {
-    styled: String,
-    width: usize,
-}
-
-/// Normalize display-only labels so they cannot inject terminal controls or
-/// extra header lines. Whitespace is collapsed for predictable wrapping.
-fn normalize_keybind_label(label: &str) -> String {
-    label
-        .chars()
-        .map(|character| {
-            if character.is_control() {
-                ' '
-            } else {
-                character
-            }
-        })
-        .collect::<String>()
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-fn truncate_visible(text: &str, max_width: usize) -> String {
-    if UnicodeWidthStr::width(text) <= max_width {
-        return text.to_string();
-    }
-    if max_width == 0 {
-        return String::new();
-    }
-
-    let ellipsis = '…';
-    let ellipsis_width = UnicodeWidthChar::width(ellipsis).unwrap_or(1);
-    let content_width = max_width.saturating_sub(ellipsis_width);
-    let mut result = String::new();
-    let mut width = 0;
-    for character in text.chars() {
-        let character_width = UnicodeWidthChar::width(character).unwrap_or(0);
-        if width + character_width > content_width {
-            break;
-        }
-        result.push(character);
-        width += character_width;
-    }
-    result.push(ellipsis);
-    result
-}
-
-fn render_keybind_segment<A>(bind: &MenuKeybind<A>, max_width: usize) -> KeybindHintSegment {
-    let key = truncate_visible(&bind.key.display_name(), max_width.saturating_sub(2));
-    let key_width = UnicodeWidthStr::width(key.as_str()) + 2;
-    let label = normalize_keybind_label(&bind.label);
-    let label_gap = usize::from(!label.is_empty()) * 2;
-    let label_width = max_width.saturating_sub(key_width + label_gap);
-    let label = truncate_visible(&label, label_width);
-
-    let keycap = format!(
-        "{}{}\x1b[1m {key} {ANSI_RESET}",
-        hex_to_ansi_bg(colors::SURFACE0),
-        hex_to_ansi_fg(colors::MAUVE),
-    );
-    let styled = if label.is_empty() {
-        keycap
-    } else {
-        format!(
-            "{keycap}  {}{label}{ANSI_RESET}",
-            hex_to_ansi_fg(colors::SUBTEXT0)
-        )
-    };
-
-    KeybindHintSegment {
-        styled,
-        width: key_width
-            + usize::from(!label.is_empty()) * 2
-            + UnicodeWidthStr::width(label.as_str()),
-    }
-}
-
-/// Estimate the width of fzf's list pane. On a wide responsive layout the
-/// preview consumes half the terminal; otherwise the hint gets the full pane.
-fn keybind_hint_width(wrapper: &FzfWrapper) -> usize {
-    let Some((terminal_columns, rows)) = super::utils::get_terminal_dimensions() else {
-        return 76;
-    };
-    let side_preview = wrapper.responsive_layout
-        && terminal_columns >= 60
-        && f32::from(terminal_columns) / f32::from(rows) >= 2.0;
-    let columns = usize::from(terminal_columns);
-    let pane_width = if side_preview { columns / 2 } else { columns };
-    pane_width
-        .saturating_sub(4)
-        .clamp(KEYBIND_HINT_MIN_WIDTH, KEYBIND_HINT_MAX_WIDTH)
-}
-
-/// Render keybinds as accent keycaps and muted action labels, wrapping whole
-/// bindings rather than allowing a long hint row to clip in narrow menus.
-fn keybind_hint_lines<A>(keybinds: &[MenuKeybind<A>], max_width: usize) -> String {
-    let keyboard = char::from(NerdFont::Keyboard);
-    let prefix_width = UnicodeWidthChar::width(keyboard).unwrap_or(1) + 2;
-    let first_prefix = format!("{}{keyboard}{ANSI_RESET}  ", hex_to_ansi_fg(colors::BLUE));
-    let continuation_prefix = " ".repeat(prefix_width);
-    let separator = format!("{}  •  {ANSI_RESET}", hex_to_ansi_fg(colors::SURFACE2));
-    const SEPARATOR_WIDTH: usize = 5;
-
-    let content_width = max_width
-        .saturating_sub(prefix_width)
-        .max(KEYBIND_HINT_MIN_WIDTH.saturating_sub(prefix_width));
-    let segments = keybinds
-        .iter()
-        .map(|bind| render_keybind_segment(bind, content_width))
-        .collect::<Vec<_>>();
-
-    let mut lines = vec![first_prefix];
-    let mut line_width = prefix_width;
-    let mut has_segment = false;
-    for segment in segments {
-        let separator_width = if has_segment { SEPARATOR_WIDTH } else { 0 };
-        if has_segment && line_width + separator_width + segment.width > max_width {
-            lines.push(continuation_prefix.clone());
-            line_width = prefix_width;
-            has_segment = false;
-        }
-        if has_segment {
-            lines.last_mut().expect("line exists").push_str(&separator);
-            line_width += SEPARATOR_WIDTH;
-        }
-        lines
-            .last_mut()
-            .expect("line exists")
-            .push_str(&segment.styled);
-        line_width += segment.width;
-        has_segment = true;
-    }
-
-    lines.join("\n")
-}
-
-/// Register the menu's keybinds with fzf: one `print(token)+accept` binding
-/// per key, so pressing it terminates fzf with the token on stdout ahead of
-/// the selection lines.
-fn emit_keybind_args<A>(cmd: &mut Command, keybinds: &[MenuKeybind<A>]) {
-    for bind in keybinds {
-        cmd.arg("--bind")
-            .arg(format!("{}:print({})+accept", bind.key, bind.key));
-    }
-}
-
 /// Shared empty keybind list for menus without keybind support.
-pub(crate) const NO_KEYBINDS: &[MenuKeybind<()>] = &[];
-
-/// Reject duplicate keybind keys before they silently shadow each other.
-fn validate_keybinds<A>(keybinds: &[MenuKeybind<A>]) -> Result<()> {
-    let mut seen = std::collections::HashSet::new();
-    for bind in keybinds {
-        if !seen.insert(bind.key.as_str()) {
-            bail!("duplicate menu keybind: {}", bind.key);
-        }
-    }
-    Ok(())
-}
+pub(crate) const NO_KEYBINDS: &[MenuKeybind<()>] = super::keybind::NONE;
 
 /// Configure fzf for separator mode: raw mode + match-based navigation.
 ///
@@ -501,19 +337,39 @@ fn configure_menu_args<A>(cmd: &mut Command, wrapper: &FzfWrapper, keybinds: &[M
             let mut text = header.clone();
             if !keybinds.is_empty() {
                 text.push('\n');
-                text.push_str(&keybind_hint_lines(keybinds, keybind_hint_width(wrapper)));
+                text.push_str(&super::keybind::render_hint(
+                    keybinds,
+                    wrapper.responsive_layout,
+                ));
             }
             Some(text)
         }
-        None if !keybinds.is_empty() => {
-            Some(keybind_hint_lines(keybinds, keybind_hint_width(wrapper)))
-        }
+        None if !keybinds.is_empty() => Some(super::keybind::render_hint(
+            keybinds,
+            wrapper.responsive_layout,
+        )),
         None => None,
     };
     if let Some(header_text) = header_text {
         cmd.arg("--header").arg(header_text);
     }
-    emit_keybind_args(cmd, keybinds);
+    super::keybind::configure_command(cmd, keybinds);
+}
+
+/// Apply caller-provided arguments, initial positioning, and terminal-aware
+/// layout consistently across static and streaming menus.
+fn configure_wrapper_tail(cmd: &mut Command, wrapper: &FzfWrapper, cursor_position: Option<usize>) {
+    for arg in &wrapper.additional_args {
+        cmd.arg(arg);
+    }
+    if let Some(position) = cursor_position {
+        cmd.arg("--bind").arg(format!("load:pos({})", position + 1));
+    }
+    if wrapper.responsive_layout {
+        let layout = super::utils::get_responsive_layout();
+        cmd.arg(layout.preview_window);
+        cmd.arg("--margin").arg(layout.margin);
+    }
 }
 
 /// Force every item's preview through the `Mixed` strategy so items
@@ -720,7 +576,7 @@ impl FzfWrapper {
         items: Vec<T>,
         keybinds: &[MenuKeybind<A>],
     ) -> Result<DialogOutcome<MenuSelection<T, A>>> {
-        validate_keybinds(keybinds)?;
+        super::keybind::validate(keybinds)?;
         #[cfg(test)]
         if let Some(resp) = crate::menu_utils::mock::pop_mock() {
             return Ok(crate::menu_utils::mock::resolve_selection(
@@ -756,24 +612,13 @@ impl FzfWrapper {
         let input_text =
             configure_preview_and_input(&mut cmd, preview_strategy, &display_data, separator_mode);
 
-        if let Some(position) = cursor_position {
-            cmd.arg("--bind").arg(format!("load:pos({})", position + 1));
-        }
-        for arg in &self.additional_args {
-            cmd.arg(arg);
-        }
-
         // Enable raw mode with separator-skipping navigation
         if separator_mode {
             configure_separator_mode(&mut cmd);
         }
-
-        // Apply responsive layout settings LAST to override defaults
-        if self.responsive_layout {
-            let layout = super::utils::get_responsive_layout();
-            cmd.arg(layout.preview_window);
-            cmd.arg("--margin").arg(layout.margin);
-        }
+        // User arguments and responsive settings intentionally come last so
+        // callers can tune defaults while layout retains final authority.
+        configure_wrapper_tail(&mut cmd, self, cursor_position);
 
         // Execute fzf
         let output = execute_fzf_command(cmd, &input_text)?;
@@ -801,7 +646,6 @@ impl FzfWrapper {
                 "3",
                 "--preview",
                 streaming_preview_command(),
-                "--ansi",
             ],
         )?;
         parse_encoded_streaming_output(output)
@@ -829,9 +673,13 @@ impl FzfWrapper {
     {
         let mut fzf = Command::new("fzf");
         fzf.env_remove("FZF_DEFAULT_OPTS");
-        for arg in self.streaming_fzf_args(base_args) {
-            fzf.arg(arg);
-        }
+        configure_menu_args(&mut fzf, self, NO_KEYBINDS);
+        fzf.args(base_args);
+        let cursor_position = self
+            .initial_cursor
+            .as_ref()
+            .map(|InitialCursor::Index(index)| *index);
+        configure_wrapper_tail(&mut fzf, self, cursor_position);
 
         let (mut fzf_child, pid) = spawn_menu_child(fzf)?;
 
@@ -885,41 +733,6 @@ impl FzfWrapper {
         result
     }
 
-    fn streaming_fzf_args(&self, base_args: &[&str]) -> Vec<String> {
-        let mut fzf_args = vec!["--tiebreak=index".to_string()];
-        fzf_args.extend(base_args.iter().map(|arg| (*arg).to_string()));
-
-        if self.multi_select {
-            fzf_args.push("--multi".to_string());
-        }
-
-        if let Some(prompt) = &self.prompt {
-            fzf_args.push("--prompt".to_string());
-            fzf_args.push(format!("{} > ", prompt));
-        }
-
-        if let Some(header) = &self.header {
-            fzf_args.push("--header".to_string());
-            fzf_args.push(header.clone());
-        }
-
-        fzf_args.extend(self.additional_args.clone());
-
-        if let Some(InitialCursor::Index(idx)) = self.initial_cursor {
-            fzf_args.push("--bind".to_string());
-            fzf_args.push(format!("load:pos({})", idx + 1));
-        }
-
-        if self.responsive_layout {
-            let layout = super::utils::get_responsive_layout();
-            fzf_args.push(layout.preview_window.to_string());
-            fzf_args.push("--margin".to_string());
-            fzf_args.push(layout.margin.to_string());
-        }
-
-        fzf_args
-    }
-
     /// Like [`FzfWrapper::select`], but further items stream in while the
     /// menu is open.
     ///
@@ -963,6 +776,11 @@ impl FzfWrapper {
 
         let (item_map, display_data) = build_item_map(&initial_items);
         let separator_mode = display_data.iter().any(|d| !d.is_selectable);
+        let cursor_position = if separator_mode {
+            calculate_separator_aware_cursor(&self.initial_cursor, &display_data)
+        } else {
+            calculate_cursor_position(&self.initial_cursor, display_data.len())
+        };
         let preview_strategy = force_mixed_preview_strategy(&initial_items);
 
         // Configure fzf command
@@ -972,17 +790,10 @@ impl FzfWrapper {
         let input_text =
             configure_preview_and_input(&mut cmd, preview_strategy, &display_data, separator_mode);
 
-        for arg in &self.additional_args {
-            cmd.arg(arg);
-        }
         if separator_mode {
             configure_separator_mode(&mut cmd);
         }
-        if self.responsive_layout {
-            let layout = super::utils::get_responsive_layout();
-            cmd.arg(layout.preview_window);
-            cmd.arg("--margin").arg(layout.margin);
-        }
+        configure_wrapper_tail(&mut cmd, self, cursor_position);
 
         let (mut child, pid) = spawn_menu_child(cmd)?;
 
@@ -1352,62 +1163,6 @@ mod mock_tests {
                 "{reserved} should be reserved"
             );
         }
-    }
-
-    #[test]
-    fn keybind_hints_use_keycaps_sanitize_labels_and_wrap_whole_bindings() {
-        let binds = [
-            MenuKeybind::new(MenuKey::new("ctrl-e").unwrap(), "edit\n  entry", 1u8),
-            MenuKeybind::new(MenuKey::new("alt-d").unwrap(), "delete", 2u8),
-        ];
-
-        let rendered = keybind_hint_lines(&binds, 30);
-        let plain = default_fzf_key(&rendered);
-        let lines = plain.lines().collect::<Vec<_>>();
-
-        assert_eq!(lines.len(), 2);
-        assert!(plain.contains(char::from(NerdFont::Keyboard)));
-        assert!(plain.contains("Ctrl E   edit entry"));
-        assert!(plain.contains("Alt D   delete"));
-        assert!(lines.iter().all(|line| UnicodeWidthStr::width(*line) <= 30));
-        assert!(rendered.contains(&hex_to_ansi_bg(colors::SURFACE0)));
-    }
-
-    #[test]
-    fn keybind_hints_separate_bindings_when_they_fit() {
-        let binds = [
-            MenuKeybind::new(MenuKey::new("ctrl-e").unwrap(), "edit", 1u8),
-            MenuKeybind::new(MenuKey::new("alt-d").unwrap(), "delete", 2u8),
-        ];
-
-        let plain = default_fzf_key(&keybind_hint_lines(&binds, 80));
-
-        assert_eq!(plain.lines().count(), 1);
-        assert!(plain.contains("edit  •   Alt D"));
-    }
-
-    #[test]
-    fn overlong_keybind_labels_are_truncated_to_the_hint_width() {
-        let binds = [MenuKeybind::new(
-            MenuKey::new("ctrl-e").unwrap(),
-            "edit an exceptionally long entry label",
-            1u8,
-        )];
-
-        let plain = default_fzf_key(&keybind_hint_lines(&binds, 24));
-
-        assert!(plain.contains('…'));
-        assert!(plain.lines().all(|line| UnicodeWidthStr::width(line) <= 24));
-    }
-
-    #[test]
-    fn duplicate_keybinds_are_rejected() {
-        let binds = [
-            MenuKeybind::new(MenuKey::new("ctrl-e").unwrap(), "a", 1u8),
-            MenuKeybind::new(MenuKey::new("ctrl-e").unwrap(), "b", 2u8),
-        ];
-        let error = validate_keybinds(&binds).unwrap_err();
-        assert_eq!(error.to_string(), "duplicate menu keybind: ctrl-e");
     }
 
     #[test]

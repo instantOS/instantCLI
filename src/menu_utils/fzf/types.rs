@@ -13,52 +13,12 @@ pub use crate::ui::preview::FzfPreview;
 
 const RESET: &str = "\x1b[0m";
 
-/// Strip ANSI escape codes from a string for use as a stable key.
-fn strip_ansi_escape_codes(s: &str) -> String {
-    let mut result = String::new();
-    let mut chars = s.chars();
-
-    while let Some(c) = chars.next() {
-        if c != '\x1b' {
-            result.push(c);
-            continue;
-        }
-
-        match chars.next() {
-            Some('[') => {
-                for next in chars.by_ref() {
-                    if ('@'..='~').contains(&next) {
-                        break;
-                    }
-                }
-            }
-            Some(']') => {
-                let iter = chars.by_ref();
-                while let Some(next) = iter.next() {
-                    match next {
-                        '\x07' => break,
-                        '\x1b' => {
-                            if matches!(iter.next(), Some('\\')) {
-                                break;
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-            }
-            Some(_) | None => {}
-        }
-    }
-
-    result
-}
-
 /// Default fzf key fallback for display text.
 ///
 /// This is intentionally a fallback only. Item types that need stronger
 /// identity than their rendered label should implement `fzf_key()` directly.
 pub fn default_fzf_key(display_text: &str) -> String {
-    strip_ansi_escape_codes(display_text)
+    crate::ui::text::strip_ansi(display_text)
 }
 
 /// Trait for types that can be displayed in FZF selection menus.

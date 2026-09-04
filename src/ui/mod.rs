@@ -76,6 +76,8 @@ pub mod catppuccin;
 
 pub mod preview;
 
+pub(crate) mod text;
+
 // Separator characters (not in nerd_font crate)
 pub const SEPARATOR_HEAVY: &str = "━";
 pub const SEPARATOR_LIGHT: &str = "─";
@@ -102,34 +104,6 @@ fn colorize(level: Level, s: &str, enable: bool) -> String {
     }
 }
 
-fn strip_ansi(input: &str) -> String {
-    // Remove common ANSI escape sequences like \x1b[0m, \x1b[1;32m, and similar
-    let bytes = input.as_bytes();
-    let mut out = String::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == 0x1b {
-            // ESC
-            if i + 1 < bytes.len() && bytes[i + 1] == b'[' {
-                i += 2;
-                // Skip until we hit a letter in @ A-Z [ \ ] ^ _ ` a-z
-                while i < bytes.len() {
-                    let b = bytes[i];
-                    if (b'@'..=b'~').contains(&b) {
-                        i += 1; // consume the final byte of the CSI sequence
-                        break;
-                    }
-                    i += 1;
-                }
-                continue;
-            }
-        }
-        out.push(bytes[i] as char);
-        i += 1;
-    }
-    out
-}
-
 pub fn emit(level: Level, code: &str, message: &str, data: Option<serde_json::Value>) {
     let r = RENDERER.read().expect("renderer poisioned").clone();
     match r.format {
@@ -143,7 +117,7 @@ pub fn emit(level: Level, code: &str, message: &str, data: Option<serde_json::Va
         }
         OutputFormat::Json => {
             // Ensure message contains no ANSI control sequences in JSON mode
-            let clean_msg = strip_ansi(message);
+            let clean_msg = text::strip_ansi(message);
             let ev = Event {
                 level: level.as_str(),
                 code,

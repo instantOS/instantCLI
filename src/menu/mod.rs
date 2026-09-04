@@ -16,6 +16,7 @@ use std::path::PathBuf;
 
 pub mod chord;
 pub mod client;
+mod commands;
 mod fallback;
 pub mod instantmenu;
 pub mod processing;
@@ -25,6 +26,7 @@ pub mod server;
 pub mod slide;
 pub mod tui;
 use client::HostedMenuClient;
+pub use commands::{MenuCommands, ServerCommands};
 use slide::SliderPreset;
 
 /// Menu backend choice for rendering dialogs
@@ -842,171 +844,6 @@ pub async fn handle_server_command(command: ServerCommands) -> Result<i32> {
             }
         }
     }
-}
-
-#[derive(clap::Subcommand, Debug, Clone)]
-pub enum MenuCommands {
-    #[command(hide = true)]
-    FallbackWorker {
-        #[arg(long = "request-file", value_hint = clap::ValueHint::FilePath)]
-        request_file: String,
-        #[arg(long = "response-file", value_hint = clap::ValueHint::FilePath)]
-        response_file: String,
-    },
-    /// Show confirmation dialog and exit with code 0 for Yes, 1 for No, 2 for Cancelled
-    Confirm {
-        /// Confirmation message to display
-        #[arg(default_value = "Are you sure?")]
-        message: String,
-        /// Menu backend choice (auto, instantmenu/im, tui, scratchpad/sp)
-        #[arg(short = 'b', long = "backend", value_enum, default_value_t = MenuBackend::Auto)]
-        backend: MenuBackend,
-    },
-    /// Unified launcher for all major InstantCLI TUIs
-    All,
-    /// Show a message dialog with an OK button
-    Message {
-        /// Message to display (if omitted, reads from stdin)
-        message: Option<String>,
-        /// Optional title for the message
-        #[arg(long)]
-        title: Option<String>,
-        /// Menu backend choice (auto, instantmenu/im, tui, scratchpad/sp)
-        #[arg(short = 'b', long = "backend", value_enum, default_value_t = MenuBackend::Auto)]
-        backend: MenuBackend,
-    },
-    /// Show selection menu and output choice(s) to stdout
-    Choice {
-        /// Selection prompt message (positional form)
-        prompt: Option<String>,
-        /// Selection prompt message (compatible long-option form)
-        #[arg(long = "prompt", value_name = "PROMPT")]
-        prompt_option: Option<String>,
-        /// Items to choose from (space-separated). If empty, reads from stdin.
-        #[arg(long, default_value = "")]
-        items: String,
-        /// Allow multiple selections
-        #[arg(long = "allow-multiple", visible_alias = "multi")]
-        allow_multiple: bool,
-        /// Menu backend choice (auto, instantmenu/im, tui, scratchpad/sp)
-        #[arg(short = 'b', long = "backend", value_enum, default_value_t = MenuBackend::Auto)]
-        backend: MenuBackend,
-    },
-    /// Show text input dialog and output input to stdout
-    Input {
-        /// Input prompt message
-        #[arg(default_value = "Type a value:")]
-        prompt: String,
-        /// Menu backend choice (auto, instantmenu/im, tui, scratchpad/sp)
-        #[arg(short = 'b', long = "backend", value_enum, default_value_t = MenuBackend::Auto)]
-        backend: MenuBackend,
-    },
-    /// Show password input dialog and output password to stdout
-    Password {
-        /// Password prompt message
-        #[arg(default_value = "Enter password:")]
-        prompt: String,
-        /// Menu backend choice (auto, instantmenu/im, tui, scratchpad/sp)
-        #[arg(short = 'b', long = "backend", value_enum, default_value_t = MenuBackend::Auto)]
-        backend: MenuBackend,
-    },
-    /// Launch file picker and output selected path(s)
-    Pick {
-        /// Starting directory for the picker
-        #[arg(long = "start", value_hint = clap::ValueHint::AnyPath)]
-        start: Option<String>,
-        /// Restrict selection to directories (defaults to files)
-        #[arg(long)]
-        dirs: bool,
-        /// Allow selecting files (enabled by default)
-        #[arg(long)]
-        files: bool,
-        /// Allow multiple selections
-        #[arg(long = "allow-multiple", visible_alias = "multi")]
-        allow_multiple: bool,
-        /// Menu backend choice (auto, tui, scratchpad/sp)
-        #[arg(short = 'b', long = "backend", value_enum, default_value_t = MenuBackend::Auto)]
-        backend: MenuBackend,
-    },
-    /// Show the scratchpad without any other action
-    Show,
-    /// Get menu server status information
-    Status,
-    /// Show chord navigator for provided chords and print the selected sequence
-    Chord {
-        /// Chord definitions in the form `keys:description`
-        #[arg(value_name = "CHORD:DESCRIPTION")]
-        chords: Vec<String>,
-        /// Read additional chord definitions from stdin (one per line)
-        #[arg(long)]
-        stdin: bool,
-        /// Menu backend choice (auto, tui, scratchpad/sp)
-        #[arg(short = 'b', long = "backend", value_enum, default_value_t = MenuBackend::Auto)]
-        backend: MenuBackend,
-    },
-    /// Menu server management commands
-    Server {
-        #[command(subcommand)]
-        command: ServerCommands,
-    },
-    /// Show a slider prompt similar to the legacy islide utility
-    Slide {
-        #[command(flatten)]
-        spec: SliderSpec,
-        /// Menu backend choice (auto, instantmenu/im, tui, scratchpad/sp)
-        #[arg(short = 'b', long = "backend", value_enum, default_value_t = MenuBackend::Auto)]
-        backend: MenuBackend,
-    },
-    /// Show a checklist dialog for testing the checklist utility
-    Checklist {
-        /// Items to display in checklist (space-separated). If empty, uses sample items.
-        #[arg(long, default_value = "")]
-        items: String,
-        /// Text for the confirm button
-        #[arg(long, default_value = "Continue")]
-        confirm: String,
-        /// Menu backend choice (auto, instantmenu/im, tui, scratchpad/sp)
-        #[arg(short = 'b', long = "backend", value_enum, default_value_t = MenuBackend::Auto)]
-        backend: MenuBackend,
-    },
-    /// Show a loading spinner dialog while executing a command, or until stdin is closed
-    Spin {
-        /// Message to display alongside the spinner
-        #[arg(short = 'm', long, default_value = "Loading...")]
-        message: String,
-        /// Command to execute (all trailing arguments)
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        command: Vec<String>,
-        /// Menu backend choice (auto, instantmenu/im, tui, scratchpad/sp)
-        #[arg(short = 'b', long = "backend", value_enum, default_value_t = MenuBackend::Auto)]
-        backend: MenuBackend,
-    },
-    /// Show an ephemeral toast notification popup
-    Toast {
-        /// Message to display in the toast notification
-        message: String,
-        /// Duration in seconds for the toast to remain visible
-        #[arg(long, short = 't', default_value_t = 3.5)]
-        duration: f64,
-        /// Menu backend choice (auto, instantmenu/im, tui, scratchpad/sp)
-        #[arg(short = 'b', long = "backend", value_enum, default_value_t = MenuBackend::Auto)]
-        backend: MenuBackend,
-    },
-}
-
-#[derive(clap::Subcommand, Debug, Clone)]
-pub enum ServerCommands {
-    /// Launch menu server (launches terminal with --inside mode)
-    Launch {
-        /// Launch terminal server instead of spawning external terminal
-        #[arg(long)]
-        inside: bool,
-        /// Run without a scratchpad
-        #[arg(long)]
-        no_scratchpad: bool,
-    },
-    /// Stop the running menu server
-    Stop,
 }
 
 #[cfg(test)]

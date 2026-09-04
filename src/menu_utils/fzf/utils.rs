@@ -26,6 +26,9 @@ pub(crate) struct ResponsiveLayout {
     pub preview_window: &'static str,
     /// The margin argument value (e.g., "2%,2%")
     pub margin: &'static str,
+    /// Conservative width available to list-pane content after margins and
+    /// an optional side preview.
+    pub list_width: usize,
 }
 
 /// Get the responsive layout settings based on terminal dimensions.
@@ -36,18 +39,24 @@ pub(crate) struct ResponsiveLayout {
 ///   - Preview on right, larger vertical margins (10%) for visual balance
 /// - Falls back to bottom layout if terminal size cannot be detected
 pub(crate) fn get_responsive_layout() -> ResponsiveLayout {
-    if let Some((cols, rows)) = get_terminal_dimensions() {
+    responsive_layout_for_dimensions(get_terminal_dimensions())
+}
+
+fn responsive_layout_for_dimensions(dimensions: Option<(u16, u16)>) -> ResponsiveLayout {
+    if let Some((cols, rows)) = dimensions {
         let ratio = cols as f32 / rows as f32;
         // Use bottom if: too narrow (<60 cols) OR aspect ratio <2:1
         if cols < 60 || ratio < 2.0 {
             ResponsiveLayout {
                 preview_window: "--preview-window=down:50%:wrap",
                 margin: "2%,2%", // Minimal vertical margins for stacked layout
+                list_width: usize::from(cols).saturating_sub(4),
             }
         } else {
             ResponsiveLayout {
                 preview_window: "--preview-window=right:50%:wrap",
                 margin: "10%,2%", // More vertical margin when side-by-side layout allows it
+                list_width: usize::from(cols / 2).saturating_sub(4),
             }
         }
     } else {
@@ -55,6 +64,7 @@ pub(crate) fn get_responsive_layout() -> ResponsiveLayout {
         ResponsiveLayout {
             preview_window: "--preview-window=down:50%:wrap",
             margin: "2%,2%",
+            list_width: 76,
         }
     }
 }
@@ -264,6 +274,23 @@ mod tests {
     use std::fs::File;
     use std::io::Write;
     use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn responsive_layout_owns_preview_placement_and_list_width() {
+        let stacked = responsive_layout_for_dimensions(Some((80, 50)));
+        assert_eq!(stacked.preview_window, "--preview-window=down:50%:wrap");
+        assert_eq!(stacked.list_width, 76);
+
+        let side_by_side = responsive_layout_for_dimensions(Some((160, 40)));
+        assert_eq!(
+            side_by_side.preview_window,
+            "--preview-window=right:50%:wrap"
+        );
+        assert_eq!(side_by_side.list_width, 76);
+
+        let fallback = responsive_layout_for_dimensions(None);
+        assert_eq!(fallback.list_width, 76);
+    }
 
     #[test]
     fn test_try_setup_fzf_on_live_iso_not_live_iso() {
