@@ -112,58 +112,6 @@ pub(super) fn interactive_pass_quick_access() -> Result<i32> {
     }
 }
 
-#[cfg(test)]
-mod keybind_tests {
-    use super::*;
-
-    fn entry_item(name: &str) -> BrowserMenuItem {
-        BrowserMenuItem {
-            key: format!("entry:{name}"),
-            display: name.to_string(),
-            preview: crate::ui::preview::FzfPreview::None,
-            kind: BrowserItemKind::Entry(name.to_string()),
-        }
-    }
-
-    #[test]
-    fn enter_keeps_the_primary_copy_action() {
-        let item = entry_item("mail/work");
-        let interpreted = interpret_quick_access_selection(MenuSelection {
-            items: vec![item.clone()],
-            action: None,
-        });
-
-        assert!(matches!(
-            interpreted,
-            Some(QuickAccessIntent::Primary(selected)) if selected.key == item.key
-        ));
-    }
-
-    #[test]
-    fn edit_keybind_targets_the_focused_entry() {
-        let item = entry_item("mail/work");
-        let interpreted = interpret_quick_access_selection(MenuSelection {
-            items: vec![item.clone()],
-            action: Some(QuickAccessBind::Edit),
-        });
-
-        assert!(matches!(
-            interpreted,
-            Some(QuickAccessIntent::Edit(selected)) if selected.key == item.key
-        ));
-    }
-
-    #[test]
-    fn edit_keybind_without_a_match_has_no_target() {
-        let interpreted = interpret_quick_access_selection(MenuSelection::<BrowserMenuItem, _> {
-            items: Vec::new(),
-            action: Some(QuickAccessBind::Edit),
-        });
-
-        assert!(interpreted.is_none());
-    }
-}
-
 pub(super) fn interactive_pass_menu_server() -> Result<i32> {
     interactive_pass_quick_access_server()
 }
@@ -559,4 +507,56 @@ fn build_edit_action_items(entry: &PassEntry) -> Vec<EditActionItem> {
     });
 
     items
+}
+
+#[cfg(test)]
+mod keybind_tests {
+    use super::*;
+
+    fn entry_item(name: &str) -> BrowserMenuItem {
+        BrowserMenuItem {
+            key: format!("entry:{name}"),
+            display: name.to_string(),
+            preview: crate::ui::preview::FzfPreview::None,
+            kind: BrowserItemKind::Entry(name.to_string()),
+        }
+    }
+
+    #[test]
+    fn enter_keeps_the_primary_copy_action() {
+        let item = entry_item("mail/work");
+        let interpreted = interpret_quick_access_selection(MenuSelection {
+            items: vec![item.clone()],
+            action: None,
+        });
+
+        assert!(matches!(
+            interpreted,
+            Some(QuickAccessIntent::Primary(selected)) if selected.key == item.key
+        ));
+    }
+
+    #[test]
+    fn edit_keybind_targets_the_focused_entry() {
+        let item = entry_item("mail/work");
+        let interpreted = interpret_quick_access_selection(MenuSelection {
+            items: vec![item.clone()],
+            action: Some(QuickAccessBind::Edit),
+        });
+
+        assert!(matches!(
+            interpreted,
+            Some(QuickAccessIntent::Edit(selected)) if selected.key == item.key
+        ));
+    }
+
+    #[test]
+    fn edit_keybind_without_a_match_has_no_target() {
+        let interpreted = interpret_quick_access_selection(MenuSelection::<BrowserMenuItem, _> {
+            items: Vec::new(),
+            action: Some(QuickAccessBind::Edit),
+        });
+
+        assert!(interpreted.is_none());
+    }
 }

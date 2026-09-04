@@ -19,6 +19,7 @@ const TEXT_LIMIT: usize = 256 * 1024;
 const HEX_LIMIT: usize = 512;
 
 pub fn render(entry: &ClipEntry) -> Result<()> {
+    clear_preview_images();
     let bytes = entry.decode()?;
     let mut file = tempfile::Builder::new()
         .prefix("ins-clip-preview-")
@@ -265,8 +266,30 @@ fn preview_archive(path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Escape that deletes every graphic the terminal is currently showing —
+/// the same sequence `kitten icat --clear` sends. `q=2` keeps the terminal
+/// from replying.
+pub const CLEAR_GRAPHICS: &str = "\x1b_Ga=d,d=A,q=2\x1b\\";
+
+/// Whether previews can place graphics through the kitty graphics protocol.
+pub fn terminal_graphics_supported() -> bool {
+    command_exists("kitten") && kitty_graphics_available()
+}
+
+/// Remove images an earlier preview left in the pane.
+///
+/// fzf repaints only the preview pane's text, so a graphic placed by
+/// `kitten icat` outlives its entry. Previews that draw an image clear via
+/// `kitten icat --clear`; every other preview relies on this call.
+pub fn clear_preview_images() {
+    if terminal_graphics_supported() {
+        print!("{CLEAR_GRAPHICS}");
+        let _ = std::io::stdout().flush();
+    }
+}
+
 fn render_terminal_image(path: &Path, top: usize) -> Result<bool> {
-    if command_exists("kitten") && kitty_graphics_available() {
+    if terminal_graphics_supported() {
         let place = format!(
             "{}x{}@0x{top}",
             preview_columns(),

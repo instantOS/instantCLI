@@ -81,6 +81,18 @@ fn is_image_format(value: &&str) -> bool {
     )
 }
 
+/// Build a static preview pane. Static previews never run the streaming
+/// renderer, so they must clear leftover preview images from a previously
+/// selected entry themselves.
+fn static_preview(builder: PreviewBuilder) -> FzfPreview {
+    let mut text = String::new();
+    if super::preview::terminal_graphics_supported() {
+        text.push_str(super::preview::CLEAR_GRAPHICS);
+    }
+    text.push_str(&builder.build_string());
+    FzfPreview::Text(text)
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum ClipMainItem {
     Entry(ClipMenuItem),
@@ -134,22 +146,25 @@ impl FzfSelectable for ClipMainItem {
     fn fzf_preview(&self) -> FzfPreview {
         match self {
             Self::Entry(entry) => entry.fzf_preview(),
-            Self::EnableCapture(backend) => PreviewBuilder::new()
-                .header(NerdFont::PlayCircle, "Enable Clipboard Capture")
-                .field("Backend", backend.name())
-                .text("Start clipboard capture now and automatically on future")
-                .text("graphical logins.")
-                .blank()
-                .text("Existing clipboard history is preserved.")
-                .build(),
-            Self::Settings => PreviewBuilder::new()
-                .header(NerdFont::Gear, "Clipboard Settings")
-                .text("Manage background capture and clear clipboard history.")
-                .build(),
-            Self::Close => PreviewBuilder::new()
-                .header(NerdFont::Cross, "Close")
-                .text("Exit without changing the clipboard.")
-                .build(),
+            Self::EnableCapture(backend) => static_preview(
+                PreviewBuilder::new()
+                    .header(NerdFont::PlayCircle, "Enable Clipboard Capture")
+                    .field("Backend", backend.name())
+                    .text("Start clipboard capture now and automatically on future")
+                    .text("graphical logins.")
+                    .blank()
+                    .text("Existing clipboard history is preserved."),
+            ),
+            Self::Settings => static_preview(
+                PreviewBuilder::new()
+                    .header(NerdFont::Gear, "Clipboard Settings")
+                    .text("Manage background capture and clear clipboard history."),
+            ),
+            Self::Close => static_preview(
+                PreviewBuilder::new()
+                    .header(NerdFont::Cross, "Close")
+                    .text("Exit without changing the clipboard."),
+            ),
         }
     }
 
