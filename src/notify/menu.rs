@@ -7,7 +7,9 @@
 
 use anyhow::{Context, Result};
 
-use crate::menu_utils::{FzfWrapper, HeaderBuilder, MenuCursor, MenuPresentation};
+use crate::menu_utils::{
+    FzfWrapper, HeaderBuilder, MenuCursor, MenuKey, MenuKeybind, MenuPresentation,
+};
 use crate::ui::catppuccin::colors;
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::prelude::*;
@@ -40,6 +42,21 @@ pub fn run_notify_ui(debug: bool, mut daemon_running: bool) -> Result<()> {
                 super::service::enable_and_start()?;
                 daemon_running = true;
             }
+            MenuAction::DeleteNotification { id, main_cursor } => {
+                cursor = main_cursor;
+                handlers::handle_delete(&db, id)?;
+            }
+            MenuAction::MarkUnread { id, main_cursor } => {
+                cursor = main_cursor;
+                db.mark_unread(id)?;
+                emit(
+                    Level::Success,
+                    "notify.marked_unread",
+                    &format!("{} Marked as unread.", char::from(NerdFont::Check)),
+                    None,
+                );
+            }
+            MenuAction::Refresh { main_cursor } => cursor = main_cursor,
             MenuAction::Exit => break,
         }
     }
@@ -51,7 +68,46 @@ enum MenuAction {
     OpenNotification { id: i64, main_cursor: MenuCursor },
     OpenOptions { main_cursor: MenuCursor },
     EnableCapture { main_cursor: MenuCursor },
+    DeleteNotification { id: i64, main_cursor: MenuCursor },
+    MarkUnread { id: i64, main_cursor: MenuCursor },
+    Refresh { main_cursor: MenuCursor },
     Exit,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum NotifyKeybindAction {
+    Delete,
+    MarkUnread,
+    Options,
+    EnableCapture,
+}
+
+fn notification_keybinds(daemon_running: bool) -> Result<Vec<MenuKeybind<NotifyKeybindAction>>> {
+    let mut keybinds = vec![
+        MenuKeybind::new(
+            MenuKey::new("ctrl-d")?,
+            "delete",
+            NotifyKeybindAction::Delete,
+        ),
+        MenuKeybind::new(
+            MenuKey::new("ctrl-u")?,
+            "mark unread",
+            NotifyKeybindAction::MarkUnread,
+        ),
+        MenuKeybind::new(
+            MenuKey::new("ctrl-o")?,
+            "options",
+            NotifyKeybindAction::Options,
+        ),
+    ];
+    if !daemon_running {
+        keybinds.push(MenuKeybind::new(
+            MenuKey::new("ctrl-e")?,
+            "enable capture",
+            NotifyKeybindAction::EnableCapture,
+        ));
+    }
+    Ok(keybinds)
 }
 
 /// Build the main menu items from the database.
@@ -124,34 +180,50 @@ fn run_main_menu(
             count_color,
         )
         .build();
+    let keybinds = notification_keybinds(daemon_running)?;
     let selection = FzfWrapper::menu()
         .cursor(initial_index)
         .header(header)
-        .presentation(MenuPresentation::Padded)
-        .select_one(items.clone())?;
+        .select_with_keybinds(items.clone(), &keybinds)?;
 
     let action = match selection {
-        crate::menu_utils::DialogOutcome::Submitted(NotifyMainItem::Notification(n)) => {
-            cursor.update(&NotifyMainItem::Notification(n.clone()), &items);
-            MenuAction::OpenNotification {
-                id: n.id,
-                main_cursor: cursor.clone(),
+        crate::menu_utils::DialogOutcome::Submitted(selection) => {
+            let selected_item = selection.items.into_iter().next();
+            if let Some(item) = &selected_item {
+                cursor.update(item, &items);
             }
-        }
-        crate::menu_utils::DialogOutcome::Submitted(NotifyMainItem::Options) => {
-            cursor.update(&NotifyMainItem::Options, &items);
-            MenuAction::OpenOptions {
-                main_cursor: cursor.clone(),
-            }
-        }
-        crate::menu_utils::DialogOutcome::Submitted(NotifyMainItem::EnableCapture) => {
-            cursor.update(&NotifyMainItem::EnableCapture, &items);
-            MenuAction::EnableCapture {
-                main_cursor: cursor.clone(),
+            let main_cursor = cursor.clone();
+            match (selection.action, selected_item) {
+                (Some(NotifyKeybindAction::Delete), Some(NotifyMainItem::Notification(n))) => {
+                    MenuAction::DeleteNotification {
+                        id: n.id,
+                        main_cursor,
+                    }
+                }
+                (Some(NotifyKeybindAction::MarkUnread), Some(NotifyMainItem::Notification(n))) => {
+                    MenuAction::MarkUnread {
+                        id: n.id,
+                        main_cursor,
+                    }
+                }
+                (Some(NotifyKeybindAction::Options), _) => MenuAction::OpenOptions { main_cursor },
+                (Some(NotifyKeybindAction::EnableCapture), _) => {
+                    MenuAction::EnableCapture { main_cursor }
+                }
+                (Some(NotifyKeybindAction::Delete | NotifyKeybindAction::MarkUnread), _)
+                | (None, None) => MenuAction::Refresh { main_cursor },
+                (None, Some(NotifyMainItem::Notification(n))) => MenuAction::OpenNotification {
+                    id: n.id,
+                    main_cursor,
+                },
+                (None, Some(NotifyMainItem::Options)) => MenuAction::OpenOptions { main_cursor },
+                (None, Some(NotifyMainItem::EnableCapture)) => {
+                    MenuAction::EnableCapture { main_cursor }
+                }
+                (None, Some(NotifyMainItem::Close)) => MenuAction::Exit,
             }
         }
         crate::menu_utils::DialogOutcome::Cancelled => MenuAction::Exit,
-        crate::menu_utils::DialogOutcome::Submitted(NotifyMainItem::Close) => MenuAction::Exit,
     };
 
     Ok(action)
@@ -300,5 +372,17 @@ mod tests {
         assert_eq!(first.preview.title, "Pair device?");
         assert_eq!(first.preview.body, "Allow the keyboard to pair.");
         assert_eq!(first.preview.actions.as_deref(), Some("Pair (live)"));
+    }
+
+    #[test]
+    fn capture_keybind_only_appears_while_daemon_is_stopped() {
+        let stopped = notification_keybinds(false).unwrap();
+        let running = notification_keybinds(true).unwrap();
+
+        assert!(stopped.iter().any(|bind| bind.key.as_str() == "ctrl-e"));
+        assert!(!running.iter().any(|bind| bind.key.as_str() == "ctrl-e"));
+        for key in ["ctrl-d", "ctrl-u", "ctrl-o"] {
+            assert!(running.iter().any(|bind| bind.key.as_str() == key));
+        }
     }
 }

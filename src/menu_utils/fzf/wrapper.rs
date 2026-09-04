@@ -406,6 +406,12 @@ fn finish_menu_child(child: std::process::Child, pid: u32) -> Result<std::proces
     }
 }
 
+/// Terminate a menu process during setup and always release its registration.
+fn abort_menu_child(mut child: std::process::Child, pid: u32) {
+    let _ = child.kill();
+    let _ = finish_menu_child(child, pid);
+}
+
 /// Execute the fzf command with the given input and return the raw output.
 fn execute_fzf_command(cmd: Command, input_text: &str) -> Result<std::process::Output> {
     let (mut child, pid) = spawn_menu_child(cmd)?;
@@ -494,29 +500,47 @@ fn parse_fzf_output<T: Clone, A: Clone>(
     Ok(DialogOutcome::Submitted(MenuSelection { items, action }))
 }
 
-fn parse_encoded_streaming_output<T: DeserializeOwned>(
+fn parse_encoded_streaming_output<T: DeserializeOwned, A: Clone>(
     result: std::process::Output,
-) -> Result<DialogOutcome<MenuSelection<DecodedStreamingMenuItem<T>>>> {
+    keybinds: &[MenuKeybind<A>],
+) -> Result<DialogOutcome<MenuSelection<DecodedStreamingMenuItem<T>, A>>> {
     if fzf_was_cancelled(&result)? {
         return Ok(DialogOutcome::Cancelled);
     }
 
     let stdout = String::from_utf8_lossy(&result.stdout);
-    let selected_lines: Vec<&str> = stdout
+    let mut lines = stdout
         .trim_end()
         .split('\n')
         .filter(|line| !line.is_empty())
-        .collect();
+        .peekable();
 
-    if selected_lines.is_empty() {
+    let action_token = match lines.peek() {
+        Some(line) if keybinds.iter().any(|bind| bind.key.as_str() == *line) => {
+            Some((*line).to_string())
+        }
+        _ => None,
+    };
+    if action_token.is_some() {
+        lines.next();
+    }
+    if !keybinds.is_empty() && lines.peek().is_some_and(|line| !line.contains('\t')) {
+        let token = lines.next().unwrap_or_default();
+        anyhow::bail!("fzf returned unknown keybind token {token:?}");
+    }
+
+    if action_token.is_none() && lines.peek().is_none() {
         return Ok(DialogOutcome::Cancelled);
     }
 
-    let items = selected_lines
-        .into_iter()
+    let items = lines
         .map(DecodedStreamingMenuItem::decode)
         .collect::<Result<Vec<_>>>()?;
-    Ok(DialogOutcome::Submitted(MenuSelection::from_items(items)))
+    let action = action_token
+        .as_deref()
+        .map(|token| resolve_action_token(token, keybinds))
+        .transpose()?;
+    Ok(DialogOutcome::Submitted(MenuSelection { items, action }))
 }
 
 pub struct FzfWrapper {
@@ -627,18 +651,21 @@ impl FzfWrapper {
         parse_fzf_output(output, &item_map, keybinds)
     }
 
-    pub fn select_encoded_streaming_prefilled<T, C>(
+    pub fn select_encoded_streaming_prefilled_with_keybinds<T, A: Clone, C>(
         &self,
         producer: C,
         initial_input: &str,
-    ) -> Result<DialogOutcome<MenuSelection<DecodedStreamingMenuItem<T>>>>
+        keybinds: &[MenuKeybind<A>],
+    ) -> Result<DialogOutcome<MenuSelection<DecodedStreamingMenuItem<T>, A>>>
     where
         T: DeserializeOwned,
         C: Into<StreamingCommand>,
     {
+        super::keybind::validate(keybinds)?;
         let output = self.execute_streaming_command(
             producer,
             initial_input,
+            keybinds,
             &[
                 "--delimiter",
                 "\t",
@@ -648,24 +675,26 @@ impl FzfWrapper {
                 streaming_preview_command(),
             ],
         )?;
-        parse_encoded_streaming_output(output)
+        parse_encoded_streaming_output(output, keybinds)
     }
 
-    pub fn select_encoded_streaming<T, C>(
+    pub fn select_encoded_streaming_with_keybinds<T, A: Clone, C>(
         &self,
         producer: C,
-    ) -> Result<DialogOutcome<MenuSelection<DecodedStreamingMenuItem<T>>>>
+        keybinds: &[MenuKeybind<A>],
+    ) -> Result<DialogOutcome<MenuSelection<DecodedStreamingMenuItem<T>, A>>>
     where
         T: DeserializeOwned,
         C: Into<StreamingCommand>,
     {
-        self.select_encoded_streaming_prefilled(producer, "")
+        self.select_encoded_streaming_prefilled_with_keybinds(producer, "", keybinds)
     }
 
-    fn execute_streaming_command<C>(
+    fn execute_streaming_command<A, C>(
         &self,
         producer: C,
         initial_input: &str,
+        keybinds: &[MenuKeybind<A>],
         base_args: &[&str],
     ) -> Result<std::process::Output>
     where
@@ -673,7 +702,7 @@ impl FzfWrapper {
     {
         let mut fzf = Command::new("fzf");
         fzf.env_remove("FZF_DEFAULT_OPTS");
-        configure_menu_args(&mut fzf, self, NO_KEYBINDS);
+        configure_menu_args(&mut fzf, self, keybinds);
         fzf.args(base_args);
         let cursor_position = self
             .initial_cursor
@@ -689,15 +718,25 @@ impl FzfWrapper {
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
 
-        let mut producer_child = producer.spawn()?;
-        let mut producer_stdout = producer_child
-            .stdout
-            .take()
-            .ok_or_else(|| anyhow::anyhow!("Failed to capture streaming producer stdout"))?;
-        let mut fzf_stdin = fzf_child
-            .stdin
-            .take()
-            .ok_or_else(|| anyhow!("Failed to capture fzf stdin"))?;
+        let mut producer_child = match producer.spawn() {
+            Ok(child) => child,
+            Err(error) => {
+                abort_menu_child(fzf_child, pid);
+                return Err(error.into());
+            }
+        };
+        let Some(mut producer_stdout) = producer_child.stdout.take() else {
+            let _ = producer_child.kill();
+            let _ = producer_child.wait();
+            abort_menu_child(fzf_child, pid);
+            return Err(anyhow!("Failed to capture streaming producer stdout"));
+        };
+        let Some(mut fzf_stdin) = fzf_child.stdin.take() else {
+            let _ = producer_child.kill();
+            let _ = producer_child.wait();
+            abort_menu_child(fzf_child, pid);
+            return Err(anyhow!("Failed to capture fzf stdin"));
+        };
         let initial = initial_input.to_string();
 
         let pump = thread::spawn(move || -> Result<()> {
@@ -740,26 +779,32 @@ impl FzfWrapper {
     /// from `late_items` and appended live until the channel closes. The
     /// preview strategy is forced to `Mixed` because the preview kind of
     /// late items is not known when fzf is spawned.
-    pub fn select_streaming<T: FzfSelectable + Clone + Send + 'static>(
+    pub fn select_streaming_with_keybinds<T: FzfSelectable + Clone + Send + 'static, A: Clone>(
         &self,
         initial_items: Vec<T>,
         late_items: Receiver<T>,
-    ) -> Result<DialogOutcome<MenuSelection<T>>> {
-        self.select_streaming_with_ready(initial_items, late_items, || Ok(()))
+        keybinds: &[MenuKeybind<A>],
+    ) -> Result<DialogOutcome<MenuSelection<T, A>>> {
+        self.select_streaming_with_ready_and_keybinds(
+            initial_items,
+            late_items,
+            keybinds,
+            || Ok(()),
+        )
     }
 
-    /// Streaming selection with a callback fired after fzf has spawned and
-    /// its initial input has been flushed. Servers use this as the readiness
-    /// boundary before allowing producers to consume their input.
-    pub fn select_streaming_with_ready<
+    pub fn select_streaming_with_ready_and_keybinds<
         T: FzfSelectable + Clone + Send + 'static,
+        A: Clone,
         F: FnOnce() -> Result<()>,
     >(
         &self,
         initial_items: Vec<T>,
         late_items: Receiver<T>,
+        keybinds: &[MenuKeybind<A>],
         on_ready: F,
-    ) -> Result<DialogOutcome<MenuSelection<T>>> {
+    ) -> Result<DialogOutcome<MenuSelection<T, A>>> {
+        super::keybind::validate(keybinds)?;
         #[cfg(test)]
         if let Some(resp) = crate::menu_utils::mock::pop_mock() {
             on_ready()?;
@@ -768,9 +813,7 @@ impl FzfWrapper {
                 items.push(item);
             }
             return Ok(crate::menu_utils::mock::resolve_selection(
-                resp,
-                items,
-                NO_KEYBINDS,
+                resp, items, keybinds,
             ));
         }
 
@@ -786,7 +829,7 @@ impl FzfWrapper {
         // Configure fzf command
         let mut cmd = Command::new("fzf");
         cmd.env_remove("FZF_DEFAULT_OPTS");
-        configure_menu_args(&mut cmd, self, NO_KEYBINDS);
+        configure_menu_args(&mut cmd, self, keybinds);
         let input_text =
             configure_preview_and_input(&mut cmd, preview_strategy, &display_data, separator_mode);
 
@@ -890,7 +933,7 @@ impl FzfWrapper {
         let item_map = shared_map
             .lock()
             .map_err(|_| anyhow!("fzf streaming item map poisoned"))?;
-        parse_fzf_output(output, &item_map, NO_KEYBINDS)
+        parse_fzf_output(output, &item_map, keybinds)
     }
 
     pub fn input(prompt: &str) -> Result<DialogOutcome<String>> {
@@ -1125,6 +1168,106 @@ mod mock_tests {
         assert_eq!(
             error.to_string(),
             "fzf returned unknown keybind token \"ctrl-z\""
+        );
+    }
+
+    fn successful_output(stdout: impl Into<Vec<u8>>) -> std::process::Output {
+        use std::os::unix::process::ExitStatusExt;
+
+        std::process::Output {
+            status: std::process::ExitStatus::from_raw(0),
+            stdout: stdout.into(),
+            stderr: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn encoded_streaming_keybind_preserves_selection_and_typed_action() {
+        let row = StreamingMenuItem::new("app", "one", "One", 42u8)
+            .encode()
+            .unwrap();
+        let binds = [MenuKeybind::new(
+            MenuKey::new("ctrl-r").unwrap(),
+            "run",
+            "run",
+        )];
+        let output = successful_output(format!("ctrl-r\n{row}\n"));
+
+        let DialogOutcome::Submitted(selection) =
+            parse_encoded_streaming_output::<u8, _>(output, &binds).unwrap()
+        else {
+            panic!("expected submission");
+        };
+        assert_eq!(selection.items[0].payload, 42);
+        assert_eq!(selection.action, Some("run"));
+    }
+
+    #[test]
+    fn encoded_streaming_keybind_can_submit_without_a_selection() {
+        let binds = [MenuKeybind::new(
+            MenuKey::new("ctrl-r").unwrap(),
+            "refresh",
+            9u8,
+        )];
+        let DialogOutcome::Submitted(selection) =
+            parse_encoded_streaming_output::<String, _>(successful_output("ctrl-r\n"), &binds)
+                .unwrap()
+        else {
+            panic!("expected submission");
+        };
+        assert!(selection.items.is_empty());
+        assert_eq!(selection.action, Some(9));
+    }
+
+    #[test]
+    fn encoded_streaming_enter_and_unknown_tokens_are_distinguished() {
+        let row = StreamingMenuItem::new("app", "one", "One", 42u8)
+            .encode()
+            .unwrap();
+        let binds = [MenuKeybind::new(
+            MenuKey::new("ctrl-r").unwrap(),
+            "run",
+            9u8,
+        )];
+
+        let DialogOutcome::Submitted(selection) =
+            parse_encoded_streaming_output::<u8, _>(successful_output(format!("{row}\n")), &binds)
+                .unwrap()
+        else {
+            panic!("expected submission");
+        };
+        assert_eq!(selection.action, None);
+
+        let error =
+            parse_encoded_streaming_output::<String, _>(successful_output("ctrl-z\n"), &binds)
+                .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "fzf returned unknown keybind token \"ctrl-z\""
+        );
+    }
+
+    #[test]
+    fn mocked_live_streaming_returns_typed_keybind_action() {
+        let (tx, rx) = crossbeam_channel::unbounded::<String>();
+        tx.send("late".to_string()).unwrap();
+        let _tx = tx;
+        let _guard = MockQueue::new().keybind_action("ctrl-e", vec![1]).guard();
+        let binds = [MenuKeybind::new(
+            MenuKey::new("ctrl-e").unwrap(),
+            "edit",
+            7u8,
+        )];
+
+        let result = FzfWrapper::builder()
+            .select_streaming_with_keybinds(vec!["static".to_string()], rx, &binds)
+            .unwrap();
+        assert_eq!(
+            result,
+            DialogOutcome::Submitted(MenuSelection {
+                items: vec!["late".to_string()],
+                action: Some(7),
+            })
         );
     }
 

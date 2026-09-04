@@ -415,12 +415,21 @@ impl FzfBuilder {
         initial_items: Vec<T>,
         late_items: crossbeam_channel::Receiver<T>,
     ) -> Result<DialogOutcome<MenuSelection<T>>> {
-        debug_assert_eq!(
-            self.shared.presentation,
-            MenuPresentation::Compact,
-            "select_streaming does not support padded presentation"
-        );
-        FzfWrapper::from_builder(self).select_streaming(initial_items, late_items)
+        self.select_streaming_with_keybinds(initial_items, late_items, super::wrapper::NO_KEYBINDS)
+    }
+
+    pub fn select_streaming_with_keybinds<T: FzfSelectable + Clone + Send + 'static, A: Clone>(
+        self,
+        initial_items: Vec<T>,
+        late_items: crossbeam_channel::Receiver<T>,
+        keybinds: &[MenuKeybind<A>],
+    ) -> Result<DialogOutcome<MenuSelection<T, A>>> {
+        ensure_compact_presentation(self.shared.presentation, "select_streaming")?;
+        FzfWrapper::from_builder(self).select_streaming_with_keybinds(
+            initial_items,
+            late_items,
+            keybinds,
+        )
     }
 
     pub fn select_streaming_with_ready<
@@ -432,14 +441,30 @@ impl FzfBuilder {
         late_items: crossbeam_channel::Receiver<T>,
         on_ready: F,
     ) -> Result<DialogOutcome<MenuSelection<T>>> {
-        debug_assert_eq!(
-            self.shared.presentation,
-            MenuPresentation::Compact,
-            "select_streaming does not support padded presentation"
-        );
-        FzfWrapper::from_builder(self).select_streaming_with_ready(
+        self.select_streaming_with_ready_and_keybinds(
             initial_items,
             late_items,
+            super::wrapper::NO_KEYBINDS,
+            on_ready,
+        )
+    }
+
+    pub fn select_streaming_with_ready_and_keybinds<
+        T: FzfSelectable + Clone + Send + 'static,
+        A: Clone,
+        F: FnOnce() -> Result<()>,
+    >(
+        self,
+        initial_items: Vec<T>,
+        late_items: crossbeam_channel::Receiver<T>,
+        keybinds: &[MenuKeybind<A>],
+        on_ready: F,
+    ) -> Result<DialogOutcome<MenuSelection<T, A>>> {
+        ensure_compact_presentation(self.shared.presentation, "select_streaming")?;
+        FzfWrapper::from_builder(self).select_streaming_with_ready_and_keybinds(
+            initial_items,
+            late_items,
+            keybinds,
             on_ready,
         )
     }
@@ -495,7 +520,20 @@ impl FzfBuilder {
         T: DeserializeOwned,
         C: Into<StreamingCommand>,
     {
-        FzfWrapper::from_builder(self).select_encoded_streaming(command)
+        self.select_encoded_streaming_with_keybinds(command, super::wrapper::NO_KEYBINDS)
+    }
+
+    pub fn select_encoded_streaming_with_keybinds<T, A: Clone, C>(
+        self,
+        command: C,
+        keybinds: &[MenuKeybind<A>],
+    ) -> Result<DialogOutcome<MenuSelection<DecodedStreamingMenuItem<T>, A>>>
+    where
+        T: DeserializeOwned,
+        C: Into<StreamingCommand>,
+    {
+        ensure_compact_presentation(self.shared.presentation, "select_encoded_streaming")?;
+        FzfWrapper::from_builder(self).select_encoded_streaming_with_keybinds(command, keybinds)
     }
 
     /// Single-pick variant of [`FzfBuilder::select_encoded_streaming`]:
@@ -521,7 +559,29 @@ impl FzfBuilder {
         T: DeserializeOwned,
         C: Into<StreamingCommand>,
     {
-        FzfWrapper::from_builder(self).select_encoded_streaming_prefilled(command, initial_input)
+        self.select_encoded_streaming_prefilled_with_keybinds(
+            command,
+            initial_input,
+            super::wrapper::NO_KEYBINDS,
+        )
+    }
+
+    pub fn select_encoded_streaming_prefilled_with_keybinds<T, A: Clone, C>(
+        self,
+        command: C,
+        initial_input: &str,
+        keybinds: &[MenuKeybind<A>],
+    ) -> Result<DialogOutcome<MenuSelection<DecodedStreamingMenuItem<T>, A>>>
+    where
+        T: DeserializeOwned,
+        C: Into<StreamingCommand>,
+    {
+        ensure_compact_presentation(self.shared.presentation, "select_encoded_streaming")?;
+        FzfWrapper::from_builder(self).select_encoded_streaming_prefilled_with_keybinds(
+            command,
+            initial_input,
+            keybinds,
+        )
     }
 
     /// Single-pick variant of [`FzfBuilder::select_encoded_streaming_prefilled`].
@@ -536,6 +596,13 @@ impl FzfBuilder {
     {
         single_from_vec(self.select_encoded_streaming_prefilled(command, initial_input)?)
     }
+}
+
+fn ensure_compact_presentation(presentation: MenuPresentation, operation: &str) -> Result<()> {
+    if presentation != MenuPresentation::Compact {
+        anyhow::bail!("{operation} does not support padded presentation");
+    }
+    Ok(())
 }
 
 /// Extract the single expected element of a submitted selection.

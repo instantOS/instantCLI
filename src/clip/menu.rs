@@ -4,11 +4,12 @@ use crate::assist::utils::copy_to_clipboard;
 use crate::common::display_server::DisplayServer;
 use crate::common::shell::current_exe_command;
 use crate::menu_utils::{
-    FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder, MenuCursor, MenuPresentation,
+    FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder, MenuCursor, MenuKey, MenuKeybind,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, hex_to_ansi_fg};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
+use crate::ui::{Level, emit};
 
 use super::history::{self, ClipBackend, ClipEntry};
 use super::service;
@@ -86,6 +87,32 @@ enum ClipMainItem {
     EnableCapture(ClipBackend),
     Settings,
     Close,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ClipKeybindAction {
+    Delete,
+    Settings,
+    EnableCapture,
+}
+
+fn clip_keybinds(capture_active: bool) -> Result<Vec<MenuKeybind<ClipKeybindAction>>> {
+    let mut keybinds = vec![
+        MenuKeybind::new(MenuKey::new("ctrl-d")?, "delete", ClipKeybindAction::Delete),
+        MenuKeybind::new(
+            MenuKey::new("ctrl-o")?,
+            "settings",
+            ClipKeybindAction::Settings,
+        ),
+    ];
+    if !capture_active {
+        keybinds.push(MenuKeybind::new(
+            MenuKey::new("ctrl-e")?,
+            "enable capture",
+            ClipKeybindAction::EnableCapture,
+        ));
+    }
+    Ok(keybinds)
 }
 
 impl FzfSelectable for ClipMainItem {
@@ -191,24 +218,45 @@ pub fn run(backend: ClipBackend) -> Result<()> {
             .status(NerdFont::Circle, capture_label, capture_color)
             .build();
 
+        let keybinds = clip_keybinds(status.active)?;
+
         let crate::menu_utils::DialogOutcome::Submitted(selection) = FzfWrapper::menu()
             .cursor(initial_index)
             .header(header)
-            .presentation(MenuPresentation::Padded)
-            .select_one(items.clone())?
+            .select_with_keybinds(items.clone(), &keybinds)?
         else {
             return Ok(());
         };
-        cursor.update(&selection, &items);
-        match selection {
-            ClipMainItem::Entry(entry) => {
-                return copy_to_clipboard(&entry.0.decode()?, &DisplayServer::detect());
+        let selected_item = selection.items.into_iter().next();
+        if let Some(item) = &selected_item {
+            cursor.update(item, &items);
+        }
+
+        match (selection.action, selected_item) {
+            (Some(ClipKeybindAction::Delete), Some(ClipMainItem::Entry(entry))) => {
+                history::delete(backend, &entry.0.id)?;
+                emit(
+                    Level::Success,
+                    "clip.deleted",
+                    &format!("Deleted clipboard entry {}.", entry.0.id),
+                    Some(serde_json::json!({ "id": entry.0.id })),
+                );
             }
-            ClipMainItem::EnableCapture(backend) => {
+            (Some(ClipKeybindAction::Settings), _) => super::settings::run(backend)?,
+            (Some(ClipKeybindAction::EnableCapture), _) => {
                 service::enable(backend)?;
             }
-            ClipMainItem::Settings => super::settings::run(backend)?,
-            ClipMainItem::Close => return Ok(()),
+            (Some(ClipKeybindAction::Delete), _) | (None, None) => {}
+            (None, Some(selection)) => match selection {
+                ClipMainItem::Entry(entry) => {
+                    return copy_to_clipboard(&entry.0.decode()?, &DisplayServer::detect());
+                }
+                ClipMainItem::EnableCapture(backend) => {
+                    service::enable(backend)?;
+                }
+                ClipMainItem::Settings => super::settings::run(backend)?,
+                ClipMainItem::Close => return Ok(()),
+            },
         }
     }
 }
@@ -252,5 +300,16 @@ mod tests {
             friendly_summary("[[ binary data 76 KiB png 1249x364 ]]"),
             "Image · PNG · 1249×364 · 76 KiB"
         );
+    }
+
+    #[test]
+    fn capture_keybind_only_appears_while_capture_is_stopped() {
+        let stopped = clip_keybinds(false).unwrap();
+        let active = clip_keybinds(true).unwrap();
+
+        assert!(stopped.iter().any(|bind| bind.key.as_str() == "ctrl-e"));
+        assert!(!active.iter().any(|bind| bind.key.as_str() == "ctrl-e"));
+        assert!(active.iter().any(|bind| bind.key.as_str() == "ctrl-d"));
+        assert!(active.iter().any(|bind| bind.key.as_str() == "ctrl-o"));
     }
 }
