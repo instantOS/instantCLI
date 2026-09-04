@@ -122,7 +122,7 @@ pub fn run(backend: ClipBackend) -> Result<()> {
             SettingsItem::Back,
         ];
         let initial_index = cursor.initial_index(&items);
-        let Some(selection) = FzfWrapper::menu()
+        let crate::menu_utils::DialogOutcome::Submitted(selection) = FzfWrapper::menu()
             .cursor(initial_index)
             .presentation(MenuPresentation::Padded)
             .select_one(items.clone())?
@@ -236,7 +236,7 @@ fn confirm_clear(entries: &[ClipEntry]) -> Result<bool> {
         },
     ];
     let header = Header::default("Review clipboard history deletion");
-    let Some(selection) = FzfWrapper::menu()
+    let crate::menu_utils::DialogOutcome::Submitted(selection) = FzfWrapper::menu()
         .initial_index(0)
         .header(header)
         .presentation(MenuPresentation::Padded)

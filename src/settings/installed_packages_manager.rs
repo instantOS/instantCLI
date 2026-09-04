@@ -140,7 +140,6 @@ fn handle_uninstall_result(
             Ok(UninstallResult::Uninstalled)
         }
         FzfResult::MultiSelected(_) | FzfResult::Cancelled => Ok(UninstallResult::Cancelled),
-        FzfResult::Error(err) => anyhow::bail!("Package selection failed: {}", err),
     }
 }
 

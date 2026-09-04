@@ -192,7 +192,6 @@ fn handle_arch_install_result(
             println!("No packages selected.");
             Ok(())
         }
-        FzfResult::Error(err) => anyhow::bail!("Package selection failed: {}", err),
     }
 }
 
@@ -275,7 +274,6 @@ where
             println!("No packages selected.");
             Ok(())
         }
-        FzfResult::Error(err) => anyhow::bail!("Package selection failed: {}", err),
     }
 }
 

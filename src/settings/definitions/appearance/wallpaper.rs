@@ -91,28 +91,30 @@ impl Setting for SetWallpaper {
             return Ok(());
         }
 
-        let path = MenuWrapper::file_picker()
+        let path = match MenuWrapper::file_picker()
             .hint("Select a wallpaper image")
-            .pick_one()?;
+            .pick_one()?
+        {
+            crate::menu_utils::DialogOutcome::Submitted(path) => path,
+            crate::menu_utils::DialogOutcome::Cancelled => return Ok(()),
+        };
 
-        if let Some(path) = path {
-            let exe = std::env::current_exe().context("Failed to get current executable path")?;
-            let status = Command::new(exe)
-                .args(["wallpaper", "set", &path.to_string_lossy()])
-                .status()
-                .context("Failed to execute wallpaper command")?;
+        let exe = std::env::current_exe().context("Failed to get current executable path")?;
+        let status = Command::new(exe)
+            .args(["wallpaper", "set", &path.to_string_lossy()])
+            .status()
+            .context("Failed to execute wallpaper command")?;
 
-            if status.success() {
-                FzfWrapper::builder()
-                    .message("Wallpaper updated successfully!")
-                    .title("Wallpaper Image")
-                    .message_dialog()?;
-            } else {
-                FzfWrapper::builder()
-                    .message("Failed to set wallpaper.")
-                    .title("Error")
-                    .message_dialog()?;
-            }
+        if status.success() {
+            FzfWrapper::builder()
+                .message("Wallpaper updated successfully!")
+                .title("Wallpaper Image")
+                .message_dialog()?;
+        } else {
+            FzfWrapper::builder()
+                .message("Failed to set wallpaper.")
+                .title("Error")
+                .message_dialog()?;
         }
         Ok(())
     }

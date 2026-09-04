@@ -10,7 +10,7 @@ use super::shared::{
     default_header_text, run_fzf_with_input,
 };
 use crate::menu_utils::fzf::types::{FzfPreview, FzfResult, FzfSelectable, InitialCursor};
-use crate::menu_utils::fzf::wrapper::check_fzf_exit;
+use crate::menu_utils::fzf::wrapper::fzf_was_cancelled;
 
 /// Invisible marker used to keep non-selectable padded rows visible while fzf
 /// navigation only visits actual menu actions.
@@ -64,25 +64,23 @@ impl FzfBuilder {
                 has_keywords,
                 has_non_selectable,
             );
-            let output = match run_fzf_with_input(cmd, input_text.as_bytes()) {
-                Ok(output) => output,
-                Err(error) => break FzfResult::Error(error.to_string()),
-            };
+            let output = run_fzf_with_input(cmd, input_text.as_bytes())?;
 
-            if let Some(cancelled) = check_fzf_exit(&output) {
-                break cancelled;
+            if fzf_was_cancelled(&output)? {
+                break FzfResult::Cancelled;
             }
             if !output.status.success() {
                 break FzfResult::Cancelled;
             }
 
             let stdout = String::from_utf8_lossy(&output.stdout);
-            let Some(index) = stdout.trim().parse::<usize>().ok() else {
-                break FzfResult::Cancelled;
-            };
-            let Some(item) = items.get(index) else {
-                break FzfResult::Cancelled;
-            };
+            let index = stdout
+                .trim()
+                .parse::<usize>()
+                .map_err(|error| anyhow::anyhow!("fzf returned an invalid item index: {error}"))?;
+            let item = items
+                .get(index)
+                .ok_or_else(|| anyhow::anyhow!("fzf returned out-of-range item index {index}"))?;
 
             if item.fzf_is_selectable() {
                 break FzfResult::Selected(item.clone());

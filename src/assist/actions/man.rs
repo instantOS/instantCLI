@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use std::process::Command;
 
 use crate::common::shell::shell_quote;
-use crate::menu::client::MenuClient;
+use crate::menu::client::HostedMenuClient;
 use crate::menu::protocol::{FzfPreview, SerializableMenuItem};
 
 pub fn search_man_pages() -> Result<()> {
@@ -30,7 +30,7 @@ pub fn search_man_pages() -> Result<()> {
         return Ok(());
     }
 
-    let client = MenuClient::new();
+    let client = HostedMenuClient::new();
     let items: Vec<SerializableMenuItem> = pages
         .into_iter()
         .map(|page| SerializableMenuItem {
@@ -48,12 +48,10 @@ pub fn search_man_pages() -> Result<()> {
         })
         .collect();
 
-    let selected = client.choice("Select a man page:".to_string(), items, false)?;
-
-    // Handle empty selection (user cancelled)
-    if selected.is_empty() {
-        return Ok(());
-    }
+    let selected = match client.choice("Select a man page:".to_string(), items, false)? {
+        crate::menu_utils::DialogOutcome::Submitted(selected) => selected,
+        crate::menu_utils::DialogOutcome::Cancelled => return Ok(()),
+    };
 
     let page = &selected[0].display_text;
     let command = format!(r#"man "{}""#, page);

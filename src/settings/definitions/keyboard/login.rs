@@ -1,8 +1,8 @@
 //! Login screen keyboard layout setting
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 
-use crate::menu_utils::{FzfResult, FzfWrapper};
+use crate::menu_utils::FzfWrapper;
 use crate::preview::{PreviewId, preview_command};
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
@@ -74,10 +74,10 @@ impl Setting for LoginScreenLayout {
             .header("Select Login Screen Layout")
             .prompt("Layout")
             .initial_index(initial_index)
-            .select(layouts)?;
+            .select_one(layouts)?;
 
         match result {
-            FzfResult::Selected(layout) => {
+            crate::menu_utils::DialogOutcome::Submitted(layout) => {
                 if let Err(err) =
                     ctx.run_command_as_root("localectl", ["set-x11-keymap", layout.code.as_str()])
                 {
@@ -94,8 +94,7 @@ impl Setting for LoginScreenLayout {
                     &format!("Set to: {} ({})", layout.name, layout.code),
                 );
             }
-            FzfResult::Error(err) => bail!("fzf error: {err}"),
-            _ => {}
+            crate::menu_utils::DialogOutcome::Cancelled => {}
         }
 
         Ok(())

@@ -1,11 +1,11 @@
 use crate::assist::registry;
 use crate::assist::utils;
 use crate::common::shell::shell_quote;
-use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper, HeaderBuilder};
+use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder};
 use crate::ui::catppuccin::{colors, format_icon_colored, hex_to_ansi_fg};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use std::io::IsTerminal;
 
 const RESET: &str = "\x1b[0m";
@@ -55,12 +55,11 @@ pub fn show_help_for_path(path: &str) -> Result<()> {
         .header(header)
         .args(["--no-sort"])
         .responsive_layout()
-        .select(items)?;
+        .select_one(items)?;
 
     match result {
-        FzfResult::Error(err) => return Err(anyhow!(err)),
-        FzfResult::Cancelled => return Ok(()),
-        FzfResult::Selected(item) => {
+        crate::menu_utils::DialogOutcome::Cancelled => return Ok(()),
+        crate::menu_utils::DialogOutcome::Submitted(item) => {
             // Parse the key format: "action:key" or "group:key"
             if let Some((item_type, key_sequence)) = item.key.split_once(':') {
                 match item_type {
@@ -78,7 +77,6 @@ pub fn show_help_for_path(path: &str) -> Result<()> {
                 }
             }
         }
-        FzfResult::MultiSelected(_) => {} // Should not happen with single select
     }
 
     Ok(())

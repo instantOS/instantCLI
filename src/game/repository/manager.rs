@@ -379,10 +379,12 @@ impl GameRepositoryManager {
         // Show message then prompt for input
         FzfWrapper::message(&message)?;
 
-        let repo_input = FzfWrapper::input("Enter restic repository path or URL")
+        let repo_input = match FzfWrapper::input("Enter restic repository path or URL")
             .map_err(|e| anyhow::anyhow!("Failed to get repository input: {}", e))?
-            .trim()
-            .to_string();
+        {
+            crate::menu_utils::DialogOutcome::Submitted(input) => input.trim().to_string(),
+            crate::menu_utils::DialogOutcome::Cancelled => String::new(),
+        };
 
         // Use default if empty
         if repo_input.is_empty() {

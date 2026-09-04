@@ -6,7 +6,7 @@ use crate::dot::dotfilerepo::{DotfileDir, DotfileRepo};
 use crate::dot::menu::repo_actions::build_repo_preview;
 use crate::dot::types::{DotsDirSelectItem, RepoMenuItem};
 use crate::dot::utils::{filter_dotfiles_by_path, get_all_dotfiles, resolve_dotfile_path};
-use crate::menu_utils::{ConfirmResult, FzfResult, FzfWrapper, HeaderBuilder};
+use crate::menu_utils::{ConfirmResult, FzfWrapper, HeaderBuilder};
 use crate::ui::prelude::*;
 use anyhow::Result;
 use colored::*;
@@ -110,13 +110,13 @@ fn select_repo(config: &DotfileConfig, db: &Database, target_path: &Path) -> Res
         .header(header)
         .prompt("Select")
         .responsive_layout()
-        .select(items)
+        .select_one(items)
         .map_err(|e| anyhow::anyhow!("Selection error: {}", e))?
     {
-        FzfResult::Selected(item) => Ok(item.repo),
-        FzfResult::Cancelled => Err(anyhow::anyhow!("No repository selected")),
-        FzfResult::Error(e) => Err(anyhow::anyhow!("Selection error: {}", e)),
-        _ => Err(anyhow::anyhow!("Unexpected selection result")),
+        crate::menu_utils::DialogOutcome::Submitted(item) => Ok(item.repo),
+        crate::menu_utils::DialogOutcome::Cancelled => {
+            Err(anyhow::anyhow!("No repository selected"))
+        }
     }
 }
 
@@ -202,13 +202,13 @@ fn select_dots_dir(
         .header(header)
         .prompt("Select")
         .responsive_layout()
-        .select(items)
+        .select_one(items)
         .map_err(|e| anyhow::anyhow!("Selection error: {}", e))?
     {
-        FzfResult::Selected(item) => Ok(Some(item.dots_dir)),
-        FzfResult::Cancelled => Err(anyhow::anyhow!("No dots directory selected")),
-        FzfResult::Error(e) => Err(anyhow::anyhow!("Selection error: {}", e)),
-        _ => Err(anyhow::anyhow!("Unexpected selection result")),
+        crate::menu_utils::DialogOutcome::Submitted(item) => Ok(Some(item.dots_dir)),
+        crate::menu_utils::DialogOutcome::Cancelled => {
+            Err(anyhow::anyhow!("No dots directory selected"))
+        }
     }
 }
 

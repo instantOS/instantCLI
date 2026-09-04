@@ -166,7 +166,6 @@ fn pick_dotfiles_fzf(all_dotfiles: &DotfileMap) -> Result<Vec<crate::dot::Dotfil
             );
             Ok(vec![])
         }
-        FzfResult::Error(err) => anyhow::bail!("fzf error: {err}"),
     }
 }
 

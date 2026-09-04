@@ -14,7 +14,7 @@ use crate::game::utils::safeguards::{PathUsage, ensure_safe_path};
 use crate::game::utils::save_files::{SaveDirectoryInfo, get_save_directory_info};
 use crate::menu::protocol;
 use crate::menu_utils::{
-    ConfirmResult, FzfResult, FzfSelectable, FzfWrapper, HeaderBuilder, MenuPresentation,
+    ConfirmResult, FzfSelectable, FzfWrapper, HeaderBuilder, MenuPresentation,
 };
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::prelude::*;
@@ -452,16 +452,11 @@ fn resolve_missing_path(display: &str, label: &str) -> Result<MissingPathChoiceK
             .build(),
         )
         .presentation(MenuPresentation::Padded)
-        .select(options)
+        .select_one(options)
         .map_err(|e| anyhow!("Failed to prompt for missing path action: {e}"))?
     {
-        FzfResult::Selected(choice) => Ok(choice.kind),
-        FzfResult::MultiSelected(mut choices) => Ok(choices
-            .pop()
-            .map(|c| c.kind)
-            .unwrap_or(MissingPathChoiceKind::Cancel)),
-        FzfResult::Cancelled => Ok(MissingPathChoiceKind::Cancel),
-        FzfResult::Error(err) => Err(anyhow!(err)),
+        crate::menu_utils::DialogOutcome::Submitted(choice) => Ok(choice.kind),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(MissingPathChoiceKind::Cancel),
     }
 }
 
@@ -893,12 +888,10 @@ fn prompt_save_path_kind(display: &str) -> Result<Option<PathContentKind>> {
             .build(),
         )
         .presentation(MenuPresentation::Padded)
-        .select(options)?
+        .select_one(options)?
     {
-        FzfResult::Selected(option) => Ok(Some(option.kind)),
-        FzfResult::MultiSelected(mut options) => Ok(options.pop().map(|opt| opt.kind)),
-        FzfResult::Cancelled => Ok(None),
-        FzfResult::Error(err) => Err(anyhow!(err)),
+        crate::menu_utils::DialogOutcome::Submitted(option) => Ok(Some(option.kind)),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
     }
 }
 

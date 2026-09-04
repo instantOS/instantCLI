@@ -200,13 +200,11 @@ pub fn select_repository(
         .header(Header::fancy("Clone Repository"))
         .prompt("Select")
         .responsive_layout()
-        .select(items)
+        .select_one(items)
         .map_err(|e| FzfError::Process(format!("Selection error: {e}")))?
     {
-        crate::menu_utils::FzfResult::Selected(item) => Ok(item),
-        crate::menu_utils::FzfResult::Cancelled => Err(FzfError::UserCancelled),
-        crate::menu_utils::FzfResult::Error(e) => Err(FzfError::Process(e)),
-        _ => Err(FzfError::Process("Unexpected selection result".to_string())),
+        crate::menu_utils::DialogOutcome::Submitted(item) => Ok(item),
+        crate::menu_utils::DialogOutcome::Cancelled => Err(FzfError::UserCancelled),
     }
 }
 
@@ -224,12 +222,10 @@ pub fn select_package(packages: Vec<Package>) -> Result<Package, FzfError> {
         .header(Header::fancy("Install Package"))
         .prompt("Select")
         .responsive_layout()
-        .select(items)
+        .select_one(items)
         .map_err(|e| FzfError::Process(format!("Selection error: {e}")))?
     {
-        crate::menu_utils::FzfResult::Selected(item) => Ok(item.package),
-        crate::menu_utils::FzfResult::Cancelled => Err(FzfError::UserCancelled),
-        crate::menu_utils::FzfResult::Error(e) => Err(FzfError::Process(e)),
-        _ => Err(FzfError::Process("Unexpected selection result".to_string())),
+        crate::menu_utils::DialogOutcome::Submitted(item) => Ok(item.package),
+        crate::menu_utils::DialogOutcome::Cancelled => Err(FzfError::UserCancelled),
     }
 }

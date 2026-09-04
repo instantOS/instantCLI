@@ -57,8 +57,8 @@ pub fn show_flatpak_action_menu(app_id: &str) -> Result<()> {
         .presentation(MenuPresentation::Padded)
         .select_one(actions)?
     {
-        Some(a) => a,
-        None => {
+        crate::menu_utils::DialogOutcome::Submitted(a) => a,
+        crate::menu_utils::DialogOutcome::Cancelled => {
             println!("Action selection cancelled.");
             return Ok(());
         }
@@ -118,9 +118,6 @@ fn run_installed_flatpaks_manager() -> Result<()> {
                 println!("App selection cancelled.");
                 return Ok(());
             }
-            FzfResult::Error(err) => {
-                anyhow::bail!("App selection failed: {}", err);
-            }
             _ => {
                 println!("No app selected.");
                 return Ok(());
@@ -134,8 +131,8 @@ fn run_installed_flatpaks_manager() -> Result<()> {
             .presentation(MenuPresentation::Padded)
             .select_one(actions)?
         {
-            Some(a) => a,
-            None => continue, // Action cancelled, return to list
+            crate::menu_utils::DialogOutcome::Submitted(a) => a,
+            crate::menu_utils::DialogOutcome::Cancelled => continue,
         };
 
         match action {

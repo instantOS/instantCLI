@@ -4,7 +4,7 @@
 //! Uses local appstream metadata for fast loading (~15x faster than remote-ls),
 //! with fallback to flatpak remote-ls if appstream is unavailable.
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 
 use crate::common::package::{PackageManager, install_package_names};
 use crate::common::shell::resolve_current_binary;
@@ -82,7 +82,6 @@ fn extract_app_ids(
         FzfResult::MultiSelected(rows) => rows,
         FzfResult::Selected(row) => vec![row],
         FzfResult::Cancelled => return Ok(vec![]),
-        FzfResult::Error(err) => bail!("App selection failed: {}", err),
     };
 
     Ok(rows.into_iter().map(|row| row.payload.app_id).collect())

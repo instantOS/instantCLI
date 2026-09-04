@@ -61,9 +61,9 @@ impl WizardStep for TextInputQuestion {
         let result = FzfWrapper::builder()
             .prompt(format!("{} {}", self.icon, self.prompt))
             .input()
-            .input_result()?;
+            .input_dialog()?;
 
-        Ok(StepOutcome::from_selection(result, |answer| answer))
+        Ok(StepOutcome::from_dialog(result, |answer| answer))
     }
 
     fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {

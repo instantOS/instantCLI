@@ -131,27 +131,27 @@ fn run_main_menu(
         .select_one(items.clone())?;
 
     let action = match selection {
-        Some(NotifyMainItem::Notification(n)) => {
+        crate::menu_utils::DialogOutcome::Submitted(NotifyMainItem::Notification(n)) => {
             cursor.update(&NotifyMainItem::Notification(n.clone()), &items);
             MenuAction::OpenNotification {
                 id: n.id,
                 main_cursor: cursor.clone(),
             }
         }
-        Some(NotifyMainItem::Options) => {
+        crate::menu_utils::DialogOutcome::Submitted(NotifyMainItem::Options) => {
             cursor.update(&NotifyMainItem::Options, &items);
             MenuAction::OpenOptions {
                 main_cursor: cursor.clone(),
             }
         }
-        Some(NotifyMainItem::EnableCapture) => {
+        crate::menu_utils::DialogOutcome::Submitted(NotifyMainItem::EnableCapture) => {
             cursor.update(&NotifyMainItem::EnableCapture, &items);
             MenuAction::EnableCapture {
                 main_cursor: cursor.clone(),
             }
         }
-        None => MenuAction::Exit,
-        Some(NotifyMainItem::Close) => MenuAction::Exit,
+        crate::menu_utils::DialogOutcome::Cancelled => MenuAction::Exit,
+        crate::menu_utils::DialogOutcome::Submitted(NotifyMainItem::Close) => MenuAction::Exit,
     };
 
     Ok(action)
@@ -182,7 +182,7 @@ fn handle_notification_detail(db: &NotifyDb, id: i64, _debug: bool) -> Result<()
         .select_one(items)?;
 
     match selection {
-        Some(item) => match item.action {
+        crate::menu_utils::DialogOutcome::Submitted(item) => match item.action {
             NotificationDetailAction::Back => Ok(()),
             NotificationDetailAction::MarkUnread => {
                 db.mark_unread(id)?;
@@ -199,7 +199,7 @@ fn handle_notification_detail(db: &NotifyDb, id: i64, _debug: bool) -> Result<()
                 Ok(())
             }
         },
-        _ => Ok(()),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(()),
     }
 }
 

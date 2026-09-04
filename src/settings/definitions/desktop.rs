@@ -9,7 +9,7 @@ use crate::common::audio::{
 };
 use crate::common::compositor::CompositorType;
 use crate::common::display::SwayDisplayProvider;
-use crate::menu::client::MenuClient;
+use crate::menu::client::HostedMenuClient;
 use crate::menu::protocol::SliderRequest;
 use crate::menu_utils::{
     ChecklistResult, FzfSelectable, FzfWrapper, Header, HeaderBuilder, MenuPresentation,
@@ -211,7 +211,9 @@ impl Setting for ScreenRecordFramerate {
         let max_fps = screen_record_max_fps();
         let start_value = ctx.int(Self::KEY).clamp(SCREEN_RECORD_MIN_FPS, max_fps);
 
-        if let Some(value) = run_screen_record_fps_slider(start_value, max_fps)? {
+        if let crate::menu_utils::DialogOutcome::Submitted(value) =
+            run_screen_record_fps_slider(start_value, max_fps)?
+        {
             ctx.set_int(Self::KEY, value);
             ctx.notify(
                 "Screen Recording",
@@ -242,10 +244,11 @@ fn detect_display_refresh_hz() -> Option<i64> {
         .max()
 }
 
-fn run_screen_record_fps_slider(start_value: i64, max_fps: i64) -> Result<Option<i64>> {
-    let client = MenuClient::new();
-    client.ensure_server_running()?;
-
+fn run_screen_record_fps_slider(
+    start_value: i64,
+    max_fps: i64,
+) -> Result<crate::menu_utils::DialogOutcome<i64>> {
+    let client = HostedMenuClient::new();
     let request = SliderRequest {
         min: SCREEN_RECORD_MIN_FPS,
         max: max_fps,
@@ -484,7 +487,7 @@ fn run_audio_source_mode_menu(
             .cursor(initial_index)
             .presentation(MenuPresentation::Padded)
             .select_one(items.clone())?;
-        let Some(choice) = selection else {
+        let crate::menu_utils::DialogOutcome::Submitted(choice) = selection else {
             break;
         };
 

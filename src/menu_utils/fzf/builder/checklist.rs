@@ -12,7 +12,7 @@ use crate::menu_utils::fzf::types::{
     ChecklistAction, ChecklistConfirm, ChecklistItem, ChecklistResult, ChecklistSelection,
     ConfirmResult, FzfSelectable, ItemDisplayData,
 };
-use crate::menu_utils::fzf::wrapper::{FzfWrapper, check_fzf_exit, configure_preview_and_input};
+use crate::menu_utils::fzf::wrapper::{FzfWrapper, configure_preview_and_input, fzf_was_cancelled};
 
 impl ChecklistBuilder {
     pub fn checklist_dialog<T: FzfSelectable + Clone>(
@@ -209,9 +209,7 @@ fn parse_checklist_output(
     key_to_index: &HashMap<String, usize>,
     action_map: &HashMap<String, ChecklistAction>,
 ) -> Result<ChecklistSelection> {
-    let exit_code = result.status.code();
-
-    if exit_code != Some(1) && check_fzf_exit::<()>(&result).is_some() {
+    if fzf_was_cancelled(&result)? {
         return Ok(ChecklistSelection::Cancelled);
     }
 
@@ -264,5 +262,37 @@ mod mock_tests {
             }
             other => panic!("Expected Confirmed, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_mock_checklist_preserves_action() {
+        let _guard = MockQueue::new().checklist_action("auto").guard();
+        let items = vec!["alpha".to_string()];
+        let result = crate::menu_utils::FzfWrapper::builder()
+            .checklist("Confirm")
+            .checklist_actions([crate::menu_utils::ChecklistAction::new(
+                "auto",
+                "Use defaults",
+            )])
+            .checklist_dialog(items)
+            .unwrap();
+        assert_eq!(
+            result,
+            crate::menu_utils::ChecklistResult::Action(crate::menu_utils::ChecklistAction::new(
+                "auto",
+                "Use defaults"
+            ))
+        );
+    }
+
+    #[test]
+    fn test_mock_checklist_preserves_cancellation() {
+        let _guard = MockQueue::new().checklist_cancelled().guard();
+        let items = vec!["alpha".to_string()];
+        let result = crate::menu_utils::FzfWrapper::builder()
+            .checklist("Confirm")
+            .checklist_dialog(items)
+            .unwrap();
+        assert_eq!(result, crate::menu_utils::ChecklistResult::Cancelled);
     }
 }

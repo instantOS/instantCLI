@@ -286,17 +286,6 @@ pub fn generate_request_id() -> String {
     format!("req_{timestamp}_{random}")
 }
 
-/// Convert protocol confirmation result to exit code
-impl From<ConfirmResult> for i32 {
-    fn from(result: ConfirmResult) -> Self {
-        match result {
-            ConfirmResult::Yes => 0,       // Yes
-            ConfirmResult::No => 1,        // No
-            ConfirmResult::Cancelled => 2, // Cancelled
-        }
-    }
-}
-
 pub fn plain_choice_items_from_input(input: &str) -> Vec<SerializableMenuItem> {
     input.lines().map(SerializableMenuItem::plain).collect()
 }

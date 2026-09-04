@@ -26,8 +26,7 @@ use crate::game::restic;
 use crate::game::setup;
 use crate::menu::protocol::FzfPreview;
 use crate::menu_utils::{
-    ConfirmResult, FzfResult, FzfSelectable, FzfWrapper, Header, HeaderBuilder, MenuCursor,
-    MenuPresentation,
+    ConfirmResult, FzfSelectable, FzfWrapper, Header, HeaderBuilder, MenuCursor, MenuPresentation,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
@@ -801,11 +800,11 @@ fn handle_open_save_directory_action(game_name: &str, state: &GameState) -> Resu
         .prompt("Open with")
         .responsive_layout()
         .presentation(MenuPresentation::Padded)
-        .select(items)?;
+        .select_one(items)?;
 
     let method = match selection {
-        FzfResult::Selected(item) => item.method,
-        _ => SaveDirectoryOpenMethod::Back,
+        crate::menu_utils::DialogOutcome::Submitted(item) => item.method,
+        crate::menu_utils::DialogOutcome::Cancelled => SaveDirectoryOpenMethod::Back,
     };
 
     match method {
@@ -886,21 +885,20 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
 
             let selection = builder
                 .presentation(MenuPresentation::Padded)
-                .select(actions.clone())?;
+                .select_one(actions.clone())?;
 
             let result = match selection {
-                FzfResult::Selected(item) => {
+                crate::menu_utils::DialogOutcome::Submitted(item) => {
                     cursor.update(&item, &actions);
                     handle_action(item.action, name, &state, exit_after_action)?
                 }
-                FzfResult::Cancelled => {
+                crate::menu_utils::DialogOutcome::Cancelled => {
                     if exit_after_action {
                         ActionResult::Exit
                     } else {
                         ActionResult::Back
                     }
                 }
-                _ => ActionResult::Exit,
             };
 
             match result {
@@ -1034,15 +1032,14 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
 
                     let selection = builder
                         .presentation(MenuPresentation::Padded)
-                        .select(actions.clone())?;
+                        .select_one(actions.clone())?;
 
                     let result = match selection {
-                        FzfResult::Selected(item) => {
+                        crate::menu_utils::DialogOutcome::Submitted(item) => {
                             cursor.update(&item, &actions);
                             handle_action(item.action, &game_name, &state, false)?
                         }
-                        FzfResult::Cancelled => ActionResult::Back,
-                        _ => ActionResult::Exit,
+                        crate::menu_utils::DialogOutcome::Cancelled => ActionResult::Back,
                     };
 
                     match result {
@@ -1152,10 +1149,10 @@ fn show_uninitialized_menu() -> Result<()> {
         .prompt("Select action")
         .responsive_layout()
         .presentation(MenuPresentation::Padded)
-        .select(options)?;
+        .select_one(options)?;
 
     match selection {
-        FzfResult::Selected(item)
+        crate::menu_utils::DialogOutcome::Submitted(item)
             if item
                 == format!(
                     "{} Initialize Game Manager",
@@ -1180,7 +1177,8 @@ fn show_uninitialized_menu() -> Result<()> {
             }
             Ok(())
         }
-        _ => Ok(()),
+        crate::menu_utils::DialogOutcome::Submitted(_)
+        | crate::menu_utils::DialogOutcome::Cancelled => Ok(()),
     }
 }
 

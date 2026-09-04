@@ -11,7 +11,7 @@ use crate::game::games::validation::validate_game_manager_initialized;
 use crate::game::games::{AddGameOptions, GameManager};
 use crate::game::launch_command::LaunchCommand;
 use crate::menu::protocol;
-use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, HeaderBuilder};
+use crate::menu_utils::{FzfSelectable, FzfWrapper, HeaderBuilder};
 use crate::ui::nerd_font::NerdFont;
 use install::SetupStepOutcome;
 
@@ -396,12 +396,10 @@ fn prompt_task_choice(game_name: &str, tasks: &[SetupTask]) -> Result<Option<Set
             )
             .build(),
         )
-        .select(options)?
+        .select_one(options)?
     {
-        FzfResult::Selected(option) => Ok(Some(option.task)),
-        FzfResult::MultiSelected(mut options) => Ok(options.pop().map(|opt| opt.task)),
-        FzfResult::Cancelled => Ok(None),
-        FzfResult::Error(err) => Err(anyhow!(err)),
+        crate::menu_utils::DialogOutcome::Submitted(option) => Ok(Some(option.task)),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
     }
 }
 
@@ -456,28 +454,14 @@ fn prompt_installation_choice(candidates: &[SetupCandidate]) -> Result<Selection
     match FzfWrapper::builder()
         .prompt("setup")
         .header(header)
-        .select(options)?
+        .select_one(options)?
     {
-        FzfResult::Selected(option) => match option.kind {
+        crate::menu_utils::DialogOutcome::Submitted(option) => match option.kind {
             CandidateOptionKind::Candidate(candidate) => Ok(Selection::Candidate(candidate)),
             CandidateOptionKind::Manual => Ok(Selection::Manual),
             CandidateOptionKind::Done => Ok(Selection::Done),
         },
-        FzfResult::Cancelled => Ok(Selection::Cancelled),
-        FzfResult::Error(err) => Err(anyhow!(err)),
-        FzfResult::MultiSelected(mut options) => {
-            if let Some(option) = options.pop() {
-                match option.kind {
-                    CandidateOptionKind::Candidate(candidate) => {
-                        Ok(Selection::Candidate(candidate))
-                    }
-                    CandidateOptionKind::Manual => Ok(Selection::Manual),
-                    CandidateOptionKind::Done => Ok(Selection::Done),
-                }
-            } else {
-                Ok(Selection::Cancelled)
-            }
-        }
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(Selection::Cancelled),
     }
 }
 

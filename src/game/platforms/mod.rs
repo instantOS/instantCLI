@@ -33,7 +33,7 @@ use crate::game::launch_command::{
 use crate::game::utils::path::is_valid_wine_prefix;
 use crate::menu::protocol::FzfPreview;
 use crate::menu_utils::{
-    ChecklistResult, FzfResult, FzfSelectable, FzfWrapper, Header, MenuPresentation, MenuWrapper,
+    ChecklistResult, FzfSelectable, FzfWrapper, Header, MenuPresentation, MenuWrapper,
     TextEditOutcome, TextEditPrompt, prompt_text_edit,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
@@ -570,18 +570,17 @@ pub fn select_launcher_type(
 
     let result = builder
         .presentation(MenuPresentation::Padded)
-        .select(items)?;
+        .select_one(items)?;
 
     match result {
-        FzfResult::Selected(item) => {
+        crate::menu_utils::DialogOutcome::Submitted(item) => {
             if item.launcher == LauncherType::Back {
                 Ok(None)
             } else {
                 Ok(Some(item.launcher))
             }
         }
-        FzfResult::Cancelled => Ok(None),
-        _ => Ok(None),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
     }
 }
 
@@ -795,11 +794,11 @@ fn prompt_executable_command(
     }
 
     match builder.pick_one()? {
-        Some(path) => {
+        crate::menu_utils::DialogOutcome::Submitted(path) => {
             let command = format!("'{}'", path.display());
             Ok(Some(LaunchCommand::from_shell_or_manual(command)))
         }
-        None => Ok(None),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
     }
 }
 

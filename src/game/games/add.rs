@@ -4,7 +4,7 @@ use crate::game::config::PathContentKind;
 use crate::game::utils::path::prompt_for_save_path;
 use crate::game::utils::safeguards::{PathUsage, ensure_safe_path};
 use crate::menu_utils::{
-    FilePickerScope, FzfResult, FzfWrapper, HeaderBuilder, PathInputBuilder, PathInputSelection,
+    FilePickerScope, FzfWrapper, HeaderBuilder, PathInputBuilder, PathInputSelection,
 };
 use crate::ui::nerd_font::NerdFont;
 use anyhow::{Context, Result, anyhow};
@@ -149,12 +149,11 @@ fn prompt_manual_game_name(context: &GameCreationContext) -> Result<Option<Strin
         let result = FzfWrapper::builder()
             .prompt("Enter game name")
             .input()
-            .input_result()?;
+            .input_dialog()?;
 
         let game_name = match result {
-            FzfResult::Selected(name) => name.trim().to_string(),
-            FzfResult::Cancelled => return Ok(None),
-            _ => return Ok(None),
+            crate::menu_utils::DialogOutcome::Submitted(name) => name.trim().to_string(),
+            crate::menu_utils::DialogOutcome::Cancelled => return Ok(None),
         };
 
         if game_name.is_empty() {
@@ -175,11 +174,10 @@ fn prompt_optional_text(prompt: &str) -> Result<Option<String>> {
     match FzfWrapper::builder()
         .prompt(prompt)
         .input()
-        .input_result()?
+        .input_dialog()?
     {
-        FzfResult::Selected(value) => Ok(Some(value.trim().to_string())),
-        FzfResult::Cancelled => Ok(None),
-        _ => Ok(None),
+        crate::menu_utils::DialogOutcome::Submitted(value) => Ok(Some(value.trim().to_string())),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
     }
 }
 

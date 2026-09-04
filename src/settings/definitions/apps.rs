@@ -4,7 +4,7 @@
 
 use anyhow::Result;
 
-use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper, HeaderBuilder};
+use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder};
 use crate::preview::{PreviewId, preview_command};
 use crate::settings::context::SettingsContext;
 use crate::settings::default_commands::{self, DefaultCommand};
@@ -95,14 +95,18 @@ fn select_default_command(ctx: &mut SettingsContext, command: DefaultCommand) ->
         menu = menu.initial_index(index);
     }
 
-    if let FzfResult::Selected(entry) = menu.select(entries)? {
+    if let crate::menu_utils::DialogOutcome::Submitted(entry) = menu.select_one(entries)? {
         let (name, path) = match entry {
             CommandMenuEntry::Command(choice) => (choice.name, choice.path),
             CommandMenuEntry::Custom => {
-                let input = FzfWrapper::builder()
+                let input = match FzfWrapper::builder()
                     .prompt(format!("{} command", command.title()))
                     .input()
-                    .input_dialog()?;
+                    .input_dialog()?
+                {
+                    crate::menu_utils::DialogOutcome::Submitted(input) => input,
+                    crate::menu_utils::DialogOutcome::Cancelled => return Ok(()),
+                };
                 let input = input.trim();
                 if input.is_empty() {
                     return Ok(());

@@ -210,10 +210,10 @@ impl WizardStep for PartitionSelectorQuestion {
 
         let result = FzfWrapper::builder()
             .header(HeaderBuilder::new(self.icon, &self.prompt).build())
-            .select(partitions)?;
+            .select_one(partitions)?;
 
         // Store just the path, not the formatted display string
-        Ok(StepOutcome::from_selection(result, |entry| entry.path))
+        Ok(StepOutcome::from_dialog(result, |entry| entry.path))
     }
 
     fn validate(&self, context: &InstallContext, answer: &str) -> Result<(), String> {

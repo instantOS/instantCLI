@@ -15,7 +15,7 @@ use crate::assist::utils::{copy_to_clipboard, show_notification};
 use crate::common::display_server::DisplayServer;
 use crate::common::package::{Dependency, InstallResult, ensure_all};
 use crate::frecency::FrecencyStore;
-use crate::menu_utils::{ConfirmResult, FzfResult, FzfWrapper};
+use crate::menu_utils::{ConfirmResult, FzfWrapper};
 
 pub(super) fn prompt_password_with_confirmation(prompt: &str) -> Result<String> {
     let password = match FzfWrapper::builder()
@@ -24,7 +24,7 @@ pub(super) fn prompt_password_with_confirmation(prompt: &str) -> Result<String> 
         .with_confirmation()
         .password_dialog()?
     {
-        FzfResult::Selected(value) => value,
+        crate::menu_utils::DialogOutcome::Submitted(value) => value,
         _ => bail!("Password entry cancelled"),
     };
 
@@ -57,8 +57,8 @@ pub(super) fn prompt_text_value(
         builder = builder.ghost(ghost);
     }
 
-    match builder.input_result()? {
-        FzfResult::Selected(value) => {
+    match builder.input_dialog()? {
+        crate::menu_utils::DialogOutcome::Submitted(value) => {
             let trimmed = value.trim().to_string();
             if trimmed.is_empty() && !allow_empty {
                 Ok(None)
@@ -66,7 +66,7 @@ pub(super) fn prompt_text_value(
                 Ok(Some(trimmed))
             }
         }
-        _ => Ok(None),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
     }
 }
 

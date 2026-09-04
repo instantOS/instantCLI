@@ -191,7 +191,7 @@ pub fn run_welcome_ui(force_live: bool, debug: bool) -> Result<()> {
             .presentation(MenuPresentation::Padded)
             .select_one(items.clone())?
         {
-            Some(WelcomeItem::InstallInstantOS) => {
+            crate::menu_utils::DialogOutcome::Submitted(WelcomeItem::InstallInstantOS) => {
                 cursor.update(&WelcomeItem::InstallInstantOS, &items);
                 if let Err(e) = install_instantos(debug) {
                     emit(
@@ -206,7 +206,7 @@ pub fn run_welcome_ui(force_live: bool, debug: bool) -> Result<()> {
                     );
                 }
             }
-            Some(WelcomeItem::ConfigureNetwork) => {
+            crate::menu_utils::DialogOutcome::Submitted(WelcomeItem::ConfigureNetwork) => {
                 cursor.update(&WelcomeItem::ConfigureNetwork, &items);
                 if let Err(e) = configure_network(debug) {
                     emit(
@@ -221,7 +221,7 @@ pub fn run_welcome_ui(force_live: bool, debug: bool) -> Result<()> {
                     );
                 }
             }
-            Some(WelcomeItem::OpenWebsite) => {
+            crate::menu_utils::DialogOutcome::Submitted(WelcomeItem::OpenWebsite) => {
                 cursor.update(&WelcomeItem::OpenWebsite, &items);
                 if let Err(e) = open_website(debug) {
                     emit(
@@ -236,7 +236,7 @@ pub fn run_welcome_ui(force_live: bool, debug: bool) -> Result<()> {
                     );
                 }
             }
-            Some(WelcomeItem::OpenSettings) => {
+            crate::menu_utils::DialogOutcome::Submitted(WelcomeItem::OpenSettings) => {
                 cursor.update(&WelcomeItem::OpenSettings, &items);
                 if let Err(e) = open_settings(debug) {
                     emit(
@@ -251,7 +251,7 @@ pub fn run_welcome_ui(force_live: bool, debug: bool) -> Result<()> {
                     );
                 }
             }
-            Some(WelcomeItem::DisableAutostart) => {
+            crate::menu_utils::DialogOutcome::Submitted(WelcomeItem::DisableAutostart) => {
                 cursor.update(&WelcomeItem::DisableAutostart, &items);
                 // Check current state using the same helper function for consistency
                 let currently_enabled = get_autostart_state();
@@ -297,7 +297,8 @@ pub fn run_welcome_ui(force_live: bool, debug: bool) -> Result<()> {
                     }
                 }
             }
-            Some(WelcomeItem::Close) | None => {
+            crate::menu_utils::DialogOutcome::Submitted(WelcomeItem::Close)
+            | crate::menu_utils::DialogOutcome::Cancelled => {
                 if let Some(selected) = items.last() {
                     cursor.update(selected, &items);
                 }

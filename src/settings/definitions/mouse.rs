@@ -8,7 +8,7 @@ use std::process::Command;
 use crate::assist::{AssistInternalCommand, assist_command_argv};
 use crate::common::compositor::{CompositorType, niri, sway};
 use crate::common::instantwmctl;
-use crate::menu::client::MenuClient;
+use crate::menu::client::HostedMenuClient;
 use crate::menu::protocol::SliderRequest;
 use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, MenuCursor, MenuPresentation};
 use crate::preview::{PreviewId, preview_command};
@@ -211,7 +211,7 @@ impl Setting for AccelProfile {
                 .select_one(items.clone())?;
 
             match selection {
-                Some(display) => {
+                crate::menu_utils::DialogOutcome::Submitted(display) => {
                     cursor.update(&display, &items);
 
                     match display.choice {
@@ -222,7 +222,7 @@ impl Setting for AccelProfile {
                         None => break,
                     }
                 }
-                None => break,
+                crate::menu_utils::DialogOutcome::Cancelled => break,
             }
         }
 
@@ -277,9 +277,7 @@ impl Setting for ScrollFactor {
 
         let start_value = initial_value.unwrap_or(100);
 
-        let client = MenuClient::new();
-        client.ensure_server_running()?;
-
+        let client = HostedMenuClient::new();
         let args = assist_command_argv(AssistInternalCommand::ScrollFactorSet)?;
         let request = SliderRequest {
             min: 0,
@@ -291,7 +289,7 @@ impl Setting for ScrollFactor {
             command: args,
         };
 
-        if let Some(value) = client.slide(request)? {
+        if let crate::menu_utils::DialogOutcome::Submitted(value) = client.slide(request)? {
             ctx.set_int(Self::KEY, value);
             ctx.notify("Scroll Speed", &format!("Scroll factor set to {}%", value));
         }
@@ -359,7 +357,9 @@ impl Setting for MouseSensitivity {
             None
         };
 
-        if let Some(value) = crate::assist::actions::mouse::run_mouse_speed_slider(initial_value)? {
+        if let crate::menu_utils::DialogOutcome::Submitted(value) =
+            crate::assist::actions::mouse::run_mouse_speed_slider(initial_value)?
+        {
             ctx.set_int(Self::KEY, value);
             ctx.notify(
                 "Mouse Sensitivity",

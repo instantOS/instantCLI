@@ -4,7 +4,7 @@ use anyhow::Result;
 use std::collections::{HashMap, HashSet};
 
 use crate::common::compositor::CompositorType;
-use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper, MenuPresentation};
+use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, MenuPresentation};
 use crate::preview::{PreviewId, preview_command};
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
@@ -203,15 +203,15 @@ fn handle_layout_action(
         .presentation(MenuPresentation::Padded)
         .select_one(actions)?
     {
-        Some(LayoutActionItem::MoveUp) => {
+        crate::menu_utils::DialogOutcome::Submitted(LayoutActionItem::MoveUp) => {
             active_codes.swap(position, position - 1);
             Ok(Some(true))
         }
-        Some(LayoutActionItem::MoveDown) => {
+        crate::menu_utils::DialogOutcome::Submitted(LayoutActionItem::MoveDown) => {
             active_codes.swap(position, position + 1);
             Ok(Some(true))
         }
-        Some(LayoutActionItem::Replace) => {
+        crate::menu_utils::DialogOutcome::Submitted(LayoutActionItem::Replace) => {
             if let Some(new_code) = select_layout(all_layouts, active_codes, Some(code))? {
                 active_codes[position] = new_code;
                 Ok(Some(true))
@@ -219,7 +219,7 @@ fn handle_layout_action(
                 Ok(Some(false))
             }
         }
-        Some(LayoutActionItem::Remove) => {
+        crate::menu_utils::DialogOutcome::Submitted(LayoutActionItem::Remove) => {
             active_codes.remove(position);
             ctx.emit_info("settings.keyboard.removed", "Layout removed");
             Ok(Some(true))
@@ -266,11 +266,11 @@ fn select_layout(
     let result = FzfWrapper::builder()
         .header("Select Keyboard Layout")
         .prompt("Layout")
-        .select(available)?;
+        .select_one(available)?;
 
     match result {
-        FzfResult::Selected(layout) => Ok(Some(layout.code)),
-        _ => Ok(None),
+        crate::menu_utils::DialogOutcome::Submitted(layout) => Ok(Some(layout.code)),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
     }
 }
 
@@ -368,7 +368,11 @@ impl Setting for KeyboardLayout {
                 .presentation(MenuPresentation::Padded)
                 .select_one(items)?
             {
-                Some(LayoutMenuItem::Layout { code, position, .. }) => {
+                crate::menu_utils::DialogOutcome::Submitted(LayoutMenuItem::Layout {
+                    code,
+                    position,
+                    ..
+                }) => {
                     if let Some(action) =
                         handle_layout_action(ctx, &mut active_codes, &all_layouts, &code, position)?
                         && action
@@ -376,7 +380,7 @@ impl Setting for KeyboardLayout {
                         changed = true;
                     }
                 }
-                Some(LayoutMenuItem::Add) => {
+                crate::menu_utils::DialogOutcome::Submitted(LayoutMenuItem::Add) => {
                     if add_layout(ctx, &mut active_codes, &all_layouts)? {
                         changed = true;
                     }

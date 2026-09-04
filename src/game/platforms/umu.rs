@@ -117,15 +117,16 @@ impl UmuBuilder {
             .prompt("Runner")
             .responsive_layout()
             .presentation(MenuPresentation::Padded)
-            .select(options)?
+            .select_one(options)?
         {
-            crate::menu_utils::FzfResult::Selected(item) if item.contains("umu-run") => {
+            crate::menu_utils::DialogOutcome::Submitted(item) if item.contains("umu-run") => {
                 Ok(Some(WineRunner::UmuRun))
             }
-            crate::menu_utils::FzfResult::Selected(item) if item.contains("wine") => {
+            crate::menu_utils::DialogOutcome::Submitted(item) if item.contains("wine") => {
                 Ok(Some(WineRunner::Wine))
             }
-            _ => Ok(None),
+            crate::menu_utils::DialogOutcome::Submitted(_)
+            | crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
         }
     }
 
@@ -248,10 +249,10 @@ impl UmuBuilder {
             .prompt("Proton")
             .responsive_layout()
             .presentation(MenuPresentation::Padded)
-            .select(options.clone())?;
+            .select_one(options.clone())?;
 
         match result {
-            crate::menu_utils::FzfResult::Selected(item) => {
+            crate::menu_utils::DialogOutcome::Submitted(item) => {
                 if item.contains("UMU-Proton") {
                     Ok(Some(ProtonSelection::UmuProtonLatest))
                 } else if item.contains("GE-Proton") {
@@ -269,7 +270,7 @@ impl UmuBuilder {
                     Ok(None)
                 }
             }
-            _ => Ok(None),
+            crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
         }
     }
 

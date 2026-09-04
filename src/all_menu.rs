@@ -108,7 +108,7 @@ pub async fn run_all_menu(debug: bool) -> Result<i32> {
                 }
             }
             FzfResult::Cancelled => return Ok(1),
-            FzfResult::MultiSelected(_) | FzfResult::Error(_) => return Ok(2),
+            FzfResult::MultiSelected(_) => return Ok(2),
         }
     }
 }

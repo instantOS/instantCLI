@@ -414,10 +414,13 @@ impl FzfBuilder {
         )
     }
 
-    pub fn select_one<T: FzfSelectable + Clone>(self, items: Vec<T>) -> Result<Option<T>> {
+    pub fn select_one<T: FzfSelectable + Clone>(self, items: Vec<T>) -> Result<DialogOutcome<T>> {
         match self.select(items)? {
-            FzfResult::Selected(item) => Ok(Some(item)),
-            _ => Ok(None),
+            FzfResult::Selected(item) => Ok(DialogOutcome::Submitted(item)),
+            FzfResult::Cancelled => Ok(DialogOutcome::Cancelled),
+            FzfResult::MultiSelected(_) => {
+                anyhow::bail!("select_one cannot be used with multi-selection enabled")
+            }
         }
     }
 
@@ -449,7 +452,6 @@ impl FzfBuilder {
                     ));
                 }
                 FzfResult::Cancelled => return Ok(FzfResult::Cancelled),
-                FzfResult::Error(error) => return Ok(FzfResult::Error(error)),
             }
         }
     }

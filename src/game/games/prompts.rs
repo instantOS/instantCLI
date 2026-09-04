@@ -8,17 +8,21 @@ use crate::ui::nerd_font::NerdFont;
 use anyhow::{Result, anyhow};
 
 pub(crate) fn get_game_description() -> Result<String> {
-    Ok(FzfWrapper::input("Enter game description (optional)")
+    match FzfWrapper::input("Enter game description (optional)")
         .map_err(|e| anyhow!("Failed to get description input: {}", e))?
-        .trim()
-        .to_string())
+    {
+        crate::menu_utils::DialogOutcome::Submitted(value) => Ok(value.trim().to_string()),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(String::new()),
+    }
 }
 
 pub(crate) fn get_launch_command() -> Result<String> {
-    Ok(FzfWrapper::input("Enter launch command (optional)")
+    match FzfWrapper::input("Enter launch command (optional)")
         .map_err(|e| anyhow!("Failed to get launch command input: {}", e))?
-        .trim()
-        .to_string())
+    {
+        crate::menu_utils::DialogOutcome::Submitted(value) => Ok(value.trim().to_string()),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(String::new()),
+    }
 }
 
 pub(crate) fn get_save_path(game_name: &str) -> Result<TildePath> {

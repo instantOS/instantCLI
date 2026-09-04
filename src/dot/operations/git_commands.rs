@@ -4,7 +4,7 @@ use crate::dot::dotfilerepo::DotfileRepo;
 use crate::dot::git::repo_ops::{run_git_command, run_interactive_git_command};
 use crate::dot::menu::repo_actions::build_repo_preview;
 use crate::dot::types::RepoMenuItem;
-use crate::menu_utils::{FzfResult, FzfWrapper, Header};
+use crate::menu_utils::{FzfWrapper, Header};
 use crate::ui::prelude::*;
 use anyhow::Result;
 use colored::*;
@@ -221,13 +221,11 @@ pub fn git_run_any(config: &DotfileConfig, args: &[String], debug: bool) -> Resu
             .header(Header::fancy("Select Repository"))
             .prompt("Select")
             .responsive_layout()
-            .select(items)
+            .select_one(items)
             .map_err(|e| anyhow::anyhow!("Selection error: {}", e))?
         {
-            FzfResult::Selected(item) => item.repo,
-            FzfResult::Cancelled => return Ok(()),
-            FzfResult::Error(e) => return Err(anyhow::anyhow!("Selection error: {}", e)),
-            _ => return Err(anyhow::anyhow!("Unexpected selection result")),
+            crate::menu_utils::DialogOutcome::Submitted(item) => item.repo,
+            crate::menu_utils::DialogOutcome::Cancelled => return Ok(()),
         }
     };
 

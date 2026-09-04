@@ -1,7 +1,7 @@
 use std::ffi::OsStr;
 use std::iter;
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 
 use crate::menu_utils::{FzfResult, FzfWrapper, MenuPresentation};
 
@@ -42,12 +42,12 @@ pub fn configure_system_language(ctx: &mut SettingsContext) -> Result<()> {
             .presentation(MenuPresentation::Padded)
             .select_one(menu_items)?
         {
-            Some(LanguageMenuItem::Locale(locale_item)) => {
+            crate::menu_utils::DialogOutcome::Submitted(LanguageMenuItem::Locale(locale_item)) => {
                 if handle_locale_entry(ctx, &state, locale_item.locale.clone())? {
                     continue;
                 }
             }
-            Some(LanguageMenuItem::Add) => {
+            crate::menu_utils::DialogOutcome::Submitted(LanguageMenuItem::Add) => {
                 if handle_add_locale(ctx, &state)? {
                     continue;
                 }
@@ -99,11 +99,14 @@ fn handle_locale_entry(
         .presentation(MenuPresentation::Padded)
         .select_one(actions)?
     {
-        Some(LocaleActionItem::SetDefault { locale, label }) => {
+        crate::menu_utils::DialogOutcome::Submitted(LocaleActionItem::SetDefault {
+            locale,
+            label,
+        }) => {
             set_system_language(ctx, &locale, &label)?;
             Ok(true)
         }
-        Some(LocaleActionItem::Remove { locale, label }) => {
+        crate::menu_utils::DialogOutcome::Submitted(LocaleActionItem::Remove { locale, label }) => {
             disable_locale(ctx, &locale, &label)?;
             Ok(true)
         }
@@ -139,7 +142,6 @@ fn handle_add_locale(ctx: &mut SettingsContext, state: &LocaleState) -> Result<b
     let selected = match selection {
         FzfResult::MultiSelected(items) => items,
         FzfResult::Selected(item) => vec![item],
-        FzfResult::Error(err) => bail!("fzf error: {err}"),
         _ => return Ok(false),
     };
 

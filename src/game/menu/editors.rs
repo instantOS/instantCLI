@@ -6,7 +6,7 @@ use crate::game::platforms::LaunchCommandBuilderContext;
 use crate::game::utils::path::{path_selection_to_tilde, prompt_for_save_path};
 use crate::menu::protocol::FzfPreview;
 use crate::menu_utils::{
-    FilePickerScope, FzfResult, FzfSelectable, FzfWrapper, Header, HeaderBuilder, MenuCursor,
+    FilePickerScope, FzfSelectable, FzfWrapper, Header, HeaderBuilder, MenuCursor,
     MenuPresentation, PathInputBuilder, TextEditOutcome, TextEditPrompt, prompt_text_edit,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
@@ -138,12 +138,11 @@ fn select_launch_command_input_method(
         .prompt("Method")
         .responsive_layout()
         .presentation(MenuPresentation::Padded)
-        .select(items)?;
+        .select_one(items)?;
 
     match result {
-        FzfResult::Selected(item) => Ok(item.method),
-        FzfResult::Cancelled => Ok(LaunchCommandInputMethod::Cancel),
-        _ => Ok(LaunchCommandInputMethod::Cancel),
+        crate::menu_utils::DialogOutcome::Submitted(item) => Ok(item.method),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(LaunchCommandInputMethod::Cancel),
     }
 }
 
@@ -156,15 +155,14 @@ pub fn edit_name(state: &mut EditState) -> Result<bool> {
         .header(format!("Current name: {}", current_name))
         .query(current_name)
         .input()
-        .input_result()?;
+        .input_dialog()?;
 
     let new_name = match result {
-        FzfResult::Selected(name) => name,
-        FzfResult::Cancelled => {
+        crate::menu_utils::DialogOutcome::Submitted(name) => name,
+        crate::menu_utils::DialogOutcome::Cancelled => {
             FzfWrapper::message("Edit cancelled. Name unchanged.")?;
             return Ok(false);
         }
-        _ => return Ok(false),
     };
 
     let trimmed = new_name.trim();
@@ -336,10 +334,10 @@ pub fn edit_launch_command(state: &mut EditState) -> Result<bool> {
 
         let selection = builder
             .presentation(MenuPresentation::Padded)
-            .select(options.clone())?;
+            .select_one(options.clone())?;
 
         match selection {
-            FzfResult::Selected(option) => {
+            crate::menu_utils::DialogOutcome::Submitted(option) => {
                 cursor.update(&option, &options);
                 match option.target {
                     LaunchCommandTarget::GameConfig => return edit_game_launch_command(state),
@@ -357,7 +355,7 @@ pub fn edit_launch_command(state: &mut EditState) -> Result<bool> {
                     LaunchCommandTarget::Back => return Ok(false),
                 }
             }
-            _ => return Ok(false),
+            crate::menu_utils::DialogOutcome::Cancelled => return Ok(false),
         }
     }
 }

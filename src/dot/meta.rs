@@ -236,36 +236,45 @@ fn gather_repo_inputs(
         default_name.to_string()
     } else {
         FzfWrapper::input(&format!("Name [{}]: ", default_name))
-            .map(|s| {
-                let trimmed = s.trim();
-                if trimmed.is_empty() {
-                    default_name.to_string()
-                } else {
-                    trimmed.to_string()
+            .map(|outcome| match outcome {
+                crate::menu_utils::DialogOutcome::Submitted(s) => {
+                    let trimmed = s.trim();
+                    if trimmed.is_empty() {
+                        default_name.to_string()
+                    } else {
+                        trimmed.to_string()
+                    }
                 }
+                crate::menu_utils::DialogOutcome::Cancelled => default_name.to_string(),
             })
             .unwrap_or_else(|_| default_name.to_string())
     };
 
     let author = FzfWrapper::input("Author (optional): ")
-        .map(|s| {
-            let trimmed = s.trim();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed.to_string())
+        .map(|outcome| match outcome {
+            crate::menu_utils::DialogOutcome::Submitted(s) => {
+                let trimmed = s.trim();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed.to_string())
+                }
             }
+            crate::menu_utils::DialogOutcome::Cancelled => None,
         })
         .unwrap_or(None);
 
     let description = FzfWrapper::input("Description (optional): ")
-        .map(|s| {
-            let trimmed = s.trim();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed.to_string())
+        .map(|outcome| match outcome {
+            crate::menu_utils::DialogOutcome::Submitted(s) => {
+                let trimmed = s.trim();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed.to_string())
+                }
             }
+            crate::menu_utils::DialogOutcome::Cancelled => None,
         })
         .unwrap_or(None);
 
@@ -276,13 +285,16 @@ fn gather_repo_inputs(
     };
 
     let dots_dir = FzfWrapper::input("Dotfiles directory [dots]: ")
-        .map(|s| {
-            let trimmed = s.trim();
-            if trimmed.is_empty() {
-                "dots".to_string()
-            } else {
-                trimmed.to_string()
+        .map(|outcome| match outcome {
+            crate::menu_utils::DialogOutcome::Submitted(s) => {
+                let trimmed = s.trim();
+                if trimmed.is_empty() {
+                    "dots".to_string()
+                } else {
+                    trimmed.to_string()
+                }
             }
+            crate::menu_utils::DialogOutcome::Cancelled => "dots".to_string(),
         })
         .unwrap_or_else(|_| "dots".to_string());
 
@@ -371,13 +383,16 @@ pub fn init_repo(repo_path: &Path, name: Option<&str>, non_interactive: bool) ->
                 _ => {
                     // Let user enter a different name
                     inputs.dots_dir = FzfWrapper::input("Dotfiles directory [dots]: ")
-                        .map(|s| {
-                            let trimmed = s.trim();
-                            if trimmed.is_empty() {
-                                "dots".to_string()
-                            } else {
-                                trimmed.to_string()
+                        .map(|outcome| match outcome {
+                            crate::menu_utils::DialogOutcome::Submitted(s) => {
+                                let trimmed = s.trim();
+                                if trimmed.is_empty() {
+                                    "dots".to_string()
+                                } else {
+                                    trimmed.to_string()
+                                }
                             }
+                            crate::menu_utils::DialogOutcome::Cancelled => "dots".to_string(),
                         })
                         .unwrap_or_else(|_| "dots".to_string());
                 }

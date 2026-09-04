@@ -340,13 +340,24 @@ impl<T: FzfSelectable + Clone> FzfSelectable for MenuItem<T> {
     }
 }
 
-/// Result type for FZF operations
+/// Outcome of an interaction that either submits a value or is cancelled.
+///
+/// Renderer, protocol, and process failures are represented by the outer
+/// `anyhow::Result`, never by this type.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DialogOutcome<T> {
+    Submitted(T),
+    Cancelled,
+}
+
+/// Result type for FZF selection operations.
+///
+/// Failures are represented by the outer `anyhow::Result`.
 #[derive(Debug, PartialEq)]
 pub enum FzfResult<T> {
     Selected(T),
     MultiSelected(Vec<T>),
     Cancelled,
-    Error(String),
 }
 
 /// Visual treatment of rows in a selection menu.

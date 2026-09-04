@@ -8,8 +8,8 @@ use crate::common::package::{
 };
 use crate::common::requirements::InstallTest;
 use crate::menu_utils::{
-    FilePickerScope, FzfResult, FzfWrapper, HeaderBuilder, MenuCursor, PathInputBuilder,
-    PathInputSelection, TextEditOutcome, TextEditPrompt, prompt_text_edit,
+    FilePickerScope, FzfWrapper, HeaderBuilder, MenuCursor, PathInputBuilder, PathInputSelection,
+    TextEditOutcome, TextEditPrompt, prompt_text_edit,
 };
 use crate::ui::catppuccin::colors;
 use crate::ui::nerd_font::NerdFont;
@@ -684,15 +684,15 @@ fn select_duplicate_keep(
         builder = builder.initial_index(initial_index);
     }
 
-    match builder.select(entries.clone())? {
-        FzfResult::Selected(choice) => {
+    match builder.select_one(entries.clone())? {
+        crate::menu_utils::DialogOutcome::Submitted(choice) => {
             cursor.update(&choice, &entries);
             match choice {
                 DuplicateChoice::Keep(file) => Ok(Some(file.path)),
                 DuplicateChoice::Skip => Ok(None),
             }
         }
-        _ => Ok(None),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
     }
 }
 
@@ -719,11 +719,11 @@ fn select_conflict_choice(
         builder = builder.initial_index(index);
     }
 
-    match builder.select(entries.clone())? {
-        FzfResult::Selected(choice) => {
+    match builder.select_one(entries.clone())? {
+        crate::menu_utils::DialogOutcome::Submitted(choice) => {
             cursor.update(&choice, &entries);
             Ok(Some(choice))
         }
-        _ => Ok(None),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
     }
 }

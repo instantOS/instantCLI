@@ -26,10 +26,12 @@ pub fn manage_users(ctx: &mut SettingsContext) -> Result<()> {
             .presentation(MenuPresentation::Padded)
             .select_one(items)?
         {
-            Some(ManageMenuItem::Add) => {
+            crate::menu_utils::DialogOutcome::Submitted(ManageMenuItem::Add) => {
                 add_user(ctx)?;
             }
-            Some(ManageMenuItem::User { username, .. }) => {
+            crate::menu_utils::DialogOutcome::Submitted(ManageMenuItem::User {
+                username, ..
+            }) => {
                 handle_user(ctx, &username)?;
             }
             _ => break,
@@ -111,10 +113,14 @@ fn add_user(ctx: &mut SettingsContext) -> Result<()> {
 }
 
 fn prompt_username() -> Result<String> {
-    let username = FzfWrapper::builder()
+    let username = match FzfWrapper::builder()
         .prompt("New username")
         .input()
-        .input_dialog()?;
+        .input_dialog()?
+    {
+        crate::menu_utils::DialogOutcome::Submitted(username) => username,
+        crate::menu_utils::DialogOutcome::Cancelled => return Ok(String::new()),
+    };
     Ok(username.trim().to_string())
 }
 
@@ -161,20 +167,22 @@ fn handle_user(ctx: &mut SettingsContext, username: &str) -> Result<()> {
             .presentation(MenuPresentation::Padded)
             .select_one(actions)?
         {
-            Some(UserActionItem::ChangeShell { .. }) => {
+            crate::menu_utils::DialogOutcome::Submitted(UserActionItem::ChangeShell { .. }) => {
                 if let Some(new_shell) = select_shell(ctx, "Select shell")? {
                     change_user_shell(ctx, username, &new_shell)?;
                 }
             }
-            Some(UserActionItem::ChangePassword) => {
+            crate::menu_utils::DialogOutcome::Submitted(UserActionItem::ChangePassword) => {
                 if let Some(password) = prompt_password_with_confirmation(ctx, "New password")? {
                     set_user_password(ctx, username, &password)?;
                 }
             }
-            Some(UserActionItem::ManageGroups { .. }) => {
+            crate::menu_utils::DialogOutcome::Submitted(UserActionItem::ManageGroups {
+                ..
+            }) => {
                 manage_user_groups(ctx, username)?;
             }
-            Some(UserActionItem::ToggleSudo {
+            crate::menu_utils::DialogOutcome::Submitted(UserActionItem::ToggleSudo {
                 enabled,
                 sudo_group,
                 no_sudo_configured,
@@ -188,7 +196,7 @@ fn handle_user(ctx: &mut SettingsContext, username: &str) -> Result<()> {
                     no_sudo_configured,
                 )?;
             }
-            Some(UserActionItem::DeleteUser { .. }) => {
+            crate::menu_utils::DialogOutcome::Submitted(UserActionItem::DeleteUser { .. }) => {
                 if confirm_delete_user(ctx, username)? {
                     delete_user(ctx, username)?;
                     ctx.emit_success(
@@ -290,10 +298,14 @@ fn confirm_delete_user(ctx: &mut SettingsContext, username: &str) -> Result<bool
     let expected = username.to_uppercase();
     let prompt = format!("Type '{}' to confirm deletion", expected);
 
-    let confirmation = FzfWrapper::builder()
+    let confirmation = match FzfWrapper::builder()
         .prompt(&prompt)
         .input()
-        .input_dialog()?;
+        .input_dialog()?
+    {
+        crate::menu_utils::DialogOutcome::Submitted(confirmation) => confirmation,
+        crate::menu_utils::DialogOutcome::Cancelled => return Ok(false),
+    };
 
     if confirmation.trim() == expected {
         Ok(true)
@@ -319,15 +331,16 @@ fn manage_user_groups(ctx: &mut SettingsContext, username: &str) -> Result<()> {
             .presentation(MenuPresentation::Padded)
             .select_one(items)?
         {
-            Some(GroupMenuItem::ExistingGroup {
-                name: group_name, ..
+            crate::menu_utils::DialogOutcome::Submitted(GroupMenuItem::ExistingGroup {
+                name: group_name,
+                ..
             }) => {
                 manage_single_group(ctx, username, &group_name, &user_info)?;
             }
-            Some(GroupMenuItem::AddGroup) => {
+            crate::menu_utils::DialogOutcome::Submitted(GroupMenuItem::AddGroup) => {
                 add_groups_to_user(ctx, username, &user_info.groups)?;
             }
-            Some(GroupMenuItem::CreateGroup) => {
+            crate::menu_utils::DialogOutcome::Submitted(GroupMenuItem::CreateGroup) => {
                 create_group_for_user(ctx, username, &user_info.groups)?;
             }
             _ => break,
@@ -487,7 +500,10 @@ fn manage_single_group(
         .presentation(MenuPresentation::Padded)
         .select_one(actions)?
     {
-        Some(GroupActionItem::RemoveGroup { is_primary, .. }) => {
+        crate::menu_utils::DialogOutcome::Submitted(GroupActionItem::RemoveGroup {
+            is_primary,
+            ..
+        }) => {
             if is_primary {
                 ctx.emit_info(
                     "settings.users.groups",

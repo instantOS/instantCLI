@@ -8,8 +8,8 @@ use crate::game::utils::path::{
 };
 use crate::menu::protocol;
 use crate::menu_utils::{
-    FilePickerScope, FzfResult, FzfSelectable, FzfWrapper, HeaderBuilder, MenuPresentation,
-    PathInputBuilder, PathInputSelection,
+    FilePickerScope, FzfSelectable, FzfWrapper, HeaderBuilder, MenuPresentation, PathInputBuilder,
+    PathInputSelection,
 };
 use crate::restic::wrapper::Snapshot;
 use crate::ui::nerd_font::NerdFont;
@@ -172,7 +172,7 @@ pub(super) fn choose_installation_path(
         .map_err(|e| anyhow!("Failed to select path option: {e}"))?;
 
     match selected {
-        Some(option) => match option.kind {
+        crate::menu_utils::DialogOutcome::Submitted(option) => match option.kind {
             SavePathOptionKind::Custom => {
                 // Enable wine prefix support if any snapshot paths are from wine prefixes
                 let enable_wine_prefix = paths.iter().any(|path_info| {
@@ -194,7 +194,7 @@ pub(super) fn choose_installation_path(
                 Ok(Some(SelectedSavePath::from_path_info(&path_info)))
             }
         },
-        None => {
+        crate::menu_utils::DialogOutcome::Cancelled => {
             println!(
                 "{} No path selected. Setup cancelled.",
                 char::from(NerdFont::Warning)
@@ -416,16 +416,16 @@ fn handle_differently_named_folders(
         match FzfWrapper::builder()
             .header(header)
             .presentation(MenuPresentation::Padded)
-            .select(options)?
+            .select_one(options)?
         {
-            FzfResult::Selected(option) => {
+            crate::menu_utils::DialogOutcome::Submitted(option) => {
                 if option.contains("as is") {
                     Ok(Some(selected_path.to_path_buf()))
                 } else {
                     Ok(Some(alternative_path))
                 }
             }
-            _ => Ok(None),
+            crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
         }
     } else {
         Ok(None)

@@ -7,7 +7,7 @@ use colored::Colorize;
 
 use crate::dot::config::DotfileConfig;
 use crate::dot::sources;
-use crate::menu_utils::{FzfResult, FzfWrapper, MenuCursor, MenuPresentation};
+use crate::menu_utils::{FzfWrapper, MenuCursor, MenuPresentation};
 use crate::ui::prelude::*;
 
 use super::create_flow::run_create_flow;
@@ -93,8 +93,8 @@ pub(crate) fn run_browse_menu(dir: &Path, display: &str, mode: BrowseMode) -> Re
             builder = builder.query(q);
         }
 
-        match builder.select(menu.clone())? {
-            FzfResult::Selected(BrowseMenuItem::Dotfile(selected)) => {
+        match builder.select_one(menu.clone())? {
+            crate::menu_utils::DialogOutcome::Submitted(BrowseMenuItem::Dotfile(selected)) => {
                 cursor.update(&BrowseMenuItem::Dotfile(selected.clone()), &menu);
                 let result = match mode {
                     BrowseMode::CreateAlternative => {
@@ -126,7 +126,7 @@ pub(crate) fn run_browse_menu(dir: &Path, display: &str, mode: BrowseMode) -> Re
                     Flow::Cancelled => return Ok(()),
                 }
             }
-            FzfResult::Selected(BrowseMenuItem::PickNewFile) => {
+            crate::menu_utils::DialogOutcome::Submitted(BrowseMenuItem::PickNewFile) => {
                 cursor.update(&BrowseMenuItem::PickNewFile, &menu);
                 if let Some(path) = pick_new_file_to_track()? {
                     let file_display = to_display_path(&path);
@@ -139,17 +139,15 @@ pub(crate) fn run_browse_menu(dir: &Path, display: &str, mode: BrowseMode) -> Re
                 }
                 continue;
             }
-            FzfResult::Selected(BrowseMenuItem::Cancel) => {
+            crate::menu_utils::DialogOutcome::Submitted(BrowseMenuItem::Cancel) => {
                 cursor.update(&BrowseMenuItem::Cancel, &menu);
                 emit_cancelled();
                 return Ok(());
             }
-            FzfResult::Cancelled => {
+            crate::menu_utils::DialogOutcome::Cancelled => {
                 emit_cancelled();
                 return Ok(());
             }
-            FzfResult::Error(e) => return Err(anyhow::anyhow!("Selection error: {}", e)),
-            _ => return Ok(()),
         }
     }
 }
@@ -205,12 +203,16 @@ fn offer_create_alternative(dir: &Path, display: &str) -> Result<()> {
         .prompt("Select action: ")
         .responsive_layout()
         .presentation(MenuPresentation::Padded)
-        .select(vec![Choice::Create, Choice::Cancel])?
+        .select_one(vec![Choice::Create, Choice::Cancel])?
     {
-        FzfResult::Selected(Choice::Create) => {
+        crate::menu_utils::DialogOutcome::Submitted(Choice::Create) => {
             run_browse_menu(dir, display, BrowseMode::CreateAlternative)
         }
-        _ => {
+        crate::menu_utils::DialogOutcome::Submitted(Choice::Cancel) => {
+            emit_cancelled();
+            Ok(())
+        }
+        crate::menu_utils::DialogOutcome::Cancelled => {
             emit_cancelled();
             Ok(())
         }
@@ -229,7 +231,7 @@ fn pick_new_file_to_track() -> Result<Option<std::path::PathBuf>> {
         .hint("Select a file to track as a dotfile")
         .pick_one()
     {
-        Ok(Some(path)) => {
+        Ok(crate::menu_utils::DialogOutcome::Submitted(path)) => {
             if crate::dot::utils::resolve_dotfile_path(&path.to_string_lossy(), true, true).is_err()
             {
                 FzfWrapper::message(
@@ -239,7 +241,7 @@ fn pick_new_file_to_track() -> Result<Option<std::path::PathBuf>> {
             }
             Ok(Some(path))
         }
-        Ok(None) => Ok(None),
+        Ok(crate::menu_utils::DialogOutcome::Cancelled) => Ok(None),
         Err(e) => {
             FzfWrapper::message(&format!("File picker error: {}", e))?;
             Ok(None)

@@ -29,30 +29,30 @@ pub fn run_options_menu(db: &NotifyDb, _debug: bool) -> Result<()> {
             .select_one(items.clone())?;
 
         match selection {
-            Some(item @ OptionsItem::DoNotDisturb(_)) => {
+            crate::menu_utils::DialogOutcome::Submitted(item @ OptionsItem::DoNotDisturb(_)) => {
                 let backend = item.dnd_backend();
                 cursor.update(&item, &items);
                 if let Some(backend) = backend {
                     handle_dnd_toggle(Some(backend))?;
                 }
             }
-            Some(OptionsItem::DeleteByApp) => {
+            crate::menu_utils::DialogOutcome::Submitted(OptionsItem::DeleteByApp) => {
                 cursor.update(&OptionsItem::DeleteByApp, &items);
                 handle_delete_by_app(db)?;
             }
-            Some(OptionsItem::DeleteByKeyword) => {
+            crate::menu_utils::DialogOutcome::Submitted(OptionsItem::DeleteByKeyword) => {
                 cursor.update(&OptionsItem::DeleteByKeyword, &items);
                 handle_delete_by_keyword(db)?;
             }
-            Some(OptionsItem::DeleteAll) => {
+            crate::menu_utils::DialogOutcome::Submitted(OptionsItem::DeleteAll) => {
                 cursor.update(&OptionsItem::DeleteAll, &items);
                 handle_delete_all(db)?;
             }
-            Some(OptionsItem::DeleteRead) => {
+            crate::menu_utils::DialogOutcome::Submitted(OptionsItem::DeleteRead) => {
                 cursor.update(&OptionsItem::DeleteRead, &items);
                 handle_delete_read(db)?;
             }
-            Some(OptionsItem::MarkAllRead) => {
+            crate::menu_utils::DialogOutcome::Submitted(OptionsItem::MarkAllRead) => {
                 cursor.update(&OptionsItem::MarkAllRead, &items);
                 db.mark_all_read()?;
                 emit(
@@ -65,11 +65,12 @@ pub fn run_options_menu(db: &NotifyDb, _debug: bool) -> Result<()> {
                     None,
                 );
             }
-            Some(OptionsItem::HistorySize) => {
+            crate::menu_utils::DialogOutcome::Submitted(OptionsItem::HistorySize) => {
                 cursor.update(&OptionsItem::HistorySize, &items);
                 handle_history_size(db)?;
             }
-            Some(OptionsItem::Back) | None => return Ok(()),
+            crate::menu_utils::DialogOutcome::Submitted(OptionsItem::Back)
+            | crate::menu_utils::DialogOutcome::Cancelled => return Ok(()),
         }
     }
 }
@@ -377,8 +378,12 @@ fn handle_delete_by_app(db: &NotifyDb) -> Result<()> {
         .select_one(items)?;
 
     let app = match selection {
-        Some(AppDeletionItem::Application { app_name, .. }) => app_name,
-        Some(AppDeletionItem::Back) | None => return Ok(()),
+        crate::menu_utils::DialogOutcome::Submitted(AppDeletionItem::Application {
+            app_name,
+            ..
+        }) => app_name,
+        crate::menu_utils::DialogOutcome::Submitted(AppDeletionItem::Back)
+        | crate::menu_utils::DialogOutcome::Cancelled => return Ok(()),
     };
 
     // Refresh after fzf closes: notifications may have changed while the menu
@@ -677,7 +682,7 @@ fn confirm_deletion(matches: &[Notification], postfix: Option<&str>) -> Result<b
         .header(Header::default(&header_text))
         .presentation(MenuPresentation::Padded)
         .select_one(items)?;
-    let Some(chosen) = selection else {
+    let crate::menu_utils::DialogOutcome::Submitted(chosen) = selection else {
         return Ok(false);
     };
     if !chosen.action.is_delete() {

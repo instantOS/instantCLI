@@ -9,7 +9,7 @@ use crate::common::package::{InstallResult, ensure_all};
 use crate::game::config::{Game, GameInstallation, InstallationsConfig, InstantGameConfig};
 use crate::game::launch_command::LaunchCommand;
 use crate::game::platforms::deps::dependencies_for_launch_command;
-use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
+use crate::menu_utils::{FzfSelectable, FzfWrapper};
 
 use super::sync::{SyncReport, sync_game_saves};
 
@@ -186,13 +186,11 @@ fn select_launchable_game(launchables: &[LaunchableGame]) -> Result<Option<Launc
     let result = FzfWrapper::builder()
         .prompt("Launch game")
         .header("Select a game to launch")
-        .select(launchables.to_vec())?;
+        .select_one(launchables.to_vec())?;
 
     match result {
-        FzfResult::Selected(game) => Ok(Some(game)),
-        FzfResult::Cancelled => Ok(None),
-        FzfResult::Error(message) => Err(anyhow!(message)),
-        FzfResult::MultiSelected(mut games) => Ok(games.pop()),
+        crate::menu_utils::DialogOutcome::Submitted(game) => Ok(Some(game)),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
     }
 }
 

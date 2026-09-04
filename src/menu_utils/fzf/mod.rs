@@ -24,9 +24,9 @@ mod wrapper;
 // Re-export public API
 pub use header::HeaderBuilder;
 pub use types::{
-    ChecklistAction, ChecklistResult, ConfirmResult, DecodedStreamingMenuItem, FzfResult,
-    FzfSelectable, Header, MenuItem, MenuPresentation, StreamingCommand, StreamingMenuItem,
-    default_fzf_key,
+    ChecklistAction, ChecklistResult, ConfirmResult, DecodedStreamingMenuItem, DialogOutcome,
+    FzfResult, FzfSelectable, Header, MenuItem, MenuPresentation, StreamingCommand,
+    StreamingMenuItem, default_fzf_key,
 };
 
 // Re-export main user-facing types

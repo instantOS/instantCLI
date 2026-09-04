@@ -4,7 +4,7 @@ use anyhow::Result;
 
 use crate::dot::config::DotfileConfig;
 use crate::dot::dotfilerepo::DotfileRepo;
-use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuPresentation};
+use crate::menu_utils::{FzfSelectable, FzfWrapper, Header, MenuPresentation};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -127,10 +127,10 @@ pub(crate) fn handle_delete_subdir(
         .prompt("How do you want to remove this directory?")
         .responsive_layout()
         .presentation(MenuPresentation::Padded)
-        .select(choices)?;
+        .select_one(choices)?;
 
     match result {
-        FzfResult::Selected(DeleteChoice::KeepFiles) => {
+        crate::menu_utils::DialogOutcome::Submitted(DeleteChoice::KeepFiles) => {
             match crate::dot::meta::remove_dots_dir(&repo_path, subdir_name, false) {
                 Ok(_) => {
                     remove_from_active_subdirs(config, repo_name, subdir_name)?;
@@ -144,7 +144,7 @@ pub(crate) fn handle_delete_subdir(
                 }
             }
         }
-        FzfResult::Selected(DeleteChoice::DeleteFiles) => {
+        crate::menu_utils::DialogOutcome::Submitted(DeleteChoice::DeleteFiles) => {
             match crate::dot::meta::remove_dots_dir(&repo_path, subdir_name, true) {
                 Ok(_) => {
                     remove_from_active_subdirs(config, repo_name, subdir_name)?;
@@ -158,8 +158,8 @@ pub(crate) fn handle_delete_subdir(
                 }
             }
         }
-        FzfResult::Selected(DeleteChoice::Cancel) | FzfResult::Cancelled => {}
-        _ => {}
+        crate::menu_utils::DialogOutcome::Submitted(DeleteChoice::Cancel) => {}
+        crate::menu_utils::DialogOutcome::Cancelled => {}
     }
 
     Ok(())

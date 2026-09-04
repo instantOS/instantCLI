@@ -4,7 +4,7 @@ use anyhow::Result;
 
 use crate::dot::config::DotfileConfig;
 use crate::dot::dotfilerepo::DotfileRepo;
-use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
+use crate::menu_utils::{FzfSelectable, FzfWrapper, Header, MenuCursor};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -99,15 +99,14 @@ pub(crate) fn handle_orphaned_subdir_actions(
         builder = builder.initial_index(index);
     }
 
-    let result = builder.select(actions.clone())?;
+    let result = builder.select_one(actions.clone())?;
 
     let action = match result {
-        FzfResult::Selected(item) => {
+        crate::menu_utils::DialogOutcome::Submitted(item) => {
             cursor.update(&item, &actions);
             item
         }
-        FzfResult::Cancelled => return Ok(()),
-        _ => return Ok(()),
+        crate::menu_utils::DialogOutcome::Cancelled => return Ok(()),
     };
 
     match action {

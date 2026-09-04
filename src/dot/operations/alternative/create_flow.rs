@@ -10,7 +10,7 @@ use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
 use crate::dot::override_config::{DotfileSource, OverrideConfig};
 use crate::dot::sources;
-use crate::menu_utils::{FzfResult, FzfWrapper, MenuCursor};
+use crate::menu_utils::{FzfWrapper, MenuCursor};
 use crate::ui::prelude::*;
 
 use super::apply::add_to_destination;
@@ -129,15 +129,15 @@ pub(crate) fn run_create_flow(
             builder = builder.initial_index(index);
         }
 
-        match builder.select(menu.clone())? {
-            FzfResult::Selected(CreateMenuItem::Destination(item)) => {
+        match builder.select_one(menu.clone())? {
+            crate::menu_utils::DialogOutcome::Submitted(CreateMenuItem::Destination(item)) => {
                 cursor.update(&CreateMenuItem::Destination(item.clone()), &menu);
                 match add_file_to_destination(&config, path, display, &item, force)? {
                     Flow::Continue => continue,
                     other => return Ok(other),
                 }
             }
-            FzfResult::Selected(CreateMenuItem::AddSubdir {
+            crate::menu_utils::DialogOutcome::Submitted(CreateMenuItem::AddSubdir {
                 repo_name,
                 is_root_target,
             }) => {
@@ -153,24 +153,22 @@ pub(crate) fn run_create_flow(
                 }
                 return Ok(Flow::Cancelled);
             }
-            FzfResult::Selected(CreateMenuItem::CloneRepo) => {
+            crate::menu_utils::DialogOutcome::Submitted(CreateMenuItem::CloneRepo) => {
                 cursor.update(&CreateMenuItem::CloneRepo, &menu);
                 if clone_new_repo()? {
                     continue;
                 }
                 return Ok(Flow::Cancelled);
             }
-            FzfResult::Selected(CreateMenuItem::Cancel) => {
+            crate::menu_utils::DialogOutcome::Submitted(CreateMenuItem::Cancel) => {
                 cursor.update(&CreateMenuItem::Cancel, &menu);
                 emit_cancelled();
                 return Ok(Flow::Cancelled);
             }
-            FzfResult::Cancelled => {
+            crate::menu_utils::DialogOutcome::Cancelled => {
                 emit_cancelled();
                 return Ok(Flow::Cancelled);
             }
-            FzfResult::Error(e) => return Err(anyhow::anyhow!("Selection error: {}", e)),
-            _ => return Ok(Flow::Cancelled),
         }
     }
 }
@@ -277,9 +275,11 @@ fn create_new_subdir(
             "New dotfile directory name: "
         })
         .input()
-        .input_result()?
+        .input_dialog()?
     {
-        FzfResult::Selected(s) if !s.trim().is_empty() => s.trim().to_string(),
+        crate::menu_utils::DialogOutcome::Submitted(s) if !s.trim().is_empty() => {
+            s.trim().to_string()
+        }
         _ => return Ok(false),
     };
 

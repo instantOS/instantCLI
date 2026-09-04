@@ -20,8 +20,8 @@ pub(super) fn prompt_password_with_confirmation(
         .password_dialog()?;
 
     let password = match password_result {
-        FzfResult::Selected(s) => s,
-        _ => return Ok(None),
+        crate::menu_utils::DialogOutcome::Submitted(s) => s,
+        crate::menu_utils::DialogOutcome::Cancelled => return Ok(None),
     };
 
     if password.trim().is_empty() {
@@ -153,10 +153,14 @@ pub(super) fn delete_user(ctx: &mut SettingsContext, username: &str) -> Result<(
 
 /// Prompt for a new group name
 pub(super) fn prompt_group_name() -> Result<String> {
-    let group_name = FzfWrapper::builder()
+    let group_name = match FzfWrapper::builder()
         .prompt("New group")
         .input()
-        .input_dialog()?;
+        .input_dialog()?
+    {
+        crate::menu_utils::DialogOutcome::Submitted(group_name) => group_name,
+        crate::menu_utils::DialogOutcome::Cancelled => return Ok(String::new()),
+    };
     Ok(group_name.trim().to_string())
 }
 
@@ -193,11 +197,11 @@ pub(super) fn select_shell(ctx: &SettingsContext, prompt: &str) -> Result<Option
     let selected = FzfWrapper::builder()
         .prompt(prompt)
         .header("Choose a shell from /etc/shells (Esc for default)")
-        .select(shell_items)?;
+        .select_one(shell_items)?;
 
     match selected {
-        FzfResult::Selected(item) => Ok(Some(item.path)),
-        _ => Ok(Some(default_shell())),
+        crate::menu_utils::DialogOutcome::Submitted(item) => Ok(Some(item.path)),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(Some(default_shell())),
     }
 }
 

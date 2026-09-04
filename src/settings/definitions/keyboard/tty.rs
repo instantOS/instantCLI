@@ -1,9 +1,9 @@
 //! TTY keymap setting
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 
 use crate::arch::annotations::{KeymapAnnotationProvider, annotate_list};
-use crate::menu_utils::{FzfResult, FzfWrapper};
+use crate::menu_utils::FzfWrapper;
 use crate::preview::{PreviewId, preview_command};
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
@@ -78,10 +78,10 @@ impl Setting for TtyKeymap {
             .header("Select TTY Keymap")
             .prompt("Keymap")
             .initial_index(initial_index)
-            .select(choices)?;
+            .select_one(choices)?;
 
         match result {
-            FzfResult::Selected(choice) => {
+            crate::menu_utils::DialogOutcome::Submitted(choice) => {
                 if let Err(err) =
                     ctx.run_command_as_root("localectl", ["set-keymap", choice.value.as_str()])
                 {
@@ -95,8 +95,7 @@ impl Setting for TtyKeymap {
                 ctx.set_string(Self::KEY, &choice.value);
                 ctx.notify("TTY Keymap", &format!("Set to: {}", choice.value));
             }
-            FzfResult::Error(err) => bail!("fzf error: {err}"),
-            _ => {}
+            crate::menu_utils::DialogOutcome::Cancelled => {}
         }
 
         Ok(())

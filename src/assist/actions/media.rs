@@ -26,7 +26,7 @@ pub fn next_track() -> Result<()> {
 }
 
 pub fn control_media() -> Result<()> {
-    use crate::menu::client::MenuClient;
+    use crate::menu::client::HostedMenuClient;
     use std::collections::HashMap;
 
     // Get list of players
@@ -100,10 +100,10 @@ pub fn control_media() -> Result<()> {
         player_map.insert(key.to_string(), player.to_string());
     }
 
-    let client = MenuClient::new();
+    let client = HostedMenuClient::new();
     let selected_key = client.chord(chords)?;
 
-    if let Some(key) = selected_key
+    if let crate::menu_utils::DialogOutcome::Submitted(key) = selected_key
         && let Some(player) = player_map.get(&key)
     {
         Command::new("playerctl")

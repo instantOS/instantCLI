@@ -58,10 +58,10 @@ pub fn manage_default_apps(ctx: &mut SettingsContext) -> Result<()> {
                 .build(),
         )
         .responsive_layout()
-        .select(mime_types)?
+        .select_one(mime_types)?
     {
-        FzfResult::Selected(info) => info,
-        _ => {
+        crate::menu_utils::DialogOutcome::Submitted(info) => info,
+        crate::menu_utils::DialogOutcome::Cancelled => {
             ctx.emit_info("settings.defaultapps.cancelled", "No MIME type selected.");
             return Ok(());
         }
@@ -114,9 +114,9 @@ pub fn manage_default_apps(ctx: &mut SettingsContext) -> Result<()> {
         app_menu = app_menu.initial_index(index);
     }
 
-    let selected_app_info = match app_menu.select(app_infos)? {
-        FzfResult::Selected(app_info) => app_info,
-        _ => {
+    let selected_app_info = match app_menu.select_one(app_infos)? {
+        crate::menu_utils::DialogOutcome::Submitted(app_info) => app_info,
+        crate::menu_utils::DialogOutcome::Cancelled => {
             ctx.emit_info("settings.defaultapps.cancelled", "No application selected.");
             return Ok(());
         }

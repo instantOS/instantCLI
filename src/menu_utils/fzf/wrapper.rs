@@ -28,23 +28,34 @@ pub(crate) struct FzfWrapperParts {
     pub responsive_layout: bool,
 }
 
-/// Process fzf exit status. Returns `Some(Cancelled)` if the process was
-/// cancelled or failed, `None` if it exited successfully.
-pub(crate) fn check_fzf_exit<T>(result: &std::process::Output) -> Option<FzfResult<T>> {
-    if let Some(code) = result.status.code()
-        && (code == 130 || code == 143)
-    {
-        return Some(FzfResult::Cancelled);
-    }
-    if !result.status.success() {
-        handle_old_fzf_error(&result.stderr);
-        if crate::ui::is_debug_enabled() {
-            log_fzf_failure(&result.stderr, result.status.code(), |code, message| {
-                crate::ui::emit(crate::ui::Level::Debug, code, message, None);
-            });
+/// Classify fzf's process status without conflating cancellation and failure.
+///
+/// Exit 1 means "no match" and is interpreted by each caller from stdout.
+/// Exit 130/143 represents an interrupted interaction. Every other non-zero
+/// status is an operational failure.
+pub(crate) fn fzf_was_cancelled(result: &std::process::Output) -> Result<bool> {
+    match result.status.code() {
+        Some(0 | 1) => Ok(false),
+        Some(130 | 143) => Ok(true),
+        code => {
+            handle_old_fzf_error(&result.stderr);
+            if crate::ui::is_debug_enabled() {
+                log_fzf_failure(&result.stderr, code, |code, message| {
+                    crate::ui::emit(crate::ui::Level::Debug, code, message, None);
+                });
+            }
+            let stderr = String::from_utf8_lossy(&result.stderr);
+            let detail = stderr.trim();
+            if detail.is_empty() {
+                Err(anyhow!("fzf exited with status {}", result.status))
+            } else {
+                Err(anyhow!(
+                    "fzf exited with status {}: {detail}",
+                    result.status
+                ))
+            }
         }
     }
-    None
 }
 
 // ============================================================================
@@ -374,8 +385,8 @@ fn parse_fzf_output<T: Clone>(
     item_map: &HashMap<String, T>,
     multi_select: bool,
 ) -> Result<FzfResult<T>> {
-    if let Some(cancelled) = check_fzf_exit(&result) {
-        return Ok(cancelled);
+    if fzf_was_cancelled(&result)? {
+        return Ok(FzfResult::Cancelled);
     }
 
     // Parse selected lines
@@ -392,25 +403,30 @@ fn parse_fzf_output<T: Clone>(
 
     // Extract the key from field 3 (format: display\x1fkeywords\x1fkey[\x1f...])
     if multi_select {
-        let selected_items: Vec<T> = selected_lines
+        let selected_items = selected_lines
             .iter()
-            .filter_map(|line| {
-                // Extract key from field 3 (index 2) using Unit Separator
-                let key = line.split('\x1f').nth(2)?;
-                item_map.get(key).cloned()
+            .map(|line| {
+                let key = line
+                    .split('\x1f')
+                    .nth(2)
+                    .ok_or_else(|| anyhow!("fzf returned a selection without an item key"))?;
+                item_map
+                    .get(key)
+                    .cloned()
+                    .ok_or_else(|| anyhow!("fzf returned unknown item key {key:?}"))
             })
-            .collect();
+            .collect::<Result<Vec<_>>>()?;
         Ok(FzfResult::MultiSelected(selected_items))
     } else {
-        // Extract key from field 3 (index 2) using Unit Separator
-        if let Some(key) = selected_lines[0].split('\x1f').nth(2) {
-            match item_map.get(key).cloned() {
-                Some(item) => Ok(FzfResult::Selected(item)),
-                None => Ok(FzfResult::Cancelled),
-            }
-        } else {
-            Ok(FzfResult::Cancelled)
-        }
+        let key = selected_lines[0]
+            .split('\x1f')
+            .nth(2)
+            .ok_or_else(|| anyhow!("fzf returned a selection without an item key"))?;
+        let item = item_map
+            .get(key)
+            .cloned()
+            .ok_or_else(|| anyhow!("fzf returned unknown item key {key:?}"))?;
+        Ok(FzfResult::Selected(item))
     }
 }
 
@@ -418,8 +434,8 @@ fn parse_encoded_streaming_output<T: DeserializeOwned>(
     result: std::process::Output,
     multi_select: bool,
 ) -> Result<FzfResult<DecodedStreamingMenuItem<T>>> {
-    if let Some(cancelled) = check_fzf_exit(&result) {
-        return Ok(cancelled);
+    if fzf_was_cancelled(&result)? {
+        return Ok(FzfResult::Cancelled);
     }
 
     let stdout = String::from_utf8_lossy(&result.stdout);
@@ -831,7 +847,7 @@ impl FzfWrapper {
         parse_fzf_output(output, &item_map, self.multi_select)
     }
 
-    pub fn input(prompt: &str) -> Result<String> {
+    pub fn input(prompt: &str) -> Result<DialogOutcome<String>> {
         Self::builder().prompt(prompt).input().input_dialog()
     }
 
@@ -843,7 +859,7 @@ impl FzfWrapper {
         Self::builder().confirm(message).confirm_dialog()
     }
 
-    pub fn password(prompt: &str) -> Result<FzfResult<String>> {
+    pub fn password(prompt: &str) -> Result<DialogOutcome<String>> {
         Self::builder().prompt(prompt).password().password_dialog()
     }
 }
@@ -870,6 +886,68 @@ mod mock_tests {
         let items = vec!["alpha".to_string()];
         let result = FzfWrapper::builder().select(items).unwrap();
         assert_eq!(result, FzfResult::Cancelled);
+    }
+
+    #[test]
+    fn select_one_preserves_submission_and_cancellation() {
+        let _guard = MockQueue::new().select_index(0).cancel_selection().guard();
+        let submitted = FzfWrapper::builder()
+            .select_one(vec!["alpha".to_string()])
+            .unwrap();
+        let cancelled = FzfWrapper::builder()
+            .select_one(vec!["alpha".to_string()])
+            .unwrap();
+
+        assert_eq!(submitted, DialogOutcome::Submitted("alpha".to_string()));
+        assert_eq!(cancelled, DialogOutcome::Cancelled);
+    }
+
+    #[test]
+    fn select_one_rejects_multi_selection_results() {
+        let _guard = MockQueue::new().multi_select(vec![0]).guard();
+        let error = FzfWrapper::builder()
+            .multi_select(true)
+            .select_one(vec!["alpha".to_string()])
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "select_one cannot be used with multi-selection enabled"
+        );
+    }
+
+    #[test]
+    fn fzf_status_distinguishes_cancellation_from_failure() {
+        use std::os::unix::process::ExitStatusExt;
+
+        let output = |code| std::process::Output {
+            status: std::process::ExitStatus::from_raw(code << 8),
+            stdout: Vec::new(),
+            stderr: b"renderer failed".to_vec(),
+        };
+
+        assert!(!fzf_was_cancelled(&output(0)).unwrap());
+        assert!(!fzf_was_cancelled(&output(1)).unwrap());
+        assert!(fzf_was_cancelled(&output(130)).unwrap());
+        assert!(fzf_was_cancelled(&output(2)).is_err());
+    }
+
+    #[test]
+    fn malformed_fzf_selection_is_an_error() {
+        use std::os::unix::process::ExitStatusExt;
+
+        let output = std::process::Output {
+            status: std::process::ExitStatus::from_raw(0),
+            stdout: b"label without fields\n".to_vec(),
+            stderr: Vec::new(),
+        };
+        let items = HashMap::from([("known".to_string(), "value".to_string())]);
+
+        let error = parse_fzf_output(output, &items, false).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "fzf returned a selection without an item key"
+        );
     }
 
     #[test]

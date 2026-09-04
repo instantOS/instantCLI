@@ -2,10 +2,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread;
 
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 
 use super::file_picker::{FilePickerScope, MenuWrapper};
-use super::fzf::{FzfResult, FzfSelectable, FzfWrapper, Header, HeaderBuilder};
+use super::fzf::{FzfSelectable, FzfWrapper, Header, HeaderBuilder};
 use crate::common::TildePath;
 use crate::preview::{PreviewId, preview_command};
 use crate::ui::nerd_font::NerdFont;
@@ -196,7 +196,8 @@ impl PathInputBuilder {
         }
 
         match picker.pick_one() {
-            Ok(path) => Ok(path),
+            Ok(crate::menu_utils::DialogOutcome::Submitted(path)) => Ok(Some(path)),
+            Ok(crate::menu_utils::DialogOutcome::Cancelled) => Ok(None),
             Err(err) => {
                 eprintln!("Failed to launch file picker: {err:#}");
                 Ok(None) // Signal to retry by returning None
@@ -222,7 +223,8 @@ impl PathInputBuilder {
         }
 
         match picker.pick_one() {
-            Ok(path) => Ok(path),
+            Ok(crate::menu_utils::DialogOutcome::Submitted(path)) => Ok(Some(path)),
+            Ok(crate::menu_utils::DialogOutcome::Cancelled) => Ok(None),
             Err(err) => {
                 eprintln!("Failed to launch file picker: {err:#}");
                 Ok(None)
@@ -271,9 +273,9 @@ impl PathInputBuilder {
         match FzfWrapper::builder()
             .prompt(&self.manual_prompt)
             .input()
-            .input_result()?
+            .input_dialog()?
         {
-            FzfResult::Selected(input) => {
+            crate::menu_utils::DialogOutcome::Submitted(input) => {
                 let trimmed = input.trim().to_string();
                 if trimmed.is_empty() {
                     println!(
@@ -285,8 +287,7 @@ impl PathInputBuilder {
 
                 Ok(ManualPathOutcome::Submitted(trimmed))
             }
-            FzfResult::Cancelled => Ok(ManualPathOutcome::Cancelled),
-            _ => Ok(ManualPathOutcome::Cancelled),
+            crate::menu_utils::DialogOutcome::Cancelled => Ok(ManualPathOutcome::Cancelled),
         }
     }
 
@@ -300,11 +301,11 @@ impl PathInputBuilder {
                 }
                 None => FzfWrapper::builder()
                     .header(self.header.clone())
-                    .select(options.clone())?,
+                    .select_one(options.clone())?,
             };
 
             match selection {
-                FzfResult::Selected(option) => match option.choice {
+                crate::menu_utils::DialogOutcome::Submitted(option) => match option.choice {
                     PathInputChoice::Manual => match self.prompt_manual_path()? {
                         ManualPathOutcome::Submitted(input) => {
                             return Ok(PathInputSelection::Manual(input));
@@ -337,9 +338,9 @@ impl PathInputBuilder {
                         return Ok(PathInputSelection::Picker(path));
                     }
                 },
-                FzfResult::Cancelled => return Ok(PathInputSelection::Cancelled),
-                FzfResult::MultiSelected(_) => return Ok(PathInputSelection::Cancelled),
-                FzfResult::Error(err) => return Err(anyhow!(err)),
+                crate::menu_utils::DialogOutcome::Cancelled => {
+                    return Ok(PathInputSelection::Cancelled);
+                }
             }
         }
     }
@@ -350,19 +351,33 @@ impl PathInputBuilder {
         &self,
         options: &[PathInputOption],
         producer: SuggestionProducer,
-    ) -> Result<FzfResult<PathInputOption>> {
+    ) -> Result<crate::menu_utils::DialogOutcome<PathInputOption>> {
         let (tx, rx) = crossbeam_channel::unbounded();
         thread::spawn(move || producer(SuggestionSink { tx }));
 
         // Jump to the first streamed suggestion once fzf finished loading its
         // input; before that the cursor rests on the first static option.
-        FzfWrapper::builder()
-            .header(self.header.clone())
-            .args([
-                "--bind".to_string(),
-                format!("load:pos({})", options.len() + 1),
-            ])
-            .select_streaming(options.to_vec(), rx)
+        Ok(
+            match FzfWrapper::builder()
+                .header(self.header.clone())
+                .args([
+                    "--bind".to_string(),
+                    format!("load:pos({})", options.len() + 1),
+                ])
+                .select_streaming(options.to_vec(), rx)?
+            {
+                crate::menu_utils::FzfResult::Selected(option) => {
+                    crate::menu_utils::DialogOutcome::Submitted(option)
+                }
+                // Single-select menu: multi-selection cannot occur.
+                crate::menu_utils::FzfResult::MultiSelected(_) => {
+                    crate::menu_utils::DialogOutcome::Cancelled
+                }
+                crate::menu_utils::FzfResult::Cancelled => {
+                    crate::menu_utils::DialogOutcome::Cancelled
+                }
+            },
+        )
     }
 }
 

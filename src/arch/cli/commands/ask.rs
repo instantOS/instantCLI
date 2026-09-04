@@ -6,7 +6,7 @@ use crate::arch::engine::{
     build_install_summary,
 };
 use crate::common::distro::is_live_iso;
-use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper, MenuPresentation};
+use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, MenuPresentation};
 use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -112,11 +112,11 @@ fn prompt_existing_answers(
         .prompt("Select")
         .responsive_layout()
         .presentation(MenuPresentation::Padded)
-        .select(options)?;
+        .select_one(options)?;
 
     match selection {
-        FzfResult::Selected(option) => Ok(Some(option.choice)),
-        _ => Ok(None),
+        crate::menu_utils::DialogOutcome::Submitted(option) => Ok(Some(option.choice)),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
     }
 }
 

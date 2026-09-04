@@ -2,7 +2,7 @@ use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, anyhow, bail};
 
-use crate::menu_utils::{ConfirmResult, FzfResult, FzfWrapper};
+use crate::menu_utils::{ConfirmResult, FzfWrapper};
 
 use super::types::{DeleteMode, PassEntry};
 use super::utils::*;
@@ -295,10 +295,10 @@ pub(super) fn select_entry(
         } else {
             "Select a pass entry"
         })
-        .select(candidates)?
+        .select_one(candidates)?
     {
-        FzfResult::Selected(entry) => Ok(Some(entry)),
-        _ => Ok(None),
+        crate::menu_utils::DialogOutcome::Submitted(entry) => Ok(Some(entry)),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
     }
 }
 

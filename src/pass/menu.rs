@@ -1,9 +1,7 @@
 use anyhow::{Result, anyhow, bail};
 
-use crate::menu::client::MenuClient;
-use crate::menu_utils::{
-    FzfResult, FzfWrapper, Header, HeaderBuilder, MenuCursor, MenuPresentation,
-};
+use crate::menu::client::HostedMenuClient;
+use crate::menu_utils::{FzfWrapper, Header, HeaderBuilder, MenuCursor, MenuPresentation};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -37,8 +35,8 @@ pub(super) fn interactive_pass_quick_access() -> Result<i32> {
             builder = builder.initial_index(index);
         }
 
-        match builder.select(quick_access_items.clone())? {
-            FzfResult::Selected(item) => {
+        match builder.select_one(quick_access_items.clone())? {
+            crate::menu_utils::DialogOutcome::Submitted(item) => {
                 cursor.update(&item, &quick_access_items);
                 match item.kind {
                     BrowserItemKind::Entry(key) => {
@@ -56,8 +54,7 @@ pub(super) fn interactive_pass_quick_access() -> Result<i32> {
                     BrowserItemKind::Folder(_) | BrowserItemKind::Add | BrowserItemKind::Back => {}
                 }
             }
-            FzfResult::Cancelled => return Ok(1),
-            _ => return Ok(1),
+            crate::menu_utils::DialogOutcome::Cancelled => return Ok(1),
         }
     }
 }
@@ -69,13 +66,7 @@ pub(super) fn interactive_pass_menu_server() -> Result<i32> {
 pub(super) fn interactive_pass_quick_access_server() -> Result<i32> {
     ensure_core_dependencies()?;
 
-    let client = MenuClient::new();
-    let server_client = client.clone();
-    let server_ready = std::thread::spawn(move || server_client.ensure_server_running());
-
-    server_ready
-        .join()
-        .map_err(|_| anyhow!("menu server thread panicked"))??;
+    let client = HostedMenuClient::new();
 
     let store_dir = ensure_password_store_dir()?;
 
@@ -84,10 +75,10 @@ pub(super) fn interactive_pass_quick_access_server() -> Result<i32> {
         sort_entries_by_frecency(&mut entries)?;
         let menu_items = build_quick_access_menu_items(&entries);
 
-        let selected = client.choice("Pass".to_string(), menu_items, false)?;
-        if selected.is_empty() {
-            return Ok(1);
-        }
+        let selected = match client.choice("Pass".to_string(), menu_items, false)? {
+            crate::menu_utils::DialogOutcome::Submitted(selected) => selected,
+            crate::menu_utils::DialogOutcome::Cancelled => return Ok(1),
+        };
 
         let metadata = selected[0]
             .metadata
@@ -128,7 +119,7 @@ pub(super) fn run_add_menu(current_prefix: Option<&str>) -> Result<()> {
         .subtitle("Create a new password, generated secret, or OTP key")
         .build();
 
-    if let Some(item) = FzfWrapper::builder()
+    if let crate::menu_utils::DialogOutcome::Submitted(item) = FzfWrapper::builder()
         .header(header)
         .prompt("Create")
         .responsive_layout()
@@ -178,8 +169,8 @@ pub(crate) fn run_edit_browser(initial_prefix: Option<&str>) -> Result<()> {
             builder = builder.initial_index(index);
         }
 
-        match builder.select(browser_items.clone())? {
-            FzfResult::Selected(item) => {
+        match builder.select_one(browser_items.clone())? {
+            crate::menu_utils::DialogOutcome::Submitted(item) => {
                 cursor.update(&item, &browser_items);
                 match item.kind {
                     BrowserItemKind::Folder(folder) => path = path_segments(&folder),
@@ -198,13 +189,12 @@ pub(crate) fn run_edit_browser(initial_prefix: Option<&str>) -> Result<()> {
                     BrowserItemKind::Menu => {}
                 }
             }
-            FzfResult::Cancelled => {
+            crate::menu_utils::DialogOutcome::Cancelled => {
                 if path.is_empty() {
                     return Ok(());
                 }
                 path.pop();
             }
-            _ => return Ok(()),
         }
     }
 }
@@ -235,8 +225,8 @@ pub(super) fn run_edit_action_menu(entry: &PassEntry) -> Result<()> {
             builder = builder.initial_index(index);
         }
 
-        match builder.select(items.clone())? {
-            FzfResult::Selected(item) => {
+        match builder.select_one(items.clone())? {
+            crate::menu_utils::DialogOutcome::Submitted(item) => {
                 cursor.update(&item, &items);
                 match item.action {
                     EditAction::CopyPassword => {
@@ -274,8 +264,7 @@ pub(super) fn run_edit_action_menu(entry: &PassEntry) -> Result<()> {
                     EditAction::Back => return Ok(()),
                 }
             }
-            FzfResult::Cancelled => return Ok(()),
-            _ => return Ok(()),
+            crate::menu_utils::DialogOutcome::Cancelled => return Ok(()),
         }
     }
 }

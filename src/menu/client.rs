@@ -1,6 +1,6 @@
-use super::MenuCommands;
 use super::protocol::*;
 use crate::common::compositor::CompositorType;
+use crate::menu_utils::DialogOutcome;
 use anyhow::{Context, Result};
 use colored::*;
 use std::fs;
@@ -20,6 +20,20 @@ enum MenuTransport {
 
 const DEFAULT_READ_TIMEOUT: Duration = Duration::from_secs(30);
 const STREAM_CHUNK_MAX_ITEMS: usize = 64;
+
+fn decode_dialog_response<T>(
+    response: MenuResponse,
+    operation: &str,
+    value: impl FnOnce(MenuResponse) -> Option<T>,
+) -> Result<DialogOutcome<T>> {
+    match response {
+        MenuResponse::Cancelled => Ok(DialogOutcome::Cancelled),
+        MenuResponse::Error(error) => anyhow::bail!("Server error: {error}"),
+        response => value(response)
+            .map(DialogOutcome::Submitted)
+            .ok_or_else(|| anyhow::anyhow!("Unexpected response type for {operation} request")),
+    }
+}
 
 fn read_timeout_for_request(request: &MenuRequest) -> Duration {
     let MenuRequest::Toast { duration, .. } = request else {
@@ -54,14 +68,18 @@ impl MenuTransport {
     }
 }
 
-/// Menu client for communicating with the menu server
+/// Client for rendering dialogs outside the caller's current terminal.
+///
+/// Requests use the scratchpad server when supported and otherwise run in a
+/// transient terminal. Typed request methods prepare the host automatically;
+/// call [`Self::prepare`] only to warm it up ahead of the first request.
 #[derive(Clone)]
-pub struct MenuClient {
+pub struct HostedMenuClient {
     socket_path: String,
     transport: MenuTransport,
 }
 
-impl MenuClient {
+impl HostedMenuClient {
     /// Create a new menu client
     pub fn new() -> Self {
         let transport = MenuTransport::detect();
@@ -96,7 +114,7 @@ impl MenuClient {
     }
 
     /// Spawn server if not running using scratchpad architecture
-    pub fn ensure_server_running(&self) -> Result<()> {
+    pub fn prepare(&self) -> Result<()> {
         if self.transport != MenuTransport::ScratchpadServer {
             return Ok(());
         }
@@ -277,7 +295,7 @@ impl MenuClient {
     }
 
     /// Send a request and receive response
-    pub fn send_request(&self, request: MenuRequest) -> Result<MenuResponse> {
+    fn send_request(&self, request: MenuRequest) -> Result<MenuResponse> {
         match self.transport {
             MenuTransport::ScratchpadServer => self.send_request_via_server(request),
             MenuTransport::KittyTransient => self.send_request_via_fallback(request),
@@ -293,7 +311,7 @@ impl MenuClient {
         ) {
             anyhow::bail!("Streaming choice frames require a streaming connection");
         }
-        self.ensure_server_running()?;
+        self.prepare()?;
 
         self.send_request_to_connected_server(request)
     }
@@ -448,17 +466,16 @@ impl MenuClient {
         prompt: String,
         items: Vec<SerializableMenuItem>,
         allow_multiple: bool,
-    ) -> Result<Vec<SerializableMenuItem>> {
-        match self.send_request(MenuRequest::Choice {
+    ) -> Result<DialogOutcome<Vec<SerializableMenuItem>>> {
+        let response = self.send_request(MenuRequest::Choice {
             prompt,
             items,
             allow_multiple,
-        })? {
-            MenuResponse::ChoiceResult(selected) => Ok(selected),
-            MenuResponse::Error(error) => anyhow::bail!("Server error: {}", error),
-            MenuResponse::Cancelled => Ok(vec![]),
-            _ => anyhow::bail!("Unexpected response type for choice request"),
-        }
+        })?;
+        decode_dialog_response(response, "choice", |response| match response {
+            MenuResponse::ChoiceResult(selected) => Some(selected),
+            _ => None,
+        })
     }
 
     /// Show streaming choice dialog, reading plain items line-by-line from
@@ -483,7 +500,7 @@ impl MenuClient {
         &self,
         prompt: String,
         allow_multiple: bool,
-    ) -> Result<Vec<SerializableMenuItem>> {
+    ) -> Result<DialogOutcome<Vec<SerializableMenuItem>>> {
         if self.transport != MenuTransport::ScratchpadServer {
             let mut buffer = String::new();
             io::stdin()
@@ -532,32 +549,30 @@ impl MenuClient {
         if response_message.request_id != request_id {
             anyhow::bail!("Request ID mismatch in streaming choice response");
         }
-        match response_message.payload {
-            MenuResponse::ChoiceResult(selected) => Ok(selected),
-            MenuResponse::Error(error) => anyhow::bail!("Server error: {}", error),
-            MenuResponse::Cancelled => Ok(vec![]),
-            _ => anyhow::bail!("Unexpected response type for streaming choice request"),
-        }
+        decode_dialog_response(response_message.payload, "streaming choice", |response| {
+            match response {
+                MenuResponse::ChoiceResult(selected) => Some(selected),
+                _ => None,
+            }
+        })
     }
 
     /// Show input dialog via server
-    pub fn input(&self, prompt: String) -> Result<String> {
-        match self.send_request(MenuRequest::Input { prompt })? {
-            MenuResponse::InputResult(text) => Ok(text),
-            MenuResponse::Error(error) => anyhow::bail!("Server error: {}", error),
-            MenuResponse::Cancelled => Ok(String::new()),
-            _ => anyhow::bail!("Unexpected response type for input request"),
-        }
+    pub fn input(&self, prompt: String) -> Result<DialogOutcome<String>> {
+        let response = self.send_request(MenuRequest::Input { prompt })?;
+        decode_dialog_response(response, "input", |response| match response {
+            MenuResponse::InputResult(text) => Some(text),
+            _ => None,
+        })
     }
 
     /// Show password dialog via server
-    pub fn password(&self, prompt: String) -> Result<String> {
-        match self.send_request(MenuRequest::Password { prompt })? {
-            MenuResponse::PasswordResult(text) => Ok(text),
-            MenuResponse::Error(error) => anyhow::bail!("Server error: {}", error),
-            MenuResponse::Cancelled => Ok(String::new()),
-            _ => anyhow::bail!("Unexpected response type for password request"),
-        }
+    pub fn password(&self, prompt: String) -> Result<DialogOutcome<String>> {
+        let response = self.send_request(MenuRequest::Password { prompt })?;
+        decode_dialog_response(response, "password", |response| match response {
+            MenuResponse::PasswordResult(text) => Some(text),
+            _ => None,
+        })
     }
 
     /// Launch file picker via server
@@ -566,41 +581,38 @@ impl MenuClient {
         start: Option<String>,
         scope: FilePickerScope,
         allow_multiple: bool,
-    ) -> Result<Vec<PathBuf>> {
-        match self.send_request(MenuRequest::FilePicker {
+    ) -> Result<DialogOutcome<Vec<PathBuf>>> {
+        let response = self.send_request(MenuRequest::FilePicker {
             start,
             scope,
             allow_multiple,
-        })? {
-            MenuResponse::FilePickerResult(paths) => Ok(paths),
-            MenuResponse::Error(error) => anyhow::bail!("Server error: {}", error),
-            MenuResponse::Cancelled => Ok(Vec::new()),
-            _ => anyhow::bail!("Unexpected response type for file picker request"),
-        }
+        })?;
+        decode_dialog_response(response, "file picker", |response| match response {
+            MenuResponse::FilePickerResult(paths) => Some(paths),
+            _ => None,
+        })
     }
 
     /// Show chord navigator via server
-    pub fn chord(&self, chords: Vec<String>) -> Result<Option<String>> {
+    pub fn chord(&self, chords: Vec<String>) -> Result<DialogOutcome<String>> {
         if chords.is_empty() {
             anyhow::bail!("Chord request must include at least one chord");
         }
 
-        match self.send_request(MenuRequest::Chord { chords })? {
-            MenuResponse::ChordResult(sequence) => Ok(Some(sequence)),
-            MenuResponse::Cancelled => Ok(None),
-            MenuResponse::Error(error) => anyhow::bail!("Server error: {}", error),
-            _ => anyhow::bail!("Unexpected response type for chord request"),
-        }
+        let response = self.send_request(MenuRequest::Chord { chords })?;
+        decode_dialog_response(response, "chord", |response| match response {
+            MenuResponse::ChordResult(sequence) => Some(sequence),
+            _ => None,
+        })
     }
 
     /// Show slider dialog via server
-    pub fn slide(&self, request: SliderRequest) -> Result<Option<i64>> {
-        match self.send_request(MenuRequest::Slide(request))? {
-            MenuResponse::SlideResult(value) => Ok(Some(value)),
-            MenuResponse::Cancelled => Ok(None),
-            MenuResponse::Error(error) => anyhow::bail!("Server error: {}", error),
-            _ => anyhow::bail!("Unexpected response type for slide request"),
-        }
+    pub fn slide(&self, request: SliderRequest) -> Result<DialogOutcome<i64>> {
+        let response = self.send_request(MenuRequest::Slide(request))?;
+        decode_dialog_response(response, "slide", |response| match response {
+            MenuResponse::SlideResult(value) => Some(value),
+            _ => None,
+        })
     }
 
     /// Show the scratchpad without any other action
@@ -645,7 +657,7 @@ impl MenuClient {
     }
 }
 
-impl Default for MenuClient {
+impl Default for HostedMenuClient {
     fn default() -> Self {
         Self::new()
     }
@@ -655,125 +667,6 @@ impl Default for MenuClient {
 pub fn force_fallback_mode() {
     if let Ok(mut guard) = transport_override().write() {
         *guard = Some(MenuTransport::KittyTransient);
-    }
-}
-
-/// Handle scratchpad menu requests by routing through client
-pub fn handle_scratchpad_request(command: &MenuCommands) -> Result<i32> {
-    let client = MenuClient::new();
-
-    match command {
-        MenuCommands::Confirm { message, .. } => {
-            match client.confirm(message.clone()) {
-                Ok(result) => Ok(result.into()),
-                Err(e) => {
-                    eprintln!("Scratchpad menu error: {e}");
-                    Ok(3) // Error exit code
-                }
-            }
-        }
-        MenuCommands::Choice {
-            prompt,
-            prompt_option,
-            items,
-            allow_multiple,
-            ..
-        } => {
-            let prompt = prompt_option
-                .as_ref()
-                .or(prompt.as_ref())
-                .cloned()
-                .unwrap_or_else(|| "Select an item:".to_string());
-
-            let streamed = if items.is_empty() {
-                client.choice_from_stdin_streaming(prompt, *allow_multiple)
-            } else {
-                let item_list: Vec<SerializableMenuItem> =
-                    items.split(' ').map(SerializableMenuItem::plain).collect();
-                client.choice(prompt, item_list, *allow_multiple)
-            };
-            match streamed {
-                Ok(selected) => {
-                    if selected.is_empty() {
-                        Ok(1) // Cancelled
-                    } else {
-                        for item in selected {
-                            println!("{}", item.display_text);
-                        }
-                        Ok(0) // Success
-                    }
-                }
-                Err(e) => {
-                    eprintln!("Scratchpad menu error: {e}");
-                    Ok(3) // Error exit code
-                }
-            }
-        }
-        MenuCommands::Input { prompt, .. } => {
-            match client.input(prompt.clone()) {
-                Ok(text) => {
-                    println!("{text}");
-                    Ok(0) // Success
-                }
-                Err(e) => {
-                    eprintln!("Scratchpad menu error: {e}");
-                    Ok(3) // Error exit code
-                }
-            }
-        }
-        MenuCommands::Password { prompt, .. } => {
-            match client.password(prompt.clone()) {
-                Ok(text) => {
-                    println!("{text}");
-                    Ok(0) // Success
-                }
-                Err(e) => {
-                    eprintln!("Scratchpad menu error: {e}");
-                    Ok(3) // Error exit code
-                }
-            }
-        }
-        MenuCommands::Pick {
-            start,
-            dirs,
-            files,
-            allow_multiple,
-            ..
-        } => {
-            let scope = match (*dirs, *files) {
-                (true, false) => FilePickerScope::Directories,
-                (false, true) => FilePickerScope::Files,
-                (true, true) => FilePickerScope::FilesAndDirectories,
-                (false, false) => FilePickerScope::Files,
-            };
-
-            match client.file_picker(start.clone(), scope, *allow_multiple) {
-                Ok(paths) => {
-                    if paths.is_empty() {
-                        Ok(1)
-                    } else {
-                        for path in paths {
-                            println!("{}", path.display());
-                        }
-                        Ok(0)
-                    }
-                }
-                Err(e) => {
-                    eprintln!("Scratchpad menu error: {e}");
-                    Ok(3)
-                }
-            }
-        }
-        MenuCommands::Toast {
-            message, duration, ..
-        } => match client.toast(message.clone(), *duration) {
-            Ok(()) => Ok(0),
-            Err(e) => {
-                eprintln!("Scratchpad menu error: {e}");
-                Ok(1)
-            }
-        },
-        _ => anyhow::bail!("Not a scratchpad menu command"),
     }
 }
 
@@ -860,7 +753,7 @@ mod tests {
 
     #[test]
     fn test_client_creation() {
-        let client = MenuClient::new();
+        let client = HostedMenuClient::new();
         assert!(!client.socket_path.is_empty());
     }
 
@@ -870,6 +763,35 @@ mod tests {
         let id2 = generate_request_id();
         assert_ne!(id1, id2);
         assert!(id1.starts_with("req_"));
+    }
+
+    #[test]
+    fn dialog_response_distinguishes_empty_submission_from_cancellation() {
+        let submitted = decode_dialog_response(
+            MenuResponse::InputResult(String::new()),
+            "input",
+            |response| match response {
+                MenuResponse::InputResult(value) => Some(value),
+                _ => None,
+            },
+        )
+        .unwrap();
+        let cancelled =
+            decode_dialog_response(MenuResponse::Cancelled, "input", |_| None::<String>).unwrap();
+
+        assert_eq!(submitted, DialogOutcome::Submitted(String::new()));
+        assert_eq!(cancelled, DialogOutcome::Cancelled);
+    }
+
+    #[test]
+    fn dialog_response_preserves_server_errors() {
+        let error =
+            decode_dialog_response(MenuResponse::Error("boom".to_string()), "input", |_| {
+                None::<String>
+            })
+            .unwrap_err();
+
+        assert_eq!(error.to_string(), "Server error: boom");
     }
 
     #[test]
@@ -937,7 +859,7 @@ mod tests {
             request.payload
         });
 
-        let client = MenuClient {
+        let client = HostedMenuClient {
             socket_path: socket_path.to_string_lossy().into_owned(),
             transport: MenuTransport::ScratchpadServer,
         };

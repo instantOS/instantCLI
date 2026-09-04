@@ -3,7 +3,7 @@ use crate::game::utils::save_files::{
     format_file_size, format_system_time_for_display, get_save_directory_info,
 };
 use crate::menu::protocol::FzfPreview;
-use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
+use crate::menu_utils::{FzfSelectable, FzfWrapper, Header, MenuCursor};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, format_with_color};
 use crate::ui::nerd_font::NerdFont;
 use anyhow::{Context, Result};
@@ -349,12 +349,12 @@ pub fn select_game_interactive(prompt_message: Option<&str>) -> Result<Option<St
 
     let result = FzfWrapper::builder()
         .responsive_layout()
-        .select(config.games.clone())
+        .select_one(config.games.clone())
         .map_err(|e| anyhow::anyhow!("Failed to select game: {}", e))?;
 
     let selected = match result {
-        FzfResult::Selected(game) => Some(game),
-        _ => None,
+        crate::menu_utils::DialogOutcome::Submitted(game) => Some(game),
+        crate::menu_utils::DialogOutcome::Cancelled => None,
     };
 
     match selected {
@@ -403,15 +403,14 @@ pub fn select_game_menu_entry(cursor: &mut MenuCursor) -> Result<Option<GameMenu
 
     // Show menu
     let result = builder
-        .select(entries.clone())
+        .select_one(entries.clone())
         .map_err(|e| anyhow::anyhow!("Failed to select from game menu: {}", e))?;
 
     match result {
-        FzfResult::Selected(entry) => {
+        crate::menu_utils::DialogOutcome::Submitted(entry) => {
             cursor.update(&entry, &entries);
             Ok(Some(entry))
         }
-        FzfResult::Cancelled => Ok(None),
-        _ => Ok(None),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
     }
 }

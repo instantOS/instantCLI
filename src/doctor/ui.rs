@@ -1,6 +1,6 @@
 use super::{CheckResult, CheckStatus};
 use crate::menu_utils::{
-    ConfirmResult, FzfPreview, FzfResult, FzfSelectable, FzfWrapper, HeaderBuilder, MenuCursor,
+    ConfirmResult, FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder, MenuCursor,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, format_with_color};
 use crate::ui::nerd_font::NerdFont;
@@ -436,7 +436,7 @@ pub fn show_all_check_results(results: &[CheckResult]) -> Result<()> {
                 .subtitle("Use arrow keys to navigate; Esc returns")
                 .build(),
         )
-        .select(viewable)?;
+        .select_one(viewable)?;
 
     Ok(())
 }
@@ -496,16 +496,18 @@ pub async fn run_success_menu(results: &[CheckResult]) -> Result<()> {
             builder = builder.initial_index(index);
         }
 
-        match builder.select(menu_items.clone())? {
-            FzfResult::Selected(item) if item.is_action(MenuAction::ViewAll) => {
+        match builder.select_one(menu_items.clone())? {
+            crate::menu_utils::DialogOutcome::Submitted(item)
+                if item.is_action(MenuAction::ViewAll) =>
+            {
                 cursor.update(&item, &menu_items);
                 show_all_check_results(results)?;
                 continue;
             }
-            FzfResult::Selected(item) => {
+            crate::menu_utils::DialogOutcome::Submitted(item) => {
                 cursor.update(&item, &menu_items);
             }
-            _ => {}
+            crate::menu_utils::DialogOutcome::Cancelled => {}
         }
         return Ok(());
     }

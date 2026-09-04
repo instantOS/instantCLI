@@ -313,9 +313,9 @@ impl WizardStep for DesktopEnvironmentQuestion {
         let result = FzfWrapper::builder()
             .header(HeaderBuilder::new(NerdFont::Desktop, "Select Desktop Environment").build())
             .presentation(MenuPresentation::Padded)
-            .select(options)?;
+            .select_one(options)?;
 
-        Ok(StepOutcome::from_selection(result, |environment| {
+        Ok(StepOutcome::from_dialog(result, |environment| {
             environment.answer_value().to_string()
         }))
     }
@@ -397,9 +397,9 @@ impl WizardStep for MirrorRegionQuestion {
 
         let result = FzfWrapper::builder()
             .header(HeaderBuilder::new(NerdFont::Globe, "Select Mirror Region").build())
-            .select(options)?;
+            .select_one(options)?;
 
-        Ok(StepOutcome::from_selection(result, |region| region.name))
+        Ok(StepOutcome::from_dialog(result, |region| region.name))
     }
 
     fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
@@ -442,9 +442,9 @@ impl WizardStep for TimezoneQuestion {
 
         let result = FzfWrapper::builder()
             .header(HeaderBuilder::new(NerdFont::Clock, "Select Timezone").build())
-            .select(options)?;
+            .select_one(options)?;
 
-        Ok(StepOutcome::from_selection(result, |tz| tz.value))
+        Ok(StepOutcome::from_dialog(result, |tz| tz.value))
     }
 
     fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
@@ -491,9 +491,9 @@ impl WizardStep for KeymapQuestion {
 
         let result = FzfWrapper::builder()
             .header(HeaderBuilder::new(NerdFont::Keyboard, "Select Keymap").build())
-            .select(options)?;
+            .select_one(options)?;
 
-        Ok(StepOutcome::from_selection(result, |val| val.value))
+        Ok(StepOutcome::from_dialog(result, |val| val.value))
     }
 
     fn data_providers(&self) -> Vec<Box<dyn crate::arch::engine::AsyncDataProvider>> {
@@ -533,9 +533,9 @@ impl WizardStep for LocaleQuestion {
 
         let result = FzfWrapper::builder()
             .header(HeaderBuilder::new(NerdFont::Language, "Select System Locale").build())
-            .select(options)?;
+            .select_one(options)?;
 
-        Ok(StepOutcome::from_selection(result, |val| val.value))
+        Ok(StepOutcome::from_dialog(result, |val| val.value))
     }
 
     fn data_providers(&self) -> Vec<Box<dyn crate::arch::engine::AsyncDataProvider>> {
@@ -569,7 +569,7 @@ impl WizardStep for PasswordQuestion {
             .with_confirmation()
             .password_dialog()?;
 
-        Ok(StepOutcome::from_selection(result, |p| p))
+        Ok(StepOutcome::from_dialog(result, |p| p))
     }
 }
 
@@ -595,11 +595,9 @@ impl WizardStep for KernelQuestion {
         let result = FzfWrapper::builder()
             .header(HeaderBuilder::new(NerdFont::Gear, "Select Kernel").build())
             .presentation(MenuPresentation::Padded)
-            .select(kernels)?;
+            .select_one(kernels)?;
 
-        Ok(StepOutcome::from_selection(result, |k| {
-            k.label().to_string()
-        }))
+        Ok(StepOutcome::from_dialog(result, |k| k.label().to_string()))
     }
 
     fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
@@ -644,7 +642,7 @@ impl WizardStep for EncryptionPasswordQuestion {
             .with_confirmation()
             .password_dialog()?;
 
-        Ok(StepOutcome::from_selection(result, |p| p))
+        Ok(StepOutcome::from_dialog(result, |p| p))
     }
 }
 

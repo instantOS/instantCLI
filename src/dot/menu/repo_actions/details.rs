@@ -6,7 +6,7 @@ use crate::dot::db::Database;
 use crate::dot::meta;
 use crate::dot::repo::DotfileRepositoryManager;
 use crate::menu_utils::{
-    ConfirmResult, FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor, MenuPresentation,
+    ConfirmResult, FzfSelectable, FzfWrapper, Header, MenuCursor, MenuPresentation,
     TextEditOutcome, TextEditPrompt, prompt_text_edit,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
@@ -105,9 +105,9 @@ pub fn handle_global_units_menu(config: &mut DotfileConfig, db: &Database) -> Re
 
         match builder
             .presentation(MenuPresentation::Padded)
-            .select(items.clone())?
+            .select_one(items.clone())?
         {
-            FzfResult::Selected(item) => {
+            crate::menu_utils::DialogOutcome::Submitted(item) => {
                 cursor.update(&item, &items);
                 match item.action {
                     UnitMenuAction::Add => {
@@ -130,8 +130,7 @@ pub fn handle_global_units_menu(config: &mut DotfileConfig, db: &Database) -> Re
                     UnitMenuAction::Back => return Ok(()),
                 }
             }
-            FzfResult::Cancelled => return Ok(()),
-            _ => return Ok(()),
+            crate::menu_utils::DialogOutcome::Cancelled => return Ok(()),
         }
     }
 }
@@ -211,15 +210,14 @@ fn select_detail_action(
 
     let result = builder
         .presentation(MenuPresentation::Padded)
-        .select(actions.clone())?;
+        .select_one(actions.clone())?;
 
     match result {
-        FzfResult::Selected(item) => {
+        crate::menu_utils::DialogOutcome::Submitted(item) => {
             cursor.update(&item, &actions);
             Ok(Some(item.action))
         }
-        FzfResult::Cancelled => Ok(None),
-        _ => Ok(None),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
     }
 }
 
@@ -270,9 +268,9 @@ fn handle_manage_units(
 
         match builder
             .presentation(MenuPresentation::Padded)
-            .select(items.clone())?
+            .select_one(items.clone())?
         {
-            FzfResult::Selected(item) => {
+            crate::menu_utils::DialogOutcome::Submitted(item) => {
                 cursor.update(&item, &items);
                 match item.action {
                     UnitMenuAction::Add => {
@@ -299,8 +297,7 @@ fn handle_manage_units(
                     UnitMenuAction::Back => return Ok(()),
                 }
             }
-            FzfResult::Cancelled => return Ok(()),
-            _ => return Ok(()),
+            crate::menu_utils::DialogOutcome::Cancelled => return Ok(()),
         }
     }
 }
@@ -442,8 +439,8 @@ fn add_global_unit_with_picker(
         .hint("Pick a directory in your home folder")
         .pick_one()
     {
-        Ok(Some(path)) => path,
-        Ok(None) => return Ok(false),
+        Ok(crate::menu_utils::DialogOutcome::Submitted(path)) => path,
+        Ok(crate::menu_utils::DialogOutcome::Cancelled) => return Ok(false),
         Err(e) => {
             FzfWrapper::message(&format!("File picker error: {}", e))?;
             return Ok(false);
@@ -497,8 +494,8 @@ fn add_unit_with_picker(
         .hint(hint)
         .pick_one()
     {
-        Ok(Some(path)) => path,
-        Ok(None) => return Ok(false),
+        Ok(crate::menu_utils::DialogOutcome::Submitted(path)) => path,
+        Ok(crate::menu_utils::DialogOutcome::Cancelled) => return Ok(false),
         Err(e) => {
             FzfWrapper::message(&format!("File picker error: {}", e))?;
             return Ok(false);

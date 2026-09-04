@@ -16,7 +16,7 @@ use crate::common::audio::{
 };
 use crate::common::paths;
 use crate::common::shell::shell_quote;
-use crate::menu::client::MenuClient;
+use crate::menu::client::HostedMenuClient;
 use crate::settings::store::{
     SCREEN_RECORD_AUDIO_SOURCES_KEY, SCREEN_RECORD_FRAMERATE_KEY, SettingsStore,
     is_audio_sources_default, parse_audio_source_selection,
@@ -942,12 +942,14 @@ fn show_post_recording_menu(output_path: &std::path::Path) -> Result<()> {
     let path_str = output_path.to_string_lossy().to_string();
     let parent_dir = recording_parent_dir(output_path);
 
-    let client = MenuClient::new();
+    let client = HostedMenuClient::new();
     let selected = client.chord(post_recording_menu_options())?;
-    let action = selected
-        .as_deref()
-        .and_then(PostRecordingAction::from_key)
-        .unwrap_or(PostRecordingAction::Done);
+    let action = match selected {
+        crate::menu_utils::DialogOutcome::Submitted(key) => {
+            PostRecordingAction::from_key(&key).unwrap_or(PostRecordingAction::Done)
+        }
+        crate::menu_utils::DialogOutcome::Cancelled => PostRecordingAction::Done,
+    };
 
     handle_post_recording_action(action, &path_str, &parent_dir)
 }

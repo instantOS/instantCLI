@@ -65,9 +65,9 @@ fn handle_list_mode(launch_items: &[LaunchItem]) -> Result<i32> {
 }
 
 async fn handle_interactive_mode(cache: &mut LaunchCache) -> Result<i32> {
-    let client = client::MenuClient::new();
+    let client = client::HostedMenuClient::new();
     let server_client = client.clone();
-    let server_ready = tokio::task::spawn_blocking(move || server_client.ensure_server_running());
+    let server_ready = tokio::task::spawn_blocking(move || server_client.prepare());
     let launch_items = cache.get_launch_items().await?;
     let menu_items = prepare_menu_items(&launch_items);
 
@@ -77,36 +77,33 @@ async fn handle_interactive_mode(cache: &mut LaunchCache) -> Result<i32> {
 
     // Show choice menu
     match client.choice("Launch application:".to_string(), menu_items, false) {
-        Ok(selected) => {
-            if selected.is_empty() {
-                Ok(1) // Cancelled
-            } else {
-                let selected_metadata = selected[0]
-                    .metadata
-                    .as_ref()
-                    .ok_or_else(|| anyhow::anyhow!("Selection metadata missing"))?;
+        Ok(crate::menu_utils::DialogOutcome::Submitted(selected)) => {
+            let selected_metadata = selected[0]
+                .metadata
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("Selection metadata missing"))?;
 
-                let index = selected_metadata
-                    .get("index")
-                    .ok_or_else(|| anyhow::anyhow!("Selection index missing"))?
-                    .parse::<usize>()
-                    .context("Selection index is invalid")?;
+            let index = selected_metadata
+                .get("index")
+                .ok_or_else(|| anyhow::anyhow!("Selection index missing"))?
+                .parse::<usize>()
+                .context("Selection index is invalid")?;
 
-                let launch_item = launch_items
-                    .get(index)
-                    .ok_or_else(|| anyhow::anyhow!("Launch item index out of bounds: {index}"))?;
+            let launch_item = launch_items
+                .get(index)
+                .ok_or_else(|| anyhow::anyhow!("Launch item index out of bounds: {index}"))?;
 
-                // Execute the selected item
-                execute::execute_launch_item(launch_item).await?;
+            // Execute the selected item
+            execute::execute_launch_item(launch_item).await?;
 
-                // Record launch in frecency store
-                if let Err(e) = cache.record_launch_item(launch_item) {
-                    eprintln!("Warning: Failed to record launch: {e}");
-                }
-
-                Ok(0) // Success
+            // Record launch in frecency store
+            if let Err(e) = cache.record_launch_item(launch_item) {
+                eprintln!("Warning: Failed to record launch: {e}");
             }
+
+            Ok(0) // Success
         }
+        Ok(crate::menu_utils::DialogOutcome::Cancelled) => Ok(1),
         Err(e) => {
             eprintln!("Error showing menu: {e}");
             Ok(2) // Error

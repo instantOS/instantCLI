@@ -14,7 +14,7 @@ use self::presentation::{
 };
 use self::step_graph::StepGraph;
 use super::{InstallContext, StepOutcome, WizardStep};
-use crate::menu_utils::{ConfirmResult, FzfResult, FzfWrapper, Header, MenuPresentation};
+use crate::menu_utils::{ConfirmResult, FzfWrapper, Header, MenuPresentation};
 use crate::ui::nerd_font::NerdFont;
 
 /// Which wizard is driving the engine.
@@ -431,19 +431,21 @@ impl WizardEngine {
         let result = FzfWrapper::menu()
             .header(Header::fancy(self.flow.pause_menu_title()))
             .presentation(MenuPresentation::Padded)
-            .select(options)?;
+            .select_one(options)?;
 
         match result {
-            FzfResult::Selected(PauseMenuItem::Resume) => Ok(NavigationAction::Stay),
-            FzfResult::Selected(PauseMenuItem::ReviewAnswers) => {
+            crate::menu_utils::DialogOutcome::Submitted(PauseMenuItem::Resume) => {
+                Ok(NavigationAction::Stay)
+            }
+            crate::menu_utils::DialogOutcome::Submitted(PauseMenuItem::ReviewAnswers) => {
                 self.review_answers(current_index).await?;
                 Ok(NavigationAction::Stay)
             }
-            FzfResult::Selected(PauseMenuItem::GoBack) => {
+            crate::menu_utils::DialogOutcome::Submitted(PauseMenuItem::GoBack) => {
                 self.go_back_from(current_index);
                 Ok(NavigationAction::ContinueFlow)
             }
-            FzfResult::Selected(PauseMenuItem::UseDefault) => {
+            crate::menu_utils::DialogOutcome::Submitted(PauseMenuItem::UseDefault) => {
                 let step = &self.steps[current_index];
                 let Some(default) = step.get_default(&self.context) else {
                     return Ok(NavigationAction::Stay);
@@ -452,14 +454,14 @@ impl WizardEngine {
                     .record_answer(&mut self.context, step.id(), default);
                 Ok(NavigationAction::ContinueFlow)
             }
-            FzfResult::Selected(PauseMenuItem::Abort) => {
+            crate::menu_utils::DialogOutcome::Submitted(PauseMenuItem::Abort) => {
                 if self.confirm_abort()? {
                     Ok(NavigationAction::Abort)
                 } else {
                     Ok(NavigationAction::Stay)
                 }
             }
-            _ => Ok(NavigationAction::Stay),
+            crate::menu_utils::DialogOutcome::Cancelled => Ok(NavigationAction::Stay),
         }
     }
 
@@ -472,9 +474,9 @@ impl WizardEngine {
             .prompt("Select")
             .responsive_layout()
             .presentation(MenuPresentation::Padded)
-            .select(final_review_options(self.flow, &self.context))?;
+            .select_one(final_review_options(self.flow, &self.context))?;
 
-        let FzfResult::Selected(option) = result else {
+        let crate::menu_utils::DialogOutcome::Submitted(option) = result else {
             return Ok(FinalReviewResult::Continue);
         };
         match option.action {
@@ -558,10 +560,13 @@ impl WizardEngine {
             .prompt("Search")
             .responsive_layout()
             .presentation(MenuPresentation::Padded)
-            .select(items)?;
+            .select_one(items)?;
         match result {
-            FzfResult::Selected(ReviewItem::Answer { index, .. }) => Ok(Some(index)),
-            _ => Ok(None),
+            crate::menu_utils::DialogOutcome::Submitted(ReviewItem::Answer { index, .. }) => {
+                Ok(Some(index))
+            }
+            crate::menu_utils::DialogOutcome::Submitted(ReviewItem::Continue)
+            | crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
         }
     }
 
@@ -569,10 +574,13 @@ impl WizardEngine {
         let result = FzfWrapper::builder()
             .header(Header::fancy("Advanced Options"))
             .presentation(MenuPresentation::Padded)
-            .select(AdvancedOption::from_steps(&self.steps, &self.context))?;
+            .select_one(AdvancedOption::from_steps(&self.steps, &self.context))?;
         match result {
-            FzfResult::Selected(AdvancedOption::Answer { index, .. }) => Ok(Some(index)),
-            _ => Ok(None),
+            crate::menu_utils::DialogOutcome::Submitted(AdvancedOption::Answer {
+                index, ..
+            }) => Ok(Some(index)),
+            crate::menu_utils::DialogOutcome::Submitted(AdvancedOption::Back)
+            | crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
         }
     }
 

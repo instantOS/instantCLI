@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 use crate::menu_utils::{
-    ConfirmResult, FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor, MenuPresentation,
+    ConfirmResult, FzfSelectable, FzfWrapper, Header, MenuCursor, MenuPresentation,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
@@ -90,21 +90,20 @@ pub fn run_edit_menu(game_name: &str, state: &mut EditState) -> Result<()> {
 
         let selection = builder
             .presentation(MenuPresentation::Padded)
-            .select(menu_items.clone())?;
+            .select_one(menu_items.clone())?;
 
         match selection {
-            FzfResult::Selected(item) => {
+            crate::menu_utils::DialogOutcome::Submitted(item) => {
                 cursor.update(&item, &menu_items);
                 if handle_menu_action(item.action, state)? == Flow::Exit {
                     return Ok(());
                 }
             }
-            FzfResult::Cancelled => {
+            crate::menu_utils::DialogOutcome::Cancelled => {
                 if handle_cancel(state)? == Flow::Exit {
                     return Ok(());
                 }
             }
-            _ => return Ok(()),
         }
     }
 }

@@ -5,7 +5,7 @@ use anyhow::Result;
 use crate::dot::config::{DotfileConfig, extract_repo_name};
 use crate::dot::db::Database;
 use crate::dot::repo::cli::RepoCommands;
-use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuPresentation};
+use crate::menu_utils::{FzfSelectable, FzfWrapper, Header, MenuPresentation};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 
@@ -201,25 +201,24 @@ fn handle_shorthand_input(shorthand: &str) -> Result<AddRepoInputResult> {
         .header(Header::fancy(&format!("Clone '{}' from:", shorthand)))
         .prompt("Select host")
         .presentation(MenuPresentation::Padded)
-        .select(choices)?
+        .select_one(choices)?
     {
-        FzfResult::Selected(ShorthandChoice::GitHub) => Ok(AddRepoInputResult::Url(format!(
-            "https://github.com/{}.git",
-            shorthand
-        ))),
-        FzfResult::Selected(ShorthandChoice::GitLab) => Ok(AddRepoInputResult::Url(format!(
-            "https://gitlab.com/{}.git",
-            shorthand
-        ))),
-        FzfResult::Selected(ShorthandChoice::Codeberg) => Ok(AddRepoInputResult::Url(format!(
-            "https://codeberg.org/{}.git",
-            shorthand
-        ))),
-        FzfResult::Selected(ShorthandChoice::EnterAnother) => Ok(AddRepoInputResult::TryAgain),
-        FzfResult::Selected(ShorthandChoice::Cancel) | FzfResult::Cancelled => {
+        crate::menu_utils::DialogOutcome::Submitted(ShorthandChoice::GitHub) => Ok(
+            AddRepoInputResult::Url(format!("https://github.com/{}.git", shorthand)),
+        ),
+        crate::menu_utils::DialogOutcome::Submitted(ShorthandChoice::GitLab) => Ok(
+            AddRepoInputResult::Url(format!("https://gitlab.com/{}.git", shorthand)),
+        ),
+        crate::menu_utils::DialogOutcome::Submitted(ShorthandChoice::Codeberg) => Ok(
+            AddRepoInputResult::Url(format!("https://codeberg.org/{}.git", shorthand)),
+        ),
+        crate::menu_utils::DialogOutcome::Submitted(ShorthandChoice::EnterAnother) => {
+            Ok(AddRepoInputResult::TryAgain)
+        }
+        crate::menu_utils::DialogOutcome::Submitted(ShorthandChoice::Cancel) => {
             Ok(AddRepoInputResult::Cancelled)
         }
-        _ => Ok(AddRepoInputResult::Cancelled),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(AddRepoInputResult::Cancelled),
     }
 }
 
@@ -235,9 +234,9 @@ fn handle_plain_name_input(name: &str, config: &mut DotfileConfig) -> Result<Add
         .header(Header::fancy(&format!("'{}' is not a URL", name)))
         .prompt("Select action")
         .presentation(MenuPresentation::Padded)
-        .select(choices)?
+        .select_one(choices)?
     {
-        FzfResult::Selected(PlainNameChoice::CreateLocal) => {
+        crate::menu_utils::DialogOutcome::Submitted(PlainNameChoice::CreateLocal) => {
             match crate::dot::meta::create_local_repo(config, Some(name), false, true, true) {
                 Ok(outcome) => {
                     if let crate::dot::meta::InitOutcome::CreatedDefault { info } = outcome {
@@ -254,11 +253,13 @@ fn handle_plain_name_input(name: &str, config: &mut DotfileConfig) -> Result<Add
             }
             Ok(AddRepoInputResult::LocalCreated)
         }
-        FzfResult::Selected(PlainNameChoice::EnterAnother) => Ok(AddRepoInputResult::TryAgain),
-        FzfResult::Selected(PlainNameChoice::Cancel) | FzfResult::Cancelled => {
+        crate::menu_utils::DialogOutcome::Submitted(PlainNameChoice::EnterAnother) => {
+            Ok(AddRepoInputResult::TryAgain)
+        }
+        crate::menu_utils::DialogOutcome::Submitted(PlainNameChoice::Cancel) => {
             Ok(AddRepoInputResult::Cancelled)
         }
-        _ => Ok(AddRepoInputResult::Cancelled),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(AddRepoInputResult::Cancelled),
     }
 }
 
@@ -274,16 +275,18 @@ fn handle_empty_input(default_repo: &str) -> Result<AddRepoInputResult> {
         .header(Header::fancy("No URL entered"))
         .prompt("Select")
         .presentation(MenuPresentation::Padded)
-        .select(choices)?
+        .select_one(choices)?
     {
-        FzfResult::Selected(EmptyInputChoice::UseDefault) => {
+        crate::menu_utils::DialogOutcome::Submitted(EmptyInputChoice::UseDefault) => {
             Ok(AddRepoInputResult::Url(default_repo.to_string()))
         }
-        FzfResult::Selected(EmptyInputChoice::GoBack) | FzfResult::Cancelled => {
+        crate::menu_utils::DialogOutcome::Submitted(EmptyInputChoice::GoBack) => {
             Ok(AddRepoInputResult::Cancelled)
         }
-        FzfResult::Selected(EmptyInputChoice::EnterAnother) => Ok(AddRepoInputResult::TryAgain),
-        _ => Ok(AddRepoInputResult::Cancelled),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(AddRepoInputResult::Cancelled),
+        crate::menu_utils::DialogOutcome::Submitted(EmptyInputChoice::EnterAnother) => {
+            Ok(AddRepoInputResult::TryAgain)
+        }
     }
 }
 
@@ -294,12 +297,11 @@ fn prompt_optional_name(url: &str) -> Result<Option<String>> {
         .prompt("Repository name (optional)")
         .input()
         .ghost(&default_name)
-        .input_result()?
+        .input_dialog()?
     {
-        FzfResult::Selected(s) if !s.is_empty() => Ok(Some(s)),
-        FzfResult::Selected(_) => Ok(None),
-        FzfResult::Cancelled => Ok(None),
-        _ => Ok(None),
+        crate::menu_utils::DialogOutcome::Submitted(s) if !s.is_empty() => Ok(Some(s)),
+        crate::menu_utils::DialogOutcome::Submitted(_) => Ok(None),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
     }
 }
 
@@ -308,12 +310,11 @@ fn prompt_optional_branch() -> Result<Option<String>> {
     match FzfWrapper::builder()
         .prompt("Branch (optional)")
         .input()
-        .input_result()?
+        .input_dialog()?
     {
-        FzfResult::Selected(s) if !s.is_empty() => Ok(Some(s)),
-        FzfResult::Selected(_) => Ok(None),
-        FzfResult::Cancelled => Ok(None),
-        _ => Ok(None),
+        crate::menu_utils::DialogOutcome::Submitted(s) if !s.is_empty() => Ok(Some(s)),
+        crate::menu_utils::DialogOutcome::Submitted(_) => Ok(None),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
     }
 }
 
@@ -329,9 +330,9 @@ pub fn handle_add_repo(config: &mut DotfileConfig, db: &Database, debug: bool) -
             .prompt("Repository URL or name")
             .input()
             .ghost(DEFAULT_REPO)
-            .input_result()?
+            .input_dialog()?
         {
-            FzfResult::Selected(s) if !s.is_empty() => {
+            crate::menu_utils::DialogOutcome::Submitted(s) if !s.is_empty() => {
                 let result = match classify_repo_input(&s) {
                     InputType::Url(url) => AddRepoInputResult::Url(url),
                     InputType::Shorthand(shorthand) => handle_shorthand_input(&shorthand)?,
@@ -345,8 +346,8 @@ pub fn handle_add_repo(config: &mut DotfileConfig, db: &Database, debug: bool) -
                     AddRepoInputResult::Cancelled => return Ok(()),
                 }
             }
-            FzfResult::Cancelled => return Ok(()),
-            FzfResult::Selected(_) => {
+            crate::menu_utils::DialogOutcome::Cancelled => return Ok(()),
+            crate::menu_utils::DialogOutcome::Submitted(_) => {
                 // Empty input
                 match handle_empty_input(DEFAULT_REPO)? {
                     AddRepoInputResult::Url(url) => break url,
@@ -354,7 +355,6 @@ pub fn handle_add_repo(config: &mut DotfileConfig, db: &Database, debug: bool) -
                     _ => return Ok(()),
                 }
             }
-            _ => return Ok(()),
         }
     };
 

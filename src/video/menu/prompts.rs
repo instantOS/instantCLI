@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::common::TildePath;
 use crate::menu_utils::{
-    ChecklistResult, ConfirmResult, FzfResult, FzfWrapper, Header, HeaderBuilder, MenuPresentation,
+    ChecklistResult, ConfirmResult, FzfWrapper, Header, HeaderBuilder, MenuPresentation,
     PathInputSelection,
 };
 use crate::ui::catppuccin::{colors, format_icon_colored};
@@ -352,11 +352,11 @@ pub fn select_choice<T: Clone>(
         .prompt(prompt)
         .responsive_layout()
         .presentation(MenuPresentation::Padded)
-        .select(items)?;
+        .select_one(items)?;
 
     match result {
-        FzfResult::Selected(item) => Ok(Some(item.value)),
-        _ => Ok(None),
+        crate::menu_utils::DialogOutcome::Submitted(item) => Ok(Some(item.value)),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
     }
 }
 
@@ -382,10 +382,10 @@ pub fn prompt_with_default(prompt: &str, default: &str) -> Result<PromptOutcome<
         .query(default)
         .input()
         .ghost("Press Enter to keep default")
-        .input_result()?;
+        .input_dialog()?;
 
     match result {
-        FzfResult::Selected(value) => {
+        crate::menu_utils::DialogOutcome::Submitted(value) => {
             let trimmed = value.trim();
             if trimmed.is_empty() {
                 Ok(PromptOutcome::Value(default.to_string()))
@@ -393,8 +393,7 @@ pub fn prompt_with_default(prompt: &str, default: &str) -> Result<PromptOutcome<
                 Ok(PromptOutcome::Value(trimmed.to_string()))
             }
         }
-        FzfResult::Cancelled => Ok(PromptOutcome::Cancelled),
-        _ => Ok(PromptOutcome::Cancelled),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(PromptOutcome::Cancelled),
     }
 }
 
@@ -403,10 +402,10 @@ pub fn prompt_optional(prompt: &str, ghost: &str) -> Result<PromptOutcome<Option
         .prompt(prompt)
         .input()
         .ghost(ghost)
-        .input_result()?;
+        .input_dialog()?;
 
     match result {
-        FzfResult::Selected(value) => {
+        crate::menu_utils::DialogOutcome::Submitted(value) => {
             let trimmed = value.trim();
             if trimmed.is_empty() {
                 Ok(PromptOutcome::Value(None))
@@ -414,8 +413,7 @@ pub fn prompt_optional(prompt: &str, ghost: &str) -> Result<PromptOutcome<Option
                 Ok(PromptOutcome::Value(Some(trimmed.to_string())))
             }
         }
-        FzfResult::Cancelled => Ok(PromptOutcome::Cancelled),
-        _ => Ok(PromptOutcome::Cancelled),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(PromptOutcome::Cancelled),
     }
 }
 
@@ -424,10 +422,10 @@ pub fn prompt_optional_path(prompt: &str, ghost: &str) -> Result<PromptOutcome<O
         .prompt(prompt)
         .input()
         .ghost(ghost)
-        .input_result()?;
+        .input_dialog()?;
 
     match result {
-        FzfResult::Selected(value) => {
+        crate::menu_utils::DialogOutcome::Submitted(value) => {
             let trimmed = value.trim();
             if trimmed.is_empty() {
                 Ok(PromptOutcome::Value(None))
@@ -436,8 +434,7 @@ pub fn prompt_optional_path(prompt: &str, ghost: &str) -> Result<PromptOutcome<O
                 Ok(PromptOutcome::Value(Some(path)))
             }
         }
-        FzfResult::Cancelled => Ok(PromptOutcome::Cancelled),
-        _ => Ok(PromptOutcome::Cancelled),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(PromptOutcome::Cancelled),
     }
 }
 

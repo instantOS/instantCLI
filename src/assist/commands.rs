@@ -204,15 +204,14 @@ fn run_assist_selector(use_instantmenu: bool) -> Result<()> {
     }
 
     // Default: use instantmenu server scratchpad + TUI chord navigator
-    let client = client::MenuClient::new();
+    let client = client::HostedMenuClient::new();
     client.show()?;
-    client.ensure_server_running()?;
 
     // Build chord specifications from the tree structure
     let chord_specs = build_chord_specs(assists);
 
     match client.chord(chord_specs) {
-        Ok(Some(selected_key)) => {
+        Ok(crate::menu_utils::DialogOutcome::Submitted(selected_key)) => {
             if let Some(path) = contextual_help_path(&selected_key) {
                 return super::actions::help::show_help_for_path(path);
             }
@@ -224,7 +223,7 @@ fn run_assist_selector(use_instantmenu: bool) -> Result<()> {
 
             Ok(())
         }
-        Ok(None) => Ok(()), // Cancelled
+        Ok(crate::menu_utils::DialogOutcome::Cancelled) => Ok(()),
         Err(e) => {
             eprintln!("Error showing chord menu: {e}");
             Err(e)

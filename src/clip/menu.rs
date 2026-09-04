@@ -191,7 +191,7 @@ pub fn run(backend: ClipBackend) -> Result<()> {
             .status(NerdFont::Circle, capture_label, capture_color)
             .build();
 
-        let Some(selection) = FzfWrapper::menu()
+        let crate::menu_utils::DialogOutcome::Submitted(selection) = FzfWrapper::menu()
             .cursor(initial_index)
             .header(header)
             .presentation(MenuPresentation::Padded)

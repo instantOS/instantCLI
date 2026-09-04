@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use super::fzf::{ConfirmResult, FzfResult, FzfWrapper};
+use super::fzf::{ConfirmResult, DialogOutcome, FzfWrapper};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TextEditOutcome {
@@ -60,10 +60,9 @@ pub fn prompt_text_edit(prompt: TextEditPrompt<'_>) -> Result<TextEditOutcome> {
         .input()
         .ghost(ghost.as_deref().unwrap_or("Leave empty to clear"));
 
-    match builder.input_result()? {
-        FzfResult::Cancelled => Ok(TextEditOutcome::Cancelled),
-        FzfResult::Selected(value) => handle_text_selection(label, current, value),
-        _ => Ok(TextEditOutcome::Cancelled),
+    match builder.input_dialog()? {
+        DialogOutcome::Cancelled => Ok(TextEditOutcome::Cancelled),
+        DialogOutcome::Submitted(value) => handle_text_selection(label, current, value),
     }
 }
 

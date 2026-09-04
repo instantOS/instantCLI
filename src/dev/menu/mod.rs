@@ -55,8 +55,11 @@ fn select_dev_menu_entry(cursor: &mut MenuCursor) -> Result<Option<DevMenuEntry>
         .cursor(cursor.initial_index(&entries))
         .select_one(entries.clone())?;
 
-    if let Some(ref entry) = selection {
-        cursor.update(entry, &entries);
+    match selection {
+        crate::menu_utils::DialogOutcome::Submitted(entry) => {
+            cursor.update(&entry, &entries);
+            Ok(Some(entry))
+        }
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
     }
-    Ok(selection)
 }

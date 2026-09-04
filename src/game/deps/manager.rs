@@ -457,8 +457,14 @@ fn resolve_dependency_id(
         return Ok(trimmed.to_string());
     }
 
-    let input = FzfWrapper::input(&format!("Enter dependency ID for '{}':", game_name))
-        .context("Failed to read dependency id input")?;
+    let input = match FzfWrapper::input(&format!("Enter dependency ID for '{}':", game_name))
+        .context("Failed to read dependency id input")?
+    {
+        crate::menu_utils::DialogOutcome::Submitted(input) => input,
+        crate::menu_utils::DialogOutcome::Cancelled => {
+            return Err(anyhow!("Dependency ID entry cancelled"));
+        }
+    };
 
     let trimmed = input.trim();
     if trimmed.is_empty() {
@@ -572,11 +578,13 @@ fn resolve_install_path(
     ];
 
     match FzfWrapper::builder().select_one(options)? {
-        Some(selection) => match selection.value {
+        crate::menu_utils::DialogOutcome::Submitted(selection) => match selection.value {
             Some(value) => Ok(value),
             None => prompt_custom_install_path(game_name, dependency_id, expected_kind),
         },
-        None => Err(anyhow!("Install path selection cancelled")),
+        crate::menu_utils::DialogOutcome::Cancelled => {
+            Err(anyhow!("Install path selection cancelled"))
+        }
     }
 }
 

@@ -587,8 +587,11 @@ pub fn select_snapshot_interactive(
         .map_err(|e| anyhow::anyhow!("Failed to select snapshot: {}", e))?;
 
     match selected {
-        Some(SnapshotMenuEntry::Snapshot(enhanced)) => Ok(Some(enhanced.snapshot.id)),
-        Some(SnapshotMenuEntry::Back) | None => {
+        crate::menu_utils::DialogOutcome::Submitted(SnapshotMenuEntry::Snapshot(enhanced)) => {
+            Ok(Some(enhanced.snapshot.id))
+        }
+        crate::menu_utils::DialogOutcome::Submitted(SnapshotMenuEntry::Back)
+        | crate::menu_utils::DialogOutcome::Cancelled => {
             emit(
                 Level::Info,
                 "game.snapshots.cancelled",

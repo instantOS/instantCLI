@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use std::process::Command;
 
 use crate::assist::{AssistInternalCommand, assist_command_argv};
-use crate::menu::client::MenuClient;
+use crate::menu::client::HostedMenuClient;
 use crate::menu::protocol::SliderRequest;
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
@@ -41,14 +41,14 @@ impl Setting for Brightness {
         };
 
         match run_brightness_slider(initial_value)? {
-            Some(value) => {
+            crate::menu_utils::DialogOutcome::Submitted(value) => {
                 ctx.set_int(Self::KEY, value);
                 ctx.notify(
                     "Screen Brightness",
                     &format!("Screen brightness set to {}%", value),
                 );
             }
-            None => {
+            crate::menu_utils::DialogOutcome::Cancelled => {
                 // Cancelled
             }
         }
@@ -122,12 +122,12 @@ fn get_current_brightness() -> Option<i64> {
 }
 
 /// Run the brightness slider and return the selected value
-fn run_brightness_slider(initial_value: Option<i64>) -> Result<Option<i64>> {
+fn run_brightness_slider(
+    initial_value: Option<i64>,
+) -> Result<crate::menu_utils::DialogOutcome<i64>> {
     let start_value = initial_value.or_else(get_current_brightness).unwrap_or(50);
 
-    let client = MenuClient::new();
-    client.ensure_server_running()?;
-
+    let client = HostedMenuClient::new();
     let args = assist_command_argv(AssistInternalCommand::BrightnessSet)?;
 
     let request = SliderRequest {

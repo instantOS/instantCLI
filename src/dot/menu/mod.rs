@@ -9,7 +9,7 @@ use anyhow::Result;
 
 use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
-use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
+use crate::menu_utils::{FzfSelectable, FzfWrapper, Header, MenuCursor};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, format_with_color};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -196,15 +196,14 @@ fn select_dot_menu_entry(
         builder = builder.initial_index(index);
     }
 
-    let result = builder.select(menu_items)?;
+    let result = builder.select_one(menu_items)?;
 
     match result {
-        FzfResult::Selected(item) => {
+        crate::menu_utils::DialogOutcome::Submitted(item) => {
             cursor.update(&item.entry, &entries);
             Ok(Some(item.entry))
         }
-        FzfResult::Cancelled => Ok(None),
-        _ => Ok(None),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
     }
 }
 

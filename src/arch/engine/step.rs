@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use crate::menu_utils::FzfResult;
+use crate::menu_utils::DialogOutcome;
 
 use super::context::{DataKey, InstallContext};
 use super::types::StepId;
@@ -25,21 +25,12 @@ pub enum StepOutcome {
 }
 
 impl StepOutcome {
-    /// Map a single-select menu result into a step outcome using
-    /// `extract` to turn the selected option into the stored answer.
-    ///
-    /// This is the single place defining how non-selection results are
-    /// treated: cancellation and fzf errors both degrade to
-    /// [`StepOutcome::Pause`] (which sends the wizard to its pause
-    /// menu). Fzf errors are logged instead of being silently swallowed.
-    pub fn from_selection<T>(result: FzfResult<T>, extract: impl FnOnce(T) -> String) -> Self {
+    /// Map a submitted dialog value into a step answer. Cancelling the
+    /// dialog opens the wizard's pause menu.
+    pub fn from_dialog<T>(result: DialogOutcome<T>, extract: impl FnOnce(T) -> String) -> Self {
         match result {
-            FzfResult::Selected(item) => StepOutcome::Answer(extract(item)),
-            FzfResult::Error(message) => {
-                eprintln!("Menu error: {message}");
-                StepOutcome::Pause
-            }
-            _ => StepOutcome::Pause,
+            DialogOutcome::Submitted(value) => StepOutcome::Answer(extract(value)),
+            DialogOutcome::Cancelled => StepOutcome::Pause,
         }
     }
 

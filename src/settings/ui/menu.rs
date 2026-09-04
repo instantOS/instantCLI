@@ -163,11 +163,11 @@ fn run_main_menu(_ctx: &mut SettingsContext, mut cursor: MenuCursor) -> Result<M
         .select_one(menu_items.clone())?;
 
     let action = match selection {
-        Some(MainMenuItem::SearchAll) => {
+        crate::menu_utils::DialogOutcome::Submitted(MainMenuItem::SearchAll) => {
             cursor.update(&MainMenuItem::SearchAll, &menu_items);
             MenuAction::EnterSearch(cursor)
         }
-        Some(MainMenuItem::Category(tree)) => {
+        crate::menu_utils::DialogOutcome::Submitted(MainMenuItem::Category(tree)) => {
             cursor.update(&MainMenuItem::Category(tree.clone()), &menu_items);
             MenuAction::EnterCategory {
                 tree,
@@ -175,7 +175,8 @@ fn run_main_menu(_ctx: &mut SettingsContext, mut cursor: MenuCursor) -> Result<M
                 category_cursor: MenuCursor::new(),
             }
         }
-        Some(MainMenuItem::Close) | None => MenuAction::Exit,
+        crate::menu_utils::DialogOutcome::Submitted(MainMenuItem::Close)
+        | crate::menu_utils::DialogOutcome::Cancelled => MenuAction::Exit,
     };
 
     Ok(action)
@@ -224,14 +225,14 @@ fn navigate_tree(
             .presentation(MenuPresentation::Padded)
             .select_one(entries.clone())?
         {
-            Some(MenuItem::Folder(folder)) => {
+            crate::menu_utils::DialogOutcome::Submitted(MenuItem::Folder(folder)) => {
                 cursor.update(&MenuItem::Folder(folder.clone()), &entries);
                 // Recurse into folder, current title becomes parent
                 if !navigate_tree(ctx, &folder, Some(title), MenuCursor::new())? {
                     return Ok(false); // Propagate exit
                 }
             }
-            Some(MenuItem::Setting { setting, .. }) => {
+            crate::menu_utils::DialogOutcome::Submitted(MenuItem::Setting { setting, .. }) => {
                 cursor.update(
                     &MenuItem::Setting {
                         setting,
@@ -241,7 +242,7 @@ fn navigate_tree(
                 );
                 super::handlers::handle_trait_setting(ctx, setting)?;
             }
-            Some(MenuItem::Back { .. }) => {
+            crate::menu_utils::DialogOutcome::Submitted(MenuItem::Back { .. }) => {
                 cursor.update(
                     &MenuItem::Back {
                         parent_name: parent_name.map(|s| s.to_string()),
@@ -250,13 +251,13 @@ fn navigate_tree(
                 );
                 return Ok(true);
             }
-            None => return Ok(true),
+            crate::menu_utils::DialogOutcome::Cancelled => return Ok(true),
         }
     }
 }
 
 pub fn handle_search_all(ctx: &mut SettingsContext, mut cursor: MenuCursor) -> Result<bool> {
-    use crate::menu_utils::{FzfResult, FzfWrapper, HeaderBuilder};
+    use crate::menu_utils::{FzfWrapper, HeaderBuilder};
 
     loop {
         let items = build_tree_search_items();
@@ -282,10 +283,10 @@ pub fn handle_search_all(ctx: &mut SettingsContext, mut cursor: MenuCursor) -> R
             .args(["--no-sort"])
             .initial_index(initial_cursor.unwrap_or(0))
             .responsive_layout()
-            .select(items.clone())?;
+            .select_one(items.clone())?;
 
         match result {
-            FzfResult::Selected(selection) => {
+            crate::menu_utils::DialogOutcome::Submitted(selection) => {
                 cursor.update(&selection, &items);
                 match &selection {
                     TreeSearchItem::Setting { setting, .. } => {
@@ -300,12 +301,7 @@ pub fn handle_search_all(ctx: &mut SettingsContext, mut cursor: MenuCursor) -> R
                     }
                 }
             }
-            FzfResult::Cancelled => return Ok(true),
-            FzfResult::Error(err) => {
-                ctx.emit_info("settings.search.error", &format!("Search error: {err}"));
-                return Ok(true);
-            }
-            _ => return Ok(true),
+            crate::menu_utils::DialogOutcome::Cancelled => return Ok(true),
         }
     }
 }

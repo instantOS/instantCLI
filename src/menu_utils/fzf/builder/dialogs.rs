@@ -1,4 +1,4 @@
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use std::process::{Command, Stdio};
 
 use crate::ui::catppuccin::{colors, hex_to_ansi_bg, hex_to_ansi_fg};
@@ -11,30 +11,27 @@ use super::shared::{
 use super::{
     ConfirmBuilder, ConfirmOption, FzfBuilder, InputBuilder, MessageBuilder, PasswordBuilder,
 };
-use crate::menu_utils::fzf::types::{ConfirmResult, FzfResult, Header, MenuPresentation};
+use crate::menu_utils::fzf::types::{
+    ConfirmResult, DialogOutcome, FzfResult, Header, MenuPresentation,
+};
 use crate::menu_utils::fzf::utils::get_terminal_dimensions;
-use crate::menu_utils::fzf::wrapper::{FzfWrapper, check_fzf_exit};
+use crate::menu_utils::fzf::wrapper::{FzfWrapper, fzf_was_cancelled};
 
 // ---------------------------------------------------------------------------
 // InputBuilder
 // ---------------------------------------------------------------------------
 
 impl InputBuilder {
-    pub fn input_dialog(self) -> Result<String> {
-        match self.input_result()? {
-            FzfResult::Selected(s) => Ok(s),
-            FzfResult::Cancelled => Ok(String::new()),
-            FzfResult::Error(e) => Err(anyhow!(e)),
-            _ => Ok(String::new()),
-        }
-    }
-
-    pub fn input_result(self) -> Result<FzfResult<String>> {
+    pub fn input_dialog(self) -> Result<DialogOutcome<String>> {
         #[cfg(test)]
         if let Some(resp) = crate::menu_utils::mock::pop_mock() {
             return match resp {
-                crate::menu_utils::mock::MockResponse::InputString(s) => Ok(FzfResult::Selected(s)),
-                crate::menu_utils::mock::MockResponse::InputCancelled => Ok(FzfResult::Cancelled),
+                crate::menu_utils::mock::MockResponse::InputString(s) => {
+                    Ok(DialogOutcome::Submitted(s))
+                }
+                crate::menu_utils::mock::MockResponse::InputCancelled => {
+                    Ok(DialogOutcome::Cancelled)
+                }
                 other => panic!("Mock: expected input response, got {other:?}"),
             };
         }
@@ -63,17 +60,17 @@ impl InputBuilder {
 
         let output = run_fzf_with_input(cmd, b"")?;
 
-        if let Some(cancelled) = check_fzf_exit(&output) {
-            return Ok(cancelled);
+        if fzf_was_cancelled(&output)? {
+            return Ok(DialogOutcome::Cancelled);
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let lines: Vec<&str> = stdout.trim_end().split('\n').collect();
 
         if let Some(query) = lines.first() {
-            Ok(FzfResult::Selected(query.trim().to_string()))
+            Ok(DialogOutcome::Submitted(query.trim().to_string()))
         } else {
-            Ok(FzfResult::Selected(String::new()))
+            Ok(DialogOutcome::Submitted(String::new()))
         }
     }
 }
@@ -83,16 +80,16 @@ impl InputBuilder {
 // ---------------------------------------------------------------------------
 
 impl PasswordBuilder {
-    pub fn password_dialog(self) -> Result<FzfResult<String>> {
+    pub fn password_dialog(self) -> Result<DialogOutcome<String>> {
         #[cfg(test)]
         if let Some(resp) = crate::menu_utils::mock::pop_mock() {
             return match resp {
                 crate::menu_utils::mock::MockResponse::PasswordString(s) => {
                     let _ = self.confirm;
-                    Ok(FzfResult::Selected(s))
+                    Ok(DialogOutcome::Submitted(s))
                 }
                 crate::menu_utils::mock::MockResponse::PasswordCancelled => {
-                    Ok(FzfResult::Cancelled)
+                    Ok(DialogOutcome::Cancelled)
                 }
                 other => panic!("Mock: expected password response, got {other:?}"),
             };
@@ -110,19 +107,19 @@ impl PasswordBuilder {
             }
 
             let pass1_str = match pass1 {
-                FzfResult::Selected(s) => s,
+                DialogOutcome::Submitted(s) => s,
                 _ => return Ok(pass1),
             };
 
             let pass2 = run_password_prompt(Some("Confirm password"), None)?;
 
             let pass2_str = match pass2 {
-                FzfResult::Selected(s) => s,
+                DialogOutcome::Submitted(s) => s,
                 _ => return Ok(pass2),
             };
 
             if pass1_str == pass2_str {
-                return Ok(FzfResult::Selected(pass1_str));
+                return Ok(DialogOutcome::Submitted(pass1_str));
             }
 
             FzfWrapper::message("Passwords do not match. Please try again.")?;
@@ -130,7 +127,10 @@ impl PasswordBuilder {
     }
 }
 
-fn run_password_prompt(prompt: Option<&str>, header: Option<&str>) -> Result<FzfResult<String>> {
+fn run_password_prompt(
+    prompt: Option<&str>,
+    header: Option<&str>,
+) -> Result<DialogOutcome<String>> {
     let mut cmd = Command::new("gum");
     cmd.arg("input").arg("--password");
 
@@ -160,12 +160,12 @@ fn run_password_prompt(prompt: Option<&str>, header: Option<&str>) -> Result<Fzf
             if let Some(code) = output.status.code()
                 && (code == 130 || code == 143)
             {
-                return Ok(FzfResult::Cancelled);
+                return Ok(DialogOutcome::Cancelled);
             }
 
             if output.status.success() {
                 let stdout = String::from_utf8_lossy(&output.stdout);
-                Ok(FzfResult::Selected(stdout.trim().to_string()))
+                Ok(DialogOutcome::Submitted(stdout.trim().to_string()))
             } else {
                 fallback_password_input(prompt)
             }
@@ -174,7 +174,7 @@ fn run_password_prompt(prompt: Option<&str>, header: Option<&str>) -> Result<Fzf
     }
 }
 
-fn fallback_password_input(prompt: Option<&str>) -> Result<FzfResult<String>> {
+fn fallback_password_input(prompt: Option<&str>) -> Result<DialogOutcome<String>> {
     use std::io::Write as _;
 
     eprint!("{}: ", prompt.unwrap_or("Enter password"));
@@ -184,10 +184,10 @@ fn fallback_password_input(prompt: Option<&str>) -> Result<FzfResult<String>> {
     let bytes = std::io::stdin().read_line(&mut password)?;
 
     if bytes == 0 {
-        return Ok(FzfResult::Cancelled);
+        return Ok(DialogOutcome::Cancelled);
     }
 
-    Ok(FzfResult::Selected(password.trim().to_string()))
+    Ok(DialogOutcome::Submitted(password.trim().to_string()))
 }
 
 // ---------------------------------------------------------------------------
@@ -240,7 +240,9 @@ impl ConfirmBuilder {
         {
             FzfResult::Selected(option) => Ok(option.result),
             FzfResult::Cancelled => Ok(ConfirmResult::Cancelled),
-            _ => Ok(ConfirmResult::Cancelled),
+            FzfResult::MultiSelected(_) => {
+                anyhow::bail!("confirmation dialog unexpectedly returned multiple selections")
+            }
         }
     }
 }
@@ -286,7 +288,7 @@ impl MessageBuilder {
         let ok_styled = format_styled_button(&ok_text, colors::GREEN, NerdFont::Check);
         let output = run_fzf_with_input(cmd, ok_styled.as_bytes())?;
 
-        if check_fzf_exit::<()>(&output).is_some() {
+        if fzf_was_cancelled(&output)? {
             return Ok(());
         }
 
@@ -386,7 +388,35 @@ mod mock_tests {
             .input()
             .input_dialog()
             .unwrap();
-        assert_eq!(result, "hello world");
+        assert_eq!(
+            result,
+            crate::menu_utils::DialogOutcome::Submitted("hello world".to_string())
+        );
+    }
+
+    #[test]
+    fn test_mock_input_preserves_empty_submission() {
+        let _guard = MockQueue::new().input_string("").guard();
+        let result = crate::menu_utils::FzfWrapper::builder()
+            .prompt("test")
+            .input()
+            .input_dialog()
+            .unwrap();
+        assert_eq!(
+            result,
+            crate::menu_utils::DialogOutcome::Submitted(String::new())
+        );
+    }
+
+    #[test]
+    fn test_mock_input_preserves_cancellation() {
+        let _guard = MockQueue::new().input_cancelled().guard();
+        let result = crate::menu_utils::FzfWrapper::builder()
+            .prompt("test")
+            .input()
+            .input_dialog()
+            .unwrap();
+        assert_eq!(result, crate::menu_utils::DialogOutcome::Cancelled);
     }
 
     #[test]
@@ -410,6 +440,16 @@ mod mock_tests {
     }
 
     #[test]
+    fn test_mock_confirm_preserves_cancellation() {
+        let _guard = MockQueue::new().confirm_cancelled().guard();
+        let result = crate::menu_utils::FzfWrapper::builder()
+            .confirm("Continue?")
+            .confirm_dialog()
+            .unwrap();
+        assert_eq!(result, crate::menu_utils::ConfirmResult::Cancelled);
+    }
+
+    #[test]
     fn test_mock_message_ack() {
         let _guard = MockQueue::new().message_ack().guard();
         let result = crate::menu_utils::FzfWrapper::builder()
@@ -427,8 +467,19 @@ mod mock_tests {
             .password_dialog()
             .unwrap();
         match result {
-            crate::menu_utils::FzfResult::Selected(s) => assert_eq!(s, "secret123"),
-            other => panic!("Expected Selected, got {other:?}"),
+            crate::menu_utils::DialogOutcome::Submitted(s) => assert_eq!(s, "secret123"),
+            other => panic!("Expected Submitted, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_mock_password_preserves_cancellation() {
+        let _guard = MockQueue::new().password_cancelled().guard();
+        let result = crate::menu_utils::FzfWrapper::builder()
+            .prompt("Password")
+            .password()
+            .password_dialog()
+            .unwrap();
+        assert_eq!(result, crate::menu_utils::DialogOutcome::Cancelled);
     }
 }

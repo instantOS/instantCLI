@@ -5,8 +5,7 @@ use std::process::Command;
 use std::time::Instant;
 
 use crate::menu_utils::{
-    ConfirmResult, FzfPreview, FzfResult, FzfSelectable, FzfWrapper, Header, HeaderBuilder,
-    MenuPresentation,
+    ConfirmResult, FzfPreview, FzfSelectable, FzfWrapper, Header, HeaderBuilder, MenuPresentation,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
@@ -222,10 +221,10 @@ pub async fn open_project_for_path(markdown_path: &Path) -> Result<()> {
             .header(Header::fancy(project_name))
             .prompt("Select")
             .responsive_layout()
-            .select(entries)?;
+            .select_one(entries)?;
 
         match result {
-            FzfResult::Selected(entry) => match entry {
+            crate::menu_utils::DialogOutcome::Submitted(entry) => match entry {
                 ProjectMenuEntry::OpenRendered { ref path, .. } => {
                     show_rendered_video_menu(path)?;
                 }
@@ -253,8 +252,7 @@ pub async fn open_project_for_path(markdown_path: &Path) -> Result<()> {
                 }
                 ProjectMenuEntry::Back => return Ok(()),
             },
-            FzfResult::Cancelled => return Ok(()),
-            _ => return Ok(()),
+            crate::menu_utils::DialogOutcome::Cancelled => return Ok(()),
         }
     }
 }
@@ -569,11 +567,11 @@ fn prompt_output_conflict(output_path: &Path) -> Result<Option<OutputConflictCho
         .prompt("Select")
         .responsive_layout()
         .presentation(MenuPresentation::Padded)
-        .select(options)?;
+        .select_one(options)?;
 
     match selection {
-        FzfResult::Selected(option) => Ok(Some(option.choice)),
-        _ => Ok(None),
+        crate::menu_utils::DialogOutcome::Submitted(option) => Ok(Some(option.choice)),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
     }
 }
 
@@ -686,9 +684,9 @@ fn show_post_render_menu(output_path: &Path, elapsed: Option<std::time::Duration
         .prompt("Select")
         .responsive_layout()
         .presentation(MenuPresentation::Padded)
-        .select(entries)?;
+        .select_one(entries)?;
 
-    if let FzfResult::Selected(action) = result {
+    if let crate::menu_utils::DialogOutcome::Submitted(action) = result {
         match action {
             PostRenderAction::OpenVideo => {
                 Command::new("xdg-open")

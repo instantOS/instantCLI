@@ -10,7 +10,7 @@ use crate::common::blockdev::{BlockDevice, load_lsblk};
 use crate::common::commands::{ensure_commands, run_interactive_status, run_status};
 use crate::common::format::format_size;
 use crate::menu_utils::{
-    ConfirmResult, FzfPreview, FzfResult, FzfSelectable, FzfWrapper, Header, MenuPresentation,
+    ConfirmResult, FzfPreview, FzfSelectable, FzfWrapper, Header, MenuPresentation,
 };
 use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
@@ -399,13 +399,11 @@ fn scan_luks_partition(
 
     if !Path::new(&mapper_path).exists() {
         let password = match FzfWrapper::password(&format!("Password for {luks_path}:"))? {
-            FzfResult::Selected(password) => password,
-            FzfResult::Cancelled => {
+            crate::menu_utils::DialogOutcome::Submitted(password) => password,
+            crate::menu_utils::DialogOutcome::Cancelled => {
                 report.push(format!("Password entry for {luks_path} was cancelled."));
                 return Ok(Vec::new());
             }
-            FzfResult::Error(err) => bail!(err),
-            FzfResult::MultiSelected(_) => return Ok(Vec::new()),
         };
 
         open_luks(&luks_path, &mapper_name, &password)
@@ -485,24 +483,16 @@ fn select_candidate(candidates: Vec<ChrootCandidate>) -> Result<ChrootCandidate>
         .header(Header::fancy("Select instantOS installation"))
         .prompt("Chroot")
         .presentation(MenuPresentation::Padded)
-        .select(candidates.clone())?;
+        .select_one(candidates.clone())?;
 
     match result {
-        FzfResult::Selected(candidate) => {
+        crate::menu_utils::DialogOutcome::Submitted(candidate) => {
             close_unselected_mappers(&candidates, &candidate);
             Ok(candidate)
         }
-        FzfResult::Cancelled => {
+        crate::menu_utils::DialogOutcome::Cancelled => {
             close_all_candidate_mappers(&candidates);
             bail!("No installation selected")
-        }
-        FzfResult::Error(err) => {
-            close_all_candidate_mappers(&candidates);
-            bail!(err)
-        }
-        FzfResult::MultiSelected(_) => {
-            close_all_candidate_mappers(&candidates);
-            bail!("Unexpected multi-select result")
         }
     }
 }

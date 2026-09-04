@@ -7,7 +7,7 @@ use anyhow::{Context, Result, bail};
 use base64::Engine;
 use sha2::{Digest, Sha256};
 
-use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper, MenuPresentation};
+use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, MenuPresentation};
 use crate::settings::context::SettingsContext;
 use crate::ui::catppuccin::{colors, format_icon, format_icon_colored};
 use crate::ui::prelude::*;
@@ -150,8 +150,10 @@ pub fn manage_ssh_keys(ctx: &mut SettingsContext) -> Result<()> {
             .presentation(MenuPresentation::Padded)
             .select_one(items)?
         {
-            Some(KeyMenuItem::Key(key)) => manage_key(ctx, &path, &key)?,
-            Some(KeyMenuItem::Add) => add_key(ctx, &path)?,
+            crate::menu_utils::DialogOutcome::Submitted(KeyMenuItem::Key(key)) => {
+                manage_key(ctx, &path, &key)?
+            }
+            crate::menu_utils::DialogOutcome::Submitted(KeyMenuItem::Add) => add_key(ctx, &path)?,
             _ => break,
         }
     }
@@ -247,20 +249,20 @@ fn manage_key(ctx: &mut SettingsContext, path: &Path, key: &AuthorizedKey) -> Re
                 KeyActionItem::Remove,
                 KeyActionItem::Back,
             ])? {
-            Some(KeyActionItem::EditComment) => {
+            crate::menu_utils::DialogOutcome::Submitted(KeyActionItem::EditComment) => {
                 let comment = FzfWrapper::builder()
                     .prompt("SSH key comment")
                     .query(&key.comment)
                     .input()
-                    .input_result()?;
-                let FzfResult::Selected(comment) = comment else {
+                    .input_dialog()?;
+                let crate::menu_utils::DialogOutcome::Submitted(comment) = comment else {
                     continue;
                 };
                 replace_key_line(path, key, &key.serialized_with_comment(&comment))?;
                 ctx.emit_success("settings.users.ssh_keys", "SSH key comment updated.");
                 break;
             }
-            Some(KeyActionItem::Remove) => {
+            crate::menu_utils::DialogOutcome::Submitted(KeyActionItem::Remove) => {
                 let result = FzfWrapper::builder()
                     .confirm(format!("Remove SSH key {:?}?", key.label()))
                     .yes_text("Remove key")
@@ -279,10 +281,14 @@ fn manage_key(ctx: &mut SettingsContext, path: &Path, key: &AuthorizedKey) -> Re
 }
 
 fn add_key(ctx: &mut SettingsContext, path: &Path) -> Result<()> {
-    let input = FzfWrapper::builder()
+    let input = match FzfWrapper::builder()
         .prompt("Paste SSH public key")
         .input()
-        .input_dialog()?;
+        .input_dialog()?
+    {
+        crate::menu_utils::DialogOutcome::Submitted(input) => input,
+        crate::menu_utils::DialogOutcome::Cancelled => return Ok(()),
+    };
     let trimmed = input.trim();
     if trimmed.is_empty() {
         return Ok(());

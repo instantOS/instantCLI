@@ -223,9 +223,9 @@ impl WizardStep for DualBootPartitionQuestion {
 
         let result = FzfWrapper::builder()
             .header(HeaderBuilder::new(NerdFont::HardDrive, "Select Partition to Resize").build())
-            .select(options)?;
+            .select_one(options)?;
 
-        Ok(StepOutcome::from_selection(result, |option| {
+        Ok(StepOutcome::from_dialog(result, |option| {
             option.info.device
         }))
     }
@@ -368,11 +368,11 @@ impl WizardStep for DualBootSizeQuestion {
         let result = tokio::task::spawn_blocking(move || run_slider(config)).await?;
 
         match result {
-            Ok(Some(gb)) => {
+            Ok(crate::menu_utils::DialogOutcome::Submitted(gb)) => {
                 let bytes = gb as u64 * GB;
                 Ok(StepOutcome::Answer(bytes.to_string()))
             }
-            Ok(None) => Ok(StepOutcome::Pause),
+            Ok(crate::menu_utils::DialogOutcome::Cancelled) => Ok(StepOutcome::Pause),
             Err(e) => Err(e).context("Slider failed")?,
         }
     }

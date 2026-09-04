@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
-use crate::menu_utils::{ConfirmResult, FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
+use crate::menu_utils::{ConfirmResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, format_with_color};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -278,10 +278,10 @@ fn handle_key_action_menu(
             builder = builder.initial_index(index);
         }
 
-        let result = builder.select(actions.clone())?;
+        let result = builder.select_one(actions.clone())?;
 
         match result {
-            FzfResult::Selected(item) => {
+            crate::menu_utils::DialogOutcome::Submitted(item) => {
                 cursor.update(&item, &actions);
                 match item.action {
                     KeyAction::CopyPublicKey => {
@@ -296,12 +296,16 @@ fn handle_key_action_menu(
                     }
                     KeyAction::RenameKey => {
                         let current_name = key.display_name();
-                        let new_name = FzfWrapper::builder()
+                        let new_name = match FzfWrapper::builder()
                             .header(Header::fancy("Rename Key"))
                             .prompt("New name")
                             .query(&current_name)
                             .input()
-                            .input_dialog()?;
+                            .input_dialog()?
+                        {
+                            crate::menu_utils::DialogOutcome::Submitted(name) => name,
+                            crate::menu_utils::DialogOutcome::Cancelled => continue,
+                        };
                         if new_name.is_empty() || new_name == current_name {
                             continue;
                         }
@@ -326,9 +330,7 @@ fn handle_key_action_menu(
                     KeyAction::Back => return Ok(()),
                 }
             }
-            FzfResult::Cancelled => return Ok(()),
-            FzfResult::Error(e) => return Err(anyhow::anyhow!("FZF Error: {}", e)),
-            _ => return Ok(()),
+            crate::menu_utils::DialogOutcome::Cancelled => return Ok(()),
         }
     }
 }
@@ -397,9 +399,9 @@ fn handle_authorize_key_to_repo(
         .prompt("Repository")
         .responsive_layout();
 
-    let result = builder.select(repo_entries)?;
+    let result = builder.select_one(repo_entries)?;
     match result {
-        FzfResult::Selected(entry) => match &entry.action {
+        crate::menu_utils::DialogOutcome::Submitted(entry) => match &entry.action {
             RepoAction::Select(repo_name) => {
                 let dry_run = false;
                 crate::dot::operations::key::handle_authorize(
@@ -418,7 +420,7 @@ fn handle_authorize_key_to_repo(
             }
             RepoAction::Back => Ok(()),
         },
-        _ => Ok(()),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(()),
     }
 }
 
@@ -530,10 +532,10 @@ pub fn handle_encryption_keys_menu(
             builder = builder.initial_index(index);
         }
 
-        let result = builder.select(items.clone())?;
+        let result = builder.select_one(items.clone())?;
 
         match result {
-            FzfResult::Selected(item) => {
+            crate::menu_utils::DialogOutcome::Submitted(item) => {
                 cursor.update(&item, &items);
                 match item.action {
                     EncryptionMenuAction::SelectKey(key) => {
@@ -544,12 +546,16 @@ pub fn handle_encryption_keys_menu(
                             .ok()
                             .and_then(|h| h.into_string().ok())
                             .unwrap_or_else(|| "default".to_string());
-                        let name = FzfWrapper::builder()
+                        let name = match FzfWrapper::builder()
                             .header(Header::fancy("Generate New Key"))
                             .prompt("Key name")
                             .query(&default_name)
                             .input()
-                            .input_dialog()?;
+                            .input_dialog()?
+                        {
+                            crate::menu_utils::DialogOutcome::Submitted(name) => name,
+                            crate::menu_utils::DialogOutcome::Cancelled => continue,
+                        };
                         if name.is_empty() {
                             continue;
                         }
@@ -558,9 +564,7 @@ pub fn handle_encryption_keys_menu(
                     EncryptionMenuAction::Back => return Ok(()),
                 }
             }
-            FzfResult::Cancelled => return Ok(()),
-            FzfResult::Error(e) => return Err(anyhow::anyhow!("FZF Error: {}", e)),
-            _ => return Ok(()),
+            crate::menu_utils::DialogOutcome::Cancelled => return Ok(()),
         }
     }
 }

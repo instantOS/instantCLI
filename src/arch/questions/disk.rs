@@ -1,7 +1,6 @@
 use crate::arch::engine::{DataKey, InstallContext, StepId, StepOutcome, WizardStep};
 use crate::menu_utils::{
-    ConfirmResult, FzfPreview, FzfResult, FzfSelectable, FzfWrapper, HeaderBuilder,
-    MenuPresentation,
+    ConfirmResult, FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder, MenuPresentation,
 };
 use crate::ui::catppuccin::colors;
 use crate::ui::nerd_font::NerdFont;
@@ -163,11 +162,10 @@ impl DiskQuestion {
 
             let builder = base.input().ghost("/dev/nvme0n1");
 
-            let input = builder.input_result()?;
+            let input = builder.input_dialog()?;
             let path = match input {
-                FzfResult::Selected(value) => value.trim().to_string(),
-                FzfResult::Cancelled => return Ok(None),
-                _ => return Ok(None),
+                crate::menu_utils::DialogOutcome::Submitted(value) => value.trim().to_string(),
+                crate::menu_utils::DialogOutcome::Cancelled => return Ok(None),
             };
 
             if path.is_empty() {
@@ -222,11 +220,11 @@ impl WizardStep for DiskQuestion {
         loop {
             let result = FzfWrapper::builder()
                 .header(HeaderBuilder::new(NerdFont::HardDrive, "Select Installation Disk").build())
-                .select(selections.clone())?;
+                .select_one(selections.clone())?;
 
             let selection = match result {
-                crate::menu_utils::FzfResult::Selected(d) => d,
-                _ => return Ok(StepOutcome::Pause),
+                crate::menu_utils::DialogOutcome::Submitted(d) => d,
+                crate::menu_utils::DialogOutcome::Cancelled => return Ok(StepOutcome::Pause),
             };
 
             match selection {
@@ -420,9 +418,9 @@ impl WizardStep for PartitioningMethodQuestion {
 
         let result = FzfWrapper::builder()
             .header(HeaderBuilder::new(NerdFont::HardDrive, "Select Partitioning Method").build())
-            .select(options)?;
+            .select_one(options)?;
 
-        Ok(StepOutcome::from_selection(result, |option| {
+        Ok(StepOutcome::from_dialog(result, |option| {
             option.label().to_string()
         }))
     }
@@ -531,25 +529,28 @@ impl WizardStep for RunCfdiskStep {
                     .build(),
                 )
                 .presentation(MenuPresentation::Padded)
-                .select(vec![
+                .select_one(vec![
                     EmptyLayoutAction::ReopenCfdisk,
                     EmptyLayoutAction::ChangePartitioningMethod,
                     EmptyLayoutAction::PauseInstaller,
                 ])?;
 
             match result {
-                FzfResult::Selected(EmptyLayoutAction::ReopenCfdisk) => continue,
-                FzfResult::Selected(EmptyLayoutAction::ChangePartitioningMethod) => {
+                crate::menu_utils::DialogOutcome::Submitted(EmptyLayoutAction::ReopenCfdisk) => {
+                    continue;
+                }
+                crate::menu_utils::DialogOutcome::Submitted(
+                    EmptyLayoutAction::ChangePartitioningMethod,
+                ) => {
                     return Ok(StepOutcome::revisit(
                         StepId::PartitioningMethod,
                         "Choose a different partitioning method.",
                     ));
                 }
-                FzfResult::Selected(EmptyLayoutAction::PauseInstaller) | FzfResult::Cancelled => {
+                crate::menu_utils::DialogOutcome::Submitted(EmptyLayoutAction::PauseInstaller)
+                | crate::menu_utils::DialogOutcome::Cancelled => {
                     return Ok(StepOutcome::Pause);
                 }
-                FzfResult::Error(message) => anyhow::bail!("Recovery menu failed: {message}"),
-                _ => return Ok(StepOutcome::Pause),
             }
         }
     }

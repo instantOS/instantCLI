@@ -130,7 +130,7 @@ pub async fn run_new_project() -> Result<()> {
             .select_one(entries.clone())?;
 
         match selection {
-            Some(entry) => {
+            crate::menu_utils::DialogOutcome::Submitted(entry) => {
                 cursor.update(&entry, &entries);
                 match entry {
                     NewProjectEntry::Video(path) => {
@@ -162,7 +162,7 @@ pub async fn run_new_project() -> Result<()> {
                     NewProjectEntry::Back => return Ok(()),
                 }
             }
-            None => return Ok(()),
+            crate::menu_utils::DialogOutcome::Cancelled => return Ok(()),
         }
     }
 }

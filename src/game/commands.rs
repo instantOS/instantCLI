@@ -131,7 +131,7 @@ fn handle_scan_wine_prefix(prefix: Option<String>, list: bool) -> Result<()> {
     use crate::common::TildePath;
     use crate::game::platforms::ludusavi;
     use crate::game::utils::path::is_valid_wine_prefix;
-    use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuPresentation};
+    use crate::menu_utils::{FzfSelectable, FzfWrapper, Header, MenuPresentation};
     use crate::ui::catppuccin::{colors, format_icon_colored};
     use crate::ui::nerd_font::NerdFont;
     use crate::ui::preview::PreviewBuilder;
@@ -285,10 +285,10 @@ fn handle_scan_wine_prefix(prefix: Option<String>, list: bool) -> Result<()> {
         .prompt("Select")
         .responsive_layout()
         .presentation(MenuPresentation::Padded)
-        .select(items)?;
+        .select_one(items)?;
 
     match result {
-        FzfResult::Selected(item) => {
+        crate::menu_utils::DialogOutcome::Submitted(item) => {
             // Pre-fill add game with discovered details
             handle_add(AddGameOptions {
                 name: Some(item.game_name),
@@ -299,8 +299,7 @@ fn handle_scan_wine_prefix(prefix: Option<String>, list: bool) -> Result<()> {
                 no_cache: false,
             })
         }
-        FzfResult::Cancelled => Ok(()),
-        _ => Ok(()),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(()),
     }
 }
 

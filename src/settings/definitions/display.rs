@@ -342,13 +342,13 @@ impl Setting for ConfigureDisplay {
             let selected_display = FzfWrapper::builder()
                 .prompt("Select Display")
                 .header("Choose a display to configure")
-                .select(display_options.clone())?;
+                .select_one(display_options.clone())?;
 
             match selected_display {
-                crate::menu_utils::FzfResult::Selected(selection) => {
+                crate::menu_utils::DialogOutcome::Submitted(selection) => {
                     outputs.iter().find(|o| o.display_label() == selection)
                 }
-                _ => return Ok(()),
+                crate::menu_utils::DialogOutcome::Cancelled => return Ok(()),
             }
             .ok_or_else(|| anyhow::anyhow!("No display selected"))?
         };
@@ -376,11 +376,11 @@ impl Setting for ConfigureDisplay {
         let selected_mode = FzfWrapper::builder()
             .prompt("Select Mode")
             .header(format!("Choose resolution/refresh for {}", output.name))
-            .select(mode_items)?;
+            .select_one(mode_items)?;
 
         let target_mode = match selected_mode {
-            crate::menu_utils::FzfResult::Selected(selection) => Some(selection.mode),
-            _ => return Ok(()),
+            crate::menu_utils::DialogOutcome::Submitted(selection) => Some(selection.mode),
+            crate::menu_utils::DialogOutcome::Cancelled => return Ok(()),
         };
 
         let mode = match target_mode {

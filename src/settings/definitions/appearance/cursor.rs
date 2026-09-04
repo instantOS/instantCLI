@@ -72,15 +72,15 @@ impl Setting for CursorTheme {
         let selected = FzfWrapper::builder()
             .prompt("Select Cursor Theme")
             .header("Choose a cursor theme to apply globally")
-            .select(options)?;
+            .select_one(options)?;
 
         match selected {
-            crate::menu_utils::FzfResult::Selected(selection) => {
+            crate::menu_utils::DialogOutcome::Submitted(selection) => {
                 ctx.set_string(Self::KEY, &selection);
                 apply_cursor_theme_changes(ctx, &compositor, &selection);
                 Ok(())
             }
-            _ => Ok(()),
+            crate::menu_utils::DialogOutcome::Cancelled => Ok(()),
         }
     }
 

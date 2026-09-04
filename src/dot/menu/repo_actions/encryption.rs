@@ -3,7 +3,7 @@ use anyhow::Result;
 use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
 use crate::dot::menu::encryption_menu::{EncryptionKeyKind, discover_all_keys};
-use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header};
+use crate::menu_utils::{FzfSelectable, FzfWrapper, Header};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, format_with_color};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -189,10 +189,10 @@ pub(super) fn handle_repo_encryption(
             .prompt("Select action")
             .responsive_layout();
 
-        let result = builder.select(items)?;
+        let result = builder.select_one(items)?;
 
         match result {
-            FzfResult::Selected(item) => match &item.kind {
+            crate::menu_utils::DialogOutcome::Submitted(item) => match &item.kind {
                 MenuKind::Recipient {
                     public_key,
                     is_local,
@@ -337,20 +337,26 @@ pub(super) fn handle_repo_encryption(
                             .prompt("Key")
                             .responsive_layout();
 
-                        match builder.select(entries)? {
-                            FzfResult::Selected(entry) => match &entry.action {
+                        match builder.select_one(entries)? {
+                            crate::menu_utils::DialogOutcome::Submitted(entry) => match &entry
+                                .action
+                            {
                                 PickerAction::Select(k) => k.clone(),
                                 PickerAction::Generate => {
                                     let default_name = nix::unistd::gethostname()
                                         .ok()
                                         .and_then(|h| h.into_string().ok())
                                         .unwrap_or_else(|| "default".to_string());
-                                    let name = FzfWrapper::builder()
+                                    let name = match FzfWrapper::builder()
                                         .header(Header::fancy("Generate New Key"))
                                         .prompt("Key name")
                                         .query(&default_name)
                                         .input()
-                                        .input_dialog()?;
+                                        .input_dialog()?
+                                    {
+                                        crate::menu_utils::DialogOutcome::Submitted(name) => name,
+                                        crate::menu_utils::DialogOutcome::Cancelled => continue,
+                                    };
                                     if !name.is_empty() {
                                         crate::dot::operations::key::handle_init(
                                             Some(&name),
@@ -361,7 +367,7 @@ pub(super) fn handle_repo_encryption(
                                 }
                                 PickerAction::Back => continue,
                             },
-                            _ => continue,
+                            crate::menu_utils::DialogOutcome::Cancelled => continue,
                         }
                     };
 
@@ -415,7 +421,7 @@ pub(super) fn handle_repo_encryption(
                 }
                 MenuKind::Back => return Ok(()),
             },
-            _ => return Ok(()),
+            crate::menu_utils::DialogOutcome::Cancelled => return Ok(()),
         }
     }
 }
@@ -504,9 +510,9 @@ fn handle_recipient_actions(
             .prompt("Action")
             .responsive_layout();
 
-        let result = builder.select(items)?;
+        let result = builder.select_one(items)?;
         match result {
-            FzfResult::Selected(item) => match item.action {
+            crate::menu_utils::DialogOutcome::Submitted(item) => match item.action {
                 "deauthorize" => {
                     let recipients = {
                         let Ok(dotfile_repo) = crate::dot::dotfilerepo::DotfileRepo::new(
@@ -576,7 +582,7 @@ fn handle_recipient_actions(
                 }
                 _ => return Ok(()),
             },
-            _ => return Ok(()),
+            crate::menu_utils::DialogOutcome::Cancelled => return Ok(()),
         }
     }
 }

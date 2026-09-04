@@ -843,7 +843,7 @@ pub fn run_keyhelp() -> Result<()> {
             .select_one(rows.clone())?;
 
         match selection {
-            Some(row) => {
+            crate::menu_utils::DialogOutcome::Submitted(row) => {
                 cursor.update(&row, &rows);
                 // Hyprland binds are Lua closures (dispatcher __lua). They can't be
                 // triggered via instantwmctl. Offer view/edit only, and show a hint
@@ -866,7 +866,7 @@ pub fn run_keyhelp() -> Result<()> {
                     }
                 }
             }
-            None => return Ok(()),
+            crate::menu_utils::DialogOutcome::Cancelled => return Ok(()),
         }
     }
 }
@@ -1040,8 +1040,8 @@ fn handle_select(row: &KeybindRow) -> Result<SubmenuAction> {
         .select_one(options)?;
 
     match selection {
-        Some(item) => Ok(item.action),
-        None => Ok(SubmenuAction::Back),
+        crate::menu_utils::DialogOutcome::Submitted(item) => Ok(item.action),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(SubmenuAction::Back),
     }
 }
 
@@ -1075,8 +1075,8 @@ fn handle_select_hyprland(row: &KeybindRow) -> Result<SubmenuAction> {
         .select_one(options)?;
 
     match selection {
-        Some(item) => Ok(item.action),
-        None => Ok(SubmenuAction::Back),
+        crate::menu_utils::DialogOutcome::Submitted(item) => Ok(item.action),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(SubmenuAction::Back),
     }
 }
 

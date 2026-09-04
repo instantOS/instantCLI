@@ -5,7 +5,7 @@
 use anyhow::{Context, Result, bail};
 use std::process::Command;
 
-use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper};
+use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper};
 use crate::preview::{PreviewId, preview_command};
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Setting, SettingMetadata, SettingState, SettingType};
@@ -212,8 +212,8 @@ pub fn configure_timezone(ctx: &mut SettingsContext) -> Result<()> {
 
     builder = builder.args(["--preview-window=right:50%:wrap"]);
 
-    match builder.select(choices)? {
-        FzfResult::Selected(choice) => {
+    match builder.select_one(choices)? {
+        crate::menu_utils::DialogOutcome::Submitted(choice) => {
             if choice.value == current {
                 ctx.emit_info(
                     "settings.timezone.unchanged",
@@ -229,10 +229,7 @@ pub fn configure_timezone(ctx: &mut SettingsContext) -> Result<()> {
             );
             ctx.notify("Timezone", "System clock updated to the selected timezone.");
         }
-        FzfResult::Error(err) => {
-            bail!("fzf error: {err}");
-        }
-        _ => {}
+        crate::menu_utils::DialogOutcome::Cancelled => {}
     }
 
     Ok(())

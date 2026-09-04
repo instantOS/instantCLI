@@ -3,7 +3,7 @@ use std::path::Path;
 use std::process::Command;
 
 use crate::menu_utils::{
-    ConfirmResult, FzfResult, FzfSelectable, FzfWrapper, Header, HeaderBuilder, MenuCursor,
+    ConfirmResult, FzfSelectable, FzfWrapper, Header, HeaderBuilder, MenuCursor,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
@@ -209,12 +209,12 @@ pub fn resolvething_menu(debug: bool) -> Result<()> {
             builder = builder.initial_index(index);
         }
 
-        let selected = match builder.select(items.clone())? {
-            FzfResult::Selected(item) => {
+        let selected = match builder.select_one(items.clone())? {
+            crate::menu_utils::DialogOutcome::Submitted(item) => {
                 cursor.update(&item, &items);
                 item.entry
             }
-            _ => return Ok(()),
+            crate::menu_utils::DialogOutcome::Cancelled => return Ok(()),
         };
 
         match selected {
@@ -344,12 +344,12 @@ fn run_scan_dir_menu(index: usize) -> Result<(ActionResult, bool)> {
             builder = builder.initial_index(idx);
         }
 
-        let selected_action = match builder.select(actions.clone())? {
-            FzfResult::Selected(item) => {
+        let selected_action = match builder.select_one(actions.clone())? {
+            crate::menu_utils::DialogOutcome::Submitted(item) => {
                 cursor.update(&item, &actions);
                 item.action
             }
-            _ => ScanDirAction::Back,
+            crate::menu_utils::DialogOutcome::Cancelled => ScanDirAction::Back,
         };
 
         // Mark statuses dirty before executing resolve actions so the next

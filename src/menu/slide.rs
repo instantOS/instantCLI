@@ -3,6 +3,8 @@ use std::process::Command;
 use std::time::Duration;
 
 use anyhow::Result;
+
+use crate::menu_utils::DialogOutcome;
 use clap::ValueEnum;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseEventKind};
 use crossterm::execute;
@@ -146,8 +148,8 @@ impl SliderPreset {
 const POLL_TIMEOUT: Duration = Duration::from_millis(150);
 const DIGIT_SEQUENCE: [char; 10] = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
 
-/// Launch the slider TUI and return the confirmed value or `None` if cancelled.
-pub fn run_slider(config: SliderConfig) -> Result<Option<i64>> {
+/// Launch the slider TUI and return the submitted value or [`DialogOutcome::Cancelled`].
+pub fn run_slider(config: SliderConfig) -> Result<DialogOutcome<i64>> {
     let mut app = SliderApp::new(config)?;
     let result = app.run();
     app.cleanup()?;
@@ -193,7 +195,7 @@ impl SliderApp {
         })
     }
 
-    fn run(&mut self) -> Result<Option<i64>> {
+    fn run(&mut self) -> Result<DialogOutcome<i64>> {
         loop {
             self.draw()?;
 
@@ -206,7 +208,7 @@ impl SliderApp {
                     if key_event.modifiers.contains(KeyModifiers::CONTROL)
                         && matches!(key_event.code, KeyCode::Char('c'))
                     {
-                        return Ok(None);
+                        return Ok(DialogOutcome::Cancelled);
                     }
 
                     if key_event.modifiers.is_empty()
@@ -215,11 +217,11 @@ impl SliderApp {
                             KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q')
                         )
                     {
-                        return Ok(None);
+                        return Ok(DialogOutcome::Cancelled);
                     }
 
                     match key_event.code {
-                        KeyCode::Enter => return Ok(Some(self.config.value)),
+                        KeyCode::Enter => return Ok(DialogOutcome::Submitted(self.config.value)),
                         KeyCode::Char('h') | KeyCode::Left => {
                             self.bump_value(-self.config.step);
                         }
@@ -449,7 +451,7 @@ impl Drop for SliderApp {
 }
 
 /// Convenience helper to run the slider with arguments typically provided by CLI parsing.
-pub fn run_slider_command(request: &super::protocol::SliderRequest) -> Result<Option<i64>> {
+pub fn run_slider_command(request: &super::protocol::SliderRequest) -> Result<DialogOutcome<i64>> {
     let command = SliderCommand::from_argv(&request.command)?;
     let config = SliderConfig::builder()
         .min(request.min)

@@ -5,7 +5,7 @@ use anyhow::Result;
 use crate::dot::config::{DotfileConfig, Repo};
 use crate::dot::db::Database;
 use crate::dot::dotfilerepo::DotfileRepo;
-use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
+use crate::menu_utils::{FzfSelectable, FzfWrapper, Header, MenuCursor};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -350,15 +350,14 @@ fn select_subdir(
         builder = builder.initial_index(index);
     }
 
-    let selection = builder.select(subdir_items.to_vec())?;
+    let selection = builder.select_one(subdir_items.to_vec())?;
 
     match selection {
-        FzfResult::Selected(item) => {
+        crate::menu_utils::DialogOutcome::Submitted(item) => {
             cursor.update(&item, subdir_items);
             Ok(Some(item))
         }
-        FzfResult::Cancelled => Ok(None),
-        _ => Ok(None),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
     }
 }
 
@@ -368,11 +367,13 @@ fn handle_add_new_subdir(dotfile_repo: &DotfileRepo, config: &DotfileConfig) -> 
         .prompt("New dotfile directory name")
         .input()
         .ghost("e.g. themes, scripts, system_root (_root = root-owned dotfiles)")
-        .input_result()?
+        .input_dialog()?
     {
-        FzfResult::Selected(s) if !s.trim().is_empty() => s.trim().to_string(),
-        FzfResult::Cancelled => return Ok(()),
-        _ => return Ok(()),
+        crate::menu_utils::DialogOutcome::Submitted(s) if !s.trim().is_empty() => {
+            s.trim().to_string()
+        }
+        crate::menu_utils::DialogOutcome::Submitted(_)
+        | crate::menu_utils::DialogOutcome::Cancelled => return Ok(()),
     };
 
     // Get repo path and add the directory

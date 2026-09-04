@@ -562,7 +562,7 @@ pub static ARCHIVE_MANAGERS: &[InstallableApp] = &[
 // Install More Menu Helper
 // =============================================================================
 
-use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper, HeaderBuilder};
+use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder};
 use crate::ui::catppuccin::{colors, hex_to_ansi_fg};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -645,10 +645,10 @@ pub fn show_install_more_menu(category_name: &str, apps: &[InstallableApp]) -> R
                 .build(),
         )
         .responsive_layout()
-        .select(items)?;
+        .select_one(items)?;
 
     match selected {
-        FzfResult::Selected(item) => {
+        crate::menu_utils::DialogOutcome::Submitted(item) => {
             if item.app.is_installed() {
                 FzfWrapper::builder()
                     .message(format!("{} is already installed.", item.app.name))
@@ -677,10 +677,6 @@ pub fn show_install_more_menu(category_name: &str, apps: &[InstallableApp]) -> R
                 }
             }
         }
-        FzfResult::MultiSelected(_) => {
-            // Multi-selection not used, treat as cancelled
-            Ok(false)
-        }
-        FzfResult::Cancelled | FzfResult::Error(_) => Ok(false),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(false),
     }
 }

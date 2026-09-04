@@ -1,7 +1,7 @@
 use crate::assist::{AssistInternalCommand, assist_command_argv};
 use crate::common::compositor::{CompositorType, niri};
 use crate::common::instantwmctl;
-use crate::menu::client::MenuClient;
+use crate::menu::client::HostedMenuClient;
 use crate::menu::protocol::SliderRequest;
 use crate::settings::store::{IntSettingKey, SettingsStore};
 use anyhow::{Context, Result};
@@ -15,7 +15,9 @@ pub fn mouse_speed_slider() -> Result<()> {
     Ok(())
 }
 
-pub fn run_mouse_speed_slider(initial_value: Option<i64>) -> Result<Option<i64>> {
+pub fn run_mouse_speed_slider(
+    initial_value: Option<i64>,
+) -> Result<crate::menu_utils::DialogOutcome<i64>> {
     let compositor = CompositorType::detect();
 
     // Set accel profile based on compositor
@@ -60,9 +62,7 @@ pub fn run_mouse_speed_slider(initial_value: Option<i64>) -> Result<Option<i64>>
         ((current_speed + 1.0) * 50.0) as i64
     };
 
-    let client = MenuClient::new();
-    client.ensure_server_running()?;
-
+    let client = HostedMenuClient::new();
     // We need a command that the slider can execute.
     // We'll use "ins assist mouse-set"
     let args = assist_command_argv(AssistInternalCommand::MouseSet)?;

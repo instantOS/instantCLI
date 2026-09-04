@@ -4,7 +4,7 @@ use std::process::{Command, Stdio};
 
 use super::SliderSpec;
 use super::protocol::SerializableMenuItem;
-use crate::menu_utils::ConfirmResult;
+use crate::menu_utils::{ConfirmResult, DialogOutcome};
 
 fn shell_escape(value: &str) -> String {
     if !value.is_empty()
@@ -127,7 +127,7 @@ impl InstantmenuBackend {
         prompt: &str,
         placeholder: Option<&str>,
         initial_text: Option<&str>,
-    ) -> Result<Option<String>> {
+    ) -> Result<DialogOutcome<String>> {
         let mut cmd = Command::new("instantmenu");
         cmd.arg("--input-only")
             .arg("--position")
@@ -158,17 +158,17 @@ impl InstantmenuBackend {
             .wait_with_output()
             .context("Failed to wait on instantmenu")?;
         if !output.status.success() {
-            return Ok(None);
+            return Ok(DialogOutcome::Cancelled);
         }
 
         let text = String::from_utf8_lossy(&output.stdout)
             .trim_end_matches('\n')
             .to_string();
-        Ok(Some(text))
+        Ok(DialogOutcome::Submitted(text))
     }
 
     /// Show password input dialog
-    pub fn password(prompt: &str) -> Result<Option<String>> {
+    pub fn password(prompt: &str) -> Result<DialogOutcome<String>> {
         let mut cmd = Command::new("instantmenu");
         cmd.arg("--password")
             .arg("--position")
@@ -192,13 +192,13 @@ impl InstantmenuBackend {
             .wait_with_output()
             .context("Failed to wait on instantmenu")?;
         if !output.status.success() {
-            return Ok(None);
+            return Ok(DialogOutcome::Cancelled);
         }
 
         let text = String::from_utf8_lossy(&output.stdout)
             .trim_end_matches('\n')
             .to_string();
-        Ok(Some(text))
+        Ok(DialogOutcome::Submitted(text))
     }
 
     /// Show choice dialog and return selected item(s)
@@ -210,7 +210,7 @@ impl InstantmenuBackend {
         prompt: &str,
         items: &[SerializableMenuItem],
         allow_multiple: bool,
-    ) -> Result<Vec<String>> {
+    ) -> Result<DialogOutcome<Vec<String>>> {
         let mut cmd = Command::new("instantmenu");
         cmd.arg("--border-width")
             .arg("4")
@@ -246,7 +246,7 @@ impl InstantmenuBackend {
             .wait_with_output()
             .context("Failed to wait on instantmenu")?;
         if !output.status.success() {
-            return Ok(vec![]);
+            return Ok(DialogOutcome::Cancelled);
         }
 
         let selected = String::from_utf8_lossy(&output.stdout);
@@ -256,7 +256,7 @@ impl InstantmenuBackend {
             .filter(|line| !line.is_empty())
             .map(ToString::to_string)
             .collect();
-        Ok(selected)
+        Ok(DialogOutcome::Submitted(selected))
     }
 
     /// Show choice dialog streaming items from stdin.
@@ -268,7 +268,10 @@ impl InstantmenuBackend {
     /// surfaces as `EPIPE` in the pump, which stops quietly. The pump may
     /// stay blocked on stdin for infinite producers — the short-lived CLI
     /// process exiting kills it, so the handle is detached, not joined.
-    pub fn choice_from_stdin_streaming(prompt: &str, allow_multiple: bool) -> Result<Vec<String>> {
+    pub fn choice_from_stdin_streaming(
+        prompt: &str,
+        allow_multiple: bool,
+    ) -> Result<DialogOutcome<Vec<String>>> {
         let mut cmd = Command::new("instantmenu");
         cmd.arg("--border-width")
             .arg("4")
@@ -320,7 +323,7 @@ impl InstantmenuBackend {
             .wait_with_output()
             .context("Failed to wait on instantmenu")?;
         if !output.status.success() {
-            return Ok(vec![]);
+            return Ok(DialogOutcome::Cancelled);
         }
 
         let selected = String::from_utf8_lossy(&output.stdout);
@@ -330,11 +333,11 @@ impl InstantmenuBackend {
             .filter(|line| !line.is_empty())
             .map(ToString::to_string)
             .collect();
-        Ok(selected)
+        Ok(DialogOutcome::Submitted(selected))
     }
 
     /// Show slider prompt via instantmenu slide
-    pub fn slide(spec: &SliderSpec) -> Result<Option<i64>> {
+    pub fn slide(spec: &SliderSpec) -> Result<DialogOutcome<i64>> {
         let mut cmd = Command::new("instantmenu");
         cmd.arg("slide")
             .arg("--min")
@@ -365,19 +368,19 @@ impl InstantmenuBackend {
             .wait_with_output()
             .context("Failed to wait on instantmenu")?;
         if !output.status.success() {
-            return Ok(None);
+            return Ok(DialogOutcome::Cancelled);
         }
 
         let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if let Ok(val) = text.parse::<i64>() {
-            Ok(Some(val))
+            Ok(DialogOutcome::Submitted(val))
         } else {
-            Ok(None)
+            Ok(DialogOutcome::Cancelled)
         }
     }
 
     /// Show checklist multi-select dialog
-    pub fn checklist(items: &[String], confirm_label: &str) -> Result<Option<Vec<String>>> {
+    pub fn checklist(items: &[String], confirm_label: &str) -> Result<DialogOutcome<Vec<String>>> {
         let mut selected_indices = std::collections::HashSet::new();
 
         loop {
@@ -415,7 +418,7 @@ impl InstantmenuBackend {
                 .wait_with_output()
                 .context("Failed to wait on instantmenu")?;
             if !output.status.success() {
-                return Ok(None);
+                return Ok(DialogOutcome::Cancelled);
             }
 
             let raw_choice = String::from_utf8_lossy(&output.stdout)
@@ -429,7 +432,7 @@ impl InstantmenuBackend {
                         result.push(item.clone());
                     }
                 }
-                return Ok(Some(result));
+                return Ok(DialogOutcome::Submitted(result));
             }
 
             let mut found = false;
@@ -446,7 +449,7 @@ impl InstantmenuBackend {
             }
 
             if !found {
-                return Ok(None);
+                return Ok(DialogOutcome::Cancelled);
             }
         }
     }

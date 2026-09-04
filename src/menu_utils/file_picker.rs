@@ -7,7 +7,7 @@ use std::process::{Command, Stdio};
 use tempfile::{Builder as TempFileBuilder, NamedTempFile};
 use which::which;
 
-use super::fzf::FzfWrapper;
+use super::fzf::{DialogOutcome, FzfWrapper};
 
 const YAZI_INIT_LUA: &str = include_str!("yazi_init.lua");
 const YAZI_CACHE_SUBDIR: &str = "ins/menu/yazi";
@@ -156,11 +156,16 @@ impl FilePickerBuilder {
         self.run_yazi()
     }
 
-    pub fn pick_one(self) -> Result<Option<PathBuf>> {
+    pub fn pick_one(self) -> Result<DialogOutcome<PathBuf>> {
         match self.pick()? {
-            FilePickerResult::Selected(path) => Ok(Some(path)),
-            FilePickerResult::MultiSelected(mut paths) => Ok(paths.pop()),
-            FilePickerResult::Cancelled => Ok(None),
+            FilePickerResult::Selected(path) => Ok(DialogOutcome::Submitted(path)),
+            // Single-pick dialogs are never configured for multi-selection; a
+            // multi payload can only come from a manual yazi chooser edit.
+            FilePickerResult::MultiSelected(mut paths) => paths
+                .pop()
+                .map(DialogOutcome::Submitted)
+                .ok_or_else(|| anyhow!("file picker returned an empty selection")),
+            FilePickerResult::Cancelled => Ok(DialogOutcome::Cancelled),
         }
     }
 
@@ -448,7 +453,10 @@ mod mock_tests {
     fn test_mock_file_picker_pick_one() {
         let _guard = MockQueue::new().file_picker("/home/user/docs").guard();
         let result = MenuWrapper::file_picker().pick_one().unwrap();
-        assert_eq!(result, Some(PathBuf::from("/home/user/docs")));
+        assert_eq!(
+            result,
+            crate::menu_utils::DialogOutcome::Submitted(PathBuf::from("/home/user/docs"))
+        );
     }
 
     #[test]
@@ -481,7 +489,7 @@ mod mock_tests {
     fn test_mock_file_picker_pick_one_cancelled() {
         let _guard = MockQueue::new().file_picker_cancelled().guard();
         let result = MenuWrapper::file_picker().pick_one().unwrap();
-        assert_eq!(result, None);
+        assert_eq!(result, crate::menu_utils::DialogOutcome::Cancelled);
     }
 
     #[test]

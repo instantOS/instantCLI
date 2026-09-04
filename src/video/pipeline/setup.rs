@@ -396,7 +396,10 @@ async fn check_and_emit_account_type(client: &Client, api_key: &str) {
 fn prompt_for_api_key() -> Result<String> {
     let prompt = "Enter your Auphonic API key (from https://auphonic.com/accounts/settings/):";
     let api_key = match FzfWrapper::input(prompt) {
-        Ok(input) => input.trim().to_string(),
+        Ok(crate::menu_utils::DialogOutcome::Submitted(input)) => input.trim().to_string(),
+        Ok(crate::menu_utils::DialogOutcome::Cancelled) => {
+            anyhow::bail!("API key entry cancelled");
+        }
         Err(e) => {
             anyhow::bail!("Failed to get API key input: {}", e);
         }

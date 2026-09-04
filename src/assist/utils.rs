@@ -24,7 +24,7 @@ pub fn check_area_selection_support() -> bool {
                     name
                 );
                 // Show error via menu server
-                let client = crate::menu::client::MenuClient::new();
+                let client = crate::menu::client::HostedMenuClient::new();
                 let _ = client.message("Feature Not Available".to_string(), message);
                 return false;
             }
@@ -52,7 +52,7 @@ pub fn check_screen_recording_support() -> bool {
                     name, name
                 );
                 // Show error via menu server
-                let client = crate::menu::client::MenuClient::new();
+                let client = crate::menu::client::HostedMenuClient::new();
                 let _ = client.message("Feature Not Available".to_string(), message);
                 return false;
             }

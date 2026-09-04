@@ -96,9 +96,9 @@ impl WizardStep for DisplayManagerQuestion {
         let result = FzfWrapper::builder()
             .header(HeaderBuilder::new(NerdFont::Desktop, "Select Display Manager").build())
             .presentation(MenuPresentation::Padded)
-            .select(options)?;
+            .select_one(options)?;
 
-        Ok(StepOutcome::from_selection(result, |option| {
+        Ok(StepOutcome::from_dialog(result, |option| {
             option.0.answer_value().to_string()
         }))
     }

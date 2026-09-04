@@ -76,7 +76,10 @@ pub fn select_dependency<'a>(
         .select_one(options)
         .context("Failed to select dependency interactively")?;
 
-    Ok(selection.map(|option| option.dependency))
+    Ok(match selection {
+        crate::menu_utils::DialogOutcome::Submitted(option) => Some(option.dependency),
+        crate::menu_utils::DialogOutcome::Cancelled => None,
+    })
 }
 
 fn format_path_for_display(path: &str) -> String {

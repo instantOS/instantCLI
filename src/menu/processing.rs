@@ -194,9 +194,6 @@ impl RequestProcessor {
                 Ok(MenuResponse::ChoiceResult(items))
             }
             Ok(crate::menu_utils::FzfResult::Cancelled) => Ok(MenuResponse::Cancelled),
-            Ok(crate::menu_utils::FzfResult::Error(e)) => {
-                Ok(MenuResponse::Error(format!("Selection error: {e}")))
-            }
             Err(e) => Ok(MenuResponse::Error(format!("Selection error: {e}"))),
         }
     }
@@ -225,9 +222,6 @@ impl RequestProcessor {
                 Ok(MenuResponse::ChoiceResult(items))
             }
             Ok(crate::menu_utils::FzfResult::Cancelled) => Ok(MenuResponse::Cancelled),
-            Ok(crate::menu_utils::FzfResult::Error(e)) => {
-                Ok(MenuResponse::Error(format!("Selection error: {e}")))
-            }
             Err(e) => Ok(MenuResponse::Error(format!("Selection error: {e}"))),
         }
     }
@@ -235,7 +229,10 @@ impl RequestProcessor {
     /// Handle text input request
     fn handle_input_request(&self, prompt: String) -> Result<MenuResponse> {
         match FzfWrapper::input(&prompt) {
-            Ok(input) => Ok(MenuResponse::InputResult(input)),
+            Ok(crate::menu_utils::DialogOutcome::Submitted(input)) => {
+                Ok(MenuResponse::InputResult(input))
+            }
+            Ok(crate::menu_utils::DialogOutcome::Cancelled) => Ok(MenuResponse::Cancelled),
             Err(e) => Ok(MenuResponse::Error(format!(
                 "Failed to show input dialog: {e}"
             ))),
@@ -245,14 +242,10 @@ impl RequestProcessor {
     /// Handle password input request
     fn handle_password_request(&self, prompt: String) -> Result<MenuResponse> {
         match FzfWrapper::password(&prompt) {
-            Ok(crate::menu_utils::FzfResult::Selected(password)) => {
+            Ok(crate::menu_utils::DialogOutcome::Submitted(password)) => {
                 Ok(MenuResponse::PasswordResult(password))
             }
-            Ok(crate::menu_utils::FzfResult::Cancelled) => Ok(MenuResponse::Cancelled),
-            Ok(crate::menu_utils::FzfResult::Error(e)) => {
-                Ok(MenuResponse::Error(format!("Password error: {e}")))
-            }
-            Ok(_) => Ok(MenuResponse::Cancelled),
+            Ok(crate::menu_utils::DialogOutcome::Cancelled) => Ok(MenuResponse::Cancelled),
             Err(e) => Ok(MenuResponse::Error(format!(
                 "Failed to show password dialog: {e}"
             ))),
@@ -262,8 +255,10 @@ impl RequestProcessor {
     /// Handle slider request
     fn handle_slider_request(&self, request: SliderRequest) -> Result<MenuResponse> {
         match slide::run_slider_command(&request) {
-            Ok(Some(value)) => Ok(MenuResponse::SlideResult(value)),
-            Ok(None) => Ok(MenuResponse::Cancelled),
+            Ok(crate::menu_utils::DialogOutcome::Submitted(value)) => {
+                Ok(MenuResponse::SlideResult(value))
+            }
+            Ok(crate::menu_utils::DialogOutcome::Cancelled) => Ok(MenuResponse::Cancelled),
             Err(e) => Ok(MenuResponse::Error(format!("Slider error: {e}"))),
         }
     }

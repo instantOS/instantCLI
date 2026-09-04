@@ -4,8 +4,8 @@ use anyhow::Result;
 
 use crate::menu::protocol::FzfPreview;
 use crate::menu_utils::{
-    ConfirmResult, FilePickerScope, FzfResult, FzfSelectable, FzfWrapper, HeaderBuilder,
-    PathInputBuilder, PathInputSelection, SuggestionProducer,
+    ConfirmResult, FilePickerScope, FzfSelectable, FzfWrapper, HeaderBuilder, PathInputBuilder,
+    PathInputSelection, SuggestionProducer,
 };
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -236,11 +236,10 @@ pub(super) fn select_detected_appimage(
             match FzfWrapper::builder()
                 .header(HeaderBuilder::new(icon, &header).build())
                 .prompt(product_name)
-                .select(items)?
+                .select_one(items)?
             {
-                FzfResult::Selected(item) => Ok(Some(item.path)),
-                FzfResult::Cancelled => Ok(None),
-                _ => Ok(None),
+                crate::menu_utils::DialogOutcome::Submitted(item) => Ok(Some(item.path)),
+                crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
             }
         }
     }

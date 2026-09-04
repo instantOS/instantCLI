@@ -1,5 +1,14 @@
+//! Shell-facing menu commands and rendering-host infrastructure.
+//!
+//! This module owns CLI backend preference resolution and exit-code mapping.
+//! Features implemented inside `ins` should normally use either
+//! [`crate::menu_utils::FzfWrapper`] for a local TUI or
+//! [`client::HostedMenuClient`] for a hosted dialog, rather than calling this
+//! command-dispatch layer.
+
 use crate::menu_utils::{
-    ConfirmResult, FilePickerResult, FilePickerScope, FzfWrapper, MenuWrapper,
+    ConfirmResult, DialogOutcome, FilePickerResult, FilePickerScope, FzfResult, FzfWrapper,
+    MenuWrapper,
 };
 use anyhow::{Context, Result, anyhow};
 use protocol::SerializableMenuItem;
@@ -16,7 +25,7 @@ pub mod scratchpad_manager;
 pub mod server;
 pub mod slide;
 pub mod tui;
-use client::MenuClient;
+use client::HostedMenuClient;
 use slide::SliderPreset;
 
 /// Menu backend choice for rendering dialogs
@@ -41,6 +50,55 @@ pub enum ResolvedBackend {
     Instantmenu,
     Tui,
     Scratchpad,
+}
+
+const EXIT_SUCCESS: i32 = 0;
+const EXIT_NO_SELECTION: i32 = 1;
+const EXIT_ABORTED: i32 = 2;
+const EXIT_BACKEND_FAILURE: i32 = 3;
+
+fn finish_dialog<T>(result: Result<DialogOutcome<T>>, renderer: &str, emit: impl FnOnce(T)) -> i32 {
+    match result {
+        Ok(DialogOutcome::Submitted(value)) => {
+            emit(value);
+            EXIT_SUCCESS
+        }
+        Ok(DialogOutcome::Cancelled) => EXIT_NO_SELECTION,
+        Err(error) => {
+            eprintln!("{renderer} error: {error}");
+            EXIT_BACKEND_FAILURE
+        }
+    }
+}
+
+fn finish_confirm(result: Result<ConfirmResult>, renderer: &str) -> i32 {
+    match result {
+        Ok(ConfirmResult::Yes) => EXIT_SUCCESS,
+        Ok(ConfirmResult::No) => EXIT_NO_SELECTION,
+        Ok(ConfirmResult::Cancelled) => EXIT_ABORTED,
+        Err(error) => {
+            eprintln!("{renderer} error: {error}");
+            EXIT_BACKEND_FAILURE
+        }
+    }
+}
+
+fn finish_action(result: Result<()>, renderer: &str) -> i32 {
+    match result {
+        Ok(()) => EXIT_SUCCESS,
+        Err(error) => {
+            eprintln!("{renderer} error: {error}");
+            EXIT_BACKEND_FAILURE
+        }
+    }
+}
+
+fn selection_dialog<T>(result: Result<FzfResult<T>>) -> Result<DialogOutcome<Vec<T>>> {
+    Ok(match result? {
+        FzfResult::Selected(item) => DialogOutcome::Submitted(vec![item]),
+        FzfResult::MultiSelected(items) => DialogOutcome::Submitted(items),
+        FzfResult::Cancelled => DialogOutcome::Cancelled,
+    })
 }
 
 impl MenuBackend {
@@ -122,15 +180,15 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
             files,
             allow_multiple,
             backend,
-        } => handle_pick(start, dirs, files, allow_multiple, backend, &command),
+        } => handle_pick(start, dirs, files, allow_multiple, backend),
         MenuCommands::Input {
             ref prompt,
             backend,
-        } => handle_input(prompt, backend, &command),
+        } => handle_input(prompt, backend),
         MenuCommands::Password {
             ref prompt,
             backend,
-        } => handle_password(prompt, backend, &command),
+        } => handle_password(prompt, backend),
         MenuCommands::Status => handle_status(),
         MenuCommands::Show => handle_show(),
         MenuCommands::Checklist {
@@ -147,7 +205,7 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
             ref message,
             duration,
             backend,
-        } => handle_toast(message, duration, backend, &command),
+        } => handle_toast(message, duration, backend),
         MenuCommands::Server { command } => handle_server_command(command).await,
     }
 }
@@ -166,36 +224,21 @@ fn handle_confirm(message: &str, backend: MenuBackend) -> Result<i32> {
     };
 
     match backend.resolve(true) {
-        ResolvedBackend::Instantmenu => {
-            match instantmenu::InstantmenuBackend::confirm(&effective_message) {
-                Ok(ConfirmResult::Yes) => Ok(0),
-                Ok(ConfirmResult::No) => Ok(1),
-                Ok(ConfirmResult::Cancelled) => Ok(2),
-                Err(e) => {
-                    eprintln!("instantmenu error: {e}");
-                    Ok(3)
-                }
-            }
-        }
+        ResolvedBackend::Instantmenu => Ok(finish_confirm(
+            instantmenu::InstantmenuBackend::confirm(&effective_message),
+            "Native dialog",
+        )),
         ResolvedBackend::Scratchpad => {
-            let client = MenuClient::new();
-            match client.confirm(effective_message) {
-                Ok(result) => Ok(result.into()),
-                Err(e) => {
-                    eprintln!("Scratchpad menu error: {e}");
-                    Ok(3)
-                }
-            }
+            let dialogs = HostedMenuClient::new();
+            Ok(finish_confirm(
+                dialogs.confirm(effective_message),
+                "Hosted dialog",
+            ))
         }
-        ResolvedBackend::Tui => match FzfWrapper::confirm(&effective_message) {
-            Ok(ConfirmResult::Yes) => Ok(0),
-            Ok(ConfirmResult::No) => Ok(1),
-            Ok(ConfirmResult::Cancelled) => Ok(2),
-            Err(e) => {
-                eprintln!("Error: {e}");
-                Ok(3)
-            }
-        },
+        ResolvedBackend::Tui => Ok(finish_confirm(
+            FzfWrapper::confirm(&effective_message),
+            "Local TUI",
+        )),
     }
 }
 
@@ -211,37 +254,23 @@ fn handle_message(message: Option<&str>, title: Option<&str>, backend: MenuBacke
     };
 
     match backend.resolve(true) {
-        ResolvedBackend::Instantmenu => {
-            match instantmenu::InstantmenuBackend::message(title, &effective_message) {
-                Ok(_) => Ok(0),
-                Err(e) => {
-                    eprintln!("instantmenu error: {e}");
-                    Ok(1)
-                }
-            }
-        }
+        ResolvedBackend::Instantmenu => Ok(finish_action(
+            instantmenu::InstantmenuBackend::message(title, &effective_message),
+            "Native dialog",
+        )),
         ResolvedBackend::Scratchpad => {
-            let client = MenuClient::new();
-            match client.message(title.unwrap_or("Notice").to_string(), effective_message) {
-                Ok(()) => Ok(0),
-                Err(e) => {
-                    eprintln!("Scratchpad menu error: {e}");
-                    Ok(1)
-                }
-            }
+            let client = HostedMenuClient::new();
+            Ok(finish_action(
+                client.message(title.unwrap_or("Notice").to_string(), effective_message),
+                "Hosted dialog",
+            ))
         }
         ResolvedBackend::Tui => {
             let mut builder = FzfWrapper::builder().message(&effective_message);
             if let Some(t) = title {
                 builder = builder.title(t);
             }
-            match builder.message_dialog() {
-                Ok(_) => Ok(0),
-                Err(e) => {
-                    eprintln!("Error: {e}");
-                    Ok(1)
-                }
-            }
+            Ok(finish_action(builder.message_dialog(), "Local TUI"))
         }
     }
 }
@@ -265,42 +294,26 @@ fn handle_choice(
     }
 
     match backend.resolve(true) {
-        ResolvedBackend::Instantmenu => {
-            match instantmenu::InstantmenuBackend::choice_from_stdin_streaming(
-                prompt,
-                allow_multiple,
-            ) {
-                Ok(selected) => {
-                    if selected.is_empty() {
-                        Ok(1)
-                    } else {
-                        for item in selected {
-                            println!("{item}");
-                        }
-                        Ok(0)
-                    }
+        ResolvedBackend::Instantmenu => Ok(finish_dialog(
+            instantmenu::InstantmenuBackend::choice_from_stdin_streaming(prompt, allow_multiple),
+            "Native dialog",
+            |selected| {
+                for item in selected {
+                    println!("{item}");
                 }
-                Err(e) => {
-                    eprintln!("instantmenu error: {e}");
-                    Ok(3)
-                }
-            }
-        }
+            },
+        )),
         ResolvedBackend::Scratchpad => {
-            let client = MenuClient::new();
-            match client.choice_from_stdin_streaming(prompt.to_string(), allow_multiple) {
-                Ok(selected) if selected.is_empty() => Ok(1),
-                Ok(selected) => {
+            let client = HostedMenuClient::new();
+            Ok(finish_dialog(
+                client.choice_from_stdin_streaming(prompt.to_string(), allow_multiple),
+                "Hosted dialog",
+                |selected| {
                     for item in selected {
                         println!("{}", item.display_text);
                     }
-                    Ok(0)
-                }
-                Err(e) => {
-                    eprintln!("Scratchpad menu error: {e}");
-                    Ok(3)
-                }
-            }
+                },
+            ))
         }
         ResolvedBackend::Tui => handle_choice_tui_streaming(prompt, allow_multiple),
     }
@@ -315,63 +328,41 @@ fn handle_choice_buffered(
     backend: MenuBackend,
 ) -> Result<i32> {
     match backend.resolve(true) {
-        ResolvedBackend::Instantmenu => {
-            match instantmenu::InstantmenuBackend::choice(prompt, &item_list, allow_multiple) {
-                Ok(selected) => {
-                    if selected.is_empty() {
-                        Ok(1)
-                    } else {
-                        for item in selected {
-                            println!("{item}");
-                        }
-                        Ok(0)
-                    }
+        ResolvedBackend::Instantmenu => Ok(finish_dialog(
+            instantmenu::InstantmenuBackend::choice(prompt, &item_list, allow_multiple),
+            "Native dialog",
+            |selected| {
+                for item in selected {
+                    println!("{item}");
                 }
-                Err(e) => {
-                    eprintln!("instantmenu error: {e}");
-                    Ok(3)
-                }
-            }
-        }
+            },
+        )),
         ResolvedBackend::Scratchpad => {
-            let client = MenuClient::new();
-            match client.choice(prompt.to_string(), item_list, allow_multiple) {
-                Ok(selected) if selected.is_empty() => Ok(1),
-                Ok(selected) => {
+            let client = HostedMenuClient::new();
+            Ok(finish_dialog(
+                client.choice(prompt.to_string(), item_list, allow_multiple),
+                "Hosted dialog",
+                |selected| {
                     for item in selected {
                         println!("{}", item.display_text);
                     }
-                    Ok(0)
-                }
-                Err(e) => {
-                    eprintln!("Scratchpad menu error: {e}");
-                    Ok(3)
-                }
-            }
+                },
+            ))
         }
-        ResolvedBackend::Tui => {
-            match FzfWrapper::builder()
-                .prompt(prompt.to_string())
-                .multi_select(allow_multiple)
-                .select(item_list)?
-            {
-                crate::menu_utils::FzfResult::Selected(item) => {
+        ResolvedBackend::Tui => Ok(finish_dialog(
+            selection_dialog(
+                FzfWrapper::builder()
+                    .prompt(prompt.to_string())
+                    .multi_select(allow_multiple)
+                    .select(item_list),
+            ),
+            "Local TUI",
+            |items| {
+                for item in items {
                     println!("{}", item.display_text);
-                    Ok(0)
                 }
-                crate::menu_utils::FzfResult::MultiSelected(items) => {
-                    for item in items {
-                        println!("{}", item.display_text);
-                    }
-                    Ok(0)
-                }
-                crate::menu_utils::FzfResult::Cancelled => Ok(1),
-                crate::menu_utils::FzfResult::Error(e) => {
-                    eprintln!("Error: {e}");
-                    Ok(2)
-                }
-            }
-        }
+            },
+        )),
     }
 }
 
@@ -403,27 +394,20 @@ fn handle_choice_tui_streaming(prompt: &str, allow_multiple: bool) -> Result<i32
         }
     });
 
-    match FzfWrapper::builder()
-        .prompt(prompt.to_string())
-        .multi_select(allow_multiple)
-        .select_streaming(Vec::new(), rx)?
-    {
-        crate::menu_utils::FzfResult::Selected(item) => {
-            println!("{}", item.display_text);
-            Ok(0)
-        }
-        crate::menu_utils::FzfResult::MultiSelected(items) => {
+    Ok(finish_dialog(
+        selection_dialog(
+            FzfWrapper::builder()
+                .prompt(prompt.to_string())
+                .multi_select(allow_multiple)
+                .select_streaming(Vec::new(), rx),
+        ),
+        "Local TUI",
+        |items| {
             for item in items {
                 println!("{}", item.display_text);
             }
-            Ok(0)
-        }
-        crate::menu_utils::FzfResult::Cancelled => Ok(1),
-        crate::menu_utils::FzfResult::Error(e) => {
-            eprintln!("Error: {e}");
-            Ok(2)
-        }
-    }
+        },
+    ))
 }
 
 fn handle_chord(chords: &[String], stdin: bool, backend: MenuBackend) -> Result<i32> {
@@ -451,13 +435,13 @@ fn handle_chord(chords: &[String], stdin: bool, backend: MenuBackend) -> Result<
 
     match backend.resolve(false) {
         ResolvedBackend::Scratchpad | ResolvedBackend::Instantmenu => {
-            let client = MenuClient::new();
+            let client = HostedMenuClient::new();
             match client.chord(combined) {
-                Ok(Some(sequence)) => {
+                Ok(DialogOutcome::Submitted(sequence)) => {
                     println!("{sequence}");
                     Ok(0)
                 }
-                Ok(None) => Ok(1),
+                Ok(DialogOutcome::Cancelled) => Ok(1),
                 Err(e) => {
                     eprintln!("Menu error: {e}");
                     Ok(3)
@@ -523,17 +507,11 @@ fn handle_slide(spec: SliderSpec, backend: MenuBackend) -> Result<i32> {
     let spec = spec.apply_preset();
 
     match backend.resolve(true) {
-        ResolvedBackend::Instantmenu => match instantmenu::InstantmenuBackend::slide(&spec) {
-            Ok(Some(result)) => {
-                println!("{result}");
-                Ok(0)
-            }
-            Ok(None) => Ok(1),
-            Err(e) => {
-                eprintln!("instantmenu error: {e}");
-                Ok(3)
-            }
-        },
+        ResolvedBackend::Instantmenu => Ok(finish_dialog(
+            instantmenu::InstantmenuBackend::slide(&spec),
+            "Native dialog",
+            |value| println!("{value}"),
+        )),
         ResolvedBackend::Scratchpad => {
             let request = protocol::SliderRequest {
                 min: spec.min,
@@ -545,18 +523,12 @@ fn handle_slide(spec: SliderSpec, backend: MenuBackend) -> Result<i32> {
                 command: spec.command,
             };
 
-            let client = MenuClient::new();
-            match client.slide(request) {
-                Ok(Some(result)) => {
-                    println!("{result}");
-                    Ok(0)
-                }
-                Ok(None) => Ok(1),
-                Err(e) => {
-                    eprintln!("Scratchpad menu error: {e}");
-                    Ok(3)
-                }
-            }
+            let client = HostedMenuClient::new();
+            Ok(finish_dialog(
+                client.slide(request),
+                "Hosted dialog",
+                |value| println!("{value}"),
+            ))
         }
         ResolvedBackend::Tui => {
             let request = protocol::SliderRequest {
@@ -569,17 +541,10 @@ fn handle_slide(spec: SliderSpec, backend: MenuBackend) -> Result<i32> {
                 command: spec.command,
             };
 
-            match slide::run_slider_command(&request) {
-                Ok(Some(result)) => {
-                    println!("{result}");
-                    Ok(0)
-                }
-                Ok(None) => Ok(1),
-                Err(e) => {
-                    eprintln!("Error: {e}");
-                    Ok(2)
-                }
-            }
+            let result = slide::run_slider_command(&request);
+            Ok(finish_dialog(result, "Local TUI", |value| {
+                println!("{value}")
+            }))
         }
     }
 }
@@ -590,7 +555,6 @@ fn handle_pick(
     files: bool,
     allow_multiple: bool,
     backend: MenuBackend,
-    command: &MenuCommands,
 ) -> Result<i32> {
     let scope = match (dirs, files) {
         (true, false) => FilePickerScope::Directories,
@@ -601,7 +565,16 @@ fn handle_pick(
 
     match backend.resolve(false) {
         ResolvedBackend::Scratchpad | ResolvedBackend::Instantmenu => {
-            client::handle_scratchpad_request(command)
+            let client = HostedMenuClient::new();
+            Ok(finish_dialog(
+                client.file_picker(start.clone(), scope, allow_multiple),
+                "Hosted dialog",
+                |paths| {
+                    for path in paths {
+                        println!("{}", path.display());
+                    }
+                },
+            ))
         }
         ResolvedBackend::Tui => {
             let mut builder = MenuWrapper::file_picker()
@@ -629,70 +602,54 @@ fn handle_pick(
     }
 }
 
-fn handle_input(prompt: &str, backend: MenuBackend, command: &MenuCommands) -> Result<i32> {
+fn handle_input(prompt: &str, backend: MenuBackend) -> Result<i32> {
     match backend.resolve(true) {
-        ResolvedBackend::Instantmenu => {
-            match instantmenu::InstantmenuBackend::input(prompt, None, None) {
-                Ok(Some(text)) => {
-                    println!("{text}");
-                    Ok(0)
-                }
-                Ok(None) => Ok(1),
-                Err(e) => {
-                    eprintln!("instantmenu error: {e}");
-                    Ok(3)
-                }
-            }
+        ResolvedBackend::Instantmenu => Ok(finish_dialog(
+            instantmenu::InstantmenuBackend::input(prompt, None, None),
+            "Native dialog",
+            |text| println!("{text}"),
+        )),
+        ResolvedBackend::Scratchpad => {
+            let client = HostedMenuClient::new();
+            Ok(finish_dialog(
+                client.input(prompt.to_string()),
+                "Hosted dialog",
+                |text| println!("{text}"),
+            ))
         }
-        ResolvedBackend::Scratchpad => client::handle_scratchpad_request(command),
-        ResolvedBackend::Tui => match FzfWrapper::input(prompt) {
-            Ok(input) => {
-                println!("{input}");
-                Ok(0)
-            }
-            Err(e) => {
-                eprintln!("Error: {e}");
-                Ok(2)
-            }
-        },
+        ResolvedBackend::Tui => Ok(finish_dialog(
+            FzfWrapper::input(prompt),
+            "Local TUI",
+            |text| println!("{text}"),
+        )),
     }
 }
 
-fn handle_password(prompt: &str, backend: MenuBackend, command: &MenuCommands) -> Result<i32> {
+fn handle_password(prompt: &str, backend: MenuBackend) -> Result<i32> {
     match backend.resolve(true) {
-        ResolvedBackend::Instantmenu => match instantmenu::InstantmenuBackend::password(prompt) {
-            Ok(Some(text)) => {
-                println!("{text}");
-                Ok(0)
-            }
-            Ok(None) => Ok(1),
-            Err(e) => {
-                eprintln!("instantmenu error: {e}");
-                Ok(3)
-            }
-        },
-        ResolvedBackend::Scratchpad => client::handle_scratchpad_request(command),
-        ResolvedBackend::Tui => match FzfWrapper::password(prompt) {
-            Ok(crate::menu_utils::FzfResult::Selected(password)) => {
-                println!("{password}");
-                Ok(0)
-            }
-            Ok(crate::menu_utils::FzfResult::Cancelled) => Ok(1),
-            Ok(crate::menu_utils::FzfResult::Error(e)) => {
-                eprintln!("Error: {e}");
-                Ok(2)
-            }
-            Ok(_) => Ok(1),
-            Err(e) => {
-                eprintln!("Error: {e}");
-                Ok(2)
-            }
-        },
+        ResolvedBackend::Instantmenu => Ok(finish_dialog(
+            instantmenu::InstantmenuBackend::password(prompt),
+            "Native dialog",
+            |password| println!("{password}"),
+        )),
+        ResolvedBackend::Scratchpad => {
+            let client = HostedMenuClient::new();
+            Ok(finish_dialog(
+                client.password(prompt.to_string()),
+                "Hosted dialog",
+                |password| println!("{password}"),
+            ))
+        }
+        ResolvedBackend::Tui => Ok(finish_dialog(
+            FzfWrapper::password(prompt),
+            "Local TUI",
+            |password| println!("{password}"),
+        )),
     }
 }
 
 fn handle_status() -> Result<i32> {
-    let client = client::MenuClient::new();
+    let client = client::HostedMenuClient::new();
     if client.is_fallback() {
         match client.status() {
             Ok(status_info) => {
@@ -728,7 +685,7 @@ fn handle_status() -> Result<i32> {
 }
 
 fn handle_show() -> Result<i32> {
-    let client = MenuClient::new();
+    let client = HostedMenuClient::new();
     match client.show() {
         Ok(_) => Ok(0),
         Err(e) => {
@@ -751,21 +708,15 @@ fn handle_checklist(items: &str, confirm: &str, backend: MenuBackend) -> Result<
     };
 
     match backend.resolve(true) {
-        ResolvedBackend::Instantmenu => {
-            match instantmenu::InstantmenuBackend::checklist(&item_list, confirm) {
-                Ok(Some(selected)) => {
-                    for item in selected {
-                        println!("{item}");
-                    }
-                    Ok(0)
+        ResolvedBackend::Instantmenu => Ok(finish_dialog(
+            instantmenu::InstantmenuBackend::checklist(&item_list, confirm),
+            "Native dialog",
+            |selected| {
+                for item in selected {
+                    println!("{item}");
                 }
-                Ok(None) => Ok(1),
-                Err(e) => {
-                    eprintln!("instantmenu error: {e}");
-                    Ok(3)
-                }
-            }
-        }
+            },
+        )),
         ResolvedBackend::Scratchpad | ResolvedBackend::Tui => {
             match FzfWrapper::builder()
                 .prompt("Select items")
@@ -840,23 +791,19 @@ fn handle_spin(message: &str, command: &[String], backend: MenuBackend) -> Resul
     }
 }
 
-fn handle_toast(
-    message: &str,
-    duration: f64,
-    backend: MenuBackend,
-    command: &MenuCommands,
-) -> Result<i32> {
+fn handle_toast(message: &str, duration: f64, backend: MenuBackend) -> Result<i32> {
     match backend.resolve(true) {
-        ResolvedBackend::Instantmenu => {
-            match instantmenu::InstantmenuBackend::toast(message, duration) {
-                Ok(()) => Ok(0),
-                Err(e) => {
-                    eprintln!("instantmenu error: {e}");
-                    Ok(1)
-                }
-            }
+        ResolvedBackend::Instantmenu => Ok(finish_action(
+            instantmenu::InstantmenuBackend::toast(message, duration),
+            "Native dialog",
+        )),
+        ResolvedBackend::Scratchpad => {
+            let client = HostedMenuClient::new();
+            Ok(finish_action(
+                client.toast(message.to_string(), duration),
+                "Hosted dialog",
+            ))
         }
-        ResolvedBackend::Scratchpad => client::handle_scratchpad_request(command),
         ResolvedBackend::Tui => {
             eprintln!("{message}");
             Ok(0)
@@ -878,7 +825,7 @@ pub async fn handle_server_command(command: ServerCommands) -> Result<i32> {
             }
         }
         ServerCommands::Stop => {
-            let client = client::MenuClient::new();
+            let client = client::HostedMenuClient::new();
             match client.stop() {
                 Ok(_) => {
                     println!("✓ Menu server stopped successfully");

@@ -8,9 +8,7 @@ use colored::Colorize;
 use crate::dot::config::DotfileConfig;
 use crate::dot::override_config::{DotfileSource, OverrideConfig};
 use crate::dot::sources;
-use crate::menu_utils::{
-    FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor, MenuPresentation,
-};
+use crate::menu_utils::{FzfSelectable, FzfWrapper, Header, MenuCursor, MenuPresentation};
 use crate::ui::prelude::*;
 
 use super::apply::{is_safe_to_switch, remove_override, set_alternative};
@@ -95,9 +93,9 @@ fn handle_single_source(
             .prompt("Action: ")
             .responsive_layout()
             .presentation(MenuPresentation::Padded)
-            .select(vec![Choice::Remove, Choice::Back])?
+            .select_one(vec![Choice::Remove, Choice::Back])?
         {
-            FzfResult::Selected(Choice::Remove) => {
+            crate::menu_utils::DialogOutcome::Submitted(Choice::Remove) => {
                 let mut overrides = OverrideConfig::load()?;
                 overrides.remove_override(path)?;
                 return message_and_done(&format!(
@@ -105,7 +103,10 @@ fn handle_single_source(
                     display, source.repo_name, source.subdir_name
                 ));
             }
-            _ => return Ok(Flow::Cancelled),
+            crate::menu_utils::DialogOutcome::Submitted(Choice::Back) => {
+                return Ok(Flow::Cancelled);
+            }
+            crate::menu_utils::DialogOutcome::Cancelled => return Ok(Flow::Cancelled),
         }
     }
 
@@ -209,13 +210,13 @@ fn run_source_selection_menu(
             builder = builder.initial_index(index);
         }
 
-        match builder.select(menu.clone())? {
-            FzfResult::Selected(MenuItem::Source(item)) => {
+        match builder.select_one(menu.clone())? {
+            crate::menu_utils::DialogOutcome::Submitted(MenuItem::Source(item)) => {
                 cursor.update(&MenuItem::Source(item.clone()), &menu);
                 set_alternative(&config, path, display, &item)?;
                 return Ok(Flow::Done);
             }
-            FzfResult::Selected(MenuItem::CreateAlternative) => {
+            crate::menu_utils::DialogOutcome::Submitted(MenuItem::CreateAlternative) => {
                 cursor.update(&MenuItem::CreateAlternative, &menu);
                 let sources = sources::list_sources_for_target(&config, path)?;
                 match run_create_flow(path, display, &sources, false, None)? {
@@ -223,7 +224,9 @@ fn run_source_selection_menu(
                     other => return Ok(other),
                 }
             }
-            FzfResult::Selected(MenuItem::RemoveOverride { default_source }) => {
+            crate::menu_utils::DialogOutcome::Submitted(MenuItem::RemoveOverride {
+                default_source,
+            }) => {
                 cursor.update(
                     &MenuItem::RemoveOverride {
                         default_source: default_source.clone(),
@@ -233,13 +236,11 @@ fn run_source_selection_menu(
                 remove_override(&config, path, display, &default_source)?;
                 return Ok(Flow::Done);
             }
-            FzfResult::Selected(MenuItem::Back) => {
+            crate::menu_utils::DialogOutcome::Submitted(MenuItem::Back) => {
                 cursor.update(&MenuItem::Back, &menu);
                 return Ok(Flow::Cancelled);
             }
-            FzfResult::Cancelled => return Ok(Flow::Cancelled),
-            FzfResult::Error(e) => return Err(anyhow::anyhow!("Selection error: {}", e)),
-            _ => return Ok(Flow::Cancelled),
+            crate::menu_utils::DialogOutcome::Cancelled => return Ok(Flow::Cancelled),
         }
     }
 }

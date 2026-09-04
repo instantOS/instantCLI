@@ -1,7 +1,7 @@
 use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
 use crate::dot::repo::DotfileRepositoryManager;
-use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header};
+use crate::menu_utils::{FzfSelectable, FzfWrapper, Header};
 use crate::preview::{DotRepositoryPreviewPayload, PreviewId, preview_command};
 use anyhow::{Context, Result};
 
@@ -55,11 +55,11 @@ fn select_repo_interactive(config: &DotfileConfig, prompt: &str) -> Result<Optio
         .header(Header::fancy("Select Repository"))
         .prompt(prompt)
         .responsive_layout()
-        .select(items)?;
+        .select_one(items)?;
 
     match result {
-        FzfResult::Selected(item) => Ok(Some(item.name)),
-        _ => Ok(None),
+        crate::menu_utils::DialogOutcome::Submitted(item) => Ok(Some(item.name)),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
     }
 }
 

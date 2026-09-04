@@ -187,7 +187,7 @@ pub(super) async fn handle_finished_command() -> Result<()> {
         .select_one(items)?;
 
     match result {
-        Some(item) => match item.option {
+        crate::menu_utils::DialogOutcome::Submitted(item) => match item.option {
             FinishedMenuOption::Reboot => {
                 println!("Rebooting...");
                 std::process::Command::new("reboot").spawn()?;
@@ -200,7 +200,7 @@ pub(super) async fn handle_finished_command() -> Result<()> {
                 println!("Exiting to live session...");
             }
         },
-        None => println!("Exiting..."),
+        crate::menu_utils::DialogOutcome::Cancelled => println!("Exiting..."),
     }
 
     Ok(())
