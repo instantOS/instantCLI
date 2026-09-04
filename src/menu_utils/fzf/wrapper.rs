@@ -588,13 +588,13 @@ impl FzfWrapper {
         items: Vec<T>,
         keybinds: &[MenuKeybind<A>],
     ) -> Result<DialogOutcome<MenuSelection<T, A>>> {
+        validate_keybinds(keybinds)?;
         #[cfg(test)]
         if let Some(resp) = crate::menu_utils::mock::pop_mock() {
             return Ok(crate::menu_utils::mock::resolve_selection(
                 resp, items, keybinds,
             ));
         }
-        validate_keybinds(keybinds)?;
         if items.is_empty() && keybinds.is_empty() {
             return Ok(DialogOutcome::Cancelled);
         }
@@ -1191,9 +1191,19 @@ mod mock_tests {
         assert!(MenuKey::new("Ctrl-E").is_err());
         assert!(MenuKey::new("ctrl_e").is_err());
         assert!(MenuKey::new("ctrl e").is_err());
+        assert!(MenuKey::new("not-a-real-key").is_err());
+        assert!(MenuKey::new("ctrl-1").is_err());
+        assert!(MenuKey::new("shift-a").is_err());
+        assert!(MenuKey::new("f0").is_err());
+        assert!(MenuKey::new("f13").is_err());
         assert!(MenuKey::new("ctrl-e").is_ok());
         assert!(MenuKey::new("f3").is_ok());
         assert!(MenuKey::new("alt-s").is_ok());
+        assert!(MenuKey::new("alt-1").is_ok());
+        assert!(MenuKey::new("ctrl-alt-r").is_ok());
+        assert!(MenuKey::new("ctrl-shift-left").is_ok());
+        assert!(MenuKey::new("ctrl-alt-shift-page-down").is_ok());
+        assert!(MenuKey::new(String::from("ctrl-r")).is_ok());
         for reserved in [
             "esc", "ctrl-c", "enter", "tab", "ctrl-p", "ctrl-j", "up", "down",
         ] {
@@ -1212,6 +1222,28 @@ mod mock_tests {
         ];
         let error = validate_keybinds(&binds).unwrap_err();
         assert_eq!(error.to_string(), "duplicate menu keybind: ctrl-e");
+    }
+
+    #[test]
+    fn mocked_keybind_returns_only_the_scripted_selection() {
+        let _guard = MockQueue::new().keybind_action("ctrl-e", vec![1]).guard();
+        let binds = [MenuKeybind::new(
+            MenuKey::new("ctrl-e").unwrap(),
+            "edit",
+            7u8,
+        )];
+
+        let outcome = FzfWrapper::builder()
+            .select_with_keybinds(vec!["alpha".to_string(), "beta".to_string()], &binds)
+            .unwrap();
+
+        assert_eq!(
+            outcome,
+            DialogOutcome::Submitted(MenuSelection {
+                items: vec!["beta".to_string()],
+                action: Some(7),
+            })
+        );
     }
 
     #[test]

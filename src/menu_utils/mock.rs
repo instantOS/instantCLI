@@ -45,7 +45,10 @@ pub(crate) enum MockResponse {
     CancelSelection,
     /// A registered menu keybind was pressed; the token is matched against
     /// the menu's registered binds at resolve time.
-    KeybindAction(String),
+    KeybindAction {
+        token: String,
+        selected_indices: Vec<usize>,
+    },
 
     // Confirmation
     ConfirmYes,
@@ -109,12 +112,19 @@ impl MockQueue {
         self
     }
 
-    /// Script a keybind press. `token` must match one of the keys the menu
-    /// registers (e.g. "ctrl-e"); the pressed action is resolved from the
-    /// menu's own binds so tests stay type-safe.
-    pub fn keybind_action(mut self, token: impl Into<String>) -> Self {
-        self.responses
-            .push_back(MockResponse::KeybindAction(token.into()));
+    /// Script a keybind press over the given selection. `token` must match one
+    /// of the menu's registered keys. For a single-select menu, pass the
+    /// focused row as a one-element index vector; an empty vector models a
+    /// keybind pressed while there are no matches.
+    pub fn keybind_action(
+        mut self,
+        token: impl Into<String>,
+        selected_indices: Vec<usize>,
+    ) -> Self {
+        self.responses.push_back(MockResponse::KeybindAction {
+            token: token.into(),
+            selected_indices,
+        });
         self
     }
 
@@ -257,7 +267,10 @@ pub(crate) fn resolve_selection<T: Clone, A: Clone>(
                 .collect(),
             action: None,
         }),
-        MockResponse::KeybindAction(token) => {
+        MockResponse::KeybindAction {
+            token,
+            selected_indices,
+        } => {
             let bind = keybinds
                 .iter()
                 .find(|bind| bind.key.as_str() == token)
@@ -267,7 +280,14 @@ pub(crate) fn resolve_selection<T: Clone, A: Clone>(
                     )
                 });
             DialogOutcome::Submitted(MenuSelection {
-                items: items.into_iter().collect(),
+                items: selected_indices
+                    .into_iter()
+                    .map(|i| {
+                        items.get(i).cloned().unwrap_or_else(|| {
+                            panic!("MockResponse::KeybindAction index {i} out of bounds")
+                        })
+                    })
+                    .collect(),
                 action: Some(bind.action.clone()),
             })
         }

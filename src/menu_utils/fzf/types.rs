@@ -407,13 +407,14 @@ impl<T, A> MenuSelection<T, A> {
     }
 }
 
-/// A validated fzf key name for a menu keybind (e.g. `"ctrl-e"`).
+/// A validated, safely serializable fzf key name (e.g. `"ctrl-e"`).
 ///
-/// Construction rejects malformed names and keys that would collide with
-/// built-in navigation or make the menu impossible to dismiss (scrolling,
-/// separator navigation, tab multi-select, and fzf's abort keys).
+/// This intentionally accepts the stable keyboard subset used by menus, not
+/// fzf events or mouse bindings. Construction rejects unsupported names and
+/// keys that would collide with result navigation, submission, multi-select,
+/// or dismissal.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MenuKey(&'static str);
+pub struct MenuKey(String);
 
 impl MenuKey {
     /// Keys that would break menu navigation or trap the user in the menu.
@@ -439,34 +440,117 @@ impl MenuKey {
         "ctrl-j",
     ];
 
-    /// Validate a static fzf key name such as `"ctrl-e"`, `"alt-s"`, or
-    /// `"f3"`.
-    pub fn new(key: &'static str) -> Result<Self> {
-        if key.is_empty() {
-            bail!("menu keybind name cannot be empty");
-        }
-        if !key
-            .chars()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
-        {
+    /// Validate an fzf key name such as `"ctrl-e"`, `"alt-s"`, or `"f3"`.
+    pub fn new(key: impl Into<String>) -> Result<Self> {
+        let key = key.into();
+        if !is_supported_menu_key(&key) {
             bail!(
-                "menu keybind {key:?} must be a lowercase fzf key name like \"ctrl-e\" or \"alt-s\""
+                "unsupported menu keybind {key:?}; expected a key such as \"ctrl-e\", \"alt-s\", or \"f3\""
             );
         }
-        if Self::RESERVED.contains(&key) {
-            bail!("menu keybind {key:?} is reserved for navigation or dismissal");
+        if Self::RESERVED.contains(&key.as_str()) {
+            bail!("menu keybind {key:?} is reserved for standard menu interaction");
         }
         Ok(Self(key))
     }
 
-    pub fn as_str(&self) -> &'static str {
-        self.0
+    pub fn as_str(&self) -> &str {
+        &self.0
     }
+}
+
+/// Return whether `key` is in the stable keyboard subset supported by the
+/// wrapper. Binding-expression separators and fzf events are deliberately
+/// excluded so a validated key can always be embedded without escaping.
+fn is_supported_menu_key(key: &str) -> bool {
+    const NAMED_KEYS: &[&str] = &[
+        "enter",
+        "space",
+        "backspace",
+        "tab",
+        "shift-tab",
+        "esc",
+        "delete",
+        "up",
+        "down",
+        "left",
+        "right",
+        "home",
+        "end",
+        "insert",
+        "page-up",
+        "page-down",
+    ];
+    const MODIFIED_NAMED_KEYS: &[&str] = &[
+        "up",
+        "down",
+        "left",
+        "right",
+        "home",
+        "end",
+        "backspace",
+        "delete",
+        "page-up",
+        "page-down",
+        "enter",
+        "space",
+    ];
+
+    if NAMED_KEYS.contains(&key) {
+        return true;
+    }
+    if let Some(number) = key.strip_prefix('f') {
+        return number
+            .parse::<u8>()
+            .is_ok_and(|number| (1..=12).contains(&number));
+    }
+    if key.len() == 1 {
+        return key
+            .bytes()
+            .next()
+            .is_some_and(|byte| byte.is_ascii_alphanumeric());
+    }
+
+    let is_named_suffix = |suffix| MODIFIED_NAMED_KEYS.contains(&suffix);
+    let is_ascii_letter = |suffix: &str| {
+        suffix.len() == 1
+            && suffix
+                .bytes()
+                .next()
+                .is_some_and(|byte| byte.is_ascii_lowercase())
+    };
+    let is_safe_alt_character = |suffix: &str| {
+        suffix.len() == 1
+            && suffix
+                .bytes()
+                .next()
+                .is_some_and(|byte| byte.is_ascii_alphanumeric())
+    };
+
+    if let Some(suffix) = key.strip_prefix("ctrl-alt-shift-") {
+        return is_named_suffix(suffix);
+    }
+    if let Some(suffix) = key.strip_prefix("ctrl-alt-") {
+        return is_ascii_letter(suffix) || is_named_suffix(suffix);
+    }
+    if let Some(suffix) = key.strip_prefix("ctrl-shift-") {
+        return is_named_suffix(suffix);
+    }
+    if let Some(suffix) = key.strip_prefix("ctrl-") {
+        return is_ascii_letter(suffix) || is_named_suffix(suffix);
+    }
+    if let Some(suffix) = key.strip_prefix("alt-shift-") {
+        return is_named_suffix(suffix);
+    }
+    if let Some(suffix) = key.strip_prefix("alt-") {
+        return is_safe_alt_character(suffix) || is_named_suffix(suffix);
+    }
+    key.strip_prefix("shift-").is_some_and(is_named_suffix)
 }
 
 impl fmt::Display for MenuKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.0)
+        f.write_str(&self.0)
     }
 }
 

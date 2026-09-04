@@ -3,6 +3,7 @@ use anyhow::{Result, anyhow, bail};
 use crate::menu::client::HostedMenuClient;
 use crate::menu_utils::{
     FzfWrapper, Header, HeaderBuilder, MenuCursor, MenuKey, MenuKeybind, MenuPresentation,
+    MenuSelection,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
@@ -20,12 +21,28 @@ enum QuickAccessBind {
     Edit,
 }
 
+enum QuickAccessIntent {
+    Primary(BrowserMenuItem),
+    Edit(BrowserMenuItem),
+}
+
 fn quick_access_keybinds() -> Result<Vec<MenuKeybind<QuickAccessBind>>> {
     Ok(vec![MenuKeybind::new(
         MenuKey::new("ctrl-e")?,
         "edit entry",
         QuickAccessBind::Edit,
     )])
+}
+
+fn interpret_quick_access_selection(
+    selection: MenuSelection<BrowserMenuItem, QuickAccessBind>,
+) -> Option<QuickAccessIntent> {
+    let action = selection.action;
+    let item = selection.into_single().ok()?;
+    Some(match action {
+        Some(QuickAccessBind::Edit) => QuickAccessIntent::Edit(item),
+        None => QuickAccessIntent::Primary(item),
+    })
 }
 
 pub(super) fn interactive_pass_menu() -> Result<i32> {
@@ -56,13 +73,13 @@ pub(super) fn interactive_pass_quick_access() -> Result<i32> {
 
         match builder.select_with_keybinds(quick_access_items.clone(), &keybinds)? {
             crate::menu_utils::DialogOutcome::Submitted(sel) => {
-                // ctrl-e edits the focused entry directly instead of copying
-                // it; every other pressed key falls back to plain submission.
-                let edit_requested = sel.action == Some(QuickAccessBind::Edit);
-
                 // Keybind pressed on an empty filtered list has no target.
-                let Ok(item) = sel.into_single() else {
+                let Some(intent) = interpret_quick_access_selection(sel) else {
                     continue;
+                };
+                let (item, edit_requested) = match intent {
+                    QuickAccessIntent::Primary(item) => (item, false),
+                    QuickAccessIntent::Edit(item) => (item, true),
                 };
 
                 cursor.update(&item, &quick_access_items);
@@ -92,6 +109,58 @@ pub(super) fn interactive_pass_quick_access() -> Result<i32> {
             }
             crate::menu_utils::DialogOutcome::Cancelled => return Ok(1),
         }
+    }
+}
+
+#[cfg(test)]
+mod keybind_tests {
+    use super::*;
+
+    fn entry_item(name: &str) -> BrowserMenuItem {
+        BrowserMenuItem {
+            key: format!("entry:{name}"),
+            display: name.to_string(),
+            preview: crate::ui::preview::FzfPreview::None,
+            kind: BrowserItemKind::Entry(name.to_string()),
+        }
+    }
+
+    #[test]
+    fn enter_keeps_the_primary_copy_action() {
+        let item = entry_item("mail/work");
+        let interpreted = interpret_quick_access_selection(MenuSelection {
+            items: vec![item.clone()],
+            action: None,
+        });
+
+        assert!(matches!(
+            interpreted,
+            Some(QuickAccessIntent::Primary(selected)) if selected.key == item.key
+        ));
+    }
+
+    #[test]
+    fn edit_keybind_targets_the_focused_entry() {
+        let item = entry_item("mail/work");
+        let interpreted = interpret_quick_access_selection(MenuSelection {
+            items: vec![item.clone()],
+            action: Some(QuickAccessBind::Edit),
+        });
+
+        assert!(matches!(
+            interpreted,
+            Some(QuickAccessIntent::Edit(selected)) if selected.key == item.key
+        ));
+    }
+
+    #[test]
+    fn edit_keybind_without_a_match_has_no_target() {
+        let interpreted = interpret_quick_access_selection(MenuSelection::<BrowserMenuItem, _> {
+            items: Vec::new(),
+            action: Some(QuickAccessBind::Edit),
+        });
+
+        assert!(interpreted.is_none());
     }
 }
 
