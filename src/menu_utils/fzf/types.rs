@@ -350,33 +350,6 @@ pub enum DialogOutcome<T> {
     Cancelled,
 }
 
-/// Internal parse-layer result for FZF selection surfaces.
-///
-/// Public dialog terminals translate this into [`DialogOutcome`] (see
-/// [`FzfResult::into_dialog_outcome`]); it never leaves the fzf module.
-/// Failures are represented by the outer `anyhow::Result`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum FzfResult<T> {
-    Selected(T),
-    MultiSelected(Vec<T>),
-    Cancelled,
-}
-
-impl<T> FzfResult<T> {
-    /// Collapse this result into the shared dialog outcome vocabulary.
-    ///
-    /// A single selection is submitted as a one-element vector, matching the
-    /// protocol-level representation of a choice (`Vec<T>`), where any
-    /// number of selected items is one submission.
-    pub fn into_dialog_outcome(self) -> DialogOutcome<Vec<T>> {
-        match self {
-            FzfResult::Selected(item) => DialogOutcome::Submitted(vec![item]),
-            FzfResult::MultiSelected(items) => DialogOutcome::Submitted(items),
-            FzfResult::Cancelled => DialogOutcome::Cancelled,
-        }
-    }
-}
-
 /// Visual treatment of rows in a selection menu.
 ///
 /// This affects presentation only. Preview delivery and execution semantics are

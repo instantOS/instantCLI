@@ -208,7 +208,10 @@ pub async fn handle_install(debug: bool, package: Option<String>) -> Result<()> 
         Some(name) => resolve_package_by_name(&packages, name)
             .cloned()
             .with_context(|| format!("Failed to resolve package '{name}'"))?,
-        None => select_package(packages).context("Failed to select package")?,
+        None => match select_package(packages).context("Failed to select package")? {
+            Some(selected) => selected,
+            None => return Ok(()),
+        },
     };
 
     if debug {

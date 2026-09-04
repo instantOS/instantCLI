@@ -16,7 +16,7 @@ mod text_input;
 
 pub use crate::ui::preview::FzfPreview;
 pub use cursor::MenuCursor;
-pub use file_picker::{FilePickerResult, FilePickerScope, MenuWrapper};
+pub use file_picker::{FilePickerBuilder, FilePickerResult, FilePickerScope};
 pub use fzf::{
     ChecklistAction, ChecklistResult, ConfirmResult, DecodedStreamingMenuItem, DialogOutcome,
     FzfSelectable, FzfWrapper, Header, HeaderBuilder, MenuItem, MenuPresentation, StreamingCommand,

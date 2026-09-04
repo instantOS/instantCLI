@@ -424,14 +424,6 @@ impl FilePickerBuilder {
     }
 }
 
-pub struct MenuWrapper;
-
-impl MenuWrapper {
-    pub fn file_picker() -> FilePickerBuilder {
-        FilePickerBuilder::new()
-    }
-}
-
 #[cfg(test)]
 mod mock_tests {
     use super::*;
@@ -440,7 +432,7 @@ mod mock_tests {
     #[test]
     fn test_mock_file_picker_returns_canned_path() {
         let _guard = MockQueue::new().file_picker("/home/user/.bashrc").guard();
-        let result = MenuWrapper::file_picker().pick().unwrap();
+        let result = FilePickerBuilder::new().pick().unwrap();
         match result {
             FilePickerResult::Selected(path) => {
                 assert_eq!(path, PathBuf::from("/home/user/.bashrc"));
@@ -452,7 +444,7 @@ mod mock_tests {
     #[test]
     fn test_mock_file_picker_pick_one() {
         let _guard = MockQueue::new().file_picker("/home/user/docs").guard();
-        let result = MenuWrapper::file_picker().pick_one().unwrap();
+        let result = FilePickerBuilder::new().pick_one().unwrap();
         assert_eq!(
             result,
             crate::menu_utils::DialogOutcome::Submitted(PathBuf::from("/home/user/docs"))
@@ -464,7 +456,7 @@ mod mock_tests {
         let _guard = MockQueue::new()
             .file_picker_multi(vec!["/a.txt".into(), "/b.txt".into()])
             .guard();
-        let result = MenuWrapper::file_picker().multi(true).pick().unwrap();
+        let result = FilePickerBuilder::new().multi(true).pick().unwrap();
         match result {
             FilePickerResult::MultiSelected(paths) => {
                 assert_eq!(paths.len(), 2);
@@ -478,7 +470,7 @@ mod mock_tests {
     #[test]
     fn test_mock_file_picker_cancelled() {
         let _guard = MockQueue::new().file_picker_cancelled().guard();
-        let result = MenuWrapper::file_picker().pick().unwrap();
+        let result = FilePickerBuilder::new().pick().unwrap();
         match result {
             FilePickerResult::Cancelled => {}
             other => panic!("Expected Cancelled, got {other:?}"),
@@ -488,7 +480,7 @@ mod mock_tests {
     #[test]
     fn test_mock_file_picker_pick_one_cancelled() {
         let _guard = MockQueue::new().file_picker_cancelled().guard();
-        let result = MenuWrapper::file_picker().pick_one().unwrap();
+        let result = FilePickerBuilder::new().pick_one().unwrap();
         assert_eq!(result, crate::menu_utils::DialogOutcome::Cancelled);
     }
 

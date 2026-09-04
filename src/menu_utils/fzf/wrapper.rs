@@ -383,13 +383,13 @@ fn execute_fzf_command(cmd: Command, input_text: &str) -> Result<std::process::O
 fn parse_fzf_output<T: Clone>(
     result: std::process::Output,
     item_map: &HashMap<String, T>,
-    multi_select: bool,
-) -> Result<FzfResult<T>> {
+) -> Result<DialogOutcome<Vec<T>>> {
     if fzf_was_cancelled(&result)? {
-        return Ok(FzfResult::Cancelled);
+        return Ok(DialogOutcome::Cancelled);
     }
 
-    // Parse selected lines
+    // Parse selected lines. Every selected line is a submission; arity is
+    // enforced by the selection terminals, not here.
     let stdout = String::from_utf8_lossy(&result.stdout);
     let selected_lines: Vec<&str> = stdout
         .trim_end()
@@ -398,44 +398,31 @@ fn parse_fzf_output<T: Clone>(
         .collect();
 
     if selected_lines.is_empty() {
-        return Ok(FzfResult::Cancelled);
+        return Ok(DialogOutcome::Cancelled);
     }
 
     // Extract the key from field 3 (format: display\x1fkeywords\x1fkey[\x1f...])
-    if multi_select {
-        let selected_items = selected_lines
-            .iter()
-            .map(|line| {
-                let key = line
-                    .split('\x1f')
-                    .nth(2)
-                    .ok_or_else(|| anyhow!("fzf returned a selection without an item key"))?;
-                item_map
-                    .get(key)
-                    .cloned()
-                    .ok_or_else(|| anyhow!("fzf returned unknown item key {key:?}"))
-            })
-            .collect::<Result<Vec<_>>>()?;
-        Ok(FzfResult::MultiSelected(selected_items))
-    } else {
-        let key = selected_lines[0]
-            .split('\x1f')
-            .nth(2)
-            .ok_or_else(|| anyhow!("fzf returned a selection without an item key"))?;
-        let item = item_map
-            .get(key)
-            .cloned()
-            .ok_or_else(|| anyhow!("fzf returned unknown item key {key:?}"))?;
-        Ok(FzfResult::Selected(item))
-    }
+    let selected_items = selected_lines
+        .iter()
+        .map(|line| {
+            let key = line
+                .split('\x1f')
+                .nth(2)
+                .ok_or_else(|| anyhow!("fzf returned a selection without an item key"))?;
+            item_map
+                .get(key)
+                .cloned()
+                .ok_or_else(|| anyhow!("fzf returned unknown item key {key:?}"))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(DialogOutcome::Submitted(selected_items))
 }
 
 fn parse_encoded_streaming_output<T: DeserializeOwned>(
     result: std::process::Output,
-    multi_select: bool,
-) -> Result<FzfResult<DecodedStreamingMenuItem<T>>> {
+) -> Result<DialogOutcome<Vec<DecodedStreamingMenuItem<T>>>> {
     if fzf_was_cancelled(&result)? {
-        return Ok(FzfResult::Cancelled);
+        return Ok(DialogOutcome::Cancelled);
     }
 
     let stdout = String::from_utf8_lossy(&result.stdout);
@@ -446,20 +433,14 @@ fn parse_encoded_streaming_output<T: DeserializeOwned>(
         .collect();
 
     if selected_lines.is_empty() {
-        return Ok(FzfResult::Cancelled);
+        return Ok(DialogOutcome::Cancelled);
     }
 
-    if multi_select {
-        let items = selected_lines
-            .into_iter()
-            .map(DecodedStreamingMenuItem::decode)
-            .collect::<Result<Vec<_>>>()?;
-        Ok(FzfResult::MultiSelected(items))
-    } else {
-        Ok(FzfResult::Selected(DecodedStreamingMenuItem::decode(
-            selected_lines[0],
-        )?))
-    }
+    let items = selected_lines
+        .into_iter()
+        .map(DecodedStreamingMenuItem::decode)
+        .collect::<Result<Vec<_>>>()?;
+    Ok(DialogOutcome::Submitted(items))
 }
 
 pub struct FzfWrapper {
@@ -521,8 +502,7 @@ impl FzfWrapper {
                 "--ansi",
             ],
         )?;
-        parse_encoded_streaming_output(output, self.multi_select)
-            .map(FzfResult::into_dialog_outcome)
+        parse_encoded_streaming_output(output)
     }
 
     pub fn select_encoded_streaming<T, C>(
@@ -695,7 +675,7 @@ impl FzfWrapper {
         let output = execute_fzf_command(cmd, &input_text)?;
 
         // Parse output and map back to items
-        parse_fzf_output(output, &item_map, self.multi_select).map(FzfResult::into_dialog_outcome)
+        parse_fzf_output(output, &item_map)
     }
 
     /// Like [`FzfWrapper::select`], but further items stream in while the
@@ -764,8 +744,16 @@ impl FzfWrapper {
             .stdin
             .take()
             .ok_or_else(|| anyhow!("Failed to capture fzf stdin"))?;
-        stdin.write_all(input_text.as_bytes())?;
-        stdin.flush()?;
+        // `input_text` is newline-joined without a trailing newline, but the
+        // pump below appends complete lines. Terminate the initial block so
+        // the first streamed item cannot glue onto the last initial row.
+        if !input_text.is_empty() {
+            stdin.write_all(input_text.as_bytes())?;
+            if !input_text.ends_with('\n') {
+                stdin.write_all(b"\n")?;
+            }
+            stdin.flush()?;
+        }
         if let Err(error) = on_ready() {
             let _ = child.kill();
             let _ = finish_menu_child(child, pid);
@@ -845,7 +833,7 @@ impl FzfWrapper {
         let item_map = shared_map
             .lock()
             .map_err(|_| anyhow!("fzf streaming item map poisoned"))?;
-        parse_fzf_output(output, &item_map, self.multi_select).map(FzfResult::into_dialog_outcome)
+        parse_fzf_output(output, &item_map)
     }
 
     pub fn input(prompt: &str) -> Result<DialogOutcome<String>> {
@@ -975,7 +963,7 @@ mod mock_tests {
         };
         let items = HashMap::from([("known".to_string(), "value".to_string())]);
 
-        let error = parse_fzf_output(output, &items, false).unwrap_err();
+        let error = parse_fzf_output(output, &items).unwrap_err();
         assert_eq!(
             error.to_string(),
             "fzf returned a selection without an item key"

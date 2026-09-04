@@ -33,7 +33,7 @@ use crate::game::launch_command::{
 use crate::game::utils::path::is_valid_wine_prefix;
 use crate::menu::protocol::FzfPreview;
 use crate::menu_utils::{
-    ChecklistResult, FzfSelectable, FzfWrapper, Header, MenuPresentation, MenuWrapper,
+    ChecklistResult, FilePickerBuilder, FzfSelectable, FzfWrapper, Header, MenuPresentation,
     TextEditOutcome, TextEditPrompt, prompt_text_edit,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
@@ -779,7 +779,7 @@ fn prompt_manual_command() -> Result<Option<LaunchCommand>> {
 fn prompt_executable_command(
     context: Option<&LaunchCommandBuilderContext>,
 ) -> Result<Option<LaunchCommand>> {
-    let mut builder = MenuWrapper::file_picker()
+    let mut builder = FilePickerBuilder::new()
         .hint("Select a binary or script to launch the game")
         .show_hidden(false);
 

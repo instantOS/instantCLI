@@ -1,6 +1,6 @@
 use super::protocol::*;
 use super::{chord, slide};
-use crate::menu_utils::{FilePickerResult, FilePickerScope, FzfWrapper, MenuWrapper};
+use crate::menu_utils::{FilePickerBuilder, FilePickerResult, FilePickerScope, FzfWrapper};
 use anyhow::Result;
 use std::sync::{
     Arc,
@@ -80,9 +80,7 @@ impl RequestProcessor {
         scope: FilePickerScope,
         allow_multiple: bool,
     ) -> Result<MenuResponse> {
-        let mut builder = MenuWrapper::file_picker()
-            .scope(scope)
-            .multi(allow_multiple);
+        let mut builder = FilePickerBuilder::new().scope(scope).multi(allow_multiple);
 
         if let Some(start_dir) = start.as_ref().filter(|s| !s.is_empty()) {
             builder = builder.start_dir(start_dir);

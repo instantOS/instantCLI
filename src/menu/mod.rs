@@ -7,7 +7,7 @@
 //! command-dispatch layer.
 
 use crate::menu_utils::{
-    ConfirmResult, DialogOutcome, FilePickerResult, FilePickerScope, FzfWrapper, MenuWrapper,
+    ConfirmResult, DialogOutcome, FilePickerBuilder, FilePickerResult, FilePickerScope, FzfWrapper,
 };
 use anyhow::{Context, Result, anyhow};
 use protocol::SerializableMenuItem;
@@ -56,6 +56,13 @@ const EXIT_NO_SELECTION: i32 = 1;
 const EXIT_ABORTED: i32 = 2;
 const EXIT_BACKEND_FAILURE: i32 = 3;
 
+/// Map a dialog outcome onto the CLI's documented exit codes:
+/// 0 submitted, 1 cancelled/no selection, 2 aborted (confirm only),
+/// 3 renderer/backend failure.
+///
+/// Handlers for dialogs always use these; server management commands
+/// (status/stop) and command-mirroring commands (spin) deliberately keep
+/// their own exit semantics instead.
 fn finish_dialog<T>(result: Result<DialogOutcome<T>>, renderer: &str, emit: impl FnOnce(T)) -> i32 {
     match result {
         Ok(DialogOutcome::Submitted(value)) => {
@@ -423,19 +430,23 @@ fn handle_chord(chords: &[String], stdin: bool, backend: MenuBackend) -> Result<
     match backend.resolve(false) {
         ResolvedBackend::Scratchpad | ResolvedBackend::Instantmenu => {
             let client = HostedMenuClient::new();
-            match client.chord(combined) {
-                Ok(DialogOutcome::Submitted(sequence)) => {
-                    println!("{sequence}");
-                    Ok(0)
-                }
-                Ok(DialogOutcome::Cancelled) => Ok(1),
-                Err(e) => {
-                    eprintln!("Menu error: {e}");
-                    Ok(3)
-                }
-            }
+            Ok(finish_dialog(
+                client.chord(combined),
+                "Hosted dialog",
+                |sequence| println!("{sequence}"),
+            ))
         }
-        ResolvedBackend::Tui => chord::run_chord_command(&combined),
+        // Match the dialog exit-code contract (failures exit 3) instead of
+        // propagating to the generic top-level error path (exit 1).
+        ResolvedBackend::Tui => chord::run_chord_command(&combined)
+            .map(|code| match code {
+                0 => EXIT_SUCCESS,
+                _ => EXIT_NO_SELECTION,
+            })
+            .or_else(|error| {
+                eprintln!("Local TUI error: {error}");
+                Ok(EXIT_BACKEND_FAILURE)
+            }),
     }
 }
 
@@ -564,9 +575,9 @@ fn handle_pick(
             ))
         }
         ResolvedBackend::Tui => {
-            let mut builder = MenuWrapper::file_picker()
-                .scope(scope)
-                .multi(allow_multiple);
+            // FilePickerResult is not DialogOutcome<Vec<_>> yet (legacy
+            // outcome type), so this arm maps exit codes by hand.
+            let mut builder = FilePickerBuilder::new().scope(scope).multi(allow_multiple);
 
             if let Some(start_dir) = start.as_ref().filter(|s| !s.is_empty()) {
                 builder = builder.start_dir(PathBuf::from(start_dir));
@@ -636,6 +647,9 @@ fn handle_password(prompt: &str, backend: MenuBackend) -> Result<i32> {
 }
 
 fn handle_status() -> Result<i32> {
+    // Server management command, not a dialog: keeps its own exit-code
+    // semantics (0 running, 1 not running, 2 status query failed) and is
+    // deliberately outside the finish_* dialog contract.
     let client = client::HostedMenuClient::new();
     if client.is_fallback() {
         match client.status() {
@@ -673,13 +687,7 @@ fn handle_status() -> Result<i32> {
 
 fn handle_show() -> Result<i32> {
     let client = HostedMenuClient::new();
-    match client.show() {
-        Ok(_) => Ok(0),
-        Err(e) => {
-            eprintln!("✗ Failed to show scratchpad: {e}");
-            Ok(1)
-        }
-    }
+    Ok(finish_action(client.show(), "Hosted dialog"))
 }
 
 fn handle_checklist(items: &str, confirm: &str, backend: MenuBackend) -> Result<i32> {
@@ -705,6 +713,9 @@ fn handle_checklist(items: &str, confirm: &str, backend: MenuBackend) -> Result<
             },
         )),
         ResolvedBackend::Scratchpad | ResolvedBackend::Tui => {
+            // Checklist actions are a third outcome that DialogOutcome cannot
+            // express, so this arm maps ChecklistResult by hand instead of
+            // using finish_dialog.
             match FzfWrapper::builder()
                 .prompt("Select items")
                 .header("Enter on item toggles it | Enter on Continue confirms")
@@ -732,6 +743,8 @@ fn handle_spin(message: &str, command: &[String], backend: MenuBackend) -> Resul
     match backend.resolve(true) {
         ResolvedBackend::Instantmenu => instantmenu::InstantmenuBackend::spin(message, command),
         ResolvedBackend::Scratchpad | ResolvedBackend::Tui => {
+            // Spin mirrors the child command's exit status instead of the
+            // dialog contract; a renderer failure cannot occur here.
             use indicatif::{ProgressBar, ProgressStyle};
             use std::time::Duration;
 
@@ -800,6 +813,8 @@ fn handle_toast(message: &str, duration: f64, backend: MenuBackend) -> Result<i3
 
 /// Handle server commands
 pub async fn handle_server_command(command: ServerCommands) -> Result<i32> {
+    // Server management command, not a dialog: keeps its own exit-code
+    // semantics and is deliberately outside the finish_* dialog contract.
     match command {
         ServerCommands::Launch {
             inside,

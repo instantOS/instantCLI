@@ -70,8 +70,9 @@ async fn handle_clone_internal(debug: bool) -> Result<()> {
         }
     }
 
-    let selected = select_repository(repos, &workspace_dir)
-        .map_err(|e| anyhow::anyhow!("Failed to select repository: {}", e))?;
+    let Some(selected) = select_repository(repos, &workspace_dir)? else {
+        return Ok(());
+    };
 
     if debug {
         eprintln!(

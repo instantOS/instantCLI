@@ -8,7 +8,7 @@ use std::process::Command;
 use crate::common::compositor::CompositorType;
 use crate::common::format::format_size;
 use crate::common::package::ensure_all;
-use crate::menu_utils::{FzfWrapper, MenuWrapper};
+use crate::menu_utils::{FilePickerBuilder, FzfWrapper};
 use crate::settings::context::SettingsContext;
 use crate::settings::deps::{AWWW, HYPRPAPER, SWAYBG, YAZI, ZENITY};
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
@@ -91,7 +91,7 @@ impl Setting for SetWallpaper {
             return Ok(());
         }
 
-        let path = match MenuWrapper::file_picker()
+        let path = match FilePickerBuilder::new()
             .hint("Select a wallpaper image")
             .pick_one()?
         {

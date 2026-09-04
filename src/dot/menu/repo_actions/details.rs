@@ -430,9 +430,9 @@ fn add_global_unit_with_picker(
     config: &mut DotfileConfig,
     db: &Database,
 ) -> Result<bool> {
-    use crate::menu_utils::{FilePickerScope, MenuWrapper};
+    use crate::menu_utils::{FilePickerBuilder, FilePickerScope};
 
-    let picked = match MenuWrapper::file_picker()
+    let picked = match FilePickerBuilder::new()
         .start_dir(&context.home)
         .scope(FilePickerScope::Directories)
         .show_hidden(true)
@@ -477,7 +477,7 @@ fn add_unit_with_picker(
     repo_path: &Path,
     repo_name: &str,
 ) -> Result<bool> {
-    use crate::menu_utils::{FilePickerScope, MenuWrapper};
+    use crate::menu_utils::{FilePickerBuilder, FilePickerScope};
 
     let start_dir = context
         .repo
@@ -487,7 +487,7 @@ fn add_unit_with_picker(
 
     let hint = format!("Pick a directory in {} or your home folder", repo_name);
 
-    let picked = match MenuWrapper::file_picker()
+    let picked = match FilePickerBuilder::new()
         .start_dir(start_dir)
         .scope(FilePickerScope::Directories)
         .show_hidden(true)

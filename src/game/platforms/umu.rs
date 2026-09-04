@@ -12,8 +12,8 @@ use crate::game::launch_command::{
     LaunchCommand, LaunchCommandKind, ProtonSelection, WineLaunchCommand, WineRunner,
 };
 use crate::menu_utils::{
-    ConfirmResult, FilePickerResult, FilePickerScope, FzfWrapper, MenuPresentation, MenuWrapper,
-    PathInputBuilder, PathInputSelection,
+    ConfirmResult, FilePickerBuilder, FilePickerResult, FilePickerScope, FzfWrapper,
+    MenuPresentation, PathInputBuilder, PathInputSelection,
 };
 use crate::ui::nerd_font::NerdFont;
 
@@ -259,7 +259,7 @@ impl UmuBuilder {
                     Ok(Some(ProtonSelection::GeProtonLatest))
                 } else if item.contains("Custom") {
                     // Select custom proton path
-                    let result = MenuWrapper::file_picker()
+                    let result = FilePickerBuilder::new()
                         .scope(FilePickerScope::Directories)
                         .pick()?;
                     match result {

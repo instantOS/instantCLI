@@ -8,21 +8,6 @@ use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 use anyhow::Result;
 
-#[derive(thiserror::Error, Debug)]
-pub enum FzfError {
-    #[error("FZF error: {0}")]
-    Process(String),
-
-    #[error("User cancelled selection")]
-    UserCancelled,
-
-    #[error("No repositories available")]
-    NoRepositories,
-
-    #[error("No packages available")]
-    NoPackages,
-}
-
 #[derive(Debug, Clone)]
 pub struct GitHubRepoSelectItem {
     pub repo: GitHubRepo,
@@ -175,12 +160,16 @@ impl FzfSelectable for PackageSelectItem {
     }
 }
 
+/// Select a repository to clone, or `None` when the user cancels the dialog.
+///
+/// The list must be non-empty: an empty repository result is a caller bug,
+/// not a user decision.
 pub fn select_repository(
     repos: Vec<GitHubRepo>,
     workspace_dir: &std::path::Path,
-) -> Result<GitHubRepoSelectItem, FzfError> {
+) -> Result<Option<GitHubRepoSelectItem>> {
     if repos.is_empty() {
-        return Err(FzfError::NoRepositories);
+        anyhow::bail!("No repositories available to select from");
     }
 
     let items: Vec<GitHubRepoSelectItem> = repos
@@ -196,21 +185,26 @@ pub fn select_repository(
         })
         .collect();
 
-    match FzfWrapper::builder()
-        .header(Header::fancy("Clone Repository"))
-        .prompt("Select")
-        .responsive_layout()
-        .select_one(items)
-        .map_err(|e| FzfError::Process(format!("Selection error: {e}")))?
-    {
-        crate::menu_utils::DialogOutcome::Submitted(item) => Ok(item),
-        crate::menu_utils::DialogOutcome::Cancelled => Err(FzfError::UserCancelled),
-    }
+    Ok(
+        match FzfWrapper::builder()
+            .header(Header::fancy("Clone Repository"))
+            .prompt("Select")
+            .responsive_layout()
+            .select_one(items)?
+        {
+            crate::menu_utils::DialogOutcome::Submitted(item) => Some(item),
+            crate::menu_utils::DialogOutcome::Cancelled => None,
+        },
+    )
 }
 
-pub fn select_package(packages: Vec<Package>) -> Result<Package, FzfError> {
+/// Select a package to install, or `None` when the user cancels the dialog.
+///
+/// The list must be non-empty: an empty package result is a caller bug,
+/// not a user decision.
+pub fn select_package(packages: Vec<Package>) -> Result<Option<Package>> {
     if packages.is_empty() {
-        return Err(FzfError::NoPackages);
+        anyhow::bail!("No packages available to select from");
     }
 
     let items: Vec<PackageSelectItem> = packages
@@ -218,14 +212,15 @@ pub fn select_package(packages: Vec<Package>) -> Result<Package, FzfError> {
         .map(|package| PackageSelectItem { package })
         .collect();
 
-    match FzfWrapper::builder()
-        .header(Header::fancy("Install Package"))
-        .prompt("Select")
-        .responsive_layout()
-        .select_one(items)
-        .map_err(|e| FzfError::Process(format!("Selection error: {e}")))?
-    {
-        crate::menu_utils::DialogOutcome::Submitted(item) => Ok(item.package),
-        crate::menu_utils::DialogOutcome::Cancelled => Err(FzfError::UserCancelled),
-    }
+    Ok(
+        match FzfWrapper::builder()
+            .header(Header::fancy("Install Package"))
+            .prompt("Select")
+            .responsive_layout()
+            .select_one(items)?
+        {
+            crate::menu_utils::DialogOutcome::Submitted(item) => Some(item.package),
+            crate::menu_utils::DialogOutcome::Cancelled => None,
+        },
+    )
 }

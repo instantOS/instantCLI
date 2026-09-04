@@ -4,7 +4,7 @@ use std::thread;
 
 use anyhow::Result;
 
-use super::file_picker::{FilePickerScope, MenuWrapper};
+use super::file_picker::{FilePickerBuilder, FilePickerScope};
 use super::fzf::{FzfSelectable, FzfWrapper, Header, HeaderBuilder};
 use crate::common::TildePath;
 use crate::preview::{PreviewId, preview_command};
@@ -181,7 +181,7 @@ impl PathInputBuilder {
     }
 
     fn run_picker(&self) -> Result<Option<PathBuf>> {
-        let mut picker = MenuWrapper::file_picker().scope(self.scope);
+        let mut picker = FilePickerBuilder::new().scope(self.scope);
 
         if let Some(dir) = &self.start_dir {
             picker = picker.start_dir(dir.clone());
@@ -206,7 +206,7 @@ impl PathInputBuilder {
     }
 
     fn run_picker_at(&self, path: &Path) -> Result<Option<PathBuf>> {
-        let mut picker = MenuWrapper::file_picker().scope(self.scope);
+        let mut picker = FilePickerBuilder::new().scope(self.scope);
 
         if path.is_dir() {
             picker = picker.start_dir(path.to_path_buf());
