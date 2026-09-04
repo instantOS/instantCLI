@@ -5,7 +5,7 @@ use super::ui::{
     show_all_check_results,
 };
 use super::{CheckStatus, DoctorCheck, PrivilegeLevel, run_all_checks};
-use crate::menu_utils::{FzfResult, FzfWrapper};
+use crate::menu_utils::FzfWrapper;
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::{Level, prelude::*};
 use anyhow::{Context, Result, anyhow, bail, ensure};
@@ -575,7 +575,7 @@ pub async fn fix_interactive(max_concurrency: usize) -> Result<()> {
             .args(["--preview-window=right:50%:wrap"])
             .select(menu_items)?
         {
-            FzfResult::MultiSelected(selected) => {
+            crate::menu_utils::DialogOutcome::Submitted(selected) => {
                 if selected.is_empty() {
                     emit(
                         Level::Info,
@@ -608,7 +608,7 @@ pub async fn fix_interactive(max_concurrency: usize) -> Result<()> {
 
                 return fix_selected_checks(issues).await;
             }
-            FzfResult::Cancelled => {
+            crate::menu_utils::DialogOutcome::Cancelled => {
                 emit(
                     Level::Info,
                     "doctor.fix_choose.cancelled",
@@ -620,7 +620,6 @@ pub async fn fix_interactive(max_concurrency: usize) -> Result<()> {
                 );
                 return Ok(());
             }
-            _ => return Ok(()),
         }
     }
 }

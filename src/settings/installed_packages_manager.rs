@@ -8,9 +8,7 @@ use anyhow::{Context, Result};
 
 use crate::common::distro::OperatingSystem;
 use crate::common::package::{PackageManager, removal_cascade, uninstall_packages};
-use crate::menu_utils::{
-    ConfirmResult, DecodedStreamingMenuItem, FzfResult, FzfWrapper, HeaderBuilder,
-};
+use crate::menu_utils::{ConfirmResult, DecodedStreamingMenuItem, FzfWrapper, HeaderBuilder};
 use crate::settings::package_list::{self, PackageSelectionPayload};
 use crate::ui::nerd_font::NerdFont;
 
@@ -75,12 +73,14 @@ fn run_uninstaller(manager: PackageManager, debug: bool) -> Result<()> {
 
 /// Handle the uninstall result.
 fn handle_uninstall_result(
-    result: FzfResult<DecodedStreamingMenuItem<PackageSelectionPayload>>,
+    result: crate::menu_utils::DialogOutcome<
+        Vec<DecodedStreamingMenuItem<PackageSelectionPayload>>,
+    >,
     manager: PackageManager,
     debug: bool,
 ) -> Result<UninstallResult> {
     match result {
-        FzfResult::MultiSelected(rows) if !rows.is_empty() => {
+        crate::menu_utils::DialogOutcome::Submitted(rows) if !rows.is_empty() => {
             let packages = deduplicate_packages(
                 rows.into_iter()
                     .map(|row| row.payload.package)
@@ -114,32 +114,8 @@ fn handle_uninstall_result(
             println!("✓ Package uninstallation completed successfully!");
             Ok(UninstallResult::Uninstalled)
         }
-        FzfResult::Selected(row) => {
-            let name = row.payload.package;
-
-            if debug {
-                println!("Selected package: {}", name);
-            }
-
-            let Some(packages) = prepare_uninstall_packages(manager, vec![name], debug)? else {
-                println!("Uninstall cancelled.");
-                return Ok(UninstallResult::Done);
-            };
-
-            let msg = uninstall_confirmation_message(manager, &packages);
-
-            if !confirm_uninstall(&msg)? {
-                println!("Uninstall cancelled.");
-                return Ok(UninstallResult::Done);
-            }
-
-            let refs: Vec<&str> = packages.iter().map(|s| s.as_str()).collect();
-            uninstall_packages(manager, &refs)?;
-
-            println!("✓ Package uninstallation completed successfully!");
-            Ok(UninstallResult::Uninstalled)
-        }
-        FzfResult::MultiSelected(_) | FzfResult::Cancelled => Ok(UninstallResult::Cancelled),
+        crate::menu_utils::DialogOutcome::Submitted(_)
+        | crate::menu_utils::DialogOutcome::Cancelled => Ok(UninstallResult::Cancelled),
     }
 }
 

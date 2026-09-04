@@ -5,7 +5,7 @@
 use anyhow::{Context, Result};
 use std::process::Command;
 
-use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuItem};
+use crate::menu_utils::{FzfSelectable, FzfWrapper, Header, MenuItem};
 use crate::preview::{PreviewId, preview_command};
 use crate::settings::context::SettingsContext;
 use crate::settings::definitions::appearance::common::{find_icon_theme_path, find_theme_path};
@@ -276,7 +276,7 @@ impl Setting for GtkIconTheme {
             let selected = builder.select_menu(options)?;
 
             match selected {
-                FzfResult::Selected(selection) => match selection.kind {
+                crate::menu_utils::DialogOutcome::Submitted(selection) => match selection.kind {
                     ThemeMenuItemKind::InstallMore { .. } => {
                         // Show install more menu
                         let installed = installable_packages::show_install_more_menu(
@@ -298,7 +298,7 @@ impl Setting for GtkIconTheme {
                         return Ok(());
                     }
                 },
-                _ => {
+                crate::menu_utils::DialogOutcome::Cancelled => {
                     return Ok(());
                 }
             }
@@ -392,7 +392,7 @@ impl Setting for GtkTheme {
             let selected = builder.select_menu(options)?;
 
             match selected {
-                FzfResult::Selected(selection) => match selection.kind {
+                crate::menu_utils::DialogOutcome::Submitted(selection) => match selection.kind {
                     ThemeMenuItemKind::InstallMore { .. } => {
                         // Show install more menu
                         let installed =
@@ -412,7 +412,7 @@ impl Setting for GtkTheme {
                         return Ok(());
                     }
                 },
-                _ => {
+                crate::menu_utils::DialogOutcome::Cancelled => {
                     return Ok(());
                 }
             }

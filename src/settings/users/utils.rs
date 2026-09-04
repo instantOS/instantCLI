@@ -1,7 +1,7 @@
 use anyhow::Result;
 use std::fmt;
 
-use crate::menu_utils::{FzfResult, FzfWrapper};
+use crate::menu_utils::FzfWrapper;
 
 use super::super::context::SettingsContext;
 use super::menu_items::{GroupItem, ShellItem};
@@ -223,16 +223,12 @@ pub(super) fn select_groups(header: &str) -> Result<Vec<String>> {
         .args(["--multi"])
         .select(group_items)?;
 
-    let mut selected_groups = Vec::new();
-    match result {
-        FzfResult::Selected(item) => {
-            selected_groups.push(item.name);
+    let selected_groups = match result {
+        crate::menu_utils::DialogOutcome::Submitted(items) => {
+            items.into_iter().map(|item| item.name).collect()
         }
-        FzfResult::MultiSelected(items) => {
-            selected_groups.extend(items.into_iter().map(|item| item.name));
-        }
-        _ => {}
-    }
+        crate::menu_utils::DialogOutcome::Cancelled => Vec::new(),
+    };
 
     Ok(selected_groups)
 }

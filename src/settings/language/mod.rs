@@ -3,7 +3,7 @@ use std::iter;
 
 use anyhow::Result;
 
-use crate::menu_utils::{FzfResult, FzfWrapper, MenuPresentation};
+use crate::menu_utils::{FzfWrapper, MenuPresentation};
 
 use super::SettingsContext;
 
@@ -140,9 +140,8 @@ fn handle_add_locale(ctx: &mut SettingsContext, state: &LocaleState) -> Result<b
         .select(candidates)?;
 
     let selected = match selection {
-        FzfResult::MultiSelected(items) => items,
-        FzfResult::Selected(item) => vec![item],
-        _ => return Ok(false),
+        crate::menu_utils::DialogOutcome::Submitted(items) => items,
+        crate::menu_utils::DialogOutcome::Cancelled => return Ok(false),
     };
 
     if selected.is_empty() {

@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use std::collections::{BTreeSet, HashMap};
 
-use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, HeaderBuilder, MenuItem};
+use crate::menu_utils::{FzfSelectable, FzfWrapper, HeaderBuilder, MenuItem};
 use crate::settings::SettingsContext;
 use crate::settings::installable_packages::{
     self, ARCHIVE_MANAGERS, FILE_MANAGERS, IMAGE_VIEWERS, InstallableApp, PDF_VIEWERS,
@@ -273,7 +273,7 @@ fn manage_default_app_for_mimes(
         let selected = builder.select_menu(entries)?;
 
         match selected {
-            FzfResult::Selected(entry) => match entry {
+            crate::menu_utils::DialogOutcome::Submitted(entry) => match entry {
                 DefaultAppMenuEntry::InstallMore => {
                     if let Some(apps) = installable_apps {
                         let installed =
@@ -290,7 +290,7 @@ fn manage_default_app_for_mimes(
                     return Ok(());
                 }
             },
-            _ => {
+            crate::menu_utils::DialogOutcome::Cancelled => {
                 ctx.emit_info("settings.defaultapps.cancelled", "No changes made.");
                 return Ok(());
             }

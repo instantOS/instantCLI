@@ -4,7 +4,7 @@ use crate::dot::utils::{
     EmptyParentBoundary, clean_empty_parent_dirs, filter_dotfiles_by_path, get_all_dotfiles,
     resolve_dotfile_path,
 };
-use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
+use crate::menu_utils::{FzfSelectable, FzfWrapper};
 use crate::ui::prelude::*;
 use anyhow::Result;
 use colored::*;
@@ -144,7 +144,7 @@ fn pick_dotfiles_fzf(all_dotfiles: &DotfileMap) -> Result<Vec<crate::dot::Dotfil
         .select(entries)?;
 
     match selection {
-        FzfResult::MultiSelected(items) => {
+        crate::menu_utils::DialogOutcome::Submitted(items) => {
             let target_set: HashSet<_> = items.iter().map(|e| e.target_path.clone()).collect();
             Ok(all_dotfiles
                 .values()
@@ -152,12 +152,7 @@ fn pick_dotfiles_fzf(all_dotfiles: &DotfileMap) -> Result<Vec<crate::dot::Dotfil
                 .cloned()
                 .collect())
         }
-        FzfResult::Selected(item) => Ok(all_dotfiles
-            .values()
-            .filter(|d| d.target_path == item.target_path)
-            .cloned()
-            .collect()),
-        FzfResult::Cancelled => {
+        crate::menu_utils::DialogOutcome::Cancelled => {
             emit(
                 Level::Info,
                 "dot.delete.cancelled",

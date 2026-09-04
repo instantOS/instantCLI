@@ -11,9 +11,7 @@ use super::shared::{
 use super::{
     ConfirmBuilder, ConfirmOption, FzfBuilder, InputBuilder, MessageBuilder, PasswordBuilder,
 };
-use crate::menu_utils::fzf::types::{
-    ConfirmResult, DialogOutcome, FzfResult, Header, MenuPresentation,
-};
+use crate::menu_utils::fzf::types::{ConfirmResult, DialogOutcome, Header, MenuPresentation};
 use crate::menu_utils::fzf::utils::get_terminal_dimensions;
 use crate::menu_utils::fzf::wrapper::{FzfWrapper, fzf_was_cancelled};
 
@@ -238,11 +236,16 @@ impl ConfirmBuilder {
             .presentation(MenuPresentation::Padded)
             .select(options)?
         {
-            FzfResult::Selected(option) => Ok(option.result),
-            FzfResult::Cancelled => Ok(ConfirmResult::Cancelled),
-            FzfResult::MultiSelected(_) => {
-                anyhow::bail!("confirmation dialog unexpectedly returned multiple selections")
+            crate::menu_utils::DialogOutcome::Submitted(mut selected) => {
+                if selected.len() != 1 {
+                    anyhow::bail!(
+                        "confirmation dialog expected exactly one selection, got {}",
+                        selected.len()
+                    );
+                }
+                Ok(selected.pop().expect("checked length").result)
             }
+            crate::menu_utils::DialogOutcome::Cancelled => Ok(ConfirmResult::Cancelled),
         }
     }
 }

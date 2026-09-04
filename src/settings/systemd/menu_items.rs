@@ -5,8 +5,8 @@ use anyhow::{Context, Result};
 use crate::common::shell::shell_quote;
 use crate::common::systemd::{ServiceScope, SystemdManager};
 use crate::menu_utils::{
-    DecodedStreamingMenuItem, FzfPreview, FzfResult, FzfSelectable, FzfWrapper, Header,
-    HeaderBuilder, MenuItem, MenuPresentation,
+    DecodedStreamingMenuItem, FzfPreview, FzfSelectable, FzfWrapper, Header, HeaderBuilder,
+    MenuItem, MenuPresentation,
 };
 use crate::settings::systemd_list;
 use crate::settings::systemd_list::SystemdServiceSelectionPayload;
@@ -303,11 +303,11 @@ pub fn run_systemd_menu() -> Result<()> {
         let result = builder.select_menu(entries.clone())?;
 
         match result {
-            FzfResult::Selected(SystemdMenuEntry::Back) => break,
-            FzfResult::Selected(entry) => {
+            crate::menu_utils::DialogOutcome::Submitted(SystemdMenuEntry::Back) => break,
+            crate::menu_utils::DialogOutcome::Submitted(entry) => {
                 entry.run()?;
             }
-            _ => break,
+            crate::menu_utils::DialogOutcome::Cancelled => break,
         }
     }
 
@@ -349,11 +349,13 @@ fn run_services_menu(scope: ServiceScope) -> Result<()> {
             .header(Header::fancy(title))
             .prompt("Select service")
             .responsive_layout()
-            .select_encoded_streaming(systemd_list::list_command(scope_str))?;
+            .select_encoded_streaming_one(systemd_list::list_command(scope_str))?;
 
         match result {
-            FzfResult::Selected(row) => selected_service = decode_service(row),
-            _ => break,
+            crate::menu_utils::DialogOutcome::Submitted(row) => {
+                selected_service = decode_service(row)
+            }
+            crate::menu_utils::DialogOutcome::Cancelled => break,
         }
     }
 
@@ -475,9 +477,9 @@ fn select_service_action(service: &ServiceItem) -> Result<ServiceAction> {
         .select_menu(actions)?;
 
     match result {
-        FzfResult::Selected(item) => Ok(item.action),
+        crate::menu_utils::DialogOutcome::Submitted(item) => Ok(item.action),
         // Treat cancellation (Escape) as going back to service list
-        _ => Ok(ServiceAction::Back),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(ServiceAction::Back),
     }
 }
 

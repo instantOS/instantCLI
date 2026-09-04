@@ -4,7 +4,7 @@
 
 use crate::common::distro::OperatingSystem;
 use crate::common::package::{PackageManager, detect_aur_helper, install_package_names};
-use crate::menu_utils::{ConfirmResult, DecodedStreamingMenuItem, FzfResult, FzfWrapper, Header};
+use crate::menu_utils::{ConfirmResult, DecodedStreamingMenuItem, FzfWrapper, Header};
 use crate::settings::package_list::{self, PackageSelectionPayload};
 use anyhow::{Context, Result};
 
@@ -122,12 +122,14 @@ fn run_arch_installer(debug: bool) -> Result<()> {
 
 /// Handle Arch install result, splitting packages by source.
 fn handle_arch_install_result(
-    result: FzfResult<DecodedStreamingMenuItem<PackageSelectionPayload>>,
+    result: crate::menu_utils::DialogOutcome<
+        Vec<DecodedStreamingMenuItem<PackageSelectionPayload>>,
+    >,
     aur_helper: Option<&str>,
     debug: bool,
 ) -> Result<()> {
     match result {
-        FzfResult::MultiSelected(rows) if !rows.is_empty() => {
+        crate::menu_utils::DialogOutcome::Submitted(rows) if !rows.is_empty() => {
             let (repo_pkgs, aur_pkgs) = parse_arch_selections(&rows);
 
             if debug {
@@ -158,6 +160,8 @@ fn handle_arch_install_result(
                 if aur_helper.is_some() {
                     let refs: Vec<&str> = aur_pkgs.iter().map(|s| s.as_str()).collect();
                     install_package_names(PackageManager::Aur, &refs)?;
+                } else if rows.len() == 1 {
+                    anyhow::bail!("AUR package selected but no AUR helper found");
                 } else {
                     println!("Warning: No AUR helper found. Skipping: {:?}", aur_pkgs);
                 }
@@ -166,29 +170,8 @@ fn handle_arch_install_result(
             println!("✓ Package installation completed successfully!");
             Ok(())
         }
-        FzfResult::Selected(row) => {
-            let source_str = row.payload.manager.as_str();
-            let name = row.payload.package.as_str();
-
-            if debug {
-                println!("Selected: {} ({})", name, source_str);
-            }
-
-            match source_str {
-                src if src == PackageManager::Aur.as_str() => {
-                    if aur_helper.is_some() {
-                        install_package_names(PackageManager::Aur, &[name])?;
-                    } else {
-                        anyhow::bail!("AUR package selected but no AUR helper found");
-                    }
-                }
-                _ => install_package_names(PackageManager::Pacman, &[name])?,
-            }
-
-            println!("✓ Package installation completed successfully!");
-            Ok(())
-        }
-        FzfResult::MultiSelected(_) | FzfResult::Cancelled => {
+        crate::menu_utils::DialogOutcome::Submitted(_)
+        | crate::menu_utils::DialogOutcome::Cancelled => {
             println!("No packages selected.");
             Ok(())
         }
@@ -219,7 +202,9 @@ fn parse_arch_selections(
 
 /// Handle install result for simple (non-Arch) package managers.
 pub(crate) fn handle_install_result<F>(
-    result: FzfResult<DecodedStreamingMenuItem<PackageSelectionPayload>>,
+    result: crate::menu_utils::DialogOutcome<
+        Vec<DecodedStreamingMenuItem<PackageSelectionPayload>>,
+    >,
     install_fn: F,
     debug: bool,
 ) -> Result<()>
@@ -227,7 +212,7 @@ where
     F: FnOnce(&[&str]) -> Result<()>,
 {
     match result {
-        FzfResult::MultiSelected(rows) if !rows.is_empty() => {
+        crate::menu_utils::DialogOutcome::Submitted(rows) if !rows.is_empty() => {
             let packages: Vec<String> = rows
                 .into_iter()
                 .map(|row| row.payload.package)
@@ -260,17 +245,8 @@ where
             println!("✓ Package installation completed successfully!");
             Ok(())
         }
-        FzfResult::Selected(row) => {
-            let name = row.payload.package;
-
-            if debug {
-                println!("Selected package: {}", name);
-            }
-            install_fn(&[&name])?;
-            println!("✓ Package installation completed successfully!");
-            Ok(())
-        }
-        FzfResult::MultiSelected(_) | FzfResult::Cancelled => {
+        crate::menu_utils::DialogOutcome::Submitted(_)
+        | crate::menu_utils::DialogOutcome::Cancelled => {
             println!("No packages selected.");
             Ok(())
         }

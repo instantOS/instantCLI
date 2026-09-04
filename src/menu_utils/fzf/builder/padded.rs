@@ -9,7 +9,7 @@ use super::shared::{
     FzfCommandOptions, apply_fzf_command_options, base_fzf_command, build_padded_item_from_lines,
     default_header_text, run_fzf_with_input,
 };
-use crate::menu_utils::fzf::types::{FzfPreview, FzfResult, FzfSelectable, InitialCursor};
+use crate::menu_utils::fzf::types::{DialogOutcome, FzfPreview, FzfSelectable, InitialCursor};
 use crate::menu_utils::fzf::wrapper::fzf_was_cancelled;
 
 /// Invisible marker used to keep non-selectable padded rows visible while fzf
@@ -20,14 +20,14 @@ impl FzfBuilder {
     pub(crate) fn select_with_padded_presentation<T: FzfSelectable + Clone>(
         mut self,
         items: Vec<T>,
-    ) -> Result<FzfResult<T>> {
+    ) -> Result<DialogOutcome<Vec<T>>> {
         #[cfg(test)]
         if let Some(resp) = crate::menu_utils::mock::pop_mock() {
             return Ok(crate::menu_utils::mock::resolve_selection(resp, items));
         }
 
         if items.is_empty() {
-            return Ok(FzfResult::Cancelled);
+            return Ok(DialogOutcome::Cancelled);
         }
 
         let has_non_selectable = items.iter().any(|item| !item.fzf_is_selectable());
@@ -38,7 +38,7 @@ impl FzfBuilder {
                 .as_ref()
                 .map(|InitialCursor::Index(index)| *index);
             let Some(initial_index) = nearest_selectable_index(&items, requested_index) else {
-                return Ok(FzfResult::Cancelled);
+                return Ok(DialogOutcome::Cancelled);
             };
             self.shared.initial_cursor = Some(InitialCursor::Index(initial_index));
         }
@@ -67,10 +67,10 @@ impl FzfBuilder {
             let output = run_fzf_with_input(cmd, input_text.as_bytes())?;
 
             if fzf_was_cancelled(&output)? {
-                break FzfResult::Cancelled;
+                break DialogOutcome::Cancelled;
             }
             if !output.status.success() {
-                break FzfResult::Cancelled;
+                break DialogOutcome::Cancelled;
             }
 
             let stdout = String::from_utf8_lossy(&output.stdout);
@@ -83,7 +83,7 @@ impl FzfBuilder {
                 .ok_or_else(|| anyhow::anyhow!("fzf returned out-of-range item index {index}"))?;
 
             if item.fzf_is_selectable() {
-                break FzfResult::Selected(item.clone());
+                break DialogOutcome::Submitted(vec![item.clone()]);
             }
             // Pointer selection can still land on a raw, non-matching row.
             // Reopen instead of returning a header as if it were an action.
@@ -290,8 +290,10 @@ mod mock_tests {
             .select(items)
             .unwrap();
         match result {
-            crate::menu_utils::FzfResult::Selected(s) => assert_eq!(s, "first"),
-            other => panic!("Expected Selected, got {other:?}"),
+            crate::menu_utils::DialogOutcome::Submitted(s) => {
+                assert_eq!(s, vec!["first".to_string()])
+            }
+            other => panic!("Expected Submitted, got {other:?}"),
         }
     }
 

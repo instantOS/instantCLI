@@ -6,9 +6,7 @@ use anyhow::{Context, Result};
 
 use crate::common::package::{PackageManager, uninstall_packages};
 use crate::common::shell::resolve_current_binary;
-use crate::menu_utils::{
-    FzfResult, FzfSelectable, FzfWrapper, Header, MenuPresentation, StreamingCommand,
-};
+use crate::menu_utils::{FzfSelectable, FzfWrapper, Header, MenuPresentation, StreamingCommand};
 use crate::settings::context::SettingsContext;
 use crate::settings::deps::FLATPAK;
 use crate::settings::flatpak_list::FlatpakSelectionPayload;
@@ -110,16 +108,12 @@ fn run_installed_flatpaks_manager() -> Result<()> {
             .prompt("Select a Flatpak app")
             .header(Header::fancy("Manage Installed Flatpaks"))
             .responsive_layout()
-            .select_encoded_streaming::<FlatpakSelectionPayload, _>(list_command)?;
+            .select_encoded_streaming_one::<FlatpakSelectionPayload, _>(list_command)?;
 
         let app_id = match result {
-            FzfResult::Selected(row) => row.payload.app_id,
-            FzfResult::Cancelled => {
+            crate::menu_utils::DialogOutcome::Submitted(row) => row.payload.app_id,
+            crate::menu_utils::DialogOutcome::Cancelled => {
                 println!("App selection cancelled.");
-                return Ok(());
-            }
-            _ => {
-                println!("No app selected.");
                 return Ok(());
             }
         };

@@ -357,27 +357,29 @@ impl PathInputBuilder {
 
         // Jump to the first streamed suggestion once fzf finished loading its
         // input; before that the cursor rests on the first static option.
-        Ok(
-            match FzfWrapper::builder()
-                .header(self.header.clone())
-                .args([
-                    "--bind".to_string(),
-                    format!("load:pos({})", options.len() + 1),
-                ])
-                .select_streaming(options.to_vec(), rx)?
-            {
-                crate::menu_utils::FzfResult::Selected(option) => {
-                    crate::menu_utils::DialogOutcome::Submitted(option)
+        let selected = FzfWrapper::builder()
+            .header(self.header.clone())
+            .args([
+                "--bind".to_string(),
+                format!("load:pos({})", options.len() + 1),
+            ])
+            .select_streaming(options.to_vec(), rx)?;
+
+        Ok(match selected {
+            crate::menu_utils::DialogOutcome::Submitted(mut selected) => {
+                // Single-select menu: expect exactly one submitted option.
+                if selected.len() != 1 {
+                    anyhow::bail!(
+                        "expected exactly one selected path option, got {}",
+                        selected.len()
+                    );
                 }
-                // Single-select menu: multi-selection cannot occur.
-                crate::menu_utils::FzfResult::MultiSelected(_) => {
-                    crate::menu_utils::DialogOutcome::Cancelled
-                }
-                crate::menu_utils::FzfResult::Cancelled => {
-                    crate::menu_utils::DialogOutcome::Cancelled
-                }
-            },
-        )
+                crate::menu_utils::DialogOutcome::Submitted(selected.pop().expect("checked length"))
+            }
+            crate::menu_utils::DialogOutcome::Cancelled => {
+                crate::menu_utils::DialogOutcome::Cancelled
+            }
+        })
     }
 }
 

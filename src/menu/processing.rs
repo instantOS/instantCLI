@@ -187,13 +187,10 @@ impl RequestProcessor {
             .multi_select(allow_multiple)
             .select(items)
         {
-            Ok(crate::menu_utils::FzfResult::Selected(item)) => {
-                Ok(MenuResponse::ChoiceResult(vec![item]))
-            }
-            Ok(crate::menu_utils::FzfResult::MultiSelected(items)) => {
+            Ok(crate::menu_utils::DialogOutcome::Submitted(items)) => {
                 Ok(MenuResponse::ChoiceResult(items))
             }
-            Ok(crate::menu_utils::FzfResult::Cancelled) => Ok(MenuResponse::Cancelled),
+            Ok(crate::menu_utils::DialogOutcome::Cancelled) => Ok(MenuResponse::Cancelled),
             Err(e) => Ok(MenuResponse::Error(format!("Selection error: {e}"))),
         }
     }
@@ -215,13 +212,10 @@ impl RequestProcessor {
             .multi_select(allow_multiple)
             .select_streaming_with_ready(Vec::new(), rx, on_ready)
         {
-            Ok(crate::menu_utils::FzfResult::Selected(item)) => {
-                Ok(MenuResponse::ChoiceResult(vec![item]))
-            }
-            Ok(crate::menu_utils::FzfResult::MultiSelected(items)) => {
+            Ok(crate::menu_utils::DialogOutcome::Submitted(items)) => {
                 Ok(MenuResponse::ChoiceResult(items))
             }
-            Ok(crate::menu_utils::FzfResult::Cancelled) => Ok(MenuResponse::Cancelled),
+            Ok(crate::menu_utils::DialogOutcome::Cancelled) => Ok(MenuResponse::Cancelled),
             Err(e) => Ok(MenuResponse::Error(format!("Selection error: {e}"))),
         }
     }

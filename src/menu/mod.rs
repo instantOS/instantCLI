@@ -7,8 +7,7 @@
 //! command-dispatch layer.
 
 use crate::menu_utils::{
-    ConfirmResult, DialogOutcome, FilePickerResult, FilePickerScope, FzfResult, FzfWrapper,
-    MenuWrapper,
+    ConfirmResult, DialogOutcome, FilePickerResult, FilePickerScope, FzfWrapper, MenuWrapper,
 };
 use anyhow::{Context, Result, anyhow};
 use protocol::SerializableMenuItem;
@@ -91,14 +90,6 @@ fn finish_action(result: Result<()>, renderer: &str) -> i32 {
             EXIT_BACKEND_FAILURE
         }
     }
-}
-
-fn selection_dialog<T>(result: Result<FzfResult<T>>) -> Result<DialogOutcome<Vec<T>>> {
-    Ok(match result? {
-        FzfResult::Selected(item) => DialogOutcome::Submitted(vec![item]),
-        FzfResult::MultiSelected(items) => DialogOutcome::Submitted(items),
-        FzfResult::Cancelled => DialogOutcome::Cancelled,
-    })
 }
 
 impl MenuBackend {
@@ -350,12 +341,10 @@ fn handle_choice_buffered(
             ))
         }
         ResolvedBackend::Tui => Ok(finish_dialog(
-            selection_dialog(
-                FzfWrapper::builder()
-                    .prompt(prompt.to_string())
-                    .multi_select(allow_multiple)
-                    .select(item_list),
-            ),
+            FzfWrapper::builder()
+                .prompt(prompt.to_string())
+                .multi_select(allow_multiple)
+                .select(item_list),
             "Local TUI",
             |items| {
                 for item in items {
@@ -395,12 +384,10 @@ fn handle_choice_tui_streaming(prompt: &str, allow_multiple: bool) -> Result<i32
     });
 
     Ok(finish_dialog(
-        selection_dialog(
-            FzfWrapper::builder()
-                .prompt(prompt.to_string())
-                .multi_select(allow_multiple)
-                .select_streaming(Vec::new(), rx),
-        ),
+        FzfWrapper::builder()
+            .prompt(prompt.to_string())
+            .multi_select(allow_multiple)
+            .select_streaming(Vec::new(), rx),
         "Local TUI",
         |items| {
             for item in items {

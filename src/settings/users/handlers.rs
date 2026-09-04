@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use anyhow::Result;
 
-use crate::menu_utils::{FzfResult, FzfWrapper, MenuPresentation};
+use crate::menu_utils::{FzfWrapper, MenuPresentation};
 
 use super::super::context::SettingsContext;
 use super::menu_items::{
@@ -461,16 +461,12 @@ fn add_groups_to_user(
         .args(["--multi"])
         .select(available_groups)?;
 
-    let mut groups_to_add = Vec::new();
-    match selected {
-        FzfResult::Selected(item) => {
-            groups_to_add.push(item.name);
+    let groups_to_add = match selected {
+        crate::menu_utils::DialogOutcome::Submitted(group_items) => {
+            group_items.into_iter().map(|item| item.name).collect()
         }
-        FzfResult::MultiSelected(group_items) => {
-            groups_to_add.extend(group_items.into_iter().map(|item| item.name));
-        }
-        _ => {}
-    }
+        crate::menu_utils::DialogOutcome::Cancelled => Vec::new(),
+    };
 
     if !groups_to_add.is_empty() {
         for group in &groups_to_add {

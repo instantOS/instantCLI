@@ -503,7 +503,7 @@ impl FzfWrapper {
         &self,
         producer: C,
         initial_input: &str,
-    ) -> Result<FzfResult<DecodedStreamingMenuItem<T>>>
+    ) -> Result<DialogOutcome<Vec<DecodedStreamingMenuItem<T>>>>
     where
         T: DeserializeOwned,
         C: Into<StreamingCommand>,
@@ -522,12 +522,13 @@ impl FzfWrapper {
             ],
         )?;
         parse_encoded_streaming_output(output, self.multi_select)
+            .map(FzfResult::into_dialog_outcome)
     }
 
     pub fn select_encoded_streaming<T, C>(
         &self,
         producer: C,
-    ) -> Result<FzfResult<DecodedStreamingMenuItem<T>>>
+    ) -> Result<DialogOutcome<Vec<DecodedStreamingMenuItem<T>>>>
     where
         T: DeserializeOwned,
         C: Into<StreamingCommand>,
@@ -637,13 +638,13 @@ impl FzfWrapper {
         fzf_args
     }
 
-    pub fn select<T: FzfSelectable + Clone>(&self, items: Vec<T>) -> Result<FzfResult<T>> {
+    pub fn select<T: FzfSelectable + Clone>(&self, items: Vec<T>) -> Result<DialogOutcome<Vec<T>>> {
         #[cfg(test)]
         if let Some(resp) = crate::menu_utils::mock::pop_mock() {
             return Ok(crate::menu_utils::mock::resolve_selection(resp, items));
         }
         if items.is_empty() {
-            return Ok(FzfResult::Cancelled);
+            return Ok(DialogOutcome::Cancelled);
         }
 
         // Build item lookup map (keyed by fzf_key) and display data with search keywords
@@ -694,7 +695,7 @@ impl FzfWrapper {
         let output = execute_fzf_command(cmd, &input_text)?;
 
         // Parse output and map back to items
-        parse_fzf_output(output, &item_map, self.multi_select)
+        parse_fzf_output(output, &item_map, self.multi_select).map(FzfResult::into_dialog_outcome)
     }
 
     /// Like [`FzfWrapper::select`], but further items stream in while the
@@ -708,7 +709,7 @@ impl FzfWrapper {
         &self,
         initial_items: Vec<T>,
         late_items: Receiver<T>,
-    ) -> Result<FzfResult<T>> {
+    ) -> Result<DialogOutcome<Vec<T>>> {
         self.select_streaming_with_ready(initial_items, late_items, || Ok(()))
     }
 
@@ -723,7 +724,7 @@ impl FzfWrapper {
         initial_items: Vec<T>,
         late_items: Receiver<T>,
         on_ready: F,
-    ) -> Result<FzfResult<T>> {
+    ) -> Result<DialogOutcome<Vec<T>>> {
         #[cfg(test)]
         if let Some(resp) = crate::menu_utils::mock::pop_mock() {
             on_ready()?;
@@ -844,7 +845,7 @@ impl FzfWrapper {
         let item_map = shared_map
             .lock()
             .map_err(|_| anyhow!("fzf streaming item map poisoned"))?;
-        parse_fzf_output(output, &item_map, self.multi_select)
+        parse_fzf_output(output, &item_map, self.multi_select).map(FzfResult::into_dialog_outcome)
     }
 
     pub fn input(prompt: &str) -> Result<DialogOutcome<String>> {
@@ -875,8 +876,8 @@ mod mock_tests {
         let items = vec!["alpha".to_string(), "beta".to_string(), "gamma".to_string()];
         let result = FzfWrapper::builder().select(items).unwrap();
         match result {
-            FzfResult::Selected(s) => assert_eq!(s, "beta"),
-            other => panic!("Expected Selected, got {other:?}"),
+            DialogOutcome::Submitted(s) => assert_eq!(s, vec!["beta".to_string()]),
+            other => panic!("Expected Submitted, got {other:?}"),
         }
     }
 
@@ -885,7 +886,21 @@ mod mock_tests {
         let _guard = MockQueue::new().cancel_selection().guard();
         let items = vec!["alpha".to_string()];
         let result = FzfWrapper::builder().select(items).unwrap();
-        assert_eq!(result, FzfResult::Cancelled);
+        assert_eq!(result, DialogOutcome::Cancelled);
+    }
+
+    #[test]
+    fn test_mock_multi_select_returns_all_canned_items() {
+        let _guard = MockQueue::new().multi_select(vec![0, 2]).guard();
+        let items = vec!["alpha".to_string(), "beta".to_string(), "gamma".to_string()];
+        let result = FzfWrapper::builder()
+            .multi_select(true)
+            .select(items)
+            .unwrap();
+        assert_eq!(
+            result,
+            DialogOutcome::Submitted(vec!["alpha".to_string(), "gamma".to_string()])
+        );
     }
 
     #[test]
@@ -913,6 +928,23 @@ mod mock_tests {
         assert_eq!(
             error.to_string(),
             "select_one cannot be used with multi-selection enabled"
+        );
+    }
+
+    #[test]
+    fn select_menu_rejects_multi_selection_results() {
+        use crate::menu_utils::MenuItem;
+
+        let _guard = MockQueue::new().multi_select(vec![0, 1]).guard();
+        let entries = vec![
+            MenuItem::entry("alpha".to_string()),
+            MenuItem::entry("beta".to_string()),
+        ];
+        let error = FzfWrapper::builder().select_menu(entries).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "expected exactly one selected menu entry, got 2"
         );
     }
 
@@ -961,8 +993,8 @@ mod mock_tests {
             .select_streaming(vec!["static".to_string()], rx)
             .unwrap();
         match result {
-            FzfResult::Selected(s) => assert_eq!(s, "late"),
-            other => panic!("Expected Selected, got {other:?}"),
+            DialogOutcome::Submitted(s) => assert_eq!(s, vec!["late".to_string()]),
+            other => panic!("Expected Submitted, got {other:?}"),
         }
     }
 

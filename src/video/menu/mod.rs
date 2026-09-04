@@ -7,7 +7,7 @@ mod types;
 
 use anyhow::Result;
 
-use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor, MenuItem};
+use crate::menu_utils::{FzfSelectable, FzfWrapper, Header, MenuCursor, MenuItem};
 
 use convert::run_new_project;
 use operations::{run_enhance, run_setup, run_slide, run_transcribe};
@@ -59,11 +59,10 @@ fn select_video_menu_entry(cursor: &mut MenuCursor) -> Result<Option<VideoMenuEn
     let result = builder.select_menu(entries.clone())?;
 
     match result {
-        FzfResult::Selected(entry) => {
+        crate::menu_utils::DialogOutcome::Submitted(entry) => {
             cursor.update_from_key(&entry.fzf_key());
             Ok(Some(entry))
         }
-        FzfResult::Cancelled => Ok(None),
-        _ => Ok(None),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
     }
 }

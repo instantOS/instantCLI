@@ -4,8 +4,8 @@ use super::manager::GameCreationContext;
 use crate::common::shell::resolve_current_binary;
 use crate::game::platforms::EdenBuilder;
 use crate::menu_utils::{
-    DecodedStreamingMenuItem, FilePickerScope, FzfResult, FzfWrapper, Header, HeaderBuilder,
-    PathInputBuilder, PathInputSelection, StreamingCommand, StreamingMenuItem,
+    DecodedStreamingMenuItem, FilePickerScope, FzfWrapper, Header, HeaderBuilder, PathInputBuilder,
+    PathInputSelection, StreamingCommand, StreamingMenuItem,
 };
 use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
@@ -124,33 +124,37 @@ pub(super) fn maybe_prefill_from_emulators(
             .header(Header::fancy("Games"))
             .prompt("Select")
             .responsive_layout()
-            .select_encoded_streaming_prefilled::<MenuSelectionPayload, _>(
+            .select_encoded_streaming_prefilled_one::<MenuSelectionPayload, _>(
                 build_discover_command(None, options.no_cache),
                 &format!("{}\n{}", scan_directory_menu_row()?, manual_menu_row()?),
             )?;
 
         match result {
-            FzfResult::Selected(row) => match parse_discovery_selection(row)? {
-                SelectedDiscovery::ManualEntry => {
-                    return Ok(EmulatorPrefillResult::Continue(options));
-                }
-                SelectedDiscovery::ScanDirectory => {
-                    let Some(scan_path) = prompt_scan_directory()? else {
-                        continue;
-                    };
-
-                    match select_from_scanned_directory(&scan_path, context, options.no_cache)? {
-                        DirectoryScanResult::Back => continue,
-                        DirectoryScanResult::Resolved(result) => return Ok(result),
+            crate::menu_utils::DialogOutcome::Submitted(row) => {
+                match parse_discovery_selection(row)? {
+                    SelectedDiscovery::ManualEntry => {
+                        return Ok(EmulatorPrefillResult::Continue(options));
                     }
+                    SelectedDiscovery::ScanDirectory => {
+                        let Some(scan_path) = prompt_scan_directory()? else {
+                            continue;
+                        };
+
+                        match select_from_scanned_directory(&scan_path, context, options.no_cache)?
+                        {
+                            DirectoryScanResult::Back => continue,
+                            DirectoryScanResult::Resolved(result) => return Ok(result),
+                        }
+                    }
+                    SelectedDiscovery::DiscoveredGame(payload) => {
+                        return resolve_discovered_selection(payload, context, options.no_cache);
+                    }
+                    SelectedDiscovery::Back => continue,
                 }
-                SelectedDiscovery::DiscoveredGame(payload) => {
-                    return resolve_discovered_selection(payload, context, options.no_cache);
-                }
-                SelectedDiscovery::Back => continue,
-            },
-            FzfResult::Cancelled => return Ok(EmulatorPrefillResult::Cancelled),
-            _ => return Ok(EmulatorPrefillResult::Continue(options)),
+            }
+            crate::menu_utils::DialogOutcome::Cancelled => {
+                return Ok(EmulatorPrefillResult::Cancelled);
+            }
         }
     }
 }
@@ -183,13 +187,13 @@ fn select_from_scanned_directory(
         .header(Header::fancy("Scanned Games"))
         .prompt("Select")
         .responsive_layout()
-        .select_encoded_streaming_prefilled::<MenuSelectionPayload, _>(
+        .select_encoded_streaming_prefilled_one::<MenuSelectionPayload, _>(
             build_discover_command(Some(scan_path), no_cache),
             &back_menu_row()?,
         )?;
 
     match result {
-        FzfResult::Selected(row) => match parse_discovery_selection(row)? {
+        crate::menu_utils::DialogOutcome::Submitted(row) => match parse_discovery_selection(row)? {
             SelectedDiscovery::Back => Ok(DirectoryScanResult::Back),
             SelectedDiscovery::DiscoveredGame(payload) => Ok(DirectoryScanResult::Resolved(
                 resolve_discovered_selection(payload, context, no_cache)?,
@@ -198,8 +202,7 @@ fn select_from_scanned_directory(
                 Ok(DirectoryScanResult::Back)
             }
         },
-        FzfResult::Cancelled => Ok(DirectoryScanResult::Back),
-        _ => Ok(DirectoryScanResult::Back),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(DirectoryScanResult::Back),
     }
 }
 

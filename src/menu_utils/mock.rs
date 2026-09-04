@@ -29,7 +29,7 @@ use std::cell::RefCell;
 use std::collections::VecDeque;
 
 #[cfg(test)]
-use crate::menu_utils::fzf::FzfResult;
+use crate::menu_utils::fzf::DialogOutcome;
 
 #[cfg(test)]
 thread_local! {
@@ -214,15 +214,20 @@ impl MockQueue {
 ///
 /// Panics when `response` is not a selection response.
 #[cfg(test)]
-pub(crate) fn resolve_selection<T: Clone>(response: MockResponse, items: Vec<T>) -> FzfResult<T> {
+pub(crate) fn resolve_selection<T: Clone>(
+    response: MockResponse,
+    items: Vec<T>,
+) -> DialogOutcome<Vec<T>> {
+    use crate::menu_utils::DialogOutcome;
+
     match response {
-        MockResponse::SelectIndex(i) => FzfResult::Selected(
+        MockResponse::SelectIndex(i) => DialogOutcome::Submitted(vec![
             items
                 .into_iter()
                 .nth(i)
                 .unwrap_or_else(|| panic!("MockResponse::SelectIndex({i}) out of bounds")),
-        ),
-        MockResponse::MultiSelectIndices(indices) => FzfResult::MultiSelected(
+        ]),
+        MockResponse::MultiSelectIndices(indices) => DialogOutcome::Submitted(
             indices
                 .into_iter()
                 .map(|i| {
@@ -232,7 +237,7 @@ pub(crate) fn resolve_selection<T: Clone>(response: MockResponse, items: Vec<T>)
                 })
                 .collect(),
         ),
-        MockResponse::CancelSelection => FzfResult::Cancelled,
+        MockResponse::CancelSelection => DialogOutcome::Cancelled,
         other => panic!("Mock: expected select response, got {other:?}"),
     }
 }

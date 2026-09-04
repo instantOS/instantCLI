@@ -1,8 +1,6 @@
 use anyhow::Result;
 
-use crate::menu_utils::{
-    FzfPreview, FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor, MenuItem,
-};
+use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, Header, MenuCursor, MenuItem};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::{dot, game, settings, video};
@@ -85,7 +83,7 @@ pub async fn run_all_menu(debug: bool) -> Result<i32> {
         let result = builder.select_menu(entries.clone())?;
 
         match result {
-            FzfResult::Selected(entry) => {
+            crate::menu_utils::DialogOutcome::Submitted(entry) => {
                 cursor.update_from_key(&entry.fzf_key());
                 match entry {
                     AllMenuEntry::Settings => {
@@ -107,8 +105,7 @@ pub async fn run_all_menu(debug: bool) -> Result<i32> {
                     AllMenuEntry::Quit => return Ok(0),
                 }
             }
-            FzfResult::Cancelled => return Ok(1),
-            FzfResult::MultiSelected(_) => return Ok(2),
+            crate::menu_utils::DialogOutcome::Cancelled => return Ok(1),
         }
     }
 }
