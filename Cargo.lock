@@ -2064,7 +2064,7 @@ dependencies = [
 
 [[package]]
 name = "ins"
-version = "0.14.13"
+version = "0.14.14"
 dependencies = [
  "age",
  "anyhow",
