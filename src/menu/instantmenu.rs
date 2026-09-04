@@ -256,7 +256,11 @@ impl InstantmenuBackend {
             .filter(|line| !line.is_empty())
             .map(ToString::to_string)
             .collect();
-        Ok(DialogOutcome::Submitted(selected))
+        if selected.is_empty() {
+            Ok(DialogOutcome::Cancelled)
+        } else {
+            Ok(DialogOutcome::Submitted(selected))
+        }
     }
 
     /// Show choice dialog streaming items from stdin.
@@ -333,7 +337,11 @@ impl InstantmenuBackend {
             .filter(|line| !line.is_empty())
             .map(ToString::to_string)
             .collect();
-        Ok(DialogOutcome::Submitted(selected))
+        if selected.is_empty() {
+            Ok(DialogOutcome::Cancelled)
+        } else {
+            Ok(DialogOutcome::Submitted(selected))
+        }
     }
 
     /// Show slider prompt via instantmenu slide

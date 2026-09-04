@@ -80,13 +80,6 @@ impl FilePickerScope {
     }
 }
 
-#[derive(Debug)]
-pub enum FilePickerResult {
-    Selected(PathBuf),
-    MultiSelected(Vec<PathBuf>),
-    Cancelled,
-}
-
 pub struct FilePickerBuilder {
     start_dir: Option<PathBuf>,
     start_path: Option<PathBuf>,
@@ -138,38 +131,48 @@ impl FilePickerBuilder {
         self
     }
 
-    pub fn pick(self) -> Result<FilePickerResult> {
+    /// Pick paths with yazi.
+    ///
+    /// Returns the submitted selections; when [`FilePickerBuilder::multi`] is
+    /// disabled only the first selection is kept, matching the advertised
+    /// single-pick hint. Cancellation is [`DialogOutcome::Cancelled`];
+    /// failures are returned through the outer `Result`.
+    pub fn pick(self) -> Result<DialogOutcome<Vec<PathBuf>>> {
         #[cfg(test)]
         if let Some(resp) = crate::menu_utils::mock::pop_mock() {
             use crate::menu_utils::mock::MockResponse;
-            return match resp {
+            let outcome = match resp {
                 MockResponse::FilePickerSelected(path) => {
-                    Ok(FilePickerResult::Selected(PathBuf::from(path)))
+                    DialogOutcome::Submitted(vec![PathBuf::from(path)])
                 }
-                MockResponse::FilePickerMultiSelected(paths) => Ok(
-                    FilePickerResult::MultiSelected(paths.into_iter().map(PathBuf::from).collect()),
-                ),
-                MockResponse::FilePickerCancelled => Ok(FilePickerResult::Cancelled),
+                MockResponse::FilePickerMultiSelected(paths) => {
+                    DialogOutcome::Submitted(paths.into_iter().map(PathBuf::from).collect())
+                }
+                MockResponse::FilePickerCancelled => DialogOutcome::Cancelled,
                 other => panic!("Mock: expected file picker response, got {other:?}"),
             };
+            return Ok(Self::finalize_selection_by(&self.multi, outcome));
         }
+        let multi = self.multi;
         self.run_yazi()
+            .map(|outcome| Self::finalize_selection_by(&multi, outcome))
     }
 
+    /// Pick exactly one path. Extra selections — possible when the chooser file
+    /// was edited manually — are normalized to the first entry.
     pub fn pick_one(self) -> Result<DialogOutcome<PathBuf>> {
         match self.pick()? {
-            FilePickerResult::Selected(path) => Ok(DialogOutcome::Submitted(path)),
-            // Single-pick dialogs are never configured for multi-selection; a
-            // multi payload can only come from a manual yazi chooser edit.
-            FilePickerResult::MultiSelected(mut paths) => paths
-                .pop()
-                .map(DialogOutcome::Submitted)
-                .ok_or_else(|| anyhow!("file picker returned an empty selection")),
-            FilePickerResult::Cancelled => Ok(DialogOutcome::Cancelled),
+            DialogOutcome::Submitted(mut paths) => {
+                if paths.is_empty() {
+                    anyhow::bail!("file picker returned an empty selection");
+                }
+                Ok(DialogOutcome::Submitted(paths.remove(0)))
+            }
+            DialogOutcome::Cancelled => Ok(DialogOutcome::Cancelled),
         }
     }
 
-    fn run_yazi(self) -> Result<FilePickerResult> {
+    fn run_yazi(self) -> Result<DialogOutcome<Vec<PathBuf>>> {
         let yazi_path = Self::resolve_yazi_path()?;
         let config_dir = ensure_yazi_config(self.show_hidden)?;
         self.pick_with_yazi(&yazi_path, &config_dir)
@@ -180,7 +183,11 @@ impl FilePickerBuilder {
             .context("`yazi` command was not found. Install it to use the menu file picker.")
     }
 
-    fn pick_with_yazi(&self, yazi_path: &Path, config_dir: &Path) -> Result<FilePickerResult> {
+    fn pick_with_yazi(
+        &self,
+        yazi_path: &Path,
+        config_dir: &Path,
+    ) -> Result<DialogOutcome<Vec<PathBuf>>> {
         let mut preselect: Option<PathBuf> = None;
 
         loop {
@@ -191,14 +198,14 @@ impl FilePickerBuilder {
                 self.launch_yazi(yazi_path, config_dir, &chooser_path, preselect.as_deref())?;
 
             if !status.success() {
-                return Ok(FilePickerResult::Cancelled);
+                return Ok(DialogOutcome::Cancelled);
             }
 
             let selections = Self::read_selections(&chooser_path);
             drop(chooser_file);
 
             if selections.is_empty() {
-                return Ok(FilePickerResult::Cancelled);
+                return Ok(DialogOutcome::Cancelled);
             }
 
             let (selections, invalid_entries) = self.filter_by_scope(selections);
@@ -217,10 +224,10 @@ impl FilePickerBuilder {
                         requested
                     ));
                 }
-                return Ok(FilePickerResult::Cancelled);
+                return Ok(DialogOutcome::Cancelled);
             }
 
-            return Ok(self.finalize_selection(selections));
+            return Ok(DialogOutcome::Submitted(selections));
         }
     }
 
@@ -312,18 +319,28 @@ impl FilePickerBuilder {
         }
     }
 
-    fn finalize_selection(&self, mut selections: Vec<PathBuf>) -> FilePickerResult {
+    /// Normalize a yazi selection: canonicalize submitted paths and, in
+    /// single-pick mode, keep only the first entry.
+    fn finalize_selection_by(
+        multi: &bool,
+        outcome: DialogOutcome<Vec<PathBuf>>,
+    ) -> DialogOutcome<Vec<PathBuf>> {
+        let DialogOutcome::Submitted(mut selections) = outcome else {
+            return DialogOutcome::Cancelled;
+        };
+
         for path in &mut selections {
             if let Ok(canonical) = fs::canonicalize(path.as_path()) {
                 *path = canonical;
             }
         }
 
-        if self.multi {
-            FilePickerResult::MultiSelected(selections)
-        } else {
-            FilePickerResult::Selected(selections.into_iter().next().unwrap())
+        // Single-pick mode advertised "Enter: choose": keep only the first
+        // selection, discarding anything added via manual chooser edits.
+        if !multi {
+            selections.truncate(1);
         }
+        DialogOutcome::Submitted(selections)
     }
 
     fn launch_yazi(
@@ -433,12 +450,10 @@ mod mock_tests {
     fn test_mock_file_picker_returns_canned_path() {
         let _guard = MockQueue::new().file_picker("/home/user/.bashrc").guard();
         let result = FilePickerBuilder::new().pick().unwrap();
-        match result {
-            FilePickerResult::Selected(path) => {
-                assert_eq!(path, PathBuf::from("/home/user/.bashrc"));
-            }
-            other => panic!("Expected Selected, got {other:?}"),
-        }
+        assert_eq!(
+            result,
+            crate::menu_utils::DialogOutcome::Submitted(vec![PathBuf::from("/home/user/.bashrc")])
+        );
     }
 
     #[test]
@@ -457,24 +472,34 @@ mod mock_tests {
             .file_picker_multi(vec!["/a.txt".into(), "/b.txt".into()])
             .guard();
         let result = FilePickerBuilder::new().multi(true).pick().unwrap();
-        match result {
-            FilePickerResult::MultiSelected(paths) => {
-                assert_eq!(paths.len(), 2);
-                assert_eq!(paths[0], PathBuf::from("/a.txt"));
-                assert_eq!(paths[1], PathBuf::from("/b.txt"));
-            }
-            other => panic!("Expected MultiSelected, got {other:?}"),
-        }
+        assert_eq!(
+            result,
+            crate::menu_utils::DialogOutcome::Submitted(vec![
+                PathBuf::from("/a.txt"),
+                PathBuf::from("/b.txt")
+            ])
+        );
+    }
+
+    /// Single-pick mode keeps only the first of a multi payload, matching the
+    /// advertised single-choice hint.
+    #[test]
+    fn test_mock_file_picker_single_mode_truncates_multi_selection() {
+        let _guard = MockQueue::new()
+            .file_picker_multi(vec!["/a.txt".into(), "/b.txt".into()])
+            .guard();
+        let result = FilePickerBuilder::new().pick().unwrap();
+        assert_eq!(
+            result,
+            crate::menu_utils::DialogOutcome::Submitted(vec![PathBuf::from("/a.txt")])
+        );
     }
 
     #[test]
     fn test_mock_file_picker_cancelled() {
         let _guard = MockQueue::new().file_picker_cancelled().guard();
         let result = FilePickerBuilder::new().pick().unwrap();
-        match result {
-            FilePickerResult::Cancelled => {}
-            other => panic!("Expected Cancelled, got {other:?}"),
-        }
+        assert_eq!(result, crate::menu_utils::DialogOutcome::Cancelled);
     }
 
     #[test]

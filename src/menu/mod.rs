@@ -7,7 +7,7 @@
 //! command-dispatch layer.
 
 use crate::menu_utils::{
-    ConfirmResult, DialogOutcome, FilePickerBuilder, FilePickerResult, FilePickerScope, FzfWrapper,
+    ConfirmResult, DialogOutcome, FilePickerBuilder, FilePickerScope, FzfWrapper,
 };
 use anyhow::{Context, Result, anyhow};
 use protocol::SerializableMenuItem;
@@ -575,27 +575,17 @@ fn handle_pick(
             ))
         }
         ResolvedBackend::Tui => {
-            // FilePickerResult is not DialogOutcome<Vec<_>> yet (legacy
-            // outcome type), so this arm maps exit codes by hand.
             let mut builder = FilePickerBuilder::new().scope(scope).multi(allow_multiple);
 
             if let Some(start_dir) = start.as_ref().filter(|s| !s.is_empty()) {
                 builder = builder.start_dir(PathBuf::from(start_dir));
             }
 
-            match builder.pick()? {
-                FilePickerResult::Selected(path) => {
+            Ok(finish_dialog(builder.pick(), "Local TUI", |paths| {
+                for path in paths {
                     println!("{}", path.display());
-                    Ok(0)
                 }
-                FilePickerResult::MultiSelected(paths) => {
-                    for path in paths {
-                        println!("{}", path.display());
-                    }
-                    Ok(0)
-                }
-                FilePickerResult::Cancelled => Ok(1),
-            }
+            }))
         }
     }
 }

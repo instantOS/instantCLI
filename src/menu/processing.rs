@@ -1,6 +1,6 @@
 use super::protocol::*;
 use super::{chord, slide};
-use crate::menu_utils::{FilePickerBuilder, FilePickerResult, FilePickerScope, FzfWrapper};
+use crate::menu_utils::{FilePickerBuilder, FilePickerScope, FzfWrapper};
 use anyhow::Result;
 use std::sync::{
     Arc,
@@ -87,9 +87,10 @@ impl RequestProcessor {
         }
 
         match builder.pick() {
-            Ok(FilePickerResult::Selected(path)) => Ok(MenuResponse::FilePickerResult(vec![path])),
-            Ok(FilePickerResult::MultiSelected(paths)) => Ok(MenuResponse::FilePickerResult(paths)),
-            Ok(FilePickerResult::Cancelled) => Ok(MenuResponse::Cancelled),
+            Ok(crate::menu_utils::DialogOutcome::Submitted(paths)) => {
+                Ok(MenuResponse::FilePickerResult(paths))
+            }
+            Ok(crate::menu_utils::DialogOutcome::Cancelled) => Ok(MenuResponse::Cancelled),
             Err(e) => Ok(MenuResponse::Error(format!("File picker error: {e}"))),
         }
     }
