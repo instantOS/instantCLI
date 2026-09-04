@@ -259,6 +259,80 @@ impl InstantmenuBackend {
         Ok(selected)
     }
 
+    /// Show choice dialog streaming items from stdin.
+    ///
+    /// Spawns `instantmenu` immediately (it grabs the keyboard and grows
+    /// the list as stdin arrives — see `instantmenu --help`) and pumps
+    /// stdin lines into it on a background thread. stdin `EOF` closes the
+    /// input pipe but leaves the menu open for selection; early menu exit
+    /// surfaces as `EPIPE` in the pump, which stops quietly. The pump may
+    /// stay blocked on stdin for infinite producers — the short-lived CLI
+    /// process exiting kills it, so the handle is detached, not joined.
+    pub fn choice_from_stdin_streaming(prompt: &str, allow_multiple: bool) -> Result<Vec<String>> {
+        let mut cmd = Command::new("instantmenu");
+        cmd.arg("--border-width")
+            .arg("4")
+            .arg("--position")
+            .arg("center")
+            .arg("--width")
+            .arg("auto")
+            .arg("--lines")
+            .arg("20")
+            .arg("--insensitive")
+            .arg("--prompt")
+            .arg(if allow_multiple {
+                format!("{prompt} (ctrl+return adds more)")
+            } else {
+                prompt.to_string()
+            })
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+
+        let mut child = cmd.spawn().context("Failed to spawn instantmenu")?;
+        let child_stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("Failed to capture instantmenu stdin"))?;
+
+        std::thread::spawn(move || {
+            use std::io::BufRead;
+            let mut writer = std::io::BufWriter::new(child_stdin);
+            let stdin = std::io::stdin();
+            let mut reader = std::io::BufReader::new(stdin.lock());
+            let mut line = String::new();
+            loop {
+                line.clear();
+                match reader.read_line(&mut line) {
+                    Ok(0) => break,
+                    Ok(_) => {
+                        use std::io::Write;
+                        if writer.write_all(line.as_bytes()).is_err() || writer.flush().is_err() {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+
+        let output = child
+            .wait_with_output()
+            .context("Failed to wait on instantmenu")?;
+        if !output.status.success() {
+            return Ok(vec![]);
+        }
+
+        let selected = String::from_utf8_lossy(&output.stdout);
+        let selected: Vec<String> = selected
+            .lines()
+            .map(str::trim_end)
+            .filter(|line| !line.is_empty())
+            .map(ToString::to_string)
+            .collect();
+        Ok(selected)
+    }
+
     /// Show slider prompt via instantmenu slide
     pub fn slide(spec: &SliderSpec) -> Result<Option<i64>> {
         let mut cmd = Command::new("instantmenu");

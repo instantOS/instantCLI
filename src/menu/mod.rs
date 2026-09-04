@@ -252,17 +252,68 @@ fn handle_choice(
     allow_multiple: bool,
     backend: MenuBackend,
 ) -> Result<i32> {
-    let item_list: Vec<SerializableMenuItem> = if items.is_empty() {
-        use std::io::{self, Read};
-        let mut buffer = String::new();
-        io::stdin()
-            .read_to_string(&mut buffer)
-            .map_err(|e| anyhow::anyhow!("Failed to read from stdin: {}", e))?;
-        protocol::plain_choice_items_from_input(&buffer)
-    } else {
-        items.split(' ').map(SerializableMenuItem::plain).collect()
-    };
+    if !items.is_empty() {
+        let item_list: Vec<SerializableMenuItem> =
+            items.split(' ').map(SerializableMenuItem::plain).collect();
+        return handle_choice_buffered(prompt, item_list, allow_multiple, backend);
+    }
 
+    if std::io::stdin().is_terminal() {
+        return Err(anyhow!(
+            "No items: pipe items via stdin or pass --items \"a b c\""
+        ));
+    }
+
+    match backend.resolve(true) {
+        ResolvedBackend::Instantmenu => {
+            match instantmenu::InstantmenuBackend::choice_from_stdin_streaming(
+                prompt,
+                allow_multiple,
+            ) {
+                Ok(selected) => {
+                    if selected.is_empty() {
+                        Ok(1)
+                    } else {
+                        for item in selected {
+                            println!("{item}");
+                        }
+                        Ok(0)
+                    }
+                }
+                Err(e) => {
+                    eprintln!("instantmenu error: {e}");
+                    Ok(3)
+                }
+            }
+        }
+        ResolvedBackend::Scratchpad => {
+            let client = MenuClient::new();
+            match client.choice_from_stdin_streaming(prompt.to_string(), allow_multiple) {
+                Ok(selected) if selected.is_empty() => Ok(1),
+                Ok(selected) => {
+                    for item in selected {
+                        println!("{}", item.display_text);
+                    }
+                    Ok(0)
+                }
+                Err(e) => {
+                    eprintln!("Scratchpad menu error: {e}");
+                    Ok(3)
+                }
+            }
+        }
+        ResolvedBackend::Tui => handle_choice_tui_streaming(prompt, allow_multiple),
+    }
+}
+
+/// Buffered fast-path for `handle_choice` when items are already in
+/// memory via `--items` (no streaming needed).
+fn handle_choice_buffered(
+    prompt: &str,
+    item_list: Vec<SerializableMenuItem>,
+    allow_multiple: bool,
+    backend: MenuBackend,
+) -> Result<i32> {
     match backend.resolve(true) {
         ResolvedBackend::Instantmenu => {
             match instantmenu::InstantmenuBackend::choice(prompt, &item_list, allow_multiple) {
@@ -320,6 +371,57 @@ fn handle_choice(
                     Ok(2)
                 }
             }
+        }
+    }
+}
+
+/// TUI streaming choice: opens fzf immediately and appends stdin lines
+/// live via `FzfWrapper::select_streaming`. stdin `EOF` ends the stream
+/// but leaves the menu open for selection. The reader may stay blocked
+/// on stdin for infinite producers — the short-lived CLI process
+/// exiting kills it, so it is detached, not joined.
+fn handle_choice_tui_streaming(prompt: &str, allow_multiple: bool) -> Result<i32> {
+    let (tx, rx) =
+        crossbeam_channel::bounded::<SerializableMenuItem>(protocol::STREAM_ITEM_BUFFER_CAPACITY);
+    std::thread::spawn(move || {
+        use std::io::BufRead;
+        let stdin = std::io::stdin();
+        let mut reader = std::io::BufReader::new(stdin.lock());
+        let mut line = String::new();
+        loop {
+            line.clear();
+            match reader.read_line(&mut line) {
+                Ok(0) => break,
+                Ok(_) => {
+                    let text = line.trim_end_matches(['\r', '\n']).to_string();
+                    if tx.send(SerializableMenuItem::plain(text)).is_err() {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    });
+
+    match FzfWrapper::builder()
+        .prompt(prompt.to_string())
+        .multi_select(allow_multiple)
+        .select_streaming(Vec::new(), rx)?
+    {
+        crate::menu_utils::FzfResult::Selected(item) => {
+            println!("{}", item.display_text);
+            Ok(0)
+        }
+        crate::menu_utils::FzfResult::MultiSelected(items) => {
+            for item in items {
+                println!("{}", item.display_text);
+            }
+            Ok(0)
+        }
+        crate::menu_utils::FzfResult::Cancelled => Ok(1),
+        crate::menu_utils::FzfResult::Error(e) => {
+            eprintln!("Error: {e}");
+            Ok(2)
         }
     }
 }

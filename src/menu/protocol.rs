@@ -94,12 +94,25 @@ pub struct SliderRequest {
 pub enum MenuRequest {
     /// Show confirmation dialog
     Confirm { message: String },
-    /// Show selection menu with rich item support
+    /// Show selection menu with rich item support (buffered fast-path,
+    /// use when items are already in memory)
     Choice {
         prompt: String,
         items: Vec<SerializableMenuItem>,
         allow_multiple: bool,
     },
+    /// Start a streaming selection menu. First frame on a connection;
+    /// server opens the menu immediately, then receives
+    /// `ChoiceChunk` frames and a final `ChoiceEnd`.
+    ChoiceBegin {
+        prompt: String,
+        allow_multiple: bool,
+    },
+    /// Batch of items for an in-progress streaming choice.
+    /// Same `request_id` as the opening `ChoiceBegin`.
+    ChoiceChunk { items: Vec<SerializableMenuItem> },
+    /// End of stream — server keeps the menu open for selection.
+    ChoiceEnd,
     /// Show chord navigator using provided chord definitions
     Chord { chords: Vec<String> },
     /// Show text input dialog
@@ -129,6 +142,11 @@ pub enum MenuRequest {
 /// Menu response types sent from server to client
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum MenuResponse {
+    /// Request protocol does not match the running server.
+    ProtocolMismatch { received: String, expected: String },
+    /// Streaming choice renderer process has started, its initial input has
+    /// been flushed, and the server may receive item chunks.
+    ChoiceReady,
     /// Confirmation dialog result
     ConfirmResult(ConfirmResult),
     /// Selection menu result(s) with rich item metadata
@@ -164,10 +182,24 @@ pub enum MenuResponse {
 pub struct MenuMessage {
     /// Unique request identifier
     pub request_id: String,
+    /// Wire protocol spoken by the sender.
+    #[serde(default = "legacy_protocol_version")]
+    pub protocol_version: String,
     /// The actual request payload
     pub payload: MenuRequest,
     /// Timestamp when request was sent
     pub timestamp: SystemTime,
+}
+
+impl MenuMessage {
+    pub fn new(request_id: String, payload: MenuRequest) -> Self {
+        Self {
+            request_id,
+            protocol_version: PROTOCOL_VERSION.to_string(),
+            payload,
+            timestamp: SystemTime::now(),
+        }
+    }
 }
 
 /// Message envelope for responses
@@ -214,7 +246,16 @@ pub struct MenuStatus {
 }
 
 /// Protocol version information
-pub const PROTOCOL_VERSION: &str = "1.0";
+pub const PROTOCOL_VERSION: &str = "3.0";
+
+fn legacy_protocol_version() -> String {
+    "1.0".to_string()
+}
+
+/// Maximum number of decoded choice items waiting between a producer and
+/// menu backend. Keeping this bounded propagates backpressure to stdin and
+/// remote clients instead of buffering an arbitrarily large stream in RAM.
+pub const STREAM_ITEM_BUFFER_CAPACITY: usize = 256;
 
 /// Default socket path
 pub fn default_socket_path() -> String {
@@ -305,21 +346,31 @@ mod tests {
 
     #[test]
     fn test_message_envelope() {
-        let message = MenuMessage {
-            request_id: "test_123".to_string(),
-            payload: MenuRequest::Input {
+        let message = MenuMessage::new(
+            "test_123".to_string(),
+            MenuRequest::Input {
                 prompt: "Enter value:".to_string(),
             },
-            timestamp: SystemTime::now(),
-        };
+        );
 
         let json = serde_json::to_string(&message).unwrap();
         let deserialized: MenuMessage = serde_json::from_str(&json).unwrap();
 
         assert_eq!(deserialized.request_id, "test_123");
+        assert_eq!(deserialized.protocol_version, PROTOCOL_VERSION);
         assert!(
             matches!(deserialized.payload, MenuRequest::Input { prompt } if prompt == "Enter value:")
         );
+    }
+
+    #[test]
+    fn missing_request_protocol_is_identified_as_v1() {
+        let message = MenuMessage::new("legacy".to_string(), MenuRequest::Status);
+        let mut value = serde_json::to_value(message).unwrap();
+        value.as_object_mut().unwrap().remove("protocol_version");
+
+        let decoded: MenuMessage = serde_json::from_value(value).unwrap();
+        assert_eq!(decoded.protocol_version, "1.0");
     }
 
     #[test]
@@ -466,5 +517,51 @@ mod tests {
         assert_eq!(deserialized.value, Some(42));
         assert_eq!(deserialized.label.as_deref(), Some("Volume"));
         assert_eq!(deserialized.command.len(), 4);
+    }
+
+    #[test]
+    fn test_streaming_choice_frames_round_trip() {
+        let request_id = "req_stream_1".to_string();
+        let frames = [
+            MenuMessage::new(
+                request_id.clone(),
+                MenuRequest::ChoiceBegin {
+                    prompt: "Pick:".to_string(),
+                    allow_multiple: false,
+                },
+            ),
+            MenuMessage::new(
+                request_id.clone(),
+                MenuRequest::ChoiceChunk {
+                    items: vec![SerializableMenuItem::plain("alpha")],
+                },
+            ),
+            MenuMessage::new(request_id.clone(), MenuRequest::ChoiceEnd),
+        ];
+
+        // Frames must survive NDJSON framing (one JSON object per line).
+        let wire: String = frames
+            .iter()
+            .map(|frame| serde_json::to_string(frame).unwrap() + "\n")
+            .collect();
+        let parsed: Vec<MenuMessage> = wire
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+
+        assert_eq!(parsed.len(), 3);
+        assert!(
+            matches!(&parsed[0].payload, MenuRequest::ChoiceBegin { prompt, .. } if prompt == "Pick:")
+        );
+        assert!(
+            matches!(&parsed[1].payload, MenuRequest::ChoiceChunk { items } if items.len() == 1 && items[0].display_text == "alpha")
+        );
+        assert!(matches!(parsed[2].payload, MenuRequest::ChoiceEnd));
+        assert!(parsed.iter().all(|m| m.request_id == request_id));
+        assert!(
+            parsed
+                .iter()
+                .all(|m| m.protocol_version == PROTOCOL_VERSION)
+        );
     }
 }

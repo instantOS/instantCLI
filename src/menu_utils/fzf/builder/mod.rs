@@ -383,7 +383,7 @@ impl FzfBuilder {
     pub fn select_streaming<T: FzfSelectable + Clone + Send + 'static>(
         self,
         initial_items: Vec<T>,
-        late_items: std::sync::mpsc::Receiver<T>,
+        late_items: crossbeam_channel::Receiver<T>,
     ) -> Result<FzfResult<T>> {
         debug_assert_eq!(
             self.shared.presentation,
@@ -391,6 +391,27 @@ impl FzfBuilder {
             "select_streaming does not support padded presentation"
         );
         FzfWrapper::from_builder(self).select_streaming(initial_items, late_items)
+    }
+
+    pub fn select_streaming_with_ready<
+        T: FzfSelectable + Clone + Send + 'static,
+        F: FnOnce() -> Result<()>,
+    >(
+        self,
+        initial_items: Vec<T>,
+        late_items: crossbeam_channel::Receiver<T>,
+        on_ready: F,
+    ) -> Result<FzfResult<T>> {
+        debug_assert_eq!(
+            self.shared.presentation,
+            MenuPresentation::Compact,
+            "select_streaming does not support padded presentation"
+        );
+        FzfWrapper::from_builder(self).select_streaming_with_ready(
+            initial_items,
+            late_items,
+            on_ready,
+        )
     }
 
     pub fn select_one<T: FzfSelectable + Clone>(self, items: Vec<T>) -> Result<Option<T>> {

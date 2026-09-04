@@ -2,14 +2,13 @@
 
 use anyhow::{Result, anyhow};
 use base64::{Engine as _, engine::general_purpose};
+use crossbeam_channel::{Receiver, TryRecvError, bounded, select};
 use serde::de::DeserializeOwned;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
-use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
 
 use super::preview::MixedPreviewContent;
 use super::preview::PreviewStrategy;
@@ -694,8 +693,24 @@ impl FzfWrapper {
         initial_items: Vec<T>,
         late_items: Receiver<T>,
     ) -> Result<FzfResult<T>> {
+        self.select_streaming_with_ready(initial_items, late_items, || Ok(()))
+    }
+
+    /// Streaming selection with a callback fired after fzf has spawned and
+    /// its initial input has been flushed. Servers use this as the readiness
+    /// boundary before allowing producers to consume their input.
+    pub fn select_streaming_with_ready<
+        T: FzfSelectable + Clone + Send + 'static,
+        F: FnOnce() -> Result<()>,
+    >(
+        &self,
+        initial_items: Vec<T>,
+        late_items: Receiver<T>,
+        on_ready: F,
+    ) -> Result<FzfResult<T>> {
         #[cfg(test)]
         if let Some(resp) = crate::menu_utils::mock::pop_mock() {
+            on_ready()?;
             let mut items = initial_items;
             while let Ok(item) = late_items.try_recv() {
                 items.push(item);
@@ -734,73 +749,79 @@ impl FzfWrapper {
             .ok_or_else(|| anyhow!("Failed to capture fzf stdin"))?;
         stdin.write_all(input_text.as_bytes())?;
         stdin.flush()?;
+        if let Err(error) = on_ready() {
+            let _ = child.kill();
+            let _ = finish_menu_child(child, pid);
+            return Err(error);
+        }
 
         // Late items are appended to fzf's stdin as they arrive; the shared
         // map lets the final selection be resolved back to an item.
         let shared_map = Arc::new(Mutex::new(item_map));
-        let late_items = Arc::new(Mutex::new(Some(late_items)));
         let pump_map = Arc::clone(&shared_map);
-        let pump_late_items = Arc::clone(&late_items);
+        let (cancel_tx, cancel_rx) = bounded::<()>(1);
         let pump = thread::spawn(move || {
             let mut stdin = stdin;
             loop {
-                // Poll so the pump can notice when the menu is gone even if
-                // the producer keeps the channel open.
-                let received = {
-                    let Ok(guard) = pump_late_items.lock() else {
-                        break;
-                    };
-                    match guard.as_ref() {
-                        Some(receiver) => receiver.recv_timeout(Duration::from_millis(50)),
-                        None => break,
-                    }
+                let first = select! {
+                    recv(cancel_rx) -> _ => break,
+                    recv(late_items) -> item => match item {
+                        Ok(item) => item,
+                        Err(_) => break,
+                    },
                 };
-                let item = match received {
-                    Ok(item) => item,
-                    Err(RecvTimeoutError::Timeout) => continue,
-                    Err(RecvTimeoutError::Disconnected) => break,
-                };
-
-                let key = item.fzf_key();
-                let (marker, content) = match item.fzf_preview() {
-                    FzfPreview::Text(text) => ("T", text),
-                    FzfPreview::Command(command) => ("C", command),
-                    FzfPreview::None => ("T", String::new()),
-                };
-                let encoded = general_purpose::STANDARD.encode(content.as_bytes());
-                let line = format_fzf_line(
-                    &item.fzf_display_text(),
-                    &key,
-                    &item.fzf_search_keywords().join(" "),
-                    &[marker, &encoded],
-                    &FzfLineContext { separator_mode },
-                    item.fzf_is_selectable(),
-                );
 
                 let Ok(mut map) = pump_map.lock() else {
                     break;
                 };
-                if map.contains_key(&key) {
-                    continue;
+                let mut batch = Vec::with_capacity(64);
+                batch.push(first);
+                while batch.len() < 64 {
+                    match late_items.try_recv() {
+                        Ok(item) => batch.push(item),
+                        Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
+                    }
                 }
 
-                let written = stdin
-                    .write_all(line.as_bytes())
-                    .and_then(|_| stdin.write_all(b"\n"))
-                    .and_then(|_| stdin.flush());
-                if written.is_err() {
+                let mut encoded_batch = String::new();
+                for item in batch {
+                    let key = item.fzf_key();
+                    if map.contains_key(&key) {
+                        continue;
+                    }
+                    let (marker, content) = match item.fzf_preview() {
+                        FzfPreview::Text(text) => ("T", text),
+                        FzfPreview::Command(command) => ("C", command),
+                        FzfPreview::None => ("T", String::new()),
+                    };
+                    let encoded = general_purpose::STANDARD.encode(content.as_bytes());
+                    let line = format_fzf_line(
+                        &item.fzf_display_text(),
+                        &key,
+                        &item.fzf_search_keywords().join(" "),
+                        &[marker, &encoded],
+                        &FzfLineContext { separator_mode },
+                        item.fzf_is_selectable(),
+                    );
+                    encoded_batch.push_str(&line);
+                    encoded_batch.push('\n');
+                    map.insert(key, item);
+                }
+
+                if (!encoded_batch.is_empty()
+                    && stdin
+                        .write_all(encoded_batch.as_bytes())
+                        .and_then(|_| stdin.flush())
+                        .is_err())
+                    || cancel_rx.try_recv().is_ok()
+                {
                     break;
                 }
-                map.insert(key, item);
             }
         });
 
-        // Close the channel so the pump exits even if the producer is still
-        // streaming into a menu nobody is watching.
-        if let Ok(mut guard) = late_items.lock() {
-            *guard = None;
-        }
         let output = finish_menu_child(child, pid);
+        let _ = cancel_tx.try_send(());
         let _ = pump.join();
         let output = output?;
 
@@ -853,7 +874,7 @@ mod mock_tests {
 
     #[test]
     fn test_mock_select_streaming_merges_streamed_items() {
-        let (tx, rx) = std::sync::mpsc::channel::<String>();
+        let (tx, rx) = crossbeam_channel::unbounded::<String>();
         tx.send("late".to_string()).unwrap();
         let _tx = tx; // keep the channel open, mirroring a live producer
 

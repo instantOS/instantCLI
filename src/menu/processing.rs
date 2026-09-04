@@ -47,6 +47,11 @@ impl RequestProcessor {
             MenuRequest::Toast { message, duration } => {
                 self.handle_toast_request(message, duration)
             }
+            MenuRequest::ChoiceBegin { .. }
+            | MenuRequest::ChoiceChunk { .. }
+            | MenuRequest::ChoiceEnd => Ok(MenuResponse::Error(
+                "Streaming choice requires a streaming connection".to_string(),
+            )),
             MenuRequest::Status => Ok(self.get_status_info()),
             MenuRequest::Stop => self.handle_stop_request(),
             MenuRequest::Show => Ok(MenuResponse::ShowResult),
@@ -181,6 +186,37 @@ impl RequestProcessor {
             .prompt(prompt)
             .multi_select(allow_multiple)
             .select(items)
+        {
+            Ok(crate::menu_utils::FzfResult::Selected(item)) => {
+                Ok(MenuResponse::ChoiceResult(vec![item]))
+            }
+            Ok(crate::menu_utils::FzfResult::MultiSelected(items)) => {
+                Ok(MenuResponse::ChoiceResult(items))
+            }
+            Ok(crate::menu_utils::FzfResult::Cancelled) => Ok(MenuResponse::Cancelled),
+            Ok(crate::menu_utils::FzfResult::Error(e)) => {
+                Ok(MenuResponse::Error(format!("Selection error: {e}")))
+            }
+            Err(e) => Ok(MenuResponse::Error(format!("Selection error: {e}"))),
+        }
+    }
+
+    /// Handle streaming choice selection: menu opens immediately with no
+    /// initial items; items arriving on `rx` are appended live via
+    /// `FzfWrapper::select_streaming`. An empty stream yields `Cancelled`
+    /// (not `Error`) so `producer | ins menu choice` with no output
+    /// behaves like an empty cancelled menu rather than a protocol error.
+    pub fn handle_choice_streaming_with_ready<F: FnOnce() -> Result<()>>(
+        &self,
+        prompt: String,
+        allow_multiple: bool,
+        rx: crossbeam_channel::Receiver<SerializableMenuItem>,
+        on_ready: F,
+    ) -> Result<MenuResponse> {
+        match FzfWrapper::builder()
+            .prompt(prompt)
+            .multi_select(allow_multiple)
+            .select_streaming_with_ready(Vec::new(), rx, on_ready)
         {
             Ok(crate::menu_utils::FzfResult::Selected(item)) => {
                 Ok(MenuResponse::ChoiceResult(vec![item]))

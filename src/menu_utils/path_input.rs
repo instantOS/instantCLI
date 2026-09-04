@@ -1,5 +1,5 @@
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, mpsc};
+use std::sync::Arc;
 use std::thread;
 
 use anyhow::{Result, anyhow};
@@ -351,7 +351,7 @@ impl PathInputBuilder {
         options: &[PathInputOption],
         producer: SuggestionProducer,
     ) -> Result<FzfResult<PathInputOption>> {
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = crossbeam_channel::unbounded();
         thread::spawn(move || producer(SuggestionSink { tx }));
 
         // Jump to the first streamed suggestion once fzf finished loading its
@@ -407,7 +407,7 @@ fn suggestion_option(path: &Path) -> PathInputOption {
 /// Pushes are best-effort: once the menu has closed, pushes are silently
 /// dropped so producers stop as soon as they notice.
 pub struct SuggestionSink {
-    tx: mpsc::Sender<PathInputOption>,
+    tx: crossbeam_channel::Sender<PathInputOption>,
 }
 
 impl SuggestionSink {
