@@ -9,6 +9,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use super::preview::MixedPreviewContent;
 use super::preview::PreviewStrategy;
@@ -16,7 +17,7 @@ use super::preview::PreviewUtils;
 use super::types::ItemDisplayData;
 use super::types::*;
 use super::utils::{handle_old_fzf_error, log_fzf_failure};
-use crate::ui::catppuccin::{colors, hex_to_ansi_fg};
+use crate::ui::catppuccin::{colors, hex_to_ansi_bg, hex_to_ansi_fg};
 use crate::ui::nerd_font::NerdFont;
 
 /// Named parts extracted from `FzfBuilder` for constructing `FzfWrapper`.
@@ -131,16 +132,145 @@ fn calculate_separator_aware_cursor(
     display_data[..pos].iter().rposition(|d| d.is_selectable)
 }
 
-/// Render the dimmed header hint line for a menu's registered keybinds.
-fn keybind_hint_line<A>(keybinds: &[MenuKeybind<A>]) -> String {
-    let dim = hex_to_ansi_fg(colors::OVERLAY0);
-    let reset = "\x1b[0m";
-    let hints = keybinds
-        .iter()
-        .map(|bind| format!("{} {}", bind.key, bind.label))
+const ANSI_RESET: &str = "\x1b[0m";
+const KEYBIND_HINT_MAX_WIDTH: usize = 96;
+const KEYBIND_HINT_MIN_WIDTH: usize = 12;
+
+struct KeybindHintSegment {
+    styled: String,
+    width: usize,
+}
+
+/// Normalize display-only labels so they cannot inject terminal controls or
+/// extra header lines. Whitespace is collapsed for predictable wrapping.
+fn normalize_keybind_label(label: &str) -> String {
+    label
+        .chars()
+        .map(|character| {
+            if character.is_control() {
+                ' '
+            } else {
+                character
+            }
+        })
+        .collect::<String>()
+        .split_whitespace()
         .collect::<Vec<_>>()
-        .join("   ");
-    format!("{dim}{hints}{reset}")
+        .join(" ")
+}
+
+fn truncate_visible(text: &str, max_width: usize) -> String {
+    if UnicodeWidthStr::width(text) <= max_width {
+        return text.to_string();
+    }
+    if max_width == 0 {
+        return String::new();
+    }
+
+    let ellipsis = '…';
+    let ellipsis_width = UnicodeWidthChar::width(ellipsis).unwrap_or(1);
+    let content_width = max_width.saturating_sub(ellipsis_width);
+    let mut result = String::new();
+    let mut width = 0;
+    for character in text.chars() {
+        let character_width = UnicodeWidthChar::width(character).unwrap_or(0);
+        if width + character_width > content_width {
+            break;
+        }
+        result.push(character);
+        width += character_width;
+    }
+    result.push(ellipsis);
+    result
+}
+
+fn render_keybind_segment<A>(bind: &MenuKeybind<A>, max_width: usize) -> KeybindHintSegment {
+    let key = truncate_visible(&bind.key.display_name(), max_width.saturating_sub(2));
+    let key_width = UnicodeWidthStr::width(key.as_str()) + 2;
+    let label = normalize_keybind_label(&bind.label);
+    let label_gap = usize::from(!label.is_empty()) * 2;
+    let label_width = max_width.saturating_sub(key_width + label_gap);
+    let label = truncate_visible(&label, label_width);
+
+    let keycap = format!(
+        "{}{}\x1b[1m {key} {ANSI_RESET}",
+        hex_to_ansi_bg(colors::SURFACE0),
+        hex_to_ansi_fg(colors::MAUVE),
+    );
+    let styled = if label.is_empty() {
+        keycap
+    } else {
+        format!(
+            "{keycap}  {}{label}{ANSI_RESET}",
+            hex_to_ansi_fg(colors::SUBTEXT0)
+        )
+    };
+
+    KeybindHintSegment {
+        styled,
+        width: key_width
+            + usize::from(!label.is_empty()) * 2
+            + UnicodeWidthStr::width(label.as_str()),
+    }
+}
+
+/// Estimate the width of fzf's list pane. On a wide responsive layout the
+/// preview consumes half the terminal; otherwise the hint gets the full pane.
+fn keybind_hint_width(wrapper: &FzfWrapper) -> usize {
+    let Some((terminal_columns, rows)) = super::utils::get_terminal_dimensions() else {
+        return 76;
+    };
+    let side_preview = wrapper.responsive_layout
+        && terminal_columns >= 60
+        && f32::from(terminal_columns) / f32::from(rows) >= 2.0;
+    let columns = usize::from(terminal_columns);
+    let pane_width = if side_preview { columns / 2 } else { columns };
+    pane_width
+        .saturating_sub(4)
+        .clamp(KEYBIND_HINT_MIN_WIDTH, KEYBIND_HINT_MAX_WIDTH)
+}
+
+/// Render keybinds as accent keycaps and muted action labels, wrapping whole
+/// bindings rather than allowing a long hint row to clip in narrow menus.
+fn keybind_hint_lines<A>(keybinds: &[MenuKeybind<A>], max_width: usize) -> String {
+    let keyboard = char::from(NerdFont::Keyboard);
+    let prefix_width = UnicodeWidthChar::width(keyboard).unwrap_or(1) + 2;
+    let first_prefix = format!("{}{keyboard}{ANSI_RESET}  ", hex_to_ansi_fg(colors::BLUE));
+    let continuation_prefix = " ".repeat(prefix_width);
+    let separator = format!("{}  •  {ANSI_RESET}", hex_to_ansi_fg(colors::SURFACE2));
+    const SEPARATOR_WIDTH: usize = 5;
+
+    let content_width = max_width
+        .saturating_sub(prefix_width)
+        .max(KEYBIND_HINT_MIN_WIDTH.saturating_sub(prefix_width));
+    let segments = keybinds
+        .iter()
+        .map(|bind| render_keybind_segment(bind, content_width))
+        .collect::<Vec<_>>();
+
+    let mut lines = vec![first_prefix];
+    let mut line_width = prefix_width;
+    let mut has_segment = false;
+    for segment in segments {
+        let separator_width = if has_segment { SEPARATOR_WIDTH } else { 0 };
+        if has_segment && line_width + separator_width + segment.width > max_width {
+            lines.push(continuation_prefix.clone());
+            line_width = prefix_width;
+            has_segment = false;
+        }
+        if has_segment {
+            lines.last_mut().expect("line exists").push_str(&separator);
+            line_width += SEPARATOR_WIDTH;
+        }
+        lines
+            .last_mut()
+            .expect("line exists")
+            .push_str(&segment.styled);
+        line_width += segment.width;
+        has_segment = true;
+    }
+
+    lines.join("\n")
 }
 
 /// Register the menu's keybinds with fzf: one `print(token)+accept` binding
@@ -371,11 +501,13 @@ fn configure_menu_args<A>(cmd: &mut Command, wrapper: &FzfWrapper, keybinds: &[M
             let mut text = header.clone();
             if !keybinds.is_empty() {
                 text.push('\n');
-                text.push_str(&keybind_hint_line(keybinds));
+                text.push_str(&keybind_hint_lines(keybinds, keybind_hint_width(wrapper)));
             }
             Some(text)
         }
-        None if !keybinds.is_empty() => Some(keybind_hint_line(keybinds)),
+        None if !keybinds.is_empty() => {
+            Some(keybind_hint_lines(keybinds, keybind_hint_width(wrapper)))
+        }
         None => None,
     };
     if let Some(header_text) = header_text {
@@ -1204,6 +1336,14 @@ mod mock_tests {
         assert!(MenuKey::new("ctrl-shift-left").is_ok());
         assert!(MenuKey::new("ctrl-alt-shift-page-down").is_ok());
         assert!(MenuKey::new(String::from("ctrl-r")).is_ok());
+        assert_eq!(MenuKey::new("ctrl-e").unwrap().display_name(), "Ctrl E");
+        assert_eq!(
+            MenuKey::new("ctrl-alt-shift-page-down")
+                .unwrap()
+                .display_name(),
+            "Ctrl Alt Shift Page Down"
+        );
+        assert_eq!(MenuKey::new("f12").unwrap().display_name(), "F12");
         for reserved in [
             "esc", "ctrl-c", "enter", "tab", "ctrl-p", "ctrl-j", "up", "down",
         ] {
@@ -1212,6 +1352,52 @@ mod mock_tests {
                 "{reserved} should be reserved"
             );
         }
+    }
+
+    #[test]
+    fn keybind_hints_use_keycaps_sanitize_labels_and_wrap_whole_bindings() {
+        let binds = [
+            MenuKeybind::new(MenuKey::new("ctrl-e").unwrap(), "edit\n  entry", 1u8),
+            MenuKeybind::new(MenuKey::new("alt-d").unwrap(), "delete", 2u8),
+        ];
+
+        let rendered = keybind_hint_lines(&binds, 30);
+        let plain = default_fzf_key(&rendered);
+        let lines = plain.lines().collect::<Vec<_>>();
+
+        assert_eq!(lines.len(), 2);
+        assert!(plain.contains(char::from(NerdFont::Keyboard)));
+        assert!(plain.contains("Ctrl E   edit entry"));
+        assert!(plain.contains("Alt D   delete"));
+        assert!(lines.iter().all(|line| UnicodeWidthStr::width(*line) <= 30));
+        assert!(rendered.contains(&hex_to_ansi_bg(colors::SURFACE0)));
+    }
+
+    #[test]
+    fn keybind_hints_separate_bindings_when_they_fit() {
+        let binds = [
+            MenuKeybind::new(MenuKey::new("ctrl-e").unwrap(), "edit", 1u8),
+            MenuKeybind::new(MenuKey::new("alt-d").unwrap(), "delete", 2u8),
+        ];
+
+        let plain = default_fzf_key(&keybind_hint_lines(&binds, 80));
+
+        assert_eq!(plain.lines().count(), 1);
+        assert!(plain.contains("edit  •   Alt D"));
+    }
+
+    #[test]
+    fn overlong_keybind_labels_are_truncated_to_the_hint_width() {
+        let binds = [MenuKeybind::new(
+            MenuKey::new("ctrl-e").unwrap(),
+            "edit an exceptionally long entry label",
+            1u8,
+        )];
+
+        let plain = default_fzf_key(&keybind_hint_lines(&binds, 24));
+
+        assert!(plain.contains('…'));
+        assert!(plain.lines().all(|line| UnicodeWidthStr::width(line) <= 24));
     }
 
     #[test]

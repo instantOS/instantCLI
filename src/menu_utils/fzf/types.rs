@@ -457,6 +457,33 @@ impl MenuKey {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// Human-readable form used in menu hints (`ctrl-alt-r` -> `Ctrl Alt R`).
+    pub fn display_name(&self) -> String {
+        if let Some(number) = self.0.strip_prefix('f')
+            && number.parse::<u8>().is_ok()
+        {
+            return format!("F{number}");
+        }
+
+        self.0
+            .split('-')
+            .map(|part| match part {
+                "ctrl" => "Ctrl".to_string(),
+                "alt" => "Alt".to_string(),
+                "shift" => "Shift".to_string(),
+                "esc" => "Esc".to_string(),
+                other => {
+                    let mut chars = other.chars();
+                    match chars.next() {
+                        Some(first) => first.to_uppercase().chain(chars).collect(),
+                        None => String::new(),
+                    }
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
 }
 
 /// Return whether `key` is in the stable keyboard subset supported by the
