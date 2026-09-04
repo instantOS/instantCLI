@@ -205,10 +205,7 @@ fn run_captured_with_timeout(cmd: &mut Command, args: &[&str]) -> Result<()> {
 /// Kill a child's whole process group (the child was spawned with
 /// `process_group(0)`, so its PID is that group's ID).
 fn kill_child_process_group(pid: u32, signal: nix::sys::signal::Signal) {
-    let _ = nix::sys::signal::kill(
-        nix::unistd::Pid::from_raw(-(pid as i32)),
-        signal,
-    );
+    let _ = nix::sys::signal::kill(nix::unistd::Pid::from_raw(-(pid as i32)), signal);
 }
 
 /// Run a git command in the given repo directory, returning stdout on success.

@@ -57,16 +57,14 @@ impl AutostartGuard {
             .open(path)
             .with_context(|| format!("Failed to open {}", path.display()))?;
 
-        let mut file = match nix::fcntl::Flock::lock(
-            file,
-            nix::fcntl::FlockArg::LockExclusiveNonblock,
-        ) {
-            Ok(locked) => locked,
-            Err((_file, nix::errno::Errno::EWOULDBLOCK)) => return Ok(None),
-            Err((_file, err)) => {
-                return Err(err).context("Failed to lock the autostart lock file");
-            }
-        };
+        let mut file =
+            match nix::fcntl::Flock::lock(file, nix::fcntl::FlockArg::LockExclusiveNonblock) {
+                Ok(locked) => locked,
+                Err((_file, nix::errno::Errno::EWOULDBLOCK)) => return Ok(None),
+                Err((_file, err)) => {
+                    return Err(err).context("Failed to lock the autostart lock file");
+                }
+            };
 
         // Record the PID for diagnostics only; the flock itself is the lock.
         use std::io::{Seek, SeekFrom, Write};
@@ -459,8 +457,8 @@ fn should_show_welcome() -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::notification_service_for;
     use super::AutostartGuard;
+    use super::notification_service_for;
     use crate::common::display_server::DisplayServer;
 
     #[test]
