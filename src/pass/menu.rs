@@ -1,7 +1,9 @@
 use anyhow::{Result, anyhow, bail};
 
 use crate::menu::client::HostedMenuClient;
-use crate::menu_utils::{FzfWrapper, Header, HeaderBuilder, MenuCursor, MenuPresentation};
+use crate::menu_utils::{
+    FzfWrapper, Header, HeaderBuilder, MenuCursor, MenuKey, MenuKeybind, MenuPresentation,
+};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -10,6 +12,21 @@ use super::browser::*;
 use super::operations::*;
 use super::types::*;
 use super::utils::*;
+
+/// Actions bound to global keys on the quick access menu.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum QuickAccessBind {
+    /// Edit the focused entry (or open the edit browser on the menu row).
+    Edit,
+}
+
+fn quick_access_keybinds() -> Result<Vec<MenuKeybind<QuickAccessBind>>> {
+    Ok(vec![MenuKeybind::new(
+        MenuKey::new("ctrl-e")?,
+        "edit entry",
+        QuickAccessBind::Edit,
+    )])
+}
 
 pub(super) fn interactive_pass_menu() -> Result<i32> {
     interactive_pass_quick_access()
@@ -35,20 +52,39 @@ pub(super) fn interactive_pass_quick_access() -> Result<i32> {
             builder = builder.initial_index(index);
         }
 
-        match builder.select_one(quick_access_items.clone())? {
-            crate::menu_utils::DialogOutcome::Submitted(item) => {
+        let keybinds = quick_access_keybinds()?;
+
+        match builder.select_with_keybinds(quick_access_items.clone(), &keybinds)? {
+            crate::menu_utils::DialogOutcome::Submitted(sel) => {
+                // ctrl-e edits the focused entry directly instead of copying
+                // it; every other pressed key falls back to plain submission.
+                let edit_requested = sel.action == Some(QuickAccessBind::Edit);
+
+                // Keybind pressed on an empty filtered list has no target.
+                let Ok(item) = sel.into_single() else {
+                    continue;
+                };
+
                 cursor.update(&item, &quick_access_items);
                 match item.kind {
                     BrowserItemKind::Entry(key) => {
                         let entry = resolve_entry_by_name(&entries, &key, false)?;
-                        copy_primary_entry(&entry)?;
-                        record_frecency(&entry.display_name)?;
-                        // Exit after copying so the user can paste immediately
-                        // (OTP codes expire; reopening is one keybinding press).
-                        return Ok(0);
+                        if edit_requested {
+                            run_edit_action_menu(&entry)?;
+                        } else {
+                            copy_primary_entry(&entry)?;
+                            record_frecency(&entry.display_name)?;
+                            // Exit after copying so the user can paste immediately
+                            // (OTP codes expire; reopening is one keybinding press).
+                            return Ok(0);
+                        }
                     }
                     BrowserItemKind::Menu => {
-                        interactive_pass_tree_menu()?;
+                        if edit_requested {
+                            run_edit_browser(None)?;
+                        } else {
+                            interactive_pass_tree_menu()?;
+                        }
                     }
                     BrowserItemKind::Close => return Ok(0),
                     BrowserItemKind::Folder(_) | BrowserItemKind::Add | BrowserItemKind::Back => {}

@@ -462,8 +462,8 @@ fn add_groups_to_user(
         .select(available_groups)?;
 
     let groups_to_add = match selected {
-        crate::menu_utils::DialogOutcome::Submitted(group_items) => {
-            group_items.into_iter().map(|item| item.name).collect()
+        crate::menu_utils::DialogOutcome::Submitted(sel) => {
+            sel.items.into_iter().map(|item| item.name).collect()
         }
         crate::menu_utils::DialogOutcome::Cancelled => Vec::new(),
     };

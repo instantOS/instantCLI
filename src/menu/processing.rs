@@ -186,8 +186,8 @@ impl RequestProcessor {
             .multi_select(allow_multiple)
             .select(items)
         {
-            Ok(crate::menu_utils::DialogOutcome::Submitted(items)) => {
-                Ok(MenuResponse::ChoiceResult(items))
+            Ok(crate::menu_utils::DialogOutcome::Submitted(sel)) => {
+                Ok(MenuResponse::ChoiceResult(sel.items))
             }
             Ok(crate::menu_utils::DialogOutcome::Cancelled) => Ok(MenuResponse::Cancelled),
             Err(e) => Ok(MenuResponse::Error(format!("Selection error: {e}"))),
@@ -211,8 +211,8 @@ impl RequestProcessor {
             .multi_select(allow_multiple)
             .select_streaming_with_ready(Vec::new(), rx, on_ready)
         {
-            Ok(crate::menu_utils::DialogOutcome::Submitted(items)) => {
-                Ok(MenuResponse::ChoiceResult(items))
+            Ok(crate::menu_utils::DialogOutcome::Submitted(sel)) => {
+                Ok(MenuResponse::ChoiceResult(sel.items))
             }
             Ok(crate::menu_utils::DialogOutcome::Cancelled) => Ok(MenuResponse::Cancelled),
             Err(e) => Ok(MenuResponse::Error(format!("Selection error: {e}"))),

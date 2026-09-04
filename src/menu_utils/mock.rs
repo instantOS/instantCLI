@@ -29,7 +29,7 @@ use std::cell::RefCell;
 use std::collections::VecDeque;
 
 #[cfg(test)]
-use crate::menu_utils::fzf::DialogOutcome;
+use crate::menu_utils::fzf::{DialogOutcome, MenuKeybind, MenuSelection};
 
 #[cfg(test)]
 thread_local! {
@@ -43,6 +43,9 @@ pub(crate) enum MockResponse {
     SelectIndex(usize),
     MultiSelectIndices(Vec<usize>),
     CancelSelection,
+    /// A registered menu keybind was pressed; the token is matched against
+    /// the menu's registered binds at resolve time.
+    KeybindAction(String),
 
     // Confirmation
     ConfirmYes,
@@ -103,6 +106,15 @@ impl MockQueue {
 
     pub fn cancel_selection(mut self) -> Self {
         self.responses.push_back(MockResponse::CancelSelection);
+        self
+    }
+
+    /// Script a keybind press. `token` must match one of the keys the menu
+    /// registers (e.g. "ctrl-e"); the pressed action is resolved from the
+    /// menu's own binds so tests stay type-safe.
+    pub fn keybind_action(mut self, token: impl Into<String>) -> Self {
+        self.responses
+            .push_back(MockResponse::KeybindAction(token.into()));
         self
     }
 
@@ -212,23 +224,30 @@ impl MockQueue {
 /// Resolve a selection-style response against `items`, shared by every
 /// selection dialog so the index handling lives in one place.
 ///
-/// Panics when `response` is not a selection response.
+/// `keybinds` are the binds the menu registered; a scripted
+/// [`MockResponse::KeybindAction`] resolves its token against them so the
+/// mocked action is the menu's real typed action. Panics when `response` is
+/// not a selection response.
 #[cfg(test)]
-pub(crate) fn resolve_selection<T: Clone>(
+pub(crate) fn resolve_selection<T: Clone, A: Clone>(
     response: MockResponse,
     items: Vec<T>,
-) -> DialogOutcome<Vec<T>> {
+    keybinds: &[MenuKeybind<A>],
+) -> DialogOutcome<MenuSelection<T, A>> {
     use crate::menu_utils::DialogOutcome;
 
     match response {
-        MockResponse::SelectIndex(i) => DialogOutcome::Submitted(vec![
-            items
-                .into_iter()
-                .nth(i)
-                .unwrap_or_else(|| panic!("MockResponse::SelectIndex({i}) out of bounds")),
-        ]),
-        MockResponse::MultiSelectIndices(indices) => DialogOutcome::Submitted(
-            indices
+        MockResponse::SelectIndex(i) => DialogOutcome::Submitted(MenuSelection {
+            items: vec![
+                items
+                    .into_iter()
+                    .nth(i)
+                    .unwrap_or_else(|| panic!("MockResponse::SelectIndex({i}) out of bounds")),
+            ],
+            action: None,
+        }),
+        MockResponse::MultiSelectIndices(indices) => DialogOutcome::Submitted(MenuSelection {
+            items: indices
                 .into_iter()
                 .map(|i| {
                     items.get(i).cloned().unwrap_or_else(|| {
@@ -236,7 +255,22 @@ pub(crate) fn resolve_selection<T: Clone>(
                     })
                 })
                 .collect(),
-        ),
+            action: None,
+        }),
+        MockResponse::KeybindAction(token) => {
+            let bind = keybinds
+                .iter()
+                .find(|bind| bind.key.as_str() == token)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "MockResponse::KeybindAction(\"{token}\") does not match any registered menu keybind"
+                    )
+                });
+            DialogOutcome::Submitted(MenuSelection {
+                items: items.into_iter().collect(),
+                action: Some(bind.action.clone()),
+            })
+        }
         MockResponse::CancelSelection => DialogOutcome::Cancelled,
         other => panic!("Mock: expected select response, got {other:?}"),
     }

@@ -4,6 +4,8 @@
 //! Reading a score decays it exponentially based on the configured half-life,
 //! so items that were used often but long ago lose to items used recently.
 //! The store persists as a small versioned JSON file in the cache directory.
+//! Discarded files (corrupt or foreign format) are removed on load so the
+//! accompanying warning surfaces exactly once.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -58,7 +60,8 @@ impl FrecencyStore {
     }
 
     /// Load the store at `path`. A missing, corrupt, or foreign-format file
-    /// yields a fresh store so a bad cache can never break a menu.
+    /// yields a fresh store so a bad cache can never break a menu. Discarded
+    /// files are removed so the warning is reported only once.
     pub fn load(path: &Path) -> Self {
         let Ok(content) = fs::read_to_string(path) else {
             return Self::new();
@@ -72,6 +75,7 @@ impl FrecencyStore {
                     path.display(),
                     store.version
                 );
+                Self::discard(path);
                 Self::new()
             }
             Err(error) => {
@@ -79,8 +83,20 @@ impl FrecencyStore {
                     "Warning: discarding unreadable frecency store {}: {error}",
                     path.display()
                 );
+                Self::discard(path);
                 Self::new()
             }
+        }
+    }
+
+    /// Remove a store file that could not be used. Failure is tolerated: the
+    /// worst case is the warning repeating on the next load.
+    fn discard(path: &Path) {
+        if let Err(error) = fs::remove_file(path) {
+            eprintln!(
+                "Warning: failed to remove discarded frecency store {}: {error}",
+                path.display()
+            );
         }
     }
 
@@ -250,6 +266,8 @@ mod tests {
         let loaded = FrecencyStore::load(&path);
 
         assert_eq!(loaded.entries.len(), 0);
+        // The discarded file is removed so the warning is not repeated.
+        assert!(!path.exists());
         Ok(())
     }
 
@@ -261,6 +279,7 @@ mod tests {
 
         let mut loaded = FrecencyStore::load(&path);
         assert_eq!(loaded.entries.len(), 0);
+        assert!(!path.exists());
 
         loaded.record("recovered");
         loaded.save(&path)?;

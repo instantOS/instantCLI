@@ -144,8 +144,8 @@ fn pick_dotfiles_fzf(all_dotfiles: &DotfileMap) -> Result<Vec<crate::dot::Dotfil
         .select(entries)?;
 
     match selection {
-        crate::menu_utils::DialogOutcome::Submitted(items) => {
-            let target_set: HashSet<_> = items.iter().map(|e| e.target_path.clone()).collect();
+        crate::menu_utils::DialogOutcome::Submitted(sel) => {
+            let target_set: HashSet<_> = sel.items.iter().map(|e| e.target_path.clone()).collect();
             Ok(all_dotfiles
                 .values()
                 .filter(|d| target_set.contains(&d.target_path))

@@ -368,10 +368,40 @@ impl FzfBuilder {
 
     // ---- selection terminals ----
 
-    pub fn select<T: FzfSelectable + Clone>(self, items: Vec<T>) -> Result<DialogOutcome<Vec<T>>> {
+    pub fn select<T: FzfSelectable + Clone>(
+        self,
+        items: Vec<T>,
+    ) -> Result<DialogOutcome<MenuSelection<T>>> {
         match self.shared.presentation {
             MenuPresentation::Compact => FzfWrapper::from_builder(self).select(items),
-            MenuPresentation::Padded => self.select_with_padded_presentation(items),
+            MenuPresentation::Padded => self
+                .select_with_padded_presentation(items)
+                .map(|outcome| outcome.map(MenuSelection::from_items)),
+        }
+    }
+
+    /// Selection with registered keybinds.
+    ///
+    /// Pressing one of the keys terminates the menu and returns its typed
+    /// action alongside the current selection set (see [`MenuSelection`]).
+    /// The labels are rendered as a dimmed hint line in the menu header.
+    /// Keys must not collide with each other or with fzf's
+    /// navigation/dismissal keys ([`MenuKey`] rejects those).
+    ///
+    /// Not supported by the `Padded` presentation: its index-based protocol
+    /// cannot carry keybind tokens.
+    pub fn select_with_keybinds<T: FzfSelectable + Clone, A: Clone>(
+        self,
+        items: Vec<T>,
+        keybinds: &[MenuKeybind<A>],
+    ) -> Result<DialogOutcome<MenuSelection<T, A>>> {
+        match self.shared.presentation {
+            MenuPresentation::Compact => {
+                FzfWrapper::from_builder(self).select_with_keybinds(items, keybinds)
+            }
+            MenuPresentation::Padded => {
+                anyhow::bail!("keybinds are not supported by the padded presentation")
+            }
         }
     }
 
@@ -384,7 +414,7 @@ impl FzfBuilder {
         self,
         initial_items: Vec<T>,
         late_items: crossbeam_channel::Receiver<T>,
-    ) -> Result<DialogOutcome<Vec<T>>> {
+    ) -> Result<DialogOutcome<MenuSelection<T>>> {
         debug_assert_eq!(
             self.shared.presentation,
             MenuPresentation::Compact,
@@ -401,7 +431,7 @@ impl FzfBuilder {
         initial_items: Vec<T>,
         late_items: crossbeam_channel::Receiver<T>,
         on_ready: F,
-    ) -> Result<DialogOutcome<Vec<T>>> {
+    ) -> Result<DialogOutcome<MenuSelection<T>>> {
         debug_assert_eq!(
             self.shared.presentation,
             MenuPresentation::Compact,
@@ -421,14 +451,7 @@ impl FzfBuilder {
             anyhow::bail!("select_one cannot be used with multi-selection enabled");
         }
         match self.select(items)? {
-            DialogOutcome::Submitted(mut selected) => {
-                if selected.len() != 1 {
-                    anyhow::bail!("expected exactly one selected item, got {}", selected.len());
-                }
-                Ok(DialogOutcome::Submitted(
-                    selected.pop().expect("checked length"),
-                ))
-            }
+            DialogOutcome::Submitted(sel) => Ok(DialogOutcome::Submitted(sel.into_single()?)),
             DialogOutcome::Cancelled => Ok(DialogOutcome::Cancelled),
         }
     }
@@ -441,16 +464,16 @@ impl FzfBuilder {
 
         loop {
             match self.clone().select(items.clone())? {
-                DialogOutcome::Submitted(mut selected) => {
+                DialogOutcome::Submitted(mut sel) => {
                     // Multi-selection on separator menus is not offered by
                     // callers today; keep the one-item contract explicit.
-                    if selected.len() != 1 {
+                    if sel.items.len() != 1 {
                         anyhow::bail!(
                             "expected exactly one selected menu entry, got {}",
-                            selected.len()
+                            sel.items.len()
                         );
                     }
-                    match selected.pop().expect("checked length") {
+                    match sel.items.pop().expect("checked length") {
                         MenuItem::Entry(item) => return Ok(DialogOutcome::Submitted(item)),
                         MenuItem::Separator(_) => {
                             // Pointer selection can land on a non-selectable raw row.
@@ -467,7 +490,7 @@ impl FzfBuilder {
     pub fn select_encoded_streaming<T, C>(
         self,
         command: C,
-    ) -> Result<DialogOutcome<Vec<DecodedStreamingMenuItem<T>>>>
+    ) -> Result<DialogOutcome<MenuSelection<DecodedStreamingMenuItem<T>>>>
     where
         T: DeserializeOwned,
         C: Into<StreamingCommand>,
@@ -493,7 +516,7 @@ impl FzfBuilder {
         self,
         command: C,
         initial_input: &str,
-    ) -> Result<DialogOutcome<Vec<DecodedStreamingMenuItem<T>>>>
+    ) -> Result<DialogOutcome<MenuSelection<DecodedStreamingMenuItem<T>>>>
     where
         T: DeserializeOwned,
         C: Into<StreamingCommand>,
@@ -516,16 +539,9 @@ impl FzfBuilder {
 }
 
 /// Extract the single expected element of a submitted selection.
-fn single_from_vec<T>(outcome: DialogOutcome<Vec<T>>) -> Result<DialogOutcome<T>> {
+fn single_from_vec<T>(outcome: DialogOutcome<MenuSelection<T>>) -> Result<DialogOutcome<T>> {
     match outcome {
-        DialogOutcome::Submitted(mut selected) => {
-            if selected.len() != 1 {
-                anyhow::bail!("expected exactly one selected item, got {}", selected.len());
-            }
-            Ok(DialogOutcome::Submitted(
-                selected.pop().expect("checked length"),
-            ))
-        }
+        DialogOutcome::Submitted(sel) => Ok(DialogOutcome::Submitted(sel.into_single()?)),
         DialogOutcome::Cancelled => Ok(DialogOutcome::Cancelled),
     }
 }

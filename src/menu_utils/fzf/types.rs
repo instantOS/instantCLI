@@ -1,9 +1,10 @@
 //! Core types and traits for the FZF wrapper
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 use base64::{Engine as _, engine::general_purpose};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::ffi::OsStr;
+use std::fmt;
 use std::process::Command;
 
 use crate::ui::catppuccin::{colors, hex_to_ansi_fg};
@@ -348,6 +349,149 @@ impl<T: FzfSelectable + Clone> FzfSelectable for MenuItem<T> {
 pub enum DialogOutcome<T> {
     Submitted(T),
     Cancelled,
+}
+
+impl<T> DialogOutcome<T> {
+    /// Transform a submitted value, preserving cancellation.
+    pub fn map<U, F: FnOnce(T) -> U>(self, f: F) -> DialogOutcome<U> {
+        match self {
+            DialogOutcome::Submitted(value) => DialogOutcome::Submitted(f(value)),
+            DialogOutcome::Cancelled => DialogOutcome::Cancelled,
+        }
+    }
+}
+
+/// What a selection menu returned.
+///
+/// `items` is the submitted selection set: every tab-selected row in
+/// multi-select menus, or the focused row otherwise. `action` is set when
+/// the user pressed one of the menu's registered [`MenuKeybind`]s instead of
+/// submitting with Enter; the items the bind was pressed on ride along.
+/// An action may legitimately carry no items (e.g. the bind was pressed
+/// while the filtered list was empty).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MenuSelection<T, A = ()> {
+    pub items: Vec<T>,
+    pub action: Option<A>,
+}
+
+impl<T> MenuSelection<T, ()> {
+    /// A plain submission without a pressed keybind.
+    pub fn from_items(items: Vec<T>) -> Self {
+        Self {
+            items,
+            action: None,
+        }
+    }
+}
+
+impl<T, A> MenuSelection<T, A> {
+    /// Take the submitted items, discarding any pressed keybind action.
+    pub fn into_items(self) -> Vec<T> {
+        self.items
+    }
+
+    /// The single submitted item.
+    ///
+    /// Errors when the menu did not submit exactly one item (e.g. a keybind
+    /// fired with an empty filtered list, or a multi-selection was returned
+    /// to a single-pick terminal).
+    pub fn into_single(self) -> Result<T> {
+        if self.items.len() != 1 {
+            bail!(
+                "expected exactly one selected item, got {}",
+                self.items.len()
+            );
+        }
+        Ok(self.items.into_iter().next().expect("checked length"))
+    }
+}
+
+/// A validated fzf key name for a menu keybind (e.g. `"ctrl-e"`).
+///
+/// Construction rejects malformed names and keys that would collide with
+/// built-in navigation or make the menu impossible to dismiss (scrolling,
+/// separator navigation, tab multi-select, and fzf's abort keys).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MenuKey(&'static str);
+
+impl MenuKey {
+    /// Keys that would break menu navigation or trap the user in the menu.
+    const RESERVED: &[&str] = &[
+        // Abort / dismissal.
+        "esc",
+        "ctrl-c",
+        "ctrl-g",
+        "ctrl-q",
+        // Submit (enter and its aliases).
+        "enter",
+        "ctrl-m",
+        // Multi-select toggles.
+        "tab",
+        "btab",
+        "shift-tab",
+        // Cursor navigation (including fzf's emacs-mode defaults).
+        "up",
+        "down",
+        "ctrl-p",
+        "ctrl-n",
+        "ctrl-k",
+        "ctrl-j",
+    ];
+
+    /// Validate a static fzf key name such as `"ctrl-e"`, `"alt-s"`, or
+    /// `"f3"`.
+    pub fn new(key: &'static str) -> Result<Self> {
+        if key.is_empty() {
+            bail!("menu keybind name cannot be empty");
+        }
+        if !key
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        {
+            bail!(
+                "menu keybind {key:?} must be a lowercase fzf key name like \"ctrl-e\" or \"alt-s\""
+            );
+        }
+        if Self::RESERVED.contains(&key) {
+            bail!("menu keybind {key:?} is reserved for navigation or dismissal");
+        }
+        Ok(Self(key))
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        self.0
+    }
+}
+
+impl fmt::Display for MenuKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.0)
+    }
+}
+
+/// A global keybind registered on a selection menu.
+///
+/// Pressing `key` terminates fzf and returns `action` alongside the current
+/// selection set; `label` is shown as a dimmed hint line in the menu header.
+/// Keybinds are always global for the whole menu (fzf has no per-item
+/// bindings); per-item semantics are the caller's dispatch on the returned
+/// `(action, items)` pair.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MenuKeybind<A> {
+    pub key: MenuKey,
+    pub label: String,
+    pub action: A,
+}
+
+impl<A> MenuKeybind<A> {
+    pub fn new(key: MenuKey, label: impl Into<String>, action: A) -> Self {
+        Self {
+            key,
+            label: label.into(),
+            action,
+        }
+    }
 }
 
 /// Visual treatment of rows in a selection menu.

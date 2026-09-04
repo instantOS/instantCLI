@@ -25,8 +25,8 @@ mod wrapper;
 pub use header::HeaderBuilder;
 pub use types::{
     ChecklistAction, ChecklistResult, ConfirmResult, DecodedStreamingMenuItem, DialogOutcome,
-    FzfSelectable, Header, MenuItem, MenuPresentation, StreamingCommand, StreamingMenuItem,
-    default_fzf_key,
+    FzfSelectable, Header, MenuItem, MenuKey, MenuKeybind, MenuPresentation, MenuSelection,
+    StreamingCommand, StreamingMenuItem, default_fzf_key,
 };
 
 // Re-export main user-facing types

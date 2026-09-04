@@ -366,15 +366,9 @@ impl PathInputBuilder {
             .select_streaming(options.to_vec(), rx)?;
 
         Ok(match selected {
-            crate::menu_utils::DialogOutcome::Submitted(mut selected) => {
+            crate::menu_utils::DialogOutcome::Submitted(sel) => {
                 // Single-select menu: expect exactly one submitted option.
-                if selected.len() != 1 {
-                    anyhow::bail!(
-                        "expected exactly one selected path option, got {}",
-                        selected.len()
-                    );
-                }
-                crate::menu_utils::DialogOutcome::Submitted(selected.pop().expect("checked length"))
+                crate::menu_utils::DialogOutcome::Submitted(sel.into_single()?)
             }
             crate::menu_utils::DialogOutcome::Cancelled => {
                 crate::menu_utils::DialogOutcome::Cancelled

@@ -224,8 +224,8 @@ pub(super) fn select_groups(header: &str) -> Result<Vec<String>> {
         .select(group_items)?;
 
     let selected_groups = match result {
-        crate::menu_utils::DialogOutcome::Submitted(items) => {
-            items.into_iter().map(|item| item.name).collect()
+        crate::menu_utils::DialogOutcome::Submitted(sel) => {
+            sel.items.into_iter().map(|item| item.name).collect()
         }
         crate::menu_utils::DialogOutcome::Cancelled => Vec::new(),
     };

@@ -9,7 +9,7 @@ use anyhow::Result;
 use crate::common::package::{PackageManager, install_package_names};
 use crate::common::shell::resolve_current_binary;
 use crate::menu_utils::{
-    ConfirmResult, DecodedStreamingMenuItem, FzfWrapper, Header, StreamingCommand,
+    ConfirmResult, DecodedStreamingMenuItem, FzfWrapper, Header, MenuSelection, StreamingCommand,
 };
 use crate::settings::context::SettingsContext;
 use crate::settings::definitions::installed_flatpaks::{
@@ -77,11 +77,11 @@ fn select_flatpak_apps() -> Result<Vec<String>> {
 
 fn extract_app_ids(
     result: crate::menu_utils::DialogOutcome<
-        Vec<DecodedStreamingMenuItem<FlatpakSelectionPayload>>,
+        MenuSelection<DecodedStreamingMenuItem<FlatpakSelectionPayload>>,
     >,
 ) -> Result<Vec<String>> {
     let rows = match result {
-        crate::menu_utils::DialogOutcome::Submitted(rows) => rows,
+        crate::menu_utils::DialogOutcome::Submitted(rows) => rows.items,
         crate::menu_utils::DialogOutcome::Cancelled => return Ok(vec![]),
     };
 

@@ -4,7 +4,9 @@
 
 use crate::common::distro::OperatingSystem;
 use crate::common::package::{PackageManager, detect_aur_helper, install_package_names};
-use crate::menu_utils::{ConfirmResult, DecodedStreamingMenuItem, FzfWrapper, Header};
+use crate::menu_utils::{
+    ConfirmResult, DecodedStreamingMenuItem, FzfWrapper, Header, MenuSelection,
+};
 use crate::settings::package_list::{self, PackageSelectionPayload};
 use anyhow::{Context, Result};
 
@@ -123,14 +125,15 @@ fn run_arch_installer(debug: bool) -> Result<()> {
 /// Handle Arch install result, splitting packages by source.
 fn handle_arch_install_result(
     result: crate::menu_utils::DialogOutcome<
-        Vec<DecodedStreamingMenuItem<PackageSelectionPayload>>,
+        MenuSelection<DecodedStreamingMenuItem<PackageSelectionPayload>>,
     >,
     aur_helper: Option<&str>,
     debug: bool,
 ) -> Result<()> {
     match result {
-        crate::menu_utils::DialogOutcome::Submitted(rows) if !rows.is_empty() => {
-            let (repo_pkgs, aur_pkgs) = parse_arch_selections(&rows);
+        crate::menu_utils::DialogOutcome::Submitted(sel) if !sel.items.is_empty() => {
+            let rows = &sel.items;
+            let (repo_pkgs, aur_pkgs) = parse_arch_selections(rows);
 
             if debug {
                 println!("Repo packages: {:?}", repo_pkgs);
@@ -160,7 +163,7 @@ fn handle_arch_install_result(
                 if aur_helper.is_some() {
                     let refs: Vec<&str> = aur_pkgs.iter().map(|s| s.as_str()).collect();
                     install_package_names(PackageManager::Aur, &refs)?;
-                } else if rows.len() == 1 {
+                } else if sel.items.len() == 1 {
                     anyhow::bail!("AUR package selected but no AUR helper found");
                 } else {
                     println!("Warning: No AUR helper found. Skipping: {:?}", aur_pkgs);
@@ -203,7 +206,7 @@ fn parse_arch_selections(
 /// Handle install result for simple (non-Arch) package managers.
 pub(crate) fn handle_install_result<F>(
     result: crate::menu_utils::DialogOutcome<
-        Vec<DecodedStreamingMenuItem<PackageSelectionPayload>>,
+        MenuSelection<DecodedStreamingMenuItem<PackageSelectionPayload>>,
     >,
     install_fn: F,
     debug: bool,
@@ -212,8 +215,9 @@ where
     F: FnOnce(&[&str]) -> Result<()>,
 {
     match result {
-        crate::menu_utils::DialogOutcome::Submitted(rows) if !rows.is_empty() => {
-            let packages: Vec<String> = rows
+        crate::menu_utils::DialogOutcome::Submitted(sel) if !sel.items.is_empty() => {
+            let packages: Vec<String> = sel
+                .items
                 .into_iter()
                 .map(|row| row.payload.package)
                 .filter(|s| !s.is_empty())

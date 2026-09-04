@@ -8,7 +8,9 @@ use anyhow::{Context, Result};
 
 use crate::common::distro::OperatingSystem;
 use crate::common::package::{PackageManager, removal_cascade, uninstall_packages};
-use crate::menu_utils::{ConfirmResult, DecodedStreamingMenuItem, FzfWrapper, HeaderBuilder};
+use crate::menu_utils::{
+    ConfirmResult, DecodedStreamingMenuItem, FzfWrapper, HeaderBuilder, MenuSelection,
+};
 use crate::settings::package_list::{self, PackageSelectionPayload};
 use crate::ui::nerd_font::NerdFont;
 
@@ -74,15 +76,16 @@ fn run_uninstaller(manager: PackageManager, debug: bool) -> Result<()> {
 /// Handle the uninstall result.
 fn handle_uninstall_result(
     result: crate::menu_utils::DialogOutcome<
-        Vec<DecodedStreamingMenuItem<PackageSelectionPayload>>,
+        MenuSelection<DecodedStreamingMenuItem<PackageSelectionPayload>>,
     >,
     manager: PackageManager,
     debug: bool,
 ) -> Result<UninstallResult> {
     match result {
-        crate::menu_utils::DialogOutcome::Submitted(rows) if !rows.is_empty() => {
+        crate::menu_utils::DialogOutcome::Submitted(sel) if !sel.items.is_empty() => {
             let packages = deduplicate_packages(
-                rows.into_iter()
+                sel.items
+                    .into_iter()
                     .map(|row| row.payload.package)
                     .filter(|s| !s.is_empty()),
             );

@@ -7,7 +7,7 @@
 //! command-dispatch layer.
 
 use crate::menu_utils::{
-    ConfirmResult, DialogOutcome, FilePickerBuilder, FilePickerScope, FzfWrapper,
+    ConfirmResult, DialogOutcome, FilePickerBuilder, FilePickerScope, FzfWrapper, MenuSelection,
 };
 use anyhow::{Context, Result, anyhow};
 use protocol::SerializableMenuItem;
@@ -351,7 +351,8 @@ fn handle_choice_buffered(
             FzfWrapper::builder()
                 .prompt(prompt.to_string())
                 .multi_select(allow_multiple)
-                .select(item_list),
+                .select(item_list)
+                .map(|outcome| outcome.map(MenuSelection::into_items)),
             "Local TUI",
             |items| {
                 for item in items {
@@ -394,7 +395,8 @@ fn handle_choice_tui_streaming(prompt: &str, allow_multiple: bool) -> Result<i32
         FzfWrapper::builder()
             .prompt(prompt.to_string())
             .multi_select(allow_multiple)
-            .select_streaming(Vec::new(), rx),
+            .select_streaming(Vec::new(), rx)
+            .map(|outcome| outcome.map(MenuSelection::into_items)),
         "Local TUI",
         |items| {
             for item in items {

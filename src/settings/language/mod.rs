@@ -140,7 +140,7 @@ fn handle_add_locale(ctx: &mut SettingsContext, state: &LocaleState) -> Result<b
         .select(candidates)?;
 
     let selected = match selection {
-        crate::menu_utils::DialogOutcome::Submitted(items) => items,
+        crate::menu_utils::DialogOutcome::Submitted(sel) => sel.items,
         crate::menu_utils::DialogOutcome::Cancelled => return Ok(false),
     };
 

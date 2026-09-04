@@ -19,8 +19,8 @@ pub use cursor::MenuCursor;
 pub use file_picker::{FilePickerBuilder, FilePickerScope};
 pub use fzf::{
     ChecklistAction, ChecklistResult, ConfirmResult, DecodedStreamingMenuItem, DialogOutcome,
-    FzfSelectable, FzfWrapper, Header, HeaderBuilder, MenuItem, MenuPresentation, StreamingCommand,
-    StreamingMenuItem, default_fzf_key,
+    FzfSelectable, FzfWrapper, Header, HeaderBuilder, MenuItem, MenuKey, MenuKeybind,
+    MenuPresentation, MenuSelection, StreamingCommand, StreamingMenuItem, default_fzf_key,
 };
 pub use keychord::{KeyChord, KeyChordAction, KeyChordChild, KeyChordNode};
 pub use path_input::{PathInputBuilder, PathInputSelection, SuggestionProducer};

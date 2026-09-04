@@ -575,7 +575,8 @@ pub async fn fix_interactive(max_concurrency: usize) -> Result<()> {
             .args(["--preview-window=right:50%:wrap"])
             .select(menu_items)?
         {
-            crate::menu_utils::DialogOutcome::Submitted(selected) => {
+            crate::menu_utils::DialogOutcome::Submitted(sel) => {
+                let selected = sel.items;
                 if selected.is_empty() {
                     emit(
                         Level::Info,

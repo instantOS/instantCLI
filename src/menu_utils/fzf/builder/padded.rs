@@ -10,6 +10,8 @@ use super::shared::{
     default_header_text, run_fzf_with_input,
 };
 use crate::menu_utils::fzf::types::{DialogOutcome, FzfPreview, FzfSelectable, InitialCursor};
+#[cfg(test)]
+use crate::menu_utils::fzf::wrapper::NO_KEYBINDS;
 use crate::menu_utils::fzf::wrapper::fzf_was_cancelled;
 
 /// Invisible marker used to keep non-selectable padded rows visible while fzf
@@ -23,7 +25,8 @@ impl FzfBuilder {
     ) -> Result<DialogOutcome<Vec<T>>> {
         #[cfg(test)]
         if let Some(resp) = crate::menu_utils::mock::pop_mock() {
-            return Ok(crate::menu_utils::mock::resolve_selection(resp, items));
+            let selection = crate::menu_utils::mock::resolve_selection(resp, items, NO_KEYBINDS);
+            return Ok(selection.map(|sel| sel.items));
         }
 
         if items.is_empty() {
@@ -291,7 +294,7 @@ mod mock_tests {
             .unwrap();
         match result {
             crate::menu_utils::DialogOutcome::Submitted(s) => {
-                assert_eq!(s, vec!["first".to_string()])
+                assert_eq!(s.items, vec!["first".to_string()])
             }
             other => panic!("Expected Submitted, got {other:?}"),
         }
