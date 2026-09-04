@@ -51,10 +51,10 @@ pub fn kill_active_menu_processes() -> Result<usize> {
     let count = processes.len();
     for pid in processes {
         // Use SIGINT (same as Ctrl+C/ESC) instead of SIGTERM to match normal cancellation behavior
-        let _ = std::process::Command::new("kill")
-            .arg("-INT")
-            .arg(pid.to_string())
-            .output();
+        let _ = nix::sys::signal::kill(
+            nix::unistd::Pid::from_raw(pid as i32),
+            nix::sys::signal::Signal::SIGINT,
+        );
     }
 
     Ok(count)
