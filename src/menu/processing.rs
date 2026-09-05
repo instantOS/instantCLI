@@ -33,7 +33,8 @@ impl RequestProcessor {
                 prompt,
                 items,
                 allow_multiple,
-            } => self.handle_choice_request(prompt, items, allow_multiple),
+                frecency_cache,
+            } => self.handle_choice_request(prompt, items, allow_multiple, frecency_cache),
             MenuRequest::Chord { chords } => self.handle_chord_request(chords),
             MenuRequest::Input { prompt } => self.handle_input_request(prompt),
             MenuRequest::Password { prompt } => self.handle_password_request(prompt),
@@ -176,7 +177,16 @@ impl RequestProcessor {
         prompt: String,
         items: Vec<SerializableMenuItem>,
         allow_multiple: bool,
+        frecency_cache: Option<String>,
     ) -> Result<MenuResponse> {
+        let mut frecency = frecency_cache
+            .as_deref()
+            .map(super::frecency::MenuFrecency::open)
+            .transpose()?;
+        let items = match frecency.as_ref() {
+            Some(state) => state.prepare(items),
+            None => items,
+        };
         if items.is_empty() {
             return Ok(MenuResponse::Error("No items to choose from".to_string()));
         }
@@ -187,6 +197,11 @@ impl RequestProcessor {
             .select(items)
         {
             Ok(crate::menu_utils::DialogOutcome::Submitted(sel)) => {
+                if let Some(state) = frecency.as_mut() {
+                    if let Err(error) = state.record_all(&sel.items) {
+                        eprintln!("Warning: {error:#}");
+                    }
+                }
                 Ok(MenuResponse::ChoiceResult(sel.items))
             }
             Ok(crate::menu_utils::DialogOutcome::Cancelled) => Ok(MenuResponse::Cancelled),

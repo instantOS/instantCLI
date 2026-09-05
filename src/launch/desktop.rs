@@ -1,72 +1,30 @@
+use crate::launch::types::DesktopAppDetails;
 use anyhow::{Context, Result};
 use freedesktop_file_parser::{EntryType, parse};
-use std::collections::HashMap;
 
-use crate::launch::types::DesktopAppDetails;
+/// Parse the selected file again immediately before launch. Discovery carries
+/// its resolved path so nested IDs and XDG precedence remain exact.
+pub fn load_desktop_details(file_path: &std::path::Path) -> Result<DesktopAppDetails> {
+    let content = std::fs::read_to_string(file_path).context("Failed to read desktop file")?;
+    let desktop_file = parse(&content).context("Failed to parse desktop file")?;
 
-/// Lazy desktop file loader and parser
-pub struct DesktopLoader {
-    cache: HashMap<String, DesktopAppDetails>,
-}
-
-impl DesktopLoader {
-    pub fn new() -> Self {
-        Self {
-            cache: HashMap::new(),
+    let (exec, terminal) = match &desktop_file.entry.entry_type {
+        EntryType::Application(app) => {
+            let exec = app.exec.clone().unwrap_or_default();
+            let terminal = app.terminal.unwrap_or(false);
+            (exec, terminal)
         }
-    }
+        _ => (String::new(), false), // Fallback for non-application types
+    };
 
-    /// Load desktop app details lazily
-    pub async fn get_desktop_details(&mut self, desktop_id: &str) -> Result<DesktopAppDetails> {
-        // Check if already cached
-        if let Some(cached) = self.cache.get(desktop_id) {
-            return Ok(cached.clone());
-        }
-
-        // Find and parse the desktop file
-        let details = self.load_and_parse_desktop_file(desktop_id).await?;
-        self.cache.insert(desktop_id.to_string(), details.clone());
-        Ok(details)
-    }
-
-    /// Find and parse desktop file
-    async fn load_and_parse_desktop_file(&self, desktop_id: &str) -> Result<DesktopAppDetails> {
-        let file_path = self.find_desktop_file_path(desktop_id).await?;
-        let content = std::fs::read_to_string(&file_path).context("Failed to read desktop file")?;
-        let desktop_file = parse(&content).context("Failed to parse desktop file")?;
-
-        let (exec, terminal) = match &desktop_file.entry.entry_type {
-            EntryType::Application(app) => {
-                let exec = app.exec.clone().unwrap_or_default();
-                let terminal = app.terminal.unwrap_or(false);
-                (exec, terminal)
-            }
-            _ => (String::new(), false), // Fallback for non-application types
-        };
-
-        Ok(DesktopAppDetails {
-            exec,
-            no_display: desktop_file.entry.no_display.unwrap_or(false),
-            terminal,
-        })
-    }
-
-    /// Find the path to a desktop file by searching XDG directories
-    async fn find_desktop_file_path(&self, desktop_id: &str) -> Result<std::path::PathBuf> {
-        let data_dirs = crate::launch::get_xdg_data_dirs();
-
-        for data_dir in data_dirs {
-            let apps_dir = data_dir.join("applications");
-            if apps_dir.exists() {
-                let desktop_path = apps_dir.join(desktop_id);
-                if desktop_path.exists() {
-                    return Ok(desktop_path);
-                }
-            }
-        }
-
-        Err(anyhow::anyhow!("Desktop file not found: {}", desktop_id))
-    }
+    Ok(DesktopAppDetails {
+        exec,
+        name: desktop_file.entry.name.default,
+        icon: desktop_file.entry.icon.map(|icon| icon.content),
+        desktop_path: file_path.to_path_buf(),
+        no_display: desktop_file.entry.no_display.unwrap_or(false),
+        terminal,
+    })
 }
 
 impl DesktopAppDetails {
@@ -76,14 +34,17 @@ impl DesktopAppDetails {
             return Err(anyhow::anyhow!("Application is marked as not displayable"));
         }
 
-        let exec_cmd = expand_exec_field_codes(&self.exec)?;
-
-        let parts: Vec<&str> = exec_cmd.split_whitespace().collect();
+        let parts = expand_exec_field_codes(
+            &self.exec,
+            &self.name,
+            self.icon.as_deref(),
+            &self.desktop_path,
+        )?;
         if parts.is_empty() {
             return Err(anyhow::anyhow!("Empty Exec command"));
         }
 
-        let mut cmd = std::process::Command::new(parts[0]);
+        let mut cmd = std::process::Command::new(&parts[0]);
 
         for arg in &parts[1..] {
             cmd.arg(arg);
@@ -104,32 +65,90 @@ impl DesktopAppDetails {
 }
 
 /// Expand field codes in Exec string
-fn expand_exec_field_codes(exec: &str) -> Result<String> {
-    let mut expanded = exec.to_string();
-
-    // Handle %% -> %
-    expanded = expanded.replace("%%", "%");
-
-    // Handle %c -> application name (not available in context, so remove)
-    expanded = expanded.replace("%c", "");
-
-    // Handle %f, %F, %u, %U (file arguments - not supported in launcher, remove)
-    expanded = expanded.replace("%f", "");
-    expanded = expanded.replace("%F", "");
-    expanded = expanded.replace("%u", "");
-    expanded = expanded.replace("%U", "");
-
-    // Handle %i (icon name - not supported, remove)
-    expanded = expanded.replace("%i", "");
-
-    // Handle %k (desktop file path - not supported, remove)
-    expanded = expanded.replace("%k", "");
-
-    // Clean up multiple spaces that might result from removing field codes
-    while expanded.contains("  ") {
-        expanded = expanded.replace("  ", " ");
+fn expand_exec_field_codes(
+    exec: &str,
+    name: &str,
+    icon: Option<&str>,
+    desktop_path: &std::path::Path,
+) -> Result<Vec<String>> {
+    let tokens = shell_words::split(exec).context("Failed to parse desktop Exec command")?;
+    let mut expanded = Vec::with_capacity(tokens.len());
+    for token in tokens {
+        match token.as_str() {
+            "%f" | "%F" | "%u" | "%U" => {}
+            "%c" => expanded.push(name.to_string()),
+            "%k" => expanded.push(desktop_path.to_string_lossy().into_owned()),
+            "%i" => {
+                if let Some(icon) = icon {
+                    expanded.push("--icon".to_string());
+                    expanded.push(icon.to_string());
+                }
+            }
+            _ => expanded.push(expand_embedded_codes(&token, name, desktop_path)?),
+        }
     }
-    expanded = expanded.trim().to_string();
-
+    expanded.retain(|argument| !argument.is_empty());
     Ok(expanded)
+}
+
+fn expand_embedded_codes(
+    token: &str,
+    name: &str,
+    desktop_path: &std::path::Path,
+) -> Result<String> {
+    let mut result = String::with_capacity(token.len());
+    let mut characters = token.chars();
+    while let Some(character) = characters.next() {
+        if character != '%' {
+            result.push(character);
+            continue;
+        }
+        match characters.next() {
+            Some('%') => result.push('%'),
+            Some('c') => result.push_str(name),
+            Some('k') => result.push_str(&desktop_path.to_string_lossy()),
+            Some('f' | 'F' | 'u' | 'U' | 'i') => {}
+            Some(code) => anyhow::bail!("Unsupported desktop Exec field code %{code}"),
+            None => anyhow::bail!("Trailing '%' in desktop Exec command"),
+        }
+    }
+    Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exec_expansion_preserves_quoted_arguments_and_literal_percent() {
+        let args = expand_exec_field_codes(
+            r#"app --title "Two words" --value=100%% %f"#,
+            "Example",
+            None,
+            std::path::Path::new("/apps/example.desktop"),
+        )
+        .unwrap();
+        assert_eq!(args, ["app", "--title", "Two words", "--value=100%"]);
+    }
+
+    #[test]
+    fn exec_expansion_supplies_desktop_metadata() {
+        let args = expand_exec_field_codes(
+            "app %i %c %k",
+            "Example App",
+            Some("example"),
+            std::path::Path::new("/apps/example.desktop"),
+        )
+        .unwrap();
+        assert_eq!(
+            args,
+            [
+                "app",
+                "--icon",
+                "example",
+                "Example App",
+                "/apps/example.desktop"
+            ]
+        );
+    }
 }

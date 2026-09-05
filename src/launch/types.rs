@@ -1,16 +1,26 @@
 /// Lightweight enum containing only display name and identifier
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LaunchItem {
-    DesktopApp(String),     // desktop_id (e.g., "firefox.desktop")
-    PathExecutable(String), // executable name
+    DesktopApp {
+        id: String,
+        name: String,
+        path: std::path::PathBuf,
+    },
+    PathExecutable {
+        name: String,
+        display_name: String,
+    },
 }
 
 /// Desktop app details loaded lazily when needed for execution
 #[derive(Debug, Clone, Default)]
 pub struct DesktopAppDetails {
-    pub exec: String,     // Exec command with field codes
-    pub no_display: bool, // Should be hidden
-    pub terminal: bool,   // Run in terminal
+    pub exec: String,
+    pub name: String,
+    pub icon: Option<String>,
+    pub desktop_path: std::path::PathBuf,
+    pub no_display: bool,
+    pub terminal: bool,
 }
 
 impl LaunchItem {
@@ -20,8 +30,22 @@ impl LaunchItem {
 
     pub fn metadata_type(&self) -> &'static str {
         match self {
-            LaunchItem::DesktopApp(_) => "desktop",
-            LaunchItem::PathExecutable(_) => "path",
+            LaunchItem::DesktopApp { .. } => "desktop",
+            LaunchItem::PathExecutable { .. } => "path",
+        }
+    }
+
+    pub fn stable_key(&self) -> String {
+        match self {
+            LaunchItem::DesktopApp { id, .. } => format!("desktop:{id}"),
+            LaunchItem::PathExecutable { name, .. } => format!("path:{name}"),
+        }
+    }
+
+    pub fn identifier(&self) -> &str {
+        match self {
+            LaunchItem::DesktopApp { id, .. } => id,
+            LaunchItem::PathExecutable { name, .. } => name,
         }
     }
 }
@@ -29,11 +53,8 @@ impl LaunchItem {
 impl std::fmt::Display for LaunchItem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let name = match self {
-            LaunchItem::DesktopApp(id) => {
-                // Extract name from desktop_id (remove .desktop suffix)
-                id.strip_suffix(".desktop").unwrap_or(id)
-            }
-            LaunchItem::PathExecutable(name) => name,
+            LaunchItem::DesktopApp { name, .. } => name,
+            LaunchItem::PathExecutable { display_name, .. } => display_name,
         };
         write!(f, "{}", name)
     }

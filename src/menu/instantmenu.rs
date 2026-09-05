@@ -210,6 +210,7 @@ impl InstantmenuBackend {
         prompt: &str,
         items: &[SerializableMenuItem],
         allow_multiple: bool,
+        frecency_cache: Option<&str>,
     ) -> Result<DialogOutcome<Vec<String>>> {
         let mut cmd = Command::new("instantmenu");
         cmd.arg("--border-width")
@@ -230,6 +231,10 @@ impl InstantmenuBackend {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
+
+        if let Some(namespace) = frecency_cache {
+            cmd.arg("--frecency-cache").arg(namespace);
+        }
 
         let mut input_data = String::new();
         for item in items {
@@ -275,6 +280,7 @@ impl InstantmenuBackend {
     pub fn choice_from_stdin_streaming(
         prompt: &str,
         allow_multiple: bool,
+        frecency_cache: Option<&str>,
     ) -> Result<DialogOutcome<Vec<String>>> {
         let mut cmd = Command::new("instantmenu");
         cmd.arg("--border-width")
@@ -295,6 +301,10 @@ impl InstantmenuBackend {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
+
+        if let Some(namespace) = frecency_cache {
+            cmd.arg("--frecency-cache").arg(namespace);
+        }
 
         let mut child = cmd.spawn().context("Failed to spawn instantmenu")?;
         let child_stdin = child

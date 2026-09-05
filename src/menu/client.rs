@@ -4,7 +4,7 @@ use crate::menu_utils::DialogOutcome;
 use anyhow::{Context, Result};
 use colored::*;
 use std::fs;
-use std::io::{self, BufRead, Read, Write};
+use std::io::{self, BufRead, Write};
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::process::Command;
@@ -232,6 +232,7 @@ impl HostedMenuClient {
         &self,
         prompt: String,
         allow_multiple: bool,
+        frecency_cache: Option<String>,
     ) -> Result<(UnixStream, io::BufReader<UnixStream>, String)> {
         let mut restarted = false;
         let mut prepared_stream = None;
@@ -254,6 +255,7 @@ impl HostedMenuClient {
                 MenuRequest::ChoiceBegin {
                     prompt: prompt.clone(),
                     allow_multiple,
+                    frecency_cache: frecency_cache.clone(),
                 },
             );
             write_menu_message(&write_stream, &begin)?;
@@ -466,11 +468,13 @@ impl HostedMenuClient {
         prompt: String,
         items: Vec<SerializableMenuItem>,
         allow_multiple: bool,
+        frecency_cache: Option<String>,
     ) -> Result<DialogOutcome<Vec<SerializableMenuItem>>> {
         let response = self.send_request(MenuRequest::Choice {
             prompt,
             items,
             allow_multiple,
+            frecency_cache,
         })?;
         decode_dialog_response(response, "choice", |response| match response {
             MenuResponse::ChoiceResult(selected) => Some(selected),
@@ -500,36 +504,68 @@ impl HostedMenuClient {
         &self,
         prompt: String,
         allow_multiple: bool,
+        frecency_cache: Option<String>,
+    ) -> Result<DialogOutcome<Vec<SerializableMenuItem>>> {
+        let (sender, receiver) =
+            crossbeam_channel::bounded::<SerializableMenuItem>(STREAM_ITEM_BUFFER_CAPACITY);
+        std::thread::spawn(move || {
+            let stdin = io::stdin();
+            let mut reader = io::BufReader::new(stdin.lock());
+            loop {
+                match read_plain_choice_chunk(&mut reader) {
+                    Ok(Some(items)) => {
+                        for item in items {
+                            if sender.send(item).is_err() {
+                                return;
+                            }
+                        }
+                    }
+                    Ok(None) | Err(_) => return,
+                }
+            }
+        });
+        self.choice_streaming(prompt, receiver, allow_multiple, frecency_cache)
+    }
+
+    /// Show a hosted choice whose typed items are produced incrementally.
+    /// With frecency enabled, the server collects through end-of-stream,
+    /// globally ranks the corpus, then starts fzf. Without it, items remain
+    /// live and are appended to the running fzf process.
+    pub fn choice_streaming(
+        &self,
+        prompt: String,
+        items: crossbeam_channel::Receiver<SerializableMenuItem>,
+        allow_multiple: bool,
+        frecency_cache: Option<String>,
     ) -> Result<DialogOutcome<Vec<SerializableMenuItem>>> {
         if self.transport != MenuTransport::ScratchpadServer {
-            let mut buffer = String::new();
-            io::stdin()
-                .read_to_string(&mut buffer)
-                .map_err(|e| anyhow::anyhow!("Failed to read from stdin: {}", e))?;
-            let items = plain_choice_items_from_input(&buffer);
-            return self.choice(prompt, items, allow_multiple);
+            return self.choice(
+                prompt,
+                items.iter().collect(),
+                allow_multiple,
+                frecency_cache,
+            );
         }
 
         let (write_stream, mut response_reader, request_id) =
-            self.open_streaming_choice(prompt, allow_multiple)?;
+            self.open_streaming_choice(prompt, allow_multiple, frecency_cache)?;
 
         let stream_request_id = request_id.clone();
         std::thread::spawn(move || {
             let mut writer = io::BufWriter::new(write_stream);
-            let stdin = io::stdin();
-            let mut reader = io::BufReader::new(stdin.lock());
-            loop {
-                let items = match read_plain_choice_chunk(&mut reader) {
-                    Ok(Some(items)) => items,
-                    Ok(None) => break,
-                    // Dropping the write half without ChoiceEnd tells the
-                    // server this was an aborted producer, not clean EOF.
-                    Err(_) => return,
-                };
-
+            while let Ok(first) = items.recv() {
+                let mut chunk_items = Vec::with_capacity(64);
+                chunk_items.push(first);
+                while chunk_items.len() < 64 {
+                    match items.try_recv() {
+                        Ok(item) => chunk_items.push(item),
+                        Err(crossbeam_channel::TryRecvError::Empty) => break,
+                        Err(crossbeam_channel::TryRecvError::Disconnected) => break,
+                    }
+                }
                 let chunk = MenuMessage::new(
                     stream_request_id.clone(),
-                    MenuRequest::ChoiceChunk { items },
+                    MenuRequest::ChoiceChunk { items: chunk_items },
                 );
                 if write_menu_message_buffered(&mut writer, &chunk).is_err() {
                     return;
@@ -864,7 +900,7 @@ mod tests {
             transport: MenuTransport::ScratchpadServer,
         };
         let (write_stream, mut response_reader, request_id) = client
-            .open_streaming_choice("Pick".to_string(), false)
+            .open_streaming_choice("Pick".to_string(), false, None)
             .unwrap();
         drop(write_stream);
         let mut completed = String::new();

@@ -48,7 +48,7 @@ pub fn search_man_pages() -> Result<()> {
         })
         .collect();
 
-    let selected = match client.choice("Select a man page:".to_string(), items, false)? {
+    let selected = match client.choice("Select a man page:".to_string(), items, false, None)? {
         crate::menu_utils::DialogOutcome::Submitted(selected) => selected,
         crate::menu_utils::DialogOutcome::Cancelled => return Ok(()),
     };

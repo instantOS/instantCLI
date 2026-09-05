@@ -18,6 +18,7 @@ pub mod chord;
 pub mod client;
 mod commands;
 mod fallback;
+mod frecency;
 pub mod instantmenu;
 pub mod processing;
 pub mod protocol;
@@ -158,6 +159,7 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
             ref prompt_option,
             ref items,
             allow_multiple,
+            ref frecency_cache,
             backend,
         } => handle_choice(
             prompt_option
@@ -166,6 +168,7 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
                 .unwrap_or("Select an item:"),
             items,
             allow_multiple,
+            frecency_cache.as_deref(),
             backend,
         ),
         MenuCommands::Chord {
@@ -279,12 +282,16 @@ fn handle_choice(
     prompt: &str,
     items: &str,
     allow_multiple: bool,
+    frecency_cache: Option<&str>,
     backend: MenuBackend,
 ) -> Result<i32> {
+    if let Some(namespace) = frecency_cache {
+        frecency::validate_namespace(namespace)?;
+    }
     if !items.is_empty() {
         let item_list: Vec<SerializableMenuItem> =
             items.split(' ').map(SerializableMenuItem::plain).collect();
-        return handle_choice_buffered(prompt, item_list, allow_multiple, backend);
+        return handle_choice_buffered(prompt, item_list, allow_multiple, frecency_cache, backend);
     }
 
     if std::io::stdin().is_terminal() {
@@ -295,7 +302,11 @@ fn handle_choice(
 
     match backend.resolve(true) {
         ResolvedBackend::Instantmenu => Ok(finish_dialog(
-            instantmenu::InstantmenuBackend::choice_from_stdin_streaming(prompt, allow_multiple),
+            instantmenu::InstantmenuBackend::choice_from_stdin_streaming(
+                prompt,
+                allow_multiple,
+                frecency_cache,
+            ),
             "Native dialog",
             |selected| {
                 for item in selected {
@@ -306,7 +317,11 @@ fn handle_choice(
         ResolvedBackend::Scratchpad => {
             let client = HostedMenuClient::new();
             Ok(finish_dialog(
-                client.choice_from_stdin_streaming(prompt.to_string(), allow_multiple),
+                client.choice_from_stdin_streaming(
+                    prompt.to_string(),
+                    allow_multiple,
+                    frecency_cache.map(ToOwned::to_owned),
+                ),
                 "Hosted dialog",
                 |selected| {
                     for item in selected {
@@ -315,7 +330,7 @@ fn handle_choice(
                 },
             ))
         }
-        ResolvedBackend::Tui => handle_choice_tui_streaming(prompt, allow_multiple),
+        ResolvedBackend::Tui => handle_choice_tui_streaming(prompt, allow_multiple, frecency_cache),
     }
 }
 
@@ -325,11 +340,17 @@ fn handle_choice_buffered(
     prompt: &str,
     item_list: Vec<SerializableMenuItem>,
     allow_multiple: bool,
+    frecency_cache: Option<&str>,
     backend: MenuBackend,
 ) -> Result<i32> {
     match backend.resolve(true) {
         ResolvedBackend::Instantmenu => Ok(finish_dialog(
-            instantmenu::InstantmenuBackend::choice(prompt, &item_list, allow_multiple),
+            instantmenu::InstantmenuBackend::choice(
+                prompt,
+                &item_list,
+                allow_multiple,
+                frecency_cache,
+            ),
             "Native dialog",
             |selected| {
                 for item in selected {
@@ -340,7 +361,12 @@ fn handle_choice_buffered(
         ResolvedBackend::Scratchpad => {
             let client = HostedMenuClient::new();
             Ok(finish_dialog(
-                client.choice(prompt.to_string(), item_list, allow_multiple),
+                client.choice(
+                    prompt.to_string(),
+                    item_list,
+                    allow_multiple,
+                    frecency_cache.map(ToOwned::to_owned),
+                ),
                 "Hosted dialog",
                 |selected| {
                     for item in selected {
@@ -349,19 +375,33 @@ fn handle_choice_buffered(
                 },
             ))
         }
-        ResolvedBackend::Tui => Ok(finish_dialog(
-            FzfWrapper::builder()
-                .prompt(prompt.to_string())
-                .multi_select(allow_multiple)
-                .select(item_list)
-                .map(|outcome| outcome.map(MenuSelection::into_items)),
-            "Local TUI",
-            |items| {
-                for item in items {
-                    println!("{}", item.display_text);
-                }
-            },
-        )),
+        ResolvedBackend::Tui => {
+            let mut frecency = frecency_cache
+                .map(frecency::MenuFrecency::open)
+                .transpose()?;
+            let item_list = match frecency.as_ref() {
+                Some(state) => state.prepare(item_list),
+                None => item_list,
+            };
+            Ok(finish_dialog(
+                FzfWrapper::builder()
+                    .prompt(prompt.to_string())
+                    .multi_select(allow_multiple)
+                    .select(item_list)
+                    .map(|outcome| outcome.map(MenuSelection::into_items)),
+                "Local TUI",
+                |items| {
+                    for item in &items {
+                        println!("{}", item.display_text);
+                    }
+                    if let Some(state) = frecency.as_mut() {
+                        if let Err(error) = state.record_all(&items) {
+                            eprintln!("Warning: {error:#}");
+                        }
+                    }
+                },
+            ))
+        }
     }
 }
 
@@ -370,7 +410,27 @@ fn handle_choice_buffered(
 /// but leaves the menu open for selection. The reader may stay blocked
 /// on stdin for infinite producers — the short-lived CLI process
 /// exiting kills it, so it is detached, not joined.
-fn handle_choice_tui_streaming(prompt: &str, allow_multiple: bool) -> Result<i32> {
+fn handle_choice_tui_streaming(
+    prompt: &str,
+    allow_multiple: bool,
+    frecency_cache: Option<&str>,
+) -> Result<i32> {
+    if let Some(namespace) = frecency_cache {
+        use std::io::BufRead;
+        let items = std::io::BufReader::new(std::io::stdin().lock())
+            .lines()
+            .collect::<std::io::Result<Vec<_>>>()?
+            .into_iter()
+            .map(SerializableMenuItem::plain)
+            .collect();
+        return handle_choice_buffered(
+            prompt,
+            items,
+            allow_multiple,
+            Some(namespace),
+            MenuBackend::Tui,
+        );
+    }
     let (tx, rx) =
         crossbeam_channel::bounded::<SerializableMenuItem>(protocol::STREAM_ITEM_BUFFER_CAPACITY);
     std::thread::spawn(move || {
@@ -957,6 +1017,16 @@ mod tests {
         };
         assert_eq!(prompt, None);
         assert_eq!(prompt_option.as_deref(), Some("Pick another"));
+    }
+
+    #[test]
+    fn choice_accepts_frecency_namespace() {
+        let cli =
+            MenuCli::try_parse_from(["ins-menu", "choice", "--frecency-cache", "launch"]).unwrap();
+        let MenuCommands::Choice { frecency_cache, .. } = cli.command else {
+            panic!("Expected Choice command");
+        };
+        assert_eq!(frecency_cache.as_deref(), Some("launch"));
     }
 
     #[test]

@@ -100,6 +100,7 @@ pub enum MenuRequest {
         prompt: String,
         items: Vec<SerializableMenuItem>,
         allow_multiple: bool,
+        frecency_cache: Option<String>,
     },
     /// Start a streaming selection menu. First frame on a connection;
     /// server opens the menu immediately, then receives
@@ -107,6 +108,7 @@ pub enum MenuRequest {
     ChoiceBegin {
         prompt: String,
         allow_multiple: bool,
+        frecency_cache: Option<String>,
     },
     /// Batch of items for an in-progress streaming choice.
     /// Same `request_id` as the opening `ChoiceBegin`.
@@ -246,7 +248,7 @@ pub struct MenuStatus {
 }
 
 /// Protocol version information
-pub const PROTOCOL_VERSION: &str = "3.0";
+pub const PROTOCOL_VERSION: &str = "4.0";
 
 fn legacy_protocol_version() -> String {
     "1.0".to_string()
@@ -284,10 +286,6 @@ pub fn generate_request_id() -> String {
     let random: u32 = rand::random();
 
     format!("req_{timestamp}_{random}")
-}
-
-pub fn plain_choice_items_from_input(input: &str) -> Vec<SerializableMenuItem> {
-    input.lines().map(SerializableMenuItem::plain).collect()
 }
 
 impl SerializableMenuItem {
@@ -401,14 +399,15 @@ mod tests {
             prompt: "Select an option:".to_string(),
             items,
             allow_multiple: false,
+            frecency_cache: Some("applications".to_string()),
         };
 
         let json = serde_json::to_string(&request).unwrap();
         let deserialized: MenuRequest = serde_json::from_str(&json).unwrap();
 
         assert!(
-            matches!(deserialized, MenuRequest::Choice { prompt, items, allow_multiple: false }
-                if prompt == "Select an option:" && items.len() == 2)
+            matches!(deserialized, MenuRequest::Choice { prompt, items, allow_multiple: false, frecency_cache: Some(namespace) }
+                if prompt == "Select an option:" && items.len() == 2 && namespace == "applications")
         );
     }
 
@@ -517,6 +516,7 @@ mod tests {
                 MenuRequest::ChoiceBegin {
                     prompt: "Pick:".to_string(),
                     allow_multiple: false,
+                    frecency_cache: Some("stream".to_string()),
                 },
             ),
             MenuMessage::new(
@@ -540,7 +540,8 @@ mod tests {
 
         assert_eq!(parsed.len(), 3);
         assert!(
-            matches!(&parsed[0].payload, MenuRequest::ChoiceBegin { prompt, .. } if prompt == "Pick:")
+            matches!(&parsed[0].payload, MenuRequest::ChoiceBegin { prompt, frecency_cache: Some(namespace), .. }
+                if prompt == "Pick:" && namespace == "stream")
         );
         assert!(
             matches!(&parsed[1].payload, MenuRequest::ChoiceChunk { items } if items.len() == 1 && items[0].display_text == "alpha")

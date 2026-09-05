@@ -37,6 +37,9 @@ pub enum MenuCommands {
         items: String,
         #[arg(long = "allow-multiple", visible_alias = "multi")]
         allow_multiple: bool,
+        /// Rank and remember selections within this menu namespace
+        #[arg(long = "frecency-cache", value_name = "NAMESPACE")]
+        frecency_cache: Option<String>,
         #[arg(short = 'b', long = "backend", value_enum, default_value_t = MenuBackend::Auto)]
         backend: MenuBackend,
     },

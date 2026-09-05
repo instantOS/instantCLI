@@ -1,19 +1,17 @@
 use anyhow::{Context, Result};
 use clap::Subcommand;
-use std::collections::HashMap;
 use std::path::PathBuf;
 
-pub mod cache;
 pub mod desktop;
+pub mod discovery;
 pub mod execute;
 pub mod types;
 
 use crate::menu::client;
 use crate::menu::protocol::{FzfPreview, SerializableMenuItem};
-use cache::LaunchCache;
 use types::LaunchItem;
 
-/// Get XDG data directories (common helper shared by cache and desktop)
+/// Get XDG data directories in desktop-entry precedence order.
 pub(crate) fn get_xdg_data_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
 
@@ -45,14 +43,13 @@ pub enum LaunchCommands {
 
 /// Handle launch command
 pub async fn handle_launch_command(list_only: bool) -> Result<i32> {
-    // Initialize cache
-    let mut cache = LaunchCache::new()?;
-
     if list_only {
-        let launch_items = cache.get_launch_items().await?;
+        let launch_items = tokio::task::spawn_blocking(discovery::discover_launch_items)
+            .await
+            .context("application discovery task failed")?;
         handle_list_mode(&launch_items)
     } else {
-        handle_interactive_mode(&mut cache).await
+        handle_interactive_mode().await
     }
 }
 
@@ -64,42 +61,31 @@ fn handle_list_mode(launch_items: &[LaunchItem]) -> Result<i32> {
     Ok(0)
 }
 
-async fn handle_interactive_mode(cache: &mut LaunchCache) -> Result<i32> {
+async fn handle_interactive_mode() -> Result<i32> {
     let client = client::HostedMenuClient::new();
-    let server_client = client.clone();
-    let server_ready = tokio::task::spawn_blocking(move || server_client.prepare());
-    let launch_items = cache.get_launch_items().await?;
-    let menu_items = prepare_menu_items(&launch_items);
-
-    server_ready
-        .await
-        .context("menu server startup task failed")??;
-
-    // Show choice menu
-    match client.choice("Launch application:".to_string(), menu_items, false) {
-        Ok(crate::menu_utils::DialogOutcome::Submitted(selected)) => {
-            let selected_metadata = selected[0]
-                .metadata
-                .as_ref()
-                .ok_or_else(|| anyhow::anyhow!("Selection metadata missing"))?;
-
-            let index = selected_metadata
-                .get("index")
-                .ok_or_else(|| anyhow::anyhow!("Selection index missing"))?
-                .parse::<usize>()
-                .context("Selection index is invalid")?;
-
-            let launch_item = launch_items
-                .get(index)
-                .ok_or_else(|| anyhow::anyhow!("Launch item index out of bounds: {index}"))?;
-
-            // Execute the selected item
-            execute::execute_launch_item(launch_item).await?;
-
-            // Record launch in frecency store
-            if let Err(e) = cache.record_launch_item(launch_item) {
-                eprintln!("Warning: Failed to record launch: {e}");
+    let (sender, receiver) =
+        crossbeam_channel::bounded(crate::menu::protocol::STREAM_ITEM_BUFFER_CAPACITY);
+    tokio::task::spawn_blocking(move || {
+        for item in discovery::discover_launch_items() {
+            if sender.send(prepare_menu_item(&item)).is_err() {
+                break;
             }
+        }
+    });
+
+    match client.choice_streaming(
+        "Launch application:".to_string(),
+        receiver,
+        false,
+        Some("launch".to_string()),
+    ) {
+        Ok(crate::menu_utils::DialogOutcome::Submitted(selected)) => {
+            let launch_item = launch_item_from_menu(
+                selected
+                    .first()
+                    .context("Menu submitted an empty selection")?,
+            )?;
+            execute::execute_launch_item(&launch_item)?;
 
             Ok(0) // Success
         }
@@ -111,21 +97,43 @@ async fn handle_interactive_mode(cache: &mut LaunchCache) -> Result<i32> {
     }
 }
 
-fn prepare_menu_items(launch_items: &[LaunchItem]) -> Vec<SerializableMenuItem> {
-    let mut menu_items = Vec::with_capacity(launch_items.len());
-
-    for (index, item) in launch_items.iter().enumerate() {
-        let mut metadata = HashMap::new();
-        metadata.insert("type".to_string(), item.metadata_type().to_string());
-        metadata.insert("index".to_string(), index.to_string());
-
-        menu_items.push(SerializableMenuItem {
-            key: None,
-            display_text: item.to_string(),
-            preview: FzfPreview::None,
-            metadata: Some(metadata),
-        });
+fn prepare_menu_item(item: &LaunchItem) -> SerializableMenuItem {
+    let mut metadata = std::collections::HashMap::new();
+    metadata.insert("type".to_string(), item.metadata_type().to_string());
+    metadata.insert("identifier".to_string(), item.identifier().to_string());
+    if let LaunchItem::DesktopApp { path, .. } = item {
+        metadata.insert("path".to_string(), path.to_string_lossy().into_owned());
     }
+    SerializableMenuItem {
+        key: Some(item.stable_key()),
+        display_text: item.to_string(),
+        preview: FzfPreview::None,
+        metadata: Some(metadata),
+    }
+}
 
-    menu_items
+fn launch_item_from_menu(item: &SerializableMenuItem) -> Result<LaunchItem> {
+    let metadata = item
+        .metadata
+        .as_ref()
+        .context("Selection metadata missing")?;
+    let identifier = metadata
+        .get("identifier")
+        .context("Selection identifier missing")?
+        .clone();
+    match metadata.get("type").map(String::as_str) {
+        Some("desktop") => Ok(LaunchItem::DesktopApp {
+            id: identifier,
+            name: item.display_text.clone(),
+            path: metadata
+                .get("path")
+                .context("Desktop selection path missing")?
+                .into(),
+        }),
+        Some("path") => Ok(LaunchItem::PathExecutable {
+            name: identifier,
+            display_name: item.display_text.clone(),
+        }),
+        _ => anyhow::bail!("Selection type is missing or invalid"),
+    }
 }

@@ -278,8 +278,19 @@ impl MenuServer {
         if let MenuRequest::ChoiceBegin {
             prompt,
             allow_multiple,
+            frecency_cache,
         } = message.payload
         {
+            if let Some(frecency_cache) = frecency_cache {
+                return self.handle_ranked_choice_stream_connection(
+                    stream,
+                    reader,
+                    message.request_id,
+                    prompt,
+                    allow_multiple,
+                    frecency_cache,
+                );
+            }
             return self.handle_choice_stream_connection(
                 stream,
                 reader,
@@ -427,6 +438,73 @@ impl MenuServer {
             eprintln!("Warning: Failed to hide scratchpad: {e}");
         }
 
+        Self::write_response(&mut stream, request_id, response)
+    }
+
+    /// Collect a complete streamed corpus before starting fzf so menu-owned
+    /// frecency can establish one global order. The scratchpad is shown and
+    /// `ChoiceReady` is sent first, allowing discovery to run only after the
+    /// UI has claimed its place on screen.
+    fn handle_ranked_choice_stream_connection(
+        &self,
+        mut stream: UnixStream,
+        mut reader: io::BufReader<UnixStream>,
+        request_id: String,
+        prompt: String,
+        allow_multiple: bool,
+        frecency_cache: String,
+    ) -> Result<()> {
+        if let Some(ref manager) = self.scratchpad_manager
+            && let Err(error) = manager.show()
+        {
+            eprintln!("Warning: Failed to show scratchpad: {error}");
+        }
+
+        reader.get_ref().set_read_timeout(None)?;
+        Self::write_response(&mut stream, request_id.clone(), MenuResponse::ChoiceReady)?;
+
+        let mut items = Vec::new();
+        let response = loop {
+            let Some(frame) = read_menu_message(&mut reader)? else {
+                break MenuResponse::Error(
+                    "Ranked choice stream ended before ChoiceEnd".to_string(),
+                );
+            };
+            if frame.request_id != request_id || frame.protocol_version != PROTOCOL_VERSION {
+                break MenuResponse::Error("Invalid ranked choice stream frame".to_string());
+            }
+            match frame.payload {
+                MenuRequest::ChoiceChunk { items: chunk } => items.extend(chunk),
+                MenuRequest::ChoiceEnd => {
+                    let request = MenuRequest::Choice {
+                        prompt,
+                        items,
+                        allow_multiple,
+                        frecency_cache: Some(frecency_cache),
+                    };
+                    break if self.scratchpad_manager.is_some() {
+                        self.process_monitored_request(request)?
+                    } else {
+                        let processor = RequestProcessor::new(
+                            self.running.clone(),
+                            self.requests_processed.clone(),
+                        );
+                        processor.process_internal(request)?
+                    };
+                }
+                _ => {
+                    break MenuResponse::Error(
+                        "Unexpected frame in ranked choice stream".to_string(),
+                    );
+                }
+            }
+        };
+
+        if let Some(ref manager) = self.scratchpad_manager
+            && let Err(error) = manager.hide_fast()
+        {
+            eprintln!("Warning: Failed to hide scratchpad: {error}");
+        }
         Self::write_response(&mut stream, request_id, response)
     }
 
@@ -793,6 +871,7 @@ mod tests {
                 MenuRequest::ChoiceBegin {
                     prompt: "Pick".to_string(),
                     allow_multiple: false,
+                    frecency_cache: None,
                 },
             ),
             MenuMessage::new(
@@ -844,6 +923,7 @@ mod tests {
             MenuRequest::ChoiceBegin {
                 prompt: "Pick".to_string(),
                 allow_multiple: false,
+                frecency_cache: None,
             },
         );
         serde_json::to_writer(&mut client_stream, &begin).unwrap();
@@ -866,6 +946,64 @@ mod tests {
         let response: MenuResponseMessage = serde_json::from_str(response.trim()).unwrap();
         assert_eq!(response.request_id, request_id);
         assert!(matches!(response.payload, MenuResponse::Cancelled));
+    }
+
+    #[test]
+    fn ranked_stream_acknowledges_before_eof_and_then_runs_choice() {
+        let server = MenuServer {
+            socket_path: default_socket_path(),
+            running: Arc::new(AtomicBool::new(true)),
+            start_time: std::time::SystemTime::now(),
+            requests_processed: Arc::new(AtomicU64::new(0)),
+            compositor: CompositorType::detect(),
+            scratchpad_manager: None,
+            tui: None,
+        };
+        let (mut client_stream, server_stream) = UnixStream::pair().unwrap();
+        let request_id = "ranked".to_string();
+        let server_thread = std::thread::spawn(move || {
+            let _guard = MockQueue::new().cancel_selection().guard();
+            server.handle_connection_sync(server_stream).unwrap();
+        });
+
+        let begin = MenuMessage::new(
+            request_id.clone(),
+            MenuRequest::ChoiceBegin {
+                prompt: "Pick".to_string(),
+                allow_multiple: false,
+                frecency_cache: Some("server_test".to_string()),
+            },
+        );
+        serde_json::to_writer(&mut client_stream, &begin).unwrap();
+        client_stream.write_all(b"\n").unwrap();
+
+        let read_stream = client_stream.try_clone().unwrap();
+        let mut reader = io::BufReader::new(read_stream);
+        let ready = read_menu_message_response(&mut reader);
+        assert!(matches!(ready.payload, MenuResponse::ChoiceReady));
+
+        let chunk = MenuMessage::new(
+            request_id.clone(),
+            MenuRequest::ChoiceChunk {
+                items: vec![SerializableMenuItem::plain("item")],
+            },
+        );
+        serde_json::to_writer(&mut client_stream, &chunk).unwrap();
+        client_stream.write_all(b"\n").unwrap();
+        let end = MenuMessage::new(request_id.clone(), MenuRequest::ChoiceEnd);
+        serde_json::to_writer(&mut client_stream, &end).unwrap();
+        client_stream.write_all(b"\n").unwrap();
+
+        let response = read_menu_message_response(&mut reader);
+        assert_eq!(response.request_id, request_id);
+        assert!(matches!(response.payload, MenuResponse::Cancelled));
+        server_thread.join().unwrap();
+    }
+
+    fn read_menu_message_response(reader: &mut impl io::BufRead) -> MenuResponseMessage {
+        let mut line = String::new();
+        reader.read_line(&mut line).unwrap();
+        serde_json::from_str(line.trim()).unwrap()
     }
 
     #[test]
