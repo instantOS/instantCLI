@@ -59,6 +59,41 @@ fn short_name(description: &str) -> &str {
         .map_or(description, |(name, _)| name)
 }
 
+/// Show a single-key instantmenu with `input` (newline-joined options) and
+/// return the selected item label, or `""` when the user cancels or the
+/// selection is empty. Shared by the top-level and group menus.
+fn run_single_key_menu(prompt: &str, input: &str) -> Result<String> {
+    let output = Command::new("instantmenu")
+        .args([
+            "--prompt",
+            prompt,
+            "--line-height",
+            "32",           // Minimum height of one menu line (C: -h)
+            "--single-key", // instantASSIST single-letter mode (C: -ct)
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .context("Failed to spawn instantmenu")
+        .and_then(|mut child| {
+            if let Some(stdin) = child.stdin.as_mut() {
+                stdin
+                    .write_all(input.as_bytes())
+                    .context("Failed to write instantmenu input")?;
+            }
+            child
+                .wait_with_output()
+                .context("Failed to wait for instantmenu")
+        })?;
+
+    // Cancelled or closed: no selection.
+    if !output.status.success() {
+        return Ok(String::new());
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
 /// Show top-level assist options using instantmenu
 fn show_top_level_instantmenu(assists: &[registry::AssistEntry]) -> Result<String> {
     let mut options = Vec::new();
@@ -101,43 +136,13 @@ fn show_top_level_instantmenu(assists: &[registry::AssistEntry]) -> Result<Strin
 
     let input = options.join("\n");
 
-    let output = Command::new("instantmenu")
-        .args([
-            "--prompt",
-            "instantASSIST", // Prompt text
-            "--line-height",
-            "32",           // Minimum height of one menu line (C: -h)
-            "--single-key", // instantASSIST single-letter mode (C: -ct)
-        ])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .context("Failed to spawn instantmenu")
-        .and_then(|mut child| {
-            if let Some(stdin) = child.stdin.as_mut() {
-                stdin
-                    .write_all(input.as_bytes())
-                    .context("Failed to write instantmenu input")?;
-            }
-            child
-                .wait_with_output()
-                .context("Failed to wait for instantmenu")
-        })?;
-
-    // Cancelled or closed: do nothing.
-    if !output.status.success() {
-        return Ok(String::new());
-    }
-
-    let selection = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    // --single-key prints the item label; look it up in our map
+    let selection = run_single_key_menu("instantASSIST", &input)?;
     if selection.is_empty() {
         return Ok(String::new());
     }
 
-    // --single-key prints the item label; look it up in our map
-    let selected_key = label_to_key.get(&selection).cloned().unwrap_or_default();
-
-    Ok(selected_key)
+    Ok(label_to_key.get(&selection).cloned().unwrap_or_default())
 }
 
 /// Show group options using instantmenu with single character keys
@@ -184,40 +189,12 @@ fn show_group_options_instantmenu(
 
     let input = options.join("\n");
 
-    let output = Command::new("instantmenu")
-        .args([
-            "--prompt",
-            &format!("instantASSIST - {}", group_prefix), // Prompt text with group prefix
-            "--line-height",
-            "32",           // Minimum height of one menu line (C: -h)
-            "--single-key", // instantASSIST single-letter mode (C: -ct)
-        ])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .context("Failed to spawn instantmenu")
-        .and_then(|mut child| {
-            if let Some(stdin) = child.stdin.as_mut() {
-                stdin
-                    .write_all(input.as_bytes())
-                    .context("Failed to write instantmenu input")?;
-            }
-            child
-                .wait_with_output()
-                .context("Failed to wait for instantmenu")
-        })?;
-
-    // Cancelled or closed: do nothing.
-    if !output.status.success() {
-        return Ok(());
-    }
-
-    let selection = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    // --single-key prints the item label; look it up in our map
+    let selection = run_single_key_menu(&format!("instantASSIST - {group_prefix}"), &input)?;
     if selection.is_empty() {
         return Ok(());
     }
 
-    // --single-key prints the item label; look it up in our map
     let actual_chord = label_to_chord
         .get(&selection)
         .cloned()

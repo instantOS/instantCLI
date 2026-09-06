@@ -1,10 +1,13 @@
 use anyhow::{Result, anyhow};
 use std::io::Write;
-use std::process::{Command, Output, Stdio};
+use std::process::{Command, Output};
 
 use super::SharedConfig;
+use crate::menu::server::tracked_spawn;
 use crate::menu_utils::fzf::types::Header;
 use crate::menu_utils::fzf::utils::{extract_icon_padding, handle_fzf_spawn_error};
+
+pub(super) use super::super::utils::base_fzf_command;
 
 pub(super) struct FzfCommandOptions {
     pub prompt_suffix: Option<&'static str>,
@@ -12,12 +15,6 @@ pub(super) struct FzfCommandOptions {
     pub include_additional_args: bool,
     pub cursor: Option<usize>,
     pub responsive_layout: bool,
-}
-
-pub(super) fn base_fzf_command() -> Command {
-    let mut cmd = Command::new("fzf");
-    cmd.env_remove("FZF_DEFAULT_OPTS");
-    cmd
 }
 
 pub(super) fn apply_fzf_command_options(
@@ -57,37 +54,30 @@ pub(super) fn default_header_text(shared: &SharedConfig) -> Option<String> {
 }
 
 pub(super) fn run_fzf_with_input(mut cmd: Command, input: &[u8]) -> Result<Output> {
-    let child = cmd
-        .stdin(Stdio::piped())
+    use std::process::Stdio;
+
+    cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn();
-
-    let mut child = match child {
-        Ok(child) => child,
-        Err(error) => {
-            handle_fzf_spawn_error(&error);
-            return Err(anyhow!("fzf execution failed: {error}"));
+        .stderr(Stdio::piped());
+    let mut tracked = tracked_spawn(cmd).map_err(|error| {
+        // A spawn failure is either "fzf missing" (recover/setup hints) or
+        // an ordinary io error; keep the historical handling.
+        if let Some(io_error) = error.downcast_ref::<std::io::Error>() {
+            handle_fzf_spawn_error(io_error);
         }
-    };
+        anyhow!("fzf execution failed: {error}")
+    })?;
 
-    let pid = child.id();
-    let _ = crate::menu::server::register_menu_process(pid);
-
-    if let Some(stdin) = child.stdin.as_mut() {
+    if let Some(stdin) = tracked.inner_mut().stdin.as_mut() {
         stdin.write_all(input)?;
     }
 
-    let output = child.wait_with_output();
-    crate::menu::server::unregister_menu_process(pid);
-
-    match output {
-        Ok(output) => Ok(output),
-        Err(error) => {
-            handle_fzf_spawn_error(&error);
-            Err(anyhow!("fzf execution failed: {error}"))
+    tracked.finish_with_output().map_err(|error| {
+        if let Some(io_error) = error.downcast_ref::<std::io::Error>() {
+            handle_fzf_spawn_error(io_error);
         }
-    }
+        anyhow!("fzf execution failed: {error}")
+    })
 }
 
 pub(super) fn build_padded_item(display_line: &str) -> String {

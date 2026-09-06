@@ -1,3 +1,11 @@
+//! Standalone fallback worker: one half of the temp-file dialog protocol.
+//!
+//! The client half lives in [`super::client`]
+//! (`HostedMenuClient::invoke_kitty_worker`): it serializes a
+//! [`MenuRequest`] to `request.json`, launches a terminal running
+//! `ins menu fallback-worker`, and reads `response.json`. There is no
+//! socket in this mode — the file pair is the transport.
+
 use super::processing::RequestProcessor;
 use super::protocol::{MenuRequest, MenuResponse};
 use anyhow::{Context, Result};

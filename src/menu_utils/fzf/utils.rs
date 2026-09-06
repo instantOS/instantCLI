@@ -2,6 +2,16 @@
 
 use crossterm::terminal;
 use std::io::ErrorKind;
+use std::process::Command;
+
+/// Base fzf invocation used by every wrapper path: a plain `fzf` command with
+/// `FZF_DEFAULT_OPTS` cleared so user/system-wide options cannot inject
+/// unsupported flags.
+pub(crate) fn base_fzf_command() -> Command {
+    let mut cmd = Command::new("fzf");
+    cmd.env_remove("FZF_DEFAULT_OPTS");
+    cmd
+}
 
 /// Get terminal dimensions (columns, rows) using crossterm.
 pub(crate) fn get_terminal_dimensions() -> Option<(u16, u16)> {

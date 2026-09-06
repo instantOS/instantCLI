@@ -1,4 +1,5 @@
 use super::protocol::*;
+use super::streaming;
 use crate::common::compositor::CompositorType;
 use crate::menu_utils::{DialogOutcome, MenuSelection};
 use anyhow::{Context, Result};
@@ -19,7 +20,6 @@ enum MenuTransport {
 }
 
 const DEFAULT_READ_TIMEOUT: Duration = Duration::from_secs(30);
-const STREAM_CHUNK_MAX_ITEMS: usize = 64;
 
 fn decode_dialog_response<T>(
     response: MenuResponse,
@@ -399,6 +399,11 @@ impl HostedMenuClient {
         }
     }
 
+    /// Invoke a one-shot fallback worker in an external terminal: the
+    /// client half of the temp-file protocol whose server half is
+    /// [`super::fallback::run_worker`] (`menu fallback-worker`). The
+    /// request is written to `request.json`, the terminal renders the
+    /// dialog, and `response.json` carries the reply back — no socket.
     fn invoke_kitty_worker(&self, request: MenuRequest) -> Result<MenuResponse> {
         let current_exe = std::env::current_exe()
             .context("Failed to determine current executable for menu fallback")?;
@@ -540,23 +545,9 @@ impl HostedMenuClient {
         &self,
         options: ChoiceOptions,
     ) -> Result<DialogOutcome<MenuSelection<SerializableMenuItem, String>>> {
-        let (sender, receiver) =
-            crossbeam_channel::bounded::<SerializableMenuItem>(STREAM_ITEM_BUFFER_CAPACITY);
-        std::thread::spawn(move || {
-            let stdin = io::stdin();
-            let mut reader = io::BufReader::new(stdin.lock());
-            loop {
-                match read_plain_choice_chunk(&mut reader) {
-                    Ok(Some(items)) => {
-                        for item in items {
-                            if sender.send(item).is_err() {
-                                return;
-                            }
-                        }
-                    }
-                    Ok(None) | Err(_) => return,
-                }
-            }
+        let receiver = streaming::spawn_stdin_item_pump(streaming::StdinItemPumpOptions {
+            batched: true,
+            skip_when_terminal: false,
         });
         self.choice_streaming(options, receiver)
     }
@@ -692,12 +683,7 @@ pub fn force_fallback_mode() {
 
 /// Write one NDJSON `MenuMessage` frame to a menu socket.
 fn write_menu_message(stream: &UnixStream, message: &MenuMessage) -> Result<()> {
-    let json = serde_json::to_string(message).context("Failed to serialize menu message")?;
-    let mut writer = io::BufWriter::new(stream);
-    writer.write_all(json.as_bytes())?;
-    writer.write_all(b"\n")?;
-    writer.flush()?;
-    Ok(())
+    write_menu_message_buffered(&mut io::BufWriter::new(stream), message)
 }
 
 /// Write one NDJSON frame via an existing buffered writer (flushes per
@@ -710,33 +696,6 @@ fn write_menu_message_buffered<W: io::Write>(
     writer.write_all(b"\n")?;
     writer.flush()?;
     Ok(())
-}
-
-/// Read at least one choice line, then collect only additional complete lines
-/// already held by `BufReader`. It never waits to fill a batch, preserving the
-/// latency of sparse producers while amortizing framing for bursty ones.
-fn read_plain_choice_chunk<R: io::Read>(
-    reader: &mut io::BufReader<R>,
-) -> io::Result<Option<Vec<SerializableMenuItem>>> {
-    let mut line = String::new();
-    if reader.read_line(&mut line)? == 0 {
-        return Ok(None);
-    }
-
-    let mut items = vec![SerializableMenuItem::plain(
-        line.trim_end_matches(['\r', '\n']),
-    )];
-    while items.len() < STREAM_CHUNK_MAX_ITEMS && reader.buffer().contains(&b'\n') {
-        line.clear();
-        if reader.read_line(&mut line)? == 0 {
-            break;
-        }
-        items.push(SerializableMenuItem::plain(
-            line.trim_end_matches(['\r', '\n']),
-        ));
-    }
-
-    Ok(Some(items))
 }
 
 /// Print formatted status information
@@ -833,7 +792,9 @@ mod tests {
         let input = "first\nsecond\r\nthird-without-newline";
         let mut reader = io::BufReader::new(input.as_bytes());
 
-        let first = read_plain_choice_chunk(&mut reader).unwrap().unwrap();
+        let first = super::super::streaming::read_plain_choice_chunk(&mut reader)
+            .unwrap()
+            .unwrap();
         assert_eq!(
             first
                 .iter()
@@ -841,9 +802,15 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["first", "second"]
         );
-        let second = read_plain_choice_chunk(&mut reader).unwrap().unwrap();
+        let second = super::super::streaming::read_plain_choice_chunk(&mut reader)
+            .unwrap()
+            .unwrap();
         assert_eq!(second[0].display_text, "third-without-newline");
-        assert!(read_plain_choice_chunk(&mut reader).unwrap().is_none());
+        assert!(
+            super::super::streaming::read_plain_choice_chunk(&mut reader)
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]

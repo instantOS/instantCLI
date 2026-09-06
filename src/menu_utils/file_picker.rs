@@ -8,6 +8,7 @@ use tempfile::{Builder as TempFileBuilder, NamedTempFile};
 use which::which;
 
 use super::fzf::{DialogOutcome, FzfWrapper};
+use crate::menu::server::tracked_spawn;
 
 const YAZI_INIT_LUA: &str = include_str!("yazi_init.lua");
 const YAZI_CACHE_SUBDIR: &str = "ins/menu/yazi";
@@ -416,26 +417,22 @@ impl FilePickerBuilder {
             cmd.current_dir(dir);
         }
 
-        let mut child = cmd
-            .stdin(Stdio::inherit())
+        cmd.stdin(Stdio::inherit())
             .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .spawn()
-            .with_context(|| {
-                format!(
-                    "Failed to launch Yazi file picker (binary: {}, cwd: {})",
-                    yazi_path.display(),
-                    current_dir
-                        .as_deref()
-                        .map(|d| d.display().to_string())
-                        .unwrap_or_else(|| "<inherited>".to_string())
-                )
-            })?;
+            .stderr(Stdio::inherit());
 
-        let pid = child.id();
-        let _ = crate::menu::server::register_menu_process(pid);
-        let status = child.wait().context("Failed to wait for Yazi process")?;
-        crate::menu::server::unregister_menu_process(pid);
+        let tracked = tracked_spawn(cmd).with_context(|| {
+            format!(
+                "Failed to launch Yazi file picker (binary: {}, cwd: {})",
+                yazi_path.display(),
+                current_dir
+                    .as_deref()
+                    .map(|d| d.display().to_string())
+                    .unwrap_or_else(|| "<inherited>".to_string())
+            )
+        })?;
+
+        let status = tracked.wait().context("Failed to wait for Yazi process")?;
 
         Ok(status)
     }

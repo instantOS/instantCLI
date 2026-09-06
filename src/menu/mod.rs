@@ -26,6 +26,8 @@ pub mod protocol;
 pub mod scratchpad_manager;
 pub mod server;
 pub mod slide;
+pub(crate) mod streaming;
+pub(crate) mod terminal;
 pub mod tui;
 use client::HostedMenuClient;
 pub use commands::{MenuCommands, ServerCommands};
@@ -464,26 +466,9 @@ fn handle_choice_tui_streaming(
             MenuBackend::Tui,
         );
     }
-    let (tx, rx) =
-        crossbeam_channel::bounded::<SerializableMenuItem>(protocol::STREAM_ITEM_BUFFER_CAPACITY);
-    std::thread::spawn(move || {
-        use std::io::BufRead;
-        let stdin = std::io::stdin();
-        let mut reader = std::io::BufReader::new(stdin.lock());
-        let mut line = String::new();
-        loop {
-            line.clear();
-            match reader.read_line(&mut line) {
-                Ok(0) => break,
-                Ok(_) => {
-                    let text = line.trim_end_matches(['\r', '\n']).to_string();
-                    if tx.send(SerializableMenuItem::plain(text)).is_err() {
-                        break;
-                    }
-                }
-                Err(_) => break,
-            }
-        }
+    let rx = streaming::spawn_stdin_item_pump(streaming::StdinItemPumpOptions {
+        batched: false,
+        skip_when_terminal: false,
     });
 
     Ok(finish_dialog(
@@ -823,34 +808,46 @@ fn handle_spin(message: &str, command: &[String], backend: MenuBackend) -> Resul
             pb.enable_steady_tick(Duration::from_millis(80));
 
             if command.is_empty() {
-                use std::io::Read;
-                let mut stdin = std::io::stdin();
-                let mut buf = [0u8; 128];
-                while let Ok(n) = stdin.read(&mut buf) {
-                    if n == 0 {
-                        break;
-                    }
-                }
+                drain_stdin_until_eof();
                 pb.finish_and_clear();
                 return Ok(0);
             }
 
-            let status = std::process::Command::new(&command[0])
-                .args(&command[1..])
-                .stdin(std::process::Stdio::inherit())
-                .stdout(std::process::Stdio::inherit())
-                .stderr(std::process::Stdio::inherit())
-                .status();
-
+            let exit = run_spin_command(command);
             pb.finish_and_clear();
+            exit
+        }
+    }
+}
 
-            match status {
-                Ok(s) => Ok(s.code().unwrap_or(1)),
-                Err(e) => {
-                    eprintln!("Failed to execute command: {e}");
-                    Ok(1)
-                }
-            }
+/// Drain our own stdin until EOF. Spinners with no target command stay up
+/// until the caller closes the pipe; this consumes it.
+pub(crate) fn drain_stdin_until_eof() {
+    use std::io::Read;
+    let mut stdin = std::io::stdin();
+    let mut buf = [0u8; 128];
+    while let Ok(n) = stdin.read(&mut buf) {
+        if n == 0 {
+            break;
+        }
+    }
+}
+
+/// Run the spin target command with inherited stdio and mirror its exit
+/// status. Shared by the TUI and instantmenu spin backends.
+pub(crate) fn run_spin_command(command: &[String]) -> Result<i32> {
+    let status = std::process::Command::new(&command[0])
+        .args(&command[1..])
+        .stdin(std::process::Stdio::inherit())
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit())
+        .status();
+
+    match status {
+        Ok(s) => Ok(s.code().unwrap_or(1)),
+        Err(e) => {
+            eprintln!("Failed to execute command: {e}");
+            Ok(1)
         }
     }
 }

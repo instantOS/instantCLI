@@ -12,6 +12,7 @@ pub mod gnome;
 pub mod hyprland;
 pub mod i3;
 pub mod instantwm;
+pub(crate) mod ipc_tree;
 pub mod kwin;
 pub mod niri;
 pub mod sway;

@@ -1,23 +1,16 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::io::stdout;
 use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
 use crossterm::event::{
-    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers,
-    MouseButton, MouseEventKind,
+    self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
 };
-use crossterm::execute;
-use crossterm::terminal::{
-    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
-};
-use ratatui::Terminal;
-use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, List, ListItem, ListState, Paragraph};
 
+use super::terminal::{self, TuiTerminal};
 use crate::menu_utils::{KeyChord, KeyChordAction, KeyChordChild, KeyChordNode};
 use crate::ui::catppuccin::colors;
 use crate::ui::nerd_font::NerdFont;
@@ -401,7 +394,7 @@ impl NavState {
 }
 
 struct KeyChordNavigator {
-    terminal: Terminal<CrosstermBackend<std::io::Stdout>>,
+    terminal: TuiTerminal,
     nav: NavState,
     /// Render mirror: carries the scroll offset (updated by the list widget);
     /// its `selected` is refreshed from `nav.selected` on every draw.
@@ -417,13 +410,7 @@ struct KeyChordNavigator {
 
 impl KeyChordNavigator {
     fn new(root: KeyChordNode) -> Result<Self> {
-        enable_raw_mode()?;
-        let mut stdout = stdout();
-        execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-        let backend = CrosstermBackend::new(stdout);
-        let mut terminal = Terminal::new(backend)?;
-        terminal.clear()?;
-        terminal.hide_cursor()?;
+        let terminal = terminal::enter()?;
 
         Ok(Self {
             terminal,
@@ -627,13 +614,7 @@ impl KeyChordNavigator {
             return Ok(());
         }
 
-        disable_raw_mode()?;
-        execute!(
-            self.terminal.backend_mut(),
-            LeaveAlternateScreen,
-            DisableMouseCapture
-        )?;
-        self.terminal.show_cursor()?;
+        terminal::leave(&mut self.terminal)?;
         self.cleaned_up = true;
         Ok(())
     }

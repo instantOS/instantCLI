@@ -1,4 +1,3 @@
-use std::io::stdout;
 use std::process::Command;
 use std::time::Duration;
 
@@ -7,17 +6,12 @@ use anyhow::Result;
 use crate::menu_utils::DialogOutcome;
 use clap::ValueEnum;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseEventKind};
-use crossterm::execute;
-use crossterm::terminal::{
-    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
-};
-use ratatui::Terminal;
-use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Gauge, Paragraph};
 
+use super::terminal::{self, TuiTerminal};
 use crate::menu_utils::{SliderCommand, SliderConfig};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -157,7 +151,7 @@ pub fn run_slider(config: SliderConfig) -> Result<DialogOutcome<i64>> {
 }
 
 struct SliderApp {
-    terminal: Terminal<CrosstermBackend<std::io::Stdout>>,
+    terminal: TuiTerminal,
     config: SliderConfig,
     last_slider_area: Option<Rect>,
     last_dispatched_value: i64,
@@ -166,18 +160,7 @@ struct SliderApp {
 
 impl SliderApp {
     fn new(config: SliderConfig) -> Result<Self> {
-        enable_raw_mode()?;
-        let mut stdout = stdout();
-        execute!(
-            stdout,
-            EnterAlternateScreen,
-            crossterm::event::EnableMouseCapture
-        )?;
-
-        let backend = CrosstermBackend::new(stdout);
-        let mut terminal = Terminal::new(backend)?;
-        terminal.clear()?;
-        terminal.hide_cursor()?;
+        let terminal = terminal::enter()?;
 
         let initial_value = config.value;
         if let Some(command) = config.command.as_ref()
@@ -432,13 +415,7 @@ impl SliderApp {
             return Ok(());
         }
 
-        disable_raw_mode()?;
-        execute!(
-            self.terminal.backend_mut(),
-            LeaveAlternateScreen,
-            crossterm::event::DisableMouseCapture
-        )?;
-        self.terminal.show_cursor()?;
+        terminal::leave(&mut self.terminal)?;
         self.cleaned_up = true;
         Ok(())
     }

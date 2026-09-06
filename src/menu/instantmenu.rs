@@ -4,8 +4,8 @@ use std::process::{Command, Stdio};
 
 use super::SliderSpec;
 use super::protocol::{ChoiceOptions, InputKind, InputOptions, SerializableMenuItem};
+use super::streaming;
 use crate::menu_utils::{ConfirmResult, DialogOutcome, FzfSelectable};
-
 fn shell_escape(value: &str) -> String {
     if !value.is_empty()
         && value.chars().all(|character| {
@@ -27,6 +27,128 @@ fn shell_command(arguments: &[String]) -> String {
         .join(" ")
 }
 
+/// Builder for the `instantmenu` popup flags. Keeps the shared frame flags
+/// (`--border-width 4 --position center --lines 20`) and the common flag
+/// pairs in one place, and offers a `flags()` seam for tests.
+struct InstantmenuCmd {
+    args: Vec<String>,
+}
+
+impl InstantmenuCmd {
+    fn new() -> Self {
+        Self { args: Vec::new() }
+    }
+
+    /// Frame shared by the centered popup dialogs.
+    fn framed() -> Self {
+        Self::new().border_width(4).position_center().lines(20)
+    }
+
+    fn pair(mut self, flag: &str, value: impl Into<String>) -> Self {
+        self.args.push(flag.to_string());
+        self.args.push(value.into());
+        self
+    }
+
+    fn border_width(self, width: u32) -> Self {
+        self.pair("--border-width", width.to_string())
+    }
+
+    fn position_center(self) -> Self {
+        self.pair("--position", "center")
+    }
+
+    fn lines(self, count: u32) -> Self {
+        self.pair("--lines", count.to_string())
+    }
+
+    fn line_height(self, value: &str) -> Self {
+        self.pair("--line-height", value)
+    }
+
+    fn width(self, value: &str) -> Self {
+        self.pair("--width", value)
+    }
+
+    fn insensitive(mut self) -> Self {
+        self.args.push("--insensitive".to_string());
+        self
+    }
+
+    fn reject_no_match(mut self) -> Self {
+        self.args.push("--reject-no-match".to_string());
+        self
+    }
+
+    fn prompt(self, text: impl Into<String>) -> Self {
+        self.pair("--prompt", text)
+    }
+
+    fn placeholder(self, text: impl Into<String>) -> Self {
+        self.pair("--placeholder", text)
+    }
+
+    fn bind(self, key: &str, label: &str) -> Self {
+        self.pair("--bind", format!("{key}:{label}"))
+    }
+
+    fn frecency_cache(self, namespace: &str) -> Self {
+        self.pair("--frecency-cache", namespace)
+    }
+
+    /// The flags built so far (test seam, shared with the keybind path).
+    fn flags(&self) -> Vec<String> {
+        self.args.clone()
+    }
+
+    /// Build a `Command` with the popup stdio used by the blocking dialogs
+    /// (piped stdin/stdout, null stderr).
+    fn command(&self) -> Command {
+        let mut cmd = Command::new("instantmenu");
+        cmd.args(&self.args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+        cmd
+    }
+
+    /// Spawn, write `input` to stdin, and wait for completion.
+    fn spawn_with_input(&self, input: &str) -> Result<std::process::Output> {
+        let mut child = self
+            .command()
+            .spawn()
+            .context("Failed to spawn instantmenu")?;
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(input.as_bytes())?;
+        }
+        child
+            .wait_with_output()
+            .context("Failed to wait on instantmenu")
+    }
+}
+
+/// The canonical flags for a choice dialog: frame, width auto, insensitive,
+/// prompt (with the multi-select hint), keybinds, frecency. Shared by the
+/// GUI backend and the keybind path so both stay in lockstep.
+pub(crate) fn choice_flags(options: &ChoiceOptions) -> Vec<String> {
+    let mut cmd =
+        InstantmenuCmd::framed()
+            .width("auto")
+            .insensitive()
+            .prompt(if options.allow_multiple {
+                format!("{} (ctrl+return adds more)", options.prompt)
+            } else {
+                options.prompt.clone()
+            });
+    for binding in &options.bindings {
+        cmd = cmd.bind(&binding.key, &binding.label);
+    }
+    if let Some(namespace) = &options.frecency_cache {
+        cmd = cmd.frecency_cache(namespace);
+    }
+    cmd.flags()
+}
+
 /// Native instantmenu GUI backend for instantCLI dialog commands
 pub struct InstantmenuBackend;
 
@@ -35,22 +157,10 @@ impl InstantmenuBackend {
     pub fn confirm(message: &str) -> Result<ConfirmResult> {
         let is_multiline = message.contains('\n');
 
-        let mut cmd = Command::new("instantmenu");
-        cmd.arg("--border-width")
-            .arg("4")
-            .arg("--position")
-            .arg("center")
-            .arg("--lines")
-            .arg("20")
-            .arg("--insensitive")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null());
+        let mut cmd = InstantmenuCmd::framed().insensitive();
 
         let input_data = if is_multiline {
-            cmd.arg("--reject-no-match")
-                .arg("--placeholder")
-                .arg("confirmation");
+            cmd = cmd.reject_no_match().placeholder("confirmation");
 
             let mut prompt_buf = String::new();
             for line in message.lines() {
@@ -59,18 +169,11 @@ impl InstantmenuBackend {
             prompt_buf.push_str("{heading} \n{green} yes\n{red} no\n");
             prompt_buf
         } else {
-            cmd.arg("--prompt").arg(format!("{message} "));
+            cmd = cmd.prompt(format!("{message} "));
             "{green} yes\n{red} no\n".to_string()
         };
 
-        let mut child = cmd.spawn().context("Failed to spawn instantmenu")?;
-        if let Some(mut stdin) = child.stdin.take() {
-            stdin.write_all(input_data.as_bytes())?;
-        }
-
-        let output = child
-            .wait_with_output()
-            .context("Failed to wait on instantmenu")?;
+        let output = cmd.spawn_with_input(&input_data)?;
         if !output.status.success() {
             return Ok(ConfirmResult::Cancelled);
         }
@@ -89,23 +192,8 @@ impl InstantmenuBackend {
 
     /// Show message dialog with an OK button
     pub fn message(title: Option<&str>, message: &str) -> Result<()> {
-        let mut cmd = Command::new("instantmenu");
-        cmd.arg("--border-width")
-            .arg("4")
-            .arg("--position")
-            .arg("center")
-            .arg("--lines")
-            .arg("20")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null());
-
-        if let Some(t) = title {
-            cmd.arg("--placeholder").arg(t);
-        } else {
-            cmd.arg("--placeholder")
-                .arg(message.lines().next().unwrap_or("Notice"));
-        }
+        let placeholder = title.unwrap_or_else(|| message.lines().next().unwrap_or("Notice"));
+        let cmd = InstantmenuCmd::framed().placeholder(placeholder);
 
         let mut input_data = String::new();
         for line in message.lines() {
@@ -113,12 +201,7 @@ impl InstantmenuBackend {
         }
         input_data.push_str("{heading} \n{green icon=check} OK\n");
 
-        let mut child = cmd.spawn().context("Failed to spawn instantmenu")?;
-        if let Some(mut stdin) = child.stdin.take() {
-            stdin.write_all(input_data.as_bytes())?;
-        }
-
-        let _ = child.wait_with_output()?;
+        cmd.spawn_with_input(&input_data)?;
         Ok(())
     }
 
@@ -127,7 +210,7 @@ impl InstantmenuBackend {
     /// `--placeholder` is forwarded for both text and password input. Upstream
     /// instantmenu renders it while the field is empty (password shows dots
     /// once typed).
-    pub(crate) fn input_argv(options: &InputOptions) -> Vec<String> {
+    pub(crate) fn input_flags(options: &InputOptions) -> Vec<String> {
         let mut args = Vec::new();
         match &options.kind {
             InputKind::Text { initial_text } => {
@@ -162,7 +245,7 @@ impl InstantmenuBackend {
 
     pub fn input(options: &InputOptions) -> Result<DialogOutcome<String>> {
         let mut cmd = Command::new("instantmenu");
-        cmd.args(Self::input_argv(options))
+        cmd.args(Self::input_flags(options))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
@@ -187,34 +270,10 @@ impl InstantmenuBackend {
 
     fn choice_command(options: &ChoiceOptions) -> Command {
         let mut cmd = Command::new("instantmenu");
-        cmd.arg("--border-width")
-            .arg("4")
-            .arg("--position")
-            .arg("center")
-            .arg("--width")
-            .arg("auto")
-            .arg("--lines")
-            .arg("20")
-            .arg("--insensitive")
-            .arg("--prompt")
-            .arg(if options.allow_multiple {
-                format!("{} (ctrl+return adds more)", options.prompt)
-            } else {
-                options.prompt.clone()
-            })
+        cmd.args(choice_flags(options))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
-
-        if !options.bindings.is_empty() {
-            for binding in &options.bindings {
-                cmd.arg("--bind")
-                    .arg(format!("{}:{}", binding.key, binding.label));
-            }
-        }
-        if let Some(namespace) = &options.frecency_cache {
-            cmd.arg("--frecency-cache").arg(namespace);
-        }
         cmd
     }
 
@@ -285,26 +344,7 @@ impl InstantmenuBackend {
             .take()
             .ok_or_else(|| anyhow::anyhow!("Failed to capture instantmenu stdin"))?;
 
-        std::thread::spawn(move || {
-            use std::io::BufRead;
-            let mut writer = std::io::BufWriter::new(child_stdin);
-            let stdin = std::io::stdin();
-            let mut reader = std::io::BufReader::new(stdin.lock());
-            let mut line = String::new();
-            loop {
-                line.clear();
-                match reader.read_line(&mut line) {
-                    Ok(0) => break,
-                    Ok(_) => {
-                        use std::io::Write;
-                        if writer.write_all(line.as_bytes()).is_err() || writer.flush().is_err() {
-                            break;
-                        }
-                    }
-                    Err(_) => break,
-                }
-            }
-        });
+        streaming::spawn_stdin_to_writer_pump(child_stdin);
 
         let output = child
             .wait_with_output()
@@ -426,28 +466,11 @@ impl InstantmenuBackend {
                 input_data.push_str(&format!("{checkbox} {item}\n"));
             }
 
-            let mut cmd = Command::new("instantmenu");
-            cmd.arg("--border-width")
-                .arg("4")
-                .arg("--position")
-                .arg("center")
-                .arg("--lines")
-                .arg("20")
-                .arg("--insensitive")
-                .arg("--prompt")
-                .arg("Select items: ")
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::null());
+            let cmd = InstantmenuCmd::framed()
+                .insensitive()
+                .prompt("Select items: ");
 
-            let mut child = cmd.spawn().context("Failed to spawn instantmenu")?;
-            if let Some(mut stdin) = child.stdin.take() {
-                stdin.write_all(input_data.as_bytes())?;
-            }
-
-            let output = child
-                .wait_with_output()
-                .context("Failed to wait on instantmenu")?;
+            let output = cmd.spawn_with_input(&input_data)?;
             if !output.status.success() {
                 return Ok(DialogOutcome::Cancelled);
             }
@@ -488,19 +511,16 @@ impl InstantmenuBackend {
     /// Show a loading spinner dialog while executing a command, or until stdin is closed
     pub fn spin(message: &str, command: &[String]) -> Result<i32> {
         let input_data = format!("{{heading}} {message}\n{{green icon=hourglass-end}} OK\n");
+        let flags = InstantmenuCmd::new()
+            .line_height("auto")
+            .lines(20)
+            .position_center()
+            .border_width(4)
+            .width("auto")
+            .placeholder("loading...")
+            .flags();
         let mut cmd = Command::new("instantmenu");
-        cmd.arg("--line-height")
-            .arg("auto")
-            .arg("--lines")
-            .arg("20")
-            .arg("--position")
-            .arg("center")
-            .arg("--border-width")
-            .arg("4")
-            .arg("--width")
-            .arg("auto")
-            .arg("--placeholder")
-            .arg("loading...")
+        cmd.args(flags)
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
@@ -513,36 +533,18 @@ impl InstantmenuBackend {
         }
 
         if command.is_empty() {
-            use std::io::Read;
-            let mut stdin = std::io::stdin();
-            let mut buf = [0u8; 128];
-            while let Ok(n) = stdin.read(&mut buf) {
-                if n == 0 {
-                    break;
-                }
-            }
+            super::drain_stdin_until_eof();
             let _ = child.kill();
             let _ = child.wait();
             return Ok(0);
         }
 
-        let status = Command::new(&command[0])
-            .args(&command[1..])
-            .stdin(Stdio::inherit())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .status();
+        let exit = super::run_spin_command(command);
 
         let _ = child.kill();
         let _ = child.wait();
 
-        match status {
-            Ok(s) => Ok(s.code().unwrap_or(1)),
-            Err(e) => {
-                eprintln!("Failed to execute command: {e}");
-                Ok(1)
-            }
-        }
+        exit
     }
 
     /// Show an ephemeral toast notification popup
@@ -579,38 +581,85 @@ impl InstantmenuBackend {
 
 #[cfg(test)]
 mod tests {
-    use super::{InstantmenuBackend, shell_command};
-    use crate::menu::protocol::InputOptions;
+    use super::{InstantmenuBackend, InstantmenuCmd, choice_flags, shell_command};
+    use crate::menu::protocol::{ChoiceOptions, InputOptions};
 
-    fn has_pair(argv: &[String], key: &str, value: &str) -> bool {
-        argv.windows(2).any(|w| w[0] == key && w[1] == value)
+    fn has_pair(flags: &[String], key: &str, value: &str) -> bool {
+        flags.windows(2).any(|w| w[0] == key && w[1] == value)
     }
 
     #[test]
-    fn text_argv_forwards_initial_text_and_placeholder() {
+    fn choice_flags_matches_the_keybind_path_shape() {
+        let options = ChoiceOptions::new("Pick:")
+            .multi_select(true)
+            .with_frecency_cache(Some("ns".to_string()));
+        let flags = choice_flags(&options);
+
+        for (key, value) in [
+            ("--border-width", "4"),
+            ("--position", "center"),
+            ("--width", "auto"),
+            ("--lines", "20"),
+            ("--frecency-cache", "ns"),
+            ("--prompt", "Pick: (ctrl+return adds more)"),
+        ] {
+            assert!(
+                has_pair(&flags, key, value),
+                "missing {key} {value}: {flags:?}"
+            );
+        }
+        assert!(flags.contains(&"--insensitive".to_string()));
+    }
+
+    #[test]
+    fn choice_flags_forwards_bindings() {
+        let options =
+            ChoiceOptions::new("Pick").with_bindings(vec!["ctrl-e:Edit".parse().unwrap()]);
+        let flags = choice_flags(&options);
+        assert!(has_pair(&flags, "--bind", "ctrl-e:Edit"), "{flags:?}");
+    }
+
+    #[test]
+    fn framed_builder_emits_the_shared_popup_frame() {
+        let flags = InstantmenuCmd::framed().flags();
+        assert_eq!(
+            flags,
+            vec![
+                "--border-width".to_string(),
+                "4".to_string(),
+                "--position".to_string(),
+                "center".to_string(),
+                "--lines".to_string(),
+                "20".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn text_flags_forward_initial_text_and_placeholder() {
         let options = InputOptions::text_with_initial("Edit:", "pre").with_placeholder("hint");
-        let argv = InstantmenuBackend::input_argv(&options);
-        assert!(argv.contains(&"--input-only".to_string()));
-        assert!(has_pair(&argv, "--initial-text", "pre"));
-        assert!(has_pair(&argv, "--placeholder", "hint"));
-        assert!(has_pair(&argv, "--prompt", "Edit:"));
+        let flags = InstantmenuBackend::input_flags(&options);
+        assert!(flags.contains(&"--input-only".to_string()));
+        assert!(has_pair(&flags, "--initial-text", "pre"));
+        assert!(has_pair(&flags, "--placeholder", "hint"));
+        assert!(has_pair(&flags, "--prompt", "Edit:"));
     }
 
     #[test]
-    fn password_argv_forwards_placeholder() {
+    fn password_flags_forward_placeholder() {
         let options = InputOptions::password("P:").with_placeholder("hint");
-        let argv = InstantmenuBackend::input_argv(&options);
-        assert!(argv.contains(&"--password".to_string()));
-        assert!(!argv.contains(&"--input-only".to_string()));
-        assert!(has_pair(&argv, "--placeholder", "hint"));
+        let flags = InstantmenuBackend::input_flags(&options);
+        assert!(flags.contains(&"--password".to_string()));
+        assert!(!flags.contains(&"--input-only".to_string()));
+        assert!(has_pair(&flags, "--placeholder", "hint"));
     }
 
     #[test]
-    fn empty_prefill_and_placeholder_stay_off_argv() {
+    fn empty_prefill_and_placeholder_stay_off_flags() {
         let options = InputOptions::text_with_initial("E:", "").with_placeholder("");
-        let argv = InstantmenuBackend::input_argv(&options);
-        assert!(!argv.contains(&"--initial-text".to_string()));
-        assert!(!argv.contains(&"--placeholder".to_string()));
+        let flags = InstantmenuBackend::input_flags(&options);
+        assert!(!flags.contains(&"--initial-text".to_string()));
+        assert!(!flags.contains(&"--placeholder".to_string()));
     }
 
     #[test]

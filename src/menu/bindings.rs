@@ -9,7 +9,8 @@ use super::{
     MenuBackend, ResolvedBackend,
     client::HostedMenuClient,
     frecency,
-    protocol::{ChoiceOptions, STREAM_ITEM_BUFFER_CAPACITY, SerializableMenuItem},
+    protocol::{ChoiceOptions, SerializableMenuItem},
+    streaming,
 };
 use crate::menu_utils::{DialogOutcome, FzfWrapper, MenuKey, MenuKeybind, MenuSelection};
 
@@ -97,30 +98,16 @@ pub(super) fn handle(
         frecency::validate_namespace(namespace)?;
     }
     if backend.resolve(true) == ResolvedBackend::Instantmenu {
+        // Shared flags with the GUI backend (frame, width auto, insensitive,
+        // multi hint, --bind, frecency). stdout/stderr stay inherited: the
+        // selection is printed by instantmenu itself and consumed by the
+        // shell caller; the exit code decides ins's exit status.
+        let options = ChoiceOptions::new(prompt)
+            .multi_select(multi)
+            .with_frecency_cache(namespace.map(str::to_owned))
+            .with_bindings(bindings.to_vec());
         let mut cmd = Command::new("instantmenu");
-        let prompt = if multi {
-            format!("{prompt} (ctrl+return adds more)")
-        } else {
-            prompt.to_owned()
-        };
-        cmd.args([
-            "--position",
-            "center",
-            "--border-width",
-            "4",
-            "--lines",
-            "20",
-            "--insensitive",
-            "--prompt",
-            &prompt,
-        ]);
-        for binding in bindings {
-            cmd.arg("--bind")
-                .arg(format!("{}:{}", binding.key, binding.label));
-        }
-        if let Some(namespace) = namespace {
-            cmd.arg("--frecency-cache").arg(namespace);
-        }
+        cmd.args(super::instantmenu::choice_flags(&options));
         if !items.is_empty() {
             cmd.stdin(Stdio::piped());
         } else if std::io::stdin().is_terminal() {
@@ -169,21 +156,9 @@ pub(super) fn handle(
             select(prompt, items, multi, namespace, bindings)?
         }
     } else {
-        let (tx, rx) = crossbeam_channel::bounded(STREAM_ITEM_BUFFER_CAPACITY);
-        std::thread::spawn(move || {
-            if std::io::stdin().is_terminal() {
-                return;
-            }
-            for line in std::io::stdin().lock().lines() {
-                match line {
-                    Ok(line) => {
-                        if tx.send(SerializableMenuItem::plain(line)).is_err() {
-                            break;
-                        }
-                    }
-                    Err(_) => break,
-                }
-            }
+        let rx = streaming::spawn_stdin_item_pump(streaming::StdinItemPumpOptions {
+            batched: false,
+            skip_when_terminal: true,
         });
         if backend.resolve(true) == ResolvedBackend::Scratchpad {
             let options = ChoiceOptions::new(prompt)

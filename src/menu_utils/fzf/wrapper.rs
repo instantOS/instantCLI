@@ -15,7 +15,8 @@ use super::preview::PreviewStrategy;
 use super::preview::PreviewUtils;
 use super::types::ItemDisplayData;
 use super::types::*;
-use super::utils::{handle_old_fzf_error, log_fzf_failure};
+use super::utils::{base_fzf_command, handle_old_fzf_error, log_fzf_failure};
+use crate::menu::server::{TrackedChild, run_tracked_with_input, tracked_spawn};
 use crate::ui::nerd_font::NerdFont;
 
 /// Named parts extracted from `FzfBuilder` for constructing `FzfWrapper`.
@@ -378,49 +379,27 @@ fn force_mixed_preview_strategy<T: FzfSelectable>(items: &[T]) -> PreviewStrateg
     PreviewUtils::force_mixed_preview_strategy(items)
 }
 
-/// Spawn fzf with piped stdio and register it with the menu server.
-fn spawn_menu_child(mut cmd: Command) -> Result<(std::process::Child, u32)> {
-    let child = cmd
-        .stdin(Stdio::piped())
+/// Spawn fzf with piped stdio, registered with the menu server for
+/// cancellation when the scratchpad becomes invisible. The returned
+/// [`TrackedChild`] unregisters (and kills, if still running) on drop, so
+/// error paths cannot leak a stale PID registration.
+fn spawn_menu_child(mut cmd: Command) -> Result<TrackedChild> {
+    use std::process::Stdio;
+    cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-
-    let pid = child.id();
-    let _ = crate::menu::server::register_menu_process(pid);
-    Ok((child, pid))
+        .stderr(Stdio::piped());
+    tracked_spawn(cmd)
 }
 
-/// Wait for fzf to exit, unregister it, and map wait failures through the
-/// standard fzf error handling.
-fn finish_menu_child(child: std::process::Child, pid: u32) -> Result<std::process::Output> {
-    let output = child.wait_with_output();
-    crate::menu::server::unregister_menu_process(pid);
-
-    match output {
-        Ok(result) => Ok(result),
-        Err(e) => {
-            super::utils::handle_fzf_spawn_error(&e);
-            Err(anyhow!("fzf execution failed: {e}"))
+/// Wait for fzf to exit, release its registration, and map wait failures
+/// through the standard fzf error handling.
+fn finish_menu_child(child: TrackedChild) -> Result<std::process::Output> {
+    child.finish_with_output().map_err(|e| {
+        if let Some(io_error) = e.downcast_ref::<std::io::Error>() {
+            super::utils::handle_fzf_spawn_error(io_error);
         }
-    }
-}
-
-/// Terminate a menu process during setup and always release its registration.
-fn abort_menu_child(mut child: std::process::Child, pid: u32) {
-    let _ = child.kill();
-    let _ = finish_menu_child(child, pid);
-}
-
-/// Execute the fzf command with the given input and return the raw output.
-fn execute_fzf_command(cmd: Command, input_text: &str) -> Result<std::process::Output> {
-    let (mut child, pid) = spawn_menu_child(cmd)?;
-
-    if let Some(stdin) = child.stdin.as_mut() {
-        stdin.write_all(input_text.as_bytes())?;
-    }
-
-    finish_menu_child(child, pid)
+        anyhow!("fzf execution failed: {e}")
+    })
 }
 
 /// Map a pressed keybind token back to the caller's typed action.
@@ -628,8 +607,7 @@ impl FzfWrapper {
         let preview_strategy = PreviewUtils::analyze_preview_strategy(&items)?;
 
         // Configure fzf command
-        let mut cmd = Command::new("fzf");
-        cmd.env_remove("FZF_DEFAULT_OPTS");
+        let mut cmd = base_fzf_command();
         configure_menu_args(&mut cmd, self, keybinds);
 
         // Build input text and configure preview
@@ -645,7 +623,7 @@ impl FzfWrapper {
         configure_wrapper_tail(&mut cmd, self, cursor_position);
 
         // Execute fzf
-        let output = execute_fzf_command(cmd, &input_text)?;
+        let output = run_tracked_with_input(cmd, input_text.as_bytes())?;
 
         // Parse output and map back to items
         parse_fzf_output(output, &item_map, keybinds)
@@ -700,8 +678,7 @@ impl FzfWrapper {
     where
         C: Into<StreamingCommand>,
     {
-        let mut fzf = Command::new("fzf");
-        fzf.env_remove("FZF_DEFAULT_OPTS");
+        let mut fzf = base_fzf_command();
         configure_menu_args(&mut fzf, self, keybinds);
         fzf.args(base_args);
         let cursor_position = self
@@ -710,7 +687,7 @@ impl FzfWrapper {
             .map(|InitialCursor::Index(index)| *index);
         configure_wrapper_tail(&mut fzf, self, cursor_position);
 
-        let (mut fzf_child, pid) = spawn_menu_child(fzf)?;
+        let mut fzf_child = spawn_menu_child(fzf)?;
 
         let mut producer = producer.into().into_command();
         producer
@@ -718,23 +695,18 @@ impl FzfWrapper {
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
 
-        let mut producer_child = match producer.spawn() {
-            Ok(child) => child,
-            Err(error) => {
-                abort_menu_child(fzf_child, pid);
-                return Err(error.into());
-            }
-        };
+        let mut producer_child = producer
+            .spawn()
+            // Dropping `fzf_child` kills fzf and releases its registration.
+            .map_err(|error| anyhow!(error))?;
         let Some(mut producer_stdout) = producer_child.stdout.take() else {
             let _ = producer_child.kill();
             let _ = producer_child.wait();
-            abort_menu_child(fzf_child, pid);
             return Err(anyhow!("Failed to capture streaming producer stdout"));
         };
-        let Some(mut fzf_stdin) = fzf_child.stdin.take() else {
+        let Some(mut fzf_stdin) = fzf_child.inner_mut().stdin.take() else {
             let _ = producer_child.kill();
             let _ = producer_child.wait();
-            abort_menu_child(fzf_child, pid);
             return Err(anyhow!("Failed to capture fzf stdin"));
         };
         let initial = initial_input.to_string();
@@ -765,7 +737,7 @@ impl FzfWrapper {
             Ok(())
         });
 
-        let result = finish_menu_child(fzf_child, pid);
+        let result = finish_menu_child(fzf_child);
         let _ = producer_child.kill();
         let _ = producer_child.wait();
         let _ = pump.join();
@@ -827,8 +799,7 @@ impl FzfWrapper {
         let preview_strategy = force_mixed_preview_strategy(&initial_items);
 
         // Configure fzf command
-        let mut cmd = Command::new("fzf");
-        cmd.env_remove("FZF_DEFAULT_OPTS");
+        let mut cmd = base_fzf_command();
         configure_menu_args(&mut cmd, self, keybinds);
         let input_text =
             configure_preview_and_input(&mut cmd, preview_strategy, &display_data, separator_mode);
@@ -838,9 +809,10 @@ impl FzfWrapper {
         }
         configure_wrapper_tail(&mut cmd, self, cursor_position);
 
-        let (mut child, pid) = spawn_menu_child(cmd)?;
+        let mut child = spawn_menu_child(cmd)?;
 
         let mut stdin = child
+            .inner_mut()
             .stdin
             .take()
             .ok_or_else(|| anyhow!("Failed to capture fzf stdin"))?;
@@ -854,11 +826,9 @@ impl FzfWrapper {
             }
             stdin.flush()?;
         }
-        if let Err(error) = on_ready() {
-            let _ = child.kill();
-            let _ = finish_menu_child(child, pid);
-            return Err(error);
-        }
+        // An error here drops `child`, which kills fzf and releases its
+        // registration.
+        on_ready()?;
 
         // Late items are appended to fzf's stdin as they arrive; the shared
         // map lets the final selection be resolved back to an item.
@@ -925,7 +895,7 @@ impl FzfWrapper {
             }
         });
 
-        let output = finish_menu_child(child, pid);
+        let output = finish_menu_child(child);
         let _ = cancel_tx.try_send(());
         let _ = pump.join();
         let output = output?;
