@@ -51,6 +51,12 @@ pub enum MenuCommands {
     Input {
         #[arg(default_value = "Type a value:")]
         prompt: String,
+        /// Faded hint shown while the input is empty
+        #[arg(long, value_name = "TEXT")]
+        placeholder: Option<String>,
+        /// Text pre-filled into the input
+        #[arg(long, value_name = "TEXT")]
+        initial_text: Option<String>,
         #[arg(short = 'b', long = "backend", value_enum, default_value_t = MenuBackend::Auto)]
         backend: MenuBackend,
     },
@@ -58,6 +64,9 @@ pub enum MenuCommands {
     Password {
         #[arg(default_value = "Enter password:")]
         prompt: String,
+        /// Faded hint shown while the input is empty
+        #[arg(long, value_name = "TEXT")]
+        placeholder: Option<String>,
         #[arg(short = 'b', long = "backend", value_enum, default_value_t = MenuBackend::Auto)]
         backend: MenuBackend,
     },

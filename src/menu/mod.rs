@@ -189,12 +189,30 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
         } => handle_pick(start, dirs, files, allow_multiple, backend),
         MenuCommands::Input {
             ref prompt,
+            ref placeholder,
+            ref initial_text,
             backend,
-        } => handle_text_input(InputOptions::new(prompt), backend),
+        } => {
+            let mut options = InputOptions::new(prompt);
+            if let Some(placeholder) = placeholder {
+                options = options.with_placeholder(placeholder);
+            }
+            if let Some(initial_text) = initial_text {
+                options = options.with_initial_text(initial_text);
+            }
+            handle_text_input(options, backend)
+        }
         MenuCommands::Password {
             ref prompt,
+            ref placeholder,
             backend,
-        } => handle_text_input(InputOptions::password(prompt), backend),
+        } => {
+            let mut options = InputOptions::password(prompt);
+            if let Some(placeholder) = placeholder {
+                options = options.with_placeholder(placeholder);
+            }
+            handle_text_input(options, backend)
+        }
         MenuCommands::Status => handle_status(),
         MenuCommands::Show => handle_show(),
         MenuCommands::Checklist {
@@ -684,17 +702,11 @@ fn handle_text_input(options: InputOptions, backend: MenuBackend) -> Result<i32>
                 |text| println!("{text}"),
             ))
         }
-        ResolvedBackend::Tui => {
-            let prompt = options.prompt.clone();
-            let outcome = if options.secret {
-                FzfWrapper::password(&prompt)
-            } else {
-                FzfWrapper::input(&prompt)
-            };
-            Ok(finish_dialog(outcome, "Local TUI", |text| {
-                println!("{text}")
-            }))
-        }
+        ResolvedBackend::Tui => Ok(finish_dialog(
+            FzfWrapper::input_with_options(&options),
+            "Local TUI",
+            |text| println!("{text}"),
+        )),
     }
 }
 

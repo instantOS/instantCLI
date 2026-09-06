@@ -940,6 +940,37 @@ impl FzfWrapper {
         Self::builder().prompt(prompt).input().input_dialog()
     }
 
+    /// Text or password input driven by shared [`InputOptions`], so all
+    /// backends honor the same prompt shape (placeholder, pre-filled text).
+    /// The placeholder renders as faded ghost text for plain input and as the
+    /// placeholder line for password dialogs.
+    pub fn input_with_options(
+        options: &crate::menu::protocol::InputOptions,
+    ) -> Result<DialogOutcome<String>> {
+        let builder = Self::builder().prompt(&options.prompt);
+        let builder = if let Some(initial_text) = options.effective_initial_text() {
+            builder.query(initial_text)
+        } else {
+            builder
+        };
+        if options.secret {
+            let builder = if let Some(placeholder) = &options.placeholder {
+                builder.header(placeholder)
+            } else {
+                builder
+            };
+            builder.password().password_dialog()
+        } else {
+            let input = builder.input();
+            let input = if let Some(placeholder) = &options.placeholder {
+                input.ghost(placeholder)
+            } else {
+                input
+            };
+            input.input_dialog()
+        }
+    }
+
     pub fn message(message: &str) -> Result<()> {
         Self::builder().message(message).message_dialog()
     }

@@ -141,6 +141,12 @@ pub struct InputOptions {
     pub prompt: String,
     /// Whether the input must be hidden (password).
     pub secret: bool,
+    /// Faded text shown while the input is empty. Never pre-filled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub placeholder: Option<String>,
+    /// Text pre-filled into the input. Rejected for password prompts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initial_text: Option<String>,
 }
 
 impl InputOptions {
@@ -149,6 +155,8 @@ impl InputOptions {
         Self {
             prompt: prompt.into(),
             secret: false,
+            placeholder: None,
+            initial_text: None,
         }
     }
 
@@ -161,6 +169,27 @@ impl InputOptions {
     pub fn secret(mut self, secret: bool) -> Self {
         self.secret = secret;
         self
+    }
+
+    /// Set the faded hint shown while the input is empty.
+    pub fn with_placeholder(mut self, placeholder: impl Into<String>) -> Self {
+        self.placeholder = Some(placeholder.into());
+        self
+    }
+
+    /// Pre-fill the input with text (ignored for password prompts).
+    pub fn with_initial_text(mut self, initial_text: impl Into<String>) -> Self {
+        self.initial_text = Some(initial_text.into());
+        self
+    }
+
+    /// Resolve the effective pre-fill text: passwords are never pre-filled.
+    pub fn effective_initial_text(&self) -> Option<&str> {
+        if self.secret {
+            None
+        } else {
+            self.initial_text.as_deref()
+        }
     }
 }
 
@@ -315,7 +344,7 @@ pub struct MenuStatus {
 }
 
 /// Protocol version information
-pub const PROTOCOL_VERSION: &str = "7.0";
+pub const PROTOCOL_VERSION: &str = "7.1";
 
 fn legacy_protocol_version() -> String {
     "1.0".to_string()
@@ -429,6 +458,48 @@ mod tests {
         assert!(
             matches!(deserialized, MenuRequest::Input { options } if options.prompt == "Enter password:" && options.secret)
         );
+    }
+
+    #[test]
+    fn test_input_options_placeholder_and_initial_text_round_trip() {
+        let request = MenuRequest::Input {
+            options: InputOptions::new("Edit value:")
+                .with_placeholder("leave empty to clear")
+                .with_initial_text("current value"),
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+        let deserialized: MenuRequest = serde_json::from_str(&json).unwrap();
+
+        assert!(matches!(
+            deserialized,
+            MenuRequest::Input { options }
+                if options.placeholder.as_deref() == Some("leave empty to clear")
+                    && options.initial_text.as_deref() == Some("current value")
+        ));
+    }
+
+    /// 7.0 payloads (pre placeholder/initial_text) must still decode: the
+    /// fields default to None and stay off the wire when unset.
+    #[test]
+    fn test_input_options_decode_without_optional_fields() {
+        let json = r#"{"prompt":"Enter value:","secret":false}"#;
+        let deserialized: InputOptions = serde_json::from_str(json).unwrap();
+        assert_eq!(deserialized.prompt, "Enter value:");
+        assert!(!deserialized.secret);
+        assert_eq!(deserialized.placeholder, None);
+        assert_eq!(deserialized.initial_text, None);
+
+        // unset optionals are omitted so 7.1 payloads stay minimal
+        let plain = serde_json::to_string(&InputOptions::new("q")).unwrap();
+        assert_eq!(plain, r#"{"prompt":"q","secret":false}"#);
+    }
+
+    /// Passwords must never be pre-filled, regardless of what a caller set.
+    #[test]
+    fn test_password_options_drop_initial_text() {
+        let options = InputOptions::password("Enter password:").with_initial_text("leaked");
+        assert_eq!(options.effective_initial_text(), None);
     }
 
     #[test]

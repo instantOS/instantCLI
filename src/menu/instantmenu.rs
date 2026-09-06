@@ -142,6 +142,13 @@ impl InstantmenuBackend {
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
 
+        if let Some(placeholder) = &options.placeholder {
+            cmd.arg("--placeholder").arg(placeholder);
+        }
+        if let Some(initial_text) = options.effective_initial_text() {
+            cmd.arg("--initial-text").arg(initial_text);
+        }
+
         let mut child = cmd.spawn().context("Failed to spawn instantmenu")?;
         if let Some(mut stdin) = child.stdin.take() {
             let _ = stdin.write_all(b"\n");

@@ -222,12 +222,7 @@ impl RequestProcessor {
 
     /// Handle text or password input request
     fn handle_input_request(&self, options: InputOptions) -> Result<MenuResponse> {
-        let outcome = if options.secret {
-            FzfWrapper::password(&options.prompt)
-        } else {
-            FzfWrapper::input(&options.prompt)
-        };
-        match outcome {
+        match FzfWrapper::input_with_options(&options) {
             Ok(crate::menu_utils::DialogOutcome::Submitted(input)) => {
                 Ok(MenuResponse::InputResult(input))
             }
