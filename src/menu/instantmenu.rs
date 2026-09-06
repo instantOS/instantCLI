@@ -3,7 +3,7 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 
 use super::SliderSpec;
-use super::protocol::SerializableMenuItem;
+use super::protocol::{ChoiceOptions, InputOptions, SerializableMenuItem};
 use crate::menu_utils::{ConfirmResult, DialogOutcome, FzfSelectable};
 
 fn shell_escape(value: &str) -> String {
@@ -122,63 +122,22 @@ impl InstantmenuBackend {
         Ok(())
     }
 
-    /// Show text input dialog
-    pub fn input(
-        prompt: &str,
-        placeholder: Option<&str>,
-        initial_text: Option<&str>,
-    ) -> Result<DialogOutcome<String>> {
+    /// Show text or password input dialog
+    pub fn input(options: &InputOptions) -> Result<DialogOutcome<String>> {
         let mut cmd = Command::new("instantmenu");
-        cmd.arg("--input-only")
-            .arg("--position")
+        if options.secret {
+            cmd.arg("--password");
+        } else {
+            cmd.arg("--input-only");
+        }
+        cmd.arg("--position")
             .arg("center")
             .arg("--border-width")
             .arg("4")
             .arg("--width")
             .arg("800")
             .arg("--prompt")
-            .arg(prompt)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null());
-
-        if let Some(ph) = placeholder {
-            cmd.arg("--placeholder").arg(ph);
-        }
-        if let Some(init) = initial_text {
-            cmd.arg("--initial-text").arg(init);
-        }
-
-        let mut child = cmd.spawn().context("Failed to spawn instantmenu")?;
-        if let Some(mut stdin) = child.stdin.take() {
-            let _ = stdin.write_all(b"\n");
-        }
-
-        let output = child
-            .wait_with_output()
-            .context("Failed to wait on instantmenu")?;
-        if !output.status.success() {
-            return Ok(DialogOutcome::Cancelled);
-        }
-
-        let text = String::from_utf8_lossy(&output.stdout)
-            .trim_end_matches('\n')
-            .to_string();
-        Ok(DialogOutcome::Submitted(text))
-    }
-
-    /// Show password input dialog
-    pub fn password(prompt: &str) -> Result<DialogOutcome<String>> {
-        let mut cmd = Command::new("instantmenu");
-        cmd.arg("--password")
-            .arg("--position")
-            .arg("center")
-            .arg("--border-width")
-            .arg("4")
-            .arg("--width")
-            .arg("800")
-            .arg("--prompt")
-            .arg(prompt)
+            .arg(&options.prompt)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
@@ -201,17 +160,7 @@ impl InstantmenuBackend {
         Ok(DialogOutcome::Submitted(text))
     }
 
-    /// Show choice dialog and return selected item(s)
-    ///
-    /// With `allow_multiple` the user can confirm additional items with
-    /// ctrl+return before finishing with return; every confirmed line is
-    /// collected from stdout.
-    pub fn choice(
-        prompt: &str,
-        items: &[SerializableMenuItem],
-        allow_multiple: bool,
-        frecency_cache: Option<&str>,
-    ) -> Result<DialogOutcome<Vec<String>>> {
+    fn choice_command(options: &ChoiceOptions) -> Command {
         let mut cmd = Command::new("instantmenu");
         cmd.arg("--border-width")
             .arg("4")
@@ -223,33 +172,28 @@ impl InstantmenuBackend {
             .arg("20")
             .arg("--insensitive")
             .arg("--prompt")
-            .arg(if allow_multiple {
-                format!("{prompt} (ctrl+return adds more)")
+            .arg(if options.allow_multiple {
+                format!("{} (ctrl+return adds more)", options.prompt)
             } else {
-                prompt.to_string()
+                options.prompt.clone()
             })
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
 
-        if let Some(namespace) = frecency_cache {
+        if !options.bindings.is_empty() {
+            for binding in &options.bindings {
+                cmd.arg("--bind")
+                    .arg(format!("{}:{}", binding.key, binding.label));
+            }
+        }
+        if let Some(namespace) = &options.frecency_cache {
             cmd.arg("--frecency-cache").arg(namespace);
         }
+        cmd
+    }
 
-        let mut input_data = String::new();
-        for item in items {
-            input_data.push_str(&item.display_text);
-            input_data.push('\n');
-        }
-
-        let mut child = cmd.spawn().context("Failed to spawn instantmenu")?;
-        if let Some(mut stdin) = child.stdin.take() {
-            stdin.write_all(input_data.as_bytes())?;
-        }
-
-        let output = child
-            .wait_with_output()
-            .context("Failed to wait on instantmenu")?;
+    fn parse_choice_strings(output: std::process::Output) -> Result<DialogOutcome<Vec<String>>> {
         if !output.status.success() {
             return Ok(DialogOutcome::Cancelled);
         }
@@ -268,6 +212,34 @@ impl InstantmenuBackend {
         }
     }
 
+    /// Show choice dialog and return selected item(s)
+    ///
+    /// With `allow_multiple` the user can confirm additional items with
+    /// ctrl+return before finishing with return; every confirmed line is
+    /// collected from stdout.
+    pub fn choice(
+        options: &ChoiceOptions,
+        items: &[SerializableMenuItem],
+    ) -> Result<DialogOutcome<Vec<String>>> {
+        let mut cmd = Self::choice_command(options);
+
+        let mut input_data = String::new();
+        for item in items {
+            input_data.push_str(&item.display_text);
+            input_data.push('\n');
+        }
+
+        let mut child = cmd.spawn().context("Failed to spawn instantmenu")?;
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(input_data.as_bytes())?;
+        }
+
+        let output = child
+            .wait_with_output()
+            .context("Failed to wait on instantmenu")?;
+        Self::parse_choice_strings(output)
+    }
+
     /// Show choice dialog streaming items from stdin.
     ///
     /// Spawns `instantmenu` immediately (it grabs the keyboard and grows
@@ -278,33 +250,9 @@ impl InstantmenuBackend {
     /// stay blocked on stdin for infinite producers — the short-lived CLI
     /// process exiting kills it, so the handle is detached, not joined.
     pub fn choice_from_stdin_streaming(
-        prompt: &str,
-        allow_multiple: bool,
-        frecency_cache: Option<&str>,
+        options: &ChoiceOptions,
     ) -> Result<DialogOutcome<Vec<String>>> {
-        let mut cmd = Command::new("instantmenu");
-        cmd.arg("--border-width")
-            .arg("4")
-            .arg("--position")
-            .arg("center")
-            .arg("--width")
-            .arg("auto")
-            .arg("--lines")
-            .arg("20")
-            .arg("--insensitive")
-            .arg("--prompt")
-            .arg(if allow_multiple {
-                format!("{prompt} (ctrl+return adds more)")
-            } else {
-                prompt.to_string()
-            })
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null());
-
-        if let Some(namespace) = frecency_cache {
-            cmd.arg("--frecency-cache").arg(namespace);
-        }
+        let mut cmd = Self::choice_command(options);
 
         let mut child = cmd.spawn().context("Failed to spawn instantmenu")?;
         let child_stdin = child
@@ -336,22 +284,7 @@ impl InstantmenuBackend {
         let output = child
             .wait_with_output()
             .context("Failed to wait on instantmenu")?;
-        if !output.status.success() {
-            return Ok(DialogOutcome::Cancelled);
-        }
-
-        let selected = String::from_utf8_lossy(&output.stdout);
-        let selected: Vec<String> = selected
-            .lines()
-            .map(str::trim_end)
-            .filter(|line| !line.is_empty())
-            .map(ToString::to_string)
-            .collect();
-        if selected.is_empty() {
-            Ok(DialogOutcome::Cancelled)
-        } else {
-            Ok(DialogOutcome::Submitted(selected))
-        }
+        Self::parse_choice_strings(output)
     }
 
     /// Show a choice dialog while typed items arrive from an in-process producer.
@@ -360,34 +293,10 @@ impl InstantmenuBackend {
     /// records are retained here because instantmenu prints their hidden stable
     /// values, while in-process callers may attach metadata needed after selection.
     pub fn choice_streaming(
-        prompt: &str,
+        options: &ChoiceOptions,
         items: crossbeam_channel::Receiver<SerializableMenuItem>,
-        allow_multiple: bool,
-        frecency_cache: Option<&str>,
     ) -> Result<DialogOutcome<Vec<SerializableMenuItem>>> {
-        let mut cmd = Command::new("instantmenu");
-        cmd.arg("--border-width")
-            .arg("4")
-            .arg("--position")
-            .arg("center")
-            .arg("--width")
-            .arg("auto")
-            .arg("--lines")
-            .arg("20")
-            .arg("--insensitive")
-            .arg("--prompt")
-            .arg(if allow_multiple {
-                format!("{prompt} (ctrl+return adds more)")
-            } else {
-                prompt.to_string()
-            })
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null());
-
-        if let Some(namespace) = frecency_cache {
-            cmd.arg("--frecency-cache").arg(namespace);
-        }
+        let mut cmd = Self::choice_command(options);
 
         let mut child = cmd.spawn().context("Failed to spawn instantmenu")?;
         let child_stdin = child

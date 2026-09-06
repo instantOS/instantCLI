@@ -31,8 +31,7 @@ impl RequestProcessor {
             MenuRequest::Choice { options, items } => self.handle_choice(options, items),
             MenuRequest::Confirm { message } => self.handle_confirm_request(message),
             MenuRequest::Chord { chords } => self.handle_chord_request(chords),
-            MenuRequest::Input { prompt } => self.handle_input_request(prompt),
-            MenuRequest::Password { prompt } => self.handle_password_request(prompt),
+            MenuRequest::Input { options } => self.handle_input_request(options),
             MenuRequest::FilePicker {
                 start,
                 scope,
@@ -221,28 +220,20 @@ impl RequestProcessor {
         }
     }
 
-    /// Handle text input request
-    fn handle_input_request(&self, prompt: String) -> Result<MenuResponse> {
-        match FzfWrapper::input(&prompt) {
+    /// Handle text or password input request
+    fn handle_input_request(&self, options: InputOptions) -> Result<MenuResponse> {
+        let outcome = if options.secret {
+            FzfWrapper::password(&options.prompt)
+        } else {
+            FzfWrapper::input(&options.prompt)
+        };
+        match outcome {
             Ok(crate::menu_utils::DialogOutcome::Submitted(input)) => {
                 Ok(MenuResponse::InputResult(input))
             }
             Ok(crate::menu_utils::DialogOutcome::Cancelled) => Ok(MenuResponse::Cancelled),
             Err(e) => Ok(MenuResponse::Error(format!(
                 "Failed to show input dialog: {e}"
-            ))),
-        }
-    }
-
-    /// Handle password input request
-    fn handle_password_request(&self, prompt: String) -> Result<MenuResponse> {
-        match FzfWrapper::password(&prompt) {
-            Ok(crate::menu_utils::DialogOutcome::Submitted(password)) => {
-                Ok(MenuResponse::PasswordResult(password))
-            }
-            Ok(crate::menu_utils::DialogOutcome::Cancelled) => Ok(MenuResponse::Cancelled),
-            Err(e) => Ok(MenuResponse::Error(format!(
-                "Failed to show password dialog: {e}"
             ))),
         }
     }

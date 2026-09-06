@@ -134,6 +134,36 @@ impl ChoiceOptions {
     }
 }
 
+/// Configuration shared by text and password prompts.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct InputOptions {
+    /// Text shown before the input query.
+    pub prompt: String,
+    /// Whether the input must be hidden (password).
+    pub secret: bool,
+}
+
+impl InputOptions {
+    /// Create a plain text input prompt.
+    pub fn new(prompt: impl Into<String>) -> Self {
+        Self {
+            prompt: prompt.into(),
+            secret: false,
+        }
+    }
+
+    /// Create a hidden password prompt.
+    pub fn password(prompt: impl Into<String>) -> Self {
+        Self::new(prompt).secret(true)
+    }
+
+    /// Configure whether the input must be hidden.
+    pub fn secret(mut self, secret: bool) -> Self {
+        self.secret = secret;
+        self
+    }
+}
+
 /// Menu request types sent from client to server
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum MenuRequest {
@@ -155,10 +185,8 @@ pub enum MenuRequest {
     ChoiceEnd,
     /// Show chord navigator using provided chord definitions
     Chord { chords: Vec<String> },
-    /// Show text input dialog
-    Input { prompt: String },
-    /// Show password input dialog
-    Password { prompt: String },
+    /// Show text or password input dialog
+    Input { options: InputOptions },
     /// Launch file picker dialog
     FilePicker {
         start: Option<String>,
@@ -196,10 +224,8 @@ pub enum MenuResponse {
     ConfirmResult(ConfirmResult),
     /// Chord selection result
     ChordResult(String),
-    /// Text input result
+    /// Text or password input result
     InputResult(String),
-    /// Password input result
-    PasswordResult(String),
     /// Server status information
     StatusResult(MenuStatus),
     /// Server stop acknowledgment
@@ -289,7 +315,7 @@ pub struct MenuStatus {
 }
 
 /// Protocol version information
-pub const PROTOCOL_VERSION: &str = "6.0";
+pub const PROTOCOL_VERSION: &str = "7.0";
 
 fn legacy_protocol_version() -> String {
     "1.0".to_string()
@@ -377,7 +403,7 @@ mod tests {
         let message = MenuMessage::new(
             "test_123".to_string(),
             MenuRequest::Input {
-                prompt: "Enter value:".to_string(),
+                options: InputOptions::new("Enter value:"),
             },
         );
 
@@ -387,7 +413,21 @@ mod tests {
         assert_eq!(deserialized.request_id, "test_123");
         assert_eq!(deserialized.protocol_version, PROTOCOL_VERSION);
         assert!(
-            matches!(deserialized.payload, MenuRequest::Input { prompt } if prompt == "Enter value:")
+            matches!(deserialized.payload, MenuRequest::Input { options } if options.prompt == "Enter value:" && !options.secret)
+        );
+    }
+
+    #[test]
+    fn test_input_options_password_round_trip() {
+        let request = MenuRequest::Input {
+            options: InputOptions::password("Enter password:"),
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+        let deserialized: MenuRequest = serde_json::from_str(&json).unwrap();
+
+        assert!(
+            matches!(deserialized, MenuRequest::Input { options } if options.prompt == "Enter password:" && options.secret)
         );
     }
 

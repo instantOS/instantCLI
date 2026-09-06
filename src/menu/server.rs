@@ -517,7 +517,6 @@ impl MenuServer {
                 | MenuRequest::ChoiceBegin { .. }
                 | MenuRequest::Chord { .. }
                 | MenuRequest::Input { .. }
-                | MenuRequest::Password { .. }
                 | MenuRequest::FilePicker { .. }
                 | MenuRequest::Slide(_)
                 | MenuRequest::Message { .. }

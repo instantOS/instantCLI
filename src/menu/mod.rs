@@ -190,11 +190,11 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
         MenuCommands::Input {
             ref prompt,
             backend,
-        } => handle_input(prompt, backend),
+        } => handle_text_input(protocol::InputOptions::new(prompt), backend),
         MenuCommands::Password {
             ref prompt,
             backend,
-        } => handle_password(prompt, backend),
+        } => handle_text_input(protocol::InputOptions::password(prompt), backend),
         MenuCommands::Status => handle_status(),
         MenuCommands::Show => handle_show(),
         MenuCommands::Checklist {
@@ -315,19 +315,20 @@ fn handle_choice(
     }
 
     match backend.resolve(true) {
-        ResolvedBackend::Instantmenu => Ok(finish_dialog(
-            instantmenu::InstantmenuBackend::choice_from_stdin_streaming(
-                prompt,
-                allow_multiple,
-                frecency_cache,
-            ),
-            "Native dialog",
-            |selected| {
-                for item in selected {
-                    println!("{item}");
-                }
-            },
-        )),
+        ResolvedBackend::Instantmenu => {
+            let options = ChoiceOptions::new(prompt)
+                .multi_select(allow_multiple)
+                .with_frecency_cache(frecency_cache.map(ToOwned::to_owned));
+            Ok(finish_dialog(
+                instantmenu::InstantmenuBackend::choice_from_stdin_streaming(&options),
+                "Native dialog",
+                |selected| {
+                    for item in selected {
+                        println!("{item}");
+                    }
+                },
+            ))
+        }
         ResolvedBackend::Scratchpad => {
             let client = HostedMenuClient::new();
             Ok(finish_dialog(
@@ -358,20 +359,20 @@ fn handle_choice_buffered(
     backend: MenuBackend,
 ) -> Result<i32> {
     match backend.resolve(true) {
-        ResolvedBackend::Instantmenu => Ok(finish_dialog(
-            instantmenu::InstantmenuBackend::choice(
-                prompt,
-                &item_list,
-                allow_multiple,
-                frecency_cache,
-            ),
-            "Native dialog",
-            |selected| {
-                for item in selected {
-                    println!("{item}");
-                }
-            },
-        )),
+        ResolvedBackend::Instantmenu => {
+            let options = ChoiceOptions::new(prompt)
+                .multi_select(allow_multiple)
+                .with_frecency_cache(frecency_cache.map(ToOwned::to_owned));
+            Ok(finish_dialog(
+                instantmenu::InstantmenuBackend::choice(&options, &item_list),
+                "Native dialog",
+                |selected| {
+                    for item in selected {
+                        println!("{item}");
+                    }
+                },
+            ))
+        }
         ResolvedBackend::Scratchpad => {
             let client = HostedMenuClient::new();
             Ok(finish_dialog(
@@ -668,49 +669,32 @@ fn handle_pick(
     }
 }
 
-fn handle_input(prompt: &str, backend: MenuBackend) -> Result<i32> {
+fn handle_text_input(options: protocol::InputOptions, backend: MenuBackend) -> Result<i32> {
     match backend.resolve(true) {
         ResolvedBackend::Instantmenu => Ok(finish_dialog(
-            instantmenu::InstantmenuBackend::input(prompt, None, None),
+            instantmenu::InstantmenuBackend::input(&options),
             "Native dialog",
             |text| println!("{text}"),
         )),
         ResolvedBackend::Scratchpad => {
             let client = HostedMenuClient::new();
             Ok(finish_dialog(
-                client.input(prompt.to_string()),
+                client.input(options),
                 "Hosted dialog",
                 |text| println!("{text}"),
             ))
         }
-        ResolvedBackend::Tui => Ok(finish_dialog(
-            FzfWrapper::input(prompt),
-            "Local TUI",
-            |text| println!("{text}"),
-        )),
-    }
-}
-
-fn handle_password(prompt: &str, backend: MenuBackend) -> Result<i32> {
-    match backend.resolve(true) {
-        ResolvedBackend::Instantmenu => Ok(finish_dialog(
-            instantmenu::InstantmenuBackend::password(prompt),
-            "Native dialog",
-            |password| println!("{password}"),
-        )),
-        ResolvedBackend::Scratchpad => {
-            let client = HostedMenuClient::new();
-            Ok(finish_dialog(
-                client.password(prompt.to_string()),
-                "Hosted dialog",
-                |password| println!("{password}"),
-            ))
+        ResolvedBackend::Tui => {
+            let prompt = options.prompt.clone();
+            let outcome = if options.secret {
+                FzfWrapper::password(&prompt)
+            } else {
+                FzfWrapper::input(&prompt)
+            };
+            Ok(finish_dialog(outcome, "Local TUI", |text| {
+                println!("{text}")
+            }))
         }
-        ResolvedBackend::Tui => Ok(finish_dialog(
-            FzfWrapper::password(prompt),
-            "Local TUI",
-            |password| println!("{password}"),
-        )),
     }
 }
 

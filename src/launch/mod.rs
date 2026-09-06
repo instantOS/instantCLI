@@ -74,12 +74,11 @@ async fn handle_interactive_mode(backend: MenuBackend) -> Result<i32> {
     });
 
     let outcome = match backend.resolve(true) {
-        ResolvedBackend::Instantmenu => instantmenu::InstantmenuBackend::choice_streaming(
-            "Launch application:",
-            receiver,
-            false,
-            Some("launch"),
-        ),
+        ResolvedBackend::Instantmenu => {
+            let options = crate::menu::protocol::ChoiceOptions::new("Launch application:")
+                .with_frecency_cache(Some("launch".to_string()));
+            instantmenu::InstantmenuBackend::choice_streaming(&options, receiver)
+        }
         ResolvedBackend::Scratchpad => client::HostedMenuClient::new()
             .choice_streaming(
                 crate::menu::protocol::ChoiceOptions::new("Launch application:")

@@ -581,20 +581,12 @@ impl HostedMenuClient {
         })
     }
 
-    /// Show input dialog via server
-    pub fn input(&self, prompt: String) -> Result<DialogOutcome<String>> {
-        let response = self.send_request(MenuRequest::Input { prompt })?;
-        decode_dialog_response(response, "input", |response| match response {
+    /// Show text or password input dialog via server
+    pub fn input(&self, options: InputOptions) -> Result<DialogOutcome<String>> {
+        let operation = if options.secret { "password" } else { "input" };
+        let response = self.send_request(MenuRequest::Input { options })?;
+        decode_dialog_response(response, operation, |response| match response {
             MenuResponse::InputResult(text) => Some(text),
-            _ => None,
-        })
-    }
-
-    /// Show password dialog via server
-    pub fn password(&self, prompt: String) -> Result<DialogOutcome<String>> {
-        let response = self.send_request(MenuRequest::Password { prompt })?;
-        decode_dialog_response(response, "password", |response| match response {
-            MenuResponse::PasswordResult(text) => Some(text),
             _ => None,
         })
     }
