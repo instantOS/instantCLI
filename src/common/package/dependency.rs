@@ -156,8 +156,13 @@ impl Dependency {
 pub fn ensure_all(deps: &[&'static Dependency]) -> anyhow::Result<InstallResult> {
     use super::batch::InstallBatch;
 
-    // Check if all already installed
-    if deps.iter().all(|d| d.is_installed()) {
+    // Installation tests may spawn subprocesses. Snapshot them once for the
+    // planning phase, then refresh only after an installation attempt.
+    let installed = deps
+        .iter()
+        .map(|dependency| dependency.is_installed())
+        .collect::<Vec<_>>();
+    if installed.iter().all(|installed| *installed) {
         return Ok(InstallResult::AlreadyInstalled);
     }
 
@@ -166,7 +171,9 @@ pub fn ensure_all(deps: &[&'static Dependency]) -> anyhow::Result<InstallResult>
     if os.is_immutable() {
         let missing_deps: Vec<_> = deps
             .iter()
-            .filter(|d| !d.is_installed())
+            .zip(&installed)
+            .filter(|(_, installed)| !**installed)
+            .map(|(dependency, _)| dependency)
             .map(|d| (d.name, d.install_hint()))
             .collect();
 
@@ -186,15 +193,13 @@ pub fn ensure_all(deps: &[&'static Dependency]) -> anyhow::Result<InstallResult>
     let mut batch = InstallBatch::new();
     let mut not_available = Vec::new();
 
-    for dep in deps {
-        if dep.is_installed() {
+    for (dep, installed) in deps.iter().zip(installed) {
+        if installed {
             continue;
         }
-        if dep.get_best_package().is_none() {
-            not_available.push((dep.name, dep.install_hint()));
-        } else {
-            // Safe because we have static lifetime
-            batch.add(dep)?;
+        match dep.get_best_package() {
+            Some(package) => batch.add_resolved(dep, package),
+            None => not_available.push((dep.name, dep.install_hint())),
         }
     }
 

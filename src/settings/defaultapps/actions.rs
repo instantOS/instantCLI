@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 
 use crate::menu_utils::{FzfSelectable, FzfWrapper, HeaderBuilder, MenuItem};
 use crate::settings::SettingsContext;
@@ -11,11 +11,11 @@ use crate::ui::catppuccin::colors;
 use crate::ui::prelude::*;
 use crate::ui::preview::FzfPreview;
 
-use super::app_info::{ApplicationInfo, get_application_info};
-use super::mime_cache::{build_mime_to_apps_map, get_apps_for_mime};
+use super::app_info::{ApplicationInfo, ApplicationInfoCache};
+use super::mime_cache::{MimeDatabase, get_apps_for_mime, load_mime_database};
 use super::mime_info::{MimeTypeInfo, get_all_mime_types, get_mime_type_info};
 use super::mime_sets::{ARCHIVE_MIME_TYPES, AUDIO_MIME_TYPES, IMAGE_MIME_TYPES, VIDEO_MIME_TYPES};
-use super::system::{query_default_app, set_default_app};
+use super::system::{query_default_app, set_default_app, set_default_apps};
 
 pub fn manage_default_apps(ctx: &mut SettingsContext) -> Result<()> {
     if which::which("xdg-mime").is_err() {
@@ -31,7 +31,7 @@ pub fn manage_default_apps(ctx: &mut SettingsContext) -> Result<()> {
         return Ok(());
     }
 
-    let mime_map = build_mime_to_apps_map().context("Failed to build MIME type map")?;
+    let mime_map = load_mime_database().context("Failed to build MIME type map")?;
     let mime_type_strings = get_all_mime_types(&mime_map);
 
     if mime_type_strings.is_empty() {
@@ -94,10 +94,11 @@ pub fn manage_default_apps(ctx: &mut SettingsContext) -> Result<()> {
         )
         .build();
 
+    let mut app_cache = ApplicationInfoCache::default();
     let app_infos: Vec<ApplicationInfo> = apps
         .iter()
         .map(|desktop_id| {
-            let mut info = get_application_info(desktop_id);
+            let mut info = app_cache.get(desktop_id);
             info.is_default = current_default_id == Some(desktop_id.as_str());
             info
         })
@@ -216,7 +217,7 @@ fn manage_default_app_for_mimes(
     let installable_apps = installable_apps_for(app_name);
 
     loop {
-        let mime_map = build_mime_to_apps_map().context("Failed to build MIME type map")?;
+        let mime_map = load_mime_database().context("Failed to build MIME type map")?;
         let app_desktop_ids = collect_supported_apps(mime_types, &mime_map);
         let current_default = query_default_app(primary_mime).ok().flatten();
         let header = selection_header(app_name, current_default.clone(), mime_types);
@@ -230,10 +231,11 @@ fn manage_default_app_for_mimes(
             }
         }
 
+        let mut app_cache = ApplicationInfoCache::default();
         let app_infos: Vec<ApplicationInfo> = app_desktop_ids
             .iter()
             .map(|desktop_id| {
-                let mut info = get_application_info(desktop_id);
+                let mut info = app_cache.get(desktop_id);
                 info.is_default = current_default.as_deref() == Some(desktop_id.as_str());
                 info
             })
@@ -312,18 +314,10 @@ fn installable_apps_for(app_name: &str) -> Option<&'static [InstallableApp]> {
     }
 }
 
-fn collect_supported_apps(
-    mime_types: &[&str],
-    mime_map: &HashMap<String, Vec<String>>,
-) -> Vec<String> {
+fn collect_supported_apps(mime_types: &[&str], mime_map: &MimeDatabase) -> Vec<String> {
     let mut sets: Vec<BTreeSet<String>> = mime_types
         .iter()
-        .map(|mime_type| {
-            mime_map
-                .get(*mime_type)
-                .map(|apps| apps.iter().cloned().collect())
-                .unwrap_or_default()
-        })
+        .map(|mime_type| get_apps_for_mime(mime_type, mime_map).into_iter().collect())
         .collect();
 
     let mut intersection = match sets.len() {
@@ -385,12 +379,7 @@ fn handle_missing_apps(
 }
 
 fn apply_default_for_mimes(mime_types: &[&str], desktop_file: &str) -> Result<()> {
-    for mime_type in mime_types {
-        set_default_app(mime_type, desktop_file)
-            .with_context(|| format!("Failed to set default for {}", mime_type))?;
-    }
-
-    Ok(())
+    set_default_apps(mime_types, desktop_file)
 }
 
 fn notify_success(

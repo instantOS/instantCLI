@@ -5,7 +5,9 @@ use anyhow::{Context, Result};
 
 use crate::preview::PreviewContext;
 use crate::preview::default_apps::display_app_name;
-use crate::settings::defaultapps::{build_mime_to_apps_map, get_apps_for_mime, query_default_app};
+use crate::settings::defaultapps::{
+    ApplicationInfoCache, get_apps_for_mime, load_mime_database, query_default_app,
+};
 use crate::ui::catppuccin::colors;
 use crate::ui::prelude::NerdFont;
 use crate::ui::preview::PreviewWriter;
@@ -20,19 +22,24 @@ pub(crate) fn render_mime_type_preview(ctx: &PreviewContext) -> Result<String> {
 }
 
 pub(crate) fn render_mime_type_preview_streaming(ctx: &PreviewContext) -> Result<()> {
-    let Some(mime_type) = ctx.key() else {
-        return Ok(());
-    };
-    let mut preview = PreviewWriter::streaming();
-    render_mime_type_impl(mime_type, &mut preview)?;
-    Ok(())
+    crate::preview::cache::render_streaming_cached(
+        crate::preview::PreviewId::MimeType,
+        ctx,
+        |preview| {
+            let Some(mime_type) = ctx.key() else {
+                return Ok(());
+            };
+            render_mime_type_impl(mime_type, preview)
+        },
+    )
 }
 
 /// Core implementation — the header and static metadata stream immediately,
 /// then the xdg-mime queries and desktop-file scans follow.
 fn render_mime_type_impl(mime_type: &str, preview: &mut PreviewWriter) -> Result<()> {
     let category = mime_category(mime_type);
-    let extensions = mime_extensions(mime_type);
+    let mime_database = load_mime_database().unwrap_or_default();
+    let extensions = mime_extensions(mime_database.canonical_type(mime_type));
 
     preview
         .header(NerdFont::File, "MIME Type")
@@ -57,10 +64,11 @@ fn render_mime_type_impl(mime_type: &str, preview: &mut PreviewWriter) -> Result
     }
 
     // These calls spawn subprocesses / scan desktop files
-    let default = query_default_app(mime_type)
-        .ok()
-        .flatten()
-        .map(|desktop_id| display_app_name(&desktop_id))
+    let mut app_cache = ApplicationInfoCache::default();
+    let current_default = query_default_app(mime_type).ok().flatten();
+    let default = current_default
+        .as_deref()
+        .map(|desktop_id| display_app_name(desktop_id, &mut app_cache))
         .unwrap_or_else(|| "(not set)".to_string());
 
     preview
@@ -78,16 +86,13 @@ fn render_mime_type_impl(mime_type: &str, preview: &mut PreviewWriter) -> Result
             "Available Applications",
         );
 
-    let app_map = build_mime_to_apps_map().unwrap_or_default();
-    let mut apps = get_apps_for_mime(mime_type, &app_map);
-    let current_default = query_default_app(mime_type).ok().flatten();
-
+    let mut apps = get_apps_for_mime(mime_type, &mime_database);
     apps.sort();
     let app_lines: Vec<String> = apps
         .into_iter()
         .take(8)
         .map(|desktop_id| {
-            let label = display_app_name(&desktop_id);
+            let label = display_app_name(&desktop_id, &mut app_cache);
             if current_default.as_deref() == Some(desktop_id.as_str()) {
                 format!("{label} (current)")
             } else {
@@ -139,11 +144,10 @@ fn mime_category(mime_type: &str) -> &'static str {
 }
 
 fn mime_extensions(mime_type: &str) -> Vec<String> {
-    let canonical = canonical_mime_type(mime_type);
     let mut entries: Vec<GlobEntry> = Vec::new();
 
     for path in mime_globs2_paths() {
-        if let Ok(mut list) = parse_globs2(&path, &canonical) {
+        if let Ok(mut list) = parse_globs2(&path, mime_type) {
             entries.append(&mut list);
         }
     }
@@ -173,36 +177,6 @@ fn mime_extensions(mime_type: &str) -> Vec<String> {
     }
 
     extensions
-}
-
-fn canonical_mime_type(mime_type: &str) -> String {
-    for path in mime_alias_paths() {
-        if let Ok(content) = std::fs::read_to_string(&path) {
-            for line in content.lines() {
-                let line = line.trim();
-                if line.is_empty() || line.starts_with('#') {
-                    continue;
-                }
-                let mut parts = line.split_whitespace();
-                let alias = parts.next().unwrap_or("");
-                let canonical = parts.next().unwrap_or("");
-                if alias == mime_type && !canonical.is_empty() {
-                    return canonical.to_string();
-                }
-            }
-        }
-    }
-    mime_type.to_string()
-}
-
-fn mime_alias_paths() -> Vec<PathBuf> {
-    let mut paths = Vec::new();
-    if let Some(home) = dirs::home_dir() {
-        paths.push(home.join(".local/share/mime/aliases"));
-    }
-    paths.push(PathBuf::from("/usr/local/share/mime/aliases"));
-    paths.push(PathBuf::from("/usr/share/mime/aliases"));
-    paths.into_iter().filter(|p| p.exists()).collect()
 }
 
 fn mime_globs2_paths() -> Vec<PathBuf> {

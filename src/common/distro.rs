@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use std::fs;
 use std::path::Path;
+use std::sync::LazyLock;
 
 /// Represents a detected operating system with methods for family checks
 /// and package manager detection.
@@ -41,6 +42,12 @@ pub enum OperatingSystem {
 impl OperatingSystem {
     /// Detect the current operating system from /etc/os-release
     pub fn detect() -> Self {
+        static DETECTED_OS: LazyLock<OperatingSystem> =
+            LazyLock::new(OperatingSystem::detect_uncached);
+        DETECTED_OS.clone()
+    }
+
+    fn detect_uncached() -> Self {
         let os_release_path = Path::new("/etc/os-release");
         if os_release_path.exists() {
             return match fs::read_to_string(os_release_path) {

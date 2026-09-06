@@ -157,6 +157,8 @@ pub fn show_single_file_status(
             OutputFormat::Text => {
                 let dir_display = crate::dot::display_path(&target_path, false);
                 println!("{}", dir_display.bold());
+                let overrides =
+                    crate::dot::override_config::OverrideConfig::load().unwrap_or_default();
 
                 for (path, dotfile) in matching {
                     let status = get_dotfile_status(dotfile, db, unit_index);
@@ -164,14 +166,8 @@ pub fn show_single_file_status(
                     let dotfile_dir = get_dotfile_dir_name(dotfile, cfg);
                     let path_display = crate::dot::display_path(path, dotfile.is_root);
 
-                    let override_indicator = if let Ok(overrides) =
-                        crate::dot::override_config::OverrideConfig::load()
-                    {
-                        if overrides.get_override(path).is_some() {
-                            " [override]"
-                        } else {
-                            ""
-                        }
+                    let override_indicator = if overrides.get_override(path).is_some() {
+                        " [override]"
                     } else {
                         ""
                     };

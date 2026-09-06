@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 
-use super::entry::DesktopEntry;
+use crate::common::desktop_entry::DesktopEntry;
 use crate::launch::types::DesktopAppDetails;
 
 /// Parse the selected file again immediately before launch. Discovery carries

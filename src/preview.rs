@@ -14,11 +14,11 @@ const EMAIL_MIME_TYPES: &[&str] = &["x-scheme-handler/mailto"];
 const FILE_MANAGER_MIME_TYPES: &[&str] = &["inode/directory"];
 const PDF_VIEWER_MIME_TYPES: &[&str] = &["application/pdf"];
 use crate::ui::prelude::NerdFont;
-use crate::ui::preview::{PreviewBuilder, PreviewWriter};
+use crate::ui::preview::PreviewBuilder;
 
 mod appearance;
 mod bluetooth;
-mod cache;
+pub(crate) mod cache;
 mod default_apps;
 mod disks;
 mod dot_repository;
@@ -236,6 +236,16 @@ fn should_use_collect_preview_cache(id: PreviewId, ctx: &PreviewContext) -> bool
                 | PreviewId::Flatpak
                 | PreviewId::Aur
                 | PreviewId::Cargo
+                | PreviewId::MimeType
+                | PreviewId::DefaultImageViewer
+                | PreviewId::DefaultVideoPlayer
+                | PreviewId::DefaultAudioPlayer
+                | PreviewId::DefaultArchiveManager
+                | PreviewId::DefaultBrowser
+                | PreviewId::DefaultTextEditor
+                | PreviewId::DefaultEmail
+                | PreviewId::DefaultFileManager
+                | PreviewId::DefaultPdfViewer
                 | PreviewId::GameSave
         )
 }
@@ -270,54 +280,72 @@ fn try_render_streaming(id: PreviewId, ctx: &PreviewContext) -> Option<Result<()
 
         // Default app previews — query xdg-mime per MIME type
         PreviewId::DefaultImageViewer => Some(stream_default_app(
+            id,
+            ctx,
             "Image Viewer",
             NerdFont::Image,
             "Set your default image viewer for photos and pictures.",
             IMAGE_MIME_TYPES,
         )),
         PreviewId::DefaultVideoPlayer => Some(stream_default_app(
+            id,
+            ctx,
             "Video Player",
             NerdFont::Video,
             "Set your default video player for movies and videos.",
             VIDEO_MIME_TYPES,
         )),
         PreviewId::DefaultAudioPlayer => Some(stream_default_app(
+            id,
+            ctx,
             "Audio Player",
             NerdFont::Music,
             "Set your default audio player for music and podcasts.",
             AUDIO_MIME_TYPES,
         )),
         PreviewId::DefaultArchiveManager => Some(stream_default_app(
+            id,
+            ctx,
             "Archive Manager",
             NerdFont::Archive,
             "Set your default archive manager for ZIP, TAR, and other compressed files.",
             ARCHIVE_MIME_TYPES,
         )),
         PreviewId::DefaultBrowser => Some(stream_default_app(
+            id,
+            ctx,
             "Web Browser",
             NerdFont::Globe,
             "Set your default web browser for opening links and HTML files.",
             BROWSER_MIME_TYPES,
         )),
         PreviewId::DefaultTextEditor => Some(stream_default_app(
+            id,
+            ctx,
             "Text Editor",
             NerdFont::FileText,
             "Set your default text editor for opening text files.",
             TEXT_EDITOR_MIME_TYPES,
         )),
         PreviewId::DefaultEmail => Some(stream_default_app(
+            id,
+            ctx,
             "Email Client",
             NerdFont::ExternalLink,
             "Set your default email client for mailto: links.",
             EMAIL_MIME_TYPES,
         )),
         PreviewId::DefaultFileManager => Some(stream_default_app(
+            id,
+            ctx,
             "File Manager",
             NerdFont::Folder,
             "Set your default file manager for browsing folders.",
             FILE_MANAGER_MIME_TYPES,
         )),
         PreviewId::DefaultPdfViewer => Some(stream_default_app(
+            id,
+            ctx,
             "PDF Viewer",
             NerdFont::FilePdf,
             "Set your default PDF viewer for documents.",
@@ -330,14 +358,16 @@ fn try_render_streaming(id: PreviewId, ctx: &PreviewContext) -> Option<Result<()
 }
 
 fn stream_default_app(
+    id: PreviewId,
+    ctx: &PreviewContext,
     title: &str,
     icon: NerdFont,
     summary: &str,
     mime_types: &[&str],
 ) -> Result<()> {
-    let mut writer = PreviewWriter::streaming();
-    default_apps::render_default_app_impl(title, icon, summary, mime_types, &mut writer)?;
-    Ok(())
+    cache::render_streaming_cached(id, ctx, |writer| {
+        default_apps::render_default_app_impl(title, icon, summary, mime_types, writer)
+    })
 }
 
 pub(crate) struct PreviewContext {
@@ -529,26 +559,21 @@ fn render_systemd_service_preview(ctx: &PreviewContext) -> Result<String> {
         vec![]
     };
 
-    let active = std::process::Command::new("systemctl")
-        .args(["is-active", service_name])
+    let properties = std::process::Command::new("systemctl")
+        .args([
+            "show",
+            service_name,
+            "--property=ActiveState,UnitFileState,Description",
+        ])
         .args(&scope_args)
         .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_else(|_| "unknown".to_string());
-
-    let enabled = std::process::Command::new("systemctl")
-        .args(["is-enabled", service_name])
-        .args(&scope_args)
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_else(|_| "unknown".to_string());
-
-    let description = std::process::Command::new("systemctl")
-        .args(["show", service_name, "-p", "Description", "--value"])
-        .args(&scope_args)
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_else(|_| String::new());
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| parse_systemd_preview_properties(&String::from_utf8_lossy(&output.stdout)))
+        .unwrap_or_default();
+    let active = properties.active.unwrap_or_else(|| "unknown".to_string());
+    let enabled = properties.enabled.unwrap_or_else(|| "unknown".to_string());
+    let description = properties.description.unwrap_or_default();
 
     let active_color = match active.as_str() {
         "active" => colors::GREEN,
@@ -622,6 +647,56 @@ fn render_systemd_service_preview(ctx: &PreviewContext) -> Result<String> {
     Ok(builder.build_string())
 }
 
+#[derive(Default)]
+struct SystemdPreviewProperties {
+    active: Option<String>,
+    enabled: Option<String>,
+    description: Option<String>,
+}
+
+fn parse_systemd_preview_properties(output: &str) -> SystemdPreviewProperties {
+    let mut properties = SystemdPreviewProperties::default();
+    for line in output.lines() {
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        match key {
+            "ActiveState" => properties.active = Some(value.to_string()),
+            "UnitFileState" => {
+                properties.enabled = Some(if value.is_empty() {
+                    "transient".to_string()
+                } else {
+                    value.to_string()
+                });
+            }
+            "Description" => properties.description = Some(value.to_string()),
+            _ => {}
+        }
+    }
+    properties
+}
+
 fn env_usize(name: &str) -> Option<usize> {
     env::var(name).ok().and_then(|v| v.parse::<usize>().ok())
+}
+
+#[cfg(test)]
+mod systemd_preview_tests {
+    use super::*;
+
+    #[test]
+    fn parses_systemd_properties_from_one_query() {
+        let properties = parse_systemd_preview_properties(
+            "ActiveState=active\nUnitFileState=enabled\nDescription=Example Service\n",
+        );
+        assert_eq!(properties.active.as_deref(), Some("active"));
+        assert_eq!(properties.enabled.as_deref(), Some("enabled"));
+        assert_eq!(properties.description.as_deref(), Some("Example Service"));
+    }
+
+    #[test]
+    fn empty_unit_file_state_means_transient() {
+        let properties = parse_systemd_preview_properties("UnitFileState=\n");
+        assert_eq!(properties.enabled.as_deref(), Some("transient"));
+    }
 }

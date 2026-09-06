@@ -4,7 +4,6 @@ use std::path::PathBuf;
 
 pub mod desktop;
 pub mod discovery;
-mod entry;
 pub mod execute;
 pub mod types;
 

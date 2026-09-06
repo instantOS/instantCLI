@@ -1,8 +1,8 @@
+use std::collections::HashMap;
 use std::env;
 use std::path::PathBuf;
 
-use freedesktop_file_parser::parse;
-
+use crate::common::desktop_entry::DesktopEntry;
 use crate::menu_utils::{FzfPreview, FzfSelectable};
 use crate::ui::catppuccin::{colors, hex_to_ansi_fg};
 use crate::ui::nerd_font::NerdFont;
@@ -79,49 +79,94 @@ impl FzfSelectable for ApplicationInfo {
     }
 }
 
-pub(crate) fn get_application_info(desktop_id: &str) -> ApplicationInfo {
-    let home_dir = env::var("HOME").unwrap_or_default();
-    let directories = [
-        format!("{home_dir}/.local/share/applications"),
-        format!("{home_dir}/.local/share/flatpak/exports/share/applications"),
-        "/var/lib/flatpak/exports/share/applications".to_string(),
-        "/usr/share/applications".to_string(),
-    ];
+pub(crate) struct ApplicationInfoCache {
+    directories: Vec<PathBuf>,
+    entries: HashMap<String, ApplicationInfo>,
+}
 
-    for dir in &directories {
-        let path = PathBuf::from(dir).join(desktop_id);
-        if path.exists()
-            && let Ok(content) = std::fs::read_to_string(&path)
-            && let Ok(desktop_file) = parse(&content)
-        {
-            use freedesktop_file_parser::EntryType;
-
-            let exec = match &desktop_file.entry.entry_type {
-                EntryType::Application(app) => app.exec.clone(),
-                _ => None,
-            };
-
-            return ApplicationInfo {
-                desktop_id: desktop_id.to_string(),
-                name: Some(desktop_file.entry.name.default.clone()),
-                comment: desktop_file
-                    .entry
-                    .comment
-                    .as_ref()
-                    .map(|c| c.default.clone()),
-                icon: desktop_file.entry.icon.as_ref().map(|i| i.content.clone()),
-                exec,
-                is_default: false,
-            };
+impl Default for ApplicationInfoCache {
+    fn default() -> Self {
+        let home_dir = env::var_os("HOME").map(PathBuf::from).unwrap_or_default();
+        Self {
+            directories: vec![
+                home_dir.join(".local/share/applications"),
+                home_dir.join(".local/share/flatpak/exports/share/applications"),
+                PathBuf::from("/var/lib/flatpak/exports/share/applications"),
+                PathBuf::from("/usr/share/applications"),
+            ],
+            entries: HashMap::new(),
         }
     }
+}
 
-    ApplicationInfo {
-        desktop_id: desktop_id.to_string(),
-        name: None,
-        comment: None,
-        icon: None,
-        exec: None,
-        is_default: false,
+impl ApplicationInfoCache {
+    pub(crate) fn get(&mut self, desktop_id: &str) -> ApplicationInfo {
+        if let Some(info) = self.entries.get(desktop_id) {
+            return info.clone();
+        }
+
+        let info = self.load(desktop_id);
+        self.entries.insert(desktop_id.to_string(), info.clone());
+        info
+    }
+
+    fn load(&self, desktop_id: &str) -> ApplicationInfo {
+        for directory in &self.directories {
+            let path = directory.join(desktop_id);
+            if let Ok(content) = std::fs::read_to_string(&path)
+                && let Some(entry) = DesktopEntry::parse(&content)
+                && entry.entry_type == Some("Application")
+            {
+                return ApplicationInfo {
+                    desktop_id: desktop_id.to_string(),
+                    name: entry.name.map(ToOwned::to_owned),
+                    comment: entry.comment.map(ToOwned::to_owned),
+                    icon: entry.icon.map(ToOwned::to_owned),
+                    exec: entry.exec.map(ToOwned::to_owned),
+                    is_default: false,
+                };
+            }
+        }
+
+        ApplicationInfo {
+            desktop_id: desktop_id.to_string(),
+            name: None,
+            comment: None,
+            icon: None,
+            exec: None,
+            is_default: false,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn application_details_are_parsed_once_per_snapshot() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("example.desktop");
+        std::fs::write(
+            &path,
+            "[Desktop Entry]\nType=Application\nName=Original\nComment=Details\nExec=example\n",
+        )
+        .unwrap();
+        let mut cache = ApplicationInfoCache {
+            directories: vec![directory.path().to_path_buf()],
+            entries: HashMap::new(),
+        };
+
+        let first = cache.get("example.desktop");
+        std::fs::write(
+            path,
+            "[Desktop Entry]\nType=Application\nName=Changed\nExec=changed\n",
+        )
+        .unwrap();
+        let second = cache.get("example.desktop");
+
+        assert_eq!(first.name.as_deref(), Some("Original"));
+        assert_eq!(first.comment.as_deref(), Some("Details"));
+        assert_eq!(second.name.as_deref(), Some("Original"));
     }
 }

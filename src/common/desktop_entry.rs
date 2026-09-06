@@ -5,21 +5,22 @@
 //! with all content in every file rather than just the fields we consume.
 
 #[derive(Debug, Default)]
-pub(super) struct DesktopEntry<'a> {
-    pub(super) entry_type: Option<&'a str>,
-    pub(super) name: Option<&'a str>,
-    pub(super) exec: Option<&'a str>,
-    pub(super) try_exec: Option<&'a str>,
-    pub(super) icon: Option<&'a str>,
-    pub(super) only_show_in: Option<&'a str>,
-    pub(super) not_show_in: Option<&'a str>,
-    pub(super) hidden: bool,
-    pub(super) no_display: bool,
-    pub(super) terminal: bool,
+pub struct DesktopEntry<'a> {
+    pub entry_type: Option<&'a str>,
+    pub name: Option<&'a str>,
+    pub comment: Option<&'a str>,
+    pub exec: Option<&'a str>,
+    pub try_exec: Option<&'a str>,
+    pub icon: Option<&'a str>,
+    pub only_show_in: Option<&'a str>,
+    pub not_show_in: Option<&'a str>,
+    pub hidden: bool,
+    pub no_display: bool,
+    pub terminal: bool,
 }
 
 impl<'a> DesktopEntry<'a> {
-    pub(super) fn parse(content: &'a str) -> Option<Self> {
+    pub fn parse(content: &'a str) -> Option<Self> {
         let mut entry = Self::default();
         let mut in_desktop_entry = false;
 
@@ -45,6 +46,7 @@ impl<'a> DesktopEntry<'a> {
             match key {
                 "Type" => entry.entry_type = Some(value),
                 "Name" => entry.name = Some(value),
+                "Comment" => entry.comment = Some(value),
                 "Exec" => entry.exec = Some(value),
                 "TryExec" => entry.try_exec = Some(value),
                 "Icon" => entry.icon = Some(value),

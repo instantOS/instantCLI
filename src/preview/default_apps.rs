@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use crate::settings::defaultapps::{get_application_info, query_default_app};
+use crate::settings::defaultapps::{ApplicationInfoCache, query_default_app};
 use crate::ui::catppuccin::colors;
 use crate::ui::prelude::NerdFont;
 use crate::ui::preview::PreviewWriter;
@@ -15,6 +15,7 @@ pub(crate) fn render_default_app_impl(
     mime_types: &[&str],
     preview: &mut PreviewWriter,
 ) -> Result<()> {
+    let mut app_cache = ApplicationInfoCache::default();
     preview
         .header(icon, title)
         .subtext(summary)
@@ -34,7 +35,7 @@ pub(crate) fn render_default_app_impl(
         let label = query_default_app(mime)
             .ok()
             .flatten()
-            .map(|desktop_id| display_app_name(&desktop_id))
+            .map(|desktop_id| display_app_name(&desktop_id, &mut app_cache))
             .unwrap_or_else(|| "(not set)".to_string());
         preview.field_indented(mime, &label);
     }
@@ -54,7 +55,7 @@ pub(crate) fn render_default_app_preview(
     Ok(preview.build_string())
 }
 
-pub(crate) fn display_app_name(desktop_id: &str) -> String {
-    let info = get_application_info(desktop_id);
+pub(crate) fn display_app_name(desktop_id: &str, app_cache: &mut ApplicationInfoCache) -> String {
+    let info = app_cache.get(desktop_id);
     info.name.unwrap_or_else(|| desktop_id.to_string())
 }

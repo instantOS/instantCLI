@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 use super::{PreviewContext, PreviewId};
 use crate::ui::preview::PreviewWriter;
 
-const PREVIEW_CACHE_VERSION: u32 = 3;
+const PREVIEW_CACHE_VERSION: u32 = 4;
 
 pub(super) fn get_or_render<F>(id: PreviewId, ctx: &PreviewContext, render: F) -> Result<String>
 where
@@ -88,6 +88,17 @@ fn cache_ttl(id: PreviewId) -> Option<Duration> {
         | PreviewId::Flatpak
         | PreviewId::Aur
         | PreviewId::Cargo => Some(Duration::from_secs(120)),
+        PreviewId::MimeType
+        | PreviewId::DefaultImageViewer
+        | PreviewId::DefaultVideoPlayer
+        | PreviewId::DefaultAudioPlayer
+        | PreviewId::DefaultArchiveManager
+        | PreviewId::DefaultBrowser
+        | PreviewId::DefaultTextEditor
+        | PreviewId::DefaultEmail
+        | PreviewId::DefaultFileManager
+        | PreviewId::DefaultPdfViewer => Some(Duration::from_secs(15)),
+        PreviewId::SystemdService => Some(Duration::from_secs(3)),
         _ => None,
     }
 }
@@ -108,7 +119,20 @@ fn cache_path(id: PreviewId, ctx: &PreviewContext) -> Result<Option<PathBuf>> {
     }
     let digest = hex::encode(hasher.finalize());
 
-    Ok(Some(preview_cache_dir()?.join(format!("{digest}.txt"))))
+    Ok(Some(
+        preview_cache_dir()?.join(format!("{id}-{digest}.txt")),
+    ))
+}
+
+pub(crate) fn invalidate(id: PreviewId) -> Result<()> {
+    let directory = preview_cache_dir()?;
+    let prefix = format!("{id}-");
+    for entry in fs::read_dir(directory)?.flatten() {
+        if entry.file_name().to_string_lossy().starts_with(&prefix) {
+            let _ = fs::remove_file(entry.path());
+        }
+    }
+    Ok(())
 }
 
 fn cache_depends_on_dimensions(id: PreviewId) -> bool {
@@ -125,6 +149,16 @@ fn cache_depends_on_dimensions(id: PreviewId) -> bool {
             | PreviewId::Flatpak
             | PreviewId::Aur
             | PreviewId::Cargo
+            | PreviewId::MimeType
+            | PreviewId::DefaultImageViewer
+            | PreviewId::DefaultVideoPlayer
+            | PreviewId::DefaultAudioPlayer
+            | PreviewId::DefaultArchiveManager
+            | PreviewId::DefaultBrowser
+            | PreviewId::DefaultTextEditor
+            | PreviewId::DefaultEmail
+            | PreviewId::DefaultFileManager
+            | PreviewId::DefaultPdfViewer
     )
 }
 
@@ -179,8 +213,10 @@ fn is_stale(modified: SystemTime, ttl: Duration) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     #[test]
+    #[serial]
     fn cache_round_trip_uses_tmp_dir() {
         let temp = tempfile::tempdir().unwrap();
         unsafe {
@@ -230,5 +266,49 @@ mod tests {
         let path_b = cache_path(PreviewId::Flatpak, &ctx_b).unwrap().unwrap();
 
         assert_eq!(path_a.file_name(), path_b.file_name());
+    }
+
+    #[test]
+    fn expensive_dynamic_previews_have_short_ttls() {
+        assert_eq!(
+            cache_ttl(PreviewId::MimeType),
+            Some(Duration::from_secs(15))
+        );
+        assert_eq!(
+            cache_ttl(PreviewId::DefaultImageViewer),
+            Some(Duration::from_secs(15))
+        );
+        assert_eq!(
+            cache_ttl(PreviewId::SystemdService),
+            Some(Duration::from_secs(3))
+        );
+        assert_eq!(cache_ttl(PreviewId::Keyhelp), None);
+    }
+
+    #[test]
+    #[serial]
+    fn invalidation_removes_only_the_requested_preview_type() {
+        let temp = tempfile::tempdir().unwrap();
+        unsafe {
+            std::env::set_var("INS_PREVIEW_CACHE_DIR", temp.path());
+        }
+        let ctx = PreviewContext {
+            key: Some("example".to_string()),
+            columns: None,
+            lines: None,
+        };
+        store(PreviewId::MimeType, &ctx, "mime").unwrap();
+        store(PreviewId::DefaultBrowser, &ctx, "browser").unwrap();
+
+        invalidate(PreviewId::MimeType).unwrap();
+
+        assert!(get_cached(PreviewId::MimeType, &ctx).unwrap().is_none());
+        assert_eq!(
+            get_cached(PreviewId::DefaultBrowser, &ctx).unwrap(),
+            Some("browser".to_string())
+        );
+        unsafe {
+            std::env::remove_var("INS_PREVIEW_CACHE_DIR");
+        }
     }
 }

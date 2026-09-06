@@ -5,7 +5,22 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
-pub(crate) fn build_mime_to_apps_map() -> Result<HashMap<String, Vec<String>>> {
+#[derive(Default)]
+pub(crate) struct MimeDatabase {
+    pub(super) apps: HashMap<String, Vec<String>>,
+    aliases: HashMap<String, String>,
+    subclasses: HashMap<String, Vec<String>>,
+}
+
+impl MimeDatabase {
+    pub(crate) fn canonical_type<'a>(&'a self, mime_type: &'a str) -> &'a str {
+        self.aliases
+            .get(mime_type)
+            .map_or(mime_type, String::as_str)
+    }
+}
+
+pub(crate) fn load_mime_database() -> Result<MimeDatabase> {
     let mut mime_map: HashMap<String, Vec<String>> = HashMap::new();
     let cache_paths = get_mimeinfo_cache_paths();
 
@@ -22,26 +37,27 @@ pub(crate) fn build_mime_to_apps_map() -> Result<HashMap<String, Vec<String>>> {
         }
     }
 
-    Ok(mime_map)
+    Ok(MimeDatabase {
+        apps: mime_map,
+        aliases: load_mime_aliases(),
+        subclasses: load_mime_subclasses(),
+    })
 }
 
-pub(crate) fn get_apps_for_mime(
-    mime_type: &str,
-    mime_map: &HashMap<String, Vec<String>>,
-) -> Vec<String> {
+pub(crate) fn get_apps_for_mime(mime_type: &str, database: &MimeDatabase) -> Vec<String> {
     let mut lookup_types: BTreeSet<String> = BTreeSet::new();
     lookup_types.insert(mime_type.to_string());
 
-    let canonical = canonical_mime_type(mime_type);
-    lookup_types.insert(canonical.clone());
+    let canonical = database.canonical_type(mime_type);
+    lookup_types.insert(canonical.to_string());
 
-    for parent in mime_parent_types(&canonical) {
+    for parent in mime_parent_types(canonical, &database.subclasses) {
         lookup_types.insert(parent);
     }
 
     let mut apps: BTreeSet<String> = BTreeSet::new();
     for lookup in lookup_types {
-        if let Some(entries) = mime_map.get(&lookup) {
+        if let Some(entries) = database.apps.get(&lookup) {
             apps.extend(entries.iter().cloned());
         }
     }
@@ -109,7 +125,8 @@ fn parse_mimeinfo_cache(path: &Path) -> Result<HashMap<String, Vec<String>>> {
     Ok(map)
 }
 
-fn canonical_mime_type(mime_type: &str) -> String {
+fn load_mime_aliases() -> HashMap<String, String> {
+    let mut aliases = HashMap::new();
     for path in mime_alias_paths() {
         if let Ok(content) = std::fs::read_to_string(&path) {
             for line in content.lines() {
@@ -120,18 +137,18 @@ fn canonical_mime_type(mime_type: &str) -> String {
                 let mut parts = line.split_whitespace();
                 let alias = parts.next().unwrap_or("");
                 let canonical = parts.next().unwrap_or("");
-                if alias == mime_type && !canonical.is_empty() {
-                    return canonical.to_string();
+                if !alias.is_empty() && !canonical.is_empty() {
+                    aliases
+                        .entry(alias.to_string())
+                        .or_insert_with(|| canonical.to_string());
                 }
             }
         }
     }
-
-    mime_type.to_string()
+    aliases
 }
 
-fn mime_parent_types(mime_type: &str) -> Vec<String> {
-    let subclass_map = load_mime_subclasses();
+fn mime_parent_types(mime_type: &str, subclass_map: &HashMap<String, Vec<String>>) -> Vec<String> {
     let mut queue = VecDeque::new();
     let mut seen = HashSet::new();
     let mut parents = Vec::new();
@@ -232,4 +249,26 @@ fn xdg_data_dirs() -> Vec<PathBuf> {
         PathBuf::from("/usr/local/share"),
         PathBuf::from("/usr/share"),
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lookup_uses_aliases_and_parent_types_from_one_snapshot() {
+        let database = MimeDatabase {
+            apps: HashMap::from([
+                ("image/png".to_string(), vec!["png.desktop".to_string()]),
+                ("image/*".to_string(), vec!["generic.desktop".to_string()]),
+            ]),
+            aliases: HashMap::from([("image/x-png".to_string(), "image/png".to_string())]),
+            subclasses: HashMap::from([("image/png".to_string(), vec!["image/*".to_string()])]),
+        };
+
+        assert_eq!(
+            get_apps_for_mime("image/x-png", &database),
+            ["generic.desktop", "png.desktop"]
+        );
+    }
 }

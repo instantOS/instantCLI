@@ -11,8 +11,8 @@ pub use actions::{
     set_default_pdf_viewer, set_default_text_editor, set_default_video_player,
 };
 
-pub(crate) use app_info::get_application_info;
-pub(crate) use mime_cache::{build_mime_to_apps_map, get_apps_for_mime};
+pub(crate) use app_info::ApplicationInfoCache;
+pub(crate) use mime_cache::{get_apps_for_mime, load_mime_database};
 pub(crate) use mime_sets::{
     ARCHIVE_MIME_TYPES, AUDIO_MIME_TYPES, IMAGE_MIME_TYPES, VIDEO_MIME_TYPES,
 };

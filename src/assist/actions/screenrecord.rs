@@ -92,9 +92,9 @@ enum AudioSelectionMode {
     Explicit(Vec<String>),
 }
 
-fn load_audio_selection_mode() -> AudioSelectionMode {
-    match SettingsStore::load() {
-        Ok(store) => {
+fn audio_selection_mode(store: Option<&SettingsStore>) -> AudioSelectionMode {
+    match store {
+        Some(store) => {
             let raw = store.optional_string(SCREEN_RECORD_AUDIO_SOURCES_KEY);
             if is_audio_sources_default(&raw) {
                 AudioSelectionMode::Defaults
@@ -102,14 +102,14 @@ fn load_audio_selection_mode() -> AudioSelectionMode {
                 AudioSelectionMode::Explicit(parse_audio_source_selection(raw))
             }
         }
-        Err(_) => AudioSelectionMode::Explicit(Vec::new()),
+        None => AudioSelectionMode::Explicit(Vec::new()),
     }
 }
 
-fn load_recording_framerate() -> Option<i64> {
-    let value = match SettingsStore::load() {
-        Ok(store) => store.int(SCREEN_RECORD_FRAMERATE_KEY),
-        Err(_) => SCREEN_RECORD_FRAMERATE_KEY.default,
+fn recording_framerate(store: Option<&SettingsStore>) -> Option<i64> {
+    let value = match store {
+        Some(store) => store.int(SCREEN_RECORD_FRAMERATE_KEY),
+        None => SCREEN_RECORD_FRAMERATE_KEY.default,
     };
 
     if value > 0 { Some(value) } else { None }
@@ -713,13 +713,14 @@ fn start_recording_impl(geometry: Option<&str>, format: RecordingFormat) -> Resu
 
     let output_path = recording_output_path(format)?;
 
-    let selection_mode = load_audio_selection_mode();
+    let settings = SettingsStore::load().ok();
+    let selection_mode = audio_selection_mode(settings.as_ref());
     let audio_target = resolve_audio_target(selection_mode)?;
     let audio_module_ids = audio_target
         .as_ref()
         .map(|target| target.module_ids().to_vec())
         .unwrap_or_default();
-    let framerate = load_recording_framerate();
+    let framerate = recording_framerate(settings.as_ref());
 
     let config = AreaSelectionConfig::new();
     let pid = if config.display_server().is_wayland() {

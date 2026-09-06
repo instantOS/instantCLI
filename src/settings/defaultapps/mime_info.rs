@@ -1,7 +1,6 @@
-use std::collections::HashMap;
-
 use crate::menu_utils::{FzfPreview, FzfSelectable};
 use crate::preview::{PreviewId, preview_command};
+use crate::settings::defaultapps::mime_cache::MimeDatabase;
 use crate::ui::prelude::*;
 
 /// Information about a MIME type for display purposes
@@ -67,8 +66,8 @@ pub(crate) fn get_mime_type_info(mime_type: &str) -> MimeTypeInfo {
     }
 }
 
-pub(crate) fn get_all_mime_types(mime_map: &HashMap<String, Vec<String>>) -> Vec<String> {
-    let mut mime_types: Vec<String> = mime_map.keys().cloned().collect();
+pub(crate) fn get_all_mime_types(database: &MimeDatabase) -> Vec<String> {
+    let mut mime_types: Vec<String> = database.apps.keys().cloned().collect();
 
     mime_types.sort_by(|a, b| {
         let a_has_exact = has_exact_mime_info(a);

@@ -5,8 +5,8 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use super::entry::DesktopEntry;
 use super::types::LaunchItem;
+use crate::common::desktop_entry::DesktopEntry;
 
 /// Discover the current application corpus. XDG directories are visited in
 /// precedence order; the first desktop file for an ID masks every later one,

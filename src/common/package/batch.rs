@@ -34,29 +34,20 @@ impl InstallBatch {
         Self::default()
     }
 
-    /// Add a dependency to the batch.
-    ///
-    /// Returns `Ok(true)` if the dependency was added to the batch.
-    /// Returns `Ok(false)` if the dependency is already installed.
-    /// Returns `Err` if no suitable package could be found.
-    pub fn add(&mut self, dep: &'static Dependency) -> Result<bool> {
-        if dep.is_installed() {
-            return Ok(false); // Already installed
-        }
-
-        if let Some(pkg) = dep.get_best_package() {
-            self.batches
-                .entry(pkg.manager)
-                .or_default()
-                .push(PackageToInstall {
-                    dependency_name: dep.name,
-                    package_def: pkg,
-                });
-            Ok(true)
-        } else {
-            // No suitable package found
-            Ok(false)
-        }
+    /// Add a dependency whose installation state and package choice were
+    /// already resolved by the caller.
+    pub(crate) fn add_resolved(
+        &mut self,
+        dep: &'static Dependency,
+        package_def: &'static PackageDefinition,
+    ) {
+        self.batches
+            .entry(package_def.manager)
+            .or_default()
+            .push(PackageToInstall {
+                dependency_name: dep.name,
+                package_def,
+            });
     }
 
     /// Check if there are any packages to install.
