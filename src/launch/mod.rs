@@ -7,7 +7,7 @@ pub mod discovery;
 pub mod execute;
 pub mod types;
 
-use crate::menu::protocol::{FzfPreview, SerializableMenuItem};
+use crate::menu::protocol::{ChoiceOptions, FzfPreview, SerializableMenuItem};
 use crate::menu::{MenuBackend, ResolvedBackend, client, instantmenu};
 use crate::menu_utils::{DialogOutcome, FzfWrapper, MenuSelection};
 use types::LaunchItem;
@@ -75,13 +75,13 @@ async fn handle_interactive_mode(backend: MenuBackend) -> Result<i32> {
 
     let outcome = match backend.resolve(true) {
         ResolvedBackend::Instantmenu => {
-            let options = crate::menu::protocol::ChoiceOptions::new("Launch application:")
+            let options = ChoiceOptions::new("Launch application:")
                 .with_frecency_cache(Some("launch".to_string()));
             instantmenu::InstantmenuBackend::choice_streaming(&options, receiver)
         }
         ResolvedBackend::Scratchpad => client::HostedMenuClient::new()
             .choice_streaming(
-                crate::menu::protocol::ChoiceOptions::new("Launch application:")
+                ChoiceOptions::new("Launch application:")
                     .with_frecency_cache(Some("launch".to_string())),
                 receiver,
             )

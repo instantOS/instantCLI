@@ -10,7 +10,7 @@ use crate::menu_utils::{
     ConfirmResult, DialogOutcome, FilePickerBuilder, FilePickerScope, FzfWrapper, MenuSelection,
 };
 use anyhow::{Context, Result, anyhow};
-use protocol::{ChoiceOptions, SerializableMenuItem};
+use protocol::{ChoiceOptions, InputOptions, SerializableMenuItem};
 use std::io::IsTerminal;
 use std::path::PathBuf;
 
@@ -190,11 +190,11 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
         MenuCommands::Input {
             ref prompt,
             backend,
-        } => handle_text_input(protocol::InputOptions::new(prompt), backend),
+        } => handle_text_input(InputOptions::new(prompt), backend),
         MenuCommands::Password {
             ref prompt,
             backend,
-        } => handle_text_input(protocol::InputOptions::password(prompt), backend),
+        } => handle_text_input(InputOptions::password(prompt), backend),
         MenuCommands::Status => handle_status(),
         MenuCommands::Show => handle_show(),
         MenuCommands::Checklist {
@@ -409,10 +409,10 @@ fn handle_choice_buffered(
                     for item in &items {
                         println!("{}", item.display_text);
                     }
-                    if let Some(state) = frecency.as_mut() {
-                        if let Err(error) = state.record_all(&items) {
-                            eprintln!("Warning: {error:#}");
-                        }
+                    if let Some(state) = frecency.as_mut()
+                        && let Err(error) = state.record_all(&items)
+                    {
+                        eprintln!("Warning: {error:#}");
                     }
                 },
             ))
@@ -669,7 +669,7 @@ fn handle_pick(
     }
 }
 
-fn handle_text_input(options: protocol::InputOptions, backend: MenuBackend) -> Result<i32> {
+fn handle_text_input(options: InputOptions, backend: MenuBackend) -> Result<i32> {
     match backend.resolve(true) {
         ResolvedBackend::Instantmenu => Ok(finish_dialog(
             instantmenu::InstantmenuBackend::input(&options),

@@ -1,6 +1,7 @@
 use anyhow::{Result, anyhow, bail};
 
 use crate::menu::client::HostedMenuClient;
+use crate::menu::protocol::ChoiceOptions;
 use crate::menu_utils::{
     FzfWrapper, Header, HeaderBuilder, MenuCursor, MenuKey, MenuKeybind, MenuPresentation,
     MenuSelection,
@@ -128,10 +129,7 @@ pub(super) fn interactive_pass_quick_access_server() -> Result<i32> {
         sort_entries_by_frecency(&mut entries)?;
         let menu_items = build_quick_access_menu_items(&entries);
 
-        let selected = match client.choice(
-            crate::menu::protocol::ChoiceOptions::new("Pass"),
-            menu_items,
-        )? {
+        let selected = match client.choice(ChoiceOptions::new("Pass"), menu_items)? {
             crate::menu_utils::DialogOutcome::Submitted(selected) => selected,
             crate::menu_utils::DialogOutcome::Cancelled => return Ok(1),
         };

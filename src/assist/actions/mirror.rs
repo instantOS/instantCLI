@@ -7,7 +7,7 @@ use crate::common::compositor::CompositorType;
 use crate::common::display::SwayDisplayProvider;
 use crate::common::display_server::DisplayServer;
 use crate::menu::client::HostedMenuClient;
-use crate::menu::protocol::{FzfPreview, SerializableMenuItem};
+use crate::menu::protocol::{ChoiceOptions, FzfPreview, SerializableMenuItem};
 
 /// Represents a display output for mirroring operations
 #[derive(Debug, Clone)]
@@ -391,7 +391,7 @@ fn create_menu_item(
 
 fn show_menu(prompt: &str, items: Vec<SerializableMenuItem>) -> Result<Option<MirrorSelection>> {
     let client = HostedMenuClient::new();
-    let selected = match client.choice(crate::menu::protocol::ChoiceOptions::new(prompt), items)? {
+    let selected = match client.choice(ChoiceOptions::new(prompt), items)? {
         crate::menu_utils::DialogOutcome::Submitted(selected) => selected,
         crate::menu_utils::DialogOutcome::Cancelled => return Ok(None),
     };

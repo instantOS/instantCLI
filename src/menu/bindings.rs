@@ -5,7 +5,12 @@ use serde::{Deserialize, Serialize};
 use std::io::{BufRead, IsTerminal, Write};
 use std::process::{Command, Stdio};
 
-use super::{MenuBackend, ResolvedBackend, frecency, protocol::SerializableMenuItem};
+use super::{
+    MenuBackend, ResolvedBackend,
+    client::HostedMenuClient,
+    frecency,
+    protocol::{ChoiceOptions, STREAM_ITEM_BUFFER_CAPACITY, SerializableMenuItem},
+};
 use crate::menu_utils::{DialogOutcome, FzfWrapper, MenuKey, MenuKeybind, MenuSelection};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -155,16 +160,16 @@ pub(super) fn handle(
                 .collect::<std::io::Result<Vec<_>>>()?
         };
         if backend.resolve(true) == ResolvedBackend::Scratchpad {
-            let options = super::protocol::ChoiceOptions::new(prompt)
+            let options = ChoiceOptions::new(prompt)
                 .multi_select(multi)
                 .with_frecency_cache(namespace.map(str::to_owned))
                 .with_bindings(bindings.to_vec());
-            super::client::HostedMenuClient::new().choice(options, items)?
+            HostedMenuClient::new().choice(options, items)?
         } else {
             select(prompt, items, multi, namespace, bindings)?
         }
     } else {
-        let (tx, rx) = crossbeam_channel::bounded(super::protocol::STREAM_ITEM_BUFFER_CAPACITY);
+        let (tx, rx) = crossbeam_channel::bounded(STREAM_ITEM_BUFFER_CAPACITY);
         std::thread::spawn(move || {
             if std::io::stdin().is_terminal() {
                 return;
@@ -181,10 +186,10 @@ pub(super) fn handle(
             }
         });
         if backend.resolve(true) == ResolvedBackend::Scratchpad {
-            let options = super::protocol::ChoiceOptions::new(prompt)
+            let options = ChoiceOptions::new(prompt)
                 .multi_select(multi)
                 .with_bindings(bindings.to_vec());
-            super::client::HostedMenuClient::new().choice_streaming(options, rx)?
+            HostedMenuClient::new().choice_streaming(options, rx)?
         } else {
             FzfWrapper::builder()
                 .prompt(prompt.to_string())
@@ -261,6 +266,7 @@ mod tests {
 
     #[test]
     fn hosted_action_without_items_survives_wire_roundtrip() {
+        use super::super::processing::RequestProcessor;
         use super::super::protocol::{MenuRequest, MenuResponse};
         use std::sync::{
             Arc,
@@ -268,15 +274,12 @@ mod tests {
         };
         let _guard = MockQueue::new().keybind_action("ctrl-e", vec![]).guard();
         let request = MenuRequest::Choice {
-            options: super::super::protocol::ChoiceOptions::new("Pick")
-                .with_bindings(vec!["ctrl-e:Edit".parse().unwrap()]),
+            options: ChoiceOptions::new("Pick").with_bindings(vec!["ctrl-e:Edit".parse().unwrap()]),
             items: vec![],
         };
         let request = serde_json::from_str(&serde_json::to_string(&request).unwrap()).unwrap();
-        let processor = super::super::processing::RequestProcessor::new(
-            Arc::new(AtomicBool::new(true)),
-            Arc::new(AtomicU64::new(0)),
-        );
+        let processor =
+            RequestProcessor::new(Arc::new(AtomicBool::new(true)), Arc::new(AtomicU64::new(0)));
         let response = processor.process_internal(request).unwrap();
         let response =
             serde_json::from_str::<MenuResponse>(&serde_json::to_string(&response).unwrap())
@@ -288,23 +291,21 @@ mod tests {
 
     #[test]
     fn hosted_streaming_action_keeps_selection() {
+        use super::super::processing::RequestProcessor;
         use super::super::protocol::MenuResponse;
         use std::sync::{
             Arc,
             atomic::{AtomicBool, AtomicU64},
         };
         let _guard = MockQueue::new().keybind_action("ctrl-e", vec![0]).guard();
-        let processor = super::super::processing::RequestProcessor::new(
-            Arc::new(AtomicBool::new(true)),
-            Arc::new(AtomicU64::new(0)),
-        );
+        let processor =
+            RequestProcessor::new(Arc::new(AtomicBool::new(true)), Arc::new(AtomicU64::new(0)));
         let (tx, rx) = crossbeam_channel::bounded(2);
         tx.send(SerializableMenuItem::plain("alpha")).unwrap();
         drop(tx);
         let response = processor
             .handle_choice_streaming(
-                super::super::protocol::ChoiceOptions::new("Pick")
-                    .with_bindings(vec!["ctrl-e:Edit".parse().unwrap()]),
+                ChoiceOptions::new("Pick").with_bindings(vec!["ctrl-e:Edit".parse().unwrap()]),
                 rx,
                 || Ok(()),
             )
