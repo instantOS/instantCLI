@@ -275,45 +275,21 @@ impl MenuServer {
             return Self::write_response(&mut stream, message.request_id, response);
         }
 
-        if let MenuRequest::ChoiceBeginWithBindings {
-            prompt,
-            allow_multiple,
-            bindings,
-        } = message.payload
-        {
-            super::bindings::validate(&bindings)?;
-            return self.handle_choice_stream_connection(
-                stream,
-                reader,
-                message.request_id,
-                prompt,
-                allow_multiple,
-                bindings,
-            );
-        }
-        if let MenuRequest::ChoiceBegin {
-            prompt,
-            allow_multiple,
-            frecency_cache,
-        } = message.payload
-        {
-            if let Some(frecency_cache) = frecency_cache {
+        if let MenuRequest::ChoiceBegin { options } = message.payload {
+            super::bindings::validate(&options.bindings)?;
+            if options.frecency_cache.is_some() {
                 return self.handle_ranked_choice_stream_connection(
                     stream,
                     reader,
                     message.request_id,
-                    prompt,
-                    allow_multiple,
-                    frecency_cache,
+                    options,
                 );
             }
             return self.handle_choice_stream_connection(
                 stream,
                 reader,
                 message.request_id,
-                prompt,
-                allow_multiple,
-                Vec::new(),
+                options,
             );
         }
         if matches!(
@@ -371,9 +347,7 @@ impl MenuServer {
         mut stream: UnixStream,
         mut reader: io::BufReader<UnixStream>,
         request_id: String,
-        prompt: String,
-        allow_multiple: bool,
-        bindings: Vec<super::bindings::Binding>,
+        options: ChoiceOptions,
     ) -> Result<()> {
         if let Some(ref manager) = self.scratchpad_manager
             && let Err(e) = manager.show()
@@ -430,19 +404,15 @@ impl MenuServer {
         });
 
         let response = if self.scratchpad_manager.is_some() {
-            self.process_monitored_streaming_choice(prompt, allow_multiple, rx, &bindings, || {
+            self.process_monitored_streaming_choice(options, rx, || {
                 Self::write_response(&mut stream, request_id.clone(), MenuResponse::ChoiceReady)
             })?
         } else {
             let processor =
                 RequestProcessor::new(self.running.clone(), self.requests_processed.clone());
-            processor.handle_choice_streaming_with_bindings(
-                prompt,
-                allow_multiple,
-                rx,
-                &bindings,
-                || Self::write_response(&mut stream, request_id.clone(), MenuResponse::ChoiceReady),
-            )?
+            processor.handle_choice_streaming(options, rx, || {
+                Self::write_response(&mut stream, request_id.clone(), MenuResponse::ChoiceReady)
+            })?
         };
 
         // Mark completion before waking the reader so EOF caused by our own
@@ -472,9 +442,7 @@ impl MenuServer {
         mut stream: UnixStream,
         mut reader: io::BufReader<UnixStream>,
         request_id: String,
-        prompt: String,
-        allow_multiple: bool,
-        frecency_cache: String,
+        options: ChoiceOptions,
     ) -> Result<()> {
         if let Some(ref manager) = self.scratchpad_manager
             && let Err(error) = manager.show()
@@ -498,12 +466,7 @@ impl MenuServer {
             match frame.payload {
                 MenuRequest::ChoiceChunk { items: chunk } => items.extend(chunk),
                 MenuRequest::ChoiceEnd => {
-                    let request = MenuRequest::Choice {
-                        prompt,
-                        items,
-                        allow_multiple,
-                        frecency_cache: Some(frecency_cache),
-                    };
+                    let request = MenuRequest::Choice { options, items };
                     break if self.scratchpad_manager.is_some() {
                         self.process_monitored_request(request)?
                     } else {
@@ -551,9 +514,7 @@ impl MenuServer {
             request,
             MenuRequest::Confirm { .. }
                 | MenuRequest::Choice { .. }
-                | MenuRequest::ChoiceWithBindings { .. }
                 | MenuRequest::ChoiceBegin { .. }
-                | MenuRequest::ChoiceBeginWithBindings { .. }
                 | MenuRequest::Chord { .. }
                 | MenuRequest::Input { .. }
                 | MenuRequest::Password { .. }
@@ -730,23 +691,15 @@ impl MenuServer {
     /// `process_monitored_request`).
     fn process_monitored_streaming_choice<F: FnOnce() -> Result<()>>(
         &self,
-        prompt: String,
-        allow_multiple: bool,
+        options: ChoiceOptions,
         rx: crossbeam_channel::Receiver<SerializableMenuItem>,
-        bindings: &[super::bindings::Binding],
         on_ready: F,
     ) -> Result<MenuResponse> {
         let (monitoring_active, was_killed, monitoring_handle) = self.start_visibility_monitor();
 
         let processor =
             RequestProcessor::new(self.running.clone(), self.requests_processed.clone());
-        let result = processor.handle_choice_streaming_with_bindings(
-            prompt,
-            allow_multiple,
-            rx,
-            bindings,
-            on_ready,
-        );
+        let result = processor.handle_choice_streaming(options, rx, on_ready);
 
         let killed =
             Self::finish_visibility_monitor(&monitoring_active, &was_killed, monitoring_handle);
@@ -899,9 +852,7 @@ mod tests {
             MenuMessage::new(
                 request_id.clone(),
                 MenuRequest::ChoiceBegin {
-                    prompt: "Pick".to_string(),
-                    allow_multiple: false,
-                    frecency_cache: None,
+                    options: ChoiceOptions::new("Pick"),
                 },
             ),
             MenuMessage::new(
@@ -951,9 +902,7 @@ mod tests {
         let begin = MenuMessage::new(
             request_id.clone(),
             MenuRequest::ChoiceBegin {
-                prompt: "Pick".to_string(),
-                allow_multiple: false,
-                frecency_cache: None,
+                options: ChoiceOptions::new("Pick"),
             },
         );
         serde_json::to_writer(&mut client_stream, &begin).unwrap();
@@ -979,7 +928,7 @@ mod tests {
     }
 
     #[test]
-    fn ranked_stream_acknowledges_before_eof_and_then_runs_choice() {
+    fn ranked_stream_preserves_bindings() {
         let server = MenuServer {
             socket_path: default_socket_path(),
             running: Arc::new(AtomicBool::new(true)),
@@ -992,16 +941,16 @@ mod tests {
         let (mut client_stream, server_stream) = UnixStream::pair().unwrap();
         let request_id = "ranked".to_string();
         let server_thread = std::thread::spawn(move || {
-            let _guard = MockQueue::new().cancel_selection().guard();
+            let _guard = MockQueue::new().keybind_action("ctrl-e", vec![]).guard();
             server.handle_connection_sync(server_stream).unwrap();
         });
 
         let begin = MenuMessage::new(
             request_id.clone(),
             MenuRequest::ChoiceBegin {
-                prompt: "Pick".to_string(),
-                allow_multiple: false,
-                frecency_cache: Some("server_test".to_string()),
+                options: ChoiceOptions::new("Pick")
+                    .with_frecency_cache(Some("server_test".to_string()))
+                    .with_bindings(vec!["ctrl-e:Edit".parse().unwrap()]),
             },
         );
         serde_json::to_writer(&mut client_stream, &begin).unwrap();
@@ -1026,7 +975,10 @@ mod tests {
 
         let response = read_menu_message_response(&mut reader);
         assert_eq!(response.request_id, request_id);
-        assert!(matches!(response.payload, MenuResponse::Cancelled));
+        assert!(
+            matches!(response.payload, MenuResponse::ChoiceResult { action: Some(action), items }
+                if action == "ctrl-e" && items.is_empty())
+        );
         server_thread.join().unwrap();
     }
 

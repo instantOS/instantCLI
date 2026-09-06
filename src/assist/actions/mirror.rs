@@ -391,12 +391,12 @@ fn create_menu_item(
 
 fn show_menu(prompt: &str, items: Vec<SerializableMenuItem>) -> Result<Option<MirrorSelection>> {
     let client = HostedMenuClient::new();
-    let selected = match client.choice(prompt.to_string(), items, false, None)? {
+    let selected = match client.choice(crate::menu::protocol::ChoiceOptions::new(prompt), items)? {
         crate::menu_utils::DialogOutcome::Submitted(selected) => selected,
         crate::menu_utils::DialogOutcome::Cancelled => return Ok(None),
     };
 
-    let item = match selected.first() {
+    let item = match selected.items.first() {
         Some(item) => item,
         None => return Ok(None),
     };

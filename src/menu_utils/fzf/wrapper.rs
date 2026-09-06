@@ -793,7 +793,7 @@ impl FzfWrapper {
         )
     }
 
-    pub fn select_streaming_with_ready_and_keybinds<
+    pub(crate) fn select_streaming_with_ready_and_keybinds<
         T: FzfSelectable + Clone + Send + 'static,
         A: Clone,
         F: FnOnce() -> Result<()>,

@@ -80,12 +80,13 @@ async fn handle_interactive_mode(backend: MenuBackend) -> Result<i32> {
             false,
             Some("launch"),
         ),
-        ResolvedBackend::Scratchpad => client::HostedMenuClient::new().choice_streaming(
-            "Launch application:".to_string(),
-            receiver,
-            false,
-            Some("launch".to_string()),
-        ),
+        ResolvedBackend::Scratchpad => client::HostedMenuClient::new()
+            .choice_streaming(
+                crate::menu::protocol::ChoiceOptions::new("Launch application:")
+                    .with_frecency_cache(Some("launch".to_string())),
+                receiver,
+            )
+            .map(|outcome| outcome.map(MenuSelection::into_items)),
         ResolvedBackend::Tui => {
             let mut frecency = crate::menu::frecency::MenuFrecency::open("launch")?;
             let ranked = frecency.prepare(receiver.iter().collect());

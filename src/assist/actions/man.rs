@@ -3,7 +3,7 @@ use std::process::Command;
 
 use crate::common::shell::shell_quote;
 use crate::menu::client::HostedMenuClient;
-use crate::menu::protocol::{FzfPreview, SerializableMenuItem};
+use crate::menu::protocol::{ChoiceOptions, FzfPreview, SerializableMenuItem};
 
 pub fn search_man_pages() -> Result<()> {
     let list_command = r#"
@@ -48,12 +48,12 @@ pub fn search_man_pages() -> Result<()> {
         })
         .collect();
 
-    let selected = match client.choice("Select a man page:".to_string(), items, false, None)? {
+    let selected = match client.choice(ChoiceOptions::new("Select a man page:"), items)? {
         crate::menu_utils::DialogOutcome::Submitted(selected) => selected,
         crate::menu_utils::DialogOutcome::Cancelled => return Ok(()),
     };
 
-    let page = &selected[0].display_text;
+    let page = &selected.items[0].display_text;
     let command = format!(r#"man "{}""#, page);
     crate::assist::utils::run_command_in_terminal(&command, "Man Pages")?;
 

@@ -155,13 +155,11 @@ pub(super) fn handle(
                 .collect::<std::io::Result<Vec<_>>>()?
         };
         if backend.resolve(true) == ResolvedBackend::Scratchpad {
-            super::client::HostedMenuClient::new().choice_with_bindings(
-                prompt.to_string(),
-                items,
-                multi,
-                namespace.map(str::to_owned),
-                bindings.to_vec(),
-            )?
+            let options = super::protocol::ChoiceOptions::new(prompt)
+                .multi_select(multi)
+                .with_frecency_cache(namespace.map(str::to_owned))
+                .with_bindings(bindings.to_vec());
+            super::client::HostedMenuClient::new().choice(options, items)?
         } else {
             select(prompt, items, multi, namespace, bindings)?
         }
@@ -183,12 +181,10 @@ pub(super) fn handle(
             }
         });
         if backend.resolve(true) == ResolvedBackend::Scratchpad {
-            super::client::HostedMenuClient::new().choice_streaming_with_bindings(
-                prompt.to_string(),
-                rx,
-                multi,
-                bindings,
-            )?
+            let options = super::protocol::ChoiceOptions::new(prompt)
+                .multi_select(multi)
+                .with_bindings(bindings.to_vec());
+            super::client::HostedMenuClient::new().choice_streaming(options, rx)?
         } else {
             FzfWrapper::builder()
                 .prompt(prompt.to_string())
@@ -271,12 +267,10 @@ mod tests {
             atomic::{AtomicBool, AtomicU64},
         };
         let _guard = MockQueue::new().keybind_action("ctrl-e", vec![]).guard();
-        let request = MenuRequest::ChoiceWithBindings {
-            prompt: "Pick".into(),
+        let request = MenuRequest::Choice {
+            options: super::super::protocol::ChoiceOptions::new("Pick")
+                .with_bindings(vec!["ctrl-e:Edit".parse().unwrap()]),
             items: vec![],
-            allow_multiple: false,
-            frecency_cache: None,
-            bindings: vec!["ctrl-e:Edit".parse().unwrap()],
         };
         let request = serde_json::from_str(&serde_json::to_string(&request).unwrap()).unwrap();
         let processor = super::super::processing::RequestProcessor::new(
@@ -288,7 +282,7 @@ mod tests {
             serde_json::from_str::<MenuResponse>(&serde_json::to_string(&response).unwrap())
                 .unwrap();
         assert!(
-            matches!(response, MenuResponse::ChoiceWithBindingsResult { key: Some(key), items } if key == "ctrl-e" && items.is_empty())
+            matches!(response, MenuResponse::ChoiceResult { action: Some(key), items } if key == "ctrl-e" && items.is_empty())
         );
     }
 
@@ -308,16 +302,15 @@ mod tests {
         tx.send(SerializableMenuItem::plain("alpha")).unwrap();
         drop(tx);
         let response = processor
-            .handle_choice_streaming_with_bindings(
-                "Pick".into(),
-                false,
+            .handle_choice_streaming(
+                super::super::protocol::ChoiceOptions::new("Pick")
+                    .with_bindings(vec!["ctrl-e:Edit".parse().unwrap()]),
                 rx,
-                &["ctrl-e:Edit".parse().unwrap()],
                 || Ok(()),
             )
             .unwrap();
         assert!(
-            matches!(response, MenuResponse::ChoiceWithBindingsResult { key: Some(key), items } if key == "ctrl-e" && items[0].display_text == "alpha")
+            matches!(response, MenuResponse::ChoiceResult { action: Some(key), items } if key == "ctrl-e" && items[0].display_text == "alpha")
         );
     }
 }

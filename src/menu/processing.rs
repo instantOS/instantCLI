@@ -28,36 +28,8 @@ impl RequestProcessor {
         self.requests_processed.fetch_add(1, Ordering::SeqCst);
 
         match request {
-            MenuRequest::ChoiceWithBindings {
-                prompt,
-                items,
-                allow_multiple,
-                frecency_cache,
-                bindings,
-            } => {
-                match super::bindings::select(
-                    &prompt,
-                    items,
-                    allow_multiple,
-                    frecency_cache.as_deref(),
-                    &bindings,
-                )? {
-                    crate::menu_utils::DialogOutcome::Submitted(selection) => {
-                        Ok(MenuResponse::ChoiceWithBindingsResult {
-                            key: selection.action,
-                            items: selection.items,
-                        })
-                    }
-                    crate::menu_utils::DialogOutcome::Cancelled => Ok(MenuResponse::Cancelled),
-                }
-            }
+            MenuRequest::Choice { options, items } => self.handle_choice(options, items),
             MenuRequest::Confirm { message } => self.handle_confirm_request(message),
-            MenuRequest::Choice {
-                prompt,
-                items,
-                allow_multiple,
-                frecency_cache,
-            } => self.handle_choice_request(prompt, items, allow_multiple, frecency_cache),
             MenuRequest::Chord { chords } => self.handle_chord_request(chords),
             MenuRequest::Input { prompt } => self.handle_input_request(prompt),
             MenuRequest::Password { prompt } => self.handle_password_request(prompt),
@@ -71,8 +43,7 @@ impl RequestProcessor {
             MenuRequest::Toast { message, duration } => {
                 self.handle_toast_request(message, duration)
             }
-            MenuRequest::ChoiceBeginWithBindings { .. }
-            | MenuRequest::ChoiceBegin { .. }
+            MenuRequest::ChoiceBegin { .. }
             | MenuRequest::ChoiceChunk { .. }
             | MenuRequest::ChoiceEnd => Ok(MenuResponse::Error(
                 "Streaming choice requires a streaming connection".to_string(),
@@ -196,40 +167,29 @@ impl RequestProcessor {
     }
 
     /// Handle choice selection request
-    fn handle_choice_request(
+    fn handle_choice(
         &self,
-        prompt: String,
+        options: ChoiceOptions,
         items: Vec<SerializableMenuItem>,
-        allow_multiple: bool,
-        frecency_cache: Option<String>,
     ) -> Result<MenuResponse> {
-        let mut frecency = frecency_cache
-            .as_deref()
-            .map(super::frecency::MenuFrecency::open)
-            .transpose()?;
-        let items = match frecency.as_ref() {
-            Some(state) => state.prepare(items),
-            None => items,
-        };
-        if items.is_empty() {
+        if items.is_empty() && options.bindings.is_empty() {
             return Ok(MenuResponse::Error("No items to choose from".to_string()));
         }
 
-        match FzfWrapper::builder()
-            .prompt(prompt)
-            .multi_select(allow_multiple)
-            .select(items)
-        {
-            Ok(crate::menu_utils::DialogOutcome::Submitted(sel)) => {
-                if let Some(state) = frecency.as_mut() {
-                    if let Err(error) = state.record_all(&sel.items) {
-                        eprintln!("Warning: {error:#}");
-                    }
-                }
-                Ok(MenuResponse::ChoiceResult(sel.items))
+        match super::bindings::select(
+            &options.prompt,
+            items,
+            options.allow_multiple,
+            options.frecency_cache.as_deref(),
+            &options.bindings,
+        )? {
+            crate::menu_utils::DialogOutcome::Submitted(selection) => {
+                Ok(MenuResponse::ChoiceResult {
+                    action: selection.action,
+                    items: selection.items,
+                })
             }
-            Ok(crate::menu_utils::DialogOutcome::Cancelled) => Ok(MenuResponse::Cancelled),
-            Err(e) => Ok(MenuResponse::Error(format!("Selection error: {e}"))),
+            crate::menu_utils::DialogOutcome::Cancelled => Ok(MenuResponse::Cancelled),
         }
     }
 
@@ -238,51 +198,26 @@ impl RequestProcessor {
     /// `FzfWrapper::select_streaming`. An empty stream yields `Cancelled`
     /// (not `Error`) so `producer | ins menu choice` with no output
     /// behaves like an empty cancelled menu rather than a protocol error.
-    pub fn handle_choice_streaming_with_ready<F: FnOnce() -> Result<()>>(
+    pub(super) fn handle_choice_streaming<F: FnOnce() -> Result<()>>(
         &self,
-        prompt: String,
-        allow_multiple: bool,
+        options: ChoiceOptions,
         rx: crossbeam_channel::Receiver<SerializableMenuItem>,
         on_ready: F,
     ) -> Result<MenuResponse> {
+        let typed = super::bindings::validate(&options.bindings)?;
         match FzfWrapper::builder()
-            .prompt(prompt)
-            .multi_select(allow_multiple)
-            .select_streaming_with_ready(Vec::new(), rx, on_ready)
-        {
-            Ok(crate::menu_utils::DialogOutcome::Submitted(selection)) => {
-                Ok(MenuResponse::ChoiceResult(selection.items))
-            }
-            Ok(crate::menu_utils::DialogOutcome::Cancelled) => Ok(MenuResponse::Cancelled),
-            Err(error) => Ok(MenuResponse::Error(format!("Selection error: {error}"))),
-        }
-    }
-
-    pub(super) fn handle_choice_streaming_with_bindings<F: FnOnce() -> Result<()>>(
-        &self,
-        prompt: String,
-        allow_multiple: bool,
-        rx: crossbeam_channel::Receiver<SerializableMenuItem>,
-        bindings: &[super::bindings::Binding],
-        on_ready: F,
-    ) -> Result<MenuResponse> {
-        if bindings.is_empty() {
-            return self.handle_choice_streaming_with_ready(prompt, allow_multiple, rx, on_ready);
-        }
-        let typed = super::bindings::validate(bindings)?;
-        match FzfWrapper::builder()
-            .prompt(prompt)
-            .multi_select(allow_multiple)
+            .prompt(options.prompt)
+            .multi_select(options.allow_multiple)
             .select_streaming_with_ready_and_keybinds(Vec::new(), rx, &typed, on_ready)
         {
-            Ok(crate::menu_utils::DialogOutcome::Submitted(sel)) => {
-                Ok(MenuResponse::ChoiceWithBindingsResult {
-                    key: sel.action,
-                    items: sel.items,
+            Ok(crate::menu_utils::DialogOutcome::Submitted(selection)) => {
+                Ok(MenuResponse::ChoiceResult {
+                    action: selection.action,
+                    items: selection.items,
                 })
             }
             Ok(crate::menu_utils::DialogOutcome::Cancelled) => Ok(MenuResponse::Cancelled),
-            Err(e) => Ok(MenuResponse::Error(format!("Selection error: {e}"))),
+            Err(error) => Ok(MenuResponse::Error(format!("Selection error: {error}"))),
         }
     }
 
@@ -358,6 +293,7 @@ impl RequestProcessor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::menu_utils::MockQueue;
     use std::sync::Arc;
 
     #[test]
@@ -399,5 +335,24 @@ mod tests {
         let _ = processor.process_internal(request);
 
         assert_eq!(requests_processed.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn streaming_choice_without_bindings_returns_unified_result() {
+        let _guard = MockQueue::new().select_index(0).guard();
+        let processor =
+            RequestProcessor::new(Arc::new(AtomicBool::new(true)), Arc::new(AtomicU64::new(0)));
+        let (tx, rx) = crossbeam_channel::bounded(1);
+        tx.send(SerializableMenuItem::plain("alpha")).unwrap();
+        drop(tx);
+
+        let response = processor
+            .handle_choice_streaming(ChoiceOptions::new("Pick"), rx, || Ok(()))
+            .unwrap();
+
+        assert!(
+            matches!(response, MenuResponse::ChoiceResult { action: None, items }
+                if items[0].display_text == "alpha")
+        );
     }
 }

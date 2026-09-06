@@ -5,6 +5,8 @@ use std::time::SystemTime;
 
 use crate::menu_utils::{FzfSelectable, default_fzf_key};
 
+pub use super::bindings::Binding;
+
 /// Serializable menu item with rich preview support
 ///
 /// This struct enables rich menu items with preview functionality that can be
@@ -89,39 +91,63 @@ pub struct SliderRequest {
     pub command: Vec<String>,
 }
 
+/// Configuration shared by buffered and streaming choices.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ChoiceOptions {
+    /// Text shown before the menu query.
+    pub prompt: String,
+    /// Whether the user may submit more than one item.
+    pub allow_multiple: bool,
+    /// Namespace used to rank and remember selections.
+    pub frecency_cache: Option<String>,
+    /// Alternative actions that can accept the current selection.
+    pub bindings: Vec<Binding>,
+}
+
+impl ChoiceOptions {
+    /// Create single-select choice options without frecency or bindings.
+    pub fn new(prompt: impl Into<String>) -> Self {
+        Self {
+            prompt: prompt.into(),
+            allow_multiple: false,
+            frecency_cache: None,
+            bindings: Vec::new(),
+        }
+    }
+
+    /// Configure whether the user may submit more than one item.
+    pub fn multi_select(mut self, allow_multiple: bool) -> Self {
+        self.allow_multiple = allow_multiple;
+        self
+    }
+
+    /// Set the optional frecency namespace.
+    pub fn with_frecency_cache(mut self, frecency_cache: Option<String>) -> Self {
+        self.frecency_cache = frecency_cache;
+        self
+    }
+
+    /// Set the actions available alongside ordinary submission.
+    pub fn with_bindings(mut self, bindings: Vec<Binding>) -> Self {
+        self.bindings = bindings;
+        self
+    }
+}
+
 /// Menu request types sent from client to server
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum MenuRequest {
-    ChoiceBeginWithBindings {
-        prompt: String,
-        allow_multiple: bool,
-        bindings: Vec<super::bindings::Binding>,
-    },
-    ChoiceWithBindings {
-        prompt: String,
+    /// Show a selection menu with an already available item corpus.
+    Choice {
+        options: ChoiceOptions,
         items: Vec<SerializableMenuItem>,
-        allow_multiple: bool,
-        frecency_cache: Option<String>,
-        bindings: Vec<super::bindings::Binding>,
     },
     /// Show confirmation dialog
     Confirm { message: String },
-    /// Show selection menu with rich item support (buffered fast-path,
-    /// use when items are already in memory)
-    Choice {
-        prompt: String,
-        items: Vec<SerializableMenuItem>,
-        allow_multiple: bool,
-        frecency_cache: Option<String>,
-    },
     /// Start a streaming selection menu. First frame on a connection;
     /// server opens the menu immediately, then receives
     /// `ChoiceChunk` frames and a final `ChoiceEnd`.
-    ChoiceBegin {
-        prompt: String,
-        allow_multiple: bool,
-        frecency_cache: Option<String>,
-    },
+    ChoiceBegin { options: ChoiceOptions },
     /// Batch of items for an in-progress streaming choice.
     /// Same `request_id` as the opening `ChoiceBegin`.
     ChoiceChunk { items: Vec<SerializableMenuItem> },
@@ -156,8 +182,9 @@ pub enum MenuRequest {
 /// Menu response types sent from server to client
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum MenuResponse {
-    ChoiceWithBindingsResult {
-        key: Option<String>,
+    /// A submitted choice, including the optional action that accepted it.
+    ChoiceResult {
+        action: Option<String>,
         items: Vec<SerializableMenuItem>,
     },
     /// Request protocol does not match the running server.
@@ -167,8 +194,6 @@ pub enum MenuResponse {
     ChoiceReady,
     /// Confirmation dialog result
     ConfirmResult(ConfirmResult),
-    /// Selection menu result(s) with rich item metadata
-    ChoiceResult(Vec<SerializableMenuItem>),
     /// Chord selection result
     ChordResult(String),
     /// Text input result
@@ -264,7 +289,7 @@ pub struct MenuStatus {
 }
 
 /// Protocol version information
-pub const PROTOCOL_VERSION: &str = "5.0";
+pub const PROTOCOL_VERSION: &str = "6.0";
 
 fn legacy_protocol_version() -> String {
     "1.0".to_string()
@@ -412,18 +437,21 @@ mod tests {
         ];
 
         let request = MenuRequest::Choice {
-            prompt: "Select an option:".to_string(),
+            options: ChoiceOptions::new("Select an option:")
+                .with_frecency_cache(Some("applications".to_string())),
             items,
-            allow_multiple: false,
-            frecency_cache: Some("applications".to_string()),
         };
 
         let json = serde_json::to_string(&request).unwrap();
         let deserialized: MenuRequest = serde_json::from_str(&json).unwrap();
 
         assert!(
-            matches!(deserialized, MenuRequest::Choice { prompt, items, allow_multiple: false, frecency_cache: Some(namespace) }
-                if prompt == "Select an option:" && items.len() == 2 && namespace == "applications")
+            matches!(deserialized, MenuRequest::Choice { options, items }
+                if options.prompt == "Select an option:"
+                    && !options.allow_multiple
+                    && options.frecency_cache.as_deref() == Some("applications")
+                    && options.bindings.is_empty()
+                    && items.len() == 2)
         );
     }
 
@@ -436,12 +464,18 @@ mod tests {
             metadata: None,
         }];
 
-        let response = MenuResponse::ChoiceResult(items);
+        let response = MenuResponse::ChoiceResult {
+            action: Some("ctrl-e".to_string()),
+            items,
+        };
 
         let json = serde_json::to_string(&response).unwrap();
         let deserialized: MenuResponse = serde_json::from_str(&json).unwrap();
 
-        assert!(matches!(deserialized, MenuResponse::ChoiceResult(items) if items.len() == 1));
+        assert!(
+            matches!(deserialized, MenuResponse::ChoiceResult { action: Some(action), items }
+                if action == "ctrl-e" && items.len() == 1)
+        );
     }
 
     #[test]
@@ -530,9 +564,8 @@ mod tests {
             MenuMessage::new(
                 request_id.clone(),
                 MenuRequest::ChoiceBegin {
-                    prompt: "Pick:".to_string(),
-                    allow_multiple: false,
-                    frecency_cache: Some("stream".to_string()),
+                    options: ChoiceOptions::new("Pick:")
+                        .with_frecency_cache(Some("stream".to_string())),
                 },
             ),
             MenuMessage::new(
@@ -556,8 +589,9 @@ mod tests {
 
         assert_eq!(parsed.len(), 3);
         assert!(
-            matches!(&parsed[0].payload, MenuRequest::ChoiceBegin { prompt, frecency_cache: Some(namespace), .. }
-                if prompt == "Pick:" && namespace == "stream")
+            matches!(&parsed[0].payload, MenuRequest::ChoiceBegin { options }
+                if options.prompt == "Pick:"
+                    && options.frecency_cache.as_deref() == Some("stream"))
         );
         assert!(
             matches!(&parsed[1].payload, MenuRequest::ChoiceChunk { items } if items.len() == 1 && items[0].display_text == "alpha")

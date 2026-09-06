@@ -432,24 +432,7 @@ impl FzfBuilder {
         )
     }
 
-    pub fn select_streaming_with_ready<
-        T: FzfSelectable + Clone + Send + 'static,
-        F: FnOnce() -> Result<()>,
-    >(
-        self,
-        initial_items: Vec<T>,
-        late_items: crossbeam_channel::Receiver<T>,
-        on_ready: F,
-    ) -> Result<DialogOutcome<MenuSelection<T>>> {
-        self.select_streaming_with_ready_and_keybinds(
-            initial_items,
-            late_items,
-            super::wrapper::NO_KEYBINDS,
-            on_ready,
-        )
-    }
-
-    pub fn select_streaming_with_ready_and_keybinds<
+    pub(crate) fn select_streaming_with_ready_and_keybinds<
         T: FzfSelectable + Clone + Send + 'static,
         A: Clone,
         F: FnOnce() -> Result<()>,

@@ -10,7 +10,7 @@ use crate::menu_utils::{
     ConfirmResult, DialogOutcome, FilePickerBuilder, FilePickerScope, FzfWrapper, MenuSelection,
 };
 use anyhow::{Context, Result, anyhow};
-use protocol::SerializableMenuItem;
+use protocol::{ChoiceOptions, SerializableMenuItem};
 use std::io::IsTerminal;
 use std::path::PathBuf;
 
@@ -332,13 +332,13 @@ fn handle_choice(
             let client = HostedMenuClient::new();
             Ok(finish_dialog(
                 client.choice_from_stdin_streaming(
-                    prompt.to_string(),
-                    allow_multiple,
-                    frecency_cache.map(ToOwned::to_owned),
+                    ChoiceOptions::new(prompt)
+                        .multi_select(allow_multiple)
+                        .with_frecency_cache(frecency_cache.map(ToOwned::to_owned)),
                 ),
                 "Hosted dialog",
                 |selected| {
-                    for item in selected {
+                    for item in selected.items {
                         println!("{}", item.display_text);
                     }
                 },
@@ -376,14 +376,14 @@ fn handle_choice_buffered(
             let client = HostedMenuClient::new();
             Ok(finish_dialog(
                 client.choice(
-                    prompt.to_string(),
+                    ChoiceOptions::new(prompt)
+                        .multi_select(allow_multiple)
+                        .with_frecency_cache(frecency_cache.map(ToOwned::to_owned)),
                     item_list,
-                    allow_multiple,
-                    frecency_cache.map(ToOwned::to_owned),
                 ),
                 "Hosted dialog",
                 |selected| {
-                    for item in selected {
+                    for item in selected.items {
                         println!("{}", item.display_text);
                     }
                 },
