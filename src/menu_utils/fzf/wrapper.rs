@@ -937,37 +937,61 @@ impl FzfWrapper {
     }
 
     pub fn input(prompt: &str) -> Result<DialogOutcome<String>> {
-        Self::builder().prompt(prompt).input().input_dialog()
+        Self::input_with_options(&crate::menu::protocol::InputOptions::text(prompt))
     }
 
-    /// Text or password input driven by shared [`InputOptions`], so all
-    /// backends honor the same prompt shape (placeholder, pre-filled text).
+    /// Build the [`InputBuilder`](super::builder::InputBuilder) for visible
+    /// text, forwarding prefill (`-q`) and ghost text verbatim. Empty values
+    /// are skipped so `Some("")` never emits `-q ""` / `--ghost ""`.
+    pub(crate) fn text_input_builder(
+        options: &crate::menu::protocol::InputOptions,
+    ) -> super::builder::InputBuilder {
+        use crate::menu::protocol::InputKind;
+
+        let builder = Self::builder().prompt(&options.prompt);
+        let builder = match &options.kind {
+            InputKind::Text {
+                initial_text: Some(text),
+            } if !text.is_empty() => builder.query(text),
+            _ => builder,
+        };
+        let input = builder.input();
+        match &options.placeholder {
+            Some(placeholder) if !placeholder.is_empty() => input.ghost(placeholder),
+            _ => input,
+        }
+    }
+
+    /// Build the [`PasswordBuilder`](super::builder::PasswordBuilder) for
+    /// hidden input, forwarding the placeholder verbatim via
+    /// [`Header::Manual`].
+    pub(crate) fn password_builder(
+        options: &crate::menu::protocol::InputOptions,
+    ) -> super::builder::PasswordBuilder {
+        let builder = Self::builder().prompt(&options.prompt);
+        // `Header::Manual` passes through verbatim: `Header::Default`
+        // would add fzf padding (`"\n{text}\n "`) that must not leak into
+        // `gum --placeholder`.
+        let builder = match &options.placeholder {
+            Some(placeholder) if !placeholder.is_empty() => {
+                builder.header(Header::Manual(placeholder.clone()))
+            }
+            _ => builder,
+        };
+        builder.password()
+    }
+
+    /// Text or password input driven by shared [`InputOptions`](crate::menu::protocol::InputOptions),
+    /// so all backends honor the same prompt shape (placeholder, pre-filled text).
     /// The placeholder renders as faded ghost text for plain input and as the
     /// placeholder line for password dialogs.
     pub fn input_with_options(
         options: &crate::menu::protocol::InputOptions,
     ) -> Result<DialogOutcome<String>> {
-        let builder = Self::builder().prompt(&options.prompt);
-        let builder = if let Some(initial_text) = options.effective_initial_text() {
-            builder.query(initial_text)
+        if options.is_secret() {
+            Self::password_builder(options).password_dialog()
         } else {
-            builder
-        };
-        if options.secret {
-            let builder = if let Some(placeholder) = &options.placeholder {
-                builder.header(placeholder)
-            } else {
-                builder
-            };
-            builder.password().password_dialog()
-        } else {
-            let input = builder.input();
-            let input = if let Some(placeholder) = &options.placeholder {
-                input.ghost(placeholder)
-            } else {
-                input
-            };
-            input.input_dialog()
+            Self::text_input_builder(options).input_dialog()
         }
     }
 
@@ -980,7 +1004,7 @@ impl FzfWrapper {
     }
 
     pub fn password(prompt: &str) -> Result<DialogOutcome<String>> {
-        Self::builder().prompt(prompt).password().password_dialog()
+        Self::input_with_options(&crate::menu::protocol::InputOptions::password(prompt))
     }
 }
 
@@ -1381,5 +1405,67 @@ mod mock_tests {
     fn standard_menu_keeps_spacing_header() {
         let parts = FzfWrapper::menu().into_wrapper_parts();
         assert!(matches!(parts.header, Some(Header::Default(text)) if text.is_empty()));
+    }
+
+    #[test]
+    fn input_with_options_routes_text_to_input_mock() {
+        use crate::menu::protocol::InputOptions;
+
+        let _guard = MockQueue::new().input_string("typed").guard();
+        let options = InputOptions::text_with_initial("Edit:", "prefill").with_placeholder("hint");
+        let result = FzfWrapper::input_with_options(&options).unwrap();
+        assert_eq!(result, DialogOutcome::Submitted("typed".to_string()));
+    }
+
+    #[test]
+    fn input_with_options_routes_password_to_password_mock() {
+        use crate::menu::protocol::InputOptions;
+
+        let _guard = MockQueue::new().password("s3cr3t").guard();
+        let options = InputOptions::password("Enter password:").with_placeholder("hint");
+        let result = FzfWrapper::input_with_options(&options).unwrap();
+        assert_eq!(result, DialogOutcome::Submitted("s3cr3t".to_string()));
+    }
+
+    #[test]
+    fn text_builder_forwards_query_ghost_and_prompt() {
+        use crate::menu::protocol::InputOptions;
+
+        let options = InputOptions::text_with_initial("Edit:", "prefill").with_placeholder("hint");
+        let builder = FzfWrapper::text_input_builder(&options);
+        assert_eq!(builder.shared.prompt.as_deref(), Some("Edit:"));
+        assert_eq!(builder.shared.initial_query.as_deref(), Some("prefill"));
+        assert_eq!(builder.ghost_text.as_deref(), Some("hint"));
+    }
+
+    #[test]
+    fn password_builder_uses_manual_header_verbatim() {
+        use crate::menu::protocol::InputOptions;
+
+        let options = InputOptions::password("P:").with_placeholder("hint");
+        let builder = FzfWrapper::password_builder(&options);
+        assert_eq!(builder.shared.prompt.as_deref(), Some("P:"));
+        assert!(matches!(
+            builder.shared.header,
+            Some(Header::Manual(ref text)) if text == "hint"
+        ));
+        assert_eq!(
+            builder.shared.header.as_ref().unwrap().to_fzf_string(),
+            "hint"
+        );
+    }
+
+    #[test]
+    fn builders_skip_empty_prefill_and_placeholder() {
+        use crate::menu::protocol::InputOptions;
+
+        let options = InputOptions::text("E:");
+        let builder = FzfWrapper::text_input_builder(&options);
+        assert!(builder.shared.initial_query.is_none());
+        assert!(builder.ghost_text.is_none());
+
+        let password = InputOptions::password("P:");
+        let builder = FzfWrapper::password_builder(&password);
+        assert!(builder.shared.header.is_none());
     }
 }

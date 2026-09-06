@@ -193,12 +193,12 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
             ref initial_text,
             backend,
         } => {
-            let mut options = InputOptions::new(prompt);
+            let mut options = match initial_text {
+                Some(text) if !text.is_empty() => InputOptions::text_with_initial(prompt, text),
+                _ => InputOptions::text(prompt),
+            };
             if let Some(placeholder) = placeholder {
                 options = options.with_placeholder(placeholder);
-            }
-            if let Some(initial_text) = initial_text {
-                options = options.with_initial_text(initial_text);
             }
             handle_text_input(options, backend)
         }
@@ -1126,5 +1126,49 @@ mod tests {
             panic!("Expected Pick command");
         };
         assert!(allow_multiple);
+    }
+
+    #[test]
+    fn input_accepts_placeholder_and_initial_text() {
+        let cli = MenuCli::try_parse_from([
+            "ins-menu",
+            "input",
+            "Edit:",
+            "--placeholder",
+            "hint",
+            "--initial-text",
+            "prefill",
+        ])
+        .unwrap();
+        let MenuCommands::Input {
+            prompt,
+            placeholder,
+            initial_text,
+            ..
+        } = cli.command
+        else {
+            panic!("Expected Input command");
+        };
+        assert_eq!(prompt, "Edit:");
+        assert_eq!(placeholder.as_deref(), Some("hint"));
+        assert_eq!(initial_text.as_deref(), Some("prefill"));
+    }
+
+    #[test]
+    fn password_accepts_placeholder_but_no_initial_text() {
+        let cli =
+            MenuCli::try_parse_from(["ins-menu", "password", "--placeholder", "hint"]).unwrap();
+        let MenuCommands::Password {
+            prompt,
+            placeholder,
+            ..
+        } = cli.command
+        else {
+            panic!("Expected Password command");
+        };
+        assert_eq!(prompt, "Enter password:");
+        assert_eq!(placeholder.as_deref(), Some("hint"));
+
+        assert!(MenuCli::try_parse_from(["ins-menu", "password", "--initial-text", "x"]).is_err());
     }
 }

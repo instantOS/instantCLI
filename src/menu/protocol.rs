@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::SystemTime;
@@ -134,62 +134,155 @@ impl ChoiceOptions {
     }
 }
 
+/// Input kind: visible text or hidden password. The split is structural so
+/// that a prefilled password cannot be expressed: only [`InputKind::Text`]
+/// carries `initial_text`.
+///
+/// Note: `prompt`/`placeholder`/`initial_text` are passed to `instantmenu` as
+/// argv and are visible in `ps`; never put secrets there. `Password` carries
+/// no prefill precisely for this reason.
+///
+/// Wire shape is flat (`#[serde(flatten)]` on [`InputOptions::kind`]):
+/// `{"prompt":"q","kind":"text","initial_text":"hi"}` vs
+/// `{"prompt":"p","kind":"password"}`. A `password` payload carrying
+/// `initial_text` is rejected on deserialize (fail-closed), not silently
+/// dropped.
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum InputKind {
+    /// Visible text, optionally pre-filled.
+    Text {
+        /// Text pre-filled into the input field.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        initial_text: Option<String>,
+    },
+    /// Hidden input; never pre-filled.
+    Password,
+}
+
+impl<'de> Deserialize<'de> for InputKind {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        // Helper mirrors the flat shape. No `deny_unknown_fields`: when
+        // flattened into `InputOptions`, sibling fields (`prompt`,
+        // `placeholder`) share the same map and must be ignored here.
+        #[derive(Deserialize)]
+        struct Helper {
+            kind: String,
+            #[serde(default)]
+            initial_text: Option<String>,
+        }
+
+        let helper = Helper::deserialize(deserializer)?;
+        match helper.kind.as_str() {
+            "text" => Ok(InputKind::Text {
+                initial_text: helper.initial_text.filter(|s| !s.is_empty()),
+            }),
+            "password"
+                if helper
+                    .initial_text
+                    .as_deref()
+                    .is_some_and(|s| !s.is_empty()) =>
+            {
+                Err(serde::de::Error::custom(
+                    "password inputs must not carry `initial_text`",
+                ))
+            }
+            "password" => Ok(InputKind::Password),
+            other => Err(serde::de::Error::unknown_variant(
+                other,
+                &["text", "password"],
+            )),
+        }
+    }
+}
+
+impl InputKind {
+    /// Visible text without prefill.
+    pub fn text() -> Self {
+        Self::Text { initial_text: None }
+    }
+
+    /// Visible text pre-filled with the given value. Empty values normalize
+    /// to no prefill so `Some("")` never reaches the wire or argv.
+    pub fn text_with_initial(initial_text: impl Into<String>) -> Self {
+        let text = initial_text.into();
+        if text.is_empty() {
+            Self::text()
+        } else {
+            Self::Text {
+                initial_text: Some(text),
+            }
+        }
+    }
+}
+
+/// Deserialize `Option<String>`, normalizing empty strings to `None` so
+/// `""` from the wire matches the constructor behavior (`with_placeholder("")`
+/// stays off the wire).
+fn empty_string_as_none<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error> {
+    let opt = Option::<String>::deserialize(deserializer)?;
+    Ok(opt.filter(|s| !s.is_empty()))
+}
+
 /// Configuration shared by text and password prompts.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct InputOptions {
     /// Text shown before the input query.
     pub prompt: String,
-    /// Whether the input must be hidden (password).
-    pub secret: bool,
-    /// Faded text shown while the input is empty. Never pre-filled.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Which input variant to show: visible text or hidden password.
+    /// Flattened so the wire is `{"prompt","kind","initial_text?","placeholder?"}`.
+    #[serde(flatten)]
+    pub kind: InputKind,
+    /// Faded text shown while the input is empty.
+    #[serde(
+        default,
+        deserialize_with = "empty_string_as_none",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub placeholder: Option<String>,
-    /// Text pre-filled into the input. Rejected for password prompts.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub initial_text: Option<String>,
 }
 
 impl InputOptions {
     /// Create a plain text input prompt.
-    pub fn new(prompt: impl Into<String>) -> Self {
+    pub fn text(prompt: impl Into<String>) -> Self {
         Self {
             prompt: prompt.into(),
-            secret: false,
+            kind: InputKind::text(),
             placeholder: None,
-            initial_text: None,
+        }
+    }
+
+    /// Create a text prompt pre-filled with the given value.
+    pub fn text_with_initial(prompt: impl Into<String>, initial_text: impl Into<String>) -> Self {
+        Self {
+            prompt: prompt.into(),
+            kind: InputKind::text_with_initial(initial_text),
+            placeholder: None,
         }
     }
 
     /// Create a hidden password prompt.
     pub fn password(prompt: impl Into<String>) -> Self {
-        Self::new(prompt).secret(true)
-    }
-
-    /// Configure whether the input must be hidden.
-    pub fn secret(mut self, secret: bool) -> Self {
-        self.secret = secret;
-        self
-    }
-
-    /// Set the faded hint shown while the input is empty.
-    pub fn with_placeholder(mut self, placeholder: impl Into<String>) -> Self {
-        self.placeholder = Some(placeholder.into());
-        self
-    }
-
-    /// Pre-fill the input with text (ignored for password prompts).
-    pub fn with_initial_text(mut self, initial_text: impl Into<String>) -> Self {
-        self.initial_text = Some(initial_text.into());
-        self
-    }
-
-    /// Resolve the effective pre-fill text: passwords are never pre-filled.
-    pub fn effective_initial_text(&self) -> Option<&str> {
-        if self.secret {
-            None
-        } else {
-            self.initial_text.as_deref()
+        Self {
+            prompt: prompt.into(),
+            kind: InputKind::Password,
+            placeholder: None,
         }
+    }
+
+    /// Whether the input must be hidden.
+    pub fn is_secret(&self) -> bool {
+        matches!(self.kind, InputKind::Password)
+    }
+
+    /// Set the faded hint shown while the input is empty. Empty values
+    /// normalize to no placeholder so `--placeholder ""` stays off the wire.
+    pub fn with_placeholder(mut self, placeholder: impl Into<String>) -> Self {
+        let text = placeholder.into();
+        self.placeholder = if text.is_empty() { None } else { Some(text) };
+        self
     }
 }
 
@@ -344,7 +437,7 @@ pub struct MenuStatus {
 }
 
 /// Protocol version information
-pub const PROTOCOL_VERSION: &str = "7.1";
+pub const PROTOCOL_VERSION: &str = "8.0";
 
 fn legacy_protocol_version() -> String {
     "1.0".to_string()
@@ -432,7 +525,7 @@ mod tests {
         let message = MenuMessage::new(
             "test_123".to_string(),
             MenuRequest::Input {
-                options: InputOptions::new("Enter value:"),
+                options: InputOptions::text("Enter value:"),
             },
         );
 
@@ -442,7 +535,7 @@ mod tests {
         assert_eq!(deserialized.request_id, "test_123");
         assert_eq!(deserialized.protocol_version, PROTOCOL_VERSION);
         assert!(
-            matches!(deserialized.payload, MenuRequest::Input { options } if options.prompt == "Enter value:" && !options.secret)
+            matches!(deserialized.payload, MenuRequest::Input { options } if options.prompt == "Enter value:" && !options.is_secret())
         );
     }
 
@@ -456,16 +549,15 @@ mod tests {
         let deserialized: MenuRequest = serde_json::from_str(&json).unwrap();
 
         assert!(
-            matches!(deserialized, MenuRequest::Input { options } if options.prompt == "Enter password:" && options.secret)
+            matches!(deserialized, MenuRequest::Input { options } if options.prompt == "Enter password:" && options.is_secret())
         );
     }
 
     #[test]
     fn test_input_options_placeholder_and_initial_text_round_trip() {
         let request = MenuRequest::Input {
-            options: InputOptions::new("Edit value:")
-                .with_placeholder("leave empty to clear")
-                .with_initial_text("current value"),
+            options: InputOptions::text_with_initial("Edit value:", "current value")
+                .with_placeholder("leave empty to clear"),
         };
 
         let json = serde_json::to_string(&request).unwrap();
@@ -475,31 +567,98 @@ mod tests {
             deserialized,
             MenuRequest::Input { options }
                 if options.placeholder.as_deref() == Some("leave empty to clear")
-                    && options.initial_text.as_deref() == Some("current value")
+                    && matches!(
+                        options.kind,
+                        InputKind::Text { initial_text: ref t } if t.as_deref() == Some("current value")
+                    )
         ));
     }
 
-    /// 7.0 payloads (pre placeholder/initial_text) must still decode: the
-    /// fields default to None and stay off the wire when unset.
+    /// A password payload carrying `initial_text` is rejected on deserialize
+    /// (fail-closed), not silently dropped.
     #[test]
-    fn test_input_options_decode_without_optional_fields() {
-        let json = r#"{"prompt":"Enter value:","secret":false}"#;
-        let deserialized: InputOptions = serde_json::from_str(json).unwrap();
-        assert_eq!(deserialized.prompt, "Enter value:");
-        assert!(!deserialized.secret);
-        assert_eq!(deserialized.placeholder, None);
-        assert_eq!(deserialized.initial_text, None);
+    fn test_input_options_prefill_cannot_leak_into_password() {
+        let json = r#"{"prompt":"p","kind":"password","initial_text":"leaked"}"#;
+        let err = serde_json::from_str::<InputOptions>(json).unwrap_err();
+        assert!(err.to_string().contains("must not carry"), "{err}");
 
-        // unset optionals are omitted so 7.1 payloads stay minimal
-        let plain = serde_json::to_string(&InputOptions::new("q")).unwrap();
-        assert_eq!(plain, r#"{"prompt":"q","secret":false}"#);
+        // empty prefill normalizes to no prefill, including for passwords
+        let empty: InputOptions =
+            serde_json::from_str(r#"{"prompt":"p","kind":"password","initial_text":""}"#).unwrap();
+        assert!(matches!(empty.kind, InputKind::Password));
+        let empty_text: InputOptions =
+            serde_json::from_str(r#"{"prompt":"q","kind":"text","initial_text":""}"#).unwrap();
+        assert!(matches!(
+            empty_text.kind,
+            InputKind::Text { initial_text: None }
+        ));
+
+        // password payloads carry no prefill field at all
+        let password_json =
+            serde_json::to_string(&InputOptions::password("Enter password:")).unwrap();
+        assert_eq!(
+            password_json,
+            r#"{"prompt":"Enter password:","kind":"password"}"#
+        );
     }
 
-    /// Passwords must never be pre-filled, regardless of what a caller set.
     #[test]
-    fn test_password_options_drop_initial_text() {
-        let options = InputOptions::password("Enter password:").with_initial_text("leaked");
-        assert_eq!(options.effective_initial_text(), None);
+    fn empty_initial_text_and_placeholder_normalize_to_none() {
+        assert!(matches!(
+            InputOptions::text_with_initial("q", "").kind,
+            InputKind::Text { initial_text: None }
+        ));
+        assert!(matches!(
+            InputKind::text_with_initial(""),
+            InputKind::Text { initial_text: None }
+        ));
+        assert_eq!(
+            InputOptions::text("q").with_placeholder("").placeholder,
+            None
+        );
+        assert_eq!(
+            serde_json::to_string(&InputOptions::text_with_initial("q", "")).unwrap(),
+            r#"{"prompt":"q","kind":"text"}"#
+        );
+        // Empty placeholder on the wire normalizes like the constructors, so a
+        // forwarded frame stays minimal instead of carrying `""`.
+        let wire_empty: InputOptions =
+            serde_json::from_str(r#"{"prompt":"q","kind":"text","placeholder":""}"#).unwrap();
+        assert_eq!(wire_empty.placeholder, None);
+        assert_eq!(
+            serde_json::to_string(&wire_empty).unwrap(),
+            r#"{"prompt":"q","kind":"text"}"#
+        );
+    }
+
+    /// `kind` is required: missing, legacy `secret`, and nested `kind`
+    /// shapes all fail closed instead of silently downgrading to visible text.
+    #[test]
+    fn test_input_options_kind_is_required() {
+        for json in [
+            r#"{"prompt":"Enter value:"}"#,
+            r#"{"prompt":"x","secret":true}"#,
+            r#"{"prompt":"x","secret":false}"#,
+            r#"{"prompt":"q","kind":{"kind":"text"}}"#,
+        ] {
+            assert!(
+                serde_json::from_str::<InputOptions>(json).is_err(),
+                "should reject: {json}"
+            );
+        }
+
+        // unset optionals are omitted so payloads stay minimal
+        let plain = serde_json::to_string(&InputOptions::text("q")).unwrap();
+        assert_eq!(plain, r#"{"prompt":"q","kind":"text"}"#);
+
+        let prefilled = serde_json::to_string(
+            &InputOptions::text_with_initial("q", "hi").with_placeholder("ph"),
+        )
+        .unwrap();
+        assert_eq!(
+            prefilled,
+            r#"{"prompt":"q","kind":"text","initial_text":"hi","placeholder":"ph"}"#
+        );
     }
 
     #[test]

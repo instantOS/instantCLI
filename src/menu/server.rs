@@ -63,14 +63,92 @@ pub fn kill_active_menu_processes() -> Result<usize> {
 /// Read one newline-delimited protocol frame without replacing the caller's
 /// buffer. Returning `None` means the peer closed its write side cleanly.
 fn read_menu_message<R: BufRead>(reader: &mut R) -> Result<Option<MenuMessage>> {
+    match read_menu_frame(reader)? {
+        Some(IncomingFrame::Message(message)) => Ok(Some(message)),
+        // Legacy helper: version-gated callers handle mismatches explicitly;
+        // direct readers treat them as a decode failure.
+        Some(IncomingFrame::VersionMismatch { received, .. }) => {
+            // Surface as an error so streaming readers break cleanly.
+            // `handle_connection_sync` uses `read_menu_frame` directly and
+            // replies with `ProtocolMismatch` instead.
+            anyhow::bail!("Menu protocol mismatch: received {received}")
+        }
+        Some(IncomingFrame::InvalidPayload { error, .. }) => {
+            anyhow::bail!("{error}")
+        }
+        None => Ok(None),
+    }
+}
+
+/// Two-phase frame: envelope version is decoded before the payload so a
+/// breaking payload change still yields a clean `ProtocolMismatch` instead of
+/// a dropped connection.
+enum IncomingFrame {
+    Message(MenuMessage),
+    VersionMismatch {
+        request_id: String,
+        received: String,
+    },
+    InvalidPayload {
+        request_id: String,
+        error: String,
+    },
+}
+
+#[derive(serde::Deserialize)]
+struct RawEnvelope {
+    request_id: String,
+    #[serde(default = "legacy_frame_version")]
+    protocol_version: String,
+    payload: serde_json::Value,
+    timestamp: std::time::SystemTime,
+}
+
+fn legacy_frame_version() -> String {
+    "1.0".to_string()
+}
+
+/// `Status`/`Stop` form the stable control plane: unit variants decode as a
+/// bare string (`"Status"`), struct variants as a single-key map.
+fn is_control_plane(payload: &serde_json::Value) -> bool {
+    if let Some(name) = payload.as_str() {
+        return name == "Status" || name == "Stop";
+    }
+    if let Some(object) = payload.as_object() {
+        return object.contains_key("Status") || object.contains_key("Stop");
+    }
+    false
+}
+
+fn read_menu_frame<R: BufRead>(reader: &mut R) -> Result<Option<IncomingFrame>> {
     let mut json = String::new();
     if reader.read_line(&mut json)? == 0 {
         return Ok(None);
     }
 
-    let message = serde_json::from_str(json.trim_end())
+    let raw: RawEnvelope = serde_json::from_str(json.trim_end())
         .context("Failed to deserialize menu protocol frame")?;
-    Ok(Some(message))
+    if raw.protocol_version != PROTOCOL_VERSION && !is_control_plane(&raw.payload) {
+        return Ok(Some(IncomingFrame::VersionMismatch {
+            request_id: raw.request_id,
+            received: raw.protocol_version,
+        }));
+    }
+    let payload = match serde_json::from_value(raw.payload) {
+        Ok(payload) => payload,
+        Err(error) => {
+            return Ok(Some(IncomingFrame::InvalidPayload {
+                request_id: raw.request_id,
+                error: format!("Failed to deserialize menu payload: {error}"),
+            }));
+        }
+    };
+    Ok(Some(IncomingFrame::Message(MenuMessage {
+        request_id: raw.request_id,
+        protocol_version: raw.protocol_version,
+        payload,
+        timestamp: raw.timestamp,
+    })))
 }
 
 /// Menu server for handling GUI menu requests
@@ -257,23 +335,34 @@ impl MenuServer {
             .try_clone()
             .context("Failed to clone menu socket for request reader")?;
         let mut reader = io::BufReader::new(reader_stream);
-        let Some(message) = read_menu_message(&mut reader)? else {
+        let Some(frame) = read_menu_frame(&mut reader)? else {
             // Client disconnected - this is normal, not an error
             return Ok(());
         };
+        let message = match frame {
+            IncomingFrame::VersionMismatch {
+                request_id,
+                received,
+            } => {
+                return Self::write_response(
+                    &mut stream,
+                    request_id,
+                    MenuResponse::ProtocolMismatch {
+                        received,
+                        expected: PROTOCOL_VERSION.to_string(),
+                    },
+                );
+            }
+            IncomingFrame::InvalidPayload { request_id, error } => {
+                return Self::write_response(&mut stream, request_id, MenuResponse::Error(error));
+            }
+            IncomingFrame::Message(message) => message,
+        };
 
-        // Status and Stop form a deliberately stable control plane so a new
-        // client can identify and replace an older daemon. All application
-        // requests require an exact protocol match.
-        let is_version_control_request =
-            matches!(&message.payload, MenuRequest::Status | MenuRequest::Stop);
-        if message.protocol_version != PROTOCOL_VERSION && !is_version_control_request {
-            let response = MenuResponse::ProtocolMismatch {
-                received: message.protocol_version,
-                expected: PROTOCOL_VERSION.to_string(),
-            };
-            return Self::write_response(&mut stream, message.request_id, response);
-        }
+        // Version gating lives solely in `read_menu_frame`: non-control-plane
+        // mismatches already returned as `ProtocolMismatch` above, and
+        // `Status`/`Stop` form the stable control plane. No second check here
+        // so the two `Status`/`Stop` lists cannot diverge.
 
         if let MenuRequest::ChoiceBegin { options } = message.payload {
             super::bindings::validate(&options.bindings)?;
@@ -1048,5 +1137,76 @@ mod tests {
             response.payload,
             MenuResponse::StatusResult(status) if status.protocol_version == PROTOCOL_VERSION
         ));
+    }
+
+    #[test]
+    fn old_input_payload_with_old_version_yields_mismatch_not_drop() {
+        // 7.x wire (`secret` bool, no `kind`) sent with an old version must
+        // get a clean `ProtocolMismatch`, not a dropped connection.
+        let server = MenuServer {
+            socket_path: default_socket_path(),
+            running: Arc::new(AtomicBool::new(true)),
+            start_time: std::time::SystemTime::now(),
+            requests_processed: Arc::new(AtomicU64::new(0)),
+            compositor: CompositorType::detect(),
+            scratchpad_manager: None,
+            tui: None,
+        };
+        let (mut client_stream, server_stream) = UnixStream::pair().unwrap();
+        let raw = serde_json::json!({
+            "request_id": "old-input",
+            "protocol_version": "7.0",
+            "payload": {"Input": {"options": {"prompt": "x", "secret": true}}},
+            "timestamp": std::time::SystemTime::now(),
+        });
+        serde_json::to_writer(&mut client_stream, &raw).unwrap();
+        client_stream.write_all(b"\n").unwrap();
+
+        server.handle_connection_sync(server_stream).unwrap();
+
+        let mut response = String::new();
+        io::BufReader::new(client_stream)
+            .read_line(&mut response)
+            .unwrap();
+        assert!(!response.trim().is_empty(), "server must reply, not drop");
+        let response: MenuResponseMessage = serde_json::from_str(response.trim()).unwrap();
+        assert!(matches!(
+            response.payload,
+            MenuResponse::ProtocolMismatch { received, .. } if received == "7.0"
+        ));
+    }
+
+    #[test]
+    fn same_version_invalid_input_yields_error_not_drop() {
+        // `password` + `initial_text` with the current version fails closed
+        // with an `Error` response carrying the request id.
+        let server = MenuServer {
+            socket_path: default_socket_path(),
+            running: Arc::new(AtomicBool::new(true)),
+            start_time: std::time::SystemTime::now(),
+            requests_processed: Arc::new(AtomicU64::new(0)),
+            compositor: CompositorType::detect(),
+            scratchpad_manager: None,
+            tui: None,
+        };
+        let (mut client_stream, server_stream) = UnixStream::pair().unwrap();
+        let raw = serde_json::json!({
+            "request_id": "bad-input",
+            "protocol_version": PROTOCOL_VERSION,
+            "payload": {"Input": {"options": {"prompt": "p", "kind": "password", "initial_text": "x"}}},
+            "timestamp": std::time::SystemTime::now(),
+        });
+        serde_json::to_writer(&mut client_stream, &raw).unwrap();
+        client_stream.write_all(b"\n").unwrap();
+
+        server.handle_connection_sync(server_stream).unwrap();
+
+        let mut response = String::new();
+        io::BufReader::new(client_stream)
+            .read_line(&mut response)
+            .unwrap();
+        let response: MenuResponseMessage = serde_json::from_str(response.trim()).unwrap();
+        assert_eq!(response.request_id, "bad-input");
+        assert!(matches!(response.payload, MenuResponse::Error(_)));
     }
 }

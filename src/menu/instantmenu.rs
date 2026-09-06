@@ -3,7 +3,7 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 
 use super::SliderSpec;
-use super::protocol::{ChoiceOptions, InputOptions, SerializableMenuItem};
+use super::protocol::{ChoiceOptions, InputKind, InputOptions, SerializableMenuItem};
 use crate::menu_utils::{ConfirmResult, DialogOutcome, FzfSelectable};
 
 fn shell_escape(value: &str) -> String {
@@ -122,32 +122,50 @@ impl InstantmenuBackend {
         Ok(())
     }
 
-    /// Show text or password input dialog
+    /// Show text or password input dialog.
+    ///
+    /// `--placeholder` is forwarded for both text and password input. Upstream
+    /// instantmenu renders it while the field is empty (password shows dots
+    /// once typed).
+    pub(crate) fn input_argv(options: &InputOptions) -> Vec<String> {
+        let mut args = Vec::new();
+        match &options.kind {
+            InputKind::Text { initial_text } => {
+                args.push("--input-only".to_string());
+                if let Some(text) = initial_text
+                    && !text.is_empty()
+                {
+                    args.push("--initial-text".to_string());
+                    args.push(text.clone());
+                }
+            }
+            InputKind::Password => {
+                args.push("--password".to_string());
+            }
+        }
+        if let Some(placeholder) = &options.placeholder
+            && !placeholder.is_empty()
+        {
+            args.push("--placeholder".to_string());
+            args.push(placeholder.clone());
+        }
+        args.push("--position".to_string());
+        args.push("center".to_string());
+        args.push("--border-width".to_string());
+        args.push("4".to_string());
+        args.push("--width".to_string());
+        args.push("800".to_string());
+        args.push("--prompt".to_string());
+        args.push(options.prompt.clone());
+        args
+    }
+
     pub fn input(options: &InputOptions) -> Result<DialogOutcome<String>> {
         let mut cmd = Command::new("instantmenu");
-        if options.secret {
-            cmd.arg("--password");
-        } else {
-            cmd.arg("--input-only");
-        }
-        cmd.arg("--position")
-            .arg("center")
-            .arg("--border-width")
-            .arg("4")
-            .arg("--width")
-            .arg("800")
-            .arg("--prompt")
-            .arg(&options.prompt)
+        cmd.args(Self::input_argv(options))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
-
-        if let Some(placeholder) = &options.placeholder {
-            cmd.arg("--placeholder").arg(placeholder);
-        }
-        if let Some(initial_text) = options.effective_initial_text() {
-            cmd.arg("--initial-text").arg(initial_text);
-        }
 
         let mut child = cmd.spawn().context("Failed to spawn instantmenu")?;
         if let Some(mut stdin) = child.stdin.take() {
@@ -162,7 +180,7 @@ impl InstantmenuBackend {
         }
 
         let text = String::from_utf8_lossy(&output.stdout)
-            .trim_end_matches('\n')
+            .trim_end_matches(['\r', '\n'])
             .to_string();
         Ok(DialogOutcome::Submitted(text))
     }
@@ -561,7 +579,39 @@ impl InstantmenuBackend {
 
 #[cfg(test)]
 mod tests {
-    use super::shell_command;
+    use super::{InstantmenuBackend, shell_command};
+    use crate::menu::protocol::InputOptions;
+
+    fn has_pair(argv: &[String], key: &str, value: &str) -> bool {
+        argv.windows(2).any(|w| w[0] == key && w[1] == value)
+    }
+
+    #[test]
+    fn text_argv_forwards_initial_text_and_placeholder() {
+        let options = InputOptions::text_with_initial("Edit:", "pre").with_placeholder("hint");
+        let argv = InstantmenuBackend::input_argv(&options);
+        assert!(argv.contains(&"--input-only".to_string()));
+        assert!(has_pair(&argv, "--initial-text", "pre"));
+        assert!(has_pair(&argv, "--placeholder", "hint"));
+        assert!(has_pair(&argv, "--prompt", "Edit:"));
+    }
+
+    #[test]
+    fn password_argv_forwards_placeholder() {
+        let options = InputOptions::password("P:").with_placeholder("hint");
+        let argv = InstantmenuBackend::input_argv(&options);
+        assert!(argv.contains(&"--password".to_string()));
+        assert!(!argv.contains(&"--input-only".to_string()));
+        assert!(has_pair(&argv, "--placeholder", "hint"));
+    }
+
+    #[test]
+    fn empty_prefill_and_placeholder_stay_off_argv() {
+        let options = InputOptions::text_with_initial("E:", "").with_placeholder("");
+        let argv = InstantmenuBackend::input_argv(&options);
+        assert!(!argv.contains(&"--initial-text".to_string()));
+        assert!(!argv.contains(&"--placeholder".to_string()));
+    }
 
     #[test]
     fn slider_command_preserves_argv_boundaries_for_the_shell() {

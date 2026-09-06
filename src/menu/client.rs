@@ -583,7 +583,11 @@ impl HostedMenuClient {
 
     /// Show text or password input dialog via server
     pub fn input(&self, options: InputOptions) -> Result<DialogOutcome<String>> {
-        let operation = if options.secret { "password" } else { "input" };
+        let operation = if options.is_secret() {
+            "password"
+        } else {
+            "input"
+        };
         let response = self.send_request(MenuRequest::Input { options })?;
         decode_dialog_response(response, operation, |response| match response {
             MenuResponse::InputResult(text) => Some(text),

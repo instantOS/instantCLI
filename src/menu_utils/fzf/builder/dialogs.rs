@@ -63,10 +63,10 @@ impl InputBuilder {
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
-        let lines: Vec<&str> = stdout.trim_end().split('\n').collect();
+        let lines: Vec<&str> = stdout.trim_end_matches(['\r', '\n']).split('\n').collect();
 
         if let Some(query) = lines.first() {
-            Ok(DialogOutcome::Submitted(query.trim().to_string()))
+            Ok(DialogOutcome::Submitted((*query).to_string()))
         } else {
             Ok(DialogOutcome::Submitted(String::new()))
         }
@@ -163,29 +163,67 @@ fn run_password_prompt(
 
             if output.status.success() {
                 let stdout = String::from_utf8_lossy(&output.stdout);
-                Ok(DialogOutcome::Submitted(stdout.trim().to_string()))
+                Ok(DialogOutcome::Submitted(
+                    stdout.trim_end_matches(['\r', '\n']).to_string(),
+                ))
             } else {
-                fallback_password_input(prompt)
+                fallback_password_input(prompt, header)
             }
         }
-        Err(_) => fallback_password_input(prompt),
+        Err(_) => fallback_password_input(prompt, header),
     }
 }
 
-fn fallback_password_input(prompt: Option<&str>) -> Result<DialogOutcome<String>> {
-    use std::io::Write as _;
-
-    eprint!("{}: ", prompt.unwrap_or("Enter password"));
-    let _ = std::io::stderr().flush();
-
-    let mut password = String::new();
-    let bytes = std::io::stdin().read_line(&mut password)?;
-
-    if bytes == 0 {
-        return Ok(DialogOutcome::Cancelled);
+pub(crate) fn fallback_password_label(prompt: Option<&str>, placeholder: Option<&str>) -> String {
+    match (prompt, placeholder) {
+        (Some(p), Some(h)) if !h.is_empty() => format!("{p} [{h}]"),
+        (Some(p), _) => p.to_string(),
+        (None, Some(h)) if !h.is_empty() => format!("[{h}]"),
+        _ => "Enter password".to_string(),
     }
+}
 
-    Ok(DialogOutcome::Submitted(password.trim().to_string()))
+fn fallback_password_input(
+    prompt: Option<&str>,
+    placeholder: Option<&str>,
+) -> Result<DialogOutcome<String>> {
+    let label = fallback_password_label(prompt, placeholder);
+    match dialoguer::Password::new()
+        .with_prompt(&label)
+        .allow_empty_password(true)
+        .interact()
+    {
+        Ok(password) => Ok(DialogOutcome::Submitted(password)),
+        Err(dialoguer::Error::IO(error)) if error.kind() == std::io::ErrorKind::Interrupted => {
+            Ok(DialogOutcome::Cancelled)
+        }
+        // No TTY (piped scripts, tests): fall back to plain stdin read where
+        // echo suppression is irrelevant. Strip only the line ending so edge
+        // spaces in secrets survive.
+        Err(dialoguer::Error::IO(error)) if error.kind() == std::io::ErrorKind::NotConnected => {
+            use std::io::Write as _;
+
+            // `label` may already end in ':' (e.g. default "Enter password:").
+            // dialoguer prints the prompt verbatim, but this plain-stdin path
+            // appends its own separator, so avoid emitting a doubled colon.
+            let separator = if label.trim_end().ends_with(':') {
+                " "
+            } else {
+                ": "
+            };
+            eprint!("{label}{separator}");
+            let _ = std::io::stderr().flush();
+            let mut password = String::new();
+            let bytes = std::io::stdin().read_line(&mut password)?;
+            if bytes == 0 {
+                return Ok(DialogOutcome::Cancelled);
+            }
+            Ok(DialogOutcome::Submitted(
+                password.trim_end_matches(['\r', '\n']).to_string(),
+            ))
+        }
+        Err(error) => Err(anyhow::anyhow!("{error}")),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -476,5 +514,19 @@ mod mock_tests {
             .password_dialog()
             .unwrap();
         assert_eq!(result, crate::menu_utils::DialogOutcome::Cancelled);
+    }
+
+    #[test]
+    fn fallback_password_label_matrix() {
+        use super::fallback_password_label;
+
+        assert_eq!(
+            fallback_password_label(Some("P:"), Some("hint")),
+            "P: [hint]"
+        );
+        assert_eq!(fallback_password_label(Some("P:"), None), "P:");
+        assert_eq!(fallback_password_label(Some("P:"), Some("")), "P:");
+        assert_eq!(fallback_password_label(None, Some("hint")), "[hint]");
+        assert_eq!(fallback_password_label(None, None), "Enter password");
     }
 }
