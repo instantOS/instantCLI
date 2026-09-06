@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 pub mod desktop;
 pub mod discovery;
+mod entry;
 pub mod execute;
 pub mod types;
 
@@ -43,14 +44,19 @@ pub enum LaunchCommands {
 }
 
 /// Handle launch command
-pub async fn handle_launch_command(list_only: bool, backend: MenuBackend) -> Result<i32> {
+pub async fn handle_launch_command(
+    list_only: bool,
+    include_path: bool,
+    backend: MenuBackend,
+) -> Result<i32> {
     if list_only {
-        let launch_items = tokio::task::spawn_blocking(discovery::discover_launch_items)
-            .await
-            .context("application discovery task failed")?;
+        let launch_items =
+            tokio::task::spawn_blocking(move || discovery::discover_launch_items(include_path))
+                .await
+                .context("application discovery task failed")?;
         handle_list_mode(&launch_items)
     } else {
-        handle_interactive_mode(backend).await
+        handle_interactive_mode(backend, include_path).await
     }
 }
 
@@ -62,11 +68,11 @@ fn handle_list_mode(launch_items: &[LaunchItem]) -> Result<i32> {
     Ok(0)
 }
 
-async fn handle_interactive_mode(backend: MenuBackend) -> Result<i32> {
+async fn handle_interactive_mode(backend: MenuBackend, include_path: bool) -> Result<i32> {
     let (sender, receiver) =
         crossbeam_channel::bounded(crate::menu::protocol::STREAM_ITEM_BUFFER_CAPACITY);
     tokio::task::spawn_blocking(move || {
-        for item in discovery::discover_launch_items() {
+        for item in discovery::discover_launch_items(include_path) {
             if sender.send(prepare_menu_item(&item)).is_err() {
                 break;
             }

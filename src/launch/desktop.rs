@@ -1,29 +1,24 @@
-use crate::launch::types::DesktopAppDetails;
 use anyhow::{Context, Result};
-use freedesktop_file_parser::{EntryType, parse};
+
+use super::entry::DesktopEntry;
+use crate::launch::types::DesktopAppDetails;
 
 /// Parse the selected file again immediately before launch. Discovery carries
 /// its resolved path so nested IDs and XDG precedence remain exact.
 pub fn load_desktop_details(file_path: &std::path::Path) -> Result<DesktopAppDetails> {
     let content = std::fs::read_to_string(file_path).context("Failed to read desktop file")?;
-    let desktop_file = parse(&content).context("Failed to parse desktop file")?;
-
-    let (exec, terminal) = match &desktop_file.entry.entry_type {
-        EntryType::Application(app) => {
-            let exec = app.exec.clone().unwrap_or_default();
-            let terminal = app.terminal.unwrap_or(false);
-            (exec, terminal)
-        }
-        _ => (String::new(), false), // Fallback for non-application types
-    };
+    let entry = DesktopEntry::parse(&content).context("Failed to parse desktop file")?;
+    if entry.entry_type != Some("Application") {
+        anyhow::bail!("Desktop file is not an application");
+    }
 
     Ok(DesktopAppDetails {
-        exec,
-        name: desktop_file.entry.name.default,
-        icon: desktop_file.entry.icon.map(|icon| icon.content),
+        exec: entry.exec.unwrap_or_default().to_string(),
+        name: entry.name.unwrap_or_default().to_string(),
+        icon: entry.icon.map(ToOwned::to_owned),
         desktop_path: file_path.to_path_buf(),
-        no_display: desktop_file.entry.no_display.unwrap_or(false),
-        terminal,
+        no_display: entry.no_display,
+        terminal: entry.terminal,
     })
 }
 

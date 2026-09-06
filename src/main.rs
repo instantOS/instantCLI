@@ -137,6 +137,9 @@ enum Commands {
         /// List available applications instead of launching
         #[arg(long)]
         list: bool,
+        /// Also include every executable found in PATH
+        #[arg(long)]
+        include_path: bool,
         /// Menu backend used by the interactive launcher
         #[arg(short = 'b', long = "backend", value_enum, default_value_t = menu::MenuBackend::Auto)]
         backend: menu::MenuBackend,
@@ -312,8 +315,12 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
                 "Error handling dev command",
             )?;
         }
-        Some(Commands::Launch { list, backend }) => {
-            let exit_code = launch::handle_launch_command(*list, *backend).await?;
+        Some(Commands::Launch {
+            list,
+            include_path,
+            backend,
+        }) => {
+            let exit_code = launch::handle_launch_command(*list, *include_path, *backend).await?;
             std::process::exit(exit_code);
         }
         Some(Commands::Pass { list, gui, command }) => {
@@ -459,6 +466,7 @@ mod launch_cli_tests {
             cli.command,
             Some(Commands::Launch {
                 list: false,
+                include_path: false,
                 backend: menu::MenuBackend::Instantmenu,
             })
         ));
@@ -471,7 +479,20 @@ mod launch_cli_tests {
             cli.command,
             Some(Commands::Launch {
                 list: false,
+                include_path: false,
                 backend: menu::MenuBackend::Auto,
+            })
+        ));
+    }
+
+    #[test]
+    fn launch_can_include_path_executables() {
+        let cli = Cli::try_parse_from(["ins", "launch", "--include-path"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Launch {
+                include_path: true,
+                ..
             })
         ));
     }
