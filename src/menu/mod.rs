@@ -14,11 +14,12 @@ use protocol::SerializableMenuItem;
 use std::io::IsTerminal;
 use std::path::PathBuf;
 
+mod bindings;
 pub mod chord;
 pub mod client;
 mod commands;
 mod fallback;
-mod frecency;
+pub(crate) mod frecency;
 pub mod instantmenu;
 pub mod processing;
 pub mod protocol;
@@ -155,6 +156,7 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
             backend,
         } => handle_message(message.as_deref(), title.as_deref(), backend),
         MenuCommands::Choice {
+            ref bindings,
             ref prompt,
             ref prompt_option,
             ref items,
@@ -170,6 +172,7 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
             allow_multiple,
             frecency_cache.as_deref(),
             backend,
+            bindings,
         ),
         MenuCommands::Chord {
             ref chords,
@@ -284,7 +287,18 @@ fn handle_choice(
     allow_multiple: bool,
     frecency_cache: Option<&str>,
     backend: MenuBackend,
+    bindings: &[bindings::Binding],
 ) -> Result<i32> {
+    if !bindings.is_empty() {
+        return bindings::handle(
+            prompt,
+            items,
+            allow_multiple,
+            frecency_cache,
+            backend,
+            bindings,
+        );
+    }
     if let Some(namespace) = frecency_cache {
         frecency::validate_namespace(namespace)?;
     }

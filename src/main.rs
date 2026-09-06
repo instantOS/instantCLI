@@ -137,6 +137,9 @@ enum Commands {
         /// List available applications instead of launching
         #[arg(long)]
         list: bool,
+        /// Menu backend used by the interactive launcher
+        #[arg(short = 'b', long = "backend", value_enum, default_value_t = menu::MenuBackend::Auto)]
+        backend: menu::MenuBackend,
     },
     /// Password-store integration backed by `pass`
     Pass {
@@ -309,8 +312,8 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
                 "Error handling dev command",
             )?;
         }
-        Some(Commands::Launch { list }) => {
-            let exit_code = launch::handle_launch_command(*list).await?;
+        Some(Commands::Launch { list, backend }) => {
+            let exit_code = launch::handle_launch_command(*list, *backend).await?;
             std::process::exit(exit_code);
         }
         Some(Commands::Pass { list, gui, command }) => {
@@ -443,6 +446,35 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod launch_cli_tests {
+    use super::*;
+
+    #[test]
+    fn launch_accepts_menu_backend() {
+        let cli = Cli::try_parse_from(["ins", "launch", "--backend", "instantmenu"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Launch {
+                list: false,
+                backend: menu::MenuBackend::Instantmenu,
+            })
+        ));
+    }
+
+    #[test]
+    fn launch_backend_defaults_to_auto() {
+        let cli = Cli::try_parse_from(["ins", "launch"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Launch {
+                list: false,
+                backend: menu::MenuBackend::Auto,
+            })
+        ));
+    }
 }
 
 #[tokio::main]

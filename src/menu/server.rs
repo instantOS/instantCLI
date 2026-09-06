@@ -275,6 +275,22 @@ impl MenuServer {
             return Self::write_response(&mut stream, message.request_id, response);
         }
 
+        if let MenuRequest::ChoiceBeginWithBindings {
+            prompt,
+            allow_multiple,
+            bindings,
+        } = message.payload
+        {
+            super::bindings::validate(&bindings)?;
+            return self.handle_choice_stream_connection(
+                stream,
+                reader,
+                message.request_id,
+                prompt,
+                allow_multiple,
+                bindings,
+            );
+        }
         if let MenuRequest::ChoiceBegin {
             prompt,
             allow_multiple,
@@ -297,6 +313,7 @@ impl MenuServer {
                 message.request_id,
                 prompt,
                 allow_multiple,
+                Vec::new(),
             );
         }
         if matches!(
@@ -356,6 +373,7 @@ impl MenuServer {
         request_id: String,
         prompt: String,
         allow_multiple: bool,
+        bindings: Vec<super::bindings::Binding>,
     ) -> Result<()> {
         if let Some(ref manager) = self.scratchpad_manager
             && let Err(e) = manager.show()
@@ -412,15 +430,19 @@ impl MenuServer {
         });
 
         let response = if self.scratchpad_manager.is_some() {
-            self.process_monitored_streaming_choice(prompt, allow_multiple, rx, || {
+            self.process_monitored_streaming_choice(prompt, allow_multiple, rx, &bindings, || {
                 Self::write_response(&mut stream, request_id.clone(), MenuResponse::ChoiceReady)
             })?
         } else {
             let processor =
                 RequestProcessor::new(self.running.clone(), self.requests_processed.clone());
-            processor.handle_choice_streaming_with_ready(prompt, allow_multiple, rx, || {
-                Self::write_response(&mut stream, request_id.clone(), MenuResponse::ChoiceReady)
-            })?
+            processor.handle_choice_streaming_with_bindings(
+                prompt,
+                allow_multiple,
+                rx,
+                &bindings,
+                || Self::write_response(&mut stream, request_id.clone(), MenuResponse::ChoiceReady),
+            )?
         };
 
         // Mark completion before waking the reader so EOF caused by our own
@@ -529,7 +551,9 @@ impl MenuServer {
             request,
             MenuRequest::Confirm { .. }
                 | MenuRequest::Choice { .. }
+                | MenuRequest::ChoiceWithBindings { .. }
                 | MenuRequest::ChoiceBegin { .. }
+                | MenuRequest::ChoiceBeginWithBindings { .. }
                 | MenuRequest::Chord { .. }
                 | MenuRequest::Input { .. }
                 | MenuRequest::Password { .. }
@@ -709,14 +733,20 @@ impl MenuServer {
         prompt: String,
         allow_multiple: bool,
         rx: crossbeam_channel::Receiver<SerializableMenuItem>,
+        bindings: &[super::bindings::Binding],
         on_ready: F,
     ) -> Result<MenuResponse> {
         let (monitoring_active, was_killed, monitoring_handle) = self.start_visibility_monitor();
 
         let processor =
             RequestProcessor::new(self.running.clone(), self.requests_processed.clone());
-        let result =
-            processor.handle_choice_streaming_with_ready(prompt, allow_multiple, rx, on_ready);
+        let result = processor.handle_choice_streaming_with_bindings(
+            prompt,
+            allow_multiple,
+            rx,
+            bindings,
+            on_ready,
+        );
 
         let killed =
             Self::finish_visibility_monitor(&monitoring_active, &was_killed, monitoring_handle);

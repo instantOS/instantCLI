@@ -234,6 +234,16 @@ impl HostedMenuClient {
         allow_multiple: bool,
         frecency_cache: Option<String>,
     ) -> Result<(UnixStream, io::BufReader<UnixStream>, String)> {
+        self.open_streaming_choice_with_bindings(prompt, allow_multiple, frecency_cache, &[])
+    }
+
+    fn open_streaming_choice_with_bindings(
+        &self,
+        prompt: String,
+        allow_multiple: bool,
+        frecency_cache: Option<String>,
+        bindings: &[super::bindings::Binding],
+    ) -> Result<(UnixStream, io::BufReader<UnixStream>, String)> {
         let mut restarted = false;
         let mut prepared_stream = None;
 
@@ -252,10 +262,18 @@ impl HostedMenuClient {
 
             let begin = MenuMessage::new(
                 request_id.clone(),
-                MenuRequest::ChoiceBegin {
-                    prompt: prompt.clone(),
-                    allow_multiple,
-                    frecency_cache: frecency_cache.clone(),
+                if bindings.is_empty() {
+                    MenuRequest::ChoiceBegin {
+                        prompt: prompt.clone(),
+                        allow_multiple,
+                        frecency_cache: frecency_cache.clone(),
+                    }
+                } else {
+                    MenuRequest::ChoiceBeginWithBindings {
+                        prompt: prompt.clone(),
+                        allow_multiple,
+                        bindings: bindings.to_vec(),
+                    }
                 },
             );
             write_menu_message(&write_stream, &begin)?;
@@ -462,6 +480,120 @@ impl HostedMenuClient {
         }
     }
 
+    pub(super) fn choice_with_bindings(
+        &self,
+        prompt: String,
+        items: Vec<SerializableMenuItem>,
+        allow_multiple: bool,
+        frecency_cache: Option<String>,
+        bindings: Vec<super::bindings::Binding>,
+    ) -> Result<DialogOutcome<crate::menu_utils::MenuSelection<SerializableMenuItem, String>>> {
+        let response = self.send_request(MenuRequest::ChoiceWithBindings {
+            prompt,
+            items,
+            allow_multiple,
+            frecency_cache,
+            bindings,
+        })?;
+        decode_dialog_response(
+            response,
+            "choice with bindings",
+            |response| match response {
+                MenuResponse::ChoiceWithBindingsResult { key, items } => {
+                    Some(crate::menu_utils::MenuSelection { action: key, items })
+                }
+                _ => None,
+            },
+        )
+    }
+
+    fn stream_choice_response(
+        &self,
+        prompt: String,
+        items: crossbeam_channel::Receiver<SerializableMenuItem>,
+        allow_multiple: bool,
+        frecency_cache: Option<String>,
+        bindings: &[super::bindings::Binding],
+    ) -> Result<MenuResponse> {
+        let (write_stream, mut response_reader, request_id) = if bindings.is_empty() {
+            self.open_streaming_choice(prompt, allow_multiple, frecency_cache)?
+        } else {
+            self.open_streaming_choice_with_bindings(
+                prompt,
+                allow_multiple,
+                frecency_cache,
+                bindings,
+            )?
+        };
+
+        let stream_request_id = request_id.clone();
+        std::thread::spawn(move || {
+            let mut writer = io::BufWriter::new(write_stream);
+            while let Ok(first) = items.recv() {
+                let mut chunk_items = Vec::with_capacity(64);
+                chunk_items.push(first);
+                while chunk_items.len() < 64 {
+                    match items.try_recv() {
+                        Ok(item) => chunk_items.push(item),
+                        Err(crossbeam_channel::TryRecvError::Empty) => break,
+                        Err(crossbeam_channel::TryRecvError::Disconnected) => break,
+                    }
+                }
+                let chunk = MenuMessage::new(
+                    stream_request_id.clone(),
+                    MenuRequest::ChoiceChunk { items: chunk_items },
+                );
+                if write_menu_message_buffered(&mut writer, &chunk).is_err() {
+                    return;
+                }
+            }
+            let end = MenuMessage::new(stream_request_id, MenuRequest::ChoiceEnd);
+            let _ = write_menu_message_buffered(&mut writer, &end);
+        });
+
+        let mut response_json = String::new();
+        response_reader.read_line(&mut response_json)?;
+        if response_json.is_empty() {
+            anyhow::bail!("Received empty response from server");
+        }
+        let response_message: MenuResponseMessage = serde_json::from_str(response_json.trim())
+            .context("Failed to deserialize streaming choice response")?;
+        if response_message.request_id != request_id {
+            anyhow::bail!("Request ID mismatch in streaming choice response");
+        }
+        Ok(response_message.payload)
+    }
+
+    pub(super) fn choice_streaming_with_bindings(
+        &self,
+        prompt: String,
+        items: crossbeam_channel::Receiver<SerializableMenuItem>,
+        allow_multiple: bool,
+        bindings: &[super::bindings::Binding],
+    ) -> Result<DialogOutcome<crate::menu_utils::MenuSelection<SerializableMenuItem, String>>> {
+        if self.transport != MenuTransport::ScratchpadServer {
+            return self.choice_with_bindings(
+                prompt,
+                items.iter().collect(),
+                allow_multiple,
+                None,
+                bindings.to_vec(),
+            );
+        }
+        let response =
+            self.stream_choice_response(prompt, items, allow_multiple, None, bindings)?;
+        decode_dialog_response(
+            response,
+            "streaming choice with bindings",
+            |response| match response {
+                MenuResponse::ChoiceWithBindingsResult { key, items } => {
+                    Some(crate::menu_utils::MenuSelection { action: key, items })
+                }
+                _ => None,
+            },
+        )
+    }
+
     /// Show choice dialog via server
     pub fn choice(
         &self,
@@ -547,49 +679,11 @@ impl HostedMenuClient {
             );
         }
 
-        let (write_stream, mut response_reader, request_id) =
-            self.open_streaming_choice(prompt, allow_multiple, frecency_cache)?;
-
-        let stream_request_id = request_id.clone();
-        std::thread::spawn(move || {
-            let mut writer = io::BufWriter::new(write_stream);
-            while let Ok(first) = items.recv() {
-                let mut chunk_items = Vec::with_capacity(64);
-                chunk_items.push(first);
-                while chunk_items.len() < 64 {
-                    match items.try_recv() {
-                        Ok(item) => chunk_items.push(item),
-                        Err(crossbeam_channel::TryRecvError::Empty) => break,
-                        Err(crossbeam_channel::TryRecvError::Disconnected) => break,
-                    }
-                }
-                let chunk = MenuMessage::new(
-                    stream_request_id.clone(),
-                    MenuRequest::ChoiceChunk { items: chunk_items },
-                );
-                if write_menu_message_buffered(&mut writer, &chunk).is_err() {
-                    return;
-                }
-            }
-            let end = MenuMessage::new(stream_request_id, MenuRequest::ChoiceEnd);
-            let _ = write_menu_message_buffered(&mut writer, &end);
-        });
-
-        let mut response_json = String::new();
-        response_reader.read_line(&mut response_json)?;
-        if response_json.is_empty() {
-            anyhow::bail!("Received empty response from server");
-        }
-        let response_message: MenuResponseMessage = serde_json::from_str(response_json.trim())
-            .context("Failed to deserialize streaming choice response")?;
-        if response_message.request_id != request_id {
-            anyhow::bail!("Request ID mismatch in streaming choice response");
-        }
-        decode_dialog_response(response_message.payload, "streaming choice", |response| {
-            match response {
-                MenuResponse::ChoiceResult(selected) => Some(selected),
-                _ => None,
-            }
+        let response =
+            self.stream_choice_response(prompt, items, allow_multiple, frecency_cache, &[])?;
+        decode_dialog_response(response, "streaming choice", |response| match response {
+            MenuResponse::ChoiceResult(items) => Some(items),
+            _ => None,
         })
     }
 

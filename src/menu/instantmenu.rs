@@ -4,7 +4,7 @@ use std::process::{Command, Stdio};
 
 use super::SliderSpec;
 use super::protocol::SerializableMenuItem;
-use crate::menu_utils::{ConfirmResult, DialogOutcome};
+use crate::menu_utils::{ConfirmResult, DialogOutcome, FzfSelectable};
 
 fn shell_escape(value: &str) -> String {
     if !value.is_empty()
@@ -347,6 +347,85 @@ impl InstantmenuBackend {
             .filter(|line| !line.is_empty())
             .map(ToString::to_string)
             .collect();
+        if selected.is_empty() {
+            Ok(DialogOutcome::Cancelled)
+        } else {
+            Ok(DialogOutcome::Submitted(selected))
+        }
+    }
+
+    /// Show a choice dialog while typed items arrive from an in-process producer.
+    ///
+    /// The renderer starts before the producer is drained. The completed item
+    /// records are retained here because instantmenu prints their hidden stable
+    /// values, while in-process callers may attach metadata needed after selection.
+    pub fn choice_streaming(
+        prompt: &str,
+        items: crossbeam_channel::Receiver<SerializableMenuItem>,
+        allow_multiple: bool,
+        frecency_cache: Option<&str>,
+    ) -> Result<DialogOutcome<Vec<SerializableMenuItem>>> {
+        let mut cmd = Command::new("instantmenu");
+        cmd.arg("--border-width")
+            .arg("4")
+            .arg("--position")
+            .arg("center")
+            .arg("--width")
+            .arg("auto")
+            .arg("--lines")
+            .arg("20")
+            .arg("--insensitive")
+            .arg("--prompt")
+            .arg(if allow_multiple {
+                format!("{prompt} (ctrl+return adds more)")
+            } else {
+                prompt.to_string()
+            })
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+
+        if let Some(namespace) = frecency_cache {
+            cmd.arg("--frecency-cache").arg(namespace);
+        }
+
+        let mut child = cmd.spawn().context("Failed to spawn instantmenu")?;
+        let child_stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("Failed to capture instantmenu stdin"))?;
+        let pump = std::thread::spawn(move || {
+            let mut writer = std::io::BufWriter::new(child_stdin);
+            let mut retained = std::collections::HashMap::new();
+            for item in items {
+                let key = item.fzf_key();
+                let escaped_key = key.replace('\\', "\\\\").replace('"', "\\\"");
+                if writeln!(writer, "{{value=\"{escaped_key}\"}} {}", item.display_text).is_err()
+                    || writer.flush().is_err()
+                {
+                    break;
+                }
+                retained.entry(key).or_insert(item);
+            }
+            retained
+        });
+
+        let output = child
+            .wait_with_output()
+            .context("Failed to wait on instantmenu")?;
+        let retained = pump
+            .join()
+            .map_err(|_| anyhow::anyhow!("instantmenu item pump panicked"))?;
+        if !output.status.success() {
+            return Ok(DialogOutcome::Cancelled);
+        }
+
+        let mut selected = Vec::new();
+        for selected_key in String::from_utf8_lossy(&output.stdout).lines() {
+            if let Some(item) = retained.get(selected_key) {
+                selected.push(item.clone());
+            }
+        }
         if selected.is_empty() {
             Ok(DialogOutcome::Cancelled)
         } else {

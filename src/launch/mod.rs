@@ -7,8 +7,9 @@ pub mod discovery;
 pub mod execute;
 pub mod types;
 
-use crate::menu::client;
 use crate::menu::protocol::{FzfPreview, SerializableMenuItem};
+use crate::menu::{MenuBackend, ResolvedBackend, client, instantmenu};
+use crate::menu_utils::{DialogOutcome, FzfWrapper, MenuSelection};
 use types::LaunchItem;
 
 /// Get XDG data directories in desktop-entry precedence order.
@@ -42,14 +43,14 @@ pub enum LaunchCommands {
 }
 
 /// Handle launch command
-pub async fn handle_launch_command(list_only: bool) -> Result<i32> {
+pub async fn handle_launch_command(list_only: bool, backend: MenuBackend) -> Result<i32> {
     if list_only {
         let launch_items = tokio::task::spawn_blocking(discovery::discover_launch_items)
             .await
             .context("application discovery task failed")?;
         handle_list_mode(&launch_items)
     } else {
-        handle_interactive_mode().await
+        handle_interactive_mode(backend).await
     }
 }
 
@@ -61,8 +62,7 @@ fn handle_list_mode(launch_items: &[LaunchItem]) -> Result<i32> {
     Ok(0)
 }
 
-async fn handle_interactive_mode() -> Result<i32> {
-    let client = client::HostedMenuClient::new();
+async fn handle_interactive_mode(backend: MenuBackend) -> Result<i32> {
     let (sender, receiver) =
         crossbeam_channel::bounded(crate::menu::protocol::STREAM_ITEM_BUFFER_CAPACITY);
     tokio::task::spawn_blocking(move || {
@@ -73,13 +73,37 @@ async fn handle_interactive_mode() -> Result<i32> {
         }
     });
 
-    match client.choice_streaming(
-        "Launch application:".to_string(),
-        receiver,
-        false,
-        Some("launch".to_string()),
-    ) {
-        Ok(crate::menu_utils::DialogOutcome::Submitted(selected)) => {
+    let outcome = match backend.resolve(true) {
+        ResolvedBackend::Instantmenu => instantmenu::InstantmenuBackend::choice_streaming(
+            "Launch application:",
+            receiver,
+            false,
+            Some("launch"),
+        ),
+        ResolvedBackend::Scratchpad => client::HostedMenuClient::new().choice_streaming(
+            "Launch application:".to_string(),
+            receiver,
+            false,
+            Some("launch".to_string()),
+        ),
+        ResolvedBackend::Tui => {
+            let mut frecency = crate::menu::frecency::MenuFrecency::open("launch")?;
+            let ranked = frecency.prepare(receiver.iter().collect());
+            let outcome = FzfWrapper::builder()
+                .prompt("Launch application:")
+                .select(ranked)
+                .map(|outcome| outcome.map(MenuSelection::into_items));
+            if let Ok(DialogOutcome::Submitted(ref selected)) = outcome
+                && let Err(error) = frecency.record_all(selected)
+            {
+                eprintln!("Warning: {error:#}");
+            }
+            outcome
+        }
+    };
+
+    match outcome {
+        Ok(DialogOutcome::Submitted(selected)) => {
             let launch_item = launch_item_from_menu(
                 selected
                     .first()

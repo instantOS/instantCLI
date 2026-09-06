@@ -28,6 +28,29 @@ impl RequestProcessor {
         self.requests_processed.fetch_add(1, Ordering::SeqCst);
 
         match request {
+            MenuRequest::ChoiceWithBindings {
+                prompt,
+                items,
+                allow_multiple,
+                frecency_cache,
+                bindings,
+            } => {
+                match super::bindings::select(
+                    &prompt,
+                    items,
+                    allow_multiple,
+                    frecency_cache.as_deref(),
+                    &bindings,
+                )? {
+                    crate::menu_utils::DialogOutcome::Submitted(selection) => {
+                        Ok(MenuResponse::ChoiceWithBindingsResult {
+                            key: selection.action,
+                            items: selection.items,
+                        })
+                    }
+                    crate::menu_utils::DialogOutcome::Cancelled => Ok(MenuResponse::Cancelled),
+                }
+            }
             MenuRequest::Confirm { message } => self.handle_confirm_request(message),
             MenuRequest::Choice {
                 prompt,
@@ -48,7 +71,8 @@ impl RequestProcessor {
             MenuRequest::Toast { message, duration } => {
                 self.handle_toast_request(message, duration)
             }
-            MenuRequest::ChoiceBegin { .. }
+            MenuRequest::ChoiceBeginWithBindings { .. }
+            | MenuRequest::ChoiceBegin { .. }
             | MenuRequest::ChoiceChunk { .. }
             | MenuRequest::ChoiceEnd => Ok(MenuResponse::Error(
                 "Streaming choice requires a streaming connection".to_string(),
@@ -226,8 +250,36 @@ impl RequestProcessor {
             .multi_select(allow_multiple)
             .select_streaming_with_ready(Vec::new(), rx, on_ready)
         {
+            Ok(crate::menu_utils::DialogOutcome::Submitted(selection)) => {
+                Ok(MenuResponse::ChoiceResult(selection.items))
+            }
+            Ok(crate::menu_utils::DialogOutcome::Cancelled) => Ok(MenuResponse::Cancelled),
+            Err(error) => Ok(MenuResponse::Error(format!("Selection error: {error}"))),
+        }
+    }
+
+    pub(super) fn handle_choice_streaming_with_bindings<F: FnOnce() -> Result<()>>(
+        &self,
+        prompt: String,
+        allow_multiple: bool,
+        rx: crossbeam_channel::Receiver<SerializableMenuItem>,
+        bindings: &[super::bindings::Binding],
+        on_ready: F,
+    ) -> Result<MenuResponse> {
+        if bindings.is_empty() {
+            return self.handle_choice_streaming_with_ready(prompt, allow_multiple, rx, on_ready);
+        }
+        let typed = super::bindings::validate(bindings)?;
+        match FzfWrapper::builder()
+            .prompt(prompt)
+            .multi_select(allow_multiple)
+            .select_streaming_with_ready_and_keybinds(Vec::new(), rx, &typed, on_ready)
+        {
             Ok(crate::menu_utils::DialogOutcome::Submitted(sel)) => {
-                Ok(MenuResponse::ChoiceResult(sel.items))
+                Ok(MenuResponse::ChoiceWithBindingsResult {
+                    key: sel.action,
+                    items: sel.items,
+                })
             }
             Ok(crate::menu_utils::DialogOutcome::Cancelled) => Ok(MenuResponse::Cancelled),
             Err(e) => Ok(MenuResponse::Error(format!("Selection error: {e}"))),

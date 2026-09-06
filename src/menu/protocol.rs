@@ -92,6 +92,18 @@ pub struct SliderRequest {
 /// Menu request types sent from client to server
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum MenuRequest {
+    ChoiceBeginWithBindings {
+        prompt: String,
+        allow_multiple: bool,
+        bindings: Vec<super::bindings::Binding>,
+    },
+    ChoiceWithBindings {
+        prompt: String,
+        items: Vec<SerializableMenuItem>,
+        allow_multiple: bool,
+        frecency_cache: Option<String>,
+        bindings: Vec<super::bindings::Binding>,
+    },
     /// Show confirmation dialog
     Confirm { message: String },
     /// Show selection menu with rich item support (buffered fast-path,
@@ -144,6 +156,10 @@ pub enum MenuRequest {
 /// Menu response types sent from server to client
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum MenuResponse {
+    ChoiceWithBindingsResult {
+        key: Option<String>,
+        items: Vec<SerializableMenuItem>,
+    },
     /// Request protocol does not match the running server.
     ProtocolMismatch { received: String, expected: String },
     /// Streaming choice renderer process has started, its initial input has
@@ -248,7 +264,7 @@ pub struct MenuStatus {
 }
 
 /// Protocol version information
-pub const PROTOCOL_VERSION: &str = "4.0";
+pub const PROTOCOL_VERSION: &str = "5.0";
 
 fn legacy_protocol_version() -> String {
     "1.0".to_string()

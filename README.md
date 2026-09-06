@@ -177,3 +177,33 @@ cargo test
 # Run integration tests
 just test
 ```
+
+## Menu action bindings
+
+```sh
+printf '%s\n' 'alpha' 'beta' |
+  ins menu choice --bind 'ctrl-e:Edit' --bind 'alt-s:Save'
+```
+
+`ins menu choice --bind KEY:LABEL` registers a global action and a visible key
+hint. Repeat the option for more actions. It works with native instantMENU,
+local fzf (`--backend tui`), and the hosted terminal (`--backend scratchpad`),
+including streamed input and `--multi`. `--items 'alpha beta'` also works.
+Use `--frecency-cache NAME` to retain selection ranking; terminal menus with
+frecency collect input before ranking, as usual.
+
+With any bindings registered, stdout begins with the pressed key, or an empty
+line for normal submission, followed by selected values. Ctrl-E on beta prints
+`ctrl-e\nbeta\n`. Actions also work with no matches and then return only the key.
+Escape returns exit status 2 without a result; success returns 0. The caller
+handles the action; neither keys nor labels execute shell commands. Native
+multi-selection uses Ctrl-Return to accumulate items before the final action.
+Without `--bind`, the existing output format is unchanged.
+
+Keys follow the fzf wrapper's validated menu vocabulary (`ctrl-e`, `alt-s`,
+`ctrl-alt-r`, `f3`, `shift-left`, etc.). Submission, dismissal, and core navigation
+keys are reserved. Labels may contain spaces and colons. Invalid labels, unsafe
+key expressions, and duplicate bindings are rejected before launching a menu.
+Install the updated instantMENU binary when using the native backend. This
+change advances the hosted menu protocol to version 5; the client restarts an
+older scratchpad server through the existing compatibility mechanism.

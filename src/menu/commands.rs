@@ -30,6 +30,10 @@ pub enum MenuCommands {
     },
     /// Show selection menu and output choice(s) to stdout
     Choice {
+        /// Global action and hint (repeatable). Output starts with the pressed
+        /// key, or an empty line for Enter, followed by selected values.
+        #[arg(long = "bind", value_name = "KEY:LABEL")]
+        bindings: Vec<super::bindings::Binding>,
         prompt: Option<String>,
         #[arg(long = "prompt", value_name = "PROMPT")]
         prompt_option: Option<String>,
