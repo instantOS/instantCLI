@@ -277,13 +277,26 @@ fn initialize_cli(cli: &Cli) {
     }
 }
 
-async fn dispatch_command(cli: &Cli) -> Result<()> {
+fn run_async<F, T>(f: F) -> Result<T>
+where
+    F: std::future::Future<Output = Result<T>>,
+{
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .context("Failed to initialize async runtime")?
+        .block_on(f)
+}
+
+fn dispatch_command(cli: &Cli) -> Result<()> {
     match &cli.command {
         Some(Commands::Arch { command }) => {
-            execute_with_error_handling(
-                arch::cli::handle_arch_command(command.clone(), cli.debug).await,
-                "Error handling arch command",
-            )?;
+            run_async(async {
+                execute_with_error_handling(
+                    arch::cli::handle_arch_command(command.clone(), cli.debug).await,
+                    "Error handling arch command",
+                )
+            })?;
         }
         Some(Commands::Game { command }) => {
             execute_with_error_handling(
@@ -310,17 +323,23 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
             )?;
         }
         Some(Commands::Dev { command }) => {
-            execute_with_error_handling(
-                dev::handle_dev_command(command.clone(), cli.debug).await,
-                "Error handling dev command",
-            )?;
+            run_async(async {
+                execute_with_error_handling(
+                    dev::handle_dev_command(command.clone(), cli.debug).await,
+                    "Error handling dev command",
+                )
+            })?;
         }
         Some(Commands::Launch {
             list,
             include_path,
             backend,
         }) => {
-            let exit_code = launch::handle_launch_command(*list, *include_path, *backend).await?;
+            let exit_code = run_async(launch::handle_launch_command(
+                *list,
+                *include_path,
+                *backend,
+            ))?;
             std::process::exit(exit_code);
         }
         Some(Commands::Pass { list, gui, command }) => {
@@ -340,20 +359,24 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
             command,
             concurrency,
         }) => {
-            doctor::handle_doctor_command(command.clone(), *concurrency).await?;
+            run_async(doctor::handle_doctor_command(command.clone(), *concurrency))?;
         }
         Some(Commands::Menu { command }) => {
-            let exit_code = match command {
-                menu::MenuCommands::All => all_menu::run_all_menu(cli.debug).await?,
-                _ => menu::handle_menu_command(command.clone(), cli.debug).await?,
-            };
+            let exit_code = run_async(async {
+                match command {
+                    menu::MenuCommands::All => all_menu::run_all_menu(cli.debug).await,
+                    _ => menu::handle_menu_command(command.clone(), cli.debug).await,
+                }
+            })?;
             std::process::exit(exit_code);
         }
         Some(Commands::Notify { command, gui }) => {
-            execute_with_error_handling(
-                notify::handle_notify_command(command, *gui, cli.debug).await,
-                "Error handling notify command",
-            )?;
+            run_async(async {
+                execute_with_error_handling(
+                    notify::handle_notify_command(command, *gui, cli.debug).await,
+                    "Error handling notify command",
+                )
+            })?;
         }
         Some(Commands::Clip { command, gui }) => {
             execute_with_error_handling(
@@ -384,28 +407,34 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
         }) => {
             let navigation =
                 settings::commands::SettingsNavigation::from_args(setting, category, *search);
-            execute_with_error_handling(
-                settings::commands::handle_settings_command(
-                    command,
-                    navigation,
-                    *gui,
-                    cli.debug,
-                    cli.internal_privileged_mode,
-                ),
-                "Error running settings",
-            )?;
+            run_async(async {
+                execute_with_error_handling(
+                    settings::commands::handle_settings_command(
+                        command,
+                        navigation,
+                        *gui,
+                        cli.debug,
+                        cli.internal_privileged_mode,
+                    ),
+                    "Error running settings",
+                )
+            })?;
         }
         Some(Commands::Video { command }) => {
-            execute_with_error_handling(
-                video::handle_video_command(command.clone(), cli.debug).await,
-                "Error handling video command",
-            )?;
+            run_async(async {
+                execute_with_error_handling(
+                    video::handle_video_command(command.clone(), cli.debug).await,
+                    "Error handling video command",
+                )
+            })?;
         }
         Some(Commands::Wallpaper { command }) => {
-            execute_with_error_handling(
-                wallpaper::commands::handle_wallpaper_command(command.clone(), cli.debug).await,
-                "Error handling wallpaper command",
-            )?;
+            run_async(async {
+                execute_with_error_handling(
+                    wallpaper::commands::handle_wallpaper_command(command.clone(), cli.debug).await,
+                    "Error handling wallpaper command",
+                )
+            })?;
         }
         Some(Commands::Debug { command }) => {
             execute_with_error_handling(
@@ -420,22 +449,28 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
             )?;
         }
         Some(Commands::SelfUpdate) => {
-            execute_with_error_handling(
-                self_update::self_update().await,
-                "Error during self-update",
-            )?;
+            run_async(async {
+                execute_with_error_handling(
+                    self_update::self_update().await,
+                    "Error during self-update",
+                )
+            })?;
         }
         Some(Commands::Update) => {
-            execute_with_error_handling(
-                update::handle_update_command(cli.debug).await,
-                "Error during update",
-            )?;
+            run_async(async {
+                execute_with_error_handling(
+                    update::handle_update_command(cli.debug).await,
+                    "Error during update",
+                )
+            })?;
         }
         Some(Commands::Autostart) => {
-            execute_with_error_handling(
-                autostart::run(cli.debug).await,
-                "Error running autostart",
-            )?;
+            run_async(async {
+                execute_with_error_handling(
+                    autostart::run(cli.debug).await,
+                    "Error running autostart",
+                )
+            })?;
         }
         Some(Commands::Welcome {
             command,
@@ -498,12 +533,11 @@ mod launch_cli_tests {
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     clap_complete::CompleteEnv::with_factory(cli_command).complete();
     let cli = Cli::parse();
     initialize_cli(&cli);
-    dispatch_command(&cli).await
+    dispatch_command(&cli)
 }
 
 #[cfg(test)]
