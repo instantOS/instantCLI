@@ -1,5 +1,5 @@
 use std::{
-    io::{IsTerminal, Write},
+    io::Write,
     path::{Path, PathBuf},
     process::Command,
     sync::{LazyLock, Once},
@@ -129,12 +129,11 @@ static DETECTED_COLOR_MODE: LazyLock<ColorMode> = LazyLock::new(|| {
 });
 
 fn detect_linux_console_device() -> Option<PathBuf> {
-    if !std::io::stdout().is_terminal() {
-        return None;
-    }
-
-    if std::env::var("TERM").is_ok_and(|term| term.starts_with("linux")) {
-        return Some(PathBuf::from("/dev/tty"));
+    // Resolve stdout's actual terminal instead of trusting TERM, which can be
+    // inherited by SSH sessions, containers, and other pseudo-terminals.
+    let stdout_tty = nix::unistd::ttyname(std::io::stdout()).ok()?;
+    if is_virtual_console_path(&stdout_tty) {
+        return Some(stdout_tty);
     }
 
     std::env::var_os("TMUX")?;
@@ -182,67 +181,67 @@ pub struct ConsolePaletteEntry {
 pub const CATPPUCCIN_CONSOLE_PALETTE: [ConsolePaletteEntry; 16] = [
     ConsolePaletteEntry {
         ansi: AnsiColor::Black,
-        hex: "1e1e2e",
+        hex: colors::BASE,
     }, // Base (terminal background)
     ConsolePaletteEntry {
         ansi: AnsiColor::Red,
-        hex: "f38ba8",
+        hex: colors::RED,
     }, // Red
     ConsolePaletteEntry {
         ansi: AnsiColor::Green,
-        hex: "a6e3a1",
+        hex: colors::GREEN,
     }, // Green
     ConsolePaletteEntry {
         ansi: AnsiColor::Yellow,
-        hex: "f9e2af",
+        hex: colors::YELLOW,
     }, // Yellow
     ConsolePaletteEntry {
         ansi: AnsiColor::Blue,
-        hex: "89b4fa",
+        hex: colors::BLUE,
     }, // Blue
     ConsolePaletteEntry {
         ansi: AnsiColor::Magenta,
-        hex: "cba6f7",
+        hex: colors::MAUVE,
     }, // Mauve
     ConsolePaletteEntry {
         ansi: AnsiColor::Cyan,
-        hex: "94e2d5",
+        hex: colors::TEAL,
     }, // Teal
     ConsolePaletteEntry {
         ansi: AnsiColor::White,
-        hex: "bac2de",
+        hex: colors::SUBTEXT1,
     }, // Subtext1
     ConsolePaletteEntry {
         ansi: AnsiColor::BrightBlack,
-        hex: "585b70",
+        hex: colors::SURFACE2,
     }, // Surface2
     ConsolePaletteEntry {
         ansi: AnsiColor::BrightRed,
-        hex: "f38ba8",
+        hex: colors::RED,
     },
     ConsolePaletteEntry {
         ansi: AnsiColor::BrightGreen,
-        hex: "a6e3a1",
+        hex: colors::GREEN,
     },
     ConsolePaletteEntry {
         ansi: AnsiColor::BrightYellow,
-        hex: "f9e2af",
+        hex: colors::YELLOW,
     },
     ConsolePaletteEntry {
         ansi: AnsiColor::BrightBlue,
-        hex: "89b4fa",
+        hex: colors::BLUE,
     },
     ConsolePaletteEntry {
         ansi: AnsiColor::BrightMagenta,
-        hex: "f5c2e7",
+        hex: colors::PINK,
     }, // Pink
     ConsolePaletteEntry {
         ansi: AnsiColor::BrightCyan,
-        hex: "89dceb",
+        hex: colors::SKY,
     }, // Sky
     ConsolePaletteEntry {
         ansi: AnsiColor::BrightWhite,
-        hex: "cdd6f4",
+        hex: colors::TEXT,
     }, // Text (terminal foreground)
 ];
 
@@ -258,7 +257,11 @@ pub fn ensure_tty_palette() {
     PALETTE_INITIALIZED.call_once(|| {
         let mut sequences = String::with_capacity(16 * 10);
         for (i, entry) in CATPPUCCIN_CONSOLE_PALETTE.iter().enumerate() {
-            sequences.push_str(&format!("\x1b]P{:x}{}", i, entry.hex));
+            sequences.push_str(&format!(
+                "\x1b]P{:x}{}",
+                i,
+                entry.hex.trim_start_matches('#')
+            ));
         }
 
         if let Some(device) = LINUX_CONSOLE_DEVICE.as_deref()
@@ -272,34 +275,39 @@ pub fn ensure_tty_palette() {
 
 /// Map a Catppuccin hex color to its corresponding 16-color ANSI representation.
 pub fn hex_to_ansi_color(hex: &str) -> Option<AnsiColor> {
-    let clean = hex.trim_start_matches('#').to_ascii_lowercase();
+    let clean = format!("#{}", hex.trim_start_matches('#').to_ascii_lowercase());
     let color = match clean.as_str() {
         // Base backgrounds -> Black
-        "1e1e2e" | "181825" | "11111b" => AnsiColor::Black,
+        colors::BASE | colors::MANTLE | colors::CRUST => AnsiColor::Black,
         // Reds
-        "f38ba8" | "eba0ac" => AnsiColor::Red,
+        colors::RED | colors::MAROON => AnsiColor::Red,
         // Greens
-        "a6e3a1" => AnsiColor::Green,
+        colors::GREEN => AnsiColor::Green,
         // Yellows
-        "f9e2af" | "fab387" => AnsiColor::Yellow,
+        colors::YELLOW | colors::PEACH => AnsiColor::Yellow,
         // Blues
-        "89b4fa" | "74c7ec" => AnsiColor::Blue,
+        colors::BLUE | colors::SAPPHIRE => AnsiColor::Blue,
         // Mauve / Magenta
-        "cba6f7" => AnsiColor::Magenta,
+        colors::MAUVE => AnsiColor::Magenta,
         // Teal / Cyan
-        "94e2d5" => AnsiColor::Cyan,
+        colors::TEAL => AnsiColor::Cyan,
         // Subtext / White
-        "bac2de" | "a6adc8" => AnsiColor::White,
+        colors::SUBTEXT1 | colors::SUBTEXT0 => AnsiColor::White,
         // Surfaces / Overlays -> BrightBlack (selection & borders)
-        "585b70" | "45475a" | "313244" | "6c7086" | "7f849c" | "9399b2" => AnsiColor::BrightBlack,
+        colors::SURFACE2
+        | colors::SURFACE1
+        | colors::SURFACE0
+        | colors::OVERLAY0
+        | colors::OVERLAY1
+        | colors::OVERLAY2 => AnsiColor::BrightBlack,
         // Lavender -> BrightBlue
-        "b4befe" => AnsiColor::BrightBlue,
+        colors::LAVENDER => AnsiColor::BrightBlue,
         // Pink / Rosewater -> BrightMagenta
-        "f5c2e7" | "f5e0dc" | "f2cdcd" => AnsiColor::BrightMagenta,
+        colors::PINK | colors::ROSEWATER | colors::FLAMINGO => AnsiColor::BrightMagenta,
         // Sky -> BrightCyan
-        "89dceb" => AnsiColor::BrightCyan,
+        colors::SKY => AnsiColor::BrightCyan,
         // Text -> BrightWhite
-        "cdd6f4" => AnsiColor::BrightWhite,
+        colors::TEXT => AnsiColor::BrightWhite,
         _ => nearest_console_color(parse_hex_rgb(&clean)?),
     };
     Some(color)
@@ -455,12 +463,41 @@ pub fn format_bold(text: &str) -> String {
 mod tests {
     use super::*;
 
+    fn installer_palette_hex_values() -> Vec<&'static str> {
+        let installer_environment = include_str!("../../scripts/install-src/environment.sh");
+        let palette_assignment = installer_environment
+            .lines()
+            .find(|line| line.starts_with("\tpalette="))
+            .expect("installer palette assignment should exist");
+
+        palette_assignment
+            .split("${esc}]P")
+            .skip(1)
+            .map(|sequence| {
+                sequence
+                    .get(1..7)
+                    .expect("each installer palette entry should contain six hex digits")
+            })
+            .collect()
+    }
+
     #[test]
     fn console_palette_has_16_entries() {
         assert_eq!(CATPPUCCIN_CONSOLE_PALETTE.len(), 16);
         for entry in &CATPPUCCIN_CONSOLE_PALETTE {
-            assert_eq!(entry.hex.len(), 6);
+            assert!(parse_hex_rgb(entry.hex).is_some());
         }
+    }
+
+    #[test]
+    fn installer_and_rust_console_palettes_match() {
+        let installer_palette = installer_palette_hex_values();
+        let rust_palette: Vec<_> = CATPPUCCIN_CONSOLE_PALETTE
+            .iter()
+            .map(|entry| entry.hex.trim_start_matches('#'))
+            .collect();
+
+        assert_eq!(installer_palette, rust_palette);
     }
 
     #[test]
