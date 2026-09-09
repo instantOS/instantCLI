@@ -26,6 +26,8 @@ download_release_asset() {
 main() {
 	parse_args "$@"
 
+	set_catppuccin_tty
+
 	if [ "$ONLY_ANIMATION" -eq 1 ]; then
 		instantos_logo_animation
 		exit 0

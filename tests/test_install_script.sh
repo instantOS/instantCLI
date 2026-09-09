@@ -289,6 +289,48 @@ test_help_documents_install_dir_environment() {
 	fi
 }
 
+test_console_palette_detection() {
+	if ! is_virtual_console_device /dev/tty1 ||
+		is_virtual_console_device /dev/tty1other ||
+		is_virtual_console_device /dev/ttyS0 ||
+		is_virtual_console_device /dev/pts/1; then
+		echo "virtual console device validation accepted an invalid path" >&2
+		return 1
+	fi
+
+	# When TERM=dumb and not a tty, is_linux_console should return 1
+	if (TERM=dumb is_linux_console); then
+		echo "is_linux_console should return false for TERM=dumb without a tty" >&2
+		return 1
+	fi
+
+	# When is_linux_console returns false, set_catppuccin_tty should be silent
+	local output
+	output="$(TERM=dumb set_catppuccin_tty)"
+	if [[ -n "${output}" ]]; then
+		echo "set_catppuccin_tty produced output when not on a linux console" >&2
+		return 1
+	fi
+
+	# A detected console is written directly rather than through /dev/tty0 or a
+	# fragile tmux escape wrapper.
+	local console_output
+	console_output="$(mktemp)"
+	linux_console_device() { printf '%s\n' "${console_output}"; }
+	set_catppuccin_tty >/dev/null
+	if [[ "$(wc -c <"${console_output}")" -ne 160 ]]; then
+		echo "set_catppuccin_tty did not emit the complete 16-color palette" >&2
+		rm -f "${console_output}"
+		return 1
+	fi
+	if [[ "$(LC_ALL=C tr -cd '\033' <"${console_output}" | wc -c)" -ne 16 ]]; then
+		echo "set_catppuccin_tty emitted an invalid palette sequence" >&2
+		rm -f "${console_output}"
+		return 1
+	fi
+	rm -f "${console_output}"
+}
+
 test_release_selection
 test_renamed_binary
 test_argument_conflicts
@@ -302,3 +344,4 @@ test_arm_cli_target_detection
 test_unsupported_termux_arm_does_not_use_glibc_target
 test_help_documents_install_dir_environment
 test_release_selection_and_extraction_agree
+test_console_palette_detection
