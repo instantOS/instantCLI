@@ -1,6 +1,6 @@
 use super::filesystem;
 use super::util::get_part_path;
-use crate::arch::engine::{InstallContext, StepId};
+use crate::arch::engine::{BootMode, InstallContext, StepId};
 use crate::arch::execution::CommandRunner;
 use anyhow::{Context, Result};
 use std::process::Command;
@@ -55,12 +55,14 @@ pub fn format_luks(
 
     println!("Formatting partitions (LVM on LUKS)...");
 
+    filesystem::wipe_signatures(&p1, executor)?;
     if is_uefi {
         executor.run(Command::new("mkfs.fat").args(["-F32", &p1]))?;
     } else {
         executor.run(Command::new("mkfs.ext4").args(["-F", &p1]))?;
     }
 
+    filesystem::wipe_signatures(&p2, executor)?;
     println!("Setting up LUKS container on {}...", p2);
     let mut cmd = Command::new("cryptsetup");
     cmd.arg("-q").arg("luksFormat").arg(&p2).arg("-");
@@ -112,7 +114,11 @@ pub fn mount_luks(
     filesystem::mount_root(context, "/dev/instantOS/root", true, executor)?;
 
     let p1 = get_part_path(disk, 1);
-    executor.run(Command::new("mount").args(["--mkdir", &p1, "/mnt/boot"]))?;
+    let boot_type = match context.system_info.boot_mode {
+        BootMode::UEFI64 | BootMode::UEFI32 => "vfat",
+        BootMode::BIOS => "ext4",
+    };
+    executor.run(Command::new("mount").args(["--mkdir", "-t", boot_type, &p1, "/mnt/boot"]))?;
 
     executor.run(Command::new("swapon").arg("/dev/instantOS/swap"))?;
 

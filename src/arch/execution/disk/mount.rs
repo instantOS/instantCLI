@@ -49,6 +49,7 @@ pub fn format_and_mount_partitions(
 
         if should_format {
             println!("Formatting Boot partition: {}", boot_path);
+            filesystem::wipe_signatures(&boot_path, executor)?;
             match boot_mode {
                 BootMode::UEFI64 | BootMode::UEFI32 => {
                     executor.run(Command::new("mkfs.fat").args(["-F32", &boot_path]))?;
@@ -65,7 +66,17 @@ pub fn format_and_mount_partitions(
         }
 
         println!("Mounting Boot partition...");
-        executor.run(Command::new("mount").args(["--mkdir", &boot_path, boot_mount_point]))?;
+        let boot_type = match boot_mode {
+            BootMode::UEFI64 | BootMode::UEFI32 => "vfat",
+            BootMode::BIOS => "ext4",
+        };
+        executor.run(Command::new("mount").args([
+            "--mkdir",
+            "-t",
+            boot_type,
+            &boot_path,
+            boot_mount_point,
+        ]))?;
     }
 
     let swap_path = if let Some(ref paths) = dualboot_paths {
@@ -78,6 +89,7 @@ pub fn format_and_mount_partitions(
 
     if let Some(swap_path) = swap_path {
         println!("Formatting Swap: {}", swap_path);
+        filesystem::wipe_signatures(&swap_path, executor)?;
         executor.run(Command::new("mkswap").arg(&swap_path))?;
         println!("Activating Swap...");
         executor.run(Command::new("swapon").arg(&swap_path))?;
@@ -85,9 +97,16 @@ pub fn format_and_mount_partitions(
 
     if let Some(home_path) = context.get_answer(&StepId::HomePartition) {
         println!("Formatting Home partition: {}", home_path);
+        filesystem::wipe_signatures(home_path, executor)?;
         executor.run(Command::new("mkfs.ext4").args(["-F", home_path]))?;
         println!("Mounting Home partition...");
-        executor.run(Command::new("mount").args(["--mkdir", home_path, "/mnt/home"]))?;
+        executor.run(Command::new("mount").args([
+            "--mkdir",
+            "-t",
+            "ext4",
+            home_path,
+            "/mnt/home",
+        ]))?;
     }
 
     Ok(())

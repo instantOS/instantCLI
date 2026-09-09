@@ -6,11 +6,24 @@ use crate::arch::execution::CommandRunner;
 use anyhow::Result;
 use std::process::Command;
 
+/// Remove stale filesystem signatures from a device before formatting it.
+///
+/// Re-running the installer over a previous (possibly failed) install leaves
+/// old swap/btrfs/ext4 signatures behind. mkfs force flags (`-F`, `-f`) plow
+/// through them but do not remove every trace (e.g. btrfs backup superblocks),
+/// and leftovers can confuse filesystem auto-detection when mounting. `wipefs`
+/// is a no-op on clean devices and fails safely if the device is in use.
+pub fn wipe_signatures(device: &str, executor: &dyn CommandRunner) -> Result<()> {
+    executor.run(Command::new("wipefs").args(["-a", device]))
+}
+
 pub fn format_root(
     context: &InstallContext,
     device: &str,
     executor: &dyn CommandRunner,
 ) -> Result<()> {
+    wipe_signatures(device, executor)?;
+
     match RootFilesystem::from_context(context) {
         RootFilesystem::Btrfs => {
             executor.run(Command::new("mkfs.btrfs").args(["-f", device]))?;
@@ -19,6 +32,13 @@ pub fn format_root(
             executor.run(Command::new("mkfs.ext4").args(["-F", device]))?;
         }
     }
+
+    // Let udev process the change events from mkfs before anything probes or
+    // mounts the freshly formatted device.
+    if !executor.dry_run() {
+        executor.run(Command::new("udevadm").arg("settle"))?;
+    }
+
     Ok(())
 }
 
@@ -29,14 +49,16 @@ pub fn mount_root(
     executor: &dyn CommandRunner,
 ) -> Result<()> {
     if !RootFilesystem::from_context(context).is_btrfs() {
-        executor.run(Command::new("mount").args([device, "/mnt"]))?;
+        // Explicit fstype: auto-detection can be thrown off by stale
+        // signatures on re-partitioned disks.
+        executor.run(Command::new("mount").args(["-t", "ext4", device, "/mnt"]))?;
         return Ok(());
     }
 
     // Create subvolumes from the top-level btrfs tree, then remount the root
     // subvolume. Keeping @home separate allows snapshots of @ without rolling
     // back user data.
-    executor.run(Command::new("mount").args([device, "/mnt"]))?;
+    executor.run(Command::new("mount").args(["-t", "btrfs", device, "/mnt"]))?;
     let create_result = (|| -> Result<()> {
         let root_path = format!("/mnt/{BTRFS_ROOT_SUBVOLUME}");
         executor.run(Command::new("btrfs").args(["subvolume", "create", &root_path]))?;
@@ -67,13 +89,15 @@ pub fn mount_root(
 
     let root_subvolume = format!("subvol={BTRFS_ROOT_SUBVOLUME}");
     let options = mount_options(&root_subvolume);
-    executor.run(Command::new("mount").args(["-o", &options, device, "/mnt"]))?;
+    executor.run(Command::new("mount").args(["-t", "btrfs", "-o", &options, device, "/mnt"]))?;
 
     if create_home_subvolume {
         let home_subvolume = format!("subvol={BTRFS_HOME_SUBVOLUME}");
         let home_options = mount_options(&home_subvolume);
         executor.run(Command::new("mount").args([
             "--mkdir",
+            "-t",
+            "btrfs",
             "-o",
             &home_options,
             device,
@@ -138,13 +162,16 @@ mod tests {
         mount_root(&context, "/dev/root", true, &runner).unwrap();
 
         let log = runner.command_log();
+        assert!(log.iter().any(|line| line == "wipefs -a /dev/root"));
         assert!(log.iter().any(|line| line == "mkfs.btrfs -f /dev/root"));
         assert!(
             log.iter()
                 .any(|line| line.contains("subvolume create /mnt/@home"))
         );
         assert!(log.iter().any(|line| {
-            line.contains("subvol=@,noatime,compress=zstd") && line.ends_with("/dev/root /mnt")
+            line.contains("-t btrfs")
+                && line.contains("subvol=@,noatime,compress=zstd")
+                && line.ends_with("/dev/root /mnt")
         }));
     }
 
@@ -158,7 +185,12 @@ mod tests {
 
         assert_eq!(
             runner.command_log(),
-            vec!["mkfs.ext4 -F /dev/root", "mount /dev/root /mnt"]
+            vec![
+                "wipefs -a /dev/root",
+                "mkfs.ext4 -F /dev/root",
+                "udevadm settle",
+                "mount -t ext4 /dev/root /mnt"
+            ]
         );
     }
 
