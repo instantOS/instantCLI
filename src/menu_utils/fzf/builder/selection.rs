@@ -26,24 +26,24 @@ impl<T: FzfSelectable + Clone, A: Clone> ItemSelection<T, A> {
             MenuPresentation::Compact => {
                 FzfWrapper::from_builder(self.builder).run_items(self.items, &self.keybinds, false)
             }
-            MenuPresentation::Padded if self.keybinds.is_empty() => {
-                self.builder.run_padded_items(self.items).map(|outcome| {
-                    outcome.map(|items| MenuSelection {
-                        items,
-                        action: None,
-                    })
-                })
-            }
             MenuPresentation::Padded => {
-                anyhow::bail!("keybinds are not supported by the padded presentation")
+                self.builder
+                    .run_padded_items(self.items, &self.keybinds, false)
             }
         }
     }
 
     /// Run a menu in which the user may submit multiple items.
     pub fn select_many(self) -> Result<DialogOutcome<MenuSelection<T, A>>> {
-        ensure_compact(self.builder.shared.presentation, "multi-selection")?;
-        FzfWrapper::from_builder(self.builder).run_items(self.items, &self.keybinds, true)
+        match self.builder.shared.presentation {
+            MenuPresentation::Compact => {
+                FzfWrapper::from_builder(self.builder).run_items(self.items, &self.keybinds, true)
+            }
+            MenuPresentation::Padded => {
+                self.builder
+                    .run_padded_items(self.items, &self.keybinds, true)
+            }
+        }
     }
 }
 
@@ -133,7 +133,7 @@ where
     }
 
     fn run(self, allow_multiple: bool) -> Result<DialogOutcome<MenuSelection<T, A>>> {
-        ensure_compact(self.builder.shared.presentation, "streaming selection")?;
+        ensure_streamable(self.builder.shared.presentation, "channel")?;
         FzfWrapper::from_builder(self.builder).run_stream(
             self.initial_items,
             self.late_items,
@@ -192,7 +192,7 @@ impl<T: DeserializeOwned, A: Clone> CommandSelection<T, A> {
         self,
         allow_multiple: bool,
     ) -> Result<DialogOutcome<MenuSelection<DecodedStreamingMenuItem<T>, A>>> {
-        ensure_compact(self.builder.shared.presentation, "command selection")?;
+        ensure_streamable(self.builder.shared.presentation, "command")?;
         FzfWrapper::from_builder(self.builder).run_command(
             self.command,
             &self.initial_rows,
@@ -208,9 +208,11 @@ impl<T: DeserializeOwned> CommandSelection<T, ()> {
     }
 }
 
-fn ensure_compact(presentation: MenuPresentation, operation: &str) -> Result<()> {
+fn ensure_streamable(presentation: MenuPresentation, source: &str) -> Result<()> {
     if presentation != MenuPresentation::Compact {
-        anyhow::bail!("{operation} does not support padded presentation");
+        anyhow::bail!(
+            "padded presentation requires a complete item collection; {source} streaming sources must use compact presentation"
+        );
     }
     Ok(())
 }

@@ -9,7 +9,9 @@ use super::shared::{
     FzfCommandOptions, apply_fzf_command_options, base_fzf_command, build_padded_item_from_lines,
     default_header_text, run_fzf_with_input,
 };
-use crate::menu_utils::fzf::types::{DialogOutcome, FzfPreview, FzfSelectable, InitialCursor};
+use crate::menu_utils::fzf::types::{
+    DialogOutcome, FzfPreview, FzfSelectable, InitialCursor, MenuKeybind, MenuSelection,
+};
 use crate::menu_utils::fzf::wrapper::fzf_was_cancelled;
 
 /// Invisible marker used to keep non-selectable padded rows visible while fzf
@@ -17,21 +19,21 @@ use crate::menu_utils::fzf::wrapper::fzf_was_cancelled;
 const SELECTABLE_MARKER: &str = "\u{2060}";
 
 impl FzfBuilder {
-    pub(crate) fn run_padded_items<T: FzfSelectable + Clone>(
+    pub(crate) fn run_padded_items<T: FzfSelectable + Clone, A: Clone>(
         mut self,
         items: Vec<T>,
-    ) -> Result<DialogOutcome<Vec<T>>> {
+        keybinds: &[MenuKeybind<A>],
+        allow_multiple: bool,
+    ) -> Result<DialogOutcome<MenuSelection<T, A>>> {
+        super::super::keybind::validate(keybinds)?;
         #[cfg(test)]
         if let Some(resp) = crate::menu_utils::mock::pop_mock() {
-            let selection = crate::menu_utils::mock::resolve_selection(
-                resp,
-                items,
-                &[] as &[crate::menu_utils::MenuKeybind<()>],
-            );
-            return Ok(selection.map(|sel| sel.items));
+            return Ok(crate::menu_utils::mock::resolve_selection(
+                resp, items, keybinds,
+            ));
         }
 
-        if items.is_empty() {
+        if items.is_empty() && keybinds.is_empty() {
             return Ok(DialogOutcome::Cancelled);
         }
 
@@ -42,10 +44,13 @@ impl FzfBuilder {
                 .initial_cursor
                 .as_ref()
                 .map(|InitialCursor::Index(index)| *index);
-            let Some(initial_index) = nearest_selectable_index(&items, requested_index) else {
-                return Ok(DialogOutcome::Cancelled);
-            };
-            self.shared.initial_cursor = Some(InitialCursor::Index(initial_index));
+            match nearest_selectable_index(&items, requested_index) {
+                Some(initial_index) => {
+                    self.shared.initial_cursor = Some(InitialCursor::Index(initial_index));
+                }
+                None if keybinds.is_empty() => return Ok(DialogOutcome::Cancelled),
+                None => self.shared.initial_cursor = None,
+            }
         }
 
         let has_keywords = items
@@ -68,6 +73,8 @@ impl FzfBuilder {
                 preview_manifest.as_ref().map(tempfile::NamedTempFile::path),
                 has_keywords,
                 has_non_selectable,
+                keybinds,
+                allow_multiple,
             );
             let output = run_fzf_with_input(cmd, input_text.as_bytes())?;
 
@@ -78,17 +85,15 @@ impl FzfBuilder {
                 break DialogOutcome::Cancelled;
             }
 
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let index = stdout
-                .trim()
-                .parse::<usize>()
-                .map_err(|error| anyhow::anyhow!("fzf returned an invalid item index: {error}"))?;
-            let item = items
-                .get(index)
-                .ok_or_else(|| anyhow::anyhow!("fzf returned out-of-range item index {index}"))?;
-
-            if item.fzf_is_selectable() {
-                break DialogOutcome::Submitted(vec![item.clone()]);
+            let response = parse_padded_response(&output.stdout, &items, keybinds)?;
+            match response {
+                DialogOutcome::Submitted(selection)
+                    if selection.action.is_some() || !selection.items.is_empty() =>
+                {
+                    break DialogOutcome::Submitted(selection);
+                }
+                DialogOutcome::Cancelled => break DialogOutcome::Cancelled,
+                DialogOutcome::Submitted(_) => {}
             }
             // Pointer selection can still land on a raw, non-matching row.
             // Reopen instead of returning a header as if it were an action.
@@ -172,11 +177,13 @@ fn prepare_padded_preview_manifest<T: FzfSelectable>(
     Ok(manifest)
 }
 
-fn configure_padded_cmd(
+fn configure_padded_cmd<A>(
     builder: &FzfBuilder,
     preview_manifest: Option<&std::path::Path>,
     has_keywords: bool,
     has_non_selectable: bool,
+    keybinds: &[MenuKeybind<A>],
+    allow_multiple: bool,
 ) -> Command {
     let mut cmd = base_fzf_command();
 
@@ -191,7 +198,21 @@ fn configure_padded_cmd(
         cmd.arg("--delimiter=\x1f").arg("--no-hscroll");
     }
 
-    cmd.arg("--bind").arg("enter:become(echo {n})");
+    if allow_multiple {
+        cmd.arg("--multi");
+    }
+
+    // Do not parse the rendered multiline records. Emit a small response
+    // envelope containing fzf's stable input indices instead.
+    cmd.arg("--bind")
+        .arg("enter:become(printf '%s\\n' submit {+n})");
+    for bind in keybinds {
+        let token = general_purpose::STANDARD.encode(bind.key.as_str());
+        cmd.arg("--bind").arg(format!(
+            "{}:become(printf '%s\\n' action {token} {{+n}})",
+            bind.key
+        ));
+    }
 
     if has_non_selectable {
         cmd.arg("--raw")
@@ -221,12 +242,13 @@ fn configure_padded_cmd(
         .initial_cursor
         .as_ref()
         .map(|InitialCursor::Index(index)| *index);
+    let header = padded_header_text(builder, keybinds);
     apply_fzf_command_options(
         &mut cmd,
         &builder.shared,
         FzfCommandOptions {
             prompt_suffix: Some(" > "),
-            header: default_header_text(&builder.shared),
+            header,
             include_additional_args: true,
             cursor,
             responsive_layout: true,
@@ -234,6 +256,70 @@ fn configure_padded_cmd(
     );
 
     cmd
+}
+
+fn padded_header_text<A>(builder: &FzfBuilder, keybinds: &[MenuKeybind<A>]) -> Option<String> {
+    let hint = (!keybinds.is_empty())
+        .then(|| super::super::keybind::render_hint(keybinds, builder.shared.responsive_layout));
+    match (default_header_text(&builder.shared), hint) {
+        (Some(mut header), Some(hint)) => {
+            header.push('\n');
+            header.push_str(&hint);
+            Some(header)
+        }
+        (Some(header), None) => Some(header),
+        (None, hint) => hint,
+    }
+}
+
+fn parse_padded_response<T: FzfSelectable + Clone, A: Clone>(
+    stdout: &[u8],
+    items: &[T],
+    keybinds: &[MenuKeybind<A>],
+) -> Result<DialogOutcome<MenuSelection<T, A>>> {
+    let text = String::from_utf8_lossy(stdout);
+    let mut lines = text.lines();
+    let Some(kind) = lines.next() else {
+        return Ok(DialogOutcome::Cancelled);
+    };
+    let action = match kind {
+        "submit" => None,
+        "action" => {
+            let encoded = lines
+                .next()
+                .ok_or_else(|| anyhow::anyhow!("fzf returned an action without a token"))?;
+            let token = general_purpose::STANDARD.decode(encoded).map_err(|error| {
+                anyhow::anyhow!("fzf returned an invalid action token: {error}")
+            })?;
+            let token = String::from_utf8(token).map_err(|error| {
+                anyhow::anyhow!("fzf returned a non-UTF-8 action token: {error}")
+            })?;
+            Some(super::super::keybind::resolve_action(&token, keybinds)?)
+        }
+        other => anyhow::bail!("fzf returned an unknown padded response kind {other:?}"),
+    };
+
+    let selected = lines
+        .filter(|line| !line.is_empty())
+        .map(|line| {
+            let index = line
+                .parse::<usize>()
+                .map_err(|error| anyhow::anyhow!("fzf returned an invalid item index: {error}"))?;
+            items
+                .get(index)
+                .ok_or_else(|| anyhow::anyhow!("fzf returned out-of-range item index {index}"))
+        })
+        .filter_map(|result| match result {
+            Ok(item) if item.fzf_is_selectable() => Some(Ok(item.clone())),
+            Ok(_) => None,
+            Err(error) => Some(Err(error)),
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    Ok(DialogOutcome::Submitted(MenuSelection {
+        items: selected,
+        action,
+    }))
 }
 
 fn padded_preview_command(manifest: &std::path::Path) -> String {
@@ -251,8 +337,13 @@ fn padded_preview_command(manifest: &std::path::Path) -> String {
 
 #[cfg(test)]
 mod mock_tests {
+    use base64::{Engine as _, engine::general_purpose};
+
     use crate::menu_utils::MockQueue;
-    use crate::menu_utils::{FzfPreview, FzfSelectable, MenuPresentation};
+    use crate::menu_utils::{
+        DialogOutcome, FzfPreview, FzfSelectable, MenuKey, MenuKeybind, MenuPresentation,
+        MenuSelection,
+    };
 
     #[derive(Clone)]
     struct Item {
@@ -401,5 +492,91 @@ mod mock_tests {
         }];
 
         assert_eq!(super::nearest_selectable_index(&items, None), None);
+    }
+
+    #[test]
+    fn padded_response_decodes_multiple_indices() {
+        let items = vec!["zero".to_string(), "one".to_string(), "two".to_string()];
+        let response =
+            super::parse_padded_response::<_, ()>(b"submit\n0\n2\n", &items, &[]).unwrap();
+
+        assert_eq!(
+            response,
+            DialogOutcome::Submitted(MenuSelection {
+                items: vec!["zero".to_string(), "two".to_string()],
+                action: None,
+            })
+        );
+    }
+
+    #[test]
+    fn padded_response_decodes_typed_action_without_an_item() {
+        let binds = [MenuKeybind::new(
+            MenuKey::new("ctrl-e").unwrap(),
+            "edit",
+            42,
+        )];
+        let token = general_purpose::STANDARD.encode("ctrl-e");
+        let response = super::parse_padded_response(
+            format!("action\n{token}\n").as_bytes(),
+            &["zero".to_string()],
+            &binds,
+        )
+        .unwrap();
+
+        assert_eq!(
+            response,
+            DialogOutcome::Submitted(MenuSelection {
+                items: Vec::new(),
+                action: Some(42),
+            })
+        );
+    }
+
+    #[test]
+    fn padded_response_drops_non_selectable_rows() {
+        let items = vec![
+            Item {
+                label: "header",
+                selectable: false,
+            },
+            Item {
+                label: "action",
+                selectable: true,
+            },
+        ];
+        let response =
+            super::parse_padded_response::<_, ()>(b"submit\n0\n1\n", &items, &[]).unwrap();
+
+        let DialogOutcome::Submitted(selection) = response else {
+            panic!("expected submitted selection");
+        };
+        assert_eq!(selection.items.len(), 1);
+        assert_eq!(selection.items[0].label, "action");
+    }
+
+    #[test]
+    fn padded_command_enables_multi_and_emits_framed_actions() {
+        let builder = super::FzfBuilder::new();
+        let binds = [MenuKeybind::new(
+            MenuKey::new("ctrl-e").unwrap(),
+            "edit",
+            (),
+        )];
+        let command = super::configure_padded_cmd(&builder, None, false, false, &binds, true);
+        let args = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+
+        assert!(args.iter().any(|arg| arg == "--multi"));
+        assert!(
+            args.iter()
+                .any(|arg| arg == "enter:become(printf '%s\\n' submit {+n})")
+        );
+        let encoded = general_purpose::STANDARD.encode("ctrl-e");
+        assert!(args.iter().any(|arg| {
+            arg == &format!("ctrl-e:become(printf '%s\\n' action {encoded} {{+n}})")
+        }));
     }
 }

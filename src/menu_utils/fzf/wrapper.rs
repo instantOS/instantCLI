@@ -402,15 +402,6 @@ fn finish_menu_child(child: TrackedChild) -> Result<std::process::Output> {
     })
 }
 
-/// Map a pressed keybind token back to the caller's typed action.
-fn resolve_action_token<A: Clone>(token: &str, keybinds: &[MenuKeybind<A>]) -> Result<A> {
-    keybinds
-        .iter()
-        .find(|bind| bind.key.as_str() == token)
-        .map(|bind| bind.action.clone())
-        .ok_or_else(|| anyhow!("fzf returned unknown keybind token {token:?}"))
-}
-
 /// Parse fzf output into submitted items plus an optional pressed keybind.
 ///
 /// Selection lines always carry at least three `\x1f`-delimited fields; a
@@ -468,7 +459,7 @@ fn parse_fzf_output<T: Clone, A: Clone>(
         .collect::<Result<Vec<_>>>()?;
 
     let action = match &action_token {
-        Some(token) => Some(resolve_action_token(token, keybinds)?),
+        Some(token) => Some(super::keybind::resolve_action(token, keybinds)?),
         None => None,
     };
 
@@ -517,7 +508,7 @@ fn parse_encoded_streaming_output<T: DeserializeOwned, A: Clone>(
         .collect::<Result<Vec<_>>>()?;
     let action = action_token
         .as_deref()
-        .map(|token| resolve_action_token(token, keybinds))
+        .map(|token| super::keybind::resolve_action(token, keybinds))
         .transpose()?;
     Ok(DialogOutcome::Submitted(MenuSelection { items, action }))
 }
@@ -1021,27 +1012,62 @@ mod mock_tests {
     }
 
     #[test]
-    fn padded_presentation_rejects_unsupported_composed_options() {
+    fn padded_presentation_composes_multi_selection_and_keybinds() {
         let binds = [MenuKeybind::new(
             MenuKey::new("ctrl-e").unwrap(),
             "edit",
-            (),
+            "edit-action",
         )];
 
-        let multiple_error = FzfWrapper::builder()
+        let _guard = MockQueue::new()
+            .multi_select(vec![0, 2])
+            .keybind_action("ctrl-e", vec![1])
+            .guard();
+        let multiple = FzfWrapper::builder()
             .presentation(MenuPresentation::Padded)
-            .items(vec!["alpha".to_string()])
+            .items(vec![
+                "alpha".to_string(),
+                "beta".to_string(),
+                "gamma".to_string(),
+            ])
             .select_many()
-            .unwrap_err();
-        let keybind_error = FzfWrapper::builder()
+            .unwrap();
+        let keybind = FzfWrapper::builder()
             .presentation(MenuPresentation::Padded)
-            .items(vec!["alpha".to_string()])
+            .items(vec!["alpha".to_string(), "beta".to_string()])
             .keybinds(&binds)
+            .select()
+            .unwrap();
+
+        assert_eq!(
+            multiple,
+            DialogOutcome::Submitted(MenuSelection {
+                items: vec!["alpha".to_string(), "gamma".to_string()],
+                action: None,
+            })
+        );
+        assert_eq!(
+            keybind,
+            DialogOutcome::Submitted(MenuSelection {
+                items: vec!["beta".to_string()],
+                action: Some("edit-action"),
+            })
+        );
+    }
+
+    #[test]
+    fn padded_presentation_explains_why_live_sources_are_incompatible() {
+        let (_tx, rx) = crossbeam_channel::unbounded::<String>();
+        let error = FzfWrapper::builder()
+            .presentation(MenuPresentation::Padded)
+            .stream(rx)
             .select()
             .unwrap_err();
 
-        assert!(multiple_error.to_string().contains("multi-selection"));
-        assert!(keybind_error.to_string().contains("keybinds"));
+        assert_eq!(
+            error.to_string(),
+            "padded presentation requires a complete item collection; channel streaming sources must use compact presentation"
+        );
     }
 
     #[test]

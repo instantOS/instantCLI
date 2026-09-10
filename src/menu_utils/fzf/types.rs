@@ -558,13 +558,16 @@ impl<A> MenuKeybind<A> {
 
 /// Visual treatment of rows in a selection menu.
 ///
-/// This affects presentation only. Preview delivery and execution semantics are
-/// identical for every presentation.
+/// Compact rows support static and live sources. Padded rows are a snapshot
+/// presentation: their multiline layout and preview index are prepared from a
+/// complete in-memory item collection before fzf starts.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum MenuPresentation {
     #[default]
     Compact,
     /// Add vertical breathing room and icon-aware shadows around each row.
+    /// Available for complete item collections, including keybind and
+    /// multi-selection menus, but not for live streaming sources.
     Padded,
 }
 
