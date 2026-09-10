@@ -101,6 +101,7 @@ fn print_setup_configuration(context: &InstallContext) {
     if DesktopEnvironment::from_context(context).requires_display_manager() {
         println!("  Display manager: {}", answer(StepId::DisplayManager));
         println!("  Autologin: {}", answer(StepId::Autologin));
+        println!("  Xorg server: {}", answer(StepId::UseXorg));
     }
     println!();
 }
@@ -112,6 +113,7 @@ fn setup_questions() -> Vec<Box<dyn WizardStep>> {
         Box::new(DesktopEnvironmentQuestion),
         Box::new(DisplayManagerQuestion),
         Box::new(autologin_question(AutologinDefault::Disabled)),
+        Box::new(super::use_xorg_question()),
     ]
 }
 

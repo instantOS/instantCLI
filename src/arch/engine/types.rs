@@ -33,6 +33,7 @@ pub enum StepId {
     EncryptionPassword,
     UsePlymouth,
     Autologin,
+    UseXorg,
     LogUpload,
     ConfirmInstall,
     VirtualBoxWarning,

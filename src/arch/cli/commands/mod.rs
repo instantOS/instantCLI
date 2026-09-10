@@ -128,6 +128,9 @@ pub(super) fn build_steps() -> Vec<Box<dyn WizardStep>> {
                 "Encrypt the installation disk?",
                 crate::ui::nerd_font::NerdFont::Lock,
             )
+            .description(
+                "Protects your data with LUKS full-disk encryption. A passphrase will be required at boot.",
+            )
             .default_from(
                 [crate::arch::engine::StepId::PartitioningMethod],
                 |context| {
@@ -166,15 +169,22 @@ pub(super) fn build_steps() -> Vec<Box<dyn WizardStep>> {
                 "Enable Plymouth boot splash screen?",
                 crate::ui::nerd_font::NerdFont::Monitor,
             )
+            .description(
+                "Displays a graphical boot animation and hides console kernel logs during system startup.",
+            )
             .optional()
             .default_yes(),
         ),
         Box::new(autologin_question(AutologinDefault::MatchEncryption)),
+        Box::new(use_xorg_question()),
         Box::new(
             BooleanQuestion::new(
                 crate::arch::engine::StepId::LogUpload,
                 "Upload installation logs to snips.sh?",
                 crate::ui::nerd_font::NerdFont::Debug,
+            )
+            .description(
+                "Uploads an anonymized installation log to snips.sh upon completion to help troubleshoot setup issues.",
             )
             .optional()
             .default_yes(),
@@ -184,6 +194,9 @@ pub(super) fn build_steps() -> Vec<Box<dyn WizardStep>> {
                 crate::arch::engine::StepId::MinimalMode,
                 "Enable Minimal Mode (Vanilla Arch Install)?",
                 crate::ui::nerd_font::NerdFont::Package,
+            )
+            .description(
+                "Installs a clean, vanilla Arch Linux system skipping instantOS packages, default apps, and custom theming.",
             )
             .optional(),
         ),
@@ -205,6 +218,9 @@ pub(super) fn autologin_question(
         "Enable Display Manager Autologin?",
         crate::ui::nerd_font::NerdFont::User,
     )
+    .description(
+        "Automatically logs into your user account on boot without prompting for a password at the display manager.",
+    )
     .optional()
     .relevant_when([StepId::DesktopEnvironment], |context| {
         crate::arch::config::DesktopEnvironment::from_context(context).requires_display_manager()
@@ -217,6 +233,28 @@ pub(super) fn autologin_question(
             }),
         AutologinDefault::Disabled => question,
     }
+}
+
+pub(super) fn use_xorg_question() -> crate::arch::questions::BooleanQuestion {
+    use crate::arch::engine::StepId;
+
+    crate::arch::questions::BooleanQuestion::new(
+        StepId::UseXorg,
+        "Install Xorg server (enable X11 session)?",
+        crate::ui::nerd_font::NerdFont::Desktop,
+    )
+    .description(
+        "instantWM supports both X11 and Wayland sessions. By default, instantOS uses Wayland.\n\
+         Enabling this option installs xorg-server so the classic X11 instantWM session is available in your display manager.",
+    )
+    .optional()
+    .relevant_when([StepId::DesktopEnvironment], |context| {
+        crate::arch::config::DesktopEnvironment::from_context(context).requires_display_manager()
+    })
+    .default_from([StepId::DisplayManager], |context| {
+        crate::arch::config::DisplayManager::from_context(context)
+            == crate::arch::config::DisplayManager::Lightdm
+    })
 }
 
 #[cfg(test)]
