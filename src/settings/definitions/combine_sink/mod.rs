@@ -8,7 +8,7 @@ use std::collections::HashSet;
 
 use anyhow::Result;
 
-use crate::menu_utils::{ChecklistResult, FzfWrapper, HeaderBuilder, MenuPresentation};
+use crate::menu_utils::{ChecklistResult, FzfWrapper, HeaderBuilder};
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::ui::prelude::*;
@@ -117,8 +117,9 @@ impl Setting for CombinedAudioSink {
             let result = FzfWrapper::builder()
                 .prompt("Select action")
                 .header(header)
-                .presentation(MenuPresentation::Padded)
-                .select_one(items_with_preview)?;
+                .items(items_with_preview)
+                .padded()
+                .select_one()?;
 
             match result {
                 crate::menu_utils::DialogOutcome::Submitted(wrapper) => match wrapper.item.action {

@@ -605,6 +605,54 @@ fn normalization_reasks_a_dependent_answer_when_provenance_is_stale() {
 }
 
 #[test]
+fn dropping_a_step_preserves_its_answer_for_preselection() {
+    let questions = vec![question(StepId::Disk, &[])];
+    let graph = StepGraph::new(&questions).unwrap();
+    let mut context = InstallContext::new();
+    graph.record_answer(&mut context, StepId::Disk, "/dev/sda".into());
+
+    graph.drop_step_state(&mut context, StepId::Disk);
+
+    assert!(context.get_answer(&StepId::Disk).is_none());
+    assert!(!context.is_step_completed(StepId::Disk));
+    assert_eq!(
+        context.previous_answer(&StepId::Disk).map(String::as_str),
+        Some("/dev/sda")
+    );
+}
+
+#[test]
+fn recording_a_new_answer_supersedes_the_previous_answer_shadow() {
+    let questions = vec![question(StepId::Disk, &[])];
+    let graph = StepGraph::new(&questions).unwrap();
+    let mut context = InstallContext::new();
+    graph.record_answer(&mut context, StepId::Disk, "/dev/sda".into());
+    graph.drop_step_state(&mut context, StepId::Disk);
+
+    graph.record_answer(&mut context, StepId::Disk, "/dev/sdb".into());
+
+    assert!(context.previous_answers.get(&StepId::Disk).is_none());
+    assert_eq!(
+        context.previous_answer(&StepId::Disk).map(String::as_str),
+        Some("/dev/sdb")
+    );
+}
+
+#[test]
+fn previous_answers_are_never_serialized() {
+    let questions = vec![question(StepId::Disk, &[])];
+    let graph = StepGraph::new(&questions).unwrap();
+    let mut context = InstallContext::new();
+    graph.record_answer(&mut context, StepId::Disk, "/dev/sda".into());
+    graph.drop_step_state(&mut context, StepId::Disk);
+
+    let restored: InstallContext = toml::from_str(&context.to_toml().unwrap()).unwrap();
+
+    assert!(restored.previous_answers.is_empty());
+    assert!(restored.previous_answer(&StepId::Disk).is_none());
+}
+
+#[test]
 fn dependency_provenance_survives_context_serialization() {
     let questions = vec![
         question(StepId::Disk, &[]),

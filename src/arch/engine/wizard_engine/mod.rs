@@ -15,7 +15,7 @@ use self::presentation::{
 };
 use self::step_graph::StepGraph;
 use super::{InstallContext, StepOutcome, WizardStep};
-use crate::menu_utils::{ConfirmResult, FzfWrapper, Header, MenuCursor, MenuPresentation};
+use crate::menu_utils::{ConfirmResult, FzfWrapper, Header, MenuCursor};
 use crate::ui::nerd_font::NerdFont;
 
 /// Which wizard is driving the engine.
@@ -441,8 +441,9 @@ impl WizardEngine {
 
         let result = FzfWrapper::menu()
             .header(Header::fancy(self.flow.pause_menu_title()))
-            .presentation(MenuPresentation::Padded)
-            .select_one(options)?;
+            .items(options)
+            .padded()
+            .select_one()?;
 
         match result {
             crate::menu_utils::DialogOutcome::Submitted(PauseMenuItem::Resume) => {
@@ -518,16 +519,16 @@ impl WizardEngine {
 
     fn select_final_review(&mut self) -> Result<Option<FinalReviewOption>> {
         let options = final_review_options(self.flow, &self.context);
-        let mut builder = FzfWrapper::builder()
+        let mut selection = FzfWrapper::builder()
             .header(Header::fancy(self.flow.final_review_title()))
             .prompt("Select")
             .responsive_layout()
-            .presentation(MenuPresentation::Padded);
+            .items(options.clone());
         if let Some(index) = self.review_cursor.initial_index(&options) {
-            builder = builder.initial_index(index);
+            selection = selection.initial_index(index);
         }
 
-        match builder.select_one(options.clone())? {
+        match selection.padded().select_one()? {
             crate::menu_utils::DialogOutcome::Submitted(option) => {
                 self.review_cursor.update(&option, &options);
                 Ok(Some(option))
@@ -606,16 +607,16 @@ impl WizardEngine {
             return Ok(None);
         }
 
-        let mut builder = FzfWrapper::builder()
+        let mut selection = FzfWrapper::builder()
             .header(Header::fancy("Select a question to modify"))
             .prompt("Search")
             .responsive_layout()
-            .presentation(MenuPresentation::Padded);
+            .items(items.clone());
         if let Some(index) = cursor.initial_index(&items) {
-            builder = builder.initial_index(index);
+            selection = selection.initial_index(index);
         }
 
-        match builder.select_one(items.clone())? {
+        match selection.padded().select_one()? {
             crate::menu_utils::DialogOutcome::Submitted(item) => {
                 cursor.update(&item, &items);
                 match item {
@@ -629,14 +630,14 @@ impl WizardEngine {
 
     fn select_advanced_option(&mut self) -> Result<Option<usize>> {
         let options = AdvancedOption::from_steps(&self.steps, &self.context);
-        let mut builder = FzfWrapper::builder()
+        let mut selection = FzfWrapper::builder()
             .header(Header::fancy("Advanced Options"))
-            .presentation(MenuPresentation::Padded);
+            .items(options.clone());
         if let Some(index) = self.advanced_cursor.initial_index(&options) {
-            builder = builder.initial_index(index);
+            selection = selection.initial_index(index);
         }
 
-        match builder.select_one(options.clone())? {
+        match selection.padded().select_one()? {
             crate::menu_utils::DialogOutcome::Submitted(option) => {
                 self.advanced_cursor.update(&option, &options);
                 match option {

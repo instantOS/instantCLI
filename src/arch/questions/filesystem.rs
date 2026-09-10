@@ -1,6 +1,6 @@
 use crate::arch::config::{BtrfsCompression, RootFilesystem};
 use crate::arch::engine::{InstallContext, StepId, StepOutcome, WizardStep};
-use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder, MenuPresentation};
+use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder};
 use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -86,16 +86,20 @@ impl WizardStep for RootFilesystemQuestion {
         Some(RootFilesystem::DEFAULT.answer_value().to_string())
     }
 
-    async fn run(&self, _context: &InstallContext) -> Result<StepOutcome> {
+    async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {
         let options = vec![
             RootFilesystemOption(RootFilesystem::Btrfs),
             RootFilesystemOption(RootFilesystem::Ext4),
         ];
 
-        let result = FzfWrapper::builder()
-            .header(HeaderBuilder::new(NerdFont::HardDrive, "Select Root Filesystem").build())
-            .presentation(MenuPresentation::Padded)
-            .select_one(options)?;
+        let result = super::select_one_with_preselect(
+            context,
+            StepId::RootFilesystem,
+            FzfWrapper::builder()
+                .header(HeaderBuilder::new(NerdFont::HardDrive, "Select Root Filesystem").build())
+                .items(options)
+                .padded(),
+        )?;
 
         Ok(StepOutcome::from_dialog(result, |option| {
             option.0.answer_value().to_string()
@@ -195,7 +199,7 @@ impl WizardStep for BtrfsCompressionQuestion {
         Some(BtrfsCompression::DEFAULT.answer_value().to_string())
     }
 
-    async fn run(&self, _context: &InstallContext) -> Result<StepOutcome> {
+    async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {
         let options = vec![
             BtrfsCompressionOption(BtrfsCompression::Zstd),
             BtrfsCompressionOption(BtrfsCompression::Lzo),
@@ -203,10 +207,14 @@ impl WizardStep for BtrfsCompressionQuestion {
             BtrfsCompressionOption(BtrfsCompression::None),
         ];
 
-        let result = FzfWrapper::builder()
-            .header(HeaderBuilder::new(NerdFont::Sliders, "Select btrfs Compression").build())
-            .presentation(MenuPresentation::Padded)
-            .select_one(options)?;
+        let result = super::select_one_with_preselect(
+            context,
+            StepId::BtrfsCompression,
+            FzfWrapper::builder()
+                .header(HeaderBuilder::new(NerdFont::Sliders, "Select btrfs Compression").build())
+                .items(options)
+                .padded(),
+        )?;
 
         Ok(StepOutcome::from_dialog(result, |option| {
             option.0.answer_value().to_string()

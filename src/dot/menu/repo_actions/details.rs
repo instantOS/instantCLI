@@ -6,8 +6,8 @@ use crate::dot::db::Database;
 use crate::dot::meta;
 use crate::dot::repo::DotfileRepositoryManager;
 use crate::menu_utils::{
-    ConfirmResult, FzfSelectable, FzfWrapper, Header, MenuCursor, MenuPresentation,
-    TextEditOutcome, TextEditPrompt, prompt_text_edit,
+    ConfirmResult, FzfSelectable, FzfWrapper, Header, MenuCursor, TextEditOutcome, TextEditPrompt,
+    prompt_text_edit,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
@@ -103,10 +103,7 @@ pub fn handle_global_units_menu(config: &mut DotfileConfig, db: &Database) -> Re
             builder = builder.initial_index(index);
         }
 
-        match builder
-            .presentation(MenuPresentation::Padded)
-            .select_one(items.clone())?
-        {
+        match builder.items(items.clone()).padded().select_one()? {
             crate::menu_utils::DialogOutcome::Submitted(item) => {
                 cursor.update(&item, &items);
                 match item.action {
@@ -208,9 +205,7 @@ fn select_detail_action(
         builder = builder.initial_index(index);
     }
 
-    let result = builder
-        .presentation(MenuPresentation::Padded)
-        .select_one(actions.clone())?;
+    let result = builder.items(actions.clone()).padded().select_one()?;
 
     match result {
         crate::menu_utils::DialogOutcome::Submitted(item) => {
@@ -266,10 +261,7 @@ fn handle_manage_units(
             builder = builder.initial_index(index);
         }
 
-        match builder
-            .presentation(MenuPresentation::Padded)
-            .select_one(items.clone())?
-        {
+        match builder.items(items.clone()).padded().select_one()? {
             crate::menu_utils::DialogOutcome::Submitted(item) => {
                 cursor.update(&item, &items);
                 match item.action {

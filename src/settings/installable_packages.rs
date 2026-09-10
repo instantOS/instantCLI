@@ -645,7 +645,8 @@ pub fn show_install_more_menu(category_name: &str, apps: &[InstallableApp]) -> R
                 .build(),
         )
         .responsive_layout()
-        .select_one(items)?;
+        .items(items)
+        .select_one()?;
 
     match selected {
         crate::menu_utils::DialogOutcome::Submitted(item) => {

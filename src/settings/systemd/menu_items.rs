@@ -6,7 +6,7 @@ use crate::common::shell::shell_quote;
 use crate::common::systemd::{ServiceScope, SystemdManager};
 use crate::menu_utils::{
     DecodedStreamingMenuItem, FzfPreview, FzfSelectable, FzfWrapper, Header, HeaderBuilder,
-    MenuItem, MenuPresentation,
+    MenuItem,
 };
 use crate::settings::systemd_list;
 use crate::settings::systemd_list::SystemdServiceSelectionPayload;
@@ -300,7 +300,7 @@ pub fn run_systemd_menu() -> Result<()> {
             .prompt("Select")
             .responsive_layout();
 
-        let result = builder.select_menu(entries.clone())?;
+        let result = builder.items(entries.clone()).select_menu()?;
 
         match result {
             crate::menu_utils::DialogOutcome::Submitted(SystemdMenuEntry::Back) => break,
@@ -349,7 +349,8 @@ fn run_services_menu(scope: ServiceScope) -> Result<()> {
             .header(Header::fancy(title))
             .prompt("Select service")
             .responsive_layout()
-            .select_encoded_streaming_one(systemd_list::list_command(scope_str))?;
+            .command(systemd_list::list_command(scope_str))
+            .select_one()?;
 
         match result {
             crate::menu_utils::DialogOutcome::Submitted(row) => {
@@ -473,8 +474,9 @@ fn select_service_action(service: &ServiceItem) -> Result<ServiceAction> {
         .header(header)
         .prompt("Action")
         .responsive_layout()
-        .presentation(MenuPresentation::Padded)
-        .select_menu(actions)?;
+        .items(actions)
+        .padded()
+        .select_menu()?;
 
     match result {
         crate::menu_utils::DialogOutcome::Submitted(item) => Ok(item.action),

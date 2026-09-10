@@ -15,3 +15,6 @@ pub use tty::TtyKeymap;
 pub use common::{
     current_gnome_layouts, current_vconsole_keymap, current_x11_layout, current_x11_layouts,
 };
+
+// Shared with the installer's annotation providers (crate-internal API).
+pub(crate) use common::parse_xkb_layouts;

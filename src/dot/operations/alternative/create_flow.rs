@@ -129,7 +129,7 @@ pub(crate) fn run_create_flow(
             builder = builder.initial_index(index);
         }
 
-        match builder.select_one(menu.clone())? {
+        match builder.items(menu.clone()).select_one()? {
             crate::menu_utils::DialogOutcome::Submitted(CreateMenuItem::Destination(item)) => {
                 cursor.update(&CreateMenuItem::Destination(item.clone()), &menu);
                 match add_file_to_destination(&config, path, display, &item, force)? {

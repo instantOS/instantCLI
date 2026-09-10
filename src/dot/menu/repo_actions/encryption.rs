@@ -189,7 +189,7 @@ pub(super) fn handle_repo_encryption(
             .prompt("Select action")
             .responsive_layout();
 
-        let result = builder.select_one(items)?;
+        let result = builder.items(items).select_one()?;
 
         match result {
             crate::menu_utils::DialogOutcome::Submitted(item) => match &item.kind {
@@ -337,7 +337,7 @@ pub(super) fn handle_repo_encryption(
                             .prompt("Key")
                             .responsive_layout();
 
-                        match builder.select_one(entries)? {
+                        match builder.items(entries).select_one()? {
                             crate::menu_utils::DialogOutcome::Submitted(entry) => match &entry
                                 .action
                             {
@@ -510,7 +510,7 @@ fn handle_recipient_actions(
             .prompt("Action")
             .responsive_layout();
 
-        let result = builder.select_one(items)?;
+        let result = builder.items(items).select_one()?;
         match result {
             crate::menu_utils::DialogOutcome::Submitted(item) => match item.action {
                 "deauthorize" => {

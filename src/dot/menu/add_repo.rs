@@ -5,7 +5,7 @@ use anyhow::Result;
 use crate::dot::config::{DotfileConfig, extract_repo_name};
 use crate::dot::db::Database;
 use crate::dot::repo::cli::RepoCommands;
-use crate::menu_utils::{FzfSelectable, FzfWrapper, Header, MenuPresentation};
+use crate::menu_utils::{FzfSelectable, FzfWrapper, Header};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 
@@ -200,8 +200,9 @@ fn handle_shorthand_input(shorthand: &str) -> Result<AddRepoInputResult> {
     match FzfWrapper::builder()
         .header(Header::fancy(&format!("Clone '{}' from:", shorthand)))
         .prompt("Select host")
-        .presentation(MenuPresentation::Padded)
-        .select_one(choices)?
+        .items(choices)
+        .padded()
+        .select_one()?
     {
         crate::menu_utils::DialogOutcome::Submitted(ShorthandChoice::GitHub) => Ok(
             AddRepoInputResult::Url(format!("https://github.com/{}.git", shorthand)),
@@ -233,8 +234,9 @@ fn handle_plain_name_input(name: &str, config: &mut DotfileConfig) -> Result<Add
     match FzfWrapper::builder()
         .header(Header::fancy(&format!("'{}' is not a URL", name)))
         .prompt("Select action")
-        .presentation(MenuPresentation::Padded)
-        .select_one(choices)?
+        .items(choices)
+        .padded()
+        .select_one()?
     {
         crate::menu_utils::DialogOutcome::Submitted(PlainNameChoice::CreateLocal) => {
             match crate::dot::meta::create_local_repo(config, Some(name), false, true, true) {
@@ -274,8 +276,9 @@ fn handle_empty_input(default_repo: &str) -> Result<AddRepoInputResult> {
     match FzfWrapper::builder()
         .header(Header::fancy("No URL entered"))
         .prompt("Select")
-        .presentation(MenuPresentation::Padded)
-        .select_one(choices)?
+        .items(choices)
+        .padded()
+        .select_one()?
     {
         crate::menu_utils::DialogOutcome::Submitted(EmptyInputChoice::UseDefault) => {
             Ok(AddRepoInputResult::Url(default_repo.to_string()))

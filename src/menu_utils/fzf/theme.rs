@@ -5,7 +5,8 @@ use crate::ui::catppuccin::{AnsiColor, colors, ensure_tty_palette, is_console_mo
 /// Return the standard instantCLI FZF styling.
 ///
 /// Row density is deliberately not configured here. Compact and three-line
-/// rows are selected independently through `MenuPresentation`.
+/// rows are selected independently through the builder's `.padded()`
+/// modifier.
 pub(crate) fn theme_args() -> Vec<String> {
     let console_mode = is_console_mode();
     if console_mode {

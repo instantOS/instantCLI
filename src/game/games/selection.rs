@@ -349,7 +349,8 @@ pub fn select_game_interactive(prompt_message: Option<&str>) -> Result<Option<St
 
     let result = FzfWrapper::builder()
         .responsive_layout()
-        .select_one(config.games.clone())
+        .items(config.games.clone())
+        .select_one()
         .map_err(|e| anyhow::anyhow!("Failed to select game: {}", e))?;
 
     let selected = match result {
@@ -403,7 +404,8 @@ pub fn select_game_menu_entry(cursor: &mut MenuCursor) -> Result<Option<GameMenu
 
     // Show menu
     let result = builder
-        .select_one(entries.clone())
+        .items(entries.clone())
+        .select_one()
         .map_err(|e| anyhow::anyhow!("Failed to select from game menu: {}", e))?;
 
     match result {

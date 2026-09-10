@@ -2,7 +2,7 @@ use super::text_input::{TextInputQuestion, validators};
 use crate::arch::annotations::AnnotatedValue;
 use crate::arch::config::DesktopEnvironment;
 use crate::arch::engine::{DataKey, InstallContext, StepId, StepOutcome, WizardStep};
-use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder, MenuPresentation};
+use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder};
 use crate::preview::{PreviewId, preview_command};
 use crate::settings::definitions::system::validate_hostname;
 use crate::settings::users::validate_username;
@@ -43,18 +43,25 @@ impl FzfSelectable for MirrorRegionOption {
     }
 }
 
+/// A timezone entry carrying its optional annotation. Wraps
+/// [`AnnotatedValue`] for the display text while keeping the rich
+/// command-based preview, which shows the live time in the selected zone.
 #[derive(Clone)]
 struct TimezoneOption {
-    value: String,
+    inner: AnnotatedValue<String>,
 }
 
 impl FzfSelectable for TimezoneOption {
     fn fzf_display_text(&self) -> String {
-        self.value.clone()
+        self.inner.fzf_display_text()
     }
 
     fn fzf_preview(&self) -> FzfPreview {
         FzfPreview::Command(preview_command(PreviewId::Timezone))
+    }
+
+    fn fzf_key(&self) -> String {
+        self.inner.fzf_key()
     }
 }
 
@@ -199,6 +206,10 @@ impl FzfSelectable for KernelOption {
     fn fzf_preview(&self) -> FzfPreview {
         self.preview()
     }
+
+    fn fzf_key(&self) -> String {
+        self.label().to_string()
+    }
 }
 
 fn add_desktop_environment_disclaimer(builder: PreviewBuilder) -> PreviewBuilder {
@@ -301,7 +312,7 @@ impl WizardStep for DesktopEnvironmentQuestion {
         Some("Choose your desktop environment")
     }
 
-    async fn run(&self, _context: &InstallContext) -> Result<StepOutcome> {
+    async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {
         let options = vec![
             DesktopEnvironment::InstantWM,
             DesktopEnvironment::Sway,
@@ -310,10 +321,14 @@ impl WizardStep for DesktopEnvironmentQuestion {
             DesktopEnvironment::Tty,
         ];
 
-        let result = FzfWrapper::builder()
-            .header(HeaderBuilder::new(NerdFont::Desktop, "Select Desktop Environment").build())
-            .presentation(MenuPresentation::Padded)
-            .select_one(options)?;
+        let result = super::select_one_with_preselect(
+            context,
+            StepId::DesktopEnvironment,
+            FzfWrapper::builder()
+                .header(HeaderBuilder::new(NerdFont::Desktop, "Select Desktop Environment").build())
+                .items(options)
+                .padded(),
+        )?;
 
         Ok(StepOutcome::from_dialog(result, |environment| {
             environment.answer_value().to_string()
@@ -395,9 +410,13 @@ impl WizardStep for MirrorRegionQuestion {
         let options: Vec<MirrorRegionOption> =
             regions.into_iter().map(MirrorRegionOption::new).collect();
 
-        let result = FzfWrapper::builder()
-            .header(HeaderBuilder::new(NerdFont::Globe, "Select Mirror Region").build())
-            .select_one(options)?;
+        let result = super::select_one_with_preselect(
+            context,
+            StepId::MirrorRegion,
+            FzfWrapper::builder()
+                .header(HeaderBuilder::new(NerdFont::Globe, "Select Mirror Region").build())
+                .items(options),
+        )?;
 
         Ok(StepOutcome::from_dialog(result, |region| region.name))
     }
@@ -437,14 +456,24 @@ impl WizardStep for TimezoneQuestion {
 
         let options: Vec<TimezoneOption> = timezones
             .into_iter()
-            .map(|value| TimezoneOption { value })
+            .map(|inner| TimezoneOption { inner })
             .collect();
 
-        let result = FzfWrapper::builder()
-            .header(HeaderBuilder::new(NerdFont::Clock, "Select Timezone").build())
-            .select_one(options)?;
+        // Start on the previously chosen timezone; on the first pass, on the
+        // one the running system already uses.
+        let preselect = context
+            .previous_answer(&StepId::Timezone)
+            .cloned()
+            .or_else(crate::arch::timezones::detect_current_timezone);
 
-        Ok(StepOutcome::from_dialog(result, |tz| tz.value))
+        let result = super::select_one_preselecting(
+            preselect,
+            FzfWrapper::builder()
+                .header(HeaderBuilder::new(NerdFont::Clock, "Select Timezone").build())
+                .items(options),
+        )?;
+
+        Ok(StepOutcome::from_dialog(result, |tz| tz.inner.value))
     }
 
     fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
@@ -489,9 +518,19 @@ impl WizardStep for KeymapQuestion {
             .map(|value| AnnotatedOption::new(value, &KEYMAP_OPTION_STYLE))
             .collect();
 
-        let result = FzfWrapper::builder()
-            .header(HeaderBuilder::new(NerdFont::Keyboard, "Select Keymap").build())
-            .select_one(options)?;
+        // Start on the previously chosen keymap; on the first pass, on the
+        // one the running system already uses.
+        let preselect = context
+            .previous_answer(&StepId::Keymap)
+            .cloned()
+            .or_else(crate::arch::keymaps::detect_current_keymap);
+
+        let result = super::select_one_preselecting(
+            preselect,
+            FzfWrapper::builder()
+                .header(HeaderBuilder::new(NerdFont::Keyboard, "Select Keymap").build())
+                .items(options),
+        )?;
 
         Ok(StepOutcome::from_dialog(result, |val| val.value))
     }
@@ -531,9 +570,19 @@ impl WizardStep for LocaleQuestion {
             .map(|value| AnnotatedOption::new(value, &LOCALE_OPTION_STYLE))
             .collect();
 
-        let result = FzfWrapper::builder()
-            .header(HeaderBuilder::new(NerdFont::Language, "Select System Locale").build())
-            .select_one(options)?;
+        // Start on the previously chosen locale; on the first pass, on the
+        // one the running system already uses.
+        let preselect = context
+            .previous_answer(&StepId::Locale)
+            .cloned()
+            .or_else(crate::arch::locales::detect_current_locale);
+
+        let result = super::select_one_preselecting(
+            preselect,
+            FzfWrapper::builder()
+                .header(HeaderBuilder::new(NerdFont::Language, "Select System Locale").build())
+                .items(options),
+        )?;
 
         Ok(StepOutcome::from_dialog(result, |val| val.value))
     }
@@ -589,13 +638,17 @@ impl WizardStep for KernelQuestion {
         true
     }
 
-    async fn run(&self, _context: &InstallContext) -> Result<StepOutcome> {
+    async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {
         let kernels = vec![KernelOption::Linux, KernelOption::Lts, KernelOption::Zen];
 
-        let result = FzfWrapper::builder()
-            .header(HeaderBuilder::new(NerdFont::Gear, "Select Kernel").build())
-            .presentation(MenuPresentation::Padded)
-            .select_one(kernels)?;
+        let result = super::select_one_with_preselect(
+            context,
+            StepId::Kernel,
+            FzfWrapper::builder()
+                .header(HeaderBuilder::new(NerdFont::Gear, "Select Kernel").build())
+                .items(kernels)
+                .padded(),
+        )?;
 
         Ok(StepOutcome::from_dialog(result, |k| k.label().to_string()))
     }

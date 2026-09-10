@@ -4,7 +4,7 @@ use anyhow::Result;
 use std::collections::{HashMap, HashSet};
 
 use crate::common::compositor::CompositorType;
-use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, MenuPresentation};
+use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper};
 use crate::preview::{PreviewId, preview_command};
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
@@ -199,10 +199,7 @@ fn handle_layout_action(
     }
     actions.push(LayoutActionItem::Back);
 
-    match FzfWrapper::menu()
-        .presentation(MenuPresentation::Padded)
-        .select_one(actions)?
-    {
+    match FzfWrapper::menu().items(actions).padded().select_one()? {
         crate::menu_utils::DialogOutcome::Submitted(LayoutActionItem::MoveUp) => {
             active_codes.swap(position, position - 1);
             Ok(Some(true))
@@ -266,7 +263,8 @@ fn select_layout(
     let result = FzfWrapper::builder()
         .header("Select Keyboard Layout")
         .prompt("Layout")
-        .select_one(available)?;
+        .items(available)
+        .select_one()?;
 
     match result {
         crate::menu_utils::DialogOutcome::Submitted(layout) => Ok(Some(layout.code)),
@@ -364,10 +362,7 @@ impl Setting for KeyboardLayout {
         loop {
             let items = build_layout_menu_items(&active_codes, &code_to_name);
 
-            match FzfWrapper::menu()
-                .presentation(MenuPresentation::Padded)
-                .select_one(items)?
-            {
+            match FzfWrapper::menu().items(items).padded().select_one()? {
                 crate::menu_utils::DialogOutcome::Submitted(LayoutMenuItem::Layout {
                     code,
                     position,

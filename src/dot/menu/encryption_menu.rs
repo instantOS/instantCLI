@@ -278,7 +278,7 @@ fn handle_key_action_menu(
             builder = builder.initial_index(index);
         }
 
-        let result = builder.select_one(actions.clone())?;
+        let result = builder.items(actions.clone()).select_one()?;
 
         match result {
             crate::menu_utils::DialogOutcome::Submitted(item) => {
@@ -399,7 +399,7 @@ fn handle_authorize_key_to_repo(
         .prompt("Repository")
         .responsive_layout();
 
-    let result = builder.select_one(repo_entries)?;
+    let result = builder.items(repo_entries).select_one()?;
     match result {
         crate::menu_utils::DialogOutcome::Submitted(entry) => match &entry.action {
             RepoAction::Select(repo_name) => {
@@ -532,7 +532,7 @@ pub fn handle_encryption_keys_menu(
             builder = builder.initial_index(index);
         }
 
-        let result = builder.select_one(items.clone())?;
+        let result = builder.items(items.clone()).select_one()?;
 
         match result {
             crate::menu_utils::DialogOutcome::Submitted(item) => {

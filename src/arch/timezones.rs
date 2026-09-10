@@ -2,6 +2,7 @@ use anyhow::Result;
 use std::fs;
 use std::path::Path;
 
+use crate::arch::annotations::{AnnotatedValue, TimezoneAnnotationProvider};
 use crate::arch::engine::DataKey;
 
 /// Non-timezone entries: metadata files, plus the `posix` and `right`
@@ -22,8 +23,22 @@ const NON_TIMEZONE_ENTRIES: &[&str] = &[
 pub struct TimezonesKey;
 
 impl DataKey for TimezonesKey {
-    type Value = Vec<String>;
+    type Value = Vec<AnnotatedValue<String>>;
     const KEY: &'static str = "timezones";
+}
+
+/// The timezone of the current system, derived from the `/etc/localtime`
+/// symlink, if it points into the zoneinfo database.
+pub(crate) fn detect_current_timezone() -> Option<String> {
+    let target = std::fs::read_link("/etc/localtime").ok()?;
+    localtime_target_to_timezone(&target.to_string_lossy())
+}
+
+fn localtime_target_to_timezone(target: &str) -> Option<String> {
+    target
+        .strip_prefix("/usr/share/zoneinfo/")
+        .filter(|tz| !tz.is_empty())
+        .map(str::to_string)
 }
 
 pub struct TimezoneProvider;
@@ -32,8 +47,14 @@ pub struct TimezoneProvider;
 impl crate::arch::engine::AsyncDataProvider for TimezoneProvider {
     async fn provide(&self, context: &crate::arch::engine::InstallContext) -> Result<()> {
         let timezones = fetch_timezones()?;
-        context.set::<TimezonesKey>(timezones);
+
+        self.save_list::<TimezonesKey, _>(context, timezones);
+
         Ok(())
+    }
+
+    fn annotation_provider(&self) -> Option<Box<dyn crate::arch::annotations::AnnotationProvider>> {
+        Some(Box::new(TimezoneAnnotationProvider::new()))
     }
 }
 
@@ -123,5 +144,25 @@ mod tests {
 
         assert_eq!(timezones, vec!["America/New_York", "Europe/Berlin"]);
         Ok(())
+    }
+
+    #[test]
+    fn localtime_target_maps_to_timezone_name() {
+        assert_eq!(
+            localtime_target_to_timezone("/usr/share/zoneinfo/Europe/Berlin").as_deref(),
+            Some("Europe/Berlin")
+        );
+        assert_eq!(
+            localtime_target_to_timezone("/usr/share/zoneinfo/America/Argentina/Buenos_Aires")
+                .as_deref(),
+            Some("America/Argentina/Buenos_Aires")
+        );
+    }
+
+    #[test]
+    fn localtime_targets_outside_zoneinfo_are_rejected() {
+        assert_eq!(localtime_target_to_timezone("/etc/localtime"), None);
+        assert_eq!(localtime_target_to_timezone("/usr/share/zoneinfo/"), None);
+        assert_eq!(localtime_target_to_timezone(""), None);
     }
 }

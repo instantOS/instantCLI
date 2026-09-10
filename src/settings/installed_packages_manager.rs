@@ -52,7 +52,6 @@ fn run_uninstaller(manager: PackageManager, debug: bool) -> Result<()> {
 
     loop {
         let result = FzfWrapper::builder()
-            .multi_select(true)
             .prompt("Select packages")
             .header(
                 HeaderBuilder::new(NerdFont::Package, "Manage Installed Packages")
@@ -60,7 +59,8 @@ fn run_uninstaller(manager: PackageManager, debug: bool) -> Result<()> {
                     .build(),
             )
             .responsive_layout()
-            .select_encoded_streaming(package_list::installed_command(manager))
+            .command(package_list::installed_command(manager))
+            .select_many()
             .context("Failed to run package selector")?;
 
         match handle_uninstall_result(result, manager, debug)? {

@@ -7,28 +7,37 @@
 //! `checklist()`) consumes the builder and yields a specialized builder that
 //! exposes only the methods relevant to that dialog kind. This makes mistakes
 //! like `.message(...).confirm_dialog()` impossible to express.
+//!
+//! Selection follows the same staged design. First choose exactly one source
+//! with `items`, `stream`, or `command`; then compose applicable options
+//! such as initial rows, keybinds, and the `.padded()` presentation; finally
+//! choose `select`, `select_many`, or `select_one`. Adding an option
+//! therefore does not require another cross-product terminal method.
+//!
+//! Presentation is a modifier, not a source: `.items(..)` and `.stream(..)`
+//! yield compact rows, and `.padded()` upgrades the stage to spacious
+//! multiline rows. Padded rows are prepared from records that must line up
+//! with a per-row preview manifest, so both static collections and live
+//! streams support them, while child-process command sources stay compact.
 
 mod checklist;
 mod dialogs;
 mod padded;
+mod selection;
 mod shared;
 
 use anyhow::Result;
-use serde::de::DeserializeOwned;
 
 use crate::ui::catppuccin::format_icon_colored;
 use crate::ui::nerd_font::NerdFont;
 
 use super::types::*;
-use super::wrapper::FzfWrapper;
-use super::wrapper::FzfWrapperParts;
 
 /// Configuration shared across every dialog kind. Carried forward through
 /// transitions; specialized builders read from this for prompt, header,
 /// additional args, etc.
 #[derive(Debug, Clone)]
 pub(crate) struct SharedConfig {
-    pub multi_select: bool,
     pub prompt: Option<String>,
     pub header: Option<Header>,
     pub default_args: Vec<String>,
@@ -36,13 +45,11 @@ pub(crate) struct SharedConfig {
     pub initial_cursor: Option<InitialCursor>,
     pub initial_query: Option<String>,
     pub responsive_layout: bool,
-    pub presentation: MenuPresentation,
 }
 
 impl SharedConfig {
     fn new() -> Self {
         Self {
-            multi_select: false,
             prompt: None,
             header: None,
             default_args: default_args(),
@@ -50,7 +57,6 @@ impl SharedConfig {
             initial_cursor: None,
             initial_query: None,
             responsive_layout: false,
-            presentation: MenuPresentation::Compact,
         }
     }
 
@@ -66,14 +72,46 @@ impl SharedConfig {
 
 /// Entry-point builder. Carries shared configuration and exposes:
 /// - shared setters (`prompt`, `header`, `args`, `initial_index`, `query`,
-///   `multi_select`, `responsive_layout`)
-/// - selection terminals (`select`, `select_one`, `select_menu`,
-///   `select_encoded_streaming{,_prefilled}`)
+///   `responsive_layout`)
+/// - selection-source transitions (`items`, `stream`, `command`)
 /// - transitions to specialized builders (`input`, `password`, `confirm`,
 ///   `message`, `checklist`)
 #[derive(Debug, Clone)]
 pub struct FzfBuilder {
     pub(crate) shared: SharedConfig,
+}
+
+/// Selection backed by a complete in-memory collection.
+pub struct ItemSelection<T, A = ()> {
+    pub(crate) builder: FzfBuilder,
+    pub(crate) items: Vec<T>,
+    pub(crate) keybinds: Vec<MenuKeybind<A>>,
+    pub(crate) presentation: ItemPresentation,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ItemPresentation {
+    Compact,
+    Padded,
+}
+
+/// Selection backed by typed items arriving over a channel.
+pub struct StreamSelection<'a, T, A = ()> {
+    pub(crate) builder: FzfBuilder,
+    pub(crate) initial_items: Vec<T>,
+    pub(crate) late_items: crossbeam_channel::Receiver<T>,
+    pub(crate) keybinds: Vec<MenuKeybind<A>>,
+    pub(crate) on_ready: Option<Box<dyn FnOnce() -> Result<()> + 'a>>,
+    pub(crate) presentation: ItemPresentation,
+}
+
+/// Selection backed by encoded rows emitted by a child process.
+pub struct CommandSelection<T, A = ()> {
+    pub(crate) builder: FzfBuilder,
+    pub(crate) command: StreamingCommand,
+    pub(crate) initial_rows: String,
+    pub(crate) keybinds: Vec<MenuKeybind<A>>,
+    pub(crate) payload: std::marker::PhantomData<T>,
 }
 
 #[derive(Debug, Clone)]
@@ -235,24 +273,6 @@ impl FzfBuilder {
         }
     }
 
-    pub(crate) fn into_wrapper_parts(self) -> FzfWrapperParts {
-        let additional_args = self.shared.args().cloned().collect();
-
-        FzfWrapperParts {
-            multi_select: self.shared.multi_select,
-            prompt: self.shared.prompt,
-            header: self.shared.header,
-            additional_args,
-            initial_cursor: self.shared.initial_cursor,
-            responsive_layout: self.shared.responsive_layout,
-        }
-    }
-
-    pub fn multi_select(mut self, multi: bool) -> Self {
-        self.shared.multi_select = multi;
-        self
-    }
-
     pub fn prompt<S: Into<String>>(mut self, prompt: S) -> Self {
         self.shared.prompt = Some(prompt.into());
         self
@@ -273,11 +293,6 @@ impl FzfBuilder {
     /// position is known.
     pub fn cursor(mut self, index: Option<usize>) -> Self {
         self.shared.initial_cursor = index.map(InitialCursor::Index);
-        self
-    }
-
-    pub fn presentation(mut self, presentation: MenuPresentation) -> Self {
-        self.shared.presentation = presentation;
         self
     }
 
@@ -366,233 +381,54 @@ impl FzfBuilder {
         }
     }
 
-    // ---- selection terminals ----
+    // ---- selection sources ----
 
-    pub fn select<T: FzfSelectable + Clone>(
-        self,
-        items: Vec<T>,
-    ) -> Result<DialogOutcome<MenuSelection<T>>> {
-        match self.shared.presentation {
-            MenuPresentation::Compact => FzfWrapper::from_builder(self).select(items),
-            MenuPresentation::Padded => self
-                .select_with_padded_presentation(items)
-                .map(|outcome| outcome.map(MenuSelection::from_items)),
+    /// Use a complete in-memory collection as the selection source.
+    ///
+    /// Applicable options are configured on the returned value, followed by
+    /// `select`, `select_many`, `select_one`, or `select_menu`.
+    pub fn items<T>(self, items: Vec<T>) -> ItemSelection<T> {
+        ItemSelection {
+            builder: self,
+            items,
+            keybinds: Vec::new(),
+            presentation: ItemPresentation::Compact,
         }
     }
 
-    /// Selection with registered keybinds.
+    /// Use a channel of typed items as the selection source.
     ///
-    /// Pressing one of the keys terminates the menu and returns its typed
-    /// action alongside the current selection set (see [`MenuSelection`]).
-    /// The labels are rendered as a dimmed hint line in the menu header.
-    /// Keys must not collide with each other or with fzf's
-    /// navigation/dismissal keys ([`MenuKey`] rejects those).
-    ///
-    /// Not supported by the `Padded` presentation: its index-based protocol
-    /// cannot carry keybind tokens.
-    pub fn select_with_keybinds<T: FzfSelectable + Clone, A: Clone>(
+    /// The menu opens immediately. Use `StreamSelection::initial_items` when
+    /// some items should be visible before the first channel value arrives.
+    pub fn stream<T>(
         self,
-        items: Vec<T>,
-        keybinds: &[MenuKeybind<A>],
-    ) -> Result<DialogOutcome<MenuSelection<T, A>>> {
-        match self.shared.presentation {
-            MenuPresentation::Compact => {
-                FzfWrapper::from_builder(self).select_with_keybinds(items, keybinds)
-            }
-            MenuPresentation::Padded => {
-                anyhow::bail!("keybinds are not supported by the padded presentation")
-            }
-        }
-    }
-
-    /// Like [`FzfBuilder::select`], but further items stream in while the
-    /// menu is open. See [`FzfWrapper::select_streaming`].
-    ///
-    /// Only supports the `Compact` presentation: the `Padded` protocol parses
-    /// an index from pre-built input and cannot accept late items.
-    pub fn select_streaming<T: FzfSelectable + Clone + Send + 'static>(
-        self,
-        initial_items: Vec<T>,
         late_items: crossbeam_channel::Receiver<T>,
-    ) -> Result<DialogOutcome<MenuSelection<T>>> {
-        self.select_streaming_with_keybinds(initial_items, late_items, super::wrapper::NO_KEYBINDS)
-    }
-
-    pub fn select_streaming_with_keybinds<T: FzfSelectable + Clone + Send + 'static, A: Clone>(
-        self,
-        initial_items: Vec<T>,
-        late_items: crossbeam_channel::Receiver<T>,
-        keybinds: &[MenuKeybind<A>],
-    ) -> Result<DialogOutcome<MenuSelection<T, A>>> {
-        ensure_compact_presentation(self.shared.presentation, "select_streaming")?;
-        FzfWrapper::from_builder(self).select_streaming_with_keybinds(
-            initial_items,
+    ) -> StreamSelection<'static, T> {
+        StreamSelection {
+            builder: self,
+            initial_items: Vec::new(),
             late_items,
-            keybinds,
-        )
-    }
-
-    pub(crate) fn select_streaming_with_ready_and_keybinds<
-        T: FzfSelectable + Clone + Send + 'static,
-        A: Clone,
-        F: FnOnce() -> Result<()>,
-    >(
-        self,
-        initial_items: Vec<T>,
-        late_items: crossbeam_channel::Receiver<T>,
-        keybinds: &[MenuKeybind<A>],
-        on_ready: F,
-    ) -> Result<DialogOutcome<MenuSelection<T, A>>> {
-        ensure_compact_presentation(self.shared.presentation, "select_streaming")?;
-        FzfWrapper::from_builder(self).select_streaming_with_ready_and_keybinds(
-            initial_items,
-            late_items,
-            keybinds,
-            on_ready,
-        )
-    }
-
-    /// Select exactly one item. Returns an error if the builder is configured
-    /// for multi-selection, which cannot satisfy a one-item contract.
-    pub fn select_one<T: FzfSelectable + Clone>(self, items: Vec<T>) -> Result<DialogOutcome<T>> {
-        if self.shared.multi_select {
-            anyhow::bail!("select_one cannot be used with multi-selection enabled");
-        }
-        match self.select(items)? {
-            DialogOutcome::Submitted(sel) => Ok(DialogOutcome::Submitted(sel.into_single()?)),
-            DialogOutcome::Cancelled => Ok(DialogOutcome::Cancelled),
+            keybinds: Vec::new(),
+            on_ready: None,
+            presentation: ItemPresentation::Compact,
         }
     }
 
-    pub fn select_menu<T: FzfSelectable + Clone>(
-        mut self,
-        items: Vec<super::types::MenuItem<T>>,
-    ) -> Result<DialogOutcome<T>> {
-        use super::types::MenuItem;
-
-        loop {
-            match self.clone().select(items.clone())? {
-                DialogOutcome::Submitted(mut sel) => {
-                    // Multi-selection on separator menus is not offered by
-                    // callers today; keep the one-item contract explicit.
-                    if sel.items.len() != 1 {
-                        anyhow::bail!(
-                            "expected exactly one selected menu entry, got {}",
-                            sel.items.len()
-                        );
-                    }
-                    match sel.items.pop().expect("checked length") {
-                        MenuItem::Entry(item) => return Ok(DialogOutcome::Submitted(item)),
-                        MenuItem::Separator(_) => {
-                            // Pointer selection can land on a non-selectable raw row.
-                            // Reopen without forcing the cursor back onto that row.
-                            self.shared.initial_cursor = None;
-                        }
-                    }
-                }
-                DialogOutcome::Cancelled => return Ok(DialogOutcome::Cancelled),
-            }
+    /// Use encoded menu rows emitted by a child process as the source.
+    ///
+    /// `T` is the payload decoded from each submitted row. Already encoded
+    /// rows can be prepended with `CommandSelection::initial_rows`.
+    pub fn command<T, C>(self, command: C) -> CommandSelection<T>
+    where
+        C: Into<StreamingCommand>,
+    {
+        CommandSelection {
+            builder: self,
+            command: command.into(),
+            initial_rows: String::new(),
+            keybinds: Vec::new(),
+            payload: std::marker::PhantomData,
         }
-    }
-
-    pub fn select_encoded_streaming<T, C>(
-        self,
-        command: C,
-    ) -> Result<DialogOutcome<MenuSelection<DecodedStreamingMenuItem<T>>>>
-    where
-        T: DeserializeOwned,
-        C: Into<StreamingCommand>,
-    {
-        self.select_encoded_streaming_with_keybinds(command, super::wrapper::NO_KEYBINDS)
-    }
-
-    pub fn select_encoded_streaming_with_keybinds<T, A: Clone, C>(
-        self,
-        command: C,
-        keybinds: &[MenuKeybind<A>],
-    ) -> Result<DialogOutcome<MenuSelection<DecodedStreamingMenuItem<T>, A>>>
-    where
-        T: DeserializeOwned,
-        C: Into<StreamingCommand>,
-    {
-        ensure_compact_presentation(self.shared.presentation, "select_encoded_streaming")?;
-        FzfWrapper::from_builder(self).select_encoded_streaming_with_keybinds(command, keybinds)
-    }
-
-    /// Single-pick variant of [`FzfBuilder::select_encoded_streaming`]:
-    /// the menu may be filtered and browsed live, but exactly one row is
-    /// submitted.
-    pub fn select_encoded_streaming_one<T, C>(
-        self,
-        command: C,
-    ) -> Result<DialogOutcome<DecodedStreamingMenuItem<T>>>
-    where
-        T: DeserializeOwned,
-        C: Into<StreamingCommand>,
-    {
-        single_from_vec(self.select_encoded_streaming(command)?)
-    }
-
-    pub fn select_encoded_streaming_prefilled<T, C>(
-        self,
-        command: C,
-        initial_input: &str,
-    ) -> Result<DialogOutcome<MenuSelection<DecodedStreamingMenuItem<T>>>>
-    where
-        T: DeserializeOwned,
-        C: Into<StreamingCommand>,
-    {
-        self.select_encoded_streaming_prefilled_with_keybinds(
-            command,
-            initial_input,
-            super::wrapper::NO_KEYBINDS,
-        )
-    }
-
-    pub fn select_encoded_streaming_prefilled_with_keybinds<T, A: Clone, C>(
-        self,
-        command: C,
-        initial_input: &str,
-        keybinds: &[MenuKeybind<A>],
-    ) -> Result<DialogOutcome<MenuSelection<DecodedStreamingMenuItem<T>, A>>>
-    where
-        T: DeserializeOwned,
-        C: Into<StreamingCommand>,
-    {
-        ensure_compact_presentation(self.shared.presentation, "select_encoded_streaming")?;
-        FzfWrapper::from_builder(self).select_encoded_streaming_prefilled_with_keybinds(
-            command,
-            initial_input,
-            keybinds,
-        )
-    }
-
-    /// Single-pick variant of [`FzfBuilder::select_encoded_streaming_prefilled`].
-    pub fn select_encoded_streaming_prefilled_one<T, C>(
-        self,
-        command: C,
-        initial_input: &str,
-    ) -> Result<DialogOutcome<DecodedStreamingMenuItem<T>>>
-    where
-        T: DeserializeOwned,
-        C: Into<StreamingCommand>,
-    {
-        single_from_vec(self.select_encoded_streaming_prefilled(command, initial_input)?)
-    }
-}
-
-fn ensure_compact_presentation(presentation: MenuPresentation, operation: &str) -> Result<()> {
-    if presentation != MenuPresentation::Compact {
-        anyhow::bail!("{operation} does not support padded presentation");
-    }
-    Ok(())
-}
-
-/// Extract the single expected element of a submitted selection.
-fn single_from_vec<T>(outcome: DialogOutcome<MenuSelection<T>>) -> Result<DialogOutcome<T>> {
-    match outcome {
-        DialogOutcome::Submitted(sel) => Ok(DialogOutcome::Submitted(sel.into_single()?)),
-        DialogOutcome::Cancelled => Ok(DialogOutcome::Cancelled),
     }
 }
 
@@ -702,6 +538,28 @@ mod tests {
                 .default_args
                 .contains(&"--padding=1,2".to_string())
         );
-        assert_eq!(builder.shared.presentation, MenuPresentation::Compact);
+        assert_eq!(
+            builder.clone().items(Vec::<String>::new()).presentation,
+            ItemPresentation::Compact
+        );
+        assert_eq!(
+            builder
+                .clone()
+                .items(Vec::<String>::new())
+                .padded()
+                .presentation,
+            ItemPresentation::Padded
+        );
+
+        let (_tx, rx) = crossbeam_channel::unbounded::<String>();
+        assert_eq!(
+            builder.clone().stream(rx).presentation,
+            ItemPresentation::Compact
+        );
+        let (_tx, rx) = crossbeam_channel::unbounded::<String>();
+        assert_eq!(
+            builder.clone().stream(rx).padded().presentation,
+            ItemPresentation::Padded
+        );
     }
 }

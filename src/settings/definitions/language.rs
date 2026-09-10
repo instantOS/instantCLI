@@ -212,7 +212,7 @@ pub fn configure_timezone(ctx: &mut SettingsContext) -> Result<()> {
 
     builder = builder.args(["--preview-window=right:50%:wrap"]);
 
-    match builder.select_one(choices)? {
+    match builder.items(choices).select_one()? {
         crate::menu_utils::DialogOutcome::Submitted(choice) => {
             if choice.value == current {
                 ctx.emit_info(

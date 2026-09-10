@@ -5,7 +5,7 @@ use std::process::Command;
 use std::time::Instant;
 
 use crate::menu_utils::{
-    ConfirmResult, FzfPreview, FzfSelectable, FzfWrapper, Header, HeaderBuilder, MenuPresentation,
+    ConfirmResult, FzfPreview, FzfSelectable, FzfWrapper, Header, HeaderBuilder,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
@@ -221,7 +221,8 @@ pub async fn open_project_for_path(markdown_path: &Path) -> Result<()> {
             .header(Header::fancy(project_name))
             .prompt("Select")
             .responsive_layout()
-            .select_one(entries)?;
+            .items(entries)
+            .select_one()?;
 
         match result {
             crate::menu_utils::DialogOutcome::Submitted(entry) => match entry {
@@ -566,8 +567,9 @@ fn prompt_output_conflict(output_path: &Path) -> Result<Option<OutputConflictCho
         )
         .prompt("Select")
         .responsive_layout()
-        .presentation(MenuPresentation::Padded)
-        .select_one(options)?;
+        .items(options)
+        .padded()
+        .select_one()?;
 
     match selection {
         crate::menu_utils::DialogOutcome::Submitted(option) => Ok(Some(option.choice)),
@@ -683,8 +685,9 @@ fn show_post_render_menu(output_path: &Path, elapsed: Option<std::time::Duration
         .header(header.build())
         .prompt("Select")
         .responsive_layout()
-        .presentation(MenuPresentation::Padded)
-        .select_one(entries)?;
+        .items(entries)
+        .padded()
+        .select_one()?;
 
     if let crate::menu_utils::DialogOutcome::Submitted(action) = result {
         match action {

@@ -10,6 +10,7 @@ use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
+use super::builder::SharedConfig;
 use super::preview::MixedPreviewContent;
 use super::preview::PreviewStrategy;
 use super::preview::PreviewUtils;
@@ -18,16 +19,6 @@ use super::types::*;
 use super::utils::{base_fzf_command, handle_old_fzf_error, log_fzf_failure};
 use crate::menu::server::{TrackedChild, run_tracked_with_input, tracked_spawn};
 use crate::ui::nerd_font::NerdFont;
-
-/// Named parts extracted from `FzfBuilder` for constructing `FzfWrapper`.
-pub(crate) struct FzfWrapperParts {
-    pub multi_select: bool,
-    pub prompt: Option<String>,
-    pub header: Option<Header>,
-    pub additional_args: Vec<String>,
-    pub initial_cursor: Option<InitialCursor>,
-    pub responsive_layout: bool,
-}
 
 /// Classify fzf's process status without conflating cancellation and failure.
 ///
@@ -130,9 +121,6 @@ fn calculate_separator_aware_cursor(
     // Search backward
     display_data[..pos].iter().rposition(|d| d.is_selectable)
 }
-
-/// Shared empty keybind list for menus without keybind support.
-pub(crate) const NO_KEYBINDS: &[MenuKeybind<()>] = super::keybind::NONE;
 
 /// Configure fzf for separator mode: raw mode + match-based navigation.
 ///
@@ -321,33 +309,37 @@ pub(crate) fn configure_preview_and_input(
     }
 }
 
-/// Apply the standard menu arguments shared by `select` and
-/// `select_streaming`.
-fn configure_menu_args<A>(cmd: &mut Command, wrapper: &FzfWrapper, keybinds: &[MenuKeybind<A>]) {
+/// Apply the standard arguments shared by every compact selection source.
+fn configure_menu_args<A>(
+    cmd: &mut Command,
+    shared: &SharedConfig,
+    keybinds: &[MenuKeybind<A>],
+    allow_multiple: bool,
+) {
     cmd.arg("--ansi"); // Enable ANSI color interpretation in display text
     cmd.arg("--tiebreak=index");
 
-    if wrapper.multi_select {
+    if allow_multiple {
         cmd.arg("--multi");
     }
-    if let Some(prompt) = &wrapper.prompt {
+    if let Some(prompt) = &shared.prompt {
         cmd.arg("--prompt").arg(format!("{prompt} > "));
     }
-    let header_text = match &wrapper.header {
+    let header_text = match &shared.header {
         Some(header) => {
-            let mut text = header.clone();
+            let mut text = header.to_fzf_string();
             if !keybinds.is_empty() {
                 text.push('\n');
                 text.push_str(&super::keybind::render_hint(
                     keybinds,
-                    wrapper.responsive_layout,
+                    shared.responsive_layout,
                 ));
             }
             Some(text)
         }
         None if !keybinds.is_empty() => Some(super::keybind::render_hint(
             keybinds,
-            wrapper.responsive_layout,
+            shared.responsive_layout,
         )),
         None => None,
     };
@@ -359,14 +351,18 @@ fn configure_menu_args<A>(cmd: &mut Command, wrapper: &FzfWrapper, keybinds: &[M
 
 /// Apply caller-provided arguments, initial positioning, and terminal-aware
 /// layout consistently across static and streaming menus.
-fn configure_wrapper_tail(cmd: &mut Command, wrapper: &FzfWrapper, cursor_position: Option<usize>) {
-    for arg in &wrapper.additional_args {
+fn configure_wrapper_tail(
+    cmd: &mut Command,
+    shared: &SharedConfig,
+    cursor_position: Option<usize>,
+) {
+    for arg in shared.args() {
         cmd.arg(arg);
     }
     if let Some(position) = cursor_position {
         cmd.arg("--bind").arg(format!("load:pos({})", position + 1));
     }
-    if wrapper.responsive_layout {
+    if shared.responsive_layout {
         let layout = super::utils::get_responsive_layout();
         cmd.arg(layout.preview_window);
         cmd.arg("--margin").arg(layout.margin);
@@ -383,7 +379,7 @@ fn force_mixed_preview_strategy<T: FzfSelectable>(items: &[T]) -> PreviewStrateg
 /// cancellation when the scratchpad becomes invisible. The returned
 /// [`TrackedChild`] unregisters (and kills, if still running) on drop, so
 /// error paths cannot leak a stale PID registration.
-fn spawn_menu_child(mut cmd: Command) -> Result<TrackedChild> {
+pub(super) fn spawn_menu_child(mut cmd: Command) -> Result<TrackedChild> {
     use std::process::Stdio;
     cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -393,7 +389,7 @@ fn spawn_menu_child(mut cmd: Command) -> Result<TrackedChild> {
 
 /// Wait for fzf to exit, release its registration, and map wait failures
 /// through the standard fzf error handling.
-fn finish_menu_child(child: TrackedChild) -> Result<std::process::Output> {
+pub(super) fn finish_menu_child(child: TrackedChild) -> Result<std::process::Output> {
     child.finish_with_output().map_err(|e| {
         if let Some(io_error) = e.downcast_ref::<std::io::Error>() {
             super::utils::handle_fzf_spawn_error(io_error);
@@ -402,26 +398,20 @@ fn finish_menu_child(child: TrackedChild) -> Result<std::process::Output> {
     })
 }
 
-/// Map a pressed keybind token back to the caller's typed action.
-fn resolve_action_token<A: Clone>(token: &str, keybinds: &[MenuKeybind<A>]) -> Result<A> {
-    keybinds
-        .iter()
-        .find(|bind| bind.key.as_str() == token)
-        .map(|bind| bind.action.clone())
-        .ok_or_else(|| anyhow!("fzf returned unknown keybind token {token:?}"))
+struct ParsedSelectionRows<A> {
+    rows: Vec<String>,
+    action: Option<A>,
 }
 
-/// Parse fzf output into submitted items plus an optional pressed keybind.
+/// Peel the renderer-independent action envelope from fzf's line output.
 ///
-/// Selection lines always carry at least three `\x1f`-delimited fields; a
-/// leading line exactly equal to one of the registered keys is the token
-/// printed by `--bind '{key}:print({key})+accept'`. A token with no item
-/// lines means the bind was pressed while the filtered list was empty.
-fn parse_fzf_output<T: Clone, A: Clone>(
+/// A leading registered key is emitted by `print(key)+accept`. An action may
+/// have no following row when it is invoked against an empty filtered list.
+fn parse_selection_rows<A: Clone>(
     result: std::process::Output,
-    item_map: &HashMap<String, T>,
     keybinds: &[MenuKeybind<A>],
-) -> Result<DialogOutcome<MenuSelection<T, A>>> {
+    row_delimiter: char,
+) -> Result<DialogOutcome<ParsedSelectionRows<A>>> {
     if fzf_was_cancelled(&result)? {
         return Ok(DialogOutcome::Cancelled);
     }
@@ -443,18 +433,44 @@ fn parse_fzf_output<T: Clone, A: Clone>(
         lines.next();
     }
 
-    // A bare line without any \x1f separator cannot be a selection line.
-    // With binds registered it can only be a token we did not register (fzf
-    // never emits one on its own); reject it explicitly instead of reporting
-    // a missing item key. Without binds, a bare line is malformed selection
-    // input, so leave it for the item-key check below.
-    if !keybinds.is_empty() && lines.peek().is_some_and(|line| !line.contains('\x1f')) {
+    if !keybinds.is_empty()
+        && lines
+            .peek()
+            .is_some_and(|line| !line.contains(row_delimiter))
+    {
         let token = lines.next().unwrap_or_default();
         anyhow::bail!("fzf returned unknown keybind token {token:?}");
     }
 
-    // Extract the key from field 3 (format: display\x1fkeywords\x1fkey[\x1f...])
-    let items = lines
+    let rows = lines.map(str::to_owned).collect::<Vec<_>>();
+    let action = action_token
+        .as_deref()
+        .map(|token| super::keybind::resolve_action(token, keybinds))
+        .transpose()?;
+
+    if action.is_none() && rows.is_empty() {
+        return Ok(DialogOutcome::Cancelled);
+    }
+
+    Ok(DialogOutcome::Submitted(ParsedSelectionRows {
+        rows,
+        action,
+    }))
+}
+
+/// Parse compact rows and resolve their stable item keys.
+fn parse_fzf_output<T: Clone, A: Clone>(
+    result: std::process::Output,
+    item_map: &HashMap<String, T>,
+    keybinds: &[MenuKeybind<A>],
+) -> Result<DialogOutcome<MenuSelection<T, A>>> {
+    let parsed = match parse_selection_rows(result, keybinds, '\x1f')? {
+        DialogOutcome::Submitted(parsed) => parsed,
+        DialogOutcome::Cancelled => return Ok(DialogOutcome::Cancelled),
+    };
+    let items = parsed
+        .rows
+        .iter()
         .map(|line| {
             let key = line
                 .split('\x1f')
@@ -466,70 +482,33 @@ fn parse_fzf_output<T: Clone, A: Clone>(
                 .ok_or_else(|| anyhow!("fzf returned unknown item key {key:?}"))
         })
         .collect::<Result<Vec<_>>>()?;
-
-    let action = match &action_token {
-        Some(token) => Some(resolve_action_token(token, keybinds)?),
-        None => None,
-    };
-
-    if action_token.is_none() && items.is_empty() {
-        return Ok(DialogOutcome::Cancelled);
-    }
-
-    Ok(DialogOutcome::Submitted(MenuSelection { items, action }))
+    Ok(DialogOutcome::Submitted(MenuSelection {
+        items,
+        action: parsed.action,
+    }))
 }
 
 fn parse_encoded_streaming_output<T: DeserializeOwned, A: Clone>(
     result: std::process::Output,
     keybinds: &[MenuKeybind<A>],
 ) -> Result<DialogOutcome<MenuSelection<DecodedStreamingMenuItem<T>, A>>> {
-    if fzf_was_cancelled(&result)? {
-        return Ok(DialogOutcome::Cancelled);
-    }
-
-    let stdout = String::from_utf8_lossy(&result.stdout);
-    let mut lines = stdout
-        .trim_end()
-        .split('\n')
-        .filter(|line| !line.is_empty())
-        .peekable();
-
-    let action_token = match lines.peek() {
-        Some(line) if keybinds.iter().any(|bind| bind.key.as_str() == *line) => {
-            Some((*line).to_string())
-        }
-        _ => None,
+    let parsed = match parse_selection_rows(result, keybinds, '\t')? {
+        DialogOutcome::Submitted(parsed) => parsed,
+        DialogOutcome::Cancelled => return Ok(DialogOutcome::Cancelled),
     };
-    if action_token.is_some() {
-        lines.next();
-    }
-    if !keybinds.is_empty() && lines.peek().is_some_and(|line| !line.contains('\t')) {
-        let token = lines.next().unwrap_or_default();
-        anyhow::bail!("fzf returned unknown keybind token {token:?}");
-    }
-
-    if action_token.is_none() && lines.peek().is_none() {
-        return Ok(DialogOutcome::Cancelled);
-    }
-
-    let items = lines
-        .map(DecodedStreamingMenuItem::decode)
+    let items = parsed
+        .rows
+        .iter()
+        .map(|row| DecodedStreamingMenuItem::decode(row))
         .collect::<Result<Vec<_>>>()?;
-    let action = action_token
-        .as_deref()
-        .map(|token| resolve_action_token(token, keybinds))
-        .transpose()?;
-    Ok(DialogOutcome::Submitted(MenuSelection { items, action }))
+    Ok(DialogOutcome::Submitted(MenuSelection {
+        items,
+        action: parsed.action,
+    }))
 }
 
-pub struct FzfWrapper {
-    pub(crate) multi_select: bool,
-    pub(crate) prompt: Option<String>,
-    pub(crate) header: Option<String>,
-    pub(crate) additional_args: Vec<String>,
-    pub(crate) initial_cursor: Option<InitialCursor>,
-    pub(crate) responsive_layout: bool,
-}
+/// Convenience entry points for constructing in-process dialogs.
+pub struct FzfWrapper;
 
 impl FzfWrapper {
     pub fn builder() -> super::builder::FzfBuilder {
@@ -547,37 +526,11 @@ impl FzfWrapper {
             .responsive_layout()
     }
 
-    pub(crate) fn from_builder(b: super::builder::FzfBuilder) -> Self {
-        let parts = b.into_wrapper_parts();
-        Self {
-            multi_select: parts.multi_select,
-            prompt: parts.prompt,
-            header: parts.header.map(|h| h.to_fzf_string()),
-            additional_args: parts.additional_args,
-            initial_cursor: parts.initial_cursor,
-            responsive_layout: parts.responsive_layout,
-        }
-    }
-
-    /// Selection without keybinds. See [`FzfWrapper::select_with_keybinds`].
-    pub fn select<T: FzfSelectable + Clone>(
-        &self,
-        items: Vec<T>,
-    ) -> Result<DialogOutcome<MenuSelection<T>>> {
-        self.select_with_keybinds(items, NO_KEYBINDS)
-    }
-
-    /// Selection with globally registered keybinds.
-    ///
-    /// Each bind terminates fzf when pressed and returns its typed action
-    /// alongside the current selection set (empty when the filtered list was
-    /// empty). Unlike [`FzfWrapper::select`], an empty item list is still
-    /// shown so keybinds remain usable; a menu without keybinds and without
-    /// items stays a plain cancellation.
-    pub fn select_with_keybinds<T: FzfSelectable + Clone, A: Clone>(
-        &self,
+    pub(crate) fn run_items<T: FzfSelectable + Clone, A: Clone>(
+        shared: SharedConfig,
         items: Vec<T>,
         keybinds: &[MenuKeybind<A>],
+        allow_multiple: bool,
     ) -> Result<DialogOutcome<MenuSelection<T, A>>> {
         super::keybind::validate(keybinds)?;
         #[cfg(test)]
@@ -598,9 +551,9 @@ impl FzfWrapper {
 
         // Calculate initial cursor position, adjusting for separators
         let cursor_position = if separator_mode {
-            calculate_separator_aware_cursor(&self.initial_cursor, &display_data)
+            calculate_separator_aware_cursor(&shared.initial_cursor, &display_data)
         } else {
-            calculate_cursor_position(&self.initial_cursor, display_data.len())
+            calculate_cursor_position(&shared.initial_cursor, display_data.len())
         };
 
         // Analyze preview strategy and build input text
@@ -608,7 +561,7 @@ impl FzfWrapper {
 
         // Configure fzf command
         let mut cmd = base_fzf_command();
-        configure_menu_args(&mut cmd, self, keybinds);
+        configure_menu_args(&mut cmd, &shared, keybinds, allow_multiple);
 
         // Build input text and configure preview
         let input_text =
@@ -620,7 +573,7 @@ impl FzfWrapper {
         }
         // User arguments and responsive settings intentionally come last so
         // callers can tune defaults while layout retains final authority.
-        configure_wrapper_tail(&mut cmd, self, cursor_position);
+        configure_wrapper_tail(&mut cmd, &shared, cursor_position);
 
         // Execute fzf
         let output = run_tracked_with_input(cmd, input_text.as_bytes())?;
@@ -629,21 +582,24 @@ impl FzfWrapper {
         parse_fzf_output(output, &item_map, keybinds)
     }
 
-    pub fn select_encoded_streaming_prefilled_with_keybinds<T, A: Clone, C>(
-        &self,
+    pub(crate) fn run_command<T, A: Clone, C>(
+        shared: SharedConfig,
         producer: C,
         initial_input: &str,
         keybinds: &[MenuKeybind<A>],
+        allow_multiple: bool,
     ) -> Result<DialogOutcome<MenuSelection<DecodedStreamingMenuItem<T>, A>>>
     where
         T: DeserializeOwned,
         C: Into<StreamingCommand>,
     {
         super::keybind::validate(keybinds)?;
-        let output = self.execute_streaming_command(
+        let output = Self::execute_streaming_command(
+            shared,
             producer,
             initial_input,
             keybinds,
+            allow_multiple,
             &[
                 "--delimiter",
                 "\t",
@@ -656,36 +612,25 @@ impl FzfWrapper {
         parse_encoded_streaming_output(output, keybinds)
     }
 
-    pub fn select_encoded_streaming_with_keybinds<T, A: Clone, C>(
-        &self,
-        producer: C,
-        keybinds: &[MenuKeybind<A>],
-    ) -> Result<DialogOutcome<MenuSelection<DecodedStreamingMenuItem<T>, A>>>
-    where
-        T: DeserializeOwned,
-        C: Into<StreamingCommand>,
-    {
-        self.select_encoded_streaming_prefilled_with_keybinds(producer, "", keybinds)
-    }
-
     fn execute_streaming_command<A, C>(
-        &self,
+        shared: SharedConfig,
         producer: C,
         initial_input: &str,
         keybinds: &[MenuKeybind<A>],
+        allow_multiple: bool,
         base_args: &[&str],
     ) -> Result<std::process::Output>
     where
         C: Into<StreamingCommand>,
     {
         let mut fzf = base_fzf_command();
-        configure_menu_args(&mut fzf, self, keybinds);
+        configure_menu_args(&mut fzf, &shared, keybinds, allow_multiple);
         fzf.args(base_args);
-        let cursor_position = self
+        let cursor_position = shared
             .initial_cursor
             .as_ref()
             .map(|InitialCursor::Index(index)| *index);
-        configure_wrapper_tail(&mut fzf, self, cursor_position);
+        configure_wrapper_tail(&mut fzf, &shared, cursor_position);
 
         let mut fzf_child = spawn_menu_child(fzf)?;
 
@@ -744,42 +689,27 @@ impl FzfWrapper {
         result
     }
 
-    /// Like [`FzfWrapper::select`], but further items stream in while the
-    /// menu is open.
+    /// Run a typed channel source, appending further items while the menu is
+    /// open.
     ///
     /// `initial_items` are shown immediately; additional items are pulled
     /// from `late_items` and appended live until the channel closes. The
     /// preview strategy is forced to `Mixed` because the preview kind of
     /// late items is not known when fzf is spawned.
-    pub fn select_streaming_with_keybinds<T: FzfSelectable + Clone + Send + 'static, A: Clone>(
-        &self,
+    pub(crate) fn run_stream<'a, T: FzfSelectable + Clone + Send + 'static, A: Clone>(
+        shared: SharedConfig,
         initial_items: Vec<T>,
         late_items: Receiver<T>,
         keybinds: &[MenuKeybind<A>],
-    ) -> Result<DialogOutcome<MenuSelection<T, A>>> {
-        self.select_streaming_with_ready_and_keybinds(
-            initial_items,
-            late_items,
-            keybinds,
-            || Ok(()),
-        )
-    }
-
-    pub(crate) fn select_streaming_with_ready_and_keybinds<
-        T: FzfSelectable + Clone + Send + 'static,
-        A: Clone,
-        F: FnOnce() -> Result<()>,
-    >(
-        &self,
-        initial_items: Vec<T>,
-        late_items: Receiver<T>,
-        keybinds: &[MenuKeybind<A>],
-        on_ready: F,
+        allow_multiple: bool,
+        on_ready: Option<Box<dyn FnOnce() -> Result<()> + 'a>>,
     ) -> Result<DialogOutcome<MenuSelection<T, A>>> {
         super::keybind::validate(keybinds)?;
         #[cfg(test)]
         if let Some(resp) = crate::menu_utils::mock::pop_mock() {
-            on_ready()?;
+            if let Some(on_ready) = on_ready {
+                on_ready()?;
+            }
             let mut items = initial_items;
             while let Ok(item) = late_items.try_recv() {
                 items.push(item);
@@ -792,22 +722,22 @@ impl FzfWrapper {
         let (item_map, display_data) = build_item_map(&initial_items);
         let separator_mode = display_data.iter().any(|d| !d.is_selectable);
         let cursor_position = if separator_mode {
-            calculate_separator_aware_cursor(&self.initial_cursor, &display_data)
+            calculate_separator_aware_cursor(&shared.initial_cursor, &display_data)
         } else {
-            calculate_cursor_position(&self.initial_cursor, display_data.len())
+            calculate_cursor_position(&shared.initial_cursor, display_data.len())
         };
         let preview_strategy = force_mixed_preview_strategy(&initial_items);
 
         // Configure fzf command
         let mut cmd = base_fzf_command();
-        configure_menu_args(&mut cmd, self, keybinds);
+        configure_menu_args(&mut cmd, &shared, keybinds, allow_multiple);
         let input_text =
             configure_preview_and_input(&mut cmd, preview_strategy, &display_data, separator_mode);
 
         if separator_mode {
             configure_separator_mode(&mut cmd);
         }
-        configure_wrapper_tail(&mut cmd, self, cursor_position);
+        configure_wrapper_tail(&mut cmd, &shared, cursor_position);
 
         let mut child = spawn_menu_child(cmd)?;
 
@@ -828,7 +758,9 @@ impl FzfWrapper {
         }
         // An error here drops `child`, which kills fzf and releases its
         // registration.
-        on_ready()?;
+        if let Some(on_ready) = on_ready {
+            on_ready()?;
+        }
 
         // Late items are appended to fzf's stdin as they arrive; the shared
         // map lets the final selection be resolved back to an item.
@@ -987,7 +919,7 @@ mod mock_tests {
     fn test_mock_select_returns_canned_item() {
         let _guard = MockQueue::new().select_index(1).guard();
         let items = vec!["alpha".to_string(), "beta".to_string(), "gamma".to_string()];
-        let result = FzfWrapper::builder().select(items).unwrap();
+        let result = FzfWrapper::builder().items(items).select().unwrap();
         match result {
             DialogOutcome::Submitted(sel) => assert_eq!(sel.items, vec!["beta".to_string()]),
             other => panic!("Expected Submitted, got {other:?}"),
@@ -998,7 +930,7 @@ mod mock_tests {
     fn test_mock_select_cancel() {
         let _guard = MockQueue::new().cancel_selection().guard();
         let items = vec!["alpha".to_string()];
-        let result = FzfWrapper::builder().select(items).unwrap();
+        let result = FzfWrapper::builder().items(items).select().unwrap();
         assert_eq!(result, DialogOutcome::Cancelled);
     }
 
@@ -1006,10 +938,7 @@ mod mock_tests {
     fn test_mock_multi_select_returns_all_canned_items() {
         let _guard = MockQueue::new().multi_select(vec![0, 2]).guard();
         let items = vec!["alpha".to_string(), "beta".to_string(), "gamma".to_string()];
-        let result = FzfWrapper::builder()
-            .multi_select(true)
-            .select(items)
-            .unwrap();
+        let result = FzfWrapper::builder().items(items).select_many().unwrap();
         assert_eq!(
             result,
             DialogOutcome::Submitted(MenuSelection {
@@ -1023,10 +952,12 @@ mod mock_tests {
     fn select_one_preserves_submission_and_cancellation() {
         let _guard = MockQueue::new().select_index(0).cancel_selection().guard();
         let submitted = FzfWrapper::builder()
-            .select_one(vec!["alpha".to_string()])
+            .items(vec!["alpha".to_string()])
+            .select_one()
             .unwrap();
         let cancelled = FzfWrapper::builder()
-            .select_one(vec!["alpha".to_string()])
+            .items(vec!["alpha".to_string()])
+            .select_one()
             .unwrap();
 
         assert_eq!(submitted, DialogOutcome::Submitted("alpha".to_string()));
@@ -1034,16 +965,72 @@ mod mock_tests {
     }
 
     #[test]
-    fn select_one_rejects_multi_selection_results() {
-        let _guard = MockQueue::new().multi_select(vec![0]).guard();
+    fn select_one_rejects_multiple_results() {
+        let _guard = MockQueue::new().multi_select(vec![0, 1]).guard();
         let error = FzfWrapper::builder()
-            .multi_select(true)
-            .select_one(vec!["alpha".to_string()])
+            .items(vec!["alpha".to_string(), "beta".to_string()])
+            .select_one()
             .unwrap_err();
 
         assert_eq!(
             error.to_string(),
-            "select_one cannot be used with multi-selection enabled"
+            "expected exactly one selected item, got 2"
+        );
+    }
+
+    #[test]
+    fn stream_source_supports_the_shared_single_item_terminal() {
+        let (tx, rx) = crossbeam_channel::unbounded();
+        tx.send("late".to_string()).unwrap();
+        drop(tx);
+        let _guard = MockQueue::new().select_index(0).guard();
+
+        let outcome = FzfWrapper::builder().stream(rx).select_one().unwrap();
+
+        assert_eq!(outcome, DialogOutcome::Submitted("late".to_string()));
+    }
+
+    #[test]
+    fn padded_presentation_composes_multi_selection_and_keybinds() {
+        let binds = [MenuKeybind::new(
+            MenuKey::new("ctrl-e").unwrap(),
+            "edit",
+            "edit-action",
+        )];
+
+        let _guard = MockQueue::new()
+            .multi_select(vec![0, 2])
+            .keybind_action("ctrl-e", vec![1])
+            .guard();
+        let multiple = FzfWrapper::builder()
+            .items(vec![
+                "alpha".to_string(),
+                "beta".to_string(),
+                "gamma".to_string(),
+            ])
+            .padded()
+            .select_many()
+            .unwrap();
+        let keybind = FzfWrapper::builder()
+            .items(vec!["alpha".to_string(), "beta".to_string()])
+            .padded()
+            .keybinds(&binds)
+            .select()
+            .unwrap();
+
+        assert_eq!(
+            multiple,
+            DialogOutcome::Submitted(MenuSelection {
+                items: vec!["alpha".to_string(), "gamma".to_string()],
+                action: None,
+            })
+        );
+        assert_eq!(
+            keybind,
+            DialogOutcome::Submitted(MenuSelection {
+                items: vec!["beta".to_string()],
+                action: Some("edit-action"),
+            })
         );
     }
 
@@ -1056,7 +1043,10 @@ mod mock_tests {
             MenuItem::entry("alpha".to_string()),
             MenuItem::entry("beta".to_string()),
         ];
-        let error = FzfWrapper::builder().select_menu(entries).unwrap_err();
+        let error = FzfWrapper::builder()
+            .items(entries)
+            .select_menu()
+            .unwrap_err();
 
         assert_eq!(
             error.to_string(),
@@ -1091,7 +1081,7 @@ mod mock_tests {
         };
         let items = HashMap::from([("known".to_string(), "value".to_string())]);
 
-        let error = parse_fzf_output(output, &items, NO_KEYBINDS).unwrap_err();
+        let error = parse_fzf_output::<_, ()>(output, &items, &[]).unwrap_err();
         assert_eq!(
             error.to_string(),
             "fzf returned a selection without an item key"
@@ -1285,7 +1275,10 @@ mod mock_tests {
         )];
 
         let result = FzfWrapper::builder()
-            .select_streaming_with_keybinds(vec!["static".to_string()], rx, &binds)
+            .stream(rx)
+            .initial_items(vec!["static".to_string()])
+            .keybinds(&binds)
+            .select()
             .unwrap();
         assert_eq!(
             result,
@@ -1343,7 +1336,9 @@ mod mock_tests {
         )];
 
         let outcome = FzfWrapper::builder()
-            .select_with_keybinds(vec!["alpha".to_string(), "beta".to_string()], &binds)
+            .items(vec!["alpha".to_string(), "beta".to_string()])
+            .keybinds(&binds)
+            .select()
             .unwrap();
 
         assert_eq!(
@@ -1356,14 +1351,16 @@ mod mock_tests {
     }
 
     #[test]
-    fn test_mock_select_streaming_merges_streamed_items() {
+    fn test_mock_stream_selection_merges_streamed_items() {
         let (tx, rx) = crossbeam_channel::unbounded::<String>();
         tx.send("late".to_string()).unwrap();
         let _tx = tx; // keep the channel open, mirroring a live producer
 
         let _guard = MockQueue::new().select_index(1).guard();
         let result = FzfWrapper::builder()
-            .select_streaming(vec!["static".to_string()], rx)
+            .stream(rx)
+            .initial_items(vec!["static".to_string()])
+            .select()
             .unwrap();
         match result {
             DialogOutcome::Submitted(sel) => assert_eq!(sel.items, vec!["late".to_string()]),
@@ -1373,8 +1370,8 @@ mod mock_tests {
 
     #[test]
     fn standard_menu_keeps_spacing_header() {
-        let parts = FzfWrapper::menu().into_wrapper_parts();
-        assert!(matches!(parts.header, Some(Header::Default(text)) if text.is_empty()));
+        let builder = FzfWrapper::menu();
+        assert!(matches!(builder.shared.header, Some(Header::Default(text)) if text.is_empty()));
     }
 
     #[test]

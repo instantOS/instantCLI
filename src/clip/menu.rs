@@ -238,7 +238,9 @@ pub fn run(backend: ClipBackend) -> Result<()> {
         let crate::menu_utils::DialogOutcome::Submitted(selection) = FzfWrapper::menu()
             .cursor(initial_index)
             .header(header)
-            .select_with_keybinds(items.clone(), &keybinds)?
+            .items(items.clone())
+            .keybinds(&keybinds)
+            .select()?
         else {
             return Ok(());
         };

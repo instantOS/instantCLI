@@ -3,8 +3,7 @@ use anyhow::{Result, anyhow, bail};
 use crate::menu::client::HostedMenuClient;
 use crate::menu::protocol::ChoiceOptions;
 use crate::menu_utils::{
-    FzfWrapper, Header, HeaderBuilder, MenuCursor, MenuKey, MenuKeybind, MenuPresentation,
-    MenuSelection,
+    FzfWrapper, Header, HeaderBuilder, MenuCursor, MenuKey, MenuKeybind, MenuSelection,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
@@ -72,7 +71,11 @@ pub(super) fn interactive_pass_quick_access() -> Result<i32> {
 
         let keybinds = quick_access_keybinds()?;
 
-        match builder.select_with_keybinds(quick_access_items.clone(), &keybinds)? {
+        match builder
+            .items(quick_access_items.clone())
+            .keybinds(&keybinds)
+            .select()?
+        {
             crate::menu_utils::DialogOutcome::Submitted(sel) => {
                 // Keybind pressed on an empty filtered list has no target.
                 let Some(intent) = interpret_quick_access_selection(sel) else {
@@ -177,8 +180,9 @@ pub(super) fn run_add_menu(current_prefix: Option<&str>) -> Result<()> {
         .header(header)
         .prompt("Create")
         .responsive_layout()
-        .presentation(MenuPresentation::Padded)
-        .select_one(items)?
+        .items(items)
+        .padded()
+        .select_one()?
     {
         match item.action {
             AddMenuAction::AddPassword => {
@@ -223,7 +227,7 @@ pub(crate) fn run_edit_browser(initial_prefix: Option<&str>) -> Result<()> {
             builder = builder.initial_index(index);
         }
 
-        match builder.select_one(browser_items.clone())? {
+        match builder.items(browser_items.clone()).select_one()? {
             crate::menu_utils::DialogOutcome::Submitted(item) => {
                 cursor.update(&item, &browser_items);
                 match item.kind {
@@ -279,7 +283,7 @@ pub(super) fn run_edit_action_menu(entry: &PassEntry) -> Result<()> {
             builder = builder.initial_index(index);
         }
 
-        match builder.select_one(items.clone())? {
+        match builder.items(items.clone()).select_one()? {
             crate::menu_utils::DialogOutcome::Submitted(item) => {
                 cursor.update(&item, &items);
                 match item.action {

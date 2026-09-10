@@ -1,7 +1,5 @@
 use crate::arch::engine::{DataKey, InstallContext, StepId, StepOutcome, WizardStep};
-use crate::menu_utils::{
-    ConfirmResult, FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder, MenuPresentation,
-};
+use crate::menu_utils::{ConfirmResult, FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder};
 use crate::ui::catppuccin::colors;
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -218,9 +216,15 @@ impl WizardStep for DiskQuestion {
         let mut last_custom_path: Option<String> = None;
 
         loop {
-            let result = FzfWrapper::builder()
-                .header(HeaderBuilder::new(NerdFont::HardDrive, "Select Installation Disk").build())
-                .select_one(selections.clone())?;
+            let result = super::select_one_with_preselect(
+                context,
+                StepId::Disk,
+                FzfWrapper::builder()
+                    .header(
+                        HeaderBuilder::new(NerdFont::HardDrive, "Select Installation Disk").build(),
+                    )
+                    .items(selections.clone()),
+            )?;
 
             let selection = match result {
                 crate::menu_utils::DialogOutcome::Submitted(d) => d,
@@ -416,9 +420,15 @@ impl WizardStep for PartitioningMethodQuestion {
             }
         }
 
-        let result = FzfWrapper::builder()
-            .header(HeaderBuilder::new(NerdFont::HardDrive, "Select Partitioning Method").build())
-            .select_one(options)?;
+        let result = super::select_one_with_preselect(
+            context,
+            StepId::PartitioningMethod,
+            FzfWrapper::builder()
+                .header(
+                    HeaderBuilder::new(NerdFont::HardDrive, "Select Partitioning Method").build(),
+                )
+                .items(options),
+        )?;
 
         Ok(StepOutcome::from_dialog(result, |option| {
             option.label().to_string()
@@ -528,12 +538,13 @@ impl WizardStep for RunCfdiskStep {
                     )
                     .build(),
                 )
-                .presentation(MenuPresentation::Padded)
-                .select_one(vec![
+                .items(vec![
                     EmptyLayoutAction::ReopenCfdisk,
                     EmptyLayoutAction::ChangePartitioningMethod,
                     EmptyLayoutAction::PauseInstaller,
-                ])?;
+                ])
+                .padded()
+                .select_one()?;
 
             match result {
                 crate::menu_utils::DialogOutcome::Submitted(EmptyLayoutAction::ReopenCfdisk) => {

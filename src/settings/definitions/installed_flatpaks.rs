@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 
 use crate::common::package::{PackageManager, uninstall_packages};
 use crate::common::shell::resolve_current_binary;
-use crate::menu_utils::{FzfSelectable, FzfWrapper, Header, MenuPresentation, StreamingCommand};
+use crate::menu_utils::{FzfSelectable, FzfWrapper, Header, StreamingCommand};
 use crate::settings::context::SettingsContext;
 use crate::settings::deps::FLATPAK;
 use crate::settings::flatpak_list::FlatpakSelectionPayload;
@@ -51,10 +51,7 @@ pub fn is_flatpak_installed(app_id: &str) -> bool {
 pub fn show_flatpak_action_menu(app_id: &str) -> Result<()> {
     let actions = vec![FlatpakAction::Run, FlatpakAction::Uninstall];
 
-    let action = match FzfWrapper::menu()
-        .presentation(MenuPresentation::Padded)
-        .select_one(actions)?
-    {
+    let action = match FzfWrapper::menu().items(actions).padded().select_one()? {
         crate::menu_utils::DialogOutcome::Submitted(a) => a,
         crate::menu_utils::DialogOutcome::Cancelled => {
             println!("Action selection cancelled.");
@@ -108,7 +105,8 @@ fn run_installed_flatpaks_manager() -> Result<()> {
             .prompt("Select a Flatpak app")
             .header(Header::fancy("Manage Installed Flatpaks"))
             .responsive_layout()
-            .select_encoded_streaming_one::<FlatpakSelectionPayload, _>(list_command)?;
+            .command::<FlatpakSelectionPayload, _>(list_command)
+            .select_one()?;
 
         let app_id = match result {
             crate::menu_utils::DialogOutcome::Submitted(row) => row.payload.app_id,
@@ -121,10 +119,7 @@ fn run_installed_flatpaks_manager() -> Result<()> {
         // Show action menu for the selected app
         let actions = vec![FlatpakAction::Run, FlatpakAction::Uninstall];
 
-        let action = match FzfWrapper::menu()
-            .presentation(MenuPresentation::Padded)
-            .select_one(actions)?
-        {
+        let action = match FzfWrapper::menu().items(actions).padded().select_one()? {
             crate::menu_utils::DialogOutcome::Submitted(a) => a,
             crate::menu_utils::DialogOutcome::Cancelled => continue,
         };

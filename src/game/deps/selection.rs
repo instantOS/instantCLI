@@ -73,7 +73,8 @@ pub fn select_dependency<'a>(
         .collect();
 
     let selection = FzfWrapper::builder()
-        .select_one(options)
+        .items(options)
+        .select_one()
         .context("Failed to select dependency interactively")?;
 
     Ok(match selection {

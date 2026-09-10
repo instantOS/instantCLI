@@ -221,9 +221,15 @@ impl WizardStep for DualBootPartitionQuestion {
             .map(|info| DualBootPartitionOption { info })
             .collect();
 
-        let result = FzfWrapper::builder()
-            .header(HeaderBuilder::new(NerdFont::HardDrive, "Select Partition to Resize").build())
-            .select_one(options)?;
+        let result = super::select_one_with_preselect(
+            context,
+            StepId::DualBootPartition,
+            FzfWrapper::builder()
+                .header(
+                    HeaderBuilder::new(NerdFont::HardDrive, "Select Partition to Resize").build(),
+                )
+                .items(options),
+        )?;
 
         Ok(StepOutcome::from_dialog(result, |option| {
             option.info.device

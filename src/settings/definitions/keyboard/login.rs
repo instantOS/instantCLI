@@ -74,7 +74,8 @@ impl Setting for LoginScreenLayout {
             .header("Select Login Screen Layout")
             .prompt("Layout")
             .initial_index(initial_index)
-            .select_one(layouts)?;
+            .items(layouts)
+            .select_one()?;
 
         match result {
             crate::menu_utils::DialogOutcome::Submitted(layout) => {

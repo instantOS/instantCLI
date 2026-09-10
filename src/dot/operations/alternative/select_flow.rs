@@ -8,7 +8,7 @@ use colored::Colorize;
 use crate::dot::config::DotfileConfig;
 use crate::dot::override_config::{DotfileSource, OverrideConfig};
 use crate::dot::sources;
-use crate::menu_utils::{FzfSelectable, FzfWrapper, Header, MenuCursor, MenuPresentation};
+use crate::menu_utils::{FzfSelectable, FzfWrapper, Header, MenuCursor};
 use crate::ui::prelude::*;
 
 use super::apply::{is_safe_to_switch, remove_override, set_alternative};
@@ -92,8 +92,9 @@ fn handle_single_source(
             )))
             .prompt("Action: ")
             .responsive_layout()
-            .presentation(MenuPresentation::Padded)
-            .select_one(vec![Choice::Remove, Choice::Back])?
+            .items(vec![Choice::Remove, Choice::Back])
+            .padded()
+            .select_one()?
         {
             crate::menu_utils::DialogOutcome::Submitted(Choice::Remove) => {
                 let mut overrides = OverrideConfig::load()?;
@@ -210,7 +211,7 @@ fn run_source_selection_menu(
             builder = builder.initial_index(index);
         }
 
-        match builder.select_one(menu.clone())? {
+        match builder.items(menu.clone()).select_one()? {
             crate::menu_utils::DialogOutcome::Submitted(MenuItem::Source(item)) => {
                 cursor.update(&MenuItem::Source(item.clone()), &menu);
                 set_alternative(&config, path, display, &item)?;

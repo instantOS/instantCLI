@@ -583,7 +583,8 @@ pub fn select_snapshot_interactive(
     entries.push(SnapshotMenuEntry::Back);
 
     let selected = FzfWrapper::builder()
-        .select_one(entries)
+        .items(entries)
+        .select_one()
         .map_err(|e| anyhow::anyhow!("Failed to select snapshot: {}", e))?;
 
     match selected {

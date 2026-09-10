@@ -6,9 +6,7 @@
 use anyhow::{Context, Result};
 use duct::cmd;
 
-use crate::menu_utils::{
-    ConfirmResult, FzfSelectable, FzfWrapper, Header, MenuCursor, MenuPresentation,
-};
+use crate::menu_utils::{ConfirmResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::prelude::*;
@@ -25,8 +23,9 @@ pub fn run_options_menu(db: &NotifyDb, _debug: bool) -> Result<()> {
         let initial_index = cursor.initial_index(&items);
         let selection = FzfWrapper::menu()
             .cursor(initial_index)
-            .presentation(MenuPresentation::Padded)
-            .select_one(items.clone())?;
+            .items(items.clone())
+            .padded()
+            .select_one()?;
 
         match selection {
             crate::menu_utils::DialogOutcome::Submitted(item @ OptionsItem::DoNotDisturb(_)) => {
@@ -374,8 +373,9 @@ fn handle_delete_by_app(db: &NotifyDb) -> Result<()> {
         .header(Header::default(
             "Select an application to review its notifications",
         ))
-        .presentation(MenuPresentation::Padded)
-        .select_one(items)?;
+        .items(items)
+        .padded()
+        .select_one()?;
 
     let app = match selection {
         crate::menu_utils::DialogOutcome::Submitted(AppDeletionItem::Application {
@@ -680,8 +680,9 @@ fn confirm_deletion(matches: &[Notification], postfix: Option<&str>) -> Result<b
     let selection = FzfWrapper::menu()
         .initial_index(0)
         .header(Header::default(&header_text))
-        .presentation(MenuPresentation::Padded)
-        .select_one(items)?;
+        .items(items)
+        .padded()
+        .select_one()?;
     let crate::menu_utils::DialogOutcome::Submitted(chosen) = selection else {
         return Ok(false);
     };

@@ -190,7 +190,8 @@ pub fn select_repository(
             .header(Header::fancy("Clone Repository"))
             .prompt("Select")
             .responsive_layout()
-            .select_one(items)?
+            .items(items)
+            .select_one()?
         {
             crate::menu_utils::DialogOutcome::Submitted(item) => Some(item),
             crate::menu_utils::DialogOutcome::Cancelled => None,
@@ -217,7 +218,8 @@ pub fn select_package(packages: Vec<Package>) -> Result<Option<Package>> {
             .header(Header::fancy("Install Package"))
             .prompt("Select")
             .responsive_layout()
-            .select_one(items)?
+            .items(items)
+            .select_one()?
         {
             crate::menu_utils::DialogOutcome::Submitted(item) => Some(item.package),
             crate::menu_utils::DialogOutcome::Cancelled => None,

@@ -301,7 +301,8 @@ impl PathInputBuilder {
                 }
                 None => FzfWrapper::builder()
                     .header(self.header.clone())
-                    .select_one(options.clone())?,
+                    .items(options.clone())
+                    .select_one()?,
             };
 
             match selection {
@@ -357,23 +358,15 @@ impl PathInputBuilder {
 
         // Jump to the first streamed suggestion once fzf finished loading its
         // input; before that the cursor rests on the first static option.
-        let selected = FzfWrapper::builder()
+        FzfWrapper::builder()
             .header(self.header.clone())
             .args([
                 "--bind".to_string(),
                 format!("load:pos({})", options.len() + 1),
             ])
-            .select_streaming(options.to_vec(), rx)?;
-
-        Ok(match selected {
-            crate::menu_utils::DialogOutcome::Submitted(sel) => {
-                // Single-select menu: expect exactly one submitted option.
-                crate::menu_utils::DialogOutcome::Submitted(sel.into_single()?)
-            }
-            crate::menu_utils::DialogOutcome::Cancelled => {
-                crate::menu_utils::DialogOutcome::Cancelled
-            }
-        })
+            .stream(rx)
+            .initial_items(options.to_vec())
+            .select_one()
     }
 }
 

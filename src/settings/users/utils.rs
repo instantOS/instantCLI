@@ -197,7 +197,8 @@ pub(super) fn select_shell(ctx: &SettingsContext, prompt: &str) -> Result<Option
     let selected = FzfWrapper::builder()
         .prompt(prompt)
         .header("Choose a shell from /etc/shells (Esc for default)")
-        .select_one(shell_items)?;
+        .items(shell_items)
+        .select_one()?;
 
     match selected {
         crate::menu_utils::DialogOutcome::Submitted(item) => Ok(Some(item.path)),
@@ -220,8 +221,8 @@ pub(super) fn select_groups(header: &str) -> Result<Vec<String>> {
     let result = FzfWrapper::builder()
         .prompt("Select groups")
         .header(header)
-        .args(["--multi"])
-        .select(group_items)?;
+        .items(group_items)
+        .select_many()?;
 
     let selected_groups = match result {
         crate::menu_utils::DialogOutcome::Submitted(sel) => {

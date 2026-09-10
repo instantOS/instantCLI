@@ -491,7 +491,7 @@ impl MenuServer {
     ///
     /// Concurrency: a reader thread owns the connection's buffered reader
     /// and forwards `ChoiceChunk` items into a bounded mpsc channel consumed by
-    /// `select_streaming`; the main thread runs fzf under the standard
+    /// `FzfBuilder::stream`; the main thread runs fzf under the standard
     /// visibility monitor. After fzf exits, the main thread shuts down the
     /// connection's read side and joins the reader before returning to the
     /// accept loop. This keeps reader ownership scoped to one request even

@@ -42,6 +42,11 @@ impl DataKey for DualBootPartitions {
 #[derive(Default, Clone)]
 pub struct InstallContext {
     pub(super) answers: HashMap<StepId, String>,
+    /// Answers which were dropped by back-navigation, revisit, or
+    /// invalidation. They are kept only so a re-asked question can preselect
+    /// the row the user previously chose; they are not part of the wizard's
+    /// answer state and are never serialized.
+    pub(super) previous_answers: HashMap<StepId, String>,
     /// Steps which completed without producing configuration data.
     pub(super) completed_steps: BTreeSet<StepId>,
     /// Fingerprint of each step's dependency state when it completed.
@@ -87,6 +92,7 @@ impl<'de> Deserialize<'de> for InstallContext {
         let helper = Helper::deserialize(deserializer)?;
         Ok(InstallContext {
             answers: helper.answers,
+            previous_answers: HashMap::new(),
             completed_steps: helper.completed_steps,
             step_dependency_fingerprints: helper.step_dependency_fingerprints,
             system_info: helper.system_info,
@@ -109,6 +115,7 @@ impl InstallContext {
     pub fn new() -> Self {
         Self {
             answers: HashMap::new(),
+            previous_answers: HashMap::new(),
             completed_steps: BTreeSet::new(),
             step_dependency_fingerprints: HashMap::new(),
             system_info: SystemInfo::default(),
@@ -139,6 +146,16 @@ impl InstallContext {
 
     pub fn get_answer(&self, id: &StepId) -> Option<&String> {
         self.answers.get(id)
+    }
+
+    /// The answer the user last chose for this step, even after it was dropped
+    /// by back-navigation, revisit, or invalidation. Falls back to the live
+    /// answer so flows which re-run a step without dropping state (the review
+    /// menu) also surface a previous choice. Used for list preselection only.
+    pub fn previous_answer(&self, id: &StepId) -> Option<&String> {
+        self.previous_answers
+            .get(id)
+            .or_else(|| self.answers.get(id))
     }
 
     pub fn is_step_completed(&self, id: StepId) -> bool {
@@ -179,17 +196,17 @@ impl InstallContext {
         }
 
         // Auto-detect locale from /etc/locale.conf
-        if let Some(locale) = detect_system_locale() {
+        if let Some(locale) = crate::arch::locales::detect_current_locale() {
             ctx.set_answer(StepId::Locale, locale);
         }
 
         // Auto-detect timezone from /etc/localtime symlink
-        if let Some(tz) = detect_system_timezone() {
+        if let Some(tz) = crate::arch::timezones::detect_current_timezone() {
             ctx.set_answer(StepId::Timezone, tz);
         }
 
         // Auto-detect keymap from /etc/vconsole.conf
-        if let Some(keymap) = detect_system_keymap() {
+        if let Some(keymap) = crate::arch::keymaps::detect_current_keymap() {
             ctx.set_answer(StepId::Keymap, keymap);
         }
 
@@ -205,38 +222,10 @@ impl InstallContext {
     }
 }
 
-/// Detect system locale from /etc/locale.conf
-fn detect_system_locale() -> Option<String> {
-    std::fs::read_to_string("/etc/locale.conf")
-        .ok()
-        .and_then(|content| {
-            content
-                .lines()
-                .find(|l| l.starts_with("LANG="))
-                .map(|l| l.trim_start_matches("LANG=").trim().to_string())
-        })
-}
-
-/// Detect system timezone from /etc/localtime symlink
-fn detect_system_timezone() -> Option<String> {
-    std::fs::read_link("/etc/localtime").ok().and_then(|path| {
-        path.to_string_lossy()
-            .strip_prefix("/usr/share/zoneinfo/")
-            .map(|s| s.to_string())
-    })
-}
-
-/// Detect system keymap from /etc/vconsole.conf
-fn detect_system_keymap() -> Option<String> {
-    std::fs::read_to_string("/etc/vconsole.conf")
-        .ok()
-        .and_then(|content| {
-            content
-                .lines()
-                .find(|l| l.starts_with("KEYMAP="))
-                .map(|l| l.trim_start_matches("KEYMAP=").trim().to_string())
-        })
-}
+// System detection helpers (locale, timezone, keymap) live in their data
+// modules: `arch::locales::detect_current_locale`,
+// `arch::keymaps::detect_current_keymap`, and
+// `arch::timezones::detect_current_timezone`.
 
 #[cfg(test)]
 mod tests {
@@ -272,6 +261,22 @@ mod tests {
             const KEY: &'static str = "missing";
         }
         assert_eq!(context.get::<MissingKey>(), None);
+    }
+
+    #[test]
+    fn previous_answer_falls_back_to_the_live_answer() {
+        let mut context = InstallContext::new();
+        context
+            .answers
+            .insert(StepId::Timezone, "Europe/Berlin".to_string());
+
+        assert_eq!(
+            context
+                .previous_answer(&StepId::Timezone)
+                .map(String::as_str),
+            Some("Europe/Berlin")
+        );
+        assert!(context.previous_answer(&StepId::Locale).is_none());
     }
 
     #[test]

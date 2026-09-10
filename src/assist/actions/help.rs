@@ -55,7 +55,8 @@ pub fn show_help_for_path(path: &str) -> Result<()> {
         .header(header)
         .args(["--no-sort"])
         .responsive_layout()
-        .select_one(items)?;
+        .items(items)
+        .select_one()?;
 
     match result {
         crate::menu_utils::DialogOutcome::Cancelled => return Ok(()),

@@ -9,9 +9,7 @@ use clap::Args;
 use crate::common::blockdev::{BlockDevice, load_lsblk};
 use crate::common::commands::{ensure_commands, run_interactive_status, run_status};
 use crate::common::format::format_size;
-use crate::menu_utils::{
-    ConfirmResult, FzfPreview, FzfSelectable, FzfWrapper, Header, MenuPresentation,
-};
+use crate::menu_utils::{ConfirmResult, FzfPreview, FzfSelectable, FzfWrapper, Header};
 use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -482,8 +480,9 @@ fn select_candidate(candidates: Vec<ChrootCandidate>) -> Result<ChrootCandidate>
     let result = FzfWrapper::builder()
         .header(Header::fancy("Select instantOS installation"))
         .prompt("Chroot")
-        .presentation(MenuPresentation::Padded)
-        .select_one(candidates.clone())?;
+        .items(candidates.clone())
+        .padded()
+        .select_one()?;
 
     match result {
         crate::menu_utils::DialogOutcome::Submitted(candidate) => {

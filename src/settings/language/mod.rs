@@ -3,7 +3,7 @@ use std::iter;
 
 use anyhow::Result;
 
-use crate::menu_utils::{FzfWrapper, MenuPresentation};
+use crate::menu_utils::FzfWrapper;
 
 use super::SettingsContext;
 
@@ -14,6 +14,9 @@ mod state;
 use locale_gen::apply_locale_gen_updates;
 use menu::{LanguageMenuItem, LocaleActionItem, LocaleToggleItem, build_language_menu_items};
 use state::LocaleState;
+
+// Shared with the installer's annotation providers (crate-internal API).
+pub(crate) use state::{locale_base, locale_display_name};
 
 pub fn configure_system_language(ctx: &mut SettingsContext) -> Result<()> {
     // Check for systemd availability (localectl)
@@ -38,10 +41,7 @@ pub fn configure_system_language(ctx: &mut SettingsContext) -> Result<()> {
 
         let menu_items = build_language_menu_items(&state);
 
-        match FzfWrapper::menu()
-            .presentation(MenuPresentation::Padded)
-            .select_one(menu_items)?
-        {
+        match FzfWrapper::menu().items(menu_items).padded().select_one()? {
             crate::menu_utils::DialogOutcome::Submitted(LanguageMenuItem::Locale(locale_item)) => {
                 if handle_locale_entry(ctx, &state, locale_item.locale.clone())? {
                     continue;
@@ -95,10 +95,7 @@ fn handle_locale_entry(
 
     actions.push(LocaleActionItem::Back);
 
-    match FzfWrapper::menu()
-        .presentation(MenuPresentation::Padded)
-        .select_one(actions)?
-    {
+    match FzfWrapper::menu().items(actions).padded().select_one()? {
         crate::menu_utils::DialogOutcome::Submitted(LocaleActionItem::SetDefault {
             locale,
             label,
@@ -134,10 +131,10 @@ fn handle_add_locale(ctx: &mut SettingsContext, state: &LocaleState) -> Result<b
     candidates.sort();
 
     let selection = FzfWrapper::builder()
-        .multi_select(true)
         .prompt("Add locale")
         .header("Select locales to enable (locale-gen)")
-        .select(candidates)?;
+        .items(candidates)
+        .select_many()?;
 
     let selected = match selection {
         crate::menu_utils::DialogOutcome::Submitted(sel) => sel.items,

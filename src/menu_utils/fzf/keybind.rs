@@ -3,7 +3,7 @@
 use std::collections::HashSet;
 use std::process::Command;
 
-use anyhow::{Result, bail};
+use anyhow::{Result, anyhow, bail};
 
 use super::types::MenuKeybind;
 use crate::ui::catppuccin::{colors, hex_to_ansi_bg, hex_to_ansi_fg};
@@ -14,8 +14,6 @@ const ANSI_RESET: &str = "\x1b[0m";
 const HINT_MAX_WIDTH: usize = 96;
 const HINT_MIN_WIDTH: usize = 12;
 const SEPARATOR_WIDTH: usize = 5;
-
-pub(super) const NONE: &[MenuKeybind<()>] = &[];
 
 struct HintSegment {
     styled: String,
@@ -40,6 +38,15 @@ pub(super) fn configure_command<A>(command: &mut Command, keybinds: &[MenuKeybin
             .arg("--bind")
             .arg(format!("{}:print({})+accept", bind.key, bind.key));
     }
+}
+
+/// Resolve a renderer-emitted key token to its caller-defined typed action.
+pub(super) fn resolve_action<A: Clone>(token: &str, keybinds: &[MenuKeybind<A>]) -> Result<A> {
+    keybinds
+        .iter()
+        .find(|bind| bind.key.as_str() == token)
+        .map(|bind| bind.action.clone())
+        .ok_or_else(|| anyhow!("fzf returned unknown keybind token {token:?}"))
 }
 
 fn normalize_label(label: &str) -> String {

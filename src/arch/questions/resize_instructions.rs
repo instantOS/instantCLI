@@ -2,7 +2,7 @@ use crate::arch::dualboot::types::ResizeInfo;
 use crate::arch::dualboot::{ResizeStatus, ResizeVerifier};
 use crate::arch::engine::{InstallContext, StepId, StepOutcome, WizardStep};
 use crate::common::format::format_size;
-use crate::menu_utils::{ConfirmResult, FzfWrapper, MenuPresentation};
+use crate::menu_utils::{ConfirmResult, FzfWrapper};
 use crate::ui::nerd_font::NerdFont;
 use anyhow::{Context, Result};
 use colored::Colorize;
@@ -241,8 +241,9 @@ async fn run_manual_resize_flow(ctx: ResizeFlowContext<'_>) -> Result<StepOutcom
 
         let result = FzfWrapper::builder()
             .header(&full_message)
-            .presentation(MenuPresentation::Padded)
-            .select_one(options.clone())?;
+            .items(options.clone())
+            .padded()
+            .select_one()?;
 
         match result {
             crate::menu_utils::DialogOutcome::Submitted(opt) => {
@@ -381,8 +382,9 @@ fn confirm_proceed_without_resize(status: &ResizeStatus) -> Result<bool> {
 
     let confirm = FzfWrapper::builder()
         .header("Partition does not appear to have been resized. Proceed?")
-        .presentation(MenuPresentation::Padded)
-        .select_one(confirm_options)?;
+        .items(confirm_options)
+        .padded()
+        .select_one()?;
 
     Ok(matches!(
         confirm,

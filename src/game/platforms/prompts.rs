@@ -236,7 +236,8 @@ pub(super) fn select_detected_appimage(
             match FzfWrapper::builder()
                 .header(HeaderBuilder::new(icon, &header).build())
                 .prompt(product_name)
-                .select_one(items)?
+                .items(items)
+                .select_one()?
             {
                 crate::menu_utils::DialogOutcome::Submitted(item) => Ok(Some(item.path)),
                 crate::menu_utils::DialogOutcome::Cancelled => Ok(None),

@@ -8,8 +8,7 @@ use crate::game::utils::path::{
 };
 use crate::menu::protocol;
 use crate::menu_utils::{
-    FilePickerScope, FzfSelectable, FzfWrapper, HeaderBuilder, MenuPresentation, PathInputBuilder,
-    PathInputSelection,
+    FilePickerScope, FzfSelectable, FzfWrapper, HeaderBuilder, PathInputBuilder, PathInputSelection,
 };
 use crate::restic::wrapper::Snapshot;
 use crate::ui::nerd_font::NerdFont;
@@ -168,7 +167,8 @@ pub(super) fn choose_installation_path(
     }
 
     let selected = FzfWrapper::builder()
-        .select_one(options)
+        .items(options)
+        .select_one()
         .map_err(|e| anyhow!("Failed to select path option: {e}"))?;
 
     match selected {
@@ -415,8 +415,9 @@ fn handle_differently_named_folders(
 
         match FzfWrapper::builder()
             .header(header)
-            .presentation(MenuPresentation::Padded)
-            .select_one(options)?
+            .items(options)
+            .padded()
+            .select_one()?
         {
             crate::menu_utils::DialogOutcome::Submitted(option) => {
                 if option.contains("as is") {
