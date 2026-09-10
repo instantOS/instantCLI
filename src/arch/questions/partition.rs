@@ -208,9 +208,12 @@ impl WizardStep for PartitionSelectorQuestion {
             ));
         }
 
-        let result = FzfWrapper::builder()
-            .header(HeaderBuilder::new(self.icon, &self.prompt).build())
-            .select_one(partitions)?;
+        let result = super::select_one_with_preselect(
+            context,
+            self.id(),
+            FzfWrapper::builder().header(HeaderBuilder::new(self.icon, &self.prompt).build()),
+            partitions,
+        )?;
 
         // Store just the path, not the formatted display string
         Ok(StepOutcome::from_dialog(result, |entry| entry.path))

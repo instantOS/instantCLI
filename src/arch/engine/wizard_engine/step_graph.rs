@@ -61,6 +61,9 @@ impl StepGraph {
         let changed =
             context.answers.get(&id) != Some(&answer) || context.completed_steps.contains(&id);
         context.completed_steps.remove(&id);
+        // A fresh answer supersedes whatever the shadow map kept for
+        // preselection.
+        context.previous_answers.remove(&id);
         context.answers.insert(id, answer);
         self.record_dependency_fingerprint(context, id);
         if changed {
@@ -78,7 +81,15 @@ impl StepGraph {
 
     pub(super) fn drop_step_state(&self, context: &mut InstallContext, id: StepId) {
         context.step_dependency_fingerprints.remove(&id);
-        let changed = context.answers.remove(&id).is_some() || context.completed_steps.remove(&id);
+        // Move a dropped answer into the previous-answer shadow map so the
+        // question can preselect that row when it is asked again. The answer
+        // itself is gone from `answers`, so the engine still treats the step
+        // as unanswered.
+        let dropped_answer = context.answers.remove(&id);
+        let changed = dropped_answer.is_some() || context.completed_steps.remove(&id);
+        if let Some(previous) = dropped_answer {
+            context.previous_answers.insert(id, previous);
+        }
         if changed {
             self.invalidate_dependents(context, id);
         }

@@ -199,6 +199,10 @@ impl FzfSelectable for KernelOption {
     fn fzf_preview(&self) -> FzfPreview {
         self.preview()
     }
+
+    fn fzf_key(&self) -> String {
+        self.label().to_string()
+    }
 }
 
 fn add_desktop_environment_disclaimer(builder: PreviewBuilder) -> PreviewBuilder {
@@ -301,7 +305,7 @@ impl WizardStep for DesktopEnvironmentQuestion {
         Some("Choose your desktop environment")
     }
 
-    async fn run(&self, _context: &InstallContext) -> Result<StepOutcome> {
+    async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {
         let options = vec![
             DesktopEnvironment::InstantWM,
             DesktopEnvironment::Sway,
@@ -310,10 +314,14 @@ impl WizardStep for DesktopEnvironmentQuestion {
             DesktopEnvironment::Tty,
         ];
 
-        let result = FzfWrapper::builder()
-            .header(HeaderBuilder::new(NerdFont::Desktop, "Select Desktop Environment").build())
-            .presentation(MenuPresentation::Padded)
-            .select_one(options)?;
+        let result = super::select_one_with_preselect(
+            context,
+            StepId::DesktopEnvironment,
+            FzfWrapper::builder()
+                .header(HeaderBuilder::new(NerdFont::Desktop, "Select Desktop Environment").build())
+                .presentation(MenuPresentation::Padded),
+            options,
+        )?;
 
         Ok(StepOutcome::from_dialog(result, |environment| {
             environment.answer_value().to_string()
@@ -395,9 +403,13 @@ impl WizardStep for MirrorRegionQuestion {
         let options: Vec<MirrorRegionOption> =
             regions.into_iter().map(MirrorRegionOption::new).collect();
 
-        let result = FzfWrapper::builder()
-            .header(HeaderBuilder::new(NerdFont::Globe, "Select Mirror Region").build())
-            .select_one(options)?;
+        let result = super::select_one_with_preselect(
+            context,
+            StepId::MirrorRegion,
+            FzfWrapper::builder()
+                .header(HeaderBuilder::new(NerdFont::Globe, "Select Mirror Region").build()),
+            options,
+        )?;
 
         Ok(StepOutcome::from_dialog(result, |region| region.name))
     }
@@ -440,9 +452,13 @@ impl WizardStep for TimezoneQuestion {
             .map(|value| TimezoneOption { value })
             .collect();
 
-        let result = FzfWrapper::builder()
-            .header(HeaderBuilder::new(NerdFont::Clock, "Select Timezone").build())
-            .select_one(options)?;
+        let result = super::select_one_with_preselect(
+            context,
+            StepId::Timezone,
+            FzfWrapper::builder()
+                .header(HeaderBuilder::new(NerdFont::Clock, "Select Timezone").build()),
+            options,
+        )?;
 
         Ok(StepOutcome::from_dialog(result, |tz| tz.value))
     }
@@ -489,9 +505,13 @@ impl WizardStep for KeymapQuestion {
             .map(|value| AnnotatedOption::new(value, &KEYMAP_OPTION_STYLE))
             .collect();
 
-        let result = FzfWrapper::builder()
-            .header(HeaderBuilder::new(NerdFont::Keyboard, "Select Keymap").build())
-            .select_one(options)?;
+        let result = super::select_one_with_preselect(
+            context,
+            StepId::Keymap,
+            FzfWrapper::builder()
+                .header(HeaderBuilder::new(NerdFont::Keyboard, "Select Keymap").build()),
+            options,
+        )?;
 
         Ok(StepOutcome::from_dialog(result, |val| val.value))
     }
@@ -531,9 +551,13 @@ impl WizardStep for LocaleQuestion {
             .map(|value| AnnotatedOption::new(value, &LOCALE_OPTION_STYLE))
             .collect();
 
-        let result = FzfWrapper::builder()
-            .header(HeaderBuilder::new(NerdFont::Language, "Select System Locale").build())
-            .select_one(options)?;
+        let result = super::select_one_with_preselect(
+            context,
+            StepId::Locale,
+            FzfWrapper::builder()
+                .header(HeaderBuilder::new(NerdFont::Language, "Select System Locale").build()),
+            options,
+        )?;
 
         Ok(StepOutcome::from_dialog(result, |val| val.value))
     }
@@ -589,13 +613,17 @@ impl WizardStep for KernelQuestion {
         true
     }
 
-    async fn run(&self, _context: &InstallContext) -> Result<StepOutcome> {
+    async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {
         let kernels = vec![KernelOption::Linux, KernelOption::Lts, KernelOption::Zen];
 
-        let result = FzfWrapper::builder()
-            .header(HeaderBuilder::new(NerdFont::Gear, "Select Kernel").build())
-            .presentation(MenuPresentation::Padded)
-            .select_one(kernels)?;
+        let result = super::select_one_with_preselect(
+            context,
+            StepId::Kernel,
+            FzfWrapper::builder()
+                .header(HeaderBuilder::new(NerdFont::Gear, "Select Kernel").build())
+                .presentation(MenuPresentation::Padded),
+            kernels,
+        )?;
 
         Ok(StepOutcome::from_dialog(result, |k| k.label().to_string()))
     }

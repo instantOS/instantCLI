@@ -218,9 +218,14 @@ impl WizardStep for DiskQuestion {
         let mut last_custom_path: Option<String> = None;
 
         loop {
-            let result = FzfWrapper::builder()
-                .header(HeaderBuilder::new(NerdFont::HardDrive, "Select Installation Disk").build())
-                .select_one(selections.clone())?;
+            let result = super::select_one_with_preselect(
+                context,
+                StepId::Disk,
+                FzfWrapper::builder().header(
+                    HeaderBuilder::new(NerdFont::HardDrive, "Select Installation Disk").build(),
+                ),
+                selections.clone(),
+            )?;
 
             let selection = match result {
                 crate::menu_utils::DialogOutcome::Submitted(d) => d,
@@ -416,9 +421,14 @@ impl WizardStep for PartitioningMethodQuestion {
             }
         }
 
-        let result = FzfWrapper::builder()
-            .header(HeaderBuilder::new(NerdFont::HardDrive, "Select Partitioning Method").build())
-            .select_one(options)?;
+        let result = super::select_one_with_preselect(
+            context,
+            StepId::PartitioningMethod,
+            FzfWrapper::builder().header(
+                HeaderBuilder::new(NerdFont::HardDrive, "Select Partitioning Method").build(),
+            ),
+            options,
+        )?;
 
         Ok(StepOutcome::from_dialog(result, |option| {
             option.label().to_string()

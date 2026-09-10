@@ -107,7 +107,7 @@ impl WizardStep for DisplayManagerQuestion {
         Some(DisplayManager::DEFAULT.answer_value().to_string())
     }
 
-    async fn run(&self, _context: &InstallContext) -> Result<StepOutcome> {
+    async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {
         loop {
             let options = vec![
                 DisplayManagerOption(DisplayManager::Gdm),
@@ -115,10 +115,14 @@ impl WizardStep for DisplayManagerQuestion {
                 DisplayManagerOption(DisplayManager::None),
             ];
 
-            let result = FzfWrapper::builder()
-                .header(HeaderBuilder::new(NerdFont::Desktop, "Select Display Manager").build())
-                .presentation(MenuPresentation::Padded)
-                .select_one(options)?;
+            let result = super::select_one_with_preselect(
+                context,
+                StepId::DisplayManager,
+                FzfWrapper::builder()
+                    .header(HeaderBuilder::new(NerdFont::Desktop, "Select Display Manager").build())
+                    .presentation(MenuPresentation::Padded),
+                options,
+            )?;
 
             let option = match result {
                 DialogOutcome::Submitted(option) => option,

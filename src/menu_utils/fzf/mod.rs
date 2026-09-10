@@ -23,6 +23,7 @@ mod utils;
 mod wrapper;
 
 // Re-export public API
+pub use builder::FzfBuilder;
 pub use header::HeaderBuilder;
 pub use types::{
     ChecklistAction, ChecklistResult, ConfirmResult, DecodedStreamingMenuItem, DialogOutcome,

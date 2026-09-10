@@ -42,6 +42,11 @@ impl DataKey for DualBootPartitions {
 #[derive(Default, Clone)]
 pub struct InstallContext {
     pub(super) answers: HashMap<StepId, String>,
+    /// Answers which were dropped by back-navigation, revisit, or
+    /// invalidation. They are kept only so a re-asked question can preselect
+    /// the row the user previously chose; they are not part of the wizard's
+    /// answer state and are never serialized.
+    pub(super) previous_answers: HashMap<StepId, String>,
     /// Steps which completed without producing configuration data.
     pub(super) completed_steps: BTreeSet<StepId>,
     /// Fingerprint of each step's dependency state when it completed.
@@ -87,6 +92,7 @@ impl<'de> Deserialize<'de> for InstallContext {
         let helper = Helper::deserialize(deserializer)?;
         Ok(InstallContext {
             answers: helper.answers,
+            previous_answers: HashMap::new(),
             completed_steps: helper.completed_steps,
             step_dependency_fingerprints: helper.step_dependency_fingerprints,
             system_info: helper.system_info,
@@ -109,6 +115,7 @@ impl InstallContext {
     pub fn new() -> Self {
         Self {
             answers: HashMap::new(),
+            previous_answers: HashMap::new(),
             completed_steps: BTreeSet::new(),
             step_dependency_fingerprints: HashMap::new(),
             system_info: SystemInfo::default(),
@@ -139,6 +146,16 @@ impl InstallContext {
 
     pub fn get_answer(&self, id: &StepId) -> Option<&String> {
         self.answers.get(id)
+    }
+
+    /// The answer the user last chose for this step, even after it was dropped
+    /// by back-navigation, revisit, or invalidation. Falls back to the live
+    /// answer so flows which re-run a step without dropping state (the review
+    /// menu) also surface a previous choice. Used for list preselection only.
+    pub fn previous_answer(&self, id: &StepId) -> Option<&String> {
+        self.previous_answers
+            .get(id)
+            .or_else(|| self.answers.get(id))
     }
 
     pub fn is_step_completed(&self, id: StepId) -> bool {
@@ -272,6 +289,22 @@ mod tests {
             const KEY: &'static str = "missing";
         }
         assert_eq!(context.get::<MissingKey>(), None);
+    }
+
+    #[test]
+    fn previous_answer_falls_back_to_the_live_answer() {
+        let mut context = InstallContext::new();
+        context
+            .answers
+            .insert(StepId::Timezone, "Europe/Berlin".to_string());
+
+        assert_eq!(
+            context
+                .previous_answer(&StepId::Timezone)
+                .map(String::as_str),
+            Some("Europe/Berlin")
+        );
+        assert!(context.previous_answer(&StepId::Locale).is_none());
     }
 
     #[test]
