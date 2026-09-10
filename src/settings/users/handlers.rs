@@ -22,7 +22,7 @@ pub fn manage_users(ctx: &mut SettingsContext) -> Result<()> {
     loop {
         let items = build_user_menu_items()?;
 
-        match FzfWrapper::menu().padded_items(items).select_one()? {
+        match FzfWrapper::menu().items(items).padded().select_one()? {
             crate::menu_utils::DialogOutcome::Submitted(ManageMenuItem::Add) => {
                 add_user(ctx)?;
             }
@@ -160,7 +160,7 @@ fn handle_user(ctx: &mut SettingsContext, username: &str) -> Result<()> {
             UserActionItem::Back,
         ];
 
-        match FzfWrapper::menu().padded_items(actions).select_one()? {
+        match FzfWrapper::menu().items(actions).padded().select_one()? {
             crate::menu_utils::DialogOutcome::Submitted(UserActionItem::ChangeShell { .. }) => {
                 if let Some(new_shell) = select_shell(ctx, "Select shell")? {
                     change_user_shell(ctx, username, &new_shell)?;
@@ -321,7 +321,7 @@ fn manage_user_groups(ctx: &mut SettingsContext, username: &str) -> Result<()> {
 
         let items = build_group_menu_items(&user_info.groups, user_info.primary_group.as_deref());
 
-        match FzfWrapper::menu().padded_items(items).select_one()? {
+        match FzfWrapper::menu().items(items).padded().select_one()? {
             crate::menu_utils::DialogOutcome::Submitted(GroupMenuItem::ExistingGroup {
                 name: group_name,
                 ..
@@ -483,7 +483,7 @@ fn manage_single_group(
         GroupActionItem::Back,
     ];
 
-    match FzfWrapper::menu().padded_items(actions).select_one()? {
+    match FzfWrapper::menu().items(actions).padded().select_one()? {
         crate::menu_utils::DialogOutcome::Submitted(GroupActionItem::RemoveGroup {
             is_primary,
             ..

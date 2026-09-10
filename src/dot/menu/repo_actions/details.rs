@@ -103,7 +103,7 @@ pub fn handle_global_units_menu(config: &mut DotfileConfig, db: &Database) -> Re
             builder = builder.initial_index(index);
         }
 
-        match builder.padded_items(items.clone()).select_one()? {
+        match builder.items(items.clone()).padded().select_one()? {
             crate::menu_utils::DialogOutcome::Submitted(item) => {
                 cursor.update(&item, &items);
                 match item.action {
@@ -205,7 +205,7 @@ fn select_detail_action(
         builder = builder.initial_index(index);
     }
 
-    let result = builder.padded_items(actions.clone()).select_one()?;
+    let result = builder.items(actions.clone()).padded().select_one()?;
 
     match result {
         crate::menu_utils::DialogOutcome::Submitted(item) => {
@@ -261,7 +261,7 @@ fn handle_manage_units(
             builder = builder.initial_index(index);
         }
 
-        match builder.padded_items(items.clone()).select_one()? {
+        match builder.items(items.clone()).padded().select_one()? {
             crate::menu_utils::DialogOutcome::Submitted(item) => {
                 cursor.update(&item, &items);
                 match item.action {

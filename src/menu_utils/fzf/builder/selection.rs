@@ -22,6 +22,19 @@ impl<T, A> ItemSelection<T, A> {
             presentation: self.presentation,
         }
     }
+
+    /// Render spacious multiline rows instead of the default compact ones.
+    ///
+    /// Padded rows are prepared from the complete in-memory collection
+    /// before fzf starts, together with a per-row preview manifest.
+    pub fn padded(self) -> Self {
+        Self {
+            builder: self.builder,
+            items: self.items,
+            keybinds: self.keybinds,
+            presentation: ItemPresentation::Padded,
+        }
+    }
 }
 
 impl<T> ItemSelection<T, ()> {
@@ -112,6 +125,7 @@ impl<'a, T> StreamSelection<'a, T, ()> {
             late_items: self.late_items,
             keybinds: keybinds.to_vec(),
             on_ready: self.on_ready,
+            presentation: self.presentation,
         }
     }
 }
@@ -121,6 +135,32 @@ impl<'a, T, A> StreamSelection<'a, T, A> {
     pub fn initial_items(mut self, items: Vec<T>) -> Self {
         self.initial_items = items;
         self
+    }
+
+    /// Render spacious multiline rows instead of the default compact ones,
+    /// including rows that arrive while the menu is open.
+    ///
+    /// Each arriving item is appended to fzf's input together with its
+    /// preview-manifest entry in the same pump step, so manifest line N
+    /// always describes input row N — the index fzf reports back through
+    /// its `{n}` placeholders. The padding machinery (selectable-row
+    /// marker, keyword delimiter, preview manifest) is enabled
+    /// unconditionally because it cannot be re-decided once fzf has
+    /// spawned.
+    ///
+    /// No production menu streams padded rows yet; the runtime is
+    /// exercised through the mock tests in `padded.rs`. Retire this
+    /// allowance when the first live call site lands.
+    #[allow(dead_code)]
+    pub fn padded(self) -> Self {
+        Self {
+            builder: self.builder,
+            initial_items: self.initial_items,
+            late_items: self.late_items,
+            keybinds: self.keybinds,
+            on_ready: self.on_ready,
+            presentation: ItemPresentation::Padded,
+        }
     }
 
     pub(crate) fn on_ready<'b, F>(self, on_ready: F) -> StreamSelection<'b, T, A>
@@ -133,6 +173,7 @@ impl<'a, T, A> StreamSelection<'a, T, A> {
             late_items: self.late_items,
             keybinds: self.keybinds,
             on_ready: Some(Box::new(on_ready)),
+            presentation: self.presentation,
         }
     }
 }
@@ -151,14 +192,23 @@ where
     }
 
     fn run(self, allow_multiple: bool) -> Result<DialogOutcome<MenuSelection<T, A>>> {
-        FzfWrapper::run_stream(
-            self.builder.shared,
-            self.initial_items,
-            self.late_items,
-            &self.keybinds,
-            allow_multiple,
-            self.on_ready,
-        )
+        match self.presentation {
+            ItemPresentation::Compact => FzfWrapper::run_stream(
+                self.builder.shared,
+                self.initial_items,
+                self.late_items,
+                &self.keybinds,
+                allow_multiple,
+                self.on_ready,
+            ),
+            ItemPresentation::Padded => self.builder.run_padded_stream(
+                self.initial_items,
+                self.late_items,
+                &self.keybinds,
+                allow_multiple,
+                self.on_ready,
+            ),
+        }
     }
 }
 

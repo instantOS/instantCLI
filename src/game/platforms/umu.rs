@@ -116,7 +116,8 @@ impl UmuBuilder {
             .header(crate::menu_utils::Header::fancy("Select Wine Runner"))
             .prompt("Runner")
             .responsive_layout()
-            .padded_items(options)
+            .items(options)
+            .padded()
             .select_one()?
         {
             crate::menu_utils::DialogOutcome::Submitted(item) if item.contains("umu-run") => {
@@ -248,7 +249,8 @@ impl UmuBuilder {
             .header(crate::menu_utils::Header::fancy("Select Proton Version"))
             .prompt("Proton")
             .responsive_layout()
-            .padded_items(options.clone())
+            .items(options.clone())
+            .padded()
             .select_one()?;
 
         match result {

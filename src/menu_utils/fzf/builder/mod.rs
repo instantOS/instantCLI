@@ -10,9 +10,15 @@
 //!
 //! Selection follows the same staged design. First choose exactly one source
 //! with `items`, `stream`, or `command`; then compose applicable options
-//! such as initial rows and keybinds; finally choose `select`, `select_many`,
-//! or `select_one`. Adding an option therefore does not require another
-//! cross-product terminal method.
+//! such as initial rows, keybinds, and the `.padded()` presentation; finally
+//! choose `select`, `select_many`, or `select_one`. Adding an option
+//! therefore does not require another cross-product terminal method.
+//!
+//! Presentation is a modifier, not a source: `.items(..)` and `.stream(..)`
+//! yield compact rows, and `.padded()` upgrades the stage to spacious
+//! multiline rows. Padded rows are prepared from records that must line up
+//! with a per-row preview manifest, so both static collections and live
+//! streams support them, while child-process command sources stay compact.
 
 mod checklist;
 mod dialogs;
@@ -96,6 +102,7 @@ pub struct StreamSelection<'a, T, A = ()> {
     pub(crate) late_items: crossbeam_channel::Receiver<T>,
     pub(crate) keybinds: Vec<MenuKeybind<A>>,
     pub(crate) on_ready: Option<Box<dyn FnOnce() -> Result<()> + 'a>>,
+    pub(crate) presentation: ItemPresentation,
 }
 
 /// Selection backed by encoded rows emitted by a child process.
@@ -389,16 +396,6 @@ impl FzfBuilder {
         }
     }
 
-    /// Use a complete in-memory collection rendered as spacious multiline rows.
-    pub fn padded_items<T>(self, items: Vec<T>) -> ItemSelection<T> {
-        ItemSelection {
-            builder: self,
-            items,
-            keybinds: Vec::new(),
-            presentation: ItemPresentation::Padded,
-        }
-    }
-
     /// Use a channel of typed items as the selection source.
     ///
     /// The menu opens immediately. Use `StreamSelection::initial_items` when
@@ -413,6 +410,7 @@ impl FzfBuilder {
             late_items,
             keybinds: Vec::new(),
             on_ready: None,
+            presentation: ItemPresentation::Compact,
         }
     }
 
@@ -545,7 +543,22 @@ mod tests {
             ItemPresentation::Compact
         );
         assert_eq!(
-            builder.padded_items(Vec::<String>::new()).presentation,
+            builder
+                .clone()
+                .items(Vec::<String>::new())
+                .padded()
+                .presentation,
+            ItemPresentation::Padded
+        );
+
+        let (_tx, rx) = crossbeam_channel::unbounded::<String>();
+        assert_eq!(
+            builder.clone().stream(rx).presentation,
+            ItemPresentation::Compact
+        );
+        let (_tx, rx) = crossbeam_channel::unbounded::<String>();
+        assert_eq!(
+            builder.clone().stream(rx).padded().presentation,
             ItemPresentation::Padded
         );
     }

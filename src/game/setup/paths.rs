@@ -415,7 +415,8 @@ fn handle_differently_named_folders(
 
         match FzfWrapper::builder()
             .header(header)
-            .padded_items(options)
+            .items(options)
+            .padded()
             .select_one()?
         {
             crate::menu_utils::DialogOutcome::Submitted(option) => {

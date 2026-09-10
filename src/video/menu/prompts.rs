@@ -350,7 +350,8 @@ pub fn select_choice<T: Clone>(
         .header(Header::fancy(title))
         .prompt(prompt)
         .responsive_layout()
-        .padded_items(items)
+        .items(items)
+        .padded()
         .select_one()?;
 
     match result {

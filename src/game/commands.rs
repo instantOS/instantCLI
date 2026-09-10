@@ -284,7 +284,8 @@ fn handle_scan_wine_prefix(prefix: Option<String>, list: bool) -> Result<()> {
         .header(Header::fancy("Discovered Saves"))
         .prompt("Select")
         .responsive_layout()
-        .padded_items(items)
+        .items(items)
+        .padded()
         .select_one()?;
 
     match result {

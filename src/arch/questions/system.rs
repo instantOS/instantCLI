@@ -326,7 +326,8 @@ impl WizardStep for DesktopEnvironmentQuestion {
             StepId::DesktopEnvironment,
             FzfWrapper::builder()
                 .header(HeaderBuilder::new(NerdFont::Desktop, "Select Desktop Environment").build())
-                .padded_items(options),
+                .items(options)
+                .padded(),
         )?;
 
         Ok(StepOutcome::from_dialog(result, |environment| {
@@ -645,7 +646,8 @@ impl WizardStep for KernelQuestion {
             StepId::Kernel,
             FzfWrapper::builder()
                 .header(HeaderBuilder::new(NerdFont::Gear, "Select Kernel").build())
-                .padded_items(kernels),
+                .items(kernels)
+                .padded(),
         )?;
 
         Ok(StepOutcome::from_dialog(result, |k| k.label().to_string()))

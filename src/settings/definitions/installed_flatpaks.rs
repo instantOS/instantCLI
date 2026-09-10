@@ -51,7 +51,7 @@ pub fn is_flatpak_installed(app_id: &str) -> bool {
 pub fn show_flatpak_action_menu(app_id: &str) -> Result<()> {
     let actions = vec![FlatpakAction::Run, FlatpakAction::Uninstall];
 
-    let action = match FzfWrapper::menu().padded_items(actions).select_one()? {
+    let action = match FzfWrapper::menu().items(actions).padded().select_one()? {
         crate::menu_utils::DialogOutcome::Submitted(a) => a,
         crate::menu_utils::DialogOutcome::Cancelled => {
             println!("Action selection cancelled.");
@@ -119,7 +119,7 @@ fn run_installed_flatpaks_manager() -> Result<()> {
         // Show action menu for the selected app
         let actions = vec![FlatpakAction::Run, FlatpakAction::Uninstall];
 
-        let action = match FzfWrapper::menu().padded_items(actions).select_one()? {
+        let action = match FzfWrapper::menu().items(actions).padded().select_one()? {
             crate::menu_utils::DialogOutcome::Submitted(a) => a,
             crate::menu_utils::DialogOutcome::Cancelled => continue,
         };

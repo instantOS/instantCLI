@@ -111,7 +111,8 @@ fn prompt_existing_answers(
         .header("Existing configuration found")
         .prompt("Select")
         .responsive_layout()
-        .padded_items(options)
+        .items(options)
+        .padded()
         .select_one()?;
 
     match selection {

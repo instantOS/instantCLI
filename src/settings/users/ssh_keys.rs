@@ -146,7 +146,7 @@ pub fn manage_ssh_keys(ctx: &mut SettingsContext) -> Result<()> {
         items.push(KeyMenuItem::Add);
         items.push(KeyMenuItem::Back);
 
-        match FzfWrapper::menu().padded_items(items).select_one()? {
+        match FzfWrapper::menu().items(items).padded().select_one()? {
             crate::menu_utils::DialogOutcome::Submitted(KeyMenuItem::Key(key)) => {
                 manage_key(ctx, &path, &key)?
             }
@@ -240,11 +240,12 @@ fn validate_key_blob(key_type: &str, key_data: &str) -> Result<()> {
 fn manage_key(ctx: &mut SettingsContext, path: &Path, key: &AuthorizedKey) -> Result<()> {
     loop {
         match FzfWrapper::menu()
-            .padded_items(vec![
+            .items(vec![
                 KeyActionItem::EditComment,
                 KeyActionItem::Remove,
                 KeyActionItem::Back,
             ])
+            .padded()
             .select_one()?
         {
             crate::menu_utils::DialogOutcome::Submitted(KeyActionItem::EditComment) => {

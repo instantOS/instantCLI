@@ -250,7 +250,8 @@ fn handle_notification_detail(db: &NotifyDb, id: i64, _debug: bool) -> Result<()
     let items = build_detail_items(&notification);
     let selection = FzfWrapper::menu()
         .initial_index(0)
-        .padded_items(items)
+        .items(items)
+        .padded()
         .select_one()?;
 
     match selection {

@@ -180,7 +180,8 @@ pub(super) fn run_add_menu(current_prefix: Option<&str>) -> Result<()> {
         .header(header)
         .prompt("Create")
         .responsive_layout()
-        .padded_items(items)
+        .items(items)
+        .padded()
         .select_one()?
     {
         match item.action {

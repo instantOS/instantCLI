@@ -568,7 +568,7 @@ pub fn select_launcher_type(
         builder = builder.initial_index(index);
     }
 
-    let result = builder.padded_items(items).select_one()?;
+    let result = builder.items(items).padded().select_one()?;
 
     match result {
         crate::menu_utils::DialogOutcome::Submitted(item) => {

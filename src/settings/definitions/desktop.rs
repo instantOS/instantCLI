@@ -483,7 +483,8 @@ fn run_audio_source_mode_menu(
 
         let selection = FzfWrapper::menu()
             .cursor(initial_index)
-            .padded_items(items.clone())
+            .items(items.clone())
+            .padded()
             .select_one()?;
         let crate::menu_utils::DialogOutcome::Submitted(choice) = selection else {
             break;

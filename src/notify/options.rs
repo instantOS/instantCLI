@@ -23,7 +23,8 @@ pub fn run_options_menu(db: &NotifyDb, _debug: bool) -> Result<()> {
         let initial_index = cursor.initial_index(&items);
         let selection = FzfWrapper::menu()
             .cursor(initial_index)
-            .padded_items(items.clone())
+            .items(items.clone())
+            .padded()
             .select_one()?;
 
         match selection {
@@ -372,7 +373,8 @@ fn handle_delete_by_app(db: &NotifyDb) -> Result<()> {
         .header(Header::default(
             "Select an application to review its notifications",
         ))
-        .padded_items(items)
+        .items(items)
+        .padded()
         .select_one()?;
 
     let app = match selection {
@@ -678,7 +680,8 @@ fn confirm_deletion(matches: &[Notification], postfix: Option<&str>) -> Result<b
     let selection = FzfWrapper::menu()
         .initial_index(0)
         .header(Header::default(&header_text))
-        .padded_items(items)
+        .items(items)
+        .padded()
         .select_one()?;
     let crate::menu_utils::DialogOutcome::Submitted(chosen) = selection else {
         return Ok(false);

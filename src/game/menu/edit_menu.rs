@@ -86,7 +86,7 @@ pub fn run_edit_menu(game_name: &str, state: &mut EditState) -> Result<()> {
             builder = builder.initial_index(index);
         }
 
-        let selection = builder.padded_items(menu_items.clone()).select_one()?;
+        let selection = builder.items(menu_items.clone()).padded().select_one()?;
 
         match selection {
             crate::menu_utils::DialogOutcome::Submitted(item) => {

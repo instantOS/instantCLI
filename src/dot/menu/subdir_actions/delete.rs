@@ -126,7 +126,8 @@ pub(crate) fn handle_delete_subdir(
         .header(Header::fancy(&format!("Delete '{}'?", subdir_name)))
         .prompt("How do you want to remove this directory?")
         .responsive_layout()
-        .padded_items(choices)
+        .items(choices)
+        .padded()
         .select_one()?;
 
     match result {

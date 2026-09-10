@@ -119,7 +119,8 @@ impl WizardStep for DisplayManagerQuestion {
                 StepId::DisplayManager,
                 FzfWrapper::builder()
                     .header(HeaderBuilder::new(NerdFont::Desktop, "Select Display Manager").build())
-                    .padded_items(options),
+                    .items(options)
+                    .padded(),
             )?;
 
             let option = match result {

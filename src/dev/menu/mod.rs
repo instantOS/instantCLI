@@ -52,7 +52,8 @@ fn select_dev_menu_entry(cursor: &mut MenuCursor) -> Result<Option<DevMenuEntry>
         .prompt("Select")
         .responsive_layout()
         .cursor(cursor.initial_index(&entries))
-        .padded_items(entries.clone())
+        .items(entries.clone())
+        .padded()
         .select_one()?;
 
     match selection {

@@ -188,7 +188,8 @@ pub fn run_welcome_ui(force_live: bool, debug: bool) -> Result<()> {
         let initial_cursor = cursor.initial_index(&items);
         match FzfWrapper::menu()
             .cursor(initial_cursor)
-            .padded_items(items.clone())
+            .items(items.clone())
+            .padded()
             .select_one()?
         {
             crate::menu_utils::DialogOutcome::Submitted(WelcomeItem::InstallInstantOS) => {

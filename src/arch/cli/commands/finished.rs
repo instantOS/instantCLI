@@ -183,7 +183,8 @@ pub(super) async fn handle_finished_command() -> Result<()> {
 
     let result = FzfWrapper::menu()
         .header(Header::fancy("Installation Finished!"))
-        .padded_items(items)
+        .items(items)
+        .padded()
         .select_one()?;
 
     match result {

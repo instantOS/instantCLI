@@ -474,7 +474,8 @@ fn select_service_action(service: &ServiceItem) -> Result<ServiceAction> {
         .header(header)
         .prompt("Action")
         .responsive_layout()
-        .padded_items(actions)
+        .items(actions)
+        .padded()
         .select_menu()?;
 
     match result {

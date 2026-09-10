@@ -117,7 +117,8 @@ impl Setting for CombinedAudioSink {
             let result = FzfWrapper::builder()
                 .prompt("Select action")
                 .header(header)
-                .padded_items(items_with_preview)
+                .items(items_with_preview)
+                .padded()
                 .select_one()?;
 
             match result {

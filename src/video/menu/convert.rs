@@ -125,7 +125,8 @@ pub async fn run_new_project() -> Result<()> {
             .prompt("Select")
             .responsive_layout()
             .cursor(cursor.initial_index(&entries))
-            .padded_items(entries.clone())
+            .items(entries.clone())
+            .padded()
             .select_one()?;
 
         match selection {

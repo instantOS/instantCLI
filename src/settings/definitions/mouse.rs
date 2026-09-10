@@ -207,7 +207,8 @@ impl Setting for AccelProfile {
             let initial_cursor = cursor.initial_index(&items).or(Some(initial_index));
             let selection = FzfWrapper::menu()
                 .cursor(initial_cursor)
-                .padded_items(items.clone())
+                .items(items.clone())
+                .padded()
                 .select_one()?;
 
             match selection {

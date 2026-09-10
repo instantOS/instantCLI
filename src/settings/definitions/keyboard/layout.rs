@@ -199,7 +199,7 @@ fn handle_layout_action(
     }
     actions.push(LayoutActionItem::Back);
 
-    match FzfWrapper::menu().padded_items(actions).select_one()? {
+    match FzfWrapper::menu().items(actions).padded().select_one()? {
         crate::menu_utils::DialogOutcome::Submitted(LayoutActionItem::MoveUp) => {
             active_codes.swap(position, position - 1);
             Ok(Some(true))
@@ -362,7 +362,7 @@ impl Setting for KeyboardLayout {
         loop {
             let items = build_layout_menu_items(&active_codes, &code_to_name);
 
-            match FzfWrapper::menu().padded_items(items).select_one()? {
+            match FzfWrapper::menu().items(items).padded().select_one()? {
                 crate::menu_utils::DialogOutcome::Submitted(LayoutMenuItem::Layout {
                     code,
                     position,

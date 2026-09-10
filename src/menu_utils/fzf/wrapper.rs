@@ -379,7 +379,7 @@ fn force_mixed_preview_strategy<T: FzfSelectable>(items: &[T]) -> PreviewStrateg
 /// cancellation when the scratchpad becomes invisible. The returned
 /// [`TrackedChild`] unregisters (and kills, if still running) on drop, so
 /// error paths cannot leak a stale PID registration.
-fn spawn_menu_child(mut cmd: Command) -> Result<TrackedChild> {
+pub(super) fn spawn_menu_child(mut cmd: Command) -> Result<TrackedChild> {
     use std::process::Stdio;
     cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -389,7 +389,7 @@ fn spawn_menu_child(mut cmd: Command) -> Result<TrackedChild> {
 
 /// Wait for fzf to exit, release its registration, and map wait failures
 /// through the standard fzf error handling.
-fn finish_menu_child(child: TrackedChild) -> Result<std::process::Output> {
+pub(super) fn finish_menu_child(child: TrackedChild) -> Result<std::process::Output> {
     child.finish_with_output().map_err(|e| {
         if let Some(io_error) = e.downcast_ref::<std::io::Error>() {
             super::utils::handle_fzf_spawn_error(io_error);
@@ -1003,15 +1003,17 @@ mod mock_tests {
             .keybind_action("ctrl-e", vec![1])
             .guard();
         let multiple = FzfWrapper::builder()
-            .padded_items(vec![
+            .items(vec![
                 "alpha".to_string(),
                 "beta".to_string(),
                 "gamma".to_string(),
             ])
+            .padded()
             .select_many()
             .unwrap();
         let keybind = FzfWrapper::builder()
-            .padded_items(vec!["alpha".to_string(), "beta".to_string()])
+            .items(vec!["alpha".to_string(), "beta".to_string()])
+            .padded()
             .keybinds(&binds)
             .select()
             .unwrap();

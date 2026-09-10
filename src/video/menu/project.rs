@@ -567,7 +567,8 @@ fn prompt_output_conflict(output_path: &Path) -> Result<Option<OutputConflictCho
         )
         .prompt("Select")
         .responsive_layout()
-        .padded_items(options)
+        .items(options)
+        .padded()
         .select_one()?;
 
     match selection {
@@ -684,7 +685,8 @@ fn show_post_render_menu(output_path: &Path, elapsed: Option<std::time::Duration
         .header(header.build())
         .prompt("Select")
         .responsive_layout()
-        .padded_items(entries)
+        .items(entries)
+        .padded()
         .select_one()?;
 
     if let crate::menu_utils::DialogOutcome::Submitted(action) = result {

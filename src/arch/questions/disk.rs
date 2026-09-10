@@ -538,11 +538,12 @@ impl WizardStep for RunCfdiskStep {
                     )
                     .build(),
                 )
-                .padded_items(vec![
+                .items(vec![
                     EmptyLayoutAction::ReopenCfdisk,
                     EmptyLayoutAction::ChangePartitioningMethod,
                     EmptyLayoutAction::PauseInstaller,
                 ])
+                .padded()
                 .select_one()?;
 
             match result {

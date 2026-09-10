@@ -92,7 +92,8 @@ fn handle_single_source(
             )))
             .prompt("Action: ")
             .responsive_layout()
-            .padded_items(vec![Choice::Remove, Choice::Back])
+            .items(vec![Choice::Remove, Choice::Back])
+            .padded()
             .select_one()?
         {
             crate::menu_utils::DialogOutcome::Submitted(Choice::Remove) => {

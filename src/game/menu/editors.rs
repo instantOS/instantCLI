@@ -137,7 +137,8 @@ fn select_launch_command_input_method(
         .header(Header::fancy("How do you want to set the launch command?"))
         .prompt("Method")
         .responsive_layout()
-        .padded_items(items)
+        .items(items)
+        .padded()
         .select_one()?;
 
     match result {
@@ -332,7 +333,7 @@ pub fn edit_launch_command(state: &mut EditState) -> Result<bool> {
             builder = builder.initial_index(index);
         }
 
-        let selection = builder.padded_items(options.clone()).select_one()?;
+        let selection = builder.items(options.clone()).padded().select_one()?;
 
         match selection {
             crate::menu_utils::DialogOutcome::Submitted(option) => {

@@ -202,7 +202,8 @@ fn offer_create_alternative(dir: &Path, display: &str) -> Result<()> {
         .header(crate::menu_utils::Header::fancy("No alternatives found"))
         .prompt("Select action: ")
         .responsive_layout()
-        .padded_items(vec![Choice::Create, Choice::Cancel])
+        .items(vec![Choice::Create, Choice::Cancel])
+        .padded()
         .select_one()?
     {
         crate::menu_utils::DialogOutcome::Submitted(Choice::Create) => {

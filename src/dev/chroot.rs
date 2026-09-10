@@ -480,7 +480,8 @@ fn select_candidate(candidates: Vec<ChrootCandidate>) -> Result<ChrootCandidate>
     let result = FzfWrapper::builder()
         .header(Header::fancy("Select instantOS installation"))
         .prompt("Chroot")
-        .padded_items(candidates.clone())
+        .items(candidates.clone())
+        .padded()
         .select_one()?;
 
     match result {

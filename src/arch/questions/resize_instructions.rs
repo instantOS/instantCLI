@@ -241,7 +241,8 @@ async fn run_manual_resize_flow(ctx: ResizeFlowContext<'_>) -> Result<StepOutcom
 
         let result = FzfWrapper::builder()
             .header(&full_message)
-            .padded_items(options.clone())
+            .items(options.clone())
+            .padded()
             .select_one()?;
 
         match result {
@@ -381,7 +382,8 @@ fn confirm_proceed_without_resize(status: &ResizeStatus) -> Result<bool> {
 
     let confirm = FzfWrapper::builder()
         .header("Partition does not appear to have been resized. Proceed?")
-        .padded_items(confirm_options)
+        .items(confirm_options)
+        .padded()
         .select_one()?;
 
     Ok(matches!(

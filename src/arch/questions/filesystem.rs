@@ -97,7 +97,8 @@ impl WizardStep for RootFilesystemQuestion {
             StepId::RootFilesystem,
             FzfWrapper::builder()
                 .header(HeaderBuilder::new(NerdFont::HardDrive, "Select Root Filesystem").build())
-                .padded_items(options),
+                .items(options)
+                .padded(),
         )?;
 
         Ok(StepOutcome::from_dialog(result, |option| {
@@ -211,7 +212,8 @@ impl WizardStep for BtrfsCompressionQuestion {
             StepId::BtrfsCompression,
             FzfWrapper::builder()
                 .header(HeaderBuilder::new(NerdFont::Sliders, "Select btrfs Compression").build())
-                .padded_items(options),
+                .items(options)
+                .padded(),
         )?;
 
         Ok(StepOutcome::from_dialog(result, |option| {

@@ -48,7 +48,7 @@ fn select_repo_action(
         builder = builder.initial_index(index);
     }
 
-    let result = builder.padded_items(actions.clone()).select_one()?;
+    let result = builder.items(actions.clone()).padded().select_one()?;
 
     match result {
         crate::menu_utils::DialogOutcome::Submitted(item) => {

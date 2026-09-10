@@ -270,7 +270,7 @@ impl ConfirmBuilder {
             shared: self.shared,
         };
 
-        match entry.padded_items(options).select_one()? {
+        match entry.items(options).padded().select_one()? {
             crate::menu_utils::DialogOutcome::Submitted(option) => Ok(option.result),
             crate::menu_utils::DialogOutcome::Cancelled => Ok(ConfirmResult::Cancelled),
         }

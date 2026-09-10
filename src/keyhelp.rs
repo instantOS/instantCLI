@@ -839,7 +839,8 @@ pub fn run_keyhelp() -> Result<()> {
             .header(header.clone())
             .responsive_layout()
             .cursor(cursor.initial_index(&rows))
-            .padded_items(rows.clone())
+            .items(rows.clone())
+            .padded()
             .select_one()?;
 
         match selection {
@@ -1036,7 +1037,8 @@ fn handle_select(row: &KeybindRow) -> Result<SubmenuAction> {
         .prompt(format!("{} ", char::from(NerdFont::Wrench)))
         .header(header)
         .responsive_layout()
-        .padded_items(options)
+        .items(options)
+        .padded()
         .select_one()?;
 
     match selection {
@@ -1071,7 +1073,8 @@ fn handle_select_hyprland(row: &KeybindRow) -> Result<SubmenuAction> {
         .prompt(format!("{} ", char::from(NerdFont::Wrench)))
         .header(header)
         .responsive_layout()
-        .padded_items(options)
+        .items(options)
+        .padded()
         .select_one()?;
 
     match selection {

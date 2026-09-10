@@ -200,7 +200,8 @@ fn handle_shorthand_input(shorthand: &str) -> Result<AddRepoInputResult> {
     match FzfWrapper::builder()
         .header(Header::fancy(&format!("Clone '{}' from:", shorthand)))
         .prompt("Select host")
-        .padded_items(choices)
+        .items(choices)
+        .padded()
         .select_one()?
     {
         crate::menu_utils::DialogOutcome::Submitted(ShorthandChoice::GitHub) => Ok(
@@ -233,7 +234,8 @@ fn handle_plain_name_input(name: &str, config: &mut DotfileConfig) -> Result<Add
     match FzfWrapper::builder()
         .header(Header::fancy(&format!("'{}' is not a URL", name)))
         .prompt("Select action")
-        .padded_items(choices)
+        .items(choices)
+        .padded()
         .select_one()?
     {
         crate::menu_utils::DialogOutcome::Submitted(PlainNameChoice::CreateLocal) => {
@@ -274,7 +276,8 @@ fn handle_empty_input(default_repo: &str) -> Result<AddRepoInputResult> {
     match FzfWrapper::builder()
         .header(Header::fancy("No URL entered"))
         .prompt("Select")
-        .padded_items(choices)
+        .items(choices)
+        .padded()
         .select_one()?
     {
         crate::menu_utils::DialogOutcome::Submitted(EmptyInputChoice::UseDefault) => {

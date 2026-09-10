@@ -430,7 +430,8 @@ impl WizardEngine {
 
         let result = FzfWrapper::menu()
             .header(Header::fancy(self.flow.pause_menu_title()))
-            .padded_items(options)
+            .items(options)
+            .padded()
             .select_one()?;
 
         match result {
@@ -473,7 +474,8 @@ impl WizardEngine {
             .header(Header::fancy(self.flow.final_review_title()))
             .prompt("Select")
             .responsive_layout()
-            .padded_items(final_review_options(self.flow, &self.context))
+            .items(final_review_options(self.flow, &self.context))
+            .padded()
             .select_one()?;
 
         let crate::menu_utils::DialogOutcome::Submitted(option) = result else {
@@ -559,7 +561,8 @@ impl WizardEngine {
             .header(Header::fancy("Select a question to modify"))
             .prompt("Search")
             .responsive_layout()
-            .padded_items(items)
+            .items(items)
+            .padded()
             .select_one()?;
         match result {
             crate::menu_utils::DialogOutcome::Submitted(ReviewItem::Answer { index, .. }) => {
@@ -573,7 +576,8 @@ impl WizardEngine {
     fn select_advanced_option(&self) -> Result<Option<usize>> {
         let result = FzfWrapper::builder()
             .header(Header::fancy("Advanced Options"))
-            .padded_items(AdvancedOption::from_steps(&self.steps, &self.context))
+            .items(AdvancedOption::from_steps(&self.steps, &self.context))
+            .padded()
             .select_one()?;
         match result {
             crate::menu_utils::DialogOutcome::Submitted(AdvancedOption::Answer {
