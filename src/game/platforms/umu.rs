@@ -12,8 +12,8 @@ use crate::game::launch_command::{
     LaunchCommand, LaunchCommandKind, ProtonSelection, WineLaunchCommand, WineRunner,
 };
 use crate::menu_utils::{
-    ConfirmResult, FilePickerBuilder, FilePickerScope, FzfWrapper, MenuPresentation,
-    PathInputBuilder, PathInputSelection,
+    ConfirmResult, FilePickerBuilder, FilePickerScope, FzfWrapper, PathInputBuilder,
+    PathInputSelection,
 };
 use crate::ui::nerd_font::NerdFont;
 
@@ -116,8 +116,7 @@ impl UmuBuilder {
             .header(crate::menu_utils::Header::fancy("Select Wine Runner"))
             .prompt("Runner")
             .responsive_layout()
-            .presentation(MenuPresentation::Padded)
-            .items(options)
+            .padded_items(options)
             .select_one()?
         {
             crate::menu_utils::DialogOutcome::Submitted(item) if item.contains("umu-run") => {
@@ -249,8 +248,7 @@ impl UmuBuilder {
             .header(crate::menu_utils::Header::fancy("Select Proton Version"))
             .prompt("Proton")
             .responsive_layout()
-            .presentation(MenuPresentation::Padded)
-            .items(options.clone())
+            .padded_items(options.clone())
             .select_one()?;
 
         match result {

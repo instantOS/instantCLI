@@ -16,7 +16,7 @@
 
 use crate::common::compositor::CompositorType;
 use crate::common::instantwmctl;
-use crate::menu_utils::{FzfSelectable, FzfWrapper, HeaderBuilder, MenuCursor, MenuPresentation};
+use crate::menu_utils::{FzfSelectable, FzfWrapper, HeaderBuilder, MenuCursor};
 use crate::preview::{PreviewId, preview_command};
 use crate::ui::catppuccin::{
     colors, format_back_icon, format_bold, format_icon, format_icon_colored, format_with_color,
@@ -838,9 +838,8 @@ pub fn run_keyhelp() -> Result<()> {
             .prompt(format!("{} ", char::from(NerdFont::Search)))
             .header(header.clone())
             .responsive_layout()
-            .presentation(MenuPresentation::Padded)
             .cursor(cursor.initial_index(&rows))
-            .items(rows.clone())
+            .padded_items(rows.clone())
             .select_one()?;
 
         match selection {
@@ -1037,8 +1036,7 @@ fn handle_select(row: &KeybindRow) -> Result<SubmenuAction> {
         .prompt(format!("{} ", char::from(NerdFont::Wrench)))
         .header(header)
         .responsive_layout()
-        .presentation(MenuPresentation::Padded)
-        .items(options)
+        .padded_items(options)
         .select_one()?;
 
     match selection {
@@ -1073,8 +1071,7 @@ fn handle_select_hyprland(row: &KeybindRow) -> Result<SubmenuAction> {
         .prompt(format!("{} ", char::from(NerdFont::Wrench)))
         .header(header)
         .responsive_layout()
-        .presentation(MenuPresentation::Padded)
-        .items(options)
+        .padded_items(options)
         .select_one()?;
 
     match selection {

@@ -131,7 +131,7 @@ fn handle_scan_wine_prefix(prefix: Option<String>, list: bool) -> Result<()> {
     use crate::common::TildePath;
     use crate::game::platforms::ludusavi;
     use crate::game::utils::path::is_valid_wine_prefix;
-    use crate::menu_utils::{FzfSelectable, FzfWrapper, Header, MenuPresentation};
+    use crate::menu_utils::{FzfSelectable, FzfWrapper, Header};
     use crate::ui::catppuccin::{colors, format_icon_colored};
     use crate::ui::nerd_font::NerdFont;
     use crate::ui::preview::PreviewBuilder;
@@ -284,8 +284,7 @@ fn handle_scan_wine_prefix(prefix: Option<String>, list: bool) -> Result<()> {
         .header(Header::fancy("Discovered Saves"))
         .prompt("Select")
         .responsive_layout()
-        .presentation(MenuPresentation::Padded)
-        .items(items)
+        .padded_items(items)
         .select_one()?;
 
     match result {

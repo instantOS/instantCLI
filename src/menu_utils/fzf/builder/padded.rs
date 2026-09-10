@@ -341,8 +341,7 @@ mod mock_tests {
 
     use crate::menu_utils::MockQueue;
     use crate::menu_utils::{
-        DialogOutcome, FzfPreview, FzfSelectable, MenuKey, MenuKeybind, MenuPresentation,
-        MenuSelection,
+        DialogOutcome, FzfPreview, FzfSelectable, MenuKey, MenuKeybind, MenuSelection,
     };
 
     #[derive(Clone)]
@@ -382,8 +381,7 @@ mod mock_tests {
         let _guard = MockQueue::new().select_index(0).guard();
         let items = vec!["first".to_string(), "second".to_string()];
         let result = crate::menu_utils::FzfWrapper::builder()
-            .presentation(MenuPresentation::Padded)
-            .items(items)
+            .padded_items(items)
             .select()
             .unwrap();
         match result {

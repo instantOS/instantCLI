@@ -26,7 +26,6 @@ use crate::ui::catppuccin::format_icon_colored;
 use crate::ui::nerd_font::NerdFont;
 
 use super::types::*;
-use super::wrapper::FzfWrapperParts;
 
 /// Configuration shared across every dialog kind. Carried forward through
 /// transitions; specialized builders read from this for prompt, header,
@@ -40,7 +39,6 @@ pub(crate) struct SharedConfig {
     pub initial_cursor: Option<InitialCursor>,
     pub initial_query: Option<String>,
     pub responsive_layout: bool,
-    pub presentation: MenuPresentation,
 }
 
 impl SharedConfig {
@@ -53,7 +51,6 @@ impl SharedConfig {
             initial_cursor: None,
             initial_query: None,
             responsive_layout: false,
-            presentation: MenuPresentation::Compact,
         }
     }
 
@@ -83,6 +80,13 @@ pub struct ItemSelection<T, A = ()> {
     pub(crate) builder: FzfBuilder,
     pub(crate) items: Vec<T>,
     pub(crate) keybinds: Vec<MenuKeybind<A>>,
+    pub(crate) presentation: ItemPresentation,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ItemPresentation {
+    Compact,
+    Padded,
 }
 
 /// Selection backed by typed items arriving over a channel.
@@ -262,18 +266,6 @@ impl FzfBuilder {
         }
     }
 
-    pub(crate) fn into_wrapper_parts(self) -> FzfWrapperParts {
-        let additional_args = self.shared.args().cloned().collect();
-
-        FzfWrapperParts {
-            prompt: self.shared.prompt,
-            header: self.shared.header,
-            additional_args,
-            initial_cursor: self.shared.initial_cursor,
-            responsive_layout: self.shared.responsive_layout,
-        }
-    }
-
     pub fn prompt<S: Into<String>>(mut self, prompt: S) -> Self {
         self.shared.prompt = Some(prompt.into());
         self
@@ -294,11 +286,6 @@ impl FzfBuilder {
     /// position is known.
     pub fn cursor(mut self, index: Option<usize>) -> Self {
         self.shared.initial_cursor = index.map(InitialCursor::Index);
-        self
-    }
-
-    pub fn presentation(mut self, presentation: MenuPresentation) -> Self {
-        self.shared.presentation = presentation;
         self
     }
 
@@ -398,6 +385,17 @@ impl FzfBuilder {
             builder: self,
             items,
             keybinds: Vec::new(),
+            presentation: ItemPresentation::Compact,
+        }
+    }
+
+    /// Use a complete in-memory collection rendered as spacious multiline rows.
+    pub fn padded_items<T>(self, items: Vec<T>) -> ItemSelection<T> {
+        ItemSelection {
+            builder: self,
+            items,
+            keybinds: Vec::new(),
+            presentation: ItemPresentation::Padded,
         }
     }
 
@@ -542,6 +540,13 @@ mod tests {
                 .default_args
                 .contains(&"--padding=1,2".to_string())
         );
-        assert_eq!(builder.shared.presentation, MenuPresentation::Compact);
+        assert_eq!(
+            builder.clone().items(Vec::<String>::new()).presentation,
+            ItemPresentation::Compact
+        );
+        assert_eq!(
+            builder.padded_items(Vec::<String>::new()).presentation,
+            ItemPresentation::Padded
+        );
     }
 }

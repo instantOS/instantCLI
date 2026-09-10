@@ -11,7 +11,7 @@ use super::shared::{
 use super::{
     ConfirmBuilder, ConfirmOption, FzfBuilder, InputBuilder, MessageBuilder, PasswordBuilder,
 };
-use crate::menu_utils::fzf::types::{ConfirmResult, DialogOutcome, Header, MenuPresentation};
+use crate::menu_utils::fzf::types::{ConfirmResult, DialogOutcome, Header};
 use crate::menu_utils::fzf::utils::get_terminal_dimensions;
 use crate::menu_utils::fzf::wrapper::{FzfWrapper, fzf_was_cancelled};
 
@@ -270,11 +270,7 @@ impl ConfirmBuilder {
             shared: self.shared,
         };
 
-        match entry
-            .presentation(MenuPresentation::Padded)
-            .items(options)
-            .select_one()?
-        {
+        match entry.padded_items(options).select_one()? {
             crate::menu_utils::DialogOutcome::Submitted(option) => Ok(option.result),
             crate::menu_utils::DialogOutcome::Cancelled => Ok(ConfirmResult::Cancelled),
         }

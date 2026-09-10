@@ -2,7 +2,6 @@ use crate::arch::config::DisplayManager;
 use crate::arch::engine::{InstallContext, StepId, StepOutcome, WizardStep};
 use crate::menu_utils::{
     ConfirmResult, DialogOutcome, FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder,
-    MenuPresentation,
 };
 use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
@@ -120,8 +119,7 @@ impl WizardStep for DisplayManagerQuestion {
                 StepId::DisplayManager,
                 FzfWrapper::builder()
                     .header(HeaderBuilder::new(NerdFont::Desktop, "Select Display Manager").build())
-                    .presentation(MenuPresentation::Padded),
-                options,
+                    .padded_items(options),
             )?;
 
             let option = match result {

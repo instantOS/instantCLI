@@ -13,9 +13,7 @@ use crate::game::restic::cache;
 use crate::game::utils::safeguards::{PathUsage, ensure_safe_path};
 use crate::game::utils::save_files::{SaveDirectoryInfo, get_save_directory_info};
 use crate::menu::protocol;
-use crate::menu_utils::{
-    ConfirmResult, FzfSelectable, FzfWrapper, HeaderBuilder, MenuPresentation,
-};
+use crate::menu_utils::{ConfirmResult, FzfSelectable, FzfWrapper, HeaderBuilder};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::prelude::*;
 
@@ -451,8 +449,7 @@ fn resolve_missing_path(display: &str, label: &str) -> Result<MissingPathChoiceK
             .subtitle("What would you like to do?")
             .build(),
         )
-        .presentation(MenuPresentation::Padded)
-        .items(options)
+        .padded_items(options)
         .select_one()
         .map_err(|e| anyhow!("Failed to prompt for missing path action: {e}"))?
     {
@@ -888,8 +885,7 @@ fn prompt_save_path_kind(display: &str) -> Result<Option<PathContentKind>> {
             .subtitle("Select the appropriate save type to continue.")
             .build(),
         )
-        .presentation(MenuPresentation::Padded)
-        .items(options)
+        .padded_items(options)
         .select_one()?
     {
         crate::menu_utils::DialogOutcome::Submitted(option) => Ok(Some(option.kind)),

@@ -3,8 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::common::TildePath;
 use crate::menu_utils::{
-    ChecklistResult, ConfirmResult, FzfWrapper, Header, HeaderBuilder, MenuPresentation,
-    PathInputSelection,
+    ChecklistResult, ConfirmResult, FzfWrapper, Header, HeaderBuilder, PathInputSelection,
 };
 use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
@@ -351,8 +350,7 @@ pub fn select_choice<T: Clone>(
         .header(Header::fancy(title))
         .prompt(prompt)
         .responsive_layout()
-        .presentation(MenuPresentation::Padded)
-        .items(items)
+        .padded_items(items)
         .select_one()?;
 
     match result {

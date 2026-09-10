@@ -1,6 +1,6 @@
 use crate::arch::config::{BtrfsCompression, RootFilesystem};
 use crate::arch::engine::{InstallContext, StepId, StepOutcome, WizardStep};
-use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder, MenuPresentation};
+use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder};
 use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -97,8 +97,7 @@ impl WizardStep for RootFilesystemQuestion {
             StepId::RootFilesystem,
             FzfWrapper::builder()
                 .header(HeaderBuilder::new(NerdFont::HardDrive, "Select Root Filesystem").build())
-                .presentation(MenuPresentation::Padded),
-            options,
+                .padded_items(options),
         )?;
 
         Ok(StepOutcome::from_dialog(result, |option| {
@@ -212,8 +211,7 @@ impl WizardStep for BtrfsCompressionQuestion {
             StepId::BtrfsCompression,
             FzfWrapper::builder()
                 .header(HeaderBuilder::new(NerdFont::Sliders, "Select btrfs Compression").build())
-                .presentation(MenuPresentation::Padded),
-            options,
+                .padded_items(options),
         )?;
 
         Ok(StepOutcome::from_dialog(result, |option| {

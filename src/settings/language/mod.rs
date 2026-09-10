@@ -3,7 +3,7 @@ use std::iter;
 
 use anyhow::Result;
 
-use crate::menu_utils::{FzfWrapper, MenuPresentation};
+use crate::menu_utils::FzfWrapper;
 
 use super::SettingsContext;
 
@@ -41,11 +41,7 @@ pub fn configure_system_language(ctx: &mut SettingsContext) -> Result<()> {
 
         let menu_items = build_language_menu_items(&state);
 
-        match FzfWrapper::menu()
-            .presentation(MenuPresentation::Padded)
-            .items(menu_items)
-            .select_one()?
-        {
+        match FzfWrapper::menu().padded_items(menu_items).select_one()? {
             crate::menu_utils::DialogOutcome::Submitted(LanguageMenuItem::Locale(locale_item)) => {
                 if handle_locale_entry(ctx, &state, locale_item.locale.clone())? {
                     continue;
@@ -99,11 +95,7 @@ fn handle_locale_entry(
 
     actions.push(LocaleActionItem::Back);
 
-    match FzfWrapper::menu()
-        .presentation(MenuPresentation::Padded)
-        .items(actions)
-        .select_one()?
-    {
+    match FzfWrapper::menu().padded_items(actions).select_one()? {
         crate::menu_utils::DialogOutcome::Submitted(LocaleActionItem::SetDefault {
             locale,
             label,

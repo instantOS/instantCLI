@@ -14,7 +14,7 @@ use self::presentation::{
 };
 use self::step_graph::StepGraph;
 use super::{InstallContext, StepOutcome, WizardStep};
-use crate::menu_utils::{ConfirmResult, FzfWrapper, Header, MenuPresentation};
+use crate::menu_utils::{ConfirmResult, FzfWrapper, Header};
 use crate::ui::nerd_font::NerdFont;
 
 /// Which wizard is driving the engine.
@@ -430,8 +430,7 @@ impl WizardEngine {
 
         let result = FzfWrapper::menu()
             .header(Header::fancy(self.flow.pause_menu_title()))
-            .presentation(MenuPresentation::Padded)
-            .items(options)
+            .padded_items(options)
             .select_one()?;
 
         match result {
@@ -474,8 +473,7 @@ impl WizardEngine {
             .header(Header::fancy(self.flow.final_review_title()))
             .prompt("Select")
             .responsive_layout()
-            .presentation(MenuPresentation::Padded)
-            .items(final_review_options(self.flow, &self.context))
+            .padded_items(final_review_options(self.flow, &self.context))
             .select_one()?;
 
         let crate::menu_utils::DialogOutcome::Submitted(option) = result else {
@@ -561,8 +559,7 @@ impl WizardEngine {
             .header(Header::fancy("Select a question to modify"))
             .prompt("Search")
             .responsive_layout()
-            .presentation(MenuPresentation::Padded)
-            .items(items)
+            .padded_items(items)
             .select_one()?;
         match result {
             crate::menu_utils::DialogOutcome::Submitted(ReviewItem::Answer { index, .. }) => {
@@ -576,8 +573,7 @@ impl WizardEngine {
     fn select_advanced_option(&self) -> Result<Option<usize>> {
         let result = FzfWrapper::builder()
             .header(Header::fancy("Advanced Options"))
-            .presentation(MenuPresentation::Padded)
-            .items(AdvancedOption::from_steps(&self.steps, &self.context))
+            .padded_items(AdvancedOption::from_steps(&self.steps, &self.context))
             .select_one()?;
         match result {
             crate::menu_utils::DialogOutcome::Submitted(AdvancedOption::Answer {

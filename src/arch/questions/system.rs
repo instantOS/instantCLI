@@ -2,7 +2,7 @@ use super::text_input::{TextInputQuestion, validators};
 use crate::arch::annotations::AnnotatedValue;
 use crate::arch::config::DesktopEnvironment;
 use crate::arch::engine::{DataKey, InstallContext, StepId, StepOutcome, WizardStep};
-use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder, MenuPresentation};
+use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder};
 use crate::preview::{PreviewId, preview_command};
 use crate::settings::definitions::system::validate_hostname;
 use crate::settings::users::validate_username;
@@ -326,8 +326,7 @@ impl WizardStep for DesktopEnvironmentQuestion {
             StepId::DesktopEnvironment,
             FzfWrapper::builder()
                 .header(HeaderBuilder::new(NerdFont::Desktop, "Select Desktop Environment").build())
-                .presentation(MenuPresentation::Padded),
-            options,
+                .padded_items(options),
         )?;
 
         Ok(StepOutcome::from_dialog(result, |environment| {
@@ -414,8 +413,8 @@ impl WizardStep for MirrorRegionQuestion {
             context,
             StepId::MirrorRegion,
             FzfWrapper::builder()
-                .header(HeaderBuilder::new(NerdFont::Globe, "Select Mirror Region").build()),
-            options,
+                .header(HeaderBuilder::new(NerdFont::Globe, "Select Mirror Region").build())
+                .items(options),
         )?;
 
         Ok(StepOutcome::from_dialog(result, |region| region.name))
@@ -469,8 +468,8 @@ impl WizardStep for TimezoneQuestion {
         let result = super::select_one_preselecting(
             preselect,
             FzfWrapper::builder()
-                .header(HeaderBuilder::new(NerdFont::Clock, "Select Timezone").build()),
-            options,
+                .header(HeaderBuilder::new(NerdFont::Clock, "Select Timezone").build())
+                .items(options),
         )?;
 
         Ok(StepOutcome::from_dialog(result, |tz| tz.inner.value))
@@ -528,8 +527,8 @@ impl WizardStep for KeymapQuestion {
         let result = super::select_one_preselecting(
             preselect,
             FzfWrapper::builder()
-                .header(HeaderBuilder::new(NerdFont::Keyboard, "Select Keymap").build()),
-            options,
+                .header(HeaderBuilder::new(NerdFont::Keyboard, "Select Keymap").build())
+                .items(options),
         )?;
 
         Ok(StepOutcome::from_dialog(result, |val| val.value))
@@ -580,8 +579,8 @@ impl WizardStep for LocaleQuestion {
         let result = super::select_one_preselecting(
             preselect,
             FzfWrapper::builder()
-                .header(HeaderBuilder::new(NerdFont::Language, "Select System Locale").build()),
-            options,
+                .header(HeaderBuilder::new(NerdFont::Language, "Select System Locale").build())
+                .items(options),
         )?;
 
         Ok(StepOutcome::from_dialog(result, |val| val.value))
@@ -646,8 +645,7 @@ impl WizardStep for KernelQuestion {
             StepId::Kernel,
             FzfWrapper::builder()
                 .header(HeaderBuilder::new(NerdFont::Gear, "Select Kernel").build())
-                .presentation(MenuPresentation::Padded),
-            kernels,
+                .padded_items(kernels),
         )?;
 
         Ok(StepOutcome::from_dialog(result, |k| k.label().to_string()))

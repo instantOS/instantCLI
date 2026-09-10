@@ -1,7 +1,5 @@
 use crate::arch::engine::{DataKey, InstallContext, StepId, StepOutcome, WizardStep};
-use crate::menu_utils::{
-    ConfirmResult, FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder, MenuPresentation,
-};
+use crate::menu_utils::{ConfirmResult, FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder};
 use crate::ui::catppuccin::colors;
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -221,10 +219,11 @@ impl WizardStep for DiskQuestion {
             let result = super::select_one_with_preselect(
                 context,
                 StepId::Disk,
-                FzfWrapper::builder().header(
-                    HeaderBuilder::new(NerdFont::HardDrive, "Select Installation Disk").build(),
-                ),
-                selections.clone(),
+                FzfWrapper::builder()
+                    .header(
+                        HeaderBuilder::new(NerdFont::HardDrive, "Select Installation Disk").build(),
+                    )
+                    .items(selections.clone()),
             )?;
 
             let selection = match result {
@@ -424,10 +423,11 @@ impl WizardStep for PartitioningMethodQuestion {
         let result = super::select_one_with_preselect(
             context,
             StepId::PartitioningMethod,
-            FzfWrapper::builder().header(
-                HeaderBuilder::new(NerdFont::HardDrive, "Select Partitioning Method").build(),
-            ),
-            options,
+            FzfWrapper::builder()
+                .header(
+                    HeaderBuilder::new(NerdFont::HardDrive, "Select Partitioning Method").build(),
+                )
+                .items(options),
         )?;
 
         Ok(StepOutcome::from_dialog(result, |option| {
@@ -538,8 +538,7 @@ impl WizardStep for RunCfdiskStep {
                     )
                     .build(),
                 )
-                .presentation(MenuPresentation::Padded)
-                .items(vec![
+                .padded_items(vec![
                     EmptyLayoutAction::ReopenCfdisk,
                     EmptyLayoutAction::ChangePartitioningMethod,
                     EmptyLayoutAction::PauseInstaller,

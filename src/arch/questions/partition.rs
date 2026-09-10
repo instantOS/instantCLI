@@ -211,8 +211,9 @@ impl WizardStep for PartitionSelectorQuestion {
         let result = super::select_one_with_preselect(
             context,
             self.id(),
-            FzfWrapper::builder().header(HeaderBuilder::new(self.icon, &self.prompt).build()),
-            partitions,
+            FzfWrapper::builder()
+                .header(HeaderBuilder::new(self.icon, &self.prompt).build())
+                .items(partitions),
         )?;
 
         // Store just the path, not the formatted display string

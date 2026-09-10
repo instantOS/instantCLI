@@ -4,7 +4,7 @@ use anyhow::Result;
 
 use crate::dot::config::DotfileConfig;
 use crate::dot::dotfilerepo::DotfileRepo;
-use crate::menu_utils::{FzfSelectable, FzfWrapper, Header, MenuPresentation};
+use crate::menu_utils::{FzfSelectable, FzfWrapper, Header};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -126,8 +126,7 @@ pub(crate) fn handle_delete_subdir(
         .header(Header::fancy(&format!("Delete '{}'?", subdir_name)))
         .prompt("How do you want to remove this directory?")
         .responsive_layout()
-        .presentation(MenuPresentation::Padded)
-        .items(choices)
+        .padded_items(choices)
         .select_one()?;
 
     match result {

@@ -8,7 +8,7 @@ use colored::Colorize;
 use crate::dot::config::DotfileConfig;
 use crate::dot::override_config::{DotfileSource, OverrideConfig};
 use crate::dot::sources;
-use crate::menu_utils::{FzfSelectable, FzfWrapper, Header, MenuCursor, MenuPresentation};
+use crate::menu_utils::{FzfSelectable, FzfWrapper, Header, MenuCursor};
 use crate::ui::prelude::*;
 
 use super::apply::{is_safe_to_switch, remove_override, set_alternative};
@@ -92,8 +92,7 @@ fn handle_single_source(
             )))
             .prompt("Action: ")
             .responsive_layout()
-            .presentation(MenuPresentation::Padded)
-            .items(vec![Choice::Remove, Choice::Back])
+            .padded_items(vec![Choice::Remove, Choice::Back])
             .select_one()?
         {
             crate::menu_utils::DialogOutcome::Submitted(Choice::Remove) => {

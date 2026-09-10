@@ -3,8 +3,7 @@ use anyhow::{Result, anyhow, bail};
 use crate::menu::client::HostedMenuClient;
 use crate::menu::protocol::ChoiceOptions;
 use crate::menu_utils::{
-    FzfWrapper, Header, HeaderBuilder, MenuCursor, MenuKey, MenuKeybind, MenuPresentation,
-    MenuSelection,
+    FzfWrapper, Header, HeaderBuilder, MenuCursor, MenuKey, MenuKeybind, MenuSelection,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
@@ -181,8 +180,7 @@ pub(super) fn run_add_menu(current_prefix: Option<&str>) -> Result<()> {
         .header(header)
         .prompt("Create")
         .responsive_layout()
-        .presentation(MenuPresentation::Padded)
-        .items(items)
+        .padded_items(items)
         .select_one()?
     {
         match item.action {

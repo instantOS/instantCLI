@@ -11,9 +11,7 @@ use crate::common::compositor::CompositorType;
 use crate::common::display::SwayDisplayProvider;
 use crate::menu::client::HostedMenuClient;
 use crate::menu::protocol::SliderRequest;
-use crate::menu_utils::{
-    ChecklistResult, FzfSelectable, FzfWrapper, Header, HeaderBuilder, MenuPresentation,
-};
+use crate::menu_utils::{ChecklistResult, FzfSelectable, FzfWrapper, Header, HeaderBuilder};
 use crate::settings::context::SettingsContext;
 use crate::settings::deps::PIPER;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
@@ -485,8 +483,7 @@ fn run_audio_source_mode_menu(
 
         let selection = FzfWrapper::menu()
             .cursor(initial_index)
-            .presentation(MenuPresentation::Padded)
-            .items(items.clone())
+            .padded_items(items.clone())
             .select_one()?;
         let crate::menu_utils::DialogOutcome::Submitted(choice) = selection else {
             break;

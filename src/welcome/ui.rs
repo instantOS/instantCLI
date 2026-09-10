@@ -1,6 +1,6 @@
 //! UI components for welcome application
 
-use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, MenuCursor, MenuPresentation};
+use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, MenuCursor};
 use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::prelude::*;
 use anyhow::Result;
@@ -188,8 +188,7 @@ pub fn run_welcome_ui(force_live: bool, debug: bool) -> Result<()> {
         let initial_cursor = cursor.initial_index(&items);
         match FzfWrapper::menu()
             .cursor(initial_cursor)
-            .presentation(MenuPresentation::Padded)
-            .items(items.clone())
+            .padded_items(items.clone())
             .select_one()?
         {
             crate::menu_utils::DialogOutcome::Submitted(WelcomeItem::InstallInstantOS) => {

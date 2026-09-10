@@ -6,7 +6,7 @@ use crate::arch::engine::{
     build_install_summary,
 };
 use crate::common::distro::is_live_iso;
-use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, MenuPresentation};
+use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper};
 use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -111,8 +111,7 @@ fn prompt_existing_answers(
         .header("Existing configuration found")
         .prompt("Select")
         .responsive_layout()
-        .presentation(MenuPresentation::Padded)
-        .items(options)
+        .padded_items(options)
         .select_one()?;
 
     match selection {

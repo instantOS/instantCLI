@@ -26,7 +26,7 @@ use crate::game::restic;
 use crate::game::setup;
 use crate::menu::protocol::FzfPreview;
 use crate::menu_utils::{
-    ConfirmResult, FzfSelectable, FzfWrapper, Header, HeaderBuilder, MenuCursor, MenuPresentation,
+    ConfirmResult, FzfSelectable, FzfWrapper, Header, HeaderBuilder, MenuCursor,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
@@ -799,8 +799,7 @@ fn handle_open_save_directory_action(game_name: &str, state: &GameState) -> Resu
         )
         .prompt("Open with")
         .responsive_layout()
-        .presentation(MenuPresentation::Padded)
-        .items(items)
+        .padded_items(items)
         .select_one()?;
 
     let method = match selection {
@@ -884,10 +883,7 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
                 builder = builder.initial_index(index);
             }
 
-            let selection = builder
-                .presentation(MenuPresentation::Padded)
-                .items(actions.clone())
-                .select_one()?;
+            let selection = builder.padded_items(actions.clone()).select_one()?;
 
             let result = match selection {
                 crate::menu_utils::DialogOutcome::Submitted(item) => {
@@ -1032,10 +1028,7 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
                         builder = builder.initial_index(index);
                     }
 
-                    let selection = builder
-                        .presentation(MenuPresentation::Padded)
-                        .items(actions.clone())
-                        .select_one()?;
+                    let selection = builder.padded_items(actions.clone()).select_one()?;
 
                     let result = match selection {
                         crate::menu_utils::DialogOutcome::Submitted(item) => {
@@ -1151,8 +1144,7 @@ fn show_uninitialized_menu() -> Result<()> {
         .header(Header::fancy("Game save manager is not initialized"))
         .prompt("Select action")
         .responsive_layout()
-        .presentation(MenuPresentation::Padded)
-        .items(options)
+        .padded_items(options)
         .select_one()?;
 
     match selection {

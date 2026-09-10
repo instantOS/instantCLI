@@ -5,7 +5,7 @@ use anyhow::Result;
 use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
 use crate::dot::repo::cli::RepoCommands;
-use crate::menu_utils::{FzfSelectable, FzfWrapper, Header, MenuCursor, MenuPresentation};
+use crate::menu_utils::{FzfSelectable, FzfWrapper, Header, MenuCursor};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -60,10 +60,7 @@ pub(crate) fn handle_subdir_actions(
             builder = builder.initial_index(index);
         }
 
-        let result = builder
-            .presentation(MenuPresentation::Padded)
-            .items(actions.clone())
-            .select_one()?;
+        let result = builder.padded_items(actions.clone()).select_one()?;
 
         let action = match result {
             crate::menu_utils::DialogOutcome::Submitted(item) => {

@@ -1,8 +1,6 @@
 use anyhow::Result;
 
-use crate::menu_utils::{
-    ConfirmResult, FzfSelectable, FzfWrapper, Header, MenuCursor, MenuPresentation,
-};
+use crate::menu_utils::{ConfirmResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::prelude::*;
@@ -124,8 +122,7 @@ pub fn run(backend: ClipBackend) -> Result<()> {
         let initial_index = cursor.initial_index(&items);
         let crate::menu_utils::DialogOutcome::Submitted(selection) = FzfWrapper::menu()
             .cursor(initial_index)
-            .presentation(MenuPresentation::Padded)
-            .items(items.clone())
+            .padded_items(items.clone())
             .select_one()?
         else {
             return Ok(());
@@ -240,8 +237,7 @@ fn confirm_clear(entries: &[ClipEntry]) -> Result<bool> {
     let crate::menu_utils::DialogOutcome::Submitted(selection) = FzfWrapper::menu()
         .initial_index(0)
         .header(header)
-        .presentation(MenuPresentation::Padded)
-        .items(items)
+        .padded_items(items)
         .select_one()?
     else {
         return Ok(false);

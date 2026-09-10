@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 
 use crate::common::package::{PackageManager, uninstall_packages};
 use crate::common::shell::resolve_current_binary;
-use crate::menu_utils::{FzfSelectable, FzfWrapper, Header, MenuPresentation, StreamingCommand};
+use crate::menu_utils::{FzfSelectable, FzfWrapper, Header, StreamingCommand};
 use crate::settings::context::SettingsContext;
 use crate::settings::deps::FLATPAK;
 use crate::settings::flatpak_list::FlatpakSelectionPayload;
@@ -51,11 +51,7 @@ pub fn is_flatpak_installed(app_id: &str) -> bool {
 pub fn show_flatpak_action_menu(app_id: &str) -> Result<()> {
     let actions = vec![FlatpakAction::Run, FlatpakAction::Uninstall];
 
-    let action = match FzfWrapper::menu()
-        .presentation(MenuPresentation::Padded)
-        .items(actions)
-        .select_one()?
-    {
+    let action = match FzfWrapper::menu().padded_items(actions).select_one()? {
         crate::menu_utils::DialogOutcome::Submitted(a) => a,
         crate::menu_utils::DialogOutcome::Cancelled => {
             println!("Action selection cancelled.");
@@ -123,11 +119,7 @@ fn run_installed_flatpaks_manager() -> Result<()> {
         // Show action menu for the selected app
         let actions = vec![FlatpakAction::Run, FlatpakAction::Uninstall];
 
-        let action = match FzfWrapper::menu()
-            .presentation(MenuPresentation::Padded)
-            .items(actions)
-            .select_one()?
-        {
+        let action = match FzfWrapper::menu().padded_items(actions).select_one()? {
             crate::menu_utils::DialogOutcome::Submitted(a) => a,
             crate::menu_utils::DialogOutcome::Cancelled => continue,
         };

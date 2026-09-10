@@ -7,7 +7,7 @@ use crate::game::utils::path::{path_selection_to_tilde, prompt_for_save_path};
 use crate::menu::protocol::FzfPreview;
 use crate::menu_utils::{
     FilePickerScope, FzfSelectable, FzfWrapper, Header, HeaderBuilder, MenuCursor,
-    MenuPresentation, PathInputBuilder, TextEditOutcome, TextEditPrompt, prompt_text_edit,
+    PathInputBuilder, TextEditOutcome, TextEditPrompt, prompt_text_edit,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
@@ -137,8 +137,7 @@ fn select_launch_command_input_method(
         .header(Header::fancy("How do you want to set the launch command?"))
         .prompt("Method")
         .responsive_layout()
-        .presentation(MenuPresentation::Padded)
-        .items(items)
+        .padded_items(items)
         .select_one()?;
 
     match result {
@@ -333,10 +332,7 @@ pub fn edit_launch_command(state: &mut EditState) -> Result<bool> {
             builder = builder.initial_index(index);
         }
 
-        let selection = builder
-            .presentation(MenuPresentation::Padded)
-            .items(options.clone())
-            .select_one()?;
+        let selection = builder.padded_items(options.clone()).select_one()?;
 
         match selection {
             crate::menu_utils::DialogOutcome::Submitted(option) => {

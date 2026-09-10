@@ -7,9 +7,7 @@
 
 use anyhow::{Context, Result};
 
-use crate::menu_utils::{
-    FzfWrapper, HeaderBuilder, MenuCursor, MenuKey, MenuKeybind, MenuPresentation,
-};
+use crate::menu_utils::{FzfWrapper, HeaderBuilder, MenuCursor, MenuKey, MenuKeybind};
 use crate::ui::catppuccin::colors;
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::prelude::*;
@@ -252,8 +250,7 @@ fn handle_notification_detail(db: &NotifyDb, id: i64, _debug: bool) -> Result<()
     let items = build_detail_items(&notification);
     let selection = FzfWrapper::menu()
         .initial_index(0)
-        .presentation(MenuPresentation::Padded)
-        .items(items)
+        .padded_items(items)
         .select_one()?;
 
     match selection {

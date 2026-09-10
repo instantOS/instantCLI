@@ -4,7 +4,7 @@
 
 use anyhow::{Context, Result};
 
-use crate::menu_utils::{FzfWrapper, MenuCursor, MenuPresentation};
+use crate::menu_utils::{FzfWrapper, MenuCursor};
 use crate::settings::category_tree::category_tree;
 use crate::settings::setting::Category;
 
@@ -159,8 +159,7 @@ fn run_main_menu(_ctx: &mut SettingsContext, mut cursor: MenuCursor) -> Result<M
     let initial_cursor = cursor.initial_index(&menu_items);
     let selection = FzfWrapper::menu()
         .cursor(initial_cursor)
-        .presentation(MenuPresentation::Padded)
-        .items(menu_items.clone())
+        .padded_items(menu_items.clone())
         .select_one()?;
 
     let action = match selection {
@@ -223,8 +222,7 @@ fn navigate_tree(
         let initial_cursor = cursor.initial_index(&entries);
         match FzfWrapper::menu()
             .cursor(initial_cursor)
-            .presentation(MenuPresentation::Padded)
-            .items(entries.clone())
+            .padded_items(entries.clone())
             .select_one()?
         {
             crate::menu_utils::DialogOutcome::Submitted(MenuItem::Folder(folder)) => {

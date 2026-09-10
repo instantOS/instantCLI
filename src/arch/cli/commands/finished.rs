@@ -2,7 +2,7 @@ use anyhow::Result;
 
 use crate::arch::cli::DEFAULT_QUESTIONS_FILE;
 use crate::arch::engine::build_install_summary;
-use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, Header, MenuPresentation};
+use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, Header};
 use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -183,8 +183,7 @@ pub(super) async fn handle_finished_command() -> Result<()> {
 
     let result = FzfWrapper::menu()
         .header(Header::fancy("Installation Finished!"))
-        .presentation(MenuPresentation::Padded)
-        .items(items)
+        .padded_items(items)
         .select_one()?;
 
     match result {

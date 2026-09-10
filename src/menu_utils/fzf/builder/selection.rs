@@ -1,12 +1,28 @@
 use anyhow::Result;
 use serde::de::DeserializeOwned;
 
-use super::{CommandSelection, ItemSelection, StreamSelection};
+use super::{CommandSelection, ItemPresentation, ItemSelection, StreamSelection};
 use crate::menu_utils::fzf::types::{
-    DecodedStreamingMenuItem, DialogOutcome, FzfSelectable, MenuItem, MenuKeybind,
-    MenuPresentation, MenuSelection,
+    DecodedStreamingMenuItem, DialogOutcome, FzfSelectable, MenuItem, MenuKeybind, MenuSelection,
 };
 use crate::menu_utils::fzf::wrapper::FzfWrapper;
+
+impl<T, A> ItemSelection<T, A> {
+    /// The items queued for this selection.
+    pub fn items(&self) -> &[T] {
+        &self.items
+    }
+
+    /// Start the cursor on the row at zero-based `index` when the menu opens.
+    pub fn initial_index(self, index: usize) -> Self {
+        Self {
+            builder: self.builder.initial_index(index),
+            items: self.items,
+            keybinds: self.keybinds,
+            presentation: self.presentation,
+        }
+    }
+}
 
 impl<T> ItemSelection<T, ()> {
     /// Register typed actions without changing the selection source.
@@ -15,6 +31,7 @@ impl<T> ItemSelection<T, ()> {
             builder: self.builder,
             items: self.items,
             keybinds: keybinds.to_vec(),
+            presentation: self.presentation,
         }
     }
 }
@@ -22,11 +39,11 @@ impl<T> ItemSelection<T, ()> {
 impl<T: FzfSelectable + Clone, A: Clone> ItemSelection<T, A> {
     /// Run a single-target menu while preserving its optional keybind action.
     pub fn select(self) -> Result<DialogOutcome<MenuSelection<T, A>>> {
-        match self.builder.shared.presentation {
-            MenuPresentation::Compact => {
-                FzfWrapper::from_builder(self.builder).run_items(self.items, &self.keybinds, false)
+        match self.presentation {
+            ItemPresentation::Compact => {
+                FzfWrapper::run_items(self.builder.shared, self.items, &self.keybinds, false)
             }
-            MenuPresentation::Padded => {
+            ItemPresentation::Padded => {
                 self.builder
                     .run_padded_items(self.items, &self.keybinds, false)
             }
@@ -35,11 +52,11 @@ impl<T: FzfSelectable + Clone, A: Clone> ItemSelection<T, A> {
 
     /// Run a menu in which the user may submit multiple items.
     pub fn select_many(self) -> Result<DialogOutcome<MenuSelection<T, A>>> {
-        match self.builder.shared.presentation {
-            MenuPresentation::Compact => {
-                FzfWrapper::from_builder(self.builder).run_items(self.items, &self.keybinds, true)
+        match self.presentation {
+            ItemPresentation::Compact => {
+                FzfWrapper::run_items(self.builder.shared, self.items, &self.keybinds, true)
             }
-            MenuPresentation::Padded => {
+            ItemPresentation::Padded => {
                 self.builder
                     .run_padded_items(self.items, &self.keybinds, true)
             }
@@ -62,6 +79,7 @@ impl<T: FzfSelectable + Clone> ItemSelection<MenuItem<T>, ()> {
                 builder: self.builder.clone(),
                 items: self.items.clone(),
                 keybinds: Vec::<MenuKeybind<()>>::new(),
+                presentation: self.presentation,
             })
             .select()?
             {
@@ -133,8 +151,8 @@ where
     }
 
     fn run(self, allow_multiple: bool) -> Result<DialogOutcome<MenuSelection<T, A>>> {
-        ensure_streamable(self.builder.shared.presentation, "channel")?;
-        FzfWrapper::from_builder(self.builder).run_stream(
+        FzfWrapper::run_stream(
+            self.builder.shared,
             self.initial_items,
             self.late_items,
             &self.keybinds,
@@ -192,8 +210,8 @@ impl<T: DeserializeOwned, A: Clone> CommandSelection<T, A> {
         self,
         allow_multiple: bool,
     ) -> Result<DialogOutcome<MenuSelection<DecodedStreamingMenuItem<T>, A>>> {
-        ensure_streamable(self.builder.shared.presentation, "command")?;
-        FzfWrapper::from_builder(self.builder).run_command(
+        FzfWrapper::run_command(
+            self.builder.shared,
             self.command,
             &self.initial_rows,
             &self.keybinds,
@@ -206,15 +224,6 @@ impl<T: DeserializeOwned> CommandSelection<T, ()> {
     pub fn select_one(self) -> Result<DialogOutcome<DecodedStreamingMenuItem<T>>> {
         single(self.select()?)
     }
-}
-
-fn ensure_streamable(presentation: MenuPresentation, source: &str) -> Result<()> {
-    if presentation != MenuPresentation::Compact {
-        anyhow::bail!(
-            "padded presentation requires a complete item collection; {source} streaming sources must use compact presentation"
-        );
-    }
-    Ok(())
 }
 
 fn single<T>(outcome: DialogOutcome<MenuSelection<T>>) -> Result<DialogOutcome<T>> {
