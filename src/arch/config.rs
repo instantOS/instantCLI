@@ -210,6 +210,7 @@ impl BtrfsCompression {
 pub enum DisplayManager {
     Gdm,
     Lightdm,
+    None,
 }
 
 impl DisplayManager {
@@ -220,6 +221,7 @@ impl DisplayManager {
         match answer {
             "gdm" => Self::Gdm,
             "lightdm" => Self::Lightdm,
+            "none" => Self::None,
             _ => Self::DEFAULT,
         }
     }
@@ -235,6 +237,7 @@ impl DisplayManager {
         match self {
             Self::Gdm => "gdm",
             Self::Lightdm => "lightdm",
+            Self::None => "none",
         }
     }
 
@@ -242,6 +245,7 @@ impl DisplayManager {
         match self {
             Self::Gdm => "gdm (default)",
             Self::Lightdm => "lightdm",
+            Self::None => "none",
         }
     }
 }
@@ -258,6 +262,7 @@ mod tests {
             DisplayManager::from_answer("lightdm"),
             DisplayManager::Lightdm
         );
+        assert_eq!(DisplayManager::from_answer("none"), DisplayManager::None);
         assert_eq!(DisplayManager::from_answer("unknown"), DisplayManager::Gdm);
         assert_eq!(DisplayManager::DEFAULT, DisplayManager::Gdm);
     }

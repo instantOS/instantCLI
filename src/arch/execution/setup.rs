@@ -4,6 +4,7 @@ use std::process::Command;
 
 use crate::arch::engine::{InstallContext, StepId};
 use crate::common::config_edit::{set_keys, set_keys_in_section, update_file};
+use crate::ui::nerd_font::NerdFont;
 
 /// URL for the instantOS dotfiles repository
 const INSTANTOS_DOTFILES_REPO: &str = "https://github.com/instantOS/dotfiles";
@@ -223,20 +224,29 @@ fn enable_services(executor: &dyn CommandRunner, context: &InstallContext) -> Re
         && !context.get_answer_bool(StepId::MinimalMode)
         && desktop.requires_display_manager()
     {
-        services.push(selected_dm_service);
-
         match selected_dm {
             crate::arch::config::DisplayManager::Gdm => {
+                services.push(selected_dm_service);
                 configure_gdm_session(context, executor)?;
                 if context.get_answer_bool(StepId::Autologin) {
                     configure_gdm_autologin(context, executor)?;
                 }
             }
             crate::arch::config::DisplayManager::Lightdm => {
+                services.push(selected_dm_service);
                 configure_lightdm_session(context, executor)?;
                 if context.get_answer_bool(StepId::Autologin) {
                     configure_lightdm_autologin(context, executor)?;
                 }
+            }
+            crate::arch::config::DisplayManager::None => {
+                println!(
+                    "{} No display manager selected. The system will boot to a text console.",
+                    NerdFont::Warning
+                );
+                println!(
+                    "   You will need to start your GUI session yourself after login (e.g. by running the compositor directly)."
+                );
             }
         }
     } else if other_dm_enabled {
@@ -245,15 +255,9 @@ fn enable_services(executor: &dyn CommandRunner, context: &InstallContext) -> Re
             selected_dm_service
         );
     } else if context.get_answer_bool(StepId::MinimalMode) {
-        println!(
-            "Skipping {} setup because minimal mode is enabled.",
-            selected_dm_service
-        );
+        println!("Skipping display manager setup because minimal mode is enabled.");
     } else {
-        println!(
-            "Skipping {} setup because no graphical desktop was selected.",
-            selected_dm_service
-        );
+        println!("Skipping display manager setup because no graphical desktop was selected.");
     }
 
     for service in services {

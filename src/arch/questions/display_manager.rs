@@ -1,6 +1,9 @@
 use crate::arch::config::DisplayManager;
 use crate::arch::engine::{InstallContext, StepId, StepOutcome, WizardStep};
-use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder, MenuPresentation};
+use crate::menu_utils::{
+    ConfirmResult, DialogOutcome, FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder,
+    MenuPresentation,
+};
 use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -14,6 +17,7 @@ impl DisplayManagerOption {
         match self.0 {
             DisplayManager::Gdm => format_icon_colored(NerdFont::Desktop, colors::GREEN),
             DisplayManager::Lightdm => format_icon_colored(NerdFont::Desktop, colors::BLUE),
+            DisplayManager::None => format_icon_colored(NerdFont::Terminal, colors::OVERLAY0),
         }
     }
 
@@ -39,6 +43,22 @@ impl DisplayManagerOption {
                 .bullets([
                     "Traditional GTK-based setups",
                     "Custom greeters and resource-constrained environments",
+                ])
+                .build(),
+            DisplayManager::None => PreviewBuilder::new()
+                .header(NerdFont::Terminal, "none (advanced)")
+                .subtext("Install without a display manager. The system boots to a text console.")
+                .blank()
+                .line(colors::RED, Some(NerdFont::Warning), "Warning")
+                .bullets([
+                    "No graphical login screen will be shown",
+                    "You must start your GUI session yourself after boot",
+                ])
+                .blank()
+                .line(colors::TEAL, None, "Best for")
+                .bullets([
+                    "Minimal setups launched from the TTY (e.g. exec sway)",
+                    "Users who prefer to manage their session manually",
                 ])
                 .build(),
         }
@@ -68,7 +88,7 @@ impl WizardStep for DisplayManagerQuestion {
     }
 
     fn description(&self) -> Option<&str> {
-        Some("Choose the display manager (gdm or lightdm)")
+        Some("Choose the display manager (gdm, lightdm, or none)")
     }
 
     fn is_optional(&self) -> bool {
@@ -88,24 +108,51 @@ impl WizardStep for DisplayManagerQuestion {
     }
 
     async fn run(&self, _context: &InstallContext) -> Result<StepOutcome> {
-        let options = vec![
-            DisplayManagerOption(DisplayManager::Gdm),
-            DisplayManagerOption(DisplayManager::Lightdm),
-        ];
+        loop {
+            let options = vec![
+                DisplayManagerOption(DisplayManager::Gdm),
+                DisplayManagerOption(DisplayManager::Lightdm),
+                DisplayManagerOption(DisplayManager::None),
+            ];
 
-        let result = FzfWrapper::builder()
-            .header(HeaderBuilder::new(NerdFont::Desktop, "Select Display Manager").build())
-            .presentation(MenuPresentation::Padded)
-            .select_one(options)?;
+            let result = FzfWrapper::builder()
+                .header(HeaderBuilder::new(NerdFont::Desktop, "Select Display Manager").build())
+                .presentation(MenuPresentation::Padded)
+                .select_one(options)?;
 
-        Ok(StepOutcome::from_dialog(result, |option| {
-            option.0.answer_value().to_string()
-        }))
+            let option = match result {
+                DialogOutcome::Submitted(option) => option,
+                DialogOutcome::Cancelled => return Ok(StepOutcome::Pause),
+            };
+
+            if option.0 != DisplayManager::None {
+                return Ok(StepOutcome::Answer(option.0.answer_value().to_string()));
+            }
+
+            // Warn that choosing no display manager means booting to a
+            // text console and starting the GUI manually.
+            let confirmed = FzfWrapper::builder()
+                .confirm(format!(
+                    "{} No display manager selected\n\n\
+                     The system will boot to a text console.\n\
+                     You will need to start your GUI session yourself after login.",
+                    NerdFont::Warning
+                ))
+                .confirm_dialog()?;
+
+            match confirmed {
+                ConfirmResult::Yes => {
+                    return Ok(StepOutcome::Answer(option.0.answer_value().to_string()));
+                }
+                // Go back to the selection so the user can reconsider.
+                ConfirmResult::No | ConfirmResult::Cancelled => continue,
+            }
+        }
     }
 
     fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
         match answer {
-            "gdm" | "lightdm" => Ok(()),
+            "gdm" | "lightdm" | "none" => Ok(()),
             _ => Err("You must select a display manager.".to_string()),
         }
     }

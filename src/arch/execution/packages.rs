@@ -142,6 +142,8 @@ fn collect_extended_packages(context: &InstallContext) -> Result<Vec<String>> {
                     packages.push("lightdm".to_string());
                     packages.push("lightdm-gtk-greeter".to_string());
                 }
+                // No display manager: the user starts their GUI manually.
+                crate::arch::config::DisplayManager::None => {}
             }
         }
 
@@ -262,6 +264,27 @@ mod tests {
         assert!(packages.iter().any(|pkg| pkg == "hyprland"));
         assert!(packages.iter().any(|pkg| pkg == "lightdm"));
         assert!(!packages.iter().any(|pkg| pkg == "gdm"));
+    }
+
+    #[test]
+    fn hyprland_selection_with_no_display_manager_skips_dm_packages() {
+        let mut context = base_context();
+        context.set_answer(
+            StepId::DesktopEnvironment,
+            DesktopEnvironment::Hyprland.answer_value().to_string(),
+        );
+        context.set_answer(
+            StepId::DisplayManager,
+            crate::arch::config::DisplayManager::None
+                .answer_value()
+                .to_string(),
+        );
+
+        let packages = build_standard_package_plan(&context).unwrap();
+
+        assert!(packages.iter().any(|pkg| pkg == "hyprland"));
+        assert!(!packages.iter().any(|pkg| pkg == "gdm"));
+        assert!(!packages.iter().any(|pkg| pkg == "lightdm"));
     }
 
     #[test]
