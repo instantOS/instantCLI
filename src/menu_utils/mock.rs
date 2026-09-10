@@ -19,6 +19,13 @@ pub(crate) fn pop_mock() -> Option<MockResponse> {
     MOCK_QUEUE.with(|cell| cell.borrow_mut().pop_front())
 }
 
+/// Test helper: number of scripted responses left unconsumed. Lets tests
+/// assert the exact scripted menu sequence was walked to the end.
+#[cfg(test)]
+pub fn scripted_responses_remaining() -> usize {
+    MOCK_QUEUE.with(|cell| cell.borrow().len())
+}
+
 // ---------------------------------------------------------------------------
 // Test-only items below
 // ---------------------------------------------------------------------------

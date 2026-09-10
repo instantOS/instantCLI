@@ -10,11 +10,12 @@ use std::io::Write;
 use anyhow::{Result, bail};
 
 use self::presentation::{
-    AdvancedOption, FinalReviewAction, PauseMenuItem, ReviewItem, final_review_options,
+    AdvancedOption, FinalReviewAction, FinalReviewOption, PauseMenuItem, ReviewItem,
+    final_review_options,
 };
 use self::step_graph::StepGraph;
 use super::{InstallContext, StepOutcome, WizardStep};
-use crate::menu_utils::{ConfirmResult, FzfWrapper, Header, MenuPresentation};
+use crate::menu_utils::{ConfirmResult, FzfWrapper, Header, MenuCursor, MenuPresentation};
 use crate::ui::nerd_font::NerdFont;
 
 /// Which wizard is driving the engine.
@@ -64,6 +65,14 @@ pub struct WizardEngine {
     context: InstallContext,
     is_tty: bool,
     flow: FlowKind,
+    /// Cursor memory for the final review and advanced options menus.
+    ///
+    /// These are fields, not locals, because `handle_final_review` hands
+    /// control back to the main run loop whenever the flow must settle
+    /// again (or the user dismisses the review with Esc); the next visit
+    /// must restore the row the user came from.
+    review_cursor: MenuCursor,
+    advanced_cursor: MenuCursor,
 }
 
 enum StepInteraction {
@@ -168,6 +177,8 @@ impl WizardEngine {
             context: InstallContext::new(),
             is_tty: is_tty_environment(),
             flow,
+            review_cursor: MenuCursor::new(),
+            advanced_cursor: MenuCursor::new(),
         })
     }
 
@@ -469,55 +480,91 @@ impl WizardEngine {
         &mut self,
         providers: &mut ProviderRuntime,
     ) -> Result<FinalReviewResult> {
-        let result = FzfWrapper::builder()
-            .header(Header::fancy(self.flow.final_review_title()))
-            .prompt("Select")
-            .responsive_layout()
-            .presentation(MenuPresentation::Padded)
-            .select_one(final_review_options(self.flow, &self.context))?;
+        let mut in_advanced_options = false;
 
-        let crate::menu_utils::DialogOutcome::Submitted(option) = result else {
-            return Ok(FinalReviewResult::Continue);
-        };
-        match option.action {
-            FinalReviewAction::Complete => Ok(FinalReviewResult::Complete),
-            FinalReviewAction::ReviewAnswers => {
-                self.review_answers(self.steps.len()).await?;
-                Ok(FinalReviewResult::Continue)
+        loop {
+            // Re-answer edits and advanced-option answers can invalidate
+            // downstream answers (including required ones) or leave optional
+            // defaults unapplied. Settle the flow again before showing a menu
+            // so the user can only complete from a fully answered context.
+            if self.find_next_step_index().is_some() {
+                return Ok(FinalReviewResult::Continue);
             }
-            FinalReviewAction::AdvancedOptions => {
-                if let Some(index) = self.select_advanced_option()?
-                    && matches!(
-                        self.wait_until_ready(index, providers).await?,
-                        StepReadiness::Ready
-                    )
-                {
-                    match self.run_step(index).await? {
-                        StepInteraction::Completed | StepInteraction::Paused => {}
-                        StepInteraction::Back { message } => {
-                            self.show_navigation_message(message)?;
-                            self.go_back_from(index);
-                        }
-                        StepInteraction::Revisit { step, message } => {
-                            self.show_navigation_message(message)?;
-                            self.revisit_from(index, step)?;
+            if in_advanced_options {
+                let Some(index) = self.select_advanced_option()? else {
+                    in_advanced_options = false;
+                    continue;
+                };
+                self.run_advanced_option(index, providers).await?;
+            } else {
+                let Some(option) = self.select_final_review()? else {
+                    return Ok(FinalReviewResult::Continue);
+                };
+                match option.action {
+                    FinalReviewAction::Complete => return Ok(FinalReviewResult::Complete),
+                    FinalReviewAction::ReviewAnswers => {
+                        self.review_answers(self.steps.len()).await?;
+                    }
+                    FinalReviewAction::AdvancedOptions => in_advanced_options = true,
+                    FinalReviewAction::Abort => {
+                        if self.confirm_abort()? {
+                            return Ok(FinalReviewResult::Abort);
                         }
                     }
-                }
-                Ok(FinalReviewResult::Continue)
-            }
-            FinalReviewAction::Abort => {
-                if self.confirm_abort()? {
-                    Ok(FinalReviewResult::Abort)
-                } else {
-                    Ok(FinalReviewResult::Continue)
                 }
             }
         }
     }
 
+    fn select_final_review(&mut self) -> Result<Option<FinalReviewOption>> {
+        let options = final_review_options(self.flow, &self.context);
+        let mut builder = FzfWrapper::builder()
+            .header(Header::fancy(self.flow.final_review_title()))
+            .prompt("Select")
+            .responsive_layout()
+            .presentation(MenuPresentation::Padded);
+        if let Some(index) = self.review_cursor.initial_index(&options) {
+            builder = builder.initial_index(index);
+        }
+
+        match builder.select_one(options.clone())? {
+            crate::menu_utils::DialogOutcome::Submitted(option) => {
+                self.review_cursor.update(&option, &options);
+                Ok(Some(option))
+            }
+            crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
+        }
+    }
+
+    /// Answer one advanced option, then return to the advanced menu.
+    async fn run_advanced_option(
+        &mut self,
+        index: usize,
+        providers: &mut ProviderRuntime,
+    ) -> Result<()> {
+        if !matches!(
+            self.wait_until_ready(index, providers).await?,
+            StepReadiness::Ready
+        ) {
+            return Ok(());
+        }
+        match self.run_step(index).await? {
+            StepInteraction::Completed | StepInteraction::Paused => {}
+            StepInteraction::Back { message } => {
+                self.show_navigation_message(message)?;
+                self.go_back_from(index);
+            }
+            StepInteraction::Revisit { step, message } => {
+                self.show_navigation_message(message)?;
+                self.revisit_from(index, step)?;
+            }
+        }
+        Ok(())
+    }
+
     async fn review_answers(&mut self, before_index: usize) -> Result<()> {
-        while let Some(index) = self.select_answer_to_review(before_index)? {
+        let mut cursor = MenuCursor::new();
+        while let Some(index) = self.select_answer_to_review(before_index, &mut cursor)? {
             match self.run_step(index).await? {
                 StepInteraction::Completed => {}
                 StepInteraction::Paused => return Ok(()),
@@ -536,7 +583,11 @@ impl WizardEngine {
         Ok(())
     }
 
-    fn select_answer_to_review(&self, before_index: usize) -> Result<Option<usize>> {
+    fn select_answer_to_review(
+        &self,
+        before_index: usize,
+        cursor: &mut MenuCursor,
+    ) -> Result<Option<usize>> {
         let mut items = vec![ReviewItem::Continue];
         for (index, step) in self.steps.iter().enumerate().take(before_index) {
             if let Some(answer) = self.context.get_answer(&step.id()) {
@@ -555,32 +606,45 @@ impl WizardEngine {
             return Ok(None);
         }
 
-        let result = FzfWrapper::builder()
+        let mut builder = FzfWrapper::builder()
             .header(Header::fancy("Select a question to modify"))
             .prompt("Search")
             .responsive_layout()
-            .presentation(MenuPresentation::Padded)
-            .select_one(items)?;
-        match result {
-            crate::menu_utils::DialogOutcome::Submitted(ReviewItem::Answer { index, .. }) => {
-                Ok(Some(index))
+            .presentation(MenuPresentation::Padded);
+        if let Some(index) = cursor.initial_index(&items) {
+            builder = builder.initial_index(index);
+        }
+
+        match builder.select_one(items.clone())? {
+            crate::menu_utils::DialogOutcome::Submitted(item) => {
+                cursor.update(&item, &items);
+                match item {
+                    ReviewItem::Answer { index, .. } => Ok(Some(index)),
+                    ReviewItem::Continue => Ok(None),
+                }
             }
-            crate::menu_utils::DialogOutcome::Submitted(ReviewItem::Continue)
-            | crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
+            crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
         }
     }
 
-    fn select_advanced_option(&self) -> Result<Option<usize>> {
-        let result = FzfWrapper::builder()
+    fn select_advanced_option(&mut self) -> Result<Option<usize>> {
+        let options = AdvancedOption::from_steps(&self.steps, &self.context);
+        let mut builder = FzfWrapper::builder()
             .header(Header::fancy("Advanced Options"))
-            .presentation(MenuPresentation::Padded)
-            .select_one(AdvancedOption::from_steps(&self.steps, &self.context))?;
-        match result {
-            crate::menu_utils::DialogOutcome::Submitted(AdvancedOption::Answer {
-                index, ..
-            }) => Ok(Some(index)),
-            crate::menu_utils::DialogOutcome::Submitted(AdvancedOption::Back)
-            | crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
+            .presentation(MenuPresentation::Padded);
+        if let Some(index) = self.advanced_cursor.initial_index(&options) {
+            builder = builder.initial_index(index);
+        }
+
+        match builder.select_one(options.clone())? {
+            crate::menu_utils::DialogOutcome::Submitted(option) => {
+                self.advanced_cursor.update(&option, &options);
+                match option {
+                    AdvancedOption::Answer { index, .. } => Ok(Some(index)),
+                    AdvancedOption::Back => Ok(None),
+                }
+            }
+            crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
         }
     }
 

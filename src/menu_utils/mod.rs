@@ -29,3 +29,5 @@ pub use text_input::{TextEditOutcome, TextEditPrompt, prompt_text_edit};
 
 #[cfg(test)]
 pub use mock::MockQueue;
+#[cfg(test)]
+pub use mock::scripted_responses_remaining;

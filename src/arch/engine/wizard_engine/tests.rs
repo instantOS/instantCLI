@@ -1,15 +1,16 @@
 use anyhow::Result;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use super::presentation::{AdvancedOption, FinalReviewAction, final_review_options};
 use super::step_graph::StepGraph;
-use super::{FlowKind, WizardEngine};
+use super::{FlowKind, WizardEngine, WizardOutcome};
 use crate::arch::engine::{
     AsyncDataProvider, DataKey, InstallContext, StepId, StepOutcome, WizardStep,
 };
 use crate::arch::questions::{
     BooleanQuestion, EncryptionPasswordQuestion, PartitioningMethodQuestion,
 };
-use crate::menu_utils::MockQueue;
+use crate::menu_utils::{MenuCursor, MockQueue, scripted_responses_remaining};
 
 struct StubOptionalQuestion {
     id: StepId,
@@ -32,6 +33,59 @@ impl WizardStep for StubOptionalQuestion {
 
     fn get_default(&self, _context: &InstallContext) -> Option<String> {
         self.default.clone()
+    }
+}
+
+/// Answers differently on each run so a re-answer changes the stored value
+/// and triggers dependency invalidation.
+struct AlternatingAnswerStep {
+    id: StepId,
+    calls: AtomicUsize,
+}
+
+#[async_trait::async_trait]
+impl WizardStep for AlternatingAnswerStep {
+    fn id(&self) -> StepId {
+        self.id
+    }
+
+    async fn run(&self, _context: &InstallContext) -> Result<StepOutcome> {
+        if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
+            Ok(StepOutcome::Answer("first".to_string()))
+        } else {
+            Ok(StepOutcome::Answer("second".to_string()))
+        }
+    }
+}
+
+/// An optional step with a fixed default, usable as a dependency target so
+/// its default can be observed after invalidation.
+struct OptionalWithDefault {
+    id: StepId,
+    default: String,
+    dependencies: Vec<StepId>,
+}
+
+#[async_trait::async_trait]
+impl WizardStep for OptionalWithDefault {
+    fn id(&self) -> StepId {
+        self.id
+    }
+
+    async fn run(&self, _context: &InstallContext) -> Result<StepOutcome> {
+        Ok(StepOutcome::Answer("changed".to_string()))
+    }
+
+    fn is_optional(&self) -> bool {
+        true
+    }
+
+    fn get_default(&self, _context: &InstallContext) -> Option<String> {
+        Some(self.default.clone())
+    }
+
+    fn depends_on(&self) -> &[StepId] {
+        &self.dependencies
     }
 }
 
@@ -735,4 +789,247 @@ fn changing_a_dependency_invalidates_completed_action_steps() {
     graph.record_answer(&mut context, StepId::Disk, "/dev/vda".into());
 
     assert!(!context.is_step_completed(StepId::PrepareDisk));
+}
+
+fn single_optional_question_engine() -> WizardEngine {
+    WizardEngine::for_flow(
+        FlowKind::Install,
+        vec![Box::new(StubOptionalQuestion {
+            id: StepId::Autologin,
+            default: Some("no".to_string()),
+        })],
+    )
+    .unwrap()
+}
+
+#[tokio::test]
+async fn backing_out_of_advanced_options_reopens_the_review_menu() {
+    let engine = single_optional_question_engine();
+
+    let _mock = MockQueue::new()
+        .select_index(2) // review: Advanced Options
+        .select_index(0) // advanced: Back
+        .select_index(0) // review: Install
+        .guard();
+
+    assert!(matches!(
+        engine.run().await.unwrap(),
+        WizardOutcome::Completed(_)
+    ));
+    assert_eq!(scripted_responses_remaining(), 0);
+}
+
+#[tokio::test]
+async fn answering_an_advanced_option_returns_to_the_advanced_menu() {
+    let engine = single_optional_question_engine();
+
+    let _mock = MockQueue::new()
+        .select_index(2) // review: Advanced Options
+        .select_index(1) // advanced: the optional question
+        .select_index(0) // advanced: Back, only reached when the answer returns here
+        .select_index(0) // review: Install
+        .guard();
+
+    match engine.run().await.unwrap() {
+        WizardOutcome::Completed(context) => assert_eq!(
+            context.get_answer(&StepId::Autologin).map(String::as_str),
+            Some("answered")
+        ),
+        WizardOutcome::Aborted => panic!("expected the wizard to complete"),
+    }
+    // Every scripted response was consumed: the Back press happened in the
+    // advanced menu, not as a premature Install on the review menu.
+    assert_eq!(scripted_responses_remaining(), 0);
+}
+
+#[tokio::test]
+async fn review_answers_revalidates_invalidated_dependents_before_completing() {
+    let engine = WizardEngine::new(vec![
+        Box::new(AlternatingAnswerStep {
+            id: StepId::UseEncryption,
+            calls: AtomicUsize::new(0),
+        }),
+        question(StepId::EncryptionPassword, &[StepId::UseEncryption]),
+    ])
+    .unwrap();
+
+    let _mock = MockQueue::new()
+        .select_index(1) // review: Review Answers
+        .select_index(1) // review list: re-answer UseEncryption
+        .select_index(0) // review list: Continue
+        .select_index(0) // review: Install, only reached after the dependent is re-asked
+        .guard();
+
+    match engine.run().await.unwrap() {
+        WizardOutcome::Completed(context) => {
+            assert_eq!(
+                context
+                    .get_answer(&StepId::UseEncryption)
+                    .map(String::as_str),
+                Some("second")
+            );
+            // Re-answering invalidated EncryptionPassword; the wizard must
+            // ask it again before allowing completion.
+            assert_eq!(
+                context
+                    .get_answer(&StepId::EncryptionPassword)
+                    .map(String::as_str),
+                Some("answered")
+            );
+        }
+        WizardOutcome::Aborted => panic!("expected the wizard to complete"),
+    }
+    assert_eq!(scripted_responses_remaining(), 0);
+}
+
+#[tokio::test]
+async fn advanced_answers_reapply_optional_defaults_before_completing() {
+    let engine = WizardEngine::for_flow(
+        FlowKind::Install,
+        vec![
+            Box::new(OptionalWithDefault {
+                id: StepId::DesktopEnvironment,
+                default: "instantwm".to_string(),
+                dependencies: vec![],
+            }),
+            Box::new(OptionalWithDefault {
+                id: StepId::DisplayManager,
+                default: "gdm".to_string(),
+                dependencies: vec![StepId::DesktopEnvironment],
+            }),
+        ],
+    )
+    .unwrap();
+
+    let _mock = MockQueue::new()
+        .select_index(2) // review: Advanced Options
+        .select_index(1) // advanced: DesktopEnvironment
+        .select_index(0) // advanced: Back
+        .select_index(0) // review: Install
+        .guard();
+
+    match engine.run().await.unwrap() {
+        WizardOutcome::Completed(context) => {
+            assert_eq!(
+                context
+                    .get_answer(&StepId::DesktopEnvironment)
+                    .map(String::as_str),
+                Some("changed")
+            );
+            // Answering DesktopEnvironment invalidated DisplayManager; its
+            // default must be re-applied before completion.
+            assert_eq!(
+                context
+                    .get_answer(&StepId::DisplayManager)
+                    .map(String::as_str),
+                Some("gdm")
+            );
+        }
+        WizardOutcome::Aborted => panic!("expected the wizard to complete"),
+    }
+    assert_eq!(scripted_responses_remaining(), 0);
+}
+
+#[test]
+fn review_menu_cursor_returns_to_the_row_that_opened_a_submenu() {
+    let engine = single_optional_question_engine();
+
+    let options = final_review_options(FlowKind::Install, &engine.context);
+    let mut cursor = MenuCursor::new();
+    cursor.update(&options[2], &options); // Advanced Options
+
+    assert_eq!(
+        cursor.initial_index(&final_review_options(FlowKind::Install, &engine.context)),
+        Some(2)
+    );
+}
+
+#[test]
+fn advanced_menu_cursor_survives_answer_updates() {
+    let mut engine = single_optional_question_engine();
+
+    let options = AdvancedOption::from_steps(&engine.steps, &engine.context);
+    let mut cursor = MenuCursor::new();
+    cursor.update(&options[1], &options); // the optional question below Back
+
+    // Answering changes the row's display text but must keep its key stable
+    // so the refreshed menu can restore the cursor.
+    engine
+        .context
+        .set_answer(StepId::Autologin, "answered".to_string());
+    let refreshed = AdvancedOption::from_steps(&engine.steps, &engine.context);
+
+    assert_eq!(cursor.initial_index(&refreshed), Some(1));
+}
+
+#[tokio::test]
+async fn review_cursor_persists_across_final_review_reentries() {
+    let mut engine = single_optional_question_engine();
+
+    // Leaving the review menu (here: into Advanced Options) records the row
+    // on the engine so a later re-entry restores it. The run loop re-enters
+    // the review through `Continue` returns whenever the flow re-settles or
+    // the user dismisses the menu, so locals would lose the position.
+    let _mock = MockQueue::new().select_index(2).guard(); // review: Advanced Options
+    assert!(matches!(
+        engine.select_final_review().unwrap(),
+        Some(option) if matches!(option.action, FinalReviewAction::AdvancedOptions)
+    ));
+
+    let options = final_review_options(FlowKind::Install, &engine.context);
+    assert_eq!(engine.review_cursor.initial_index(&options), Some(2));
+}
+
+#[tokio::test]
+async fn advanced_cursor_persists_across_final_review_reentries() {
+    let mut engine = single_optional_question_engine();
+
+    let _mock = MockQueue::new().select_index(1).guard(); // advanced: the optional question
+    assert_eq!(engine.select_advanced_option().unwrap(), Some(0));
+
+    let options = AdvancedOption::from_steps(&engine.steps, &engine.context);
+    assert_eq!(engine.advanced_cursor.initial_index(&options), Some(1));
+}
+
+#[tokio::test]
+async fn advanced_answers_reask_invalidated_required_questions_before_completing() {
+    let engine = WizardEngine::for_flow(
+        FlowKind::Install,
+        vec![
+            Box::new(OptionalWithDefault {
+                id: StepId::DesktopEnvironment,
+                default: "instantwm".to_string(),
+                dependencies: vec![],
+            }),
+            question(StepId::RootPartition, &[StepId::DesktopEnvironment]),
+        ],
+    )
+    .unwrap();
+
+    let _mock = MockQueue::new()
+        .select_index(2) // review: Advanced Options
+        .select_index(1) // advanced: DesktopEnvironment
+        .select_index(0) // review: Install, only reached after the dependent is re-asked
+        .guard();
+
+    match engine.run().await.unwrap() {
+        WizardOutcome::Completed(context) => {
+            assert_eq!(
+                context
+                    .get_answer(&StepId::DesktopEnvironment)
+                    .map(String::as_str),
+                Some("changed")
+            );
+            // Re-answering DesktopEnvironment invalidated RootPartition; the
+            // wizard must ask it again before allowing completion.
+            assert_eq!(
+                context
+                    .get_answer(&StepId::RootPartition)
+                    .map(String::as_str),
+                Some("answered")
+            );
+        }
+        WizardOutcome::Aborted => panic!("expected the wizard to complete"),
+    }
+    assert_eq!(scripted_responses_remaining(), 0);
 }
