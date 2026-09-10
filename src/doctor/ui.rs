@@ -436,7 +436,8 @@ pub fn show_all_check_results(results: &[CheckResult]) -> Result<()> {
                 .subtitle("Use arrow keys to navigate; Esc returns")
                 .build(),
         )
-        .select_one(viewable)?;
+        .items(viewable)
+        .select_one()?;
 
     Ok(())
 }
@@ -496,7 +497,7 @@ pub async fn run_success_menu(results: &[CheckResult]) -> Result<()> {
             builder = builder.initial_index(index);
         }
 
-        match builder.select_one(menu_items.clone())? {
+        match builder.items(menu_items.clone()).select_one()? {
             crate::menu_utils::DialogOutcome::Submitted(item)
                 if item.is_action(MenuAction::ViewAll) =>
             {

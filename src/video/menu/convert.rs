@@ -127,7 +127,8 @@ pub async fn run_new_project() -> Result<()> {
             .responsive_layout()
             .presentation(MenuPresentation::Padded)
             .cursor(cursor.initial_index(&entries))
-            .select_one(entries.clone())?;
+            .items(entries.clone())
+            .select_one()?;
 
         match selection {
             crate::menu_utils::DialogOutcome::Submitted(entry) => {

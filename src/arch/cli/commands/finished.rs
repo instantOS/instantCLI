@@ -184,7 +184,8 @@ pub(super) async fn handle_finished_command() -> Result<()> {
     let result = FzfWrapper::menu()
         .header(Header::fancy("Installation Finished!"))
         .presentation(MenuPresentation::Padded)
-        .select_one(items)?;
+        .items(items)
+        .select_one()?;
 
     match result {
         crate::menu_utils::DialogOutcome::Submitted(item) => match item.option {

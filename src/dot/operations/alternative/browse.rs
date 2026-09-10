@@ -93,7 +93,7 @@ pub(crate) fn run_browse_menu(dir: &Path, display: &str, mode: BrowseMode) -> Re
             builder = builder.query(q);
         }
 
-        match builder.select_one(menu.clone())? {
+        match builder.items(menu.clone()).select_one()? {
             crate::menu_utils::DialogOutcome::Submitted(BrowseMenuItem::Dotfile(selected)) => {
                 cursor.update(&BrowseMenuItem::Dotfile(selected.clone()), &menu);
                 let result = match mode {
@@ -203,7 +203,8 @@ fn offer_create_alternative(dir: &Path, display: &str) -> Result<()> {
         .prompt("Select action: ")
         .responsive_layout()
         .presentation(MenuPresentation::Padded)
-        .select_one(vec![Choice::Create, Choice::Cancel])?
+        .items(vec![Choice::Create, Choice::Cancel])
+        .select_one()?
     {
         crate::menu_utils::DialogOutcome::Submitted(Choice::Create) => {
             run_browse_menu(dir, display, BrowseMode::CreateAlternative)

@@ -800,7 +800,8 @@ fn handle_open_save_directory_action(game_name: &str, state: &GameState) -> Resu
         .prompt("Open with")
         .responsive_layout()
         .presentation(MenuPresentation::Padded)
-        .select_one(items)?;
+        .items(items)
+        .select_one()?;
 
     let method = match selection {
         crate::menu_utils::DialogOutcome::Submitted(item) => item.method,
@@ -885,7 +886,8 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
 
             let selection = builder
                 .presentation(MenuPresentation::Padded)
-                .select_one(actions.clone())?;
+                .items(actions.clone())
+                .select_one()?;
 
             let result = match selection {
                 crate::menu_utils::DialogOutcome::Submitted(item) => {
@@ -1032,7 +1034,8 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
 
                     let selection = builder
                         .presentation(MenuPresentation::Padded)
-                        .select_one(actions.clone())?;
+                        .items(actions.clone())
+                        .select_one()?;
 
                     let result = match selection {
                         crate::menu_utils::DialogOutcome::Submitted(item) => {
@@ -1149,7 +1152,8 @@ fn show_uninitialized_menu() -> Result<()> {
         .prompt("Select action")
         .responsive_layout()
         .presentation(MenuPresentation::Padded)
-        .select_one(options)?;
+        .items(options)
+        .select_one()?;
 
     match selection {
         crate::menu_utils::DialogOutcome::Submitted(item)

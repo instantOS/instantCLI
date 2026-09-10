@@ -396,7 +396,8 @@ fn prompt_task_choice(game_name: &str, tasks: &[SetupTask]) -> Result<Option<Set
             )
             .build(),
         )
-        .select_one(options)?
+        .items(options)
+        .select_one()?
     {
         crate::menu_utils::DialogOutcome::Submitted(option) => Ok(Some(option.task)),
         crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
@@ -454,7 +455,8 @@ fn prompt_installation_choice(candidates: &[SetupCandidate]) -> Result<Selection
     match FzfWrapper::builder()
         .prompt("setup")
         .header(header)
-        .select_one(options)?
+        .items(options)
+        .select_one()?
     {
         crate::menu_utils::DialogOutcome::Submitted(option) => match option.kind {
             CandidateOptionKind::Candidate(candidate) => Ok(Selection::Candidate(candidate)),

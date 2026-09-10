@@ -15,6 +15,9 @@ use locale_gen::apply_locale_gen_updates;
 use menu::{LanguageMenuItem, LocaleActionItem, LocaleToggleItem, build_language_menu_items};
 use state::LocaleState;
 
+// Shared with the installer's annotation providers (crate-internal API).
+pub(crate) use state::{locale_base, locale_display_name};
+
 pub fn configure_system_language(ctx: &mut SettingsContext) -> Result<()> {
     // Check for systemd availability (localectl)
     if which::which("localectl").is_err() {
@@ -40,7 +43,8 @@ pub fn configure_system_language(ctx: &mut SettingsContext) -> Result<()> {
 
         match FzfWrapper::menu()
             .presentation(MenuPresentation::Padded)
-            .select_one(menu_items)?
+            .items(menu_items)
+            .select_one()?
         {
             crate::menu_utils::DialogOutcome::Submitted(LanguageMenuItem::Locale(locale_item)) => {
                 if handle_locale_entry(ctx, &state, locale_item.locale.clone())? {
@@ -97,7 +101,8 @@ fn handle_locale_entry(
 
     match FzfWrapper::menu()
         .presentation(MenuPresentation::Padded)
-        .select_one(actions)?
+        .items(actions)
+        .select_one()?
     {
         crate::menu_utils::DialogOutcome::Submitted(LocaleActionItem::SetDefault {
             locale,
@@ -134,10 +139,10 @@ fn handle_add_locale(ctx: &mut SettingsContext, state: &LocaleState) -> Result<b
     candidates.sort();
 
     let selection = FzfWrapper::builder()
-        .multi_select(true)
         .prompt("Add locale")
         .header("Select locales to enable (locale-gen)")
-        .select(candidates)?;
+        .items(candidates)
+        .select_many()?;
 
     let selected = match selection {
         crate::menu_utils::DialogOutcome::Submitted(sel) => sel.items,

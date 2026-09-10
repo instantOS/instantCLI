@@ -539,11 +539,12 @@ impl WizardStep for RunCfdiskStep {
                     .build(),
                 )
                 .presentation(MenuPresentation::Padded)
-                .select_one(vec![
+                .items(vec![
                     EmptyLayoutAction::ReopenCfdisk,
                     EmptyLayoutAction::ChangePartitioningMethod,
                     EmptyLayoutAction::PauseInstaller,
-                ])?;
+                ])
+                .select_one()?;
 
             match result {
                 crate::menu_utils::DialogOutcome::Submitted(EmptyLayoutAction::ReopenCfdisk) => {

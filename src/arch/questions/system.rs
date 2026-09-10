@@ -43,18 +43,25 @@ impl FzfSelectable for MirrorRegionOption {
     }
 }
 
+/// A timezone entry carrying its optional annotation. Wraps
+/// [`AnnotatedValue`] for the display text while keeping the rich
+/// command-based preview, which shows the live time in the selected zone.
 #[derive(Clone)]
 struct TimezoneOption {
-    value: String,
+    inner: AnnotatedValue<String>,
 }
 
 impl FzfSelectable for TimezoneOption {
     fn fzf_display_text(&self) -> String {
-        self.value.clone()
+        self.inner.fzf_display_text()
     }
 
     fn fzf_preview(&self) -> FzfPreview {
         FzfPreview::Command(preview_command(PreviewId::Timezone))
+    }
+
+    fn fzf_key(&self) -> String {
+        self.inner.fzf_key()
     }
 }
 
@@ -449,18 +456,24 @@ impl WizardStep for TimezoneQuestion {
 
         let options: Vec<TimezoneOption> = timezones
             .into_iter()
-            .map(|value| TimezoneOption { value })
+            .map(|inner| TimezoneOption { inner })
             .collect();
 
-        let result = super::select_one_with_preselect(
-            context,
-            StepId::Timezone,
+        // Start on the previously chosen timezone; on the first pass, on the
+        // one the running system already uses.
+        let preselect = context
+            .previous_answer(&StepId::Timezone)
+            .cloned()
+            .or_else(crate::arch::timezones::detect_current_timezone);
+
+        let result = super::select_one_preselecting(
+            preselect,
             FzfWrapper::builder()
                 .header(HeaderBuilder::new(NerdFont::Clock, "Select Timezone").build()),
             options,
         )?;
 
-        Ok(StepOutcome::from_dialog(result, |tz| tz.value))
+        Ok(StepOutcome::from_dialog(result, |tz| tz.inner.value))
     }
 
     fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
@@ -505,9 +518,15 @@ impl WizardStep for KeymapQuestion {
             .map(|value| AnnotatedOption::new(value, &KEYMAP_OPTION_STYLE))
             .collect();
 
-        let result = super::select_one_with_preselect(
-            context,
-            StepId::Keymap,
+        // Start on the previously chosen keymap; on the first pass, on the
+        // one the running system already uses.
+        let preselect = context
+            .previous_answer(&StepId::Keymap)
+            .cloned()
+            .or_else(crate::arch::keymaps::detect_current_keymap);
+
+        let result = super::select_one_preselecting(
+            preselect,
             FzfWrapper::builder()
                 .header(HeaderBuilder::new(NerdFont::Keyboard, "Select Keymap").build()),
             options,
@@ -551,9 +570,15 @@ impl WizardStep for LocaleQuestion {
             .map(|value| AnnotatedOption::new(value, &LOCALE_OPTION_STYLE))
             .collect();
 
-        let result = super::select_one_with_preselect(
-            context,
-            StepId::Locale,
+        // Start on the previously chosen locale; on the first pass, on the
+        // one the running system already uses.
+        let preselect = context
+            .previous_answer(&StepId::Locale)
+            .cloned()
+            .or_else(crate::arch::locales::detect_current_locale);
+
+        let result = super::select_one_preselecting(
+            preselect,
             FzfWrapper::builder()
                 .header(HeaderBuilder::new(NerdFont::Language, "Select System Locale").build()),
             options,

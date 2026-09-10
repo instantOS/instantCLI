@@ -58,7 +58,8 @@ pub fn manage_default_apps(ctx: &mut SettingsContext) -> Result<()> {
                 .build(),
         )
         .responsive_layout()
-        .select_one(mime_types)?
+        .items(mime_types)
+        .select_one()?
     {
         crate::menu_utils::DialogOutcome::Submitted(info) => info,
         crate::menu_utils::DialogOutcome::Cancelled => {
@@ -115,7 +116,7 @@ pub fn manage_default_apps(ctx: &mut SettingsContext) -> Result<()> {
         app_menu = app_menu.initial_index(index);
     }
 
-    let selected_app_info = match app_menu.select_one(app_infos)? {
+    let selected_app_info = match app_menu.items(app_infos).select_one()? {
         crate::menu_utils::DialogOutcome::Submitted(app_info) => app_info,
         crate::menu_utils::DialogOutcome::Cancelled => {
             ctx.emit_info("settings.defaultapps.cancelled", "No application selected.");
@@ -272,7 +273,7 @@ fn manage_default_app_for_mimes(
             builder = builder.initial_index(index + offset);
         }
 
-        let selected = builder.select_menu(entries)?;
+        let selected = builder.items(entries).select_menu()?;
 
         match selected {
             crate::menu_utils::DialogOutcome::Submitted(entry) => match entry {

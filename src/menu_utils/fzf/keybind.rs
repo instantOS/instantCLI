@@ -15,8 +15,6 @@ const HINT_MAX_WIDTH: usize = 96;
 const HINT_MIN_WIDTH: usize = 12;
 const SEPARATOR_WIDTH: usize = 5;
 
-pub(super) const NONE: &[MenuKeybind<()>] = &[];
-
 struct HintSegment {
     styled: String,
     width: usize,

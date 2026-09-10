@@ -272,9 +272,10 @@ impl ConfirmBuilder {
 
         match entry
             .presentation(MenuPresentation::Padded)
-            .select(options)?
+            .items(options)
+            .select_one()?
         {
-            crate::menu_utils::DialogOutcome::Submitted(sel) => Ok(sel.into_single()?.result),
+            crate::menu_utils::DialogOutcome::Submitted(option) => Ok(option.result),
             crate::menu_utils::DialogOutcome::Cancelled => Ok(ConfirmResult::Cancelled),
         }
     }

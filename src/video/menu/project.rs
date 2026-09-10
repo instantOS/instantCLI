@@ -221,7 +221,8 @@ pub async fn open_project_for_path(markdown_path: &Path) -> Result<()> {
             .header(Header::fancy(project_name))
             .prompt("Select")
             .responsive_layout()
-            .select_one(entries)?;
+            .items(entries)
+            .select_one()?;
 
         match result {
             crate::menu_utils::DialogOutcome::Submitted(entry) => match entry {
@@ -567,7 +568,8 @@ fn prompt_output_conflict(output_path: &Path) -> Result<Option<OutputConflictCho
         .prompt("Select")
         .responsive_layout()
         .presentation(MenuPresentation::Padded)
-        .select_one(options)?;
+        .items(options)
+        .select_one()?;
 
     match selection {
         crate::menu_utils::DialogOutcome::Submitted(option) => Ok(Some(option.choice)),
@@ -684,7 +686,8 @@ fn show_post_render_menu(output_path: &Path, elapsed: Option<std::time::Duration
         .prompt("Select")
         .responsive_layout()
         .presentation(MenuPresentation::Padded)
-        .select_one(entries)?;
+        .items(entries)
+        .select_one()?;
 
     if let crate::menu_utils::DialogOutcome::Submitted(action) = result {
         match action {

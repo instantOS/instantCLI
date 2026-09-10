@@ -26,7 +26,8 @@ pub fn run_options_menu(db: &NotifyDb, _debug: bool) -> Result<()> {
         let selection = FzfWrapper::menu()
             .cursor(initial_index)
             .presentation(MenuPresentation::Padded)
-            .select_one(items.clone())?;
+            .items(items.clone())
+            .select_one()?;
 
         match selection {
             crate::menu_utils::DialogOutcome::Submitted(item @ OptionsItem::DoNotDisturb(_)) => {
@@ -375,7 +376,8 @@ fn handle_delete_by_app(db: &NotifyDb) -> Result<()> {
             "Select an application to review its notifications",
         ))
         .presentation(MenuPresentation::Padded)
-        .select_one(items)?;
+        .items(items)
+        .select_one()?;
 
     let app = match selection {
         crate::menu_utils::DialogOutcome::Submitted(AppDeletionItem::Application {
@@ -681,7 +683,8 @@ fn confirm_deletion(matches: &[Notification], postfix: Option<&str>) -> Result<b
         .initial_index(0)
         .header(Header::default(&header_text))
         .presentation(MenuPresentation::Padded)
-        .select_one(items)?;
+        .items(items)
+        .select_one()?;
     let crate::menu_utils::DialogOutcome::Submitted(chosen) = selection else {
         return Ok(false);
     };

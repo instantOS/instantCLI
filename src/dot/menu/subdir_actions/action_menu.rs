@@ -62,7 +62,8 @@ pub(crate) fn handle_subdir_actions(
 
         let result = builder
             .presentation(MenuPresentation::Padded)
-            .select_one(actions.clone())?;
+            .items(actions.clone())
+            .select_one()?;
 
         let action = match result {
             crate::menu_utils::DialogOutcome::Submitted(item) => {

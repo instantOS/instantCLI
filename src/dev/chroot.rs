@@ -483,7 +483,8 @@ fn select_candidate(candidates: Vec<ChrootCandidate>) -> Result<ChrootCandidate>
         .header(Header::fancy("Select instantOS installation"))
         .prompt("Chroot")
         .presentation(MenuPresentation::Padded)
-        .select_one(candidates.clone())?;
+        .items(candidates.clone())
+        .select_one()?;
 
     match result {
         crate::menu_utils::DialogOutcome::Submitted(candidate) => {

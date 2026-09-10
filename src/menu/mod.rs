@@ -418,12 +418,16 @@ fn handle_choice_buffered(
                 Some(state) => state.prepare(item_list),
                 None => item_list,
             };
+            let selection = FzfWrapper::builder()
+                .prompt(prompt.to_string())
+                .items(item_list);
+            let result = if allow_multiple {
+                selection.select_many()
+            } else {
+                selection.select()
+            };
             Ok(finish_dialog(
-                FzfWrapper::builder()
-                    .prompt(prompt.to_string())
-                    .multi_select(allow_multiple)
-                    .select(item_list)
-                    .map(|outcome| outcome.map(MenuSelection::into_items)),
+                result.map(|outcome| outcome.map(MenuSelection::into_items)),
                 "Local TUI",
                 |items| {
                     for item in &items {
@@ -441,7 +445,7 @@ fn handle_choice_buffered(
 }
 
 /// TUI streaming choice: opens fzf immediately and appends stdin lines
-/// live via `FzfWrapper::select_streaming`. stdin `EOF` ends the stream
+/// live via `FzfBuilder::stream`. stdin `EOF` ends the stream
 /// but leaves the menu open for selection. The reader may stay blocked
 /// on stdin for infinite producers — the short-lived CLI process
 /// exiting kills it, so it is detached, not joined.
@@ -471,12 +475,14 @@ fn handle_choice_tui_streaming(
         skip_when_terminal: false,
     });
 
+    let selection = FzfWrapper::builder().prompt(prompt.to_string()).stream(rx);
+    let result = if allow_multiple {
+        selection.select_many()
+    } else {
+        selection.select()
+    };
     Ok(finish_dialog(
-        FzfWrapper::builder()
-            .prompt(prompt.to_string())
-            .multi_select(allow_multiple)
-            .select_streaming(Vec::new(), rx)
-            .map(|outcome| outcome.map(MenuSelection::into_items)),
+        result.map(|outcome| outcome.map(MenuSelection::into_items)),
         "Local TUI",
         |items| {
             for item in items {

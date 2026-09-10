@@ -72,10 +72,15 @@ pub(super) fn select(
     if let Some(state) = state.as_mut() {
         items = state.prepare(items);
     }
-    let outcome = FzfWrapper::builder()
+    let selection = FzfWrapper::builder()
         .prompt(prompt.to_string())
-        .multi_select(multi)
-        .select_with_keybinds(items, &typed)?;
+        .items(items)
+        .keybinds(&typed);
+    let outcome = if multi {
+        selection.select_many()?
+    } else {
+        selection.select()?
+    };
     if let DialogOutcome::Submitted(selection) = &outcome
         && let Some(state) = state.as_mut()
         && let Err(error) = state.record_all(&selection.items)
@@ -166,10 +171,15 @@ pub(super) fn handle(
                 .with_bindings(bindings.to_vec());
             HostedMenuClient::new().choice_streaming(options, rx)?
         } else {
-            FzfWrapper::builder()
+            let selection = FzfWrapper::builder()
                 .prompt(prompt.to_string())
-                .multi_select(multi)
-                .select_streaming_with_keybinds(Vec::new(), rx, &typed)?
+                .stream(rx)
+                .keybinds(&typed);
+            if multi {
+                selection.select_many()?
+            } else {
+                selection.select()?
+            }
         }
     };
     match outcome {

@@ -189,7 +189,8 @@ pub fn run_welcome_ui(force_live: bool, debug: bool) -> Result<()> {
         match FzfWrapper::menu()
             .cursor(initial_cursor)
             .presentation(MenuPresentation::Padded)
-            .select_one(items.clone())?
+            .items(items.clone())
+            .select_one()?
         {
             crate::menu_utils::DialogOutcome::Submitted(WelcomeItem::InstallInstantOS) => {
                 cursor.update(&WelcomeItem::InstallInstantOS, &items);

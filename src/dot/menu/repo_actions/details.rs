@@ -105,7 +105,8 @@ pub fn handle_global_units_menu(config: &mut DotfileConfig, db: &Database) -> Re
 
         match builder
             .presentation(MenuPresentation::Padded)
-            .select_one(items.clone())?
+            .items(items.clone())
+            .select_one()?
         {
             crate::menu_utils::DialogOutcome::Submitted(item) => {
                 cursor.update(&item, &items);
@@ -210,7 +211,8 @@ fn select_detail_action(
 
     let result = builder
         .presentation(MenuPresentation::Padded)
-        .select_one(actions.clone())?;
+        .items(actions.clone())
+        .select_one()?;
 
     match result {
         crate::menu_utils::DialogOutcome::Submitted(item) => {
@@ -268,7 +270,8 @@ fn handle_manage_units(
 
         match builder
             .presentation(MenuPresentation::Padded)
-            .select_one(items.clone())?
+            .items(items.clone())
+            .select_one()?
         {
             crate::menu_utils::DialogOutcome::Submitted(item) => {
                 cursor.update(&item, &items);

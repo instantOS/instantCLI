@@ -684,7 +684,7 @@ fn select_duplicate_keep(
         builder = builder.initial_index(initial_index);
     }
 
-    match builder.select_one(entries.clone())? {
+    match builder.items(entries.clone()).select_one()? {
         crate::menu_utils::DialogOutcome::Submitted(choice) => {
             cursor.update(&choice, &entries);
             match choice {
@@ -719,7 +719,7 @@ fn select_conflict_choice(
         builder = builder.initial_index(index);
     }
 
-    match builder.select_one(entries.clone())? {
+    match builder.items(entries.clone()).select_one()? {
         crate::menu_utils::DialogOutcome::Submitted(choice) => {
             cursor.update(&choice, &entries);
             Ok(Some(choice))

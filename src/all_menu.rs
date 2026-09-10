@@ -80,7 +80,7 @@ pub async fn run_all_menu(debug: bool) -> Result<i32> {
             builder = builder.initial_index(index);
         }
 
-        let result = builder.select_menu(entries.clone())?;
+        let result = builder.items(entries.clone()).select_menu()?;
 
         match result {
             crate::menu_utils::DialogOutcome::Submitted(entry) => {

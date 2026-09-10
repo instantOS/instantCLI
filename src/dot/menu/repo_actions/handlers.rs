@@ -50,7 +50,8 @@ fn select_repo_action(
 
     let result = builder
         .presentation(MenuPresentation::Padded)
-        .select_one(actions.clone())?;
+        .items(actions.clone())
+        .select_one()?;
 
     match result {
         crate::menu_utils::DialogOutcome::Submitted(item) => {

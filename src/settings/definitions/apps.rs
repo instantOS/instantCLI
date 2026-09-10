@@ -95,7 +95,7 @@ fn select_default_command(ctx: &mut SettingsContext, command: DefaultCommand) ->
         menu = menu.initial_index(index);
     }
 
-    if let crate::menu_utils::DialogOutcome::Submitted(entry) = menu.select_one(entries)? {
+    if let crate::menu_utils::DialogOutcome::Submitted(entry) = menu.items(entries).select_one()? {
         let (name, path) = match entry {
             CommandMenuEntry::Command(choice) => (choice.name, choice.path),
             CommandMenuEntry::Custom => {

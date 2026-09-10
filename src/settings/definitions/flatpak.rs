@@ -66,11 +66,11 @@ fn select_flatpak_apps() -> Result<Vec<String>> {
     let list_cmd = flatpak_list_command();
 
     let result = FzfWrapper::builder()
-        .multi_select(true)
         .prompt("Select packages")
         .header(Header::fancy("Install Flatpak Apps"))
         .responsive_layout()
-        .select_encoded_streaming(list_cmd)?;
+        .command(list_cmd)
+        .select_many()?;
 
     extract_app_ids(result)
 }

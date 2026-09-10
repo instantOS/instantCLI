@@ -125,7 +125,8 @@ pub fn run(backend: ClipBackend) -> Result<()> {
         let crate::menu_utils::DialogOutcome::Submitted(selection) = FzfWrapper::menu()
             .cursor(initial_index)
             .presentation(MenuPresentation::Padded)
-            .select_one(items.clone())?
+            .items(items.clone())
+            .select_one()?
         else {
             return Ok(());
         };
@@ -240,7 +241,8 @@ fn confirm_clear(entries: &[ClipEntry]) -> Result<bool> {
         .initial_index(0)
         .header(header)
         .presentation(MenuPresentation::Padded)
-        .select_one(items)?
+        .items(items)
+        .select_one()?
     else {
         return Ok(false);
     };

@@ -160,7 +160,8 @@ fn run_main_menu(_ctx: &mut SettingsContext, mut cursor: MenuCursor) -> Result<M
     let selection = FzfWrapper::menu()
         .cursor(initial_cursor)
         .presentation(MenuPresentation::Padded)
-        .select_one(menu_items.clone())?;
+        .items(menu_items.clone())
+        .select_one()?;
 
     let action = match selection {
         crate::menu_utils::DialogOutcome::Submitted(MainMenuItem::SearchAll) => {
@@ -223,7 +224,8 @@ fn navigate_tree(
         match FzfWrapper::menu()
             .cursor(initial_cursor)
             .presentation(MenuPresentation::Padded)
-            .select_one(entries.clone())?
+            .items(entries.clone())
+            .select_one()?
         {
             crate::menu_utils::DialogOutcome::Submitted(MenuItem::Folder(folder)) => {
                 cursor.update(&MenuItem::Folder(folder.clone()), &entries);
@@ -283,7 +285,8 @@ pub fn handle_search_all(ctx: &mut SettingsContext, mut cursor: MenuCursor) -> R
             .args(["--no-sort"])
             .initial_index(initial_cursor.unwrap_or(0))
             .responsive_layout()
-            .select_one(items.clone())?;
+            .items(items.clone())
+            .select_one()?;
 
         match result {
             crate::menu_utils::DialogOutcome::Submitted(selection) => {

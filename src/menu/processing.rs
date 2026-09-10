@@ -194,7 +194,7 @@ impl RequestProcessor {
 
     /// Handle streaming choice selection: menu opens immediately with no
     /// initial items; items arriving on `rx` are appended live via
-    /// `FzfWrapper::select_streaming`. An empty stream yields `Cancelled`
+    /// `FzfBuilder::stream`. An empty stream yields `Cancelled`
     /// (not `Error`) so `producer | ins menu choice` with no output
     /// behaves like an empty cancelled menu rather than a protocol error.
     pub(super) fn handle_choice_streaming<F: FnOnce() -> Result<()>>(
@@ -204,11 +204,17 @@ impl RequestProcessor {
         on_ready: F,
     ) -> Result<MenuResponse> {
         let typed = super::bindings::validate(&options.bindings)?;
-        match FzfWrapper::builder()
+        let selection = FzfWrapper::builder()
             .prompt(options.prompt)
-            .multi_select(options.allow_multiple)
-            .select_streaming_with_ready_and_keybinds(Vec::new(), rx, &typed, on_ready)
-        {
+            .stream(rx)
+            .keybinds(&typed)
+            .on_ready(on_ready);
+        let result = if options.allow_multiple {
+            selection.select_many()
+        } else {
+            selection.select()
+        };
+        match result {
             Ok(crate::menu_utils::DialogOutcome::Submitted(selection)) => {
                 Ok(MenuResponse::ChoiceResult {
                     action: selection.action,

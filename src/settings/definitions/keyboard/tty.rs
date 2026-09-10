@@ -60,7 +60,7 @@ impl Setting for TtyKeymap {
             return Ok(());
         }
 
-        let provider = KeymapAnnotationProvider;
+        let provider = KeymapAnnotationProvider::new();
         let choices = annotate_list(Some(&provider), keymaps);
 
         let current = if ctx.contains(Self::KEY.key) {
@@ -78,7 +78,8 @@ impl Setting for TtyKeymap {
             .header("Select TTY Keymap")
             .prompt("Keymap")
             .initial_index(initial_index)
-            .select_one(choices)?;
+            .items(choices)
+            .select_one()?;
 
         match result {
             crate::menu_utils::DialogOutcome::Submitted(choice) => {

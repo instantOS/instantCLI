@@ -138,7 +138,8 @@ fn select_launch_command_input_method(
         .prompt("Method")
         .responsive_layout()
         .presentation(MenuPresentation::Padded)
-        .select_one(items)?;
+        .items(items)
+        .select_one()?;
 
     match result {
         crate::menu_utils::DialogOutcome::Submitted(item) => Ok(item.method),
@@ -334,7 +335,8 @@ pub fn edit_launch_command(state: &mut EditState) -> Result<bool> {
 
         let selection = builder
             .presentation(MenuPresentation::Padded)
-            .select_one(options.clone())?;
+            .items(options.clone())
+            .select_one()?;
 
         match selection {
             crate::menu_utils::DialogOutcome::Submitted(option) => {

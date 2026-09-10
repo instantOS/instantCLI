@@ -184,7 +184,9 @@ fn run_main_menu(
     let selection = FzfWrapper::menu()
         .cursor(initial_index)
         .header(header)
-        .select_with_keybinds(items.clone(), &keybinds)?;
+        .items(items.clone())
+        .keybinds(&keybinds)
+        .select()?;
 
     let action = match selection {
         crate::menu_utils::DialogOutcome::Submitted(selection) => {
@@ -251,7 +253,8 @@ fn handle_notification_detail(db: &NotifyDb, id: i64, _debug: bool) -> Result<()
     let selection = FzfWrapper::menu()
         .initial_index(0)
         .presentation(MenuPresentation::Padded)
-        .select_one(items)?;
+        .items(items)
+        .select_one()?;
 
     match selection {
         crate::menu_utils::DialogOutcome::Submitted(item) => match item.action {

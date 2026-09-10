@@ -167,6 +167,19 @@ fn parse_locale_file(path: &Path) -> Result<Option<LocaleMetadata>> {
     let contents = fs::read_to_string(path)
         .with_context(|| format!("reading locale data from {}", path.display()))?;
 
+    Ok(
+        locale_display_name(&contents).map(|display_name| LocaleMetadata {
+            display_name: Some(display_name),
+        }),
+    )
+}
+
+/// Extract the human-readable display name from the `LC_IDENTIFICATION`
+/// section of a locale definition file's contents.
+///
+/// Prefers the `title` field and falls back to `language` (optionally
+/// combined with `territory`). Returns `None` when neither is present.
+pub(crate) fn locale_display_name(contents: &str) -> Option<String> {
     let mut in_identification = false;
     let mut title = None;
     let mut language = None;
@@ -196,18 +209,16 @@ fn parse_locale_file(path: &Path) -> Result<Option<LocaleMetadata>> {
         }
     }
 
-    let display_name = if let Some(title) = title {
-        Some(title)
-    } else if let Some(lang) = language {
-        match territory {
+    if let Some(title) = title {
+        return Some(title);
+    }
+    if let Some(lang) = language {
+        return match territory {
             Some(country) if !country.is_empty() => Some(format!("{lang} ({country})")),
             _ => Some(lang),
-        }
-    } else {
-        None
-    };
-
-    Ok(Some(LocaleMetadata { display_name }))
+        };
+    }
+    None
 }
 
 fn parse_quoted_value(input: &str) -> Option<String> {
@@ -218,7 +229,7 @@ fn parse_quoted_value(input: &str) -> Option<String> {
     Some(value.replace("\\\"", "\""))
 }
 
-fn locale_base(locale: &str) -> &str {
+pub(crate) fn locale_base(locale: &str) -> &str {
     let mut base = locale;
     if let Some(idx) = base.find('.') {
         base = &base[..idx];
@@ -272,4 +283,56 @@ fn read_command_lines(mut command: Command) -> Result<Vec<String>> {
         .map(|line| line.trim().to_string())
         .filter(|line| !line.is_empty())
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::locale_display_name;
+
+    #[test]
+    fn display_name_prefers_title_over_language_and_territory() {
+        let contents = "\
+LC_IDENTIFICATION
+title      \"German locale for Germany\"
+language   \"German\"
+territory  \"Germany\"
+END LC_IDENTIFICATION
+";
+
+        assert_eq!(
+            locale_display_name(contents).as_deref(),
+            Some("German locale for Germany")
+        );
+    }
+
+    #[test]
+    fn display_name_combines_language_and_territory_without_title() {
+        let contents = "\
+LC_IDENTIFICATION
+language   \"German\"
+territory  \"Germany\"
+END LC_IDENTIFICATION
+";
+
+        assert_eq!(
+            locale_display_name(contents).as_deref(),
+            Some("German (Germany)")
+        );
+    }
+
+    #[test]
+    fn display_name_without_identification_fields_is_none() {
+        assert_eq!(locale_display_name("LC_MONETARY\nEND LC_MONETARY\n"), None);
+    }
+
+    #[test]
+    fn display_name_stops_reading_after_end_marker() {
+        let contents = "\
+LC_IDENTIFICATION
+END LC_IDENTIFICATION
+title      \"Not part of the identification section\"
+";
+
+        assert_eq!(locale_display_name(contents), None);
+    }
 }

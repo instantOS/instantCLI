@@ -570,7 +570,8 @@ pub fn select_launcher_type(
 
     let result = builder
         .presentation(MenuPresentation::Padded)
-        .select_one(items)?;
+        .items(items)
+        .select_one()?;
 
     match result {
         crate::menu_utils::DialogOutcome::Submitted(item) => {

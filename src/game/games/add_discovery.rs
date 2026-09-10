@@ -124,10 +124,13 @@ pub(super) fn maybe_prefill_from_emulators(
             .header(Header::fancy("Games"))
             .prompt("Select")
             .responsive_layout()
-            .select_encoded_streaming_prefilled_one::<MenuSelectionPayload, _>(
-                build_discover_command(None, options.no_cache),
-                &format!("{}\n{}", scan_directory_menu_row()?, manual_menu_row()?),
-            )?;
+            .command::<MenuSelectionPayload, _>(build_discover_command(None, options.no_cache))
+            .initial_rows(format!(
+                "{}\n{}",
+                scan_directory_menu_row()?,
+                manual_menu_row()?
+            ))
+            .select_one()?;
 
         match result {
             crate::menu_utils::DialogOutcome::Submitted(row) => {
@@ -187,10 +190,9 @@ fn select_from_scanned_directory(
         .header(Header::fancy("Scanned Games"))
         .prompt("Select")
         .responsive_layout()
-        .select_encoded_streaming_prefilled_one::<MenuSelectionPayload, _>(
-            build_discover_command(Some(scan_path), no_cache),
-            &back_menu_row()?,
-        )?;
+        .command::<MenuSelectionPayload, _>(build_discover_command(Some(scan_path), no_cache))
+        .initial_rows(back_menu_row()?)
+        .select_one()?;
 
     match result {
         crate::menu_utils::DialogOutcome::Submitted(row) => match parse_discovery_selection(row)? {

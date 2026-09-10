@@ -295,7 +295,8 @@ pub(super) fn select_entry(
         } else {
             "Select a pass entry"
         })
-        .select_one(candidates)?
+        .items(candidates)
+        .select_one()?
     {
         crate::menu_utils::DialogOutcome::Submitted(entry) => Ok(Some(entry)),
         crate::menu_utils::DialogOutcome::Cancelled => Ok(None),

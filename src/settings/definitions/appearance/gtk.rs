@@ -273,7 +273,7 @@ impl Setting for GtkIconTheme {
                 builder = builder.initial_index(index);
             }
 
-            let selected = builder.select_menu(options)?;
+            let selected = builder.items(options).select_menu()?;
 
             match selected {
                 crate::menu_utils::DialogOutcome::Submitted(selection) => match selection.kind {
@@ -389,7 +389,7 @@ impl Setting for GtkTheme {
                 builder = builder.initial_index(index);
             }
 
-            let selected = builder.select_menu(options)?;
+            let selected = builder.items(options).select_menu()?;
 
             match selected {
                 crate::menu_utils::DialogOutcome::Submitted(selection) => match selection.kind {

@@ -209,7 +209,7 @@ pub fn resolvething_menu(debug: bool) -> Result<()> {
             builder = builder.initial_index(index);
         }
 
-        let selected = match builder.select_one(items.clone())? {
+        let selected = match builder.items(items.clone()).select_one()? {
             crate::menu_utils::DialogOutcome::Submitted(item) => {
                 cursor.update(&item, &items);
                 item.entry
@@ -344,7 +344,7 @@ fn run_scan_dir_menu(index: usize) -> Result<(ActionResult, bool)> {
             builder = builder.initial_index(idx);
         }
 
-        let selected_action = match builder.select_one(actions.clone())? {
+        let selected_action = match builder.items(actions.clone()).select_one()? {
             crate::menu_utils::DialogOutcome::Submitted(item) => {
                 cursor.update(&item, &actions);
                 item.action

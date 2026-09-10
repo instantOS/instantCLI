@@ -840,7 +840,8 @@ pub fn run_keyhelp() -> Result<()> {
             .responsive_layout()
             .presentation(MenuPresentation::Padded)
             .cursor(cursor.initial_index(&rows))
-            .select_one(rows.clone())?;
+            .items(rows.clone())
+            .select_one()?;
 
         match selection {
             crate::menu_utils::DialogOutcome::Submitted(row) => {
@@ -1037,7 +1038,8 @@ fn handle_select(row: &KeybindRow) -> Result<SubmenuAction> {
         .header(header)
         .responsive_layout()
         .presentation(MenuPresentation::Padded)
-        .select_one(options)?;
+        .items(options)
+        .select_one()?;
 
     match selection {
         crate::menu_utils::DialogOutcome::Submitted(item) => Ok(item.action),
@@ -1072,7 +1074,8 @@ fn handle_select_hyprland(row: &KeybindRow) -> Result<SubmenuAction> {
         .header(header)
         .responsive_layout()
         .presentation(MenuPresentation::Padded)
-        .select_one(options)?;
+        .items(options)
+        .select_one()?;
 
     match selection {
         crate::menu_utils::DialogOutcome::Submitted(item) => Ok(item.action),

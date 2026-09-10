@@ -24,7 +24,8 @@ pub fn manage_users(ctx: &mut SettingsContext) -> Result<()> {
 
         match FzfWrapper::menu()
             .presentation(MenuPresentation::Padded)
-            .select_one(items)?
+            .items(items)
+            .select_one()?
         {
             crate::menu_utils::DialogOutcome::Submitted(ManageMenuItem::Add) => {
                 add_user(ctx)?;
@@ -165,7 +166,8 @@ fn handle_user(ctx: &mut SettingsContext, username: &str) -> Result<()> {
 
         match FzfWrapper::menu()
             .presentation(MenuPresentation::Padded)
-            .select_one(actions)?
+            .items(actions)
+            .select_one()?
         {
             crate::menu_utils::DialogOutcome::Submitted(UserActionItem::ChangeShell { .. }) => {
                 if let Some(new_shell) = select_shell(ctx, "Select shell")? {
@@ -329,7 +331,8 @@ fn manage_user_groups(ctx: &mut SettingsContext, username: &str) -> Result<()> {
 
         match FzfWrapper::menu()
             .presentation(MenuPresentation::Padded)
-            .select_one(items)?
+            .items(items)
+            .select_one()?
         {
             crate::menu_utils::DialogOutcome::Submitted(GroupMenuItem::ExistingGroup {
                 name: group_name,
@@ -458,8 +461,8 @@ fn add_groups_to_user(
     let selected = FzfWrapper::builder()
         .prompt("Select groups to add")
         .header("Use Tab to select multiple, Enter to confirm")
-        .args(["--multi"])
-        .select(available_groups)?;
+        .items(available_groups)
+        .select_many()?;
 
     let groups_to_add = match selected {
         crate::menu_utils::DialogOutcome::Submitted(sel) => {
@@ -494,7 +497,8 @@ fn manage_single_group(
 
     match FzfWrapper::menu()
         .presentation(MenuPresentation::Padded)
-        .select_one(actions)?
+        .items(actions)
+        .select_one()?
     {
         crate::menu_utils::DialogOutcome::Submitted(GroupActionItem::RemoveGroup {
             is_primary,

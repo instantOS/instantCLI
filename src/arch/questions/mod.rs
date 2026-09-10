@@ -20,22 +20,33 @@ pub mod warnings;
 /// Items are matched by [`FzfSelectable::fzf_key`], the same machine-readable
 /// value stored as the step's answer. When there is no previous answer or it
 /// no longer exists in the list, the dialog behaves exactly like
-/// [`FzfBuilder::select_one`].
+/// [`FzfBuilder::items`] followed by `select_one`.
 pub(crate) fn select_one_with_preselect<T: FzfSelectable + Clone>(
     context: &InstallContext,
     id: StepId,
     builder: FzfBuilder,
     items: Vec<T>,
 ) -> Result<DialogOutcome<T>> {
-    let preselect = context
-        .previous_answer(&id)
-        .and_then(|answer| items.iter().position(|item| item.fzf_key() == *answer));
+    select_one_preselecting(context.previous_answer(&id).cloned(), builder, items)
+}
 
-    let builder = match preselect {
+/// Like [`select_one_with_preselect`], but with an explicit target value.
+///
+/// Questions use this to fall back to a sensible guess when no answer has
+/// been recorded yet — e.g. placing the cursor on the system's detected
+/// timezone.
+pub(crate) fn select_one_preselecting<T: FzfSelectable + Clone>(
+    preselect: Option<String>,
+    builder: FzfBuilder,
+    items: Vec<T>,
+) -> Result<DialogOutcome<T>> {
+    let index = preselect.and_then(|answer| items.iter().position(|item| item.fzf_key() == answer));
+
+    let builder = match index {
         Some(index) => builder.initial_index(index),
         None => builder,
     };
-    builder.select_one(items)
+    builder.items(items).select_one()
 }
 
 // Re-exports

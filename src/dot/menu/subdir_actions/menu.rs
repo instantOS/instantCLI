@@ -350,7 +350,7 @@ fn select_subdir(
         builder = builder.initial_index(index);
     }
 
-    let selection = builder.select_one(subdir_items.to_vec())?;
+    let selection = builder.items(subdir_items.to_vec()).select_one()?;
 
     match selection {
         crate::menu_utils::DialogOutcome::Submitted(item) => {

@@ -352,7 +352,8 @@ pub fn select_choice<T: Clone>(
         .prompt(prompt)
         .responsive_layout()
         .presentation(MenuPresentation::Padded)
-        .select_one(items)?;
+        .items(items)
+        .select_one()?;
 
     match result {
         crate::menu_utils::DialogOutcome::Submitted(item) => Ok(Some(item.value)),

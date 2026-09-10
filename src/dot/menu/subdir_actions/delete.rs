@@ -127,7 +127,8 @@ pub(crate) fn handle_delete_subdir(
         .prompt("How do you want to remove this directory?")
         .responsive_layout()
         .presentation(MenuPresentation::Padded)
-        .select_one(choices)?;
+        .items(choices)
+        .select_one()?;
 
     match result {
         crate::menu_utils::DialogOutcome::Submitted(DeleteChoice::KeepFiles) => {

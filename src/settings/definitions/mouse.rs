@@ -208,7 +208,8 @@ impl Setting for AccelProfile {
             let selection = FzfWrapper::menu()
                 .cursor(initial_cursor)
                 .presentation(MenuPresentation::Padded)
-                .select_one(items.clone())?;
+                .items(items.clone())
+                .select_one()?;
 
             match selection {
                 crate::menu_utils::DialogOutcome::Submitted(display) => {

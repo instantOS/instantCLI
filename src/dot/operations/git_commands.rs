@@ -221,7 +221,8 @@ pub fn git_run_any(config: &DotfileConfig, args: &[String], debug: bool) -> Resu
             .header(Header::fancy("Select Repository"))
             .prompt("Select")
             .responsive_layout()
-            .select_one(items)
+            .items(items)
+            .select_one()
             .map_err(|e| anyhow::anyhow!("Selection error: {}", e))?
         {
             crate::menu_utils::DialogOutcome::Submitted(item) => item.repo,

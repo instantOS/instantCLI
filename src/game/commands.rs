@@ -285,7 +285,8 @@ fn handle_scan_wine_prefix(prefix: Option<String>, list: bool) -> Result<()> {
         .prompt("Select")
         .responsive_layout()
         .presentation(MenuPresentation::Padded)
-        .select_one(items)?;
+        .items(items)
+        .select_one()?;
 
     match result {
         crate::menu_utils::DialogOutcome::Submitted(item) => {

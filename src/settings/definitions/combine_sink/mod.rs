@@ -118,7 +118,8 @@ impl Setting for CombinedAudioSink {
                 .prompt("Select action")
                 .header(header)
                 .presentation(MenuPresentation::Padded)
-                .select_one(items_with_preview)?;
+                .items(items_with_preview)
+                .select_one()?;
 
             match result {
                 crate::menu_utils::DialogOutcome::Submitted(wrapper) => match wrapper.item.action {

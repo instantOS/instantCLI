@@ -45,11 +45,11 @@ fn run_simple_installer(manager: PackageManager, debug: bool) -> Result<()> {
     }
 
     let result = FzfWrapper::builder()
-        .multi_select(true)
         .prompt("Select packages")
         .header(Header::fancy("Install Packages"))
         .responsive_layout()
-        .select_encoded_streaming(package_list::available_command(manager))
+        .command(package_list::available_command(manager))
+        .select_many()
         .context("Failed to run package selector")?;
 
     handle_install_result(
@@ -75,7 +75,6 @@ pub fn run_snap_installer(debug: bool) -> Result<()> {
     let reload_cmd = package_list::snap_search_reload_command();
 
     let result = FzfWrapper::builder()
-        .multi_select(true)
         .prompt("Search snaps")
         .header(Header::fancy("Type to search Snap Store"))
         .args([
@@ -84,7 +83,8 @@ pub fn run_snap_installer(debug: bool) -> Result<()> {
             "--phony",
         ])
         .responsive_layout()
-        .select_encoded_streaming(package_list::snap_search_command(None))
+        .command(package_list::snap_search_command(None))
+        .select_many()
         .context("Failed to run snap selector")?;
 
     handle_install_result(
@@ -112,11 +112,11 @@ fn run_arch_installer(debug: bool) -> Result<()> {
     }
 
     let result = FzfWrapper::builder()
-        .multi_select(true)
         .prompt("Select packages")
         .header(Header::fancy("Install Packages"))
         .responsive_layout()
-        .select_encoded_streaming(package_list::arch_available_command())
+        .command(package_list::arch_available_command())
+        .select_many()
         .context("Failed to run package selector")?;
 
     handle_arch_install_result(result, detect_aur_helper(), debug)

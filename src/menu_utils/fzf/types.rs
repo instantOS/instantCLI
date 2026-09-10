@@ -87,7 +87,8 @@ impl FzfSelectable for &str {
 
 /// A menu item that can be either a selectable entry or a visual separator.
 ///
-/// Use with `FzfBuilder::select_menu()` to build menus with grouped sections.
+/// Use with `FzfBuilder::items(...).select_menu()` to build menus with grouped
+/// sections.
 /// Separators are rendered as dimmed lines and navigation keys skip over them.
 ///
 /// **Best suited for short, static menus** (e.g. home/action menus) where
@@ -333,16 +334,6 @@ impl<T> DialogOutcome<T> {
 pub struct MenuSelection<T, A = ()> {
     pub items: Vec<T>,
     pub action: Option<A>,
-}
-
-impl<T> MenuSelection<T, ()> {
-    /// A plain submission without a pressed keybind.
-    pub fn from_items(items: Vec<T>) -> Self {
-        Self {
-            items,
-            action: None,
-        }
-    }
 }
 
 impl<T, A> MenuSelection<T, A> {

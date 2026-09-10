@@ -342,7 +342,8 @@ impl Setting for ConfigureDisplay {
             let selected_display = FzfWrapper::builder()
                 .prompt("Select Display")
                 .header("Choose a display to configure")
-                .select_one(display_options.clone())?;
+                .items(display_options.clone())
+                .select_one()?;
 
             match selected_display {
                 crate::menu_utils::DialogOutcome::Submitted(selection) => {
@@ -376,7 +377,8 @@ impl Setting for ConfigureDisplay {
         let selected_mode = FzfWrapper::builder()
             .prompt("Select Mode")
             .header(format!("Choose resolution/refresh for {}", output.name))
-            .select_one(mode_items)?;
+            .items(mode_items)
+            .select_one()?;
 
         let target_mode = match selected_mode {
             crate::menu_utils::DialogOutcome::Submitted(selection) => Some(selection.mode),

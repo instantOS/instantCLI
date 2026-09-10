@@ -569,11 +569,11 @@ pub async fn fix_interactive(max_concurrency: usize) -> Result<()> {
         let menu_items = build_fix_menu_items(fixable_issues.clone());
 
         match FzfWrapper::builder()
-            .multi_select(true)
             .prompt("Select issues to fix:")
             .header("System Diagnostics - Fixable Issues\n\nSelect issues to fix or press Esc to cancel")
             .args(["--preview-window=right:50%:wrap"])
-            .select(menu_items)?
+            .items(menu_items)
+            .select_many()?
         {
             crate::menu_utils::DialogOutcome::Submitted(sel) => {
                 let selected = sel.items;

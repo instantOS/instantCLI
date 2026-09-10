@@ -201,7 +201,8 @@ fn handle_layout_action(
 
     match FzfWrapper::menu()
         .presentation(MenuPresentation::Padded)
-        .select_one(actions)?
+        .items(actions)
+        .select_one()?
     {
         crate::menu_utils::DialogOutcome::Submitted(LayoutActionItem::MoveUp) => {
             active_codes.swap(position, position - 1);
@@ -266,7 +267,8 @@ fn select_layout(
     let result = FzfWrapper::builder()
         .header("Select Keyboard Layout")
         .prompt("Layout")
-        .select_one(available)?;
+        .items(available)
+        .select_one()?;
 
     match result {
         crate::menu_utils::DialogOutcome::Submitted(layout) => Ok(Some(layout.code)),
@@ -366,7 +368,8 @@ impl Setting for KeyboardLayout {
 
             match FzfWrapper::menu()
                 .presentation(MenuPresentation::Padded)
-                .select_one(items)?
+                .items(items)
+                .select_one()?
             {
                 crate::menu_utils::DialogOutcome::Submitted(LayoutMenuItem::Layout {
                     code,

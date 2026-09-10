@@ -138,10 +138,10 @@ fn pick_dotfiles_fzf(all_dotfiles: &DotfileMap) -> Result<Vec<crate::dot::Dotfil
     }
 
     let selection = FzfWrapper::builder()
-        .multi_select(true)
         .prompt("Select dotfiles to delete")
         .header("Dotfiles")
-        .select(entries)?;
+        .items(entries)
+        .select_many()?;
 
     match selection {
         crate::menu_utils::DialogOutcome::Submitted(sel) => {

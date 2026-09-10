@@ -196,7 +196,7 @@ fn select_dot_menu_entry(
         builder = builder.initial_index(index);
     }
 
-    let result = builder.select_one(menu_items)?;
+    let result = builder.items(menu_items).select_one()?;
 
     match result {
         crate::menu_utils::DialogOutcome::Submitted(item) => {

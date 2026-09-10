@@ -10,8 +10,6 @@ use super::shared::{
     default_header_text, run_fzf_with_input,
 };
 use crate::menu_utils::fzf::types::{DialogOutcome, FzfPreview, FzfSelectable, InitialCursor};
-#[cfg(test)]
-use crate::menu_utils::fzf::wrapper::NO_KEYBINDS;
 use crate::menu_utils::fzf::wrapper::fzf_was_cancelled;
 
 /// Invisible marker used to keep non-selectable padded rows visible while fzf
@@ -19,13 +17,17 @@ use crate::menu_utils::fzf::wrapper::fzf_was_cancelled;
 const SELECTABLE_MARKER: &str = "\u{2060}";
 
 impl FzfBuilder {
-    pub(crate) fn select_with_padded_presentation<T: FzfSelectable + Clone>(
+    pub(crate) fn run_padded_items<T: FzfSelectable + Clone>(
         mut self,
         items: Vec<T>,
     ) -> Result<DialogOutcome<Vec<T>>> {
         #[cfg(test)]
         if let Some(resp) = crate::menu_utils::mock::pop_mock() {
-            let selection = crate::menu_utils::mock::resolve_selection(resp, items, NO_KEYBINDS);
+            let selection = crate::menu_utils::mock::resolve_selection(
+                resp,
+                items,
+                &[] as &[crate::menu_utils::MenuKeybind<()>],
+            );
             return Ok(selection.map(|sel| sel.items));
         }
 
@@ -290,7 +292,8 @@ mod mock_tests {
         let items = vec!["first".to_string(), "second".to_string()];
         let result = crate::menu_utils::FzfWrapper::builder()
             .presentation(MenuPresentation::Padded)
-            .select(items)
+            .items(items)
+            .select()
             .unwrap();
         match result {
             crate::menu_utils::DialogOutcome::Submitted(s) => {

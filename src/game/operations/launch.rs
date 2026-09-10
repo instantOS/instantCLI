@@ -186,7 +186,8 @@ fn select_launchable_game(launchables: &[LaunchableGame]) -> Result<Option<Launc
     let result = FzfWrapper::builder()
         .prompt("Launch game")
         .header("Select a game to launch")
-        .select_one(launchables.to_vec())?;
+        .items(launchables.to_vec())
+        .select_one()?;
 
     match result {
         crate::menu_utils::DialogOutcome::Submitted(game) => Ok(Some(game)),

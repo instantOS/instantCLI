@@ -431,7 +431,8 @@ impl WizardEngine {
         let result = FzfWrapper::menu()
             .header(Header::fancy(self.flow.pause_menu_title()))
             .presentation(MenuPresentation::Padded)
-            .select_one(options)?;
+            .items(options)
+            .select_one()?;
 
         match result {
             crate::menu_utils::DialogOutcome::Submitted(PauseMenuItem::Resume) => {
@@ -474,7 +475,8 @@ impl WizardEngine {
             .prompt("Select")
             .responsive_layout()
             .presentation(MenuPresentation::Padded)
-            .select_one(final_review_options(self.flow, &self.context))?;
+            .items(final_review_options(self.flow, &self.context))
+            .select_one()?;
 
         let crate::menu_utils::DialogOutcome::Submitted(option) = result else {
             return Ok(FinalReviewResult::Continue);
@@ -560,7 +562,8 @@ impl WizardEngine {
             .prompt("Search")
             .responsive_layout()
             .presentation(MenuPresentation::Padded)
-            .select_one(items)?;
+            .items(items)
+            .select_one()?;
         match result {
             crate::menu_utils::DialogOutcome::Submitted(ReviewItem::Answer { index, .. }) => {
                 Ok(Some(index))
@@ -574,7 +577,8 @@ impl WizardEngine {
         let result = FzfWrapper::builder()
             .header(Header::fancy("Advanced Options"))
             .presentation(MenuPresentation::Padded)
-            .select_one(AdvancedOption::from_steps(&self.steps, &self.context))?;
+            .items(AdvancedOption::from_steps(&self.steps, &self.context))
+            .select_one()?;
         match result {
             crate::menu_utils::DialogOutcome::Submitted(AdvancedOption::Answer {
                 index, ..

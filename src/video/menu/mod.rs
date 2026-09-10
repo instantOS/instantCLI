@@ -56,7 +56,7 @@ fn select_video_menu_entry(cursor: &mut MenuCursor) -> Result<Option<VideoMenuEn
         builder = builder.initial_index(index);
     }
 
-    let result = builder.select_menu(entries.clone())?;
+    let result = builder.items(entries.clone()).select_menu()?;
 
     match result {
         crate::menu_utils::DialogOutcome::Submitted(entry) => {

@@ -53,7 +53,8 @@ pub fn show_flatpak_action_menu(app_id: &str) -> Result<()> {
 
     let action = match FzfWrapper::menu()
         .presentation(MenuPresentation::Padded)
-        .select_one(actions)?
+        .items(actions)
+        .select_one()?
     {
         crate::menu_utils::DialogOutcome::Submitted(a) => a,
         crate::menu_utils::DialogOutcome::Cancelled => {
@@ -108,7 +109,8 @@ fn run_installed_flatpaks_manager() -> Result<()> {
             .prompt("Select a Flatpak app")
             .header(Header::fancy("Manage Installed Flatpaks"))
             .responsive_layout()
-            .select_encoded_streaming_one::<FlatpakSelectionPayload, _>(list_command)?;
+            .command::<FlatpakSelectionPayload, _>(list_command)
+            .select_one()?;
 
         let app_id = match result {
             crate::menu_utils::DialogOutcome::Submitted(row) => row.payload.app_id,
@@ -123,7 +125,8 @@ fn run_installed_flatpaks_manager() -> Result<()> {
 
         let action = match FzfWrapper::menu()
             .presentation(MenuPresentation::Padded)
-            .select_one(actions)?
+            .items(actions)
+            .select_one()?
         {
             crate::menu_utils::DialogOutcome::Submitted(a) => a,
             crate::menu_utils::DialogOutcome::Cancelled => continue,

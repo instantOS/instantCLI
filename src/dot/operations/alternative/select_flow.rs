@@ -93,7 +93,8 @@ fn handle_single_source(
             .prompt("Action: ")
             .responsive_layout()
             .presentation(MenuPresentation::Padded)
-            .select_one(vec![Choice::Remove, Choice::Back])?
+            .items(vec![Choice::Remove, Choice::Back])
+            .select_one()?
         {
             crate::menu_utils::DialogOutcome::Submitted(Choice::Remove) => {
                 let mut overrides = OverrideConfig::load()?;
@@ -210,7 +211,7 @@ fn run_source_selection_menu(
             builder = builder.initial_index(index);
         }
 
-        match builder.select_one(menu.clone())? {
+        match builder.items(menu.clone()).select_one()? {
             crate::menu_utils::DialogOutcome::Submitted(MenuItem::Source(item)) => {
                 cursor.update(&MenuItem::Source(item.clone()), &menu);
                 set_alternative(&config, path, display, &item)?;

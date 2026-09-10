@@ -55,7 +55,8 @@ fn select_repo_interactive(config: &DotfileConfig, prompt: &str) -> Result<Optio
         .header(Header::fancy("Select Repository"))
         .prompt(prompt)
         .responsive_layout()
-        .select_one(items)?;
+        .items(items)
+        .select_one()?;
 
     match result {
         crate::menu_utils::DialogOutcome::Submitted(item) => Ok(Some(item.name)),

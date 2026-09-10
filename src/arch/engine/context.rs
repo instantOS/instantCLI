@@ -196,17 +196,17 @@ impl InstallContext {
         }
 
         // Auto-detect locale from /etc/locale.conf
-        if let Some(locale) = detect_system_locale() {
+        if let Some(locale) = crate::arch::locales::detect_current_locale() {
             ctx.set_answer(StepId::Locale, locale);
         }
 
         // Auto-detect timezone from /etc/localtime symlink
-        if let Some(tz) = detect_system_timezone() {
+        if let Some(tz) = crate::arch::timezones::detect_current_timezone() {
             ctx.set_answer(StepId::Timezone, tz);
         }
 
         // Auto-detect keymap from /etc/vconsole.conf
-        if let Some(keymap) = detect_system_keymap() {
+        if let Some(keymap) = crate::arch::keymaps::detect_current_keymap() {
             ctx.set_answer(StepId::Keymap, keymap);
         }
 
@@ -222,38 +222,10 @@ impl InstallContext {
     }
 }
 
-/// Detect system locale from /etc/locale.conf
-fn detect_system_locale() -> Option<String> {
-    std::fs::read_to_string("/etc/locale.conf")
-        .ok()
-        .and_then(|content| {
-            content
-                .lines()
-                .find(|l| l.starts_with("LANG="))
-                .map(|l| l.trim_start_matches("LANG=").trim().to_string())
-        })
-}
-
-/// Detect system timezone from /etc/localtime symlink
-fn detect_system_timezone() -> Option<String> {
-    std::fs::read_link("/etc/localtime").ok().and_then(|path| {
-        path.to_string_lossy()
-            .strip_prefix("/usr/share/zoneinfo/")
-            .map(|s| s.to_string())
-    })
-}
-
-/// Detect system keymap from /etc/vconsole.conf
-fn detect_system_keymap() -> Option<String> {
-    std::fs::read_to_string("/etc/vconsole.conf")
-        .ok()
-        .and_then(|content| {
-            content
-                .lines()
-                .find(|l| l.starts_with("KEYMAP="))
-                .map(|l| l.trim_start_matches("KEYMAP=").trim().to_string())
-        })
-}
+// System detection helpers (locale, timezone, keymap) live in their data
+// modules: `arch::locales::detect_current_locale`,
+// `arch::keymaps::detect_current_keymap`, and
+// `arch::timezones::detect_current_timezone`.
 
 #[cfg(test)]
 mod tests {

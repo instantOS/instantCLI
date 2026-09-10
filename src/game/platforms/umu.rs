@@ -117,7 +117,8 @@ impl UmuBuilder {
             .prompt("Runner")
             .responsive_layout()
             .presentation(MenuPresentation::Padded)
-            .select_one(options)?
+            .items(options)
+            .select_one()?
         {
             crate::menu_utils::DialogOutcome::Submitted(item) if item.contains("umu-run") => {
                 Ok(Some(WineRunner::UmuRun))
@@ -249,7 +250,8 @@ impl UmuBuilder {
             .prompt("Proton")
             .responsive_layout()
             .presentation(MenuPresentation::Padded)
-            .select_one(options.clone())?;
+            .items(options.clone())
+            .select_one()?;
 
         match result {
             crate::menu_utils::DialogOutcome::Submitted(item) => {

@@ -112,7 +112,8 @@ fn prompt_existing_answers(
         .prompt("Select")
         .responsive_layout()
         .presentation(MenuPresentation::Padded)
-        .select_one(options)?;
+        .items(options)
+        .select_one()?;
 
     match selection {
         crate::menu_utils::DialogOutcome::Submitted(option) => Ok(Some(option.choice)),

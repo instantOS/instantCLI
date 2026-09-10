@@ -96,7 +96,8 @@ async fn handle_interactive_mode(backend: MenuBackend, include_path: bool) -> Re
             let ranked = frecency.prepare(receiver.iter().collect());
             let outcome = FzfWrapper::builder()
                 .prompt("Launch application:")
-                .select(ranked)
+                .items(ranked)
+                .select()
                 .map(|outcome| outcome.map(MenuSelection::into_items));
             if let Ok(DialogOutcome::Submitted(ref selected)) = outcome
                 && let Err(error) = frecency.record_all(selected)

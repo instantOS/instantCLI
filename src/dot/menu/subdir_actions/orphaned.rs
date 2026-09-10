@@ -99,7 +99,7 @@ pub(crate) fn handle_orphaned_subdir_actions(
         builder = builder.initial_index(index);
     }
 
-    let result = builder.select_one(actions.clone())?;
+    let result = builder.items(actions.clone()).select_one()?;
 
     let action = match result {
         crate::menu_utils::DialogOutcome::Submitted(item) => {

@@ -148,7 +148,8 @@ pub fn manage_ssh_keys(ctx: &mut SettingsContext) -> Result<()> {
 
         match FzfWrapper::menu()
             .presentation(MenuPresentation::Padded)
-            .select_one(items)?
+            .items(items)
+            .select_one()?
         {
             crate::menu_utils::DialogOutcome::Submitted(KeyMenuItem::Key(key)) => {
                 manage_key(ctx, &path, &key)?
@@ -244,11 +245,13 @@ fn manage_key(ctx: &mut SettingsContext, path: &Path, key: &AuthorizedKey) -> Re
     loop {
         match FzfWrapper::menu()
             .presentation(MenuPresentation::Padded)
-            .select_one(vec![
+            .items(vec![
                 KeyActionItem::EditComment,
                 KeyActionItem::Remove,
                 KeyActionItem::Back,
-            ])? {
+            ])
+            .select_one()?
+        {
             crate::menu_utils::DialogOutcome::Submitted(KeyActionItem::EditComment) => {
                 let comment = FzfWrapper::builder()
                     .prompt("SSH key comment")

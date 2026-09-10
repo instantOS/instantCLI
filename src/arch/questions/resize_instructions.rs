@@ -242,7 +242,8 @@ async fn run_manual_resize_flow(ctx: ResizeFlowContext<'_>) -> Result<StepOutcom
         let result = FzfWrapper::builder()
             .header(&full_message)
             .presentation(MenuPresentation::Padded)
-            .select_one(options.clone())?;
+            .items(options.clone())
+            .select_one()?;
 
         match result {
             crate::menu_utils::DialogOutcome::Submitted(opt) => {
@@ -382,7 +383,8 @@ fn confirm_proceed_without_resize(status: &ResizeStatus) -> Result<bool> {
     let confirm = FzfWrapper::builder()
         .header("Partition does not appear to have been resized. Proceed?")
         .presentation(MenuPresentation::Padded)
-        .select_one(confirm_options)?;
+        .items(confirm_options)
+        .select_one()?;
 
     Ok(matches!(
         confirm,

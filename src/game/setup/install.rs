@@ -452,7 +452,8 @@ fn resolve_missing_path(display: &str, label: &str) -> Result<MissingPathChoiceK
             .build(),
         )
         .presentation(MenuPresentation::Padded)
-        .select_one(options)
+        .items(options)
+        .select_one()
         .map_err(|e| anyhow!("Failed to prompt for missing path action: {e}"))?
     {
         crate::menu_utils::DialogOutcome::Submitted(choice) => Ok(choice.kind),
@@ -888,7 +889,8 @@ fn prompt_save_path_kind(display: &str) -> Result<Option<PathContentKind>> {
             .build(),
         )
         .presentation(MenuPresentation::Padded)
-        .select_one(options)?
+        .items(options)
+        .select_one()?
     {
         crate::menu_utils::DialogOutcome::Submitted(option) => Ok(Some(option.kind)),
         crate::menu_utils::DialogOutcome::Cancelled => Ok(None),

@@ -110,7 +110,8 @@ fn select_repo(config: &DotfileConfig, db: &Database, target_path: &Path) -> Res
         .header(header)
         .prompt("Select")
         .responsive_layout()
-        .select_one(items)
+        .items(items)
+        .select_one()
         .map_err(|e| anyhow::anyhow!("Selection error: {}", e))?
     {
         crate::menu_utils::DialogOutcome::Submitted(item) => Ok(item.repo),
@@ -202,7 +203,8 @@ fn select_dots_dir(
         .header(header)
         .prompt("Select")
         .responsive_layout()
-        .select_one(items)
+        .items(items)
+        .select_one()
         .map_err(|e| anyhow::anyhow!("Selection error: {}", e))?
     {
         crate::menu_utils::DialogOutcome::Submitted(item) => Ok(Some(item.dots_dir)),
