@@ -167,6 +167,14 @@ pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary 
     } else {
         "Disabled".to_string()
     };
+    let use_xorg = context.get_answer_bool(StepId::UseXorg);
+    let xorg_label = if minimal_mode {
+        "Disabled (minimal mode)".to_string()
+    } else if use_xorg {
+        "Enabled".to_string()
+    } else {
+        "Disabled".to_string()
+    };
     let autologin_label = if minimal_mode {
         "Disabled (minimal mode)".to_string()
     } else if context.get_answer_bool(StepId::Autologin) {
@@ -309,6 +317,7 @@ pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary 
         .field_indented("Display manager", &dm_label)
         .field_indented("Profile", &profile)
         .field_indented("Plymouth", &plymouth_label)
+        .field_indented("Xorg server", &xorg_label)
         .field_indented("Autologin", &autologin_label)
         .field_indented("Log upload", &log_upload_label)
         .field_indented("Mirror region", &mirror_region);
@@ -346,6 +355,15 @@ pub(crate) fn build_setup_summary(context: &InstallContext) -> String {
     } else {
         "Not required".to_string()
     };
+    let xorg_label = if desktop.requires_display_manager() {
+        if context.get_answer_bool(StepId::UseXorg) {
+            "Enabled".to_string()
+        } else {
+            "Disabled".to_string()
+        }
+    } else {
+        "Not required".to_string()
+    };
 
     let summary = PreviewBuilder::new()
         .line(colors::TEAL, Some(NerdFont::User), "Setup")
@@ -353,6 +371,7 @@ pub(crate) fn build_setup_summary(context: &InstallContext) -> String {
         .field_indented("Desktop", desktop.label())
         .field_indented("Display manager", &dm_label)
         .field_indented("Autologin", &autologin_label)
+        .field_indented("Xorg server", &xorg_label)
         .build_string();
 
     summary.trim_start_matches('\n').to_string()

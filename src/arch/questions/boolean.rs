@@ -8,6 +8,7 @@ type ContextPredicate = dyn Fn(&InstallContext) -> bool + Send + Sync;
 pub struct BooleanQuestion {
     id: StepId,
     prompt: String,
+    description: Option<String>,
     icon: NerdFont,
     is_optional: bool,
     default_yes: bool,
@@ -21,6 +22,7 @@ impl BooleanQuestion {
         Self {
             id,
             prompt: prompt.into(),
+            description: None,
             icon,
             is_optional: false,
             default_yes: false,
@@ -28,6 +30,11 @@ impl BooleanQuestion {
             should_ask_predicate: None,
             dependencies: Vec::new(),
         }
+    }
+
+    pub fn description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
+        self
     }
 
     pub fn optional(mut self) -> Self {
@@ -86,7 +93,7 @@ impl WizardStep for BooleanQuestion {
     }
 
     fn description(&self) -> Option<&str> {
-        Some(&self.prompt)
+        self.description.as_deref().or(Some(&self.prompt))
     }
 
     fn is_optional(&self) -> bool {
@@ -119,10 +126,14 @@ impl WizardStep for BooleanQuestion {
     }
 
     async fn run(&self, _context: &InstallContext) -> Result<StepOutcome> {
+        let message = if let Some(desc) = &self.description {
+            format!("{} {}\n\n{}", self.icon, self.prompt, desc)
+        } else {
+            format!("{} {}", self.icon, self.prompt)
+        };
+
         // Use FzfWrapper's confirmation dialog for consistent yes/no prompts
-        let result = FzfWrapper::builder()
-            .confirm(format!("{} {}", self.icon, self.prompt))
-            .confirm_dialog()?;
+        let result = FzfWrapper::builder().confirm(message).confirm_dialog()?;
 
         match result {
             ConfirmResult::Yes => Ok(StepOutcome::Answer("yes".to_string())),

@@ -145,6 +145,11 @@ fn collect_extended_packages(context: &InstallContext) -> Result<Vec<String>> {
                 // No display manager: the user starts their GUI manually.
                 crate::arch::config::DisplayManager::None => {}
             }
+
+            let use_xorg = context.get_answer_bool(StepId::UseXorg);
+            if use_xorg || dm == crate::arch::config::DisplayManager::Lightdm {
+                packages.push("xorg-server".to_string());
+            }
         }
 
         packages.extend(strings(desktop.package_names()));
@@ -263,6 +268,7 @@ mod tests {
 
         assert!(packages.iter().any(|pkg| pkg == "hyprland"));
         assert!(packages.iter().any(|pkg| pkg == "lightdm"));
+        assert!(packages.iter().any(|pkg| pkg == "xorg-server"));
         assert!(!packages.iter().any(|pkg| pkg == "gdm"));
     }
 
@@ -285,6 +291,36 @@ mod tests {
         assert!(packages.iter().any(|pkg| pkg == "hyprland"));
         assert!(!packages.iter().any(|pkg| pkg == "gdm"));
         assert!(!packages.iter().any(|pkg| pkg == "lightdm"));
+        assert!(!packages.iter().any(|pkg| pkg == "xorg-server"));
+    }
+
+    #[test]
+    fn use_xorg_selection_adds_xorg_server() {
+        let mut context = base_context();
+        context.set_answer(
+            StepId::DesktopEnvironment,
+            DesktopEnvironment::InstantWM.answer_value().to_string(),
+        );
+        context.set_answer(StepId::UseXorg, "yes".to_string());
+
+        let packages = build_standard_package_plan(&context).unwrap();
+
+        assert!(packages.iter().any(|pkg| pkg == "xorg-server"));
+        assert!(packages.iter().any(|pkg| pkg == "gdm"));
+    }
+
+    #[test]
+    fn default_instantwm_skips_xorg_server() {
+        let mut context = base_context();
+        context.set_answer(
+            StepId::DesktopEnvironment,
+            DesktopEnvironment::InstantWM.answer_value().to_string(),
+        );
+
+        let packages = build_standard_package_plan(&context).unwrap();
+
+        assert!(!packages.iter().any(|pkg| pkg == "xorg-server"));
+        assert!(packages.iter().any(|pkg| pkg == "gdm"));
     }
 
     #[test]

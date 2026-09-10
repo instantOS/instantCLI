@@ -103,12 +103,15 @@ pub async fn setup_instant_repo(executor: &dyn CommandRunner) -> Result<()> {
 /// These are the only packages installed by `ins arch setup` on existing systems.
 /// For fresh installations, standard packages are installed separately in the Config step.
 fn install_instant_packages(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
-    let packages = crate::arch::execution::packages::build_instant_package_plan(context);
+    let mut packages = crate::arch::execution::packages::build_instant_package_plan(context);
+    if context.get_answer_bool(StepId::UseXorg) {
+        packages.push("xorg-server".to_string());
+    }
     if packages.is_empty() {
         println!("Minimal mode enabled, skipping instantOS packages.");
         return Ok(());
     }
-    println!("Installing instantOS packages: {}", packages.join(", "));
+    println!("Installing packages: {}", packages.join(", "));
     let package_refs: Vec<&str> = packages.iter().map(|s| s.as_str()).collect();
     super::pacman::install(&package_refs, executor)?;
     Ok(())
@@ -440,7 +443,12 @@ fn setup_backlight_udev_rule(executor: &dyn CommandRunner) -> Result<()> {
 
 fn configure_gdm_session(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
     let desktop = crate::arch::config::DesktopEnvironment::from_context(context);
-    let Some(session_name) = desktop.gdm_session_name() else {
+    let session_name = if context.get_answer_bool(StepId::UseXorg) {
+        desktop.session_name()
+    } else {
+        desktop.gdm_session_name()
+    };
+    let Some(session_name) = session_name else {
         return Ok(());
     };
     let username = context
