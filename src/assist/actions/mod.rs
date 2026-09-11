@@ -15,3 +15,4 @@ pub mod screenrecord;
 pub mod screenshot;
 pub mod settings;
 pub mod system;
+pub mod wallpaper;

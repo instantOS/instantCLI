@@ -10,6 +10,9 @@ use crate::common::requirements::InstallTest;
 // Package Definitions using new Dependency format
 // =============================================================================
 
+/// Yazi file manager, used by the wallpaper "set from file" picker.
+pub use crate::settings::deps::YAZI;
+
 /// Playerctl - MPRIS media player controller
 pub static PLAYERCTL: Dependency = Dependency {
     name: "playerctl",
