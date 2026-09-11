@@ -5,6 +5,7 @@ pub mod disks;
 pub mod dualboot;
 pub mod engine;
 pub mod execution;
+pub mod geo;
 pub mod keymaps;
 pub mod locales;
 pub mod logging;

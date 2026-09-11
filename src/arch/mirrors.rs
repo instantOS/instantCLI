@@ -25,6 +25,18 @@ impl DataKey for MirrorRegionsKey {
     const KEY: &'static str = "mirror_regions";
 }
 
+/// Key for the region-name -> country-code map from archlinux.org.
+///
+/// [`MirrorRegionsKey`] keeps only the display names for the question list;
+/// this preserves the codes so a detected country can be mapped back to its
+/// region without re-fetching.
+pub struct MirrorRegionCodesKey;
+
+impl DataKey for MirrorRegionCodesKey {
+    type Value = HashMap<String, String>;
+    const KEY: &'static str = "mirror_region_codes";
+}
+
 /// Key to track whether mirror regions fetch failed
 /// When true, the MirrorRegionQuestion should be skipped
 pub struct MirrorRegionsFetchFailed;
@@ -286,6 +298,7 @@ impl crate::arch::engine::AsyncDataProvider for MirrorlistProvider {
                 let mut names: Vec<String> = regions.keys().cloned().collect();
                 names.sort();
                 context.set::<MirrorRegionsKey>(names);
+                context.set::<MirrorRegionCodesKey>(regions);
                 context.set::<MirrorRegionsFetchFailed>(false);
             }
             Err(e) => {
