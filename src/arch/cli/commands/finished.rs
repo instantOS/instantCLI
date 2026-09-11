@@ -7,12 +7,14 @@ use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 
-/// The three actions offered after installation completes.
+/// Actions offered after installation completes.
 #[derive(Clone)]
 enum FinishedMenuOption {
     Reboot,
     Shutdown,
     Continue,
+    UploadLogs,
+    ViewLogs,
 }
 
 impl FinishedMenuOption {
@@ -21,6 +23,8 @@ impl FinishedMenuOption {
             Self::Reboot => (colors::GREEN, NerdFont::Reboot),
             Self::Shutdown => (colors::RED, NerdFont::PowerOff),
             Self::Continue => (colors::BLUE, NerdFont::Continue),
+            Self::UploadLogs => (colors::GREEN, NerdFont::Upload),
+            Self::ViewLogs => (colors::BLUE, NerdFont::FileText),
         }
     }
 
@@ -29,6 +33,8 @@ impl FinishedMenuOption {
             Self::Reboot => "Reboot",
             Self::Shutdown => "Shutdown",
             Self::Continue => "Continue in Live Session",
+            Self::UploadLogs => "Upload Logs",
+            Self::ViewLogs => "View Logs",
         }
     }
 
@@ -45,6 +51,14 @@ impl FinishedMenuOption {
             Self::Continue => &[
                 "Return to the live environment without",
                 "rebooting or powering off.",
+            ],
+            Self::UploadLogs => &[
+                "Choose what to include, then upload a",
+                "privacy-filtered report to snips.sh.",
+            ],
+            Self::ViewLogs => &[
+                "Inspect the local installation log in nvim,",
+                "or less when nvim is unavailable.",
             ],
         }
     }
@@ -151,7 +165,7 @@ pub(super) async fn handle_finished_command() -> Result<()> {
 
     // Check if we should upload logs
     if let Ok(context) = crate::arch::engine::InstallContext::load(DEFAULT_QUESTIONS_FILE) {
-        crate::arch::logging::process_log_upload(&context);
+        crate::arch::logging::process_requested_log_upload(&context);
     }
 
     // Compute summary data once so every preview shares it
@@ -163,6 +177,8 @@ pub(super) async fn handle_finished_command() -> Result<()> {
         FinishedMenuOption::Reboot,
         FinishedMenuOption::Shutdown,
         FinishedMenuOption::Continue,
+        FinishedMenuOption::UploadLogs,
+        FinishedMenuOption::ViewLogs,
     ];
 
     let items: Vec<FinishedMenuItem> = options
@@ -181,27 +197,45 @@ pub(super) async fn handle_finished_command() -> Result<()> {
         })
         .collect();
 
-    let result = FzfWrapper::menu()
-        .header(Header::fancy("Installation Finished!"))
-        .items(items)
-        .padded()
-        .select_one()?;
+    loop {
+        let result = FzfWrapper::menu()
+            .header(Header::fancy("Installation Finished!"))
+            .items(items.clone())
+            .padded()
+            .select_one()?;
 
-    match result {
-        crate::menu_utils::DialogOutcome::Submitted(item) => match item.option {
-            FinishedMenuOption::Reboot => {
-                println!("Rebooting...");
-                std::process::Command::new("reboot").spawn()?;
+        match result {
+            crate::menu_utils::DialogOutcome::Submitted(item) => match item.option {
+                FinishedMenuOption::Reboot => {
+                    println!("Rebooting...");
+                    std::process::Command::new("reboot").spawn()?;
+                    break;
+                }
+                FinishedMenuOption::Shutdown => {
+                    println!("Shutting down...");
+                    std::process::Command::new("poweroff").spawn()?;
+                    break;
+                }
+                FinishedMenuOption::Continue => {
+                    println!("Exiting to live session...");
+                    break;
+                }
+                FinishedMenuOption::UploadLogs => {
+                    let context =
+                        crate::arch::engine::InstallContext::load(DEFAULT_QUESTIONS_FILE)?;
+                    crate::arch::logging::prompt_log_upload(&context)?;
+                }
+                FinishedMenuOption::ViewLogs => {
+                    if let Err(error) = crate::arch::logging::view_install_log() {
+                        eprintln!("Failed to view logs: {error}");
+                    }
+                }
+            },
+            crate::menu_utils::DialogOutcome::Cancelled => {
+                println!("Exiting...");
+                break;
             }
-            FinishedMenuOption::Shutdown => {
-                println!("Shutting down...");
-                std::process::Command::new("poweroff").spawn()?;
-            }
-            FinishedMenuOption::Continue => {
-                println!("Exiting to live session...");
-            }
-        },
-        crate::menu_utils::DialogOutcome::Cancelled => println!("Exiting..."),
+        }
     }
 
     Ok(())

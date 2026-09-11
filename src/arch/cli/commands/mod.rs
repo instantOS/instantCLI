@@ -184,10 +184,9 @@ pub(super) fn build_steps() -> Vec<Box<dyn WizardStep>> {
                 crate::ui::nerd_font::NerdFont::Debug,
             )
             .description(
-                "Uploads an anonymized installation log to snips.sh upon completion to help troubleshoot setup issues.",
+                "Uploads a privacy-filtered support report to snips.sh after a successful installation. Identity and passwords are never included.",
             )
-            .optional()
-            .default_yes(),
+            .optional(),
         ),
         Box::new(
             BooleanQuestion::new(

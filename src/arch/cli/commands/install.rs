@@ -149,15 +149,11 @@ pub(super) async fn handle_install_command(debug: bool) -> Result<()> {
     .await;
 
     if exec_result.is_err() {
-        // Try to upload logs if forced or requested
-        if let Ok(context) = crate::arch::engine::InstallContext::load(DEFAULT_QUESTIONS_FILE) {
-            crate::arch::logging::process_log_upload(&context);
-        } else if std::path::Path::new("/etc/instantos/uploadlogs").exists() {
-            println!("Uploading installation logs (forced by /etc/instantos/uploadlogs)...");
-            let log_path = std::path::PathBuf::from(crate::arch::execution::paths::LOG_FILE);
-            if let Err(e) = crate::arch::logging::upload_logs(&log_path) {
-                eprintln!("Failed to upload logs: {}", e);
-            }
+        // Never upload implicitly after a failure. Keep the installer open so
+        // the user can inspect the log or explicitly choose an upload scope.
+        let context = crate::arch::engine::InstallContext::load(DEFAULT_QUESTIONS_FILE).ok();
+        if let Err(error) = crate::arch::logging::show_failed_install_log_menu(context.as_ref()) {
+            eprintln!("Could not show log options: {error}");
         }
     }
 

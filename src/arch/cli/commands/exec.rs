@@ -16,6 +16,12 @@ pub(super) async fn handle_exec_command(
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
+        // A full installation gets a fresh log so an upload cannot include
+        // output left behind by an earlier installation attempt. Explicit
+        // single-step execution continues appending to the current attempt.
+        if step.is_none() {
+            std::fs::File::create(&path)?;
+        }
         Some(path)
     } else {
         None

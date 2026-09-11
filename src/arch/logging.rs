@@ -1,9 +1,16 @@
-use anyhow::{Context, Result};
-use colored::Colorize;
 use std::io::Write;
 use std::path::Path;
 use std::process::Command;
+
+use anyhow::{Context, Result};
+use colored::Colorize;
 use tempfile::NamedTempFile;
+
+use crate::arch::engine::{AnswerPrivacy, InstallContext};
+use crate::menu_utils::{DialogOutcome, FzfPreview, FzfSelectable, FzfWrapper, Header};
+use crate::ui::catppuccin::{colors, format_icon_colored};
+use crate::ui::nerd_font::NerdFont;
+use crate::ui::preview::PreviewBuilder;
 
 const SNIPS_KEY: &str = "-----BEGIN OPENSSH PRIVATE KEY-----
 b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
@@ -13,20 +20,314 @@ AAAEA+b6NfYeO8B3xNNqiixJPfcRrw2zQhmdA8uCFodPK4etHNQL0JG3t6z0EmZSsj6wO3
 qcboKxIG+1854C9xH8nuAAAADWJlbmphbWluQHJ4cGM=
 -----END OPENSSH PRIVATE KEY-----";
 
-pub fn process_log_upload(context: &crate::arch::engine::InstallContext) {
-    let force_upload = std::path::Path::new("/etc/instantos/uploadlogs").exists();
-    if force_upload || context.get_answer_bool(crate::arch::engine::StepId::LogUpload) {
-        if force_upload {
-            println!("Uploading installation logs (forced by /etc/instantos/uploadlogs)...");
-        } else {
-            println!("Uploading installation logs as requested...");
-        }
-        let log_path = std::path::PathBuf::from(crate::arch::execution::paths::LOG_FILE);
-        match upload_logs(&log_path) {
-            Ok(url) => println!("Logs uploaded successfully: {}", url.green().bold()),
-            Err(e) => eprintln!("Failed to upload logs: {}", e),
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UploadScope {
+    InstallLog,
+    InstallLogAndSystemDetails,
+}
+
+#[derive(Clone)]
+struct MenuItem<T> {
+    value: T,
+    label: String,
+    preview: FzfPreview,
+}
+
+impl<T: Clone> FzfSelectable for MenuItem<T> {
+    fn fzf_display_text(&self) -> String {
+        self.label.clone()
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        self.preview.clone()
+    }
+}
+
+#[derive(Clone, Copy)]
+enum FailureLogAction {
+    Upload,
+    View,
+    Exit,
+}
+
+/// Upload after a successful install only when the user explicitly enabled it
+/// in Advanced Options. This always uses the least-detailed report scope.
+pub fn process_requested_log_upload(context: &InstallContext) {
+    if !context.get_answer_bool(crate::arch::engine::StepId::LogUpload) {
+        return;
+    }
+
+    println!("Uploading the privacy-filtered installation report as requested...");
+    match upload_install_report(context, UploadScope::InstallLog) {
+        Ok(url) => println!("Logs uploaded successfully: {}", url.green().bold()),
+        Err(error) => eprintln!("Failed to upload logs: {error}"),
+    }
+}
+
+/// Let the user select exactly what will be included before uploading.
+pub fn prompt_log_upload(context: &InstallContext) -> Result<()> {
+    let options = vec![
+        MenuItem {
+            value: None,
+            label: format!(
+                "{} Do Not Upload",
+                format_icon_colored(NerdFont::CrossCircle, colors::BLUE)
+            ),
+            preview: PreviewBuilder::new()
+                .header(NerdFont::CrossCircle, "Do Not Upload")
+                .text("Return without sharing any logs or system information.")
+                .blank()
+                .line(
+                    colors::GREEN,
+                    Some(NerdFont::Lock),
+                    "No network request will be made.",
+                )
+                .build(),
+        },
+        MenuItem {
+            value: Some(UploadScope::InstallLog),
+            label: format!(
+                "{} Install log and anonymous choices",
+                format_icon_colored(NerdFont::Upload, colors::GREEN)
+            ),
+            preview: PreviewBuilder::new()
+                .header(NerdFont::Upload, "Upload Support Report")
+                .text("Upload the sanitized install log and non-personal configuration choices.")
+                .blank()
+                .line(colors::GREEN, Some(NerdFont::Lock), "Excluded")
+                .bullets([
+                    "Username and hostname",
+                    "Passwords and encryption passphrases",
+                    "Disk and partition identifiers",
+                    "Detected hardware and system specifications",
+                ])
+                .blank()
+                .subtext("Nothing is uploaded until you select this option.")
+                .build(),
+        },
+        MenuItem {
+            value: Some(UploadScope::InstallLogAndSystemDetails),
+            label: format!(
+                "{} Include system and hardware details",
+                format_icon_colored(NerdFont::CloudUpload, colors::YELLOW)
+            ),
+            preview: PreviewBuilder::new()
+                .header(NerdFont::CloudUpload, "Upload Detailed Support Report")
+                .text("Also include detected CPU/GPU, RAM, architecture, distro, boot mode, and selected disk/partitions.")
+                .blank()
+                .line(colors::GREEN, Some(NerdFont::Lock), "Still excluded")
+                .bullets([
+                    "Username and hostname",
+                    "Passwords and encryption passphrases",
+                ])
+                .blank()
+                .subtext("Review the local log first if command output may contain personal data.")
+                .build(),
+        },
+    ];
+
+    let result = FzfWrapper::builder()
+        .header(Header::fancy("Choose Log Upload Contents"))
+        .prompt("Select")
+        .responsive_layout()
+        .items(options)
+        .padded()
+        .select_one()?;
+
+    let DialogOutcome::Submitted(item) = result else {
+        return Ok(());
+    };
+    let Some(scope) = item.value else {
+        return Ok(());
+    };
+
+    println!("Preparing privacy-filtered support report...");
+    match upload_install_report(context, scope) {
+        Ok(url) => println!("Logs uploaded successfully: {}", url.green().bold()),
+        Err(error) => eprintln!("Failed to upload logs: {error}"),
+    }
+    Ok(())
+}
+
+/// Keep a failed installation interactive so the user can inspect or
+/// explicitly upload its log before returning to the shell.
+pub fn show_failed_install_log_menu(context: Option<&InstallContext>) -> Result<()> {
+    loop {
+        let options = vec![
+            MenuItem {
+                value: FailureLogAction::Upload,
+                label: format!(
+                    "{} Upload Logs",
+                    format_icon_colored(NerdFont::Upload, colors::GREEN)
+                ),
+                preview: PreviewBuilder::new()
+                    .header(NerdFont::Upload, "Upload Logs")
+                    .text("Choose a privacy-filtered support report to upload to snips.sh.")
+                    .blank()
+                    .subtext("Uploading is optional and requires another explicit selection.")
+                    .build(),
+            },
+            MenuItem {
+                value: FailureLogAction::View,
+                label: format!(
+                    "{} View Logs",
+                    format_icon_colored(NerdFont::FileText, colors::BLUE)
+                ),
+                preview: PreviewBuilder::new()
+                    .header(NerdFont::FileText, "View Logs")
+                    .text("Open the local installation log in nvim, or less when nvim is unavailable.")
+                    .field("File", crate::arch::execution::paths::LOG_FILE)
+                    .build(),
+            },
+            MenuItem {
+                value: FailureLogAction::Exit,
+                label: format!(
+                    "{} Exit",
+                    format_icon_colored(NerdFont::CrossCircle, colors::RED)
+                ),
+                preview: PreviewBuilder::new()
+                    .header(NerdFont::CrossCircle, "Exit")
+                    .text("Return to the shell without uploading anything.")
+                    .build(),
+            },
+        ];
+
+        let result = FzfWrapper::builder()
+            .header(Header::fancy("Installation Failed"))
+            .prompt("Select")
+            .responsive_layout()
+            .items(options)
+            .padded()
+            .select_one()?;
+
+        match result {
+            DialogOutcome::Submitted(item) => match item.value {
+                FailureLogAction::Upload => {
+                    if let Some(context) = context {
+                        prompt_log_upload(context)?;
+                    } else {
+                        FzfWrapper::message(
+                            "The saved answers could not be loaded, so a safely redacted report cannot be created. You can still view the local log.",
+                        )?;
+                    }
+                }
+                FailureLogAction::View => {
+                    if let Err(error) = view_install_log() {
+                        FzfWrapper::message(&format!("Failed to view logs: {error}"))?;
+                    }
+                }
+                FailureLogAction::Exit => return Ok(()),
+            },
+            DialogOutcome::Cancelled => return Ok(()),
         }
     }
+}
+
+pub fn view_install_log() -> Result<()> {
+    let log_path = Path::new(crate::arch::execution::paths::LOG_FILE);
+    if !log_path.exists() {
+        anyhow::bail!("Log file not found: {}", log_path.display());
+    }
+
+    let (viewer, args): (&str, &[&str]) = if command_exists("nvim") {
+        ("nvim", &[])
+    } else {
+        ("less", &["-R"])
+    };
+    let status = Command::new(viewer)
+        .args(args)
+        .arg(log_path)
+        .status()
+        .with_context(|| format!("Failed to open log with {viewer}"))?;
+    if !status.success() {
+        anyhow::bail!("{viewer} exited unsuccessfully");
+    }
+    Ok(())
+}
+
+fn command_exists(command: &str) -> bool {
+    std::env::var_os("PATH").is_some_and(|paths| {
+        std::env::split_paths(&paths).any(|directory| directory.join(command).is_file())
+    })
+}
+
+pub fn upload_install_report(context: &InstallContext, scope: UploadScope) -> Result<String> {
+    let log_path = Path::new(crate::arch::execution::paths::LOG_FILE);
+    let report = build_support_report(context, log_path, scope)?;
+    upload_logs(report.path())
+}
+
+fn build_support_report(
+    context: &InstallContext,
+    log_path: &Path,
+    scope: UploadScope,
+) -> Result<NamedTempFile> {
+    let log = std::fs::read_to_string(log_path)
+        .with_context(|| format!("Failed to read log file: {}", log_path.display()))?;
+    let sanitized_log = redact_log(context, &log, scope);
+
+    let mut report = NamedTempFile::new().context("Failed to create support report")?;
+    writeln!(report, "instantOS installation support report")?;
+    writeln!(report, "scope = {scope:?}")?;
+    writeln!(report, "known_identity_and_secret_answers_included = false")?;
+    writeln!(report, "\n[included choices]")?;
+
+    let mut answers: Vec<_> = context.answers().collect();
+    answers.sort_by_key(|(id, _)| **id);
+    for (id, answer) in answers {
+        let include = id.answer_privacy() == AnswerPrivacy::Anonymous
+            || (scope == UploadScope::InstallLogAndSystemDetails
+                && id.answer_privacy() == AnswerPrivacy::SystemDetail);
+        if include {
+            writeln!(report, "{id:?} = {answer:?}")?;
+        }
+    }
+
+    if scope == UploadScope::InstallLogAndSystemDetails {
+        let info = &context.system_info;
+        writeln!(report, "\n[system details]")?;
+        writeln!(report, "boot_mode = {:?}", info.boot_mode)?;
+        writeln!(report, "architecture = {:?}", info.architecture)?;
+        writeln!(report, "distro = {:?}", info.distro)?;
+        writeln!(report, "has_amd_cpu = {}", info.has_amd_cpu)?;
+        writeln!(report, "has_intel_cpu = {}", info.has_intel_cpu)?;
+        writeln!(report, "gpus = {:?}", info.gpus)?;
+        writeln!(report, "virtual_machine = {:?}", info.vm_type)?;
+        writeln!(report, "total_ram_gb = {:?}", info.total_ram_gb)?;
+    }
+
+    writeln!(report, "\n[install log]")?;
+    report.write_all(sanitized_log.as_bytes())?;
+    report.flush()?;
+    Ok(report)
+}
+
+fn redact_log(context: &InstallContext, log: &str, scope: UploadScope) -> String {
+    let mut redactions: Vec<_> = context
+        .answers()
+        .filter_map(|(id, answer)| {
+            if answer.is_empty() {
+                return None;
+            }
+            let privacy = id.answer_privacy();
+            let should_redact = matches!(privacy, AnswerPrivacy::Personal | AnswerPrivacy::Secret)
+                || (privacy == AnswerPrivacy::SystemDetail && scope == UploadScope::InstallLog);
+            should_redact.then_some((answer, privacy))
+        })
+        .collect();
+    redactions.sort_by_key(|(answer, _)| std::cmp::Reverse(answer.len()));
+
+    let mut sanitized = log.to_string();
+    for (answer, privacy) in redactions {
+        let replacement = match privacy {
+            AnswerPrivacy::Secret => "[REDACTED SECRET]",
+            AnswerPrivacy::Personal => "[REDACTED PERSONAL]",
+            AnswerPrivacy::SystemDetail => "[REDACTED SYSTEM DETAIL]",
+            AnswerPrivacy::Anonymous => continue,
+        };
+        sanitized = sanitized.replace(answer, replacement);
+    }
+    sanitized
 }
 
 pub fn upload_logs(log_path: &Path) -> Result<String> {
@@ -34,32 +335,18 @@ pub fn upload_logs(log_path: &Path) -> Result<String> {
         anyhow::bail!("Log file not found: {}", log_path.display());
     }
 
-    // Create a temporary file for the key
     let mut key_file = NamedTempFile::new().context("Failed to create temporary key file")?;
     key_file
         .write_all(SNIPS_KEY.as_bytes())
         .context("Failed to write key to temporary file")?;
-
-    // Ensure trailing newline which is often required by SSH
     if !SNIPS_KEY.ends_with('\n') {
-        key_file
-            .write_all(b"\n")
-            .context("Failed to write newline to key file")?;
+        key_file.write_all(b"\n")?;
     }
-    key_file.flush().context("Failed to flush key file")?;
-
-    // Ensure the key file has correct permissions (0600)
-    // NamedTempFile is created with 0600 on Unix by default, but let's be explicit if needed or rely on tempfile crate guarantees.
-    // The tempfile crate documentation says: "The file is created with mode 0600 on Unix-like systems."
-
-    let key_path = key_file.path().to_path_buf();
-
-    // Construct the SSH command
-    // cat log_file | ssh -i key_file -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null instantos@snips.sh
+    key_file.flush()?;
 
     let output = Command::new("ssh")
         .arg("-i")
-        .arg(&key_path)
+        .arg(key_file.path())
         .arg("-o")
         .arg("StrictHostKeyChecking=no")
         .arg("-o")
@@ -74,24 +361,93 @@ pub fn upload_logs(log_path: &Path) -> Result<String> {
         .context("Failed to execute ssh command")?;
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("Failed to upload logs: {}", stderr);
+        anyhow::bail!(
+            "Failed to upload logs: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 
-    let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
-
-    // The key file is automatically deleted when key_file goes out of scope
-
-    Ok(url)
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::arch::engine::StepId;
 
     #[test]
-    fn test_key_structure() {
+    fn key_has_openssh_structure() {
         assert!(SNIPS_KEY.starts_with("-----BEGIN OPENSSH PRIVATE KEY-----"));
         assert!(SNIPS_KEY.ends_with("-----END OPENSSH PRIVATE KEY-----"));
+    }
+
+    #[test]
+    fn basic_report_redacts_identity_secrets_and_system_details() {
+        let mut context = InstallContext::new();
+        context.set_answer(StepId::Username, "alice".to_string());
+        context.set_answer(StepId::Hostname, "homebox".to_string());
+        context.set_answer(StepId::Password, "secret phrase".to_string());
+        context.set_answer(StepId::Disk, "/dev/nvme0n1".to_string());
+        context.set_answer(StepId::Kernel, "linux-zen".to_string());
+
+        let sanitized = redact_log(
+            &context,
+            "user alice on homebox password secret phrase disk /dev/nvme0n1 kernel linux-zen",
+            UploadScope::InstallLog,
+        );
+
+        assert!(!sanitized.contains("alice"));
+        assert!(!sanitized.contains("homebox"));
+        assert!(!sanitized.contains("secret phrase"));
+        assert!(!sanitized.contains("/dev/nvme0n1"));
+        assert!(sanitized.contains("linux-zen"));
+    }
+
+    #[test]
+    fn detailed_report_still_redacts_identity_and_secrets() {
+        let mut context = InstallContext::new();
+        context.set_answer(StepId::Username, "alice".to_string());
+        context.set_answer(StepId::Password, "secret phrase".to_string());
+        context.set_answer(StepId::Disk, "/dev/nvme0n1".to_string());
+
+        let sanitized = redact_log(
+            &context,
+            "alice secret phrase /dev/nvme0n1",
+            UploadScope::InstallLogAndSystemDetails,
+        );
+
+        assert!(!sanitized.contains("alice"));
+        assert!(!sanitized.contains("secret phrase"));
+        assert!(sanitized.contains("/dev/nvme0n1"));
+    }
+
+    #[test]
+    fn support_report_includes_only_the_selected_answer_classes() {
+        let mut context = InstallContext::new();
+        context.set_answer(StepId::Username, "alice".to_string());
+        context.set_answer(StepId::Password, "secret phrase".to_string());
+        context.set_answer(StepId::Disk, "/dev/nvme0n1".to_string());
+        context.set_answer(StepId::Kernel, "linux-zen".to_string());
+
+        let mut log = NamedTempFile::new().unwrap();
+        writeln!(log, "alice secret phrase /dev/nvme0n1 linux-zen").unwrap();
+
+        let basic = build_support_report(&context, log.path(), UploadScope::InstallLog).unwrap();
+        let basic_text = std::fs::read_to_string(basic.path()).unwrap();
+        assert!(basic_text.contains("Kernel = \"linux-zen\""));
+        assert!(!basic_text.contains("alice"));
+        assert!(!basic_text.contains("secret phrase"));
+        assert!(!basic_text.contains("/dev/nvme0n1"));
+
+        let detailed = build_support_report(
+            &context,
+            log.path(),
+            UploadScope::InstallLogAndSystemDetails,
+        )
+        .unwrap();
+        let detailed_text = std::fs::read_to_string(detailed.path()).unwrap();
+        assert!(detailed_text.contains("Disk = \"/dev/nvme0n1\""));
+        assert!(!detailed_text.contains("alice"));
+        assert!(!detailed_text.contains("secret phrase"));
     }
 }

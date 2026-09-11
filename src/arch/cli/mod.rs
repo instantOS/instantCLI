@@ -51,9 +51,9 @@ pub enum ArchCommands {
         #[arg(long)]
         dry_run: bool,
     },
-    /// Upload installation logs to snips.sh
+    /// Review and optionally upload a privacy-filtered support report to snips.sh
     UploadLogs {
-        /// Path to the log file (optional, defaults to standard location)
+        /// Upload this exact file verbatim instead of building a filtered report
         #[arg(short, long)]
         path: Option<std::path::PathBuf>,
     },

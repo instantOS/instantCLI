@@ -10,5 +10,5 @@ pub use context::{
 };
 pub use step::{AsyncDataProvider, StepOutcome, WizardStep};
 pub(crate) use summary::{InstallSummary, build_install_summary};
-pub use types::{BootMode, GpuKind, StepId, SystemInfo};
+pub use types::{AnswerPrivacy, BootMode, GpuKind, StepId, SystemInfo};
 pub use wizard_engine::{FlowKind, WizardEngine, WizardOutcome};
