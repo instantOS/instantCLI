@@ -322,9 +322,10 @@ impl WizardStep for DesktopEnvironmentQuestion {
             DesktopEnvironment::Tty,
         ];
 
-        let result = super::select_one_with_preselect(
+        let result = super::select_one_for_step(
             context,
             StepId::DesktopEnvironment,
+            None,
             FzfWrapper::builder()
                 .header(HeaderBuilder::new(NerdFont::Desktop, "Select Desktop Environment").build())
                 .items(options)
@@ -413,7 +414,7 @@ impl WizardStep for MirrorRegionQuestion {
 
         // Start on the previously chosen region; on the first pass, on the
         // region matching the detected country.
-        let result = super::select_one_with_suggestion(
+        let result = super::select_one_for_step(
             context,
             StepId::MirrorRegion,
             self.suggested_answer(context),
@@ -475,7 +476,7 @@ impl WizardStep for TimezoneQuestion {
         let suggestion = self
             .suggested_answer(context)
             .or_else(crate::arch::timezones::detect_current_timezone);
-        let result = super::select_one_with_suggestion(
+        let result = super::select_one_for_step(
             context,
             StepId::Timezone,
             suggestion,
@@ -539,7 +540,7 @@ impl WizardStep for KeymapQuestion {
 
         // Start on the previously chosen keymap; on the first pass, on the
         // one the running system already uses.
-        let result = super::select_one_with_suggestion(
+        let result = super::select_one_for_step(
             context,
             StepId::Keymap,
             crate::arch::keymaps::detect_current_keymap(),
@@ -591,7 +592,7 @@ impl WizardStep for LocaleQuestion {
         let suggestion = self
             .suggested_answer(context)
             .or_else(crate::arch::locales::detect_current_locale);
-        let result = super::select_one_with_suggestion(
+        let result = super::select_one_for_step(
             context,
             StepId::Locale,
             suggestion,
@@ -664,9 +665,10 @@ impl WizardStep for KernelQuestion {
     async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {
         let kernels = vec![KernelOption::Linux, KernelOption::Lts, KernelOption::Zen];
 
-        let result = super::select_one_with_preselect(
+        let result = super::select_one_for_step(
             context,
             StepId::Kernel,
+            None,
             FzfWrapper::builder()
                 .header(HeaderBuilder::new(NerdFont::Gear, "Select Kernel").build())
                 .items(kernels)

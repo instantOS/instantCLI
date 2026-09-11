@@ -216,9 +216,10 @@ impl WizardStep for DiskQuestion {
         let mut last_custom_path: Option<String> = None;
 
         loop {
-            let result = super::select_one_with_preselect(
+            let result = super::select_one_for_step(
                 context,
                 StepId::Disk,
+                None,
                 FzfWrapper::builder()
                     .header(
                         HeaderBuilder::new(NerdFont::HardDrive, "Select Installation Disk").build(),
@@ -420,9 +421,10 @@ impl WizardStep for PartitioningMethodQuestion {
             }
         }
 
-        let result = super::select_one_with_preselect(
+        let result = super::select_one_for_step(
             context,
             StepId::PartitioningMethod,
+            None,
             FzfWrapper::builder()
                 .header(
                     HeaderBuilder::new(NerdFont::HardDrive, "Select Partitioning Method").build(),

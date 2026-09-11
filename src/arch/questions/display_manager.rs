@@ -114,9 +114,10 @@ impl WizardStep for DisplayManagerQuestion {
                 DisplayManagerOption(DisplayManager::None),
             ];
 
-            let result = super::select_one_with_preselect(
+            let result = super::select_one_for_step(
                 context,
                 StepId::DisplayManager,
+                None,
                 FzfWrapper::builder()
                     .header(HeaderBuilder::new(NerdFont::Desktop, "Select Display Manager").build())
                     .items(options)

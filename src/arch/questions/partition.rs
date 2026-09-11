@@ -208,9 +208,10 @@ impl WizardStep for PartitionSelectorQuestion {
             ));
         }
 
-        let result = super::select_one_with_preselect(
+        let result = super::select_one_for_step(
             context,
             self.id(),
+            None,
             FzfWrapper::builder()
                 .header(HeaderBuilder::new(self.icon, &self.prompt).build())
                 .items(partitions),
