@@ -149,6 +149,15 @@ pub trait WizardStep: Send + Sync {
         None
     }
 
+    /// Return a best-effort answer to preselect when the user has not already
+    /// answered this question. Suggestions may use earlier answers and
+    /// optional data populated by [`WizardStep::data_providers`], but must
+    /// tolerate that data being absent. They affect only the initial cursor
+    /// and are never persisted automatically.
+    fn suggested_answer(&self, _context: &InstallContext) -> Option<String> {
+        None
+    }
+
     /// Returns the steps whose state this step is derived from.
     ///
     /// When any dependency changes, the engine removes this step's answer or

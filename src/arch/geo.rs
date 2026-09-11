@@ -4,7 +4,9 @@
 //! `us`), so the per-module `detect_current_*` helpers cannot tell us where
 //! the user actually is. This module asks a public IP-geolocation service for
 //! a country/timezone hint and derives the location-dependent preselections
-//! (timezone, locale, console keymap, mirror region) from it.
+//! (timezone and mirror region) from it. Language and keyboard layout are
+//! personal preferences, not geographic properties, so they deliberately use
+//! the existing local-system defaults instead.
 //!
 //! Detection is strictly a nicety: every failure path yields an empty
 //! [`GeoLocation`], and the questions fall back to their previous behaviour.
@@ -13,9 +15,7 @@ use std::time::Duration;
 
 use serde::Deserialize;
 
-use crate::arch::annotations::AnnotatedValue;
-use crate::arch::engine::{AsyncDataProvider, DataKey, InstallContext};
-use crate::arch::keymaps::KeymapsKey;
+use crate::arch::engine::{AsyncDataProvider, DataKey, InstallContext, StepId};
 use crate::arch::locales::LocalesKey;
 use crate::arch::mirrors::MirrorRegionCodesKey;
 use crate::arch::timezones::TimezonesKey;
@@ -56,11 +56,24 @@ static GEO_CACHE: tokio::sync::OnceCell<GeoLocation> = tokio::sync::OnceCell::co
 ///
 /// Never fails: a failed lookup stores an empty location so downstream
 /// suggestions simply do nothing.
-pub struct GeoLocationProvider;
+pub struct GeoLocationProvider {
+    question: StepId,
+}
+
+impl GeoLocationProvider {
+    pub fn for_question(question: StepId) -> Self {
+        Self { question }
+    }
+}
 
 #[async_trait::async_trait]
 impl AsyncDataProvider for GeoLocationProvider {
     async fn provide(&self, context: &InstallContext) -> anyhow::Result<()> {
+        // Do not disclose the public IP when a saved or previous answer already
+        // determines where the cursor should start.
+        if context.previous_answer(&self.question).is_some() {
+            return Ok(());
+        }
         context.set::<GeoLocationKey>(detect_location().await);
         Ok(())
     }
@@ -70,13 +83,24 @@ impl AsyncDataProvider for GeoLocationProvider {
 async fn detect_location() -> GeoLocation {
     GEO_CACHE
         .get_or_init(|| async {
+            let mut partial = GeoLocation::default();
             for endpoint in GEO_ENDPOINTS {
                 match tokio::time::timeout(GEO_TIMEOUT, fetch_geo_location(endpoint)).await {
-                    Ok(Ok(location)) if !location.is_empty() => return location,
+                    Ok(Ok(location)) if !location.is_empty() => {
+                        if location.country_code.is_some() && location.timezone.is_some() {
+                            return location;
+                        }
+                        if partial.country_code.is_none() {
+                            partial.country_code = location.country_code;
+                        }
+                        if partial.timezone.is_none() {
+                            partial.timezone = location.timezone;
+                        }
+                    }
                     _ => continue,
                 }
             }
-            GeoLocation::default()
+            partial
         })
         .await
         .clone()
@@ -150,32 +174,45 @@ fn normalize_country_code(value: &str) -> Option<String> {
 pub fn timezone_suggestion(context: &InstallContext) -> Option<String> {
     let location = context.get::<GeoLocationKey>()?;
     let timezones = context.get::<TimezonesKey>()?;
-    let country_timezone = location.country_code.as_deref().and_then(country_timezone);
-    first_present(&timezones, [location.timezone.as_deref(), country_timezone])
+    let timezone = location.timezone?;
+    timezones
+        .iter()
+        .any(|item| item.value == timezone)
+        .then_some(timezone)
 }
 
-/// Suggested locale for the locale question, if it exists in the list.
+/// Fall back from an earlier keyboard choice when IP detection has no usable
+/// timezone. The language-to-country defaults are intentionally small and
+/// conservative; missing entries simply produce no suggestion.
+pub fn timezone_suggestion_from_keymap(context: &InstallContext) -> Option<String> {
+    let keymap = context.get_answer(&StepId::Keymap)?;
+    let (_, country) = keymap_profile(keymap)?;
+    let timezone = crate::arch::timezones::timezone_for_country(context, country)?;
+    let timezones = context.get::<TimezonesKey>()?;
+    timezones
+        .iter()
+        .any(|item| item.value == timezone)
+        .then_some(timezone)
+}
+
+/// Suggest a locale only when earlier choices provide both a language and a
+/// territory. This avoids guessing the first locale listed for multilingual
+/// countries.
 pub fn locale_suggestion(context: &InstallContext) -> Option<String> {
-    let location = context.get::<GeoLocationKey>()?;
-    let country = location.country_code.as_deref()?;
+    let keymap = context.get_answer(&StepId::Keymap)?;
+    let (language, _) = keymap_profile(keymap)?;
+    let country = context
+        .get_answer(&StepId::Timezone)
+        .and_then(|timezone| crate::arch::timezones::country_for_timezone(context, timezone))
+        .or_else(|| context.get::<GeoLocationKey>()?.country_code)?;
     let locales = context.get::<LocalesKey>()?;
-    locale_for_country(country, &locales)
-}
 
-/// Suggested console keymap for the keymap question, if it exists in the list.
-pub fn keymap_suggestion(context: &InstallContext) -> Option<String> {
-    let location = context.get::<GeoLocationKey>()?;
-    let country = location.country_code.as_deref()?;
-
-    let locale = context
-        .get::<LocalesKey>()
-        .as_deref()
-        .and_then(|locales| locale_for_country(country, locales));
-    let language = locale.as_deref().and_then(language_of);
-
-    let candidate = country_keymap(country).or_else(|| language.and_then(language_keymap));
-    let keymaps = context.get::<KeymapsKey>()?;
-    first_present(&keymaps, [candidate])
+    locales.into_iter().find_map(|item| {
+        let (candidate_language, candidate_country) = locale_parts(&item.value)?;
+        (candidate_language.eq_ignore_ascii_case(language)
+            && candidate_country.eq_ignore_ascii_case(&country))
+        .then_some(item.value)
+    })
 }
 
 /// Suggested mirror region name for the mirror-region question.
@@ -189,223 +226,58 @@ pub fn mirror_region_suggestion(context: &InstallContext) -> Option<String> {
         .map(|(name, _)| name.clone())
 }
 
-/// Returns the first candidate that is actually present in `list`, so a
-/// suggestion never points at an option the user cannot select.
-fn first_present<'a>(
-    list: &[AnnotatedValue<String>],
-    candidates: impl IntoIterator<Item = Option<&'a str>>,
-) -> Option<String> {
-    for candidate in candidates.into_iter().flatten() {
-        if list.iter().any(|item| item.value == candidate) {
-            return Some(candidate.to_string());
-        }
-    }
-    None
+fn locale_parts(locale: &str) -> Option<(&str, &str)> {
+    let base = locale.split(['.', '@']).next()?;
+    let (language, country) = base.split_once('_')?;
+    (!language.is_empty() && !country.is_empty()).then_some((language, country))
 }
 
-/// The language part of a locale, e.g. `de` for `de_DE.UTF-8`.
-fn language_of(locale: &str) -> Option<&str> {
-    let base = locale.split('.').next().unwrap_or(locale);
-    let (language, _) = base.split_once('_')?;
-    (!language.is_empty()).then_some(language)
-}
-
-/// The `(language, territory)` parts of a locale, e.g. `de_DE.UTF-8`.
-fn territory_of(locale: &str) -> Option<(&str, &str)> {
-    let base = locale.split('.').next().unwrap_or(locale);
-    let (language, territory) = base.split_once('_')?;
-    (!language.is_empty() && !territory.is_empty()).then_some((language, territory))
-}
-
-/// Picks an available locale whose territory matches the country, preferring
-/// the country's primary language where one is known.
-fn locale_for_country(country: &str, available: &[AnnotatedValue<String>]) -> Option<String> {
-    let preferred = country_language(country);
-    let mut fallback = None;
-
-    for item in available {
-        let Some((language, territory)) = territory_of(&item.value) else {
-            continue;
-        };
-        if !territory.eq_ignore_ascii_case(country) {
-            continue;
-        }
-        if preferred == Some(language) {
-            return Some(item.value.clone());
-        }
-        fallback.get_or_insert_with(|| item.value.clone());
-    }
-
-    fallback
-}
-
-fn country_language(country: &str) -> Option<&'static str> {
-    lookup(COUNTRY_LANGUAGE, country)
-}
-
-fn country_keymap(country: &str) -> Option<&'static str> {
-    lookup(COUNTRY_KEYMAP, country)
-}
-
-fn country_timezone(country: &str) -> Option<&'static str> {
-    lookup(COUNTRY_TIMEZONE, country)
-}
-
-fn language_keymap(language: &str) -> Option<&'static str> {
-    lookup(LANGUAGE_KEYMAP, language)
-}
-
-fn lookup<'a>(table: &[(&str, &'a str)], key: &str) -> Option<&'a str> {
-    table
+fn keymap_profile(keymap: &str) -> Option<(&'static str, &'static str)> {
+    let base = keymap.split(['-', '_']).next()?;
+    KEYMAP_PROFILES
         .iter()
-        .find(|(candidate, _)| candidate.eq_ignore_ascii_case(key))
-        .map(|(_, value)| *value)
+        .find(|(candidate, _, _)| candidate.eq_ignore_ascii_case(base))
+        .map(|(_, language, country)| (*language, *country))
 }
 
-/// Countries where more than one available locale shares the territory code;
-/// the preferred language wins the `_CC.UTF-8` scan.
-const COUNTRY_LANGUAGE: &[(&str, &str)] = &[
-    ("CA", "en"),
-    ("CH", "de"),
-    ("BE", "nl"),
-    ("LU", "fr"),
-    ("IN", "en"),
-    ("ZA", "en"),
-    ("SG", "en"),
-    ("PH", "en"),
-    ("MY", "en"),
-];
-
-/// Console keymaps for countries whose layout is not implied by the locale's
-/// language (notably `en_GB` -> `uk`). Validated against `KeymapsKey`, so a
-/// name that is missing from the system just yields no suggestion.
-const COUNTRY_KEYMAP: &[(&str, &str)] = &[
-    ("US", "us"),
-    ("GB", "uk"),
-    ("IE", "uk"),
-    ("AU", "us"),
-    ("NZ", "us"),
-    ("CA", "ca"),
-    ("DE", "de-latin1"),
-    ("AT", "de-latin1"),
-    ("CH", "sg-latin1"),
-    ("LI", "de-latin1"),
-    ("FR", "fr"),
-    ("BE", "be-latin1"),
-    ("LU", "fr"),
-    ("MC", "fr"),
-    ("ES", "es"),
-    ("IT", "it"),
-    ("PT", "pt-latin1"),
-    ("BR", "br-abnt2"),
-    ("NL", "nl"),
-    ("SE", "sv-latin1"),
-    ("NO", "no-latin1"),
-    ("DK", "dk-latin1"),
-    ("FI", "fi"),
-    ("PL", "pl"),
-    ("CZ", "cz"),
-    ("SK", "sk-qwertz"),
-    ("HU", "hu101"),
-    ("RO", "ro"),
-    ("RU", "ru"),
-    ("UA", "ua-utf"),
-    ("TR", "tr_q-latin5"),
-    ("GR", "gr"),
-    ("IL", "il"),
-    ("JP", "jp106"),
-    ("KR", "kr"),
-    ("CN", "us"),
-    ("TW", "us"),
-    ("HK", "us"),
-    ("MX", "la-latin1"),
-    ("AR", "la-latin1"),
-    ("CL", "la-latin1"),
-    ("CO", "la-latin1"),
-];
-
-/// Fallback for countries without a specific keymap above.
-const LANGUAGE_KEYMAP: &[(&str, &str)] = &[
-    ("en", "us"),
-    ("de", "de-latin1"),
-    ("fr", "fr"),
-    ("es", "es"),
-    ("it", "it"),
-    ("pt", "pt-latin1"),
-    ("nl", "nl"),
-    ("sv", "sv-latin1"),
-    ("nb", "no-latin1"),
-    ("nn", "no-latin1"),
-    ("da", "dk-latin1"),
-    ("fi", "fi"),
-    ("pl", "pl"),
-    ("cs", "cz"),
-    ("sk", "sk-qwertz"),
-    ("hu", "hu101"),
-    ("ro", "ro"),
-    ("ru", "ru"),
-    ("uk", "ua-utf"),
-    ("tr", "tr_q-latin5"),
-    ("el", "gr"),
-    ("he", "il"),
-    ("ja", "jp106"),
-    ("ko", "kr"),
-    ("zh", "us"),
-];
-
-/// Representative timezone per country, used only when the geolocation
-/// service did not return a timezone of its own.
-const COUNTRY_TIMEZONE: &[(&str, &str)] = &[
-    ("US", "America/New_York"),
-    ("CA", "America/Toronto"),
-    ("MX", "America/Mexico_City"),
-    ("BR", "America/Sao_Paulo"),
-    ("AR", "America/Argentina/Buenos_Aires"),
-    ("GB", "Europe/London"),
-    ("IE", "Europe/Dublin"),
-    ("FR", "Europe/Paris"),
-    ("DE", "Europe/Berlin"),
-    ("AT", "Europe/Vienna"),
-    ("CH", "Europe/Zurich"),
-    ("IT", "Europe/Rome"),
-    ("ES", "Europe/Madrid"),
-    ("PT", "Europe/Lisbon"),
-    ("NL", "Europe/Amsterdam"),
-    ("BE", "Europe/Brussels"),
-    ("LU", "Europe/Luxembourg"),
-    ("SE", "Europe/Stockholm"),
-    ("NO", "Europe/Oslo"),
-    ("DK", "Europe/Copenhagen"),
-    ("FI", "Europe/Helsinki"),
-    ("PL", "Europe/Warsaw"),
-    ("CZ", "Europe/Prague"),
-    ("SK", "Europe/Bratislava"),
-    ("HU", "Europe/Budapest"),
-    ("RO", "Europe/Bucharest"),
-    ("RU", "Europe/Moscow"),
-    ("UA", "Europe/Kyiv"),
-    ("TR", "Europe/Istanbul"),
-    ("GR", "Europe/Athens"),
-    ("IL", "Asia/Jerusalem"),
-    ("IN", "Asia/Kolkata"),
-    ("CN", "Asia/Shanghai"),
-    ("JP", "Asia/Tokyo"),
-    ("KR", "Asia/Seoul"),
-    ("AU", "Australia/Sydney"),
-    ("NZ", "Pacific/Auckland"),
-    ("ZA", "Africa/Johannesburg"),
-    ("EG", "Africa/Cairo"),
-    ("NG", "Africa/Lagos"),
-    ("SG", "Asia/Singapore"),
-    ("HK", "Asia/Hong_Kong"),
-    ("TW", "Asia/Taipei"),
-    ("AE", "Asia/Dubai"),
+/// Common console-keymap families and their best-effort language/territory.
+const KEYMAP_PROFILES: &[(&str, &str, &str)] = &[
+    ("us", "en", "US"),
+    ("uk", "en", "GB"),
+    ("de", "de", "DE"),
+    ("sg", "de", "CH"),
+    ("fr", "fr", "FR"),
+    ("be", "nl", "BE"),
+    ("es", "es", "ES"),
+    ("la", "es", "MX"),
+    ("it", "it", "IT"),
+    ("pt", "pt", "PT"),
+    ("br", "pt", "BR"),
+    ("nl", "nl", "NL"),
+    ("sv", "sv", "SE"),
+    ("no", "nb", "NO"),
+    ("dk", "da", "DK"),
+    ("fi", "fi", "FI"),
+    ("pl", "pl", "PL"),
+    ("cz", "cs", "CZ"),
+    ("sk", "sk", "SK"),
+    ("hu", "hu", "HU"),
+    ("ro", "ro", "RO"),
+    ("ru", "ru", "RU"),
+    ("ua", "uk", "UA"),
+    ("tr", "tr", "TR"),
+    ("gr", "el", "GR"),
+    ("il", "he", "IL"),
+    ("jp106", "ja", "JP"),
+    ("kr", "ko", "KR"),
 ];
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::collections::HashMap;
+
+    use crate::arch::annotations::AnnotatedValue;
 
     fn annotated(values: &[&str]) -> Vec<AnnotatedValue<String>> {
         values
@@ -418,6 +290,19 @@ mod tests {
         let context = InstallContext::new();
         context.set::<GeoLocationKey>(location);
         context
+    }
+
+    #[tokio::test]
+    async fn provider_skips_lookup_when_question_has_a_previous_answer() {
+        let mut context = InstallContext::new();
+        context.set_answer(StepId::Timezone, "Europe/Berlin".to_string());
+
+        GeoLocationProvider::for_question(StepId::Timezone)
+            .provide(&context)
+            .await
+            .expect("provider should succeed without a lookup");
+
+        assert_eq!(context.get::<GeoLocationKey>(), None);
     }
 
     #[test]
@@ -490,75 +375,34 @@ mod tests {
     }
 
     #[test]
-    fn timezone_suggestion_falls_back_to_country() {
+    fn timezone_suggestion_needs_an_exact_timezone() {
         let context = context_with(GeoLocation {
             country_code: Some("DE".to_string()),
             timezone: None,
         });
         context.set::<TimezonesKey>(annotated(&["Europe/Berlin"]));
 
-        assert_eq!(
-            timezone_suggestion(&context).as_deref(),
-            Some("Europe/Berlin")
-        );
+        assert_eq!(timezone_suggestion(&context), None);
     }
 
     #[test]
-    fn locale_suggestion_matches_the_territory() {
-        let context = context_with(GeoLocation {
+    fn locale_suggestion_combines_keymap_language_with_geo_country() {
+        let mut context = context_with(GeoLocation {
             country_code: Some("DE".to_string()),
-            timezone: None,
+            timezone: Some("Europe/Berlin".to_string()),
         });
-        context.set::<LocalesKey>(annotated(&["en_US.UTF-8", "de_DE.UTF-8"]));
+        context.set_answer(StepId::Keymap, "de-latin1".to_string());
+        context.set::<LocalesKey>(annotated(&["de_AT.UTF-8", "hsb_DE.UTF-8", "de_DE.UTF-8"]));
 
         assert_eq!(locale_suggestion(&context).as_deref(), Some("de_DE.UTF-8"));
     }
 
     #[test]
-    fn locale_suggestion_prefers_the_primary_language() {
-        let context = context_with(GeoLocation {
-            country_code: Some("CH".to_string()),
-            timezone: None,
-        });
-        context.set::<LocalesKey>(annotated(&["fr_CH.UTF-8", "it_CH.UTF-8", "de_CH.UTF-8"]));
-
-        assert_eq!(locale_suggestion(&context).as_deref(), Some("de_CH.UTF-8"));
-    }
-
-    #[test]
-    fn keymap_suggestion_uses_country_override() {
-        let context = context_with(GeoLocation {
-            country_code: Some("GB".to_string()),
-            timezone: None,
-        });
-        context.set::<LocalesKey>(annotated(&["en_GB.UTF-8"]));
-        context.set::<KeymapsKey>(annotated(&["us", "uk"]));
-
-        assert_eq!(keymap_suggestion(&context).as_deref(), Some("uk"));
-    }
-
-    #[test]
-    fn keymap_suggestion_falls_back_to_language() {
-        let context = context_with(GeoLocation {
-            country_code: Some("DE".to_string()),
-            timezone: None,
-        });
-        context.set::<LocalesKey>(annotated(&["de_DE.UTF-8"]));
-        context.set::<KeymapsKey>(annotated(&["de-latin1"]));
-
-        assert_eq!(keymap_suggestion(&context).as_deref(), Some("de-latin1"));
-    }
-
-    #[test]
-    fn keymap_suggestion_is_none_when_absent_from_the_list() {
-        let context = context_with(GeoLocation {
-            country_code: Some("FR".to_string()),
-            timezone: None,
-        });
-        context.set::<LocalesKey>(annotated(&["fr_FR.UTF-8"]));
-        context.set::<KeymapsKey>(annotated(&["us"]));
-
-        assert_eq!(keymap_suggestion(&context), None);
+    fn keymap_profiles_keep_language_and_region_distinct() {
+        assert_eq!(keymap_profile("de-latin1"), Some(("de", "DE")));
+        assert_eq!(keymap_profile("uk"), Some(("en", "GB")));
+        assert_eq!(keymap_profile("br-abnt2"), Some(("pt", "BR")));
+        assert_eq!(keymap_profile("unknown"), None);
     }
 
     #[test]
@@ -582,12 +426,8 @@ mod tests {
     fn suggestions_are_none_without_a_detected_location() {
         let context = InstallContext::new();
         context.set::<TimezonesKey>(annotated(&["Europe/Berlin"]));
-        context.set::<LocalesKey>(annotated(&["de_DE.UTF-8"]));
-        context.set::<KeymapsKey>(annotated(&["de-latin1"]));
 
         assert_eq!(timezone_suggestion(&context), None);
-        assert_eq!(locale_suggestion(&context), None);
-        assert_eq!(keymap_suggestion(&context), None);
         assert_eq!(mirror_region_suggestion(&context), None);
     }
 }

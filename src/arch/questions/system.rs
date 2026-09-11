@@ -413,13 +413,10 @@ impl WizardStep for MirrorRegionQuestion {
 
         // Start on the previously chosen region; on the first pass, on the
         // region matching the detected country.
-        let preselect = context
-            .previous_answer(&StepId::MirrorRegion)
-            .cloned()
-            .or_else(|| crate::arch::geo::mirror_region_suggestion(context));
-
-        let result = super::select_one_preselecting(
-            preselect,
+        let result = super::select_one_with_suggestion(
+            context,
+            StepId::MirrorRegion,
+            self.suggested_answer(context),
             FzfWrapper::builder()
                 .header(HeaderBuilder::new(NerdFont::Globe, "Select Mirror Region").build())
                 .items(options),
@@ -438,8 +435,12 @@ impl WizardStep for MirrorRegionQuestion {
     fn data_providers(&self) -> Vec<Box<dyn crate::arch::engine::AsyncDataProvider>> {
         vec![
             Box::new(crate::arch::mirrors::MirrorlistProvider),
-            Box::new(GeoLocationProvider),
+            Box::new(GeoLocationProvider::for_question(StepId::MirrorRegion)),
         ]
+    }
+
+    fn suggested_answer(&self, context: &InstallContext) -> Option<String> {
+        crate::arch::geo::mirror_region_suggestion(context)
     }
 }
 
@@ -471,14 +472,13 @@ impl WizardStep for TimezoneQuestion {
 
         // Start on the previously chosen timezone; on the first pass, on the
         // one best matching the detected location, then the running system's.
-        let preselect = context
-            .previous_answer(&StepId::Timezone)
-            .cloned()
-            .or_else(|| crate::arch::geo::timezone_suggestion(context))
+        let suggestion = self
+            .suggested_answer(context)
             .or_else(crate::arch::timezones::detect_current_timezone);
-
-        let result = super::select_one_preselecting(
-            preselect,
+        let result = super::select_one_with_suggestion(
+            context,
+            StepId::Timezone,
+            suggestion,
             FzfWrapper::builder()
                 .header(HeaderBuilder::new(NerdFont::Clock, "Select Timezone").build())
                 .items(options),
@@ -497,8 +497,13 @@ impl WizardStep for TimezoneQuestion {
     fn data_providers(&self) -> Vec<Box<dyn crate::arch::engine::AsyncDataProvider>> {
         vec![
             Box::new(crate::arch::timezones::TimezoneProvider),
-            Box::new(GeoLocationProvider),
+            Box::new(GeoLocationProvider::for_question(StepId::Timezone)),
         ]
+    }
+
+    fn suggested_answer(&self, context: &InstallContext) -> Option<String> {
+        crate::arch::geo::timezone_suggestion(context)
+            .or_else(|| crate::arch::geo::timezone_suggestion_from_keymap(context))
     }
 }
 
@@ -533,15 +538,11 @@ impl WizardStep for KeymapQuestion {
             .collect();
 
         // Start on the previously chosen keymap; on the first pass, on the
-        // one best matching the detected location, then the running system's.
-        let preselect = context
-            .previous_answer(&StepId::Keymap)
-            .cloned()
-            .or_else(|| crate::arch::geo::keymap_suggestion(context))
-            .or_else(crate::arch::keymaps::detect_current_keymap);
-
-        let result = super::select_one_preselecting(
-            preselect,
+        // one the running system already uses.
+        let result = super::select_one_with_suggestion(
+            context,
+            StepId::Keymap,
+            crate::arch::keymaps::detect_current_keymap(),
             FzfWrapper::builder()
                 .header(HeaderBuilder::new(NerdFont::Keyboard, "Select Keymap").build())
                 .items(options),
@@ -551,13 +552,7 @@ impl WizardStep for KeymapQuestion {
     }
 
     fn data_providers(&self) -> Vec<Box<dyn crate::arch::engine::AsyncDataProvider>> {
-        vec![
-            Box::new(crate::arch::keymaps::KeymapProvider),
-            // The keymap suggestion derives its language fallback from the
-            // available locales, and keymap is asked before the locale step.
-            Box::new(crate::arch::locales::LocaleProvider),
-            Box::new(GeoLocationProvider),
-        ]
+        vec![Box::new(crate::arch::keymaps::KeymapProvider)]
     }
 }
 
@@ -592,15 +587,14 @@ impl WizardStep for LocaleQuestion {
             .collect();
 
         // Start on the previously chosen locale; on the first pass, on the
-        // one best matching the detected location, then the running system's.
-        let preselect = context
-            .previous_answer(&StepId::Locale)
-            .cloned()
-            .or_else(|| crate::arch::geo::locale_suggestion(context))
+        // one the running system already uses.
+        let suggestion = self
+            .suggested_answer(context)
             .or_else(crate::arch::locales::detect_current_locale);
-
-        let result = super::select_one_preselecting(
-            preselect,
+        let result = super::select_one_with_suggestion(
+            context,
+            StepId::Locale,
+            suggestion,
             FzfWrapper::builder()
                 .header(HeaderBuilder::new(NerdFont::Language, "Select System Locale").build())
                 .items(options),
@@ -612,8 +606,12 @@ impl WizardStep for LocaleQuestion {
     fn data_providers(&self) -> Vec<Box<dyn crate::arch::engine::AsyncDataProvider>> {
         vec![
             Box::new(crate::arch::locales::LocaleProvider),
-            Box::new(GeoLocationProvider),
+            Box::new(crate::arch::timezones::TimezoneCountriesProvider),
         ]
+    }
+
+    fn suggested_answer(&self, context: &InstallContext) -> Option<String> {
+        crate::arch::geo::locale_suggestion(context)
     }
 }
 

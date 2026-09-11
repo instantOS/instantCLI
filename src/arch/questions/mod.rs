@@ -26,7 +26,19 @@ pub(crate) fn select_one_with_preselect<T: FzfSelectable + Clone>(
     id: StepId,
     selection: ItemSelection<T>,
 ) -> Result<DialogOutcome<T>> {
-    select_one_preselecting(context.previous_answer(&id).cloned(), selection)
+    select_one_with_suggestion(context, id, None, selection)
+}
+
+/// Preselect the previous answer when available, otherwise a best-effort
+/// suggestion supplied by the question.
+pub(crate) fn select_one_with_suggestion<T: FzfSelectable + Clone>(
+    context: &InstallContext,
+    id: StepId,
+    suggestion: Option<String>,
+    selection: ItemSelection<T>,
+) -> Result<DialogOutcome<T>> {
+    let preselect = context.previous_answer(&id).cloned().or(suggestion);
+    select_one_preselecting(preselect, selection)
 }
 
 /// Like [`select_one_with_preselect`], but with an explicit target value.
