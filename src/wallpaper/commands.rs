@@ -3,6 +3,8 @@ use colored::*;
 use std::path::PathBuf;
 
 use crate::common::compositor::CompositorType;
+use crate::common::package::{Dependency, ensure_all};
+use crate::settings::deps::{AWWW, HYPRPAPER, SWAYBG};
 use crate::settings::store::{
     SettingsStore, WALLPAPER_BG_COLOR_KEY, WALLPAPER_FG_COLOR_KEY, WALLPAPER_LOGO_KEY,
     WALLPAPER_PATH_KEY,
@@ -10,6 +12,30 @@ use crate::settings::store::{
 use crate::wallpaper::cli::{SetArgs, WallpaperCommands};
 
 use crate::wallpaper::{awww, gnome, hyprpaper, instantwm, kwin, sway, x11};
+
+/// Run a wallpaper command from synchronous code, such as an assist action.
+///
+/// Assist actions execute outside the CLI's async runtime, so they need their
+/// own runtime to drive the shared asynchronous command handlers.
+pub fn run_command_blocking(command: WallpaperCommands) -> Result<()> {
+    tokio::runtime::Runtime::new()
+        .context("Failed to create async runtime for wallpaper command")?
+        .block_on(handle_wallpaper_command(command, false))
+}
+
+/// Ensure the compositor-specific packages needed to apply a wallpaper.
+///
+/// Most compositors apply wallpapers with tools they already ship; Hyprland,
+/// niri, and instantWM rely on a separate backend that may need installing.
+pub fn ensure_backend_deps() -> Result<bool> {
+    let deps: &[&'static Dependency] = match CompositorType::detect() {
+        CompositorType::Hyprland => &[&HYPRPAPER],
+        CompositorType::Niri => &[&AWWW],
+        CompositorType::InstantWM => &[&SWAYBG],
+        _ => &[],
+    };
+    Ok(ensure_all(deps)?.is_available())
+}
 
 pub async fn handle_wallpaper_command(command: WallpaperCommands, _debug: bool) -> Result<()> {
     match command {

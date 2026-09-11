@@ -386,6 +386,41 @@ pub const ASSISTS: &[AssistEntry] = &[
             }),
         ],
     }),
+    AssistEntry::Group(AssistGroup {
+        key: 'w',
+        description: "Wallpaper: Set, fetch, and repair wallpapers",
+        icon: NerdFont::Image,
+        children: &[
+            AssistEntry::Action(AssistAction {
+                key: 'c',
+                description: "Colored Wallpaper: Solid-color wallpaper with the instantOS logo",
+                icon: NerdFont::Palette,
+                dependencies: &[&IMAGEMAGICK],
+                execute: actions::wallpaper::colored,
+            }),
+            AssistEntry::Action(AssistAction {
+                key: 'r',
+                description: "Repair Wallpaper: Re-apply or regenerate a broken wallpaper",
+                icon: NerdFont::Wrench,
+                dependencies: &[&IMAGEMAGICK],
+                execute: actions::wallpaper::repair,
+            }),
+            AssistEntry::Action(AssistAction {
+                key: 's',
+                description: "Set from File: Pick a custom image as your wallpaper",
+                icon: NerdFont::FolderOpen,
+                dependencies: &[&YAZI],
+                execute: actions::wallpaper::set_from_file,
+            }),
+            AssistEntry::Action(AssistAction {
+                key: 'w',
+                description: "Random Wallpaper: Fetch a random wallpaper from Wallhaven",
+                icon: NerdFont::Refresh,
+                dependencies: &[&IMAGEMAGICK],
+                execute: actions::wallpaper::random,
+            }),
+        ],
+    }),
 ];
 
 impl AssistEntry {
@@ -674,6 +709,55 @@ mod tests {
         assert_eq!(
             action.unwrap().description,
             "Keyhelp: Explore and search instantWM keybinds"
+        );
+    }
+
+    #[test]
+    fn test_wallpaper_group_is_not_an_action() {
+        assert!(find_action("w").is_none());
+        assert_eq!(
+            find_group_entries("w").map(|entries| entries.len()),
+            Some(4)
+        );
+    }
+
+    #[test]
+    fn test_find_wallpaper_random_action() {
+        let action = find_action("ww");
+        assert!(action.is_some());
+        assert_eq!(
+            action.unwrap().description,
+            "Random Wallpaper: Fetch a random wallpaper from Wallhaven"
+        );
+    }
+
+    #[test]
+    fn test_find_wallpaper_colored_action() {
+        let action = find_action("wc");
+        assert!(action.is_some());
+        assert_eq!(
+            action.unwrap().description,
+            "Colored Wallpaper: Solid-color wallpaper with the instantOS logo"
+        );
+    }
+
+    #[test]
+    fn test_find_wallpaper_set_from_file_action() {
+        let action = find_action("ws");
+        assert!(action.is_some());
+        assert_eq!(
+            action.unwrap().description,
+            "Set from File: Pick a custom image as your wallpaper"
+        );
+    }
+
+    #[test]
+    fn test_find_wallpaper_repair_action() {
+        let action = find_action("wr");
+        assert!(action.is_some());
+        assert_eq!(
+            action.unwrap().description,
+            "Repair Wallpaper: Re-apply or regenerate a broken wallpaper"
         );
     }
 }
