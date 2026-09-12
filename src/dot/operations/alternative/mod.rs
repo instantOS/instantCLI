@@ -14,7 +14,8 @@ mod lists;
 mod picker;
 mod select_flow;
 
+pub use action::Action;
 pub use apply::add_to_destination;
 pub(crate) use create_flow::create_and_activate_subdir;
 pub use create_flow::pick_destination_and_add;
-pub use handle::{AlternativeOptions, handle_alternative};
+pub use handle::handle_alternative;

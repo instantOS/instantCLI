@@ -230,15 +230,8 @@ pub fn dot_menu(debug: bool) -> Result<()> {
             DotMenuEntry::AlternateFiles => {
                 crate::dot::operations::alternative::handle_alternative(
                     &config,
-                    crate::dot::operations::alternative::AlternativeOptions {
-                        path: "~",
-                        reset: false,
-                        create: false,
-                        list: false,
-                        set: None,
-                        repo: None,
-                        subdir: None,
-                    },
+                    "~",
+                    crate::dot::operations::alternative::Action::Select,
                 )?;
                 reload_menu_state(&mut config, &mut db)?;
             }

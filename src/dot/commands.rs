@@ -191,27 +191,8 @@ pub enum DotCommands {
     },
     /// Set or view which repository/subdirectory a dotfile is sourced from
     Alternative {
-        /// Path to the dotfile or directory (defaults to ~/ to browse all)
-        #[arg(value_hint = ValueHint::AnyPath, default_value = "~")]
-        path: String,
-        /// Remove the override for this file (use default priority)
-        #[arg(long)]
-        reset: bool,
-        /// Create the file in a new repo/subdir if it doesn't exist there
-        #[arg(long)]
-        create: bool,
-        /// List available alternatives and exit
-        #[arg(long)]
-        list: bool,
-        /// Set source to REPO or REPO/SUBDIR (non-interactive)
-        #[arg(long, value_name = "REPO[/SUBDIR]")]
-        set: Option<String>,
-        /// Repository name (with --create for non-interactive mode)
-        #[arg(long, requires = "create")]
-        repo: Option<String>,
-        /// Subdirectory name (with --create for non-interactive mode)
-        #[arg(long, requires = "repo")]
-        subdir: Option<String>,
+        #[command(subcommand)]
+        command: Option<AlternativeCommands>,
     },
     /// Manage repository priority order
     Priority {
@@ -241,6 +222,53 @@ pub enum DotCommands {
         /// Show what would be deleted without actually deleting
         #[arg(long)]
         dry_run: bool,
+    },
+}
+
+/// Actions for the alternative command.
+///
+/// Each action is a separate subcommand so contradictory invocations
+/// (e.g. reset and set at the same time) are rejected by clap instead of
+/// being resolved by a silent precedence chain.
+#[derive(Subcommand, Debug)]
+pub enum AlternativeCommands {
+    /// Interactively pick the source for a dotfile (or browse a directory)
+    Browse {
+        /// Path to the dotfile or directory (defaults to ~/ to browse all)
+        #[arg(value_hint = ValueHint::AnyPath, default_value = "~")]
+        path: String,
+    },
+    /// List available alternatives for a dotfile or directory
+    List {
+        /// Path to the dotfile or directory (defaults to ~/ to browse all)
+        #[arg(value_hint = ValueHint::AnyPath, default_value = "~")]
+        path: String,
+    },
+    /// Remove the override for a dotfile (use default priority)
+    Reset {
+        /// Path to the dotfile
+        #[arg(value_hint = ValueHint::AnyPath)]
+        path: String,
+    },
+    /// Set the source for a dotfile to REPO or REPO/SUBDIR (non-interactive)
+    Set {
+        /// Path to the dotfile
+        #[arg(value_hint = ValueHint::AnyPath)]
+        path: String,
+        /// Repository name or REPO/SUBDIR
+        repo: String,
+    },
+    /// Create the file in a repo/subdir (interactive destination picker without --repo)
+    Create {
+        /// Path to the dotfile or directory (defaults to ~/ to browse all)
+        #[arg(value_hint = ValueHint::AnyPath, default_value = "~")]
+        path: String,
+        /// Repository name (interactive destination picker if omitted)
+        #[arg(long)]
+        repo: Option<String>,
+        /// Subdirectory name (requires --repo, defaults to "dots")
+        #[arg(long, requires = "repo")]
+        subdir: Option<String>,
     },
 }
 
@@ -669,6 +697,32 @@ fn handle_priority_command(
     Ok(())
 }
 
+/// Resolve the alternative subcommand to a path and the action to perform.
+fn alternative_action(
+    command: Option<&AlternativeCommands>,
+) -> (String, super::operations::alternative::Action) {
+    use super::operations::alternative::Action;
+    use AlternativeCommands as Alt;
+
+    match command {
+        None => ("~".to_string(), Action::Select),
+        Some(Alt::Browse { path }) => (path.clone(), Action::Select),
+        Some(Alt::List { path }) => (path.clone(), Action::List),
+        Some(Alt::Reset { path }) => (path.clone(), Action::Reset),
+        Some(Alt::Set { path, repo }) => (path.clone(), Action::set_direct(repo)),
+        Some(Alt::Create { path, repo, subdir }) => (
+            path.clone(),
+            match repo {
+                Some(repo_name) => Action::CreateDirect {
+                    repo: repo_name.clone(),
+                    subdir: subdir.clone().unwrap_or_else(|| "dots".to_string()),
+                },
+                None => Action::Create,
+            },
+        ),
+    }
+}
+
 pub fn handle_dot_command(
     command: &DotCommands,
     config_path: Option<&str>,
@@ -864,27 +918,9 @@ pub fn handle_dot_command(
         DotCommands::Git { args } => {
             super::git_run_any(&config, args, debug)?;
         }
-        DotCommands::Alternative {
-            path,
-            reset,
-            create,
-            list,
-            set,
-            repo,
-            subdir,
-        } => {
-            super::operations::alternative::handle_alternative(
-                &config,
-                super::operations::alternative::AlternativeOptions {
-                    path,
-                    reset: *reset,
-                    create: *create,
-                    list: *list,
-                    set: set.as_deref(),
-                    repo: repo.as_deref(),
-                    subdir: subdir.as_deref(),
-                },
-            )?;
+        DotCommands::Alternative { command } => {
+            let (path, action) = alternative_action(command.as_ref());
+            super::operations::alternative::handle_alternative(&config, &path, action)?;
         }
         DotCommands::Priority { command } => {
             handle_priority_command(&mut config, command, config_path)?;

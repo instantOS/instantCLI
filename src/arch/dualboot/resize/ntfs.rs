@@ -1,6 +1,6 @@
 //! NTFS resize detection
 
-use crate::arch::dualboot::types::ResizeInfo;
+use crate::arch::dualboot::types::{ResizeInfo, Shrinkability};
 use std::process::Command;
 
 /// Get NTFS resize information using ntfsresize
@@ -19,9 +19,9 @@ pub fn get_ntfs_resize_info(device: &str) -> ResizeInfo {
                 // Check for common issues
                 if stderr.contains("hibernat") || stdout.contains("hibernat") {
                     return ResizeInfo {
-                        can_shrink: false,
-                        min_size_bytes: None,
-                        reason: Some("Windows is hibernated".to_string()),
+                        shrinkability: Shrinkability::NotShrinkable {
+                            reason: "Windows is hibernated".to_string(),
+                        },
                         prerequisites: vec![
                             "Boot into Windows".to_string(),
                             "Disable Fast Startup in Power Options".to_string(),
@@ -31,9 +31,9 @@ pub fn get_ntfs_resize_info(device: &str) -> ResizeInfo {
                 }
                 if stderr.contains("inconsistent") || stdout.contains("inconsistent") {
                     return ResizeInfo {
-                        can_shrink: false,
-                        min_size_bytes: None,
-                        reason: Some("NTFS filesystem has errors".to_string()),
+                        shrinkability: Shrinkability::NotShrinkable {
+                            reason: "NTFS filesystem has errors".to_string(),
+                        },
                         prerequisites: vec![
                             "Boot into Windows".to_string(),
                             "Run: chkdsk /f C:".to_string(),
@@ -41,9 +41,9 @@ pub fn get_ntfs_resize_info(device: &str) -> ResizeInfo {
                     };
                 }
                 return ResizeInfo {
-                    can_shrink: false,
-                    min_size_bytes: None,
-                    reason: Some(format!("ntfsresize failed: {}", stderr.trim())),
+                    shrinkability: Shrinkability::NotShrinkable {
+                        reason: format!("ntfsresize failed: {}", stderr.trim()),
+                    },
                     prerequisites: vec![],
                 };
             }
@@ -54,26 +54,26 @@ pub fn get_ntfs_resize_info(device: &str) -> ResizeInfo {
                 // Add 10% safety margin
                 let safe_min = (min_bytes as f64 * 1.1) as u64;
                 return ResizeInfo {
-                    can_shrink: true,
-                    min_size_bytes: Some(safe_min),
-                    reason: None,
+                    shrinkability: Shrinkability::Shrinkable {
+                        min_size_bytes: safe_min,
+                    },
                     prerequisites: vec![],
                 };
             }
 
             ResizeInfo {
-                can_shrink: true,
-                min_size_bytes: None,
-                reason: Some("Could not determine minimum size".to_string()),
+                shrinkability: Shrinkability::MinUnknown {
+                    reason: "Could not determine minimum size".to_string(),
+                },
                 prerequisites: vec![],
             }
         }
         Err(e) => {
             // ntfsresize not installed or other error
             ResizeInfo {
-                can_shrink: false,
-                min_size_bytes: None,
-                reason: Some(format!("ntfsresize not available: {}", e)),
+                shrinkability: Shrinkability::NotShrinkable {
+                    reason: format!("ntfsresize not available: {}", e),
+                },
                 prerequisites: vec!["Install ntfsprogs package".to_string()],
             }
         }
@@ -119,9 +119,11 @@ mod tests {
         let info = get_ntfs_resize_info(disk.path_str());
 
         // On a fresh NTFS, it should be shrinkable
-        assert!(info.can_shrink);
+        assert!(matches!(
+            info.shrinkability,
+            Shrinkability::Shrinkable { .. }
+        ));
         // It should have found a minimum size
-        assert!(info.min_size_bytes.is_some());
-        assert!(info.reason.is_none());
+        assert_eq!(info.reason(), None);
     }
 }

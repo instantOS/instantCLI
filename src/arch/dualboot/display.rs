@@ -3,7 +3,8 @@
 //! Provides pretty-printed output for disk and partition information.
 //! Uses simple row-based output similar to `ins arch info`.
 
-use crate::arch::dualboot::types::{DiskInfo, OSType, PartitionInfo};
+use crate::arch::dualboot::types::{DiskInfo, OSType, PartitionInfo, Shrinkability};
+use crate::common::format::format_size;
 use crate::ui::nerd_font::NerdFont;
 use colored::Colorize;
 
@@ -95,28 +96,24 @@ pub fn display_partition_row(partition: &PartitionInfo) {
 
     let resize_text = match &partition.resize_info {
         Some(info) if partition.is_efi => {
-            let reason = info
-                .reason
-                .as_ref()
-                .cloned()
-                .unwrap_or_else(|| "Reuse for dual boot".to_string());
+            let reason = info.reason().unwrap_or("Reuse for dual boot");
             format!("{} {}", NerdFont::Check.to_string().green(), reason.green())
         }
-        Some(info) if info.can_shrink => {
-            if let Some(min) = info.min_size_human() {
-                format!("{} min: {}", NerdFont::Check.to_string().green(), min)
-            } else {
-                format!("{} shrinkable", NerdFont::Check.to_string().green())
+        Some(info) => match &info.shrinkability {
+            Shrinkability::Shrinkable { min_size_bytes } => format!(
+                "{} min: {}",
+                NerdFont::Check.to_string().green(),
+                format_size(*min_size_bytes)
+            ),
+            Shrinkability::MinUnknown { reason } => format!(
+                "{} shrinkable (min unknown: {})",
+                NerdFont::Check.to_string().green(),
+                reason
+            ),
+            Shrinkability::NotShrinkable { reason } => {
+                format!("{} {}", NerdFont::Cross.to_string().red(), reason.dimmed())
             }
-        }
-        Some(info) => {
-            let reason = info
-                .reason
-                .as_ref()
-                .cloned()
-                .unwrap_or_else(|| "Not shrinkable".to_string());
-            format!("{} {}", NerdFont::Cross.to_string().red(), reason.dimmed())
-        }
+        },
         None => "-".dimmed().to_string(),
     };
 
@@ -131,13 +128,11 @@ pub fn display_partition_row(partition: &PartitionInfo) {
     );
 
     if let Some(info) = &partition.resize_info {
-        if info.can_shrink || info.reason.is_some() {
-            println!(
-                "      {} {}",
-                NerdFont::ArrowSubItem.to_string().dimmed(),
-                resize_text
-            );
-        }
+        println!(
+            "      {} {}",
+            NerdFont::ArrowSubItem.to_string().dimmed(),
+            resize_text
+        );
 
         if !info.prerequisites.is_empty() {
             for prereq in &info.prerequisites {

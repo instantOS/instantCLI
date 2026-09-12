@@ -1,6 +1,6 @@
 //! ext2/3/4 resize detection
 
-use crate::arch::dualboot::types::ResizeInfo;
+use crate::arch::dualboot::types::{ResizeInfo, Shrinkability};
 use std::process::Command;
 
 /// Get ext2/3/4 resize information using dumpe2fs
@@ -26,25 +26,25 @@ pub fn get_ext_resize_info(device: &str, mount_point: Option<&str>) -> ResizeInf
             }
 
             ResizeInfo {
-                can_shrink: true,
-                min_size_bytes: Some(min_size),
-                reason: None,
+                shrinkability: Shrinkability::Shrinkable {
+                    min_size_bytes: min_size,
+                },
                 prerequisites,
             }
         }
         Ok(output) => {
             let stderr = String::from_utf8_lossy(&output.stderr);
             ResizeInfo {
-                can_shrink: false,
-                min_size_bytes: None,
-                reason: Some(format!("dumpe2fs failed: {}", stderr.trim())),
+                shrinkability: Shrinkability::NotShrinkable {
+                    reason: format!("dumpe2fs failed: {}", stderr.trim()),
+                },
                 prerequisites: vec![],
             }
         }
         Err(e) => ResizeInfo {
-            can_shrink: false,
-            min_size_bytes: None,
-            reason: Some(format!("dumpe2fs not available: {}", e)),
+            shrinkability: Shrinkability::NotShrinkable {
+                reason: format!("dumpe2fs not available: {}", e),
+            },
             prerequisites: vec!["Install e2fsprogs package".to_string()],
         },
     }
@@ -72,8 +72,10 @@ mod tests {
         disk.format_ext4();
 
         let info = get_ext_resize_info(disk.path_str(), None);
-        assert!(info.can_shrink);
-        assert!(info.min_size_bytes.is_some());
+        assert!(matches!(
+            info.shrinkability,
+            Shrinkability::Shrinkable { .. }
+        ));
         assert_eq!(info.prerequisites.len(), 0);
     }
 
@@ -84,7 +86,10 @@ mod tests {
 
         // Simulate it being mounted
         let info = get_ext_resize_info(disk.path_str(), Some("/mnt/test"));
-        assert!(info.can_shrink);
+        assert!(matches!(
+            info.shrinkability,
+            Shrinkability::Shrinkable { .. }
+        ));
         assert!(
             info.prerequisites
                 .contains(&"Unmount filesystem before resizing".to_string())

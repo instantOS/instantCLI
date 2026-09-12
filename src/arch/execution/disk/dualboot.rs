@@ -2,7 +2,7 @@ use super::mount;
 use super::probe::{get_current_partitions, get_partition_size_bytes};
 use super::util::{align_down, parse_partition_number};
 use crate::arch::dualboot::parsing::{PartitionLayout, get_free_regions, get_partition_layout};
-use crate::arch::dualboot::types::{FreeRegion, MIN_ESP_SIZE};
+use crate::arch::dualboot::types::{FreeRegion, MIN_ESP_SIZE, Shrinkability};
 use crate::arch::dualboot::{DualBootDisksKey, PartitionTableType};
 use crate::arch::engine::{
     DualBootPartitionPaths, DualBootPartitions, EspNeedsFormat, InstallContext, StepId,
@@ -200,13 +200,15 @@ fn auto_resize_partition(
         .as_ref()
         .context("No resize info for partition")?;
 
-    if !resize_info.can_shrink {
-        anyhow::bail!("Selected partition is not shrinkable");
-    }
-
-    let min_size_bytes = resize_info
-        .min_size_bytes
-        .context("Automatic resize requires a known minimum size")?;
+    let min_size_bytes = match &resize_info.shrinkability {
+        Shrinkability::Shrinkable { min_size_bytes } => *min_size_bytes,
+        Shrinkability::MinUnknown { reason } => {
+            anyhow::bail!("Cannot auto-resize {partition_path}: {reason}");
+        }
+        Shrinkability::NotShrinkable { reason } => {
+            anyhow::bail!("Cannot auto-resize {partition_path}: {reason}");
+        }
+    };
 
     let fs_type = partition
         .filesystem

@@ -1,5 +1,4 @@
-use crate::arch::dualboot::types::ResizeInfo;
-use crate::arch::dualboot::{ResizeStatus, ResizeVerifier};
+use crate::arch::dualboot::{ResizeStatus, ResizeVerifier, Shrinkability};
 use crate::arch::engine::{InstallContext, StepId, StepOutcome, WizardStep};
 use crate::common::format::format_size;
 use crate::menu_utils::{ConfirmResult, FzfWrapper};
@@ -86,19 +85,30 @@ impl WizardStep for ResizeWorkflowStep {
             .as_ref()
             .context("No resize info for partition")?;
 
-        if !resize_info.can_shrink {
-            return Ok(StepOutcome::revisit(
-                StepId::DualBootPartition,
-                "The selected partition cannot be resized. Choose a different partition.",
-            ));
-        }
+        let min_size = match &resize_info.shrinkability {
+            Shrinkability::Shrinkable { min_size_bytes } => *min_size_bytes,
+            Shrinkability::MinUnknown { reason } => {
+                return Ok(StepOutcome::revisit(
+                    StepId::DualBootPartition,
+                    format!(
+                        "The selected partition cannot be resized automatically: {reason}. Choose a different partition."
+                    ),
+                ));
+            }
+            Shrinkability::NotShrinkable { reason } => {
+                return Ok(StepOutcome::revisit(
+                    StepId::DualBootPartition,
+                    format!(
+                        "The selected partition cannot be resized: {reason}. Choose a different partition."
+                    ),
+                ));
+            }
+        };
 
         let original_size = partition.size_bytes;
         let target_size = original_size.saturating_sub(new_linux_size_bytes);
 
-        if let Some(min_size) = resize_info.min_size_bytes
-            && target_size < min_size
-        {
+        if target_size < min_size {
             return Ok(StepOutcome::revisit(
                 StepId::DualBootSize,
                 format!(
@@ -108,11 +118,10 @@ impl WizardStep for ResizeWorkflowStep {
             ));
         }
 
-        let auto_resize =
-            is_auto_resize_supported(fs_type, resize_info).then(|| AutoResizeContext {
-                resize_info: resize_info.clone(),
-                mount_point: partition.mount_point.clone(),
-            });
+        let auto_resize = is_auto_resize_supported(fs_type).then(|| AutoResizeContext {
+            prerequisites: resize_info.prerequisites.clone(),
+            mount_point: partition.mount_point.clone(),
+        });
 
         let ctx = ResizeFlowContext {
             disk_path,
@@ -129,13 +138,13 @@ impl WizardStep for ResizeWorkflowStep {
     }
 }
 
-fn is_auto_resize_supported(fs_type: &str, resize_info: &ResizeInfo) -> bool {
-    matches!(fs_type, "ntfs" | "ext4" | "ext3" | "ext2") && resize_info.min_size_bytes.is_some()
+fn is_auto_resize_supported(fs_type: &str) -> bool {
+    matches!(fs_type, "ntfs" | "ext4" | "ext3" | "ext2")
 }
 
 #[derive(Clone)]
 struct AutoResizeContext {
-    resize_info: ResizeInfo,
+    prerequisites: Vec<String>,
     mount_point: Option<String>,
 }
 
@@ -158,7 +167,7 @@ fn confirm_auto_resize(
     original_size: u64,
     target_size: u64,
     new_linux_size_bytes: u64,
-    resize_info: &ResizeInfo,
+    prerequisites: &[String],
     mount_point: Option<&str>,
 ) -> Result<bool> {
     let mut message = format!(
@@ -183,9 +192,9 @@ fn confirm_auto_resize(
         ));
     }
 
-    if !resize_info.prerequisites.is_empty() {
+    if !prerequisites.is_empty() {
         message.push_str("\n\nPrerequisites:");
-        for prereq in &resize_info.prerequisites {
+        for prereq in prerequisites {
             message.push_str(&format!("\n- {}", prereq));
         }
     }
@@ -255,7 +264,7 @@ async fn run_manual_resize_flow(ctx: ResizeFlowContext<'_>) -> Result<StepOutcom
                             ctx.original_size,
                             ctx.target_size,
                             ctx.linux_size_bytes,
-                            &auto_resize.resize_info,
+                            &auto_resize.prerequisites,
                             auto_resize.mount_point.as_deref(),
                         )?
                     {

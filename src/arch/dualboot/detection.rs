@@ -6,7 +6,7 @@
 use crate::arch::dualboot::os_detection::detect_os_from_info;
 use crate::arch::dualboot::parsing;
 use crate::arch::dualboot::types::{
-    DiskAnalysis, DiskInfo, MIN_ESP_SIZE, PartitionTableType, ResizeInfo,
+    DiskAnalysis, DiskInfo, MIN_ESP_SIZE, PartitionTableType, ResizeInfo, Shrinkability,
 };
 use crate::common::format::format_size;
 use anyhow::Result;
@@ -105,19 +105,20 @@ pub fn analyze_all_disks() -> Result<Vec<DiskAnalysis>> {
 fn get_efi_resize_info(size_bytes: u64) -> ResizeInfo {
     if size_bytes < MIN_ESP_SIZE {
         ResizeInfo {
-            can_shrink: false,
-            min_size_bytes: None,
-            reason: Some(format!(
-                "ESP is small ({}) - recommend 260MB+ for dual boot",
-                format_size(size_bytes)
-            )),
+            shrinkability: Shrinkability::NotShrinkable {
+                reason: format!(
+                    "ESP is small ({}) - recommend 260MB+ for dual boot",
+                    format_size(size_bytes)
+                ),
+            },
             prerequisites: vec![],
         }
     } else {
         ResizeInfo {
-            can_shrink: false, // Don't shrink ESP
-            min_size_bytes: None,
-            reason: Some("Reuse for dual boot (do not reformat)".to_string()),
+            // Don't shrink ESP
+            shrinkability: Shrinkability::NotShrinkable {
+                reason: "Reuse for dual boot (do not reformat)".to_string(),
+            },
             prerequisites: vec![],
         }
     }
@@ -148,17 +149,17 @@ mod tests {
     #[test]
     fn test_resize_info_min_size_human() {
         let info = ResizeInfo {
-            can_shrink: true,
-            min_size_bytes: Some(1073741824),
-            reason: None,
+            shrinkability: Shrinkability::Shrinkable {
+                min_size_bytes: 1073741824,
+            },
             prerequisites: vec![],
         };
         assert_eq!(info.min_size_human(), Some("1.0 GB".to_string()));
 
         let info_none = ResizeInfo {
-            can_shrink: false,
-            min_size_bytes: None,
-            reason: None,
+            shrinkability: Shrinkability::NotShrinkable {
+                reason: "nope".to_string(),
+            },
             prerequisites: vec![],
         };
         assert_eq!(info_none.min_size_human(), None);

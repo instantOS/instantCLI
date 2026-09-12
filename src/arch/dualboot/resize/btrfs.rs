@@ -1,15 +1,15 @@
 //! Btrfs resize detection
 
-use crate::arch::dualboot::types::ResizeInfo;
+use crate::arch::dualboot::types::{ResizeInfo, Shrinkability};
 use std::process::Command;
 
 /// Get Btrfs resize information using btrfs filesystem usage
 pub fn get_btrfs_resize_info(mount_point: Option<&str>) -> ResizeInfo {
     let Some(mp) = mount_point else {
         return ResizeInfo {
-            can_shrink: true,
-            min_size_bytes: None,
-            reason: Some("Btrfs must be mounted to determine min size".to_string()),
+            shrinkability: Shrinkability::MinUnknown {
+                reason: "Btrfs must be mounted to determine min size".to_string(),
+            },
             prerequisites: vec!["Mount filesystem to get accurate size info".to_string()],
         };
     };
@@ -32,9 +32,9 @@ pub fn get_btrfs_resize_info(mount_point: Option<&str>) -> ResizeInfo {
                     // Add 10% safety margin
                     let min_size = (used_bytes as f64 * 1.1) as u64;
                     return ResizeInfo {
-                        can_shrink: true,
-                        min_size_bytes: Some(min_size),
-                        reason: None,
+                        shrinkability: Shrinkability::Shrinkable {
+                            min_size_bytes: min_size,
+                        },
                         prerequisites: vec![],
                     };
                 }
@@ -45,33 +45,33 @@ pub fn get_btrfs_resize_info(mount_point: Option<&str>) -> ResizeInfo {
                 // Add 10% safety margin
                 let min_size = (used as f64 * 1.1) as u64;
                 return ResizeInfo {
-                    can_shrink: true,
-                    min_size_bytes: Some(min_size),
-                    reason: None,
+                    shrinkability: Shrinkability::Shrinkable {
+                        min_size_bytes: min_size,
+                    },
                     prerequisites: vec![],
                 };
             }
 
             ResizeInfo {
-                can_shrink: true,
-                min_size_bytes: None,
-                reason: Some("Could not determine minimum size".to_string()),
+                shrinkability: Shrinkability::MinUnknown {
+                    reason: "Could not determine minimum size".to_string(),
+                },
                 prerequisites: vec![],
             }
         }
         Ok(output) => {
             let stderr = String::from_utf8_lossy(&output.stderr);
             ResizeInfo {
-                can_shrink: true,
-                min_size_bytes: None,
-                reason: Some(format!("btrfs usage failed: {}", stderr.trim())),
+                shrinkability: Shrinkability::MinUnknown {
+                    reason: format!("btrfs usage failed: {}", stderr.trim()),
+                },
                 prerequisites: vec![],
             }
         }
         Err(e) => ResizeInfo {
-            can_shrink: true,
-            min_size_bytes: None,
-            reason: Some(format!("btrfs command not available: {}", e)),
+            shrinkability: Shrinkability::MinUnknown {
+                reason: format!("btrfs command not available: {}", e),
+            },
             prerequisites: vec!["Install btrfs-progs package".to_string()],
         },
     }

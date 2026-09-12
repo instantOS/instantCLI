@@ -1,3 +1,4 @@
+use crate::arch::dualboot::types::Shrinkability;
 use crate::arch::engine::{InstallContext, StepId, StepOutcome, WizardStep};
 use crate::arch::questions::partition::partition_belongs_to_disk;
 use crate::common::format::format_size;
@@ -49,16 +50,10 @@ impl FzfSelectable for DualBootPartitionOption {
 
     fn fzf_preview(&self) -> FzfPreview {
         let resize_info = self.info.resize_info.as_ref();
-        let can_shrink = resize_info.map(|info| info.can_shrink).unwrap_or(false);
-        let resize_status = if can_shrink {
-            "Shrinkable"
-        } else {
-            "Not shrinkable"
-        };
-        let resize_color = if can_shrink {
-            colors::GREEN
-        } else {
-            colors::YELLOW
+        let (resize_status, resize_color) = match resize_info.map(|info| &info.shrinkability) {
+            Some(Shrinkability::Shrinkable { .. }) => ("Shrinkable", colors::GREEN),
+            Some(Shrinkability::MinUnknown { .. }) => ("Shrinkable (min unknown)", colors::YELLOW),
+            _ => ("Not shrinkable", colors::YELLOW),
         };
 
         let mut builder = PreviewBuilder::new()
@@ -78,7 +73,7 @@ impl FzfSelectable for DualBootPartitionOption {
             if let Some(min_size) = info.min_size_human() {
                 builder = builder.field_indented("Min size", &min_size);
             }
-            if let Some(reason) = info.reason.as_deref() {
+            if let Some(reason) = info.reason() {
                 builder = builder.field_indented("Reason", reason);
             }
             if !info.prerequisites.is_empty() {
@@ -330,12 +325,16 @@ impl WizardStep for DualBootSizeQuestion {
             .as_ref()
             .context("No resize info for partition")?;
 
-        if !resize_info.can_shrink {
-            bail!("Partition is not shrinkable");
-        }
-
         let partition_size = partition.size_bytes;
-        let min_existing = resize_info.min_size_bytes.unwrap_or(0);
+        let min_existing = match &resize_info.shrinkability {
+            Shrinkability::Shrinkable { min_size_bytes } => *min_size_bytes,
+            Shrinkability::MinUnknown { reason } => {
+                bail!("Cannot determine minimum size for this partition: {reason}");
+            }
+            Shrinkability::NotShrinkable { reason } => {
+                bail!("Partition is not shrinkable: {reason}");
+            }
+        };
 
         // Minimum for Linux + swap (swap can be capped but stays at least 1GB)
         const GB: u64 = 1024 * 1024 * 1024;

@@ -91,8 +91,7 @@ impl DiskInfo {
                         !p.is_efi
                             && p.resize_info
                                 .as_ref()
-                                .map(|r| r.can_shrink)
-                                .unwrap_or(false)
+                                .is_some_and(|r| r.shrinkability.maybe_shrinkable())
                     })
                     .collect();
 
@@ -190,25 +189,15 @@ impl PartitionInfo {
             return false;
         }
 
-        // Must be shrinkable
-        let resize_info = match self.resize_info.as_ref() {
-            Some(info) => info,
-            None => return false,
-        };
-
-        let can_shrink = resize_info.can_shrink;
-
-        if !can_shrink {
+        // Must be shrinkable with a known minimum size
+        let Some(resize_info) = self.resize_info.as_ref() else {
             return false;
-        }
-
-        // Must have enough space
-        let min_existing = match resize_info.min_size_bytes {
-            Some(min) => min,
-            None => return false,
+        };
+        let Shrinkability::Shrinkable { min_size_bytes } = resize_info.shrinkability else {
+            return false;
         };
 
-        self.size_bytes.saturating_sub(min_existing) >= crate::arch::dualboot::MIN_LINUX_SIZE
+        self.size_bytes.saturating_sub(min_size_bytes) >= crate::arch::dualboot::MIN_LINUX_SIZE
     }
 }
 
@@ -262,20 +251,57 @@ impl std::fmt::Display for OSType {
 /// Resize feasibility information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResizeInfo {
-    /// Whether the partition can be shrunk
-    pub can_shrink: bool,
-    /// Minimum size in bytes (if shrinkable)
-    pub min_size_bytes: Option<u64>,
-    /// Reason why it can or can't be resized
-    pub reason: Option<String>,
+    /// Whether and how the partition can be shrunk
+    pub shrinkability: Shrinkability,
     /// Prerequisites that must be met before resizing
     pub prerequisites: Vec<String>,
 }
 
+/// Whether a partition can be shrunk, and how well its limits are known
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum Shrinkability {
+    /// Can be shrunk; the minimum remaining size is known
+    Shrinkable {
+        /// Minimum remaining size in bytes
+        min_size_bytes: u64,
+    },
+    /// Can be shrunk in principle, but the minimum size could not be
+    /// determined (e.g. the probing tool failed or must be mounted)
+    MinUnknown {
+        /// Why the minimum size is unknown
+        reason: String,
+    },
+    /// Cannot be shrunk
+    NotShrinkable {
+        /// Why the partition cannot be shrunk
+        reason: String,
+    },
+}
+
+impl Shrinkability {
+    /// Whether the partition may be shrinkable (known minimum or not)
+    pub fn maybe_shrinkable(&self) -> bool {
+        !matches!(self, Shrinkability::NotShrinkable { .. })
+    }
+}
+
 impl ResizeInfo {
-    /// Get human-readable minimum size
+    /// Get human-readable minimum size, if known
     pub fn min_size_human(&self) -> Option<String> {
-        self.min_size_bytes.map(format_size)
+        match self.shrinkability {
+            Shrinkability::Shrinkable { min_size_bytes } => Some(format_size(min_size_bytes)),
+            _ => None,
+        }
+    }
+
+    /// Why the partition is not shrinkable or its minimum size is unknown
+    pub fn reason(&self) -> Option<&str> {
+        match &self.shrinkability {
+            Shrinkability::Shrinkable { .. } => None,
+            Shrinkability::MinUnknown { reason } | Shrinkability::NotShrinkable { reason } => {
+                Some(reason)
+            }
+        }
     }
 }
 
@@ -435,22 +461,32 @@ mod tests {
     #[test]
     fn test_resize_info_min_size_human() {
         let info = ResizeInfo {
-            can_shrink: true,
-            min_size_bytes: Some(10 * 1024 * 1024 * 1024),
-            reason: None,
+            shrinkability: Shrinkability::Shrinkable {
+                min_size_bytes: 10 * 1024 * 1024 * 1024,
+            },
             prerequisites: vec![],
         };
         assert_eq!(info.min_size_human(), Some("10.0 GB".to_string()));
+        assert!(matches!(
+            info.shrinkability,
+            Shrinkability::Shrinkable { .. }
+        ));
+        assert_eq!(info.reason(), None);
     }
 
     #[test]
     fn test_resize_info_min_size_human_none() {
         let info = ResizeInfo {
-            can_shrink: false,
-            min_size_bytes: None,
-            reason: Some("Filesystem not supported".into()),
+            shrinkability: Shrinkability::NotShrinkable {
+                reason: "Filesystem not supported".into(),
+            },
             prerequisites: vec![],
         };
         assert!(info.min_size_human().is_none());
+        assert!(!matches!(
+            info.shrinkability,
+            Shrinkability::Shrinkable { .. }
+        ));
+        assert_eq!(info.reason(), Some("Filesystem not supported"));
     }
 }

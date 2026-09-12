@@ -123,12 +123,13 @@ fn detect_bitlocker(device_path: &str) -> bool {
 mod tests {
     use super::*;
     use crate::arch::dualboot::types::ResizeInfo;
+    use crate::common::format::format_size;
 
     fn noop_resize_info(_size: u64) -> ResizeInfo {
         ResizeInfo {
-            can_shrink: false,
-            min_size_bytes: None,
-            reason: None,
+            shrinkability: crate::arch::dualboot::types::Shrinkability::NotShrinkable {
+                reason: "noop".to_string(),
+            },
             prerequisites: vec![],
         }
     }
@@ -246,14 +247,21 @@ mod tests {
             r#"{"name": "sda1", "size": 536870912, "fstype": "vfat", "parttype": "c12a7328-f81f-11d2-ba4b-00a0c93ec93b"}"#,
         );
         let resize_fn = |size: u64| ResizeInfo {
-            can_shrink: true,
-            min_size_bytes: Some(size / 2),
-            reason: Some("test".into()),
+            shrinkability: crate::arch::dualboot::types::Shrinkability::Shrinkable {
+                min_size_bytes: size / 2,
+            },
             prerequisites: vec![],
         };
         let p = parse_partition(&json, noop_detect_os, resize_fn).unwrap();
         let info = p.resize_info.unwrap();
-        assert!(info.can_shrink);
-        assert_eq!(info.min_size_bytes, Some(536870912 / 2));
+        assert!(matches!(
+            info.shrinkability,
+            crate::arch::dualboot::types::Shrinkability::Shrinkable { .. }
+        ));
+        assert_eq!(
+            info.min_size_human(),
+            Some(format_size(536870912 / 2)),
+            "min size should be half the partition size"
+        );
     }
 }
