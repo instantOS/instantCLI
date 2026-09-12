@@ -218,8 +218,7 @@ impl WizardStep for DiskQuestion {
         loop {
             let result = super::select_one_for_step(
                 context,
-                StepId::Disk,
-                None,
+                self,
                 FzfWrapper::builder()
                     .header(
                         HeaderBuilder::new(NerdFont::HardDrive, "Select Installation Disk").build(),
@@ -423,8 +422,7 @@ impl WizardStep for PartitioningMethodQuestion {
 
         let result = super::select_one_for_step(
             context,
-            StepId::PartitioningMethod,
-            None,
+            self,
             FzfWrapper::builder()
                 .header(
                     HeaderBuilder::new(NerdFont::HardDrive, "Select Partitioning Method").build(),

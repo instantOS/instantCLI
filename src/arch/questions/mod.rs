@@ -1,4 +1,4 @@
-use crate::arch::engine::{InstallContext, StepId};
+use crate::arch::engine::{InstallContext, WizardStep, read_audit};
 use crate::menu_utils::{DialogOutcome, FzfSelectable, ItemSelection};
 use anyhow::Result;
 
@@ -16,16 +16,18 @@ pub mod warnings;
 /// Present a select-one dialog for a wizard step.
 ///
 /// The cursor starts on the previous answer when it remains selectable, then
-/// falls back to `suggestion`. Items are matched by
-/// [`FzfSelectable::fzf_key`], the machine-readable value stored as the step's
-/// answer. With neither match, the selection uses its normal initial row.
+/// falls back to the step's [`WizardStep::preselect_answer`]. Items are matched
+/// by [`FzfSelectable::fzf_key`], the machine-readable value stored as the
+/// step's answer. With neither match, the selection uses its normal initial row.
 pub(crate) fn select_one_for_step<T: FzfSelectable + Clone>(
     context: &InstallContext,
-    id: StepId,
-    suggestion: Option<String>,
+    step: &dyn WizardStep,
     selection: ItemSelection<T>,
 ) -> Result<DialogOutcome<T>> {
-    let preselect = context.previous_answer(&id).cloned().or(suggestion);
+    let preselect = context
+        .previous_answer(&step.id())
+        .cloned()
+        .or_else(|| read_audit::hook(step, "preselect_answer", || step.preselect_answer(context)));
     let index = preselect.and_then(|answer| {
         selection
             .items()

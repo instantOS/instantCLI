@@ -210,8 +210,7 @@ impl WizardStep for PartitionSelectorQuestion {
 
         let result = super::select_one_for_step(
             context,
-            self.id(),
-            None,
+            self,
             FzfWrapper::builder()
                 .header(HeaderBuilder::new(self.icon, &self.prompt).build())
                 .items(partitions),

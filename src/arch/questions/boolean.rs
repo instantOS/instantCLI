@@ -113,6 +113,9 @@ impl WizardStep for BooleanQuestion {
     }
 
     fn get_default(&self, context: &InstallContext) -> Option<String> {
+        // Always `Some`: booleans always have an unattended answer. Note the
+        // confirm dialog in `run` ignores suggestions entirely, so this value
+        // only matters for the engine's skip/default handling.
         let effective_default = if let Some(dynamic_func) = &self.dynamic_default {
             dynamic_func(context)
         } else {

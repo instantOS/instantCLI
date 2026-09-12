@@ -14,6 +14,7 @@ use self::presentation::{
     final_review_options,
 };
 use self::step_graph::StepGraph;
+use super::read_audit;
 use super::{InstallContext, StepOutcome, WizardStep};
 use crate::menu_utils::{ConfirmResult, FzfWrapper, Header, MenuCursor};
 use crate::ui::nerd_font::NerdFont;
@@ -319,7 +320,9 @@ impl WizardEngine {
             self.clear_terminal()?;
             match self.steps[index].run(&self.context).await? {
                 StepOutcome::Answer(answer) => {
-                    if let Err(message) = self.steps[index].validate(&self.context, &answer) {
+                    if let Err(message) = read_audit::hook(&*self.steps[index], "validate", || {
+                        self.steps[index].validate(&self.context, &answer)
+                    }) {
                         FzfWrapper::message(&format!("{} {message}", NerdFont::Warning))?;
                         continue;
                     }
@@ -356,7 +359,7 @@ impl WizardEngine {
     fn find_next_step_index(&mut self) -> Option<usize> {
         for index in 0..self.steps.len() {
             let step = &self.steps[index];
-            if !step.should_ask(&self.context) {
+            if !read_audit::hook(&**step, "should_ask", || step.should_ask(&self.context)) {
                 let id = step.id();
                 self.step_graph.drop_step_state(&mut self.context, id);
                 continue;
@@ -364,7 +367,8 @@ impl WizardEngine {
 
             if step.is_optional() && self.flow == FlowKind::Install {
                 if !self.context.is_step_completed(step.id())
-                    && let Some(default) = step.get_default(&self.context)
+                    && let Some(default) =
+                        read_audit::hook(&**step, "get_default", || step.get_default(&self.context))
                 {
                     let id = step.id();
                     self.step_graph
@@ -375,7 +379,9 @@ impl WizardEngine {
 
             let id = step.id();
             if let Some(answer) = self.context.get_answer(&id) {
-                if step.validate(&self.context, answer).is_err() {
+                if read_audit::hook(&**step, "validate", || step.validate(&self.context, answer))
+                    .is_err()
+                {
                     self.step_graph.drop_step_state(&mut self.context, id);
                     return Some(index);
                 }
@@ -402,13 +408,16 @@ impl WizardEngine {
             let step = &self.steps[index];
             let id = step.id();
 
-            if !step.should_ask(&self.context) {
+            if !read_audit::hook(&**step, "should_ask", || step.should_ask(&self.context)) {
                 self.step_graph.drop_step_state(&mut self.context, id);
                 continue;
             }
 
             if let Some(answer) = self.context.get_answer(&id).cloned() {
-                if step.validate(&self.context, &answer).is_err()
+                if read_audit::hook(&**step, "validate", || {
+                    step.validate(&self.context, &answer)
+                })
+                .is_err()
                     || !self.step_graph.step_state_is_current(&self.context, id)
                 {
                     self.step_graph.drop_step_state(&mut self.context, id);
@@ -434,7 +443,11 @@ impl WizardEngine {
             PauseMenuItem::GoBack,
         ];
         let current_step = &self.steps[current_index];
-        if current_step.is_optional() && current_step.get_default(&self.context).is_some() {
+        let has_default = read_audit::hook(&**current_step, "get_default", || {
+            current_step.get_default(&self.context)
+        })
+        .is_some();
+        if current_step.is_optional() && has_default {
             options.push(PauseMenuItem::UseDefault);
         }
         options.push(PauseMenuItem::Abort);
@@ -459,7 +472,9 @@ impl WizardEngine {
             }
             crate::menu_utils::DialogOutcome::Submitted(PauseMenuItem::UseDefault) => {
                 let step = &self.steps[current_index];
-                let Some(default) = step.get_default(&self.context) else {
+                let Some(default) =
+                    read_audit::hook(&**step, "get_default", || step.get_default(&self.context))
+                else {
                     return Ok(NavigationAction::Stay);
                 };
                 self.step_graph

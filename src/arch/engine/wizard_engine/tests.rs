@@ -457,6 +457,17 @@ fn setup_flow_asks_optional_questions_in_main_flow() {
     assert!(engine.context.get_answer(&StepId::Autologin).is_none());
 }
 
+#[test]
+fn preselect_answer_defaults_to_get_default() {
+    let context = InstallContext::new();
+    let step = StubOptionalQuestion {
+        id: StepId::Kernel,
+        default: Some("linux".to_string()),
+    };
+
+    assert_eq!(step.preselect_answer(&context).as_deref(), Some("linux"));
+}
+
 #[tokio::test]
 async fn provider_failures_return_an_error_instead_of_waiting_forever() {
     let mut engine = WizardEngine::new(vec![Box::new(ProviderBackedQuestion)]).unwrap();

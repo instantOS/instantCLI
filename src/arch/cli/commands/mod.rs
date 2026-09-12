@@ -259,10 +259,69 @@ pub(super) fn use_xorg_question() -> crate::arch::questions::BooleanQuestion {
 #[cfg(test)]
 mod tests {
     use super::build_steps;
-    use crate::arch::engine::WizardEngine;
+    use crate::arch::engine::{InstallContext, StepId, WizardEngine, read_audit};
+    use clap::ValueEnum as _;
 
     #[test]
     fn install_question_graph_is_valid() {
         WizardEngine::new(build_steps()).unwrap();
+    }
+
+    /// Every state a hook reads must be declared in `depends_on`, or the step
+    /// graph cannot invalidate recorded answers when that state changes. The
+    /// read audit is compile-time unenforceable, so this pins the contract for
+    /// the real shipped flow. Representative values open value-gated read
+    /// branches (e.g. the locale suggestion only reads the timezone answer
+    /// when the keymap answer maps to a known keyboard profile).
+    #[test]
+    fn install_flow_hooks_only_read_declared_dependencies() {
+        let representative = |id: StepId| match id {
+            StepId::Keymap => "de-latin1",
+            StepId::Timezone => "Europe/Berlin",
+            StepId::Locale => "de_DE.UTF-8",
+            _ => "representative",
+        };
+
+        let mut context = InstallContext::new();
+        for id in StepId::value_variants() {
+            context.set_answer(*id, representative(*id).to_string());
+        }
+
+        let steps = build_steps();
+        let mut violations = Vec::new();
+        for step in &steps {
+            let answer = context.get_answer(&step.id()).cloned().unwrap_or_default();
+            let phases = [
+                (
+                    "should_ask",
+                    read_audit::audited(&**step, || step.should_ask(&context)).1,
+                ),
+                (
+                    "get_default",
+                    read_audit::audited(&**step, || step.get_default(&context)).1,
+                ),
+                (
+                    "preselect_answer",
+                    read_audit::audited(&**step, || step.preselect_answer(&context)).1,
+                ),
+                (
+                    "validate",
+                    read_audit::audited(&**step, || step.validate(&context, &answer)).1,
+                ),
+            ];
+            for (phase, undeclared) in phases {
+                if !undeclared.is_empty() {
+                    violations.push(format!(
+                        "{:?} {phase}() reads {undeclared:?} without declaring them in depends_on()",
+                        step.id()
+                    ));
+                }
+            }
+        }
+        assert!(
+            violations.is_empty(),
+            "undeclared step-state reads:\n{}",
+            violations.join("\n")
+        );
     }
 }

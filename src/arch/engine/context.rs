@@ -145,6 +145,7 @@ impl InstallContext {
     }
 
     pub fn get_answer(&self, id: &StepId) -> Option<&String> {
+        super::read_audit::record_read(*id);
         self.answers.get(id)
     }
 
@@ -153,16 +154,19 @@ impl InstallContext {
     /// answer so flows which re-run a step without dropping state (the review
     /// menu) also surface a previous choice. Used for list preselection only.
     pub fn previous_answer(&self, id: &StepId) -> Option<&String> {
+        super::read_audit::record_read(*id);
         self.previous_answers
             .get(id)
             .or_else(|| self.answers.get(id))
     }
 
     pub fn is_step_completed(&self, id: StepId) -> bool {
+        super::read_audit::record_read(id);
         self.answers.contains_key(&id) || self.completed_steps.contains(&id)
     }
 
     pub fn get_answer_bool(&self, id: StepId) -> bool {
+        super::read_audit::record_read(id);
         self.answers
             .get(&id)
             .map(|s| s == "true" || s == "yes")

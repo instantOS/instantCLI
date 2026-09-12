@@ -94,8 +94,7 @@ impl WizardStep for RootFilesystemQuestion {
 
         let result = super::select_one_for_step(
             context,
-            StepId::RootFilesystem,
-            None,
+            self,
             FzfWrapper::builder()
                 .header(HeaderBuilder::new(NerdFont::HardDrive, "Select Root Filesystem").build())
                 .items(options)
@@ -210,8 +209,7 @@ impl WizardStep for BtrfsCompressionQuestion {
 
         let result = super::select_one_for_step(
             context,
-            StepId::BtrfsCompression,
-            None,
+            self,
             FzfWrapper::builder()
                 .header(HeaderBuilder::new(NerdFont::Sliders, "Select btrfs Compression").build())
                 .items(options)

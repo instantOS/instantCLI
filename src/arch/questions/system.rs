@@ -324,8 +324,7 @@ impl WizardStep for DesktopEnvironmentQuestion {
 
         let result = super::select_one_for_step(
             context,
-            StepId::DesktopEnvironment,
-            None,
+            self,
             FzfWrapper::builder()
                 .header(HeaderBuilder::new(NerdFont::Desktop, "Select Desktop Environment").build())
                 .items(options)
@@ -416,8 +415,7 @@ impl WizardStep for MirrorRegionQuestion {
         // region matching the detected country.
         let result = super::select_one_for_step(
             context,
-            StepId::MirrorRegion,
-            self.suggested_answer(context),
+            self,
             FzfWrapper::builder()
                 .header(HeaderBuilder::new(NerdFont::Globe, "Select Mirror Region").build())
                 .items(options),
@@ -440,7 +438,7 @@ impl WizardStep for MirrorRegionQuestion {
         ]
     }
 
-    fn suggested_answer(&self, context: &InstallContext) -> Option<String> {
+    fn preselect_answer(&self, context: &InstallContext) -> Option<String> {
         crate::arch::geo::mirror_region_suggestion(context)
     }
 }
@@ -461,6 +459,12 @@ impl WizardStep for TimezoneQuestion {
         vec![crate::arch::timezones::TimezonesKey::KEY.to_string()]
     }
 
+    /// The timezone suggestion falls back to the earlier keymap choice, so a
+    /// recorded timezone must be re-asked when the keymap changes.
+    fn depends_on(&self) -> &[StepId] {
+        &[StepId::Keymap]
+    }
+
     async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {
         let timezones = context
             .get::<crate::arch::timezones::TimezonesKey>()
@@ -473,13 +477,9 @@ impl WizardStep for TimezoneQuestion {
 
         // Start on the previously chosen timezone; on the first pass, on the
         // one best matching the detected location, then the running system's.
-        let suggestion = self
-            .suggested_answer(context)
-            .or_else(crate::arch::timezones::detect_current_timezone);
         let result = super::select_one_for_step(
             context,
-            StepId::Timezone,
-            suggestion,
+            self,
             FzfWrapper::builder()
                 .header(HeaderBuilder::new(NerdFont::Clock, "Select Timezone").build())
                 .items(options),
@@ -502,9 +502,10 @@ impl WizardStep for TimezoneQuestion {
         ]
     }
 
-    fn suggested_answer(&self, context: &InstallContext) -> Option<String> {
+    fn preselect_answer(&self, context: &InstallContext) -> Option<String> {
         crate::arch::geo::timezone_suggestion(context)
             .or_else(|| crate::arch::geo::timezone_suggestion_from_keymap(context))
+            .or_else(crate::arch::timezones::detect_current_timezone)
     }
 }
 
@@ -542,8 +543,7 @@ impl WizardStep for KeymapQuestion {
         // one the running system already uses.
         let result = super::select_one_for_step(
             context,
-            StepId::Keymap,
-            crate::arch::keymaps::detect_current_keymap(),
+            self,
             FzfWrapper::builder()
                 .header(HeaderBuilder::new(NerdFont::Keyboard, "Select Keymap").build())
                 .items(options),
@@ -554,6 +554,12 @@ impl WizardStep for KeymapQuestion {
 
     fn data_providers(&self) -> Vec<Box<dyn crate::arch::engine::AsyncDataProvider>> {
         vec![Box::new(crate::arch::keymaps::KeymapProvider)]
+    }
+
+    fn preselect_answer(&self, _context: &InstallContext) -> Option<String> {
+        // Keyboard layout is a personal preference rather than a geographic
+        // property, so the running system's keymap is the only hint.
+        crate::arch::keymaps::detect_current_keymap()
     }
 }
 
@@ -573,6 +579,12 @@ impl WizardStep for LocaleQuestion {
         vec![crate::arch::locales::LocalesKey::KEY.to_string()]
     }
 
+    /// The locale suggestion matches the earlier keymap and timezone choices,
+    /// so a recorded locale must be re-asked when either of them changes.
+    fn depends_on(&self) -> &[StepId] {
+        &[StepId::Keymap, StepId::Timezone]
+    }
+
     async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {
         let locales = context
             .get::<crate::arch::locales::LocalesKey>()
@@ -588,14 +600,11 @@ impl WizardStep for LocaleQuestion {
             .collect();
 
         // Start on the previously chosen locale; on the first pass, on the
-        // one the running system already uses.
-        let suggestion = self
-            .suggested_answer(context)
-            .or_else(crate::arch::locales::detect_current_locale);
+        // one matching the earlier keymap/timezone choices, then the running
+        // system's.
         let result = super::select_one_for_step(
             context,
-            StepId::Locale,
-            suggestion,
+            self,
             FzfWrapper::builder()
                 .header(HeaderBuilder::new(NerdFont::Language, "Select System Locale").build())
                 .items(options),
@@ -611,8 +620,9 @@ impl WizardStep for LocaleQuestion {
         ]
     }
 
-    fn suggested_answer(&self, context: &InstallContext) -> Option<String> {
+    fn preselect_answer(&self, context: &InstallContext) -> Option<String> {
         crate::arch::geo::locale_suggestion(context)
+            .or_else(crate::arch::locales::detect_current_locale)
     }
 }
 
@@ -667,8 +677,7 @@ impl WizardStep for KernelQuestion {
 
         let result = super::select_one_for_step(
             context,
-            StepId::Kernel,
-            None,
+            self,
             FzfWrapper::builder()
                 .header(HeaderBuilder::new(NerdFont::Gear, "Select Kernel").build())
                 .items(kernels)
@@ -727,6 +736,68 @@ impl WizardStep for EncryptionPasswordQuestion {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn annotated(values: &[&str]) -> Vec<AnnotatedValue<String>> {
+        values
+            .iter()
+            .map(|value| AnnotatedValue::new((*value).to_string(), None))
+            .collect()
+    }
+
+    #[test]
+    fn timezone_suggestion_prefers_the_detected_location() {
+        let context = InstallContext::new();
+        context.set::<crate::arch::geo::GeoLocationKey>(crate::arch::geo::GeoLocation {
+            country_code: Some("DE".to_string()),
+            timezone: Some("Europe/Berlin".to_string()),
+        });
+        context.set::<crate::arch::timezones::TimezonesKey>(annotated(&["UTC", "Europe/Berlin"]));
+
+        assert_eq!(
+            TimezoneQuestion.preselect_answer(&context).as_deref(),
+            Some("Europe/Berlin")
+        );
+    }
+
+    #[test]
+    fn locale_suggestion_combines_the_keymap_choice_with_the_geo_country() {
+        let mut context = InstallContext::new();
+        context.set_answer(StepId::Keymap, "de-latin1".to_string());
+        context.set::<crate::arch::geo::GeoLocationKey>(crate::arch::geo::GeoLocation {
+            country_code: Some("DE".to_string()),
+            timezone: None,
+        });
+        context.set::<crate::arch::locales::LocalesKey>(annotated(&[
+            "de_AT.UTF-8",
+            "hsb_DE.UTF-8",
+            "de_DE.UTF-8",
+        ]));
+
+        assert_eq!(
+            LocaleQuestion.preselect_answer(&context).as_deref(),
+            Some("de_DE.UTF-8")
+        );
+    }
+
+    #[test]
+    fn keymap_suggestion_follows_the_running_system() {
+        let context = InstallContext::new();
+
+        assert_eq!(
+            KeymapQuestion.preselect_answer(&context),
+            crate::arch::keymaps::detect_current_keymap()
+        );
+    }
+
+    #[test]
+    fn locale_question_declares_its_suggestion_inputs_as_dependencies() {
+        // The suggestion matches the earlier keymap/timezone answers, so a
+        // recorded locale must be dropped when either of them changes.
+        assert_eq!(
+            LocaleQuestion.depends_on(),
+            &[StepId::Keymap, StepId::Timezone]
+        );
+    }
 
     #[test]
     fn hostname_question_enforces_shared_hostname_rules() {

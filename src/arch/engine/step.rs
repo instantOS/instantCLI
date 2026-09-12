@@ -144,26 +144,42 @@ pub trait WizardStep: Send + Sync {
         vec![]
     }
 
-    /// Returns the default value for this step if one exists.
+    /// Returns the answer to record when this step is not asked.
+    ///
+    /// This is the authoritative hook, unlike the advisory
+    /// [`WizardStep::preselect_answer`]: the engine records the value as the
+    /// answer of optional steps in the install flow, and offers "use default"
+    /// in the pause menu for optional steps. Because `preselect_answer` falls
+    /// back to it, a declared default is also the initial cursor position in
+    /// select dialogs.
+    ///
+    /// Declare every state this reads in [`WizardStep::depends_on`]. Return
+    /// `None` for questions with no sensible unattended answer.
     fn get_default(&self, _context: &InstallContext) -> Option<String> {
         None
     }
 
-    /// Return a best-effort answer to preselect when the user has not already
-    /// answered this question. Suggestions may use earlier answers and
-    /// optional data populated by [`WizardStep::data_providers`], but must
-    /// tolerate that data being absent. They affect only the initial cursor
-    /// and are never persisted automatically.
-    fn suggested_answer(&self, _context: &InstallContext) -> Option<String> {
-        None
+    /// Return a best-effort answer to preselect when this step is asked
+    /// without a previous answer. Advisory only: only select dialogs honor
+    /// it, it moves the initial cursor, and it is never recorded as the
+    /// answer. Suggestions may use earlier answers and optional data
+    /// populated by [`WizardStep::data_providers`], but must tolerate that
+    /// data being absent and must declare those reads in
+    /// [`WizardStep::depends_on`].
+    ///
+    /// Defaults to [`WizardStep::get_default`], so a step that declares a
+    /// skippable default also starts with the cursor on it. Override when the
+    /// likely choice differs from that default.
+    fn preselect_answer(&self, context: &InstallContext) -> Option<String> {
+        self.get_default(context)
     }
 
     /// Returns the steps whose state this step is derived from.
     ///
     /// When any dependency changes, the engine removes this step's answer or
     /// completion marker transitively so it runs again. Declare every state
-    /// that `run`, `should_ask`, `get_default`, or `validate`
-    /// reads for decision-making. Dependencies that are not part of the
+    /// that `run`, `should_ask`, `get_default`, `preselect_answer`, or
+    /// `validate` reads for decision-making. Dependencies that are not part of the
     /// current wizard's step list are permitted (e.g. pre-seeded contexts)
     /// but must still appear earlier in the list when they are present.
     fn depends_on(&self) -> &[StepId] {
