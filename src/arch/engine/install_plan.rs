@@ -6,20 +6,63 @@ use anyhow::{Context, Result, bail};
 use super::{BootMode, InstallContext, Kernel, PartitioningMethod, StepId, SystemInfo};
 use crate::arch::config::{BtrfsCompression, DesktopEnvironment, DisplayManager, RootFilesystem};
 
-macro_rules! display_string_value {
+/// Accessor for the validated string types. The type itself carries the
+/// invariant established by `parse`; execution only ever needs the value back
+/// as a `&str`.
+macro_rules! string_value {
     ($type:ty) => {
         impl $type {
             pub fn as_str(&self) -> &str {
                 &self.0
             }
         }
-
-        impl fmt::Display for $type {
-            fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-                formatter.write_str(self.as_str())
-            }
-        }
     };
+}
+
+/// Root of the filesystem whose `zoneinfo` database and `/etc/locale.gen` a
+/// value is checked against. Production validates the running system; unit
+/// tests validate a fixture so the checks stay enabled on any host instead of
+/// being skipped when the host lacks those files.
+fn system_root() -> std::path::PathBuf {
+    #[cfg(test)]
+    {
+        system_fixture()
+    }
+
+    #[cfg(not(test))]
+    {
+        std::path::PathBuf::from("/")
+    }
+}
+
+#[cfg(test)]
+fn system_fixture() -> std::path::PathBuf {
+    use std::sync::OnceLock;
+
+    static FIXTURE: OnceLock<std::path::PathBuf> = OnceLock::new();
+
+    FIXTURE
+        .get_or_init(|| {
+            let root = std::env::temp_dir().join("ins-install-plan-system");
+            let write = |relative: &str, contents: &str| {
+                let path = root.join(relative);
+                if let Some(parent) = path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                let _ = std::fs::write(path, contents);
+            };
+
+            write(
+                "etc/locale.gen",
+                "#en_US.UTF-8 UTF-8\n#de_DE.UTF-8 UTF-8\nC.UTF-8 UTF-8\n",
+            );
+            for zone in ["UTC", "Europe/Berlin", "America/New_York"] {
+                write(&format!("usr/share/zoneinfo/{zone}"), "");
+            }
+
+            root
+        })
+        .clone()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,7 +76,7 @@ impl Hostname {
     }
 }
 
-display_string_value!(Hostname);
+string_value!(Hostname);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Username(String);
@@ -50,7 +93,7 @@ impl Username {
     }
 }
 
-display_string_value!(Username);
+string_value!(Username);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConsoleKeymap(String);
@@ -62,7 +105,7 @@ impl ConsoleKeymap {
     }
 }
 
-display_string_value!(ConsoleKeymap);
+string_value!(ConsoleKeymap);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Timezone(String);
@@ -70,73 +113,43 @@ pub struct Timezone(String);
 impl Timezone {
     pub fn parse(value: &str) -> Result<Self> {
         validate_relative_resource_name("timezone", value)?;
-        let zoneinfo = Path::new("/usr/share/zoneinfo");
-        if zoneinfo.exists() && !zoneinfo.join(value).is_file() {
+        if !system_root()
+            .join("usr/share/zoneinfo")
+            .join(value)
+            .is_file()
+        {
             bail!("unknown timezone {value:?}")
         }
         Ok(Self(value.to_owned()))
     }
 }
 
-display_string_value!(Timezone);
+string_value!(Timezone);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocaleName(String);
 
 impl LocaleName {
+    /// The answer must be an available locale (see `CONTEXT.md`) in the
+    /// target's `/etc/locale.gen`: `configure_locale` relies on that to enable
+    /// an existing entry rather than appending a new one.
     pub fn parse(value: &str) -> Result<Self> {
         if value.is_empty() || value.chars().any(char::is_whitespace) {
             bail!("invalid locale {value:?}")
         }
-        match std::fs::read_to_string("/etc/locale.gen") {
-            Ok(locale_gen) => {
-                if !crate::common::locale_gen::available_locales(&locale_gen)
-                    .iter()
-                    .any(|available| available == value)
-                {
-                    bail!("locale {value:?} is not available in /etc/locale.gen")
-                }
-            }
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                validate_locale_syntax(value)?;
-            }
-            Err(err) => {
-                return Err(err).context("cannot read /etc/locale.gen");
-            }
+        let locale_gen = std::fs::read_to_string(system_root().join("etc/locale.gen"))
+            .context("cannot validate locale without /etc/locale.gen")?;
+        if !crate::common::locale_gen::available_locales(&locale_gen)
+            .iter()
+            .any(|available| available == value)
+        {
+            bail!("locale {value:?} is not available in /etc/locale.gen")
         }
         Ok(Self(value.to_owned()))
     }
 }
 
-fn validate_locale_syntax(value: &str) -> Result<()> {
-    if !value
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '@' | '-'))
-    {
-        bail!("invalid characters in locale {value:?}");
-    }
-    if value == "C" || value == "POSIX" || value == "C.UTF-8" {
-        return Ok(());
-    }
-    let (lang_country, _modifier) = value.split_once('@').unwrap_or((value, ""));
-    let (lang_country, _encoding) = lang_country.split_once('.').unwrap_or((lang_country, ""));
-    let (lang, country) = lang_country.split_once('_').unwrap_or((lang_country, ""));
-
-    let valid_lang =
-        (lang.len() == 2 || lang.len() == 3) && lang.chars().all(|c| c.is_ascii_lowercase());
-    let valid_country = country.is_empty()
-        || ((country.len() == 2 || country.len() == 3)
-            && country
-                .chars()
-                .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit()));
-
-    if !valid_lang || !valid_country {
-        bail!("invalid locale format {value:?}");
-    }
-    Ok(())
-}
-
-display_string_value!(LocaleName);
+string_value!(LocaleName);
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct LoginPassword(String);
@@ -210,11 +223,9 @@ impl DiskPath {
         }
         Ok(Self(value.to_owned()))
     }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
 }
+
+string_value!(DiskPath);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PartitionPath(String);
@@ -226,11 +237,9 @@ impl PartitionPath {
         }
         Ok(Self(value.to_owned()))
     }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
 }
+
+string_value!(PartitionPath);
 
 fn is_safe_device_path(value: &str) -> bool {
     let mut components = Path::new(value).components();
@@ -325,6 +334,57 @@ impl StoragePlan {
     }
 }
 
+/// Desktop and session answers shared by an install plan and `ins arch setup`.
+///
+/// Both flows read the same steps with the same rules and defaults; keeping the
+/// parse in one place is what stops their answers from drifting apart.
+/// `autologin_default` is the one legitimate difference: a fresh encrypted
+/// install turns autologin on, while setup (which never asks about disk
+/// encryption) leaves it off.
+#[derive(Debug, Clone, Copy)]
+pub struct SessionAnswers {
+    pub desktop: DesktopEnvironment,
+    pub display_manager: DisplayManager,
+    pub use_plymouth: bool,
+    pub autologin: bool,
+    pub use_xorg: bool,
+    pub minimal_mode: bool,
+}
+
+impl SessionAnswers {
+    pub fn from_context(context: &InstallContext, autologin_default: bool) -> Result<Self> {
+        let desktop = context
+            .get_answer(&StepId::DesktopEnvironment)
+            .map(|answer| {
+                DesktopEnvironment::try_from_answer(answer)
+                    .with_context(|| format!("invalid desktop environment {answer:?}"))
+            })
+            .transpose()?
+            .unwrap_or(DesktopEnvironment::DEFAULT);
+        let display_manager = context
+            .get_answer(&StepId::DisplayManager)
+            .map(|answer| {
+                DisplayManager::try_from_answer(answer)
+                    .with_context(|| format!("invalid display manager {answer:?}"))
+            })
+            .transpose()?
+            .unwrap_or(DisplayManager::DEFAULT);
+
+        Ok(Self {
+            desktop,
+            display_manager,
+            use_plymouth: context.bool_answer(StepId::UsePlymouth)?.unwrap_or(true),
+            autologin: context
+                .bool_answer(StepId::Autologin)?
+                .unwrap_or(autologin_default),
+            use_xorg: context
+                .bool_answer(StepId::UseXorg)?
+                .unwrap_or(display_manager == DisplayManager::Lightdm),
+            minimal_mode: context.bool_answer(StepId::MinimalMode)?.unwrap_or(false),
+        })
+    }
+}
+
 /// Complete configuration accepted by the execution layer.
 ///
 /// Unlike wizard state, this contains no missing required answers and encodes
@@ -359,13 +419,6 @@ impl TryFrom<&InstallContext> for InstallPlan {
                 .map(String::as_str)
                 .with_context(|| format!("missing required answer {id:?}"))
         };
-        let parse_bool = |id, default| match context.get_answer(&id) {
-            Some(answer) if answer == "yes" => Ok(true),
-            Some(answer) if answer == "no" => Ok(false),
-            Some(answer) => bail!("invalid boolean answer for {id:?}: {answer:?}"),
-            None => Ok(default),
-        };
-
         let disk = DiskPath::parse(required(StepId::Disk)?)?;
         let filesystem = match context.get_answer(&StepId::RootFilesystem) {
             Some(answer) => RootFilesystem::try_from_answer(answer)
@@ -387,14 +440,7 @@ impl TryFrom<&InstallContext> for InstallPlan {
         let partitioning = context.require_partitioning_method()?;
         let storage = match partitioning {
             PartitioningMethod::Automatic => {
-                let use_encryption = match context.get_answer(&StepId::UseEncryption) {
-                    Some(answer) if answer == "yes" => true,
-                    Some(answer) if answer == "no" => false,
-                    Some(answer) => {
-                        bail!("invalid boolean answer for UseEncryption: {answer:?}")
-                    }
-                    None => bail!("missing required answer UseEncryption"),
-                };
+                let use_encryption = context.require_bool_answer(StepId::UseEncryption)?;
                 let encryption = use_encryption
                     .then(|| {
                         required(StepId::EncryptionPassword).and_then(|password| {
@@ -412,7 +458,7 @@ impl TryFrom<&InstallContext> for InstallPlan {
                 }
             }
             PartitioningMethod::DualBoot => {
-                if parse_bool(StepId::UseEncryption, false)? {
+                if context.bool_answer(StepId::UseEncryption)?.unwrap_or(false) {
                     bail!("dual-boot partitioning cannot use automatic disk encryption")
                 }
                 let selected = required(StepId::DualBootPartition)?;
@@ -441,7 +487,7 @@ impl TryFrom<&InstallContext> for InstallPlan {
                 }
             }
             PartitioningMethod::Manual => {
-                if parse_bool(StepId::UseEncryption, false)? {
+                if context.bool_answer(StepId::UseEncryption)?.unwrap_or(false) {
                     bail!("manual partitioning cannot use automatic disk encryption")
                 }
                 StoragePlan::Manual {
@@ -464,29 +510,16 @@ impl TryFrom<&InstallContext> for InstallPlan {
         };
 
         let kernel = context.kernel()?;
-        let desktop = context
-            .get_answer(&StepId::DesktopEnvironment)
-            .map(|answer| {
-                DesktopEnvironment::try_from_answer(answer)
-                    .with_context(|| format!("invalid desktop environment {answer:?}"))
-            })
-            .transpose()?
-            .unwrap_or(DesktopEnvironment::DEFAULT);
-        let display_manager = context
-            .get_answer(&StepId::DisplayManager)
-            .map(|answer| {
-                DisplayManager::try_from_answer(answer)
-                    .with_context(|| format!("invalid display manager {answer:?}"))
-            })
-            .transpose()?
-            .unwrap_or(DisplayManager::DEFAULT);
-        let autologin_default = matches!(
+        // With automatic encryption the boot passphrase already authenticates
+        // the user, so autologin is the default rather than an extra prompt.
+        let encryption_implies_autologin = matches!(
             storage,
             StoragePlan::Automatic {
                 encryption: Some(_),
                 ..
             }
         );
+        let session = SessionAnswers::from_context(context, encryption_implies_autologin)?;
 
         Ok(Self {
             system_info: context.system_info.clone(),
@@ -499,12 +532,12 @@ impl TryFrom<&InstallContext> for InstallPlan {
             locale: LocaleName::parse(required(StepId::Locale)?)?,
             mirror_region: context.get_answer(&StepId::MirrorRegion).cloned(),
             kernel,
-            desktop,
-            display_manager,
-            use_plymouth: parse_bool(StepId::UsePlymouth, true)?,
-            autologin: parse_bool(StepId::Autologin, autologin_default)?,
-            use_xorg: parse_bool(StepId::UseXorg, display_manager == DisplayManager::Lightdm)?,
-            minimal_mode: parse_bool(StepId::MinimalMode, false)?,
+            desktop: session.desktop,
+            display_manager: session.display_manager,
+            use_plymouth: session.use_plymouth,
+            autologin: session.autologin,
+            use_xorg: session.use_xorg,
+            minimal_mode: session.minimal_mode,
         })
     }
 }
@@ -639,6 +672,9 @@ mod tests {
         assert!(Username::parse("root").is_err());
         assert!(ConsoleKeymap::parse("../etc/passwd").is_err());
         assert!(Timezone::parse("../etc/passwd").is_err());
+        // The zoneinfo and locale.gen checks run against the test fixture, so
+        // unknown values are still rejected without depending on the host.
+        assert!(Timezone::parse("Not/AZone").is_err());
         assert!(LocaleName::parse("not_a_real_LOCALE.UTF-8").is_err());
         assert!(LoginPassword::parse("safe\nroot:changed").is_err());
         assert!(LoginPassword::parse("contains:delimiter").is_err());
@@ -648,22 +684,21 @@ mod tests {
     }
 
     #[test]
+    fn system_backed_checks_consult_the_test_fixture() {
+        // `Timezone::parse` and `LocaleName::parse` check the fixture root in
+        // test builds. If that seam stopped working, `Pacific/Auckland` (in
+        // the host's zoneinfo, absent from the fixture) would be accepted.
+        assert!(Timezone::parse("UTC").is_ok());
+        assert!(Timezone::parse("Pacific/Auckland").is_err());
+        assert!(LocaleName::parse("de_DE.UTF-8").is_ok());
+    }
+
+    #[test]
     fn secret_debug_output_is_redacted() {
         let login = LoginPassword::parse("login-secret").unwrap();
         let encryption = EncryptionPassword::parse("encryption-secret").unwrap();
 
         assert!(!format!("{login:?}").contains("login-secret"));
         assert!(!format!("{encryption:?}").contains("encryption-secret"));
-    }
-
-    #[test]
-    fn locale_syntax_fallback_validates_structure_when_gen_missing() {
-        assert!(validate_locale_syntax("en_US.UTF-8").is_ok());
-        assert!(validate_locale_syntax("de_DE").is_ok());
-        assert!(validate_locale_syntax("sr_RS.UTF-8@latin").is_ok());
-        assert!(validate_locale_syntax("C.UTF-8").is_ok());
-        assert!(validate_locale_syntax("POSIX").is_ok());
-        assert!(validate_locale_syntax("not_a_real_LOCALE.UTF-8").is_err());
-        assert!(validate_locale_syntax("en_US/../etc/passwd").is_err());
     }
 }

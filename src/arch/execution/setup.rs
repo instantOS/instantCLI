@@ -3,7 +3,7 @@ use anyhow::{Context, Result};
 use std::process::Command;
 
 use crate::arch::config::{DesktopEnvironment, DisplayManager};
-use crate::arch::engine::{InstallContext, InstallPlan, StepId, SystemInfo};
+use crate::arch::engine::{InstallContext, InstallPlan, SessionAnswers, StepId, SystemInfo};
 use crate::common::config_edit::{set_keys, set_keys_in_section, update_file};
 use crate::ui::nerd_font::NerdFont;
 
@@ -23,38 +23,18 @@ struct SetupOptions {
 
 impl SetupOptions {
     fn from_wizard(context: &InstallContext, override_user: Option<String>) -> Result<Self> {
-        let desktop = context
-            .get_answer(&StepId::DesktopEnvironment)
-            .map(|answer| {
-                DesktopEnvironment::try_from_answer(answer)
-                    .with_context(|| format!("invalid desktop environment {answer:?}"))
-            })
-            .transpose()?
-            .unwrap_or(DesktopEnvironment::DEFAULT);
-        let display_manager = context
-            .get_answer(&StepId::DisplayManager)
-            .map(|answer| {
-                DisplayManager::try_from_answer(answer)
-                    .with_context(|| format!("invalid display manager {answer:?}"))
-            })
-            .transpose()?
-            .unwrap_or(DisplayManager::DEFAULT);
-        let boolean = |id, default| match context.get_answer(&id) {
-            Some(answer) if answer == "yes" => Ok(true),
-            Some(answer) if answer == "no" => Ok(false),
-            Some(answer) => anyhow::bail!("invalid boolean answer for {id:?}: {answer:?}"),
-            None => Ok(default),
-        };
-        let minimal_mode = boolean(StepId::MinimalMode, false)?;
+        // Parsed exactly as for a fresh install; setup never asks about disk
+        // encryption, so autologin defaults to off.
+        let session = SessionAnswers::from_context(context, false)?;
 
         Ok(Self {
             username: override_user.or_else(|| context.get_answer(&StepId::Username).cloned()),
-            desktop,
-            display_manager,
-            use_plymouth: boolean(StepId::UsePlymouth, true)?,
-            autologin: boolean(StepId::Autologin, false)?,
-            use_xorg: boolean(StepId::UseXorg, display_manager == DisplayManager::Lightdm)?,
-            minimal_mode,
+            desktop: session.desktop,
+            display_manager: session.display_manager,
+            use_plymouth: session.use_plymouth,
+            autologin: session.autologin,
+            use_xorg: session.use_xorg,
+            minimal_mode: session.minimal_mode,
             system_info: context.system_info.clone(),
         })
     }

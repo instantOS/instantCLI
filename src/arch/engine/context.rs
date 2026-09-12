@@ -165,12 +165,36 @@ impl InstallContext {
         self.answers.contains_key(&id) || self.completed_steps.contains(&id)
     }
 
-    /// Booleans are recorded and validated as exactly "yes"/"no" (see
-    /// `BooleanQuestion::validate`); anything else is not a truthy spelling,
-    /// it is an invalid answer.
+    /// Lenient boolean read for display and preselection: an unanswered or
+    /// corrupt value is treated as "no". Boundaries that must not act on a
+    /// corrupt answer use [`Self::bool_answer`] instead.
     pub fn get_answer_bool(&self, id: StepId) -> bool {
         super::read_audit::record_read(id);
         self.answers.get(&id).map(|s| s == "yes").unwrap_or(false)
+    }
+
+    /// The stored boolean answer for `id`, or `None` when the step was skipped.
+    ///
+    /// Booleans are recorded and validated as exactly "yes"/"no" (see
+    /// `BooleanQuestion::validate`); anything else is not a truthy spelling,
+    /// it is an invalid answer.
+    pub fn bool_answer(&self, id: StepId) -> Result<Option<bool>> {
+        super::read_audit::record_read(id);
+        match self.answers.get(&id) {
+            Some(answer) if answer == "yes" => Ok(Some(true)),
+            Some(answer) if answer == "no" => Ok(Some(false)),
+            Some(answer) => Err(anyhow::anyhow!(
+                "invalid boolean answer for {id:?}: {answer:?}"
+            )),
+            None => Ok(None),
+        }
+    }
+
+    /// Like [`Self::bool_answer`], but a skipped step is an error instead of
+    /// `None`.
+    pub fn require_bool_answer(&self, id: StepId) -> Result<bool> {
+        self.bool_answer(id)?
+            .ok_or_else(|| anyhow::anyhow!("missing required answer {id:?}"))
     }
 
     /// The selected kernel, defaulting to the standard one when the step was

@@ -332,7 +332,7 @@ pub async fn execute_installation(
     let plan = crate::arch::engine::InstallPlan::try_from(&context)
         .context("Refusing to execute an incomplete or inconsistent installation plan")?;
 
-    println!("Loaded configuration for user: {}", plan.username);
+    println!("Loaded configuration for user: {}", plan.username.as_str());
 
     if let Some(step_name) = step {
         // Try to parse the step name
