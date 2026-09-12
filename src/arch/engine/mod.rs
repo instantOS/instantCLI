@@ -14,8 +14,9 @@ pub(crate) use install_plan::SessionAnswers;
 #[cfg(test)]
 pub(crate) use install_plan::test_install_plan;
 pub use install_plan::{
-    ConsoleKeymap, DualBootTarget, EncryptionPassword, EncryptionPlan, FilesystemPlan, Hostname,
-    InstallPlan, LocaleName, LoginPassword, ManualPartitions, StoragePlan, Timezone, Username,
+    ConsoleKeymap, DiskPath, DualBootResizeMethod, DualBootSize, DualBootTarget,
+    EncryptionPassword, EncryptionPlan, FilesystemPlan, Hostname, InstallPlan, LocaleName,
+    LoginPassword, ManualPartitions, PartitionPath, StoragePlan, Timezone, Username,
 };
 pub use step::{AskPolicy, AsyncDataProvider, StepOutcome, WizardStep};
 pub(crate) use summary::{InstallSummary, build_install_summary};

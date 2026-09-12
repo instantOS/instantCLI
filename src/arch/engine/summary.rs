@@ -4,6 +4,7 @@ use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 
 use super::context::InstallContext;
+use super::install_plan::DualBootResizeMethod;
 use super::types::{BootMode, PartitioningMethod, StepId};
 
 pub(crate) struct InstallSummary {
@@ -56,11 +57,11 @@ fn format_dualboot_resize_method(context: &InstallContext, uses_free_space: bool
 
     match context
         .get_answer(&StepId::DualBootInstructions)
-        .map(|value| value.as_str())
+        .and_then(|value| DualBootResizeMethod::parse(value).ok())
     {
-        Some("auto") => "Installer resize".to_string(),
-        Some("confirmed") => "Manual resize".to_string(),
-        _ => "Manual resize".to_string(),
+        Some(DualBootResizeMethod::Auto) => "Installer resize".to_string(),
+        Some(DualBootResizeMethod::Confirmed) => "Manual resize".to_string(),
+        None => "Manual resize".to_string(),
     }
 }
 

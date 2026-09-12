@@ -1,5 +1,5 @@
 use crate::arch::engine::{
-    DataKey, InstallContext, PartitioningMethod, StepId, StepOutcome, WizardStep,
+    DataKey, DiskPath, InstallContext, PartitioningMethod, StepId, StepOutcome, WizardStep,
 };
 use crate::menu_utils::{ConfirmResult, FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder};
 use crate::ui::catppuccin::colors;
@@ -249,12 +249,7 @@ impl WizardStep for DiskQuestion {
     }
 
     fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
-        if answer.is_empty() {
-            return Err("You must select a disk.".to_string());
-        }
-        if !answer.starts_with("/dev/") {
-            return Err("Invalid disk selection: must start with /dev/".to_string());
-        }
+        DiskPath::parse(answer).map_err(|error| error.to_string())?;
 
         // answer is now just the device path (e.g., "/dev/sda")
         let device_name = answer;
@@ -559,5 +554,22 @@ impl WizardStep for RunCfdiskStep {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn disk_question_rejects_unsafe_and_empty_paths() {
+        let context = InstallContext::new();
+        assert!(DiskQuestion.validate(&context, "").is_err());
+        assert!(DiskQuestion.validate(&context, "not-dev").is_err());
+        assert!(
+            DiskQuestion
+                .validate(&context, "/dev/../etc/passwd")
+                .is_err()
+        );
     }
 }

@@ -1,4 +1,6 @@
-use crate::arch::engine::{AskPolicy, InstallContext, StepId, StepOutcome, WizardStep};
+use crate::arch::engine::{
+    AskPolicy, InstallContext, PartitionPath, StepId, StepOutcome, WizardStep,
+};
 use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder};
 use crate::preview::{PreviewId, preview_command};
 use crate::ui::nerd_font::NerdFont;
@@ -225,6 +227,8 @@ impl WizardStep for PartitionSelectorQuestion {
     }
 
     fn validate(&self, context: &InstallContext, answer: &str) -> Result<(), String> {
+        PartitionPath::parse(answer).map_err(|error| error.to_string())?;
+
         // answer is now just the device path (e.g., "/dev/sda1")
         let part_path = answer;
         let current_id = self.id();
@@ -301,7 +305,7 @@ fn get_partition_size(partition_path: &str) -> Option<PartitionSize> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_lsblk_partitions, partition_belongs_to_disk};
+    use super::*;
 
     #[test]
     fn parses_only_partition_rows_from_lsblk() {
@@ -353,5 +357,18 @@ mod tests {
     #[test]
     fn dual_boot_free_space_marker_is_not_a_partition() {
         assert!(!partition_belongs_to_disk("__free_space__", "/dev/sda"));
+    }
+
+    #[test]
+    fn partition_selector_rejects_unsafe_paths() {
+        let question = PartitionSelectorQuestion::new(
+            StepId::RootPartition,
+            "Select Root Partition",
+            NerdFont::HardDrive,
+            None,
+        );
+        let context = InstallContext::new();
+        assert!(question.validate(&context, "/dev/../etc/passwd").is_err());
+        assert!(question.validate(&context, "not-dev").is_err());
     }
 }

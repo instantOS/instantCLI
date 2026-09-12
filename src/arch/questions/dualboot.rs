@@ -1,5 +1,7 @@
 use crate::arch::dualboot::types::Shrinkability;
-use crate::arch::engine::{InstallContext, StepId, StepOutcome, WizardStep};
+use crate::arch::engine::{
+    DualBootSize, InstallContext, PartitionPath, StepId, StepOutcome, WizardStep,
+};
 use crate::arch::questions::partition::partition_belongs_to_disk;
 use crate::common::format::format_size;
 use crate::menu::slide::run_slider;
@@ -115,6 +117,8 @@ impl WizardStep for DualBootPartitionQuestion {
         if answer == "__free_space__" {
             return Ok(());
         }
+
+        PartitionPath::parse(answer).map_err(|error| error.to_string())?;
 
         // ask() only offers partitions of the selected disk, so a mismatch
         // means the answer was given for a different disk.
@@ -253,6 +257,12 @@ impl WizardStep for DualBootSizeQuestion {
             StepId::PartitioningMethod,
             StepId::DualBootPartition,
         ]
+    }
+
+    fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
+        DualBootSize::parse(answer)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
     }
 
     async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {
@@ -422,6 +432,37 @@ mod tests {
             DualBootPartitionQuestion
                 .validate(&context, "/dev/sda2")
                 .is_ok()
+        );
+    }
+
+    #[test]
+    fn dual_boot_partition_rejects_unsafe_device_path() {
+        let context = context_with_disk("/dev/sda");
+        assert!(
+            DualBootPartitionQuestion
+                .validate(&context, "/dev/../etc/passwd")
+                .is_err()
+        );
+        assert!(
+            DualBootPartitionQuestion
+                .validate(&context, "not-dev")
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn dual_boot_size_validates_byte_count() {
+        let context = InstallContext::new();
+        assert!(
+            DualBootSizeQuestion
+                .validate(&context, "53687091200")
+                .is_ok()
+        );
+        assert!(DualBootSizeQuestion.validate(&context, "0").is_err());
+        assert!(
+            DualBootSizeQuestion
+                .validate(&context, "not-a-number")
+                .is_err()
         );
     }
 }

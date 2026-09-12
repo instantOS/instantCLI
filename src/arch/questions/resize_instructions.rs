@@ -1,5 +1,5 @@
 use crate::arch::dualboot::{ResizeStatus, ResizeVerifier, Shrinkability};
-use crate::arch::engine::{InstallContext, StepId, StepOutcome, WizardStep};
+use crate::arch::engine::{DualBootResizeMethod, InstallContext, StepId, StepOutcome, WizardStep};
 use crate::common::format::format_size;
 use crate::menu_utils::{ConfirmResult, FzfSelectable, FzfWrapper};
 use crate::ui::nerd_font::NerdFont;
@@ -37,6 +37,12 @@ impl WizardStep for ResizeWorkflowStep {
             StepId::DualBootPartition,
             StepId::DualBootSize,
         ]
+    }
+
+    fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
+        DualBootResizeMethod::parse(answer)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
     }
 
     async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {
@@ -450,4 +456,17 @@ fn confirm_proceed_without_resize(status: &ResizeStatus) -> Result<bool> {
         confirm,
         crate::menu_utils::DialogOutcome::Submitted(UnverifiedResizeAction::Proceed)
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resize_workflow_validates_resize_method() {
+        let context = InstallContext::new();
+        assert!(ResizeWorkflowStep.validate(&context, "auto").is_ok());
+        assert!(ResizeWorkflowStep.validate(&context, "confirmed").is_ok());
+        assert!(ResizeWorkflowStep.validate(&context, "invalid").is_err());
+    }
 }

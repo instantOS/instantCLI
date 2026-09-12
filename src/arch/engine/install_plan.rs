@@ -217,7 +217,7 @@ fn validate_secret(label: &str, value: &str, reject_colon: bool) -> Result<()> {
 pub struct DiskPath(String);
 
 impl DiskPath {
-    fn parse(value: &str) -> Result<Self> {
+    pub fn parse(value: &str) -> Result<Self> {
         if !is_safe_device_path(value) {
             bail!("invalid disk path {value:?}; expected a device below /dev")
         }
@@ -231,7 +231,7 @@ string_value!(DiskPath);
 pub struct PartitionPath(String);
 
 impl PartitionPath {
-    fn parse(value: &str) -> Result<Self> {
+    pub fn parse(value: &str) -> Result<Self> {
         if !is_safe_device_path(value) {
             bail!("invalid partition path {value:?}; expected a device below /dev")
         }
@@ -247,6 +247,60 @@ fn is_safe_device_path(value: &str) -> bool {
         && matches!(components.next(), Some(Component::Normal(component)) if component == "dev")
         && matches!(components.next(), Some(Component::Normal(_)))
         && components.all(|component| matches!(component, Component::Normal(_)))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DualBootSize(u64);
+
+impl DualBootSize {
+    pub fn parse(value: &str) -> Result<Self> {
+        let bytes = value
+            .parse::<u64>()
+            .context("dual-boot size is not a byte count")?;
+        if bytes == 0 {
+            bail!("dual-boot size cannot be zero");
+        }
+        Ok(Self(bytes))
+    }
+
+    pub fn bytes(&self) -> u64 {
+        self.0
+    }
+}
+
+impl fmt::Display for DualBootSize {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}", self.0)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DualBootResizeMethod {
+    Auto,
+    Confirmed,
+}
+
+impl DualBootResizeMethod {
+    pub fn parse(value: &str) -> Result<Self> {
+        match value {
+            "auto" => Ok(Self::Auto),
+            "confirmed" => Ok(Self::Confirmed),
+            answer => bail!("invalid dual-boot resize method {answer:?}"),
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Confirmed => "confirmed",
+        }
+    }
+}
+
+impl fmt::Display for DualBootResizeMethod {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
 }
 
 /// A root filesystem ready to be created. Compression belongs to the btrfs
@@ -273,7 +327,7 @@ pub enum DualBootTarget {
     ExistingFreeSpace,
     ResizeAutomatically {
         partition: PartitionPath,
-        desired_free_space_bytes: u64,
+        desired_free_space_bytes: DualBootSize,
     },
     ResizedManually {
         partition: PartitionPath,
@@ -466,18 +520,18 @@ impl TryFrom<&InstallContext> for InstallPlan {
                     DualBootTarget::ExistingFreeSpace
                 } else {
                     let partition = PartitionPath::parse(selected)?;
-                    match required(StepId::DualBootInstructions)? {
-                        "auto" => {
-                            let desired_free_space_bytes = required(StepId::DualBootSize)?
-                                .parse::<u64>()
-                                .context("dual-boot size is not a byte count")?;
+                    match DualBootResizeMethod::parse(required(StepId::DualBootInstructions)?)? {
+                        DualBootResizeMethod::Auto => {
+                            let desired_free_space_bytes =
+                                DualBootSize::parse(required(StepId::DualBootSize)?)?;
                             DualBootTarget::ResizeAutomatically {
                                 partition,
                                 desired_free_space_bytes,
                             }
                         }
-                        "confirmed" => DualBootTarget::ResizedManually { partition },
-                        answer => bail!("invalid dual-boot resize method {answer:?}"),
+                        DualBootResizeMethod::Confirmed => {
+                            DualBootTarget::ResizedManually { partition }
+                        }
                     }
                 };
                 StoragePlan::DualBoot {
@@ -681,6 +735,12 @@ mod tests {
         assert!(EncryptionPassword::parse("").is_err());
         assert!(DiskPath::parse("/dev/../etc/passwd").is_err());
         assert!(PartitionPath::parse("/dev/sda1/../sda2").is_err());
+        assert!(DualBootSize::parse("not-a-number").is_err());
+        assert!(DualBootSize::parse("0").is_err());
+        assert!(DualBootSize::parse("53687091200").is_ok());
+        assert!(DualBootResizeMethod::parse("invalid").is_err());
+        assert!(DualBootResizeMethod::parse("auto").is_ok());
+        assert!(DualBootResizeMethod::parse("confirmed").is_ok());
     }
 
     #[test]

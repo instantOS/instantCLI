@@ -58,7 +58,7 @@ pub fn prepare_dualboot_disk(
                 disk_info,
                 disk_path,
                 partition_path,
-                *desired_free_space_bytes,
+                desired_free_space_bytes.bytes(),
             )?);
 
             let detected = crate::arch::dualboot::detect_disks()
