@@ -58,7 +58,8 @@ pub enum StepId {
 /// back with [`Kernel::from_answer`] at every consumer instead of matching raw
 /// strings. The match in [`crate::arch::engine::system_info`] is exhaustive so
 /// a new variant must pick its GPU driver packages.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum Kernel {
     Linux,
     Lts,
@@ -86,40 +87,45 @@ impl Kernel {
 /// How the target disk will be partitioned.
 ///
 /// This is the typed form of the `PartitioningMethod` answer; parse it with
-/// [`PartitioningKind::from_answer`] (via
-/// [`InstallContext::partitioning_kind`]) instead of substring-matching the
+/// [`PartitioningMethod::from_answer`] (via
+/// [`InstallContext::partitioning_method`]) instead of substring-matching the
 /// raw label at each consumer — the labels are display strings and must not
 /// double as dispatch keys.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PartitioningKind {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PartitioningMethod {
     Automatic,
     DualBoot,
     Manual,
-    /// The step was not answered, or the answer is not a known label
-    /// (e.g. a hand-edited or older config). Execution must treat this as
-    /// an error, never as the automatic (disk-erasing) default.
-    Unknown,
 }
 
-impl PartitioningKind {
-    /// Exact-match parse of the wizard's `PartitioningMethodOption` labels.
-    pub fn from_answer(answer: &str) -> PartitioningKind {
+impl PartitioningMethod {
+    /// Stable value persisted by the wizard. This is deliberately independent
+    /// of the human-facing menu label.
+    pub fn answer_value(self) -> &'static str {
+        match self {
+            Self::Automatic => "automatic",
+            Self::DualBoot => "dual_boot",
+            Self::Manual => "manual",
+        }
+    }
+
+    pub fn from_answer(answer: &str) -> Option<Self> {
         match answer {
-            "Automatic (Erase Disk)" => PartitioningKind::Automatic,
-            "Dual Boot (Automatic)" => PartitioningKind::DualBoot,
-            "Manual (cfdisk)" => PartitioningKind::Manual,
-            _ => PartitioningKind::Unknown,
+            "automatic" => Some(Self::Automatic),
+            "dual_boot" => Some(Self::DualBoot),
+            "manual" => Some(Self::Manual),
+            _ => None,
         }
     }
 }
 
-impl std::fmt::Display for PartitioningKind {
+impl std::fmt::Display for PartitioningMethod {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PartitioningKind::Automatic => write!(f, "automatic"),
-            PartitioningKind::DualBoot => write!(f, "dual-boot"),
-            PartitioningKind::Manual => write!(f, "manual"),
-            PartitioningKind::Unknown => write!(f, "unknown"),
+            PartitioningMethod::Automatic => write!(f, "automatic"),
+            PartitioningMethod::DualBoot => write!(f, "dual-boot"),
+            PartitioningMethod::Manual => write!(f, "manual"),
         }
     }
 }

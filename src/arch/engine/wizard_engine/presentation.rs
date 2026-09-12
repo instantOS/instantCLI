@@ -1,6 +1,6 @@
 use std::fmt;
 
-use super::super::{AskPolicy, InstallContext, PartitioningKind, StepId, WizardStep};
+use super::super::{AskPolicy, InstallContext, PartitioningMethod, StepId, WizardStep};
 use super::FlowKind;
 use crate::arch::engine::summary::{InstallSummary, build_install_summary, build_setup_summary};
 use crate::menu_utils::{FzfPreview, FzfSelectable};
@@ -399,7 +399,7 @@ fn install_review_preview(action: &FinalReviewAction, summary: &InstallSummary) 
                 .header(NerdFont::Download, "Start Installation")
                 .text("Apply the selected configuration.")
                 .blank();
-            if summary.partitioning_kind == PartitioningKind::Automatic {
+            if summary.partitioning_method == Some(PartitioningMethod::Automatic) {
                 builder = builder
                     .line(
                         colors::YELLOW,

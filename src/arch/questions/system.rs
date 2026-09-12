@@ -1,14 +1,13 @@
-use super::text_input::{TextInputQuestion, validators};
+use super::text_input::TextInputQuestion;
 use crate::arch::annotations::AnnotatedValue;
 use crate::arch::config::DesktopEnvironment;
 use crate::arch::engine::{
-    AskPolicy, DataKey, InstallContext, Kernel, StepId, StepOutcome, WizardStep,
+    AskPolicy, ConsoleKeymap, DataKey, EncryptionPassword, Hostname, InstallContext, Kernel,
+    LocaleName, LoginPassword, StepId, StepOutcome, Timezone, Username, WizardStep,
 };
 use crate::arch::geo::GeoLocationProvider;
 use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder};
 use crate::preview::{PreviewId, preview_command};
-use crate::settings::definitions::system::validate_hostname;
-use crate::settings::users::validate_username;
 use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -335,7 +334,11 @@ pub fn hostname_question() -> TextInputQuestion {
         NerdFont::Desktop,
     )
     .description("Set the system's network hostname")
-    .validator(|answer| validate_hostname(answer).map_err(|error| error.to_string()))
+    .validator(|answer| {
+        Hostname::parse(answer)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    })
 }
 
 /// Username rules live in `settings::users::validate_username` (same rules as
@@ -347,8 +350,11 @@ pub fn username_question() -> TextInputQuestion {
         NerdFont::User,
     )
     .description("Create the main user account")
-    .validator(|answer| validate_username(answer).map_err(|error| error.to_string()))
-    .validator(validators::forbidden_value("Username", "root"))
+    .validator(|answer| {
+        Username::parse(answer)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    })
 }
 
 pub struct MirrorRegionQuestion;
@@ -467,10 +473,9 @@ impl WizardStep for TimezoneQuestion {
     }
 
     fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
-        if answer.is_empty() {
-            return Err("You must select a timezone.".to_string());
-        }
-        Ok(())
+        Timezone::parse(answer)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
     }
 
     fn data_providers(&self) -> Vec<Box<dyn crate::arch::engine::AsyncDataProvider>> {
@@ -539,6 +544,12 @@ impl WizardStep for KeymapQuestion {
         // property, so the running system's keymap is the only hint.
         crate::arch::keymaps::detect_current_keymap()
     }
+
+    fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
+        ConsoleKeymap::parse(answer)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    }
 }
 
 pub struct LocaleQuestion;
@@ -602,6 +613,12 @@ impl WizardStep for LocaleQuestion {
         crate::arch::geo::locale_suggestion(context)
             .or_else(crate::arch::locales::detect_current_locale)
     }
+
+    fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
+        LocaleName::parse(answer)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    }
 }
 
 pub struct PasswordQuestion;
@@ -631,6 +648,12 @@ impl WizardStep for PasswordQuestion {
             .password_dialog()?;
 
         Ok(StepOutcome::from_dialog(result, |p| p))
+    }
+
+    fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
+        LoginPassword::parse(answer)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
     }
 }
 
@@ -712,6 +735,12 @@ impl WizardStep for EncryptionPasswordQuestion {
             .password_dialog()?;
 
         Ok(StepOutcome::from_dialog(result, |p| p))
+    }
+
+    fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
+        EncryptionPassword::parse(answer)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
     }
 }
 

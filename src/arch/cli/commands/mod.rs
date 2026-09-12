@@ -134,12 +134,11 @@ pub(super) fn build_steps() -> Vec<Box<dyn WizardStep>> {
             .relevant_when(
                 [crate::arch::engine::StepId::PartitioningMethod],
                 |context| {
-                    // Only ask about encryption if automatic partitioning is
-                    // selected. Unanswered/unknown counts as automatic here:
-                    // this only gates which questions are relevant, never a
-                    // destructive action.
-                    context.partitioning_kind()
-                        != crate::arch::engine::PartitioningKind::Manual
+                    // Encryption is part of the automatic storage plan. It is
+                    // not silently accepted and ignored by dual-boot/manual
+                    // execution.
+                    context.partitioning_method()
+                        == Some(crate::arch::engine::PartitioningMethod::Automatic)
                 },
             ),
         ),
@@ -210,7 +209,8 @@ pub(super) fn autologin_question(
         "Automatically logs into your user account on boot without prompting for a password at the display manager.",
     )
     .relevant_when([StepId::DesktopEnvironment], |context| {
-        crate::arch::config::DesktopEnvironment::from_context(context).requires_display_manager()
+        crate::arch::config::DesktopEnvironment::selected_or_default(context)
+            .requires_display_manager()
     });
 
     match default {
@@ -235,10 +235,11 @@ pub(super) fn use_xorg_question() -> crate::arch::questions::BooleanQuestion {
          Enabling this option installs xorg-server so the classic X11 instantWM session is available in your display manager.",
     )
     .relevant_when([StepId::DesktopEnvironment], |context| {
-        crate::arch::config::DesktopEnvironment::from_context(context).requires_display_manager()
+        crate::arch::config::DesktopEnvironment::selected_or_default(context)
+            .requires_display_manager()
     })
     .optional_default_from([StepId::DisplayManager], |context| {
-        crate::arch::config::DisplayManager::from_context(context)
+        crate::arch::config::DisplayManager::selected_or_default(context)
             == crate::arch::config::DisplayManager::Lightdm
     })
 }

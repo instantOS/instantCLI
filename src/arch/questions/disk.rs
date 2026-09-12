@@ -1,4 +1,6 @@
-use crate::arch::engine::{DataKey, InstallContext, StepId, StepOutcome, WizardStep};
+use crate::arch::engine::{
+    DataKey, InstallContext, PartitioningMethod, StepId, StepOutcome, WizardStep,
+};
 use crate::menu_utils::{ConfirmResult, FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder};
 use crate::ui::catppuccin::colors;
 use crate::ui::nerd_font::NerdFont;
@@ -297,25 +299,18 @@ impl WizardStep for DiskQuestion {
 
 pub struct PartitioningMethodQuestion;
 
-#[derive(Clone)]
-enum PartitioningMethodOption {
-    Automatic,
-    DualBoot,
-    Manual,
-}
-
-impl PartitioningMethodOption {
+impl PartitioningMethod {
     fn label(&self) -> &'static str {
         match self {
-            PartitioningMethodOption::Automatic => "Automatic (Erase Disk)",
-            PartitioningMethodOption::DualBoot => "Dual Boot (Automatic)",
-            PartitioningMethodOption::Manual => "Manual (cfdisk)",
+            PartitioningMethod::Automatic => "Automatic (Erase Disk)",
+            PartitioningMethod::DualBoot => "Dual Boot (Automatic)",
+            PartitioningMethod::Manual => "Manual (cfdisk)",
         }
     }
 
     fn preview(&self) -> FzfPreview {
         match self {
-            PartitioningMethodOption::Automatic => PreviewBuilder::new()
+            PartitioningMethod::Automatic => PreviewBuilder::new()
                 .header(NerdFont::HardDrive, "Automatic Partitioning")
                 .subtext("Erase the selected disk and create a recommended layout.")
                 .blank()
@@ -328,7 +323,7 @@ impl PartitioningMethodOption {
                 .line(colors::YELLOW, None, "Warning")
                 .bullet("All data on the disk will be lost")
                 .build(),
-            PartitioningMethodOption::DualBoot => PreviewBuilder::new()
+            PartitioningMethod::DualBoot => PreviewBuilder::new()
                 .header(NerdFont::HardDrive, "Dual Boot")
                 .subtext("Shrink an existing partition and create Linux partitions automatically.")
                 .blank()
@@ -341,7 +336,7 @@ impl PartitioningMethodOption {
                     "Back up important data before resizing",
                 ])
                 .build(),
-            PartitioningMethodOption::Manual => PreviewBuilder::new()
+            PartitioningMethod::Manual => PreviewBuilder::new()
                 .header(NerdFont::HardDrive, "Manual Partitioning")
                 .subtext("Use cfdisk to create your own partition layout.")
                 .blank()
@@ -359,7 +354,7 @@ impl PartitioningMethodOption {
     }
 }
 
-impl FzfSelectable for PartitioningMethodOption {
+impl FzfSelectable for PartitioningMethod {
     fn fzf_display_text(&self) -> String {
         self.label().to_string()
     }
@@ -369,7 +364,7 @@ impl FzfSelectable for PartitioningMethodOption {
     }
 
     fn fzf_key(&self) -> String {
-        self.label().to_string()
+        self.answer_value().to_string()
     }
 }
 
@@ -388,10 +383,7 @@ impl WizardStep for PartitioningMethodQuestion {
     }
 
     async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {
-        let mut options = vec![
-            PartitioningMethodOption::Automatic,
-            PartitioningMethodOption::Manual,
-        ];
+        let mut options = vec![PartitioningMethod::Automatic, PartitioningMethod::Manual];
 
         // Check for dual boot possibility using shared feasibility logic
         if let Some(disk_path) = context.get_answer(&StepId::Disk) {
@@ -416,7 +408,7 @@ impl WizardStep for PartitioningMethodQuestion {
             if let Ok(Ok(feasibility)) = feasibility_result
                 && feasibility.feasible
             {
-                options.insert(1, PartitioningMethodOption::DualBoot);
+                options.insert(1, PartitioningMethod::DualBoot);
             }
         }
 
@@ -431,8 +423,14 @@ impl WizardStep for PartitioningMethodQuestion {
         )?;
 
         Ok(StepOutcome::from_dialog(result, |option| {
-            option.label().to_string()
+            option.answer_value().to_string()
         }))
+    }
+
+    fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
+        PartitioningMethod::from_answer(answer)
+            .map(|_| ())
+            .ok_or_else(|| format!("invalid partitioning method {answer:?}"))
     }
 }
 
@@ -480,7 +478,7 @@ impl WizardStep for RunCfdiskStep {
     }
 
     fn should_ask(&self, context: &InstallContext) -> bool {
-        context.partitioning_kind() == crate::arch::engine::PartitioningKind::Manual
+        context.partitioning_method() == Some(PartitioningMethod::Manual)
     }
 
     fn depends_on(&self) -> &[StepId] {

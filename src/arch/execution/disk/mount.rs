@@ -1,41 +1,43 @@
 use super::filesystem;
-use crate::arch::engine::{BootMode, DualBootPartitions, EspNeedsFormat, InstallContext, StepId};
+use crate::arch::engine::{
+    BootMode, DualBootPartitions, EspNeedsFormat, FilesystemPlan, InstallContext, ManualPartitions,
+};
 use crate::arch::execution::CommandRunner;
 use anyhow::{Context, Result};
 use std::process::Command;
 
 pub fn format_and_mount_partitions(
     context: &InstallContext,
+    filesystem_plan: FilesystemPlan,
+    manual_partitions: Option<&ManualPartitions>,
+    boot_mode: &BootMode,
     executor: &dyn CommandRunner,
 ) -> Result<()> {
     println!("Formatting and mounting partitions...");
-
-    let boot_mode = &context.system_info.boot_mode;
 
     let dualboot_paths = context.get::<DualBootPartitions>();
 
     let root_path = if let Some(ref paths) = dualboot_paths {
         paths.root.clone()
     } else {
-        context
-            .get_answer(&StepId::RootPartition)
-            .context("Root partition not set")?
-            .to_string()
+        manual_partitions
+            .context("manual partition plan missing")?
+            .root
+            .as_str()
+            .to_owned()
     };
 
     println!("Formatting Root partition: {}", root_path);
-    filesystem::format_root(context, &root_path, executor)?;
+    filesystem::format_root(filesystem_plan, &root_path, executor)?;
 
     println!("Mounting Root partition...");
-    let has_separate_home = context.get_answer(&StepId::HomePartition).is_some();
-    filesystem::mount_root(context, &root_path, !has_separate_home, executor)?;
+    let has_separate_home = manual_partitions.is_some_and(|parts| parts.home.is_some());
+    filesystem::mount_root(filesystem_plan, &root_path, !has_separate_home, executor)?;
 
     let boot_path = if let Some(ref paths) = dualboot_paths {
         Some(paths.boot.clone())
     } else {
-        context
-            .get_answer(&StepId::BootPartition)
-            .map(|s| s.to_string())
+        manual_partitions.map(|parts| parts.boot.as_str().to_owned())
     };
 
     if let Some(boot_path) = boot_path {
@@ -82,9 +84,7 @@ pub fn format_and_mount_partitions(
     let swap_path = if let Some(ref paths) = dualboot_paths {
         Some(paths.swap.clone())
     } else {
-        context
-            .get_answer(&StepId::SwapPartition)
-            .map(|s| s.to_string())
+        manual_partitions.and_then(|parts| parts.swap.as_ref().map(|path| path.as_str().to_owned()))
     };
 
     if let Some(swap_path) = swap_path {
@@ -95,7 +95,10 @@ pub fn format_and_mount_partitions(
         executor.run(Command::new("swapon").arg(&swap_path))?;
     }
 
-    if let Some(home_path) = context.get_answer(&StepId::HomePartition) {
+    if let Some(home_path) = manual_partitions
+        .and_then(|parts| parts.home.as_ref())
+        .map(|path| path.as_str())
+    {
         println!("Formatting Home partition: {}", home_path);
         filesystem::wipe_signatures(home_path, executor)?;
         executor.run(Command::new("mkfs.ext4").args(["-F", home_path]))?;

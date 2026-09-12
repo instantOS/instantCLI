@@ -1,23 +1,23 @@
 use super::CommandRunner;
-use crate::arch::engine::{InstallContext, StepId};
+use crate::arch::engine::InstallPlan;
 use anyhow::{Context, Result};
 
-pub async fn install_base(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
+pub async fn install_base(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
     println!("Setting up mirrors...");
-    setup_mirrors(context, executor).await?;
+    setup_mirrors(plan, executor).await?;
 
     println!("Configuring pacman settings...");
     crate::common::pacman::configure_pacman_settings(None, executor.dry_run()).await?;
 
     println!("Installing base system...");
-    run_pacstrap(context, executor)?;
+    run_pacstrap(plan, executor)?;
 
     Ok(())
 }
 
-async fn setup_mirrors(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
+async fn setup_mirrors(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
     // Check if a region was selected (question may have been skipped if fetch failed)
-    let region_name = context.get_answer(&StepId::MirrorRegion);
+    let region_name = plan.mirror_region.as_ref();
 
     if executor.dry_run() {
         match region_name {
@@ -70,19 +70,18 @@ async fn fetch_fallback_mirrorlist() -> Result<String> {
     crate::arch::mirrors::fetch_mirrorlist("").await
 }
 
-fn run_pacstrap(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
-    // Get selected kernel (defaults to the standard kernel when skipped)
-    let kernel = context.kernel()?;
-    let use_encryption = context.get_answer_bool(StepId::UseEncryption);
-    let use_plymouth = context.get_answer_bool(StepId::UsePlymouth);
-    let minimal_mode = context.get_answer_bool(StepId::MinimalMode);
+fn run_pacstrap(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
+    let kernel = plan.kernel;
+    let use_encryption = plan.storage.encryption().is_some();
+    let use_plymouth = plan.use_plymouth;
+    let minimal_mode = plan.minimal_mode;
 
     let mut packages: Vec<String> = vec!["base", "linux-firmware"]
         .into_iter()
         .map(String::from)
         .collect();
 
-    if crate::arch::config::RootFilesystem::from_context(context).is_btrfs() {
+    if plan.storage.filesystem().is_btrfs() {
         packages.push("btrfs-progs".to_string());
     }
 
@@ -90,11 +89,11 @@ fn run_pacstrap(context: &InstallContext, executor: &dyn CommandRunner) -> Resul
     packages.push(kernel.label().to_string());
 
     // CPU Microcode
-    if context.system_info.has_amd_cpu {
+    if plan.system_info.has_amd_cpu {
         println!("Detected AMD CPU, adding amd-ucode");
         packages.push("amd-ucode".to_string());
     }
-    if context.system_info.has_intel_cpu {
+    if plan.system_info.has_intel_cpu {
         println!("Detected Intel CPU, adding intel-ucode");
         packages.push("intel-ucode".to_string());
     }

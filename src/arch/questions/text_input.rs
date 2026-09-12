@@ -74,23 +74,6 @@ impl WizardStep for TextInputQuestion {
     }
 }
 
-/// Validation rules for installer-provided names.
-pub mod validators {
-    /// Reject a specific reserved value (e.g. the `root` username).
-    pub fn forbidden_value(
-        label: &str,
-        forbidden: &str,
-    ) -> impl Fn(&str) -> Result<(), String> + Send + Sync {
-        let label = label.to_string();
-        move |answer| {
-            if answer == forbidden {
-                return Err(format!("{label} cannot be '{forbidden}'."));
-            }
-            Ok(())
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -98,8 +81,16 @@ mod tests {
     #[test]
     fn validators_run_in_order_and_report_the_first_failure() {
         let question = TextInputQuestion::new(StepId::Username, "prompt", NerdFont::User)
-            .validator(validators::forbidden_value("Username", "root"))
-            .validator(validators::forbidden_value("Username", "admin"));
+            .validator(|answer| {
+                (answer != "root")
+                    .then_some(())
+                    .ok_or_else(|| "Username cannot be 'root'.".to_string())
+            })
+            .validator(|answer| {
+                (answer != "admin")
+                    .then_some(())
+                    .ok_or_else(|| "Username cannot be 'admin'.".to_string())
+            });
 
         assert_eq!(
             question.validate(&InstallContext::new(), "ben").map(|_| ()),

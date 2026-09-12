@@ -11,17 +11,19 @@ use std::{path::Path, path::PathBuf};
 pub struct DotfileDir {
     pub path: PathBuf,
     pub is_active: bool,
-    pub is_root: bool,
 }
 
 impl DotfileDir {
     pub fn new_no_create(name: &str, repo_path: &Path, is_active: bool) -> Result<Self> {
         let path = repo_path.join(name);
-        Ok(DotfileDir {
-            path,
-            is_active,
-            is_root: crate::dot::types::is_root_subdir(name),
-        })
+        Ok(DotfileDir { path, is_active })
+    }
+
+    pub fn is_root(&self) -> bool {
+        self.path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(crate::dot::types::is_root_subdir)
     }
 }
 

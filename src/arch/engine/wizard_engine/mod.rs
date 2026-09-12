@@ -746,6 +746,9 @@ pub fn validate_imported_context(
     for step in steps {
         let id = step.id();
         if !read_audit::hook(&**step, "should_ask", || step.should_ask(context)) {
+            if context.get_answer(&id).is_some() || context.is_step_completed(id) {
+                bail!("the stored state for {id:?} is irrelevant to the selected configuration")
+            }
             continue;
         }
 

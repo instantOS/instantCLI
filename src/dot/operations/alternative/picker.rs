@@ -120,7 +120,7 @@ impl FzfSelectable for CreateMenuItem {
                         "File already exists here - will set as active source",
                     );
                 }
-                if item.source.is_root {
+                if item.source.is_root() {
                     b = b.blank().line(
                         colors::TEXT,
                         Some(NerdFont::Info),

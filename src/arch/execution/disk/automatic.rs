@@ -1,6 +1,6 @@
 use super::filesystem;
 use super::util::get_part_path;
-use crate::arch::engine::InstallContext;
+use crate::arch::engine::FilesystemPlan;
 use crate::arch::execution::CommandRunner;
 use anyhow::Result;
 use std::process::Command;
@@ -47,7 +47,7 @@ pub fn partition_bios(disk: &str, executor: &dyn CommandRunner, swap_size_gb: u6
 }
 
 pub fn format_uefi(
-    context: &InstallContext,
+    filesystem: FilesystemPlan,
     disk: &str,
     executor: &dyn CommandRunner,
 ) -> Result<()> {
@@ -61,13 +61,13 @@ pub fn format_uefi(
     executor.run(Command::new("mkfs.fat").args(["-F32", &p1]))?;
     filesystem::wipe_signatures(&p2, executor)?;
     executor.run(Command::new("mkswap").arg(&p2))?;
-    filesystem::format_root(context, &p3, executor)?;
+    filesystem::format_root(filesystem, &p3, executor)?;
 
     Ok(())
 }
 
 pub fn format_bios(
-    context: &InstallContext,
+    filesystem: FilesystemPlan,
     disk: &str,
     executor: &dyn CommandRunner,
 ) -> Result<()> {
@@ -78,13 +78,13 @@ pub fn format_bios(
 
     filesystem::wipe_signatures(&p1, executor)?;
     executor.run(Command::new("mkswap").arg(&p1))?;
-    filesystem::format_root(context, &p2, executor)?;
+    filesystem::format_root(filesystem, &p2, executor)?;
 
     Ok(())
 }
 
 pub fn mount_uefi(
-    context: &InstallContext,
+    filesystem: FilesystemPlan,
     disk: &str,
     executor: &dyn CommandRunner,
 ) -> Result<()> {
@@ -94,7 +94,7 @@ pub fn mount_uefi(
 
     println!("Mounting partitions...");
 
-    filesystem::mount_root(context, &p3, true, executor)?;
+    filesystem::mount_root(filesystem, &p3, true, executor)?;
     executor.run(Command::new("mount").args(["--mkdir", "-t", "vfat", &p1, "/mnt/boot"]))?;
     executor.run(Command::new("swapon").arg(&p2))?;
 
@@ -102,7 +102,7 @@ pub fn mount_uefi(
 }
 
 pub fn mount_bios(
-    context: &InstallContext,
+    filesystem: FilesystemPlan,
     disk: &str,
     executor: &dyn CommandRunner,
 ) -> Result<()> {
@@ -111,7 +111,7 @@ pub fn mount_bios(
 
     println!("Mounting partitions...");
 
-    filesystem::mount_root(context, &p2, true, executor)?;
+    filesystem::mount_root(filesystem, &p2, true, executor)?;
     executor.run(Command::new("swapon").arg(&p1))?;
 
     Ok(())
@@ -162,12 +162,7 @@ mod tests {
     #[test]
     fn test_format_uefi_commands() {
         let mock = crate::arch::execution::mock::MockRunner::new();
-        let mut context = crate::arch::engine::InstallContext::new();
-        context.set_answer(
-            crate::arch::engine::StepId::RootFilesystem,
-            "ext4".to_string(),
-        );
-        super::format_uefi(&context, "/dev/sda", &mock).unwrap();
+        super::format_uefi(crate::arch::engine::FilesystemPlan::Ext4, "/dev/sda", &mock).unwrap();
 
         let log = mock.command_log();
         assert!(
@@ -184,12 +179,7 @@ mod tests {
     #[test]
     fn test_format_bios_commands() {
         let mock = crate::arch::execution::mock::MockRunner::new();
-        let mut context = crate::arch::engine::InstallContext::new();
-        context.set_answer(
-            crate::arch::engine::StepId::RootFilesystem,
-            "ext4".to_string(),
-        );
-        super::format_bios(&context, "/dev/vda", &mock).unwrap();
+        super::format_bios(crate::arch::engine::FilesystemPlan::Ext4, "/dev/vda", &mock).unwrap();
 
         let log = mock.command_log();
         // Stale signatures must be wiped before formatting each partition
@@ -205,12 +195,7 @@ mod tests {
     #[test]
     fn test_mount_bios_commands() {
         let mock = crate::arch::execution::mock::MockRunner::new();
-        let mut context = crate::arch::engine::InstallContext::new();
-        context.set_answer(
-            crate::arch::engine::StepId::RootFilesystem,
-            "ext4".to_string(),
-        );
-        super::mount_bios(&context, "/dev/vda", &mock).unwrap();
+        super::mount_bios(crate::arch::engine::FilesystemPlan::Ext4, "/dev/vda", &mock).unwrap();
 
         let log = mock.command_log();
         assert_eq!(

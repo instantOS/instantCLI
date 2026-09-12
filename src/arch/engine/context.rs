@@ -4,7 +4,7 @@ use std::any::Any;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, Mutex};
 
-use super::types::{Kernel, PartitioningKind, StepId, SystemInfo};
+use super::types::{Kernel, PartitioningMethod, StepId, SystemInfo};
 
 /// Trait for defining type-safe keys for the data map
 pub trait DataKey: Send + Sync + 'static {
@@ -191,16 +191,24 @@ impl InstallContext {
 
     /// The partitioning approach chosen for the target disk.
     ///
-    /// Parsed once here instead of substring-matching the raw display label
-    /// at every consumer. `Unknown` means the step was skipped or the stored
-    /// answer is not a known label; the execution layer must error on it
-    /// before touching the disk.
-    pub fn partitioning_kind(&self) -> PartitioningKind {
+    /// Parsed form used while the wizard is incomplete. Invalid values are
+    /// indistinguishable from absence here because the step validator owns
+    /// reporting them; execution uses [`Self::require_partitioning_method`].
+    pub fn partitioning_method(&self) -> Option<PartitioningMethod> {
         super::read_audit::record_read(StepId::PartitioningMethod);
         self.answers
             .get(&StepId::PartitioningMethod)
-            .map(|answer| PartitioningKind::from_answer(answer))
-            .unwrap_or(PartitioningKind::Unknown)
+            .and_then(|answer| PartitioningMethod::from_answer(answer))
+    }
+
+    pub fn require_partitioning_method(&self) -> Result<PartitioningMethod> {
+        super::read_audit::record_read(StepId::PartitioningMethod);
+        let answer = self
+            .answers
+            .get(&StepId::PartitioningMethod)
+            .ok_or_else(|| anyhow::anyhow!("partitioning method was not answered"))?;
+        PartitioningMethod::from_answer(answer)
+            .ok_or_else(|| anyhow::anyhow!("invalid partitioning method answer {answer:?}"))
     }
 
     /// Set a value in the data map using a strongly-typed key

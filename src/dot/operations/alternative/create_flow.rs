@@ -50,7 +50,7 @@ pub(crate) fn run_create_flow(
         let destinations: Vec<DotfileSource> = get_destinations(&config)
             .into_iter()
             .filter(|dest| {
-                if is_root_target != dest.is_root {
+                if is_root_target != dest.is_root() {
                     return false;
                 }
 

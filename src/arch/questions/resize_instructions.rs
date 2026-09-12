@@ -1,7 +1,7 @@
 use crate::arch::dualboot::{ResizeStatus, ResizeVerifier, Shrinkability};
 use crate::arch::engine::{InstallContext, StepId, StepOutcome, WizardStep};
 use crate::common::format::format_size;
-use crate::menu_utils::{ConfirmResult, FzfWrapper};
+use crate::menu_utils::{ConfirmResult, FzfSelectable, FzfWrapper};
 use crate::ui::nerd_font::NerdFont;
 use anyhow::{Context, Result};
 use colored::Colorize;
@@ -19,8 +19,8 @@ impl WizardStep for ResizeWorkflowStep {
     }
 
     fn should_ask(&self, context: &InstallContext) -> bool {
-        let is_dualboot =
-            context.partitioning_kind() == crate::arch::engine::PartitioningKind::DualBoot;
+        let is_dualboot = context.partitioning_method()
+            == Some(crate::arch::engine::PartitioningMethod::DualBoot);
 
         let needs_resize = context
             .get_answer(&StepId::DualBootPartition)
@@ -159,6 +159,58 @@ struct ResizeFlowContext<'a> {
     auto_resize: Option<AutoResizeContext>,
 }
 
+#[derive(Clone, Copy)]
+enum ResizeAction {
+    Automatic,
+    ConfirmManual,
+    OpenCfdisk,
+    Back,
+}
+
+impl FzfSelectable for ResizeAction {
+    fn fzf_display_text(&self) -> String {
+        match self {
+            Self::Automatic => format!("{} Let installer resize", NerdFont::Gear),
+            Self::ConfirmManual => format!("{} I have resized the partition", NerdFont::Check),
+            Self::OpenCfdisk => format!("{} Open cfdisk to verify/edit", NerdFont::HardDrive),
+            Self::Back => format!("{} Go Back", NerdFont::ArrowLeft),
+        }
+    }
+
+    fn fzf_key(&self) -> String {
+        match self {
+            Self::Automatic => "automatic",
+            Self::ConfirmManual => "confirm_manual",
+            Self::OpenCfdisk => "open_cfdisk",
+            Self::Back => "back",
+        }
+        .to_string()
+    }
+}
+
+#[derive(Clone, Copy)]
+enum UnverifiedResizeAction {
+    Proceed,
+    KeepResizing,
+}
+
+impl FzfSelectable for UnverifiedResizeAction {
+    fn fzf_display_text(&self) -> String {
+        match self {
+            Self::Proceed => format!("{} Proceed anyway", NerdFont::ArrowRight),
+            Self::KeepResizing => format!("{} Go back and resize", NerdFont::ArrowLeft),
+        }
+    }
+
+    fn fzf_key(&self) -> String {
+        match self {
+            Self::Proceed => "proceed",
+            Self::KeepResizing => "keep_resizing",
+        }
+        .to_string()
+    }
+}
+
 fn confirm_auto_resize(
     partition_path: &str,
     fs_type: &str,
@@ -214,12 +266,12 @@ async fn run_manual_resize_flow(ctx: ResizeFlowContext<'_>) -> Result<StepOutcom
     let mut last_status: Option<ResizeStatus> = None;
 
     let mut options = vec![
-        format!("{} I have resized the partition", NerdFont::Check),
-        format!("{} Open cfdisk to verify/edit", NerdFont::HardDrive),
-        format!("{} Go Back", NerdFont::ArrowLeft),
+        ResizeAction::ConfirmManual,
+        ResizeAction::OpenCfdisk,
+        ResizeAction::Back,
     ];
     if ctx.auto_resize.is_some() {
-        options.insert(0, format!("{} Let installer resize", NerdFont::Gear));
+        options.insert(0, ResizeAction::Automatic);
     }
 
     loop {
@@ -253,8 +305,8 @@ async fn run_manual_resize_flow(ctx: ResizeFlowContext<'_>) -> Result<StepOutcom
             .select_one()?;
 
         match result {
-            crate::menu_utils::DialogOutcome::Submitted(opt) => {
-                if opt.contains("installer") {
+            crate::menu_utils::DialogOutcome::Submitted(action) => match action {
+                ResizeAction::Automatic => {
                     if let Some(auto_resize) = ctx.auto_resize.as_ref()
                         && confirm_auto_resize(
                             ctx.partition_path,
@@ -268,11 +320,13 @@ async fn run_manual_resize_flow(ctx: ResizeFlowContext<'_>) -> Result<StepOutcom
                     {
                         return Ok(StepOutcome::Answer("auto".to_string()));
                     }
-                } else if opt.contains("Open cfdisk") {
+                }
+                ResizeAction::OpenCfdisk => {
                     let _ =
                         crate::common::terminal::run_tui_program("cfdisk", &[ctx.disk_path]).await;
                     last_status = Some(verifier.check_async().await?);
-                } else if opt.contains("I have resized") {
+                }
+                ResizeAction::ConfirmManual => {
                     let status = verifier.check_async().await?;
 
                     if status.resize_detected {
@@ -282,10 +336,9 @@ async fn run_manual_resize_flow(ctx: ResizeFlowContext<'_>) -> Result<StepOutcom
                     if confirm_proceed_without_resize(&status)? {
                         return Ok(StepOutcome::Answer("confirmed".to_string()));
                     }
-                } else if opt.contains("Go Back") {
-                    return Ok(StepOutcome::back());
                 }
-            }
+                ResizeAction::Back => return Ok(StepOutcome::back()),
+            },
             crate::menu_utils::DialogOutcome::Cancelled => return Ok(StepOutcome::Pause),
         }
     }
@@ -383,8 +436,8 @@ fn confirm_proceed_without_resize(status: &ResizeStatus) -> Result<bool> {
     println!();
 
     let confirm_options = vec![
-        format!("{} Proceed anyway", NerdFont::ArrowRight),
-        format!("{} Go back and resize", NerdFont::ArrowLeft),
+        UnverifiedResizeAction::Proceed,
+        UnverifiedResizeAction::KeepResizing,
     ];
 
     let confirm = FzfWrapper::builder()
@@ -395,6 +448,6 @@ fn confirm_proceed_without_resize(status: &ResizeStatus) -> Result<bool> {
 
     Ok(matches!(
         confirm,
-        crate::menu_utils::DialogOutcome::Submitted(c) if c.contains("Proceed")
+        crate::menu_utils::DialogOutcome::Submitted(UnverifiedResizeAction::Proceed)
     ))
 }

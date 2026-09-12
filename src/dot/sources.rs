@@ -36,7 +36,7 @@ pub fn list_sources_for_target(
         };
 
         for dotfile_dir in dotfile_repo.active_dotfile_dirs() {
-            if dotfile_dir.is_root == is_home {
+            if dotfile_dir.is_root() == is_home {
                 continue;
             }
             let subdir_name = dotfile_dir
@@ -56,7 +56,6 @@ pub fn list_sources_for_target(
                         repo_name: repo_config.name.clone(),
                         subdir_name: subdir_name.clone(),
                         source_path: candidate,
-                        is_root: dotfile_dir.is_root,
                     });
                 }
             }
@@ -106,7 +105,7 @@ pub fn list_sources_by_target_in_dir(
                 // sources collide on the same target key in the returned map.
                 let target_relative = crate::dot::encryption::strip_age_suffix(&relative_path)
                     .unwrap_or(relative_path);
-                let target_path = if dotfile_dir.is_root {
+                let target_path = if dotfile_dir.is_root() {
                     std::path::Path::new("/").join(target_relative)
                 } else {
                     home.join(target_relative)
@@ -123,7 +122,6 @@ pub fn list_sources_by_target_in_dir(
                         repo_name: repo_config.name.clone(),
                         subdir_name: subdir_name.clone(),
                         source_path,
-                        is_root: dotfile_dir.is_root,
                     });
             }
         }

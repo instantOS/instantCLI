@@ -1,7 +1,5 @@
-use crate::arch::config::{
-    BTRFS_HOME_SUBVOLUME, BTRFS_ROOT_SUBVOLUME, BtrfsCompression, RootFilesystem,
-};
-use crate::arch::engine::InstallContext;
+use crate::arch::config::{BTRFS_HOME_SUBVOLUME, BTRFS_ROOT_SUBVOLUME};
+use crate::arch::engine::FilesystemPlan;
 use crate::arch::execution::CommandRunner;
 use anyhow::Result;
 use std::process::Command;
@@ -18,17 +16,17 @@ pub fn wipe_signatures(device: &str, executor: &dyn CommandRunner) -> Result<()>
 }
 
 pub fn format_root(
-    context: &InstallContext,
+    filesystem: FilesystemPlan,
     device: &str,
     executor: &dyn CommandRunner,
 ) -> Result<()> {
     wipe_signatures(device, executor)?;
 
-    match RootFilesystem::from_context(context) {
-        RootFilesystem::Btrfs => {
+    match filesystem {
+        FilesystemPlan::Btrfs { .. } => {
             executor.run(Command::new("mkfs.btrfs").args(["-f", device]))?;
         }
-        RootFilesystem::Ext4 => {
+        FilesystemPlan::Ext4 => {
             executor.run(Command::new("mkfs.ext4").args(["-F", device]))?;
         }
     }
@@ -43,17 +41,17 @@ pub fn format_root(
 }
 
 pub fn mount_root(
-    context: &InstallContext,
+    filesystem: FilesystemPlan,
     device: &str,
     create_home_subvolume: bool,
     executor: &dyn CommandRunner,
 ) -> Result<()> {
-    if !RootFilesystem::from_context(context).is_btrfs() {
+    let FilesystemPlan::Btrfs { compression } = filesystem else {
         // Explicit fstype: auto-detection can be thrown off by stale
         // signatures on re-partitioned disks.
         executor.run(Command::new("mount").args(["-t", "ext4", device, "/mnt"]))?;
         return Ok(());
-    }
+    };
 
     // Create subvolumes from the top-level btrfs tree, then remount the root
     // subvolume. Keeping @home separate allows snapshots of @ without rolling
@@ -78,7 +76,6 @@ pub fn mount_root(
     }
     unmount_result?;
 
-    let compression = BtrfsCompression::from_context(context);
     let mount_options = |subvolume| {
         let mut options = vec![subvolume, "noatime"];
         if let Some(option) = compression.mount_option() {
@@ -111,7 +108,7 @@ pub fn mount_root(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::arch::engine::StepId;
+    use crate::arch::config::BtrfsCompression;
     use crate::arch::execution::mock::MockRunner;
     use std::process::Output;
 
@@ -146,20 +143,15 @@ mod tests {
         }
     }
 
-    fn context(filesystem: &str, compression: &str) -> InstallContext {
-        let mut context = InstallContext::new();
-        context.set_answer(StepId::RootFilesystem, filesystem.into());
-        context.set_answer(StepId::BtrfsCompression, compression.into());
-        context
-    }
-
     #[test]
     fn formats_and_mounts_btrfs_subvolumes() {
         let runner = MockRunner::new();
-        let context = context("btrfs", "zstd");
+        let filesystem = FilesystemPlan::Btrfs {
+            compression: BtrfsCompression::Zstd,
+        };
 
-        format_root(&context, "/dev/root", &runner).unwrap();
-        mount_root(&context, "/dev/root", true, &runner).unwrap();
+        format_root(filesystem, "/dev/root", &runner).unwrap();
+        mount_root(filesystem, "/dev/root", true, &runner).unwrap();
 
         let log = runner.command_log();
         assert!(log.iter().any(|line| line == "wipefs -a /dev/root"));
@@ -178,10 +170,8 @@ mod tests {
     #[test]
     fn ext4_does_not_create_subvolumes() {
         let runner = MockRunner::new();
-        let context = context("ext4", "zstd");
-
-        format_root(&context, "/dev/root", &runner).unwrap();
-        mount_root(&context, "/dev/root", true, &runner).unwrap();
+        format_root(FilesystemPlan::Ext4, "/dev/root", &runner).unwrap();
+        mount_root(FilesystemPlan::Ext4, "/dev/root", true, &runner).unwrap();
 
         assert_eq!(
             runner.command_log(),
@@ -199,9 +189,11 @@ mod tests {
         let runner = FailOnHomeSubvolume {
             inner: MockRunner::new(),
         };
-        let context = context("btrfs", "zstd");
+        let filesystem = FilesystemPlan::Btrfs {
+            compression: BtrfsCompression::Zstd,
+        };
 
-        let error = mount_root(&context, "/dev/root", true, &runner).unwrap_err();
+        let error = mount_root(filesystem, "/dev/root", true, &runner).unwrap_err();
 
         assert!(error.to_string().contains("simulated subvolume failure"));
         assert_eq!(runner.inner.command_log().last().unwrap(), "umount /mnt");

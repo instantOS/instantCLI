@@ -2,12 +2,76 @@ use super::CommandRunner;
 use anyhow::{Context, Result};
 use std::process::Command;
 
-use crate::arch::engine::{InstallContext, StepId};
+use crate::arch::config::{DesktopEnvironment, DisplayManager};
+use crate::arch::engine::{InstallContext, InstallPlan, StepId, SystemInfo};
 use crate::common::config_edit::{set_keys, set_keys_in_section, update_file};
 use crate::ui::nerd_font::NerdFont;
 
 /// URL for the instantOS dotfiles repository
 const INSTANTOS_DOTFILES_REPO: &str = "https://github.com/instantOS/dotfiles";
+
+struct SetupOptions {
+    username: Option<String>,
+    desktop: DesktopEnvironment,
+    display_manager: DisplayManager,
+    use_plymouth: bool,
+    autologin: bool,
+    use_xorg: bool,
+    minimal_mode: bool,
+    system_info: SystemInfo,
+}
+
+impl SetupOptions {
+    fn from_wizard(context: &InstallContext, override_user: Option<String>) -> Result<Self> {
+        let desktop = context
+            .get_answer(&StepId::DesktopEnvironment)
+            .map(|answer| {
+                DesktopEnvironment::try_from_answer(answer)
+                    .with_context(|| format!("invalid desktop environment {answer:?}"))
+            })
+            .transpose()?
+            .unwrap_or(DesktopEnvironment::DEFAULT);
+        let display_manager = context
+            .get_answer(&StepId::DisplayManager)
+            .map(|answer| {
+                DisplayManager::try_from_answer(answer)
+                    .with_context(|| format!("invalid display manager {answer:?}"))
+            })
+            .transpose()?
+            .unwrap_or(DisplayManager::DEFAULT);
+        let boolean = |id, default| match context.get_answer(&id) {
+            Some(answer) if answer == "yes" => Ok(true),
+            Some(answer) if answer == "no" => Ok(false),
+            Some(answer) => anyhow::bail!("invalid boolean answer for {id:?}: {answer:?}"),
+            None => Ok(default),
+        };
+        let minimal_mode = boolean(StepId::MinimalMode, false)?;
+
+        Ok(Self {
+            username: override_user.or_else(|| context.get_answer(&StepId::Username).cloned()),
+            desktop,
+            display_manager,
+            use_plymouth: boolean(StepId::UsePlymouth, true)?,
+            autologin: boolean(StepId::Autologin, false)?,
+            use_xorg: boolean(StepId::UseXorg, display_manager == DisplayManager::Lightdm)?,
+            minimal_mode,
+            system_info: context.system_info.clone(),
+        })
+    }
+
+    fn from_install_plan(plan: &InstallPlan) -> Self {
+        Self {
+            username: Some(plan.username.as_str().to_owned()),
+            desktop: plan.desktop,
+            display_manager: plan.display_manager,
+            use_plymouth: plan.use_plymouth,
+            autologin: plan.autologin,
+            use_xorg: plan.use_xorg,
+            minimal_mode: plan.minimal_mode,
+            system_info: plan.system_info.clone(),
+        }
+    }
+}
 
 /// Set up instantOS on a system.
 ///
@@ -21,9 +85,25 @@ pub async fn setup_instantos(
     executor: &dyn CommandRunner,
     override_user: Option<String>,
 ) -> Result<()> {
+    let options = SetupOptions::from_wizard(context, override_user)?;
+    setup_instantos_with_options(&options, executor).await
+}
+
+pub async fn setup_instantos_for_install(
+    plan: &InstallPlan,
+    executor: &dyn CommandRunner,
+) -> Result<()> {
+    let options = SetupOptions::from_install_plan(plan);
+    setup_instantos_with_options(&options, executor).await
+}
+
+async fn setup_instantos_with_options(
+    options: &SetupOptions,
+    executor: &dyn CommandRunner,
+) -> Result<()> {
     println!("Setting up instantOS...");
 
-    let minimal_mode = context.get_answer_bool(StepId::MinimalMode);
+    let minimal_mode = options.minimal_mode;
 
     if !minimal_mode {
         // Enable multilib for 32-bit support (Steam, Wine, etc.)
@@ -33,20 +113,20 @@ pub async fn setup_instantos(
 
         // Set up instantOS repository and install instantOS packages
         setup_instant_repo(executor).await?;
-        install_instant_packages(context, executor)?;
+        install_instant_packages(options, executor)?;
 
         // Configure Plymouth theme (after instantOS packages are installed)
-        super::config::configure_plymouth(context, executor)?;
+        super::config::configure_plymouth(options.use_plymouth, minimal_mode, executor)?;
 
         // Update /etc/os-release to identify as instantOS
         update_os_release(executor)?;
 
         // Configure GRUB theme
-        crate::arch::execution::bootloader::configure_grub_theme(context, executor)?;
+        crate::arch::execution::bootloader::configure_grub_theme(executor)?;
     }
 
     // Determine username: override > context > SUDO_USER
-    let username = override_user.or_else(|| context.get_answer(&StepId::Username).cloned());
+    let username = options.username.clone();
 
     // Configure user groups (create groups and add user to them)
     // This reuses the same functions as ins arch install for consistency
@@ -74,7 +154,7 @@ pub async fn setup_instantos(
     }
 
     setup_backlight_udev_rule(executor)?;
-    enable_services(executor, context)?;
+    enable_services(executor, options)?;
     super::config::configure_environment(executor)?;
 
     Ok(())
@@ -102,9 +182,10 @@ pub async fn setup_instant_repo(executor: &dyn CommandRunner) -> Result<()> {
 ///
 /// These are the only packages installed by `ins arch setup` on existing systems.
 /// For fresh installations, standard packages are installed separately in the Config step.
-fn install_instant_packages(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
-    let mut packages = crate::arch::execution::packages::build_instant_package_plan(context);
-    if context.get_answer_bool(StepId::UseXorg) {
+fn install_instant_packages(options: &SetupOptions, executor: &dyn CommandRunner) -> Result<()> {
+    let mut packages =
+        crate::arch::execution::packages::build_instant_package_plan(options.minimal_mode);
+    if options.use_xorg {
         packages.push("xorg-server".to_string());
     }
     if packages.is_empty() {
@@ -175,14 +256,14 @@ fn setup_wallpaper(username: &str, executor: &dyn CommandRunner) -> Result<()> {
     Ok(())
 }
 
-fn enable_services(executor: &dyn CommandRunner, context: &InstallContext) -> Result<()> {
+fn enable_services(executor: &dyn CommandRunner, options: &SetupOptions) -> Result<()> {
     println!("Enabling services...");
 
     let mut services = vec!["NetworkManager", "sshd", "systemd-timesyncd"];
-    let desktop = crate::arch::config::DesktopEnvironment::from_context(context);
+    let desktop = options.desktop;
 
     // Enable VM-specific services
-    if let Some(vm_type) = &context.system_info.vm_type {
+    if let Some(vm_type) = &options.system_info.vm_type {
         match vm_type.as_str() {
             "vmware" => {
                 services.push("vmtoolsd");
@@ -197,7 +278,7 @@ fn enable_services(executor: &dyn CommandRunner, context: &InstallContext) -> Re
         }
     }
 
-    let selected_dm = crate::arch::config::DisplayManager::from_context(context);
+    let selected_dm = options.display_manager;
     let selected_dm_service = selected_dm.answer_value();
 
     // Check if other display managers are enabled
@@ -223,23 +304,20 @@ fn enable_services(executor: &dyn CommandRunner, context: &InstallContext) -> Re
         }
     }
 
-    if !other_dm_enabled
-        && !context.get_answer_bool(StepId::MinimalMode)
-        && desktop.requires_display_manager()
-    {
+    if !other_dm_enabled && !options.minimal_mode && desktop.requires_display_manager() {
         match selected_dm {
             crate::arch::config::DisplayManager::Gdm => {
                 services.push(selected_dm_service);
-                configure_gdm_session(context, executor)?;
-                if context.get_answer_bool(StepId::Autologin) {
-                    configure_gdm_autologin(context, executor)?;
+                configure_gdm_session(options, executor)?;
+                if options.autologin {
+                    configure_gdm_autologin(options, executor)?;
                 }
             }
             crate::arch::config::DisplayManager::Lightdm => {
                 services.push(selected_dm_service);
-                configure_lightdm_session(context, executor)?;
-                if context.get_answer_bool(StepId::Autologin) {
-                    configure_lightdm_autologin(context, executor)?;
+                configure_lightdm_session(options, executor)?;
+                if options.autologin {
+                    configure_lightdm_autologin(options, executor)?;
                 }
             }
             crate::arch::config::DisplayManager::None => {
@@ -257,7 +335,7 @@ fn enable_services(executor: &dyn CommandRunner, context: &InstallContext) -> Re
             "Skipping {} setup because another display manager is enabled.",
             selected_dm_service
         );
-    } else if context.get_answer_bool(StepId::MinimalMode) {
+    } else if options.minimal_mode {
         println!("Skipping display manager setup because minimal mode is enabled.");
     } else {
         println!("Skipping display manager setup because no graphical desktop was selected.");
@@ -313,8 +391,8 @@ fn update_os_release(executor: &dyn CommandRunner) -> Result<()> {
     Ok(())
 }
 
-fn configure_lightdm_session(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
-    let desktop = crate::arch::config::DesktopEnvironment::from_context(context);
+fn configure_lightdm_session(options: &SetupOptions, executor: &dyn CommandRunner) -> Result<()> {
+    let desktop = options.desktop;
     let Some(session_name) = desktop.session_name() else {
         return Ok(());
     };
@@ -358,17 +436,14 @@ fn configure_lightdm_session(context: &InstallContext, executor: &dyn CommandRun
     Ok(())
 }
 
-fn configure_lightdm_autologin(
-    context: &InstallContext,
-    executor: &dyn CommandRunner,
-) -> Result<()> {
+fn configure_lightdm_autologin(options: &SetupOptions, executor: &dyn CommandRunner) -> Result<()> {
     println!("Configuring LightDM autologin...");
 
-    let username = context
-        .get_answer(&StepId::Username)
+    let username = options
+        .username
+        .as_deref()
         .context("Username not set for autologin")?;
-    let session_name =
-        crate::arch::config::DesktopEnvironment::from_context(context).session_name();
+    let session_name = options.desktop.session_name();
 
     if executor.dry_run() {
         println!("[DRY RUN] Enable autologin for user: {}", username);
@@ -392,7 +467,7 @@ fn configure_lightdm_autologin(
 
     let changed = update_file(config_path, |content| {
         let mut keys = vec![
-            ("autologin-user", username.as_str()),
+            ("autologin-user", username),
             ("autologin-user-timeout", "0"),
         ];
         if let Some(session_name) = session_name {
@@ -441,9 +516,9 @@ fn setup_backlight_udev_rule(executor: &dyn CommandRunner) -> Result<()> {
     Ok(())
 }
 
-fn configure_gdm_session(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
-    let desktop = crate::arch::config::DesktopEnvironment::from_context(context);
-    let session_name = if context.get_answer_bool(StepId::UseXorg) {
+fn configure_gdm_session(options: &SetupOptions, executor: &dyn CommandRunner) -> Result<()> {
+    let desktop = options.desktop;
+    let session_name = if options.use_xorg {
         desktop.session_name()
     } else {
         desktop.gdm_session_name()
@@ -451,8 +526,9 @@ fn configure_gdm_session(context: &InstallContext, executor: &dyn CommandRunner)
     let Some(session_name) = session_name else {
         return Ok(());
     };
-    let username = context
-        .get_answer(&StepId::Username)
+    let username = options
+        .username
+        .as_deref()
         .context("Username not set for GDM session configuration")?;
 
     println!(
@@ -487,11 +563,12 @@ fn configure_gdm_session(context: &InstallContext, executor: &dyn CommandRunner)
     Ok(())
 }
 
-fn configure_gdm_autologin(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
+fn configure_gdm_autologin(options: &SetupOptions, executor: &dyn CommandRunner) -> Result<()> {
     println!("Configuring GDM autologin...");
 
-    let username = context
-        .get_answer(&StepId::Username)
+    let username = options
+        .username
+        .as_deref()
         .context("Username not set for GDM autologin")?;
 
     if executor.dry_run() {

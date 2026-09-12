@@ -298,7 +298,7 @@ fn revisit_targets_an_earlier_step_and_invalidates_its_dependents() {
     engine.step_graph.record_answer(
         &mut engine.context,
         StepId::PartitioningMethod,
-        "Manual (cfdisk)".into(),
+        "manual".into(),
     );
     engine
         .step_graph
@@ -575,7 +575,7 @@ fn normalization_removes_inactive_imported_answers() {
         crate::ui::nerd_font::NerdFont::Lock,
     )
     .relevant_when([StepId::PartitioningMethod], |context| {
-        context.partitioning_kind() != crate::arch::engine::PartitioningKind::Manual
+        context.partitioning_method() != Some(crate::arch::engine::PartitioningMethod::Manual)
     });
     let mut engine = WizardEngine::new(vec![
         question(StepId::PartitioningMethod, &[]),
@@ -584,7 +584,7 @@ fn normalization_removes_inactive_imported_answers() {
     .unwrap();
     engine
         .context
-        .set_answer(StepId::PartitioningMethod, "Manual (cfdisk)".to_string());
+        .set_answer(StepId::PartitioningMethod, "manual".to_string());
     engine
         .context
         .set_answer(StepId::UseEncryption, "yes".to_string());
@@ -604,10 +604,9 @@ fn normalization_rejects_dependent_answers_without_provenance() {
     engine
         .context
         .set_answer(StepId::Disk, "/dev/sda".to_string());
-    engine.context.set_answer(
-        StepId::PartitioningMethod,
-        "Automatic (Erase Disk)".to_string(),
-    );
+    engine
+        .context
+        .set_answer(StepId::PartitioningMethod, "automatic".to_string());
 
     engine.normalize_context();
 
@@ -632,11 +631,7 @@ fn normalization_reasks_a_dependent_answer_when_provenance_is_stale() {
     let graph = StepGraph::new(&questions).unwrap();
     let mut context = InstallContext::new();
     graph.record_answer(&mut context, StepId::Disk, "/dev/sda".into());
-    graph.record_answer(
-        &mut context,
-        StepId::PartitioningMethod,
-        "Automatic (Erase Disk)".into(),
-    );
+    graph.record_answer(&mut context, StepId::PartitioningMethod, "automatic".into());
     // Simulate an external edit which bypassed the graph but left the saved
     // provenance available for detecting the inconsistency.
     context.answers.insert(StepId::Disk, "/dev/sdb".to_string());
@@ -709,11 +704,7 @@ fn dependency_provenance_survives_context_serialization() {
     let graph = StepGraph::new(&questions).unwrap();
     let mut context = InstallContext::new();
     graph.record_answer(&mut context, StepId::Disk, "/dev/sda".into());
-    graph.record_answer(
-        &mut context,
-        StepId::PartitioningMethod,
-        "Automatic (Erase Disk)".into(),
-    );
+    graph.record_answer(&mut context, StepId::PartitioningMethod, "automatic".into());
 
     let serialized = context.to_toml().unwrap();
     let restored: InstallContext = toml::from_str(&serialized).unwrap();
@@ -725,7 +716,7 @@ fn dependency_provenance_survives_context_serialization() {
             .context
             .get_answer(&StepId::PartitioningMethod)
             .map(String::as_str),
-        Some("Automatic (Erase Disk)")
+        Some("automatic")
     );
 }
 
@@ -783,11 +774,7 @@ fn changing_disk_invalidates_real_partitioning_method_question() {
     let mut context = InstallContext::new();
 
     graph.record_answer(&mut context, StepId::Disk, "/dev/sda".into());
-    graph.record_answer(
-        &mut context,
-        StepId::PartitioningMethod,
-        "Dual Boot (Automatic)".into(),
-    );
+    graph.record_answer(&mut context, StepId::PartitioningMethod, "dual_boot".into());
     graph.record_answer(&mut context, StepId::Disk, "/dev/sdb".into());
 
     assert!(context.get_answer(&StepId::PartitioningMethod).is_none());
@@ -1170,7 +1157,7 @@ fn imported_context_rejects_a_stale_dependent_answer() {
 }
 
 #[test]
-fn imported_context_accepts_current_answers_and_ignores_irrelevant_ones() {
+fn imported_context_rejects_irrelevant_answers() {
     let steps: Vec<Box<dyn WizardStep>> = vec![
         Box::new(StrictAnswerStep {
             id: StepId::UseEncryption,
@@ -1178,7 +1165,7 @@ fn imported_context_accepts_current_answers_and_ignores_irrelevant_ones() {
             relevant: true,
         }),
         // Irrelevant at import time: the wizard would have dropped this
-        // state, so a leftover answer must not fail validation.
+        // state, so imported execution must reject it as stale input.
         Box::new(StrictAnswerStep {
             id: StepId::UsePlymouth,
             accepted: "yes",
@@ -1190,7 +1177,8 @@ fn imported_context_accepts_current_answers_and_ignores_irrelevant_ones() {
     graph.record_answer(&mut context, StepId::UseEncryption, "yes".into());
     context.set_answer(StepId::UsePlymouth, "garbage".to_string());
 
-    validate_imported_context(&steps, &context).unwrap();
+    let error = validate_imported_context(&steps, &context).unwrap_err();
+    assert!(error.to_string().contains("irrelevant"));
 }
 
 #[test]

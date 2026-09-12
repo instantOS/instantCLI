@@ -4,11 +4,11 @@ use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 
 use super::context::InstallContext;
-use super::types::{BootMode, PartitioningKind, StepId};
+use super::types::{BootMode, PartitioningMethod, StepId};
 
 pub(crate) struct InstallSummary {
     pub(crate) text: String,
-    pub(crate) partitioning_kind: PartitioningKind,
+    pub(crate) partitioning_method: Option<PartitioningMethod>,
 }
 
 fn format_disk_label(context: &InstallContext) -> String {
@@ -85,7 +85,7 @@ pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary 
     let locale = answer_or(context, StepId::Locale, "<not set>");
     let keymap = answer_or(context, StepId::Keymap, "<not set>");
 
-    let partitioning_kind = context.partitioning_kind();
+    let partitioning_method = context.partitioning_method();
 
     let disk = format_disk_label(context);
 
@@ -109,14 +109,14 @@ pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary 
     let desktop_label = if minimal_mode {
         "Skipped (minimal mode)".to_string()
     } else {
-        crate::arch::config::DesktopEnvironment::from_context(context)
+        crate::arch::config::DesktopEnvironment::selected_or_default(context)
             .label()
             .to_string()
     };
 
-    let root_filesystem = crate::arch::config::RootFilesystem::from_context(context);
+    let root_filesystem = crate::arch::config::RootFilesystem::selected_or_default(context);
     let filesystem_label = if root_filesystem.is_btrfs() {
-        let compression = crate::arch::config::BtrfsCompression::from_context(context);
+        let compression = crate::arch::config::BtrfsCompression::selected_or_default(context);
         let subvolumes = if context.get_answer(&StepId::HomePartition).is_some() {
             "@"
         } else {
@@ -153,10 +153,10 @@ pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary 
 
     let dm_label = if minimal_mode {
         "Skipped (minimal mode)".to_string()
-    } else if crate::arch::config::DesktopEnvironment::from_context(context)
+    } else if crate::arch::config::DesktopEnvironment::selected_or_default(context)
         .requires_display_manager()
     {
-        crate::arch::config::DisplayManager::from_context(context)
+        crate::arch::config::DisplayManager::selected_or_default(context)
             .label()
             .to_string()
     } else {
@@ -169,17 +169,17 @@ pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary 
         "Do not upload".to_string()
     };
 
-    let encryption_label = match partitioning_kind {
-        PartitioningKind::Automatic => {
+    let encryption_label = match partitioning_method {
+        Some(PartitioningMethod::Automatic) => {
             if context.get_answer_bool(StepId::UseEncryption) {
                 "Enabled (LUKS)".to_string()
             } else {
                 "Disabled".to_string()
             }
         }
-        PartitioningKind::DualBoot => "Not supported for dual boot".to_string(),
-        PartitioningKind::Manual => "Not supported for manual partitioning".to_string(),
-        PartitioningKind::Unknown => {
+        Some(PartitioningMethod::DualBoot) => "Not supported for dual boot".to_string(),
+        Some(PartitioningMethod::Manual) => "Not supported for manual partitioning".to_string(),
+        None => {
             if context.get_answer_bool(StepId::UseEncryption) {
                 "Enabled (LUKS)".to_string()
             } else {
@@ -212,18 +212,23 @@ pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary 
         .blank()
         .line(colors::TEAL, Some(NerdFont::HardDrive), "Storage Plan")
         .field_indented("Disk", &disk)
-        .field_indented("Partitioning", &partitioning_kind.to_string())
+        .field_indented(
+            "Partitioning",
+            &partitioning_method
+                .map(|kind| kind.to_string())
+                .unwrap_or_else(|| "<not set>".to_string()),
+        )
         .field_indented("Root filesystem", &filesystem_label);
 
-    match partitioning_kind {
-        PartitioningKind::Automatic => {
+    match partitioning_method {
+        Some(PartitioningMethod::Automatic) => {
             let layout =
                 format_automatic_layout(context, context.get_answer_bool(StepId::UseEncryption));
             builder = builder
                 .field_indented("Layout", &layout)
                 .field_indented("Swap", "Auto (RAM-based)");
         }
-        PartitioningKind::DualBoot => {
+        Some(PartitioningMethod::DualBoot) => {
             let resize_target = match context.get_answer(&StepId::DualBootPartition) {
                 Some(value) if value == "__free_space__" => "Use existing free space".to_string(),
                 Some(value) => value.clone(),
@@ -242,7 +247,7 @@ pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary 
                 .field_indented("Resize method", &resize_method)
                 .field_indented("Swap", "Auto (RAM-based)");
         }
-        PartitioningKind::Manual => {
+        Some(PartitioningMethod::Manual) => {
             let root_partition = answer_or(context, StepId::RootPartition, "<not set>");
             let boot_partition = answer_or(context, StepId::BootPartition, "<not set>");
             let swap_partition = context
@@ -262,7 +267,7 @@ pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary 
                 .field_indented("Swap", &swap_partition)
                 .field_indented("Home", &home_partition);
         }
-        PartitioningKind::Unknown => {}
+        None => {}
     }
 
     builder = builder
@@ -271,7 +276,7 @@ pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary 
         .field_indented("Disk encryption", &encryption_label)
         .field_indented("User password", user_password_status);
 
-    if partitioning_kind == PartitioningKind::Automatic
+    if partitioning_method == Some(PartitioningMethod::Automatic)
         && context.get_answer_bool(StepId::UseEncryption)
     {
         builder = builder.field_indented("LUKS passphrase", encryption_password_status);
@@ -295,7 +300,7 @@ pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary 
 
     InstallSummary {
         text: summary,
-        partitioning_kind,
+        partitioning_method,
     }
 }
 
@@ -306,9 +311,9 @@ pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary 
 pub(crate) fn build_setup_summary(context: &InstallContext) -> String {
     let username = answer_or(context, StepId::Username, "<not set>");
 
-    let desktop = crate::arch::config::DesktopEnvironment::from_context(context);
+    let desktop = crate::arch::config::DesktopEnvironment::selected_or_default(context);
     let dm_label = if desktop.requires_display_manager() {
-        crate::arch::config::DisplayManager::from_context(context)
+        crate::arch::config::DisplayManager::selected_or_default(context)
             .label()
             .to_string()
     } else {

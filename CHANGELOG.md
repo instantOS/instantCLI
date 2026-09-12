@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- breaking: `ins dot alternative` now uses subcommands instead of flags (`browse`, `list`, `reset`, `set <path> <repo[/subdir]>`, `create`); contradictory flag combinations are no longer silently resolved by precedence
+- breaking: `ResizeInfo.can_shrink`/`min_size_bytes`/`reason` replaced by a `Shrinkability` enum so "shrinkable but minimum unknown" is explicit instead of a `bool`/`Option` pairing that consumers interpreted differently
+- breaking: installer TOML now stores stable machine values such as `automatic`, `dual_boot`, and `manual` instead of partitioning menu labels; old answer files are intentionally unsupported
+- installer execution now validates wizard answers into a typed `InstallPlan`; storage strategies and filesystem-specific options are represented structurally so invalid combinations cannot reach destructive operations
+- installer identities, secrets, locales, timezones, keymaps, and device paths now cross into execution as validated domain types; unsafe password delimiters and path traversal are rejected before installation starts
+
 ## [0.14.14](https://github.com/instantOS/instantCLI/compare/v0.14.13...v0.14.14) - 2026-09-04
 
 ### Added

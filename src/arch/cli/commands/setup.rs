@@ -96,9 +96,9 @@ fn print_setup_configuration(context: &InstallContext) {
     println!("\nSetup configuration:");
     println!(
         "  Desktop environment: {}",
-        DesktopEnvironment::from_context(context).label()
+        DesktopEnvironment::selected_or_default(context).label()
     );
-    if DesktopEnvironment::from_context(context).requires_display_manager() {
+    if DesktopEnvironment::selected_or_default(context).requires_display_manager() {
         println!("  Display manager: {}", answer(StepId::DisplayManager));
         println!("  Autologin: {}", answer(StepId::Autologin));
         println!("  Xorg server: {}", answer(StepId::UseXorg));

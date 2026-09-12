@@ -1,31 +1,28 @@
 use super::CommandRunner;
-use crate::arch::engine::{BootMode, InstallContext, StepId};
+use crate::arch::engine::{BootMode, InstallPlan};
 use crate::common::config_edit::set_keys;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::process::Command;
 
-pub async fn install_bootloader(
-    context: &InstallContext,
-    executor: &dyn CommandRunner,
-) -> Result<()> {
+pub async fn install_bootloader(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
     println!("Installing bootloader (inside chroot)...");
 
-    match context.system_info.boot_mode {
-        BootMode::UEFI64 | BootMode::UEFI32 => install_grub_uefi(context, executor)?,
-        BootMode::BIOS => install_grub_bios(context, executor)?,
+    match plan.system_info.boot_mode {
+        BootMode::UEFI64 | BootMode::UEFI32 => install_grub_uefi(plan, executor)?,
+        BootMode::BIOS => install_grub_bios(plan, executor)?,
     }
 
-    configure_grub(context, executor)?;
+    configure_grub(plan, executor)?;
 
     Ok(())
 }
 
 /// Packages needed for bootloader setup (installed in a single batch elsewhere)
-pub fn bootloader_package_list(context: &InstallContext) -> Vec<String> {
+pub fn bootloader_package_list(plan: &InstallPlan) -> Vec<String> {
     let mut packages = vec!["grub".to_string(), "os-prober".to_string()];
 
     if matches!(
-        context.system_info.boot_mode,
+        plan.system_info.boot_mode,
         BootMode::UEFI64 | BootMode::UEFI32
     ) {
         packages.push("efibootmgr".to_string());
@@ -34,11 +31,11 @@ pub fn bootloader_package_list(context: &InstallContext) -> Vec<String> {
     packages
 }
 
-fn install_grub_uefi(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
+fn install_grub_uefi(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
     println!("Detected UEFI mode. Installing GRUB for UEFI...");
 
     // Determine the appropriate target based on UEFI mode
-    let target = match context.system_info.boot_mode {
+    let target = match plan.system_info.boot_mode {
         BootMode::UEFI64 => "x86_64-efi",
         BootMode::UEFI32 => "i386-efi",
         _ => anyhow::bail!("Invalid boot mode for UEFI installation"),
@@ -65,13 +62,11 @@ fn install_grub_uefi(context: &InstallContext, executor: &dyn CommandRunner) -> 
     Ok(())
 }
 
-fn install_grub_bios(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
+fn install_grub_bios(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
     println!("Detected BIOS mode. Installing GRUB for BIOS...");
 
     // disk is now just the device path (e.g., "/dev/sda")
-    let disk = context
-        .get_answer(&StepId::Disk)
-        .context("Disk not selected")?;
+    let disk = plan.storage.disk().as_str();
 
     println!("Installing GRUB to MBR of {}", disk);
 
@@ -84,20 +79,19 @@ fn install_grub_bios(context: &InstallContext, executor: &dyn CommandRunner) -> 
     Ok(())
 }
 
-fn configure_grub(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
+fn configure_grub(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
     println!("Generating GRUB configuration...");
 
-    if context.get_answer_bool(StepId::UseEncryption) {
-        configure_grub_encryption(context, executor)?;
+    if plan.storage.encryption().is_some() {
+        configure_grub_encryption(plan, executor)?;
     }
 
-    if context.get_answer_bool(StepId::UsePlymouth) && !context.get_answer_bool(StepId::MinimalMode)
-    {
-        configure_grub_plymouth(context, executor)?;
+    if plan.use_plymouth && !plan.minimal_mode {
+        configure_grub_plymouth(executor)?;
     }
 
-    if !context.get_answer_bool(StepId::MinimalMode) {
-        configure_grub_theme(context, executor)?;
+    if !plan.minimal_mode {
+        configure_grub_theme(executor)?;
     }
 
     // grub-mkconfig -o /boot/grub/grub.cfg
@@ -109,14 +103,14 @@ fn configure_grub(context: &InstallContext, executor: &dyn CommandRunner) -> Res
     Ok(())
 }
 
-fn configure_grub_encryption(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
+fn configure_grub_encryption(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
     if executor.dry_run() {
         println!("[DRY RUN] Adding 'rd.luks.name=...=cryptlvm' to GRUB_CMDLINE_LINUX");
         println!("[DRY RUN] Setting GRUB_ENABLE_CRYPTODISK=y in /etc/default/grub");
         return Ok(());
     }
 
-    let luks_part = luks_partition_path(context)?;
+    let luks_part = luks_partition_path(plan);
     let uuid = read_luks_uuid(&luks_part)?;
     println!("Found LUKS UUID: {}", uuid);
 
@@ -131,12 +125,8 @@ fn configure_grub_encryption(context: &InstallContext, executor: &dyn CommandRun
     Ok(())
 }
 
-fn luks_partition_path(context: &InstallContext) -> Result<String> {
-    let disk = context
-        .get_answer(&StepId::Disk)
-        .context("Disk not selected")?;
-
-    Ok(crate::arch::execution::disk::get_part_path(disk, 2))
+fn luks_partition_path(plan: &InstallPlan) -> String {
+    crate::arch::execution::disk::get_part_path(plan.storage.disk().as_str(), 2)
 }
 
 fn read_luks_uuid(luks_part: &str) -> Result<String> {
@@ -167,7 +157,7 @@ fn build_grub_encryption_param(uuid: &str) -> String {
     )
 }
 
-fn configure_grub_plymouth(_context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
+fn configure_grub_plymouth(executor: &dyn CommandRunner) -> Result<()> {
     if executor.dry_run() {
         println!("[DRY RUN] Adding 'splash quiet' to GRUB_CMDLINE_LINUX");
         return Ok(());
@@ -186,7 +176,7 @@ fn configure_grub_plymouth(_context: &InstallContext, executor: &dyn CommandRunn
     Ok(())
 }
 
-pub fn configure_grub_theme(_context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
+pub fn configure_grub_theme(executor: &dyn CommandRunner) -> Result<()> {
     let grub_default = "/etc/default/grub";
 
     if !std::path::Path::new(grub_default).exists() {

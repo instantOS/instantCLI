@@ -329,11 +329,10 @@ pub async fn execute_installation(
     // on an invalid or stale answer.
     crate::arch::engine::validate_imported_context(steps, &context)
         .context("Refusing to execute an invalid configuration")?;
+    let plan = crate::arch::engine::InstallPlan::try_from(&context)
+        .context("Refusing to execute an incomplete or inconsistent installation plan")?;
 
-    println!(
-        "Loaded configuration for user: {:?}",
-        context.get_answer(&crate::arch::engine::StepId::Username)
-    );
+    println!("Loaded configuration for user: {}", plan.username);
 
     if let Some(step_name) = step {
         // Try to parse the step name
@@ -351,7 +350,7 @@ pub async fn execute_installation(
         };
 
         println!("Executing single step: {:?}", step_enum);
-        execute_step(step_enum, &context, &executor, &config_path).await?;
+        execute_step(step_enum, &plan, &context, &executor, &config_path).await?;
     } else {
         println!("Executing all steps...");
         let steps = vec![
@@ -364,7 +363,7 @@ pub async fn execute_installation(
         ];
 
         for step in steps {
-            execute_step(step, &context, &executor, &config_path).await?;
+            execute_step(step, &plan, &context, &executor, &config_path).await?;
         }
 
         // Remove the config file from the chroot to prevent leaking sensitive data (passwords)
@@ -396,6 +395,7 @@ pub async fn execute_installation(
 
 async fn execute_step(
     step: InstallStep,
+    plan: &crate::arch::engine::InstallPlan,
     context: &crate::arch::engine::InstallContext,
     executor: &dyn CommandRunner,
     config_path: &std::path::Path,
@@ -486,20 +486,20 @@ async fn execute_step(
     }
 
     match step {
-        InstallStep::Disk => disk::prepare_disk(context, executor)?,
-        InstallStep::Base => base::install_base(context, executor).await?,
-        InstallStep::Fstab => fstab::generate_fstab(context, executor)?,
+        InstallStep::Disk => disk::prepare_disk(plan, context, executor)?,
+        InstallStep::Base => base::install_base(plan, executor).await?,
+        InstallStep::Fstab => fstab::generate_fstab(executor)?,
         InstallStep::Config => {
             // setup_chroot is handled above if needed
-            config::install_config(context, executor).await?
+            config::install_config(plan, executor).await?
         }
         InstallStep::Bootloader => {
             // setup_chroot is handled above if needed
-            bootloader::install_bootloader(context, executor).await?
+            bootloader::install_bootloader(plan, executor).await?
         }
         InstallStep::Post => {
             // setup_chroot is handled above if needed
-            post::install_post(context, executor).await?
+            post::install_post(plan, executor).await?
         }
     }
 

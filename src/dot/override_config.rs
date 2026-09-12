@@ -39,9 +39,12 @@ pub struct DotfileSource {
     pub repo_name: String,
     pub subdir_name: String,
     pub source_path: PathBuf,
-    /// Parsed once from [`crate::dot::types::is_root_subdir`] at construction;
-    /// consumers must use this instead of re-deriving it from `subdir_name`.
-    pub is_root: bool,
+}
+
+impl DotfileSource {
+    pub fn is_root(&self) -> bool {
+        crate::dot::types::is_root_subdir(&self.subdir_name)
+    }
 }
 
 impl std::fmt::Display for DotfileSource {

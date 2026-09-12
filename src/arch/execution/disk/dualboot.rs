@@ -5,7 +5,8 @@ use crate::arch::dualboot::parsing::{PartitionLayout, get_free_regions, get_part
 use crate::arch::dualboot::types::{FreeRegion, MIN_ESP_SIZE, Shrinkability};
 use crate::arch::dualboot::{DualBootDisksKey, PartitionTableType};
 use crate::arch::engine::{
-    DualBootPartitionPaths, DualBootPartitions, EspNeedsFormat, InstallContext, StepId,
+    BootMode, DualBootPartitionPaths, DualBootPartitions, DualBootTarget, EspNeedsFormat,
+    FilesystemPlan, InstallContext,
 };
 use crate::arch::execution::CommandRunner;
 use crate::common::format::format_size;
@@ -18,6 +19,9 @@ struct ResizePlan {
 
 pub fn prepare_dualboot_disk(
     context: &InstallContext,
+    filesystem: FilesystemPlan,
+    target: &DualBootTarget,
+    boot_mode: &BootMode,
     executor: &dyn CommandRunner,
     disk_path: &str,
     mut swap_size_gb: u64,
@@ -36,29 +40,25 @@ pub fn prepare_dualboot_disk(
 
     let mut resized_partition: Option<String> = None;
     let mut resize_plan: Option<ResizePlan> = None;
-    let resize_choice = context
-        .get_answer(&StepId::DualBootInstructions)
-        .map(|choice| choice.as_str())
-        .unwrap_or("manual");
-    let auto_resize_selected = resize_choice == "auto";
+    let auto_resize_selected = matches!(target, DualBootTarget::ResizeAutomatically { .. });
 
-    if let Some(partition_path) = context.get_answer(&StepId::DualBootPartition)
-        && partition_path != "__free_space__"
-    {
-        resized_partition = Some(partition_path.to_string());
-
-        if auto_resize_selected {
-            let size_str = context
-                .get_answer(&StepId::DualBootSize)
-                .context("No size selected for dual boot")?;
-            let desired_free_space_bytes: u64 = size_str.parse()?;
-
+    match target {
+        DualBootTarget::ExistingFreeSpace => {}
+        DualBootTarget::ResizedManually { partition } => {
+            resized_partition = Some(partition.as_str().to_owned());
+        }
+        DualBootTarget::ResizeAutomatically {
+            partition,
+            desired_free_space_bytes,
+        } => {
+            let partition_path = partition.as_str();
+            resized_partition = Some(partition_path.to_owned());
             resize_plan = Some(auto_resize_partition(
                 executor,
                 disk_info,
                 disk_path,
                 partition_path,
-                desired_free_space_bytes,
+                *desired_free_space_bytes,
             )?);
 
             let detected = crate::arch::dualboot::detect_disks()
@@ -177,7 +177,7 @@ pub fn prepare_dualboot_disk(
 
     context.set::<EspNeedsFormat>(esp_needs_format);
 
-    mount::format_and_mount_partitions(context, executor)?;
+    mount::format_and_mount_partitions(context, filesystem, None, boot_mode, executor)?;
 
     Ok(())
 }

@@ -226,12 +226,12 @@ pub fn get_all_dotfiles(
 
     let mut all_dotfiles = Vec::new();
     for dir in active_dirs {
-        let target_prefix = if dir.is_root {
+        let target_prefix = if dir.is_root() {
             Path::new("/")
         } else {
             &home_path
         };
-        let dotfiles = scan_directory_for_dotfiles(&dir.path, target_prefix, dir.is_root)?;
+        let dotfiles = scan_directory_for_dotfiles(&dir.path, target_prefix, dir.is_root())?;
         all_dotfiles.push(dotfiles);
     }
 

@@ -134,8 +134,8 @@ impl WizardStep for DualBootEspWarning {
     }
 
     fn should_ask(&self, context: &InstallContext) -> bool {
-        let is_dualboot =
-            context.partitioning_kind() == crate::arch::engine::PartitioningKind::DualBoot;
+        let is_dualboot = context.partitioning_method()
+            == Some(crate::arch::engine::PartitioningMethod::DualBoot);
 
         if !is_dualboot {
             return false;

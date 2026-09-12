@@ -1,4 +1,4 @@
-use crate::arch::engine::{GpuKind, InstallContext, StepId};
+use crate::arch::engine::{GpuKind, InstallPlan};
 use anyhow::Result;
 use std::collections::HashSet;
 
@@ -23,11 +23,11 @@ pub fn dedup_preserve(vec: &mut Vec<String>) {
 /// Note: instantOS packages (instantdepend, instantos, instantextra) are NOT included here.
 /// They are installed separately via `build_instant_package_plan()` to allow `ins arch setup`
 /// to work on existing Arch installations without reinstalling standard packages.
-pub fn build_standard_package_plan(context: &InstallContext) -> Result<Vec<String>> {
-    let mut packages = collect_extended_packages(context)?;
-    packages.extend(crate::arch::execution::config::config_package_list(context));
+pub fn build_standard_package_plan(plan: &InstallPlan) -> Result<Vec<String>> {
+    let mut packages = collect_extended_packages(plan)?;
+    packages.extend(crate::arch::execution::config::config_package_list(plan));
     packages.extend(crate::arch::execution::bootloader::bootloader_package_list(
-        context,
+        plan,
     ));
 
     dedup_preserve(&mut packages);
@@ -39,17 +39,18 @@ pub fn build_standard_package_plan(context: &InstallContext) -> Result<Vec<Strin
 /// These packages are installed by both:
 /// - `ins arch install` (in Post step, after [instant] repo is configured)
 /// - `ins arch setup` (on existing Arch installations converting to instantOS)
-pub fn build_instant_package_plan(context: &InstallContext) -> Vec<String> {
-    if context.get_answer_bool(StepId::MinimalMode) {
+pub fn build_instant_package_plan(minimal_mode: bool) -> Vec<String> {
+    if minimal_mode {
         return Vec::new();
     }
     strings(&["instantdepend", "instantos", "instantextra"])
 }
 
-fn collect_language_packages(context: &InstallContext) -> Vec<String> {
+fn collect_language_packages(plan: &InstallPlan) -> Vec<String> {
     let mut packages = Vec::new();
 
-    if let Some(locale) = context.get_answer(&StepId::Locale) {
+    {
+        let locale = plan.locale.as_str();
         let locale_lower = locale.to_lowercase();
         // Extract language and region/country
         // e.g. "de_DE.UTF-8" -> "de_de"
@@ -100,10 +101,9 @@ fn collect_language_packages(context: &InstallContext) -> Vec<String> {
     packages
 }
 
-fn collect_extended_packages(context: &InstallContext) -> Result<Vec<String>> {
-    let minimal_mode = context.get_answer_bool(StepId::MinimalMode);
-
-    let kernel = context.kernel()?;
+fn collect_extended_packages(plan: &InstallPlan) -> Result<Vec<String>> {
+    let minimal_mode = plan.minimal_mode;
+    let kernel = plan.kernel;
 
     let mut packages: Vec<String> = strings(&[
         "openssh",
@@ -126,11 +126,11 @@ fn collect_extended_packages(context: &InstallContext) -> Result<Vec<String>> {
     // Standard Arch desktop packages
     // Note: instantOS packages are installed separately via build_instant_package_plan()
     if !minimal_mode {
-        let desktop = crate::arch::config::DesktopEnvironment::from_context(context);
+        let desktop = plan.desktop;
 
         if desktop.requires_display_manager() {
             packages.push("xorg-xwayland".to_string());
-            let dm = crate::arch::config::DisplayManager::from_context(context);
+            let dm = plan.display_manager;
             match dm {
                 crate::arch::config::DisplayManager::Gdm => {
                     packages.push("gdm".to_string());
@@ -143,7 +143,7 @@ fn collect_extended_packages(context: &InstallContext) -> Result<Vec<String>> {
                 crate::arch::config::DisplayManager::None => {}
             }
 
-            let use_xorg = context.get_answer_bool(StepId::UseXorg);
+            let use_xorg = plan.use_xorg;
             if use_xorg || dm == crate::arch::config::DisplayManager::Lightdm {
                 packages.push("xorg-server".to_string());
             }
@@ -155,7 +155,7 @@ fn collect_extended_packages(context: &InstallContext) -> Result<Vec<String>> {
 
     // GPU packages (after multilib is enabled)
     let mut seen_gpus = HashSet::new();
-    for gpu in &context.system_info.gpus {
+    for gpu in &plan.system_info.gpus {
         if !seen_gpus.insert(std::mem::discriminant(gpu)) {
             continue;
         }
@@ -177,7 +177,7 @@ fn collect_extended_packages(context: &InstallContext) -> Result<Vec<String>> {
     }
 
     // VM Guest Tools
-    if let Some(vm_type) = &context.system_info.vm_type {
+    if let Some(vm_type) = &plan.system_info.vm_type {
         println!("Detected VM: {}, adding guest tools", vm_type);
         match vm_type.as_str() {
             "kvm" | "qemu" | "bochs" => packages.push("qemu-guest-agent".to_owned()),
@@ -188,16 +188,16 @@ fn collect_extended_packages(context: &InstallContext) -> Result<Vec<String>> {
     }
 
     // Plymouth support
-    if context.get_answer_bool(StepId::UsePlymouth) && !minimal_mode {
+    if plan.use_plymouth && !minimal_mode {
         println!("Plymouth enabled, adding plymouth package");
         packages.push("plymouth".to_owned());
     }
 
     // Append language-specific packages (only if GUI is installed and not in minimal mode)
     if !minimal_mode {
-        let desktop = crate::arch::config::DesktopEnvironment::from_context(context);
+        let desktop = plan.desktop;
         if desktop.requires_display_manager() {
-            packages.extend(collect_language_packages(context));
+            packages.extend(collect_language_packages(plan));
         }
     }
 
@@ -207,24 +207,17 @@ fn collect_extended_packages(context: &InstallContext) -> Result<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::build_standard_package_plan;
-    use crate::arch::config::DesktopEnvironment;
-    use crate::arch::engine::{BootMode, InstallContext, StepId};
+    use crate::arch::config::{DesktopEnvironment, DisplayManager};
+    use crate::arch::engine::InstallPlan;
 
-    fn base_context() -> InstallContext {
-        let mut context = InstallContext::new();
-        context.system_info.boot_mode = BootMode::UEFI64;
-        context.set_answer(StepId::Kernel, "linux".to_string());
-        context.set_answer(
-            StepId::DesktopEnvironment,
-            DesktopEnvironment::Tty.answer_value().to_string(),
-        );
-        context
+    fn base_plan() -> InstallPlan {
+        crate::arch::engine::test_install_plan()
     }
 
     #[test]
     fn tty_selection_skips_display_manager_packages() {
-        let context = base_context();
-        let packages = build_standard_package_plan(&context).unwrap();
+        let plan = base_plan();
+        let packages = build_standard_package_plan(&plan).unwrap();
 
         assert!(!packages.iter().any(|pkg| pkg == "lightdm"));
         assert!(!packages.iter().any(|pkg| pkg == "gdm"));
@@ -234,13 +227,10 @@ mod tests {
 
     #[test]
     fn hyprland_selection_adds_hyprland_and_gdm_by_default() {
-        let mut context = base_context();
-        context.set_answer(
-            StepId::DesktopEnvironment,
-            DesktopEnvironment::Hyprland.answer_value().to_string(),
-        );
+        let mut plan = base_plan();
+        plan.desktop = DesktopEnvironment::Hyprland;
 
-        let packages = build_standard_package_plan(&context).unwrap();
+        let packages = build_standard_package_plan(&plan).unwrap();
 
         assert!(packages.iter().any(|pkg| pkg == "hyprland"));
         assert!(packages.iter().any(|pkg| pkg == "gdm"));
@@ -249,19 +239,11 @@ mod tests {
 
     #[test]
     fn hyprland_selection_adds_hyprland_and_lightdm_when_selected() {
-        let mut context = base_context();
-        context.set_answer(
-            StepId::DesktopEnvironment,
-            DesktopEnvironment::Hyprland.answer_value().to_string(),
-        );
-        context.set_answer(
-            StepId::DisplayManager,
-            crate::arch::config::DisplayManager::Lightdm
-                .answer_value()
-                .to_string(),
-        );
+        let mut plan = base_plan();
+        plan.desktop = DesktopEnvironment::Hyprland;
+        plan.display_manager = DisplayManager::Lightdm;
 
-        let packages = build_standard_package_plan(&context).unwrap();
+        let packages = build_standard_package_plan(&plan).unwrap();
 
         assert!(packages.iter().any(|pkg| pkg == "hyprland"));
         assert!(packages.iter().any(|pkg| pkg == "lightdm"));
@@ -271,19 +253,11 @@ mod tests {
 
     #[test]
     fn hyprland_selection_with_no_display_manager_skips_dm_packages() {
-        let mut context = base_context();
-        context.set_answer(
-            StepId::DesktopEnvironment,
-            DesktopEnvironment::Hyprland.answer_value().to_string(),
-        );
-        context.set_answer(
-            StepId::DisplayManager,
-            crate::arch::config::DisplayManager::None
-                .answer_value()
-                .to_string(),
-        );
+        let mut plan = base_plan();
+        plan.desktop = DesktopEnvironment::Hyprland;
+        plan.display_manager = DisplayManager::None;
 
-        let packages = build_standard_package_plan(&context).unwrap();
+        let packages = build_standard_package_plan(&plan).unwrap();
 
         assert!(packages.iter().any(|pkg| pkg == "hyprland"));
         assert!(!packages.iter().any(|pkg| pkg == "gdm"));
@@ -293,14 +267,11 @@ mod tests {
 
     #[test]
     fn use_xorg_selection_adds_xorg_server() {
-        let mut context = base_context();
-        context.set_answer(
-            StepId::DesktopEnvironment,
-            DesktopEnvironment::InstantWM.answer_value().to_string(),
-        );
-        context.set_answer(StepId::UseXorg, "yes".to_string());
+        let mut plan = base_plan();
+        plan.desktop = DesktopEnvironment::InstantWM;
+        plan.use_xorg = true;
 
-        let packages = build_standard_package_plan(&context).unwrap();
+        let packages = build_standard_package_plan(&plan).unwrap();
 
         assert!(packages.iter().any(|pkg| pkg == "xorg-server"));
         assert!(packages.iter().any(|pkg| pkg == "gdm"));
@@ -308,13 +279,10 @@ mod tests {
 
     #[test]
     fn default_instantwm_skips_xorg_server() {
-        let mut context = base_context();
-        context.set_answer(
-            StepId::DesktopEnvironment,
-            DesktopEnvironment::InstantWM.answer_value().to_string(),
-        );
+        let mut plan = base_plan();
+        plan.desktop = DesktopEnvironment::InstantWM;
 
-        let packages = build_standard_package_plan(&context).unwrap();
+        let packages = build_standard_package_plan(&plan).unwrap();
 
         assert!(!packages.iter().any(|pkg| pkg == "xorg-server"));
         assert!(packages.iter().any(|pkg| pkg == "gdm"));
@@ -322,14 +290,11 @@ mod tests {
 
     #[test]
     fn selecting_german_locale_adds_german_firefox_i18n_package() {
-        let mut context = base_context();
-        context.set_answer(StepId::Locale, "de_DE.UTF-8".to_string());
-        context.set_answer(
-            StepId::DesktopEnvironment,
-            DesktopEnvironment::Sway.answer_value().to_string(),
-        );
+        let mut plan = base_plan();
+        plan.locale = crate::arch::engine::LocaleName::parse("de_DE.UTF-8").unwrap();
+        plan.desktop = DesktopEnvironment::Sway;
 
-        let packages = build_standard_package_plan(&context).unwrap();
+        let packages = build_standard_package_plan(&plan).unwrap();
         assert!(packages.iter().any(|pkg| pkg == "firefox-i18n-de"));
     }
 }

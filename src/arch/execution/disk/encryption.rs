@@ -1,8 +1,8 @@
 use super::filesystem;
 use super::util::get_part_path;
-use crate::arch::engine::{BootMode, InstallContext, StepId};
+use crate::arch::engine::{BootMode, EncryptionPlan, FilesystemPlan};
 use crate::arch::execution::CommandRunner;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::process::Command;
 
 pub fn partition_uefi_luks(disk: &str, executor: &dyn CommandRunner) -> Result<()> {
@@ -40,7 +40,8 @@ pub fn partition_bios_luks(disk: &str, executor: &dyn CommandRunner) -> Result<(
 }
 
 pub fn format_luks(
-    context: &InstallContext,
+    filesystem: FilesystemPlan,
+    encryption: &EncryptionPlan,
     disk: &str,
     executor: &dyn CommandRunner,
     is_uefi: bool,
@@ -49,9 +50,7 @@ pub fn format_luks(
     let p1 = get_part_path(disk, 1);
     let p2 = get_part_path(disk, 2);
 
-    let password = context
-        .get_answer(&StepId::EncryptionPassword)
-        .context("Encryption password not set")?;
+    let password = encryption.password.expose();
 
     println!("Formatting partitions (LVM on LUKS)...");
 
@@ -99,22 +98,23 @@ pub fn format_luks(
 
     println!("Formatting Logical Volumes...");
     executor.run(Command::new("mkswap").arg("/dev/instantOS/swap"))?;
-    filesystem::format_root(context, "/dev/instantOS/root", executor)?;
+    filesystem::format_root(filesystem, "/dev/instantOS/root", executor)?;
 
     Ok(())
 }
 
 pub fn mount_luks(
-    context: &InstallContext,
+    filesystem: FilesystemPlan,
+    boot_mode: &BootMode,
     executor: &dyn CommandRunner,
     disk: &str,
 ) -> Result<()> {
     println!("Mounting LVM volumes...");
 
-    filesystem::mount_root(context, "/dev/instantOS/root", true, executor)?;
+    filesystem::mount_root(filesystem, "/dev/instantOS/root", true, executor)?;
 
     let p1 = get_part_path(disk, 1);
-    let boot_type = match context.system_info.boot_mode {
+    let boot_type = match boot_mode {
         BootMode::UEFI64 | BootMode::UEFI32 => "vfat",
         BootMode::BIOS => "ext4",
     };

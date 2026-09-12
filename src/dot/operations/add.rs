@@ -133,7 +133,7 @@ fn select_dots_dir(
     let dirs: Vec<_> = dotfile_repo
         .dotfile_dirs
         .iter()
-        .filter(|d| d.is_root == is_root_target)
+        .filter(|d| d.is_root() == is_root_target)
         .cloned()
         .collect();
 
@@ -383,7 +383,6 @@ fn add_new_file(
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| ".".to_string()),
         source_path: chosen_dir.path.clone(),
-        is_root: chosen_dir.is_root,
     };
 
     let recipients = if encrypt {

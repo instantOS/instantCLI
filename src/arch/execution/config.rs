@@ -1,5 +1,5 @@
 use super::CommandRunner;
-use crate::arch::engine::{InstallContext, StepId};
+use crate::arch::engine::InstallPlan;
 use crate::arch::mkinitcpio::MkinitcpioConfig;
 use crate::common::locale_gen::apply_enable_disable;
 use anyhow::{Context, Result};
@@ -51,7 +51,7 @@ pub fn add_user_to_groups(username: &str, executor: &dyn CommandRunner) -> Resul
     Ok(())
 }
 
-pub async fn install_config(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
+pub async fn install_config(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
     println!("Configuring system (inside chroot)...");
 
     // Enable multilib for 32-bit support (needed for lib32-vulkan-* GPU drivers)
@@ -63,15 +63,15 @@ pub async fn install_config(context: &InstallContext, executor: &dyn CommandRunn
     sync_repos(executor)?;
 
     configure_pacman_target(executor).await?;
-    install_standard_packages(context, executor)?;
-    configure_timezone(context, executor)?;
-    configure_locale(context, executor)?;
-    configure_network(context, executor)?;
-    configure_users(context, executor)?;
+    install_standard_packages(plan, executor)?;
+    configure_timezone(plan, executor)?;
+    configure_locale(plan, executor)?;
+    configure_network(plan, executor)?;
+    configure_users(plan, executor)?;
     configure_environment(executor)?;
-    configure_vconsole(context, executor)?;
-    configure_sudo(context, executor)?;
-    configure_mkinitcpio(context, executor)?;
+    configure_vconsole(plan, executor)?;
+    configure_sudo(executor)?;
+    configure_mkinitcpio(plan, executor)?;
 
     Ok(())
 }
@@ -122,9 +122,9 @@ fn sync_repos(executor: &dyn CommandRunner) -> Result<()> {
     Ok(())
 }
 
-fn install_standard_packages(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
+fn install_standard_packages(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
     println!("Installing standard packages...");
-    let packages = crate::arch::execution::packages::build_standard_package_plan(context)?;
+    let packages = crate::arch::execution::packages::build_standard_package_plan(plan)?;
     let package_refs: Vec<&str> = packages.iter().map(|s| s.as_str()).collect();
     super::pacman::install(&package_refs, executor)?;
     Ok(())
@@ -138,26 +138,25 @@ async fn configure_pacman_target(executor: &dyn CommandRunner) -> Result<()> {
 }
 
 /// Packages required for configuration steps (installed in a single batch elsewhere)
-pub fn config_package_list(context: &InstallContext) -> Vec<String> {
+pub fn config_package_list(plan: &InstallPlan) -> Vec<String> {
     let mut packages = Vec::new();
 
-    if context.get_answer_bool(StepId::UseEncryption) {
+    if plan.storage.encryption().is_some() {
         packages.push("lvm2".to_string());
         packages.push("cryptsetup".to_string());
     }
 
-    if context.get_answer_bool(StepId::UsePlymouth) && !context.get_answer_bool(StepId::MinimalMode)
-    {
+    if plan.use_plymouth && !plan.minimal_mode {
         packages.push("plymouth".to_string());
     }
 
     packages
 }
 
-fn configure_mkinitcpio(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
-    let use_encryption = context.get_answer_bool(StepId::UseEncryption);
-    let use_plymouth = context.get_answer_bool(StepId::UsePlymouth);
-    let use_btrfs = crate::arch::config::RootFilesystem::from_context(context).is_btrfs();
+fn configure_mkinitcpio(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
+    let use_encryption = plan.storage.encryption().is_some();
+    let use_plymouth = plan.use_plymouth;
+    let use_btrfs = plan.storage.filesystem().is_btrfs();
 
     if !use_encryption && !use_plymouth && !use_btrfs {
         return Ok(());
@@ -166,7 +165,7 @@ fn configure_mkinitcpio(context: &InstallContext, executor: &dyn CommandRunner) 
     if use_encryption {
         println!("Configuring mkinitcpio for encryption...");
     }
-    if use_plymouth && !context.get_answer_bool(StepId::MinimalMode) {
+    if use_plymouth && !plan.minimal_mode {
         println!("Configuring mkinitcpio for Plymouth...");
     }
 
@@ -174,7 +173,7 @@ fn configure_mkinitcpio(context: &InstallContext, executor: &dyn CommandRunner) 
         if use_btrfs {
             println!("[DRY RUN] Adding 'btrfs' to MODULES in /etc/mkinitcpio.conf");
         }
-        if use_plymouth && !context.get_answer_bool(StepId::MinimalMode) {
+        if use_plymouth && !plan.minimal_mode {
             println!("[DRY RUN] Adding 'plymouth' to HOOKS in /etc/mkinitcpio.conf");
         }
         if use_encryption {
@@ -200,7 +199,7 @@ fn configure_mkinitcpio(context: &InstallContext, executor: &dyn CommandRunner) 
 
     // Plymouth should be after systemd but before encrypt/sd-encrypt
     // And definitely before sd-encrypt to show password prompt
-    if use_plymouth && !context.get_answer_bool(StepId::MinimalMode) {
+    if use_plymouth && !plan.minimal_mode {
         config.ensure_hook_position(
             "plymouth",
             &["base", "systemd", "udev"],       // After these
@@ -244,10 +243,8 @@ fn configure_mkinitcpio(context: &InstallContext, executor: &dyn CommandRunner) 
     Ok(())
 }
 
-fn configure_vconsole(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
-    let keymap = context
-        .get_answer(&StepId::Keymap)
-        .context("Keymap not selected")?;
+fn configure_vconsole(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
+    let keymap = plan.keymap.as_str();
 
     println!("Setting console keymap to {}", keymap);
 
@@ -260,10 +257,8 @@ fn configure_vconsole(context: &InstallContext, executor: &dyn CommandRunner) ->
     Ok(())
 }
 
-fn configure_timezone(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
-    let timezone = context
-        .get_answer(&StepId::Timezone)
-        .context("Timezone not selected")?;
+fn configure_timezone(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
+    let timezone = plan.timezone.as_str();
 
     println!("Setting timezone to {}", timezone);
 
@@ -306,10 +301,8 @@ fn configure_timezone(context: &InstallContext, executor: &dyn CommandRunner) ->
     Ok(())
 }
 
-fn configure_locale(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
-    let locale = context
-        .get_answer(&StepId::Locale)
-        .context("Locale not selected")?;
+fn configure_locale(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
+    let locale = plan.locale.as_str();
 
     println!("Setting locale to {}", locale);
 
@@ -328,7 +321,7 @@ fn configure_locale(context: &InstallContext, executor: &dyn CommandRunner) -> R
         // Enable the selected locale, preserving the file's formatting. The
         // answer is always an available locale, so this only ever uncomments;
         // the write is skipped when nothing changed.
-        if let Some(updated) = apply_enable_disable(&content, std::slice::from_ref(locale), &[]) {
+        if let Some(updated) = apply_enable_disable(&content, &[locale.to_owned()], &[]) {
             std::fs::write(locale_gen_path, updated)?;
         }
 
@@ -347,10 +340,8 @@ fn configure_locale(context: &InstallContext, executor: &dyn CommandRunner) -> R
     Ok(())
 }
 
-fn configure_network(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
-    let hostname = context
-        .get_answer(&StepId::Hostname)
-        .context("Hostname not set")?;
+fn configure_network(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
+    let hostname = plan.hostname.as_str();
 
     println!("Setting hostname to {}", hostname);
 
@@ -370,13 +361,9 @@ fn configure_network(context: &InstallContext, executor: &dyn CommandRunner) -> 
     Ok(())
 }
 
-fn configure_users(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
-    let username = context
-        .get_answer(&StepId::Username)
-        .context("Username not set")?;
-    let password = context
-        .get_answer(&StepId::Password)
-        .context("Password not set")?;
+fn configure_users(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
+    let username = plan.username.as_str();
+    let password = plan.password.expose();
 
     println!("Configuring user: {}", username);
 
@@ -442,7 +429,7 @@ fn configure_users(context: &InstallContext, executor: &dyn CommandRunner) -> Re
     Ok(())
 }
 
-pub fn configure_sudo(_context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
+pub fn configure_sudo(executor: &dyn CommandRunner) -> Result<()> {
     println!("Configuring sudoers...");
     // Uncomment %wheel ALL=(ALL:ALL) ALL
 
@@ -481,9 +468,12 @@ pub fn configure_sudo(_context: &InstallContext, executor: &dyn CommandRunner) -
     Ok(())
 }
 
-pub fn configure_plymouth(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
-    if !context.get_answer_bool(StepId::UsePlymouth) || context.get_answer_bool(StepId::MinimalMode)
-    {
+pub fn configure_plymouth(
+    use_plymouth: bool,
+    minimal_mode: bool,
+    executor: &dyn CommandRunner,
+) -> Result<()> {
+    if !use_plymouth || minimal_mode {
         return Ok(());
     }
 

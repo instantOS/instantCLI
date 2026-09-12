@@ -1,8 +1,8 @@
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 
 use crate::arch::cli::DEFAULT_QUESTIONS_FILE;
 use crate::arch::engine::{
-    InstallContext, InstallSummary, StepId, SystemInfo, WizardEngine, WizardOutcome,
+    InstallContext, InstallPlan, InstallSummary, StepId, SystemInfo, WizardEngine, WizardOutcome,
     build_install_summary,
 };
 use crate::common::distro::is_live_iso;
@@ -332,6 +332,12 @@ async fn run_full_wizard(
     let WizardOutcome::Completed(context) = engine.run().await? else {
         return Ok(AskOutcome::Cancelled);
     };
+
+    // The interactive path and `arch exec` share the exact same final
+    // conversion. Validate before saving for immediate feedback, then repeat
+    // after loading because a saved file is an untrusted boundary.
+    InstallPlan::try_from(context.as_ref())
+        .context("The completed answers do not form a valid installation plan")?;
 
     print_completion_summary(&context);
     save_config(&context, &config_path)?;
