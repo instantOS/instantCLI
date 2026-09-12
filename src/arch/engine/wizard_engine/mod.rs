@@ -723,6 +723,49 @@ impl WizardEngine {
     }
 }
 
+/// Validate an imported context against the question graph for flows that
+/// execute recorded answers without re-asking them (`ins arch exec`).
+///
+/// This is the exec-path counterpart of [`WizardEngine::normalize_context`]:
+/// instead of dropping unusable state and asking again, the first problem
+/// becomes a fatal error so an unattended run can never act on it.
+///
+/// Every answer present in the context must belong to a relevant step, pass
+/// that step's `validate`, and have been recorded against the dependency
+/// values currently in the context. Missing answers are deliberately not an
+/// error here: a step's relevance can depend on provider data that only
+/// exists inside a wizard run (for example the mirror-region fetch-failure
+/// flag), so demanding answers would reject contexts the wizard itself
+/// produced. The execution code fails loudly at its use sites on the
+/// answers it truly requires.
+pub fn validate_imported_context(
+    steps: &[Box<dyn WizardStep>],
+    context: &InstallContext,
+) -> Result<()> {
+    let graph = StepGraph::new(steps)?;
+    for step in steps {
+        let id = step.id();
+        if !read_audit::hook(&**step, "should_ask", || step.should_ask(context)) {
+            continue;
+        }
+
+        let Some(answer) = context.get_answer(&id) else {
+            continue;
+        };
+
+        read_audit::hook(&**step, "validate", || step.validate(context, answer)).map_err(
+            |message| anyhow::anyhow!("the stored answer for {id:?} is invalid: {message}"),
+        )?;
+
+        if !graph.step_state_is_current(context, id) {
+            bail!(
+                "the stored answer for {id:?} is stale: it was recorded against different dependency answers"
+            );
+        }
+    }
+    Ok(())
+}
+
 fn is_tty_environment() -> bool {
     std::env::var("TERM")
         .map(|term| term == "linux")

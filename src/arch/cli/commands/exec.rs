@@ -1,8 +1,10 @@
 use anyhow::Result;
 
 use super::super::utils::ensure_root;
+use crate::arch::engine::WizardStep;
 
 pub(super) async fn handle_exec_command(
+    steps: Vec<Box<dyn WizardStep>>,
     step: Option<String>,
     questions_file: std::path::PathBuf,
     dry_run: bool,
@@ -27,5 +29,6 @@ pub(super) async fn handle_exec_command(
         None
     };
 
-    crate::arch::execution::execute_installation(questions_file, step, dry_run, log_file).await
+    crate::arch::execution::execute_installation(&steps, questions_file, step, dry_run, log_file)
+        .await
 }

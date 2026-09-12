@@ -277,6 +277,7 @@ impl CommandRunner for CommandExecutor {
 }
 
 pub async fn execute_installation(
+    steps: &[Box<dyn crate::arch::engine::WizardStep>],
     config_path: PathBuf,
     step: Option<String>,
     mut dry_run: bool,
@@ -322,6 +323,12 @@ pub async fn execute_installation(
 
     let content = std::fs::read_to_string(&config_path)?;
     let context: crate::arch::engine::InstallContext = toml::from_str(&content)?;
+
+    // Exec bypasses the wizard, so nothing has validated the answers a saved
+    // (possibly hand-edited) config contains. Fail loudly rather than acting
+    // on an invalid or stale answer.
+    crate::arch::engine::validate_imported_context(steps, &context)
+        .context("Refusing to execute an invalid configuration")?;
 
     println!(
         "Loaded configuration for user: {:?}",

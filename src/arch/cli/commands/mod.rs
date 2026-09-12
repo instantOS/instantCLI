@@ -53,7 +53,7 @@ pub async fn handle_arch_command(command: ArchCommands, debug: bool) -> Result<(
             step,
             questions_file,
             dry_run,
-        } => handle_exec_command(step, questions_file, dry_run).await,
+        } => handle_exec_command(steps, step, questions_file, dry_run).await,
         ArchCommands::UploadLogs { path } => handle_upload_logs(path),
         ArchCommands::Info => handle_info_command(),
         ArchCommands::Dualboot { command } => match command {

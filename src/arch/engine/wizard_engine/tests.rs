@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use super::presentation::{AdvancedOption, FinalReviewAction, final_review_options};
 use super::step_graph::StepGraph;
-use super::{FlowKind, WizardEngine, WizardOutcome};
+use super::{FlowKind, WizardEngine, WizardOutcome, validate_imported_context};
 use crate::arch::engine::{
     AskPolicy, AsyncDataProvider, DataKey, InstallContext, StepId, StepOutcome, WizardStep,
 };
@@ -110,6 +110,37 @@ fn question(id: StepId, dependencies: &[StepId]) -> Box<dyn WizardStep> {
         id,
         dependencies: dependencies.to_vec(),
     })
+}
+
+/// A step that accepts exactly one answer, so validation of stored values
+/// can be observed.
+struct StrictAnswerStep {
+    id: StepId,
+    accepted: &'static str,
+    relevant: bool,
+}
+
+#[async_trait::async_trait]
+impl WizardStep for StrictAnswerStep {
+    fn id(&self) -> StepId {
+        self.id
+    }
+
+    async fn run(&self, _context: &InstallContext) -> Result<StepOutcome> {
+        Ok(StepOutcome::Answer(self.accepted.to_string()))
+    }
+
+    fn should_ask(&self, _context: &InstallContext) -> bool {
+        self.relevant
+    }
+
+    fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
+        if answer == self.accepted {
+            Ok(())
+        } else {
+            Err(format!("expected {:?}", self.accepted))
+        }
+    }
 }
 
 struct CompletingStep {
@@ -1100,4 +1131,73 @@ async fn advanced_answers_reask_invalidated_required_questions_before_completing
         WizardOutcome::Aborted => panic!("expected the wizard to complete"),
     }
     assert_eq!(scripted_responses_remaining(), 0);
+}
+
+#[test]
+fn imported_context_rejects_an_answer_failing_validation() {
+    // The capitalized value is what a hand-edited config might contain; the
+    // boolean reader would silently treat it as "no".
+    let steps: Vec<Box<dyn WizardStep>> = vec![Box::new(StrictAnswerStep {
+        id: StepId::UseEncryption,
+        accepted: "yes",
+        relevant: true,
+    })];
+    let mut context = InstallContext::new();
+    context.set_answer(StepId::UseEncryption, "Yes".to_string());
+
+    let error = validate_imported_context(&steps, &context).unwrap_err();
+    assert!(error.to_string().contains("UseEncryption"));
+}
+
+#[test]
+fn imported_context_rejects_a_stale_dependent_answer() {
+    let steps = vec![
+        question(StepId::Disk, &[]),
+        question(StepId::DualBootPartition, &[StepId::Disk]),
+    ];
+    let graph = StepGraph::new(&steps).unwrap();
+    let mut context = InstallContext::new();
+    graph.record_answer(&mut context, StepId::Disk, "/dev/sda".into());
+    graph.record_answer(&mut context, StepId::DualBootPartition, "/dev/sda2".into());
+
+    // A hand edit of the upstream answer, as it would appear in the saved
+    // config: the dependent answer was recorded for the old disk.
+    context.set_answer(StepId::Disk, "/dev/sdb".to_string());
+
+    let error = validate_imported_context(&steps, &context).unwrap_err();
+    assert!(error.to_string().contains("stale"));
+}
+
+#[test]
+fn imported_context_accepts_current_answers_and_ignores_irrelevant_ones() {
+    let steps: Vec<Box<dyn WizardStep>> = vec![
+        Box::new(StrictAnswerStep {
+            id: StepId::UseEncryption,
+            accepted: "yes",
+            relevant: true,
+        }),
+        // Irrelevant at import time: the wizard would have dropped this
+        // state, so a leftover answer must not fail validation.
+        Box::new(StrictAnswerStep {
+            id: StepId::UsePlymouth,
+            accepted: "yes",
+            relevant: false,
+        }),
+    ];
+    let graph = StepGraph::new(&steps).unwrap();
+    let mut context = InstallContext::new();
+    graph.record_answer(&mut context, StepId::UseEncryption, "yes".into());
+    context.set_answer(StepId::UsePlymouth, "garbage".to_string());
+
+    validate_imported_context(&steps, &context).unwrap();
+}
+
+#[test]
+fn imported_context_does_not_demand_missing_answers() {
+    // Relevance can depend on provider data that only exists inside a
+    // wizard run, so absence is not proof of an invalid config here.
+    let steps = vec![question(StepId::Disk, &[])];
+    let context = InstallContext::new();
+
+    validate_imported_context(&steps, &context).unwrap();
 }
