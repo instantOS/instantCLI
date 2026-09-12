@@ -1,7 +1,7 @@
 //! Dev-time audit for undeclared step-state reads.
 //!
 //! The [`WizardStep`] contract requires every step answer that `should_ask`,
-//! `get_default`, `preselect_answer`, or `validate` reads to be declared in
+//! `ask_policy`, `preselect_answer`, or `validate` reads to be declared in
 //! [`WizardStep::depends_on`] — nothing else enforces that, and undeclared
 //! reads silently break dependency invalidation. The engine therefore wraps
 //! those synchronous hooks: while one runs, the answer accessors on

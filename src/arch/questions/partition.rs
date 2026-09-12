@@ -1,4 +1,4 @@
-use crate::arch::engine::{InstallContext, StepId, StepOutcome, WizardStep};
+use crate::arch::engine::{AskPolicy, InstallContext, StepId, StepOutcome, WizardStep};
 use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder};
 use crate::preview::{PreviewId, preview_command};
 use crate::ui::nerd_font::NerdFont;
@@ -140,7 +140,7 @@ pub struct PartitionSelectorQuestion {
     pub id: StepId,
     pub prompt: String,
     pub icon: NerdFont,
-    pub is_optional: bool,
+    pub optional: bool,
     pub validator: Box<dyn PartitionValidator>,
 }
 
@@ -155,13 +155,13 @@ impl PartitionSelectorQuestion {
             id,
             prompt: prompt.into(),
             icon,
-            is_optional: false,
+            optional: false,
             validator: validator.unwrap_or_else(|| Box::new(DefaultPartitionValidator)),
         }
     }
 
     pub fn optional(mut self) -> Self {
-        self.is_optional = true;
+        self.optional = true;
         self
     }
 }
@@ -176,8 +176,15 @@ impl WizardStep for PartitionSelectorQuestion {
         Some(&self.prompt)
     }
 
-    fn is_optional(&self) -> bool {
-        self.is_optional
+    fn ask_policy(&self, _context: &InstallContext) -> AskPolicy {
+        if self.optional {
+            // Partition selection has no sensible unattended answer.
+            AskPolicy::Optional {
+                unattended_answer: None,
+            }
+        } else {
+            AskPolicy::Required
+        }
     }
 
     fn should_ask(&self, context: &InstallContext) -> bool {

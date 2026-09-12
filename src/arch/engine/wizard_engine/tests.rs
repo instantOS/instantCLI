@@ -5,7 +5,7 @@ use super::presentation::{AdvancedOption, FinalReviewAction, final_review_option
 use super::step_graph::StepGraph;
 use super::{FlowKind, WizardEngine, WizardOutcome};
 use crate::arch::engine::{
-    AsyncDataProvider, DataKey, InstallContext, StepId, StepOutcome, WizardStep,
+    AskPolicy, AsyncDataProvider, DataKey, InstallContext, StepId, StepOutcome, WizardStep,
 };
 use crate::arch::questions::{
     BooleanQuestion, EncryptionPasswordQuestion, PartitioningMethodQuestion,
@@ -27,12 +27,10 @@ impl WizardStep for StubOptionalQuestion {
         Ok(StepOutcome::Answer("answered".to_string()))
     }
 
-    fn is_optional(&self) -> bool {
-        true
-    }
-
-    fn get_default(&self, _context: &InstallContext) -> Option<String> {
-        self.default.clone()
+    fn ask_policy(&self, _context: &InstallContext) -> AskPolicy {
+        AskPolicy::Optional {
+            unattended_answer: self.default.clone(),
+        }
     }
 }
 
@@ -76,12 +74,10 @@ impl WizardStep for OptionalWithDefault {
         Ok(StepOutcome::Answer("changed".to_string()))
     }
 
-    fn is_optional(&self) -> bool {
-        true
-    }
-
-    fn get_default(&self, _context: &InstallContext) -> Option<String> {
-        Some(self.default.clone())
+    fn ask_policy(&self, _context: &InstallContext) -> AskPolicy {
+        AskPolicy::Optional {
+            unattended_answer: Some(self.default.clone()),
+        }
     }
 
     fn depends_on(&self) -> &[StepId] {
@@ -458,7 +454,7 @@ fn setup_flow_asks_optional_questions_in_main_flow() {
 }
 
 #[test]
-fn preselect_answer_defaults_to_get_default() {
+fn preselect_answer_defaults_to_the_unattended_answer() {
     let context = InstallContext::new();
     let step = StubOptionalQuestion {
         id: StepId::Kernel,
@@ -466,6 +462,19 @@ fn preselect_answer_defaults_to_get_default() {
     };
 
     assert_eq!(step.preselect_answer(&context).as_deref(), Some("linux"));
+}
+
+#[test]
+fn required_steps_have_no_preselect_or_unattended_answer() {
+    let context = InstallContext::new();
+    let step = StubDependentQuestion {
+        id: StepId::Disk,
+        dependencies: vec![],
+    };
+
+    assert_eq!(step.ask_policy(&context), AskPolicy::Required);
+    assert_eq!(step.preselect_answer(&context), None);
+    assert_eq!(AskPolicy::Required.unattended_answer(), None);
 }
 
 #[tokio::test]

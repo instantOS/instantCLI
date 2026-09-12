@@ -1,5 +1,5 @@
 use crate::arch::config::DisplayManager;
-use crate::arch::engine::{InstallContext, StepId, StepOutcome, WizardStep};
+use crate::arch::engine::{AskPolicy, InstallContext, StepId, StepOutcome, WizardStep};
 use crate::menu_utils::{
     ConfirmResult, DialogOutcome, FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder,
 };
@@ -90,8 +90,10 @@ impl WizardStep for DisplayManagerQuestion {
         Some("Choose the display manager (gdm, lightdm, or none)")
     }
 
-    fn is_optional(&self) -> bool {
-        true
+    fn ask_policy(&self, _context: &InstallContext) -> AskPolicy {
+        AskPolicy::Optional {
+            unattended_answer: Some(DisplayManager::DEFAULT.answer_value().to_string()),
+        }
     }
 
     fn should_ask(&self, context: &InstallContext) -> bool {
@@ -100,10 +102,6 @@ impl WizardStep for DisplayManagerQuestion {
 
     fn depends_on(&self) -> &[StepId] {
         &[StepId::DesktopEnvironment]
-    }
-
-    fn get_default(&self, _context: &InstallContext) -> Option<String> {
-        Some(DisplayManager::DEFAULT.answer_value().to_string())
     }
 
     async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {

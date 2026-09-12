@@ -9,7 +9,7 @@ mod wizard_engine;
 pub use context::{
     DataKey, DualBootPartitionPaths, DualBootPartitions, EspNeedsFormat, InstallContext,
 };
-pub use step::{AsyncDataProvider, StepOutcome, WizardStep};
+pub use step::{AskPolicy, AsyncDataProvider, StepOutcome, WizardStep};
 pub(crate) use summary::{InstallSummary, build_install_summary};
 pub use types::{AnswerPrivacy, BootMode, GpuKind, StepId, SystemInfo};
 pub use wizard_engine::{FlowKind, WizardEngine, WizardOutcome};

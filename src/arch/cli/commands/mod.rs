@@ -131,17 +131,6 @@ pub(super) fn build_steps() -> Vec<Box<dyn WizardStep>> {
             .description(
                 "Protects your data with LUKS full-disk encryption. A passphrase will be required at boot.",
             )
-            .default_from(
-                [crate::arch::engine::StepId::PartitioningMethod],
-                |context| {
-                    // Encryption features are only available for automatic partitioning
-                    // If manual partitioning is selected, encryption is not supported
-                    context
-                        .get_answer(&crate::arch::engine::StepId::PartitioningMethod)
-                        .map(|method| !method.contains("Manual"))
-                        .unwrap_or(false)
-                },
-            )
             .relevant_when(
                 [crate::arch::engine::StepId::PartitioningMethod],
                 |context| {
@@ -172,8 +161,7 @@ pub(super) fn build_steps() -> Vec<Box<dyn WizardStep>> {
             .description(
                 "Displays a graphical boot animation and hides console kernel logs during system startup.",
             )
-            .optional()
-            .default_yes(),
+            .optional_default_yes(),
         ),
         Box::new(autologin_question(AutologinDefault::MatchEncryption)),
         Box::new(use_xorg_question()),
@@ -220,17 +208,16 @@ pub(super) fn autologin_question(
     .description(
         "Automatically logs into your user account on boot without prompting for a password at the display manager.",
     )
-    .optional()
     .relevant_when([StepId::DesktopEnvironment], |context| {
         crate::arch::config::DesktopEnvironment::from_context(context).requires_display_manager()
     });
 
     match default {
         AutologinDefault::MatchEncryption => question
-            .default_from([StepId::UseEncryption], |context| {
+            .optional_default_from([StepId::UseEncryption], |context| {
                 context.get_answer_bool(StepId::UseEncryption)
             }),
-        AutologinDefault::Disabled => question,
+        AutologinDefault::Disabled => question.optional(),
     }
 }
 
@@ -246,11 +233,10 @@ pub(super) fn use_xorg_question() -> crate::arch::questions::BooleanQuestion {
         "instantWM supports both X11 and Wayland sessions. By default, instantOS uses Wayland.\n\
          Enabling this option installs xorg-server so the classic X11 instantWM session is available in your display manager.",
     )
-    .optional()
     .relevant_when([StepId::DesktopEnvironment], |context| {
         crate::arch::config::DesktopEnvironment::from_context(context).requires_display_manager()
     })
-    .default_from([StepId::DisplayManager], |context| {
+    .optional_default_from([StepId::DisplayManager], |context| {
         crate::arch::config::DisplayManager::from_context(context)
             == crate::arch::config::DisplayManager::Lightdm
     })
@@ -297,8 +283,8 @@ mod tests {
                     read_audit::audited(&**step, || step.should_ask(&context)).1,
                 ),
                 (
-                    "get_default",
-                    read_audit::audited(&**step, || step.get_default(&context)).1,
+                    "ask_policy",
+                    read_audit::audited(&**step, || step.ask_policy(&context)).1,
                 ),
                 (
                     "preselect_answer",

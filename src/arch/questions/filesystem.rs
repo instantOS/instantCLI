@@ -1,5 +1,5 @@
 use crate::arch::config::{BtrfsCompression, RootFilesystem};
-use crate::arch::engine::{InstallContext, StepId, StepOutcome, WizardStep};
+use crate::arch::engine::{AskPolicy, InstallContext, StepId, StepOutcome, WizardStep};
 use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder};
 use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
@@ -78,12 +78,10 @@ impl WizardStep for RootFilesystemQuestion {
         Some("Choose the root filesystem (btrfs or ext4)")
     }
 
-    fn is_optional(&self) -> bool {
-        true
-    }
-
-    fn get_default(&self, _context: &InstallContext) -> Option<String> {
-        Some(RootFilesystem::DEFAULT.answer_value().to_string())
+    fn ask_policy(&self, _context: &InstallContext) -> AskPolicy {
+        AskPolicy::Optional {
+            unattended_answer: Some(RootFilesystem::DEFAULT.answer_value().to_string()),
+        }
     }
 
     async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {
@@ -182,8 +180,10 @@ impl WizardStep for BtrfsCompressionQuestion {
         Some("Choose btrfs compression algorithm")
     }
 
-    fn is_optional(&self) -> bool {
-        true
+    fn ask_policy(&self, _context: &InstallContext) -> AskPolicy {
+        AskPolicy::Optional {
+            unattended_answer: Some(BtrfsCompression::DEFAULT.answer_value().to_string()),
+        }
     }
 
     /// Only relevant when the root filesystem is btrfs.
@@ -193,10 +193,6 @@ impl WizardStep for BtrfsCompressionQuestion {
 
     fn depends_on(&self) -> &[StepId] {
         &[StepId::RootFilesystem]
-    }
-
-    fn get_default(&self, _context: &InstallContext) -> Option<String> {
-        Some(BtrfsCompression::DEFAULT.answer_value().to_string())
     }
 
     async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {

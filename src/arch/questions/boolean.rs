@@ -1,18 +1,43 @@
-use crate::arch::engine::{InstallContext, StepId, StepOutcome, WizardStep};
+use crate::arch::engine::{AskPolicy, InstallContext, StepId, StepOutcome, WizardStep};
 use crate::menu_utils::{ConfirmResult, FzfWrapper};
 use crate::ui::nerd_font::NerdFont;
 use anyhow::Result;
 
 type ContextPredicate = dyn Fn(&InstallContext) -> bool + Send + Sync;
 
+/// The unattended answer of an optional boolean question. Booleans always
+/// have one, so optionality and the answer applied unattended coincide:
+/// `None` on the question means required, `Some` means optional.
+enum BooleanDefault {
+    No,
+    Yes,
+    Derived(Box<ContextPredicate>),
+}
+
+impl BooleanDefault {
+    /// The answer recorded when the question runs unattended, using the
+    /// same machine values `run` records for the same choice.
+    fn unattended_answer(&self, context: &InstallContext) -> &'static str {
+        match self {
+            Self::No => "no",
+            Self::Yes => "yes",
+            Self::Derived(predicate) => {
+                if predicate(context) {
+                    "yes"
+                } else {
+                    "no"
+                }
+            }
+        }
+    }
+}
+
 pub struct BooleanQuestion {
     id: StepId,
     prompt: String,
     description: Option<String>,
     icon: NerdFont,
-    is_optional: bool,
-    default_yes: bool,
-    dynamic_default: Option<Box<ContextPredicate>>,
+    default: Option<BooleanDefault>,
     should_ask_predicate: Option<Box<ContextPredicate>>,
     dependencies: Vec<StepId>,
 }
@@ -24,9 +49,7 @@ impl BooleanQuestion {
             prompt: prompt.into(),
             description: None,
             icon,
-            is_optional: false,
-            default_yes: false,
-            dynamic_default: None,
+            default: None,
             should_ask_predicate: None,
             dependencies: Vec::new(),
         }
@@ -37,19 +60,22 @@ impl BooleanQuestion {
         self
     }
 
+    /// Make the question optional; its unattended answer is "no".
     pub fn optional(mut self) -> Self {
-        self.is_optional = true;
+        self.default = Some(BooleanDefault::No);
         self
     }
 
-    pub fn default_yes(mut self) -> Self {
-        self.default_yes = true;
+    /// Make the question optional; its unattended answer is "yes".
+    pub fn optional_default_yes(mut self) -> Self {
+        self.default = Some(BooleanDefault::Yes);
         self
     }
 
-    /// Derive the default from earlier answers and declare those dependencies
-    /// in the same operation so invalidation cannot drift from the closure.
-    pub fn default_from<F>(
+    /// Make the question optional with an unattended answer derived from
+    /// earlier answers, declaring those dependencies in the same operation so
+    /// invalidation cannot drift from the closure.
+    pub fn optional_default_from<F>(
         mut self,
         dependencies: impl IntoIterator<Item = StepId>,
         func: F,
@@ -58,7 +84,7 @@ impl BooleanQuestion {
         F: Fn(&InstallContext) -> bool + 'static + Send + Sync,
     {
         self.add_dependencies(dependencies);
-        self.dynamic_default = Some(Box::new(func));
+        self.default = Some(BooleanDefault::Derived(Box::new(func)));
         self
     }
 
@@ -96,10 +122,6 @@ impl WizardStep for BooleanQuestion {
         self.description.as_deref().or(Some(&self.prompt))
     }
 
-    fn is_optional(&self) -> bool {
-        self.is_optional
-    }
-
     fn should_ask(&self, context: &InstallContext) -> bool {
         if let Some(predicate) = &self.should_ask_predicate {
             predicate(context)
@@ -112,20 +134,15 @@ impl WizardStep for BooleanQuestion {
         &self.dependencies
     }
 
-    fn get_default(&self, context: &InstallContext) -> Option<String> {
-        // Always `Some`: booleans always have an unattended answer. Note the
-        // confirm dialog in `run` ignores suggestions entirely, so this value
-        // only matters for the engine's skip/default handling.
-        let effective_default = if let Some(dynamic_func) = &self.dynamic_default {
-            dynamic_func(context)
-        } else {
-            self.default_yes
-        };
-        Some(if effective_default {
-            "yes".to_string()
-        } else {
-            "no".to_string()
-        })
+    fn ask_policy(&self, context: &InstallContext) -> AskPolicy {
+        match &self.default {
+            // Confirm dialogs ignore preselection, so a required boolean has
+            // no use for a default answer.
+            None => AskPolicy::Required,
+            Some(default) => AskPolicy::Optional {
+                unattended_answer: Some(default.unattended_answer(context).to_string()),
+            },
+        }
     }
 
     async fn run(&self, _context: &InstallContext) -> Result<StepOutcome> {

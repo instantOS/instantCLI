@@ -46,6 +46,34 @@ impl StepOutcome {
     }
 }
 
+/// How the wizard treats a step in the main flow.
+///
+/// Optionality is about flow placement, not relevance: optional steps are
+/// configured through Advanced Options in the install flow and asked inline
+/// in the setup flow. Whether a step applies to the current answers at all
+/// is [`WizardStep::should_ask`]'s job.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AskPolicy {
+    /// Always ask; the wizard never answers this step on its own.
+    Required,
+    /// The step may run unattended. `unattended_answer` is recorded as its
+    /// answer whenever no one is asked — applied automatically by the
+    /// install flow, or offered as "Use Default" in the pause menu — and
+    /// preselected when it is asked anyway; `None` leaves the step
+    /// unanswered until the user visits it.
+    Optional { unattended_answer: Option<String> },
+}
+
+impl AskPolicy {
+    /// The answer recorded when this step runs unattended.
+    pub fn unattended_answer(&self) -> Option<&str> {
+        match self {
+            Self::Required => None,
+            Self::Optional { unattended_answer } => unattended_answer.as_deref(),
+        }
+    }
+}
+
 /// Trait for providing async data to the install context
 #[async_trait::async_trait]
 pub trait AsyncDataProvider: Send + Sync {
@@ -110,11 +138,6 @@ pub trait WizardStep: Send + Sync {
         false
     }
 
-    /// Returns true if the question is optional and should be skipped in the main flow
-    fn is_optional(&self) -> bool {
-        false
-    }
-
     /// Returns true if this step is an informational message or warning
     /// and should be skipped when navigating backwards
     fn is_info_only(&self) -> bool {
@@ -144,41 +167,43 @@ pub trait WizardStep: Send + Sync {
         vec![]
     }
 
-    /// Returns the answer to record when this step is not asked.
+    /// Declares whether and how this step can run without user interaction.
     ///
-    /// This is the authoritative hook, unlike the advisory
-    /// [`WizardStep::preselect_answer`]: the engine records the value as the
-    /// answer of optional steps in the install flow, and offers "use default"
-    /// in the pause menu for optional steps. Because `preselect_answer` falls
-    /// back to it, a declared default is also the initial cursor position in
-    /// select dialogs.
+    /// Optional steps are hidden from the install flow's main questions: the
+    /// engine records their `unattended_answer` automatically when it has
+    /// one, and otherwise only exposes them through the final review's
+    /// Advanced Options menu and the pause menu. The setup flow asks
+    /// optional steps inline, with "Use Default" in the pause menu when an
+    /// unattended answer exists.
     ///
-    /// Declare every state this reads in [`WizardStep::depends_on`]. Return
-    /// `None` for questions with no sensible unattended answer.
-    fn get_default(&self, _context: &InstallContext) -> Option<String> {
-        None
+    /// Return [`AskPolicy::Required`] for steps with no sensible unattended
+    /// answer. Declare every state this reads in
+    /// [`WizardStep::depends_on`].
+    fn ask_policy(&self, _context: &InstallContext) -> AskPolicy {
+        AskPolicy::Required
     }
 
     /// Return a best-effort answer to preselect when this step is asked
     /// without a previous answer. Advisory only: only select dialogs honor
     /// it, it moves the initial cursor, and it is never recorded as the
-    /// answer. Suggestions may use earlier answers and optional data
-    /// populated by [`WizardStep::data_providers`], but must tolerate that
-    /// data being absent and must declare those reads in
+    /// answer. Defaults to the policy's unattended answer, so an optional
+    /// step that is asked despite its default starts with the cursor on
+    /// it. Override to suggest a likely answer for required steps
+    /// (detections, heuristics). Suggestions may use earlier answers and
+    /// optional data populated by [`WizardStep::data_providers`], but must
+    /// tolerate that data being absent and must declare those reads in
     /// [`WizardStep::depends_on`].
-    ///
-    /// Defaults to [`WizardStep::get_default`], so a step that declares a
-    /// skippable default also starts with the cursor on it. Override when the
-    /// likely choice differs from that default.
     fn preselect_answer(&self, context: &InstallContext) -> Option<String> {
-        self.get_default(context)
+        self.ask_policy(context)
+            .unattended_answer()
+            .map(str::to_string)
     }
 
     /// Returns the steps whose state this step is derived from.
     ///
     /// When any dependency changes, the engine removes this step's answer or
     /// completion marker transitively so it runs again. Declare every state
-    /// that `run`, `should_ask`, `get_default`, `preselect_answer`, or
+    /// that `run`, `should_ask`, `ask_policy`, `preselect_answer`, or
     /// `validate` reads for decision-making. Dependencies that are not part of the
     /// current wizard's step list are permitted (e.g. pre-seeded contexts)
     /// but must still appear earlier in the list when they are present.

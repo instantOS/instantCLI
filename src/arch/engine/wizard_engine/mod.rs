@@ -15,6 +15,7 @@ use self::presentation::{
 };
 use self::step_graph::StepGraph;
 use super::read_audit;
+use super::step::AskPolicy;
 use super::{InstallContext, StepOutcome, WizardStep};
 use crate::menu_utils::{ConfirmResult, FzfWrapper, Header, MenuCursor};
 use crate::ui::nerd_font::NerdFont;
@@ -365,14 +366,19 @@ impl WizardEngine {
                 continue;
             }
 
-            if step.is_optional() && self.flow == FlowKind::Install {
-                if !self.context.is_step_completed(step.id())
-                    && let Some(default) =
-                        read_audit::hook(&**step, "get_default", || step.get_default(&self.context))
+            // Optional steps never run in the install flow's main questions.
+            // Their unattended answers are applied here so the context
+            // settles the same way no matter which entry point resumes the
+            // flow.
+            if self.flow == FlowKind::Install
+                && let AskPolicy::Optional { unattended_answer } =
+                    read_audit::hook(&**step, "ask_policy", || step.ask_policy(&self.context))
+            {
+                let id = step.id();
+                if !self.context.is_step_completed(id)
+                    && let Some(answer) = unattended_answer
                 {
-                    let id = step.id();
-                    self.step_graph
-                        .record_answer(&mut self.context, id, default);
+                    self.step_graph.record_answer(&mut self.context, id, answer);
                 }
                 continue;
             }
@@ -443,11 +449,15 @@ impl WizardEngine {
             PauseMenuItem::GoBack,
         ];
         let current_step = &self.steps[current_index];
-        let has_default = read_audit::hook(&**current_step, "get_default", || {
-            current_step.get_default(&self.context)
-        })
-        .is_some();
-        if current_step.is_optional() && has_default {
+        let policy = read_audit::hook(&**current_step, "ask_policy", || {
+            current_step.ask_policy(&self.context)
+        });
+        if matches!(
+            policy,
+            AskPolicy::Optional {
+                unattended_answer: Some(_)
+            }
+        ) {
             options.push(PauseMenuItem::UseDefault);
         }
         options.push(PauseMenuItem::Abort);
@@ -471,14 +481,18 @@ impl WizardEngine {
                 Ok(NavigationAction::ContinueFlow)
             }
             crate::menu_utils::DialogOutcome::Submitted(PauseMenuItem::UseDefault) => {
-                let step = &self.steps[current_index];
-                let Some(default) =
-                    read_audit::hook(&**step, "get_default", || step.get_default(&self.context))
+                let AskPolicy::Optional {
+                    unattended_answer: Some(unattended_answer),
+                } = policy
                 else {
+                    // Unreachable while the menu only offers Use Default for
+                    // optional steps with an unattended answer; stay rather
+                    // than panic if that invariant ever changes.
                     return Ok(NavigationAction::Stay);
                 };
+                let id = current_step.id();
                 self.step_graph
-                    .record_answer(&mut self.context, step.id(), default);
+                    .record_answer(&mut self.context, id, unattended_answer);
                 Ok(NavigationAction::ContinueFlow)
             }
             crate::menu_utils::DialogOutcome::Submitted(PauseMenuItem::Abort) => {

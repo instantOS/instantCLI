@@ -1,6 +1,6 @@
 use std::fmt;
 
-use super::super::{InstallContext, StepId, WizardStep};
+use super::super::{AskPolicy, InstallContext, StepId, WizardStep};
 use super::FlowKind;
 use crate::arch::engine::summary::{
     InstallSummary, PartitioningKind, build_install_summary, build_setup_summary,
@@ -235,7 +235,10 @@ impl AdvancedOption {
             steps
                 .iter()
                 .enumerate()
-                .filter(|(_, step)| step.is_optional() && step.should_ask(context))
+                .filter(|(_, step)| {
+                    matches!(step.ask_policy(context), AskPolicy::Optional { .. })
+                        && step.should_ask(context)
+                })
                 .map(|(index, step)| Self::Answer {
                     index,
                     id: step.id(),

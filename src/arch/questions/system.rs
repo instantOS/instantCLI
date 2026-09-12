@@ -1,7 +1,7 @@
 use super::text_input::{TextInputQuestion, validators};
 use crate::arch::annotations::AnnotatedValue;
 use crate::arch::config::DesktopEnvironment;
-use crate::arch::engine::{DataKey, InstallContext, StepId, StepOutcome, WizardStep};
+use crate::arch::engine::{AskPolicy, DataKey, InstallContext, StepId, StepOutcome, WizardStep};
 use crate::arch::geo::GeoLocationProvider;
 use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder};
 use crate::preview::{PreviewId, preview_command};
@@ -305,8 +305,10 @@ impl WizardStep for DesktopEnvironmentQuestion {
         StepId::DesktopEnvironment
     }
 
-    fn is_optional(&self) -> bool {
-        true
+    fn ask_policy(&self, _context: &InstallContext) -> AskPolicy {
+        AskPolicy::Optional {
+            unattended_answer: Some(DesktopEnvironment::DEFAULT.answer_value().to_string()),
+        }
     }
 
     fn description(&self) -> Option<&str> {
@@ -334,10 +336,6 @@ impl WizardStep for DesktopEnvironmentQuestion {
         Ok(StepOutcome::from_dialog(result, |environment| {
             environment.answer_value().to_string()
         }))
-    }
-
-    fn get_default(&self, _context: &InstallContext) -> Option<String> {
-        Some(DesktopEnvironment::DEFAULT.answer_value().to_string())
     }
 
     fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
@@ -668,8 +666,12 @@ impl WizardStep for KernelQuestion {
         Some("Select the Linux kernel variant")
     }
 
-    fn is_optional(&self) -> bool {
-        true
+    fn ask_policy(&self, _context: &InstallContext) -> AskPolicy {
+        // No unattended answer: without a user choice the kernel stays
+        // unanswered and is only configurable through Advanced Options.
+        AskPolicy::Optional {
+            unattended_answer: None,
+        }
     }
 
     async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {
