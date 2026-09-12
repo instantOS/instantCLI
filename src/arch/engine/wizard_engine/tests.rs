@@ -1190,3 +1190,16 @@ fn imported_context_does_not_demand_missing_answers() {
 
     validate_imported_context(&steps, &context).unwrap();
 }
+
+#[test]
+fn imported_context_accepts_completed_info_step_even_when_should_ask_is_false() {
+    let steps: Vec<Box<dyn WizardStep>> = vec![Box::new(
+        crate::arch::questions::warnings::DualBootEspWarning,
+    )];
+    let mut context = InstallContext::new();
+    context.completed_steps.insert(StepId::DualBootEspWarning);
+
+    // Even without providers running (so DualBootDisksKey is absent and should_ask is false),
+    // validate_imported_context must not reject the completed warning.
+    validate_imported_context(&steps, &context).unwrap();
+}

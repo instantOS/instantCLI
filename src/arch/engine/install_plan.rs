@@ -70,7 +70,8 @@ pub struct Timezone(String);
 impl Timezone {
     pub fn parse(value: &str) -> Result<Self> {
         validate_relative_resource_name("timezone", value)?;
-        if !Path::new("/usr/share/zoneinfo").join(value).is_file() {
+        let zoneinfo = Path::new("/usr/share/zoneinfo");
+        if zoneinfo.exists() && !zoneinfo.join(value).is_file() {
             bail!("unknown timezone {value:?}")
         }
         Ok(Self(value.to_owned()))
@@ -87,16 +88,52 @@ impl LocaleName {
         if value.is_empty() || value.chars().any(char::is_whitespace) {
             bail!("invalid locale {value:?}")
         }
-        let locale_gen = std::fs::read_to_string("/etc/locale.gen")
-            .context("cannot validate locale without /etc/locale.gen")?;
-        if !crate::common::locale_gen::available_locales(&locale_gen)
-            .iter()
-            .any(|available| available == value)
-        {
-            bail!("locale {value:?} is not available in /etc/locale.gen")
+        match std::fs::read_to_string("/etc/locale.gen") {
+            Ok(locale_gen) => {
+                if !crate::common::locale_gen::available_locales(&locale_gen)
+                    .iter()
+                    .any(|available| available == value)
+                {
+                    bail!("locale {value:?} is not available in /etc/locale.gen")
+                }
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                validate_locale_syntax(value)?;
+            }
+            Err(err) => {
+                return Err(err).context("cannot read /etc/locale.gen");
+            }
         }
         Ok(Self(value.to_owned()))
     }
+}
+
+fn validate_locale_syntax(value: &str) -> Result<()> {
+    if !value
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '@' | '-'))
+    {
+        bail!("invalid characters in locale {value:?}");
+    }
+    if value == "C" || value == "POSIX" || value == "C.UTF-8" {
+        return Ok(());
+    }
+    let (lang_country, _modifier) = value.split_once('@').unwrap_or((value, ""));
+    let (lang_country, _encoding) = lang_country.split_once('.').unwrap_or((lang_country, ""));
+    let (lang, country) = lang_country.split_once('_').unwrap_or((lang_country, ""));
+
+    let valid_lang =
+        (lang.len() == 2 || lang.len() == 3) && lang.chars().all(|c| c.is_ascii_lowercase());
+    let valid_country = country.is_empty()
+        || ((country.len() == 2 || country.len() == 3)
+            && country
+                .chars()
+                .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit()));
+
+    if !valid_lang || !valid_country {
+        bail!("invalid locale format {value:?}");
+    }
+    Ok(())
 }
 
 display_string_value!(LocaleName);
@@ -617,5 +654,16 @@ mod tests {
 
         assert!(!format!("{login:?}").contains("login-secret"));
         assert!(!format!("{encryption:?}").contains("encryption-secret"));
+    }
+
+    #[test]
+    fn locale_syntax_fallback_validates_structure_when_gen_missing() {
+        assert!(validate_locale_syntax("en_US.UTF-8").is_ok());
+        assert!(validate_locale_syntax("de_DE").is_ok());
+        assert!(validate_locale_syntax("sr_RS.UTF-8@latin").is_ok());
+        assert!(validate_locale_syntax("C.UTF-8").is_ok());
+        assert!(validate_locale_syntax("POSIX").is_ok());
+        assert!(validate_locale_syntax("not_a_real_LOCALE.UTF-8").is_err());
+        assert!(validate_locale_syntax("en_US/../etc/passwd").is_err());
     }
 }
