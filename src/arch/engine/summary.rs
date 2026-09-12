@@ -4,42 +4,11 @@ use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 
 use super::context::InstallContext;
-use super::types::{BootMode, StepId};
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum PartitioningKind {
-    Automatic,
-    DualBoot,
-    Manual,
-    Unknown,
-}
-
-impl std::fmt::Display for PartitioningKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            PartitioningKind::Automatic => write!(f, "automatic"),
-            PartitioningKind::DualBoot => write!(f, "dual-boot"),
-            PartitioningKind::Manual => write!(f, "manual"),
-            PartitioningKind::Unknown => write!(f, "unknown"),
-        }
-    }
-}
+use super::types::{BootMode, PartitioningKind, StepId};
 
 pub(crate) struct InstallSummary {
     pub(crate) text: String,
     pub(crate) partitioning_kind: PartitioningKind,
-}
-
-fn partitioning_kind_from(method: &str) -> PartitioningKind {
-    if method.contains("Dual Boot") {
-        PartitioningKind::DualBoot
-    } else if method.contains("Manual") {
-        PartitioningKind::Manual
-    } else if method.contains("Automatic") {
-        PartitioningKind::Automatic
-    } else {
-        PartitioningKind::Unknown
-    }
 }
 
 fn format_disk_label(context: &InstallContext) -> String {
@@ -116,8 +85,7 @@ pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary 
     let locale = answer_or(context, StepId::Locale, "<not set>");
     let keymap = answer_or(context, StepId::Keymap, "<not set>");
 
-    let partitioning_method = answer_or(context, StepId::PartitioningMethod, "<not set>");
-    let partitioning_kind = partitioning_kind_from(&partitioning_method);
+    let partitioning_kind = context.partitioning_kind();
 
     let disk = format_disk_label(context);
 
@@ -244,7 +212,7 @@ pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary 
         .blank()
         .line(colors::TEAL, Some(NerdFont::HardDrive), "Storage Plan")
         .field_indented("Disk", &disk)
-        .field_indented("Partitioning", &partitioning_method)
+        .field_indented("Partitioning", &partitioning_kind.to_string())
         .field_indented("Root filesystem", &filesystem_label);
 
     match partitioning_kind {

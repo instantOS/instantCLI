@@ -6,6 +6,7 @@ use crate::common::TildePath;
 use crate::common::config::DocumentedConfig;
 use crate::common::paths;
 use crate::game::launch_command::LaunchCommand;
+use crate::restic::wrapper::Snapshot;
 
 /// Describes what kind of filesystem element a tracked path represents
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -197,6 +198,18 @@ impl GameInstallation {
     ) {
         self.nearest_checkpoint = Some(checkpoint_id.into());
         self.checkpoint_time = Some(time.into());
+    }
+
+    /// Whether `snapshot` is this installation's checkpoint.
+    ///
+    /// Matching tolerates the short form because configs written before
+    /// checkpoints were normalized to full IDs (or hand-edited with the short
+    /// form `game snapshots` displays) must still match — a mismatch here makes
+    /// sync re-restore over local saves.
+    pub fn checkpoint_matches(&self, snapshot: &Snapshot) -> bool {
+        self.nearest_checkpoint
+            .as_deref()
+            .is_some_and(|checkpoint| snapshot.matches_id(checkpoint))
     }
 }
 
@@ -393,6 +406,49 @@ mod tests {
             Some("checkpoint789".to_string())
         );
         assert_eq!(installation.launch_command, None);
+    }
+
+    fn snapshot_fixture(id: &str, short_id: &str) -> Snapshot {
+        serde_json::from_value(serde_json::json!({
+            "time": "2026-01-01T00:00:00Z",
+            "tree": "0".repeat(64),
+            "paths": [],
+            "hostname": "test-host",
+            "username": "test-user",
+            "tags": [],
+            "id": id,
+            "short_id": short_id,
+        }))
+        .expect("snapshot fixture should deserialize")
+    }
+
+    #[test]
+    fn test_checkpoint_matches_accepts_full_and_short_ids() {
+        const FULL_ID: &str = "40dc152cb64e26ec6caa82e18a54e57e7ef5b8c9d1a4c7b16efc53a92b8a1234";
+        const SHORT_ID: &str = "40dc152c";
+
+        let mut installation = GameInstallation::with_kind(
+            GameName("test_game".to_string()),
+            TildePath::new(PathBuf::from("~/.test/saves")),
+            PathContentKind::Directory,
+        );
+        let snapshot = snapshot_fixture(FULL_ID, SHORT_ID);
+
+        // No checkpoint yet: never matches, sync must not skip.
+        assert!(!installation.checkpoint_matches(&snapshot));
+
+        // Writes are normalized to the full ID (see checkpoint.rs).
+        installation.update_checkpoint(FULL_ID);
+        assert!(installation.checkpoint_matches(&snapshot));
+
+        // Legacy configs holding the short form (hand-edited or pre-
+        // normalization) must still match, or sync re-restores over saves.
+        installation.update_checkpoint(SHORT_ID);
+        assert!(installation.checkpoint_matches(&snapshot));
+
+        // Unrelated snapshots never match.
+        let other = snapshot_fixture("deadbeef", "deadbeef");
+        assert!(!installation.checkpoint_matches(&other));
     }
 
     #[test]

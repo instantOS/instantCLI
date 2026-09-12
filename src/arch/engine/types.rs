@@ -52,6 +52,78 @@ pub enum StepId {
     DualBootInstructions,
 }
 
+/// Kernel variants the wizard can install.
+///
+/// The stored answer is the pacman package name ([`Kernel::label`]); parse it
+/// back with [`Kernel::from_answer`] at every consumer instead of matching raw
+/// strings. The match in [`crate::arch::engine::system_info`] is exhaustive so
+/// a new variant must pick its GPU driver packages.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Kernel {
+    Linux,
+    Lts,
+    Zen,
+}
+
+impl Kernel {
+    pub const ALL: [Kernel; 3] = [Kernel::Linux, Kernel::Lts, Kernel::Zen];
+
+    /// The pacman package name; also the persisted wizard answer.
+    pub fn label(&self) -> &'static str {
+        match self {
+            Kernel::Linux => "linux",
+            Kernel::Lts => "linux-lts",
+            Kernel::Zen => "linux-zen",
+        }
+    }
+
+    /// Parse a stored answer, rejecting unknown values instead of guessing.
+    pub fn from_answer(answer: &str) -> Option<Kernel> {
+        Self::ALL.iter().copied().find(|k| k.label() == answer)
+    }
+}
+
+/// How the target disk will be partitioned.
+///
+/// This is the typed form of the `PartitioningMethod` answer; parse it with
+/// [`PartitioningKind::from_answer`] (via
+/// [`InstallContext::partitioning_kind`]) instead of substring-matching the
+/// raw label at each consumer — the labels are display strings and must not
+/// double as dispatch keys.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PartitioningKind {
+    Automatic,
+    DualBoot,
+    Manual,
+    /// The step was not answered, or the answer is not a known label
+    /// (e.g. a hand-edited or older config). Execution must treat this as
+    /// an error, never as the automatic (disk-erasing) default.
+    Unknown,
+}
+
+impl PartitioningKind {
+    /// Exact-match parse of the wizard's `PartitioningMethodOption` labels.
+    pub fn from_answer(answer: &str) -> PartitioningKind {
+        match answer {
+            "Automatic (Erase Disk)" => PartitioningKind::Automatic,
+            "Dual Boot (Automatic)" => PartitioningKind::DualBoot,
+            "Manual (cfdisk)" => PartitioningKind::Manual,
+            _ => PartitioningKind::Unknown,
+        }
+    }
+}
+
+impl std::fmt::Display for PartitioningKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PartitioningKind::Automatic => write!(f, "automatic"),
+            PartitioningKind::DualBoot => write!(f, "dual-boot"),
+            PartitioningKind::Manual => write!(f, "manual"),
+            PartitioningKind::Unknown => write!(f, "unknown"),
+        }
+    }
+}
+
 /// Privacy classification for an answer when building a support report.
 ///
 /// This is deliberately exhaustive: adding a new installer answer requires a

@@ -50,6 +50,15 @@ fn default_dots_dirs() -> Vec<String> {
     vec!["dots".to_string()]
 }
 
+/// The on-disk protocol for root-owned dotfile subdirectories: a directory
+/// name ending in `_root` stores root-owned dotfiles (targeted at `/`)
+/// instead of home dotfiles. This is the single parse point for the
+/// convention — `DotfileDir` and `DotfileSource` carry the parsed flag so
+/// consumers never re-derive it from the name.
+pub fn is_root_subdir(name: &str) -> bool {
+    name.ends_with("_root")
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RepoName(String);
 

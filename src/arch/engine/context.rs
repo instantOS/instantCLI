@@ -4,7 +4,7 @@ use std::any::Any;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, Mutex};
 
-use super::types::{StepId, SystemInfo};
+use super::types::{Kernel, PartitioningKind, StepId, SystemInfo};
 
 /// Trait for defining type-safe keys for the data map
 pub trait DataKey: Send + Sync + 'static {
@@ -165,12 +165,42 @@ impl InstallContext {
         self.answers.contains_key(&id) || self.completed_steps.contains(&id)
     }
 
+    /// Booleans are recorded and validated as exactly "yes"/"no" (see
+    /// `BooleanQuestion::validate`); anything else is not a truthy spelling,
+    /// it is an invalid answer.
     pub fn get_answer_bool(&self, id: StepId) -> bool {
         super::read_audit::record_read(id);
+        self.answers.get(&id).map(|s| s == "yes").unwrap_or(false)
+    }
+
+    /// The selected kernel, defaulting to the standard one when the step was
+    /// skipped. Errors on an unknown stored answer instead of pacstrap-failing
+    /// on it after the disk has already been partitioned.
+    pub fn kernel(&self) -> Result<Kernel> {
+        super::read_audit::record_read(StepId::Kernel);
+        match self.answers.get(&StepId::Kernel) {
+            Some(answer) => Kernel::from_answer(answer).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "unknown kernel answer {answer:?}; expected one of {}",
+                    Kernel::ALL.map(|k| k.label()).join(", ")
+                )
+            }),
+            None => Ok(Kernel::Linux),
+        }
+    }
+
+    /// The partitioning approach chosen for the target disk.
+    ///
+    /// Parsed once here instead of substring-matching the raw display label
+    /// at every consumer. `Unknown` means the step was skipped or the stored
+    /// answer is not a known label; the execution layer must error on it
+    /// before touching the disk.
+    pub fn partitioning_kind(&self) -> PartitioningKind {
+        super::read_audit::record_read(StepId::PartitioningMethod);
         self.answers
-            .get(&id)
-            .map(|s| s == "true" || s == "yes")
-            .unwrap_or(false)
+            .get(&StepId::PartitioningMethod)
+            .map(|answer| PartitioningKind::from_answer(answer))
+            .unwrap_or(PartitioningKind::Unknown)
     }
 
     /// Set a value in the data map using a strongly-typed key

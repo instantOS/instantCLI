@@ -145,6 +145,17 @@ impl WizardStep for BooleanQuestion {
         }
     }
 
+    /// Booleans have exactly two answers ("yes"/"no"). Validating here means
+    /// `validate_imported_context` rejects hand-edited or stale configs whose
+    /// booleans spell truth some other way ("true", "1", ...) instead of
+    /// letting them silently read as false at execution time.
+    fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
+        match answer {
+            "yes" | "no" => Ok(()),
+            _ => Err(format!("expected \"yes\" or \"no\", got {answer:?}")),
+        }
+    }
+
     async fn run(&self, _context: &InstallContext) -> Result<StepOutcome> {
         let message = if let Some(desc) = &self.description {
             format!("{} {}\n\n{}", self.icon, self.prompt, desc)

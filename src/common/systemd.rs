@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use serde::{Deserialize, Serialize};
 use std::process::Command;
 
 const GRAPHICAL_SESSION_ANCHOR: &str = "ins-graphical-session.service";
@@ -40,13 +41,22 @@ pub fn ensure_graphical_session_target() -> Result<()> {
 }
 
 /// Represents the scope of a systemd service (system or user)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, clap::ValueEnum)]
+#[serde(rename_all = "lowercase")]
 pub enum ServiceScope {
     System,
     User,
 }
 
 impl ServiceScope {
+    /// Canonical lowercase name used in CLI args, preview keys, and payloads.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ServiceScope::System => "system",
+            ServiceScope::User => "user",
+        }
+    }
+
     /// Get the systemctl command arguments for this scope
     pub fn systemctl_args(&self) -> Vec<&'static str> {
         match self {

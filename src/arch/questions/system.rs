@@ -1,7 +1,9 @@
 use super::text_input::{TextInputQuestion, validators};
 use crate::arch::annotations::AnnotatedValue;
 use crate::arch::config::DesktopEnvironment;
-use crate::arch::engine::{AskPolicy, DataKey, InstallContext, StepId, StepOutcome, WizardStep};
+use crate::arch::engine::{
+    AskPolicy, DataKey, InstallContext, Kernel, StepId, StepOutcome, WizardStep,
+};
 use crate::arch::geo::GeoLocationProvider;
 use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder};
 use crate::preview::{PreviewId, preview_command};
@@ -151,39 +153,33 @@ impl FzfSelectable for AnnotatedOption {
     }
 }
 
-#[derive(Clone)]
-enum KernelOption {
-    Linux,
-    Lts,
-    Zen,
-}
-
-impl KernelOption {
-    fn label(&self) -> &'static str {
-        match self {
-            KernelOption::Linux => "linux",
-            KernelOption::Lts => "linux-lts",
-            KernelOption::Zen => "linux-zen",
-        }
+impl FzfSelectable for Kernel {
+    fn fzf_display_text(&self) -> String {
+        let icon = match self {
+            Kernel::Linux => format_icon_colored(NerdFont::LinuxTux, colors::TEXT),
+            Kernel::Lts => format_icon_colored(NerdFont::Shield, colors::TEAL),
+            Kernel::Zen => format_icon_colored(NerdFont::Performance, colors::MAUVE),
+        };
+        format!("{icon} {}", self.label())
     }
 
-    fn preview(&self) -> FzfPreview {
+    fn fzf_preview(&self) -> FzfPreview {
         match self {
-            KernelOption::Linux => PreviewBuilder::new()
+            Kernel::Linux => PreviewBuilder::new()
                 .header(NerdFont::Gear, "linux")
                 .subtext("The standard Arch kernel with the latest updates.")
                 .blank()
                 .line(colors::TEAL, None, "Best for")
                 .bullets(["Most systems", "Up-to-date hardware support"])
                 .build(),
-            KernelOption::Lts => PreviewBuilder::new()
+            Kernel::Lts => PreviewBuilder::new()
                 .header(NerdFont::Gear, "linux-lts")
                 .subtext("Long-term support kernel with fewer breaking changes.")
                 .blank()
                 .line(colors::TEAL, None, "Best for")
                 .bullets(["Stability", "Older hardware"])
                 .build(),
-            KernelOption::Zen => PreviewBuilder::new()
+            Kernel::Zen => PreviewBuilder::new()
                 .header(NerdFont::Gear, "linux-zen")
                 .subtext("Performance-tuned kernel with extra desktop patches.")
                 .blank()
@@ -191,21 +187,6 @@ impl KernelOption {
                 .bullets(["Responsive desktop feel", "Gaming"])
                 .build(),
         }
-    }
-}
-
-impl FzfSelectable for KernelOption {
-    fn fzf_display_text(&self) -> String {
-        let icon = match self {
-            Self::Linux => format_icon_colored(NerdFont::LinuxTux, colors::TEXT),
-            Self::Lts => format_icon_colored(NerdFont::Shield, colors::TEAL),
-            Self::Zen => format_icon_colored(NerdFont::Performance, colors::MAUVE),
-        };
-        format!("{icon} {}", self.label())
-    }
-
-    fn fzf_preview(&self) -> FzfPreview {
-        self.preview()
     }
 
     fn fzf_key(&self) -> String {
@@ -339,10 +320,9 @@ impl WizardStep for DesktopEnvironmentQuestion {
     }
 
     fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
-        match answer {
-            "sway" | "niri" | "instantwm" | "hyprland" | "none/tty" => Ok(()),
-            _ => Err("You must select a desktop environment.".to_string()),
-        }
+        DesktopEnvironment::try_from_answer(answer)
+            .map(|_| ())
+            .ok_or_else(|| "You must select a desktop environment.".to_string())
     }
 }
 
@@ -675,14 +655,12 @@ impl WizardStep for KernelQuestion {
     }
 
     async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {
-        let kernels = vec![KernelOption::Linux, KernelOption::Lts, KernelOption::Zen];
-
         let result = super::select_one_for_step(
             context,
             self,
             FzfWrapper::builder()
                 .header(HeaderBuilder::new(NerdFont::Gear, "Select Kernel").build())
-                .items(kernels)
+                .items(Kernel::ALL.to_vec())
                 .padded(),
         )?;
 
@@ -690,8 +668,10 @@ impl WizardStep for KernelQuestion {
     }
 
     fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
-        if answer.is_empty() {
-            return Err("You must select a kernel.".to_string());
+        if Kernel::from_answer(answer).is_none() {
+            return Err(
+                "You must select a supported kernel (linux, linux-lts, or linux-zen).".to_string(),
+            );
         }
         Ok(())
     }

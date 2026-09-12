@@ -19,10 +19,8 @@ impl WizardStep for ResizeWorkflowStep {
     }
 
     fn should_ask(&self, context: &InstallContext) -> bool {
-        let is_dualboot = context
-            .get_answer(&StepId::PartitioningMethod)
-            .map(|s| s.contains("Dual Boot"))
-            .unwrap_or(false);
+        let is_dualboot =
+            context.partitioning_kind() == crate::arch::engine::PartitioningKind::DualBoot;
 
         let needs_resize = context
             .get_answer(&StepId::DualBootPartition)

@@ -85,8 +85,7 @@ pub fn determine_action(
                     // 1. Checkpoint ID matches latest snapshot
                     // 2. File was NOT modified after checkpoint was set (within tolerance)
                     if !force
-                        && let Some(ref nearest_checkpoint) = installation.nearest_checkpoint
-                        && nearest_checkpoint == &snapshot.id
+                        && installation.checkpoint_matches(snapshot)
                         && let Some(ref checkpoint_time) = installation.checkpoint_time
                         && !file_modified_after_checkpoint(local_time, checkpoint_time)
                     {
@@ -104,10 +103,7 @@ pub fn determine_action(
                     })
                 }
                 TimeComparison::SnapshotNewer => {
-                    if !force
-                        && let Some(ref nearest_checkpoint) = installation.nearest_checkpoint
-                        && nearest_checkpoint == &snapshot.id
-                    {
+                    if !force && installation.checkpoint_matches(snapshot) {
                         return Ok(SyncAction::RestoreSkipped(snapshot.id.clone()));
                     }
                     Ok(SyncAction::RestoreFromSnapshot(snapshot.id.clone()))
@@ -116,10 +112,7 @@ pub fn determine_action(
                     if force {
                         return Ok(SyncAction::RestoreFromSnapshot(snapshot.id.clone()));
                     }
-                    if !force
-                        && let Some(ref nearest_checkpoint) = installation.nearest_checkpoint
-                        && nearest_checkpoint == &snapshot.id
-                    {
+                    if !force && installation.checkpoint_matches(snapshot) {
                         return Ok(SyncAction::RestoreSkipped(snapshot.id.clone()));
                     }
                     Ok(SyncAction::WithinTolerance {
@@ -139,10 +132,7 @@ pub fn determine_action(
         }
         (None, Some(snapshot)) => {
             // Check if restore should be skipped due to matching checkpoint
-            if !force
-                && let Some(ref nearest_checkpoint) = installation.nearest_checkpoint
-                && nearest_checkpoint == &snapshot.id
-            {
+            if !force && installation.checkpoint_matches(snapshot) {
                 return Ok(SyncAction::RestoreSkipped(snapshot.id.clone()));
             }
 

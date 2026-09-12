@@ -188,10 +188,7 @@ impl WizardStep for PartitionSelectorQuestion {
     }
 
     fn should_ask(&self, context: &InstallContext) -> bool {
-        context
-            .get_answer(&StepId::PartitioningMethod)
-            .map(|s| s.contains("Manual"))
-            .unwrap_or(false)
+        context.partitioning_kind() == crate::arch::engine::PartitioningKind::Manual
     }
 
     fn depends_on(&self) -> &[StepId] {

@@ -34,16 +34,19 @@ impl GpuKind {
     }
 
     /// Returns driver packages for this GPU.
-    /// For NVIDIA, pass the kernel name to get kernel-specific drivers (nvidia, nvidia-lts, nvidia-dkms).
-    pub fn get_driver_packages(&self, kernel: Option<&str>) -> Vec<&'static str> {
+    /// For NVIDIA, the kernel determines the driver (nvidia, nvidia-lts, or dkms).
+    pub fn get_driver_packages(
+        &self,
+        kernel: Option<crate::arch::engine::Kernel>,
+    ) -> Vec<&'static str> {
         match self {
             GpuKind::Nvidia => {
                 let mut packages = Vec::new();
-                match kernel.unwrap_or("linux") {
-                    "linux" => packages.push("nvidia"),
-                    "linux-lts" => packages.push("nvidia-lts"),
-                    _ => {
-                        // Custom kernels (zen, hardened, etc) need DKMS
+                match kernel.unwrap_or(crate::arch::engine::Kernel::Linux) {
+                    crate::arch::engine::Kernel::Linux => packages.push("nvidia"),
+                    crate::arch::engine::Kernel::Lts => packages.push("nvidia-lts"),
+                    crate::arch::engine::Kernel::Zen => {
+                        // Zen needs DKMS instead of a prebuilt module
                         packages.push("nvidia-dkms");
                         packages.push("dkms");
                     }

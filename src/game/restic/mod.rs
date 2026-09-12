@@ -176,38 +176,7 @@ pub fn restore_game_saves(
 
     let game_name_plain = game_selection.game_name.clone();
 
-    // Step 4: Check if restore should be skipped due to matching checkpoint
-    if !force
-        && let Some(ref nearest_checkpoint) = game_selection.installation.nearest_checkpoint
-        && nearest_checkpoint == &snapshot_id
-    {
-        let plain_message = format!(
-            "Restore skipped for game '{}' from snapshot {} (checkpoint matches, use --force to override)",
-            game_name_plain, snapshot_id
-        );
-        let text_message = format!(
-            "Restore skipped for game '{}' from snapshot {} (checkpoint matches, use --force to override)",
-            game_selection.game_name.yellow(),
-            snapshot_id
-        );
-        let snapshot_for_data = snapshot_id.clone();
-        emit_restic_event(
-            Level::Info,
-            "game.restore.skipped",
-            Some(char::from(NerdFont::Info)),
-            plain_message,
-            text_message,
-            Some(serde_json::json!({
-                "game": game_name_plain.clone(),
-                "action": "restore_skipped",
-                "snapshot_id": snapshot_for_data,
-                "reason": "checkpoint_matches"
-            })),
-        );
-        return Ok(());
-    }
-
-    // Step 5: Get snapshot details for security checks
+    // Step 4: Get snapshot details for security checks
     let game_config =
         InstantGameConfig::load().context("Failed to load game configuration for restore")?;
     let snapshot =
@@ -248,6 +217,34 @@ pub fn restore_game_saves(
                 return Err(anyhow::anyhow!("snapshot not found"));
             }
         };
+
+    // Step 5: Check if restore should be skipped due to matching checkpoint
+    if !force && game_selection.installation.checkpoint_matches(&snapshot) {
+        let plain_message = format!(
+            "Restore skipped for game '{}' from snapshot {} (checkpoint matches, use --force to override)",
+            game_name_plain, snapshot.id
+        );
+        let text_message = format!(
+            "Restore skipped for game '{}' from snapshot {} (checkpoint matches, use --force to override)",
+            game_selection.game_name.yellow(),
+            snapshot.id
+        );
+        let snapshot_id = snapshot.id.clone();
+        emit_restic_event(
+            Level::Info,
+            "game.restore.skipped",
+            Some(char::from(NerdFont::Info)),
+            plain_message,
+            text_message,
+            Some(serde_json::json!({
+                "game": game_name_plain.clone(),
+                "action": "restore_skipped",
+                "snapshot_id": snapshot_id,
+                "reason": "checkpoint_matches"
+            })),
+        );
+        return Ok(());
+    }
 
     // Step 6: Perform security check for snapshot vs local saves
     if let Some(ref save_info) = security_result.save_info

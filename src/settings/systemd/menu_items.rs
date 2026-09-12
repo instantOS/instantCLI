@@ -320,11 +320,6 @@ fn run_services_menu(scope: ServiceScope) -> Result<()> {
         ServiceScope::User => "User Services",
     };
 
-    let scope_str = match scope {
-        ServiceScope::System => "system",
-        ServiceScope::User => "user",
-    };
-
     let mut selected_service: Option<ServiceItem> = None;
 
     loop {
@@ -349,7 +344,7 @@ fn run_services_menu(scope: ServiceScope) -> Result<()> {
             .header(Header::fancy(title))
             .prompt("Select service")
             .responsive_layout()
-            .command(systemd_list::list_command(scope_str))
+            .command(systemd_list::list_command(scope))
             .select_one()?;
 
         match result {
@@ -366,25 +361,17 @@ fn run_services_menu(scope: ServiceScope) -> Result<()> {
 fn decode_service(
     row: DecodedStreamingMenuItem<SystemdServiceSelectionPayload>,
 ) -> Option<ServiceItem> {
-    let scope = match row.payload.scope.as_str() {
-        "user" => ServiceScope::User,
-        _ => ServiceScope::System,
-    };
-
     Some(ServiceItem::new(
         row.payload.name,
         row.payload.description,
         row.payload.active,
         row.payload.enabled,
-        scope,
+        row.payload.scope,
     ))
 }
 
 fn get_service_enabled_state(name: &str, scope: ServiceScope) -> String {
-    let scope_args: Vec<&str> = match scope {
-        ServiceScope::System => vec![],
-        ServiceScope::User => vec!["--user"],
-    };
+    let scope_args = scope.systemctl_args();
 
     let output = Command::new("systemctl")
         .args(["is-enabled", name])

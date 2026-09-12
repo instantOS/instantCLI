@@ -113,8 +113,7 @@ impl SnapshotListEntry {
         let is_current_checkpoint = game_name
             .as_ref()
             .and_then(|name| checkpoints.get(name))
-            .map(|checkpoint| checkpoint == &snapshot.id || checkpoint == &snapshot.short_id)
-            .unwrap_or(false);
+            .is_some_and(|checkpoint| snapshot.matches_id(checkpoint));
 
         let summary = snapshot.summary.as_ref();
         Self {

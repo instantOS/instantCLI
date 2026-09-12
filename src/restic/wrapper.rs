@@ -516,6 +516,17 @@ pub struct Snapshot {
     pub short_id: String,
 }
 
+impl Snapshot {
+    /// Whether `id` refers to this snapshot.
+    ///
+    /// Accepts both the full restic ID and the short form (what restic and
+    /// `game snapshots` display), since checkpoint strings persisted in
+    /// installations.toml may hold either.
+    pub fn matches_id(&self, id: &str) -> bool {
+        self.id == id || self.short_id == id
+    }
+}
+
 #[derive(Debug, Deserialize, Clone)]
 #[allow(dead_code)]
 pub struct SnapshotNode {

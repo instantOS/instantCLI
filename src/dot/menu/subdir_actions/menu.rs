@@ -380,7 +380,7 @@ fn handle_add_new_subdir(dotfile_repo: &DotfileRepo, config: &DotfileConfig) -> 
     let local_path = dotfile_repo.local_path(config)?;
     match crate::dot::meta::add_dots_dir(&local_path, &new_dir) {
         Ok(()) => {
-            let root_note = if new_dir.ends_with("_root") {
+            let root_note = if crate::dot::types::is_root_subdir(&new_dir) {
                 "\nDirectories ending in '_root' store root-owned dotfiles."
             } else {
                 ""

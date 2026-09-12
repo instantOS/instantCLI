@@ -103,10 +103,7 @@ fn collect_language_packages(context: &InstallContext) -> Vec<String> {
 fn collect_extended_packages(context: &InstallContext) -> Result<Vec<String>> {
     let minimal_mode = context.get_answer_bool(StepId::MinimalMode);
 
-    let kernel = context
-        .get_answer(&StepId::Kernel)
-        .map(|s| s.as_str())
-        .unwrap_or("linux");
+    let kernel = context.kernel()?;
 
     let mut packages: Vec<String> = strings(&[
         "openssh",
@@ -124,7 +121,7 @@ fn collect_extended_packages(context: &InstallContext) -> Result<Vec<String>> {
         "xdg-user-dirs",
     ]);
 
-    packages.push(format!("{}-headers", kernel));
+    packages.push(format!("{}-headers", kernel.label()));
 
     // Standard Arch desktop packages
     // Note: instantOS packages are installed separately via build_instant_package_plan()

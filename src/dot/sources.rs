@@ -56,6 +56,7 @@ pub fn list_sources_for_target(
                         repo_name: repo_config.name.clone(),
                         subdir_name: subdir_name.clone(),
                         source_path: candidate,
+                        is_root: dotfile_dir.is_root,
                     });
                 }
             }
@@ -122,6 +123,7 @@ pub fn list_sources_by_target_in_dir(
                         repo_name: repo_config.name.clone(),
                         subdir_name: subdir_name.clone(),
                         source_path,
+                        is_root: dotfile_dir.is_root,
                     });
             }
         }

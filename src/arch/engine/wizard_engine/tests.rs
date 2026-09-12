@@ -575,19 +575,16 @@ fn normalization_removes_inactive_imported_answers() {
         crate::ui::nerd_font::NerdFont::Lock,
     )
     .relevant_when([StepId::PartitioningMethod], |context| {
-        context
-            .get_answer(&StepId::PartitioningMethod)
-            .is_some_and(|method| !method.contains("Manual"))
+        context.partitioning_kind() != crate::arch::engine::PartitioningKind::Manual
     });
     let mut engine = WizardEngine::new(vec![
         question(StepId::PartitioningMethod, &[]),
         Box::new(encryption),
     ])
     .unwrap();
-    engine.context.set_answer(
-        StepId::PartitioningMethod,
-        "Manual Partitioning".to_string(),
-    );
+    engine
+        .context
+        .set_answer(StepId::PartitioningMethod, "Manual (cfdisk)".to_string());
     engine
         .context
         .set_answer(StepId::UseEncryption, "yes".to_string());
@@ -609,7 +606,7 @@ fn normalization_rejects_dependent_answers_without_provenance() {
         .set_answer(StepId::Disk, "/dev/sda".to_string());
     engine.context.set_answer(
         StepId::PartitioningMethod,
-        "Automatic Partitioning".to_string(),
+        "Automatic (Erase Disk)".to_string(),
     );
 
     engine.normalize_context();
@@ -638,7 +635,7 @@ fn normalization_reasks_a_dependent_answer_when_provenance_is_stale() {
     graph.record_answer(
         &mut context,
         StepId::PartitioningMethod,
-        "Automatic Partitioning".into(),
+        "Automatic (Erase Disk)".into(),
     );
     // Simulate an external edit which bypassed the graph but left the saved
     // provenance available for detecting the inconsistency.
@@ -715,7 +712,7 @@ fn dependency_provenance_survives_context_serialization() {
     graph.record_answer(
         &mut context,
         StepId::PartitioningMethod,
-        "Automatic Partitioning".into(),
+        "Automatic (Erase Disk)".into(),
     );
 
     let serialized = context.to_toml().unwrap();
@@ -728,7 +725,7 @@ fn dependency_provenance_survives_context_serialization() {
             .context
             .get_answer(&StepId::PartitioningMethod)
             .map(String::as_str),
-        Some("Automatic Partitioning")
+        Some("Automatic (Erase Disk)")
     );
 }
 
@@ -786,7 +783,11 @@ fn changing_disk_invalidates_real_partitioning_method_question() {
     let mut context = InstallContext::new();
 
     graph.record_answer(&mut context, StepId::Disk, "/dev/sda".into());
-    graph.record_answer(&mut context, StepId::PartitioningMethod, "Dual Boot".into());
+    graph.record_answer(
+        &mut context,
+        StepId::PartitioningMethod,
+        "Dual Boot (Automatic)".into(),
+    );
     graph.record_answer(&mut context, StepId::Disk, "/dev/sdb".into());
 
     assert!(context.get_answer(&StepId::PartitioningMethod).is_none());

@@ -1,10 +1,8 @@
 use std::fmt;
 
-use super::super::{AskPolicy, InstallContext, StepId, WizardStep};
+use super::super::{AskPolicy, InstallContext, PartitioningKind, StepId, WizardStep};
 use super::FlowKind;
-use crate::arch::engine::summary::{
-    InstallSummary, PartitioningKind, build_install_summary, build_setup_summary,
-};
+use crate::arch::engine::summary::{InstallSummary, build_install_summary, build_setup_summary};
 use crate::menu_utils::{FzfPreview, FzfSelectable};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;

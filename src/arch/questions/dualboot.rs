@@ -103,10 +103,7 @@ impl WizardStep for DualBootPartitionQuestion {
     }
 
     fn should_ask(&self, context: &InstallContext) -> bool {
-        context
-            .get_answer(&StepId::PartitioningMethod)
-            .map(|s| s.contains("Dual Boot"))
-            .unwrap_or(false)
+        context.partitioning_kind() == crate::arch::engine::PartitioningKind::DualBoot
     }
 
     fn depends_on(&self) -> &[StepId] {
@@ -245,10 +242,7 @@ impl WizardStep for DualBootSizeQuestion {
     }
 
     fn should_ask(&self, context: &InstallContext) -> bool {
-        context
-            .get_answer(&StepId::PartitioningMethod)
-            .map(|s| s.contains("Dual Boot"))
-            .unwrap_or(false)
+        context.partitioning_kind() == crate::arch::engine::PartitioningKind::DualBoot
     }
 
     fn depends_on(&self) -> &[StepId] {

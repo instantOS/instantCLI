@@ -225,7 +225,7 @@ pub fn add_to_destination(
     }
 
     let (relative, is_root_target) = relative_target_path(target_path)?;
-    let is_root_destination = dest.subdir_name.ends_with("_root");
+    let is_root_destination = dest.is_root;
     if is_root_target != is_root_destination {
         anyhow::bail!(
             "Destination '{}/{}' cannot store {}.\n\
@@ -338,6 +338,7 @@ mod tests {
             repo_name: "personal".to_string(),
             subdir_name: "dots_root".to_string(),
             source_path: root_dir.clone(),
+            is_root: true,
         };
 
         add_to_destination(&config, &db, &target, &dest, true, None).unwrap();

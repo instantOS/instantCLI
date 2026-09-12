@@ -134,11 +134,12 @@ pub(super) fn build_steps() -> Vec<Box<dyn WizardStep>> {
             .relevant_when(
                 [crate::arch::engine::StepId::PartitioningMethod],
                 |context| {
-                    // Only ask about encryption if automatic partitioning is selected
-                    context
-                        .get_answer(&crate::arch::engine::StepId::PartitioningMethod)
-                        .map(|method| !method.contains("Manual"))
-                        .unwrap_or(true) // Default to true if partitioning method not yet answered
+                    // Only ask about encryption if automatic partitioning is
+                    // selected. Unanswered/unknown counts as automatic here:
+                    // this only gates which questions are relevant, never a
+                    // destructive action.
+                    context.partitioning_kind()
+                        != crate::arch::engine::PartitioningKind::Manual
                 },
             ),
         ),

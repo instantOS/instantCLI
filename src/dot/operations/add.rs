@@ -162,12 +162,10 @@ fn select_dots_dir(
                     config_path,
                 )?;
                 let is_active = true;
-                let is_root = true;
                 return Ok(Some(DotfileDir::new_no_create(
                     "dots_root",
                     &dotfile_repo.local_path(config)?,
                     is_active,
-                    is_root,
                 )?));
             }
             return Ok(None);
@@ -385,6 +383,7 @@ fn add_new_file(
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| ".".to_string()),
         source_path: chosen_dir.path.clone(),
+        is_root: chosen_dir.is_root,
     };
 
     let recipients = if encrypt {

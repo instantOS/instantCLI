@@ -71,11 +71,8 @@ async fn fetch_fallback_mirrorlist() -> Result<String> {
 }
 
 fn run_pacstrap(context: &InstallContext, executor: &dyn CommandRunner) -> Result<()> {
-    // Get selected kernel or default to "linux"
-    let kernel = context
-        .get_answer(&StepId::Kernel)
-        .map(|s| s.as_str())
-        .unwrap_or("linux");
+    // Get selected kernel (defaults to the standard kernel when skipped)
+    let kernel = context.kernel()?;
     let use_encryption = context.get_answer_bool(StepId::UseEncryption);
     let use_plymouth = context.get_answer_bool(StepId::UsePlymouth);
     let minimal_mode = context.get_answer_bool(StepId::MinimalMode);
@@ -90,7 +87,7 @@ fn run_pacstrap(context: &InstallContext, executor: &dyn CommandRunner) -> Resul
     }
 
     // Add kernel (headers are installed later alongside extra packages)
-    packages.push(kernel.to_string());
+    packages.push(kernel.label().to_string());
 
     // CPU Microcode
     if context.system_info.has_amd_cpu {

@@ -152,9 +152,8 @@ impl WizardStep for DisplayManagerQuestion {
     }
 
     fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
-        match answer {
-            "gdm" | "lightdm" | "none" => Ok(()),
-            _ => Err("You must select a display manager.".to_string()),
-        }
+        DisplayManager::try_from_answer(answer)
+            .map(|_| ())
+            .ok_or_else(|| "You must select a display manager.".to_string())
     }
 }

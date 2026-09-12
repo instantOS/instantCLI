@@ -73,6 +73,7 @@ fn resolve_override_status(
                 repo_name: repo_name.clone(),
                 subdir_name: subdir_name.clone(),
                 source_path,
+                is_root: crate::dot::types::is_root_subdir(subdir_name),
             },
             exists: false,
         })
@@ -148,6 +149,7 @@ pub fn get_destinations(config: &DotfileConfig) -> Vec<DotfileSource> {
                     repo_name: repo.name.clone(),
                     subdir_name: subdir.clone(),
                     source_path: config.repos_path().join(&repo.name).join(subdir),
+                    is_root: crate::dot::types::is_root_subdir(subdir),
                 });
             } else {
                 // Invalid - not in metadata, warn once per session

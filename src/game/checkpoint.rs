@@ -83,7 +83,9 @@ pub fn update_checkpoint_after_restore(game_name: &str, snapshot_id: &str) -> Re
     // Find and update the installation
     for installation in &mut installations.installations {
         if installation.game_name.0 == game_name {
-            installation.update_checkpoint_at(snapshot_id, snapshot.time);
+            // Store the resolved full snapshot ID, never the user-supplied
+            // (possibly short) form, so checkpoint comparisons stay exact.
+            installation.update_checkpoint_at(snapshot.id.clone(), snapshot.time);
             break;
         }
     }

@@ -45,8 +45,8 @@ pub enum SettingsCommands {
     #[command(hide = true)]
     InternalGenerateSystemdList {
         /// Service scope: system or user
-        #[arg(long = "scope")]
-        scope: String,
+        #[arg(long = "scope", value_enum)]
+        scope: crate::common::systemd::ServiceScope,
     },
     /// Internal: Generate package list rows for streaming menus
     #[command(hide = true)]
@@ -66,10 +66,6 @@ pub enum SettingsCommands {
     InternalApply {
         #[arg(long = "setting-id")]
         setting_id: String,
-        #[arg(long = "bool-value")]
-        bool_value: Option<bool>,
-        #[arg(long = "string-value")]
-        string_value: Option<String>,
         #[arg(long = "settings-file", value_hint = ValueHint::FilePath)]
         settings_file: Option<std::path::PathBuf>,
     },
@@ -98,7 +94,7 @@ pub fn dispatch_settings_command(
             super::flatpak_list::generate_and_print_installed_list()
         }
         Some(SettingsCommands::InternalGenerateSystemdList { scope }) => {
-            super::systemd_list::generate_and_print_list(&scope)
+            super::systemd_list::generate_and_print_list(scope)
         }
         Some(SettingsCommands::InternalGeneratePackageList { manager, mode }) => {
             super::package_list::generate_and_print_package_list(&manager, &mode)
@@ -108,17 +104,8 @@ pub fn dispatch_settings_command(
         }
         Some(SettingsCommands::InternalApply {
             setting_id,
-            bool_value,
-            string_value,
             settings_file,
-        }) => apply::run_internal_apply(
-            debug,
-            privileged_flag,
-            &setting_id,
-            bool_value,
-            string_value,
-            settings_file,
-        ),
+        }) => apply::run_internal_apply(debug, privileged_flag, &setting_id, settings_file),
     }
 }
 

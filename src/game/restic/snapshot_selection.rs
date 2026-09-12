@@ -162,17 +162,11 @@ struct SnapshotComparisonContext {
 }
 
 impl SnapshotComparisonContext {
-    fn new(
-        snapshot_hostname: &str,
-        snapshot_id: &str,
-        snapshot_short_id: &str,
-        nearest_checkpoint: Option<&str>,
-    ) -> Self {
+    fn new(snapshot: &Snapshot, nearest_checkpoint: Option<&str>) -> Self {
         let current_hostname = get_current_hostname();
-        let is_same_host = current_hostname.as_deref() == Some(snapshot_hostname);
-        let is_current_checkpoint = nearest_checkpoint
-            .map(|id| id == snapshot_id || id == snapshot_short_id)
-            .unwrap_or(false);
+        let is_same_host = current_hostname.as_deref() == Some(snapshot.hostname.as_str());
+        let is_current_checkpoint =
+            nearest_checkpoint.is_some_and(|checkpoint| snapshot.matches_id(checkpoint));
 
         Self {
             is_same_host,
@@ -332,10 +326,7 @@ fn add_local_files_comparison(
 fn add_preview_local_comparison(
     mut builder: PreviewBuilder,
     local_save_info: Option<&crate::game::utils::save_files::SaveDirectoryInfo>,
-    snapshot_time: &str,
-    snapshot_hostname: &str,
-    snapshot_id: &str,
-    snapshot_short_id: &str,
+    snapshot: &Snapshot,
     nearest_checkpoint: Option<&str>,
 ) -> PreviewBuilder {
     builder = builder
@@ -348,16 +339,11 @@ fn add_preview_local_comparison(
         )
         .blank();
 
-    let context = SnapshotComparisonContext::new(
-        snapshot_hostname,
-        snapshot_id,
-        snapshot_short_id,
-        nearest_checkpoint,
-    );
+    let context = SnapshotComparisonContext::new(snapshot, nearest_checkpoint);
 
     match local_save_info {
         Some(local_info) if local_info.file_count > 0 => {
-            builder = add_local_files_comparison(builder, local_info, snapshot_time, &context);
+            builder = add_local_files_comparison(builder, local_info, &snapshot.time, &context);
         }
         Some(_) => {
             builder = builder
@@ -440,15 +426,8 @@ fn build_snapshot_preview(
 
     // Local save comparison section (only if info provided)
     if local_save_info.is_some() {
-        builder = add_preview_local_comparison(
-            builder,
-            local_save_info,
-            &snapshot.time,
-            &snapshot.hostname,
-            &snapshot.id,
-            &snapshot.short_id,
-            nearest_checkpoint,
-        );
+        builder =
+            add_preview_local_comparison(builder, local_save_info, snapshot, nearest_checkpoint);
     }
 
     // File statistics

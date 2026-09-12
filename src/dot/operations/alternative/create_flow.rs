@@ -50,8 +50,7 @@ pub(crate) fn run_create_flow(
         let destinations: Vec<DotfileSource> = get_destinations(&config)
             .into_iter()
             .filter(|dest| {
-                let is_root_dest = dest.subdir_name.ends_with("_root");
-                if is_root_target != is_root_dest {
+                if is_root_target != dest.is_root {
                     return false;
                 }
 
@@ -283,7 +282,7 @@ fn create_new_subdir(
         _ => return Ok(false),
     };
 
-    if is_root_target && !new_dir.ends_with("_root") {
+    if is_root_target && !crate::dot::types::is_root_subdir(&new_dir) {
         new_dir.push_str("_root");
     }
 

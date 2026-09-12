@@ -15,17 +15,12 @@ pub struct DotfileDir {
 }
 
 impl DotfileDir {
-    pub fn new_no_create(
-        name: &str,
-        repo_path: &Path,
-        is_active: bool,
-        is_root: bool,
-    ) -> Result<Self> {
+    pub fn new_no_create(name: &str, repo_path: &Path, is_active: bool) -> Result<Self> {
         let path = repo_path.join(name);
         Ok(DotfileDir {
             path,
             is_active,
-            is_root,
+            is_root: crate::dot::types::is_root_subdir(name),
         })
     }
 }
@@ -117,9 +112,7 @@ impl DotfileRepo {
 
             if in_metadata || exists_on_disk {
                 let is_active = true;
-                let is_root = subdir_name.ends_with("_root");
-                let dotfile_dir =
-                    DotfileDir::new_no_create(subdir_name, repo_path, is_active, is_root)?;
+                let dotfile_dir = DotfileDir::new_no_create(subdir_name, repo_path, is_active)?;
                 dotfile_dirs.push(dotfile_dir);
                 added_subdirs.insert(subdir_name.clone());
             }
@@ -127,9 +120,7 @@ impl DotfileRepo {
 
         for subdir_name in available_subdirs {
             if !added_subdirs.contains(subdir_name) {
-                let is_root = subdir_name.ends_with("_root");
-                let dotfile_dir =
-                    DotfileDir::new_no_create(subdir_name, repo_path, false, is_root)?;
+                let dotfile_dir = DotfileDir::new_no_create(subdir_name, repo_path, false)?;
                 dotfile_dirs.push(dotfile_dir);
             }
         }

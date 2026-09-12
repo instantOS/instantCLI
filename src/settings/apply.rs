@@ -71,8 +71,6 @@ pub fn run_internal_apply(
     debug: bool,
     privileged_flag: bool,
     setting_id: &str,
-    _bool_value: Option<bool>,
-    _string_value: Option<String>,
     settings_file: Option<std::path::PathBuf>,
 ) -> Result<()> {
     let store = if let Some(path) = settings_file {

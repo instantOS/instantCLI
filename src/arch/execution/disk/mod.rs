@@ -28,40 +28,47 @@ pub fn prepare_disk(context: &InstallContext, executor: &dyn CommandRunner) -> R
         ram_size_gb, swap_size_gb
     );
 
-    let partitioning_method = context
-        .get_answer(&StepId::PartitioningMethod)
-        .map(|s| s.as_str())
-        .unwrap_or("Automatic");
+    // Dispatch on the typed partitioning kind. There is deliberately no
+    // default: an unanswered or unrecognized method must fail before any
+    // partitioning runs, never fall through to the disk-erasing path.
+    match context.partitioning_kind() {
+        crate::arch::engine::PartitioningKind::DualBoot => {
+            dualboot::prepare_dualboot_disk(context, executor, disk_path, swap_size_gb)?;
+        }
+        crate::arch::engine::PartitioningKind::Manual => {
+            mount::format_and_mount_partitions(context, executor)?;
+        }
+        crate::arch::engine::PartitioningKind::Automatic => {
+            let use_encryption = context.get_answer_bool(StepId::UseEncryption);
 
-    if partitioning_method.contains("Dual Boot") {
-        dualboot::prepare_dualboot_disk(context, executor, disk_path, swap_size_gb)?;
-    } else if partitioning_method.contains("Manual") {
-        mount::format_and_mount_partitions(context, executor)?;
-    } else {
-        let use_encryption = context.get_answer_bool(StepId::UseEncryption);
-
-        match (boot_mode, use_encryption) {
-            (BootMode::UEFI64 | BootMode::UEFI32, false) => {
-                automatic::partition_uefi(disk_path, executor, swap_size_gb)?;
-                automatic::format_uefi(context, disk_path, executor)?;
-                automatic::mount_uefi(context, disk_path, executor)?;
-            }
-            (BootMode::BIOS, false) => {
-                automatic::partition_bios(disk_path, executor, swap_size_gb)?;
-                automatic::format_bios(context, disk_path, executor)?;
-                automatic::mount_bios(context, disk_path, executor)?;
-            }
-            (BootMode::UEFI64 | BootMode::UEFI32, true) => {
-                encryption::partition_uefi_luks(disk_path, executor)?;
-                encryption::format_luks(context, disk_path, executor, true, swap_size_gb)?;
-                encryption::mount_luks(context, executor, disk_path)?;
-            }
-            (BootMode::BIOS, true) => {
-                encryption::partition_bios_luks(disk_path, executor)?;
-                encryption::format_luks(context, disk_path, executor, false, swap_size_gb)?;
-                encryption::mount_luks(context, executor, disk_path)?;
+            match (boot_mode, use_encryption) {
+                (BootMode::UEFI64 | BootMode::UEFI32, false) => {
+                    automatic::partition_uefi(disk_path, executor, swap_size_gb)?;
+                    automatic::format_uefi(context, disk_path, executor)?;
+                    automatic::mount_uefi(context, disk_path, executor)?;
+                }
+                (BootMode::BIOS, false) => {
+                    automatic::partition_bios(disk_path, executor, swap_size_gb)?;
+                    automatic::format_bios(context, disk_path, executor)?;
+                    automatic::mount_bios(context, disk_path, executor)?;
+                }
+                (BootMode::UEFI64 | BootMode::UEFI32, true) => {
+                    encryption::partition_uefi_luks(disk_path, executor)?;
+                    encryption::format_luks(context, disk_path, executor, true, swap_size_gb)?;
+                    encryption::mount_luks(context, executor, disk_path)?;
+                }
+                (BootMode::BIOS, true) => {
+                    encryption::partition_bios_luks(disk_path, executor)?;
+                    encryption::format_luks(context, disk_path, executor, false, swap_size_gb)?;
+                    encryption::mount_luks(context, executor, disk_path)?;
+                }
             }
         }
+        kind => anyhow::bail!(
+            "Partitioning method was not answered or is unrecognized (kind: {kind}); \
+             refusing to partition {} automatically",
+            disk_path
+        ),
     }
 
     Ok(())

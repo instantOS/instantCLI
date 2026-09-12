@@ -15,31 +15,23 @@ pub struct SystemdServiceSelectionPayload {
     pub description: String,
     pub active: String,
     pub enabled: String,
-    pub scope: String,
+    pub scope: ServiceScope,
 }
 
-pub fn list_command(scope: &str) -> StreamingCommand {
+pub fn list_command(scope: ServiceScope) -> StreamingCommand {
     StreamingCommand::new(resolve_current_binary())
         .arg("settings")
         .arg("internal-generate-systemd-list")
         .arg("--scope")
-        .arg(scope)
+        .arg(scope.as_str())
 }
 
-pub fn generate_and_print_list(scope: &str) -> Result<()> {
-    let service_scope = match scope {
-        "user" => ServiceScope::User,
-        _ => ServiceScope::System,
-    };
-
-    stream_services(service_scope)
+pub fn generate_and_print_list(scope: ServiceScope) -> Result<()> {
+    stream_services(scope)
 }
 
 fn stream_services(scope: ServiceScope) -> Result<()> {
-    let scope_args: Vec<&str> = match scope {
-        ServiceScope::System => vec![],
-        ServiceScope::User => vec!["--user"],
-    };
+    let scope_args = scope.systemctl_args();
 
     let mut child = Command::new("systemctl")
         .args([
@@ -87,10 +79,7 @@ fn stream_services(scope: ServiceScope) -> Result<()> {
 
     lines.sort_by(|a, b| a.0.cmp(&b.0));
 
-    let scope_str = match scope {
-        ServiceScope::System => "system",
-        ServiceScope::User => "user",
-    };
+    let scope_str = scope.as_str();
 
     let stdout = io::stdout();
     let mut handle = stdout.lock();
@@ -108,7 +97,7 @@ fn stream_services(scope: ServiceScope) -> Result<()> {
                 description,
                 active,
                 enabled,
-                scope: scope_str.to_string(),
+                scope,
             },
         )
         .preview(FzfPreview::Command(preview_command(
@@ -126,10 +115,7 @@ fn load_enabled_states<'a>(
     scope: ServiceScope,
     service_names: impl Iterator<Item = &'a String>,
 ) -> Option<HashMap<String, String>> {
-    let scope_args: Vec<&str> = match scope {
-        ServiceScope::System => vec![],
-        ServiceScope::User => vec!["--user"],
-    };
+    let scope_args = scope.systemctl_args();
 
     let mut command = Command::new("systemctl");
     command

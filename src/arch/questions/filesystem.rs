@@ -105,10 +105,9 @@ impl WizardStep for RootFilesystemQuestion {
     }
 
     fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
-        match answer {
-            "btrfs" | "ext4" => Ok(()),
-            _ => Err("You must select a root filesystem.".to_string()),
-        }
+        RootFilesystem::try_from_answer(answer)
+            .map(|_| ())
+            .ok_or_else(|| "You must select a root filesystem.".to_string())
     }
 }
 
@@ -218,9 +217,8 @@ impl WizardStep for BtrfsCompressionQuestion {
     }
 
     fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
-        match answer {
-            "none" | "zstd" | "lzo" | "zlib" => Ok(()),
-            _ => Err("You must select a compression option.".to_string()),
-        }
+        BtrfsCompression::try_from_answer(answer)
+            .map(|_| ())
+            .ok_or_else(|| "You must select a compression option.".to_string())
     }
 }

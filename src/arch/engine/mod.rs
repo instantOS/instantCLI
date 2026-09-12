@@ -11,5 +11,5 @@ pub use context::{
 };
 pub use step::{AskPolicy, AsyncDataProvider, StepOutcome, WizardStep};
 pub(crate) use summary::{InstallSummary, build_install_summary};
-pub use types::{AnswerPrivacy, BootMode, GpuKind, StepId, SystemInfo};
+pub use types::{AnswerPrivacy, BootMode, GpuKind, Kernel, PartitioningKind, StepId, SystemInfo};
 pub use wizard_engine::{FlowKind, WizardEngine, WizardOutcome, validate_imported_context};

@@ -15,16 +15,28 @@ pub enum DesktopEnvironment {
 
 impl DesktopEnvironment {
     pub const DEFAULT: Self = Self::InstantWM;
+    pub const ALL: [Self; 5] = [
+        Self::Sway,
+        Self::Niri,
+        Self::InstantWM,
+        Self::Hyprland,
+        Self::Tty,
+    ];
 
+    /// Lenient parse for display/summary use: unknown answers fall back to
+    /// [`Self::DEFAULT`]. Execution paths validate stored answers with
+    /// [`Self::try_from_answer`] first, so a default here can only mean the
+    /// step was skipped.
     pub fn from_answer(answer: &str) -> Self {
-        match answer {
-            "sway" => Self::Sway,
-            "niri" => Self::Niri,
-            "instantwm" => Self::InstantWM,
-            "hyprland" => Self::Hyprland,
-            "none/tty" => Self::Tty,
-            _ => Self::DEFAULT,
-        }
+        Self::try_from_answer(answer).unwrap_or(Self::DEFAULT)
+    }
+
+    /// Strict parse of the `answer_value` vocabulary; `None` on anything else.
+    pub fn try_from_answer(answer: &str) -> Option<Self> {
+        Self::ALL
+            .iter()
+            .copied()
+            .find(|value| value.answer_value() == answer)
     }
 
     pub fn from_context(context: &InstallContext) -> Self {
@@ -111,13 +123,20 @@ pub enum RootFilesystem {
 impl RootFilesystem {
     /// btrfs is the recommended default (snapshots, compression).
     pub const DEFAULT: Self = Self::Btrfs;
+    pub const ALL: [Self; 2] = [Self::Btrfs, Self::Ext4];
 
+    /// Lenient parse for display/summary use; see
+    /// [`DesktopEnvironment::from_answer`].
     pub fn from_answer(answer: &str) -> Self {
-        match answer {
-            "ext4" => Self::Ext4,
-            "btrfs" => Self::Btrfs,
-            _ => Self::DEFAULT,
-        }
+        Self::try_from_answer(answer).unwrap_or(Self::DEFAULT)
+    }
+
+    /// Strict parse of the `answer_value` vocabulary; `None` on anything else.
+    pub fn try_from_answer(answer: &str) -> Option<Self> {
+        Self::ALL
+            .iter()
+            .copied()
+            .find(|value| value.answer_value() == answer)
     }
 
     pub fn from_context(context: &InstallContext) -> Self {
@@ -158,15 +177,20 @@ pub enum BtrfsCompression {
 impl BtrfsCompression {
     /// zstd offers the best balance of speed and ratio and is the default.
     pub const DEFAULT: Self = Self::Zstd;
+    pub const ALL: [Self; 4] = [Self::None, Self::Zstd, Self::Lzo, Self::Zlib];
 
+    /// Lenient parse for display/summary use; see
+    /// [`DesktopEnvironment::from_answer`].
     pub fn from_answer(answer: &str) -> Self {
-        match answer {
-            "none" => Self::None,
-            "zstd" => Self::Zstd,
-            "lzo" => Self::Lzo,
-            "zlib" => Self::Zlib,
-            _ => Self::DEFAULT,
-        }
+        Self::try_from_answer(answer).unwrap_or(Self::DEFAULT)
+    }
+
+    /// Strict parse of the `answer_value` vocabulary; `None` on anything else.
+    pub fn try_from_answer(answer: &str) -> Option<Self> {
+        Self::ALL
+            .iter()
+            .copied()
+            .find(|value| value.answer_value() == answer)
     }
 
     pub fn from_context(context: &InstallContext) -> Self {
@@ -216,14 +240,20 @@ pub enum DisplayManager {
 impl DisplayManager {
     /// gdm is the default.
     pub const DEFAULT: Self = Self::Gdm;
+    pub const ALL: [Self; 3] = [Self::Gdm, Self::Lightdm, Self::None];
 
+    /// Lenient parse for display/summary use; see
+    /// [`DesktopEnvironment::from_answer`].
     pub fn from_answer(answer: &str) -> Self {
-        match answer {
-            "gdm" => Self::Gdm,
-            "lightdm" => Self::Lightdm,
-            "none" => Self::None,
-            _ => Self::DEFAULT,
-        }
+        Self::try_from_answer(answer).unwrap_or(Self::DEFAULT)
+    }
+
+    /// Strict parse of the `answer_value` vocabulary; `None` on anything else.
+    pub fn try_from_answer(answer: &str) -> Option<Self> {
+        Self::ALL
+            .iter()
+            .copied()
+            .find(|value| value.answer_value() == answer)
     }
 
     pub fn from_context(context: &InstallContext) -> Self {
@@ -263,8 +293,15 @@ mod tests {
             DisplayManager::Lightdm
         );
         assert_eq!(DisplayManager::from_answer("none"), DisplayManager::None);
+        // Lenient parse falls back to the default...
         assert_eq!(DisplayManager::from_answer("unknown"), DisplayManager::Gdm);
         assert_eq!(DisplayManager::DEFAULT, DisplayManager::Gdm);
+        // ...but the strict parse used at execution boundaries rejects it.
+        assert_eq!(DisplayManager::try_from_answer("unknown"), None);
+        assert_eq!(
+            DisplayManager::try_from_answer("lightdm"),
+            Some(DisplayManager::Lightdm)
+        );
     }
 
     #[test]
@@ -277,9 +314,16 @@ mod tests {
             DesktopEnvironment::from_answer("none/tty"),
             DesktopEnvironment::Tty
         );
+        // Lenient parse falls back to the default...
         assert_eq!(
             DesktopEnvironment::from_answer("unknown"),
             DesktopEnvironment::InstantWM
+        );
+        // ...but the strict parse used at execution boundaries rejects it.
+        assert_eq!(DesktopEnvironment::try_from_answer("hyprLand"), None);
+        assert_eq!(
+            DesktopEnvironment::try_from_answer("hyprland"),
+            Some(DesktopEnvironment::Hyprland)
         );
     }
 
@@ -299,19 +343,25 @@ mod tests {
     fn root_filesystem_defaults_to_btrfs() {
         assert_eq!(RootFilesystem::from_answer("ext4"), RootFilesystem::Ext4);
         assert_eq!(RootFilesystem::from_answer("btrfs"), RootFilesystem::Btrfs);
+        // Lenient parse falls back to the default...
         assert_eq!(
             RootFilesystem::from_answer("unknown"),
             RootFilesystem::Btrfs
         );
         assert_eq!(RootFilesystem::DEFAULT, RootFilesystem::Btrfs);
+        // ...but the strict parse used at execution boundaries rejects it.
+        assert_eq!(RootFilesystem::try_from_answer("unknown"), None);
     }
 
     #[test]
     fn btrfs_compression_mount_options() {
+        // Lenient parse falls back to the default...
         assert_eq!(
             BtrfsCompression::from_answer("unknown"),
             BtrfsCompression::Zstd
         );
+        // ...but the strict parse used at execution boundaries rejects it.
+        assert_eq!(BtrfsCompression::try_from_answer("unknown"), None);
         assert_eq!(BtrfsCompression::None.mount_option(), None);
         assert_eq!(BtrfsCompression::Zstd.mount_option(), Some("compress=zstd"));
         assert_eq!(BtrfsCompression::Lzo.mount_option(), Some("compress=lzo"));
