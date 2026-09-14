@@ -7,6 +7,7 @@ use anyhow::{Context, Result, bail};
 use base64::Engine;
 use sha2::{Digest, Sha256};
 
+use crate::common::display_server::DisplayServer;
 use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper};
 use crate::settings::context::SettingsContext;
 use crate::ui::catppuccin::{colors, format_icon, format_icon_colored};
@@ -48,6 +49,16 @@ impl AuthorizedKey {
             self.prefix.clone()
         } else {
             format!("{} {}", self.prefix, comment.trim())
+        }
+    }
+
+    /// The shareable public-key line, without `authorized_keys` options that
+    /// only apply to this machine.
+    fn public_key_line(&self) -> String {
+        if self.comment.is_empty() {
+            format!("{} {}", self.key_type, self.key_data)
+        } else {
+            format!("{} {} {}", self.key_type, self.key_data, self.comment)
         }
     }
 }
@@ -99,6 +110,7 @@ impl FzfSelectable for KeyMenuItem {
 
 #[derive(Clone)]
 enum KeyActionItem {
+    Copy(AuthorizedKey),
     EditComment,
     Remove,
     Back,
@@ -107,6 +119,10 @@ enum KeyActionItem {
 impl FzfSelectable for KeyActionItem {
     fn fzf_display_text(&self) -> String {
         match self {
+            Self::Copy(_) => format!(
+                "{} Copy public key",
+                format_icon_colored(NerdFont::Clipboard, colors::GREEN)
+            ),
             Self::EditComment => format!("{} Edit comment", format_icon(NerdFont::Edit)),
             Self::Remove => format!(
                 "{} Remove key",
@@ -118,6 +134,12 @@ impl FzfSelectable for KeyActionItem {
 
     fn fzf_preview(&self) -> FzfPreview {
         match self {
+            Self::Copy(key) => PreviewBuilder::new()
+                .header(NerdFont::Clipboard, "Copy Public Key")
+                .text("Copy this key to the system clipboard.")
+                .blank()
+                .field("Key", &key.public_key_line())
+                .build(),
             Self::EditComment => PreviewBuilder::new()
                 .header(NerdFont::Edit, "Edit Comment")
                 .text("Change the label at the end of this public key.")
@@ -241,6 +263,7 @@ fn manage_key(ctx: &mut SettingsContext, path: &Path, key: &AuthorizedKey) -> Re
     loop {
         match FzfWrapper::menu()
             .items(vec![
+                KeyActionItem::Copy(key.clone()),
                 KeyActionItem::EditComment,
                 KeyActionItem::Remove,
                 KeyActionItem::Back,
@@ -248,6 +271,9 @@ fn manage_key(ctx: &mut SettingsContext, path: &Path, key: &AuthorizedKey) -> Re
             .padded()
             .select_one()?
         {
+            crate::menu_utils::DialogOutcome::Submitted(KeyActionItem::Copy(_)) => {
+                copy_public_key(ctx, key);
+            }
             crate::menu_utils::DialogOutcome::Submitted(KeyActionItem::EditComment) => {
                 let comment = FzfWrapper::builder()
                     .prompt("SSH key comment")
@@ -277,6 +303,18 @@ fn manage_key(ctx: &mut SettingsContext, path: &Path, key: &AuthorizedKey) -> Re
         }
     }
     Ok(())
+}
+
+fn copy_public_key(ctx: &SettingsContext, key: &AuthorizedKey) {
+    let display_server = DisplayServer::detect();
+    match crate::assist::utils::copy_to_clipboard(key.public_key_line().as_bytes(), &display_server)
+    {
+        Ok(()) => ctx.emit_success("settings.users.ssh_keys", "Public key copied to clipboard."),
+        Err(error) => ctx.emit_failure(
+            "settings.users.ssh_keys",
+            &format!("Failed to copy to clipboard: {error}. Ensure wl-copy (Wayland) or xclip (X11) is installed."),
+        ),
+    }
 }
 
 fn add_key(ctx: &mut SettingsContext, path: &Path) -> Result<()> {
@@ -453,6 +491,38 @@ mod tests {
         assert!(
             key.serialized_with_comment("renamed")
                 .starts_with("command=\"echo   hello world\",no-pty ")
+        );
+    }
+
+    #[test]
+    fn public_key_line_omits_authorized_keys_options() {
+        let restricted = parse_authorized_key(
+            &format!(
+                "from=\"192.0.2.1\",no-pty {}",
+                key_line("ssh-ed25519", "laptop")
+            ),
+            0,
+        )
+        .unwrap();
+        assert_eq!(
+            restricted.public_key_line(),
+            format!("ssh-ed25519 {} laptop", restricted.key_data)
+        );
+
+        let unnamed = parse_authorized_key(
+            &format!("ssh-rsa {}", {
+                let mut blob = Vec::new();
+                blob.extend_from_slice(&("ssh-rsa".len() as u32).to_be_bytes());
+                blob.extend_from_slice(b"ssh-rsa");
+                blob.extend_from_slice(b"payload");
+                base64::engine::general_purpose::STANDARD.encode(blob)
+            }),
+            1,
+        )
+        .unwrap();
+        assert_eq!(
+            unnamed.public_key_line(),
+            format!("ssh-rsa {}", unnamed.key_data)
         );
     }
 
