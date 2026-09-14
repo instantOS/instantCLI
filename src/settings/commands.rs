@@ -69,6 +69,18 @@ pub enum SettingsCommands {
         #[arg(long = "settings-file", value_hint = ValueHint::FilePath)]
         settings_file: Option<std::path::PathBuf>,
     },
+    /// Read the helper account's authorized_keys file.
+    #[command(hide = true)]
+    InternalReadAuthorizedKeys {
+        #[arg(long)]
+        username: String,
+    },
+    /// Atomically update the helper account's authorized_keys file.
+    #[command(hide = true)]
+    InternalUpdateAuthorizedKeys {
+        #[arg(long)]
+        username: String,
+    },
 }
 
 pub fn dispatch_settings_command(
@@ -106,6 +118,12 @@ pub fn dispatch_settings_command(
             setting_id,
             settings_file,
         }) => apply::run_internal_apply(debug, privileged_flag, &setting_id, settings_file),
+        Some(SettingsCommands::InternalReadAuthorizedKeys { username }) => {
+            super::users::read_authorized_keys_for_helper(&username)
+        }
+        Some(SettingsCommands::InternalUpdateAuthorizedKeys { username }) => {
+            super::users::update_authorized_keys_for_helper(&username)
+        }
     }
 }
 

@@ -56,6 +56,12 @@ fn get_existing_sudo_group() -> Result<Option<String>> {
     Ok(None)
 }
 
+/// Passwd information for the user running this process.
+pub(in crate::settings) fn get_current_user_info() -> Result<UserInfo> {
+    let uid = nix::unistd::geteuid().as_raw();
+    get_user_info(&uid.to_string())?.with_context(|| format!("no passwd entry for uid {uid}"))
+}
+
 /// Get information about a system user
 pub(super) fn get_user_info(username: &str) -> Result<Option<UserInfo>> {
     let passwd = Command::new("getent")
@@ -70,24 +76,37 @@ pub(super) fn get_user_info(username: &str) -> Result<Option<UserInfo>> {
 
     let line = String::from_utf8(passwd.stdout).context("parsing passwd entry")?;
     let mut fields = line.trim().split(':');
-    let _name = fields.next();
+    let username = fields
+        .next()
+        .context("passwd entry is missing the name field")?
+        .to_string();
     let _pw = fields.next();
-    let _uid = fields.next();
+    let uid = fields
+        .next()
+        .context("passwd entry is missing the uid field")?
+        .parse::<u32>()
+        .context("passwd entry has an invalid uid")?;
     let _gid = fields.next();
     let _gecos = fields.next();
-    let _home = fields.next();
+    let home = fields
+        .next()
+        .map(PathBuf::from)
+        .context("passwd entry is missing the home field")?;
     let shell = fields
         .next()
         .map(str::to_string)
         .unwrap_or_else(default_shell);
 
-    let primary_group = get_user_primary_group(username);
-    let groups = get_user_groups(username);
+    let primary_group = get_user_primary_group(&username);
+    let groups = get_user_groups(&username);
 
     Ok(Some(UserInfo {
+        username,
         shell,
         primary_group,
         groups,
+        home,
+        uid,
     }))
 }
 

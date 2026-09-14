@@ -314,16 +314,7 @@ impl SettingsContext {
         S: AsRef<std::ffi::OsStr>,
     {
         let program_os = program.as_ref().to_owned();
-        let status = if self.privileged {
-            let mut command = Command::new(&program_os);
-            command.args(args);
-            command.status()
-        } else {
-            let mut command = Command::new("/usr/bin/sudo");
-            command.arg(&program_os);
-            command.args(args);
-            command.status()
-        }?;
+        let status = self.command_as_root(&program_os, args).status()?;
 
         if !status.success() {
             bail!(
@@ -334,5 +325,24 @@ impl SettingsContext {
         }
 
         Ok(())
+    }
+
+    /// Builds the `Command` for a root operation: the program itself when
+    /// already privileged, otherwise the program wrapped in sudo.
+    pub fn command_as_root<I, S>(&self, program: S, args: I) -> Command
+    where
+        I: IntoIterator,
+        I::Item: AsRef<std::ffi::OsStr>,
+        S: AsRef<std::ffi::OsStr>,
+    {
+        let mut command = if self.privileged {
+            Command::new(program.as_ref())
+        } else {
+            let mut command = Command::new("/usr/bin/sudo");
+            command.arg("--").arg(program.as_ref());
+            command
+        };
+        command.args(args);
+        command
     }
 }

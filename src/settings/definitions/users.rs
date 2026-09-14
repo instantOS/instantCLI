@@ -56,6 +56,7 @@ impl Setting for SshKeys {
     }
 
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
-        users::manage_ssh_keys(ctx)
+        let info = users::get_current_user_info()?;
+        users::manage_ssh_keys(ctx, &info)
     }
 }

@@ -86,6 +86,9 @@ pub(super) enum UserActionItem {
         current_shell: String,
     },
     ChangePassword,
+    ManageSshKeys {
+        username: String,
+    },
     ManageGroups {
         groups: Vec<String>,
         primary_group: Option<String>,
@@ -110,6 +113,12 @@ impl FzfSelectable for UserActionItem {
             }
             UserActionItem::ChangePassword => {
                 format!("{} Change password", format_icon(NerdFont::Key))
+            }
+            UserActionItem::ManageSshKeys { .. } => {
+                format!(
+                    "{} Manage SSH keys",
+                    format_icon(NerdFont::ClosedLockWithKey)
+                )
             }
             UserActionItem::ManageGroups { .. } => {
                 format!("{} Manage groups", format_icon(NerdFont::List))
@@ -149,6 +158,16 @@ impl FzfSelectable for UserActionItem {
                 .text("Set a new password for this user.")
                 .blank()
                 .subtext("You will be prompted to confirm the password.")
+                .build(),
+            UserActionItem::ManageSshKeys { username } => PreviewBuilder::new()
+                .header(NerdFont::ClosedLockWithKey, "Manage SSH Keys")
+                .text(&format!(
+                    "Choose which public keys may log in as '{username}'."
+                ))
+                .blank()
+                .field("File", &format!("~{username}/.ssh/authorized_keys"))
+                .blank()
+                .subtext("Your own keys are edited directly; other accounts as that user via sudo.")
                 .build(),
             UserActionItem::ManageGroups {
                 groups,

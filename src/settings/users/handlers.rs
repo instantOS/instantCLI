@@ -8,6 +8,7 @@ use super::super::context::SettingsContext;
 use super::menu_items::{
     GroupActionItem, GroupItem, GroupMenuItem, ManageMenuItem, UserActionItem,
 };
+use super::ssh_keys::manage_ssh_keys;
 use super::system::{
     WheelSudoStatus, get_all_system_groups, get_sudo_group, get_system_users_with_home,
     get_user_info, group_exists, wheel_sudo_status,
@@ -199,6 +200,9 @@ fn handle_user(ctx: &mut SettingsContext, username: &str) -> Result<()> {
                 current_shell: user_info.shell.clone(),
             },
             UserActionItem::ChangePassword,
+            UserActionItem::ManageSshKeys {
+                username: username.to_string(),
+            },
             UserActionItem::ManageGroups {
                 groups: user_info.groups.clone(),
                 primary_group: user_info.primary_group.clone(),
@@ -231,6 +235,11 @@ fn handle_user(ctx: &mut SettingsContext, username: &str) -> Result<()> {
                     }
                     PasswordPromptOutcome::Cancelled => {}
                 }
+            }
+            crate::menu_utils::DialogOutcome::Submitted(UserActionItem::ManageSshKeys {
+                ..
+            }) => {
+                manage_ssh_keys(ctx, &user_info)?;
             }
             crate::menu_utils::DialogOutcome::Submitted(UserActionItem::ManageGroups {
                 ..

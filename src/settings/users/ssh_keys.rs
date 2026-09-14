@@ -1,12 +1,16 @@
+use std::ffi::CString;
 use std::fs;
 use std::io::Write;
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::path::{Path, PathBuf};
+use std::process::{Output, Stdio};
 
 use anyhow::{Context, Result, bail};
 use base64::Engine;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use super::models::UserInfo;
 use crate::common::display_server::DisplayServer;
 use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper};
 use crate::settings::context::SettingsContext;
@@ -17,6 +21,7 @@ use crate::ui::preview::PreviewBuilder;
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct AuthorizedKey {
     line_index: usize,
+    original_line: String,
     prefix: String,
     options: String,
     key_type: String,
@@ -60,6 +65,101 @@ impl AuthorizedKey {
         } else {
             format!("{} {} {}", self.key_type, self.key_data, self.comment)
         }
+    }
+}
+
+/// Where one account's `authorized_keys` file lives and who may touch it.
+///
+/// Files for the account running this process are read and written directly.
+/// Another account can control its own home-directory paths, so following
+/// them with elevated privileges would turn a key edit into an arbitrary
+/// privileged write. Every foreign access therefore goes through a helper
+/// that permanently drops to that account before resolving its home path.
+/// The target account must be able to read the existing file and create and
+/// rename files in its target directory.
+struct AuthorizedKeysFile {
+    /// Account name from the passwd database, the helper's target identity.
+    username: String,
+    path: PathBuf,
+    owner_uid: u32,
+}
+
+impl AuthorizedKeysFile {
+    fn for_user(info: &UserInfo) -> Result<Self> {
+        if info.home.as_os_str().is_empty() {
+            bail!("user has no home directory");
+        }
+
+        Ok(Self {
+            username: info.username.clone(),
+            path: info.home.join(".ssh/authorized_keys"),
+            owner_uid: info.uid,
+        })
+    }
+
+    /// True when this file belongs to the user running this process, so
+    /// reads and writes already happen with the right ownership.
+    fn is_current(&self) -> bool {
+        self.owner_uid == current_uid()
+    }
+
+    fn read_keys(&self, ctx: &SettingsContext) -> Result<Vec<AuthorizedKey>> {
+        Ok(self
+            .read_lines(ctx)?
+            .iter()
+            .enumerate()
+            .filter_map(|(index, line)| parse_authorized_key(line, index))
+            .collect())
+    }
+
+    fn read_lines(&self, ctx: &SettingsContext) -> Result<Vec<String>> {
+        let Some(contents) = self.contents(ctx)? else {
+            return Ok(Vec::new());
+        };
+
+        Ok(contents.lines().map(str::to_string).collect())
+    }
+
+    /// Returns `None` when the file does not exist yet.
+    fn contents(&self, ctx: &SettingsContext) -> Result<Option<String>> {
+        if self.is_current() {
+            read_contents_direct(&self.path)
+        } else {
+            read_contents_as_user(ctx, &self.username, &self.path)
+        }
+    }
+
+    fn write_lines_if_unchanged(
+        &self,
+        ctx: &SettingsContext,
+        expected: Option<&str>,
+        lines: &[String],
+    ) -> Result<()> {
+        let replacement = serialize_lines(lines);
+        if self.is_current() {
+            replace_contents_atomically(&self.path, expected, &replacement)
+        } else {
+            write_contents_as_user(ctx, &self.username, &self.path, expected, &replacement)
+        }
+    }
+
+    fn replace_key_line(
+        &self,
+        ctx: &SettingsContext,
+        key: &AuthorizedKey,
+        replacement: &str,
+    ) -> Result<()> {
+        let expected = self.contents(ctx)?;
+        let mut lines = lines_from_contents(expected.as_deref());
+        replace_line(&mut lines, key, replacement)?;
+        self.write_lines_if_unchanged(ctx, expected.as_deref(), &lines)
+    }
+
+    fn remove_key_line(&self, ctx: &SettingsContext, key: &AuthorizedKey) -> Result<()> {
+        let expected = self.contents(ctx)?;
+        let mut lines = lines_from_contents(expected.as_deref());
+        remove_line(&mut lines, key)?;
+        self.write_lines_if_unchanged(ctx, expected.as_deref(), &lines)
     }
 }
 
@@ -159,44 +259,29 @@ impl FzfSelectable for KeyActionItem {
     }
 }
 
-pub fn manage_ssh_keys(ctx: &mut SettingsContext) -> Result<()> {
-    let path = authorized_keys_path()?;
-
+/// Manage an account's `authorized_keys`: edited directly when it belongs
+/// to the current user, through sudo otherwise.
+pub fn manage_ssh_keys(ctx: &mut SettingsContext, info: &UserInfo) -> Result<()> {
+    let keys = AuthorizedKeysFile::for_user(info)?;
     loop {
-        let keys = read_authorized_keys(&path)?;
-        let mut items: Vec<_> = keys.into_iter().map(KeyMenuItem::Key).collect();
+        let mut items: Vec<_> = keys
+            .read_keys(ctx)?
+            .into_iter()
+            .map(KeyMenuItem::Key)
+            .collect();
         items.push(KeyMenuItem::Add);
         items.push(KeyMenuItem::Back);
 
         match FzfWrapper::menu().items(items).padded().select_one()? {
             crate::menu_utils::DialogOutcome::Submitted(KeyMenuItem::Key(key)) => {
-                manage_key(ctx, &path, &key)?
+                manage_key(ctx, &keys, &key)?
             }
-            crate::menu_utils::DialogOutcome::Submitted(KeyMenuItem::Add) => add_key(ctx, &path)?,
+            crate::menu_utils::DialogOutcome::Submitted(KeyMenuItem::Add) => add_key(ctx, &keys)?,
             _ => break,
         }
     }
 
     Ok(())
-}
-
-fn authorized_keys_path() -> Result<PathBuf> {
-    let home = dirs::home_dir().context("determining home directory for SSH keys")?;
-    Ok(home.join(".ssh/authorized_keys"))
-}
-
-fn read_authorized_keys(path: &Path) -> Result<Vec<AuthorizedKey>> {
-    let contents = match fs::read_to_string(path) {
-        Ok(contents) => contents,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(err) => return Err(err).with_context(|| format!("reading {}", path.display())),
-    };
-
-    Ok(contents
-        .lines()
-        .enumerate()
-        .filter_map(|(line_index, line)| parse_authorized_key(line, line_index))
-        .collect())
 }
 
 fn parse_authorized_key(line: &str, line_index: usize) -> Option<AuthorizedKey> {
@@ -213,6 +298,7 @@ fn parse_authorized_key(line: &str, line_index: usize) -> Option<AuthorizedKey> 
 
     Some(AuthorizedKey {
         line_index,
+        original_line: line.to_string(),
         prefix: trimmed[..data_end].to_string(),
         options: trimmed[..type_start].trim().to_string(),
         key_type: key_type.to_string(),
@@ -259,7 +345,11 @@ fn validate_key_blob(key_type: &str, key_data: &str) -> Result<()> {
     Ok(())
 }
 
-fn manage_key(ctx: &mut SettingsContext, path: &Path, key: &AuthorizedKey) -> Result<()> {
+fn manage_key(
+    ctx: &mut SettingsContext,
+    keys: &AuthorizedKeysFile,
+    key: &AuthorizedKey,
+) -> Result<()> {
     loop {
         match FzfWrapper::menu()
             .items(vec![
@@ -283,7 +373,7 @@ fn manage_key(ctx: &mut SettingsContext, path: &Path, key: &AuthorizedKey) -> Re
                 let crate::menu_utils::DialogOutcome::Submitted(comment) = comment else {
                     continue;
                 };
-                replace_key_line(path, key, &key.serialized_with_comment(&comment))?;
+                keys.replace_key_line(ctx, key, &key.serialized_with_comment(&comment))?;
                 ctx.emit_success("settings.users.ssh_keys", "SSH key comment updated.");
                 break;
             }
@@ -294,7 +384,7 @@ fn manage_key(ctx: &mut SettingsContext, path: &Path, key: &AuthorizedKey) -> Re
                     .no_text("Cancel")
                     .confirm_dialog()?;
                 if matches!(result, crate::menu_utils::ConfirmResult::Yes) {
-                    remove_key_line(path, key)?;
+                    keys.remove_key_line(ctx, key)?;
                     ctx.emit_success("settings.users.ssh_keys", "SSH key removed.");
                     break;
                 }
@@ -317,7 +407,7 @@ fn copy_public_key(ctx: &SettingsContext, key: &AuthorizedKey) {
     }
 }
 
-fn add_key(ctx: &mut SettingsContext, path: &Path) -> Result<()> {
+fn add_key(ctx: &mut SettingsContext, keys: &AuthorizedKeysFile) -> Result<()> {
     let input = match FzfWrapper::builder()
         .prompt("Paste SSH public key")
         .input()
@@ -338,10 +428,11 @@ fn add_key(ctx: &mut SettingsContext, path: &Path) -> Result<()> {
         );
         return Ok(());
     };
-    if read_authorized_keys(path)?
-        .iter()
-        .any(|key| same_authorization(key, &new_key))
-    {
+    let expected = keys.contents(ctx)?;
+    let mut lines = lines_from_contents(expected.as_deref());
+    if lines.iter().enumerate().any(|(index, line)| {
+        parse_authorized_key(line, index).is_some_and(|key| same_authorization(&key, &new_key))
+    }) {
         ctx.emit_info(
             "settings.users.ssh_keys",
             "This SSH key is already authorized.",
@@ -349,9 +440,8 @@ fn add_key(ctx: &mut SettingsContext, path: &Path) -> Result<()> {
         return Ok(());
     }
 
-    let mut lines = read_lines(path)?;
     lines.push(trimmed.to_string());
-    write_lines(path, &lines)?;
+    keys.write_lines_if_unchanged(ctx, expected.as_deref(), &lines)?;
     ctx.emit_success("settings.users.ssh_keys", "SSH key added.");
     Ok(())
 }
@@ -360,50 +450,170 @@ fn same_authorization(left: &AuthorizedKey, right: &AuthorizedKey) -> bool {
     left.key_data == right.key_data && left.options == right.options
 }
 
-fn replace_key_line(path: &Path, key: &AuthorizedKey, replacement: &str) -> Result<()> {
-    let mut lines = read_lines(path)?;
+/// Replaces the line `key` was parsed from, refusing when the file changed
+/// underneath the menu.
+fn replace_line(lines: &mut [String], key: &AuthorizedKey, replacement: &str) -> Result<()> {
     let line = lines
         .get_mut(key.line_index)
         .context("SSH key changed while the menu was open")?;
     ensure_same_key(line, key)?;
     *line = replacement.to_string();
-    write_lines(path, &lines)
+    Ok(())
 }
 
-fn remove_key_line(path: &Path, key: &AuthorizedKey) -> Result<()> {
-    let mut lines = read_lines(path)?;
+/// Removes the line `key` was parsed from, refusing when the file changed
+/// underneath the menu.
+fn remove_line(lines: &mut Vec<String>, key: &AuthorizedKey) -> Result<()> {
     if key.line_index >= lines.len() {
         bail!("SSH key changed while the menu was open");
     }
     ensure_same_key(&lines[key.line_index], key)?;
     lines.remove(key.line_index);
-    write_lines(path, &lines)
+    Ok(())
 }
 
 fn ensure_same_key(line: &str, expected: &AuthorizedKey) -> Result<()> {
-    let current = parse_authorized_key(line, expected.line_index)
-        .context("SSH key changed while the menu was open")?;
-    if current.key_data != expected.key_data {
+    if line != expected.original_line {
         bail!("SSH key changed while the menu was open");
     }
     Ok(())
 }
 
-fn read_lines(path: &Path) -> Result<Vec<String>> {
+/// The effective uid of this process, which decides file access rights.
+fn current_uid() -> u32 {
+    nix::unistd::geteuid().as_raw()
+}
+
+/// Reads a file the current process is allowed to open; `None` if missing.
+fn read_contents_direct(path: &Path) -> Result<Option<String>> {
     match fs::read_to_string(path) {
-        Ok(contents) => Ok(contents.lines().map(str::to_string).collect()),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+        Ok(contents) => Ok(Some(contents)),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(err) => Err(err).with_context(|| format!("reading {}", path.display())),
     }
 }
 
-fn write_lines(path: &Path, lines: &[String]) -> Result<()> {
+/// Starts the internal user helper through the normal root command boundary.
+/// The helper permanently drops privileges before resolving any user path.
+fn run_user_helper(
+    ctx: &SettingsContext,
+    username: &str,
+    args: &[&std::ffi::OsStr],
+) -> Result<std::process::Output> {
+    let executable = crate::common::shell::resolve_current_binary();
+    ctx.command_as_root(&executable, args.iter().copied())
+        .output()
+        .with_context(|| format!("starting the authorized_keys helper for user {username}"))
+}
+
+/// Fails when `output` reports failure, including the command's stderr.
+fn require_user_command_success(username: &str, what: &str, output: &Output) -> Result<()> {
+    if output.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stderr = stderr.trim();
+    if stderr.is_empty() {
+        bail!(
+            "{what} failed as user {username} with status {:?}",
+            output.status.code()
+        );
+    }
+    bail!(
+        "{what} failed as user {username} with status {:?}: {stderr}",
+        output.status.code()
+    );
+}
+
+/// Decodes captured stdout as UTF-8, failing instead of replacing bytes:
+/// a lossy decode would be written back and silently corrupt unrelated
+/// lines on the next whole-file rewrite.
+fn captured_user_stdout(username: &str, what: &str, output: Output) -> Result<String> {
+    require_user_command_success(username, what, &output)?;
+    String::from_utf8(output.stdout)
+        .with_context(|| format!("{what} as user {username} did not produce UTF-8 output"))
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct AuthorizedKeysSnapshot {
+    version: u8,
+    contents: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct AuthorizedKeysUpdate {
+    version: u8,
+    expected: Option<String>,
+    replacement: String,
+}
+
+const AUTHORIZED_KEYS_PROTOCOL_VERSION: u8 = 1;
+
+/// Reads another user's `authorized_keys` through this binary running as
+/// that user. Using a structured response distinguishes a missing file from
+/// an empty one without assigning special meanings to process exit codes.
+fn read_contents_as_user(
+    ctx: &SettingsContext,
+    username: &str,
+    path: &Path,
+) -> Result<Option<String>> {
+    let args = [
+        std::ffi::OsStr::new("settings"),
+        std::ffi::OsStr::new("internal-read-authorized-keys"),
+        std::ffi::OsStr::new("--username"),
+        std::ffi::OsStr::new(username),
+    ];
+    let output = run_user_helper(ctx, username, &args)?;
+    let stdout = captured_user_stdout(username, &format!("reading {}", path.display()), output)?;
+    let snapshot: AuthorizedKeysSnapshot = serde_json::from_str(&stdout)
+        .with_context(|| format!("decoding the authorized_keys response for user {username}"))?;
+    if snapshot.version != AUTHORIZED_KEYS_PROTOCOL_VERSION {
+        bail!(
+            "unsupported authorized_keys helper response version {}",
+            snapshot.version
+        );
+    }
+    Ok(snapshot.contents)
+}
+
+fn lines_from_contents(contents: Option<&str>) -> Vec<String> {
+    contents
+        .unwrap_or_default()
+        .lines()
+        .map(str::to_string)
+        .collect()
+}
+
+fn serialize_lines(lines: &[String]) -> String {
+    let mut contents = String::new();
+    for line in lines {
+        contents.push_str(line);
+        contents.push('\n');
+    }
+    contents
+}
+
+/// Atomically replaces `path` only if its contents still match `expected`.
+/// The second comparison happens after the replacement has been fully written
+/// and synced, keeping the remaining race window immediately around rename.
+fn replace_contents_atomically(
+    path: &Path,
+    expected: Option<&str>,
+    replacement: &str,
+) -> Result<()> {
+    if read_contents_direct(path)?.as_deref() != expected {
+        bail!("SSH keys changed while the edit was being saved");
+    }
+
     let ssh_dir = path
         .parent()
         .context("authorized_keys has no parent directory")?;
     if !ssh_dir.exists() {
+        // Plain create: the current user's home directory must already
+        // exist, and nothing outside `.ssh` should spring into existence.
         fs::DirBuilder::new()
-            .recursive(true)
             .mode(0o700)
             .create(ssh_dir)
             .with_context(|| format!("creating {}", ssh_dir.display()))?;
@@ -418,17 +628,22 @@ fn write_lines(path: &Path, lines: &[String]) -> Result<()> {
     temporary
         .as_file()
         .set_permissions(fs::Permissions::from_mode(0o600))?;
-    for line in lines {
-        writeln!(temporary, "{line}")?;
-    }
+    temporary.write_all(replacement.as_bytes())?;
     temporary.flush()?;
     temporary.as_file().sync_all()?;
+
+    let current_target = resolve_write_target(path)?;
+    let current_contents = read_contents_direct(path)?;
+    if current_target != target || current_contents.as_deref() != expected {
+        bail!("SSH keys changed while the edit was being saved");
+    }
 
     let persisted = temporary
         .persist(&target)
         .map_err(|err| err.error)
         .with_context(|| format!("atomically replacing {}", target.display()))?;
     persisted.sync_all()?;
+
     fs::File::open(target_dir)?.sync_all()?;
     Ok(())
 }
@@ -443,6 +658,117 @@ fn resolve_write_target(path: &Path) -> Result<PathBuf> {
     }
 }
 
+/// Requests one optimistic-concurrency-checked update from this binary running
+/// as the target account. The helper owns directory creation, symlink
+/// resolution, temporary file creation, syncing, and rename, so no privileged
+/// process follows paths controlled by that account.
+fn write_contents_as_user(
+    ctx: &SettingsContext,
+    username: &str,
+    path: &Path,
+    expected: Option<&str>,
+    replacement: &str,
+) -> Result<()> {
+    let args = [
+        std::ffi::OsStr::new("settings"),
+        std::ffi::OsStr::new("internal-update-authorized-keys"),
+        std::ffi::OsStr::new("--username"),
+        std::ffi::OsStr::new(username),
+    ];
+    let update = AuthorizedKeysUpdate {
+        version: AUTHORIZED_KEYS_PROTOCOL_VERSION,
+        expected: expected.map(str::to_string),
+        replacement: replacement.to_string(),
+    };
+    let payload = serde_json::to_vec(&update).context("encoding the authorized_keys update")?;
+    let executable = crate::common::shell::resolve_current_binary();
+    let mut child = ctx
+        .command_as_root(&executable, args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .with_context(|| format!("starting the write of {}", path.display()))?;
+    let mut stdin = child.stdin.take().context("sudo child has no stdin")?;
+    let write_error = stdin.write_all(&payload).err();
+    drop(stdin);
+    let output = child
+        .wait_with_output()
+        .context("waiting for the write to finish")?;
+    require_user_command_success(username, &format!("writing {}", path.display()), &output)?;
+
+    // A failed write only surfaces if the command itself succeeded, since
+    // the exit status carries the better message.
+    if let Some(err) = write_error {
+        return Err(err).context("piping the new contents to sudo");
+    }
+    Ok(())
+}
+
+/// Internal helper endpoint. It drops every user and group identity from root
+/// to `username` before deriving the account's fixed authorized_keys path.
+pub(in crate::settings) fn read_authorized_keys_for_helper(username: &str) -> Result<()> {
+    let path = drop_privileges_for_authorized_keys_helper(username)?;
+    let snapshot = AuthorizedKeysSnapshot {
+        version: AUTHORIZED_KEYS_PROTOCOL_VERSION,
+        contents: read_contents_direct(&path)?,
+    };
+    serde_json::to_writer(std::io::stdout().lock(), &snapshot)
+        .context("encoding the authorized_keys snapshot")?;
+    Ok(())
+}
+
+/// Internal helper endpoint for a durable, optimistic-concurrency-checked
+/// authorized_keys update. The request is read only from stdin so key material
+/// never appears in argv or a staging file outside the target directory.
+pub(in crate::settings) fn update_authorized_keys_for_helper(username: &str) -> Result<()> {
+    let path = drop_privileges_for_authorized_keys_helper(username)?;
+    let update: AuthorizedKeysUpdate = serde_json::from_reader(std::io::stdin().lock())
+        .context("decoding authorized_keys update")?;
+    if update.version != AUTHORIZED_KEYS_PROTOCOL_VERSION {
+        bail!(
+            "unsupported authorized_keys update version {}",
+            update.version
+        );
+    }
+    replace_contents_atomically(&path, update.expected.as_deref(), &update.replacement)
+}
+
+fn drop_privileges_for_authorized_keys_helper(username: &str) -> Result<PathBuf> {
+    if !nix::unistd::Uid::effective().is_root() {
+        bail!("authorized_keys user helper must start with root privileges");
+    }
+
+    let user = nix::unistd::User::from_name(username)
+        .with_context(|| format!("looking up authorized_keys helper account {username}"))?
+        .with_context(|| format!("no passwd entry for user {username}"))?;
+    let path = authorized_keys_path_for_user(&user)?;
+    let username = CString::new(user.name).context("username contains a null byte")?;
+
+    nix::unistd::initgroups(&username, user.gid).with_context(|| {
+        format!(
+            "initializing groups for user {}",
+            username.to_string_lossy()
+        )
+    })?;
+    nix::unistd::setresgid(user.gid, user.gid, user.gid)
+        .with_context(|| format!("dropping group privileges to gid {}", user.gid.as_raw()))?;
+    nix::unistd::setresuid(user.uid, user.uid, user.uid)
+        .with_context(|| format!("dropping user privileges to uid {}", user.uid.as_raw()))?;
+
+    if nix::unistd::Uid::current() != user.uid || nix::unistd::Uid::effective() != user.uid {
+        bail!("authorized_keys helper did not fully drop user privileges");
+    }
+    Ok(path)
+}
+
+fn authorized_keys_path_for_user(user: &nix::unistd::User) -> Result<PathBuf> {
+    if user.dir.as_os_str().is_empty() {
+        bail!("authorized_keys helper account has no home directory");
+    }
+    Ok(user.dir.join(".ssh/authorized_keys"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -454,6 +780,27 @@ mod tests {
         blob.extend_from_slice(b"key payload");
         let encoded = base64::engine::general_purpose::STANDARD.encode(blob);
         format!("{key_type} {encoded} {comment}")
+    }
+
+    fn parse_authorized_keys(contents: &str) -> Vec<AuthorizedKey> {
+        contents
+            .lines()
+            .enumerate()
+            .filter_map(|(line_index, line)| parse_authorized_key(line, line_index))
+            .collect()
+    }
+
+    fn read_keys_from(path: &Path) -> Vec<AuthorizedKey> {
+        parse_authorized_keys(&read_contents_direct(path).unwrap().unwrap_or_default())
+    }
+
+    fn read_lines_from(path: &Path) -> Vec<String> {
+        read_contents_direct(path)
+            .unwrap()
+            .unwrap_or_default()
+            .lines()
+            .map(str::to_string)
+            .collect()
     }
 
     #[test]
@@ -544,6 +891,24 @@ mod tests {
     }
 
     #[test]
+    fn selected_line_must_match_exactly_before_editing() {
+        let original = format!(
+            "from=\"192.0.2.1\",no-pty {}",
+            key_line("ssh-ed25519", "original")
+        );
+        let key = parse_authorized_key(&original, 0).unwrap();
+
+        let changed_options = original.replace("no-pty", "restrict");
+        let changed_comment = original.replace("original", "changed elsewhere");
+        let changed_spacing = format!("  {original}");
+
+        for changed in [changed_options, changed_comment, changed_spacing] {
+            let mut lines = vec![changed];
+            assert!(replace_line(&mut lines, &key, &key.serialized_with_comment("mine")).is_err());
+        }
+    }
+
+    #[test]
     fn ignores_comments_and_invalid_key_data() {
         assert!(parse_authorized_key("# ssh-ed25519 disabled", 0).is_none());
         assert!(parse_authorized_key("ssh-ed25519 not-base64 label", 0).is_none());
@@ -557,17 +922,68 @@ mod tests {
         let second = key_line("ssh-rsa", "second");
         fs::write(&path, format!("# keep this\n{first}\n{second}\n")).unwrap();
 
-        let keys = read_authorized_keys(&path).unwrap();
-        replace_key_line(&path, &keys[0], &keys[0].serialized_with_comment("renamed")).unwrap();
-        let keys = read_authorized_keys(&path).unwrap();
+        let keys = read_keys_from(&path);
+        let mut lines = read_lines_from(&path);
+        replace_line(
+            &mut lines,
+            &keys[0],
+            &keys[0].serialized_with_comment("renamed"),
+        )
+        .unwrap();
+        let expected = fs::read_to_string(&path).unwrap();
+        replace_contents_atomically(&path, Some(&expected), &serialize_lines(&lines)).unwrap();
+
+        let keys = read_keys_from(&path);
         assert_eq!(keys[0].comment, "renamed");
         assert_eq!(keys[1].comment, "second");
 
-        remove_key_line(&path, &keys[1]).unwrap();
+        let mut lines = read_lines_from(&path);
+        remove_line(&mut lines, &keys[1]).unwrap();
+        let expected = fs::read_to_string(&path).unwrap();
+        replace_contents_atomically(&path, Some(&expected), &serialize_lines(&lines)).unwrap();
+
         let contents = fs::read_to_string(path).unwrap();
         assert!(contents.starts_with("# keep this\n"));
         assert!(contents.contains("renamed"));
         assert!(!contents.contains("second"));
+    }
+
+    #[test]
+    fn foreign_store_targets_the_users_home() {
+        let info = UserInfo {
+            username: "alice".to_string(),
+            shell: "/bin/bash".to_string(),
+            primary_group: Some("alice".to_string()),
+            groups: vec!["alice".to_string()],
+            home: PathBuf::from("/home/alice"),
+            uid: 1001,
+        };
+
+        let keys = AuthorizedKeysFile::for_user(&info).unwrap();
+        assert_eq!(keys.username, "alice");
+        assert_eq!(keys.path, PathBuf::from("/home/alice/.ssh/authorized_keys"));
+        assert_eq!(keys.owner_uid, 1001);
+        assert!(!keys.is_current());
+
+        let mut homeless = info.clone();
+        homeless.home = PathBuf::new();
+        assert!(AuthorizedKeysFile::for_user(&homeless).is_err());
+    }
+
+    #[test]
+    fn only_the_owning_user_gets_direct_access() {
+        let mut info = UserInfo {
+            username: "me".to_string(),
+            shell: "/bin/bash".to_string(),
+            primary_group: Some("me".to_string()),
+            groups: vec!["me".to_string()],
+            home: PathBuf::from("/home/me"),
+            uid: current_uid(),
+        };
+        assert!(AuthorizedKeysFile::for_user(&info).unwrap().is_current());
+
+        info.uid += 1;
+        assert!(!AuthorizedKeysFile::for_user(&info).unwrap().is_current());
     }
 
     #[test]
@@ -581,7 +997,7 @@ mod tests {
         fs::write(&target, "old contents\n").unwrap();
         symlink(&target, &link).unwrap();
 
-        write_lines(&link, &["new contents".to_string()]).unwrap();
+        replace_contents_atomically(&link, Some("old contents\n"), "new contents\n").unwrap();
 
         assert!(
             fs::symlink_metadata(&link)
@@ -593,6 +1009,67 @@ mod tests {
         assert_eq!(
             fs::metadata(&target).unwrap().permissions().mode() & 0o777,
             0o600
+        );
+    }
+
+    #[test]
+    fn stale_atomic_update_preserves_current_contents() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("authorized_keys");
+        fs::write(&path, "newer contents\n").unwrap();
+
+        let result =
+            replace_contents_atomically(&path, Some("stale contents\n"), "replacement contents\n");
+
+        assert!(result.is_err());
+        assert_eq!(fs::read_to_string(path).unwrap(), "newer contents\n");
+    }
+
+    #[test]
+    fn atomic_update_creates_secure_ssh_storage() {
+        let home = tempfile::tempdir().unwrap();
+        let ssh_dir = home.path().join(".ssh");
+        let path = ssh_dir.join("authorized_keys");
+
+        replace_contents_atomically(&path, None, "key contents\n").unwrap();
+
+        assert_eq!(fs::read_to_string(&path).unwrap(), "key contents\n");
+        assert_eq!(
+            fs::metadata(&ssh_dir).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+    }
+
+    #[test]
+    fn helper_protocol_round_trips_and_rejects_other_versions() {
+        let update = AuthorizedKeysUpdate {
+            version: AUTHORIZED_KEYS_PROTOCOL_VERSION,
+            expected: Some("old\n".to_string()),
+            replacement: "new\n".to_string(),
+        };
+        let encoded = serde_json::to_vec(&update).unwrap();
+        let decoded: AuthorizedKeysUpdate = serde_json::from_slice(&encoded).unwrap();
+
+        assert_eq!(decoded.version, AUTHORIZED_KEYS_PROTOCOL_VERSION);
+        assert_eq!(decoded.expected.as_deref(), Some("old\n"));
+        assert_eq!(decoded.replacement, "new\n");
+
+        let unknown_field = br#"{"version":1,"expected":null,"replacement":"","extra":true}"#;
+        assert!(serde_json::from_slice::<AuthorizedKeysUpdate>(unknown_field).is_err());
+    }
+
+    #[test]
+    fn helper_path_is_restricted_to_the_account_home() {
+        let uid = nix::unistd::Uid::effective();
+        let user = nix::unistd::User::from_uid(uid).unwrap().unwrap();
+
+        assert_eq!(
+            authorized_keys_path_for_user(&user).unwrap(),
+            user.dir.join(".ssh/authorized_keys")
         );
     }
 }
