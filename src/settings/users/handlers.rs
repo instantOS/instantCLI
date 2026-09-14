@@ -13,9 +13,9 @@ use super::system::{
     get_user_info, group_exists, wheel_sudo_status,
 };
 use super::utils::{
-    add_user_to_group, change_user_shell, create_group, create_user, delete_user,
-    prompt_group_name, prompt_password_with_confirmation, remove_user_from_group, select_groups,
-    select_shell, set_user_password, validate_group_name, validate_username,
+    PasswordPromptOutcome, add_user_to_group, change_user_shell, create_group, create_user,
+    delete_user, prompt_group_name, prompt_password_with_confirmation, remove_user_from_group,
+    select_groups, select_shell, set_user_password, validate_group_name, validate_username,
 };
 
 pub fn manage_users(ctx: &mut SettingsContext) -> Result<()> {
@@ -77,27 +77,72 @@ fn build_user_menu_items() -> Result<Vec<ManageMenuItem>> {
 }
 
 fn add_user(ctx: &mut SettingsContext) -> Result<()> {
-    let username = prompt_username()?;
-    if username.is_empty() {
-        ctx.emit_info("settings.users.add.cancelled", "Creation cancelled.");
-        return Ok(());
+    // Answers are collected before any system state changes, so stepping back
+    // through the prompts never has to undo a side effect.
+    let mut step = AddUserStep::Username;
+    let mut username = String::new();
+    let mut shell = String::new();
+    let mut groups = Vec::new();
+    let mut password = None;
+
+    loop {
+        match step {
+            AddUserStep::Username => {
+                let Some(name) = prompt_username()? else {
+                    ctx.emit_info("settings.users.add.cancelled", "Creation cancelled.");
+                    return Ok(());
+                };
+
+                if let Err(err) = validate_username(&name) {
+                    ctx.emit_info(
+                        "settings.users.add.invalid",
+                        &format!("Invalid username: {}", err),
+                    );
+                    // Ask again; Esc at the prompt still aborts creation.
+                    continue;
+                }
+
+                username = name;
+                step = AddUserStep::Shell;
+            }
+            AddUserStep::Shell => match select_shell(ctx, "Select shell")? {
+                Some(selected) => {
+                    shell = selected;
+                    step = AddUserStep::Groups;
+                }
+                None => step = AddUserStep::Username,
+            },
+            AddUserStep::Groups => {
+                match select_groups("Use Tab to select multiple, Enter to confirm")? {
+                    Some(selected) => {
+                        groups = selected;
+                        step = AddUserStep::Password;
+                    }
+                    None => step = AddUserStep::Shell,
+                }
+            }
+            AddUserStep::Password => {
+                match prompt_password_with_confirmation("Set password for user")? {
+                    PasswordPromptOutcome::Password(value) => {
+                        password = Some(value);
+                        break;
+                    }
+                    PasswordPromptOutcome::Empty => {
+                        ctx.emit_info(
+                            "settings.users.password",
+                            &format!("No password set for {}.", username),
+                        );
+                        break;
+                    }
+                    PasswordPromptOutcome::Cancelled => step = AddUserStep::Groups,
+                }
+            }
+        }
     }
 
-    if let Err(err) = validate_username(&username) {
-        ctx.emit_info(
-            "settings.users.add.invalid",
-            &format!("Invalid username: {}", err),
-        );
-        return Ok(());
-    }
+    create_user(ctx, &username, &shell, &groups)?;
 
-    let shell = select_shell(ctx, "Select shell")?.unwrap_or_else(super::models::default_shell);
-    let selected_groups =
-        select_groups("Use Tab to select multiple, Enter to confirm, Esc to skip")?;
-
-    create_user(ctx, &username, &shell, &selected_groups)?;
-
-    if let Some(password) = prompt_password_with_confirmation(ctx, "Set password for user")? {
+    if let Some(password) = password {
         set_user_password(ctx, &username, &password)?;
     }
 
@@ -109,16 +154,26 @@ fn add_user(ctx: &mut SettingsContext) -> Result<()> {
     Ok(())
 }
 
-fn prompt_username() -> Result<String> {
+/// Stages of the add-user flow, walked forwards and backwards via Esc.
+#[derive(Clone, Copy)]
+enum AddUserStep {
+    Username,
+    Shell,
+    Groups,
+    Password,
+}
+
+/// Prompt for a username. Returns `None` when the user cancels.
+fn prompt_username() -> Result<Option<String>> {
     let username = match FzfWrapper::builder()
         .prompt("New username")
         .input()
         .input_dialog()?
     {
         crate::menu_utils::DialogOutcome::Submitted(username) => username,
-        crate::menu_utils::DialogOutcome::Cancelled => return Ok(String::new()),
+        crate::menu_utils::DialogOutcome::Cancelled => return Ok(None),
     };
-    Ok(username.trim().to_string())
+    Ok(Some(username.trim().to_string()))
 }
 
 fn handle_user(ctx: &mut SettingsContext, username: &str) -> Result<()> {
@@ -167,8 +222,14 @@ fn handle_user(ctx: &mut SettingsContext, username: &str) -> Result<()> {
                 }
             }
             crate::menu_utils::DialogOutcome::Submitted(UserActionItem::ChangePassword) => {
-                if let Some(password) = prompt_password_with_confirmation(ctx, "New password")? {
-                    set_user_password(ctx, username, &password)?;
+                match prompt_password_with_confirmation("New password")? {
+                    PasswordPromptOutcome::Password(password) => {
+                        set_user_password(ctx, username, &password)?;
+                    }
+                    PasswordPromptOutcome::Empty => {
+                        ctx.emit_info("settings.users.password", "Password cannot be empty.");
+                    }
+                    PasswordPromptOutcome::Cancelled => {}
                 }
             }
             crate::menu_utils::DialogOutcome::Submitted(UserActionItem::ManageGroups {

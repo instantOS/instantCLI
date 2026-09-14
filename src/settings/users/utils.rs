@@ -8,11 +8,18 @@ use super::menu_items::{GroupItem, ShellItem};
 use super::models::default_shell;
 use super::system::{get_all_system_groups, get_available_shells, partition_groups};
 
+/// Outcome of prompting for a password.
+pub(super) enum PasswordPromptOutcome {
+    /// The dialog was dismissed with Esc.
+    Cancelled,
+    /// An empty password was submitted; treated as a deliberate skip.
+    Empty,
+    /// A non-empty password was submitted and confirmed.
+    Password(String),
+}
+
 /// Prompt for a password with confirmation
-pub(super) fn prompt_password_with_confirmation(
-    ctx: &SettingsContext,
-    prompt: &str,
-) -> Result<Option<String>> {
+pub(super) fn prompt_password_with_confirmation(prompt: &str) -> Result<PasswordPromptOutcome> {
     let password_result = FzfWrapper::builder()
         .prompt(prompt)
         .password()
@@ -21,15 +28,16 @@ pub(super) fn prompt_password_with_confirmation(
 
     let password = match password_result {
         crate::menu_utils::DialogOutcome::Submitted(s) => s,
-        crate::menu_utils::DialogOutcome::Cancelled => return Ok(None),
+        crate::menu_utils::DialogOutcome::Cancelled => {
+            return Ok(PasswordPromptOutcome::Cancelled);
+        }
     };
 
     if password.trim().is_empty() {
-        ctx.emit_info("settings.users.password", "Password cannot be empty.");
-        return Ok(None);
+        return Ok(PasswordPromptOutcome::Empty);
     }
 
-    Ok(Some(password))
+    Ok(PasswordPromptOutcome::Password(password))
 }
 
 /// Set a user's password using chpasswd
@@ -178,7 +186,11 @@ pub(super) fn create_group(ctx: &mut SettingsContext, group_name: &str) -> Resul
     Ok(())
 }
 
-/// Prompt user to select a shell
+/// Prompt user to select a shell.
+///
+/// Returns `Ok(None)` when the dialog is cancelled so callers can step back.
+/// An empty `/etc/shells` falls back to the default shell, because there is
+/// nothing to choose from.
 pub(super) fn select_shell(ctx: &SettingsContext, prompt: &str) -> Result<Option<String>> {
     let available_shells = get_available_shells()?;
     let shell_items: Vec<ShellItem> = available_shells
@@ -196,18 +208,21 @@ pub(super) fn select_shell(ctx: &SettingsContext, prompt: &str) -> Result<Option
 
     let selected = FzfWrapper::builder()
         .prompt(prompt)
-        .header("Choose a shell from /etc/shells (Esc for default)")
+        .header("Choose a shell from /etc/shells (Esc to go back)")
         .items(shell_items)
         .select_one()?;
 
     match selected {
         crate::menu_utils::DialogOutcome::Submitted(item) => Ok(Some(item.path)),
-        crate::menu_utils::DialogOutcome::Cancelled => Ok(Some(default_shell())),
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
     }
 }
 
-/// Prompt user to select groups (multi-select)
-pub(super) fn select_groups(header: &str) -> Result<Vec<String>> {
+/// Prompt user to select groups (multi-select).
+///
+/// Returns `Ok(None)` when the dialog is cancelled so callers can step back;
+/// an empty submitted selection is an explicit "no groups".
+pub(super) fn select_groups(header: &str) -> Result<Option<Vec<String>>> {
     let all_groups = get_all_system_groups()?;
     let group_items: Vec<GroupItem> = all_groups
         .into_iter()
@@ -215,7 +230,7 @@ pub(super) fn select_groups(header: &str) -> Result<Vec<String>> {
         .collect();
 
     if group_items.is_empty() {
-        return Ok(Vec::new());
+        return Ok(Some(Vec::new()));
     }
 
     let result = FzfWrapper::builder()
@@ -226,9 +241,9 @@ pub(super) fn select_groups(header: &str) -> Result<Vec<String>> {
 
     let selected_groups = match result {
         crate::menu_utils::DialogOutcome::Submitted(sel) => {
-            sel.items.into_iter().map(|item| item.name).collect()
+            Some(sel.items.into_iter().map(|item| item.name).collect())
         }
-        crate::menu_utils::DialogOutcome::Cancelled => Vec::new(),
+        crate::menu_utils::DialogOutcome::Cancelled => None,
     };
 
     Ok(selected_groups)
