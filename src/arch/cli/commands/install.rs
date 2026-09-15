@@ -125,11 +125,6 @@ pub(super) async fn handle_install_command(debug: bool) -> Result<()> {
         return Ok(());
     }
 
-    // Mark start time
-    let mut state = crate::arch::execution::state::InstallState::load()?;
-    state.mark_start();
-    state.save()?;
-
     // 1. Ask questions
     let questions = build_steps();
     match Box::pin(handle_ask_command(None, None, questions)).await? {
@@ -138,13 +133,11 @@ pub(super) async fn handle_install_command(debug: bool) -> Result<()> {
     }
 
     // 2. Execute
-    let exec_result = Box::pin(handle_arch_command(
-        ArchCommands::Exec {
-            step: None,
-            questions_file: std::path::PathBuf::from(DEFAULT_QUESTIONS_FILE),
-            dry_run: false,
-        },
-        debug,
+    let exec_result = Box::pin(super::exec::handle_exec_command(
+        build_steps(),
+        None,
+        std::path::PathBuf::from(DEFAULT_QUESTIONS_FILE),
+        false,
     ))
     .await;
 
@@ -157,7 +150,12 @@ pub(super) async fn handle_install_command(debug: bool) -> Result<()> {
         }
     }
 
-    exec_result?;
+    if matches!(
+        exec_result?,
+        crate::arch::execution::ExecutionOutcome::AlreadyInstalled
+    ) {
+        return Ok(());
+    }
 
     // 3. Finished
     Box::pin(handle_arch_command(ArchCommands::Finished, debug)).await?;

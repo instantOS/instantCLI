@@ -277,13 +277,19 @@ impl CommandRunner for CommandExecutor {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExecutionOutcome {
+    Completed,
+    AlreadyInstalled,
+}
+
 pub async fn execute_installation(
     steps: &[Box<dyn crate::arch::engine::WizardStep>],
     config_path: PathBuf,
     step: Option<String>,
     mut dry_run: bool,
     log_file: Option<PathBuf>,
-) -> Result<()> {
+) -> Result<ExecutionOutcome> {
     // Check for force dry-run file
     if std::path::Path::new(paths::DRY_RUN_FLAG).exists() {
         if !dry_run {
@@ -324,6 +330,8 @@ pub async fn execute_installation(
 
     let content = std::fs::read_to_string(&config_path)?;
     let context: crate::arch::engine::InstallContext = toml::from_str(&content)?;
+    let configuration_sha256 =
+        crate::arch::installation_identity::configuration_fingerprint(&content);
 
     // Exec bypasses the wizard, so nothing has validated the answers a saved
     // (possibly hand-edited) config contains. Fail loudly rather than acting
@@ -332,8 +340,33 @@ pub async fn execute_installation(
         .context("Refusing to execute an invalid configuration")?;
     let plan = crate::arch::engine::InstallPlan::try_from(&context)
         .context("Refusing to execute an incomplete or inconsistent installation plan")?;
+    let intent_sha256 = crate::arch::installation_identity::fingerprint(&context)?;
 
     println!("Loaded configuration for user: {}", plan.username.as_str());
+
+    let is_disk_execution = step
+        .as_deref()
+        .is_none_or(|name| name.eq_ignore_ascii_case("disk"));
+    if is_disk_execution
+        && !dry_run
+        && !is_chroot()
+        && let Some(existing) =
+            crate::arch::installation_identity::find_matching_installation(&plan, &intent_sha256)?
+    {
+        println!(
+            "This installation configuration is already installed on {} (completed {}).",
+            existing.root_device,
+            existing.installed_at.format("%Y-%m-%d %H:%M UTC")
+        );
+        println!("No changes were made; you do not need to install it again.");
+        return Ok(ExecutionOutcome::AlreadyInstalled);
+    }
+
+    if !dry_run {
+        let mut state = InstallState::load_for_configuration(&configuration_sha256);
+        state.mark_start();
+        state.save()?;
+    }
 
     if let Some(step_name) = step {
         // Try to parse the step name
@@ -351,7 +384,15 @@ pub async fn execute_installation(
         };
 
         println!("Executing single step: {:?}", step_enum);
-        execute_step(step_enum, &plan, &context, &executor, &config_path).await?;
+        execute_step(
+            step_enum,
+            &plan,
+            &context,
+            &executor,
+            &config_path,
+            &configuration_sha256,
+        )
+        .await?;
     } else {
         println!("Executing all steps...");
         let steps = vec![
@@ -364,7 +405,15 @@ pub async fn execute_installation(
         ];
 
         for step in steps {
-            execute_step(step, &plan, &context, &executor, &config_path).await?;
+            execute_step(
+                step,
+                &plan,
+                &context,
+                &executor,
+                &config_path,
+                &configuration_sha256,
+            )
+            .await?;
         }
 
         // Remove the config file from the chroot to prevent leaking sensitive data (passwords)
@@ -379,6 +428,16 @@ pub async fn execute_installation(
                 }
             }
 
+            let chroot_state = paths::chroot_path(paths::STATE_FILE);
+            if chroot_state.exists()
+                && let Err(error) = std::fs::remove_file(&chroot_state)
+            {
+                println!(
+                    "Warning: Failed to remove execution state from target system: {}",
+                    error
+                );
+            }
+
             let chroot_bin = paths::chroot_path("/usr/bin/ins-install");
             if chroot_bin.exists()
                 && let Err(e) = std::fs::remove_file(&chroot_bin)
@@ -388,10 +447,16 @@ pub async fn execute_installation(
                     e
                 );
             }
+
+            let marker = crate::arch::installation_identity::write_completed_marker(
+                std::path::Path::new(paths::CHROOT_MOUNT),
+                &intent_sha256,
+            )?;
+            println!("Recorded completed installation in {}.", marker.display());
         }
     }
 
-    Ok(())
+    Ok(ExecutionOutcome::Completed)
 }
 
 async fn execute_step(
@@ -400,15 +465,13 @@ async fn execute_step(
     context: &crate::arch::engine::InstallContext,
     executor: &dyn CommandRunner,
     config_path: &std::path::Path,
+    configuration_sha256: &str,
 ) -> Result<()> {
     let in_chroot = is_chroot();
     let requires_chroot = step.requires_chroot();
 
     // Load state
-    let mut state = InstallState::load().unwrap_or_else(|e| {
-        println!("Warning: Failed to load install state: {}", e);
-        InstallState::new()
-    });
+    let mut state = InstallState::load_for_configuration(configuration_sha256);
 
     // Check if already complete
     if state.is_complete(step) && !executor.dry_run() {

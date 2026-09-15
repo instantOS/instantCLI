@@ -6,6 +6,7 @@ pub mod dualboot;
 pub mod engine;
 pub mod execution;
 pub mod geo;
+pub mod installation_identity;
 pub mod keymaps;
 pub mod locales;
 pub mod logging;

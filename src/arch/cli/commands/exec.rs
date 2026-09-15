@@ -8,7 +8,7 @@ pub(super) async fn handle_exec_command(
     step: Option<String>,
     questions_file: std::path::PathBuf,
     dry_run: bool,
-) -> Result<()> {
+) -> Result<crate::arch::execution::ExecutionOutcome> {
     if !dry_run {
         ensure_root()?;
     }
