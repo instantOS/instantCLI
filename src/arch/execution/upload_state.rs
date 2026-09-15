@@ -3,8 +3,8 @@
 //! The record is deliberately kept outside [`super::state::InstallState`]:
 //! install-resume progress and upload history have different lifetimes. A
 //! record only stays meaningful while the install log it was generated from
-//! is unchanged, so it is keyed to the log's modification time and reported
-//! as absent once a new install attempt rewrites the log.
+//! is unchanged, so it is keyed to the log's contents and reported as absent
+//! once a new install attempt rewrites the log.
 
 use std::fs;
 use std::io::Write;
@@ -12,6 +12,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use tempfile::NamedTempFile;
 
 use super::paths;
@@ -37,33 +38,29 @@ impl UploadScope {
 ///
 /// Kept so the menus can report that logs were already uploaded, show the
 /// resulting URL again, and avoid surprising the user with a duplicate
-/// upload. Tied to the install log's modification time at upload time: once
-/// the log changes, the record no longer describes it.
+/// upload. Tied to the install log's SHA-256 digest at upload time: once the
+/// log changes, the record no longer describes it.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct UploadRecord {
     pub url: String,
     pub scope: UploadScope,
     pub uploaded_at: chrono::DateTime<chrono::Utc>,
-    /// Modification time of the install log the report was built from.
-    pub log_modified: chrono::DateTime<chrono::Utc>,
+    /// SHA-256 digest of the exact install log the report was built from.
+    pub log_sha256: String,
 }
 
 impl UploadRecord {
-    pub fn new(
-        url: impl Into<String>,
-        scope: UploadScope,
-        log_modified: chrono::DateTime<chrono::Utc>,
-    ) -> Self {
+    pub fn new(url: impl Into<String>, scope: UploadScope, log_sha256: impl Into<String>) -> Self {
         Self {
             url: url.into(),
             scope,
             uploaded_at: chrono::Utc::now(),
-            log_modified: truncate_seconds(log_modified),
+            log_sha256: log_sha256.into(),
         }
     }
 
-    /// The remembered upload, if it still describes the current install log.
-    pub fn current() -> Option<Self> {
+    /// Load the remembered upload without deciding whether it is still current.
+    pub fn load() -> Option<Self> {
         let content = match fs::read_to_string(paths::UPLOAD_STATE_FILE) {
             Ok(content) => content,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return None,
@@ -72,22 +69,20 @@ impl UploadRecord {
                 return None;
             }
         };
-        let record: Self = match toml::from_str(&content) {
+        match toml::from_str(&content) {
             Ok(record) => record,
             Err(error) => {
                 eprintln!("Warning: could not parse the upload record: {error}");
-                return None;
+                None
             }
-        };
-        let log_modified = Self::current_log_modified()?;
-        (record.log_modified == log_modified).then_some(record)
+        }
     }
 
-    /// Modification time of the install log, truncated to whole seconds so
-    /// records compare stably across serialization.
-    pub fn current_log_modified() -> Option<chrono::DateTime<chrono::Utc>> {
-        let modified = fs::metadata(paths::LOG_FILE).ok()?.modified().ok()?;
-        Some(truncate_seconds(modified.into()))
+    /// The remembered upload, if it still describes the current install log.
+    pub fn current() -> Option<Self> {
+        let record = Self::load()?;
+        let log_sha256 = fingerprint_file(Path::new(paths::LOG_FILE)).ok()?;
+        (record.log_sha256 == log_sha256).then_some(record)
     }
 
     /// Persist this record, replacing any previous one.
@@ -108,9 +103,19 @@ impl UploadRecord {
     }
 }
 
-fn truncate_seconds(time: chrono::DateTime<chrono::Utc>) -> chrono::DateTime<chrono::Utc> {
-    chrono::DateTime::from_timestamp(time.timestamp(), 0)
-        .expect("whole-second timestamp is representable")
+/// Produce a content identity for a log file.
+pub fn fingerprint_file(path: &Path) -> Result<String> {
+    let bytes = fs::read(path).with_context(|| {
+        format!(
+            "Failed to read log file for fingerprinting: {}",
+            path.display()
+        )
+    })?;
+    Ok(fingerprint_bytes(&bytes))
+}
+
+pub fn fingerprint_bytes(bytes: &[u8]) -> String {
+    hex::encode(Sha256::digest(bytes))
 }
 
 #[cfg(test)]
@@ -119,11 +124,10 @@ mod tests {
 
     #[test]
     fn upload_record_round_trips_through_toml_with_enum_scope() {
-        let log_modified = chrono::DateTime::from_timestamp(1_000_000, 0).unwrap();
         let record = UploadRecord::new(
             "https://snips.sh/f/abc",
             UploadScope::InstallLog,
-            log_modified,
+            fingerprint_bytes(b"install log"),
         );
 
         let encoded = toml::to_string_pretty(&record).unwrap();
@@ -134,15 +138,7 @@ mod tests {
     }
 
     #[test]
-    fn log_time_is_truncated_to_whole_seconds() {
-        let with_nanos = chrono::DateTime::from_timestamp(1_000_000, 999_999_999).unwrap();
-        let record = UploadRecord::new(
-            "https://snips.sh/f/abc",
-            UploadScope::InstallLog,
-            with_nanos,
-        );
-
-        assert_eq!(record.log_modified.timestamp(), 1_000_000);
-        assert_eq!(record.log_modified.timestamp_subsec_nanos(), 0);
+    fn fingerprint_changes_with_log_contents() {
+        assert_ne!(fingerprint_bytes(b"first"), fingerprint_bytes(b"second"));
     }
 }

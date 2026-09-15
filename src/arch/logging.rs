@@ -7,7 +7,7 @@ use colored::Colorize;
 use tempfile::NamedTempFile;
 
 use crate::arch::engine::{AnswerPrivacy, InstallContext};
-use crate::arch::execution::upload_state::{UploadRecord, UploadScope};
+use crate::arch::execution::upload_state::{UploadRecord, UploadScope, fingerprint_bytes};
 use crate::menu_utils::{DialogOutcome, FzfPreview, FzfSelectable, FzfWrapper, Header};
 use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
@@ -55,6 +55,36 @@ enum UploadMenuAction {
     Cancel,
 }
 
+#[derive(Clone, Copy)]
+enum ExistingUploadPolicy {
+    Reuse,
+    Replace,
+}
+
+enum UploadResult {
+    Uploaded(UploadRecord),
+    Reused(UploadRecord),
+}
+
+impl UploadResult {
+    fn into_record(self) -> UploadRecord {
+        match self {
+            Self::Uploaded(record) | Self::Reused(record) => record,
+        }
+    }
+}
+
+fn reusable_upload(
+    record: Option<UploadRecord>,
+    log_sha256: &str,
+    policy: ExistingUploadPolicy,
+) -> Option<UploadRecord> {
+    if !matches!(policy, ExistingUploadPolicy::Reuse) {
+        return None;
+    }
+    record.filter(|record| record.log_sha256 == log_sha256)
+}
+
 /// Upload after a successful install only when the user explicitly enabled it
 /// in Advanced Options. This always uses the least-detailed report scope.
 pub fn process_requested_log_upload(context: &InstallContext) {
@@ -62,9 +92,17 @@ pub fn process_requested_log_upload(context: &InstallContext) {
         return;
     }
 
-    println!("Uploading the privacy-filtered installation report as requested...");
-    match upload_install_report(context, UploadScope::InstallLog) {
-        Ok(record) => println!("Logs uploaded successfully: {}", record.url.green().bold()),
+    match upload_install_report(
+        context,
+        UploadScope::InstallLog,
+        ExistingUploadPolicy::Reuse,
+    ) {
+        Ok(UploadResult::Uploaded(record)) => {
+            println!("Logs uploaded successfully: {}", record.url.green().bold())
+        }
+        Ok(UploadResult::Reused(record)) => {
+            println!("Logs were already uploaded: {}", record.url.green().bold())
+        }
         Err(error) => eprintln!("Failed to upload logs: {error}"),
     }
 }
@@ -251,8 +289,9 @@ pub fn prompt_log_upload(context: &InstallContext) -> Result<()> {
             UploadMenuAction::Cancel => return Ok(()),
             UploadMenuAction::Upload(scope) => {
                 println!("Preparing privacy-filtered support report...");
-                match upload_install_report(context, scope) {
-                    Ok(record) => {
+                match upload_install_report(context, scope, ExistingUploadPolicy::Replace) {
+                    Ok(result) => {
+                        let record = result.into_record();
                         FzfWrapper::message(&format!(
                             "Logs uploaded successfully.\n\nURL: {}\nContents: {}\n\nSelect \"View Logs\" to inspect the local log, or \"Exit\" to leave this menu.",
                             record.url,
@@ -371,27 +410,36 @@ fn command_exists(command: &str) -> bool {
 /// cannot forget it. The raw [`upload_logs`] path stays unrecorded on
 /// purpose: it uploads an explicitly chosen file, not this report. A failing
 /// record is only a warning because the upload itself already succeeded.
-pub fn upload_install_report(context: &InstallContext, scope: UploadScope) -> Result<UploadRecord> {
+fn upload_install_report(
+    context: &InstallContext,
+    scope: UploadScope,
+    existing_upload: ExistingUploadPolicy,
+) -> Result<UploadResult> {
     let log_path = Path::new(crate::arch::execution::paths::LOG_FILE);
-    let log_modified = UploadRecord::current_log_modified()
-        .context("Failed to determine the install log's modification time")?;
-    let report = build_support_report(context, log_path, scope)?;
+    let (report, log_sha256) = build_support_report(context, log_path, scope)?;
+
+    if let Some(record) = reusable_upload(UploadRecord::load(), &log_sha256, existing_upload) {
+        return Ok(UploadResult::Reused(record));
+    }
+
+    println!("Uploading the privacy-filtered installation report as requested...");
     let url = upload_logs(report.path())?;
 
-    let record = UploadRecord::new(url, scope, log_modified);
+    let record = UploadRecord::new(url, scope, log_sha256);
     if let Err(error) = record.save() {
         eprintln!("Warning: could not save the upload record: {error}");
     }
-    Ok(record)
+    Ok(UploadResult::Uploaded(record))
 }
 
 fn build_support_report(
     context: &InstallContext,
     log_path: &Path,
     scope: UploadScope,
-) -> Result<NamedTempFile> {
+) -> Result<(NamedTempFile, String)> {
     let log = std::fs::read_to_string(log_path)
         .with_context(|| format!("Failed to read log file: {}", log_path.display()))?;
+    let log_sha256 = fingerprint_bytes(log.as_bytes());
     let sanitized_log = redact_log(context, &log, scope);
 
     let mut report = NamedTempFile::new().context("Failed to create support report")?;
@@ -427,7 +475,7 @@ fn build_support_report(
     writeln!(report, "\n[install log]")?;
     report.write_all(sanitized_log.as_bytes())?;
     report.flush()?;
-    Ok(report)
+    Ok((report, log_sha256))
 }
 
 fn redact_log(context: &InstallContext, log: &str, scope: UploadScope) -> String {
@@ -509,7 +557,7 @@ mod tests {
             url: "https://snips.sh/f/abc123".to_string(),
             scope: UploadScope::InstallLog,
             uploaded_at: chrono::Utc::now(),
-            log_modified: chrono::Utc::now(),
+            log_sha256: fingerprint_bytes(b"install log"),
         };
 
         let fresh = build_upload_options(None);
@@ -555,6 +603,36 @@ mod tests {
                 .iter()
                 .any(|item| matches!(item.value, UploadMenuAction::ViewLogs)),
             "viewing the logs should always be offered"
+        );
+    }
+
+    #[test]
+    fn automatic_upload_reuses_only_a_record_for_identical_log_contents() {
+        let log_sha256 = fingerprint_bytes(b"install log");
+        let record = UploadRecord::new(
+            "https://snips.sh/f/abc123",
+            UploadScope::InstallLog,
+            &log_sha256,
+        );
+
+        assert!(
+            reusable_upload(
+                Some(record.clone()),
+                &log_sha256,
+                ExistingUploadPolicy::Reuse,
+            )
+            .is_some()
+        );
+        assert!(
+            reusable_upload(
+                Some(record.clone()),
+                &fingerprint_bytes(b"changed log"),
+                ExistingUploadPolicy::Reuse,
+            )
+            .is_none()
+        );
+        assert!(
+            reusable_upload(Some(record), &log_sha256, ExistingUploadPolicy::Replace,).is_none()
         );
     }
 
@@ -615,14 +693,15 @@ mod tests {
         let mut log = NamedTempFile::new().unwrap();
         writeln!(log, "alice secret phrase /dev/nvme0n1 linux-zen").unwrap();
 
-        let basic = build_support_report(&context, log.path(), UploadScope::InstallLog).unwrap();
+        let (basic, _) =
+            build_support_report(&context, log.path(), UploadScope::InstallLog).unwrap();
         let basic_text = std::fs::read_to_string(basic.path()).unwrap();
         assert!(basic_text.contains("Kernel = \"linux-zen\""));
         assert!(!basic_text.contains("alice"));
         assert!(!basic_text.contains("secret phrase"));
         assert!(!basic_text.contains("/dev/nvme0n1"));
 
-        let detailed = build_support_report(
+        let (detailed, _) = build_support_report(
             &context,
             log.path(),
             UploadScope::InstallLogAndSystemDetails,
