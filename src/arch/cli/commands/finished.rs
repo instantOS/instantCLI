@@ -226,9 +226,7 @@ pub(super) async fn handle_finished_command() -> Result<()> {
                     crate::arch::logging::prompt_log_upload(&context)?;
                 }
                 FinishedMenuOption::ViewLogs => {
-                    if let Err(error) = crate::arch::logging::view_install_log() {
-                        eprintln!("Failed to view logs: {error}");
-                    }
+                    crate::arch::logging::show_install_log_dialog()?;
                 }
             },
             crate::menu_utils::DialogOutcome::Cancelled => {

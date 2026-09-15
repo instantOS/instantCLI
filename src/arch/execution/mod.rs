@@ -14,6 +14,7 @@ pub mod post;
 pub mod setup;
 pub mod state;
 pub mod step;
+pub mod upload_state;
 
 use self::state::InstallState;
 use self::step::InstallStep;
