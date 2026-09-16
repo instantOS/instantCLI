@@ -13,6 +13,7 @@ depends=('glibc' 'gcc-libs' 'fzf' 'git' 'sqlite')
 makedepends=('rust')
 checkdepends=('ntfs-3g' 'ntfsprogs' 'ffmpeg')
 optdepends=(
+    'instantmenu: for the assist emoji picker'
     'restic: for backup functionality'
     'kitty: default terminal for scratchpad'
     'ntfsprogs: for NTFS partition resize detection (dual-boot)'
@@ -45,6 +46,8 @@ package() {
     cd "instantCLI-$pkgver"
     install -Dm755 "target/release/$pkgname" "$pkgdir/usr/bin/$pkgname"
     install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    install -Dm644 src/assist/actions/emoji/LICENSE \
+        "$pkgdir/usr/share/licenses/$pkgname/emoji-catalog-LICENSE"
     install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
 
     for desktop_file in desktop/*.desktop; do

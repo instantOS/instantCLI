@@ -50,6 +50,8 @@ mkdir -p "${PKG_DIR}/DEBIAN" \
 
 install -Dm755 "${INS_BIN}" "${PKG_DIR}/usr/bin/ins"
 install -Dm644 "LICENSE" "${PKG_DIR}/usr/share/doc/ins/copyright"
+install -Dm644 "src/assist/actions/emoji/LICENSE" \
+	"${PKG_DIR}/usr/share/doc/ins/emoji-catalog-LICENSE"
 install -Dm644 "README.md" "${PKG_DIR}/usr/share/doc/ins/README.md"
 
 for desktop_file in desktop/*.desktop; do

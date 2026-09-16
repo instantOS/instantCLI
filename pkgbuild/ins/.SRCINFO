@@ -14,6 +14,7 @@ pkgbase = ins
 	depends = fzf
 	depends = git
 	depends = sqlite
+	optdepends = instantmenu: for the assist emoji picker
 	optdepends = restic: for backup functionality
 	optdepends = kitty: default terminal for scratchpad
 	optdepends = ntfsprogs: for NTFS partition resize detection (dual-boot)

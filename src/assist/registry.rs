@@ -160,7 +160,7 @@ pub const ASSISTS: &[AssistEntry] = &[
         key: 'e',
         description: "Emoji Picker: Open emoji picker",
         icon: NerdFont::Smile,
-        dependencies: &[&EMOTE],
+        dependencies: &[&INSTANTMENU, &WL_CLIPBOARD, &XCLIP],
         execute: actions::emoji::emoji_picker,
     }),
     AssistEntry::Action(AssistAction {
