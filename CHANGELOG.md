@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.16](https://github.com/instantOS/instantCLI/compare/v0.14.15...v0.14.16) - 2026-09-16
+
+### Fixed
+
+- help not working on instantmenu stuff
+
+### Other
+
+- add shared key
+- parallelize more
+- artifact name matrix
+- parallelize builds
+- attempt toolchain install fix
+
 ## [0.14.15](https://github.com/instantOS/instantCLI/compare/v0.14.14...v0.14.15) - 2026-09-16
 
 ### Added
