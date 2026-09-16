@@ -36,7 +36,7 @@ impl DoctorCheck for SwayDisplayCheck {
             return CheckStatus::Skipped("Not running on Sway".to_string());
         }
 
-        match SwayDisplayProvider::get_outputs().await {
+        match SwayDisplayProvider::get_outputs_sync() {
             Ok(outputs) => {
                 if outputs.is_empty() {
                     return CheckStatus::Pass("No displays detected".to_string());
@@ -89,14 +89,14 @@ impl DoctorCheck for SwayDisplayCheck {
     }
 
     async fn fix(&self) -> Result<()> {
-        let outputs = SwayDisplayProvider::get_outputs().await?;
+        let outputs = SwayDisplayProvider::get_outputs_sync()?;
 
         let mut fixed = 0;
         for output in outputs {
             if !output.is_optimal() {
                 let optimal = output.optimal_mode();
                 println!("Setting {} to {}...", output.name, optimal.display_format());
-                SwayDisplayProvider::set_output_mode(&output.name, &optimal).await?;
+                SwayDisplayProvider::set_output_mode_sync(&output.name, &optimal)?;
                 fixed += 1;
             }
         }

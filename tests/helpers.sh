@@ -62,13 +62,6 @@ ins() {
 	"${INS_BIN}" --no-color "$@"
 }
 
-ins_output() {
-	if [[ -z "${INS_BIN:-}" || ! -x "${INS_BIN}" ]]; then
-		prepare_ins_binary
-	fi
-	"${INS_BIN}" --no-color "$@"
-}
-
 create_sample_dot_repo() {
 	local repo_dir="$1"
 	local repo_name="${2:-sample-dot-repo}"

@@ -1,6 +1,8 @@
 use anyhow::{Context, Result};
 use std::process::Command;
 
+use crate::ui::nerd_font::NerdFont;
+
 pub fn music() -> Result<()> {
     Command::new("playerctl")
         .arg("play-pause")
@@ -89,10 +91,10 @@ pub fn control_media() -> Result<()> {
         };
 
         let icon = match status.as_str() {
-            "Playing" => "▶",
-            "Paused" => "⏸",
-            "Stopped" => "⏹",
-            _ => "?",
+            "Playing" => char::from(NerdFont::Play).to_string(),
+            "Paused" => char::from(NerdFont::Pause).to_string(),
+            "Stopped" => char::from(NerdFont::Stop).to_string(),
+            _ => "?".to_string(),
         };
 
         let description = format!("{} {}: {}", icon, player, track_info);

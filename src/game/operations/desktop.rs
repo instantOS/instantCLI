@@ -6,7 +6,7 @@ use crate::common::distro::OperatingSystem;
 
 /// Desktop entry structure
 #[derive(Debug, Clone)]
-pub struct DesktopEntry {
+pub struct GameDesktopEntry {
     pub name: String,
     pub exec: String,
     pub icon: String,
@@ -15,7 +15,7 @@ pub struct DesktopEntry {
     pub categories: Vec<String>,
 }
 
-impl DesktopEntry {
+impl GameDesktopEntry {
     fn new(name: &str, exec: &str, icon: &str, comment: &str, terminal: bool) -> Self {
         Self {
             name: name.to_string(),
@@ -185,7 +185,7 @@ pub fn add_game_to_desktop(name: &str, _launch_command: &str) -> Result<(bool, O
     let icon = "applications-games";
     let comment = format!("Launch {} with automatic save sync", name);
 
-    let entry = DesktopEntry::new(name, &exec, icon, &comment, false);
+    let entry = GameDesktopEntry::new(name, &exec, icon, &comment, false);
     let content = entry.to_desktop_file_content();
     let filename = format!("ins-game-{}.desktop", sanitize_filename(name));
 
@@ -276,7 +276,7 @@ pub fn add_menu_to_desktop() -> Result<(bool, Option<PathBuf>)> {
     let icon = "utilities-terminal";
     let comment = "Launch the ins game menu";
 
-    let entry = DesktopEntry::new(menu_name, &exec, icon, comment, false);
+    let entry = GameDesktopEntry::new(menu_name, &exec, icon, comment, false);
     let content = entry.to_desktop_file_content();
     let filename = format!("ins-game-{}.desktop", sanitize_filename(menu_name));
 
@@ -324,7 +324,7 @@ mod tests {
 
     #[test]
     fn test_desktop_entry_formatting() {
-        let entry = DesktopEntry::new(
+        let entry = GameDesktopEntry::new(
             "Test Game",
             "ins game launch \"Test Game\"",
             "applications-games",

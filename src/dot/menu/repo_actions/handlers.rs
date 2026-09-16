@@ -5,6 +5,7 @@ use crate::dot::config::DotfileConfig;
 use crate::dot::db::Database;
 use crate::dot::repo::{DotfileRepositoryManager, cli::RepoCommands};
 use crate::menu_utils::{ConfirmResult, FzfWrapper, Header, MenuCursor};
+use crate::ui::nerd_font::NerdFont;
 
 use super::super::subdir_actions::handle_manage_subdirs;
 use super::action_menu::{RepoAction, build_repo_action_menu};
@@ -250,11 +251,12 @@ fn confirm_make_writable(repo_name: &str) -> Result<bool> {
     let confirm = FzfWrapper::builder()
         .confirm(format!(
             "Make '{}' writable?\n\n\
- ⚠️  WARNING: This will allow the repository to diverge from upstream.\n\
+ {} WARNING: This will allow the repository to diverge from upstream.\n\
  You may be unable to receive updates without manual work.\n\n\
  Consider adding your own dotfile repository on top instead.\n\
  See: https://instantos.io/docs/insdot.html",
-            repo_name
+            repo_name,
+            char::from(NerdFont::Warning)
         ))
         .yes_text("Make Writable")
         .no_text("Cancel")

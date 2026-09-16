@@ -43,11 +43,7 @@ fn apply_via_hyprpaper(path: &str) -> Result<()> {
         // Start hyprpaper detached. Use nohup + setsid so closing the terminal
         // doesn't SIGHUP the daemon (same issue we fixed for awww).
         // Hyprland's autostart also does `exec-once = hyprpaper`, but we start on-demand.
-        Command::new("sh")
-            .args(["-c", "nohup hyprpaper >/dev/null 2>&1 &"])
-            .output()
-            .context("Failed to start hyprpaper daemon")?;
-        std::thread::sleep(std::time::Duration::from_millis(500));
+        crate::wallpaper::common::daemonize("nohup hyprpaper >/dev/null 2>&1 &")?;
     }
 
     // Hyprland 0.8+ uses `hyprctl hyprpaper wallpaper "mon,path,fit"` where mon can be empty for fallback.

@@ -15,6 +15,16 @@ use crate::common::compositor::CompositorType;
 pub const OVERLAY_URL: &str =
     "https://raw.githubusercontent.com/instantOS/instantLOGO/main/wallpaper/overlay.png";
 
+/// Start a daemon detached so closing the terminal doesn't SIGHUP it.
+pub(crate) fn daemonize(shell_cmd: &str) -> Result<()> {
+    Command::new("sh")
+        .args(["-c", shell_cmd])
+        .output()
+        .context("Failed to start background daemon")?;
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    Ok(())
+}
+
 /// Get the wallpaper directory path
 pub fn get_wallpaper_dir() -> Result<PathBuf> {
     let home = dirs::data_local_dir().context("Could not find local data directory")?;

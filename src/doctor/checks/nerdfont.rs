@@ -25,6 +25,8 @@ use async_trait::async_trait;
 use std::path::{Path, PathBuf};
 use tokio::process::Command;
 
+use crate::ui::nerd_font::NerdFont;
+
 /// Nerd Font icon set ranges for comprehensive coverage testing (v3.x codepoints).
 /// Each entry: (name, start_codepoint, end_codepoint, sample_count)
 /// We sample a few characters from each range to test coverage without being excessive.
@@ -205,7 +207,8 @@ impl DoctorCheck for NerdFontCheck {
 
         if state.is_fully_configured() {
             println!(
-                "✓ {} is already installed and configured correctly.",
+                "{} {} is already installed and configured correctly.",
+                NerdFont::Check,
                 NERD_FONT_NAME
             );
             println!("  Font location: {:?}", fonts_dir);
@@ -220,21 +223,28 @@ impl DoctorCheck for NerdFontCheck {
         if !state.font_installed {
             self.install_font(&fonts_dir).await?;
         } else {
-            println!("✓ {} already installed, skipping download.", NERD_FONT_NAME);
+            println!(
+                "{} {} already installed, skipping download.",
+                NerdFont::Check,
+                NERD_FONT_NAME
+            );
         }
 
         // Configure fontconfig if needed
         if !state.fontconfig_configured {
             self.configure_fontconfig(&fontconfig_dir).await?;
         } else {
-            println!("✓ Fontconfig priority already configured, skipping.");
+            println!(
+                "{} Fontconfig priority already configured, skipping.",
+                NerdFont::Check
+            );
         }
 
         // Always refresh font cache to ensure changes are picked up
         self.refresh_font_cache().await?;
 
         println!();
-        println!("✓ {} setup complete!", NERD_FONT_NAME);
+        println!("{} {} setup complete!", NerdFont::Check, NERD_FONT_NAME);
         println!("  Please restart your terminal for changes to take effect.");
 
         Ok(())
@@ -332,7 +342,12 @@ impl NerdFontCheck {
         // Clean up zip file
         let _ = tokio::fs::remove_file(&zip_path).await;
 
-        println!("✓ Installed {} to {:?}", NERD_FONT_NAME, fonts_dir);
+        println!(
+            "{} Installed {} to {:?}",
+            NerdFont::Check,
+            NERD_FONT_NAME,
+            fonts_dir
+        );
         Ok(())
     }
 
@@ -412,7 +427,11 @@ impl NerdFontCheck {
             .await
             .context("Failed to write fontconfig file")?;
 
-        println!("✓ Created fontconfig priority file: {:?}", config_file);
+        println!(
+            "{} Created fontconfig priority file: {:?}",
+            NerdFont::Check,
+            config_file
+        );
         Ok(())
     }
 

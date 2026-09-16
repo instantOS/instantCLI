@@ -7,6 +7,92 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.17](https://github.com/instantOS/instantCLI/compare/v0.14.16...v0.14.17) - 2026-09-16
+
+### Added
+
+- bump
+
+### Fixed
+
+- raise glibc
+- fix bash
+
+### Other
+
+- dedupe stuff, fix nerd font usage
+
+## [0.14.16](https://github.com/instantOS/instantCLI/compare/v0.14.15...v0.14.16) - 2026-09-16
+
+### Fixed
+
+- help not working on instantmenu stuff
+
+### Other
+
+- add shared key
+- parallelize more
+- artifact name matrix
+- parallelize builds
+- attempt toolchain install fix
+
+## [0.14.15](https://github.com/instantOS/instantCLI/compare/v0.14.14...v0.14.15) - 2026-09-16
+
+### Added
+
+- *(arch)* prevent duplicate installations with config fingerprints
+- add wallpaper `ins assist` stuff
+
+### Fixed
+
+- fix logging issues
+- more solid user creation flow
+- fix dual boot and test portability
+- better installer validation
+- add missing fzf arg combinations
+- combinatorial explosion in fzf wrapper methods
+- preselect previous answers on revisiting questions
+- wipe stuff before formatting
+- prettier look in tty/live iso
+
+### Other
+
+- sync PKGBUILD version
+- release v0.14.15
+- init better logging menu
+- add foreign user ssh key editing
+- add copy button to ssh key settings
+- unify validation stuff
+- dedupe stuff
+- way more typesafe `ins arch`
+- safer ins arch
+- less representable invalid state
+- better model stuff
+- default suggested_answer to a step's declared default
+- consolidate step helper thingy
+- better suggestion architecture
+- better installer log handling
+- Merge branch 'annotate-more' into dev
+- implement padded streaming
+- simplify fzf stuff
+- add none option for display manager
+- dedupe theme
+- Merge pull request #166 from instantOS/release-plz-2026-09-04T20-33-51Z
+- bump stuff
+- migrate to actions runners
+- improve async startup time
+- more memoization
+- optimize launch speed
+- bump stuff
+- loads of deduping
+- make invalid state inexpressible
+- menu feature parity
+- more consistent imports
+- refactor duplications
+- fzf choice method
+- add ins menu keybind support
+- add frecency and ins menu streaming
+
 ## [0.14.15](https://github.com/instantOS/instantCLI/compare/v0.14.14...v0.14.15) - 2026-09-15
 
 ### Added

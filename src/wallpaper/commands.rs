@@ -107,35 +107,14 @@ pub async fn apply_configured_wallpaper() -> Result<()> {
     let compositor = CompositorType::detect();
     println!("Applying wallpaper to {}...", compositor.name().cyan());
 
-    match compositor {
-        CompositorType::Sway => {
-            sway::apply_wallpaper(&path)?;
-            println!("{}", "Wallpaper applied successfully".green());
-        }
-        CompositorType::InstantWM => {
-            instantwm::apply_wallpaper(&path)?;
-            println!("{}", "Wallpaper applied successfully".green());
-        }
-        CompositorType::I3 | CompositorType::Dwm => {
-            x11::apply_wallpaper(&path)?;
-            println!("{}", "Wallpaper applied successfully".green());
-        }
-        CompositorType::Gnome => {
-            gnome::apply_wallpaper(&path)?;
-            println!("{}", "Wallpaper applied successfully".green());
-        }
-        CompositorType::Hyprland => {
-            hyprpaper::apply_wallpaper(&path)?;
-            println!("{}", "Wallpaper applied successfully".green());
-        }
-        CompositorType::Niri => {
-            awww::apply_wallpaper(&path)?;
-            println!("{}", "Wallpaper applied successfully".green());
-        }
-        CompositorType::KWin => {
-            kwin::apply_wallpaper(&path)?;
-            println!("{}", "Wallpaper applied successfully".green());
-        }
+    let applied = match compositor {
+        CompositorType::Sway => sway::apply_wallpaper(&path),
+        CompositorType::InstantWM => instantwm::apply_wallpaper(&path),
+        CompositorType::I3 | CompositorType::Dwm => x11::apply_wallpaper(&path),
+        CompositorType::Gnome => gnome::apply_wallpaper(&path),
+        CompositorType::Hyprland => hyprpaper::apply_wallpaper(&path),
+        CompositorType::Niri => awww::apply_wallpaper(&path),
+        CompositorType::KWin => kwin::apply_wallpaper(&path),
         _ => {
             println!(
                 "{}",
@@ -145,9 +124,12 @@ pub async fn apply_configured_wallpaper() -> Result<()> {
                 )
                 .yellow()
             );
+            return Ok(());
         }
-    }
+    };
+    applied?;
 
+    println!("{}", "Wallpaper applied successfully".green());
     Ok(())
 }
 

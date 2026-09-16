@@ -114,7 +114,10 @@ fn handle_uninstall_result(
             let refs: Vec<&str> = packages.iter().map(|s| s.as_str()).collect();
             uninstall_packages(manager, &refs)?;
 
-            println!("✓ Package uninstallation completed successfully!");
+            println!(
+                "{} Package uninstallation completed successfully!",
+                NerdFont::Check
+            );
             Ok(UninstallResult::Uninstalled)
         }
         crate::menu_utils::DialogOutcome::Submitted(_)

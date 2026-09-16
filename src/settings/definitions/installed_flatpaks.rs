@@ -146,7 +146,7 @@ pub fn run_flatpak(app_id: &str) -> Result<()> {
         .with_context(|| format!("Failed to run Flatpak app: {}", app_id))?;
 
     if status.success() {
-        println!("✓ Flatpak app exited successfully.");
+        println!("{} Flatpak app exited successfully.", NerdFont::Check);
     } else {
         println!("Flatpak app exited with status: {:?}", status.code());
     }
@@ -168,7 +168,10 @@ pub fn uninstall_flatpak(app_id: &str) -> Result<bool> {
 
     println!("Uninstalling Flatpak app: {}", app_id);
     uninstall_packages(PackageManager::Flatpak, &[app_id])?;
-    println!("✓ Flatpak app uninstallation completed successfully!");
+    println!(
+        "{} Flatpak app uninstallation completed successfully!",
+        NerdFont::Check
+    );
 
     Ok(true)
 }

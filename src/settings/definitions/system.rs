@@ -298,12 +298,14 @@ impl Setting for DotfileManager {
 }
 
 // ============================================================================
-// Systemd Manager (fzf-based menu for managing services)
+// Systemd Services (fzf-based menu for managing services)
 // ============================================================================
 
-pub struct SystemdManager;
+/// Setting marker that opens the systemd services menu. Named to avoid
+/// confusion with `common::systemd::SystemdManager`, the real manager.
+pub struct SystemdServicesSetting;
 
-impl Setting for SystemdManager {
+impl Setting for SystemdServicesSetting {
     fn metadata(&self) -> SettingMetadata {
         SettingMetadata::builder()
             .id("system.systemd")

@@ -14,7 +14,8 @@ system diagnostics, WM keychords, game saves and much more.
 - system diagnostics
 - WM keychord management
 - game save management
-- notification history and Do Not Disturb controls
+- notification center
+- Arch Linux Installer
 - video editing (yes, I know it's random)
 
 ### Notification history

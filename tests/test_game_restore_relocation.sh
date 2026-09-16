@@ -30,7 +30,7 @@ main() {
 	ins game sync --force "${game_name}"
 
 	local backup_output
-	backup_output="$(ins_output game backup "${game_name}")"
+	backup_output="$(ins game backup "${game_name}")"
 	local snapshot_id
 	snapshot_id="$(printf '%s\n' "${backup_output}" | sed -n 's/.*snapshot: \([0-9a-f]\{8,\}\).*/\1/p' | head -n1)"
 

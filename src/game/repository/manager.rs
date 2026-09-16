@@ -306,14 +306,17 @@ impl GameRepositoryManager {
             Ok(exists) => {
                 if exists {
                     if debug {
-                        println!("✓ Repository exists and is accessible");
+                        println!("{} Repository exists and is accessible", NerdFont::Check);
                     }
 
                     // Additional test: try to list snapshots to ensure the repository is fully functional
                     match restic.list_snapshots_filtered(None) {
                         Ok(_) => {
                             if debug {
-                                println!("✓ Repository operations working correctly");
+                                println!(
+                                    "{} Repository operations working correctly",
+                                    NerdFont::Check
+                                );
                             }
                             Ok(())
                         }
@@ -351,7 +354,7 @@ impl GameRepositoryManager {
 
         if output.status.success() {
             if debug {
-                println!("✓ Rclone remote is accessible");
+                println!("{} Rclone remote is accessible", NerdFont::Check);
             }
             Ok(())
         } else {
