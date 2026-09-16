@@ -188,6 +188,7 @@ jobs:
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
+          shared-key: cross-deps
           key: cross-${{ matrix.target }}
       - name: Cross compile (zig)
         if: matrix.kind == 'zig'
