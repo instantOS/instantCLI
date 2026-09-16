@@ -139,7 +139,7 @@ EOF
 	' >/dev/null
 
 	local menu_output
-	menu_output="$(ins_output game discover --menu --source epic)"
+	menu_output="$(ins game discover --menu --source epic)"
 	assert_output_contains "${menu_output}" "Sable (Epic)"
 
 	echo "Game discovery CLI succeeded"

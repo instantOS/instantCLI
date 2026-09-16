@@ -250,6 +250,76 @@ fn should_use_collect_preview_cache(id: PreviewId, ctx: &PreviewContext) -> bool
         )
 }
 
+/// Static spec for the nine default-app previews.
+/// Single source of truth shared by the streaming and collect paths so copy
+/// changes only need to happen in one place.
+struct DefaultAppSpec {
+    title: &'static str,
+    icon: NerdFont,
+    summary: &'static str,
+    mime_types: &'static [&'static str],
+}
+
+fn default_app_spec(id: PreviewId) -> Option<DefaultAppSpec> {
+    match id {
+        PreviewId::DefaultImageViewer => Some(DefaultAppSpec {
+            title: "Image Viewer",
+            icon: NerdFont::Image,
+            summary: "Set your default image viewer for photos and pictures.",
+            mime_types: IMAGE_MIME_TYPES,
+        }),
+        PreviewId::DefaultVideoPlayer => Some(DefaultAppSpec {
+            title: "Video Player",
+            icon: NerdFont::Video,
+            summary: "Set your default video player for movies and videos.",
+            mime_types: VIDEO_MIME_TYPES,
+        }),
+        PreviewId::DefaultAudioPlayer => Some(DefaultAppSpec {
+            title: "Audio Player",
+            icon: NerdFont::Music,
+            summary: "Set your default audio player for music and podcasts.",
+            mime_types: AUDIO_MIME_TYPES,
+        }),
+        PreviewId::DefaultArchiveManager => Some(DefaultAppSpec {
+            title: "Archive Manager",
+            icon: NerdFont::Archive,
+            summary: "Set your default archive manager for ZIP, TAR, and other compressed files.",
+            mime_types: ARCHIVE_MIME_TYPES,
+        }),
+        PreviewId::DefaultBrowser => Some(DefaultAppSpec {
+            title: "Web Browser",
+            icon: NerdFont::Globe,
+            summary: "Set your default web browser for opening links and HTML files.",
+            mime_types: BROWSER_MIME_TYPES,
+        }),
+        PreviewId::DefaultTextEditor => Some(DefaultAppSpec {
+            title: "Text Editor",
+            icon: NerdFont::FileText,
+            summary: "Set your default text editor for opening text files.",
+            mime_types: TEXT_EDITOR_MIME_TYPES,
+        }),
+        PreviewId::DefaultEmail => Some(DefaultAppSpec {
+            title: "Email Client",
+            icon: NerdFont::ExternalLink,
+            summary: "Set your default email client for mailto: links.",
+            mime_types: EMAIL_MIME_TYPES,
+        }),
+        PreviewId::DefaultFileManager => Some(DefaultAppSpec {
+            title: "File Manager",
+            icon: NerdFont::Folder,
+            summary: "Set your default file manager for browsing folders.",
+            mime_types: FILE_MANAGER_MIME_TYPES,
+        }),
+        PreviewId::DefaultPdfViewer => Some(DefaultAppSpec {
+            title: "PDF Viewer",
+            icon: NerdFont::FilePdf,
+            summary: "Set your default PDF viewer for documents.",
+            mime_types: PDF_VIEWER_MIME_TYPES,
+        }),
+        _ => None,
+    }
+}
+
 /// Try to render a preview using the streaming path.
 /// Returns `Some(result)` if this preview ID supports streaming, `None` otherwise.
 fn try_render_streaming(id: PreviewId, ctx: &PreviewContext) -> Option<Result<()>> {
@@ -279,78 +349,25 @@ fn try_render_streaming(id: PreviewId, ctx: &PreviewContext) -> Option<Result<()
         PreviewId::MimeType => Some(mime::render_mime_type_preview_streaming(ctx)),
 
         // Default app previews — query xdg-mime per MIME type
-        PreviewId::DefaultImageViewer => Some(stream_default_app(
-            id,
-            ctx,
-            "Image Viewer",
-            NerdFont::Image,
-            "Set your default image viewer for photos and pictures.",
-            IMAGE_MIME_TYPES,
-        )),
-        PreviewId::DefaultVideoPlayer => Some(stream_default_app(
-            id,
-            ctx,
-            "Video Player",
-            NerdFont::Video,
-            "Set your default video player for movies and videos.",
-            VIDEO_MIME_TYPES,
-        )),
-        PreviewId::DefaultAudioPlayer => Some(stream_default_app(
-            id,
-            ctx,
-            "Audio Player",
-            NerdFont::Music,
-            "Set your default audio player for music and podcasts.",
-            AUDIO_MIME_TYPES,
-        )),
-        PreviewId::DefaultArchiveManager => Some(stream_default_app(
-            id,
-            ctx,
-            "Archive Manager",
-            NerdFont::Archive,
-            "Set your default archive manager for ZIP, TAR, and other compressed files.",
-            ARCHIVE_MIME_TYPES,
-        )),
-        PreviewId::DefaultBrowser => Some(stream_default_app(
-            id,
-            ctx,
-            "Web Browser",
-            NerdFont::Globe,
-            "Set your default web browser for opening links and HTML files.",
-            BROWSER_MIME_TYPES,
-        )),
-        PreviewId::DefaultTextEditor => Some(stream_default_app(
-            id,
-            ctx,
-            "Text Editor",
-            NerdFont::FileText,
-            "Set your default text editor for opening text files.",
-            TEXT_EDITOR_MIME_TYPES,
-        )),
-        PreviewId::DefaultEmail => Some(stream_default_app(
-            id,
-            ctx,
-            "Email Client",
-            NerdFont::ExternalLink,
-            "Set your default email client for mailto: links.",
-            EMAIL_MIME_TYPES,
-        )),
-        PreviewId::DefaultFileManager => Some(stream_default_app(
-            id,
-            ctx,
-            "File Manager",
-            NerdFont::Folder,
-            "Set your default file manager for browsing folders.",
-            FILE_MANAGER_MIME_TYPES,
-        )),
-        PreviewId::DefaultPdfViewer => Some(stream_default_app(
-            id,
-            ctx,
-            "PDF Viewer",
-            NerdFont::FilePdf,
-            "Set your default PDF viewer for documents.",
-            PDF_VIEWER_MIME_TYPES,
-        )),
+        PreviewId::DefaultImageViewer
+        | PreviewId::DefaultVideoPlayer
+        | PreviewId::DefaultAudioPlayer
+        | PreviewId::DefaultArchiveManager
+        | PreviewId::DefaultBrowser
+        | PreviewId::DefaultTextEditor
+        | PreviewId::DefaultEmail
+        | PreviewId::DefaultFileManager
+        | PreviewId::DefaultPdfViewer => {
+            let spec = default_app_spec(id).expect("default app spec must exist");
+            Some(stream_default_app(
+                id,
+                ctx,
+                spec.title,
+                spec.icon,
+                spec.summary,
+                spec.mime_types,
+            ))
+        }
         PreviewId::GameSave => Some(game_save::render_game_save_preview_streaming(ctx)),
 
         _ => None,
@@ -401,60 +418,23 @@ fn render_preview(id: PreviewId, ctx: &PreviewContext) -> Result<String> {
         PreviewId::IconTheme => appearance::render_icon_theme_preview(),
         PreviewId::CursorTheme => appearance::render_cursor_theme_preview(),
         PreviewId::MouseSensitivity => mouse::render_mouse_sensitivity_preview(),
-        PreviewId::DefaultImageViewer => default_apps::render_default_app_preview(
-            "Image Viewer",
-            NerdFont::Image,
-            "Set your default image viewer for photos and pictures.",
-            IMAGE_MIME_TYPES,
-        ),
-        PreviewId::DefaultVideoPlayer => default_apps::render_default_app_preview(
-            "Video Player",
-            NerdFont::Video,
-            "Set your default video player for movies and videos.",
-            VIDEO_MIME_TYPES,
-        ),
-        PreviewId::DefaultAudioPlayer => default_apps::render_default_app_preview(
-            "Audio Player",
-            NerdFont::Music,
-            "Set your default audio player for music and podcasts.",
-            AUDIO_MIME_TYPES,
-        ),
-        PreviewId::DefaultArchiveManager => default_apps::render_default_app_preview(
-            "Archive Manager",
-            NerdFont::Archive,
-            "Set your default archive manager for ZIP, TAR, and other compressed files.",
-            ARCHIVE_MIME_TYPES,
-        ),
-        PreviewId::DefaultBrowser => default_apps::render_default_app_preview(
-            "Web Browser",
-            NerdFont::Globe,
-            "Set your default web browser for opening links and HTML files.",
-            BROWSER_MIME_TYPES,
-        ),
-        PreviewId::DefaultTextEditor => default_apps::render_default_app_preview(
-            "Text Editor",
-            NerdFont::FileText,
-            "Set your default text editor for opening text files.",
-            TEXT_EDITOR_MIME_TYPES,
-        ),
-        PreviewId::DefaultEmail => default_apps::render_default_app_preview(
-            "Email Client",
-            NerdFont::ExternalLink,
-            "Set your default email client for mailto: links.",
-            EMAIL_MIME_TYPES,
-        ),
-        PreviewId::DefaultFileManager => default_apps::render_default_app_preview(
-            "File Manager",
-            NerdFont::Folder,
-            "Set your default file manager for browsing folders.",
-            FILE_MANAGER_MIME_TYPES,
-        ),
-        PreviewId::DefaultPdfViewer => default_apps::render_default_app_preview(
-            "PDF Viewer",
-            NerdFont::FilePdf,
-            "Set your default PDF viewer for documents.",
-            PDF_VIEWER_MIME_TYPES,
-        ),
+        PreviewId::DefaultImageViewer
+        | PreviewId::DefaultVideoPlayer
+        | PreviewId::DefaultAudioPlayer
+        | PreviewId::DefaultArchiveManager
+        | PreviewId::DefaultBrowser
+        | PreviewId::DefaultTextEditor
+        | PreviewId::DefaultEmail
+        | PreviewId::DefaultFileManager
+        | PreviewId::DefaultPdfViewer => {
+            let spec = default_app_spec(id).expect("default app spec must exist");
+            default_apps::render_default_app_preview(
+                spec.title,
+                spec.icon,
+                spec.summary,
+                spec.mime_types,
+            )
+        }
         PreviewId::Disk => disks::render_disk_preview(ctx),
         PreviewId::DotRepository => dot_repository::render_dot_repository_preview(ctx),
         PreviewId::Partition => disks::render_partition_preview(ctx),

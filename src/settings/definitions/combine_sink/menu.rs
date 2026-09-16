@@ -235,9 +235,9 @@ pub(super) fn build_menu_items(
         ));
         // Always show "Set as default" option - show current status in label
         let default_label = if is_default {
-            "Default output ✓"
+            format!("Default output {}", NerdFont::Check)
         } else {
-            "Set as default output"
+            "Set as default output".to_string()
         };
         items.push(MenuItem::new(
             MenuAction::SetAsDefault,

@@ -1,5 +1,7 @@
 use indicatif::{ProgressBar, ProgressStyle};
 
+use crate::ui::nerd_font::NerdFont;
+
 pub fn create_spinner(message: String) -> ProgressBar {
     let pb = ProgressBar::new_spinner();
     pb.set_style(
@@ -17,5 +19,5 @@ pub fn create_spinner(message: String) -> ProgressBar {
 /// This clears the spinner line entirely and prints a clean message
 pub fn finish_spinner_with_success(pb: ProgressBar, message: impl Into<String>) {
     pb.finish_and_clear();
-    println!("✓ {}", message.into());
+    println!("{} {}", NerdFont::Check, message.into());
 }

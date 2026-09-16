@@ -6,6 +6,7 @@ use std::process::{Command, ExitStatus};
 use crate::common::compositor::CompositorType;
 use crate::common::display_server::DisplayServer;
 use crate::common::shell::shell_quote;
+use crate::ui::nerd_font::NerdFont;
 
 /// Check if the current compositor supports area selection tools (like slurp)
 /// Shows a message dialog if not supported and returns false
@@ -61,6 +62,16 @@ pub fn check_screen_recording_support() -> bool {
     }
 
     true
+}
+
+/// Launch the current binary as a detached GUI subcommand (fire-and-forget).
+pub fn launch_self_gui(args: &[&str]) -> Result<()> {
+    Command::new(std::env::current_exe()?)
+        .args(args)
+        .arg("--gui")
+        .spawn()
+        .context("Failed to launch GUI subcommand")?;
+    Ok(())
 }
 
 /// Launch a command in a detached terminal window
@@ -134,7 +145,7 @@ if [ $install_exit_code -ne 0 ]; then
     # Installation failed - show error and wait for user acknowledgment
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "⚠ Installation Failed (exit code: $install_exit_code)"
+    echo "{warning_icon} Installation Failed (exit code: $install_exit_code)"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
     echo "Please review the error messages above."
@@ -151,7 +162,7 @@ fi
 # Post-installation menu using ins menu choice
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "✓ Installation Complete"
+echo "{check_icon} Installation Complete"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
@@ -162,7 +173,7 @@ choice=$(printf "Close terminal and continue\nKeep terminal open for review" | \
 if [ "$choice" = "Keep terminal open for review" ]; then
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "✓ Installation was successful"
+    echo "{check_icon} Installation was successful"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
     echo "Terminal will stay open for review."
@@ -170,7 +181,9 @@ if [ "$choice" = "Keep terminal open for review" ]; then
 fi
 "#,
         install_command,
-        shell_quote(&binary.to_string_lossy())
+        shell_quote(&binary.to_string_lossy()),
+        warning_icon = char::from(NerdFont::Warning),
+        check_icon = char::from(NerdFont::Check),
     );
 
     let mut temp_file = NamedTempFile::new().context("Failed to create temporary script file")?;

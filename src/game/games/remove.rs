@@ -1,6 +1,7 @@
 use crate::game::config::{InstallationsConfig, InstantGameConfig};
 use crate::game::games::selection::select_game_interactive;
 use crate::menu_utils::{ConfirmResult, FzfWrapper};
+use crate::ui::nerd_font::NerdFont;
 use anyhow::{Context, Result, anyhow};
 
 pub fn remove_game(game_name: Option<String>, force: bool) -> Result<()> {
@@ -27,7 +28,10 @@ pub fn remove_game(game_name: Option<String>, force: bool) -> Result<()> {
 
     if force {
         remove_game_entry(&mut config, &mut installations, game_index, &game_name)?;
-        println!("✓ Game '{game_name}' removed successfully!");
+        println!(
+            "{} Game '{game_name}' removed successfully!",
+            NerdFont::Check
+        );
         return Ok(());
     }
 
@@ -55,7 +59,10 @@ pub fn remove_game(game_name: Option<String>, force: bool) -> Result<()> {
     {
         ConfirmResult::Yes => {
             remove_game_entry(&mut config, &mut installations, game_index, &game_name)?;
-            println!("✓ Game '{game_name}' removed successfully!");
+            println!(
+                "{} Game '{game_name}' removed successfully!",
+                NerdFont::Check
+            );
         }
         ConfirmResult::No | ConfirmResult::Cancelled => {
             println!("Game removal cancelled.");

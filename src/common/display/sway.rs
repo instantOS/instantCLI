@@ -4,29 +4,11 @@
 
 use super::{DisplayMode, OutputInfo};
 use anyhow::{Context, Result};
-use tokio::process::Command as TokioCommand;
 
 /// Sway display provider for querying and setting display modes
 pub struct SwayDisplayProvider;
 
 impl SwayDisplayProvider {
-    /// Get all connected outputs with their modes
-    pub async fn get_outputs() -> Result<Vec<OutputInfo>> {
-        let output = TokioCommand::new("swaymsg")
-            .args(["-t", "get_outputs"])
-            .output()
-            .await
-            .context("Failed to execute swaymsg")?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            anyhow::bail!("swaymsg failed: {}", stderr);
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        Self::parse_outputs(&stdout)
-    }
-
     /// Get outputs synchronously (for use in settings apply)
     pub fn get_outputs_sync() -> Result<Vec<OutputInfo>> {
         let output = std::process::Command::new("swaymsg")
@@ -41,25 +23,6 @@ impl SwayDisplayProvider {
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         Self::parse_outputs(&stdout)
-    }
-
-    /// Set a display's mode
-    pub async fn set_output_mode(output_name: &str, mode: &DisplayMode) -> Result<()> {
-        let mode_str = mode.to_swaymsg_format();
-        let command = format!("output {} mode {}", output_name, mode_str);
-
-        let output = TokioCommand::new("swaymsg")
-            .arg(&command)
-            .output()
-            .await
-            .context("Failed to execute swaymsg")?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            anyhow::bail!("Failed to set mode for {}: {}", output_name, stderr);
-        }
-
-        Ok(())
     }
 
     /// Set a display's mode synchronously

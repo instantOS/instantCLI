@@ -2,6 +2,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
 
+use crate::ui::nerd_font::NerdFont;
+
 #[derive(Debug, Clone)]
 pub struct SteamShortcut {
     pub app_name: String,
@@ -527,9 +529,10 @@ pub fn get_game_shortcut(game_name: &str) -> Result<Option<SteamShortcut>> {
 /// Build a user-friendly warning message when Steam is running during shortcut modifications
 pub fn format_steam_running_warning(operation: &str) -> String {
     format!(
-        "⚠️  Steam is currently running.\n\
+        "{} Steam is currently running.\n\
          The shortcut has been {operation}, but changes will only take effect after restarting Steam.\n\
-         Note: If Steam exits before you restart, the changes may be lost."
+         Note: If Steam exits before you restart, the changes may be lost.",
+        char::from(NerdFont::Warning)
     )
 }
 

@@ -390,11 +390,11 @@ impl NerdFont {
             Self::Smile => '\u{f118}',  // fa-smile-o
 
             // Gaming and entertainment
-            Self::Gamepad => '', // fa-gamepad
-            Self::Trophy => '',  // fa-trophy
-            Self::Star => '',    // fa-star
-            Self::Flag => '🏳',    // fa-flag
-            Self::Target => '',  // fa-bullseye
+            Self::Gamepad => '',     // fa-gamepad
+            Self::Trophy => '',      // fa-trophy
+            Self::Star => '',        // fa-star
+            Self::Flag => '\u{f024}', // fa-flag
+            Self::Target => '',      // fa-bullseye
 
             // Data and analytics
             Self::Chart => '',    // fa-bar-chart
@@ -403,9 +403,9 @@ impl NerdFont {
             Self::Database => '', // fa-database
 
             // Time and scheduling
-            Self::Clock => '',    // fa-clock
-            Self::Calendar => '󰃭', // fa-calendar
-            Self::Timer => '⏱',    // fa-stopwatch
+            Self::Clock => '',        // fa-clock
+            Self::Calendar => '󰃭',     // fa-calendar
+            Self::Timer => '\u{f254}', // fa-hourglass (timer)
 
             // Development and tools
             Self::Code => '',    // fa-code

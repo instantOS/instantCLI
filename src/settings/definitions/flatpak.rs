@@ -146,7 +146,10 @@ fn run_flatpak_installer(debug: bool) -> Result<()> {
         let refs: Vec<&str> = not_installed.iter().map(|s| s.as_str()).collect();
         install_package_names(PackageManager::Flatpak, &refs)?;
 
-        println!("✓ Flatpak installation completed successfully!");
+        println!(
+            "{} Flatpak installation completed successfully!",
+            NerdFont::Check
+        );
     }
 
     // Show action menu for already installed apps

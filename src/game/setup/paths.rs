@@ -268,7 +268,10 @@ impl FzfSelectable for PathInfo {
             let first_str = first.format("%Y-%m-%d %H:%M:%S").to_string();
             let last_str = last.format("%Y-%m-%d %H:%M:%S").to_string();
 
-            preview.push_str("\n📅 USAGE TIMELINE:\n");
+            preview.push_str(&format!(
+                "\n{} USAGE TIMELINE:\n",
+                char::from(NerdFont::Calendar)
+            ));
             preview.push_str(&format!("First Seen:     {first_str}\n"));
             preview.push_str(&format!("Last Seen:      {last_str}\n"));
         }

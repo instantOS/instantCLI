@@ -1,11 +1,7 @@
 use anyhow::Result;
-use std::process::Command;
+
+use crate::assist::utils::launch_self_gui;
 
 pub fn open_password_manager() -> Result<()> {
-    let current_exe = std::env::current_exe()?;
-    let status = Command::new(current_exe).args(["pass", "--gui"]).status()?;
-    if !status.success() {
-        anyhow::bail!("`ins pass` exited with status {status}");
-    }
-    Ok(())
+    launch_self_gui(&["pass"])
 }

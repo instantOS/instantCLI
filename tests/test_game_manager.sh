@@ -40,7 +40,7 @@ main() {
 	ins game sync --force "${game_name}"
 
 	local backup_output
-	backup_output="$(ins_output game backup "${game_name}")"
+	backup_output="$(ins game backup "${game_name}")"
 	echo "${backup_output}"
 
 	local snapshot_id

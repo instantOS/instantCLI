@@ -2,7 +2,7 @@ pub mod awww;
 pub mod cli;
 pub mod colored;
 pub mod commands;
-mod common;
+pub(crate) mod common;
 pub mod gnome;
 pub mod hyprpaper;
 pub mod instantwm;

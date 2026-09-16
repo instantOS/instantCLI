@@ -1,14 +1,8 @@
 use anyhow::Result;
-use std::process::Command;
+
+use crate::assist::utils::launch_self_gui;
 
 /// Open the instantOS settings manager
 pub fn open_settings() -> Result<()> {
-    let current_exe = std::env::current_exe()?;
-
-    Command::new(&current_exe)
-        .arg("settings")
-        .arg("--gui")
-        .spawn()?;
-
-    Ok(())
+    launch_self_gui(&["settings"])
 }

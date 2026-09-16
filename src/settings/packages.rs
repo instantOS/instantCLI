@@ -8,6 +8,7 @@ use crate::menu_utils::{
     ConfirmResult, DecodedStreamingMenuItem, FzfWrapper, Header, MenuSelection,
 };
 use crate::settings::package_list::{self, PackageSelectionPayload};
+use crate::ui::nerd_font::NerdFont;
 use anyhow::{Context, Result};
 
 use super::SettingsContext;
@@ -170,7 +171,10 @@ fn handle_arch_install_result(
                 }
             }
 
-            println!("✓ Package installation completed successfully!");
+            println!(
+                "{} Package installation completed successfully!",
+                NerdFont::Check
+            );
             Ok(())
         }
         crate::menu_utils::DialogOutcome::Submitted(_)
@@ -246,7 +250,10 @@ where
             let refs: Vec<&str> = packages.iter().map(|s| s.as_str()).collect();
             install_fn(&refs)?;
 
-            println!("✓ Package installation completed successfully!");
+            println!(
+                "{} Package installation completed successfully!",
+                NerdFont::Check
+            );
             Ok(())
         }
         crate::menu_utils::DialogOutcome::Submitted(_)

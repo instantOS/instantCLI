@@ -26,12 +26,7 @@ pub fn apply_wallpaper(path: &str) -> Result<()> {
         // `awww-daemon` forks but stays in the same session by default; closing
         // the terminal sends SIGHUP to the session and kills it, reverting the
         // wallpaper. Use nohup + setsid to detach.
-        Command::new("sh")
-            .args(["-c", "nohup awww-daemon >/dev/null 2>&1 &"])
-            .output()
-            .context("Failed to start awww-daemon")?;
-
-        std::thread::sleep(std::time::Duration::from_millis(500));
+        crate::wallpaper::common::daemonize("nohup awww-daemon >/dev/null 2>&1 &")?;
     }
 
     let output = Command::new("awww")

@@ -82,7 +82,7 @@ main() {
 	ins game backup "${game_name}"
 
 	local backup_output2
-	backup_output2="$(ins_output game backup "${game_name}")"
+	backup_output2="$(ins game backup "${game_name}")"
 	echo "${backup_output2}"
 
 	local snapshot_id2

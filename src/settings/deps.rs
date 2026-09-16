@@ -84,23 +84,7 @@ pub static FASTFETCH: Dependency = Dependency {
     tests: &[InstallTest::WhichSucceeds("fastfetch")],
 };
 
-pub static PACMAN_CONTRIB: Dependency = Dependency {
-    name: "pacman-contrib",
-    packages: &[PackageDefinition::new(
-        "pacman-contrib",
-        PackageManager::Pacman,
-    )],
-    tests: &[
-        InstallTest::WhichSucceeds("paccache"),
-        InstallTest::WhichSucceeds("checkupdates"),
-    ],
-};
-
-pub static TOPGRADE: Dependency = Dependency {
-    name: "topgrade",
-    packages: &[PackageDefinition::new("topgrade", PackageManager::Pacman)],
-    tests: &[InstallTest::WhichSucceeds("topgrade")],
-};
+pub use crate::common::deps::{PACMAN_CONTRIB, TOPGRADE};
 
 pub static GNOME_FIRMWARE: Dependency = Dependency {
     name: "GNOME Firmware manager",

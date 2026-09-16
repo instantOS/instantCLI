@@ -67,7 +67,7 @@ EOF
 	# Test dot repo list JSON output (empty initially)
 	echo "Testing empty repo list JSON output..."
 	local empty_list_json
-	empty_list_json="$(ins_output --output json dot repo list 2>/dev/null)"
+	empty_list_json="$(ins --output json dot repo list 2>/dev/null)"
 	assert_json_field "${empty_list_json}" ".data.count" "0"
 	assert_json_field "${empty_list_json}" ".data.repos" "[]"
 
@@ -78,7 +78,7 @@ EOF
 	# Test dot repo list JSON output (after adding repo)
 	echo "Testing repo list JSON output after adding repo..."
 	local repo_list_json
-	repo_list_json="$(ins_output --output json dot repo list 2>/dev/null)"
+	repo_list_json="$(ins --output json dot repo list 2>/dev/null)"
 	assert_json_field "${repo_list_json}" ".data.count" "1"
 	assert_json_field "${repo_list_json}" ".data.repos[0].name" "basic-test"
 	assert_json_field "${repo_list_json}" ".data.repos[0].enabled" "true"
@@ -89,7 +89,7 @@ EOF
 	# Test dot status JSON output (before apply)
 	echo "Testing dot status JSON output before apply..."
 	local status_json
-	status_json="$(ins_output --output json dot status 2>/dev/null)"
+	status_json="$(ins --output json dot status 2>/dev/null)"
 	assert_json_field "${status_json}" ".data.total_files" "2"
 	assert_json_field "${status_json}" ".data.modified_count" "0"
 	assert_json_field "${status_json}" ".data.outdated_count" "0"
@@ -102,7 +102,7 @@ EOF
 	# Test dot status JSON output (after apply)
 	echo "Testing dot status JSON output after apply..."
 	local applied_status_json
-	applied_status_json="$(ins_output --output json dot status 2>/dev/null)"
+	applied_status_json="$(ins --output json dot status 2>/dev/null)"
 	assert_json_field "${applied_status_json}" ".data.total_files" "2"
 	assert_json_field "${applied_status_json}" ".data.clean_count" "2"
 	assert_json_field "${applied_status_json}" ".data.modified_count" "0"
@@ -116,7 +116,7 @@ EOF
 	# Test individual file status JSON output
 	echo "Testing individual file status JSON output..."
 	local file_status_json
-	file_status_json="$(ins_output --output json dot status .config/instanttest/config.txt 2>/dev/null)"
+	file_status_json="$(ins --output json dot status .config/instanttest/config.txt 2>/dev/null)"
 	assert_json_field "${file_status_json}" ".data.tracked" "true"
 	assert_json_field "${file_status_json}" ".data.repo" "basic-test"
 	assert_json_field "${file_status_json}" ".data.dotfile_dir" "dots"
@@ -124,7 +124,7 @@ EOF
 	# Test directory status JSON output
 	echo "Testing directory status JSON output..."
 	local dir_status_json
-	dir_status_json="$(ins_output --output json dot status .config/instanttest 2>/dev/null)"
+	dir_status_json="$(ins --output json dot status .config/instanttest 2>/dev/null)"
 	assert_json_field "${dir_status_json}" ".data.tracked" "true"
 	assert_json_field "${dir_status_json}" ".data.type" "directory"
 	assert_json_field "${dir_status_json}" ".data.files | length" "2"
@@ -134,7 +134,7 @@ EOF
 	echo "Testing inactive subdir hint for dot merge..."
 	mkdir -p "${HOME}/.ssh"
 	local inactive_merge_output
-	inactive_merge_output="$(ins_output dot merge .ssh 2>&1)"
+	inactive_merge_output="$(ins dot merge .ssh 2>&1)"
 	assert_output_contains "${inactive_merge_output}" "No tracked dotfiles found at ~/.ssh"
 	assert_output_contains "${inactive_merge_output}" "Found a matching source in inactive subdir 'basic-test:extras'"
 	assert_output_contains "${inactive_merge_output}" "ins dot repo subdirs enable basic-test extras"
@@ -156,16 +156,16 @@ EOF
 	assert_file_equals "${HOME}/.config/externaltest/config.txt" "external configuration content"
 
 	local external_list_json
-	external_list_json="$(ins_output --output json dot repo list 2>/dev/null)"
+	external_list_json="$(ins --output json dot repo list 2>/dev/null)"
 	assert_json_field "${external_list_json}" ".data.count" "2"
 	assert_json_field "${external_list_json}" '.data.repos[] | select(.name == "external-test") | .external' "true"
 
 	local external_list_text
-	external_list_text="$(ins_output dot repo list)"
+	external_list_text="$(ins dot repo list)"
 	assert_output_contains "${external_list_text}" "[external]"
 
 	local external_info_text
-	external_info_text="$(ins_output dot repo info external-test)"
+	external_info_text="$(ins dot repo info external-test)"
 	assert_output_contains "${external_info_text}" "External (Yadm/Stow compatible)"
 	assert_output_contains "${external_info_text}" "Fixed layout: uses repository root '.'"
 	assert_output_contains "${external_info_text}" "external repos cannot create '_root' directories"

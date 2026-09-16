@@ -1,6 +1,7 @@
 use crate::menu_utils::ConfirmResult;
 use crate::menu_utils::FzfWrapper;
 use crate::restic::ResticWrapper;
+use crate::ui::nerd_font::NerdFont;
 use anyhow::{Context, Result};
 use colored::*;
 use std::path::Path;
@@ -24,7 +25,11 @@ pub fn initialize_restic_repo(repo: &Path, password: &str, debug: bool) -> Resul
                 if debug {
                     println!(
                         "{}",
-                        "✓ Repository already exists and is accessible".green()
+                        format!(
+                            "{} Repository already exists and is accessible",
+                            NerdFont::Check
+                        )
+                        .green()
                     );
                 }
                 return Ok(true);
@@ -48,7 +53,7 @@ pub fn initialize_restic_repo(repo: &Path, password: &str, debug: bool) -> Resul
             ConfirmResult::Yes => {
                 // Create parent directories
                 std::fs::create_dir_all(repo).context("Failed to create repository directory")?;
-                println!("✓ Created repository directory");
+                println!("{} Created repository directory", NerdFont::Check);
             }
             ConfirmResult::No | ConfirmResult::Cancelled => {
                 println!("Repository initialization cancelled.");
@@ -65,7 +70,10 @@ pub fn initialize_restic_repo(repo: &Path, password: &str, debug: bool) -> Resul
     match restic.init_repository() {
         Ok(()) => {
             if debug {
-                println!("{}", "✓ Repository initialized successfully".green());
+                println!(
+                    "{}",
+                    format!("{} Repository initialized successfully", NerdFont::Check).green()
+                );
             }
             Ok(true)
         }

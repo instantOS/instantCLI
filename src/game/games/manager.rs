@@ -2,6 +2,7 @@ use super::add::{AddGameOptions, ResolvedGameDetails};
 use super::add_discovery::{EmulatorPrefillResult, maybe_prefill_from_emulators};
 use crate::game::config::{Game, GameInstallation, InstallationsConfig, InstantGameConfig};
 use crate::game::launch_command::LaunchCommand;
+use crate::ui::nerd_font::NerdFont;
 use anyhow::{Context, Result};
 
 pub(super) struct GameCreationContext {
@@ -114,7 +115,11 @@ impl GameManager {
 
         let save_path_display = details.save_path.display_string();
 
-        println!("✓ Game '{}' added successfully!", details.name);
+        println!(
+            "{} Game '{}' added successfully!",
+            NerdFont::Check,
+            details.name
+        );
         println!(
             "Game configuration saved with save path: {}",
             save_path_display
@@ -150,7 +155,10 @@ impl GameManager {
 
         let path_display = new_path.display_string();
 
-        println!("✓ Save path for '{game_name}' relocated successfully!");
+        println!(
+            "{} Save path for '{game_name}' relocated successfully!",
+            NerdFont::Check
+        );
         println!("New save path: {}", path_display);
 
         Ok(())

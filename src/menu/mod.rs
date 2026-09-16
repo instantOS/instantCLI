@@ -9,6 +9,7 @@
 use crate::menu_utils::{
     ConfirmResult, DialogOutcome, FilePickerBuilder, FilePickerScope, FzfWrapper, MenuSelection,
 };
+use crate::ui::nerd_font::NerdFont;
 use anyhow::{Context, Result, anyhow};
 use protocol::{ChoiceOptions, InputOptions, SerializableMenuItem};
 use std::io::IsTerminal;
@@ -731,7 +732,7 @@ fn handle_status() -> Result<i32> {
             }
         }
     } else {
-        println!("✗ Menu server is not running");
+        println!("{} Menu server is not running", NerdFont::Cross);
         println!(
             "  Start the server with: {} menu server launch --inside",
             env!("CARGO_BIN_NAME")
@@ -897,7 +898,7 @@ pub async fn handle_server_command(command: ServerCommands) -> Result<i32> {
             let client = client::HostedMenuClient::new();
             match client.stop() {
                 Ok(_) => {
-                    println!("✓ Menu server stopped successfully");
+                    println!("{} Menu server stopped successfully", NerdFont::Check);
                     Ok(0)
                 }
                 Err(e) => {
@@ -907,7 +908,7 @@ pub async fn handle_server_command(command: ServerCommands) -> Result<i32> {
                         || error_msg.contains("No such file or directory")
                         || error_msg.contains("Received empty response")
                     {
-                        println!("✗ Menu server is not running");
+                        println!("{} Menu server is not running", NerdFont::Cross);
                         Ok(1)
                     } else {
                         eprintln!("Error stopping server: {e}");
