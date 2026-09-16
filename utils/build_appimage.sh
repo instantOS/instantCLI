@@ -84,10 +84,11 @@ bundle_fzf() {
 	rm -rf "${tmp}"
 }
 
-bundle_restic
-bundle_rclone
-bundle_gum
-bundle_fzf
+bundle_restic &
+bundle_rclone &
+bundle_gum &
+bundle_fzf &
+wait
 
 cat >"${APPDIR}/AppRun" <<'EOF'
 #!/bin/sh
