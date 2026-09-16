@@ -4,6 +4,9 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+defaults:
+  run:
+    shell: bash
 jobs:
   build:
     name: Build release artifacts
