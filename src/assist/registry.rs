@@ -466,6 +466,14 @@ pub fn find_action(key_sequence: &str) -> Option<&'static AssistAction> {
     }
 }
 
+/// Resolve a contextual help chord: `<group-path>h` opens help for that
+/// group's subtree. Shared by every frontend (`run` handler, chord
+/// navigator, instantmenu) so `h` means help everywhere.
+pub fn contextual_help_path(key_sequence: &str) -> Option<&str> {
+    let path = key_sequence.strip_suffix('h')?;
+    (!path.is_empty() && find_group_entries(path).is_some()).then_some(path)
+}
+
 fn find_entry_in<'a>(entries: &'a [AssistEntry], key_sequence: &str) -> Option<&'a AssistEntry> {
     let mut entries = entries;
     let mut keys = key_sequence.chars().peekable();
@@ -759,5 +767,37 @@ mod tests {
             action.unwrap().description,
             "Repair Wallpaper: Re-apply or regenerate a broken wallpaper"
         );
+    }
+
+    #[test]
+    fn test_contextual_help_chord_resolution() {
+        assert_eq!(contextual_help_path("sh"), Some("s"));
+        assert_eq!(contextual_help_path("ih"), Some("i"));
+        assert_eq!(contextual_help_path("h"), None);
+        assert_eq!(contextual_help_path("s"), None);
+        assert_eq!(contextual_help_path("not-a-grouph"), None);
+    }
+
+    #[test]
+    fn keys_are_unique_per_level_and_groups_reserve_h_for_help() {
+        fn check_level(entries: &[AssistEntry], path: &str) {
+            let scope = if path.is_empty() { "root" } else { path };
+            let mut seen = std::collections::HashSet::new();
+            for entry in entries {
+                let key = entry.key();
+                assert!(seen.insert(key), "duplicate key '{key}' in '{scope}'");
+                if !path.is_empty() {
+                    assert_ne!(
+                        key, 'h',
+                        "'h' in group '{path}' collides with the contextual help chord"
+                    );
+                }
+                if let AssistEntry::Group(group) = entry {
+                    check_level(group.children, &format!("{path}{}", group.key));
+                }
+            }
+        }
+
+        check_level(ASSISTS, "");
     }
 }

@@ -145,46 +145,17 @@ fn show_top_level_instantmenu(assists: &[registry::AssistEntry]) -> Result<Strin
     Ok(label_to_key.get(&selection).cloned().unwrap_or_default())
 }
 
-/// Show group options using instantmenu with single character keys
+/// Show group options using instantmenu with the actions' real registry keys
 fn show_group_options_instantmenu(
     group_prefix: &str,
     entries: &[registry::AssistEntry],
 ) -> Result<()> {
-    let mut options = Vec::new();
-    let mut label_to_chord: HashMap<String, String> = HashMap::new();
+    let (options, label_to_chord) = build_group_options(group_prefix, entries);
 
-    // Filter only actions from the group
-    let actions: Vec<_> = entries
-        .iter()
-        .filter_map(|entry| match entry {
-            registry::AssistEntry::Action(action) => Some(action),
-            _ => None,
-        })
-        .collect();
-
-    if actions.is_empty() {
+    // Only the synthesized help row means the group has no actions
+    if label_to_chord.len() <= 1 {
         println!("No options available in this group");
         return Ok(());
-    }
-
-    // Create single character keys (a, b, c, ...) mapped to the actual chords
-    for (i, action) in actions.iter().enumerate() {
-        let instantmenu_key = char::from(b'a' + i as u8);
-        let actual_chord = format!("{}{}", group_prefix, action.key);
-
-        // Compact `key ◆ name` label; the full description lives in help (h)
-        let label = format!(
-            "{} {} {}",
-            instantmenu_key,
-            NerdFont::Diamond,
-            short_name(action.description)
-        );
-        label_to_chord.insert(label.clone(), actual_chord);
-
-        options.push(format!(
-            "{{key={} icon={}}} {}",
-            instantmenu_key, action.icon, label
-        ));
     }
 
     let input = options.join("\n");
@@ -195,14 +166,112 @@ fn show_group_options_instantmenu(
         return Ok(());
     }
 
-    let actual_chord = label_to_chord
+    let chord = label_to_chord
         .get(&selection)
         .cloned()
         .ok_or_else(|| anyhow::anyhow!("Invalid selection: {}", selection))?;
 
-    // Execute the selected action
-    let action = registry::find_action(&actual_chord)
-        .ok_or_else(|| anyhow::anyhow!("Assist not found for key: {}", actual_chord))?;
+    // `h` opens contextual help for this group, as in every other backend
+    if let Some(path) = registry::contextual_help_path(&chord) {
+        return super::actions::help::show_help_for_path(path);
+    }
 
-    super::execute::execute_assist(action, &actual_chord)
+    // Execute the selected action
+    let action = registry::find_action(&chord)
+        .ok_or_else(|| anyhow::anyhow!("Assist not found for key: {}", chord))?;
+
+    super::execute::execute_assist(action, &chord)
+}
+
+/// Build the group menu rows: one per action using its real registry key,
+/// plus the synthesized `h` contextual-help row. Keys stay in the canonical
+/// namespace, so what the menu shows is what `assist run`, the chord
+/// navigator, and the WM exports accept.
+fn build_group_options(
+    group_prefix: &str,
+    entries: &[registry::AssistEntry],
+) -> (Vec<String>, HashMap<String, String>) {
+    let mut options = Vec::new();
+    let mut label_to_chord: HashMap<String, String> = HashMap::new();
+
+    // `h` inside a group is reserved for contextual help (registry test
+    // enforces this); skip any defensively.
+    for action in entries.iter().filter_map(|entry| match entry {
+        registry::AssistEntry::Action(action) if action.key != 'h' => Some(action),
+        _ => None,
+    }) {
+        let chord = format!("{}{}", group_prefix, action.key);
+
+        // Compact `key ◆ name` label; the full description lives in help (h)
+        let label = format!(
+            "{} {} {}",
+            action.key,
+            NerdFont::Diamond,
+            short_name(action.description)
+        );
+        label_to_chord.insert(label.clone(), chord);
+
+        options.push(format!(
+            "{{key={} icon={}}} {}",
+            action.key, action.icon, label
+        ));
+    }
+
+    // Synthesize `h` = help, mirroring the chord navigator and WM exports
+    let help_label = format!("h {} Help", NerdFont::Diamond);
+    label_to_chord.insert(help_label.clone(), format!("{group_prefix}h"));
+    options.push(format!(
+        "{{key=h icon={}}} {}",
+        NerdFont::Question,
+        help_label
+    ));
+
+    (options, label_to_chord)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn group_menu_keeps_registry_keys_and_synthesizes_help() {
+        let children = registry::find_group_entries("s").expect("s group exists");
+        let (options, label_to_chord) = build_group_options("s", children);
+
+        // Actions activate their real registry key: the QR scanner stays on
+        // `q` instead of being remapped onto `h` positionally
+        let qr_label = label_to_chord
+            .keys()
+            .find(|label| label.contains("QR Code Scanner"))
+            .expect("QR row");
+        assert!(qr_label.starts_with("q "));
+        assert_eq!(label_to_chord.get(qr_label), Some(&"sq".to_string()));
+        assert!(
+            options
+                .iter()
+                .any(|row| row.starts_with("{key=q ") && row.contains("QR Code Scanner"))
+        );
+
+        // `h` is the synthesized contextual help row, not an action
+        let help_label = label_to_chord
+            .keys()
+            .find(|label| label.contains("Help"))
+            .expect("help row");
+        assert!(help_label.starts_with("h "));
+        assert_eq!(label_to_chord.get(help_label), Some(&"sh".to_string()));
+        assert!(
+            options
+                .iter()
+                .any(|row| row.starts_with("{key=h ") && row.contains("Help"))
+        );
+
+        // Menu keys are unique
+        let mut keys: Vec<char> = label_to_chord
+            .keys()
+            .map(|label| label.chars().next().expect("label starts with key"))
+            .collect();
+        keys.sort_unstable();
+        keys.dedup();
+        assert_eq!(keys.len(), label_to_chord.len());
+    }
 }

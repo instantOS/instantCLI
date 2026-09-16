@@ -112,13 +112,9 @@ pub fn dispatch_assist_command(
             super::actions::system::brightness_direct(&action)
         }
         Some(AssistCommands::Run { key_sequence }) => {
-            // Check if this is a help request (ends with 'h')
-            if key_sequence.ends_with('h') && key_sequence.len() > 1 {
-                let path = &key_sequence[..key_sequence.len() - 1];
-                // Verify the path is valid group
-                if registry::find_group_entries(path).is_some() {
-                    return super::actions::help::show_help_for_path(path);
-                }
+            // `<group-path>h` opens contextual help for that subtree
+            if let Some(path) = registry::contextual_help_path(&key_sequence) {
+                return super::actions::help::show_help_for_path(path);
             }
 
             let action = registry::find_action(&key_sequence).ok_or_else(|| {
@@ -212,7 +208,7 @@ fn run_assist_selector(use_instantmenu: bool) -> Result<()> {
 
     match client.chord(chord_specs) {
         Ok(crate::menu_utils::DialogOutcome::Submitted(selected_key)) => {
-            if let Some(path) = contextual_help_path(&selected_key) {
+            if let Some(path) = registry::contextual_help_path(&selected_key) {
                 return super::actions::help::show_help_for_path(path);
             }
 
@@ -281,11 +277,6 @@ fn build_chord_specs(entries: &[registry::AssistEntry]) -> Vec<String> {
     }
 
     specs
-}
-
-fn contextual_help_path(key_sequence: &str) -> Option<&str> {
-    let path = key_sequence.strip_suffix('h')?;
-    (!path.is_empty() && registry::find_group_entries(path).is_some()).then_some(path)
 }
 
 /// Export assists to Window Manager config format
@@ -383,8 +374,5 @@ mod tests {
                 .iter()
                 .any(|spec| spec.starts_with("sh:") && spec.contains("Search assists"))
         );
-        assert_eq!(contextual_help_path("sh"), Some("s"));
-        assert_eq!(contextual_help_path("h"), None);
-        assert_eq!(contextual_help_path("not-a-grouph"), None);
     }
 }
