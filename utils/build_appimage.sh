@@ -126,6 +126,8 @@ download "${ICON_URL}" "${DOWNLOAD_DIR}/instantcli.png"
 install -Dm644 "${DOWNLOAD_DIR}/instantcli.png" "${APPDIR}/instantcli.png"
 
 install -Dm644 "LICENSE" "${APPDIR}/usr/share/doc/ins/LICENSE"
+install -Dm644 "src/assist/actions/emoji/LICENSE" \
+	"${APPDIR}/usr/share/doc/ins/emoji-catalog-LICENSE"
 
 APPIMAGETOOL="${WORK_DIR}/appimagetool-x86_64.AppImage"
 if [[ ! -x "${APPIMAGETOOL}" ]]; then

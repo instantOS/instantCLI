@@ -275,17 +275,14 @@ pub static KDIALOG: Dependency = Dependency {
     tests: &[InstallTest::WhichSucceeds("kdialog")],
 };
 
-/// Emote - emoji picker (Flatpak only)
-pub static EMOTE: Dependency = Dependency {
-    name: "Emote",
-    packages: &[PackageDefinition::new(
-        "com.tomjwatson.Emote",
-        PackageManager::Flatpak,
-    )],
-    tests: &[InstallTest::CommandSucceeds {
-        program: "flatpak",
-        args: &["info", "com.tomjwatson.Emote"],
-    }],
+/// instantmenu - menu backend for instantOS tools.
+pub static INSTANTMENU: Dependency = Dependency {
+    name: "instantmenu",
+    packages: &[
+        PackageDefinition::new("instantmenu", PackageManager::Pacman),
+        PackageDefinition::new("instantmenu", PackageManager::Aur),
+    ],
+    tests: &[InstallTest::WhichSucceeds("instantmenu")],
 };
 
 /// Kooha - simple screen recorder (Flatpak only)
