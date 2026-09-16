@@ -90,10 +90,34 @@ jobs:
             artifacts/ins-${{ steps.vars.outputs.version }}-x86_64.AppImage
             artifacts/ins-${{ steps.vars.outputs.version }}-x86_64.AppImage.sha256
   cross-compile:
-    name: Cross-compile for ARM and musl targets
+    name: Cross-compile ${{ matrix.target }}
     runs-on: ubuntu-24.04
     container:
       image: ubuntu:24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-unknown-linux-gnu
+            build_target: aarch64-unknown-linux-gnu.2.17
+            kind: zig
+            pkg: ins-aarch64-unknown-linux-gnu
+          - target: armv7-unknown-linux-gnueabihf
+            build_target: armv7-unknown-linux-gnueabihf.2.17
+            kind: zig
+            pkg: ins-armv7-unknown-linux-gnueabihf
+          - target: x86_64-unknown-linux-musl
+            build_target: x86_64-unknown-linux-musl
+            kind: zig
+            pkg: ins-x86_64-unknown-linux-musl
+          - target: aarch64-unknown-linux-musl
+            build_target: aarch64-unknown-linux-musl
+            kind: zig
+            pkg: ins-aarch64-unknown-linux-musl
+          - target: aarch64-linux-android
+            build_target: aarch64-linux-android
+            kind: ndk
+            pkg: ins-aarch64-termux
     env:
       CARGO_TERM_COLOR: always
       DEBIAN_FRONTEND: noninteractive
@@ -113,9 +137,10 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-unknown-linux-gnu,armv7-unknown-linux-gnueabihf,x86_64-unknown-linux-musl,aarch64-unknown-linux-musl,aarch64-linux-android
+          targets: ${{ matrix.target }}
           components: llvm-tools-preview
       - name: Install zig
+        if: matrix.kind == 'zig'
         env:
           ZIG_VERSION: 0.15.1
           ZIG_SHASUM: c61c5da6edeea14ca51ecd5e4520c6f4189ef5250383db33d01848293bfafe05
@@ -129,11 +154,18 @@ jobs:
           rm "/tmp/${tarball}"
           echo "/opt/zig-x86_64-linux-${ZIG_VERSION}" >> "$GITHUB_PATH"
           "/opt/zig-x86_64-linux-${ZIG_VERSION}/zig" version
-      - name: Install cargo tools
+      - name: Install cargo-zigbuild
+        if: matrix.kind == 'zig'
         uses: taiki-e/install-action@v2
         with:
-          tool: cargo-zigbuild@0.23,cargo-ndk@4.1.2
+          tool: cargo-zigbuild@0.23
+      - name: Install cargo-ndk
+        if: matrix.kind == 'ndk'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-ndk@4.1.2
       - name: Install Android NDK
+        if: matrix.kind == 'ndk'
         id: setup-ndk
         uses: nttld/setup-ndk@v1
         with:
@@ -151,92 +183,41 @@ jobs:
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
-          key: cross-compile
-      - name: Cross compile for ARM64 Linux
-        run: cargo zigbuild --locked --release --features cross-compile --target aarch64-unknown-linux-gnu.2.17
-      - name: Cross compile for ARMv7 Linux
-        run: cargo zigbuild --locked --release --features cross-compile --target armv7-unknown-linux-gnueabihf.2.17
-      - name: Cross compile for x86_64 musl
-        run: cargo zigbuild --locked --release --features cross-compile --target x86_64-unknown-linux-musl
-      - name: Cross compile for aarch64 musl
-        run: cargo zigbuild --locked --release --features cross-compile --target aarch64-unknown-linux-musl
-      - name: Strip cross-compiled binaries
-        run: |
-          LLVM_STRIP="$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | awk '/^host:/ {print $2}')/bin/llvm-strip"
-          "$LLVM_STRIP" target/aarch64-unknown-linux-gnu/release/ins
-          "$LLVM_STRIP" target/armv7-unknown-linux-gnueabihf/release/ins
-          "$LLVM_STRIP" target/x86_64-unknown-linux-musl/release/ins
-          "$LLVM_STRIP" target/aarch64-unknown-linux-musl/release/ins
+          key: cross-${{ matrix.target }}
+      - name: Cross compile (zig)
+        if: matrix.kind == 'zig'
+        run: cargo zigbuild --locked --release --features cross-compile --target ${{ matrix.build_target }}
       - name: Build for Android
+        if: matrix.kind == 'ndk'
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
-        run: cargo ndk -t aarch64-linux-android build --release --locked --features cross-compile
-      - name: Collect cross-compile artifacts
+        run: cargo ndk -t ${{ matrix.build_target }} build --release --locked --features cross-compile
+      - name: Strip binary
+        run: |
+          LLVM_STRIP="$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | awk '/^host:/ {print $2}')/bin/llvm-strip"
+          "$LLVM_STRIP" "target/${{ matrix.target }}/release/ins"
+      - name: Collect artifact
         env:
           VERSION: ${{ steps.vars.outputs.version }}
+          PKG: ${{ matrix.pkg }}
+          TARGET_DIR: ${{ matrix.target }}
         run: |
           mkdir -p artifacts
-
-          # ARM64 Linux
-          pkg_dir_aarch64="ins-aarch64-unknown-linux-gnu-v${VERSION}"
-          tmpdir_aarch64=$(mktemp -d)
-          mkdir -p "$tmpdir_aarch64/$pkg_dir_aarch64"
-          install -Dm0755 "target/aarch64-unknown-linux-gnu/release/ins" "$tmpdir_aarch64/$pkg_dir_aarch64/ins"
-          tar -czf "artifacts/${pkg_dir_aarch64}.tgz" -C "$tmpdir_aarch64" "$pkg_dir_aarch64"
-          sha256sum "artifacts/${pkg_dir_aarch64}.tgz" > "artifacts/${pkg_dir_aarch64}.tgz.sha256"
-          rm -rf "$tmpdir_aarch64"
-
-          # ARMv7 Linux
-          pkg_dir_armv7="ins-armv7-unknown-linux-gnueabihf-v${VERSION}"
-          tmpdir_armv7=$(mktemp -d)
-          mkdir -p "$tmpdir_armv7/$pkg_dir_armv7"
-          install -Dm0755 "target/armv7-unknown-linux-gnueabihf/release/ins" "$tmpdir_armv7/$pkg_dir_armv7/ins"
-          tar -czf "artifacts/${pkg_dir_armv7}.tgz" -C "$tmpdir_armv7" "$pkg_dir_armv7"
-          sha256sum "artifacts/${pkg_dir_armv7}.tgz" > "artifacts/${pkg_dir_armv7}.tgz.sha256"
-          rm -rf "$tmpdir_armv7"
-
-          # x86_64 musl (static)
-          pkg_dir_musl_x86="ins-x86_64-unknown-linux-musl-v${VERSION}"
-          tmpdir_musl_x86=$(mktemp -d)
-          mkdir -p "$tmpdir_musl_x86/$pkg_dir_musl_x86"
-          install -Dm0755 "target/x86_64-unknown-linux-musl/release/ins" "$tmpdir_musl_x86/$pkg_dir_musl_x86/ins"
-          tar -czf "artifacts/${pkg_dir_musl_x86}.tgz" -C "$tmpdir_musl_x86" "$pkg_dir_musl_x86"
-          sha256sum "artifacts/${pkg_dir_musl_x86}.tgz" > "artifacts/${pkg_dir_musl_x86}.tgz.sha256"
-          rm -rf "$tmpdir_musl_x86"
-
-          # aarch64 musl (static)
-          pkg_dir_musl_arm="ins-aarch64-unknown-linux-musl-v${VERSION}"
-          tmpdir_musl_arm=$(mktemp -d)
-          mkdir -p "$tmpdir_musl_arm/$pkg_dir_musl_arm"
-          install -Dm0755 "target/aarch64-unknown-linux-musl/release/ins" "$tmpdir_musl_arm/$pkg_dir_musl_arm/ins"
-          tar -czf "artifacts/${pkg_dir_musl_arm}.tgz" -C "$tmpdir_musl_arm" "$pkg_dir_musl_arm"
-          sha256sum "artifacts/${pkg_dir_musl_arm}.tgz" > "artifacts/${pkg_dir_musl_arm}.tgz.sha256"
-          rm -rf "$tmpdir_musl_arm"
-
-          # Android ARM64 (Termux)
-          pkg_dir_termux="ins-aarch64-termux-v${VERSION}"
-          tmpdir_termux=$(mktemp -d)
-          mkdir -p "$tmpdir_termux/$pkg_dir_termux"
-          install -Dm0755 "target/aarch64-linux-android/release/ins" "$tmpdir_termux/$pkg_dir_termux/ins"
-          tar -czf "artifacts/${pkg_dir_termux}.tgz" -C "$tmpdir_termux" "$pkg_dir_termux"
-          sha256sum "artifacts/${pkg_dir_termux}.tgz" > "artifacts/${pkg_dir_termux}.tgz.sha256"
-          rm -rf "$tmpdir_termux"
-      - name: Upload cross-compile artifacts
+          pkg_dir="${PKG}-v${VERSION}"
+          tmpdir=$(mktemp -d)
+          mkdir -p "$tmpdir/$pkg_dir"
+          install -Dm0755 "target/${TARGET_DIR}/release/ins" "$tmpdir/$pkg_dir/ins"
+          tar -czf "artifacts/${pkg_dir}.tgz" -C "$tmpdir" "$pkg_dir"
+          sha256sum "artifacts/${pkg_dir}.tgz" > "artifacts/${pkg_dir}.tgz.sha256"
+          rm -rf "$tmpdir"
+      - name: Upload cross-compile artifact
         uses: actions/upload-artifact@v7
         with:
-          name: ins-${{ steps.vars.outputs.version }}-cross-binaries
+          name: ins-${{ steps.vars.outputs.version }}-${{ matrix.target }}
           path: |
-            artifacts/ins-aarch64-unknown-linux-gnu-v${{ steps.vars.outputs.version }}.tgz
-            artifacts/ins-aarch64-unknown-linux-gnu-v${{ steps.vars.outputs.version }}.tgz.sha256
-            artifacts/ins-armv7-unknown-linux-gnueabihf-v${{ steps.vars.outputs.version }}.tgz
-            artifacts/ins-armv7-unknown-linux-gnueabihf-v${{ steps.vars.outputs.version }}.tgz.sha256
-            artifacts/ins-x86_64-unknown-linux-musl-v${{ steps.vars.outputs.version }}.tgz
-            artifacts/ins-x86_64-unknown-linux-musl-v${{ steps.vars.outputs.version }}.tgz.sha256
-            artifacts/ins-aarch64-unknown-linux-musl-v${{ steps.vars.outputs.version }}.tgz
-            artifacts/ins-aarch64-unknown-linux-musl-v${{ steps.vars.outputs.version }}.tgz.sha256
-            artifacts/ins-aarch64-termux-v${{ steps.vars.outputs.version }}.tgz
-            artifacts/ins-aarch64-termux-v${{ steps.vars.outputs.version }}.tgz.sha256
+            artifacts/${{ matrix.pkg }}-v${{ steps.vars.outputs.version }}.tgz
+            artifacts/${{ matrix.pkg }}-v${{ steps.vars.outputs.version }}.tgz.sha256
   pkgbuild:
     name: Build Arch package
     runs-on: ubuntu-24.04
