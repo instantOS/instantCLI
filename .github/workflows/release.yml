@@ -102,22 +102,27 @@ jobs:
             build_target: aarch64-unknown-linux-gnu.2.17
             kind: zig
             pkg: ins-aarch64-unknown-linux-gnu
+            artifact: aarch64-unknown-linux-gnu
           - target: armv7-unknown-linux-gnueabihf
             build_target: armv7-unknown-linux-gnueabihf.2.17
             kind: zig
             pkg: ins-armv7-unknown-linux-gnueabihf
+            artifact: armv7-unknown-linux-gnueabihf
           - target: x86_64-unknown-linux-musl
             build_target: x86_64-unknown-linux-musl
             kind: zig
             pkg: ins-x86_64-unknown-linux-musl
+            artifact: x86_64-unknown-linux-musl
           - target: aarch64-unknown-linux-musl
             build_target: aarch64-unknown-linux-musl
             kind: zig
             pkg: ins-aarch64-unknown-linux-musl
+            artifact: aarch64-unknown-linux-musl
           - target: aarch64-linux-android
             build_target: aarch64-linux-android
             kind: ndk
             pkg: ins-aarch64-termux
+            artifact: aarch64-termux
     env:
       CARGO_TERM_COLOR: always
       DEBIAN_FRONTEND: noninteractive
@@ -214,7 +219,7 @@ jobs:
       - name: Upload cross-compile artifact
         uses: actions/upload-artifact@v7
         with:
-          name: ins-${{ steps.vars.outputs.version }}-${{ matrix.target }}
+          name: ins-${{ steps.vars.outputs.version }}-${{ matrix.artifact }}
           path: |
             artifacts/${{ matrix.pkg }}-v${{ steps.vars.outputs.version }}.tgz
             artifacts/${{ matrix.pkg }}-v${{ steps.vars.outputs.version }}.tgz.sha256
