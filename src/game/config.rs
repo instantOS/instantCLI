@@ -293,6 +293,19 @@ impl InstantGameConfig {
 
     pub fn save(&self) -> Result<()> {
         let path = games_config_path()?;
+        // Protect the plaintext repository password before writing any content.
+        // Open without truncation so an error cannot erase the existing config.
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .mode(0o600)
+            .open(&path)?;
+        file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
         self.save_documented_pretty_toml(path, Some("Instant game configuration"))
     }
 

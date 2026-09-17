@@ -21,12 +21,18 @@ mod restic;
 
 pub fn setup_uninstalled_games() -> Result<()> {
     let mut game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
+    let initialized_here = !game_config.is_initialized();
+    if initialized_here {
+        use crate::game::repository::manager::{GameRepositoryManager, InitOptions, InitOutcome};
+        if GameRepositoryManager::initialize_game_manager(false, InitOptions::default())?
+            == InitOutcome::Cancelled
+        {
+            return Ok(());
+        }
+        game_config = InstantGameConfig::load().context("Failed to reload game configuration")?;
+    }
     let mut installations =
         InstallationsConfig::load().context("Failed to load installations configuration")?;
-
-    if !validate_game_manager_initialized()? {
-        return Ok(());
-    }
 
     loop {
         let snapshot_overview = restic::collect_snapshot_overview(&game_config)?;
@@ -38,6 +44,12 @@ pub fn setup_uninstalled_games() -> Result<()> {
                 "{} No games require setup. Use `ins game add` to add a new game.",
                 char::from(NerdFont::Info)
             );
+            if initialized_here
+                && FzfWrapper::confirm("Backup storage is ready. Add a game now?")?
+                    == crate::menu_utils::ConfirmResult::Yes
+            {
+                GameManager::add_game(AddGameOptions::default())?;
+            }
             return Ok(());
         }
 

@@ -42,9 +42,13 @@ fn ensure_restic_available() -> Result<()> {
 
 pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
     match command {
-        GameCommands::Init { repo, password } => {
+        GameCommands::Init {
+            repo,
+            password,
+            existing,
+        } => {
             ensure_restic_available()?;
-            handle_init(debug, repo, password)
+            handle_init(debug, repo, password, existing)
         }
         GameCommands::Add {
             name,
@@ -304,8 +308,38 @@ fn handle_scan_wine_prefix(prefix: Option<String>, list: bool) -> Result<()> {
     }
 }
 
-fn handle_init(debug: bool, repo: Option<String>, password: Option<String>) -> Result<()> {
-    GameRepositoryManager::initialize_game_manager(debug, InitOptions { repo, password })
+fn handle_init(
+    debug: bool,
+    repo: Option<String>,
+    password: Option<String>,
+    existing: bool,
+) -> Result<()> {
+    let interactive = repo.is_none();
+    let outcome = GameRepositoryManager::initialize_game_manager(
+        debug,
+        InitOptions {
+            repo,
+            password,
+            existing,
+        },
+    )?;
+    if interactive && outcome == super::repository::manager::InitOutcome::Ready {
+        use crate::menu_utils::{DialogOutcome, FzfWrapper};
+        match FzfWrapper::builder()
+            .header("Backup storage is ready. What next?")
+            .items(vec!["Finish", "Add a game", "Set up games from backups"])
+            .select_one()?
+        {
+            DialogOutcome::Submitted("Add a game") => {
+                GameManager::add_game(AddGameOptions::default())?
+            }
+            DialogOutcome::Submitted("Set up games from backups") => {
+                setup::setup_uninstalled_games()?
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 fn handle_add(options: AddGameOptions) -> Result<()> {

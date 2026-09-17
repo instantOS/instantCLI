@@ -65,6 +65,7 @@ pub(super) fn setup_single_game_with_discovered_path(
     let snapshot_selection = gather_snapshot_selection(game_name, game_config, snapshot_context)?;
     snapshot_selection.announce(game_name, discovered_save_path);
 
+    let mut discovered_save_path = discovered_save_path;
     let outcome = loop {
         let selected_path = snapshot_selection.select_path(game_name, discovered_save_path)?;
 
@@ -77,7 +78,12 @@ pub(super) fn setup_single_game_with_discovered_path(
                 &snapshot_selection,
             )? {
                 FinalizeOutcome::Done(outcome) => break outcome,
-                FinalizeOutcome::Reselect => continue,
+                FinalizeOutcome::Reselect => {
+                    // A discovered path is only the initial suggestion. Reselect must
+                    // let the user enter another path instead of retrying it forever.
+                    discovered_save_path = None;
+                    continue;
+                }
             },
             None => {
                 emit(
@@ -317,6 +323,7 @@ fn finalize_game_setup(
         RestoreFlow::Cancelled => {
             return Ok(FinalizeOutcome::Done(SetupStepOutcome::Cancelled));
         }
+        RestoreFlow::Reselect => return Ok(FinalizeOutcome::Reselect),
         RestoreFlow::Proceed(value) => value,
     };
 
@@ -487,19 +494,18 @@ fn prepare_save_path(
                     );
                     path_created = true;
                 }
-                ConfirmResult::No | ConfirmResult::Cancelled => {
-                    match resolve_missing_path(display, "Save directory")? {
-                        MissingPathChoiceKind::UseAnyway => {
-                            println!("Directory not created. You can create it later when needed.");
-                        }
-                        MissingPathChoiceKind::Reselect => {
-                            return Ok(PathPreparationOutcome::Reselect);
-                        }
-                        MissingPathChoiceKind::Cancel => {
-                            return Ok(PathPreparationOutcome::Cancelled);
-                        }
+                ConfirmResult::Cancelled => return Ok(PathPreparationOutcome::Cancelled),
+                ConfirmResult::No => match resolve_missing_path(display, "Save directory")? {
+                    MissingPathChoiceKind::UseAnyway => {
+                        println!("Directory not created. You can create it later when needed.");
                     }
-                }
+                    MissingPathChoiceKind::Reselect => {
+                        return Ok(PathPreparationOutcome::Reselect);
+                    }
+                    MissingPathChoiceKind::Cancel => {
+                        return Ok(PathPreparationOutcome::Cancelled);
+                    }
+                },
             }
         }
     } else {
@@ -537,7 +543,8 @@ fn prepare_save_path(
                         None,
                     );
                 }
-                ConfirmResult::No | ConfirmResult::Cancelled => {
+                ConfirmResult::Cancelled => return Ok(PathPreparationOutcome::Cancelled),
+                ConfirmResult::No => {
                     let parent_display = parent.display().to_string();
                     match resolve_missing_path(&parent_display, "Parent directory")? {
                         MissingPathChoiceKind::UseAnyway => {
@@ -617,9 +624,28 @@ fn resolve_single_file_save_path(
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RestoreFlow {
     Proceed(bool),
+    Reselect,
     Cancelled,
+}
+
+#[derive(Clone)]
+struct RestoreChoice {
+    label: &'static str,
+    description: String,
+    flow: RestoreFlow,
+}
+
+impl FzfSelectable for RestoreChoice {
+    fn fzf_display_text(&self) -> String {
+        self.label.to_string()
+    }
+
+    fn fzf_preview(&self) -> protocol::FzfPreview {
+        protocol::FzfPreview::Text(self.description.clone())
+    }
 }
 
 fn resolve_restore_decision(
@@ -637,27 +663,60 @@ fn resolve_restore_decision(
         let info = directory_info
             .ok_or_else(|| anyhow!("Directory information missing for restore confirmation"))?;
         format!(
-            "{} The directory '{display}' already contains {} file{}.\nRestoring from backup will replace its contents. Proceed?",
+            "{} The directory '{display}' already contains {} file{}.\nRestoring from backup will replace its contents.",
             char::from(NerdFont::Warning),
             info.file_count,
             if info.file_count == 1 { "" } else { "s" }
         )
     } else {
         format!(
-            "{} The file '{display}' already exists. Restoring from backup will overwrite it. Proceed?",
+            "{} The file '{display}' already exists. Restoring from backup will overwrite it.",
             char::from(NerdFont::Warning)
         )
     };
 
-    match FzfWrapper::builder()
-        .confirm(prompt)
-        .yes_text("Restore and overwrite")
-        .no_text("Choose a different path")
-        .confirm_dialog()
-        .map_err(|e| anyhow!("Failed to confirm restore overwrite: {e}"))?
+    // Keep the non-destructive action first so Enter cannot overwrite saves by default.
+    let options = vec![
+        RestoreChoice {
+            label: "Keep existing saves",
+            description: format!(
+                "Set up the game using the existing saves at '{display}'. Do not restore a backup or overwrite these saves."
+            ),
+            flow: RestoreFlow::Proceed(false),
+        },
+        RestoreChoice {
+            label: "Restore backup and overwrite",
+            description: format!(
+                "Restore the latest backup into '{display}', replacing the existing saves. Local progress may be lost."
+            ),
+            flow: RestoreFlow::Proceed(true),
+        },
+        RestoreChoice {
+            label: "Choose a different path",
+            description:
+                "Return to save path selection without restoring a backup or setting up this path."
+                    .to_string(),
+            flow: RestoreFlow::Reselect,
+        },
+    ];
+
+    let flow = match FzfWrapper::builder()
+        .header(
+            HeaderBuilder::new(NerdFont::Warning, prompt)
+                .subtitle("Choose how to handle existing saves, or press Esc to cancel setup.")
+                .build(),
+        )
+        .items(options)
+        .padded()
+        .select_one()
+        .map_err(|e| anyhow!("Failed to select restore action: {e}"))?
     {
-        ConfirmResult::Yes => Ok(RestoreFlow::Proceed(true)),
-        ConfirmResult::No => {
+        crate::menu_utils::DialogOutcome::Submitted(choice) => choice.flow,
+        crate::menu_utils::DialogOutcome::Cancelled => RestoreFlow::Cancelled,
+    };
+
+    match flow {
+        RestoreFlow::Proceed(false) => {
             if kind.is_directory() {
                 println!(
                     "{} Keeping existing files in '{display}'. Restore skipped.",
@@ -671,7 +730,8 @@ fn resolve_restore_decision(
             }
             Ok(RestoreFlow::Proceed(false))
         }
-        ConfirmResult::Cancelled => {
+        RestoreFlow::Proceed(true) | RestoreFlow::Reselect => Ok(flow),
+        RestoreFlow::Cancelled => {
             emit(
                 Level::Warn,
                 "game.setup.cancelled",
@@ -925,6 +985,110 @@ impl FzfSelectable for SavePathKindOption {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::menu_utils::{MockQueue, scripted_responses_remaining};
+
+    #[test]
+    fn existing_saves_offer_keep_restore_and_reselect() -> Result<()> {
+        let info = SaveDirectoryInfo {
+            last_modified: None,
+            file_count: 2,
+            total_size: 100,
+        };
+        for kind in [PathContentKind::Directory, PathContentKind::File] {
+            for (index, expected) in [
+                (0, RestoreFlow::Proceed(false)),
+                (1, RestoreFlow::Proceed(true)),
+                (2, RestoreFlow::Reselect),
+            ] {
+                let _guard = MockQueue::new().select_index(index).guard();
+                let flow = resolve_restore_decision(
+                    "test-game",
+                    "/test/saves",
+                    kind,
+                    determine_restore_decision(true, true, false, 2, kind),
+                    Some(&info),
+                )?;
+                assert_eq!(flow, expected);
+                assert_eq!(scripted_responses_remaining(), 0);
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn existing_saves_escape_cancels_setup() -> Result<()> {
+        let info = SaveDirectoryInfo {
+            last_modified: None,
+            file_count: 1,
+            total_size: 100,
+        };
+        for kind in [PathContentKind::Directory, PathContentKind::File] {
+            let _guard = MockQueue::new().cancel_selection().guard();
+            assert_eq!(
+                resolve_restore_decision(
+                    "test-game",
+                    "/test/saves",
+                    kind,
+                    determine_restore_decision(true, true, false, 1, kind),
+                    Some(&info),
+                )?,
+                RestoreFlow::Cancelled
+            );
+            assert_eq!(scripted_responses_remaining(), 0);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn missing_directory_escape_cancels_without_followup() -> Result<()> {
+        for kind in [PathContentKind::Directory, PathContentKind::File] {
+            let temp = tempfile::tempdir()?;
+            let missing_directory = temp.path().join("missing");
+            let path = if kind.is_directory() {
+                missing_directory.clone()
+            } else {
+                missing_directory.join("save.dat")
+            };
+            // Leave a follow-up response queued to detect Esc incorrectly behaving as No.
+            let _guard = MockQueue::new().confirm_cancelled().select_index(0).guard();
+            assert!(matches!(
+                prepare_save_path(&TildePath::new(path), kind, "test save path")?,
+                PathPreparationOutcome::Cancelled
+            ));
+            assert_eq!(scripted_responses_remaining(), 1);
+            assert!(!missing_directory.exists());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn missing_directory_no_still_offers_keep_reselect_and_cancel() -> Result<()> {
+        for kind in [PathContentKind::Directory, PathContentKind::File] {
+            for index in 0..3 {
+                let temp = tempfile::tempdir()?;
+                let missing_directory = temp.path().join("missing");
+                let path = if kind.is_directory() {
+                    missing_directory.clone()
+                } else {
+                    missing_directory.join("save.dat")
+                };
+                let _guard = MockQueue::new().confirm_no().select_index(index).guard();
+                let outcome = prepare_save_path(&TildePath::new(path), kind, "test save path")?;
+                match (index, outcome) {
+                    (0, PathPreparationOutcome::Ready(prep)) => {
+                        assert!(!prep.path_created);
+                        assert!(!prep.exists_after);
+                    }
+                    (1, PathPreparationOutcome::Reselect)
+                    | (2, PathPreparationOutcome::Cancelled) => {}
+                    _ => panic!("Unexpected outcome for missing path choice {index}"),
+                }
+                assert_eq!(scripted_responses_remaining(), 0);
+                assert!(!missing_directory.exists());
+            }
+        }
+        Ok(())
+    }
 
     #[test]
     fn restore_not_attempted_without_snapshots() {
