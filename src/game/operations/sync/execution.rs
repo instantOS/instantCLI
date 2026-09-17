@@ -17,7 +17,7 @@ pub fn perform_backup(
 
     // Update checkpoint after successful backup
     checkpoint::update_checkpoint_after_backup(
-        &backup_result,
+        backup_result.snapshot_id.as_deref(),
         &installation.game_name.0,
         game_config,
     )?;
@@ -52,9 +52,6 @@ pub fn perform_restore(
             snapshot_source_path: snapshot_hint.as_deref(),
         })
         .context("Failed to restore from snapshot")?;
-
-    // Update the installation with the checkpoint
-    checkpoint::update_checkpoint_after_restore(&installation.game_name.0, snapshot_id)?;
 
     // Invalidate cache for this game after successful restore
     let repo_path = game_config.repo.as_path().to_string_lossy().to_string();

@@ -19,6 +19,12 @@ mod install;
 mod paths;
 mod restic;
 
+pub(crate) fn choose_reconciliation_path(
+    game_name: &str,
+) -> Result<Option<(crate::common::TildePath, PathContentKind)>> {
+    install::choose_reconciliation_path(game_name)
+}
+
 pub fn setup_uninstalled_games() -> Result<()> {
     let mut game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
     let initialized_here = !game_config.is_initialized();
@@ -30,6 +36,9 @@ pub fn setup_uninstalled_games() -> Result<()> {
             return Ok(());
         }
         game_config = InstantGameConfig::load().context("Failed to reload game configuration")?;
+    }
+    if !crate::game::reconciliation::reconcile_configured_games(&game_config)? {
+        return Ok(());
     }
     let mut installations =
         InstallationsConfig::load().context("Failed to load installations configuration")?;

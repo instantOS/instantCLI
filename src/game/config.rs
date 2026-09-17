@@ -163,6 +163,15 @@ pub struct GameInstallation {
     pub nearest_checkpoint: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub checkpoint_time: Option<String>,
+    /// Repository associated with this installation's local sync state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sync_repository: Option<String>,
+    /// Remote head acknowledged by an explicit historical restore, not local contents.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub acknowledged_snapshot: Option<String>,
+    /// Snapshot whose restore must complete before automatic sync is safe.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_restore: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub launch_command: Option<LaunchCommand>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -181,6 +190,9 @@ impl GameInstallation {
             save_path_type: kind,
             nearest_checkpoint: None,
             checkpoint_time: None,
+            sync_repository: None,
+            acknowledged_snapshot: None,
+            pending_restore: None,
             launch_command: None,
             dependencies: Vec::new(),
         }
@@ -189,6 +201,8 @@ impl GameInstallation {
     pub fn update_checkpoint(&mut self, checkpoint_id: impl Into<String>) {
         self.nearest_checkpoint = Some(checkpoint_id.into());
         self.checkpoint_time = Some(chrono::Utc::now().to_rfc3339());
+        self.acknowledged_snapshot = None;
+        self.pending_restore = None;
     }
 
     pub fn update_checkpoint_at(
@@ -198,6 +212,15 @@ impl GameInstallation {
     ) {
         self.nearest_checkpoint = Some(checkpoint_id.into());
         self.checkpoint_time = Some(time.into());
+        self.acknowledged_snapshot = None;
+        self.pending_restore = None;
+    }
+
+    /// Legacy installations without an associated repository remain compatible.
+    pub fn needs_repository_reconciliation(&self, repository: &str) -> bool {
+        self.sync_repository
+            .as_deref()
+            .is_some_and(|previous| previous != repository)
     }
 
     /// Whether `snapshot` is this installation's checkpoint.
@@ -396,6 +419,74 @@ mod tests {
     use super::*;
     use std::fs;
     use std::path::PathBuf;
+
+    #[test]
+    fn installation_sync_state_is_backwards_compatible() {
+        let legacy = "game_name = 'Game'\nsave_path = '/saves'\nnearest_checkpoint = 'old'";
+        let mut installation: GameInstallation = toml::from_str(legacy).unwrap();
+        assert!(installation.sync_repository.is_none());
+        assert!(installation.acknowledged_snapshot.is_none());
+        assert!(installation.pending_restore.is_none());
+        let serialized = toml::to_string(&installation).unwrap();
+        for field in [
+            "sync_repository",
+            "acknowledged_snapshot",
+            "pending_restore",
+        ] {
+            assert!(!serialized.contains(field));
+        }
+
+        installation.sync_repository = Some("repo".into());
+        installation.acknowledged_snapshot = Some("head".into());
+        installation.pending_restore = Some("historical".into());
+        let restored: GameInstallation =
+            toml::from_str(&toml::to_string(&installation).unwrap()).unwrap();
+        assert_eq!(restored.sync_repository.as_deref(), Some("repo"));
+        assert_eq!(restored.acknowledged_snapshot.as_deref(), Some("head"));
+        assert_eq!(restored.pending_restore.as_deref(), Some("historical"));
+        assert_eq!(restored.nearest_checkpoint.as_deref(), Some("old"));
+    }
+
+    #[test]
+    fn repository_reconciliation_requires_a_known_different_repository() {
+        let mut installation = GameInstallation::with_kind(
+            "Game",
+            TildePath::new(PathBuf::from("/saves")),
+            PathContentKind::Directory,
+        );
+        assert!(!installation.needs_repository_reconciliation("repo"));
+        installation.sync_repository = Some("repo".into());
+        assert!(!installation.needs_repository_reconciliation("repo"));
+        assert!(installation.needs_repository_reconciliation("other"));
+    }
+
+    #[test]
+    fn checkpoint_updates_clear_transient_sync_state() {
+        let mut installation = GameInstallation::with_kind(
+            "Game",
+            TildePath::new(PathBuf::from("/saves")),
+            PathContentKind::Directory,
+        );
+        installation.sync_repository = Some("repo".into());
+        for explicit_time in [false, true] {
+            installation.acknowledged_snapshot = Some("head".into());
+            installation.pending_restore = Some("old".into());
+            if explicit_time {
+                installation.update_checkpoint_at("old", "2026-01-01T00:00:00Z");
+                assert_eq!(
+                    installation.checkpoint_time.as_deref(),
+                    Some("2026-01-01T00:00:00Z")
+                );
+            } else {
+                installation.update_checkpoint("old");
+                assert!(installation.checkpoint_time.is_some());
+            }
+            assert_eq!(installation.nearest_checkpoint.as_deref(), Some("old"));
+            assert!(installation.acknowledged_snapshot.is_none());
+            assert!(installation.pending_restore.is_none());
+            assert_eq!(installation.sync_repository.as_deref(), Some("repo"));
+        }
+    }
 
     #[test]
     fn test_game_installation_update_checkpoint() {

@@ -393,6 +393,29 @@ fn save_repository(
     repository: &str,
     password: String,
 ) -> Result<()> {
+    if config.repo.as_path().to_string_lossy() != repository {
+        let mut installations = crate::game::config::InstallationsConfig::load()?;
+        if installations
+            .installations
+            .iter()
+            .any(|installation| installation.pending_restore.is_some())
+        {
+            bail!(
+                "A game restore is incomplete. Finish `ins game setup` with the current repository before changing storage."
+            );
+        }
+        // Bind legacy installations to the old location BEFORE saving the new
+        // one. If either write fails, sync must not silently use the new storage.
+        for installation in &mut installations.installations {
+            if installation.sync_repository.is_none() {
+                installation.sync_repository =
+                    Some(config.repo.as_path().to_string_lossy().to_string());
+            }
+        }
+        installations
+            .save()
+            .context("Could not preserve game repository associations")?;
+    }
     let mut updated = config.clone();
     updated.repo = TildePath::from_str(repository);
     updated.repo_password = password;

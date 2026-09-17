@@ -8,6 +8,7 @@ pub mod launch_command;
 pub mod menu;
 pub mod operations;
 pub mod platforms;
+pub(crate) mod reconciliation;
 pub mod repository;
 pub mod restic;
 pub mod setup;

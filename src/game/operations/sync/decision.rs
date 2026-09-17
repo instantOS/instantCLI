@@ -4,7 +4,8 @@ use crate::game::restic::cache;
 use crate::game::utils::save_files::{
     SYNC_TOLERANCE_SECONDS, TimeComparison, compare_snapshot_vs_local, get_save_directory_info,
 };
-use anyhow::Result;
+use crate::restic::wrapper::Snapshot;
+use anyhow::{Result, bail};
 use std::time::SystemTime;
 
 /// Check if file was modified after checkpoint was set (with tolerance)
@@ -26,12 +27,49 @@ fn file_modified_after_checkpoint(file_time: SystemTime, checkpoint_time: &str) 
     diff_seconds > SYNC_TOLERANCE_SECONDS
 }
 
+/// An explicit historical restore acknowledges the head without claiming its contents.
+/// Only subsequent local edits should trigger a backup; even force must not undo
+/// that choice by automatically restoring the same known head.
+fn acknowledged_head_action(
+    installation: &GameInstallation,
+    snapshot: &Snapshot,
+    local_time: Option<SystemTime>,
+) -> Option<SyncAction> {
+    if installation.nearest_checkpoint.is_none()
+        || !installation
+            .acknowledged_snapshot
+            .as_deref()
+            .is_some_and(|acknowledged| snapshot.matches_id(acknowledged))
+    {
+        return None;
+    }
+
+    if let (Some(local_time), Some(checkpoint_time)) =
+        (local_time, installation.checkpoint_time.as_deref())
+        && file_modified_after_checkpoint(local_time, checkpoint_time)
+    {
+        return Some(SyncAction::CreateBackup);
+    }
+
+    Some(SyncAction::RestoreSkipped(snapshot.id.clone()))
+}
+
 /// Determine the required action for a single game
 pub fn determine_action(
     installation: &GameInstallation,
     game_config: &InstantGameConfig,
     force: bool,
 ) -> Result<SyncAction> {
+    // These guards precede all filesystem inspection and snapshot access, even with force.
+    if let Some(snapshot_id) = &installation.pending_restore {
+        bail!(
+            "Restore of snapshot '{snapshot_id}' is incomplete; run `ins game setup` to retry before syncing"
+        );
+    }
+    if installation.needs_repository_reconciliation(&game_config.repo.as_path().to_string_lossy()) {
+        bail!("Sync repository has changed; run `ins game setup` for repository reconciliation");
+    }
+
     let game_name = &installation.game_name.0;
     let save_path = installation.save_path.as_path();
 
@@ -42,6 +80,9 @@ pub fn determine_action(
         if installation.save_path_type.is_file() {
             let snapshots = cache::get_snapshots_for_game(game_name, game_config)?;
             if let Some(snapshot) = snapshots.first() {
+                if let Some(action) = acknowledged_head_action(installation, snapshot, None) {
+                    return Ok(action);
+                }
                 // Single file doesn't exist but snapshots exist - restore from latest
                 // Note: We don't check checkpoint matching here since the file is missing locally
                 return Ok(SyncAction::RestoreFromLatest(snapshot.id.clone()));
@@ -74,6 +115,13 @@ pub fn determine_action(
     // Get latest snapshot for this game
     let snapshots = cache::get_snapshots_for_game(game_name, game_config)?;
     let latest_snapshot = snapshots.first();
+
+    if let Some(snapshot) = latest_snapshot
+        && let Some(action) =
+            acknowledged_head_action(installation, snapshot, local_save_info.last_modified)
+    {
+        return Ok(action);
+    }
 
     // Determine sync action based on local saves and snapshots
     match (local_save_info.last_modified, latest_snapshot) {
@@ -145,5 +193,119 @@ pub fn determine_action(
                 "No local saves and no snapshots found - nothing to sync".to_string(),
             ))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::game::config::PathContentKind;
+
+    fn installation() -> GameInstallation {
+        GameInstallation::with_kind(
+            "Game",
+            crate::common::TildePath::new(std::path::PathBuf::from("/nonexistent/saves")),
+            PathContentKind::File,
+        )
+    }
+
+    fn snapshot(id: &str) -> Snapshot {
+        serde_json::from_value(serde_json::json!({
+            "time": "2026-02-01T00:00:00Z",
+            "tree": "0".repeat(64),
+            "paths": [],
+            "hostname": "test-host",
+            "username": "test-user",
+            "tags": [],
+            "id": id,
+            "short_id": &id[..8],
+        }))
+        .unwrap()
+    }
+
+    fn time(value: &str) -> SystemTime {
+        chrono::DateTime::parse_from_rfc3339(value).unwrap().into()
+    }
+
+    #[test]
+    fn pending_restore_blocks_sync_before_missing_file_or_repository_access() {
+        let mut installation = installation();
+        installation.pending_restore = Some("historical".into());
+        installation.sync_repository = Some("old-repo".into());
+        for force in [false, true] {
+            let error = determine_action(&installation, &InstantGameConfig::default(), force)
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains("incomplete"));
+            assert!(error.contains("historical"));
+            assert!(error.contains("ins game setup"));
+        }
+    }
+
+    #[test]
+    fn repository_mismatch_blocks_sync_before_missing_file_or_repository_access() {
+        let mut installation = installation();
+        installation.sync_repository = Some("old-repo".into());
+        for force in [false, true] {
+            let error = determine_action(&installation, &InstantGameConfig::default(), force)
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains("repository reconciliation"));
+            assert!(error.contains("ins game setup"));
+        }
+    }
+
+    #[test]
+    fn acknowledged_head_preserves_historical_contents_until_local_edits() {
+        let mut installation = installation();
+        installation.update_checkpoint_at("historical", "2026-01-01T00:00:00Z");
+        let head = snapshot(&"a".repeat(64));
+        installation.acknowledged_snapshot = Some(head.id.clone());
+
+        for local_time in [
+            None,
+            Some(time("2025-12-01T00:00:00Z")),
+            Some(time("2026-01-01T00:00:00Z")),
+        ] {
+            assert_eq!(
+                acknowledged_head_action(&installation, &head, local_time),
+                Some(SyncAction::RestoreSkipped(head.id.clone()))
+            );
+        }
+        let checkpoint_time = time("2026-01-01T00:00:00Z");
+        let tolerance = std::time::Duration::from_secs(SYNC_TOLERANCE_SECONDS as u64);
+        assert_eq!(
+            acknowledged_head_action(&installation, &head, Some(checkpoint_time + tolerance)),
+            Some(SyncAction::RestoreSkipped(head.id.clone()))
+        );
+        // Still older than the remote head: compare against the restore baseline, not head time.
+        assert_eq!(
+            acknowledged_head_action(
+                &installation,
+                &head,
+                Some(checkpoint_time + tolerance + std::time::Duration::from_secs(1))
+            ),
+            Some(SyncAction::CreateBackup)
+        );
+        assert_eq!(
+            installation.nearest_checkpoint.as_deref(),
+            Some("historical")
+        );
+    }
+
+    #[test]
+    fn new_head_or_missing_checkpoint_resumes_normal_decision() {
+        let mut installation = installation();
+        let head = snapshot(&"a".repeat(64));
+        installation.update_checkpoint("historical");
+        installation.acknowledged_snapshot = Some(head.short_id.clone());
+        assert!(acknowledged_head_action(&installation, &head, None).is_some());
+        assert!(
+            acknowledged_head_action(&installation, &snapshot(&"b".repeat(64)), None).is_none()
+        );
+        installation.nearest_checkpoint = None;
+        assert!(acknowledged_head_action(&installation, &head, None).is_none());
+        installation.update_checkpoint("historical");
+        assert!(acknowledged_head_action(&installation, &head, None).is_none());
     }
 }

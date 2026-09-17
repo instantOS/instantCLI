@@ -21,22 +21,16 @@ fn update_local(game_name: &str, checkpoint_id: &str) -> Result<()> {
         .context("Failed to save updated installations configuration")
 }
 
-/// Extract snapshot ID from backup result string
-/// Handles both "snapshot: {id}" format and fallback to latest snapshot
-pub fn extract_snapshot_id(
-    backup_result: &str,
+/// Resolve the checkpoint produced by a backup without parsing display text.
+pub fn resolve_backup_snapshot_id(
+    snapshot_id: Option<&str>,
     game_name: &str,
     game_config: &super::config::InstantGameConfig,
 ) -> Result<Option<String>> {
-    if backup_result.starts_with("snapshot: ") {
-        // Extract ID from "snapshot: {id}" format
-        Ok(Some(
-            backup_result
-                .strip_prefix("snapshot: ")
-                .unwrap_or(backup_result)
-                .to_string(),
-        ))
+    if let Some(snapshot_id) = snapshot_id {
+        Ok(Some(snapshot_id.to_string()))
     } else {
+        cache::invalidate_snapshot_cache();
         // Try to get the latest snapshot for this game as fallback
         match cache::get_snapshots_for_game(game_name, game_config) {
             Ok(snapshots) => {
@@ -57,16 +51,30 @@ pub fn extract_snapshot_id(
 
 /// Update installation checkpoint after successful backup
 pub fn update_checkpoint_after_backup(
-    backup_result: &str,
+    snapshot_id: Option<&str>,
     game_name: &str,
     game_config: &super::config::InstantGameConfig,
 ) -> Result<()> {
-    if let Some(snapshot_id) = extract_snapshot_id(backup_result, game_name, game_config)?
-        && let Err(e) = update_local(game_name, &snapshot_id)
-    {
-        eprintln!("Warning: Could not update checkpoint: {e}");
+    if let Some(snapshot_id) = resolve_backup_snapshot_id(snapshot_id, game_name, game_config)? {
+        update_local(game_name, &snapshot_id)
+            .context("Could not update checkpoint after backup")?;
     }
     Ok(())
+}
+
+/// Persist the restore intent before any operation can alter live save files.
+pub fn mark_restore_pending(game_name: &str, snapshot_id: &str) -> Result<()> {
+    let mut installations =
+        InstallationsConfig::load().context("Failed to load installations configuration")?;
+    let installation = installations
+        .installations
+        .iter_mut()
+        .find(|installation| installation.game_name.0 == game_name)
+        .with_context(|| format!("No installation configured for game '{game_name}'"))?;
+    installation.pending_restore = Some(snapshot_id.to_string());
+    installations
+        .save()
+        .context("Could not save restore retry state; no files were restored")
 }
 
 /// Update checkpoint with the snapshot's actual timestamp (not current time)
@@ -93,4 +101,19 @@ pub fn update_checkpoint_after_restore(game_name: &str, snapshot_id: &str) -> Re
     installations
         .save()
         .context("Failed to save updated installations configuration")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn explicit_backup_snapshot_id_is_not_parsed_as_display_text() -> Result<()> {
+        let config = super::super::config::InstantGameConfig::default();
+        assert_eq!(
+            resolve_backup_snapshot_id(Some("snapshot-id"), "game", &config)?,
+            Some("snapshot-id".to_string())
+        );
+        Ok(())
+    }
 }

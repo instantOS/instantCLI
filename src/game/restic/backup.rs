@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use std::{fs, path::Path};
 
+use crate::game::checkpoint;
 use crate::game::config::{GameInstallation, InstantGameConfig, PathContentKind};
 use crate::game::restic::{cache, single_file, tags};
 use crate::restic::ResticWrapper;
@@ -15,6 +16,26 @@ pub struct RestoreRequest<'a> {
     pub snapshot_source_path: Option<&'a str>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BackupResult {
+    pub snapshot_id: Option<String>,
+    pub file_contents_changed: bool,
+}
+
+impl std::fmt::Display for BackupResult {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match (&self.snapshot_id, self.file_contents_changed) {
+            (Some(snapshot_id), true) => write!(formatter, "snapshot: {snapshot_id}"),
+            (Some(snapshot_id), false) => {
+                write!(formatter, "snapshot: {snapshot_id} (no file changes)")
+            }
+            (None, false) => formatter
+                .write_str("backup completed (no snapshot created; no file changes detected)"),
+            (None, true) => formatter.write_str("backup completed (no snapshot created)"),
+        }
+    }
+}
+
 /// Backup game saves to restic repository with proper tagging
 pub struct GameBackup {
     pub config: InstantGameConfig,
@@ -26,7 +47,7 @@ impl GameBackup {
     }
 
     /// Create a backup of a specific game's save directory
-    pub fn backup_game(&self, game_installation: &GameInstallation) -> Result<String> {
+    pub fn backup_game(&self, game_installation: &GameInstallation) -> Result<BackupResult> {
         // Validate that save path exists
         let save_path_buf = game_installation.save_path.as_path();
         if !save_path_buf.exists() {
@@ -72,29 +93,21 @@ impl GameBackup {
             .backup(&restic_paths, tags, None)
             .context("Failed to perform restic backup")?;
 
-        if let Some(summary) = progress.summary {
-            let snapshot_id = summary.snapshot_id.clone();
-            let no_file_changes = summary.files_new == 0 && summary.files_changed == 0;
+        let Some(summary) = progress.summary else {
+            return Ok(BackupResult {
+                snapshot_id: None,
+                file_contents_changed: true,
+            });
+        };
 
-            if let Some(snap) = snapshot_id {
-                if no_file_changes {
-                    return Ok(format!("snapshot: {snap} (no file changes)"));
-                }
-                return Ok(format!("snapshot: {snap}"));
-            }
-
-            if no_file_changes {
-                return Ok(
-                    "backup completed (no snapshot created; no file changes detected)".to_string(),
-                );
-            }
-        }
-
-        Ok("backup completed (no snapshot created)".to_string())
+        Ok(BackupResult {
+            snapshot_id: summary.snapshot_id,
+            file_contents_changed: summary.files_new != 0 || summary.files_changed != 0,
+        })
     }
 
     /// Restore a game backup
-    pub fn restore_game_backup(
+    fn restore_game_backup(
         &self,
         game_name: &str,
         snapshot_id: &str,
@@ -109,7 +122,13 @@ impl GameBackup {
         let snapshot = cache::get_snapshot_by_id(snapshot_id, game_name, &self.config)
             .context("Failed to locate snapshot metadata")?;
 
-        let snapshot_path = snapshot.and_then(|s| s.paths.first().cloned());
+        // Exact directory restores must be scoped to the backed-up save tree.
+        // Falling back to the snapshot root would delete valid saves and restore
+        // the snapshot's absolute-path hierarchy inside the target instead.
+        let snapshot_path = snapshot
+            .and_then(|s| s.paths.first().cloned())
+            .filter(|path| !path.is_empty())
+            .context("Snapshot has no source directory; refusing an unscoped restore")?;
 
         let restic = ResticWrapper::new(
             self.config.repo.as_path().to_string_lossy().to_string(),
@@ -118,7 +137,7 @@ impl GameBackup {
         .context("Failed to initialize restic wrapper")?;
 
         let progress = restic
-            .restore(snapshot_id, snapshot_path.as_deref(), target_path)
+            .restore(snapshot_id, Some(&snapshot_path), target_path)
             .context("Failed to restore restic snapshot")?;
 
         if let Some(summary) = progress.summary {
@@ -130,6 +149,21 @@ impl GameBackup {
 
     /// Restore a game backup (handles both files and directories)
     pub fn restore_backup(&self, request: RestoreRequest<'_>) -> Result<String> {
+        checkpoint::mark_restore_pending(request.game_name, request.snapshot_id)?;
+        let summary = self.restore_backup_files(&request).with_context(|| {
+            format!(
+                "Restore incomplete. Do not play '{}'; retry the restore before syncing",
+                request.game_name
+            )
+        })?;
+        checkpoint::update_checkpoint_after_restore(request.game_name, request.snapshot_id)
+            .context(
+                "Restore completed, but its checkpoint could not be saved; retry before syncing",
+            )?;
+        Ok(summary)
+    }
+
+    fn restore_backup_files(&self, request: &RestoreRequest<'_>) -> Result<String> {
         match request.save_path_type {
             PathContentKind::Directory => {
                 // For directories, use the standard restore
@@ -216,6 +250,7 @@ impl GameBackup {
             }
         }
     }
+
     /// Check if restic is available on the system
     pub fn check_restic_availability() -> Result<bool> {
         // Use the wrapper to query version
@@ -227,5 +262,24 @@ impl GameBackup {
             },
             Err(_) => Ok(false),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BackupResult;
+
+    #[test]
+    fn backup_result_keeps_snapshot_id_separate_from_display_summary() {
+        let result = BackupResult {
+            snapshot_id: Some("snapshot-id".into()),
+            file_contents_changed: false,
+        };
+
+        assert_eq!(result.snapshot_id.as_deref(), Some("snapshot-id"));
+        assert_eq!(
+            result.to_string(),
+            "snapshot: snapshot-id (no file changes)"
+        );
     }
 }
