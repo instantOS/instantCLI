@@ -98,14 +98,16 @@ fn perform_game_backup(
                 Some(serde_json::json!({
                     "game": game_name,
                     "action": "backup_completed",
-                    "output": output
+                    "output": output.to_string()
                 })),
             );
 
             // Update checkpoint after successful backup
-            if let Err(e) =
-                checkpoint::update_checkpoint_after_backup(&output, game_name, &game_config)
-            {
+            if let Err(e) = checkpoint::update_checkpoint_after_backup(
+                output.snapshot_id.as_deref(),
+                game_name,
+                &game_config,
+            ) {
                 eprintln!("Warning: Could not update checkpoint: {e}");
             }
 
@@ -341,9 +343,6 @@ pub fn restore_game_saves(
                     "output": output_clone
                 })),
             );
-
-            // Update the installation with the checkpoint
-            checkpoint::update_checkpoint_after_restore(&game_selection.game_name, &snapshot_id)?;
 
             // Invalidate cache for this game after successful restore
             let repo_path = backup_handler

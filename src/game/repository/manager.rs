@@ -1,423 +1,541 @@
-use super::init::initialize_restic_repo;
-use crate::common::TildePath;
-use crate::common::paths;
-use crate::game::config::InstantGameConfig;
-use crate::menu_utils::FzfWrapper;
-use crate::ui::nerd_font::NerdFont;
-use anyhow::{Context, Result};
-use std::process::Command;
+use std::io::IsTerminal;
 
-/// Manage game restic repository initialization and configuration
+use anyhow::{Context, Result, bail};
+
+use crate::common::{TildePath, paths};
+use crate::game::config::{InstantGameConfig, games_config_path};
+use crate::menu::protocol::FzfPreview;
+use crate::menu_utils::{DialogOutcome, FzfSelectable, FzfWrapper, HeaderBuilder};
+use crate::restic::error::ResticError;
+use crate::ui::nerd_font::NerdFont;
+
+use super::init::{RepositoryIntent, prepare_repository};
+use super::rclone;
+
 pub struct GameRepositoryManager;
 
-/// Options for initializing the game repository non-interactively
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct InitOptions {
     pub repo: Option<String>,
     pub password: Option<String>,
+    pub existing: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InitOutcome {
+    Ready,
+    Cancelled,
 }
 
 impl GameRepositoryManager {
-    /// Initialize the game save backup system
-    pub fn initialize_game_manager(debug: bool, options: InitOptions) -> Result<()> {
-        println!("Initializing game save manager...");
-
+    pub fn initialize_game_manager(_debug: bool, options: InitOptions) -> Result<InitOutcome> {
         let mut config = InstantGameConfig::load().context("Failed to load game configuration")?;
-
-        if config.is_initialized() {
-            match Self::handle_existing_configuration(&config, debug) {
-                Ok(()) => return Ok(()),
-                Err(e) => {
-                    // Check if this is a reconfiguration request
-                    if e.to_string().contains("reconfiguration needed") {
-                        println!(
-                            "{} Starting repository reconfiguration...",
-                            char::from(NerdFont::Play)
-                        );
-                        // Clear the current config to force new setup
-                        config.repo = crate::common::TildePath::new(std::path::PathBuf::new());
-                        config.repo_password = "instantgamepassword".to_string();
-                    } else {
-                        return Err(e);
-                    }
-                }
-            }
+        if let Some(repo) = options.repo {
+            let repository = normalize_repository(&repo)?;
+            let password = options.password.unwrap_or_else(default_password);
+            validate_password(&password)?;
+            let intent = if options.existing {
+                RepositoryIntent::Connect
+            } else {
+                RepositoryIntent::Create
+            };
+            println!("Checking backup storage: {repository}");
+            prepare_repository(&repository, &password, intent)?;
+            save_repository(&mut config, &repository, password)?;
+            print_completion(&repository)?;
+            return Ok(InitOutcome::Ready);
         }
 
-        Self::setup_new_repository(&mut config, debug, &options)
-    }
-
-    /// Handle existing configuration by validating connection and offering recovery options
-    fn handle_existing_configuration(config: &InstantGameConfig, debug: bool) -> Result<()> {
-        println!("Game save manager appears to be already initialized.");
-        println!(
-            "Current repository: {}",
-            config.repo.to_tilde_string().unwrap_or_else(|_| config
-                .repo
-                .as_path()
-                .to_string_lossy()
-                .to_string())
-        );
-
-        println!(
-            "{} Testing repository connection...",
-            char::from(NerdFont::Search)
-        );
-        match Self::validate_repository_connection(&config.repo, &config.repo_password, debug) {
-            Ok(()) => {
-                println!(
-                    "{} Repository connection is working properly!",
-                    char::from(NerdFont::Check)
-                );
-                Ok(())
-            }
-            Err(e) => {
-                println!(
-                    "{} Repository connection test failed: {e}",
-                    char::from(NerdFont::CrossCircle)
-                );
-                Self::handle_connection_failure(config, debug)
-            }
-        }
-    }
-
-    /// Handle repository connection failure with intelligent recovery options
-    fn handle_connection_failure(config: &InstantGameConfig, debug: bool) -> Result<()> {
-        let repo_str = config.repo.as_path().to_string_lossy();
-
-        if Self::is_rclone_remote(&repo_str) {
-            Self::handle_rclone_remote_failure(&repo_str, config, debug)
-        } else {
-            Self::handle_standard_repository_failure()
-        }
-    }
-
-    /// Handle rclone remote connection failure
-    fn handle_rclone_remote_failure(
-        repo_str: &str,
-        config: &InstantGameConfig,
-        debug: bool,
-    ) -> Result<()> {
-        println!(
-            "{} Detected rclone remote configuration. Testing remote accessibility...",
-            char::from(NerdFont::Search)
-        );
-
-        match Self::test_rclone_remote(repo_str, debug) {
-            Ok(()) => Self::handle_remote_without_repo(config, debug),
-            Err(remote_error) => Self::handle_inaccessible_remote(remote_error),
-        }
-    }
-
-    /// Handle case where rclone remote is accessible but has no restic repository
-    fn handle_remote_without_repo(config: &InstantGameConfig, debug: bool) -> Result<()> {
-        println!(
-            "{} Rclone remote is accessible!",
-            char::from(NerdFont::Check)
-        );
-        println!(
-            "{} The remote works, but no restic repository exists there yet.",
-            char::from(NerdFont::Lightbulb)
-        );
-
-        // Use message dialog before the interactive prompt
-        let message = format!(
-            "{} Repository Creation Options:\n\nYour rclone remote is working, but there's no restic repository there yet.",
-            char::from(NerdFont::Flag)
-        );
-
-        FzfWrapper::message(&message)?;
-        match FzfWrapper::confirm("Create restic repository in existing remote?")
-            .map_err(|e| anyhow::anyhow!("Failed to get user input: {}", e))?
-        {
-            crate::menu_utils::ConfirmResult::Yes => Self::create_remote_repo(config, debug),
-            crate::menu_utils::ConfirmResult::No | crate::menu_utils::ConfirmResult::Cancelled => {
-                Self::handle_declined_repo_creation()
-            }
-        }
-    }
-
-    /// Create restic repository in existing accessible remote
-    fn create_remote_repo(config: &InstantGameConfig, debug: bool) -> Result<()> {
-        println!(
-            "{} Creating restic repository in existing remote...",
-            char::from(NerdFont::Upload)
-        );
-        if initialize_restic_repo(config.repo.as_path(), &config.repo_password, debug)? {
-            println!(
-                "{} Repository created successfully in existing remote!",
-                char::from(NerdFont::Check)
-            );
-            Ok(())
-        } else {
-            Err(anyhow::anyhow!(
-                "Failed to create restic repository in remote"
-            ))
-        }
-    }
-
-    /// Handle when user declines to create repository in existing remote
-    fn handle_declined_repo_creation() -> Result<()> {
-        // Use message dialog before the interactive prompt
-        let message = format!(
-            "{} Repository Configuration:\n\nYou chose not to create a repository in the existing remote.\nWould you like to reconfigure the repository settings instead?",
-            char::from(NerdFont::List)
-        );
-
-        FzfWrapper::message(&message)?;
-        match FzfWrapper::confirm("Would you like to reconfigure the repository settings?")
-            .map_err(|e| anyhow::anyhow!("Failed to get user input: {}", e))?
-        {
-            crate::menu_utils::ConfirmResult::Yes => {
-                println!(
-                    "{} Proceeding with reconfiguration...",
-                    char::from(NerdFont::Play)
-                );
-                Err(anyhow::anyhow!("Repository reconfiguration needed"))
-            }
-            crate::menu_utils::ConfirmResult::No | crate::menu_utils::ConfirmResult::Cancelled => {
-                Err(anyhow::anyhow!(
-                    "Repository setup cancelled. Please reconfigure when ready."
-                ))
-            }
-        }
-    }
-
-    /// Handle inaccessible rclone remote
-    fn handle_inaccessible_remote(remote_error: anyhow::Error) -> Result<()> {
-        // Use message dialog before the interactive prompt
-        let message = format!(
-            "{} Rclone Remote Issue:\n\nRclone remote test failed: {remote_error}\n{} The remote configuration may be incorrect or inaccessible.\n\nWould you like to reconfigure the repository settings?",
-            char::from(NerdFont::CrossCircle),
-            char::from(NerdFont::Lightbulb)
-        );
-
-        FzfWrapper::message(&message)?;
-        match FzfWrapper::confirm("Would you like to reconfigure the repository settings?")
-            .map_err(|e| anyhow::anyhow!("Failed to get user input: {}", e))?
-        {
-            crate::menu_utils::ConfirmResult::Yes => {
-                println!(
-                    "{} Proceeding with reconfiguration...",
-                    char::from(NerdFont::Play)
-                );
-                Err(anyhow::anyhow!("Repository reconfiguration needed"))
-            }
-            crate::menu_utils::ConfirmResult::No | crate::menu_utils::ConfirmResult::Cancelled => {
-                Err(anyhow::anyhow!(
-                    "Remote is not accessible. Please check your rclone configuration and network connection."
-                ))
-            }
-        }
-    }
-
-    /// Handle standard (non-rclone) repository failure
-    fn handle_standard_repository_failure() -> Result<()> {
-        // Use message dialog before the interactive prompt
-        let message = format!(
-            "{} Repository Connection Failed:\n\nThe repository connection failed.\nWould you like to reconfigure the repository settings?",
-            char::from(NerdFont::CrossCircle)
-        );
-
-        FzfWrapper::message(&message)?;
-        match FzfWrapper::confirm("Would you like to reconfigure the repository settings?")
-            .map_err(|e| anyhow::anyhow!("Failed to get user input: {}", e))?
-        {
-            crate::menu_utils::ConfirmResult::Yes => {
-                println!(
-                    "{} Proceeding with reconfiguration...",
-                    char::from(NerdFont::Play)
-                );
-                Err(anyhow::anyhow!("Repository reconfiguration needed"))
-            }
-            crate::menu_utils::ConfirmResult::No | crate::menu_utils::ConfirmResult::Cancelled => {
-                Err(anyhow::anyhow!(
-                    "Repository connection failed. Please check your configuration."
-                ))
-            }
-        }
-    }
-
-    /// Setup a new repository configuration from scratch
-    fn setup_new_repository(
-        config: &mut InstantGameConfig,
-        debug: bool,
-        options: &InitOptions,
-    ) -> Result<()> {
-        // Prompt for restic repository using fzf unless provided
-        let repo = if let Some(repo_str) = &options.repo {
-            let tilde_path = TildePath::from_str(repo_str);
-
-            if tilde_path.as_path().is_absolute() && !tilde_path.as_path().exists() {
-                std::fs::create_dir_all(tilde_path.as_path())
-                    .context("Failed to create repository directory")?;
-            }
-
-            tilde_path
-        } else {
-            Self::get_repository_path()?
-        };
-
-        let password = options
-            .password
-            .clone()
-            .unwrap_or_else(|| "instantgamepassword".to_string());
-
-        // Update config
-        config.repo = repo.clone();
-        config.repo_password = password.clone();
-
-        // Initialize the repository
-        if initialize_restic_repo(repo.as_path(), &password, debug)? {
-            config.save()?;
-            println!(
-                "{} Game save manager initialized successfully!",
-                char::from(NerdFont::Check)
-            );
-            println!(
-                "Repository: {}",
-                repo.to_tilde_string()
-                    .unwrap_or_else(|_| repo.as_path().to_string_lossy().to_string())
-            );
-            Ok(())
-        } else {
-            Err(anyhow::anyhow!("Failed to connect to restic repository"))
-        }
-    }
-
-    /// Validate that the repository connection actually works
-    fn validate_repository_connection(repo: &TildePath, password: &str, debug: bool) -> Result<()> {
-        if debug {
-            println!(
-                "Testing repository connection: {}",
-                repo.to_tilde_string()
-                    .unwrap_or_else(|_| repo.as_path().to_string_lossy().to_string())
+        if !std::io::stdin().is_terminal() {
+            bail!(
+                "Interactive setup needs a terminal. Use `ins game init --repo PATH` to create backups, or add --existing to connect. Use --password only for a custom repository password."
             );
         }
+        run_wizard(&mut config, options)
+    }
+}
 
-        let restic = crate::restic::ResticWrapper::new(
-            repo.as_path().to_string_lossy().to_string(),
-            password.to_string(),
+fn default_password() -> String {
+    InstantGameConfig::default().repo_password
+}
+
+#[derive(Clone)]
+struct Choice<T> {
+    label: &'static str,
+    description: &'static str,
+    value: T,
+}
+
+impl<T: Clone> FzfSelectable for Choice<T> {
+    fn fzf_display_text(&self) -> String {
+        self.label.to_string()
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        FzfPreview::Text(self.description.to_string())
+    }
+}
+
+fn choose<T: Clone>(title: &str, subtitle: &str, choices: Vec<Choice<T>>) -> Result<Option<T>> {
+    match FzfWrapper::builder()
+        .header(
+            HeaderBuilder::new(NerdFont::BackupRestore, title)
+                .subtitle(subtitle)
+                .build(),
         )
-        .context("Failed to initialize restic wrapper")?;
+        .items(choices)
+        .select_one()?
+    {
+        DialogOutcome::Submitted(choice) => Ok(Some(choice.value)),
+        DialogOutcome::Cancelled => Ok(None),
+    }
+}
 
-        // Try to check if repository exists - this will test the actual connection
-        match restic.repository_exists() {
-            Ok(exists) => {
-                if exists {
-                    if debug {
-                        println!("{} Repository exists and is accessible", NerdFont::Check);
-                    }
+fn choose_intent() -> Result<Option<RepositoryIntent>> {
+    choose(
+        "Set up game backups",
+        "Esc cancels. No repository settings are saved until storage is verified.",
+        vec![
+            Choice {
+                label: "Create new backups",
+                description: "Start a new backup repository. Choose a dedicated folder; an existing repository will never be overwritten.",
+                value: RepositoryIntent::Create,
+            },
+            Choice {
+                label: "Connect existing backups",
+                description: "Use backups from another device. Select the same storage and folder. Games with backups can then be configured on this device.",
+                value: RepositoryIntent::Connect,
+            },
+        ],
+    )
+}
 
-                    // Additional test: try to list snapshots to ensure the repository is fully functional
-                    match restic.list_snapshots_filtered(None) {
-                        Ok(_) => {
-                            if debug {
-                                println!(
-                                    "{} Repository operations working correctly",
-                                    NerdFont::Check
-                                );
-                            }
-                            Ok(())
-                        }
-                        Err(e) => Err(anyhow::anyhow!(
-                            "Repository exists but operations failed: {}",
-                            e
-                        )),
-                    }
+#[derive(Clone, Copy)]
+enum Storage {
+    Cloud,
+    Local,
+    Advanced,
+}
+
+fn choose_storage() -> Result<Option<String>> {
+    loop {
+        let Some(storage) = choose(
+            "Where should game backups live?",
+            "Cloud storage can be shared across devices. A local folder alone does not sync between machines.",
+            vec![
+                Choice {
+                    label: "Cloud storage (rclone)",
+                    description: "Choose an existing rclone remote or configure your cloud account. Then select a folder for game backups.",
+                    value: Storage::Cloud,
+                },
+                Choice {
+                    label: "Local folder",
+                    description: "Store backups on this computer, an external drive, or a mounted network share. This is separate from your game's save folder.",
+                    value: Storage::Local,
+                },
+                Choice {
+                    label: "Advanced: repository URL",
+                    description: "Enter a restic backend URL, such as sftp:user@host:/backups/games, or rclone:remote:folder. Backend tools and credentials must already be configured.",
+                    value: Storage::Advanced,
+                },
+            ],
+        )?
+        else {
+            return Ok(None);
+        };
+        let selected = match storage {
+            Storage::Cloud => rclone::choose_repository()?,
+            Storage::Local => prompt_local_repository()?,
+            Storage::Advanced => prompt_advanced_repository()?,
+        };
+        if selected.is_some() {
+            return Ok(selected);
+        }
+        // Cancelling a storage-specific screen returns to storage selection.
+    }
+}
+
+fn prompt_local_repository() -> Result<Option<String>> {
+    let default = paths::default_games_repo_path()
+        .to_string_lossy()
+        .to_string();
+    loop {
+        match FzfWrapper::input(&format!(
+            "Backup folder (not the game's saves). Leave empty for {default}"
+        ))? {
+            DialogOutcome::Cancelled => return Ok(None),
+            DialogOutcome::Submitted(input) => {
+                let input = if input.trim().is_empty() {
+                    &default
                 } else {
-                    Err(anyhow::anyhow!("Repository does not exist"))
+                    input.trim()
+                };
+                let path = TildePath::from_str(input);
+                if !path.as_path().is_absolute() {
+                    FzfWrapper::message("Use an absolute folder path or a path starting with ~/.")?;
+                    continue;
+                }
+                return Ok(Some(path.as_path().to_string_lossy().to_string()));
+            }
+        }
+    }
+}
+
+fn prompt_advanced_repository() -> Result<Option<String>> {
+    loop {
+        match FzfWrapper::input(
+            "Restic repository URL or absolute path (rclone format: rclone:remote:folder)",
+        )? {
+            DialogOutcome::Cancelled => return Ok(None),
+            DialogOutcome::Submitted(input) => match normalize_repository(&input) {
+                Ok(repository) => return Ok(Some(repository)),
+                Err(error) => FzfWrapper::message(&error.to_string())?,
+            },
+        }
+    }
+}
+
+fn normalize_repository(input: &str) -> Result<String> {
+    let input = input.trim();
+    if input.is_empty() || input.chars().any(char::is_control) {
+        bail!("Enter a repository URL or absolute folder path.");
+    }
+    let path = TildePath::from_str(input);
+    if !path.as_path().is_absolute() && !input.contains(':') {
+        bail!("Use an absolute folder path, ~/path, or a restic backend URL.");
+    }
+    Ok(path.as_path().to_string_lossy().to_string())
+}
+
+#[derive(Clone, Copy)]
+enum ReviewAction {
+    Proceed,
+    Storage,
+    Password,
+    Intent,
+}
+
+fn review(
+    repository: &str,
+    password: &str,
+    intent: RepositoryIntent,
+    error: Option<&str>,
+) -> Result<Option<ReviewAction>> {
+    let action = match intent {
+        RepositoryIntent::Create => "Create new backups",
+        RepositoryIntent::Connect => "Connect existing backups",
+    };
+    let password_info = if password == default_password() {
+        "Built-in password: easy to use across devices, NOT private encryption. Access protection comes from your storage account."
+    } else {
+        "Custom password: saved locally in plaintext for automatic sync. Keep a separate copy for another device or recovery."
+    };
+    let mut summary = format!(
+        "Action: {action}\nStorage: {repository}\n{password_info}\nExisting game entries and save paths are kept. No game saves are restored here."
+    );
+    if let Some(error) = error {
+        summary.push_str(&format!("\n\nStorage check failed: {error}\nNo repository settings were saved. Edit a setting below, or retry."));
+    }
+    choose(
+        "Review backup setup",
+        &summary,
+        vec![
+            Choice {
+                label: "Continue: verify and save",
+                description: "Perform the selected action, then save repository settings. Creating backups writes a new restic repository at this location; connecting only verifies access.",
+                value: ReviewAction::Proceed,
+            },
+            Choice {
+                label: "Choose a different storage location",
+                description: "Select another remote, folder, or repository URL.",
+                value: ReviewAction::Storage,
+            },
+            Choice {
+                label: "Advanced: repository password",
+                description: "Use the built-in password for easy multi-device setup, or set/enter a custom password. Changing this setting does NOT change a password on an existing repository.",
+                value: ReviewAction::Password,
+            },
+            Choice {
+                label: "Change: new or existing backups",
+                description: "Switch between creating a repository and connecting to one that already exists.",
+                value: ReviewAction::Intent,
+            },
+        ],
+    )
+}
+
+fn prompt_password(intent: RepositoryIntent) -> Result<Option<String>> {
+    let Some(custom) = choose(
+        "Repository password",
+        "The built-in password needs no transfer between devices, but provides no private encryption.",
+        vec![
+            Choice {
+                label: "Use built-in password (default)",
+                description: "Use the same built-in password as other instantCLI installations. Protect your backups using your storage account permissions.",
+                value: false,
+            },
+            Choice {
+                label: "Use a custom password",
+                description: "Saved in plaintext in the local games.toml for unattended sync. You must keep a separate copy and use the same password on other devices. Lost passwords cannot be reset to recover backups.",
+                value: true,
+            },
+        ],
+    )?
+    else {
+        return Ok(None);
+    };
+    if !custom {
+        return Ok(Some(default_password()));
+    }
+    loop {
+        let builder = FzfWrapper::builder()
+            .prompt(match intent {
+                RepositoryIntent::Create => "New repository password",
+                RepositoryIntent::Connect => "Password for existing backups",
+            })
+            .password();
+        let outcome = match intent {
+            RepositoryIntent::Create => builder.with_confirmation().password_dialog()?,
+            RepositoryIntent::Connect => builder.password_dialog()?,
+        };
+        match outcome {
+            DialogOutcome::Cancelled => return Ok(None),
+            DialogOutcome::Submitted(password) => match validate_password(&password) {
+                Ok(()) => return Ok(Some(password)),
+                Err(error) => FzfWrapper::message(&error.to_string())?,
+            },
+        }
+    }
+}
+
+fn validate_password(password: &str) -> Result<()> {
+    if password.is_empty() || password.contains(['\0', '\n', '\r']) {
+        bail!("The repository password cannot be empty or contain NUL/newline characters.");
+    }
+    Ok(())
+}
+
+fn run_wizard(config: &mut InstantGameConfig, options: InitOptions) -> Result<InitOutcome> {
+    let (mut intent, mut repository, mut password) = if config.is_initialized() {
+        (
+            RepositoryIntent::Connect,
+            config.repo.as_path().to_string_lossy().to_string(),
+            config.repo_password.clone(),
+        )
+    } else {
+        let intent = if options.existing {
+            RepositoryIntent::Connect
+        } else {
+            let Some(intent) = choose_intent()? else {
+                return Ok(InitOutcome::Cancelled);
+            };
+            intent
+        };
+        let Some(repository) = choose_storage()? else {
+            return Ok(InitOutcome::Cancelled);
+        };
+        (intent, repository, default_password())
+    };
+    if let Some(supplied) = options.password {
+        validate_password(&supplied)?;
+        password = supplied;
+    }
+    let mut error = None;
+    loop {
+        match review(&repository, &password, intent, error.as_deref())? {
+            None => {
+                println!("Backup setup cancelled. Repository settings unchanged.");
+                return Ok(InitOutcome::Cancelled);
+            }
+            Some(ReviewAction::Storage) => {
+                if let Some(selected) = choose_storage()? {
+                    repository = selected;
+                    error = None;
                 }
             }
-            Err(e) => Err(anyhow::anyhow!("Failed to connect to repository: {}", e)),
-        }
-    }
-
-    /// Test if an rclone remote is accessible
-    fn test_rclone_remote(repo_str: &str, debug: bool) -> Result<()> {
-        if debug {
-            println!("Testing rclone remote accessibility: {repo_str}");
-        }
-
-        // Extract the remote path for rclone lsd command
-        // rclone:remote:path -> remote:path
-        let rclone_path = repo_str
-            .strip_prefix("rclone:")
-            .ok_or_else(|| anyhow::anyhow!("Invalid rclone remote format: {}", repo_str))?;
-
-        let output = Command::new("rclone")
-            .args(["lsd", rclone_path])
-            .output()
-            .context(
-                "Failed to execute rclone command. Make sure rclone is installed and in PATH.",
-            )?;
-
-        if output.status.success() {
-            if debug {
-                println!("{} Rclone remote is accessible", NerdFont::Check);
+            Some(ReviewAction::Password) => {
+                if let Some(selected) = prompt_password(intent)? {
+                    password = selected;
+                    error = None;
+                }
             }
-            Ok(())
-        } else {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            Err(anyhow::anyhow!(
-                "Rclone remote test failed: {}",
-                stderr.trim()
-            ))
+            Some(ReviewAction::Intent) => {
+                if let Some(selected) = choose_intent()? {
+                    intent = selected;
+                    error = None;
+                }
+            }
+            Some(ReviewAction::Proceed) => {
+                println!("Checking backup storage: {repository}");
+                match prepare_repository(&repository, &password, intent) {
+                    Ok(()) => {
+                        save_repository(config, &repository, password)?;
+                        print_completion(&repository)?;
+                        return Ok(InitOutcome::Ready);
+                    }
+                    Err(failure) => error = Some(connection_guidance(&failure)),
+                }
+            }
         }
     }
+}
 
-    /// Check if a repository path looks like an rclone remote
-    fn is_rclone_remote(repo_str: &str) -> bool {
-        repo_str.starts_with("rclone:")
+fn connection_guidance(error: &anyhow::Error) -> String {
+    match error.downcast_ref::<ResticError>() {
+        Some(ResticError::InvalidPassword) => "The repository password is incorrect. Choose Advanced: repository password and enter the password used when these backups were created.".to_string(),
+        Some(ResticError::RepositoryLocked) => "The repository is locked. Wait for other backup operations to finish, then retry.".to_string(),
+        _ => format!("{error:#}\nCheck your network, storage credentials and folder. For rclone, use the storage picker to test or reconfigure the remote."),
     }
+}
 
-    /// Get repository path from user input or use default
-    fn get_repository_path() -> Result<TildePath> {
-        // Show helpful information about repository formats using message dialog
-        let message = format!(
-            "{} Repository Options:\n\n• Local path: /path/to/repo or ~/games/repo\n• Rclone remote: rclone:remote:name\n• SFTP: sftp:user@host:/path\n• S3: s3:bucketname\n• Other: See restic documentation for supported backends\n\nEnter your repository path or leave empty for default local repository.",
-            char::from(NerdFont::Folder)
-        );
-
-        // Show message then prompt for input
-        FzfWrapper::message(&message)?;
-
-        let repo_input = match FzfWrapper::input("Enter restic repository path or URL")
-            .map_err(|e| anyhow::anyhow!("Failed to get repository input: {}", e))?
+fn save_repository(
+    config: &mut InstantGameConfig,
+    repository: &str,
+    password: String,
+) -> Result<()> {
+    if config.repo.as_path().to_string_lossy() != repository {
+        let mut installations = crate::game::config::InstallationsConfig::load()?;
+        if installations
+            .installations
+            .iter()
+            .any(|installation| installation.pending_restore.is_some())
         {
-            crate::menu_utils::DialogOutcome::Submitted(input) => input.trim().to_string(),
-            crate::menu_utils::DialogOutcome::Cancelled => String::new(),
-        };
-
-        // Use default if empty
-        if repo_input.is_empty() {
-            let default_path = paths::default_games_repo_path();
-            println!(
-                "Using default local repository: {}",
-                default_path.to_string_lossy()
+            bail!(
+                "A game restore is incomplete. Finish `ins game setup` with the current repository before changing storage."
             );
-            Ok(TildePath::new(default_path))
-        } else {
-            // Use TildePath to handle tilde expansion automatically
-            let path = TildePath::from_str(&repo_input);
-
-            // Provide guidance for rclone remotes (after interaction, so println is fine)
-            if repo_input.starts_with("rclone:") {
-                println!(
-                    "{} Configuring rclone remote: {repo_input}",
-                    char::from(NerdFont::Folder)
-                );
-                println!(
-                    "{} Make sure your rclone is configured and the remote exists",
-                    char::from(NerdFont::Lightbulb)
-                );
-                println!(
-                    "{} Test with: rclone lsd {repo_input}",
-                    char::from(NerdFont::Terminal)
-                );
-            }
-
-            Ok(path)
         }
+        // Bind legacy installations to the old location BEFORE saving the new
+        // one. If either write fails, sync must not silently use the new storage.
+        for installation in &mut installations.installations {
+            if installation.sync_repository.is_none() {
+                installation.sync_repository =
+                    Some(config.repo.as_path().to_string_lossy().to_string());
+            }
+        }
+        installations
+            .save()
+            .context("Could not preserve game repository associations")?;
+    }
+    let mut updated = config.clone();
+    updated.repo = TildePath::from_str(repository);
+    updated.repo_password = password;
+    updated.save().context("Storage is ready, but saving local settings failed. Re-run setup with 'Connect existing backups' to retry; do not create another repository.")?;
+    *config = updated;
+    Ok(())
+}
+
+fn print_completion(repository: &str) -> Result<()> {
+    println!("Game backup storage is ready: {repository}");
+    println!(
+        "Settings and repository password are saved locally in {} (owner-only access).",
+        games_config_path()?.display()
+    );
+    println!(
+        "On another device: run `ins game setup`, choose Connect existing backups, and select the same storage folder. Custom passwords must also match."
+    );
+    println!(
+        "Next: `ins game add` to track a game, or `ins game setup` to configure games found in backups."
+    );
+    println!(
+        "Use `ins game launch` for automatic sync before/after play, or `ins game sync` for manual sync. Setup alone does not enable background sync."
+    );
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::menu_utils::{MockQueue, scripted_responses_remaining};
+
+    #[test]
+    fn cancelling_local_input_does_not_select_default() {
+        let _guard = MockQueue::new().input_cancelled().guard();
+        assert!(prompt_local_repository().unwrap().is_none());
+    }
+
+    #[test]
+    fn blank_local_input_deliberately_selects_default() {
+        let _guard = MockQueue::new().input_string("").guard();
+        assert_eq!(
+            prompt_local_repository().unwrap(),
+            Some(
+                paths::default_games_repo_path()
+                    .to_string_lossy()
+                    .to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn default_password_requires_no_secret_input() {
+        let _guard = MockQueue::new().select_index(0).guard();
+        assert_eq!(
+            prompt_password(RepositoryIntent::Create).unwrap(),
+            Some(default_password())
+        );
+        assert_eq!(scripted_responses_remaining(), 0);
+    }
+
+    #[test]
+    fn custom_password_preserves_spaces_and_cancels_cleanly() {
+        {
+            let _guard = MockQueue::new()
+                .select_index(1)
+                .password(" secret ")
+                .guard();
+            assert_eq!(
+                prompt_password(RepositoryIntent::Connect).unwrap(),
+                Some(" secret ".to_string())
+            );
+        }
+        let _guard = MockQueue::new()
+            .select_index(1)
+            .password_cancelled()
+            .guard();
+        assert!(prompt_password(RepositoryIntent::Create).unwrap().is_none());
+    }
+
+    #[test]
+    fn cancelling_review_keeps_configuration() {
+        let mut config = InstantGameConfig::default();
+        config.repo = TildePath::from_str("/old/repository");
+        config.repo_password = "original".to_string();
+        let _guard = MockQueue::new().cancel_selection().guard();
+        assert_eq!(
+            run_wizard(&mut config, InitOptions::default()).unwrap(),
+            InitOutcome::Cancelled
+        );
+        assert_eq!(config.repo.display_string(), "/old/repository");
+        assert_eq!(config.repo_password, "original");
+    }
+
+    #[test]
+    fn cancelling_fresh_setup_before_storage_has_no_effect() {
+        let mut config = InstantGameConfig::default();
+        let _guard = MockQueue::new().select_index(0).cancel_selection().guard();
+        assert_eq!(
+            run_wizard(&mut config, InitOptions::default()).unwrap(),
+            InitOutcome::Cancelled
+        );
+        assert!(!config.is_initialized());
+    }
+
+    #[test]
+    fn rejects_empty_repository_and_relative_paths() {
+        for input in ["", " ", "folder", "./folder", "remote:\nfolder"] {
+            assert!(normalize_repository(input).is_err(), "{input:?}");
+        }
+        assert_eq!(
+            normalize_repository("rclone:drive:game saves").unwrap(),
+            "rclone:drive:game saves"
+        );
+    }
+
+    #[test]
+    fn password_errors_have_specific_recovery() {
+        let error = anyhow::Error::new(ResticError::InvalidPassword);
+        let message = connection_guidance(&error);
+        assert!(message.contains("Advanced: repository password"));
+        assert!(!message.contains("no restic repository"));
     }
 }

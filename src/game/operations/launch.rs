@@ -1,6 +1,5 @@
 use std::collections::{BTreeSet, HashMap};
 use std::process::Command;
-use std::thread::sleep;
 use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
@@ -11,12 +10,22 @@ use crate::game::launch_command::LaunchCommand;
 use crate::game::platforms::deps::dependencies_for_launch_command;
 use crate::menu_utils::{FzfSelectable, FzfWrapper};
 
-use super::sync::{SyncReport, sync_game_saves};
+use super::sync::SyncReport;
+use super::ui_dialog::{GameUi, after_launch};
 
 const POST_LAUNCH_SYNC_DELAY: Duration = Duration::from_secs(5);
 
 /// Handle game launching
 pub fn launch_game(game_name: Option<String>) -> Result<()> {
+    let ui = GameUi::detect();
+    let result = launch_with_ui(game_name, &ui);
+    if let Err(error) = &result {
+        ui.error(&format!("{error:#}"));
+    }
+    result
+}
+
+fn launch_with_ui(game_name: Option<String>, ui: &GameUi) -> Result<()> {
     let game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
     let installations =
         InstallationsConfig::load().context("Failed to load installations configuration")?;
@@ -51,19 +60,27 @@ pub fn launch_game(game_name: Option<String>) -> Result<()> {
         selected.source.label()
     );
 
-    let report = sync_game_saves(None, false)?;
+    let title = format!("InstantCLI - {}", selected.name);
+    let report = ui
+        .sync(&title, Duration::ZERO)
+        .context("Pre-launch save sync failed")?;
     ensure_game_synced(&report, &selected.name, "Pre-launch")?;
+    // Unrelated failures shouldn't block this game, but must remain visible.
+    if let Err(error) = report.ensure_success() {
+        ui.error(&format!("Some other games failed to sync:\n{error:#}"));
+    }
 
-    run_launch_command(&selected)?;
-
-    println!(
-        "Waiting {} seconds before syncing saves...",
-        POST_LAUNCH_SYNC_DELAY.as_secs()
-    );
-    sleep(POST_LAUNCH_SYNC_DELAY);
-
-    let report = sync_game_saves(None, false)?;
-    ensure_game_synced(&report, &selected.name, "Post-launch")?;
+    after_launch(run_launch_command(&selected), || {
+        let report = ui
+            .sync(&title, POST_LAUNCH_SYNC_DELAY)
+            .context("Post-exit save sync failed")?;
+        ensure_game_synced(&report, &selected.name, "Post-exit")?;
+        if let Err(error) = report.ensure_success() {
+            ui.error(&format!("Some other games failed to sync:\n{error:#}"));
+        }
+        ui.completed(&report);
+        Ok(())
+    })?;
 
     println!("Finished launch workflow for {}", selected.name);
 

@@ -14,6 +14,9 @@ pub enum GameCommands {
         /// Restic repository password (defaults to built-in password)
         #[arg(long)]
         password: Option<String>,
+        /// Connect an existing repository instead of creating one (with --repo)
+        #[arg(long)]
+        existing: bool,
     },
     /// Add a new game to track
     Add {
@@ -142,7 +145,7 @@ pub enum GameCommands {
         #[arg(add = ArgValueCompleter::new(crate::completions::game_name_completion))]
         game_name: Option<String>,
     },
-    /// Set up games that have been added but are not configured on this device
+    /// Set up backup storage if needed, then configure games on this device
     Setup,
     /// Relocate a game's save path (updates config, does not move files)
     #[command(alias = "move")]

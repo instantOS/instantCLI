@@ -3,6 +3,7 @@ pub mod exec;
 pub mod launch;
 pub mod steam;
 pub mod sync;
+mod ui_dialog;
 
 pub use exec::exec_game_command;
 pub use launch::launch_game;

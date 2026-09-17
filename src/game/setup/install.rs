@@ -4,14 +4,12 @@ use std::fs;
 use std::path::Path;
 
 use crate::common::TildePath;
-use crate::game::checkpoint;
 use crate::game::config::{
     GameInstallation, InstallationsConfig, InstantGameConfig, PathContentKind,
 };
-use crate::game::restic::backup::{GameBackup, RestoreRequest};
 use crate::game::restic::cache;
 use crate::game::utils::safeguards::{PathUsage, ensure_safe_path};
-use crate::game::utils::save_files::{SaveDirectoryInfo, get_save_directory_info};
+use crate::game::utils::save_files::get_save_directory_info;
 use crate::menu::protocol;
 use crate::menu_utils::{ConfirmResult, FzfSelectable, FzfWrapper, HeaderBuilder};
 use crate::ui::nerd_font::NerdFont;
@@ -65,6 +63,7 @@ pub(super) fn setup_single_game_with_discovered_path(
     let snapshot_selection = gather_snapshot_selection(game_name, game_config, snapshot_context)?;
     snapshot_selection.announce(game_name, discovered_save_path);
 
+    let mut discovered_save_path = discovered_save_path;
     let outcome = loop {
         let selected_path = snapshot_selection.select_path(game_name, discovered_save_path)?;
 
@@ -77,7 +76,12 @@ pub(super) fn setup_single_game_with_discovered_path(
                 &snapshot_selection,
             )? {
                 FinalizeOutcome::Done(outcome) => break outcome,
-                FinalizeOutcome::Reselect => continue,
+                FinalizeOutcome::Reselect => {
+                    // A discovered path is only the initial suggestion. Reselect must
+                    // let the user enter another path instead of retrying it forever.
+                    discovered_save_path = None;
+                    continue;
+                }
             },
             None => {
                 emit(
@@ -299,67 +303,28 @@ fn finalize_game_setup(
     let state = capture_path_state(&save_path, save_path_kind, &path_display)?;
 
     let has_existing_snapshot = snapshot_selection.latest_snapshot_id().is_some();
-    let decision = determine_restore_decision(
-        has_existing_snapshot,
-        path_prep.exists_after,
-        path_prep.path_created,
-        state.file_count,
-        save_path_kind,
-    );
-
-    let should_restore = match resolve_restore_decision(
-        game_name,
-        &path_display,
-        save_path_kind,
-        decision,
-        state.directory_info.as_ref(),
-    )? {
-        RestoreFlow::Cancelled => {
-            return Ok(FinalizeOutcome::Done(SetupStepOutcome::Cancelled));
+    use crate::game::reconciliation::{SaveChoice, apply_choice, choose_saves};
+    let choice = if has_existing_snapshot {
+        let snapshots = cache::get_snapshots_for_game(game_name, game_config)?;
+        match choose_saves(&installation, &snapshots)? {
+            SaveChoice::Cancel => return Ok(FinalizeOutcome::Done(SetupStepOutcome::Cancelled)),
+            SaveChoice::Reselect => return Ok(FinalizeOutcome::Reselect),
+            choice => Some(choice),
         }
-        RestoreFlow::Proceed(value) => value,
+    } else if path_prep.exists_after && state.file_count > 0 {
+        Some(SaveChoice::Upload)
+    } else {
+        None
     };
 
-    if should_restore && let Some(snapshot_id) = snapshot_selection.latest_snapshot_id() {
-        emit(
-            Level::Info,
-            "game.setup.restore_latest",
-            &format!(
-                "{} Restoring latest backup ({snapshot_id}) into {path_display}...",
-                char::from(NerdFont::Download)
-            ),
-            None,
-        );
-
-        let restore_summary = restore_latest_backup(
-            game_name,
-            &save_path,
-            snapshot_id,
-            game_config,
-            installation.save_path_type,
-            selected_path.snapshot_path.as_deref(),
-        )?;
-        emit(
-            Level::Success,
-            "game.setup.restore_done",
-            &format!("{} {restore_summary}", char::from(NerdFont::Check)),
-            None,
-        );
-        installation.update_checkpoint(snapshot_id.to_string());
-    }
-
-    if !has_existing_snapshot {
-        handle_initial_checkpoint(
-            game_name,
-            &path_display,
-            game_config,
-            &mut installation,
-            path_prep.exists_after,
-        )?;
-    }
-
+    installation.sync_repository = Some(game_config.repo.as_path().to_string_lossy().to_string());
+    let index = installations.installations.len();
     installations.installations.push(installation);
-    installations.save()?;
+    if let Some(choice) = choice {
+        apply_choice(game_config, installations, index, choice)?;
+    } else {
+        installations.save()?;
+    }
 
     emit(
         Level::Success,
@@ -375,7 +340,6 @@ fn finalize_game_setup(
 }
 
 struct PathPreparation {
-    path_created: bool,
     exists_after: bool,
 }
 
@@ -464,8 +428,6 @@ fn prepare_save_path(
     kind: PathContentKind,
     display: &str,
 ) -> Result<PathPreparationOutcome> {
-    let mut path_created = false;
-
     if kind.is_directory() {
         if !save_path.as_path().exists() {
             match FzfWrapper::confirm(&format!(
@@ -485,21 +447,19 @@ fn prepare_save_path(
                         ),
                         None,
                     );
-                    path_created = true;
                 }
-                ConfirmResult::No | ConfirmResult::Cancelled => {
-                    match resolve_missing_path(display, "Save directory")? {
-                        MissingPathChoiceKind::UseAnyway => {
-                            println!("Directory not created. You can create it later when needed.");
-                        }
-                        MissingPathChoiceKind::Reselect => {
-                            return Ok(PathPreparationOutcome::Reselect);
-                        }
-                        MissingPathChoiceKind::Cancel => {
-                            return Ok(PathPreparationOutcome::Cancelled);
-                        }
+                ConfirmResult::Cancelled => return Ok(PathPreparationOutcome::Cancelled),
+                ConfirmResult::No => match resolve_missing_path(display, "Save directory")? {
+                    MissingPathChoiceKind::UseAnyway => {
+                        println!("Directory not created. You can create it later when needed.");
                     }
-                }
+                    MissingPathChoiceKind::Reselect => {
+                        return Ok(PathPreparationOutcome::Reselect);
+                    }
+                    MissingPathChoiceKind::Cancel => {
+                        return Ok(PathPreparationOutcome::Cancelled);
+                    }
+                },
             }
         }
     } else {
@@ -525,7 +485,6 @@ fn prepare_save_path(
                     fs::create_dir_all(parent).with_context(|| {
                         format!("Failed to create directory '{}'", parent.display())
                     })?;
-                    path_created = true;
                     emit(
                         Level::Success,
                         "game.setup.parent_created",
@@ -537,7 +496,8 @@ fn prepare_save_path(
                         None,
                     );
                 }
-                ConfirmResult::No | ConfirmResult::Cancelled => {
+                ConfirmResult::Cancelled => return Ok(PathPreparationOutcome::Cancelled),
+                ConfirmResult::No => {
                     let parent_display = parent.display().to_string();
                     match resolve_missing_path(&parent_display, "Parent directory")? {
                         MissingPathChoiceKind::UseAnyway => {
@@ -558,14 +518,12 @@ fn prepare_save_path(
     }
 
     Ok(PathPreparationOutcome::Ready(PathPreparation {
-        path_created,
         exists_after: save_path.as_path().exists(),
     }))
 }
 
 struct PathState {
     file_count: u64,
-    directory_info: Option<SaveDirectoryInfo>,
 }
 
 fn capture_path_state(
@@ -578,12 +536,10 @@ fn capture_path_state(
             .with_context(|| format!("Failed to inspect save directory '{display}'"))?;
         Ok(PathState {
             file_count: info.file_count,
-            directory_info: Some(info),
         })
     } else {
         Ok(PathState {
             file_count: if save_path.as_path().exists() { 1 } else { 0 },
-            directory_info: None,
         })
     }
 }
@@ -617,212 +573,32 @@ fn resolve_single_file_save_path(
     }
 }
 
-enum RestoreFlow {
-    Proceed(bool),
-    Cancelled,
-}
-
-fn resolve_restore_decision(
+/// Let the user pick a save path during reconciliation, without any snapshot context.
+pub(super) fn choose_reconciliation_path(
     game_name: &str,
-    display: &str,
-    kind: PathContentKind,
-    decision: RestoreDecision,
-    directory_info: Option<&SaveDirectoryInfo>,
-) -> Result<RestoreFlow> {
-    if !decision.needs_confirmation {
-        return Ok(RestoreFlow::Proceed(decision.should_restore));
-    }
-
-    let prompt = if kind.is_directory() {
-        let info = directory_info
-            .ok_or_else(|| anyhow!("Directory information missing for restore confirmation"))?;
-        format!(
-            "{} The directory '{display}' already contains {} file{}.\nRestoring from backup will replace its contents. Proceed?",
-            char::from(NerdFont::Warning),
-            info.file_count,
-            if info.file_count == 1 { "" } else { "s" }
-        )
-    } else {
-        format!(
-            "{} The file '{display}' already exists. Restoring from backup will overwrite it. Proceed?",
-            char::from(NerdFont::Warning)
-        )
+) -> Result<Option<(TildePath, PathContentKind)>> {
+    let game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
+    let selected_path = match prompt_manual_save_path(game_name, None, false)? {
+        Some(selected_path) => selected_path,
+        None => return Ok(None),
     };
 
-    match FzfWrapper::builder()
-        .confirm(prompt)
-        .yes_text("Restore and overwrite")
-        .no_text("Choose a different path")
-        .confirm_dialog()
-        .map_err(|e| anyhow!("Failed to confirm restore overwrite: {e}"))?
-    {
-        ConfirmResult::Yes => Ok(RestoreFlow::Proceed(true)),
-        ConfirmResult::No => {
-            if kind.is_directory() {
-                println!(
-                    "{} Keeping existing files in '{display}'. Restore skipped.",
-                    char::from(NerdFont::Info)
-                );
-            } else {
-                println!(
-                    "{} Keeping existing file '{display}'. Restore skipped.",
-                    char::from(NerdFont::Info)
-                );
-            }
-            Ok(RestoreFlow::Proceed(false))
-        }
-        ConfirmResult::Cancelled => {
-            emit(
-                Level::Warn,
-                "game.setup.cancelled",
-                &format!(
-                    "{} Setup cancelled for game '{game_name}'.",
-                    char::from(NerdFont::Warning)
-                ),
-                None,
-            );
-            Ok(RestoreFlow::Cancelled)
-        }
-    }
-}
+    let save_path = TildePath::from_str(&selected_path.display_path);
+    let Some(kind) =
+        detect_save_path_kind(&save_path, None, &game_config, &selected_path.display_path)?
+    else {
+        return Ok(None);
+    };
 
-fn handle_initial_checkpoint(
-    game_name: &str,
-    display: &str,
-    game_config: &InstantGameConfig,
-    installation: &mut GameInstallation,
-    path_exists_after: bool,
-) -> Result<()> {
-    if !path_exists_after {
-        emit(
-            Level::Warn,
-            "game.setup.initial_checkpoint.skipped",
-            &format!(
-                "{} Cannot create initial checkpoint because '{display}' does not exist.",
-                char::from(NerdFont::Warning)
-            ),
-            None,
-        );
-        return Ok(());
-    }
+    let save_path = if kind == PathContentKind::File {
+        resolve_single_file_save_path(save_path, &selected_path, None)?
+    } else {
+        save_path
+    };
 
-    emit(
-        Level::Info,
-        "game.setup.initial_checkpoint.start",
-        &format!(
-            "{} No checkpoints found. Creating initial backup from '{display}'...",
-            char::from(NerdFont::Upload)
-        ),
-        None,
-    );
+    ensure_safe_path(save_path.as_path(), PathUsage::SaveDirectory)?;
 
-    let backup_handler = GameBackup::new(game_config.clone());
-    let backup_summary = backup_handler
-        .backup_game(installation)
-        .with_context(|| format!("Failed to create initial checkpoint for game '{game_name}'"))?;
-
-    emit(
-        Level::Success,
-        "game.setup.initial_checkpoint.success",
-        &format!(
-            "{} Initial backup completed ({backup_summary}).",
-            char::from(NerdFont::Check)
-        ),
-        None,
-    );
-
-    if let Some(snapshot_id) =
-        checkpoint::extract_snapshot_id(&backup_summary, game_name, game_config)?
-    {
-        installation.update_checkpoint(snapshot_id.clone());
-    }
-
-    let repo_path = game_config.repo.as_path().to_string_lossy().to_string();
-    cache::invalidate_game_cache(game_name, &repo_path);
-
-    Ok(())
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct RestoreDecision {
-    should_restore: bool,
-    needs_confirmation: bool,
-}
-
-fn determine_restore_decision(
-    has_existing_snapshot: bool,
-    path_exists: bool,
-    path_created: bool,
-    file_count: u64,
-    save_kind: PathContentKind,
-) -> RestoreDecision {
-    if !has_existing_snapshot {
-        return RestoreDecision {
-            should_restore: false,
-            needs_confirmation: false,
-        };
-    }
-
-    match save_kind {
-        PathContentKind::Directory => {
-            if !path_exists {
-                return RestoreDecision {
-                    should_restore: false,
-                    needs_confirmation: false,
-                };
-            }
-
-            if path_created || file_count == 0 {
-                return RestoreDecision {
-                    should_restore: true,
-                    needs_confirmation: false,
-                };
-            }
-
-            RestoreDecision {
-                should_restore: false,
-                needs_confirmation: true,
-            }
-        }
-        PathContentKind::File => {
-            if !path_exists || path_created {
-                return RestoreDecision {
-                    should_restore: true,
-                    needs_confirmation: false,
-                };
-            }
-
-            RestoreDecision {
-                should_restore: false,
-                needs_confirmation: true,
-            }
-        }
-    }
-}
-
-fn restore_latest_backup(
-    game_name: &str,
-    save_path: &TildePath,
-    snapshot_id: &str,
-    game_config: &InstantGameConfig,
-    save_path_type: PathContentKind,
-    snapshot_source_path: Option<&str>,
-) -> Result<String> {
-    let backup_handler = GameBackup::new(game_config.clone());
-    let summary = backup_handler
-        .restore_backup(RestoreRequest {
-            game_name,
-            snapshot_id,
-            path: save_path.as_path(),
-            save_path_type,
-            snapshot_source_path,
-        })
-        .context("Failed to restore latest backup")?;
-
-    let repo_path = game_config.repo.as_path().to_string_lossy().to_string();
-    cache::invalidate_game_cache(game_name, &repo_path);
-
-    Ok(summary)
+    Ok(Some((save_path, kind)))
 }
 
 fn detect_save_path_kind(
@@ -925,65 +701,55 @@ impl FzfSelectable for SavePathKindOption {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::menu_utils::{MockQueue, scripted_responses_remaining};
 
     #[test]
-    fn restore_not_attempted_without_snapshots() {
-        let decision =
-            determine_restore_decision(false, true, false, 10, PathContentKind::Directory);
-        assert_eq!(
-            decision,
-            RestoreDecision {
-                should_restore: false,
-                needs_confirmation: false
-            }
-        );
+    fn missing_directory_escape_cancels_without_followup() -> Result<()> {
+        for kind in [PathContentKind::Directory, PathContentKind::File] {
+            let temp = tempfile::tempdir()?;
+            let missing_directory = temp.path().join("missing");
+            let path = if kind.is_directory() {
+                missing_directory.clone()
+            } else {
+                missing_directory.join("save.dat")
+            };
+            // Leave a follow-up response queued to detect Esc incorrectly behaving as No.
+            let _guard = MockQueue::new().confirm_cancelled().select_index(0).guard();
+            assert!(matches!(
+                prepare_save_path(&TildePath::new(path), kind, "test save path")?,
+                PathPreparationOutcome::Cancelled
+            ));
+            assert_eq!(scripted_responses_remaining(), 1);
+            assert!(!missing_directory.exists());
+        }
+        Ok(())
     }
 
     #[test]
-    fn restore_occurs_without_prompt_for_new_directories() {
-        let decision = determine_restore_decision(true, true, true, 0, PathContentKind::Directory);
-        assert_eq!(
-            decision,
-            RestoreDecision {
-                should_restore: true,
-                needs_confirmation: false
+    fn missing_directory_no_still_offers_keep_reselect_and_cancel() -> Result<()> {
+        for kind in [PathContentKind::Directory, PathContentKind::File] {
+            for index in 0..3 {
+                let temp = tempfile::tempdir()?;
+                let missing_directory = temp.path().join("missing");
+                let path = if kind.is_directory() {
+                    missing_directory.clone()
+                } else {
+                    missing_directory.join("save.dat")
+                };
+                let _guard = MockQueue::new().confirm_no().select_index(index).guard();
+                let outcome = prepare_save_path(&TildePath::new(path), kind, "test save path")?;
+                match (index, outcome) {
+                    (0, PathPreparationOutcome::Ready(prep)) => {
+                        assert!(!prep.exists_after);
+                    }
+                    (1, PathPreparationOutcome::Reselect)
+                    | (2, PathPreparationOutcome::Cancelled) => {}
+                    _ => panic!("Unexpected outcome for missing path choice {index}"),
+                }
+                assert_eq!(scripted_responses_remaining(), 0);
+                assert!(!missing_directory.exists());
             }
-        );
-    }
-
-    #[test]
-    fn restore_requires_confirmation_when_files_exist() {
-        let decision = determine_restore_decision(true, true, false, 5, PathContentKind::Directory);
-        assert_eq!(
-            decision,
-            RestoreDecision {
-                should_restore: false,
-                needs_confirmation: true
-            }
-        );
-    }
-
-    #[test]
-    fn restore_occurs_for_single_file_when_missing() {
-        let decision = determine_restore_decision(true, false, false, 0, PathContentKind::File);
-        assert_eq!(
-            decision,
-            RestoreDecision {
-                should_restore: true,
-                needs_confirmation: false
-            }
-        );
-    }
-
-    #[test]
-    fn restore_prompts_when_single_file_exists() {
-        let decision = determine_restore_decision(true, true, false, 1, PathContentKind::File);
-        assert_eq!(
-            decision,
-            RestoreDecision {
-                should_restore: false,
-                needs_confirmation: true
-            }
-        );
+        }
+        Ok(())
     }
 }

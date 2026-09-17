@@ -35,6 +35,50 @@ pub struct SyncReport {
 }
 
 impl SyncReport {
+    /// Reject any failed game, including failures recorded only in the summary.
+    pub fn ensure_success(&self) -> Result<()> {
+        let failures: Vec<String> = self
+            .games
+            .iter()
+            .filter_map(|outcome| match &outcome.status {
+                GameSyncStatus::Failed(message) => Some(format!("{}: {}", outcome.game, message)),
+                _ => None,
+            })
+            .collect();
+        let failed = self.summary.errors.max(failures.len());
+        if failed == 0 {
+            return Ok(());
+        }
+
+        let mut message = format!("Save sync failed: {failed} failed game(s).");
+        if !failures.is_empty() {
+            message.push('\n');
+            message.push_str(&failures.join("\n"));
+        }
+        if self.summary.errors > failures.len() {
+            message.push_str(&format!(
+                "\n{} failure(s) reported without per-game details.",
+                self.summary.errors - failures.len()
+            ));
+        }
+        Err(anyhow::anyhow!(message))
+    }
+
+    /// Describe actual sync results without implying every run created a backup.
+    pub fn completion_message(&self) -> String {
+        if self.summary.total() == 0 && self.games.is_empty() {
+            return "No games configured for syncing.".to_string();
+        }
+
+        format!(
+            "Save sync results: {} backed up, {} restored, {} skipped, {} failed.",
+            self.summary.backed_up,
+            self.summary.restored,
+            self.summary.skipped,
+            self.summary.errors
+        )
+    }
+
     /// Error message if the given game's sync failed
     pub fn failure_for(&self, game_name: &str) -> Option<&str> {
         self.games
@@ -53,7 +97,14 @@ impl SyncReport {
 /// are recorded in the returned [`SyncReport`] instead of failing the whole
 /// batch; callers decide whether a specific failure is fatal. Only global
 /// failures (config load, restic availability) return `Err`.
-pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<SyncReport> {
+///
+/// The progress callback receives each stage before its terminal spinner starts.
+/// Callers that do not need progress updates can pass `&mut |_| {}`.
+pub fn sync_game_saves(
+    game_name: Option<String>,
+    force: bool,
+    progress: &mut dyn FnMut(&str),
+) -> Result<SyncReport> {
     // Load configurations
     let game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
     let installations =
@@ -92,7 +143,9 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<SyncRep
     for installation in games_to_sync {
         let game_name_plain = installation.game_name.0.clone();
 
-        let spinner = create_spinner(format!("{}: Checking sync status...", game_name_plain));
+        let message = format!("{}: Checking sync status...", game_name_plain);
+        progress(&message);
+        let spinner = create_spinner(message);
         let action_result = decision::determine_action(&installation, &game_config, force);
         spinner.finish_and_clear();
 
@@ -118,16 +171,18 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<SyncRep
                     GameSyncStatus::Skipped
                 }
                 SyncAction::CreateBackup => {
-                    let spinner =
-                        create_spinner(format!("{}: Creating backup...", game_name_plain));
+                    let message = format!("{}: Creating backup...", game_name_plain);
+                    progress(&message);
+                    let spinner = create_spinner(message);
                     let result = execution::perform_backup(&installation, &game_config);
                     spinner.finish_and_clear();
                     ui::report_backup_result(&game_name_plain, &result);
                     sync_status(result, GameSyncStatus::BackedUp)
                 }
                 SyncAction::RestoreFromSnapshot(snapshot_id) => {
-                    let spinner =
-                        create_spinner(format!("{}: Restoring from snapshot...", game_name_plain));
+                    let message = format!("{}: Restoring from snapshot...", game_name_plain);
+                    progress(&message);
+                    let spinner = create_spinner(message);
                     let result =
                         execution::perform_restore(&installation, &game_config, &snapshot_id);
                     spinner.finish_and_clear();
@@ -135,8 +190,9 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<SyncRep
                     sync_status(result, GameSyncStatus::Restored)
                 }
                 SyncAction::RestoreFromLatest(snapshot_id) => {
-                    let spinner =
-                        create_spinner(format!("{}: Restoring latest backup...", game_name_plain));
+                    let message = format!("{}: Restoring latest backup...", game_name_plain);
+                    progress(&message);
+                    let spinner = create_spinner(message);
                     let result =
                         execution::perform_restore(&installation, &game_config, &snapshot_id);
                     spinner.finish_and_clear();
@@ -144,8 +200,9 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<SyncRep
                     sync_status(result, GameSyncStatus::Restored)
                 }
                 SyncAction::CreateInitialBackup => {
-                    let spinner =
-                        create_spinner(format!("{}: Creating initial backup...", game_name_plain));
+                    let message = format!("{}: Creating initial backup...", game_name_plain);
+                    progress(&message);
+                    let spinner = create_spinner(message);
                     let result = execution::perform_backup(&installation, &game_config);
                     spinner.finish_and_clear();
                     ui::report_initial_backup_result(&game_name_plain, &result);
@@ -223,6 +280,116 @@ mod tests {
         assert_eq!(report.failure_for("Fine Game"), None);
         assert_eq!(report.failure_for("Skipped Game"), None);
         assert_eq!(report.failure_for("Unknown Game"), None);
+        assert!(report.ensure_success().is_err());
+        assert_eq!(
+            report.completion_message(),
+            "Save sync results: 1 backed up, 0 restored, 1 skipped, 1 failed."
+        );
+    }
+
+    #[test]
+    fn ensure_success_rejects_individual_failures_with_game_details() {
+        let mut report = SyncReport {
+            summary: SyncSummary {
+                errors: 2,
+                ..SyncSummary::default()
+            },
+            games: vec![
+                GameSyncOutcome {
+                    game: "Broken Game".to_string(),
+                    status: GameSyncStatus::Failed("Save path does not exist".to_string()),
+                },
+                GameSyncOutcome {
+                    game: "Other Game".to_string(),
+                    status: GameSyncStatus::Failed("Repository unavailable".to_string()),
+                },
+            ],
+        };
+
+        for summary_errors in [2, 0] {
+            report.summary.errors = summary_errors;
+            let error = report.ensure_success().unwrap_err().to_string();
+            assert!(error.contains("2 failed game(s)"));
+            assert!(error.contains("Broken Game: Save path does not exist"));
+            assert!(error.contains("Other Game: Repository unavailable"));
+        }
+    }
+
+    #[test]
+    fn ensure_success_rejects_summary_errors_without_game_details() {
+        let report = SyncReport {
+            summary: SyncSummary {
+                errors: 3,
+                ..SyncSummary::default()
+            },
+            games: Vec::new(),
+        };
+
+        let error = report.ensure_success().unwrap_err().to_string();
+        assert!(error.contains("3 failed game(s)"));
+        assert!(error.contains("3 failure(s) reported without per-game details"));
+        assert_eq!(
+            report.completion_message(),
+            "Save sync results: 0 backed up, 0 restored, 0 skipped, 3 failed."
+        );
+    }
+
+    #[test]
+    fn successful_report_reports_backups_and_restores_honestly() {
+        let report = SyncReport {
+            summary: SyncSummary {
+                backed_up: 1,
+                restored: 1,
+                ..SyncSummary::default()
+            },
+            games: vec![
+                GameSyncOutcome {
+                    game: "Backed Up Game".to_string(),
+                    status: GameSyncStatus::BackedUp,
+                },
+                GameSyncOutcome {
+                    game: "Restored Game".to_string(),
+                    status: GameSyncStatus::Restored,
+                },
+            ],
+        };
+
+        assert!(report.ensure_success().is_ok());
+        assert_eq!(
+            report.completion_message(),
+            "Save sync results: 1 backed up, 1 restored, 0 skipped, 0 failed."
+        );
+    }
+
+    #[test]
+    fn skipped_report_does_not_claim_a_backup() {
+        let report = SyncReport {
+            summary: SyncSummary {
+                skipped: 1,
+                ..SyncSummary::default()
+            },
+            games: vec![GameSyncOutcome {
+                game: "Already Synced Game".to_string(),
+                status: GameSyncStatus::Skipped,
+            }],
+        };
+
+        assert!(report.ensure_success().is_ok());
+        assert_eq!(
+            report.completion_message(),
+            "Save sync results: 0 backed up, 0 restored, 1 skipped, 0 failed."
+        );
+    }
+
+    #[test]
+    fn empty_report_reports_no_games_configured() {
+        let report = SyncReport::default();
+
+        assert!(report.ensure_success().is_ok());
+        assert_eq!(
+            report.completion_message(),
+            "No games configured for syncing."
+        );
     }
 
     #[test]

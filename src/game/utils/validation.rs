@@ -7,14 +7,12 @@ use anyhow::{Context, Result};
 /// Common validation utilities for game manager operations
 /// Check if restic is available and show error message if not
 pub fn check_restic_availability() -> Result<()> {
-    if !backup::GameBackup::check_restic_availability()? {
-        eprintln!(
-            "{} Error: restic is not installed or not found in PATH.\n\nPlease install restic to use backup functionality.",
+    backup::GameBackup::validate_restic_version().map_err(|error| {
+        anyhow::anyhow!(
+            "{} Error: {error}\n\nInstall or upgrade restic before using game backups.",
             char::from(NerdFont::CrossCircle)
-        );
-        return Err(anyhow::anyhow!("restic not available"));
-    }
-    Ok(())
+        )
+    })
 }
 
 /// Check if game manager is initialized and show error message if not
@@ -55,11 +53,12 @@ pub fn prompt_initialize_if_needed() -> Result<bool> {
 
     if init == ConfirmResult::Yes {
         // Call initialization logic
-        crate::game::repository::manager::GameRepositoryManager::initialize_game_manager(
-            false,
-            Default::default(),
-        )?;
-        Ok(true)
+        let outcome =
+            crate::game::repository::manager::GameRepositoryManager::initialize_game_manager(
+                false,
+                Default::default(),
+            )?;
+        Ok(outcome == crate::game::repository::manager::InitOutcome::Ready)
     } else {
         Ok(false)
     }

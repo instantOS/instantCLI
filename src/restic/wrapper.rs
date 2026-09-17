@@ -71,14 +71,24 @@ impl ResticWrapper {
         }
     }
 
-    pub fn check_version(&self) -> Result<bool, ResticError> {
+    pub fn installed_version(&self) -> Result<(u64, u64, u64), ResticError> {
         let mut cmd = self.base_command();
         cmd.arg("version");
         let args = vec!["version".to_string()];
 
         let output = self.execute_and_log_command(cmd, &args)?;
-
-        Ok(output.status.success())
+        if !output.status.success() {
+            let code = output.status.code().unwrap_or(1);
+            let stderr = String::from_utf8(output.stderr)?;
+            return Err(ResticError::from_exit_code(code, &stderr));
+        }
+        let stdout = String::from_utf8(output.stdout)?;
+        parse_restic_version(&stdout).ok_or_else(|| {
+            ResticError::CommandFailed(format!(
+                "Could not parse restic version from output: {}",
+                stdout.trim()
+            ))
+        })
     }
 
     pub fn init_repository(&self) -> Result<(), ResticError> {
@@ -316,13 +326,18 @@ impl ResticWrapper {
         Ok(())
     }
 
+    /// Restore an exact directory tree in place, removing entries absent from the snapshot.
+    ///
+    /// Requires restic's `restore --delete` support. Older versions must fail rather
+    /// than silently merge trees. A failed restore may be partial; retry the same
+    /// snapshot and target to finish it without a local recovery copy or directory swap.
     pub fn restore(
         &self,
         snapshot_id: &str,
         subpath: Option<&str>,
         target_path: &std::path::Path,
     ) -> Result<RestoreProgress, ResticError> {
-        let mut args = vec!["restore".to_string()];
+        let mut args = vec!["restore".to_string(), "--delete".to_string()];
 
         let mut snapshot_spec = snapshot_id.to_string();
         if let Some(path) = subpath
@@ -445,6 +460,20 @@ impl ResticWrapper {
         let stdout = String::from_utf8(output.stdout)?;
         RestoreProgress::parse(&stdout)
     }
+}
+
+fn parse_restic_version(output: &str) -> Option<(u64, u64, u64)> {
+    let version = output.split_whitespace().nth(1)?;
+    let mut parts = version.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    let patch = parts
+        .next()?
+        .split(|character: char| !character.is_ascii_digit())
+        .next()?
+        .parse()
+        .ok()?;
+    Some((major, minor, patch))
 }
 
 #[derive(Debug, Deserialize)]
@@ -657,4 +686,97 @@ pub struct RestoreError {
     pub message: String,
     pub during: String,
     pub item: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn parses_supported_restic_versions() {
+        assert_eq!(
+            parse_restic_version("restic 0.19.1 compiled with go1.26 on linux/amd64"),
+            Some((0, 19, 1))
+        );
+        assert_eq!(
+            parse_restic_version("restic 0.17.0-dev compiled with go1.22"),
+            Some((0, 17, 0))
+        );
+        assert_eq!(parse_restic_version("unexpected output"), None);
+    }
+
+    #[test]
+    #[ignore = "requires installed restic with restore --delete support"]
+    fn exact_directory_restore_is_retryable_and_preserves_siblings() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let source = temp.path().join("source");
+        let target = temp.path().join("target");
+        let sibling = temp.path().join("sibling");
+        fs::create_dir_all(source.join("nested"))?;
+        fs::create_dir_all(&target)?;
+        fs::write(source.join("save"), "snapshot save")?;
+        fs::write(source.join("nested/slot"), "snapshot slot")?;
+        fs::write(&sibling, "untouched")?;
+
+        let restic = ResticWrapper::new(
+            temp.path().join("repo").to_string_lossy().into_owned(),
+            "test-password".to_string(),
+        )?;
+        restic.init_repository()?;
+        let backup = restic.backup(&[&source], vec!["test".to_string()], None)?;
+        let snapshot_id = backup
+            .summary
+            .and_then(|summary| summary.snapshot_id)
+            .ok_or_else(|| anyhow::anyhow!("Backup did not create a snapshot"))?;
+        let source_path = source
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("Invalid source"))?;
+
+        fs::write(target.join("save"), "local changes")?;
+        fs::create_dir_all(target.join("stale/nested"))?;
+        fs::write(target.join("stale/nested/obsolete"), "not in snapshot")?;
+        fs::write(target.join("extra"), "not in snapshot")?;
+
+        // A failure must propagate, without preemptively clearing the target.
+        assert!(
+            restic
+                .restore("not-a-snapshot", Some(source_path), &target)
+                .is_err()
+        );
+        assert_eq!(fs::read_to_string(target.join("save"))?, "local changes");
+        assert!(target.join("extra").exists());
+
+        restic.restore(&snapshot_id, Some(source_path), &target)?;
+        assert_eq!(fs::read_to_string(target.join("save"))?, "snapshot save");
+        assert_eq!(
+            fs::read_to_string(target.join("nested/slot"))?,
+            "snapshot slot"
+        );
+        assert!(!target.join("extra").exists());
+        assert!(!target.join("stale").exists());
+        assert_eq!(fs::read_to_string(&sibling)?, "untouched");
+
+        // Model an incomplete tree and retry the same durable snapshot ID.
+        fs::remove_file(target.join("nested/slot"))?;
+        fs::write(target.join("interrupted"), "partial restore")?;
+        restic.restore(&snapshot_id, Some(source_path), &target)?;
+        restic.restore(&snapshot_id, Some(source_path), &target)?;
+        assert_eq!(
+            fs::read_to_string(target.join("nested/slot"))?,
+            "snapshot slot"
+        );
+        assert!(!target.join("interrupted").exists());
+        assert_eq!(fs::read_to_string(&sibling)?, "untouched");
+
+        let mut entries = fs::read_dir(temp.path())?
+            .map(|entry| entry.map(|entry| entry.file_name()))
+            .collect::<Result<Vec<_>, _>>()?;
+        entries.sort();
+        assert_eq!(
+            entries,
+            ["repo", "sibling", "source", "target"].map(std::ffi::OsString::from)
+        );
+        Ok(())
+    }
 }

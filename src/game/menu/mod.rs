@@ -939,7 +939,7 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
                 continue;
             }
             GameMenuEntry::SyncAll => {
-                match sync_game_saves(None, false) {
+                match sync_game_saves(None, false, &mut |_| {}) {
                     Ok(report) => {
                         let summary = report.summary;
                         // Show summary in a message dialog
@@ -1164,11 +1164,12 @@ fn show_uninitialized_menu() -> Result<()> {
                     Default::default(),
                 );
             match init_result {
-                Ok(()) => {
+                Ok(crate::game::repository::manager::InitOutcome::Ready) => {
                     FzfWrapper::message(
-                        "Game save manager initialized successfully!\n\nYou can now add games with 'ins game add' or open the menu again.",
+                        "Backup storage is ready. Use 'ins game add' for new games or 'ins game setup' for games found in backups.",
                     )?;
                 }
+                Ok(crate::game::repository::manager::InitOutcome::Cancelled) => {}
                 Err(e) => {
                     FzfWrapper::message(&format!("Initialization failed: {}", e))?;
                 }
