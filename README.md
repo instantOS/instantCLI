@@ -18,6 +18,23 @@ system diagnostics, WM keychords, game saves and much more.
 - Arch Linux Installer
 - video editing (yes, I know it's random)
 
+### Emoji picker
+
+`ins assist run e` opens a searchable instantMENU emoji picker and copies the
+selection to the clipboard. Enter selects; Ctrl-Enter adds more emoji before
+Enter finishes; Escape cancels without changing the clipboard. Recent/frequent
+selections rise to the top.
+
+This replaces Emote outright. It requires the current Rust instantMENU (including
+`value=` metadata and `--frecency-cache`), clipboard utilities (`wl-copy` on
+Wayland, `xclip` on X11), and an emoji-capable font. Install instantMENU from its
+[releases](https://github.com/instantOS/instantMENU/releases) or source if it is
+not available through your package manager. There is no Emote/legacy-menu fallback.
+
+The full Unicode 17 English-name catalog is embedded as ~157 KiB of plain UTF-8
+(including its license), so no download is needed at build time or first use.
+See [catalog provenance and regeneration](src/assist/actions/emoji/README.md).
+
 ### Notification history
 
 `ins notify` browses notification history (`ins notify --gui` opens it in a
