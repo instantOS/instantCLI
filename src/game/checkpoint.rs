@@ -77,8 +77,16 @@ pub fn mark_restore_pending(game_name: &str, snapshot_id: &str) -> Result<()> {
         .context("Could not save restore retry state; no files were restored")
 }
 
-/// Update checkpoint with the snapshot's actual timestamp (not current time)
-pub fn update_checkpoint_after_restore(game_name: &str, snapshot_id: &str) -> Result<()> {
+/// Complete a restore in one durable config write.
+///
+/// Keeping the checkpoint, acknowledged remote head, and pending marker in the
+/// same transition prevents a crash from making an explicit historical restore
+/// look like an ordinary stale checkpoint.
+pub fn complete_restore(
+    game_name: &str,
+    snapshot_id: &str,
+    acknowledged_snapshot: Option<&str>,
+) -> Result<()> {
     let mut installations =
         InstallationsConfig::load().context("Failed to load installations configuration")?;
 
@@ -88,19 +96,22 @@ pub fn update_checkpoint_after_restore(game_name: &str, snapshot_id: &str) -> Re
     let snapshot = cache::get_snapshot_by_id(snapshot_id, game_name, &game_config)?
         .context("Snapshot not found for checkpoint update")?;
 
-    // Find and update the installation
-    for installation in &mut installations.installations {
-        if installation.game_name.0 == game_name {
-            // Store the resolved full snapshot ID, never the user-supplied
-            // (possibly short) form, so checkpoint comparisons stay exact.
-            installation.update_checkpoint_at(snapshot.id.clone(), snapshot.time);
-            break;
-        }
-    }
+    let installation = installations
+        .installations
+        .iter_mut()
+        .find(|installation| installation.game_name.0 == game_name)
+        .with_context(|| format!("No installation configured for game '{game_name}'"))?;
+    // Store the resolved full snapshot ID, never the user-supplied (possibly
+    // short) form, so checkpoint comparisons stay exact.
+    installation.complete_restore_at(
+        snapshot.id.clone(),
+        snapshot.time,
+        acknowledged_snapshot.map(str::to_string),
+    );
 
     installations
         .save()
-        .context("Failed to save updated installations configuration")
+        .context("Failed to save completed restore state")
 }
 
 #[cfg(test)]

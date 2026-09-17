@@ -58,21 +58,33 @@ pub(crate) fn choose_saves(
             )
         })
         .unwrap_or_else(|| "No backups in this repository.".into());
+    let recovery_warning = installation.pending_restore.as_ref().map_or("", |_| {
+        "\nWARNING: The previous restore did not complete. Current local files may be a partial restore; upload them only if you deliberately want to keep that state."
+    });
     let summary = format!(
-        "Game: {}\nLocal path: {}\nLocal files last modified: {}\nLocal contents: {} files, {} bytes\n{}\nModification time and backup creation time are different measurements, not proof of game progress.\nRestoring replaces local saves, including removing files absent from the backup. No recovery copy is kept.",
+        "Game: {}\nLocal path: {}\nLocal files last modified: {}\nLocal contents: {} files, {} bytes\n{}{}\nModification time and backup creation time are different measurements, not proof of game progress.\nRestoring replaces local saves, including removing files absent from the backup. No recovery copy is kept.",
         installation.game_name.0,
         installation.save_path.display_string(),
         format_system_time_for_display(local.last_modified),
         local.file_count,
         local.total_size,
-        backup_info
+        backup_info,
+        recovery_warning
     );
     loop {
         let mut choices = Vec::new();
         if local.file_count > 0 {
             choices.push(Choice {
-                label: "Use local saves — upload now",
-                description: "Back up local saves and use them on this device. This becomes the newest backup and may be downloaded by other devices.",
+                label: if installation.pending_restore.is_some() {
+                    "Accept current local files — upload now"
+                } else {
+                    "Use local saves — upload now"
+                },
+                description: if installation.pending_restore.is_some() {
+                    "Explicitly accept the possibly partial local restore, back it up, and clear the incomplete-restore state."
+                } else {
+                    "Back up local saves and use them on this device. This becomes the newest backup and may be downloaded by other devices."
+                },
                 action: MenuAction::Upload,
             });
         }
@@ -184,14 +196,11 @@ pub(crate) fn apply_choice(
                     path: installation.save_path.as_path(),
                     save_path_type: installation.save_path_type,
                     snapshot_source_path: snapshot.paths.first().map(String::as_str),
+                    acknowledged_snapshot: head.as_deref(),
                 })
                 .context("Could not reconcile saves from the selected backup")?;
             *installations = InstallationsConfig::load()
                 .context("Could not reload installation after restore")?;
-            let installation = &mut installations.installations[index];
-            // The checkpoint describes actual contents; the acknowledged head only
-            // prevents an immediate re-restore of a newer, deliberately rejected version.
-            installation.acknowledged_snapshot = head;
         }
         SaveChoice::Cancel | SaveChoice::Reselect => bail!("No save action selected"),
     }
@@ -209,18 +218,29 @@ pub(crate) fn reconcile_configured_games(config: &InstantGameConfig) -> Result<b
     let repository = config.repo.as_path().to_string_lossy().to_string();
     for index in 0..installations.installations.len() {
         let installation = &installations.installations[index];
+        let mut unavailable_pending_restore = false;
         if let Some(id) = installation.pending_restore.clone() {
-            if FzfWrapper::confirm(&format!(
-                "Restore for '{}' was incomplete. Retry the selected backup now?",
-                installation.game_name.0
-            ))? != crate::menu_utils::ConfirmResult::Yes
-            {
-                return Ok(false);
+            let snapshots = cache::get_snapshots_for_game(&installation.game_name.0, config)?;
+            if snapshots.iter().any(|snapshot| snapshot.matches_id(&id)) {
+                if FzfWrapper::confirm(&format!(
+                    "Restore for '{}' was incomplete. Retry the selected backup now?",
+                    installation.game_name.0
+                ))? != crate::menu_utils::ConfirmResult::Yes
+                {
+                    return Ok(false);
+                }
+                apply_choice(config, &mut installations, index, SaveChoice::Restore(id))?;
+                continue;
             }
-            apply_choice(config, &mut installations, index, SaveChoice::Restore(id))?;
-            continue;
+            FzfWrapper::message(&format!(
+                "The incomplete restore snapshot '{id}' for '{}' is no longer available. Choose another backup, or explicitly accept and upload the current local files.",
+                installation.game_name.0
+            ))?;
+            unavailable_pending_restore = true;
         }
-        if !installation.needs_repository_reconciliation(&repository) {
+        if !unavailable_pending_restore
+            && !installation.needs_repository_reconciliation(&repository)
+        {
             continue;
         }
         loop {

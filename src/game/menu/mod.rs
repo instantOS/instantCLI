@@ -939,7 +939,7 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
                 continue;
             }
             GameMenuEntry::SyncAll => {
-                match sync_game_saves(None, false) {
+                match sync_game_saves(None, false, &mut |_| {}) {
                     Ok(report) => {
                         let summary = report.summary;
                         // Show summary in a message dialog

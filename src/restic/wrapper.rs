@@ -71,14 +71,24 @@ impl ResticWrapper {
         }
     }
 
-    pub fn check_version(&self) -> Result<bool, ResticError> {
+    pub fn installed_version(&self) -> Result<(u64, u64, u64), ResticError> {
         let mut cmd = self.base_command();
         cmd.arg("version");
         let args = vec!["version".to_string()];
 
         let output = self.execute_and_log_command(cmd, &args)?;
-
-        Ok(output.status.success())
+        if !output.status.success() {
+            let code = output.status.code().unwrap_or(1);
+            let stderr = String::from_utf8(output.stderr)?;
+            return Err(ResticError::from_exit_code(code, &stderr));
+        }
+        let stdout = String::from_utf8(output.stdout)?;
+        parse_restic_version(&stdout).ok_or_else(|| {
+            ResticError::CommandFailed(format!(
+                "Could not parse restic version from output: {}",
+                stdout.trim()
+            ))
+        })
     }
 
     pub fn init_repository(&self) -> Result<(), ResticError> {
@@ -452,6 +462,20 @@ impl ResticWrapper {
     }
 }
 
+fn parse_restic_version(output: &str) -> Option<(u64, u64, u64)> {
+    let version = output.split_whitespace().nth(1)?;
+    let mut parts = version.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    let patch = parts
+        .next()?
+        .split(|character: char| !character.is_ascii_digit())
+        .next()?
+        .parse()
+        .ok()?;
+    Some((major, minor, patch))
+}
+
 #[derive(Debug, Deserialize)]
 pub struct BackupProgress {
     pub summary: Option<BackupSummary>,
@@ -668,6 +692,19 @@ pub struct RestoreError {
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn parses_supported_restic_versions() {
+        assert_eq!(
+            parse_restic_version("restic 0.19.1 compiled with go1.26 on linux/amd64"),
+            Some((0, 19, 1))
+        );
+        assert_eq!(
+            parse_restic_version("restic 0.17.0-dev compiled with go1.22"),
+            Some((0, 17, 0))
+        );
+        assert_eq!(parse_restic_version("unexpected output"), None);
+    }
 
     #[test]
     #[ignore = "requires installed restic with restore --delete support"]

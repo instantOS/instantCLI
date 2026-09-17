@@ -14,6 +14,8 @@ pub struct RestoreRequest<'a> {
     pub save_path_type: PathContentKind,
     /// Optional hint for the snapshot source path (from cached snapshot metadata)
     pub snapshot_source_path: Option<&'a str>,
+    /// Remote head deliberately superseded by an explicit historical restore.
+    pub acknowledged_snapshot: Option<&'a str>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -156,10 +158,12 @@ impl GameBackup {
                 request.game_name
             )
         })?;
-        checkpoint::update_checkpoint_after_restore(request.game_name, request.snapshot_id)
-            .context(
-                "Restore completed, but its checkpoint could not be saved; retry before syncing",
-            )?;
+        checkpoint::complete_restore(
+            request.game_name,
+            request.snapshot_id,
+            request.acknowledged_snapshot,
+        )
+        .context("Restore completed, but its state could not be saved; retry before syncing")?;
         Ok(summary)
     }
 
@@ -251,17 +255,18 @@ impl GameBackup {
         }
     }
 
-    /// Check if restic is available on the system
-    pub fn check_restic_availability() -> Result<bool> {
-        // Use the wrapper to query version
-        let restic = ResticWrapper::new("".to_string(), "".to_string());
-        match restic {
-            Ok(r) => match r.check_version() {
-                Ok(success) => Ok(success),
-                Err(_) => Ok(false),
-            },
-            Err(_) => Ok(false),
-        }
+    /// Require the restore semantics used by game-save reconciliation.
+    pub fn validate_restic_version() -> Result<()> {
+        let restic = ResticWrapper::new(String::new(), String::new())?;
+        let version = restic.installed_version()?;
+        anyhow::ensure!(
+            version >= (0, 17, 0),
+            "restic 0.17.0 or newer is required; found {}.{}.{}",
+            version.0,
+            version.1,
+            version.2
+        );
+        Ok(())
     }
 }
 

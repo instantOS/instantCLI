@@ -29,7 +29,9 @@ use super::cli::DebugCommands;
 /// Ensure restic is available, prompting for installation if needed
 fn ensure_restic_available() -> Result<()> {
     match ensure_all(&[&RESTIC])? {
-        InstallResult::Installed | InstallResult::AlreadyInstalled => Ok(()),
+        InstallResult::Installed | InstallResult::AlreadyInstalled => {
+            super::utils::validation::check_restic_availability()
+        }
         InstallResult::Declined => Err(anyhow::anyhow!("restic installation cancelled")),
         InstallResult::NotAvailable { hint, .. } => {
             Err(anyhow::anyhow!("restic not available: {}", hint))
@@ -351,7 +353,7 @@ fn handle_add(options: AddGameOptions) -> Result<()> {
 }
 
 fn handle_sync(game_name: Option<String>, force: bool) -> Result<()> {
-    let report = sync_game_saves(game_name, force)?;
+    let report = sync_game_saves(game_name, force, &mut |_| {})?;
     if report.summary.errors > 0 {
         return Err(anyhow::anyhow!(
             "sync completed with {} errors",

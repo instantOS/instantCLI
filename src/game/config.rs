@@ -216,6 +216,16 @@ impl GameInstallation {
         self.pending_restore = None;
     }
 
+    pub fn complete_restore_at(
+        &mut self,
+        checkpoint_id: impl Into<String>,
+        time: impl Into<String>,
+        acknowledged_snapshot: Option<String>,
+    ) {
+        self.update_checkpoint_at(checkpoint_id, time);
+        self.acknowledged_snapshot = acknowledged_snapshot;
+    }
+
     /// Legacy installations without an associated repository remain compatible.
     pub fn needs_repository_reconciliation(&self, repository: &str) -> bool {
         self.sync_repository
@@ -486,6 +496,30 @@ mod tests {
             assert!(installation.pending_restore.is_none());
             assert_eq!(installation.sync_repository.as_deref(), Some("repo"));
         }
+    }
+
+    #[test]
+    fn restore_completion_persists_checkpoint_and_acknowledgement_together() {
+        let mut installation = GameInstallation::with_kind(
+            "Game",
+            TildePath::new(PathBuf::from("/saves")),
+            PathContentKind::Directory,
+        );
+        installation.pending_restore = Some("historical".into());
+        installation.complete_restore_at(
+            "historical",
+            "2026-01-01T00:00:00Z",
+            Some("remote-head".into()),
+        );
+        assert_eq!(
+            installation.nearest_checkpoint.as_deref(),
+            Some("historical")
+        );
+        assert_eq!(
+            installation.acknowledged_snapshot.as_deref(),
+            Some("remote-head")
+        );
+        assert!(installation.pending_restore.is_none());
     }
 
     #[test]

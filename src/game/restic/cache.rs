@@ -140,5 +140,5 @@ pub fn get_snapshot_by_id(
 
     Ok(snapshots
         .into_iter()
-        .find(|snapshot| snapshot.id == snapshot_id))
+        .find(|snapshot| snapshot.matches_id(snapshot_id)))
 }

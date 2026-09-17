@@ -97,7 +97,7 @@ pub async fn handle_update_command(debug: bool) -> Result<()> {
     // We pass None for game_name to sync all games, and false for force.
     // Per-game errors (e.g. an unmounted drive) are reported by the sync
     // itself and must not abort the whole system update.
-    let report = sync_game_saves(None, false)?;
+    let report = sync_game_saves(None, false, &mut |_| {})?;
 
     if report.summary.errors > 0 {
         emit(

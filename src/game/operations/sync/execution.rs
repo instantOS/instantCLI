@@ -50,6 +50,7 @@ pub fn perform_restore(
             path: save_path,
             save_path_type: installation.save_path_type,
             snapshot_source_path: snapshot_hint.as_deref(),
+            acknowledged_snapshot: None,
         })
         .context("Failed to restore from snapshot")?;
 
