@@ -166,7 +166,8 @@ pub struct GameInstallation {
     /// Repository associated with this installation's local sync state.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sync_repository: Option<String>,
-    /// Remote head acknowledged by an explicit historical restore, not local contents.
+    /// Remote head acknowledged by an explicit historical restore, not local
+    /// contents. Never the restored snapshot itself.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub acknowledged_snapshot: Option<String>,
     /// Snapshot whose restore must complete before automatic sync is safe.
@@ -198,32 +199,40 @@ impl GameInstallation {
         }
     }
 
-    pub fn update_checkpoint(&mut self, checkpoint_id: impl Into<String>) {
-        self.nearest_checkpoint = Some(checkpoint_id.into());
-        self.checkpoint_time = Some(chrono::Utc::now().to_rfc3339());
-        self.acknowledged_snapshot = None;
-        self.pending_restore = None;
+    /// Record a fresh backup as the checkpoint local saves reflect.
+    pub fn note_backup(&mut self, checkpoint_id: impl Into<String>) {
+        self.set_checkpoint(checkpoint_id, chrono::Utc::now().to_rfc3339());
     }
 
-    pub fn update_checkpoint_at(
+    /// Settle a completed restore in one transition.
+    ///
+    /// The checkpoint records what local saves now contain; the acknowledged
+    /// head records which remote head was deliberately not restored. The two
+    /// must differ: acknowledging a head equal to the checkpoint would claim
+    /// the local saves hold contents they do not.
+    pub fn note_restored_snapshot(
         &mut self,
         checkpoint_id: impl Into<String>,
         time: impl Into<String>,
+        acknowledged_head: Option<String>,
     ) {
+        let checkpoint_id = checkpoint_id.into();
+        debug_assert!(
+            acknowledged_head.as_deref() != Some(checkpoint_id.as_str()),
+            "an acknowledged head must differ from the restored checkpoint"
+        );
+        self.set_checkpoint(checkpoint_id, time);
+        self.acknowledged_snapshot = acknowledged_head;
+    }
+
+    /// Every checkpoint transition invalidates transient sync state: the
+    /// previous acknowledgement and any pending-restore marker describe the
+    /// superseded state, not the new one.
+    fn set_checkpoint(&mut self, checkpoint_id: impl Into<String>, time: impl Into<String>) {
         self.nearest_checkpoint = Some(checkpoint_id.into());
         self.checkpoint_time = Some(time.into());
         self.acknowledged_snapshot = None;
         self.pending_restore = None;
-    }
-
-    pub fn complete_restore_at(
-        &mut self,
-        checkpoint_id: impl Into<String>,
-        time: impl Into<String>,
-        acknowledged_snapshot: Option<String>,
-    ) {
-        self.update_checkpoint_at(checkpoint_id, time);
-        self.acknowledged_snapshot = acknowledged_snapshot;
     }
 
     /// Legacy installations without an associated repository remain compatible.
@@ -478,24 +487,33 @@ mod tests {
             PathContentKind::Directory,
         );
         installation.sync_repository = Some("repo".into());
-        for explicit_time in [false, true] {
-            installation.acknowledged_snapshot = Some("head".into());
-            installation.pending_restore = Some("old".into());
-            if explicit_time {
-                installation.update_checkpoint_at("old", "2026-01-01T00:00:00Z");
-                assert_eq!(
-                    installation.checkpoint_time.as_deref(),
-                    Some("2026-01-01T00:00:00Z")
-                );
-            } else {
-                installation.update_checkpoint("old");
-                assert!(installation.checkpoint_time.is_some());
-            }
-            assert_eq!(installation.nearest_checkpoint.as_deref(), Some("old"));
-            assert!(installation.acknowledged_snapshot.is_none());
-            assert!(installation.pending_restore.is_none());
-            assert_eq!(installation.sync_repository.as_deref(), Some("repo"));
-        }
+
+        // A fresh backup checkpoint clears transient sync state.
+        installation.acknowledged_snapshot = Some("head".into());
+        installation.pending_restore = Some("old".into());
+        installation.note_backup("old");
+        assert_eq!(installation.nearest_checkpoint.as_deref(), Some("old"));
+        assert!(installation.checkpoint_time.is_some());
+        assert!(installation.acknowledged_snapshot.is_none());
+        assert!(installation.pending_restore.is_none());
+        assert_eq!(installation.sync_repository.as_deref(), Some("repo"));
+
+        // A completed restore clears it too, keeping only the acknowledged
+        // head that belongs to the new state.
+        installation.acknowledged_snapshot = Some("head".into());
+        installation.pending_restore = Some("old".into());
+        installation.note_restored_snapshot("old", "2026-01-01T00:00:00Z", Some("remote".into()));
+        assert_eq!(installation.nearest_checkpoint.as_deref(), Some("old"));
+        assert_eq!(
+            installation.checkpoint_time.as_deref(),
+            Some("2026-01-01T00:00:00Z")
+        );
+        assert_eq!(
+            installation.acknowledged_snapshot.as_deref(),
+            Some("remote")
+        );
+        assert!(installation.pending_restore.is_none());
+        assert_eq!(installation.sync_repository.as_deref(), Some("repo"));
     }
 
     #[test]
@@ -506,7 +524,7 @@ mod tests {
             PathContentKind::Directory,
         );
         installation.pending_restore = Some("historical".into());
-        installation.complete_restore_at(
+        installation.note_restored_snapshot(
             "historical",
             "2026-01-01T00:00:00Z",
             Some("remote-head".into()),
@@ -523,14 +541,29 @@ mod tests {
     }
 
     #[test]
-    fn test_game_installation_update_checkpoint() {
+    #[should_panic(expected = "acknowledged head must differ")]
+    fn acknowledged_head_must_differ_from_the_restored_checkpoint() {
+        let mut installation = GameInstallation::with_kind(
+            "Game",
+            TildePath::new(PathBuf::from("/saves")),
+            PathContentKind::Directory,
+        );
+        installation.note_restored_snapshot(
+            "historical",
+            "2026-01-01T00:00:00Z",
+            Some("historical".into()),
+        );
+    }
+
+    #[test]
+    fn note_backup_updates_checkpoint() {
         let mut installation = GameInstallation::with_kind(
             GameName("test_game".to_string()),
             TildePath::new(PathBuf::from("~/.test/saves")),
             PathContentKind::Directory,
         );
 
-        installation.update_checkpoint("checkpoint456");
+        installation.note_backup("checkpoint456");
         assert_eq!(
             installation.nearest_checkpoint,
             Some("checkpoint456".to_string())
@@ -538,7 +571,7 @@ mod tests {
         assert_eq!(installation.launch_command, None);
         assert!(installation.dependencies.is_empty());
 
-        installation.update_checkpoint("checkpoint789");
+        installation.note_backup("checkpoint789");
         assert_eq!(
             installation.nearest_checkpoint,
             Some("checkpoint789".to_string())
@@ -576,12 +609,12 @@ mod tests {
         assert!(!installation.checkpoint_matches(&snapshot));
 
         // Writes are normalized to the full ID (see checkpoint.rs).
-        installation.update_checkpoint(FULL_ID);
+        installation.note_backup(FULL_ID);
         assert!(installation.checkpoint_matches(&snapshot));
 
         // Legacy configs holding the short form (hand-edited or pre-
         // normalization) must still match, or sync re-restores over saves.
-        installation.update_checkpoint(SHORT_ID);
+        installation.nearest_checkpoint = Some(SHORT_ID.into());
         assert!(installation.checkpoint_matches(&snapshot));
 
         // Unrelated snapshots never match.

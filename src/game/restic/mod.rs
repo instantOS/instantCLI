@@ -296,11 +296,6 @@ pub fn restore_game_saves(
 
     // Step 8: Perform the restore
     let save_path = game_selection.installation.save_path.as_path();
-    let acknowledged_snapshot =
-        cache::get_snapshots_for_game(&game_selection.game_name, &game_config)?
-            .first()
-            .filter(|head| !head.matches_id(&snapshot.id))
-            .map(|head| head.id.clone());
     let backup_handler = GameBackup::new(game_config);
 
     emit_restic_event(
@@ -325,7 +320,6 @@ pub fn restore_game_saves(
         path: save_path,
         save_path_type: game_selection.installation.save_path_type,
         snapshot_source_path: snapshot.paths.first().map(|path| path.as_str()),
-        acknowledged_snapshot: acknowledged_snapshot.as_deref(),
     }) {
         Ok(output) => {
             let output_clone = output.clone();

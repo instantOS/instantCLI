@@ -174,7 +174,7 @@ pub(crate) fn apply_choice(
                 config,
             )?
             .context("Backup completed but no checkpoint could be resolved; run setup again")?;
-            installations.installations[index].update_checkpoint(id);
+            installations.installations[index].note_backup(id);
         }
         SaveChoice::Restore(id) => {
             let snapshots = cache::get_snapshots_for_game(&game_name, config)?;
@@ -182,7 +182,6 @@ pub(crate) fn apply_choice(
                 .iter()
                 .find(|snapshot| snapshot.matches_id(&id))
                 .context("Selected backup is no longer available")?;
-            let head = snapshots.first().map(|snapshot| snapshot.id.clone());
             // Persist any reselected path or newly-created installation before
             // the managed restore writes its durable retry marker.
             installations
@@ -196,7 +195,6 @@ pub(crate) fn apply_choice(
                     path: installation.save_path.as_path(),
                     save_path_type: installation.save_path_type,
                     snapshot_source_path: snapshot.paths.first().map(String::as_str),
-                    acknowledged_snapshot: head.as_deref(),
                 })
                 .context("Could not reconcile saves from the selected backup")?;
             *installations = InstallationsConfig::load()

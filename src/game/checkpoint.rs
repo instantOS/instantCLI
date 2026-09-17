@@ -11,7 +11,7 @@ fn update_local(game_name: &str, checkpoint_id: &str) -> Result<()> {
     // Find and update the installation
     for installation in &mut installations.installations {
         if installation.game_name.0 == game_name {
-            installation.update_checkpoint(checkpoint_id);
+            installation.note_backup(checkpoint_id);
             break;
         }
     }
@@ -82,11 +82,7 @@ pub fn mark_restore_pending(game_name: &str, snapshot_id: &str) -> Result<()> {
 /// Keeping the checkpoint, acknowledged remote head, and pending marker in the
 /// same transition prevents a crash from making an explicit historical restore
 /// look like an ordinary stale checkpoint.
-pub fn complete_restore(
-    game_name: &str,
-    snapshot_id: &str,
-    acknowledged_snapshot: Option<&str>,
-) -> Result<()> {
+pub fn complete_restore(game_name: &str, snapshot_id: &str) -> Result<()> {
     let mut installations =
         InstallationsConfig::load().context("Failed to load installations configuration")?;
 
@@ -96,6 +92,13 @@ pub fn complete_restore(
     let snapshot = cache::get_snapshot_by_id(snapshot_id, game_name, &game_config)?
         .context("Snapshot not found for checkpoint update")?;
 
+    // Acknowledge the remote head unless the restore targeted it: a head that
+    // matches the checkpoint was restored, not superseded.
+    let acknowledged_head = cache::get_snapshots_for_game(game_name, &game_config)?
+        .first()
+        .filter(|head| !head.matches_id(&snapshot.id))
+        .map(|head| head.id.clone());
+
     let installation = installations
         .installations
         .iter_mut()
@@ -103,11 +106,7 @@ pub fn complete_restore(
         .with_context(|| format!("No installation configured for game '{game_name}'"))?;
     // Store the resolved full snapshot ID, never the user-supplied (possibly
     // short) form, so checkpoint comparisons stay exact.
-    installation.complete_restore_at(
-        snapshot.id.clone(),
-        snapshot.time,
-        acknowledged_snapshot.map(str::to_string),
-    );
+    installation.note_restored_snapshot(snapshot.id.clone(), snapshot.time, acknowledged_head);
 
     installations
         .save()

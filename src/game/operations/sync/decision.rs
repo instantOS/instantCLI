@@ -258,7 +258,8 @@ mod tests {
     #[test]
     fn acknowledged_head_preserves_historical_contents_until_local_edits() {
         let mut installation = installation();
-        installation.update_checkpoint_at("historical", "2026-01-01T00:00:00Z");
+        installation.nearest_checkpoint = Some("historical".into());
+        installation.checkpoint_time = Some("2026-01-01T00:00:00Z".into());
         let head = snapshot(&"a".repeat(64));
         installation.acknowledged_snapshot = Some(head.id.clone());
 
@@ -297,7 +298,7 @@ mod tests {
     fn new_head_or_missing_checkpoint_resumes_normal_decision() {
         let mut installation = installation();
         let head = snapshot(&"a".repeat(64));
-        installation.update_checkpoint("historical");
+        installation.note_backup("historical");
         installation.acknowledged_snapshot = Some(head.short_id.clone());
         assert!(acknowledged_head_action(&installation, &head, None).is_some());
         assert!(
@@ -305,7 +306,7 @@ mod tests {
         );
         installation.nearest_checkpoint = None;
         assert!(acknowledged_head_action(&installation, &head, None).is_none());
-        installation.update_checkpoint("historical");
+        installation.note_backup("historical");
         assert!(acknowledged_head_action(&installation, &head, None).is_none());
     }
 }
