@@ -238,7 +238,7 @@ impl Setting for ConfigureDisplay {
             .id("display.configure")
             .title("Display Configuration")
             .icon(NerdFont::Monitor)
-            .summary("Configure display resolution and refresh rate.\n\nSelect a display and choose from available modes.\n\nSupported on X11 (all WMs), Sway, Hyprland, and InstantWM Wayland.")
+            .summary("Configure display resolution and refresh rate.\n\nSelect a display and choose from available modes.\n\nSupported on X11, Sway, Hyprland, and instantWM.")
             .build()
     }
 
@@ -253,16 +253,15 @@ impl Setting for ConfigureDisplay {
         let is_hyprland = matches!(compositor, CompositorType::Hyprland);
 
         // Determine which provider to use:
-        //   X11 (any WM)               → xrandr
+        //   instantWM (either backend) → instantwmctl
+        //   Other X11 WMs              → xrandr
         //   Wayland + Sway             → swaymsg
         //   Wayland + Hyprland         → hyprctl
-        //   Wayland + instantWM        → instantwmctl
         //   Wayland + other/unknown    → unsupported
-        let use_xrandr = display_server.is_x11();
+        let use_instantwm = matches!(compositor, CompositorType::InstantWM);
+        let use_xrandr = display_server.is_x11() && !use_instantwm;
         let use_sway = display_server.is_wayland() && is_sway;
         let use_hyprland = display_server.is_wayland() && is_hyprland;
-        let use_instantwm =
-            display_server.is_wayland() && matches!(compositor, CompositorType::InstantWM);
 
         if !use_xrandr && !use_sway && !use_hyprland && !use_instantwm {
             ctx.emit_unsupported(

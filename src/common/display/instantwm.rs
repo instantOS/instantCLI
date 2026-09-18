@@ -1,13 +1,13 @@
-//! instantWM Wayland display provider
+//! instantWM display provider
 //!
-//! Uses instantwmctl IPC to query and configure display outputs
-//! when running instantWM on the Wayland backend.
+//! Uses instantwmctl IPC to query and configure display outputs on either
+//! instantWM backend.
 
 use super::{DisplayMode, OutputInfo};
 use crate::common::instantwmctl;
 use anyhow::{Context, Result};
 
-/// instantWM Wayland display provider using instantwmctl.
+/// instantWM display provider using instantwmctl.
 pub struct InstantWMDisplayProvider;
 
 impl InstantWMDisplayProvider {

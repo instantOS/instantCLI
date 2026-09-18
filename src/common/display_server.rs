@@ -16,18 +16,16 @@ pub enum DisplayServer {
 impl DisplayServer {
     /// Detect the current display server type
     pub fn detect() -> Self {
-        // Fast path: check for instantWM env var first (instantWM sets INSTANTWM=1)
-        if env::var("INSTANTWM").is_ok() {
-            // Check which backend
-            if let Ok(backend) = env::var("INSTANTWM_BACKEND") {
-                if backend.starts_with("wayland") {
-                    return DisplayServer::Wayland;
-                }
-                // x11 or unknown defaults to X11
+        // instantWM exports its selected backend to direct children. If that
+        // detail is unavailable, continue with the standard session variables
+        // instead of treating an ambiguous INSTANTWM marker as X11.
+        if let Ok(backend) = env::var("INSTANTWM_BACKEND") {
+            if backend.starts_with("wayland") {
+                return DisplayServer::Wayland;
+            }
+            if backend == "x11" {
                 return DisplayServer::X11;
             }
-            // INSTANTWM is set but no backend info - assume X11 (default)
-            return DisplayServer::X11;
         }
 
         // Fast path: check sway env var (sway sets SWAYSOCK)
