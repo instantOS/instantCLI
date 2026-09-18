@@ -11,6 +11,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Other
 
+- sync PKGBUILD version
+- release v0.14.18
+- Support instantWM display configuration on both backends
+- unify policy
+- more solid reporting
+- more solid setup UX
+- better game setup flow
+- use explicit values in assist menus
+- better emoji assist
+
+## [0.14.18](https://github.com/instantOS/instantCLI/compare/v0.14.17...v0.14.18) - 2026-09-18
+
+### Other
+
 - Support instantWM display configuration on both backends
 - unify policy
 - more solid reporting
