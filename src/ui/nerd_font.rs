@@ -86,6 +86,7 @@ pub enum NerdFont {
     Plus,
     Minus,
     Edit,
+    ContentCopy,
     Trash,
     Search,
     Filter,
@@ -380,14 +381,15 @@ impl NerdFont {
             Self::UserMinus => '', // fa-user-minus
 
             // Actions and controls
-            Self::Plus => '+',          // fa-plus
-            Self::Minus => '-',         // fa-minus
-            Self::Edit => '',          // fa-edit
-            Self::Trash => '\u{f1f8}',  // fa-trash
-            Self::Search => '',        // fa-search
-            Self::Filter => '',        // fa-filter
-            Self::QrCode => '\u{f029}', // fa-qrcode
-            Self::Smile => '\u{f118}',  // fa-smile-o
+            Self::Plus => '+',                // fa-plus
+            Self::Minus => '-',               // fa-minus
+            Self::Edit => '',                // fa-edit
+            Self::Trash => '\u{f1f8}',        // fa-trash
+            Self::ContentCopy => '\u{f018f}', // md-content-copy
+            Self::Search => '',              // fa-search
+            Self::Filter => '',              // fa-filter
+            Self::QrCode => '\u{f029}',       // fa-qrcode
+            Self::Smile => '\u{f118}',        // fa-smile-o
 
             // Gaming and entertainment
             Self::Gamepad => '',     // fa-gamepad

@@ -25,6 +25,7 @@ pub mod shell;
 pub mod systemd;
 pub mod terminal;
 pub mod tilde_path;
+pub mod xkb;
 
 // Re-export commonly used types
 pub use tilde_path::{TildePath, home_dir};

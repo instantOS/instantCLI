@@ -1,5 +1,6 @@
 use super::config::{INSTANT_KDL_HEADER, WindowManager, WmConfigManager};
 use super::{ScratchpadProvider, ScratchpadWindowInfo, create_terminal_process};
+use crate::common::xkb;
 use crate::scratchpad::{config::ScratchpadConfig, terminal::Terminal};
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
@@ -231,14 +232,25 @@ pub fn set_touchpad_tap(enabled: bool) -> Result<()> {
 }
 
 pub fn set_keyboard_layouts(layouts: &[String]) -> Result<()> {
-    let joined = layouts.join(",");
+    let base_layouts: Vec<&str> = layouts.iter().map(|code| xkb::base_layout(code)).collect();
+    let joined = base_layouts.join(",");
     if joined.trim().is_empty() {
         bail!("No keyboard layouts selected");
     }
 
     let config = read_config()?;
     let config = remove_property(&config, &["input", "keyboard", "xkb"], "file");
-    let config = remove_property(&config, &["input", "keyboard", "xkb"], "variant");
+    // XKB variant lists are positional: `,nodeadkeys` pairs `nodeadkeys`
+    // with the second layout. Clear the property when no variant is set.
+    let config = match xkb::positional_variants(layouts) {
+        Some(variants) => upsert_property(
+            &config,
+            &["input", "keyboard", "xkb"],
+            "variant",
+            &quoted(&variants),
+        ),
+        None => remove_property(&config, &["input", "keyboard", "xkb"], "variant"),
+    };
     let config = upsert_property(
         &config,
         &["input", "keyboard", "xkb"],
@@ -262,7 +274,16 @@ pub fn current_keyboard_layout_codes() -> Result<Vec<String>> {
     }
 
     if let Some(layouts) = find_property_value(&config, &xkb_path, "layout") {
-        return Ok(split_csv(&layouts));
+        let variants = find_property_value(&config, &xkb_path, "variant")
+            .map(|value| {
+                value
+                    .split(',')
+                    .map(str::trim)
+                    .map(str::to_string)
+                    .collect::<Vec<String>>()
+            })
+            .unwrap_or_default();
+        return Ok(xkb::merge_layout_variants(&split_csv(&layouts), &variants));
     }
 
     Ok(localectl_x11_layouts().unwrap_or_default())
