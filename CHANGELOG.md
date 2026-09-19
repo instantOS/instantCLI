@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.19](https://github.com/instantOS/instantCLI/compare/v0.14.18...v0.14.19) - 2026-09-19
+
+### Added
+
+- add more wallpaper sources
+
+### Fixed
+
+- fix keyboard variant UX
+
+### Other
+
+- Merge branch 'dev'
+- add wallpaper fallback chain
+- add best effort command support in `ins arch`
+- add keyboard variant support
+
 ## [0.14.18](https://github.com/instantOS/instantCLI/compare/v0.14.17...v0.14.18) - 2026-09-18
 
 ### Other
