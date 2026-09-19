@@ -1,7 +1,7 @@
 //! Keyboard layout setting for desktop sessions
 
 use anyhow::Result;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use crate::common::compositor::CompositorType;
 use crate::common::xkb;
@@ -97,22 +97,20 @@ impl FzfSelectable for LayoutMenuItem {
                 }
 
                 if *total > 1 {
-                    builder = builder
-                        .line(
-                            colors::TEAL,
-                            Some(NerdFont::List),
-                            &format!("Priority: {} of {}", position + 1, total),
-                        )
-                        .blank()
-                        .separator()
-                        .blank()
-                        .subtext("Select to change priority or remove");
+                    builder = builder.line(
+                        colors::TEAL,
+                        Some(NerdFont::List),
+                        &format!("Priority: {} of {}", position + 1, total),
+                    );
+                }
+
+                builder = builder.blank().separator().blank();
+
+                if *total > 1 {
+                    builder =
+                        builder.subtext("Ctrl+V to set variant; select for priority or actions");
                 } else {
-                    builder = builder
-                        .blank()
-                        .separator()
-                        .blank()
-                        .subtext("Ctrl+V to set a variant; select to change or remove");
+                    builder = builder.subtext("Ctrl+V to set variant; select to change or remove");
                 }
 
                 builder.build()
@@ -437,23 +435,16 @@ fn select_layout(
     active_codes: &[String],
     exclude_code: Option<&str>,
 ) -> Result<Option<String>> {
-    // Dedupe on the base layout: `de` and `de(nodeadkeys)` occupy the same
-    // slot in the picker.
-    let exclude_base = exclude_code.map(|code| xkb::base_layout(code).to_string());
-    let active_bases: HashSet<String> = active_codes
-        .iter()
-        .map(|code| xkb::base_layout(code).to_string())
-        .collect();
-
-    let available: Vec<LayoutChoice> = all_layouts
-        .iter()
-        .filter(|l| {
-            let dominated = active_bases.contains(&l.code);
-            let is_excluded = exclude_base.as_deref().is_some_and(|ex| ex == l.code);
-            !dominated || is_excluded
-        })
-        .cloned()
-        .collect();
+    let available: Vec<LayoutChoice> = if let Some(exclude) = exclude_code {
+        let (exclude_base, _) = xkb::split_layout_variant(exclude);
+        all_layouts
+            .iter()
+            .filter(|l| l.code != exclude_base)
+            .cloned()
+            .collect()
+    } else {
+        all_layouts.to_vec()
+    };
 
     if available.is_empty() {
         return Ok(None);
@@ -476,12 +467,35 @@ fn select_layout(
                         if let Some(choice) = selected
                             && let Some(new_code) = pick_variant(ctx, all_layouts, &choice.code)?
                         {
+                            if active_codes.iter().any(|c| c == &new_code) {
+                                ctx.emit_info(
+                                    "settings.keyboard.already_active",
+                                    &format!("Layout '{new_code}' is already active"),
+                                );
+                                continue;
+                            }
                             return Ok(Some(new_code));
                         }
-                        // Cancelled or nothing to pick: reopen the chooser.
                     }
                     None => match selected {
-                        Some(choice) => return Ok(Some(choice.code)),
+                        Some(choice) => {
+                            if active_codes.iter().any(|c| c == &choice.code) {
+                                if let Some(new_code) =
+                                    pick_variant(ctx, all_layouts, &choice.code)?
+                                {
+                                    if active_codes.iter().any(|c| c == &new_code) {
+                                        ctx.emit_info(
+                                            "settings.keyboard.already_active",
+                                            &format!("Layout '{new_code}' is already active"),
+                                        );
+                                        continue;
+                                    }
+                                    return Ok(Some(new_code));
+                                }
+                                continue;
+                            }
+                            return Ok(Some(choice.code));
+                        }
                         None => return Ok(None),
                     },
                 }

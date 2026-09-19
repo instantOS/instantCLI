@@ -6,9 +6,41 @@
 //! parses, and it survives the comma-joined settings values unchanged.
 
 use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 
 /// Path of the XKB rules index listing layouts, variants, and options.
 pub const XKB_RULES_LIST: &str = "/usr/share/X11/xkb/rules/evdev.lst";
+
+/// Resolve the path to the XKB rules list (`evdev.lst`).
+///
+/// Respects `$XKB_CONFIG_ROOT` if set, otherwise checks standard system paths
+/// and NixOS fallback locations before defaulting to [`XKB_RULES_LIST`].
+pub fn xkb_rules_path() -> PathBuf {
+    if let Some(root) = std::env::var_os("XKB_CONFIG_ROOT") {
+        let path = Path::new(&root).join("rules/evdev.lst");
+        if path.exists() {
+            return path;
+        }
+    }
+
+    let default = Path::new(XKB_RULES_LIST);
+    if default.exists() {
+        return default.to_path_buf();
+    }
+
+    for candidate in [
+        "/run/current-system/sw/share/X11/xkb/rules/evdev.lst",
+        "/etc/xkb/rules/evdev.lst",
+        "/usr/local/share/X11/xkb/rules/evdev.lst",
+    ] {
+        let path = Path::new(candidate);
+        if path.exists() {
+            return path.to_path_buf();
+        }
+    }
+
+    default.to_path_buf()
+}
 
 /// Split a stored layout code into its base layout and optional variant.
 ///

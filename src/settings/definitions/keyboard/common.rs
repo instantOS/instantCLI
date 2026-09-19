@@ -39,6 +39,11 @@ impl KeyboardLayoutKeys {
     }
 }
 
+use std::sync::OnceLock;
+
+static CACHED_LAYOUTS: OnceLock<Vec<LayoutChoice>> = OnceLock::new();
+static CACHED_VARIANTS: OnceLock<BTreeMap<String, Vec<VariantChoice>>> = OnceLock::new();
+
 #[derive(Clone)]
 pub struct LayoutChoice {
     pub code: String,
@@ -62,13 +67,26 @@ impl FzfSelectable for LayoutChoice {
                 Some(NerdFont::Tag),
                 &format!("Code: {}", self.code),
             )
+            .blank()
+            .separator()
+            .blank()
+            .subtext("Enter to select, Ctrl+V to choose variant")
             .build()
     }
 }
 
 pub fn parse_xkb_layouts() -> Result<Vec<LayoutChoice>> {
-    let file = File::open(xkb::XKB_RULES_LIST)
-        .with_context(|| format!("Failed to open {}", xkb::XKB_RULES_LIST))?;
+    if let Some(layouts) = CACHED_LAYOUTS.get() {
+        return Ok(layouts.clone());
+    }
+    let layouts = load_xkb_layouts()?;
+    let _ = CACHED_LAYOUTS.set(layouts.clone());
+    Ok(layouts)
+}
+
+fn load_xkb_layouts() -> Result<Vec<LayoutChoice>> {
+    let path = xkb::xkb_rules_path();
+    let file = File::open(&path).with_context(|| format!("Failed to open {}", path.display()))?;
     let reader = BufReader::new(file);
 
     let mut layouts = Vec::new();
@@ -130,9 +148,18 @@ impl FzfSelectable for VariantChoice {
 
 /// Parse the `! variant` section of `evdev.lst` into variants grouped by
 /// layout code.
-pub fn parse_xkb_variants() -> Result<BTreeMap<String, Vec<VariantChoice>>> {
-    let file = File::open(xkb::XKB_RULES_LIST)
-        .with_context(|| format!("Failed to open {}", xkb::XKB_RULES_LIST))?;
+pub fn parse_xkb_variants() -> Result<&'static BTreeMap<String, Vec<VariantChoice>>> {
+    if let Some(variants) = CACHED_VARIANTS.get() {
+        return Ok(variants);
+    }
+    let variants = load_xkb_variants()?;
+    let _ = CACHED_VARIANTS.set(variants);
+    Ok(CACHED_VARIANTS.get().unwrap())
+}
+
+fn load_xkb_variants() -> Result<BTreeMap<String, Vec<VariantChoice>>> {
+    let path = xkb::xkb_rules_path();
+    let file = File::open(&path).with_context(|| format!("Failed to open {}", path.display()))?;
     let lines: Vec<String> = BufReader::new(file)
         .lines()
         .collect::<std::io::Result<_>>()
@@ -364,12 +391,15 @@ pub fn current_instantwm_layouts() -> Option<Vec<String>> {
 /// instantwmctl prints variants as `name (variant)`; restore the stored
 /// `name(variant)` spelling so variants survive the round-trip.
 fn parse_instantwm_list_code(line: &str) -> Option<String> {
-    if let Some(name) = line.strip_suffix(')')
-        && let Some((name, variant)) = name.rsplit_once(" (")
-        && !name.is_empty()
-        && !variant.is_empty()
+    let trimmed = line.trim();
+    if let Some(inner) = trimmed.strip_suffix(')')
+        && let Some((name, variant)) = inner.rsplit_once('(')
     {
-        return Some(format!("{name}({variant})"));
+        let name = name.trim();
+        let variant = variant.trim();
+        if !name.is_empty() && !variant.is_empty() {
+            return Some(format!("{name}({variant})"));
+        }
     }
 
     line.split_whitespace().next().map(str::to_string)
@@ -380,11 +410,30 @@ pub fn current_niri_layouts() -> Option<Vec<String>> {
 }
 
 pub fn map_layout_names_to_codes(names: &[String], layouts: &[LayoutChoice]) -> Vec<String> {
+    let variants = parse_xkb_variants().ok();
+    map_layout_names_from_sources(names, layouts, variants)
+}
+
+fn map_layout_names_from_sources(
+    names: &[String],
+    layouts: &[LayoutChoice],
+    variants: Option<&BTreeMap<String, Vec<VariantChoice>>>,
+) -> Vec<String> {
     let mut map = HashMap::new();
     let mut normalized_map = HashMap::new();
     for layout in layouts {
         map.insert(layout.name.clone(), layout.code.clone());
         normalized_map.insert(layout.name.to_lowercase(), layout.code.clone());
+    }
+
+    if let Some(variants) = variants {
+        for (layout_code, var_choices) in variants {
+            for var in var_choices {
+                let full_code = format!("{layout_code}({})", var.code);
+                map.insert(var.name.clone(), full_code.clone());
+                normalized_map.insert(var.name.to_lowercase(), full_code);
+            }
+        }
     }
 
     let mut result = Vec::new();
@@ -488,10 +537,10 @@ pub fn apply_keyboard_layouts(codes: &[String], compositor: &CompositorType) -> 
 
     match compositor {
         CompositorType::Sway => {
-            let mut cmd = format!("input type:keyboard xkb_layout \"{joined}\"");
-            if let Some(variants) = variants {
-                cmd.push_str(&format!(" xkb_variant \"{variants}\""));
-            }
+            let variant_arg = variants.as_deref().unwrap_or("");
+            let cmd = format!(
+                "input type:keyboard xkb_layout \"{joined}\" xkb_variant \"{variant_arg}\""
+            );
             sway::swaymsg(&cmd)?;
         }
         CompositorType::Gnome => {
@@ -596,6 +645,46 @@ mod tests {
         assert_eq!(
             parse_instantwm_list_code(marked_variant).as_deref(),
             Some("de(intl)")
+        );
+        // Tolerant of multiple spaces and tabs between code and variant.
+        assert_eq!(
+            parse_instantwm_list_code("de   (nodeadkeys)").as_deref(),
+            Some("de(nodeadkeys)")
+        );
+        assert_eq!(
+            parse_instantwm_list_code("de\t(nodeadkeys)").as_deref(),
+            Some("de(nodeadkeys)")
+        );
+    }
+
+    #[test]
+    fn map_layout_names_resolves_base_and_variant_names() {
+        let layouts = vec![
+            LayoutChoice {
+                code: "us".to_string(),
+                name: "English (US)".to_string(),
+            },
+            LayoutChoice {
+                code: "de".to_string(),
+                name: "German".to_string(),
+            },
+        ];
+        let variants = BTreeMap::from([(
+            "de".to_string(),
+            vec![VariantChoice {
+                code: "nodeadkeys".to_string(),
+                name: "German (nodeadkeys)".to_string(),
+            }],
+        )]);
+
+        let names = vec![
+            "English (US)".to_string(),
+            "German (nodeadkeys)".to_string(),
+        ];
+        let resolved = map_layout_names_from_sources(&names, &layouts, Some(&variants));
+        assert_eq!(
+            resolved,
+            vec!["us".to_string(), "de(nodeadkeys)".to_string()]
         );
     }
 }
