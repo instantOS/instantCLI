@@ -15,26 +15,74 @@ const BROWSER_UA: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KH
 
 pub struct RandomOptions {
     pub no_logo: bool,
-    pub source: WallpaperSource,
+    /// The source to fetch from. `None` means auto: try the curated default
+    /// first and fall back through the remaining sources, in
+    /// [`default_source_chain`] order.
+    pub source: Option<WallpaperSource>,
+}
+
+/// The sources tried when no explicit source was requested.
+///
+/// The curated instantOS collection on Wallhaven comes first because it is
+/// the intended look; Bing's curated daily wallpaper follows, then the
+/// generic photo services, so a single outage cannot leave the user without
+/// a wallpaper.
+fn default_source_chain() -> Vec<WallpaperSource> {
+    vec![
+        WallpaperSource::Wallhaven,
+        WallpaperSource::Bing,
+        WallpaperSource::Picsum,
+        WallpaperSource::Loremflickr,
+    ]
+}
+
+async fn fetch_from_source(source: WallpaperSource, wallpaper_dir: &Path) -> Result<PathBuf> {
+    match source {
+        WallpaperSource::Wallhaven => fetch_wallhaven_wallpaper(wallpaper_dir).await,
+        WallpaperSource::Picsum => fetch_picsum_wallpaper(wallpaper_dir).await,
+        WallpaperSource::Bing => fetch_bing_wallpaper(wallpaper_dir).await,
+        WallpaperSource::Loremflickr => fetch_loremflickr_wallpaper(wallpaper_dir).await,
+    }
 }
 
 pub async fn generate_random_wallpaper(options: RandomOptions) -> Result<PathBuf> {
     let wallpaper_dir = get_wallpaper_dir()?;
     fs::create_dir_all(&wallpaper_dir).await?;
 
-    println!(
-        "{}",
-        format!(
-            "Fetching random wallpaper from {}...",
-            options.source.as_str()
-        )
-        .cyan()
-    );
-    let raw_image_path = match options.source {
-        WallpaperSource::Wallhaven => fetch_wallhaven_wallpaper(&wallpaper_dir).await?,
-        WallpaperSource::Picsum => fetch_picsum_wallpaper(&wallpaper_dir).await?,
-        WallpaperSource::Bing => fetch_bing_wallpaper(&wallpaper_dir).await?,
-        WallpaperSource::Loremflickr => fetch_loremflickr_wallpaper(&wallpaper_dir).await?,
+    let chain = match options.source {
+        Some(source) => vec![source],
+        None => default_source_chain(),
+    };
+
+    let mut fetched = None;
+    let mut last_error = None;
+    for (index, source) in chain.iter().enumerate() {
+        println!(
+            "{}",
+            format!("Fetching random wallpaper from {source}...").cyan()
+        );
+        match fetch_from_source(*source, &wallpaper_dir).await {
+            Ok(path) => {
+                fetched = Some(path);
+                break;
+            }
+            Err(error) => {
+                println!("{}", format!("{source} failed: {error}").yellow());
+                if let Some(next) = chain.get(index + 1) {
+                    println!("{}", format!("Falling back to {next}...").cyan());
+                }
+                last_error = Some(error);
+            }
+        }
+    }
+
+    let raw_image_path = match fetched {
+        Some(path) => path,
+        None => {
+            let error =
+                last_error.unwrap_or_else(|| anyhow::anyhow!("no wallpaper source was requested"));
+            return Err(error.context("All wallpaper sources failed"));
+        }
     };
 
     let final_path = if options.no_logo {
@@ -390,4 +438,25 @@ async fn apply_overlay(bg_path: &Path, dir: &Path) -> Result<PathBuf> {
     .await??;
 
     Ok(output_path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_chain_prefers_curated_sources_over_generic_ones() {
+        // The curated instantOS collection is the intended look and comes
+        // first; Bing's curated wallpaper follows before the generic photo
+        // services.
+        assert_eq!(
+            default_source_chain(),
+            vec![
+                WallpaperSource::Wallhaven,
+                WallpaperSource::Bing,
+                WallpaperSource::Picsum,
+                WallpaperSource::Loremflickr,
+            ]
+        );
+    }
 }

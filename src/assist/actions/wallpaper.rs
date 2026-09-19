@@ -9,7 +9,7 @@ use std::path::Path;
 use crate::assist::utils::show_notification;
 use crate::menu_utils::{DialogOutcome, FilePickerBuilder};
 use crate::settings::store::{SettingsStore, WALLPAPER_PATH_KEY};
-use crate::wallpaper::cli::{ColoredArgs, RandomArgs, SetArgs, WallpaperCommands, WallpaperSource};
+use crate::wallpaper::cli::{ColoredArgs, RandomArgs, SetArgs, WallpaperCommands};
 use crate::wallpaper::commands;
 
 /// Ensure the compositor-specific backend needed to apply a wallpaper.
@@ -27,7 +27,7 @@ pub fn random() -> Result<()> {
     ensure_backend()?;
     commands::run_command_blocking(WallpaperCommands::Random(RandomArgs {
         no_logo: false,
-        source: WallpaperSource::Wallhaven,
+        source: None,
     }))
 }
 
@@ -87,6 +87,6 @@ pub fn repair() -> Result<()> {
 
     commands::run_command_blocking(WallpaperCommands::Random(RandomArgs {
         no_logo: false,
-        source: WallpaperSource::Wallhaven,
+        source: None,
     }))
 }
