@@ -2,6 +2,8 @@ use anyhow::{Context, Result};
 use std::io::{BufRead, Write};
 use std::path::PathBuf;
 
+use crate::ui::nerd_font::NerdFont;
+
 pub mod base;
 pub mod bootloader;
 pub mod config;
@@ -52,6 +54,31 @@ pub trait CommandRunner {
         &self,
         command: &mut std::process::Command,
     ) -> anyhow::Result<Option<std::process::Output>>;
+
+    /// Runs a command whose failure must not abort the installation.
+    ///
+    /// This is how the execution layer expresses a best-effort nicety: a step
+    /// the installed system does not depend on (e.g. fetching a random
+    /// wallpaper from a third-party service). The command runs normally with
+    /// output streamed; on failure a warning is printed, the failure is
+    /// logged, and execution continues.
+    ///
+    /// Returns `true` when the command succeeded, so callers can offer a
+    /// follow-up hint. Use [`CommandRunner::run`] for anything the
+    /// installation depends on.
+    fn run_best_effort(&self, command: &mut std::process::Command, description: &str) -> bool {
+        if self.run(command).is_ok() {
+            return true;
+        }
+        println!(
+            "{} {} failed; continuing without it.",
+            NerdFont::Warning,
+            description
+        );
+        self.log(&format!("BEST-EFFORT FAILED: {}", description));
+        false
+    }
+
     fn log(&self, message: &str);
 }
 
@@ -713,5 +740,53 @@ pub mod mock {
         let program = command.get_program().to_string_lossy();
         let args: Vec<_> = command.get_args().map(|a| a.to_string_lossy()).collect();
         format!("{} {}", program, args.join(" "))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::process::{Command, Output};
+
+    use super::CommandRunner;
+    use super::mock::MockRunner;
+
+    /// A runner whose commands always fail, to exercise best-effort handling.
+    struct AlwaysFails;
+
+    impl CommandRunner for AlwaysFails {
+        fn dry_run(&self) -> bool {
+            false
+        }
+
+        fn run(&self, _command: &mut Command) -> anyhow::Result<()> {
+            anyhow::bail!("simulated failure")
+        }
+
+        fn run_with_input(&self, _command: &mut Command, _input: &str) -> anyhow::Result<()> {
+            anyhow::bail!("simulated failure")
+        }
+
+        fn run_with_output(&self, _command: &mut Command) -> anyhow::Result<Option<Output>> {
+            anyhow::bail!("simulated failure")
+        }
+
+        fn log(&self, _message: &str) {}
+    }
+
+    #[test]
+    fn best_effort_swallows_failures_and_reports_them() {
+        let mut cmd = Command::new("false");
+
+        assert!(!AlwaysFails.run_best_effort(&mut cmd, "test nicety"));
+    }
+
+    #[test]
+    fn best_effort_still_runs_the_command() {
+        let runner = MockRunner::new();
+        let mut cmd = Command::new("true");
+        cmd.arg("--version");
+
+        assert!(runner.run_best_effort(&mut cmd, "test nicety"));
+        assert_eq!(runner.command_log(), vec!["true --version".to_string()]);
     }
 }
