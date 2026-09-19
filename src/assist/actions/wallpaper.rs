@@ -9,7 +9,7 @@ use std::path::Path;
 use crate::assist::utils::show_notification;
 use crate::menu_utils::{DialogOutcome, FilePickerBuilder};
 use crate::settings::store::{SettingsStore, WALLPAPER_PATH_KEY};
-use crate::wallpaper::cli::{ColoredArgs, RandomArgs, SetArgs, WallpaperCommands};
+use crate::wallpaper::cli::{ColoredArgs, RandomArgs, SetArgs, WallpaperCommands, WallpaperSource};
 use crate::wallpaper::commands;
 
 /// Ensure the compositor-specific backend needed to apply a wallpaper.
@@ -20,12 +20,15 @@ fn ensure_backend() -> Result<()> {
     Ok(())
 }
 
-/// Fetch a random Wallhaven wallpaper and apply it.
+/// Fetch a random wallpaper and apply it.
 ///
 /// Respects the "Show Logo on Wallpaper" setting.
 pub fn random() -> Result<()> {
     ensure_backend()?;
-    commands::run_command_blocking(WallpaperCommands::Random(RandomArgs { no_logo: false }))
+    commands::run_command_blocking(WallpaperCommands::Random(RandomArgs {
+        no_logo: false,
+        source: WallpaperSource::Wallhaven,
+    }))
 }
 
 /// Generate a solid-color wallpaper with the instantOS logo and apply it.
@@ -82,5 +85,8 @@ pub fn repair() -> Result<()> {
         );
     }
 
-    commands::run_command_blocking(WallpaperCommands::Random(RandomArgs { no_logo: false }))
+    commands::run_command_blocking(WallpaperCommands::Random(RandomArgs {
+        no_logo: false,
+        source: WallpaperSource::Wallhaven,
+    }))
 }

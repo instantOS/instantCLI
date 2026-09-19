@@ -56,7 +56,10 @@ async fn handle_random(args: crate::wallpaper::cli::RandomArgs) -> Result<()> {
     };
 
     let path = crate::wallpaper::random::generate_random_wallpaper(
-        crate::wallpaper::random::RandomOptions { no_logo },
+        crate::wallpaper::random::RandomOptions {
+            no_logo,
+            source: args.source,
+        },
     )
     .await?;
 
