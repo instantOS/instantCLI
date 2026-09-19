@@ -23,18 +23,19 @@ pub struct RandomArgs {
     /// Do not apply the instantOS logo overlay
     #[arg(long)]
     pub no_logo: bool,
-    /// Wallpaper source to fetch from
-    #[arg(long, value_enum, default_value_t = WallpaperSource::Wallhaven)]
-    pub source: WallpaperSource,
+    /// Wallpaper source to fetch from. When omitted, the curated default is
+    /// tried first and the remaining sources follow automatically if it fails.
+    #[arg(long, value_enum)]
+    pub source: Option<WallpaperSource>,
 }
 
 /// Source to fetch a random wallpaper from.
 ///
-/// `wallhaven` is the curated default. When it is down, use
-/// `picsum`, `bing`, or `loremflickr` instead.
+/// Without an explicit `--source`, `wallhaven` is tried first and the other
+/// sources follow when it fails. An explicit source is used strictly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum WallpaperSource {
-    /// Curated wallpapers from Wallhaven (default)
+    /// Curated wallpapers from Wallhaven (tried first)
     Wallhaven,
     /// Random photos from picsum.photos (reliable fallback)
     Picsum,

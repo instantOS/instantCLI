@@ -223,9 +223,10 @@ fn setup_user_dotfiles(username: &str, executor: &dyn CommandRunner) -> Result<(
     Ok(())
 }
 
-/// Best-effort nicety: fetching a wallpaper depends on a third-party service,
-/// so a failure must not abort the installation. The user can pick a wallpaper
-/// from the instant settings afterwards.
+/// Best-effort nicety: the command falls back through the available wallpaper
+/// sources, but if every source is unreachable the failure must still not
+/// abort the installation. The user can pick a wallpaper from the instant
+/// settings afterwards.
 fn setup_wallpaper(username: &str, executor: &dyn CommandRunner) {
     println!("Setting up wallpaper for user: {}", username);
 
