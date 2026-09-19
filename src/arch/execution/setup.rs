@@ -119,7 +119,7 @@ async fn setup_instantos_with_options(
         println!("Creating XDG user directories for {}...", user);
         let mut cmd_xdg = Command::new("su");
         cmd_xdg.arg("-c").arg("xdg-user-dirs-update").arg(user);
-        let _ = executor.run(&mut cmd_xdg);
+        executor.run_best_effort(&mut cmd_xdg, "XDG user directory creation");
     } else {
         println!("No username provided, skipping user group membership.");
     }
@@ -127,7 +127,7 @@ async fn setup_instantos_with_options(
     if !minimal_mode {
         if let Some(user) = username.clone() {
             setup_user_dotfiles(&user, executor)?;
-            setup_wallpaper(&user, executor)?;
+            setup_wallpaper(&user, executor);
         } else {
             println!("Skipping dotfiles setup: No user specified and SUDO_USER not found.");
         }
@@ -223,7 +223,11 @@ fn setup_user_dotfiles(username: &str, executor: &dyn CommandRunner) -> Result<(
     Ok(())
 }
 
-fn setup_wallpaper(username: &str, executor: &dyn CommandRunner) -> Result<()> {
+/// Best-effort nicety: the command falls back through the available wallpaper
+/// sources, but if every source is unreachable the failure must still not
+/// abort the installation. The user can pick a wallpaper from the instant
+/// settings afterwards.
+fn setup_wallpaper(username: &str, executor: &dyn CommandRunner) {
     println!("Setting up wallpaper for user: {}", username);
 
     // Run `ins wallpaper random` as the user
@@ -231,9 +235,12 @@ fn setup_wallpaper(username: &str, executor: &dyn CommandRunner) -> Result<()> {
     let mut cmd = Command::new("su");
     cmd.arg("-c").arg(wallpaper_cmd_str).arg(username);
 
-    executor.run(&mut cmd)?;
-
-    Ok(())
+    if !executor.run_best_effort(&mut cmd, "Random wallpaper download") {
+        println!(
+            "{} You can set a wallpaper yourself later from the instant settings.",
+            NerdFont::Warning
+        );
+    }
 }
 
 fn enable_services(executor: &dyn CommandRunner, options: &SetupOptions) -> Result<()> {
@@ -484,14 +491,14 @@ fn setup_backlight_udev_rule(executor: &dyn CommandRunner) -> Result<()> {
     std::fs::write(rules_path, rules_content)?;
     println!("Created {}", rules_path);
 
-    // Try to reload udev rules (ignore errors as it might fail in chroot)
+    // udevadm can fail inside chroot; the rules file is already in place
     let mut cmd = Command::new("udevadm");
     cmd.arg("control").arg("--reload-rules");
-    let _ = executor.run(&mut cmd);
+    executor.run_best_effort(&mut cmd, "udev rule reload");
 
     let mut cmd_trigger = Command::new("udevadm");
     cmd_trigger.arg("trigger");
-    let _ = executor.run(&mut cmd_trigger);
+    executor.run_best_effort(&mut cmd_trigger, "udev trigger");
 
     Ok(())
 }

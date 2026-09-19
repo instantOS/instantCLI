@@ -414,7 +414,7 @@ pub const ASSISTS: &[AssistEntry] = &[
             }),
             AssistEntry::Action(AssistAction {
                 key: 'w',
-                description: "Random Wallpaper: Fetch a random wallpaper from Wallhaven",
+                description: "Random Wallpaper: Fetch a random wallpaper (wallhaven, picsum, bing, loremflickr)",
                 icon: NerdFont::Refresh,
                 dependencies: &[&IMAGEMAGICK],
                 execute: actions::wallpaper::random,
@@ -735,7 +735,7 @@ mod tests {
         assert!(action.is_some());
         assert_eq!(
             action.unwrap().description,
-            "Random Wallpaper: Fetch a random wallpaper from Wallhaven"
+            "Random Wallpaper: Fetch a random wallpaper (wallhaven, picsum, bing, loremflickr)"
         );
     }
 

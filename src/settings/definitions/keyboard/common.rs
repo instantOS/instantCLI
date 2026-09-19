@@ -1,6 +1,6 @@
 //! Shared keyboard utilities
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::process::Command;
@@ -9,6 +9,7 @@ use anyhow::{Context, Result, bail};
 
 use crate::common::compositor::{CompositorType, niri, sway};
 use crate::common::instantwmctl;
+use crate::common::xkb::{self, XkbVariant};
 use crate::menu_utils::{FzfPreview, FzfSelectable};
 use crate::settings::context::SettingsContext;
 use crate::settings::store::StringSettingKey;
@@ -38,6 +39,11 @@ impl KeyboardLayoutKeys {
     }
 }
 
+use std::sync::OnceLock;
+
+static CACHED_LAYOUTS: OnceLock<Vec<LayoutChoice>> = OnceLock::new();
+static CACHED_VARIANTS: OnceLock<BTreeMap<String, Vec<VariantChoice>>> = OnceLock::new();
+
 #[derive(Clone)]
 pub struct LayoutChoice {
     pub code: String,
@@ -61,13 +67,26 @@ impl FzfSelectable for LayoutChoice {
                 Some(NerdFont::Tag),
                 &format!("Code: {}", self.code),
             )
+            .blank()
+            .separator()
+            .blank()
+            .subtext("Enter to select, Ctrl+V to choose variant")
             .build()
     }
 }
 
 pub fn parse_xkb_layouts() -> Result<Vec<LayoutChoice>> {
-    let file = File::open("/usr/share/X11/xkb/rules/evdev.lst")
-        .context("Failed to open /usr/share/X11/xkb/rules/evdev.lst")?;
+    if let Some(layouts) = CACHED_LAYOUTS.get() {
+        return Ok(layouts.clone());
+    }
+    let layouts = load_xkb_layouts()?;
+    let _ = CACHED_LAYOUTS.set(layouts.clone());
+    Ok(layouts)
+}
+
+fn load_xkb_layouts() -> Result<Vec<LayoutChoice>> {
+    let path = xkb::xkb_rules_path();
+    let file = File::open(&path).with_context(|| format!("Failed to open {}", path.display()))?;
     let reader = BufReader::new(file);
 
     let mut layouts = Vec::new();
@@ -97,6 +116,72 @@ pub fn parse_xkb_layouts() -> Result<Vec<LayoutChoice>> {
     }
 
     Ok(layouts)
+}
+
+/// One keyboard variant offered for a layout in the settings menu.
+#[derive(Clone)]
+pub struct VariantChoice {
+    pub code: String,
+    pub name: String,
+}
+
+impl FzfSelectable for VariantChoice {
+    fn fzf_display_text(&self) -> String {
+        format!("{} {}", format_icon(NerdFont::Gear), self.name)
+    }
+
+    fn fzf_key(&self) -> String {
+        self.code.clone()
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        PreviewBuilder::new()
+            .header(NerdFont::Gear, &self.name)
+            .line(
+                colors::TEAL,
+                Some(NerdFont::Tag),
+                &format!("Variant: {}", self.code),
+            )
+            .build()
+    }
+}
+
+/// Parse the `! variant` section of `evdev.lst` into variants grouped by
+/// layout code.
+pub fn parse_xkb_variants() -> Result<&'static BTreeMap<String, Vec<VariantChoice>>> {
+    if let Some(variants) = CACHED_VARIANTS.get() {
+        return Ok(variants);
+    }
+    let variants = load_xkb_variants()?;
+    let _ = CACHED_VARIANTS.set(variants);
+    Ok(CACHED_VARIANTS.get().unwrap())
+}
+
+fn load_xkb_variants() -> Result<BTreeMap<String, Vec<VariantChoice>>> {
+    let path = xkb::xkb_rules_path();
+    let file = File::open(&path).with_context(|| format!("Failed to open {}", path.display()))?;
+    let lines: Vec<String> = BufReader::new(file)
+        .lines()
+        .collect::<std::io::Result<_>>()
+        .context("Failed to read XKB rules list")?;
+
+    Ok(
+        xkb::parse_xkb_variant_lines(lines.iter().map(String::as_str))
+            .into_iter()
+            .map(|(layout, variants)| {
+                (
+                    layout,
+                    variants
+                        .into_iter()
+                        .map(|variant: XkbVariant| VariantChoice {
+                            code: variant.code,
+                            name: variant.name,
+                        })
+                        .collect(),
+                )
+            })
+            .collect(),
+    )
 }
 
 pub fn split_layout_codes(value: &str) -> Vec<String> {
@@ -139,14 +224,27 @@ pub fn current_x11_layouts() -> Vec<String> {
         _ => return Vec::new(),
     };
 
+    let mut layouts = Vec::new();
+    let mut variants = Vec::new();
     for line in String::from_utf8_lossy(&output.stdout).lines() {
         let trimmed = line.trim();
         if let Some(rest) = trimmed.strip_prefix("layout:") {
-            return split_layout_codes(rest);
+            layouts = positional_csv(rest);
+        } else if let Some(rest) = trimmed.strip_prefix("variant:") {
+            variants = positional_csv(rest);
         }
     }
 
-    Vec::new()
+    xkb::merge_layout_variants(&layouts, &variants)
+}
+
+/// Split a positional XKB comma list, keeping empty segments so that the
+/// positions of later entries survive (`,nodeadkeys` has two entries).
+fn positional_csv(value: &str) -> Vec<String> {
+    value
+        .split(',')
+        .map(|part| part.trim().to_string())
+        .collect()
 }
 
 /// Get current GNOME keyboard layouts from gsettings
@@ -188,7 +286,7 @@ fn parse_gnome_sources(sources_str: &str) -> Option<Vec<String>> {
         if parts.len() == 2 {
             let layout_code = parts[1].trim().trim_matches('\'');
             if !layout_code.is_empty() {
-                layouts.push(layout_code.to_string());
+                layouts.push(normalize_gnome_layout_code(layout_code));
             }
         }
     }
@@ -197,6 +295,17 @@ fn parse_gnome_sources(sources_str: &str) -> Option<Vec<String>> {
         None
     } else {
         Some(layouts)
+    }
+}
+
+/// GNOME spells variants `layout+variant` (e.g. `de+nodeadkeys`); normalize
+/// to the stored `layout(variant)` spelling.
+fn normalize_gnome_layout_code(code: &str) -> String {
+    match code.split_once('+') {
+        Some((layout, variant)) if !layout.is_empty() && !variant.is_empty() => {
+            format!("{layout}({variant})")
+        }
+        _ => code.to_string(),
     }
 }
 
@@ -264,9 +373,11 @@ pub fn current_instantwm_layouts() -> Option<Vec<String>> {
         if line.is_empty() {
             continue;
         }
-        let layout = line.trim_start_matches("* ").trim();
-        if let Some(name) = layout.split_whitespace().next() {
-            layouts.push(name.to_string());
+        // The active row is marked with a leading `*`; strip it and any
+        // padding regardless of how instantwmctl aligned the columns.
+        let layout = line.trim_start_matches(['*', ' ']);
+        if let Some(code) = parse_instantwm_list_code(layout) {
+            layouts.push(code);
         }
     }
 
@@ -277,16 +388,52 @@ pub fn current_instantwm_layouts() -> Option<Vec<String>> {
     }
 }
 
+/// instantwmctl prints variants as `name (variant)`; restore the stored
+/// `name(variant)` spelling so variants survive the round-trip.
+fn parse_instantwm_list_code(line: &str) -> Option<String> {
+    let trimmed = line.trim();
+    if let Some(inner) = trimmed.strip_suffix(')')
+        && let Some((name, variant)) = inner.rsplit_once('(')
+    {
+        let name = name.trim();
+        let variant = variant.trim();
+        if !name.is_empty() && !variant.is_empty() {
+            return Some(format!("{name}({variant})"));
+        }
+    }
+
+    line.split_whitespace().next().map(str::to_string)
+}
+
 pub fn current_niri_layouts() -> Option<Vec<String>> {
     niri::current_keyboard_layout_codes().ok()
 }
 
 pub fn map_layout_names_to_codes(names: &[String], layouts: &[LayoutChoice]) -> Vec<String> {
+    let variants = parse_xkb_variants().ok();
+    map_layout_names_from_sources(names, layouts, variants)
+}
+
+fn map_layout_names_from_sources(
+    names: &[String],
+    layouts: &[LayoutChoice],
+    variants: Option<&BTreeMap<String, Vec<VariantChoice>>>,
+) -> Vec<String> {
     let mut map = HashMap::new();
     let mut normalized_map = HashMap::new();
     for layout in layouts {
         map.insert(layout.name.clone(), layout.code.clone());
         normalized_map.insert(layout.name.to_lowercase(), layout.code.clone());
+    }
+
+    if let Some(variants) = variants {
+        for (layout_code, var_choices) in variants {
+            for var in var_choices {
+                let full_code = format!("{layout_code}({})", var.code);
+                map.insert(var.name.clone(), full_code.clone());
+                normalized_map.insert(var.name.to_lowercase(), full_code);
+            }
+        }
     }
 
     let mut result = Vec::new();
@@ -375,15 +522,25 @@ pub fn ensure_localectl(ctx: &mut SettingsContext, code: &str, message: &str) ->
 }
 
 /// Apply keyboard layout(s) via swaymsg, niri msg, setxkbmap, instantwmctl, or gsettings depending on compositor
+///
+/// Codes use the `layout(variant)` spelling, e.g. `us,de(nodeadkeys)`.
 pub fn apply_keyboard_layouts(codes: &[String], compositor: &CompositorType) -> Result<()> {
-    let joined = join_layout_codes(codes);
-    if joined.is_empty() {
+    if join_layout_codes(codes).is_empty() {
         bail!("No keyboard layouts selected");
     }
+    let joined: String = codes
+        .iter()
+        .map(|code| xkb::base_layout(code))
+        .collect::<Vec<_>>()
+        .join(",");
+    let variants = xkb::positional_variants(codes);
 
     match compositor {
         CompositorType::Sway => {
-            let cmd = format!("input type:keyboard xkb_layout \"{joined}\"");
+            let variant_arg = variants.as_deref().unwrap_or("");
+            let cmd = format!(
+                "input type:keyboard xkb_layout \"{joined}\" xkb_variant \"{variant_arg}\""
+            );
             sway::swaymsg(&cmd)?;
         }
         CompositorType::Gnome => {
@@ -394,6 +551,7 @@ pub fn apply_keyboard_layouts(codes: &[String], compositor: &CompositorType) -> 
                 .with_context(|| format!("Failed to update niri keyboard layouts to '{joined}'"))?;
         }
         CompositorType::InstantWM => {
+            // instantwmctl parses `layout(variant)` codes natively.
             let mut args = vec!["keyboard".to_string(), "set".to_string()];
             args.extend(codes.iter().cloned());
             instantwmctl::run(args).with_context(|| {
@@ -403,6 +561,9 @@ pub fn apply_keyboard_layouts(codes: &[String], compositor: &CompositorType) -> 
         _ if compositor.is_x11() => {
             let mut command = Command::new("setxkbmap");
             command.arg("-layout").arg(&joined);
+            if let Some(variants) = variants {
+                command.arg("-variant").arg(variants);
+            }
             if let Some(options) = current_x11_options() {
                 command.arg("-option").arg(options);
             }
@@ -419,7 +580,13 @@ pub fn apply_keyboard_layouts(codes: &[String], compositor: &CompositorType) -> 
 pub fn apply_gnome_keyboard_layouts(codes: &[String]) -> Result<()> {
     let sources: Vec<String> = codes
         .iter()
-        .map(|code| format!("('xkb', '{}')", code))
+        .map(|code| {
+            let (layout, variant) = xkb::split_layout_variant(code);
+            match variant {
+                Some(variant) => format!("('xkb', '{layout}+{variant}')"),
+                None => format!("('xkb', '{layout}')"),
+            }
+        })
         .collect();
     let sources_str = format!("[{}]", sources.join(", "));
 
@@ -434,4 +601,90 @@ pub fn apply_gnome_keyboard_layouts(codes: &[String]) -> Result<()> {
         .with_context(|| format!("Failed to set GNOME keyboard layouts to: {sources_str}"))?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gnome_sources_normalize_plus_variants() {
+        let sources = parse_gnome_sources("[('xkb', 'us'), ('xkb', 'de+nodeadkeys')]")
+            .expect("sources parse");
+
+        assert_eq!(
+            sources,
+            vec!["us".to_string(), "de(nodeadkeys)".to_string()]
+        );
+    }
+
+    #[test]
+    fn instantwm_list_codes_restore_variant_parentheses() {
+        assert_eq!(
+            parse_instantwm_list_code("de (nodeadkeys)").as_deref(),
+            Some("de(nodeadkeys)")
+        );
+        assert_eq!(parse_instantwm_list_code("us").as_deref(), Some("us"));
+        assert_eq!(
+            parse_instantwm_list_code("de (intl)").as_deref(),
+            Some("de(intl)")
+        );
+        // Unbalanced rows fall back to the first whitespace token.
+        assert_eq!(
+            parse_instantwm_list_code("German (T3 (x").as_deref(),
+            Some("German")
+        );
+    }
+
+    #[test]
+    fn instantwm_active_marker_is_stripped_before_parsing() {
+        let marked = "*us".trim_start_matches(['*', ' ']);
+        assert_eq!(parse_instantwm_list_code(marked).as_deref(), Some("us"));
+
+        let marked_variant = "* de (intl)".trim_start_matches(['*', ' ']);
+        assert_eq!(
+            parse_instantwm_list_code(marked_variant).as_deref(),
+            Some("de(intl)")
+        );
+        // Tolerant of multiple spaces and tabs between code and variant.
+        assert_eq!(
+            parse_instantwm_list_code("de   (nodeadkeys)").as_deref(),
+            Some("de(nodeadkeys)")
+        );
+        assert_eq!(
+            parse_instantwm_list_code("de\t(nodeadkeys)").as_deref(),
+            Some("de(nodeadkeys)")
+        );
+    }
+
+    #[test]
+    fn map_layout_names_resolves_base_and_variant_names() {
+        let layouts = vec![
+            LayoutChoice {
+                code: "us".to_string(),
+                name: "English (US)".to_string(),
+            },
+            LayoutChoice {
+                code: "de".to_string(),
+                name: "German".to_string(),
+            },
+        ];
+        let variants = BTreeMap::from([(
+            "de".to_string(),
+            vec![VariantChoice {
+                code: "nodeadkeys".to_string(),
+                name: "German (nodeadkeys)".to_string(),
+            }],
+        )]);
+
+        let names = vec![
+            "English (US)".to_string(),
+            "German (nodeadkeys)".to_string(),
+        ];
+        let resolved = map_layout_names_from_sources(&names, &layouts, Some(&variants));
+        assert_eq!(
+            resolved,
+            vec!["us".to_string(), "de(nodeadkeys)".to_string()]
+        );
+    }
 }

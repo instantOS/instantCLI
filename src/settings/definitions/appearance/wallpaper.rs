@@ -198,7 +198,7 @@ impl Setting for RandomWallpaper {
             .id("appearance.wallpaper_random")
             .title("Random Wallpaper")
             .icon(NerdFont::Refresh)
-            .summary("Fetch and set a random wallpaper from Wallhaven.\n\nRespects the 'Show Logo on Wallpaper' setting.")
+            .summary("Fetch and set a random wallpaper.\n\nDefaults to Wallhaven; use `ins wallpaper random --source picsum|bing|loremflickr` when Wallhaven is down.\n\nRespects the 'Show Logo on Wallpaper' setting.")
             .build()
     }
 

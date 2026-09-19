@@ -273,8 +273,8 @@ fn configure_timezone(plan: &InstallPlan, executor: &dyn CommandRunner) -> Resul
         // timedatectl set-ntp true
         let mut cmd_ntp = Command::new("timedatectl");
         cmd_ntp.arg("set-ntp").arg("true");
-        // We ignore errors here as NTP might not be controllable in chroot
-        let _ = executor.run(&mut cmd_ntp);
+        // NTP might not be controllable in chroot, but that is not fatal
+        executor.run_best_effort(&mut cmd_ntp, "timedatectl NTP enable");
     } else {
         println!("timedatectl failed, falling back to manual configuration...");
 
