@@ -77,6 +77,16 @@ test_argument_conflicts() {
 		return 1
 	fi
 
+	if (parse_args --cli-only --config /path/to/config.toml) >/dev/null 2>&1; then
+		echo "Conflicting --cli-only and --config modes should fail" >&2
+		return 1
+	fi
+
+	if (parse_args --dry-run) >/dev/null 2>&1; then
+		echo "--dry-run without --config should fail" >&2
+		return 1
+	fi
+
 	if (parse_args --only-animation --no-animation) >/dev/null 2>&1; then
 		echo "Conflicting animation modes should fail" >&2
 		return 1
@@ -331,6 +341,73 @@ test_console_palette_detection() {
 	rm -f "${console_output}"
 }
 
+test_unattended_config_parsing() {
+	(
+		parse_args --config /tmp/questions.toml --dry-run
+		assert_equals "/tmp/questions.toml" "${UNATTENDED_CONFIG}"
+		assert_equals 1 "${OS_INSTALL}"
+		assert_equals 1 "${DRY_RUN}"
+	)
+
+	(
+		parse_args --unattended /tmp/questions.toml
+		assert_equals "/tmp/questions.toml" "${UNATTENDED_CONFIG}"
+		assert_equals 1 "${OS_INSTALL}"
+		assert_equals 0 "${DRY_RUN}"
+	)
+
+	(
+		parse_args --questions-file /tmp/questions.toml
+		assert_equals "/tmp/questions.toml" "${UNATTENDED_CONFIG}"
+		assert_equals 1 "${OS_INSTALL}"
+		assert_equals 0 "${DRY_RUN}"
+	)
+}
+
+test_unattended_launch_command() (
+	local captured_command dummy_config
+	captured_command="$(mktemp)"
+	dummy_config="$(mktemp /tmp/test_q.XXXXXX.toml)"
+	trap 'rm -f "${captured_command}" "${dummy_config}"' EXIT
+
+	INSTALL_DIR="/custom/bin"
+	BIN_NAME="ins"
+
+	# Subshell with mocked exec
+	(
+		exec() {
+			printf '%s\n' "$*" >"${captured_command}"
+		}
+
+		UNATTENDED_CONFIG="${dummy_config}"
+		DRY_RUN=1
+		OS_INSTALL=1
+
+		if [ -n "$UNATTENDED_CONFIG" ]; then
+			case "$UNATTENDED_CONFIG" in
+			http://* | https://*) ;;
+			*)
+				[ -f "$UNATTENDED_CONFIG" ]
+				UNATTENDED_CONFIG=$(cd "$(dirname "$UNATTENDED_CONFIG")" && pwd)/$(basename "$UNATTENDED_CONFIG")
+				;;
+			esac
+
+			if [ "$DRY_RUN" -eq 1 ]; then
+				exec "$INSTALL_DIR/$BIN_NAME" arch exec --dry-run -f "$UNATTENDED_CONFIG"
+			else
+				exec "$INSTALL_DIR/$BIN_NAME" arch exec -f "$UNATTENDED_CONFIG"
+			fi
+		fi
+	)
+
+	cmd="$(<"${captured_command}")"
+	if [[ "${cmd}" == *"--trust-config"* ]]; then
+		echo "Unattended launch should not use non-existent --trust-config flag" >&2
+		return 1
+	fi
+	assert_equals "/custom/bin/ins arch exec --dry-run -f ${dummy_config}" "${cmd}"
+)
+
 test_release_selection
 test_renamed_binary
 test_argument_conflicts
@@ -345,3 +422,5 @@ test_unsupported_termux_arm_does_not_use_glibc_target
 test_help_documents_install_dir_environment
 test_release_selection_and_extraction_agree
 test_console_palette_detection
+test_unattended_config_parsing
+test_unattended_launch_command

@@ -107,6 +107,8 @@ Options:
   --bin-name <name>                   Override installed binary name (default: ins)
   --cli-only, --no-launch             Install ins CLI only (do not launch OS installer on live disk)
   --os-install, --arch-install        Launch instantOS installer after installing ins
+  --config, --unattended <path|url>   Run unattended OS installation with questions TOML file or URL
+  --dry-run                           Run unattended OS installation in dry-run mode
   --only-animation, --animation-only  Play the logo animation and exit
   --no-animation                      Skip the logo animation
   -h, --help                          Show this help message
@@ -137,6 +139,16 @@ parse_args() {
 		--os-install | --arch-install)
 			OS_INSTALL=1
 			;;
+		--config | --unattended | --questions-file)
+			shift
+			[ $# -gt 0 ] || fatal "--config requires a file path or URL"
+			[ -n "$1" ] || fatal "--config requires a non-empty value"
+			UNATTENDED_CONFIG=$1
+			OS_INSTALL=1
+			;;
+		--dry-run)
+			DRY_RUN=1
+			;;
 		--only-animation | --animation-only)
 			ONLY_ANIMATION=1
 			;;
@@ -156,8 +168,14 @@ parse_args() {
 	if [ "$CLI_ONLY" -eq 1 ] && [ "$OS_INSTALL" -eq 1 ]; then
 		fatal "--cli-only and --os-install cannot be used together"
 	fi
+	if [ "$CLI_ONLY" -eq 1 ] && [ -n "$UNATTENDED_CONFIG" ]; then
+		fatal "--cli-only and --config cannot be used together"
+	fi
 	if [ "$ONLY_ANIMATION" -eq 1 ] && [ "$NO_ANIMATION" -eq 1 ]; then
 		fatal "--only-animation and --no-animation cannot be used together"
+	fi
+	if [ "$DRY_RUN" -eq 1 ] && [ -z "$UNATTENDED_CONFIG" ]; then
+		fatal "--dry-run requires --config"
 	fi
 }
 

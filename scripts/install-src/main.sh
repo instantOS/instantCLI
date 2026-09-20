@@ -46,7 +46,7 @@ main() {
 	instantos_logo_animation
 
 	# If live disk or forced OS install, prepare the keyring before downloading.
-	if should_launch_os_installer; then
+	if should_launch_os_installer && [ "$DRY_RUN" -eq 0 ]; then
 		prepare_live_keyring
 	fi
 
@@ -94,9 +94,34 @@ main() {
 
 	# Launch instantOS installer if on live disk or requested
 	if should_launch_os_installer; then
-		log "Starting instantOS installer..."
-		# The CLI configures networking as the desktop user, then escalates itself.
-		exec "$INSTALL_DIR/$BIN_NAME" arch install
+		if [ -n "$UNATTENDED_CONFIG" ]; then
+			case "$UNATTENDED_CONFIG" in
+			http://* | https://*)
+				downloaded_config=$(mktemp /tmp/instant_questions.XXXXXX.toml)
+				log "Downloading installation configuration from $UNATTENDED_CONFIG..."
+				if ! curl -fsSL "$UNATTENDED_CONFIG" -o "$downloaded_config"; then
+					rm -f "$downloaded_config"
+					fatal "failed to download configuration from $UNATTENDED_CONFIG"
+				fi
+				UNATTENDED_CONFIG="$downloaded_config"
+				;;
+			*)
+				[ -f "$UNATTENDED_CONFIG" ] || fatal "configuration file not found: $UNATTENDED_CONFIG"
+				UNATTENDED_CONFIG=$(cd "$(dirname "$UNATTENDED_CONFIG")" && pwd)/$(basename "$UNATTENDED_CONFIG")
+				;;
+			esac
+
+			log "Starting instantOS unattended installer..."
+			if [ "$DRY_RUN" -eq 1 ]; then
+				exec "$INSTALL_DIR/$BIN_NAME" arch exec --dry-run -f "$UNATTENDED_CONFIG"
+			else
+				exec "$INSTALL_DIR/$BIN_NAME" arch exec -f "$UNATTENDED_CONFIG"
+			fi
+		else
+			log "Starting instantOS installer..."
+			# The CLI configures networking as the desktop user, then escalates itself.
+			exec "$INSTALL_DIR/$BIN_NAME" arch install
+		fi
 	fi
 
 	print_summary
