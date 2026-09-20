@@ -242,9 +242,9 @@ pub const ASSISTS: &[AssistEntry] = &[
             }),
             AssistEntry::Action(AssistAction {
                 key: 'z',
-                description: "Freeze Area: Screenshot region displayed at exact position (Sway)",
+                description: "Freeze Area: Pin a screenshot of the selected area in place",
                 icon: NerdFont::Snowflake,
-                dependencies: &[&SLURP, &GRIM, &FEH],
+                dependencies: &[&SLURP, &SLOP, &GRIM, &IMAGEMAGICK, &FEH],
                 execute: actions::screenshot::screenshot_freeze,
             }),
             AssistEntry::Action(AssistAction {
@@ -686,7 +686,7 @@ mod tests {
         assert!(action.is_some());
         assert_eq!(
             action.unwrap().description,
-            "Freeze Area: Screenshot region displayed at exact position (Sway)"
+            "Freeze Area: Pin a screenshot of the selected area in place"
         );
     }
 

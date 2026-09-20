@@ -375,16 +375,18 @@ fn wait_for_xwayland_window(class: &str, max_attempts: u32) -> Result<bool> {
     Ok(false)
 }
 
+/// Window class used for the freeze overlay window
+const FREEZE_WINDOW_CLASS: &str = "ins_freeze";
+
 /// Take a screenshot of a region and display it as a floating window at the exact position
-/// This effectively "freezes" that part of the screen. Currently only supports Sway.
+/// This effectively "freezes" that part of the screen.
+///
+/// Exact positioning is a Sway nicety (and handled by feh's own geometry on
+/// X11). Everywhere else the screenshot still opens in a normal feh window.
+/// Unsupported compositors (GNOME/KWin Wayland) are rejected by area selection
+/// itself, which reports the problem to the user.
 pub fn screenshot_freeze() -> Result<()> {
     let compositor = CompositorType::detect();
-    if !matches!(compositor, CompositorType::Sway) {
-        anyhow::bail!(
-            "Screenshot freeze is only supported on Sway. Detected: {:?}",
-            compositor
-        );
-    }
 
     let config = AreaSelectionConfig::new();
 
@@ -393,8 +395,6 @@ pub fn screenshot_freeze() -> Result<()> {
         Err(_) => return Ok(()),
     };
 
-    let (x, y, width, height) = parse_slurp_geometry(&geometry)?;
-
     let display_server = config.display_server();
     let screenshot_data = capture_area_to_memory(&geometry, display_server)?;
 
@@ -402,13 +402,34 @@ pub fn screenshot_freeze() -> Result<()> {
     let temp_path = std::env::temp_dir().join(format!("ins_freeze_{}.png", std::process::id()));
     std::fs::write(&temp_path, &screenshot_data).context("Failed to write temporary screenshot")?;
 
-    // Launch feh with specific geometry
-    // feh is an X11 app, so on Sway it runs via XWayland and uses "class" not "app_id"
-    let geometry_arg = format!("{}x{}+{}+{}", width, height, x, y);
+    // feh is an X11 app and always expects the X11 geometry format "WxH+X+Y"
+    let geometry_arg = if display_server.is_wayland() {
+        let (x, y, width, height) = parse_slurp_geometry(&geometry)?;
+        format!("{}x{}+{}+{}", width, height, x, y)
+    } else {
+        // slop already returns the geometry in the "WxH+X+Y" format
+        geometry.clone()
+    };
+
+    // On X11, ask instantWM to float the next matching window so feh's
+    // geometry is honored instead of the window being tiled. Best-effort:
+    // plain i3 and other X11 WMs don't know this command, where feh is on
+    // its own.
+    if display_server.is_x11() {
+        let _ = Command::new("instantwmctl")
+            .args([
+                "pending-tmp-rule",
+                "add",
+                "--float",
+                "--class",
+                FREEZE_WINDOW_CLASS,
+            ])
+            .status();
+    }
 
     Command::new("feh")
         .arg("--class")
-        .arg("ins_freeze")
+        .arg(FREEZE_WINDOW_CLASS)
         .arg("--geometry")
         .arg(&geometry_arg)
         .arg("--borderless")
@@ -417,19 +438,22 @@ pub fn screenshot_freeze() -> Result<()> {
         .spawn()
         .context("Failed to launch feh")?;
 
-    // Wait for feh window to appear with exponential backoff
-    if !wait_for_xwayland_window("ins_freeze", 10)? {
-        anyhow::bail!("feh window did not appear");
-    }
+    if display_server.is_wayland() && matches!(compositor, CompositorType::Sway) {
+        // Wait for feh window to appear with exponential backoff
+        if !wait_for_xwayland_window(FREEZE_WINDOW_CLASS, 10)? {
+            anyhow::bail!("feh window did not appear");
+        }
 
-    // Make it floating and position it exactly
-    // Use "class" for XWayland apps (not "app_id" which is for native Wayland)
-    // Use "move absolute position" to avoid title bar offset issues
-    let sway_cmd = format!(
-        "[class=\"ins_freeze\"] floating enable, border none, move absolute position {} {}",
-        x, y
-    );
-    let _ = sway::swaymsg(&sway_cmd);
+        // Make it floating and position it exactly
+        // Use "class" for XWayland apps (not "app_id" which is for native Wayland)
+        // Use "move absolute position" to avoid title bar offset issues
+        let (x, y, _, _) = parse_slurp_geometry(&geometry)?;
+        let sway_cmd = format!(
+            "[class=\"{}\"] floating enable, border none, move absolute position {} {}",
+            FREEZE_WINDOW_CLASS, x, y
+        );
+        let _ = sway::swaymsg(&sway_cmd);
+    }
 
     Ok(())
 }
