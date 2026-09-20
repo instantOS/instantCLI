@@ -57,6 +57,19 @@ impl StepGraph {
         })
     }
 
+    /// Re-derive every step's dependency fingerprint from the answers
+    /// currently in `context`.
+    ///
+    /// Used when an imported configuration is trusted (`ins arch exec
+    /// --trust-config`): the file's answers were validated, so fresh
+    /// provenance is recorded for them instead of rejecting missing or stale
+    /// fingerprints.
+    pub(super) fn refresh_provenance(&self, context: &mut InstallContext) {
+        for id in self.dependencies.keys() {
+            self.record_dependency_fingerprint(context, *id);
+        }
+    }
+
     pub(super) fn record_answer(&self, context: &mut InstallContext, id: StepId, answer: String) {
         let changed =
             context.answers.get(&id) != Some(&answer) || context.completed_steps.contains(&id);

@@ -237,6 +237,17 @@ fn configure_mkinitcpio(plan: &InstallPlan, executor: &dyn CommandRunner) -> Res
 
     std::fs::write(conf_path, config.to_string())?;
 
+    if use_plymouth && !plan.minimal_mode {
+        // The Post step applies the Plymouth theme with
+        // `plymouth-set-default-theme -R`, which regenerates the initramfs
+        // from exactly this configuration with the theme embedded. Building
+        // here as well made a fresh install run mkinitcpio three times
+        // (kernel scriptlet during pacstrap, here, then again in Post) while
+        // the interim image is thrown away unused.
+        println!("Initramfs rebuild deferred to Plymouth theme setup (Post step).");
+        return Ok(());
+    }
+
     // Regenerate initramfs
     executor.run(Command::new("mkinitcpio").arg("-P"))?;
 
@@ -472,6 +483,7 @@ pub fn configure_plymouth(
     use_plymouth: bool,
     minimal_mode: bool,
     executor: &dyn CommandRunner,
+    rebuild_is_load_bearing: bool,
 ) -> Result<()> {
     if !use_plymouth || minimal_mode {
         return Ok(());
@@ -492,6 +504,16 @@ pub fn configure_plymouth(
             "Warning: Plymouth theme '{}' not found at {}. Skipping theme apply.",
             theme, theme_dir
         );
+        if rebuild_is_load_bearing {
+            // The Config step deferred the initramfs rebuild to this point,
+            // so the image on disk must still be regenerated to match
+            // /etc/mkinitcpio.conf (encryption hooks etc.), just without the
+            // custom theme.
+            println!("Rebuilding initramfs without the theme...");
+            executor.run(Command::new("mkinitcpio").arg("-P")).context(
+                "Failed to regenerate the initramfs after the Plymouth theme was missing",
+            )?;
+        }
         return Ok(());
     }
 
@@ -520,6 +542,15 @@ pub fn configure_plymouth(
     let mut cmd = Command::new("plymouth-set-default-theme");
     cmd.arg("-R").arg(theme);
     if let Err(e) = executor.run(&mut cmd) {
+        if rebuild_is_load_bearing {
+            // This rebuild is the only one carrying the mkinitcpio
+            // configuration written by the Config step; letting the failure
+            // slide would leave an initramfs that predates that
+            // configuration (and Plymouth).
+            return Err(e).context(
+                "Plymouth theme application failed; the initramfs still reflects the pre-Plymouth configuration",
+            );
+        }
         println!("Warning: Failed to apply Plymouth theme: {}", e);
         return Ok(());
     }

@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use std::io::{BufRead, Write};
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use crate::ui::nerd_font::NerdFont;
 
@@ -87,9 +88,29 @@ pub struct CommandExecutor {
     pub log_file: Option<PathBuf>,
 }
 
+/// Commands that ran at least this long are announced on the terminal, not
+/// just in the log file: they are where an installation's time goes, and a
+/// user staring at a quiet terminal deserves to see the big pieces move.
+const SLOW_COMMAND_THRESHOLD: Duration = Duration::from_secs(10);
+
 impl CommandExecutor {
     pub fn new(dry_run: bool, log_file: Option<PathBuf>) -> Self {
         Self { dry_run, log_file }
+    }
+
+    /// Record how long a spawned command took. The log file gets every
+    /// command's duration (this is what makes `install.log` a profiler);
+    /// the terminal only hears about the slow ones.
+    fn log_command_duration(&self, cmd_str: &str, started: Instant) {
+        let elapsed = started.elapsed();
+        self.log_to_file(&format!(
+            "DONE ({:.1}s): {}",
+            elapsed.as_secs_f64(),
+            cmd_str
+        ));
+        if elapsed >= SLOW_COMMAND_THRESHOLD {
+            println!("'{}' finished in {:.0}s", cmd_str, elapsed.as_secs_f64());
+        }
     }
 
     fn log_to_file(&self, message: &str) {
@@ -117,6 +138,7 @@ impl CommandExecutor {
 
         self.log_to_file(&format!("RUN: {}", cmd_str));
 
+        let started = Instant::now();
         if self.dry_run {
             self.print_dry_run(command, None);
             Ok(())
@@ -143,6 +165,7 @@ impl CommandExecutor {
                 self.log_to_file(&format!("FAILED: {}", cmd_str));
                 anyhow::bail!("Command failed: {:?}", command);
             }
+            self.log_command_duration(&cmd_str, started);
             Ok(())
         }
     }
@@ -161,6 +184,7 @@ impl CommandExecutor {
         // For now let's just log that input was provided.
         self.log_to_file("(Input provided)");
 
+        let started = Instant::now();
         if self.dry_run {
             self.print_dry_run(command, Some(input));
             Ok(())
@@ -191,6 +215,7 @@ impl CommandExecutor {
                 self.log_to_file(&format!("FAILED: {}", cmd_str));
                 anyhow::bail!("Command failed: {:?}", command);
             }
+            self.log_command_duration(&cmd_str, started);
             Ok(())
         }
     }
@@ -232,6 +257,7 @@ impl CommandExecutor {
 
         self.log_to_file(&format!("RUN WITH OUTPUT: {}", cmd_str));
 
+        let started = Instant::now();
         if self.dry_run {
             self.print_dry_run(command, None);
             Ok(None)
@@ -247,6 +273,7 @@ impl CommandExecutor {
                 self.log_to_file(&format!("STDERR: {}", stderr));
                 anyhow::bail!("Command failed: {:?}", command);
             }
+            self.log_command_duration(&cmd_str, started);
             Ok(Some(output))
         }
     }
@@ -316,6 +343,7 @@ pub async fn execute_installation(
     step: Option<String>,
     mut dry_run: bool,
     log_file: Option<PathBuf>,
+    trust_imported_answers: bool,
 ) -> Result<ExecutionOutcome> {
     // Check for force dry-run file
     if std::path::Path::new(paths::DRY_RUN_FLAG).exists() {
@@ -349,6 +377,10 @@ pub async fn execute_installation(
         ));
     }
 
+    let installation_started = Instant::now();
+    // Captured before `step` is consumed by the single-step branch below.
+    let full_installation = step.is_none();
+
     println!("Loading configuration from: {}", config_path.display());
 
     if !config_path.exists() {
@@ -356,14 +388,15 @@ pub async fn execute_installation(
     }
 
     let content = std::fs::read_to_string(&config_path)?;
-    let context: crate::arch::engine::InstallContext = toml::from_str(&content)?;
+    let mut context: crate::arch::engine::InstallContext = toml::from_str(&content)?;
     let configuration_sha256 =
         crate::arch::installation_identity::configuration_fingerprint(&content);
 
     // Exec bypasses the wizard, so nothing has validated the answers a saved
     // (possibly hand-edited) config contains. Fail loudly rather than acting
-    // on an invalid or stale answer.
-    crate::arch::engine::validate_imported_context(steps, &context)
+    // on an invalid or irrelevant answer. Provenance is rejected as stale
+    // unless the caller trusted an imported (hand-edited) config.
+    crate::arch::engine::validate_imported_context(steps, &mut context, trust_imported_answers)
         .context("Refusing to execute an invalid configuration")?;
     let plan = crate::arch::engine::InstallPlan::try_from(&context)
         .context("Refusing to execute an incomplete or inconsistent installation plan")?;
@@ -418,6 +451,7 @@ pub async fn execute_installation(
             &executor,
             &config_path,
             &configuration_sha256,
+            trust_imported_answers,
         )
         .await?;
     } else {
@@ -439,6 +473,7 @@ pub async fn execute_installation(
                 &executor,
                 &config_path,
                 &configuration_sha256,
+                trust_imported_answers,
             )
             .await?;
         }
@@ -483,6 +518,22 @@ pub async fn execute_installation(
         }
     }
 
+    // Only a full installation reports a total; a single step invoked via
+    // `arch exec <step>` (including every chroot re-invocation) reports its
+    // own step duration instead.
+    if !dry_run && full_installation {
+        let elapsed = installation_started.elapsed();
+        println!(
+            "Installation completed in {}m {:02}s",
+            elapsed.as_secs() / 60,
+            elapsed.as_secs() % 60
+        );
+        executor.log(&format!(
+            "Installation completed in {:.1}s",
+            elapsed.as_secs_f64()
+        ));
+    }
+
     Ok(ExecutionOutcome::Completed)
 }
 
@@ -493,9 +544,11 @@ async fn execute_step(
     executor: &dyn CommandRunner,
     config_path: &std::path::Path,
     configuration_sha256: &str,
+    trust_imported_answers: bool,
 ) -> Result<()> {
     let in_chroot = is_chroot();
     let requires_chroot = step.requires_chroot();
+    let step_started = Instant::now();
 
     // Load state
     let mut state = InstallState::load_for_configuration(configuration_sha256);
@@ -546,6 +599,13 @@ async fn execute_step(
             cmd.arg("--dry-run");
         }
 
+        // A trusted hand-edited config carries no valid provenance records;
+        // the inner invocation validates the same file and must apply the
+        // same trust semantics or it will reject what the outer run accepted.
+        if trust_imported_answers {
+            cmd.arg("--trust-config");
+        }
+
         executor.run(&mut cmd)?;
 
         // Collect logs from chroot
@@ -562,6 +622,15 @@ async fn execute_step(
                 let _ = std::fs::remove_file(&chroot_log);
             }
         }
+
+        // The step's real runtime was reported by the inner invocation inside
+        // the chroot; here the whole arch-chroot round trip only goes to the
+        // log file to keep the terminal free of double reports.
+        executor.log(&format!(
+            "Step {:?} (via chroot) took {:.1}s",
+            step,
+            step_started.elapsed().as_secs_f64()
+        ));
 
         // Mark complete on host after successful chroot execution
         state.mark_complete(step);
@@ -595,6 +664,14 @@ async fn execute_step(
     }
 
     if !executor.dry_run() {
+        let elapsed = step_started.elapsed();
+        println!("Step {:?} completed in {:.0}s", step, elapsed.as_secs_f64());
+        executor.log(&format!(
+            "Step {:?} took {:.1}s",
+            step,
+            elapsed.as_secs_f64()
+        ));
+
         state.mark_complete(step);
         if let Err(e) = state.save() {
             println!("Warning: Failed to save install state: {}", e);

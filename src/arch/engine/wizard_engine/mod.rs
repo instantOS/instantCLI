@@ -740,7 +740,8 @@ impl WizardEngine {
 /// answers it truly requires.
 pub fn validate_imported_context(
     steps: &[Box<dyn WizardStep>],
-    context: &InstallContext,
+    context: &mut InstallContext,
+    trust_imported_answers: bool,
 ) -> Result<()> {
     let graph = StepGraph::new(steps)?;
     for step in steps {
@@ -760,11 +761,18 @@ pub fn validate_imported_context(
             |message| anyhow::anyhow!("the stored answer for {id:?} is invalid: {message}"),
         )?;
 
-        if !graph.step_state_is_current(context, id) {
+        if !trust_imported_answers && !graph.step_state_is_current(context, id) {
             bail!(
                 "the stored answer for {id:?} is stale: it was recorded against different dependency answers"
             );
         }
+    }
+
+    if trust_imported_answers {
+        // Hand-edited configuration files cannot be expected to carry valid
+        // dependency provenance. Their answers were validated above, so record
+        // fresh provenance for them instead of rejecting the import.
+        graph.refresh_provenance(context);
     }
     Ok(())
 }

@@ -91,7 +91,11 @@ fn configure_grub(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()
     }
 
     if !plan.minimal_mode {
-        configure_grub_theme(executor)?;
+        // Apply the theme to /etc/default/grub only; the single grub-mkconfig
+        // below picks it up together with every other edit made here. A fresh
+        // install used to regenerate the GRUB configuration once with the
+        // theme and once more right after — pure duplicate work.
+        configure_grub_theme(executor, false)?;
     }
 
     // grub-mkconfig -o /boot/grub/grub.cfg
@@ -99,6 +103,26 @@ fn configure_grub(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()
     cmd.arg("-o").arg("/boot/grub/grub.cfg");
 
     executor.run(&mut cmd)?;
+
+    if executor.dry_run() {
+        // The check below reads the generated file, which does not exist in
+        // a dry run.
+        return Ok(());
+    }
+
+    // grub-mkconfig can exit successfully while leaving an empty or
+    // entry-less configuration behind; such a system cannot boot. Fail
+    // loudly instead of reporting a finished installation.
+    let grub_cfg = std::fs::read_to_string("/boot/grub/grub.cfg").unwrap_or_else(|error| {
+        println!("Warning: could not read generated grub.cfg: {error}");
+        String::new()
+    });
+    if !grub_cfg.contains("menuentry") {
+        anyhow::bail!(
+            "grub-mkconfig produced a boot configuration without menu entries ({} bytes); the system would not boot",
+            grub_cfg.len()
+        );
+    }
 
     Ok(())
 }
@@ -176,7 +200,14 @@ fn configure_grub_plymouth(executor: &dyn CommandRunner) -> Result<()> {
     Ok(())
 }
 
-pub fn configure_grub_theme(executor: &dyn CommandRunner) -> Result<()> {
+/// Point GRUB at the instantOS theme in /etc/default/grub.
+///
+/// When `regenerate_config` is true and the theme changed, the GRUB
+/// configuration is regenerated right away. Callers that run
+/// `grub-mkconfig` themselves after applying all /etc/default/grub edits
+/// (the Bootloader step does) pass `false` so the expensive regeneration
+/// happens exactly once.
+pub fn configure_grub_theme(executor: &dyn CommandRunner, regenerate_config: bool) -> Result<()> {
     let grub_default = "/etc/default/grub";
 
     if !std::path::Path::new(grub_default).exists() {
@@ -204,7 +235,7 @@ pub fn configure_grub_theme(executor: &dyn CommandRunner) -> Result<()> {
         // Update grub config
         // Try to detect where grub-mkconfig writes to. Usually /boot/grub/grub.cfg
         let grub_cfg = "/boot/grub/grub.cfg";
-        if std::path::Path::new(grub_cfg).exists() {
+        if regenerate_config && std::path::Path::new(grub_cfg).exists() {
             println!("Regenerating GRUB configuration...");
             let mut cmd = Command::new("grub-mkconfig");
             cmd.arg("-o").arg(grub_cfg);
