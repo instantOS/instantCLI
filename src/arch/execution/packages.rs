@@ -121,7 +121,19 @@ fn collect_extended_packages(plan: &InstallPlan) -> Result<Vec<String>> {
         "xdg-user-dirs",
     ]);
 
-    packages.push(format!("{}-headers", kernel.label()));
+    // Kernel headers are only needed to build out-of-tree modules. Whether a
+    // GPU/driver pair needs them is decided next to the driver-package list
+    // in GpuKind, so this site stays oblivious to which kernels require
+    // headers and which do not.
+    if let Some(headers) = plan
+        .system_info
+        .gpus
+        .iter()
+        .filter_map(|gpu| gpu.get_kernel_headers(kernel))
+        .next()
+    {
+        packages.push(headers);
+    }
 
     // Standard Arch desktop packages
     // Note: instantOS packages are installed separately via build_instant_package_plan()

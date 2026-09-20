@@ -264,39 +264,47 @@ fn configure_timezone(plan: &InstallPlan, executor: &dyn CommandRunner) -> Resul
 
     // Try timedatectl first
     // timedatectl set-timezone "$REGION"
-    let mut cmd = Command::new("timedatectl");
-    cmd.arg("set-timezone").arg(timezone);
+    // timedatectl needs a running D-Bus/systemd, which the installer's chroot
+    // does not provide; the call only stalls there before failing. Go
+    // straight to the manual configuration in that case.
+    if !super::is_chroot() {
+        let mut cmd = Command::new("timedatectl");
+        cmd.arg("set-timezone").arg(timezone);
 
-    // We try to run timedatectl. If it fails (e.g. in chroot without dbus), we fallback.
-    // We suppress the error from executor.run by checking the result.
-    if executor.run(&mut cmd).is_ok() {
-        // timedatectl set-ntp true
-        let mut cmd_ntp = Command::new("timedatectl");
-        cmd_ntp.arg("set-ntp").arg("true");
-        // NTP might not be controllable in chroot, but that is not fatal
-        executor.run_best_effort(&mut cmd_ntp, "timedatectl NTP enable");
-    } else {
-        println!("timedatectl failed, falling back to manual configuration...");
-
-        // ln -sf /usr/share/zoneinfo/Region/City /etc/localtime
-        let source = format!("/usr/share/zoneinfo/{}", timezone);
-        let target = "/etc/localtime";
-
-        if executor.dry_run() {
-            println!("[DRY RUN] ln -sf {} {}", source, target);
-        } else {
-            // Remove existing link/file if it exists to avoid error
-            if std::path::Path::new(target).exists() {
-                std::fs::remove_file(target)?;
-            }
-            std::os::unix::fs::symlink(&source, target)?;
+        // We try to run timedatectl. If it fails (e.g. no D-Bus on the host),
+        // we fall back. We suppress the error from executor.run by checking
+        // the result.
+        if executor.run(&mut cmd).is_ok() {
+            // timedatectl set-ntp true
+            let mut cmd_ntp = Command::new("timedatectl");
+            cmd_ntp.arg("set-ntp").arg("true");
+            // NTP might not be controllable in chroot, but that is not fatal
+            executor.run_best_effort(&mut cmd_ntp, "timedatectl NTP enable");
+            return Ok(());
         }
-
-        // hwclock --systohc
-        let mut cmd_hw = Command::new("hwclock");
-        cmd_hw.arg("--systohc");
-        executor.run(&mut cmd_hw)?;
     }
+
+    if executor.dry_run() {
+        println!("[DRY RUN] ln -sf {} /etc/localtime", timezone);
+        return Ok(());
+    }
+
+    println!("Falling back to manual timezone configuration...");
+
+    // ln -sf /usr/share/zoneinfo/Region/City /etc/localtime
+    let source = format!("/usr/share/zoneinfo/{}", timezone);
+    let target = "/etc/localtime";
+
+    // Remove existing link/file if it exists to avoid error
+    if std::path::Path::new(target).exists() {
+        std::fs::remove_file(target)?;
+    }
+    std::os::unix::fs::symlink(&source, target)?;
+
+    // hwclock --systohc
+    let mut cmd_hw = Command::new("hwclock");
+    cmd_hw.arg("--systohc");
+    executor.run(&mut cmd_hw)?;
 
     Ok(())
 }
@@ -329,12 +337,19 @@ fn configure_locale(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<
         let mut cmd = Command::new("locale-gen");
         executor.run(&mut cmd)?;
 
-        // Use localectl to set the system locale instead of directly editing /etc/locale.conf
+        // Set the system locale. localectl talks to systemd-localed over
+        // D-Bus, which the installer's chroot does not run (the call only
+        // stalls there), so write /etc/locale.conf directly in that case —
+        // the same thing localectl would do.
         // Extract just the LANG part, e.g., "en_US.UTF-8" from "en_US.UTF-8 UTF-8"
         let lang = locale.split_whitespace().next().unwrap_or(locale);
-        let mut cmd = Command::new("localectl");
-        cmd.arg("set-locale").arg(format!("LANG={}", lang));
-        executor.run(&mut cmd)?;
+        if super::is_chroot() {
+            std::fs::write("/etc/locale.conf", format!("LANG={}\n", lang))?;
+        } else {
+            let mut cmd = Command::new("localectl");
+            cmd.arg("set-locale").arg(format!("LANG={}", lang));
+            executor.run(&mut cmd)?;
+        }
     }
 
     Ok(())

@@ -364,9 +364,12 @@ fn update_os_release(executor: &dyn CommandRunner) -> Result<()> {
             content,
             &[
                 ("NAME", "\"instantOS\""),
-                ("ID", "\"instantos\""),
                 ("PRETTY_NAME", "\"instantOS\""),
-                ("ID_LIKE", "\"arch\""),
+                // os-release(5) allows quoting, but ID and ID_LIKE are
+                // token-like values that consumers commonly exact-match
+                // unquoted (`grep ^ID=`), so write them bare.
+                ("ID", "instantos"),
+                ("ID_LIKE", "arch"),
             ],
         )
     })?;

@@ -4,6 +4,11 @@ use tokio::io::AsyncWriteExt;
 
 pub const INSTANT_MIRRORLIST: &str = include_str!("instantmirrorlist");
 
+/// Concurrent pacman download streams for the install. Upstream Arch ships a
+/// commented `#ParallelDownloads = 5`; we set 10 because package downloads
+/// dominate install time and the home link is rarely the bottleneck.
+const PARALLEL_DOWNLOADS: u8 = 10;
+
 pub async fn setup_instant_repo(dry_run: bool) -> Result<()> {
     if dry_run {
         println!("[DRY RUN] Appending [instant] config to /etc/pacman.conf");
@@ -150,7 +155,8 @@ fn process_pacman_settings(content: &str) -> Option<String> {
             *line = "Color".to_string();
             changed = true;
         } else if trimmed.starts_with("#ParallelDownloads") {
-            *line = line.replacen('#', "", 1);
+            // Replace the commented default with our preferred value.
+            *line = format!("ParallelDownloads = {}", PARALLEL_DOWNLOADS);
             changed = true;
         }
     }
@@ -225,13 +231,16 @@ Include = /etc/pacman.d/mirrorlist
 #Color
 #ParallelDownloads = 5
 "#;
-        let expected = r#"
+        let expected = format!(
+            r#"
 [options]
 ILoveCandy
 #VerbosePkgLists
 Color
-ParallelDownloads = 5
-"#;
+ParallelDownloads = {}
+"#,
+            PARALLEL_DOWNLOADS
+        );
         // Note: ILoveCandy inserted after [options] because VerbosePkgLists is commented out
         // Wait, in my logic: if VerbosePkgLists is commented, verbose_pkg_lists_idx is None.
         // So it falls back to options_idx.

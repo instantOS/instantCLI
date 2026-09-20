@@ -65,6 +65,60 @@ impl GpuKind {
             GpuKind::Other(_) => vec!["mesa", "lib32-mesa"],
         }
     }
+
+    /// Kernel headers required to build this GPU's driver on the given
+    /// kernel, if any. DKMS drivers (e.g. nvidia-dkms on Zen) need the
+    /// headers to compile the out-of-tree module; prebuilt drivers do not.
+    /// Sibling of [`Self::get_driver_packages`] so the DKMS/headers coupling
+    /// stays in one place.
+    pub fn get_kernel_headers(&self, kernel: crate::arch::engine::Kernel) -> Option<String> {
+        match (self, kernel) {
+            (GpuKind::Nvidia, crate::arch::engine::Kernel::Zen) => {
+                Some(format!("{}-headers", kernel.label()))
+            }
+            _ => None,
+        }
+    }
+}
+
+/// PCI/USB vendor IDs of every network interface, read from sysfs.
+///
+/// Used to select the `linux-firmware-*` split packages that actually match
+/// the machine's hardware (see `execution::base::firmware_packages`). USB
+/// devices keep their `vendor` file on the USB device directory above the
+/// interface, so the lookup walks up a few sysfs levels.
+pub fn detect_network_vendor_ids() -> Vec<String> {
+    let mut vendors = std::collections::HashSet::new();
+
+    let Ok(entries) = std::fs::read_dir("/sys/class/net") else {
+        return Vec::new();
+    };
+
+    for entry in entries.flatten() {
+        let Ok(device) = entry.path().join("device").read_link() else {
+            continue;
+        };
+
+        // Walk up the sysfs device tree until we find a `vendor` file.
+        // PCI devices expose it at the function (one hop up); USB and other
+        // buses nest deeper; the natural top of the device hierarchy is
+        // `/sys/devices`, so stop once we climb above it.
+        let mut current = device.as_path();
+        loop {
+            match std::fs::read_to_string(current.join("vendor")) {
+                Ok(vendor) => {
+                    vendors.insert(vendor.trim().trim_start_matches("0x").to_ascii_lowercase());
+                    break;
+                }
+                Err(_) => match current.parent() {
+                    Some(parent) if parent.starts_with("/sys/devices") => current = parent,
+                    _ => break,
+                },
+            }
+        }
+    }
+
+    vendors.into_iter().collect()
 }
 
 impl SystemInfo {
@@ -153,6 +207,9 @@ impl SystemInfo {
         {
             info.vm_type = Some(String::from_utf8_lossy(&virt.stdout).trim().to_string());
         }
+
+        // Network interface vendors, used for firmware split selection
+        info.network_vendor_ids = detect_network_vendor_ids();
 
         // Architecture check
         info.architecture = std::env::consts::ARCH.to_string();

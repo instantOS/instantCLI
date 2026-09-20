@@ -241,4 +241,10 @@ pub struct SystemInfo {
     pub architecture: String,
     pub distro: String,
     pub total_ram_gb: Option<u64>,
+    /// PCI/USB vendor IDs (lowercase hex, no `0x` prefix) of the network
+    /// interfaces. Used to pick the matching `linux-firmware-*` split
+    /// packages. Optional in imported configurations for compatibility with
+    /// config files written before this field existed.
+    #[serde(default)]
+    pub network_vendor_ids: Vec<String>,
 }
