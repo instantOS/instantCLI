@@ -1133,7 +1133,7 @@ fn imported_context_rejects_an_answer_failing_validation() {
     let mut context = InstallContext::new();
     context.set_answer(StepId::UseEncryption, "Yes".to_string());
 
-    let error = validate_imported_context(&steps, &mut context, false).unwrap_err();
+    let error = validate_imported_context(&steps, &context).unwrap_err();
     assert!(error.to_string().contains("UseEncryption"));
 }
 
@@ -1152,32 +1152,25 @@ fn imported_context_rejects_a_stale_dependent_answer() {
     // config: the dependent answer was recorded for the old disk.
     context.set_answer(StepId::Disk, "/dev/sdb".to_string());
 
-    let error = validate_imported_context(&steps, &mut context, false).unwrap_err();
+    let error = validate_imported_context(&steps, &context).unwrap_err();
     assert!(error.to_string().contains("stale"));
 }
 
 #[test]
-fn trusted_import_accepts_a_stale_dependent_answer_and_records_provenance() {
+fn imported_context_accepts_a_dependent_answer_without_provenance() {
     let steps = vec![
         question(StepId::Disk, &[]),
         question(StepId::DualBootPartition, &[StepId::Disk]),
     ];
-    let graph = StepGraph::new(&steps).unwrap();
     let mut context = InstallContext::new();
-    graph.record_answer(&mut context, StepId::Disk, "/dev/sda".into());
-    graph.record_answer(&mut context, StepId::DualBootPartition, "/dev/sda2".into());
+    context.set_answer(StepId::Disk, "/dev/sda".into());
+    context.set_answer(StepId::DualBootPartition, "/dev/sda2".into());
 
-    // A hand edit of the upstream answer leaves the dependent answer's
-    // provenance stale. `--trust-config` accepts it and re-derives the
-    // provenance from the imported answers instead of rejecting the file.
-    context.set_answer(StepId::Disk, "/dev/sdb".to_string());
-
-    validate_imported_context(&steps, &mut context, true).unwrap();
-    assert!(graph.step_state_is_current(&context, StepId::DualBootPartition));
+    validate_imported_context(&steps, &context).unwrap();
 }
 
 #[test]
-fn trusted_import_still_rejects_invalid_and_irrelevant_answers() {
+fn provenance_free_import_still_rejects_invalid_and_irrelevant_answers() {
     let steps: Vec<Box<dyn WizardStep>> = vec![
         Box::new(StrictAnswerStep {
             id: StepId::UseEncryption,
@@ -1194,9 +1187,8 @@ fn trusted_import_still_rejects_invalid_and_irrelevant_answers() {
     context.set_answer(StepId::UseEncryption, "Yes".to_string());
     context.set_answer(StepId::UsePlymouth, "garbage".to_string());
 
-    // Trusting imported answers only lifts provenance checks; semantic
-    // validation and relevance still apply.
-    let error = validate_imported_context(&steps, &mut context, true).unwrap_err();
+    // Missing provenance does not weaken semantic validation or relevance.
+    let error = validate_imported_context(&steps, &context).unwrap_err();
     assert!(error.to_string().contains("invalid") || error.to_string().contains("irrelevant"));
 }
 
@@ -1221,7 +1213,7 @@ fn imported_context_rejects_irrelevant_answers() {
     graph.record_answer(&mut context, StepId::UseEncryption, "yes".into());
     context.set_answer(StepId::UsePlymouth, "garbage".to_string());
 
-    let error = validate_imported_context(&steps, &mut context, false).unwrap_err();
+    let error = validate_imported_context(&steps, &context).unwrap_err();
     assert!(error.to_string().contains("irrelevant"));
 }
 
@@ -1230,9 +1222,9 @@ fn imported_context_does_not_demand_missing_answers() {
     // Relevance can depend on provider data that only exists inside a
     // wizard run, so absence is not proof of an invalid config here.
     let steps = vec![question(StepId::Disk, &[])];
-    let mut context = InstallContext::new();
+    let context = InstallContext::new();
 
-    validate_imported_context(&steps, &mut context, false).unwrap();
+    validate_imported_context(&steps, &context).unwrap();
 }
 
 #[test]
@@ -1245,5 +1237,5 @@ fn imported_context_accepts_completed_info_step_even_when_should_ask_is_false() 
 
     // Even without providers running (so DualBootDisksKey is absent and should_ask is false),
     // validate_imported_context must not reject the completed warning.
-    validate_imported_context(&steps, &mut context, false).unwrap();
+    validate_imported_context(&steps, &context).unwrap();
 }

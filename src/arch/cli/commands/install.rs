@@ -138,7 +138,6 @@ pub(super) async fn handle_install_command(debug: bool) -> Result<()> {
         None,
         std::path::PathBuf::from(DEFAULT_QUESTIONS_FILE),
         false,
-        false,
     ))
     .await;
 

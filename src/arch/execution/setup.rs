@@ -19,12 +19,6 @@ struct SetupOptions {
     use_xorg: bool,
     minimal_mode: bool,
     system_info: SystemInfo,
-    /// Whether the Plymouth theme application owns the one initramfs rebuild
-    /// that carries the mkinitcpio configuration. True on the fresh-install
-    /// path (the Config step defers its rebuild to the theme setup here);
-    /// false for `ins arch setup` on existing systems, where a failed theme
-    /// apply must not abort the setup.
-    plymouth_rebuild_load_bearing: bool,
 }
 
 impl SetupOptions {
@@ -42,7 +36,6 @@ impl SetupOptions {
             use_xorg: session.use_xorg,
             minimal_mode: session.minimal_mode,
             system_info: context.system_info.clone(),
-            plymouth_rebuild_load_bearing: false,
         })
     }
 
@@ -56,7 +49,6 @@ impl SetupOptions {
             use_xorg: plan.use_xorg,
             minimal_mode: plan.minimal_mode,
             system_info: plan.system_info.clone(),
-            plymouth_rebuild_load_bearing: true,
         }
     }
 }
@@ -103,24 +95,16 @@ async fn setup_instantos_with_options(
         setup_instant_repo(executor).await?;
         install_instant_packages(options, executor)?;
 
-        // Configure Plymouth theme (after instantOS packages are installed).
-        // On the fresh-install path this is the single initramfs rebuild, so
-        // its failure must abort the installation.
-        super::config::configure_plymouth(
-            options.use_plymouth,
-            minimal_mode,
-            executor,
-            options.plymouth_rebuild_load_bearing,
-        )?;
+        // Configure Plymouth theme (after instantOS packages are installed)
+        super::config::configure_plymouth(options.use_plymouth, minimal_mode, executor)?;
 
         // Update /etc/os-release to identify as instantOS
         update_os_release(executor)?;
 
-        // Configure GRUB theme. On a fresh install the Bootloader step
-        // already set the theme, so this is a no-op; on `ins arch setup`
-        // against an existing Arch system the theme is new and the GRUB
-        // configuration must be regenerated here.
-        crate::arch::execution::bootloader::configure_grub_theme(executor, true)?;
+        // Configure the GRUB theme after its package is installed. This also
+        // refreshes an existing grub.cfg even if GRUB_THEME was written by an
+        // earlier installer step before the theme files existed.
+        crate::arch::execution::bootloader::configure_grub_theme(executor)?;
     }
 
     // Determine username: override > context > SUDO_USER

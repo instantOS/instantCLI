@@ -47,9 +47,11 @@ pub struct InstallContext {
     /// the row the user previously chose; they are not part of the wizard's
     /// answer state and are never serialized.
     pub(super) previous_answers: HashMap<StepId, String>,
-    /// Steps which completed without producing configuration data.
+    /// Steps which completed without producing configuration data. Wizard
+    /// metadata; absent from a hand-authored installation configuration.
     pub(super) completed_steps: BTreeSet<StepId>,
-    /// Fingerprint of each step's dependency state when it completed.
+    /// Fingerprint of each step's dependency state when it completed. Wizard
+    /// metadata; absent from a hand-authored installation configuration.
     pub(super) step_dependency_fingerprints: HashMap<StepId, String>,
     pub system_info: SystemInfo,
     // We use Arc<Mutex> for interior mutability across threads
@@ -84,7 +86,9 @@ impl<'de> Deserialize<'de> for InstallContext {
         #[derive(Deserialize)]
         struct Helper {
             answers: HashMap<StepId, String>,
+            #[serde(default)]
             completed_steps: BTreeSet<StepId>,
+            #[serde(default)]
             step_dependency_fingerprints: HashMap<StepId, String>,
             system_info: SystemInfo,
         }
@@ -346,14 +350,17 @@ mod tests {
     }
 
     #[test]
-    fn contexts_without_wizard_state_are_rejected() {
+    fn installation_config_does_not_require_wizard_metadata() {
         let context = InstallContext::new();
         let mut serialized = toml::Value::try_from(&context).unwrap();
         let table = serialized.as_table_mut().unwrap();
         table.remove("completed_steps");
         table.remove("step_dependency_fingerprints");
 
-        assert!(toml::from_str::<InstallContext>(&serialized.to_string()).is_err());
+        let serialized = toml::to_string(&serialized).unwrap();
+        let restored: InstallContext = toml::from_str(&serialized).unwrap();
+        assert!(restored.completed_steps.is_empty());
+        assert!(restored.step_dependency_fingerprints.is_empty());
     }
 
     #[test]

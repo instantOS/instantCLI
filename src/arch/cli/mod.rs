@@ -39,11 +39,6 @@ pub enum ArchCommands {
         /// Run in dry-run mode (no changes will be made)
         #[arg(long)]
         dry_run: bool,
-        /// Skip dependency-provenance validation for hand-edited configuration
-        /// files. Answers are still validated; missing or stale provenance
-        /// records are recomputed instead of rejected.
-        #[arg(long)]
-        trust_config: bool,
     },
     /// Show installation finished menu
     Finished,

@@ -53,8 +53,7 @@ pub async fn handle_arch_command(command: ArchCommands, debug: bool) -> Result<(
             step,
             questions_file,
             dry_run,
-            trust_config,
-        } => handle_exec_command(steps, step, questions_file, dry_run, trust_config)
+        } => handle_exec_command(steps, step, questions_file, dry_run)
             .await
             .map(|_| ()),
         ArchCommands::UploadLogs { path } => handle_upload_logs(path),

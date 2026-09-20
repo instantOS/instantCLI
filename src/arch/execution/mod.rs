@@ -101,15 +101,18 @@ impl CommandExecutor {
     /// Record how long a spawned command took. The log file gets every
     /// command's duration (this is what makes `install.log` a profiler);
     /// the terminal only hears about the slow ones.
-    fn log_command_duration(&self, cmd_str: &str, started: Instant) {
+    fn log_command_duration(&self, cmd_str: &str, started: Instant, succeeded: bool) {
         let elapsed = started.elapsed();
+        let outcome = if succeeded { "DONE" } else { "FAILED" };
         self.log_to_file(&format!(
-            "DONE ({:.1}s): {}",
+            "{} ({:.1}s): {}",
+            outcome,
             elapsed.as_secs_f64(),
             cmd_str
         ));
         if elapsed >= SLOW_COMMAND_THRESHOLD {
-            println!("'{}' finished in {:.0}s", cmd_str, elapsed.as_secs_f64());
+            let verb = if succeeded { "finished" } else { "failed" };
+            println!("'{}' {} in {:.0}s", cmd_str, verb, elapsed.as_secs_f64());
         }
     }
 
@@ -161,11 +164,11 @@ impl CommandExecutor {
             let _ = stdout_handle.join();
             let _ = stderr_handle.join();
 
-            if !status.success() {
-                self.log_to_file(&format!("FAILED: {}", cmd_str));
+            let succeeded = status.success();
+            self.log_command_duration(&cmd_str, started, succeeded);
+            if !succeeded {
                 anyhow::bail!("Command failed: {:?}", command);
             }
-            self.log_command_duration(&cmd_str, started);
             Ok(())
         }
     }
@@ -211,11 +214,11 @@ impl CommandExecutor {
             let _ = stdout_handle.join();
             let _ = stderr_handle.join();
 
-            if !status.success() {
-                self.log_to_file(&format!("FAILED: {}", cmd_str));
+            let succeeded = status.success();
+            self.log_command_duration(&cmd_str, started, succeeded);
+            if !succeeded {
                 anyhow::bail!("Command failed: {:?}", command);
             }
-            self.log_command_duration(&cmd_str, started);
             Ok(())
         }
     }
@@ -267,13 +270,13 @@ impl CommandExecutor {
             // We don't necessarily want to capture stderr, maybe let it inherit?
             // But .output() captures both.
             let output = command.output()?;
-            if !output.status.success() {
-                self.log_to_file(&format!("FAILED: {}", cmd_str));
+            let succeeded = output.status.success();
+            self.log_command_duration(&cmd_str, started, succeeded);
+            if !succeeded {
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 self.log_to_file(&format!("STDERR: {}", stderr));
                 anyhow::bail!("Command failed: {:?}", command);
             }
-            self.log_command_duration(&cmd_str, started);
             Ok(Some(output))
         }
     }
@@ -343,7 +346,6 @@ pub async fn execute_installation(
     step: Option<String>,
     mut dry_run: bool,
     log_file: Option<PathBuf>,
-    trust_imported_answers: bool,
 ) -> Result<ExecutionOutcome> {
     // Check for force dry-run file
     if std::path::Path::new(paths::DRY_RUN_FLAG).exists() {
@@ -388,15 +390,15 @@ pub async fn execute_installation(
     }
 
     let content = std::fs::read_to_string(&config_path)?;
-    let mut context: crate::arch::engine::InstallContext = toml::from_str(&content)?;
+    let context: crate::arch::engine::InstallContext = toml::from_str(&content)?;
     let configuration_sha256 =
         crate::arch::installation_identity::configuration_fingerprint(&content);
 
     // Exec bypasses the wizard, so nothing has validated the answers a saved
     // (possibly hand-edited) config contains. Fail loudly rather than acting
-    // on an invalid or irrelevant answer. Provenance is rejected as stale
-    // unless the caller trusted an imported (hand-edited) config.
-    crate::arch::engine::validate_imported_context(steps, &mut context, trust_imported_answers)
+    // on an invalid or irrelevant answer. Hand-authored configurations may
+    // omit wizard provenance; provenance that is present must still be current.
+    crate::arch::engine::validate_imported_context(steps, &context)
         .context("Refusing to execute an invalid configuration")?;
     let plan = crate::arch::engine::InstallPlan::try_from(&context)
         .context("Refusing to execute an incomplete or inconsistent installation plan")?;
@@ -451,7 +453,6 @@ pub async fn execute_installation(
             &executor,
             &config_path,
             &configuration_sha256,
-            trust_imported_answers,
         )
         .await?;
     } else {
@@ -473,7 +474,6 @@ pub async fn execute_installation(
                 &executor,
                 &config_path,
                 &configuration_sha256,
-                trust_imported_answers,
             )
             .await?;
         }
@@ -544,7 +544,6 @@ async fn execute_step(
     executor: &dyn CommandRunner,
     config_path: &std::path::Path,
     configuration_sha256: &str,
-    trust_imported_answers: bool,
 ) -> Result<()> {
     let in_chroot = is_chroot();
     let requires_chroot = step.requires_chroot();
@@ -597,13 +596,6 @@ async fn execute_step(
         if executor.dry_run() {
             // Pass dry-run flag if we are dry-running
             cmd.arg("--dry-run");
-        }
-
-        // A trusted hand-edited config carries no valid provenance records;
-        // the inner invocation validates the same file and must apply the
-        // same trust semantics or it will reject what the outer run accepted.
-        if trust_imported_answers {
-            cmd.arg("--trust-config");
         }
 
         executor.run(&mut cmd)?;

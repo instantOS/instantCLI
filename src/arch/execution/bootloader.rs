@@ -1,7 +1,7 @@
 use super::CommandRunner;
 use crate::arch::engine::{BootMode, InstallPlan};
 use crate::common::config_edit::set_keys;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::process::Command;
 
 pub async fn install_bootloader(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
@@ -91,32 +91,28 @@ fn configure_grub(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()
     }
 
     if !plan.minimal_mode {
-        // Apply the theme to /etc/default/grub only; the single grub-mkconfig
-        // below picks it up together with every other edit made here. A fresh
-        // install used to regenerate the GRUB configuration once with the
-        // theme and once more right after — pure duplicate work.
-        configure_grub_theme(executor, false)?;
+        configure_grub_theme(executor)?;
     }
 
-    // grub-mkconfig -o /boot/grub/grub.cfg
-    let mut cmd = Command::new("grub-mkconfig");
-    cmd.arg("-o").arg("/boot/grub/grub.cfg");
+    generate_grub_config(executor)
+}
 
+fn generate_grub_config(executor: &dyn CommandRunner) -> Result<()> {
+    let grub_cfg_path = "/boot/grub/grub.cfg";
+    let mut cmd = Command::new("grub-mkconfig");
+    cmd.arg("-o").arg(grub_cfg_path);
     executor.run(&mut cmd)?;
 
     if executor.dry_run() {
-        // The check below reads the generated file, which does not exist in
-        // a dry run.
         return Ok(());
     }
 
     // grub-mkconfig can exit successfully while leaving an empty or
     // entry-less configuration behind; such a system cannot boot. Fail
     // loudly instead of reporting a finished installation.
-    let grub_cfg = std::fs::read_to_string("/boot/grub/grub.cfg").unwrap_or_else(|error| {
-        println!("Warning: could not read generated grub.cfg: {error}");
-        String::new()
-    });
+    let grub_cfg = std::fs::read_to_string(grub_cfg_path).with_context(|| {
+        format!("grub-mkconfig succeeded but the generated {grub_cfg_path} could not be read")
+    })?;
     if !grub_cfg.contains("menuentry") {
         anyhow::bail!(
             "grub-mkconfig produced a boot configuration without menu entries ({} bytes); the system would not boot",
@@ -200,14 +196,13 @@ fn configure_grub_plymouth(executor: &dyn CommandRunner) -> Result<()> {
     Ok(())
 }
 
-/// Point GRUB at the instantOS theme in /etc/default/grub.
+/// Point GRUB at the instantOS theme and refresh an existing configuration.
 ///
-/// When `regenerate_config` is true and the theme changed, the GRUB
-/// configuration is regenerated right away. Callers that run
-/// `grub-mkconfig` themselves after applying all /etc/default/grub edits
-/// (the Bootloader step does) pass `false` so the expensive regeneration
-/// happens exactly once.
-pub fn configure_grub_theme(executor: &dyn CommandRunner, regenerate_config: bool) -> Result<()> {
+/// A fresh install calls this before its first `grub-mkconfig`, when the theme
+/// package may not exist yet. Post-install setup calls it again after package
+/// installation; regenerating an existing configuration even when the setting
+/// itself was unchanged is what makes the newly installed theme take effect.
+pub fn configure_grub_theme(executor: &dyn CommandRunner) -> Result<()> {
     let grub_default = "/etc/default/grub";
 
     if !std::path::Path::new(grub_default).exists() {
@@ -220,10 +215,15 @@ pub fn configure_grub_theme(executor: &dyn CommandRunner, regenerate_config: boo
         return Ok(());
     }
 
-    let content = std::fs::read_to_string(grub_default)?;
     // Note: If encryption is used, the theme will not be visible during the initial
     // boot phase (GRUB password prompt) because /usr is on the encrypted partition.
     let theme_path = "/usr/share/grub/themes/instantos/theme.txt";
+    if !std::path::Path::new(theme_path).is_file() {
+        println!("GRUB theme not installed yet; skipping theme configuration.");
+        return Ok(());
+    }
+
+    let content = std::fs::read_to_string(grub_default)?;
 
     let edit = set_keys(&content, &[("GRUB_THEME", &format!("\"{theme_path}\""))]);
 
@@ -231,18 +231,18 @@ pub fn configure_grub_theme(executor: &dyn CommandRunner, regenerate_config: boo
     if edit.changed {
         std::fs::write(grub_default, &edit.content)?;
         println!("Updated GRUB theme configuration.");
-
-        // Update grub config
-        // Try to detect where grub-mkconfig writes to. Usually /boot/grub/grub.cfg
-        let grub_cfg = "/boot/grub/grub.cfg";
-        if regenerate_config && std::path::Path::new(grub_cfg).exists() {
-            println!("Regenerating GRUB configuration...");
-            let mut cmd = Command::new("grub-mkconfig");
-            cmd.arg("-o").arg(grub_cfg);
-            executor.run(&mut cmd)?;
-        }
     } else {
         println!("GRUB theme already configured.");
+    }
+
+    // The theme package can appear after GRUB_THEME was first written. Always
+    // refresh an existing generated configuration so idempotent setup repairs
+    // that ordering case instead of treating the unchanged setting as proof
+    // that grub.cfg already contains the theme.
+    let grub_cfg = "/boot/grub/grub.cfg";
+    if std::path::Path::new(grub_cfg).exists() {
+        println!("Regenerating GRUB configuration...");
+        generate_grub_config(executor)?;
     }
 
     Ok(())

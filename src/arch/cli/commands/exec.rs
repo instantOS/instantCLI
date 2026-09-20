@@ -8,7 +8,6 @@ pub(super) async fn handle_exec_command(
     step: Option<String>,
     questions_file: std::path::PathBuf,
     dry_run: bool,
-    trust_config: bool,
 ) -> Result<crate::arch::execution::ExecutionOutcome> {
     if !dry_run {
         ensure_root()?;
@@ -30,13 +29,6 @@ pub(super) async fn handle_exec_command(
         None
     };
 
-    crate::arch::execution::execute_installation(
-        &steps,
-        questions_file,
-        step,
-        dry_run,
-        log_file,
-        trust_config,
-    )
-    .await
+    crate::arch::execution::execute_installation(&steps, questions_file, step, dry_run, log_file)
+        .await
 }
