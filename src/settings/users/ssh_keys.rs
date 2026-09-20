@@ -950,19 +950,20 @@ mod tests {
 
     #[test]
     fn foreign_store_targets_the_users_home() {
+        let foreign_uid = current_uid().wrapping_add(1);
         let info = UserInfo {
             username: "alice".to_string(),
             shell: "/bin/bash".to_string(),
             primary_group: Some("alice".to_string()),
             groups: vec!["alice".to_string()],
             home: PathBuf::from("/home/alice"),
-            uid: 1001,
+            uid: foreign_uid,
         };
 
         let keys = AuthorizedKeysFile::for_user(&info).unwrap();
         assert_eq!(keys.username, "alice");
         assert_eq!(keys.path, PathBuf::from("/home/alice/.ssh/authorized_keys"));
-        assert_eq!(keys.owner_uid, 1001);
+        assert_eq!(keys.owner_uid, foreign_uid);
         assert!(!keys.is_current());
 
         let mut homeless = info.clone();
