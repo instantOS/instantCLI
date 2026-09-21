@@ -170,6 +170,10 @@ fn install_instant_packages(options: &SetupOptions, executor: &dyn CommandRunner
     if options.use_xorg {
         packages.push("xorg-server".to_string());
     }
+    if !options.minimal_mode && options.system_info.has_bluetooth {
+        println!("Bluetooth adapter detected, adding bluetooth management");
+        packages.push("blueman".to_string());
+    }
     if packages.is_empty() {
         println!("Minimal mode enabled, skipping instantOS packages.");
         return Ok(());

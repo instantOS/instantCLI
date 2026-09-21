@@ -211,6 +211,16 @@ impl SystemInfo {
         // Network interface vendors, used for firmware split selection
         info.network_vendor_ids = detect_network_vendor_ids();
 
+        // Bluetooth adapter presence: the live environment's kernel binds
+        // btusb automatically, so a bound hci device means real hardware.
+        info.has_bluetooth = std::fs::read_dir("/sys/class/bluetooth")
+            .map(|entries| {
+                entries
+                    .flatten()
+                    .any(|entry| entry.file_name().to_string_lossy().starts_with("hci"))
+            })
+            .unwrap_or(false);
+
         // Architecture check
         info.architecture = std::env::consts::ARCH.to_string();
 

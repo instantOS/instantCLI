@@ -247,4 +247,10 @@ pub struct SystemInfo {
     /// config files written before this field existed.
     #[serde(default)]
     pub network_vendor_ids: Vec<String>,
+    /// Whether a bluetooth adapter is present. The live environment's kernel
+    /// binds `btusb` automatically, so an existing `/sys/class/bluetooth/hci*`
+    /// entry is a reliable indicator; only then is the bluetooth management
+    /// stack (blueman) installed.
+    #[serde(default)]
+    pub has_bluetooth: bool,
 }
