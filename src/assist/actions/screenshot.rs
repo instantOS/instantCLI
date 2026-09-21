@@ -411,11 +411,12 @@ pub fn screenshot_freeze() -> Result<()> {
         geometry.clone()
     };
 
-    // On X11, ask instantWM to float the next matching window without a WM
-    // border so feh's geometry is honored and the overlay blends into the
-    // screen. Best-effort: plain i3 and other X11 WMs don't know this
-    // command, where feh is on its own.
-    if display_server.is_x11() {
+    // On instantWM (X11 and Wayland), ask it to float the next matching
+    // window without a WM border. Floating is what makes instantWM honor
+    // feh's USPosition hint (X11 geometry, XWayland surface) instead of
+    // tiling the overlay. Best-effort: plain i3 and other WMs don't know
+    // this command, where feh is on its own.
+    if display_server.is_x11() || matches!(compositor, CompositorType::InstantWM) {
         let _ = Command::new("instantwmctl")
             .args([
                 "pending-tmp-rule",
