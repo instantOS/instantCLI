@@ -1,5 +1,6 @@
 use anyhow::{Context, Result, anyhow};
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::arch::engine::DataKey;
@@ -89,11 +90,17 @@ pub async fn fetch_mirror_regions() -> Result<HashMap<String, String>> {
 async fn try_fetch_mirror_regions() -> Result<HashMap<String, String>> {
     let url = "https://archlinux.org/mirrorlist/";
     let response = download_text(url).await?;
+    Ok(parse_region_options(&response))
+}
 
+/// Parse the archlinux.org mirrorlist page's `<option value="CODE">NAME</option>`
+/// entries into a name -> country-code map. Shared by the live fetch and the
+/// offline bundle's `regions.html` snapshot so a page change breaks both
+/// paths identically.
+fn parse_region_options(response: &str) -> HashMap<String, String> {
     let mut regions = HashMap::new();
 
-    // Simple parser for <option value="CODE">NAME</option>
-    // We skip the first option which is usually "Select a country" or "All" if it has value=""
+    // Entries without a value or name are skipped, as is the "All" pseudo-entry.
     for line in response.lines() {
         let line = line.trim();
         if line.starts_with("<option value=\"")
@@ -114,7 +121,7 @@ async fn try_fetch_mirror_regions() -> Result<HashMap<String, String>> {
         }
     }
 
-    Ok(regions)
+    regions
 }
 
 // ============================================================================
@@ -285,6 +292,53 @@ fn uncomment_servers(content: &str) -> String {
 }
 
 // ============================================================================
+// Bundled Region Data (offline ISO)
+// ============================================================================
+
+/// Snapshot of archlinux.org region data staged into the offline bundle by
+/// `instantOS/iso/offline/mk-region-data.sh`: the raw mirrorlist page plus
+/// one raw per-region response under `mirrorlists/`.
+fn bundled_regions_dir() -> PathBuf {
+    Path::new(crate::arch::offline::BUNDLE_ROOT).join("regions")
+}
+
+/// name -> country-code from the bundle's `regions.html`; `None` when the
+/// bundle carries no region snapshot (online ISO, partial/old bundle).
+pub fn bundled_region_codes() -> Option<HashMap<String, String>> {
+    load_region_codes(&bundled_regions_dir())
+}
+
+/// Read `regions.html` from `dir` with the same parser the live fetch uses.
+fn load_region_codes(dir: &Path) -> Option<HashMap<String, String>> {
+    let html = std::fs::read_to_string(dir.join("regions.html")).ok()?;
+    let codes = parse_region_options(&html);
+    (!codes.is_empty()).then_some(codes)
+}
+
+/// The bundled mirrorlist for a region selected in the wizard, put through
+/// the same transform as the live fetch (uncomment + non-empty check) but
+/// without network probing: the build-time API ordering is kept as-is.
+pub fn bundled_region_mirrorlist(region_name: &str) -> Result<String> {
+    load_region_mirrorlist(&bundled_regions_dir(), region_name)
+}
+
+fn load_region_mirrorlist(dir: &Path, region_name: &str) -> Result<String> {
+    let codes = load_region_codes(dir).context("the offline bundle carries no region snapshot")?;
+    let code = codes
+        .get(region_name)
+        .with_context(|| format!("region {region_name:?} is not in the bundle's region list"))?;
+    let raw = std::fs::read_to_string(dir.join("mirrorlists").join(format!("{code}.txt")))
+        .with_context(|| format!("the bundle has no mirrorlist for {region_name} ({code})"))?;
+    let list = uncomment_servers(&raw);
+    if !list.contains("Server =") {
+        return Err(anyhow!(
+            "the bundled mirrorlist for {region_name} contains no servers"
+        ));
+    }
+    Ok(list)
+}
+
+// ============================================================================
 // Data Provider
 // ============================================================================
 
@@ -293,31 +347,154 @@ pub struct MirrorlistProvider;
 #[async_trait::async_trait]
 impl crate::arch::engine::AsyncDataProvider for MirrorlistProvider {
     async fn provide(&self, context: &crate::arch::engine::InstallContext) -> Result<()> {
-        match fetch_mirror_regions().await {
-            Ok(regions) => {
-                let mut names: Vec<String> = regions.keys().cloned().collect();
-                names.sort();
-                context.set::<MirrorRegionsKey>(names);
-                context.set::<MirrorRegionCodesKey>(regions);
-                context.set::<MirrorRegionsFetchFailed>(false);
-            }
-            Err(e) => {
-                eprintln!("Failed to fetch mirror regions: {}", e);
-                eprintln!(
-                    "Mirror region selection will be skipped; fallback mirrorlist will be used."
-                );
-                // Set empty list - the question will be skipped via should_ask()
-                context.set::<MirrorRegionsKey>(Vec::new());
-                context.set::<MirrorRegionsFetchFailed>(true);
-            }
-        }
-        Ok(())
+        provide_mirrorlist(context, crate::arch::offline::mode()).await
     }
+}
+
+async fn provide_mirrorlist(
+    context: &crate::arch::engine::InstallContext,
+    mode: crate::arch::offline::Mode,
+) -> Result<()> {
+    if mode.is_offline() {
+        provide_bundled_regions(context, bundled_region_codes());
+        return Ok(());
+    }
+    provide_fetched_regions(context).await
+}
+
+/// Publish region data so the mirror-region question runs; shared by the
+/// bundled and fetched paths.
+fn publish_regions(
+    context: &crate::arch::engine::InstallContext,
+    regions: HashMap<String, String>,
+) {
+    let mut names: Vec<String> = regions.keys().cloned().collect();
+    names.sort();
+    context.set::<MirrorRegionsKey>(names);
+    context.set::<MirrorRegionCodesKey>(regions);
+    context.set::<MirrorRegionsFetchFailed>(false);
+}
+
+/// Offline: serve the build-time region snapshot so the question is still
+/// asked and the choice shapes the installed system's mirrorlist. Without a
+/// snapshot, degrade exactly like a failed fetch: empty list hides the
+/// question and the fallback mirrorlist is used.
+fn provide_bundled_regions(
+    context: &crate::arch::engine::InstallContext,
+    codes: Option<HashMap<String, String>>,
+) {
+    match codes {
+        Some(codes) => {
+            publish_regions(context, codes);
+            println!(
+                "Offline install: using the bundled region list; the selection shapes the installed system's mirrorlist."
+            );
+        }
+        None => {
+            println!("Offline install: bundle carries no region snapshot; selection skipped.");
+            context.set::<MirrorRegionsKey>(Vec::new());
+            context.set::<MirrorRegionsFetchFailed>(true);
+        }
+    }
+}
+
+async fn provide_fetched_regions(context: &crate::arch::engine::InstallContext) -> Result<()> {
+    match fetch_mirror_regions().await {
+        Ok(regions) => publish_regions(context, regions),
+        Err(e) => {
+            eprintln!("Failed to fetch mirror regions: {}", e);
+            eprintln!("Mirror region selection will be skipped; fallback mirrorlist will be used.");
+            // Set empty list - the question will be skipped via should_ask()
+            context.set::<MirrorRegionsKey>(Vec::new());
+            context.set::<MirrorRegionsFetchFailed>(true);
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn offline_provider_skips_the_fetch_and_hides_the_question() {
+        let context = crate::arch::engine::InstallContext::new();
+        provide_mirrorlist(&context, crate::arch::offline::Mode::Strict)
+            .await
+            .unwrap();
+
+        assert_eq!(context.get::<MirrorRegionsKey>(), Some(Vec::new()));
+        assert_eq!(context.get::<MirrorRegionsFetchFailed>(), Some(true));
+    }
+
+    #[test]
+    fn bundled_regions_publish_keys_and_show_the_question() {
+        let context = crate::arch::engine::InstallContext::new();
+        let mut codes = HashMap::new();
+        codes.insert("Germany".to_string(), "de".to_string());
+        codes.insert("Austria".to_string(), "at".to_string());
+
+        provide_bundled_regions(&context, Some(codes));
+
+        assert_eq!(
+            context.get::<MirrorRegionsKey>(),
+            Some(vec!["Austria".to_string(), "Germany".to_string()])
+        );
+        assert_eq!(
+            context
+                .get::<MirrorRegionCodesKey>()
+                .and_then(|m| m.get("Germany").cloned()),
+            Some("de".to_string())
+        );
+        assert_eq!(context.get::<MirrorRegionsFetchFailed>(), Some(false));
+    }
+
+    #[test]
+    fn missing_bundled_regions_degrade_to_the_fetch_failed_skip() {
+        let context = crate::arch::engine::InstallContext::new();
+        provide_bundled_regions(&context, None);
+        assert_eq!(context.get::<MirrorRegionsKey>(), Some(Vec::new()));
+        assert_eq!(context.get::<MirrorRegionsFetchFailed>(), Some(true));
+    }
+
+    #[test]
+    fn parse_region_options_reads_the_mirrorlist_page() {
+        let html = "<option value=\"\">All</option>\n  <option value=\"de\">Germany</option>\n<option value=\"at\">Austria</option>\n";
+        let codes = parse_region_options(html);
+        assert_eq!(codes.get("Germany"), Some(&"de".to_string()));
+        assert_eq!(codes.get("Austria"), Some(&"at".to_string()));
+        assert_eq!(codes.len(), 2);
+    }
+
+    #[test]
+    fn bundled_region_snapshot_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("regions.html"),
+            "<option value=\"de\">Germany</option>\n",
+        )
+        .unwrap();
+        std::fs::create_dir(dir.path().join("mirrorlists")).unwrap();
+        std::fs::write(
+            dir.path().join("mirrorlists").join("de.txt"),
+            "#Server = https://mirror.example/$repo/os/$arch\n",
+        )
+        .unwrap();
+
+        let codes = load_region_codes(dir.path()).expect("snapshot parses");
+        assert_eq!(codes.get("Germany"), Some(&"de".to_string()));
+
+        let list = load_region_mirrorlist(dir.path(), "Germany").unwrap();
+        assert!(list.contains("Server = https://mirror.example/$repo/os/$arch"));
+
+        assert!(load_region_mirrorlist(dir.path(), "Nowhere").is_err());
+    }
+
+    #[test]
+    fn absent_region_snapshot_is_none() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(load_region_codes(dir.path()).is_none());
+    }
 
     #[test]
     fn test_uncomment_servers_basic() {

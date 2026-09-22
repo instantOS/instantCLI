@@ -369,6 +369,7 @@ pub fn handle_add_repo(config: &mut DotfileConfig, db: &Database, debug: bool) -
         url,
         name,
         branch,
+        origin: None,
         read_only: false,
         force_write: false,
         root_flags: Default::default(),

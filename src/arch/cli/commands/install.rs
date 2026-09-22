@@ -40,16 +40,34 @@ fn confirm_battery_power() -> Result<bool> {
 fn ensure_interactive_internet() -> Result<bool> {
     use crate::menu_utils::{ConfirmResult, FzfWrapper};
 
+    // Offline installs never block on connectivity: the bundle covers the
+    // packages, so nmtui stays an offer the user may take or leave.
+    let offline = crate::arch::offline::mode().is_offline();
+
     while !crate::common::network::check_internet() {
-        let choice = FzfWrapper::builder()
-            .confirm(
-                "No internet connection was detected. instantOS installation requires internet.\n\nOpen the network configuration now?",
+        let (prompt, no_text) = if offline {
+            (
+                "No internet connection was detected. The offline bundle covers this installation.\n\nOpen the network configuration anyway?",
+                "Continue without network",
             )
+        } else {
+            (
+                "No internet connection was detected. instantOS installation requires internet.\n\nOpen the network configuration now?",
+                "Abort installation",
+            )
+        };
+
+        let choice = FzfWrapper::builder()
+            .confirm(prompt)
             .yes_text("Open nmtui")
-            .no_text("Abort installation")
+            .no_text(no_text)
             .confirm_dialog()?;
 
         if choice != ConfirmResult::Yes {
+            if offline {
+                println!("Continuing without network; packages will come from the offline bundle.");
+                return Ok(true);
+            }
             println!("Installation aborted: no internet connection.");
             return Ok(false);
         }

@@ -149,7 +149,9 @@ async fn setup_instantos_with_options(
 /// have their own multilib configuration.
 pub async fn setup_instant_repo(executor: &dyn CommandRunner) -> Result<()> {
     println!("Setting up instantOS repository...");
-    crate::common::pacman::setup_instant_repo(executor.dry_run()).await?;
+    let offline_content = crate::arch::offline::instant_mirrorlist_override();
+    crate::common::pacman::setup_instant_repo(executor.dry_run(), offline_content.as_deref())
+        .await?;
 
     // Update repositories to include [instant]
     println!("Updating repositories...");
@@ -200,9 +202,20 @@ fn setup_user_dotfiles(username: &str, executor: &dyn CommandRunner) -> Result<(
     };
 
     if !repo_exists {
-        // Clone dotfiles
-        // su -c "ins dot repo clone https://github.com/instantOS/dotfiles --read-only" username
-        let clone_cmd_str = format!("ins dot repo clone {} --read-only", INSTANTOS_DOTFILES_REPO);
+        // Clone dotfiles. Offline installs clone the bundled snapshot and
+        // record the canonical URL as origin so a later online
+        // `ins dot update` still pulls from the network.
+        let clone_cmd_str = if crate::arch::offline::mode().is_offline()
+            && std::path::Path::new(crate::arch::offline::DOTFILES_SNAPSHOT).exists()
+        {
+            format!(
+                "ins dot repo clone {} --read-only --origin {}",
+                crate::arch::offline::DOTFILES_SNAPSHOT,
+                INSTANTOS_DOTFILES_REPO
+            )
+        } else {
+            format!("ins dot repo clone {} --read-only", INSTANTOS_DOTFILES_REPO)
+        };
         let mut cmd_clone = Command::new("su");
         cmd_clone.arg("-c").arg(clone_cmd_str).arg(username);
 
@@ -234,6 +247,16 @@ fn setup_user_dotfiles(username: &str, executor: &dyn CommandRunner) -> Result<(
 /// abort the installation. The user can pick a wallpaper from the instant
 /// settings afterwards.
 fn setup_wallpaper(username: &str, executor: &dyn CommandRunner) {
+    // The wallpaper picker is a best-effort download; offline installs skip
+    // it outright rather than wait for timeouts on every candidate source.
+    if crate::arch::offline::mode().is_offline() {
+        println!(
+            "{} Offline install: skipping wallpaper download; you can pick one from the instant settings later.",
+            NerdFont::Warning
+        );
+        return;
+    }
+
     println!("Setting up wallpaper for user: {}", username);
 
     // Run `ins wallpaper random` as the user

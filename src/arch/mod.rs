@@ -12,6 +12,7 @@ pub mod locales;
 pub mod logging;
 pub mod mirrors;
 pub mod mkinitcpio;
+pub mod offline;
 pub mod questions;
 
 pub mod timezones;

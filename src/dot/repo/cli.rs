@@ -93,6 +93,10 @@ pub struct CloneArgs {
     pub name: Option<String>,
     #[arg(long, short = 'b')]
     pub branch: Option<String>,
+    /// Record this URL as the repository origin instead of the clone source
+    /// (clone from a local snapshot while later updates pull from the network).
+    #[arg(long)]
+    pub origin: Option<String>,
     #[arg(long)]
     pub read_only: bool,
     #[arg(long)]

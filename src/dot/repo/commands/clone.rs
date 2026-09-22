@@ -9,6 +9,8 @@ use anyhow::Result;
 
 use super::apply::apply_all_repos;
 
+use anyhow::Context;
+
 /// Resolve repository name from provided name, metadata, or URL
 fn resolve_repo_name(url: &str, name: Option<&str>) -> String {
     name.map(|s| s.to_string())
@@ -96,6 +98,8 @@ fn handle_read_only_metadata(
 /// Options for cloning a repository
 pub struct CloneOptions<'a> {
     pub url: &'a str,
+    /// Canonical URL recorded as the origin after cloning from `url`.
+    pub origin: Option<&'a str>,
     pub name: Option<&'a str>,
     pub branch: Option<&'a str>,
     pub read_only: bool,
@@ -109,6 +113,7 @@ impl<'a> CloneOptions<'a> {
     pub fn from_args(args: &'a crate::dot::repo::cli::CloneArgs, debug: bool) -> Self {
         Self {
             url: &args.url,
+            origin: args.origin.as_deref(),
             name: args.name.as_deref(),
             branch: args.branch.as_deref(),
             read_only: args.read_only,
@@ -159,6 +164,22 @@ pub fn clone_repository(
 
     match git_clone_repo(config, repo_config, opts.debug) {
         Ok(path) => {
+            // Cloned from a local snapshot with a canonical origin recorded:
+            // repoint both git's origin and the stored URL so a later online
+            // `ins dot update` pulls from the network.
+            if let Some(origin) = opts.origin {
+                crate::common::git::set_remote_url(&path, "origin", origin).with_context(|| {
+                    format!("Failed to record origin URL {origin} after cloning")
+                })?;
+                for repo in &mut config.repos {
+                    if repo.name == repo_name {
+                        repo.url = origin.to_string();
+                        break;
+                    }
+                }
+                config.save(None)?;
+            }
+
             emit(
                 Level::Info,
                 "dot.repo.clone.path",
