@@ -78,9 +78,9 @@ pub fn enable(backend: ClipBackend) -> Result<bool> {
 
     let systemd = SystemdManager::user();
     disable_if_present(&systemd, LEGACY_CLIPMENU_SERVICE)?;
+    write_wayland_condition(&systemd)?;
 
     let unit_changed = if backend == ClipBackend::X11 {
-        import_x11_environment()?;
         write_x11_unit(&systemd)?
     } else {
         false
@@ -101,6 +101,16 @@ pub fn enable(backend: ClipBackend) -> Result<bool> {
     } else if unit_changed {
         systemd.restart(service)?;
     }
+    // A unit whose start condition fails is skipped without an error.
+    anyhow::ensure!(
+        systemd.is_active(service),
+        "{service} did not start: the systemd user environment does not match this {} \
+         session. Run `ins doctor run session-environment` to inspect it.",
+        match backend {
+            ClipBackend::Wayland => "Wayland",
+            ClipBackend::X11 => "X11",
+        }
+    );
     Ok(true)
 }
 
@@ -127,34 +137,42 @@ fn disable_if_present(systemd: &SystemdManager, service: &str) -> Result<()> {
     Ok(())
 }
 
-/// Make sure the systemd user manager can reach the X server. Window
-/// managers often start without importing DISPLAY, and the manager may still
-/// hold variables from a previous (e.g. Wayland) session.
-fn import_x11_environment() -> Result<()> {
-    let variables: Vec<&str> = ["DISPLAY", "XAUTHORITY"]
-        .into_iter()
-        .filter(|name| std::env::var_os(name).is_some_and(|value| !value.is_empty()))
-        .collect();
-    if variables.is_empty() {
+/// Make the packaged `cliphist.service` skip X11 sessions instead of failing
+/// there: it is bound to `graphical-session.target`, which X11 sessions start
+/// too, but `wl-paste` can only work while a Wayland display is exported.
+fn write_wayland_condition(systemd: &SystemdManager) -> Result<()> {
+    let path = user_unit_dir()?
+        .join(format!("{WAYLAND_SERVICE}.d"))
+        .join("ins-wayland-only.conf");
+    if std::fs::read_to_string(&path).is_ok_and(|existing| existing == WAYLAND_CONDITION) {
         return Ok(());
     }
-    let status = Command::new("systemctl")
-        .args(["--user", "import-environment"])
-        .args(&variables)
-        .status()
-        .context("Failed to import the X11 environment into systemd")?;
-    anyhow::ensure!(status.success(), "systemctl import-environment failed");
+    let parent = path.parent().context("Drop-in path has no parent")?;
+    std::fs::create_dir_all(parent)
+        .with_context(|| format!("Failed to create {}", parent.display()))?;
+    std::fs::write(&path, WAYLAND_CONDITION)
+        .with_context(|| format!("Failed to write {}", path.display()))?;
+    systemd.daemon_reload()?;
+    // Clear a start-limit failure left behind by earlier X11 logins.
+    let _ = Command::new("systemctl")
+        .args(["--user", "reset-failed", WAYLAND_SERVICE])
+        .status();
     Ok(())
+}
+
+const WAYLAND_CONDITION: &str = "[Unit]\nConditionEnvironment=WAYLAND_DISPLAY\n";
+
+fn user_unit_dir() -> Result<std::path::PathBuf> {
+    Ok(dirs::config_dir()
+        .context("unable to determine user config directory")?
+        .join("systemd/user"))
 }
 
 /// Write the X11 capture unit. Returns whether the file content changed.
 fn write_x11_unit(systemd: &SystemdManager) -> Result<bool> {
     let executable = std::env::current_exe().context("Failed to locate the ins executable")?;
     let content = x11_unit_content(&executable.to_string_lossy());
-    let path = dirs::config_dir()
-        .context("unable to determine user config directory")?
-        .join("systemd/user")
-        .join(X11_SERVICE);
+    let path = user_unit_dir()?.join(X11_SERVICE);
     if std::fs::read_to_string(&path).is_ok_and(|existing| existing == content) {
         return Ok(false);
     }
@@ -169,6 +187,8 @@ fn x11_unit_content(executable: &str) -> String {
          PartOf=graphical-session.target\n\
          After=graphical-session.target\n\
          Requisite=graphical-session.target\n\
+         ConditionEnvironment=DISPLAY\n\
+         ConditionEnvironment=!WAYLAND_DISPLAY\n\
          \n\
          [Service]\n\
          Type=simple\n\
@@ -214,5 +234,6 @@ mod tests {
         assert!(unit.contains("PartOf=graphical-session.target"));
         assert!(unit.contains("WantedBy=graphical-session.target"));
         assert!(!unit.contains("default.target"));
+        assert!(unit.contains("ConditionEnvironment=!WAYLAND_DISPLAY"));
     }
 }

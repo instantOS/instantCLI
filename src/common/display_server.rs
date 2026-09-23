@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::env;
+use std::os::unix::net::UnixStream;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// Display server types
@@ -176,6 +178,28 @@ impl DisplayServer {
     }
 }
 
+/// Whether the compositor named by a `WAYLAND_DISPLAY` value accepts
+/// connections. `None` when the value cannot be resolved to a socket path.
+///
+/// This connects to the compositor, so it is meant for diagnostics (e.g. a
+/// stale environment inherited from an earlier session), never for `detect`.
+pub fn wayland_socket_reachable(display: &str) -> Option<bool> {
+    if display.is_empty() {
+        return None;
+    }
+    let path = PathBuf::from(display);
+    let socket = if path.is_absolute() {
+        path
+    } else {
+        PathBuf::from(env::var_os("XDG_RUNTIME_DIR")?).join(path)
+    };
+    Some(socket_reachable(&socket))
+}
+
+fn socket_reachable(socket: &Path) -> bool {
+    UnixStream::connect(socket).is_ok()
+}
+
 impl std::fmt::Display for DisplayServer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let name = match self {
@@ -190,6 +214,7 @@ impl std::fmt::Display for DisplayServer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::net::UnixListener;
 
     #[test]
     fn test_display_server_detection() {
@@ -201,6 +226,22 @@ mod tests {
                 // Test passes
             }
         }
+    }
+
+    #[test]
+    fn stale_wayland_sockets_are_detected() {
+        let dir = tempfile::tempdir().unwrap();
+        let socket = dir.path().join("wayland-test");
+
+        let listener = UnixListener::bind(&socket).unwrap();
+        assert!(socket_reachable(&socket));
+
+        // A compositor that exited leaves its socket file behind.
+        drop(listener);
+        assert!(socket.exists());
+        assert!(!socket_reachable(&socket));
+
+        assert!(!socket_reachable(&dir.path().join("missing")));
     }
 
     #[test]

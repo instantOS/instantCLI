@@ -10,6 +10,7 @@
 //! - security.rs: Security-related checks (polkit agents)
 //! - nerdfont.rs: Nerd Font symbol rendering checks
 //! - completions.rs: Shell completion checks
+//! - session.rs: Session environment checks (stale Wayland variables)
 
 use crate::doctor::{CheckStatus, DoctorCheck, PrivilegeLevel};
 
@@ -20,6 +21,7 @@ pub mod locale;
 pub mod nerdfont;
 pub mod network;
 pub mod security;
+pub mod session;
 pub mod storage;
 pub mod system;
 pub mod tools;
@@ -32,6 +34,7 @@ pub use locale::LocaleCheck;
 pub use nerdfont::NerdFontCheck;
 pub use network::{InstantRepoCheck, InternetCheck, PacmanMirrorCheck};
 pub use security::{FaillockCheck, PolkitAgentCheck, SshAuthSockCheck};
+pub use session::SessionEnvironmentCheck;
 pub use storage::{
     PacmanCacheCheck, PacmanDbSyncCheck, PacmanStaleDownloadsCheck, SmartHealthCheck,
     SteamCompatdataOrphansCheck, TrashBinSizeCheck, YayCacheCheck,

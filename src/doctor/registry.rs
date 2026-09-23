@@ -40,6 +40,7 @@ impl CheckRegistry {
         registry.register::<ZshHealthCheck>("zsh-health");
         registry.register::<PipewireSessionManagerCheck>("pipewire-session-manager");
         registry.register::<SshAuthSockCheck>("ssh-auth-sock");
+        registry.register::<SessionEnvironmentCheck>("session-environment");
 
         registry
     }

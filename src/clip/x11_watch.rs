@@ -42,11 +42,6 @@ const TARGET_PREFERENCE: &[&str] = &[
 ];
 
 pub fn run() -> Result<()> {
-    if live_wayland_session() {
-        eprintln!("A Wayland session is active; cliphist.service handles capture there. Exiting.");
-        return Ok(());
-    }
-
     let (conn, screen_num) = x11rb::connect(None)
         .context("Failed to connect to the X server (is DISPLAY set for the user session?)")?;
     let screen = &conn.setup().roots[screen_num];
@@ -91,26 +86,6 @@ pub fn run() -> Result<()> {
             capture_logged();
         }
     }
-}
-
-/// True when `WAYLAND_DISPLAY` points at a compositor that actually accepts
-/// connections. The systemd user environment often keeps a stale value from
-/// an earlier session, so the variable alone is not trustworthy.
-fn live_wayland_session() -> bool {
-    let Some(display) = std::env::var_os("WAYLAND_DISPLAY").filter(|value| !value.is_empty())
-    else {
-        return false;
-    };
-    let path = std::path::PathBuf::from(display);
-    let socket = if path.is_absolute() {
-        path
-    } else {
-        match std::env::var_os("XDG_RUNTIME_DIR") {
-            Some(runtime) => std::path::PathBuf::from(runtime).join(path),
-            None => return false,
-        }
-    };
-    std::os::unix::net::UnixStream::connect(socket).is_ok()
 }
 
 fn capture_logged() {
