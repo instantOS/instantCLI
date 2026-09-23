@@ -31,8 +31,12 @@ pub fn detect_single_user() -> Option<String> {
 
 pub fn ensure_root() -> Result<()> {
     if let sudo::RunningAs::User = sudo::check() {
-        sudo::with_env(&["RUST_BACKTRACE", "RUST_LOG"])
-            .map_err(|e| anyhow::anyhow!("Failed to escalate privileges: {}", e))?;
+        sudo::with_env(&[
+            "RUST_BACKTRACE",
+            "RUST_LOG",
+            crate::arch::offline::OFFLINE_ENV,
+        ])
+        .map_err(|e| anyhow::anyhow!("Failed to escalate privileges: {}", e))?;
     }
     Ok(())
 }

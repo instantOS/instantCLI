@@ -336,7 +336,7 @@ async fn run_full_wizard(
     let system_info = SystemInfo::detect();
 
     let install_mode = crate::arch::offline::mode();
-    crate::arch::offline::validate(install_mode)?;
+    crate::arch::offline::validate(install_mode, system_info.internet_connected)?;
     ensure_internet(&system_info, install_mode)?;
     install_live_iso_dependencies()?;
     print_system_checks(&system_info, install_mode);

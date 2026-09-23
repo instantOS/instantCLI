@@ -82,13 +82,57 @@ pub fn mode() -> Mode {
     resolve(env_forced(), bundle_present())
 }
 
-/// Strict mode without a bundle cannot install anything: fail fast with a
-/// message that names the problem instead of a hundred pacman errors.
-pub fn validate(mode: Mode) -> Result<()> {
-    if mode == Mode::Strict && !bundle_present() {
+/// Reject an incomplete bundle before disk changes when the install has no
+/// network fallback. With working network, opportunistic mode can use it to
+/// fill missing bundle content.
+pub fn validate(mode: Mode, network_available: bool) -> Result<()> {
+    if mode == Mode::Online {
+        return Ok(());
+    }
+    validate_bundle_at(
+        Path::new(BUNDLE_ROOT),
+        Path::new(DOTFILES_SNAPSHOT),
+        mode,
+        network_available,
+    )
+}
+
+fn validate_bundle_at(
+    bundle: &Path,
+    dotfiles: &Path,
+    mode: Mode,
+    network_available: bool,
+) -> Result<()> {
+    if mode == Mode::Online {
+        return Ok(());
+    }
+
+    if !bundle.join("core/os/x86_64/core.db").is_file() {
         anyhow::bail!(
-            "{OFFLINE_ENV}=1 forces a networkless install but no bundle was found at \
-             {BUNDLE_ROOT}. Boot the offline ISO or unset {OFFLINE_ENV}."
+            "Offline bundle is incomplete: missing repository database {}. \
+             Boot a complete offline ISO or remove the incomplete bundle.",
+            bundle.join("core/os/x86_64/core.db").display()
+        );
+    }
+
+    if mode == Mode::Opportunistic && network_available {
+        return Ok(());
+    }
+
+    for repo in ["extra", "multilib", "instant"] {
+        let database = bundle.join(format!("{repo}/os/x86_64/{repo}.db"));
+        if !database.is_file() {
+            anyhow::bail!(
+                "Offline bundle is incomplete: missing repository database {}",
+                database.display()
+            );
+        }
+    }
+
+    if !dotfiles.join(".git").exists() {
+        anyhow::bail!(
+            "Offline bundle is incomplete: missing git dotfiles snapshot at {}",
+            dotfiles.display()
         );
     }
     Ok(())
@@ -225,11 +269,9 @@ pub fn bind_bundle(executor: &dyn CommandRunner, mode: Mode) -> Result<()> {
         return Ok(());
     }
 
-    if let Some(parent) = target.parent() {
-        let mut mkdir = std::process::Command::new("mkdir");
-        mkdir.arg("-p").arg(parent);
-        executor.run(&mut mkdir)?;
-    }
+    let mut mkdir = std::process::Command::new("mkdir");
+    mkdir.arg("-p").arg(&target);
+    executor.run(&mut mkdir)?;
 
     let mut mount = std::process::Command::new("mount");
     mount.args(["--bind", BUNDLE_MOUNT]).arg(&target);
@@ -535,7 +577,7 @@ Server = file:///run/archiso/bootmnt/offline-repo/$repo/os/$arch
             "must check for an existing bind: {log:?}"
         );
         assert!(
-            log.iter().any(|c| c.starts_with("mkdir -p")),
+            log.iter().any(|c| c == "mkdir -p /mnt/run/archiso/bootmnt"),
             "must create the bind target: {log:?}"
         );
         assert!(
@@ -562,13 +604,33 @@ Server = file:///run/archiso/bootmnt/offline-repo/$repo/os/$arch
     }
 
     #[test]
-    fn strict_mode_without_a_bundle_fails_validation() {
-        // Test hosts have no live-ISO bundle path; if one ever does, the
-        // strict validation legitimately passes there.
-        if !bundle_present() {
-            assert!(validate(Mode::Strict).is_err());
+    fn validation_rejects_incomplete_bundle_before_installation() {
+        let temp = tempfile::tempdir().unwrap();
+        let bundle = temp.path().join("offline-repo");
+        let snapshot = temp.path().join("dotfiles");
+
+        assert!(validate_bundle_at(&bundle, &snapshot, Mode::Online, false).is_ok());
+        assert!(validate_bundle_at(&bundle, &snapshot, Mode::Strict, true).is_err());
+
+        for repo in ["core", "extra", "multilib", "instant"] {
+            let directory = bundle.join(format!("{repo}/os/x86_64"));
+            std::fs::create_dir_all(&directory).unwrap();
+            std::fs::write(directory.join(format!("{repo}.db")), "test database").unwrap();
         }
-        assert!(validate(Mode::Opportunistic).is_ok());
-        assert!(validate(Mode::Online).is_ok());
+
+        let instant_database = bundle.join("instant/os/x86_64/instant.db");
+        std::fs::remove_file(&instant_database).unwrap();
+        let missing_repo = validate_bundle_at(&bundle, &snapshot, Mode::Strict, true).unwrap_err();
+        assert!(missing_repo.to_string().contains("instant.db"));
+        std::fs::write(instant_database, "test database").unwrap();
+
+        assert!(validate_bundle_at(&bundle, &snapshot, Mode::Opportunistic, true).is_ok());
+        let missing_snapshot =
+            validate_bundle_at(&bundle, &snapshot, Mode::Opportunistic, false).unwrap_err();
+        assert!(missing_snapshot.to_string().contains("dotfiles snapshot"));
+
+        std::fs::create_dir_all(snapshot.join(".git")).unwrap();
+        assert!(validate_bundle_at(&bundle, &snapshot, Mode::Strict, false).is_ok());
+        assert!(validate_bundle_at(&bundle, &snapshot, Mode::Opportunistic, false).is_ok());
     }
 }

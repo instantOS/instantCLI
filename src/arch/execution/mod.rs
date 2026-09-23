@@ -362,9 +362,11 @@ pub async fn execute_installation(
         println!("*** DRY RUN MODE ENABLED - No changes will be made ***");
     }
 
-    // Strict mode demands a bundle; fail before touching the disk.
+    // Validate the install source before touching the disk.
     let install_mode = crate::arch::offline::mode();
-    crate::arch::offline::validate(install_mode)?;
+    let network_available = install_mode == crate::arch::offline::Mode::Opportunistic
+        && crate::common::network::check_internet();
+    crate::arch::offline::validate(install_mode, network_available)?;
 
     // Increase cowspace if in live ISO
     if crate::common::distro::is_live_iso()
@@ -529,21 +531,19 @@ pub async fn execute_installation(
                 );
             }
 
+            // Offline installs: drop the bundle references from the target's
+            // pacman files and release the bind before declaring completion.
+            crate::arch::offline::cleanup_target(
+                &executor,
+                install_mode,
+                plan.mirror_region.as_deref(),
+            )?;
+
             let marker = crate::arch::installation_identity::write_completed_marker(
                 std::path::Path::new(paths::CHROOT_MOUNT),
                 &intent_sha256,
             )?;
             println!("Recorded completed installation in {}.", marker.display());
-
-            // Offline installs: drop the bundle references from the target's
-            // pacman files and release the bind before declaring completion.
-            if let Err(e) = crate::arch::offline::cleanup_target(
-                &executor,
-                install_mode,
-                plan.mirror_region.as_deref(),
-            ) {
-                println!("Warning: Offline cleanup failed: {e}");
-            }
         }
     }
 
