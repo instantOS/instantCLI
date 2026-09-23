@@ -271,9 +271,11 @@ fn preview_archive(path: &Path) -> Result<()> {
 /// from replying.
 pub const CLEAR_GRAPHICS: &str = "\x1b_Ga=d,d=A,q=2\x1b\\";
 
-/// Whether previews can place graphics through the kitty graphics protocol.
+/// Whether previews can place graphics through the kitty graphics protocol
+/// using unicode placeholders, the only placement mode that follows fzf's
+/// text and therefore disappears when the preview changes.
 pub fn terminal_graphics_supported() -> bool {
-    command_exists("kitten") && kitty_graphics_available()
+    command_exists("kitten") && kitty_placeholders_available()
 }
 
 /// Remove images an earlier preview left in the pane.
@@ -295,7 +297,7 @@ fn render_terminal_image(path: &Path, top: usize) -> Result<bool> {
             preview_columns(),
             preview_lines().saturating_sub(top).max(1)
         );
-        let mut kitten = Command::new("kitten")
+        let output = Command::new("kitten")
             .args([
                 "icat",
                 "--clear",
@@ -306,37 +308,62 @@ fn render_terminal_image(path: &Path, top: usize) -> Result<bool> {
                 &place,
             ])
             .arg(path)
-            .stdout(Stdio::piped())
             .stderr(Stdio::null())
-            .spawn()
-            .context("Failed to start kitten icat")?;
-        let stdout = kitten
-            .stdout
-            .take()
-            .context("Failed to read kitten output")?;
-        let mut sed = Command::new("sed")
-            .arg("$d")
-            .stdin(stdout)
-            .spawn()
-            .context("Failed to filter kitten output")?;
-        let kitten_status = kitten.wait()?;
-        let sed_status = sed.wait()?;
-        return Ok(kitten_status.success() && sed_status.success());
+            .output()
+            .context("Failed to run kitten icat")?;
+        if !output.status.success() {
+            return Ok(false);
+        }
+        let mut stdout = std::io::stdout().lock();
+        stdout.write_all(&strip_trailing_reset_line(&output.stdout))?;
+        stdout.flush()?;
+        return Ok(true);
     }
 
     if command_exists("chafa") {
+        // Stay one row above the pane bottom: sixel output touching it makes
+        // the preview scroll, which pushes the header out of view.
         let size = format!(
             "{}x{}",
             preview_columns(),
-            preview_lines().saturating_sub(top).max(1)
+            preview_lines().saturating_sub(top + 1).max(1)
         );
-        return Ok(Command::new("chafa")
-            .args(["--size", &size])
+        let mut chafa = Command::new("chafa");
+        chafa.args(["--size", &size]);
+        // chafa would otherwise emit direct kitty placements here. Those are
+        // not tied to fzf's text, so they outlive the preview and pile up
+        // when scrolling quickly.
+        if speaks_kitty_graphics() {
+            chafa.args(["--format", "symbols"]);
+        }
+        return Ok(chafa
             .arg(path)
             .status()
             .is_ok_and(|status| status.success()));
     }
     Ok(false)
+}
+
+/// Older `kitten icat` releases end their output with a line holding only
+/// escape codes, which fzf counts as an extra row (showing a scroll
+/// indicator). Drop such a line, but keep it when it is the final image row
+/// (current releases), and always finish with an SGR reset.
+fn strip_trailing_reset_line(output: &[u8]) -> Vec<u8> {
+    // UTF-8 encoding of U+10EEEE, kitty's image placeholder character.
+    const PLACEHOLDER: &[u8] = b"\xf4\x8e\xbb\xae";
+    let body = match output.iter().rposition(|&byte| byte == b'\n') {
+        Some(index)
+            if !output[index..]
+                .windows(PLACEHOLDER.len())
+                .any(|window| window == PLACEHOLDER) =>
+        {
+            &output[..index]
+        }
+        _ => output,
+    };
+    let mut result = body.to_vec();
+    result.extend_from_slice(b"\x1b[m");
+    result
 }
 
 fn format_duration(value: &str) -> Option<String> {
@@ -350,9 +377,28 @@ fn format_duration(value: &str) -> Option<String> {
     ))
 }
 
-fn kitty_graphics_available() -> bool {
+/// Terminals implementing kitty graphics *with* unicode placeholders.
+fn kitty_placeholders_available() -> bool {
+    let term = env::var("TERM").unwrap_or_default().to_ascii_lowercase();
+    let program = env::var("TERM_PROGRAM")
+        .unwrap_or_default()
+        .to_ascii_lowercase();
     env::var_os("KITTY_WINDOW_ID").is_some()
-        || env::var("TERM").is_ok_and(|term| term.to_ascii_lowercase().contains("kitty"))
+        || env::var_os("GHOSTTY_RESOURCES_DIR").is_some()
+        || term.contains("kitty")
+        || term.contains("ghostty")
+        || program == "ghostty"
+}
+
+/// Terminals for which chafa auto-selects direct kitty graphics placements.
+fn speaks_kitty_graphics() -> bool {
+    let program = env::var("TERM_PROGRAM")
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    kitty_placeholders_available()
+        || program == "wezterm"
+        || env::var_os("WEZTERM_EXECUTABLE").is_some()
+        || env::var_os("KONSOLE_VERSION").is_some()
 }
 
 fn command_exists(name: &str) -> bool {
@@ -721,6 +767,21 @@ fn human_size(bytes: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn kitten_reset_line_is_folded_into_the_last_row() {
+        assert_eq!(
+            strip_trailing_reset_line(b"row1\nrow2\n\x1b[m"),
+            b"row1\nrow2\x1b[m".to_vec()
+        );
+        assert_eq!(strip_trailing_reset_line(b"row"), b"row\x1b[m".to_vec());
+        // Current kitten: the last line is an image row and must survive.
+        let placeholder_row = "a\n\u{10EEEE}\x1b[39m";
+        assert_eq!(
+            strip_trailing_reset_line(placeholder_row.as_bytes()),
+            format!("{placeholder_row}\x1b[m").into_bytes()
+        );
+    }
 
     #[test]
     fn distinguishes_text_from_binary() {
