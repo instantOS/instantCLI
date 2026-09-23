@@ -124,7 +124,10 @@ pub enum MirrorlistAction {
     /// Keep whatever is on disk: the offline ISO ships a `file://`-first
     /// mirrorlist and the region question was skipped.
     Keep,
-    /// Write this exact content (strict: `file://` only).
+    /// Write this exact content (strict: `file://` only). The wizard's
+    /// region answer is intentionally not consulted here — strict is
+    /// deterministic — but it still shapes the finish-time refill in
+    /// [`cleanup_target`].
     Replace(String),
 }
 
@@ -167,12 +170,14 @@ pub fn strip_file_servers(content: &str) -> String {
     out
 }
 
-/// Whether any uncommented http(s) `Server` line remains.
+/// Whether any uncommented http(s) `Server` line remains. Commented
+/// `#Server` lines do not count: pacman never uses them, so a stripped list
+/// holding only comments must still be refilled or the target boots with
+/// no active mirror.
 pub fn has_network_mirrors(content: &str) -> bool {
     content.lines().any(|line| {
         let trimmed = line.trim_start();
-        (trimmed.starts_with("Server") || trimmed.starts_with("#Server"))
-            && trimmed.contains("http")
+        trimmed.starts_with("Server") && trimmed.contains("http")
     })
 }
 
@@ -239,6 +244,11 @@ pub fn bind_bundle(executor: &dyn CommandRunner, mode: Mode) -> Result<()> {
 /// Bring the bundled dotfiles snapshot into the target so the chroot can
 /// clone it without network access. Idempotent: `setup_chroot` runs once
 /// per chroot step.
+///
+/// Dotfiles are mandatory, never best-effort: a missing snapshot is fatal
+/// in strict mode (there is no network to fall back to) and only skips the
+/// copy in opportunistic mode, where `setup_user_dotfiles` clones from the
+/// network instead. Some source must succeed or the install fails.
 pub fn copy_dotfiles_snapshot(executor: &dyn CommandRunner, mode: Mode) -> Result<()> {
     if mode == Mode::Online {
         return Ok(());
@@ -246,6 +256,13 @@ pub fn copy_dotfiles_snapshot(executor: &dyn CommandRunner, mode: Mode) -> Resul
 
     let source = Path::new(DOTFILES_SNAPSHOT);
     if !source.exists() {
+        if mode == Mode::Strict {
+            anyhow::bail!(
+                "strict offline mode has no network fallback, but the dotfiles snapshot \
+                 is missing at {DOTFILES_SNAPSHOT}: dotfiles are mandatory, so the \
+                 install cannot proceed"
+            );
+        }
         println!(
             "Warning: offline dotfiles snapshot missing at {DOTFILES_SNAPSHOT}; \
              dotfiles will be cloned from the network instead."
@@ -463,6 +480,45 @@ Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch
         assert!(has_network_mirrors(
             "Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch\n"
         ));
+    }
+
+    #[test]
+    fn commented_servers_do_not_count_as_network_mirrors() {
+        assert!(!has_network_mirrors(
+            "#Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch\n"
+        ));
+
+        // A shipped file://-first list whose only network entries are
+        // commented out must be refilled after stripping, or the target
+        // boots with zero active servers.
+        let shipped = "\
+Server = file:///run/archiso/bootmnt/offline-repo/$repo/os/$arch
+#Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch
+";
+        let stripped = strip_file_servers(shipped);
+        assert!(!has_network_mirrors(&stripped));
+    }
+
+    #[test]
+    fn copy_dotfiles_snapshot_treats_a_missing_snapshot_by_mode() {
+        // Test hosts have no live-ISO snapshot path; if one ever does, the
+        // failure legitimately cannot be simulated here.
+        if !Path::new(DOTFILES_SNAPSHOT).exists() {
+            // Strict has no network to fall back to: fatal, before any command.
+            let runner = MockRunner::new();
+            let error = copy_dotfiles_snapshot(&runner, Mode::Strict).unwrap_err();
+            assert!(error.to_string().contains(DOTFILES_SNAPSHOT));
+            assert!(
+                runner.command_log().is_empty(),
+                "must fail before running anything"
+            );
+
+            // Opportunistic: only skips the copy; the network clone covers
+            // the gap in setup_user_dotfiles.
+            let runner = MockRunner::new();
+            copy_dotfiles_snapshot(&runner, Mode::Opportunistic).unwrap();
+            assert!(runner.command_log().is_empty());
+        }
     }
 
     #[test]

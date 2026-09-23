@@ -471,7 +471,7 @@ pub async fn execute_installation(
         ];
 
         for step in steps {
-            execute_step(
+            if let Err(e) = execute_step(
                 step,
                 &plan,
                 &context,
@@ -479,7 +479,22 @@ pub async fn execute_installation(
                 &config_path,
                 &configuration_sha256,
             )
-            .await?;
+            .await
+            {
+                // A failed offline install still leaves the target
+                // referencing the bundle; strip those references even on the
+                // way out so a later boot is not broken too.
+                if !dry_run
+                    && let Err(ce) = crate::arch::offline::cleanup_target(
+                        &executor,
+                        install_mode,
+                        plan.mirror_region.as_deref(),
+                    )
+                {
+                    println!("Warning: Offline cleanup after failed install failed: {ce}");
+                }
+                return Err(e);
+            }
         }
 
         // Remove the config file from the chroot to prevent leaking sensitive data (passwords)

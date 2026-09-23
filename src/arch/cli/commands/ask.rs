@@ -193,13 +193,13 @@ fn install_live_iso_dependencies() -> Result<()> {
     Ok(())
 }
 
-fn print_system_checks(system_info: &SystemInfo) {
+fn print_system_checks(system_info: &SystemInfo, install_mode: crate::arch::offline::Mode) {
     println!("System Checks:");
     println!("  Boot Mode: {}", system_info.boot_mode);
     println!("  Internet: {}", system_info.internet_connected);
     println!(
         "  Install Source: {}",
-        match crate::arch::offline::mode() {
+        match install_mode {
             crate::arch::offline::Mode::Online => "network mirrors".to_owned(),
             crate::arch::offline::Mode::Opportunistic => {
                 "offline bundle (network fallback enabled)".to_owned()
@@ -339,7 +339,7 @@ async fn run_full_wizard(
     crate::arch::offline::validate(install_mode)?;
     ensure_internet(&system_info, install_mode)?;
     install_live_iso_dependencies()?;
-    print_system_checks(&system_info);
+    print_system_checks(&system_info, install_mode);
 
     let existing_context = match load_existing_context(&config_path, &system_info)? {
         ExistingContextOutcome::Continue(context) => context,

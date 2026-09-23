@@ -204,22 +204,46 @@ fn setup_user_dotfiles(username: &str, executor: &dyn CommandRunner) -> Result<(
     if !repo_exists {
         // Clone dotfiles. Offline installs clone the bundled snapshot and
         // record the canonical URL as origin so a later online
-        // `ins dot update` still pulls from the network.
-        let clone_cmd_str = if crate::arch::offline::mode().is_offline()
-            && std::path::Path::new(crate::arch::offline::DOTFILES_SNAPSHOT).exists()
-        {
-            format!(
-                "ins dot repo clone {} --read-only --origin {}",
-                crate::arch::offline::DOTFILES_SNAPSHOT,
-                INSTANTOS_DOTFILES_REPO
-            )
-        } else {
-            format!("ins dot repo clone {} --read-only", INSTANTOS_DOTFILES_REPO)
+        // `ins dot update` still pulls from the network. The snapshot is
+        // copied into the target before this runs (see
+        // `offline::copy_dotfiles_snapshot`). Dotfiles are never optional:
+        // opportunistic mode falls back to the network when the snapshot
+        // does not work, and if no source succeeds the install fails.
+        let mode = crate::arch::offline::mode();
+        let clone = |url: &str, origin: Option<&str>| -> Result<()> {
+            let origin_flag = origin
+                .map(|origin_url| format!(" --origin {origin_url}"))
+                .unwrap_or_default();
+            let mut cmd = Command::new("su");
+            cmd.arg("-c")
+                .arg(format!("ins dot repo clone {url} --read-only{origin_flag}"))
+                .arg(username);
+            executor.run(&mut cmd)
         };
-        let mut cmd_clone = Command::new("su");
-        cmd_clone.arg("-c").arg(clone_cmd_str).arg(username);
 
-        executor.run(&mut cmd_clone)?;
+        match mode {
+            crate::arch::offline::Mode::Online => clone(INSTANTOS_DOTFILES_REPO, None)?,
+            crate::arch::offline::Mode::Strict => {
+                clone(
+                    crate::arch::offline::DOTFILES_SNAPSHOT,
+                    Some(INSTANTOS_DOTFILES_REPO),
+                )?;
+            }
+            crate::arch::offline::Mode::Opportunistic => {
+                if clone(
+                    crate::arch::offline::DOTFILES_SNAPSHOT,
+                    Some(INSTANTOS_DOTFILES_REPO),
+                )
+                .is_err()
+                {
+                    println!(
+                        "{} Snapshot clone failed; falling back to a network clone from {INSTANTOS_DOTFILES_REPO}.",
+                        NerdFont::Warning
+                    );
+                    clone(INSTANTOS_DOTFILES_REPO, None)?;
+                }
+            }
+        }
     } else {
         println!("Dotfiles repository already exists, skipping clone.");
     }

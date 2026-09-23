@@ -347,16 +347,22 @@ pub struct MirrorlistProvider;
 #[async_trait::async_trait]
 impl crate::arch::engine::AsyncDataProvider for MirrorlistProvider {
     async fn provide(&self, context: &crate::arch::engine::InstallContext) -> Result<()> {
-        provide_mirrorlist(context, crate::arch::offline::mode()).await
+        provide_mirrorlist(
+            context,
+            crate::arch::offline::mode(),
+            bundled_region_codes(),
+        )
+        .await
     }
 }
 
 async fn provide_mirrorlist(
     context: &crate::arch::engine::InstallContext,
     mode: crate::arch::offline::Mode,
+    bundled: Option<HashMap<String, String>>,
 ) -> Result<()> {
     if mode.is_offline() {
-        provide_bundled_regions(context, bundled_region_codes());
+        provide_bundled_regions(context, bundled);
         return Ok(());
     }
     provide_fetched_regions(context).await
@@ -418,13 +424,33 @@ mod tests {
 
     #[tokio::test]
     async fn offline_provider_skips_the_fetch_and_hides_the_question() {
+        // Without a snapshot, degrade exactly like a failed fetch.
         let context = crate::arch::engine::InstallContext::new();
-        provide_mirrorlist(&context, crate::arch::offline::Mode::Strict)
+        provide_mirrorlist(&context, crate::arch::offline::Mode::Strict, None)
             .await
             .unwrap();
 
         assert_eq!(context.get::<MirrorRegionsKey>(), Some(Vec::new()));
         assert_eq!(context.get::<MirrorRegionsFetchFailed>(), Some(true));
+
+        // With a snapshot, the question is asked from bundle data alone —
+        // never the network.
+        let context = crate::arch::engine::InstallContext::new();
+        let mut codes = HashMap::new();
+        codes.insert("Germany".to_string(), "de".to_string());
+        provide_mirrorlist(
+            &context,
+            crate::arch::offline::Mode::Opportunistic,
+            Some(codes),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            context.get::<MirrorRegionsKey>(),
+            Some(vec!["Germany".to_string()])
+        );
+        assert_eq!(context.get::<MirrorRegionsFetchFailed>(), Some(false));
     }
 
     #[test]

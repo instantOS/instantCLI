@@ -59,12 +59,6 @@ pub fn install(packages: &[&str], executor: &dyn CommandRunner) -> Result<()> {
     loop {
         attempt += 1;
         if attempt > 10 {
-            if offline {
-                anyhow::bail!(
-                    "Package installation failed after 10 attempts. The offline bundle does not contain every required package: {}",
-                    packages.join(" ")
-                );
-            }
             anyhow::bail!(
                 "Package installation failed after 10 attempts. Please check your internet connection."
             );
@@ -119,14 +113,13 @@ pub fn install(packages: &[&str], executor: &dyn CommandRunner) -> Result<()> {
                 }
 
                 if offline {
-                    // The bundle already served the freshest db it has and no
-                    // network refresh can help: retry against it directly.
-                    println!(
-                        "Offline install: bundle gap for {}; retrying without a network refresh.",
+                    // The bundle is static: apart from the keyring refresh
+                    // above, no retry can change the outcome, so fail with
+                    // the real cause instead of burning identical attempts.
+                    anyhow::bail!(
+                        "Package installation failed. The offline bundle does not contain every required package: {}",
                         packages.join(" ")
                     );
-                    thread::sleep(Duration::from_secs(1));
-                    continue;
                 }
 
                 // Update mirrors
@@ -185,11 +178,6 @@ pub fn pacstrap(mount_point: &str, packages: &[&str], executor: &dyn CommandRunn
     loop {
         attempt += 1;
         if attempt > 10 {
-            if offline {
-                anyhow::bail!(
-                    "Pacstrap failed after 10 attempts. The offline bundle does not contain every required package."
-                );
-            }
             anyhow::bail!(
                 "Pacstrap failed after 10 attempts. Please check your internet connection."
             );
@@ -220,13 +208,12 @@ pub fn pacstrap(mount_point: &str, packages: &[&str], executor: &dyn CommandRunn
                 println!("Pacstrap failed: {}", e);
 
                 if offline {
-                    // No network to refresh from: retry against the bundle
-                    // without touching mirrors.
-                    println!(
-                        "Offline install: retrying against the bundle without mirror changes..."
+                    // The bundle is static: no mirror shuffle or refresh can
+                    // change the outcome, so fail with the real cause instead
+                    // of retrying identical work.
+                    anyhow::bail!(
+                        "Pacstrap failed. The offline bundle does not contain every required package."
                     );
-                    thread::sleep(Duration::from_secs(1));
-                    continue;
                 }
 
                 println!("Ensure you are connected to the internet.");
