@@ -49,6 +49,8 @@ pub fn install(packages: &[&str], executor: &dyn CommandRunner) -> Result<()> {
         return Ok(());
     }
 
+    let offline = crate::arch::offline::mode().is_offline();
+
     let mut attempt = 0;
     // We use a file to track if we've refreshed the keyring, similar to the bash script
     // This persists across retries within the same session if the file remains.
@@ -84,7 +86,9 @@ pub fn install(packages: &[&str], executor: &dyn CommandRunner) -> Result<()> {
             }
             Err(e) => {
                 println!("Package installation failed: {}", e);
-                println!("Ensure you are connected to the internet.");
+                if !offline {
+                    println!("Ensure you are connected to the internet.");
+                }
 
                 // Check if we should refresh keyring
                 // Don't refresh if we are currently trying to install the keyring itself
@@ -106,6 +110,16 @@ pub fn install(packages: &[&str], executor: &dyn CommandRunner) -> Result<()> {
                         // Continue immediately after keyring refresh to try original packages again
                         continue;
                     }
+                }
+
+                if offline {
+                    // The bundle is static: apart from the keyring refresh
+                    // above, no retry can change the outcome, so fail with
+                    // the real cause instead of burning identical attempts.
+                    anyhow::bail!(
+                        "Package installation failed. The offline bundle does not contain every required package: {}",
+                        packages.join(" ")
+                    );
                 }
 
                 // Update mirrors
@@ -157,6 +171,8 @@ pub fn pacstrap(mount_point: &str, packages: &[&str], executor: &dyn CommandRunn
         return Ok(());
     }
 
+    let offline = crate::arch::offline::mode().is_offline();
+
     let mut attempt = 0;
 
     loop {
@@ -190,6 +206,16 @@ pub fn pacstrap(mount_point: &str, packages: &[&str], executor: &dyn CommandRunn
             }
             Err(e) => {
                 println!("Pacstrap failed: {}", e);
+
+                if offline {
+                    // The bundle is static: no mirror shuffle or refresh can
+                    // change the outcome, so fail with the real cause instead
+                    // of retrying identical work.
+                    anyhow::bail!(
+                        "Pacstrap failed. The offline bundle does not contain every required package."
+                    );
+                }
+
                 println!("Ensure you are connected to the internet.");
 
                 if let Err(e) = shuffle_mirrors() {

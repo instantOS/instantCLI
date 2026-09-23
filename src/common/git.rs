@@ -369,6 +369,13 @@ pub fn clone_repo(
     run_git_network_in(None, &args).context("Failed to clone repository")
 }
 
+/// Point an existing remote at a new URL.
+pub fn set_remote_url(repo_path: &Path, remote: &str, url: &str) -> Result<()> {
+    run_git(repo_path, &["remote", "set-url", remote, url])
+        .with_context(|| format!("Failed to set remote '{remote}' to {url}"))?;
+    Ok(())
+}
+
 /// Get the current checked out branch name
 pub fn current_branch(repo_path: &Path) -> Result<String> {
     let branch = run_git(repo_path, &["rev-parse", "--abbrev-ref", "HEAD"])

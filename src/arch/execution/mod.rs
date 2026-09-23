@@ -362,6 +362,12 @@ pub async fn execute_installation(
         println!("*** DRY RUN MODE ENABLED - No changes will be made ***");
     }
 
+    // Validate the install source before touching the disk.
+    let install_mode = crate::arch::offline::mode();
+    let network_available = install_mode == crate::arch::offline::Mode::Opportunistic
+        && crate::common::network::check_internet();
+    crate::arch::offline::validate(install_mode, network_available)?;
+
     // Increase cowspace if in live ISO
     if crate::common::distro::is_live_iso()
         && !dry_run
@@ -467,7 +473,7 @@ pub async fn execute_installation(
         ];
 
         for step in steps {
-            execute_step(
+            if let Err(e) = execute_step(
                 step,
                 &plan,
                 &context,
@@ -475,7 +481,22 @@ pub async fn execute_installation(
                 &config_path,
                 &configuration_sha256,
             )
-            .await?;
+            .await
+            {
+                // A failed offline install still leaves the target
+                // referencing the bundle; strip those references even on the
+                // way out so a later boot is not broken too.
+                if !dry_run
+                    && let Err(ce) = crate::arch::offline::cleanup_target(
+                        &executor,
+                        install_mode,
+                        plan.mirror_region.as_deref(),
+                    )
+                {
+                    println!("Warning: Offline cleanup after failed install failed: {ce}");
+                }
+                return Err(e);
+            }
         }
 
         // Remove the config file from the chroot to prevent leaking sensitive data (passwords)
@@ -509,6 +530,14 @@ pub async fn execute_installation(
                     e
                 );
             }
+
+            // Offline installs: drop the bundle references from the target's
+            // pacman files and release the bind before declaring completion.
+            crate::arch::offline::cleanup_target(
+                &executor,
+                install_mode,
+                plan.mirror_region.as_deref(),
+            )?;
 
             let marker = crate::arch::installation_identity::write_completed_marker(
                 std::path::Path::new(paths::CHROOT_MOUNT),
@@ -749,6 +778,12 @@ fn setup_chroot(executor: &dyn CommandRunner, config_path: &std::path::Path) -> 
             std::fs::copy(state_file, target_state).context("Failed to copy state to chroot")?;
         }
     }
+
+    // Offline installs: give the chroot the same view of the bundle as the
+    // live system (all file:// paths resolve through this bind) and bring
+    // the dotfiles snapshot along for the clone.
+    crate::arch::offline::bind_bundle(executor, crate::arch::offline::mode())?;
+    crate::arch::offline::copy_dotfiles_snapshot(executor, crate::arch::offline::mode())?;
 
     Ok(())
 }

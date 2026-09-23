@@ -218,6 +218,10 @@ impl DoctorCheck for InstantRepoCheck {
     }
 
     async fn fix(&self) -> Result<()> {
-        crate::common::pacman::setup_instant_repo(false).await
+        crate::common::pacman::setup_instant_repo(
+            false,
+            crate::arch::offline::instant_mirrorlist_override().as_deref(),
+        )
+        .await
     }
 }

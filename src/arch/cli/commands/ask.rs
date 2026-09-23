@@ -135,7 +135,14 @@ fn resolve_config_path(output_config: Option<std::path::PathBuf>) -> std::path::
     output_config.unwrap_or_else(|| std::path::PathBuf::from(DEFAULT_QUESTIONS_FILE))
 }
 
-fn ensure_internet(system_info: &SystemInfo) -> Result<()> {
+fn ensure_internet(system_info: &SystemInfo, mode: crate::arch::offline::Mode) -> Result<()> {
+    use crate::arch::offline::Mode;
+
+    if mode != Mode::Online {
+        println!("Offline bundle detected: proceeding without an internet connection.");
+        return Ok(());
+    }
+
     if system_info.internet_connected {
         return Ok(());
     }
@@ -186,10 +193,20 @@ fn install_live_iso_dependencies() -> Result<()> {
     Ok(())
 }
 
-fn print_system_checks(system_info: &SystemInfo) {
+fn print_system_checks(system_info: &SystemInfo, install_mode: crate::arch::offline::Mode) {
     println!("System Checks:");
     println!("  Boot Mode: {}", system_info.boot_mode);
     println!("  Internet: {}", system_info.internet_connected);
+    println!(
+        "  Install Source: {}",
+        match install_mode {
+            crate::arch::offline::Mode::Online => "network mirrors".to_owned(),
+            crate::arch::offline::Mode::Opportunistic => {
+                "offline bundle (network fallback enabled)".to_owned()
+            }
+            crate::arch::offline::Mode::Strict => "offline bundle (strict, no network)".to_owned(),
+        }
+    );
     println!("  AMD CPU: {}", system_info.has_amd_cpu);
     println!("  Intel CPU: {}", system_info.has_intel_cpu);
     println!("  GPUs: {:?}", system_info.gpus);
@@ -318,9 +335,11 @@ async fn run_full_wizard(
     // Perform system checks
     let system_info = SystemInfo::detect();
 
-    ensure_internet(&system_info)?;
+    let install_mode = crate::arch::offline::mode();
+    crate::arch::offline::validate(install_mode, system_info.internet_connected)?;
+    ensure_internet(&system_info, install_mode)?;
     install_live_iso_dependencies()?;
-    print_system_checks(&system_info);
+    print_system_checks(&system_info, install_mode);
 
     let existing_context = match load_existing_context(&config_path, &system_info)? {
         ExistingContextOutcome::Continue(context) => context,
@@ -362,6 +381,7 @@ pub(super) async fn handle_ask_command(
 mod tests {
     use super::ensure_internet;
     use crate::arch::engine::SystemInfo;
+    use crate::arch::offline::Mode;
 
     #[test]
     fn ensure_internet_errors_when_offline() {
@@ -370,7 +390,7 @@ mod tests {
             ..SystemInfo::default()
         };
 
-        let error = ensure_internet(&system_info).unwrap_err();
+        let error = ensure_internet(&system_info, Mode::Online).unwrap_err();
         assert!(
             error
                 .to_string()
@@ -385,6 +405,17 @@ mod tests {
             ..SystemInfo::default()
         };
 
-        ensure_internet(&system_info).unwrap();
+        ensure_internet(&system_info, Mode::Online).unwrap();
+    }
+
+    #[test]
+    fn ensure_internet_skips_the_requirement_when_offline() {
+        let system_info = SystemInfo {
+            internet_connected: false,
+            ..SystemInfo::default()
+        };
+
+        ensure_internet(&system_info, Mode::Opportunistic).unwrap();
+        ensure_internet(&system_info, Mode::Strict).unwrap();
     }
 }

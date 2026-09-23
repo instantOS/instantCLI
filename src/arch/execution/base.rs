@@ -18,9 +18,65 @@ pub async fn install_base(plan: &InstallPlan, executor: &dyn CommandRunner) -> R
     Ok(())
 }
 
+/// Region list to write under the bundle line in an opportunistic install.
+/// `None` when no region was selected or the bundle snapshot cannot resolve
+/// it — the caller then keeps the shipped fallback (a warning is logged for
+/// a selected-but-unresolvable region).
+fn offline_region_list(region_name: Option<&String>) -> Option<String> {
+    let name = region_name?;
+    match crate::arch::mirrors::bundled_region_mirrorlist(name) {
+        Ok(list) => Some(list),
+        Err(e) => {
+            println!("Warning: {e:#}; keeping the shipped fallback mirrorlist.");
+            None
+        }
+    }
+}
+
 async fn setup_mirrors(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
     // Check if a region was selected (question may have been skipped if fetch failed)
     let region_name = plan.mirror_region.as_ref();
+
+    match crate::arch::offline::arch_mirrorlist_action(crate::arch::offline::mode()) {
+        crate::arch::offline::MirrorlistAction::Fetch => {}
+        crate::arch::offline::MirrorlistAction::Keep => {
+            if executor.dry_run() {
+                match region_name {
+                    Some(region) => println!(
+                        "[DRY RUN] Offline mirrorlist: bundle first, selected region {region} below."
+                    ),
+                    None => println!("[DRY RUN] Keeping the bundled offline mirrorlist"),
+                }
+                return Ok(());
+            }
+            match offline_region_list(region_name) {
+                Some(list) => {
+                    let content = format!(
+                        "{}\n{}\n",
+                        crate::arch::offline::file_server_line(),
+                        list.trim_end()
+                    );
+                    std::fs::write("/etc/pacman.d/mirrorlist", content)?;
+                    println!(
+                        "Offline bundle detected: bundle first, selected region below (stripped from the target at finish)."
+                    );
+                }
+                None => println!(
+                    "Offline bundle detected: keeping the shipped mirrorlist (file:// first, network mirrors below)."
+                ),
+            }
+            return Ok(());
+        }
+        crate::arch::offline::MirrorlistAction::Replace(content) => {
+            if executor.dry_run() {
+                println!("[DRY RUN] Writing file://-only mirrorlist (strict offline)");
+                return Ok(());
+            }
+            std::fs::write("/etc/pacman.d/mirrorlist", content)?;
+            println!("Strict offline mode: mirrorlist restricted to the offline bundle.");
+            return Ok(());
+        }
+    }
 
     if executor.dry_run() {
         match region_name {

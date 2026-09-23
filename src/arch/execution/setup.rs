@@ -149,7 +149,9 @@ async fn setup_instantos_with_options(
 /// have their own multilib configuration.
 pub async fn setup_instant_repo(executor: &dyn CommandRunner) -> Result<()> {
     println!("Setting up instantOS repository...");
-    crate::common::pacman::setup_instant_repo(executor.dry_run()).await?;
+    let offline_content = crate::arch::offline::instant_mirrorlist_override();
+    crate::common::pacman::setup_instant_repo(executor.dry_run(), offline_content.as_deref())
+        .await?;
 
     // Update repositories to include [instant]
     println!("Updating repositories...");
@@ -200,13 +202,48 @@ fn setup_user_dotfiles(username: &str, executor: &dyn CommandRunner) -> Result<(
     };
 
     if !repo_exists {
-        // Clone dotfiles
-        // su -c "ins dot repo clone https://github.com/instantOS/dotfiles --read-only" username
-        let clone_cmd_str = format!("ins dot repo clone {} --read-only", INSTANTOS_DOTFILES_REPO);
-        let mut cmd_clone = Command::new("su");
-        cmd_clone.arg("-c").arg(clone_cmd_str).arg(username);
+        // Clone dotfiles. Offline installs clone the bundled snapshot and
+        // record the canonical URL as origin so a later online
+        // `ins dot update` still pulls from the network. The snapshot is
+        // copied into the target before this runs (see
+        // `offline::copy_dotfiles_snapshot`). Dotfiles are never optional:
+        // opportunistic mode falls back to the network when the snapshot
+        // does not work, and if no source succeeds the install fails.
+        let mode = crate::arch::offline::mode();
+        let clone = |url: &str, origin: Option<&str>| -> Result<()> {
+            let origin_flag = origin
+                .map(|origin_url| format!(" --origin {origin_url}"))
+                .unwrap_or_default();
+            let mut cmd = Command::new("su");
+            cmd.arg("-c")
+                .arg(format!("ins dot repo clone {url} --read-only{origin_flag}"))
+                .arg(username);
+            executor.run(&mut cmd)
+        };
 
-        executor.run(&mut cmd_clone)?;
+        match mode {
+            crate::arch::offline::Mode::Online => clone(INSTANTOS_DOTFILES_REPO, None)?,
+            crate::arch::offline::Mode::Strict => {
+                clone(
+                    crate::arch::offline::DOTFILES_SNAPSHOT,
+                    Some(INSTANTOS_DOTFILES_REPO),
+                )?;
+            }
+            crate::arch::offline::Mode::Opportunistic => {
+                if clone(
+                    crate::arch::offline::DOTFILES_SNAPSHOT,
+                    Some(INSTANTOS_DOTFILES_REPO),
+                )
+                .is_err()
+                {
+                    println!(
+                        "{} Snapshot clone failed; falling back to a network clone from {INSTANTOS_DOTFILES_REPO}.",
+                        NerdFont::Warning
+                    );
+                    clone(INSTANTOS_DOTFILES_REPO, None)?;
+                }
+            }
+        }
     } else {
         println!("Dotfiles repository already exists, skipping clone.");
     }
@@ -234,6 +271,16 @@ fn setup_user_dotfiles(username: &str, executor: &dyn CommandRunner) -> Result<(
 /// abort the installation. The user can pick a wallpaper from the instant
 /// settings afterwards.
 fn setup_wallpaper(username: &str, executor: &dyn CommandRunner) {
+    // The wallpaper picker is a best-effort download; offline installs skip
+    // it outright rather than wait for timeouts on every candidate source.
+    if crate::arch::offline::mode().is_offline() {
+        println!(
+            "{} Offline install: skipping wallpaper download; you can pick one from the instant settings later.",
+            NerdFont::Warning
+        );
+        return;
+    }
+
     println!("Setting up wallpaper for user: {}", username);
 
     // Run `ins wallpaper random` as the user

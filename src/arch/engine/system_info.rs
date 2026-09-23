@@ -34,7 +34,11 @@ impl GpuKind {
     }
 
     /// Returns driver packages for this GPU.
-    /// For NVIDIA, the kernel determines the driver (nvidia, nvidia-lts, or dkms).
+    /// For NVIDIA, the kernel determines the driver: Arch ships the open
+    /// kernel modules as prebuilt packages for linux (`nvidia-open`) and
+    /// linux-lts (`nvidia-open-lts`); every other kernel builds them from
+    /// source with DKMS (`nvidia-open-dkms`). The proprietary module
+    /// packages (`nvidia`, `nvidia-lts`, `nvidia-dkms`) no longer exist.
     pub fn get_driver_packages(
         &self,
         kernel: Option<crate::arch::engine::Kernel>,
@@ -43,11 +47,11 @@ impl GpuKind {
             GpuKind::Nvidia => {
                 let mut packages = Vec::new();
                 match kernel.unwrap_or(crate::arch::engine::Kernel::Linux) {
-                    crate::arch::engine::Kernel::Linux => packages.push("nvidia"),
-                    crate::arch::engine::Kernel::Lts => packages.push("nvidia-lts"),
+                    crate::arch::engine::Kernel::Linux => packages.push("nvidia-open"),
+                    crate::arch::engine::Kernel::Lts => packages.push("nvidia-open-lts"),
                     crate::arch::engine::Kernel::Zen => {
                         // Zen needs DKMS instead of a prebuilt module
-                        packages.push("nvidia-dkms");
+                        packages.push("nvidia-open-dkms");
                         packages.push("dkms");
                     }
                 }
@@ -55,11 +59,12 @@ impl GpuKind {
                 packages.push("nvidia-settings");
                 packages
             }
+            // VA-API for Mesa ships inside (lib32-)mesa since the Mesa
+            // consolidation; the old libva-mesa-driver names are gone.
             GpuKind::Amd => vec![
                 "vulkan-radeon",
                 "lib32-vulkan-radeon",
-                "libva-mesa-driver",
-                "lib32-libva-mesa-driver",
+                "lib32-mesa",
             ],
             GpuKind::Intel => vec!["vulkan-intel", "lib32-vulkan-intel", "intel-media-driver"],
             GpuKind::Other(_) => vec!["mesa", "lib32-mesa"],

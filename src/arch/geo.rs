@@ -74,6 +74,12 @@ impl AsyncDataProvider for GeoLocationProvider {
         if context.previous_answer(&self.question).is_some() {
             return Ok(());
         }
+        // Offline installs never call out: store the empty location a failed
+        // lookup would produce so preselection falls back to stock defaults.
+        if crate::arch::offline::mode().is_offline() {
+            context.set::<GeoLocationKey>(GeoLocation::default());
+            return Ok(());
+        }
         context.set::<GeoLocationKey>(detect_location().await);
         Ok(())
     }

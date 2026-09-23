@@ -9,7 +9,13 @@ pub const INSTANT_MIRRORLIST: &str = include_str!("instantmirrorlist");
 /// dominate install time and the home link is rarely the bottleneck.
 const PARALLEL_DOWNLOADS: u8 = 10;
 
-pub async fn setup_instant_repo(dry_run: bool) -> Result<()> {
+/// Append the `[instant]` repository to pacman.conf and write its mirrorlist.
+///
+/// `offline_content` is the bundle-shaped mirrorlist content for offline
+/// installs (`crate::arch::offline::instant_mirrorlist_override`): `None`
+/// online keeps existing user-authored lists untouched, `Some` forces the
+/// file so a stale or copied list cannot point at the wrong place.
+pub async fn setup_instant_repo(dry_run: bool, offline_content: Option<&str>) -> Result<()> {
     if dry_run {
         println!("[DRY RUN] Appending [instant] config to /etc/pacman.conf");
         println!("[DRY RUN] Creating /etc/pacman.d/instantmirrorlist");
@@ -20,10 +26,11 @@ pub async fn setup_instant_repo(dry_run: bool) -> Result<()> {
 
     // Check if already exists to avoid duplication
     // Note: Doctor check does this check before calling fix, but good to have here too.
+    let mut section_exists = false;
     match tokio::fs::read_to_string(pacman_conf).await {
         Ok(content) => {
             if content.contains("[instant]") {
-                return Ok(());
+                section_exists = true;
             }
         }
         Err(_) => {
@@ -31,21 +38,32 @@ pub async fn setup_instant_repo(dry_run: bool) -> Result<()> {
         }
     }
 
-    let mut file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(pacman_conf)
+    if !section_exists {
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(pacman_conf)
+            .await?;
+
+        file.write_all(
+            b"\n[instant]\nSigLevel = Optional TrustAll\nInclude = /etc/pacman.d/instantmirrorlist\n",
+        )
         .await?;
+        println!("Added InstantOS repository to /etc/pacman.conf");
+    }
 
-    file.write_all(
-        b"\n[instant]\nSigLevel = Optional TrustAll\nInclude = /etc/pacman.d/instantmirrorlist\n",
-    )
-    .await?;
+    // Write the mirrorlist: always on a fresh section, and always when an
+    // offline install supplies bundle-shaped content that must win over
+    // whatever was there before.
+    let mirrorlist_path = "/etc/pacman.d/instantmirrorlist";
+    let mirrorlist_exists = tokio::fs::try_exists(mirrorlist_path)
+        .await
+        .unwrap_or(false);
+    if !section_exists || offline_content.is_some() || !mirrorlist_exists {
+        let content = offline_content.unwrap_or(INSTANT_MIRRORLIST);
+        tokio::fs::write(mirrorlist_path, content).await?;
+    }
 
-    // Create the mirrorlist file
-    tokio::fs::write("/etc/pacman.d/instantmirrorlist", INSTANT_MIRRORLIST).await?;
-
-    println!("Added InstantOS repository to /etc/pacman.conf");
     Ok(())
 }
 
