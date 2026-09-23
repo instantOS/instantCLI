@@ -108,7 +108,7 @@ pub fn run(backend: ClipBackend) -> Result<()> {
     loop {
         let status = service::status(backend);
         let entries = if status.installed {
-            history::load(backend)?
+            history::load()?
         } else {
             Vec::new()
         };
@@ -131,13 +131,13 @@ pub fn run(backend: ClipBackend) -> Result<()> {
         cursor.update(&selection, &items);
 
         match selection {
-            SettingsItem::Capture(status) if status.active => service::disable(backend)?,
+            SettingsItem::Capture(status) if status.active => service::disable()?,
             SettingsItem::Capture(_) => {
                 service::enable(backend)?;
             }
             SettingsItem::ClearHistory { .. } => {
                 if confirm_clear(&entries)? {
-                    let count = history::clear(backend)?;
+                    let count = history::clear()?;
                     emit(
                         Level::Success,
                         "clip.cleared",

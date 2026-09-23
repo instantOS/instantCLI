@@ -495,14 +495,26 @@ fn copy_to_wayland_clipboard(data: &[u8], mime_type: Option<&str>) -> Result<()>
     copy_with_command(command, data, "wl-copy")
 }
 
+fn xclip_copy_command(mime_type: Option<&str>) -> Command {
+    let mut command = Command::new("xclip");
+    command.args(["-selection", "clipboard"]);
+    if let Some(mime_type) = mime_type {
+        command.args(["-t", mime_type]);
+    }
+    // Like wl-copy, xclip forks a background owner that inherits stdout and
+    // stderr, which would keep a transient terminal window alive.
+    command
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    command
+}
+
 /// Copy data to clipboard using the appropriate tool for the display server
 pub fn copy_to_clipboard(data: &[u8], display_server: &DisplayServer) -> Result<()> {
     if display_server.is_wayland() {
         copy_to_wayland_clipboard(data, None)?;
     } else if display_server.is_x11() {
-        let mut command = Command::new("xclip");
-        command.args(["-selection", "clipboard"]);
-        copy_with_command(command, data, "xclip")?;
+        copy_with_command(xclip_copy_command(None), data, "xclip")?;
     } else {
         anyhow::bail!("Unknown display server - cannot copy to clipboard");
     }
@@ -519,9 +531,7 @@ pub fn copy_image_to_clipboard(
     if display_server.is_wayland() {
         copy_to_wayland_clipboard(data, Some(mime_type))?;
     } else if display_server.is_x11() {
-        let mut command = Command::new("xclip");
-        command.args(["-selection", "clipboard", "-t", mime_type]);
-        copy_with_command(command, data, "xclip")?;
+        copy_with_command(xclip_copy_command(Some(mime_type)), data, "xclip")?;
     } else {
         anyhow::bail!("Unknown display server - cannot copy to clipboard");
     }

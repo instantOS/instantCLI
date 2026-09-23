@@ -1,7 +1,5 @@
 use anyhow::Result;
 
-use crate::assist::utils::copy_to_clipboard;
-use crate::common::display_server::DisplayServer;
 use crate::common::shell::current_exe_command;
 use crate::menu_utils::{
     FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder, MenuCursor, MenuKey, MenuKeybind,
@@ -184,7 +182,7 @@ pub fn run(backend: ClipBackend) -> Result<()> {
     loop {
         let status = service::status(backend);
         let entries = if status.installed {
-            history::load(backend)?
+            history::load()?
         } else {
             Vec::new()
         };
@@ -251,7 +249,7 @@ pub fn run(backend: ClipBackend) -> Result<()> {
 
         match (selection.action, selected_item) {
             (Some(ClipKeybindAction::Delete), Some(ClipMainItem::Entry(entry))) => {
-                history::delete(backend, &entry.0.id)?;
+                history::delete(&entry.0.id)?;
                 emit(
                     Level::Success,
                     "clip.deleted",
@@ -266,7 +264,7 @@ pub fn run(backend: ClipBackend) -> Result<()> {
             (Some(ClipKeybindAction::Delete), _) | (None, None) => {}
             (None, Some(selection)) => match selection {
                 ClipMainItem::Entry(entry) => {
-                    return copy_to_clipboard(&entry.0.decode()?, &DisplayServer::detect());
+                    return history::restore(&entry.0);
                 }
                 ClipMainItem::EnableCapture(backend) => {
                     service::enable(backend)?;

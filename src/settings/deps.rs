@@ -9,12 +9,6 @@ use crate::common::requirements::InstallTest;
 // Clipboard
 // =============================================================================
 
-pub static CLIPMENU: Dependency = Dependency {
-    name: "clipmenu",
-    packages: &[PackageDefinition::new("clipmenu", PackageManager::Pacman)],
-    tests: &[InstallTest::WhichSucceeds("clipmenud")],
-};
-
 pub static CLIPHIST: Dependency = Dependency {
     name: "cliphist",
     packages: &[PackageDefinition::new("cliphist", PackageManager::Pacman)],

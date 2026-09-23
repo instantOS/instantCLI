@@ -1,8 +1,6 @@
 use anyhow::Result;
 use clap::Subcommand;
 
-use crate::assist::utils::copy_to_clipboard;
-use crate::common::display_server::DisplayServer;
 use crate::menu_utils::{ConfirmResult, FzfWrapper};
 use crate::ui::prelude::*;
 
@@ -33,6 +31,9 @@ pub enum ClipCommands {
     /// Render an entry for the interactive preview pane
     #[command(hide = true)]
     Preview { id: String },
+    /// Capture X11 clipboard changes into cliphist (run by ins-clip-x11.service)
+    #[command(hide = true)]
+    WatchX11,
 }
 
 pub fn handle_clip_command(command: &Option<ClipCommands>, gui: bool, debug: bool) -> Result<()> {
@@ -55,12 +56,12 @@ pub fn handle_clip_command(command: &Option<ClipCommands>, gui: bool, debug: boo
         Some(ClipCommands::Status) => show_status(),
         Some(ClipCommands::Settings) => settings(),
         Some(ClipCommands::Preview { id }) => preview(id),
+        Some(ClipCommands::WatchX11) => super::x11_watch::run(),
     }
 }
 
 fn preview(id: &str) -> Result<()> {
-    let backend = history::ClipBackend::detect()?;
-    let entry = history::find(backend, id)?;
+    let entry = history::find(id)?;
     super::preview::render(&entry)
 }
 
@@ -74,7 +75,7 @@ fn settings() -> Result<()> {
 }
 
 fn list() -> Result<()> {
-    let entries = history::load(history::ClipBackend::detect()?)?;
+    let entries = history::load()?;
     if get_output_format() == OutputFormat::Json {
         println!(
             "{}",
@@ -96,9 +97,8 @@ fn list() -> Result<()> {
 }
 
 fn copy(id: &str) -> Result<()> {
-    let backend = history::ClipBackend::detect()?;
-    let entry = history::find(backend, id)?;
-    copy_to_clipboard(&entry.decode()?, &DisplayServer::detect())?;
+    let entry = history::find(id)?;
+    history::restore(&entry)?;
     emit(
         Level::Success,
         "clip.copied",
@@ -109,9 +109,8 @@ fn copy(id: &str) -> Result<()> {
 }
 
 fn delete(id: &str) -> Result<()> {
-    let backend = history::ClipBackend::detect()?;
-    let entry = history::find(backend, id)?;
-    history::delete(backend, &entry.id)?;
+    let entry = history::find(id)?;
+    history::delete(&entry.id)?;
     emit(
         Level::Success,
         "clip.deleted",
@@ -127,7 +126,7 @@ fn clear(skip_confirmation: bool) -> Result<()> {
     {
         return Ok(());
     }
-    let count = history::clear(history::ClipBackend::detect()?)?;
+    let count = history::clear()?;
     emit(
         Level::Success,
         "clip.cleared",
@@ -149,13 +148,28 @@ fn enable() -> Result<()> {
             ),
             None,
         );
+        warn_about_conflicts(&service::status(backend).conflicts);
     }
     Ok(())
 }
 
+fn warn_about_conflicts(conflicts: &[String]) {
+    if conflicts.is_empty() {
+        return;
+    }
+    emit(
+        Level::Warn,
+        "clip.service.conflicts",
+        &format!(
+            "Other clipboard managers are running ({}). They may take over the clipboard or record duplicate history; consider disabling them.",
+            conflicts.join(", ")
+        ),
+        Some(serde_json::json!({ "conflicts": conflicts })),
+    );
+}
+
 fn disable() -> Result<()> {
-    let backend = history::ClipBackend::detect()?;
-    service::disable(backend)?;
+    service::disable()?;
     emit(
         Level::Success,
         "clip.service.disabled",
@@ -169,7 +183,7 @@ fn show_status() -> Result<()> {
     let backend = history::ClipBackend::detect()?;
     let status = service::status(backend);
     let entries = if status.installed {
-        history::load(backend)?.len()
+        history::load()?.len()
     } else {
         0
     };
@@ -179,6 +193,7 @@ fn show_status() -> Result<()> {
         "enabled": status.enabled,
         "active": status.active,
         "entries": entries,
+        "conflicts": status.conflicts,
     });
     if get_output_format() == OutputFormat::Json {
         println!("{}", serde_json::to_string_pretty(&data)?);
@@ -197,6 +212,7 @@ fn show_status() -> Result<()> {
             if status.installed { "yes" } else { "no" }
         );
         println!("History entries: {entries}");
+        warn_about_conflicts(&status.conflicts);
     }
     Ok(())
 }

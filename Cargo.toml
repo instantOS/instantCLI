@@ -68,6 +68,7 @@ sha1 = "0.10"
 hmac = "0.12"
 zbus = { version = "5", default-features = false, features = ["tokio"] }
 crossbeam-channel = "0.5.16"
+x11rb = { version = "0.14.0", features = ["xfixes"] }
 
 [dev-dependencies]
 serial_test = "3"
