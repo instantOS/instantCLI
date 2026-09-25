@@ -12,6 +12,36 @@ pub struct SaveDirectoryInfo {
     pub total_size: u64,
 }
 
+/// Check whether the total size of files under `path` reaches `threshold`.
+///
+/// Stops walking as soon as the threshold is reached so that pointing the
+/// warning check at a huge tree does not require statting every file. Unlike
+/// [`get_save_directory_info`], hidden files and directories are included,
+/// since game data often lives in dot-directories (Wine prefixes, etc.), and
+/// the skip-hidden behavior of `filter_entry` would otherwise prune those
+/// subtrees entirely. Unreadable entries are skipped: this check is
+/// best-effort and must not fail path selection.
+pub fn path_size_reaches(path: &Path, threshold: u64) -> bool {
+    let mut total = 0u64;
+
+    for entry in WalkDir::new(path).into_iter().filter_map(|e| e.ok()) {
+        if !entry.file_type().is_file() {
+            continue;
+        }
+
+        let Ok(metadata) = entry.metadata() else {
+            continue;
+        };
+
+        total += metadata.len();
+        if total >= threshold {
+            return true;
+        }
+    }
+
+    false
+}
+
 /// Comparison result between snapshot time and local save time
 #[derive(Debug, Clone, PartialEq)]
 pub enum TimeComparison {
@@ -172,4 +202,51 @@ fn is_hidden(entry: &walkdir::DirEntry) -> bool {
         .to_str()
         .map(|s| s.starts_with('.'))
         .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::File;
+    use tempfile::TempDir;
+
+    /// Create a sparse file that reports `len` bytes without occupying disk space
+    fn write_sparse_file(path: &Path, len: u64) {
+        File::create(path)
+            .and_then(|file| file.set_len(len))
+            .expect("failed to create sparse test file");
+    }
+
+    #[test]
+    fn size_check_ignores_small_paths() {
+        let temp = TempDir::new().expect("failed to create temp dir");
+        write_sparse_file(&temp.path().join("save1.dat"), 1024);
+
+        assert!(!path_size_reaches(temp.path(), 1024 * 1024));
+    }
+
+    #[test]
+    fn size_check_reaches_threshold() {
+        let temp = TempDir::new().expect("failed to create temp dir");
+        write_sparse_file(&temp.path().join("huge.sav"), 1024 * 1024);
+
+        assert!(path_size_reaches(temp.path(), 1024 * 1024));
+    }
+
+    #[test]
+    fn size_check_counts_hidden_directories() {
+        let temp = TempDir::new().expect("failed to create temp dir");
+        let hidden_dir = temp.path().join(".wine-prefix");
+        std::fs::create_dir(&hidden_dir).expect("failed to create hidden dir");
+        write_sparse_file(&hidden_dir.join("huge.sav"), 1024 * 1024);
+
+        assert!(path_size_reaches(temp.path(), 1024 * 1024));
+    }
+
+    #[test]
+    fn size_check_handles_missing_paths() {
+        let temp = TempDir::new().expect("failed to create temp dir");
+
+        assert!(!path_size_reaches(&temp.path().join("missing"), 1024));
+    }
 }

@@ -364,48 +364,163 @@ test_unattended_config_parsing() {
 	)
 }
 
+# Run the handoff in a subshell with a stub CLI so exec cannot replace the test.
 test_unattended_launch_command() (
-	local captured_command dummy_config
-	captured_command="$(mktemp)"
+	local dummy_config captured config_contents downloaded_path_file stub_dir output cmd config_path status
 	dummy_config="$(mktemp /tmp/test_q.XXXXXX.toml)"
-	trap 'rm -f "${captured_command}" "${dummy_config}"' EXIT
+	captured="$(mktemp)"
+	config_contents="$(mktemp)"
+	downloaded_path_file="$(mktemp)"
+	stub_dir="$(mktemp -d)"
+	config_path=""
+	trap 'rm -rf "${stub_dir}"; rm -f "${captured}" "${dummy_config}" "${config_contents}" "${downloaded_path_file}"' EXIT
 
-	INSTALL_DIR="/custom/bin"
+	INSTALL_DIR="${stub_dir}"
 	BIN_NAME="ins"
+	export MOCK_CAPTURED="${captured}" MOCK_CONFIG_CONTENTS="${config_contents}" MOCK_EXIT_STATUS=0
+	cat >"${stub_dir}/ins" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" >"$MOCK_CAPTURED"
+while [ "$#" -gt 0 ]; do
+	if [ "$1" = "-f" ]; then
+		cp "$2" "$MOCK_CONFIG_CONTENTS"
+		break
+	fi
+	shift
+done
+exit "$MOCK_EXIT_STATUS"
+EOF
+	chmod +x "${stub_dir}/ins"
 
-	# Subshell with mocked exec
-	(
-		exec() {
-			printf '%s\n' "$*" >"${captured_command}"
-		}
+	launch() (launch_os_installer)
 
-		UNATTENDED_CONFIG="${dummy_config}"
-		DRY_RUN=1
-		OS_INSTALL=1
+	# Unattended dry run passes the questions file through unchanged.
+	UNATTENDED_CONFIG="${dummy_config}"
+	DRY_RUN=1
+	OS_INSTALL=1
+	CLI_ONLY=0
+	rm -f "${captured}"
+	launch >/dev/null
+	assert_equals "arch exec --dry-run -f ${dummy_config}" "$(<"${captured}")"
 
-		if [ -n "$UNATTENDED_CONFIG" ]; then
-			case "$UNATTENDED_CONFIG" in
-			http://* | https://*) ;;
-			*)
-				[ -f "$UNATTENDED_CONFIG" ]
-				UNATTENDED_CONFIG=$(cd "$(dirname "$UNATTENDED_CONFIG")" && pwd)/$(basename "$UNATTENDED_CONFIG")
-				;;
-			esac
+	# The same config without --dry-run drops the flag.
+	DRY_RUN=0
+	rm -f "${captured}"
+	launch >/dev/null
+	assert_equals "arch exec -f ${dummy_config}" "$(<"${captured}")"
 
-			if [ "$DRY_RUN" -eq 1 ]; then
-				exec "$INSTALL_DIR/$BIN_NAME" arch exec --dry-run -f "$UNATTENDED_CONFIG"
-			else
-				exec "$INSTALL_DIR/$BIN_NAME" arch exec -f "$UNATTENDED_CONFIG"
+	# Without a config the interactive installer is launched instead.
+	UNATTENDED_CONFIG=""
+	rm -f "${captured}"
+	launch >/dev/null
+	assert_equals "arch install" "$(<"${captured}")"
+
+	# A remote config is downloaded, and the downloaded file is what gets handed off.
+	UNATTENDED_CONFIG="https://example.invalid/questions.toml"
+	curl() {
+		local dest=""
+		while [ $# -gt 0 ]; do
+			if [ "$1" = "-o" ]; then
+				shift
+				dest=$1
 			fi
-		fi
-	)
-
-	cmd="$(<"${captured_command}")"
-	if [[ "${cmd}" == *"--trust-config"* ]]; then
-		echo "Unattended launch should not use non-existent --trust-config flag" >&2
+			shift
+		done
+		printf '%s\n' "${dest}" >"${downloaded_path_file}"
+		printf 'mode = "unattended"\n' >"${dest}"
+	}
+	rm -f "${captured}"
+	launch >/dev/null
+	cmd="$(<"${captured}")"
+	config_path="$(<"${downloaded_path_file}")"
+	assert_equals "arch exec -f ${config_path}" "${cmd}"
+	if [[ "$(<"${config_contents}")" != 'mode = "unattended"' ]]; then
+		echo "Handed off config does not contain the downloaded content" >&2
 		return 1
 	fi
-	assert_equals "/custom/bin/ins arch exec --dry-run -f ${dummy_config}" "${cmd}"
+	if [[ -e "${config_path}" ]]; then
+		echo "Downloaded config was not removed after the installer exited" >&2
+		return 1
+	fi
+	DRY_RUN=1
+	launch >/dev/null
+	config_path="$(<"${downloaded_path_file}")"
+	assert_equals "arch exec --dry-run -f ${config_path}" "$(<"${captured}")"
+	if [[ -e "${config_path}" ]]; then
+		echo "Downloaded dry-run config was not removed" >&2
+		return 1
+	fi
+	DRY_RUN=0
+
+	# Cleanup also runs when the CLI fails.
+	MOCK_EXIT_STATUS=23
+	export MOCK_EXIT_STATUS
+	if launch >/dev/null; then
+		echo "A failed OS installer unexpectedly succeeded" >&2
+		return 1
+	else
+		status=$?
+	fi
+	assert_equals 23 "${status}"
+	config_path="$(<"${downloaded_path_file}")"
+	if [[ -e "${config_path}" ]]; then
+		echo "Downloaded config was not removed after installer failure" >&2
+		return 1
+	fi
+	MOCK_EXIT_STATUS=0
+	export MOCK_EXIT_STATUS
+
+	# A failed download leaves no temporary config or CLI handoff.
+	curl() {
+		while [ "$#" -gt 0 ]; do
+			if [ "$1" = "-o" ]; then
+				shift
+				printf '%s\n' "$1" >"${downloaded_path_file}"
+				printf 'partial download\n' >"$1"
+				return 22
+			fi
+			shift
+		done
+	}
+	rm -f "${captured}"
+	if launch >/dev/null 2>&1; then
+		echo "A failed config download unexpectedly succeeded" >&2
+		return 1
+	fi
+	config_path="$(<"${downloaded_path_file}")"
+	if [[ -e "${config_path}" || -e "${captured}" ]]; then
+		echo "A failed download left a config or launched the installer" >&2
+		return 1
+	fi
+	unset -f curl
+
+	# A missing local config must abort before any handoff.
+	UNATTENDED_CONFIG="/nonexistent/instant_questions.toml"
+	rm -f "${captured}"
+	if output="$(launch 2>&1)"; then
+		echo "Launching with a missing config unexpectedly succeeded" >&2
+		return 1
+	fi
+	if [[ "${output}" != *"configuration file not found"* ]]; then
+		echo "Missing config did not report the expected error" >&2
+		echo "Actual: ${output}" >&2
+		return 1
+	fi
+	if [[ -e "${captured}" ]]; then
+		echo "A missing config still handed off to the OS installer" >&2
+		return 1
+	fi
+
+	# CLI-only mode must never launch, even with a config present.
+	UNATTENDED_CONFIG="${dummy_config}"
+	OS_INSTALL=0
+	CLI_ONLY=1
+	rm -f "${captured}"
+	launch >/dev/null
+	if [[ -e "${captured}" ]]; then
+		echo "CLI-only mode unexpectedly launched the OS installer" >&2
+		return 1
+	fi
 )
 
 test_release_selection
