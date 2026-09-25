@@ -94,8 +94,13 @@ fn install_aur_with_helper(helper: &str, packages: &[&str]) -> Result<()> {
 fn is_flathub_configured() -> bool {
     cmd!("flatpak", "remotes", "--columns=name")
         .read()
-        .map(|output| output.lines().any(|line| line.trim() == "flathub"))
+        .map(|output| flathub_remote_listed(&output))
         .unwrap_or(false)
+}
+
+/// Whether `flatpak remotes --columns=name` output lists the flathub remote.
+fn flathub_remote_listed(output: &str) -> bool {
+    output.lines().any(|line| line.trim() == "flathub")
 }
 
 /// Set up Flathub remote.
@@ -169,9 +174,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_is_flathub_configured_on_system_without_flatpak() {
-        // This test just ensures the function doesn't panic
-        // The actual result depends on the system
-        let _ = is_flathub_configured();
+    fn flathub_remote_is_recognized() {
+        assert!(flathub_remote_listed("flathub"));
+        assert!(flathub_remote_listed("fedora\n  flathub  \narch\n"));
+        assert!(flathub_remote_listed("\tflathub\n"));
+    }
+
+    #[test]
+    fn non_flathub_remotes_are_not_recognized() {
+        assert!(!flathub_remote_listed(""));
+        assert!(!flathub_remote_listed("\n\n"));
+        assert!(!flathub_remote_listed("fedora\narch\n"));
+        // Substrings and similar names must not count as flathub.
+        assert!(!flathub_remote_listed("myflathub\nflathub-mirror\n"));
     }
 }

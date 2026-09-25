@@ -61,11 +61,7 @@ impl GpuKind {
             }
             // VA-API for Mesa ships inside (lib32-)mesa since the Mesa
             // consolidation; the old libva-mesa-driver names are gone.
-            GpuKind::Amd => vec![
-                "vulkan-radeon",
-                "lib32-vulkan-radeon",
-                "lib32-mesa",
-            ],
+            GpuKind::Amd => vec!["vulkan-radeon", "lib32-vulkan-radeon", "lib32-mesa"],
             GpuKind::Intel => vec!["vulkan-intel", "lib32-vulkan-intel", "intel-media-driver"],
             GpuKind::Other(_) => vec!["mesa", "lib32-mesa"],
         }
