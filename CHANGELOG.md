@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.21](https://github.com/instantOS/instantCLI/compare/v0.14.20...v0.14.21) - 2026-09-25
+
+### Fixed
+
+- fix ghostty image previews
+- instantWM wayland stuff
+- freeze screenshot on other backends
+
+### Other
+
+- update instantwmctl syntax
+- Handle stale session environments in clipboard services
+- Add X11 clipboard capture with cliphist
+- bluetooth arch install gate
+- make freeze borderless
+
 ## [0.14.20](https://github.com/instantOS/instantCLI/compare/v0.14.19...v0.14.20) - 2026-09-20
 
 ### Added
