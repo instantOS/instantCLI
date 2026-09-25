@@ -6,6 +6,7 @@ source "${SCRIPT_DIR}/helpers.sh"
 
 main() {
 	if ! require_restic; then
+		echo "Skipping game repository test because restic is not installed."
 		return 0
 	fi
 	setup_test_env
