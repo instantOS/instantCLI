@@ -1,6 +1,6 @@
 use crate::assist::{AssistInternalCommand, assist_command_argv};
 use crate::common::compositor::{CompositorType, niri};
-use crate::common::instantwmctl;
+use crate::common::instantwm;
 use crate::menu::client::HostedMenuClient;
 use crate::menu::protocol::SliderRequest;
 use crate::settings::store::{IntSettingKey, SettingsStore};
@@ -30,7 +30,7 @@ pub fn run_mouse_speed_slider(
         }
         CompositorType::Gnome => {}
         CompositorType::InstantWM => {
-            instantwmctl::run(["mouse", "accel-profile", "flat"])
+            instantwm::set_accel_profile(instantwm::POINTER, "flat")
                 .context("Failed to set mouse accel profile to flat")?;
         }
         CompositorType::Niri => {}
@@ -59,7 +59,10 @@ pub fn run_mouse_speed_slider(
         // Map -1.0..1.0 to 0..100
         // speed = (value / 50.0) - 1.0
         // value = (speed + 1.0) * 50.0
-        ((current_speed + 1.0) * 50.0) as i64
+        // Round: the round-trip through f64 lands a hair off the stored step
+        // (35 -> -0.30000000000000004), and truncating would drop the slider
+        // one notch below where the user left it.
+        (((current_speed + 1.0) * 50.0).round()) as i64
     };
 
     let client = HostedMenuClient::new();
@@ -122,8 +125,7 @@ pub fn set_mouse_speed(value: i64) -> Result<()> {
             set_x11_mouse_speed(speed)?;
         }
         CompositorType::InstantWM => {
-            let speed_arg = speed.to_string();
-            instantwmctl::run(["mouse", "speed", "--", speed_arg.as_str()])
+            instantwm::set_pointer_accel(instantwm::POINTER, speed)
                 .context("Failed to set mouse speed via instantwmctl")?;
         }
         CompositorType::Niri => {
@@ -147,17 +149,8 @@ pub fn set_mouse_speed(value: i64) -> Result<()> {
 }
 
 pub fn get_instantwm_mouse_speed() -> Result<f64> {
-    if let Ok(output) = instantwmctl::output(["mouse", "list"]) {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        for line in stdout.lines() {
-            if line.contains("pointer_accel:")
-                && let Some(val_str) = line.split("Some(").nth(1)
-                && let Some(num_str) = val_str.split(')').next()
-                && let Ok(speed) = num_str.trim().parse::<f64>()
-            {
-                return Ok(speed);
-            }
-        }
+    if let Some(speed) = instantwm::pointer_accel()? {
+        return Ok(speed);
     }
 
     if let Ok(store) = SettingsStore::load()
@@ -311,8 +304,7 @@ pub fn set_scroll_factor(value: i64) -> Result<()> {
 
     match compositor {
         CompositorType::InstantWM => {
-            let factor_arg = factor.to_string();
-            instantwmctl::run(["mouse", "scroll-factor", factor_arg.as_str()])
+            instantwm::set_scroll_factor(instantwm::POINTER, factor)
                 .context("Failed to set scroll factor via instantwmctl")?;
         }
         CompositorType::Sway => {
@@ -331,24 +323,4 @@ pub fn set_scroll_factor(value: i64) -> Result<()> {
     }
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_parse_instantwm_mouse_speed() {
-        let sample_output =
-            "[*]\ntap: Some(Enabled)\npointer_accel: Some(-0.400000)\nscroll_factor: Some(1.0)\n";
-        let mut speed = None;
-        for line in sample_output.lines() {
-            if line.contains("pointer_accel:")
-                && let Some(val_str) = line.split("Some(").nth(1)
-                && let Some(num_str) = val_str.split(')').next()
-                && let Ok(s) = num_str.trim().parse::<f64>()
-            {
-                speed = Some(s);
-            }
-        }
-        assert_eq!(speed, Some(-0.4));
-    }
 }

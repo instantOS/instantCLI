@@ -32,8 +32,9 @@ pub(crate) fn render_mouse_sensitivity_preview() -> Result<String> {
             }
             _ => 0.0,
         };
-        // Map -1.0..1.0 to 0..100
-        ((speed + 1.0) * 50.0) as i64
+        // Map -1.0..1.0 to 0..100, rounding away the f64 round-trip error so a
+        // detected speed lands on the step the user actually set.
+        (((speed + 1.0) * 50.0).round()) as i64
     };
 
     let display_value = if store.contains(MOUSE_SENSITIVITY_KEY.key) {

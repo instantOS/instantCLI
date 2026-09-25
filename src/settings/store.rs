@@ -302,7 +302,10 @@ mod tests {
 
         // Set some values with dotted keys
         settings.set("appearance.animations", toml::Value::Boolean(true));
-        settings.set("desktop.layout", toml::Value::String("tile".to_string()));
+        settings.set(
+            "mouse.accel_profile",
+            toml::Value::String("flat".to_string()),
+        );
         settings.set("printers.services", toml::Value::Boolean(false));
         settings.set("desktop.clipboard.enabled", toml::Value::Boolean(true));
 
@@ -312,8 +315,8 @@ mod tests {
         // Verify it creates proper hierarchical structure
         assert!(toml_str.contains("[appearance]"));
         assert!(toml_str.contains("animations = true"));
-        assert!(toml_str.contains("[desktop]"));
-        assert!(toml_str.contains("layout = \"tile\""));
+        assert!(toml_str.contains("[mouse]"));
+        assert!(toml_str.contains("accel_profile = \"flat\""));
         assert!(toml_str.contains("[printers]"));
         assert!(toml_str.contains("services = false"));
 
@@ -335,9 +338,12 @@ mod tests {
         assert_eq!(value.as_bool(), Some(true));
 
         // Test setting and getting string
-        settings.set("desktop.layout", toml::Value::String("grid".to_string()));
-        let value = settings.get("desktop.layout").unwrap();
-        assert_eq!(value.as_str(), Some("grid"));
+        settings.set(
+            "mouse.accel_profile",
+            toml::Value::String("adaptive".to_string()),
+        );
+        let value = settings.get("mouse.accel_profile").unwrap();
+        assert_eq!(value.as_str(), Some("adaptive"));
 
         // Test deeply nested value
         settings.set("a.b.c.d", toml::Value::Integer(42));
@@ -378,19 +384,19 @@ mod tests {
 
         let mut store = SettingsStore::load_from_path(path.clone()).unwrap();
 
-        let key = StringSettingKey::new("desktop.layout", "tile");
+        let key = StringSettingKey::new("mouse.accel_profile", "flat");
 
         // Test default value
-        assert_eq!(store.string(key), "tile");
+        assert_eq!(store.string(key), "flat");
 
         // Set and verify
-        store.set_string(key, "grid");
-        assert_eq!(store.string(key), "grid");
+        store.set_string(key, "adaptive");
+        assert_eq!(store.string(key), "adaptive");
 
         // Save and reload
         store.save().unwrap();
         let reloaded = SettingsStore::load_from_path(path).unwrap();
-        assert_eq!(reloaded.string(key), "grid");
+        assert_eq!(reloaded.string(key), "adaptive");
     }
 
     #[test]
@@ -423,8 +429,8 @@ mod tests {
 [appearance]
 animations = true
 
-[desktop]
-layout = "monocle"
+[mouse]
+accel_profile = "adaptive"
 "#;
         fs::write(temp_file.path(), hierarchical_content).unwrap();
 
@@ -434,17 +440,17 @@ layout = "monocle"
         let store = SettingsStore::load_from_path(path.clone()).unwrap();
 
         let bool_key = BoolSettingKey::new("appearance.animations", false);
-        let string_key = StringSettingKey::new("desktop.layout", "tile");
+        let string_key = StringSettingKey::new("mouse.accel_profile", "flat");
 
         assert!(store.bool(bool_key));
-        assert_eq!(store.string(string_key), "monocle");
+        assert_eq!(store.string(string_key), "adaptive");
 
         // Save should maintain hierarchical format
         store.save().unwrap();
 
         let saved_content = fs::read_to_string(&path).unwrap();
         assert!(saved_content.contains("[appearance]"));
-        assert!(saved_content.contains("[desktop]"));
+        assert!(saved_content.contains("[mouse]"));
         assert!(!saved_content.contains("[values]"));
         assert!(!saved_content.contains("\"appearance.animations\""));
     }

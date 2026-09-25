@@ -90,7 +90,7 @@ impl Category {
             Category::Desktop => CategoryMeta {
                 id: "desktop",
                 title: "Desktop",
-                description: "Desktop behaviour, window management, and layout preferences.",
+                description: "Clipboard history and screen recording preferences.",
                 icon: NerdFont::Desktop,
                 color: colors::MAUVE,
                 search_keywords: &[],

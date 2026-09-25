@@ -16,6 +16,7 @@ use crate::settings::store::StringSettingKey;
 use crate::ui::catppuccin::{colors, format_icon};
 use crate::ui::prelude::NerdFont;
 use crate::ui::preview::PreviewBuilder;
+use serde::Deserialize;
 use serde_json::Value;
 use which::which;
 
@@ -363,46 +364,29 @@ pub fn current_sway_layout_names() -> Option<Vec<String>> {
     if names.is_empty() { None } else { Some(names) }
 }
 
+/// Layouts instantWM currently has configured, as `name(variant)` codes.
 pub fn current_instantwm_layouts() -> Option<Vec<String>> {
-    let output = instantwmctl::output(["keyboard", "list"]).ok()?;
+    let layouts: Vec<InstantWmLayout> = instantwmctl::json(["keyboard", "list"]).ok()?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut layouts = Vec::new();
-    for line in stdout.lines() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        // The active row is marked with a leading `*`; strip it and any
-        // padding regardless of how instantwmctl aligned the columns.
-        let layout = line.trim_start_matches(['*', ' ']);
-        if let Some(code) = parse_instantwm_list_code(layout) {
-            layouts.push(code);
-        }
-    }
-
-    if layouts.is_empty() {
-        None
-    } else {
-        Some(layouts)
-    }
+    let codes: Vec<String> = layouts.iter().map(layout_code).collect();
+    if codes.is_empty() { None } else { Some(codes) }
 }
 
-/// instantwmctl prints variants as `name (variant)`; restore the stored
-/// `name(variant)` spelling so variants survive the round-trip.
-fn parse_instantwm_list_code(line: &str) -> Option<String> {
-    let trimmed = line.trim();
-    if let Some(inner) = trimmed.strip_suffix(')')
-        && let Some((name, variant)) = inner.rsplit_once('(')
-    {
-        let name = name.trim();
-        let variant = variant.trim();
-        if !name.is_empty() && !variant.is_empty() {
-            return Some(format!("{name}({variant})"));
-        }
-    }
+/// One entry of `instantwmctl --json keyboard list`.
+#[derive(Debug, Clone, Deserialize)]
+struct InstantWmLayout {
+    name: String,
+    #[serde(default)]
+    variant: Option<String>,
+}
 
-    line.split_whitespace().next().map(str::to_string)
+/// Render an entry as the stored `name(variant)` spelling, so variants survive
+/// the round-trip through `instantwmctl keyboard set`.
+fn layout_code(layout: &InstantWmLayout) -> String {
+    match layout.variant.as_deref() {
+        Some(variant) if !variant.is_empty() => format!("{}({variant})", layout.name),
+        _ => layout.name.clone(),
+    }
 }
 
 pub fn current_niri_layouts() -> Option<Vec<String>> {
@@ -619,42 +603,33 @@ mod tests {
     }
 
     #[test]
-    fn instantwm_list_codes_restore_variant_parentheses() {
+    fn instantwm_layout_codes_restore_variant_parentheses() {
+        fn layout(name: &str, variant: Option<&str>) -> InstantWmLayout {
+            InstantWmLayout {
+                name: name.to_string(),
+                variant: variant.map(str::to_string),
+            }
+        }
+
+        assert_eq!(layout_code(&layout("us", None)), "us");
         assert_eq!(
-            parse_instantwm_list_code("de (nodeadkeys)").as_deref(),
-            Some("de(nodeadkeys)")
+            layout_code(&layout("de", Some("nodeadkeys"))),
+            "de(nodeadkeys)"
         );
-        assert_eq!(parse_instantwm_list_code("us").as_deref(), Some("us"));
-        assert_eq!(
-            parse_instantwm_list_code("de (intl)").as_deref(),
-            Some("de(intl)")
-        );
-        // Unbalanced rows fall back to the first whitespace token.
-        assert_eq!(
-            parse_instantwm_list_code("German (T3 (x").as_deref(),
-            Some("German")
-        );
+        assert_eq!(layout_code(&layout("de", Some("intl"))), "de(intl)");
+        // An empty variant is the same as none.
+        assert_eq!(layout_code(&layout("de", Some(""))), "de");
     }
 
     #[test]
-    fn instantwm_active_marker_is_stripped_before_parsing() {
-        let marked = "*us".trim_start_matches(['*', ' ']);
-        assert_eq!(parse_instantwm_list_code(marked).as_deref(), Some("us"));
+    fn instantwm_layout_codes_are_read_from_the_json_payload() {
+        let layouts: Vec<InstantWmLayout> = serde_json::from_str(
+            r#"[{"name":"us","variant":null,"is_active":true},{"name":"de","variant":"nodeadkeys","is_active":false}]"#,
+        )
+        .expect("keyboard list payload");
 
-        let marked_variant = "* de (intl)".trim_start_matches(['*', ' ']);
-        assert_eq!(
-            parse_instantwm_list_code(marked_variant).as_deref(),
-            Some("de(intl)")
-        );
-        // Tolerant of multiple spaces and tabs between code and variant.
-        assert_eq!(
-            parse_instantwm_list_code("de   (nodeadkeys)").as_deref(),
-            Some("de(nodeadkeys)")
-        );
-        assert_eq!(
-            parse_instantwm_list_code("de\t(nodeadkeys)").as_deref(),
-            Some("de(nodeadkeys)")
-        );
+        let codes: Vec<String> = layouts.iter().map(layout_code).collect();
+        assert_eq!(codes, vec!["us".to_string(), "de(nodeadkeys)".to_string()]);
     }
 
     #[test]

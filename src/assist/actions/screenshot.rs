@@ -8,6 +8,7 @@ use crate::assist::utils::{
 use crate::common::compositor::CompositorType;
 use crate::common::compositor::sway;
 use crate::common::display_server::DisplayServer;
+use crate::common::instantwmctl;
 use crate::common::paths;
 
 pub fn screenshot_annotate() -> Result<()> {
@@ -417,16 +418,15 @@ pub fn screenshot_freeze() -> Result<()> {
     // tiling the overlay. Best-effort: plain i3 and other WMs don't know
     // this command, where feh is on its own.
     if display_server.is_x11() || matches!(compositor, CompositorType::InstantWM) {
-        let _ = Command::new("instantwmctl")
-            .args([
-                "pending-tmp-rule",
-                "add",
-                "--float",
-                "--borderless",
-                "--class",
-                FREEZE_WINDOW_CLASS,
-            ])
-            .status();
+        let _ = instantwmctl::run([
+            "pending-tmp-rule",
+            "add",
+            "--floating",
+            "true",
+            "--borderless",
+            "--class",
+            FREEZE_WINDOW_CLASS,
+        ]);
     }
 
     Command::new("feh")
