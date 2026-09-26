@@ -12,7 +12,7 @@ permissions:
 jobs:
   build:
     name: Build release artifacts
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     container:
       image: archlinux:latest
     env:
@@ -96,9 +96,9 @@ jobs:
             artifacts/ins-${{ steps.vars.outputs.version }}-x86_64.AppImage.sha256
   cross-compile:
     name: Cross-compile ${{ matrix.target }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     container:
-      image: ubuntu:24.04
+      image: ubuntu:26.04
     strategy:
       fail-fast: false
       matrix:
@@ -230,7 +230,7 @@ jobs:
             artifacts/${{ matrix.pkg }}-v${{ steps.vars.outputs.version }}.tgz.sha256
   pkgbuild:
     name: Build Arch package
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     container:
       image: archlinux:latest
     steps:
@@ -279,9 +279,9 @@ jobs:
           path: artifacts/
   deb:
     name: Build Debian package
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     container:
-      image: ubuntu:24.04
+      image: ubuntu:26.04
     needs: build
     steps:
       - name: Checkout
@@ -326,9 +326,9 @@ jobs:
           path: artifacts/
   release:
     name: Publish GitHub release
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     container:
-      image: ubuntu:24.04
+      image: ubuntu:26.04
     needs:
       - build
       - cross-compile
