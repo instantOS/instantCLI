@@ -50,6 +50,7 @@ impl DataKey for GeoLocationKey {
 }
 
 /// Shares one lookup across every question that wants a suggestion.
+//BOZO: is this a hack? Should this be done more idiomatically? There are other LazyLock stuff in this codebase. Inconsistent?
 static GEO_CACHE: tokio::sync::OnceCell<GeoLocation> = tokio::sync::OnceCell::const_new();
 
 /// Data provider for [`GeoLocationKey`].

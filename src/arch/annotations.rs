@@ -133,6 +133,7 @@ pub fn annotate_list<T: FzfSelectable + Clone + Ord>(
 /// Curated locale names. Checked before the dynamic i18n lookup because these
 /// read better than the raw `LC_IDENTIFICATION` titles, and they keep working
 /// on systems without `/usr/share/i18n`.
+//BOZO: is this a hack?
 static CURATED_LOCALE_NAMES: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
     HashMap::from([
         ("en_US.UTF-8", "English (United States)"),
@@ -199,6 +200,7 @@ fn dynamic_locale_display_name(locale: &str) -> Option<String> {
 /// Map a console keymap name to its XKB layout code, tolerating the naming
 /// differences between the two registries (`de-latin1` -> `de`,
 /// `uk` -> `gb`, `jp106` -> `jp`, `it2` -> `it`, ...).
+//BOZO: should this use better types?
 fn console_keymap_to_xkb(keymap: &str, layouts: &HashMap<String, String>) -> Option<String> {
     /// Console keymaps whose XKB counterpart is not derivable by rule.
     const ALIASES: &[(&str, &str)] = &[("uk", "gb"), ("jp106", "jp"), ("sv-latin1", "se")];
