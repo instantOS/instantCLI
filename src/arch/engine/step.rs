@@ -191,7 +191,8 @@ pub trait WizardStep: Send + Sync {
         true
     }
 
-    /// Returns a list of data providers required by this step.
+    /// Returns providers for data this step consumes. Every key a provider
+    /// publishes must appear in this step's required or optional data keys.
     fn data_providers(&self) -> Vec<Box<dyn AsyncDataProvider>> {
         vec![]
     }

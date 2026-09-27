@@ -386,42 +386,44 @@ impl DataKey for ProviderReadyKey {
     const NAME: &'static str = "provider_ready";
 }
 
-struct ProviderSkipKey;
+struct RelevanceFlagKey;
 
-impl DataKey for ProviderSkipKey {
+impl DataKey for RelevanceFlagKey {
     type Value = bool;
-    const NAME: &'static str = "provider_skip";
+    const NAME: &'static str = "relevance_flag";
 }
 
-struct SkippingProvider;
+/// Test fixture for provider data that makes a question irrelevant, like a
+/// failed mirror-region fetch does in the real wizard.
+struct RelevanceFlagProvider;
 
 #[async_trait::async_trait]
-impl AsyncDataProvider for SkippingProvider {
+impl AsyncDataProvider for RelevanceFlagProvider {
     fn publishes(&self) -> Vec<KeyId> {
-        vec![
-            KeyId::of::<ProviderSkipKey>(),
-            KeyId::of::<ProviderReadyKey>(),
-        ]
+        vec![KeyId::of::<RelevanceFlagKey>()]
     }
 
     async fn provide(&self, context: &InstallContext) -> Result<()> {
         tokio::task::yield_now().await;
-        context.set::<ProviderSkipKey>(true);
-        context.set::<ProviderReadyKey>(true);
+        context.set::<RelevanceFlagKey>(true);
         Ok(())
     }
 }
 
-struct ProviderSkippedQuestion;
+struct ProviderRelevanceQuestion;
 
 #[async_trait::async_trait]
-impl WizardStep for ProviderSkippedQuestion {
+impl WizardStep for ProviderRelevanceQuestion {
     fn id(&self) -> StepId {
         StepId::MirrorRegion
     }
 
+    fn optional_data_keys(&self) -> Vec<KeyId> {
+        vec![KeyId::of::<RelevanceFlagKey>()]
+    }
+
     fn should_ask(&self, context: &InstallContext) -> bool {
-        !context.get::<ProviderSkipKey>().unwrap_or(false)
+        !context.get::<RelevanceFlagKey>().unwrap_or(false)
     }
 
     async fn run(&self, _context: &InstallContext) -> Result<StepOutcome> {
@@ -429,7 +431,7 @@ impl WizardStep for ProviderSkippedQuestion {
     }
 
     fn data_providers(&self) -> Vec<Box<dyn AsyncDataProvider>> {
-        vec![Box::new(SkippingProvider)]
+        vec![Box::new(RelevanceFlagProvider)]
     }
 }
 
@@ -544,9 +546,8 @@ async fn provider_failures_return_an_error_instead_of_waiting_forever() {
 
 #[tokio::test]
 async fn provider_can_make_a_selected_question_irrelevant() {
-    // This step declares no data keys, so its attached provider must be
-    // awaited by scope rather than by published-key matching.
-    let mut engine = WizardEngine::new(vec![Box::new(ProviderSkippedQuestion)]).unwrap();
+    // The provider's optional status must resolve before relevance is checked.
+    let mut engine = WizardEngine::new(vec![Box::new(ProviderRelevanceQuestion)]).unwrap();
     let mut providers = engine.start_providers().unwrap();
 
     assert_eq!(engine.find_next_step_index(), Some(0));
@@ -559,7 +560,7 @@ async fn provider_can_make_a_selected_question_irrelevant() {
 
 #[tokio::test]
 async fn settling_providers_removes_an_answer_that_becomes_irrelevant() {
-    let mut engine = WizardEngine::new(vec![Box::new(ProviderSkippedQuestion)]).unwrap();
+    let mut engine = WizardEngine::new(vec![Box::new(ProviderRelevanceQuestion)]).unwrap();
     engine
         .context
         .set_answer(StepId::MirrorRegion, "Germany".to_string());
@@ -647,7 +648,7 @@ async fn a_declaring_step_waits_for_the_shared_source_that_feeds_it() {
 }
 
 #[tokio::test]
-async fn a_shared_source_failure_blocks_required_but_not_optional_consumers() {
+async fn a_shared_source_failure_blocks_required_but_not_optional_data() {
     struct FailingSharedSource;
 
     #[async_trait::async_trait]
@@ -667,19 +668,57 @@ async fn a_shared_source_failure_blocks_required_but_not_optional_consumers() {
         .with_data_sources(vec![Box::new(FailingSharedSource)]);
     let mut providers = engine.start_providers().unwrap();
 
-    for consumer in [StepId::MirrorRegion, StepId::Locale] {
+    for _ in 0..2 {
         let error = providers
-            .finish_tasks_for(consumer, &[key], &[key])
+            .finish_tasks_for(&[key], &[key])
             .await
             .unwrap_err();
         assert!(error.to_string().contains("shared source failed"));
     }
 
     // The same failed source only supplies a suggestion to this consumer.
-    providers
-        .finish_tasks_for(StepId::Hostname, &[], &[key])
-        .await
-        .unwrap();
+    providers.finish_tasks_for(&[], &[key]).await.unwrap();
+}
+
+#[tokio::test]
+async fn an_attached_provider_must_publish_only_declared_keys() {
+    struct UndeclaredProvider;
+
+    #[async_trait::async_trait]
+    impl AsyncDataProvider for UndeclaredProvider {
+        fn publishes(&self) -> Vec<KeyId> {
+            vec![KeyId::of::<RelevanceFlagKey>()]
+        }
+
+        async fn provide(&self, _context: &InstallContext) -> Result<()> {
+            panic!("an invalid provider must not run")
+        }
+    }
+
+    struct UndeclaredStep;
+
+    #[async_trait::async_trait]
+    impl WizardStep for UndeclaredStep {
+        fn id(&self) -> StepId {
+            StepId::MirrorRegion
+        }
+
+        fn data_providers(&self) -> Vec<Box<dyn AsyncDataProvider>> {
+            vec![Box::new(UndeclaredProvider)]
+        }
+
+        async fn run(&self, _context: &InstallContext) -> Result<StepOutcome> {
+            panic!("an invalid step must not run")
+        }
+    }
+
+    let mut engine = WizardEngine::new(vec![Box::new(UndeclaredStep)]).unwrap();
+    let error = engine.start_providers().err().unwrap();
+    assert!(
+        error
+            .to_string()
+            .contains("undeclared data key relevance_flag")
+    );
 }
 
 #[tokio::test]
@@ -713,6 +752,9 @@ async fn two_providers_claiming_one_slot_are_rejected_before_running() {
         fn id(&self) -> StepId {
             StepId::Disk
         }
+        fn required_data_keys(&self) -> Vec<KeyId> {
+            vec![KeyId::of::<ProviderReadyKey>()]
+        }
         fn data_providers(&self) -> Vec<Box<dyn AsyncDataProvider>> {
             vec![Box::new(ClashingProvider)]
         }
@@ -726,6 +768,9 @@ async fn two_providers_claiming_one_slot_are_rejected_before_running() {
     impl WizardStep for SecondConsumer {
         fn id(&self) -> StepId {
             StepId::SwapPartition
+        }
+        fn required_data_keys(&self) -> Vec<KeyId> {
+            vec![KeyId::of::<ProviderReadyKey>()]
         }
         fn data_providers(&self) -> Vec<Box<dyn AsyncDataProvider>> {
             vec![Box::new(ClashingProvider)]
@@ -741,7 +786,7 @@ async fn two_providers_claiming_one_slot_are_rejected_before_running() {
     let error = engine.start_providers().err().unwrap();
     let message = error.to_string();
     assert!(message.contains("provider_ready"));
-    assert!(message.contains("both Step(Disk) and Step(SwapPartition)"));
+    assert!(message.contains("both step Disk and step SwapPartition"));
 }
 
 #[tokio::test]

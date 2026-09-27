@@ -370,9 +370,10 @@ impl WizardStep for MirrorRegionQuestion {
     }
 
     fn required_data_keys(&self) -> Vec<crate::arch::engine::KeyId> {
-        vec![crate::arch::engine::KeyId::of::<
-            crate::arch::mirrors::MirrorRegionsKey,
-        >()]
+        vec![
+            crate::arch::engine::KeyId::of::<crate::arch::mirrors::MirrorRegionsKey>(),
+            crate::arch::engine::KeyId::of::<crate::arch::mirrors::MirrorRegionsFetchFailed>(),
+        ]
     }
 
     /// Skip this question if mirror regions fetch failed.
@@ -422,9 +423,12 @@ impl WizardStep for MirrorRegionQuestion {
     }
 
     /// The region is preselected from the detected country, which is a shared
-    /// input rather than this step's own data.
+    /// input. Region codes are a best-effort output of this step's provider.
     fn optional_data_keys(&self) -> Vec<crate::arch::engine::KeyId> {
-        vec![crate::arch::engine::KeyId::of::<GeoLocationKey>()]
+        vec![
+            crate::arch::engine::KeyId::of::<GeoLocationKey>(),
+            crate::arch::engine::KeyId::of::<crate::arch::mirrors::MirrorRegionCodesKey>(),
+        ]
     }
 
     fn preselect_answer(&self, context: &InstallContext) -> Option<String> {

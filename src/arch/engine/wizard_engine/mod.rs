@@ -113,70 +113,38 @@ enum FinalReviewResult {
 
 struct ProviderRuntime {
     tasks: Vec<ProviderTask>,
-    failures_by_question: HashMap<super::StepId, String>,
     failures_by_key: HashMap<KeyId, String>,
 }
 
-#[derive(Clone, Copy, Debug)]
-enum ProviderScope {
-    /// Always awaited when the attached step is reached.
-    Step(super::StepId),
-    /// Awaited when a step declares any published key.
-    Shared,
-}
-
 struct ProviderTask {
-    scope: ProviderScope,
-    /// Slots this provider claims to publish, used to decide which tasks a
-    /// step must wait for.
     publishes: Vec<KeyId>,
     handle: tokio::task::JoinHandle<std::result::Result<(), String>>,
 }
 
 impl ProviderTask {
-    fn needed_by(&self, question_id: super::StepId, declared: &[KeyId]) -> bool {
-        match self.scope {
-            ProviderScope::Step(owner) => owner == question_id,
-            ProviderScope::Shared => self.publishes.iter().any(|key| declared.contains(key)),
-        }
+    fn needed_by(&self, declared: &[KeyId]) -> bool {
+        self.publishes.iter().any(|key| declared.contains(key))
     }
 }
 
 struct PendingProvider {
-    scope: ProviderScope,
+    source: String,
     publishes: Vec<KeyId>,
     provider: Box<dyn AsyncDataProvider>,
 }
 
 impl ProviderRuntime {
-    fn has_tasks_for(&self, question_id: super::StepId, declared: &[KeyId]) -> bool {
-        self.tasks
-            .iter()
-            .any(|task| task.needed_by(question_id, declared))
+    fn has_tasks_for(&self, declared: &[KeyId]) -> bool {
+        self.tasks.iter().any(|task| task.needed_by(declared))
     }
 
-    /// Resolve every task a step is waiting on: the ones it owns, plus any
-    /// wizard-level source publishing a slot it declares (required or
-    /// optional). Shared sources are therefore awaited lazily, by the first
-    /// step that declares them, rather than all up front.
-    async fn finish_tasks_for(
-        &mut self,
-        question_id: super::StepId,
-        required: &[KeyId],
-        declared: &[KeyId],
-    ) -> Result<()> {
-        while let Some(index) = self
-            .tasks
-            .iter()
-            .position(|task| task.needed_by(question_id, declared))
-        {
+    /// Resolve providers publishing a slot this step declares.
+    async fn finish_tasks_for(&mut self, required: &[KeyId], declared: &[KeyId]) -> Result<()> {
+        while let Some(index) = self.tasks.iter().position(|task| task.needed_by(declared)) {
             self.finish_task_at(index).await;
         }
-        if let Some(message) = self.failures_by_question.get(&question_id) {
-            bail!("{message}");
-        }
         // A failed optional source leaves its suggestion unavailable; only
-        // required shared data can stop the question.
+        // required data can stop the question.
         for key in required {
             if let Some(message) = self.failures_by_key.get(key) {
                 bail!("{message}");
@@ -198,15 +166,8 @@ impl ProviderRuntime {
             Ok(Err(message)) => message,
             Err(error) => format!("data provider task failed: {error}"),
         };
-        match task.scope {
-            ProviderScope::Step(owner) => {
-                self.failures_by_question.entry(owner).or_insert(failure);
-            }
-            ProviderScope::Shared => {
-                for key in task.publishes {
-                    self.failures_by_key.entry(key).or_insert(failure.clone());
-                }
-            }
+        for key in task.publishes {
+            self.failures_by_key.entry(key).or_insert(failure.clone());
         }
     }
 }
@@ -243,9 +204,9 @@ impl WizardEngine {
     /// consumes and that therefore cannot be owned by any single step's
     /// [`WizardStep::data_providers`].
     ///
-    /// At least one step must declare a slot it publishes, in
+    /// Every published slot must be declared by a step, in
     /// [`WizardStep::optional_data_keys`] or [`WizardStep::required_data_keys`].
-    /// Startup rejects an unclaimed source.
+    /// Startup rejects an unclaimed output.
     pub fn with_data_sources(mut self, sources: Vec<Box<dyn AsyncDataProvider>>) -> Self {
         self.data_sources = sources;
         self
@@ -327,10 +288,21 @@ impl WizardEngine {
 
         let mut pending = Vec::new();
         for step in &self.steps {
+            let declared = self.declared_keys(step.as_ref());
             for provider in step.data_providers() {
+                let publishes = provider.publishes();
+                for key in &publishes {
+                    if !declared.contains(key) {
+                        bail!(
+                            "provider for {:?} publishes undeclared data key {}",
+                            step.id(),
+                            key.name()
+                        );
+                    }
+                }
                 pending.push(PendingProvider {
-                    scope: ProviderScope::Step(step.id()),
-                    publishes: provider.publishes(),
+                    source: format!("step {:?}", step.id()),
+                    publishes,
                     provider,
                 });
             }
@@ -338,23 +310,20 @@ impl WizardEngine {
 
         for source in data_sources {
             let publishes = source.publishes();
-            let claimed = self.steps.iter().any(|step| {
-                self.declared_keys(step.as_ref())
+            for key in &publishes {
+                if !self
+                    .steps
                     .iter()
-                    .any(|key| publishes.contains(key))
-            });
-            if !claimed {
-                bail!(
-                    "no wizard step declares the data published by a shared source ({})",
-                    publishes
-                        .iter()
-                        .map(|key| key.name())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                );
+                    .any(|step| self.declared_keys(step.as_ref()).contains(key))
+                {
+                    bail!(
+                        "no wizard step declares data key {} from a shared source",
+                        key.name()
+                    );
+                }
             }
             pending.push(PendingProvider {
-                scope: ProviderScope::Shared,
+                source: "shared source".to_string(),
                 publishes,
                 provider: source,
             });
@@ -365,12 +334,15 @@ impl WizardEngine {
         // running in the background.
         let mut claims = HashMap::new();
         for item in &pending {
+            if item.publishes.is_empty() {
+                bail!("{} publishes no data keys", item.source);
+            }
             for key in &item.publishes {
-                if let Some(previous) = claims.insert(*key, item.scope) {
+                if let Some(previous) = claims.insert(*key, &item.source) {
                     bail!(
-                        "data key {} is published by both {previous:?} and {:?}",
+                        "data key {} is published by both {previous} and {}",
                         key.name(),
-                        item.scope
+                        item.source
                     );
                 }
             }
@@ -381,7 +353,6 @@ impl WizardEngine {
             .map(|item| {
                 let context = self.context.clone();
                 ProviderTask {
-                    scope: item.scope,
                     publishes: item.publishes,
                     handle: tokio::spawn(async move {
                         item.provider
@@ -395,7 +366,6 @@ impl WizardEngine {
 
         Ok(ProviderRuntime {
             tasks,
-            failures_by_question: HashMap::new(),
             failures_by_key: HashMap::new(),
         })
     }
@@ -409,11 +379,8 @@ impl WizardEngine {
         let required = self.steps[index].required_data_keys();
         let mut declared = required.clone();
         declared.extend(self.steps[index].optional_data_keys());
-        let had_providers = providers.has_tasks_for(question_id, &declared);
-        if let Err(error) = providers
-            .finish_tasks_for(question_id, &required, &declared)
-            .await
-        {
+        let had_providers = providers.has_tasks_for(&declared);
+        if let Err(error) = providers.finish_tasks_for(&required, &declared).await {
             self.show_fatal_error(&format!(
                 "Data required for {question_id:?} could not be loaded: {error}"
             ))?;
