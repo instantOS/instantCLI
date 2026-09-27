@@ -259,7 +259,10 @@ fn build_wizard_engine(
 ) -> Result<WizardEngine> {
     let mut context = existing_context.map_or_else(InstallContext::default, |context| *context);
     context.system_info = system_info;
-    Ok(WizardEngine::new(steps)?.with_context(context))
+    Ok(
+        crate::arch::questions::wizard_engine(crate::arch::engine::FlowKind::Install, steps)?
+            .with_context(context),
+    )
 }
 
 fn print_completion_summary(context: &InstallContext) {
@@ -309,7 +312,8 @@ async fn run_single_question(
         .find(|q| q.id() == id)
         .ok_or_else(|| anyhow::anyhow!("Wizard step not found"))?;
 
-    let engine = WizardEngine::new(vec![step])?;
+    let engine =
+        crate::arch::questions::wizard_engine(crate::arch::engine::FlowKind::Install, vec![step])?;
 
     let WizardOutcome::Completed(context) = engine.run().await? else {
         return Ok(AskOutcome::Cancelled);

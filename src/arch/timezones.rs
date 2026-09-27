@@ -25,20 +25,24 @@ pub struct TimezonesKey;
 
 impl DataKey for TimezonesKey {
     type Value = Vec<AnnotatedValue<String>>;
-    const KEY: &'static str = "timezones";
+    const NAME: &'static str = "timezones";
 }
 
+/// Bidirectional timezone <-> country lookup derived from `zone.tab`.
+///
+/// Public only because [`TimezoneCountriesKey`] is a shared data source whose
+/// value type appears in its public interface; the fields stay module-private.
 #[derive(Clone, Default)]
-struct TimezoneCountries {
+pub struct TimezoneCountries {
     country_by_timezone: HashMap<String, String>,
     timezone_by_country: HashMap<String, String>,
 }
 
-struct TimezoneCountriesKey;
+pub struct TimezoneCountriesKey;
 
 impl DataKey for TimezoneCountriesKey {
     type Value = TimezoneCountries;
-    const KEY: &'static str = "timezone_countries";
+    const NAME: &'static str = "timezone_countries";
 }
 
 /// The timezone of the current system, derived from the `/etc/localtime`
@@ -112,6 +116,10 @@ pub struct TimezoneCountriesProvider;
 
 #[async_trait::async_trait]
 impl crate::arch::engine::AsyncDataProvider for TimezoneCountriesProvider {
+    fn publishes(&self) -> Vec<crate::arch::engine::KeyId> {
+        vec![crate::arch::engine::KeyId::of::<TimezoneCountriesKey>()]
+    }
+
     async fn provide(&self, context: &crate::arch::engine::InstallContext) -> Result<()> {
         let countries = fs::read_to_string("/usr/share/zoneinfo/zone.tab")
             .map(|contents| timezone_countries(&contents))
@@ -123,11 +131,14 @@ impl crate::arch::engine::AsyncDataProvider for TimezoneCountriesProvider {
 
 #[async_trait::async_trait]
 impl crate::arch::engine::AsyncDataProvider for TimezoneProvider {
+    fn publishes(&self) -> Vec<crate::arch::engine::KeyId> {
+        vec![crate::arch::engine::KeyId::of::<TimezonesKey>()]
+    }
+
     async fn provide(&self, context: &crate::arch::engine::InstallContext) -> Result<()> {
         let timezones = fetch_timezones()?;
 
         self.save_list::<TimezonesKey, _>(context, timezones);
-        TimezoneCountriesProvider.provide(context).await?;
 
         Ok(())
     }

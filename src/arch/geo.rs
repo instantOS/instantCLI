@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use serde::Deserialize;
 
-use crate::arch::engine::{AsyncDataProvider, DataKey, InstallContext, StepId};
+use crate::arch::engine::{AsyncDataProvider, DataKey, InstallContext, KeyId, StepId};
 use crate::arch::locales::LocalesKey;
 use crate::arch::mirrors::MirrorRegionCodesKey;
 use crate::arch::timezones::TimezonesKey;
@@ -46,33 +46,41 @@ pub struct GeoLocationKey;
 
 impl DataKey for GeoLocationKey {
     type Value = GeoLocation;
-    const KEY: &'static str = "geo_location";
+    const NAME: &'static str = "geo_location";
 }
 
-/// Shares one lookup across every question that wants a suggestion.
-//BOZO: is this a hack? Should this be done more idiomatically? There are other LazyLock stuff in this codebase. Inconsistent?
-static GEO_CACHE: tokio::sync::OnceCell<GeoLocation> = tokio::sync::OnceCell::const_new();
-
-/// Data provider for [`GeoLocationKey`].
+/// Wizard-level data source for [`GeoLocationKey`].
 ///
 /// Never fails: a failed lookup stores an empty location so downstream
 /// suggestions simply do nothing.
 pub struct GeoLocationProvider {
-    question: StepId,
+    consumers: Vec<StepId>,
 }
 
 impl GeoLocationProvider {
-    pub fn for_question(question: StepId) -> Self {
-        Self { question }
+    pub fn new(consumers: Vec<StepId>) -> Self {
+        Self { consumers }
     }
 }
 
 #[async_trait::async_trait]
 impl AsyncDataProvider for GeoLocationProvider {
+    fn publishes(&self) -> Vec<KeyId> {
+        vec![KeyId::of::<GeoLocationKey>()]
+    }
+
     async fn provide(&self, context: &InstallContext) -> anyhow::Result<()> {
-        // Do not disclose the public IP when a saved or previous answer already
-        // determines where the cursor should start.
-        if context.previous_answer(&self.question).is_some() {
+        // The context slot is the memo: this source is registered once, so a
+        // second resolve cannot happen and nothing process-global is needed.
+        if context.has_key(KeyId::of::<GeoLocationKey>()) {
+            return Ok(());
+        }
+        // Do not disclose the public IP when every consumer's saved or previous
+        // answer already determines where its cursor should start. The location
+        // is a single shared fact, so one decision covers all of them: if any
+        // consumer still needs a suggestion, resolving it for that consumer
+        // necessarily resolves it for the rest.
+        if !needs_location(context, &self.consumers) {
             return Ok(());
         }
         // Offline installs never call out: store the empty location a failed
@@ -86,31 +94,34 @@ impl AsyncDataProvider for GeoLocationProvider {
     }
 }
 
-/// Fetches the location hint once per process.
+/// Whether any consumer still needs a location-derived suggestion.
+fn needs_location(context: &InstallContext, consumers: &[StepId]) -> bool {
+    consumers
+        .iter()
+        .any(|step| context.previous_answer(step).is_none())
+}
+
+/// Fetches the location hint. Called at most once per context, because the
+/// caller checks the memo first.
 async fn detect_location() -> GeoLocation {
-    GEO_CACHE
-        .get_or_init(|| async {
-            let mut partial = GeoLocation::default();
-            for endpoint in GEO_ENDPOINTS {
-                match tokio::time::timeout(GEO_TIMEOUT, fetch_geo_location(endpoint)).await {
-                    Ok(Ok(location)) if !location.is_empty() => {
-                        if location.country_code.is_some() && location.timezone.is_some() {
-                            return location;
-                        }
-                        if partial.country_code.is_none() {
-                            partial.country_code = location.country_code;
-                        }
-                        if partial.timezone.is_none() {
-                            partial.timezone = location.timezone;
-                        }
-                    }
-                    _ => continue,
+    let mut partial = GeoLocation::default();
+    for endpoint in GEO_ENDPOINTS {
+        match tokio::time::timeout(GEO_TIMEOUT, fetch_geo_location(endpoint)).await {
+            Ok(Ok(location)) if !location.is_empty() => {
+                if location.country_code.is_some() && location.timezone.is_some() {
+                    return location;
+                }
+                if partial.country_code.is_none() {
+                    partial.country_code = location.country_code;
+                }
+                if partial.timezone.is_none() {
+                    partial.timezone = location.timezone;
                 }
             }
-            partial
-        })
-        .await
-        .clone()
+            _ => continue,
+        }
+    }
+    partial
 }
 
 /// Response shape covering the field names used by the supported services.
@@ -300,16 +311,61 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn provider_skips_lookup_when_question_has_a_previous_answer() {
+    async fn provider_skips_the_lookup_when_every_consumer_is_answered() {
         let mut context = InstallContext::new();
-        context.set_answer(StepId::Timezone, "Europe/Berlin".to_string());
+        let consumers = [StepId::Timezone, StepId::MirrorRegion, StepId::Locale];
+        for step in consumers {
+            context.set_answer(step, "already chosen".to_string());
+        }
 
-        GeoLocationProvider::for_question(StepId::Timezone)
+        GeoLocationProvider::new(consumers.to_vec())
             .provide(&context)
             .await
             .expect("provider should succeed without a lookup");
 
+        // Absent, not empty: no lookup happened, as opposed to a lookup that
+        // found nothing and stored an empty location.
         assert_eq!(context.get::<GeoLocationKey>(), None);
+    }
+
+    #[tokio::test]
+    async fn provider_does_not_look_up_twice() {
+        let context = InstallContext::new();
+        let resolved = GeoLocation {
+            country_code: Some("DE".to_string()),
+            timezone: Some("Europe/Berlin".to_string()),
+        };
+        // Pretend an earlier resolve already stored the slot; the memo must
+        // short-circuit before any network access.
+        context.set::<GeoLocationKey>(resolved.clone());
+
+        GeoLocationProvider::new(vec![StepId::Timezone])
+            .provide(&context)
+            .await
+            .expect("provider should succeed without a lookup");
+
+        assert_eq!(context.get::<GeoLocationKey>(), Some(resolved));
+    }
+
+    #[test]
+    fn one_unanswered_consumer_is_enough_to_require_the_lookup() {
+        // The decision is a single shared fact, not one lookup per consumer, so
+        // a partially answered context still needs it.
+        let mut context = InstallContext::new();
+        let consumers = [StepId::Timezone, StepId::MirrorRegion, StepId::Locale];
+        for step in consumers.iter().skip(1) {
+            context.set_answer(*step, "already chosen".to_string());
+        }
+
+        assert!(needs_location(&context, &consumers));
+    }
+
+    #[test]
+    fn steps_outside_the_current_flow_do_not_trigger_a_lookup() {
+        let mut context = InstallContext::new();
+        context.set_answer(StepId::Timezone, "Europe/Berlin".to_string());
+
+        assert!(!needs_location(&context, &[StepId::Timezone]));
     }
 
     #[test]

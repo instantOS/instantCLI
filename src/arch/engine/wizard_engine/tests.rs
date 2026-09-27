@@ -5,7 +5,7 @@ use super::presentation::{AdvancedOption, FinalReviewAction, final_review_option
 use super::step_graph::StepGraph;
 use super::{FlowKind, WizardEngine, WizardOutcome, validate_imported_context};
 use crate::arch::engine::{
-    AskPolicy, AsyncDataProvider, DataKey, InstallContext, StepId, StepOutcome, WizardStep,
+    AskPolicy, AsyncDataProvider, DataKey, InstallContext, KeyId, StepId, StepOutcome, WizardStep,
 };
 use crate::arch::questions::{
     BooleanQuestion, EncryptionPasswordQuestion, PartitioningMethodQuestion,
@@ -337,10 +337,22 @@ fn revisit_rejects_forward_navigation() {
     assert!(error.to_string().contains("must precede"));
 }
 
+/// A key no provider in these tests publishes, to exercise the fatal path.
+struct NeverProvidedKey;
+
+impl DataKey for NeverProvidedKey {
+    type Value = bool;
+    const NAME: &'static str = "never_provided";
+}
+
 struct FailingProvider;
 
 #[async_trait::async_trait]
 impl AsyncDataProvider for FailingProvider {
+    fn publishes(&self) -> Vec<KeyId> {
+        vec![KeyId::of::<NeverProvidedKey>()]
+    }
+
     async fn provide(&self, _context: &InstallContext) -> Result<()> {
         anyhow::bail!("provider exploded")
     }
@@ -354,8 +366,8 @@ impl WizardStep for ProviderBackedQuestion {
         StepId::Locale
     }
 
-    fn required_data_keys(&self) -> Vec<String> {
-        vec!["missing_provider_data".to_string()]
+    fn required_data_keys(&self) -> Vec<KeyId> {
+        vec![KeyId::of::<NeverProvidedKey>()]
     }
 
     async fn run(&self, _context: &InstallContext) -> Result<StepOutcome> {
@@ -371,20 +383,27 @@ struct ProviderReadyKey;
 
 impl DataKey for ProviderReadyKey {
     type Value = bool;
-    const KEY: &'static str = "provider_ready";
+    const NAME: &'static str = "provider_ready";
 }
 
 struct ProviderSkipKey;
 
 impl DataKey for ProviderSkipKey {
     type Value = bool;
-    const KEY: &'static str = "provider_skip";
+    const NAME: &'static str = "provider_skip";
 }
 
 struct SkippingProvider;
 
 #[async_trait::async_trait]
 impl AsyncDataProvider for SkippingProvider {
+    fn publishes(&self) -> Vec<KeyId> {
+        vec![
+            KeyId::of::<ProviderSkipKey>(),
+            KeyId::of::<ProviderReadyKey>(),
+        ]
+    }
+
     async fn provide(&self, context: &InstallContext) -> Result<()> {
         tokio::task::yield_now().await;
         context.set::<ProviderSkipKey>(true);
@@ -399,10 +418,6 @@ struct ProviderSkippedQuestion;
 impl WizardStep for ProviderSkippedQuestion {
     fn id(&self) -> StepId {
         StepId::MirrorRegion
-    }
-
-    fn required_data_keys(&self) -> Vec<String> {
-        vec![ProviderReadyKey::KEY.to_string()]
     }
 
     fn should_ask(&self, context: &InstallContext) -> bool {
@@ -422,6 +437,10 @@ struct IncompleteProvider;
 
 #[async_trait::async_trait]
 impl AsyncDataProvider for IncompleteProvider {
+    fn publishes(&self) -> Vec<KeyId> {
+        vec![KeyId::of::<ProviderReadyKey>()]
+    }
+
     async fn provide(&self, _context: &InstallContext) -> Result<()> {
         Ok(())
     }
@@ -435,8 +454,8 @@ impl WizardStep for IncompleteProviderQuestion {
         StepId::Timezone
     }
 
-    fn required_data_keys(&self) -> Vec<String> {
-        vec![ProviderReadyKey::KEY.to_string()]
+    fn required_data_keys(&self) -> Vec<KeyId> {
+        vec![KeyId::of::<ProviderReadyKey>()]
     }
 
     async fn run(&self, _context: &InstallContext) -> Result<StepOutcome> {
@@ -511,7 +530,7 @@ fn required_steps_have_no_preselect_or_unattended_answer() {
 #[tokio::test]
 async fn provider_failures_return_an_error_instead_of_waiting_forever() {
     let mut engine = WizardEngine::new(vec![Box::new(ProviderBackedQuestion)]).unwrap();
-    let mut providers = engine.start_providers();
+    let mut providers = engine.start_providers().unwrap();
     let _mock = MockQueue::new().message_ack().guard();
 
     let error = engine
@@ -525,8 +544,10 @@ async fn provider_failures_return_an_error_instead_of_waiting_forever() {
 
 #[tokio::test]
 async fn provider_can_make_a_selected_question_irrelevant() {
+    // This step declares no data keys, so its attached provider must be
+    // awaited by scope rather than by published-key matching.
     let mut engine = WizardEngine::new(vec![Box::new(ProviderSkippedQuestion)]).unwrap();
-    let mut providers = engine.start_providers();
+    let mut providers = engine.start_providers().unwrap();
 
     assert_eq!(engine.find_next_step_index(), Some(0));
     assert!(matches!(
@@ -543,7 +564,7 @@ async fn settling_providers_removes_an_answer_that_becomes_irrelevant() {
         .context
         .set_answer(StepId::MirrorRegion, "Germany".to_string());
     engine.normalize_context();
-    let mut providers = engine.start_providers();
+    let mut providers = engine.start_providers().unwrap();
 
     assert_eq!(engine.find_next_step_index(), None);
     providers.finish_all().await;
@@ -555,7 +576,7 @@ async fn settling_providers_removes_an_answer_that_becomes_irrelevant() {
 #[tokio::test]
 async fn provider_completion_without_required_data_returns_an_error() {
     let mut engine = WizardEngine::new(vec![Box::new(IncompleteProviderQuestion)]).unwrap();
-    let mut providers = engine.start_providers();
+    let mut providers = engine.start_providers().unwrap();
     let _mock = MockQueue::new().message_ack().guard();
 
     let error = engine
@@ -565,6 +586,205 @@ async fn provider_completion_without_required_data_returns_an_error() {
 
     assert!(error.to_string().contains("completed without supplying"));
     assert!(error.to_string().contains("Timezone"));
+}
+
+struct SharedSourceRan(std::sync::Arc<AtomicUsize>);
+
+#[async_trait::async_trait]
+impl AsyncDataProvider for SharedSourceRan {
+    fn publishes(&self) -> Vec<KeyId> {
+        vec![KeyId::of::<ProviderReadyKey>()]
+    }
+
+    async fn provide(&self, context: &InstallContext) -> Result<()> {
+        self.0.fetch_add(1, Ordering::SeqCst);
+        tokio::task::yield_now().await;
+        context.set::<ProviderReadyKey>(true);
+        Ok(())
+    }
+}
+
+/// A step that consumes a shared input without owning it.
+struct SharedInputConsumer;
+
+#[async_trait::async_trait]
+impl WizardStep for SharedInputConsumer {
+    fn id(&self) -> StepId {
+        StepId::MirrorRegion
+    }
+
+    fn optional_data_keys(&self) -> Vec<KeyId> {
+        vec![KeyId::of::<ProviderReadyKey>()]
+    }
+
+    async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {
+        Ok(StepOutcome::Answer(
+            context
+                .get::<ProviderReadyKey>()
+                .unwrap_or(false)
+                .to_string(),
+        ))
+    }
+}
+
+#[tokio::test]
+async fn a_declaring_step_waits_for_the_shared_source_that_feeds_it() {
+    let runs = std::sync::Arc::new(AtomicUsize::new(0));
+    let mut engine = WizardEngine::new(vec![Box::new(SharedInputConsumer) as Box<dyn WizardStep>])
+        .unwrap()
+        .with_data_sources(vec![Box::new(SharedSourceRan(runs.clone()))]);
+    let mut providers = engine.start_providers().unwrap();
+
+    assert_eq!(
+        engine.wait_until_ready(0, &mut providers).await.unwrap(),
+        super::StepReadiness::Ready
+    );
+
+    // The step owns no provider, so the source must have run exactly once and
+    // populated the slot the step reads.
+    assert_eq!(runs.load(Ordering::SeqCst), 1);
+    assert!(engine.context.get::<ProviderReadyKey>().unwrap_or(false));
+}
+
+#[tokio::test]
+async fn a_shared_source_failure_blocks_required_but_not_optional_consumers() {
+    struct FailingSharedSource;
+
+    #[async_trait::async_trait]
+    impl AsyncDataProvider for FailingSharedSource {
+        fn publishes(&self) -> Vec<KeyId> {
+            vec![KeyId::of::<ProviderReadyKey>()]
+        }
+
+        async fn provide(&self, _context: &InstallContext) -> Result<()> {
+            anyhow::bail!("shared source failed")
+        }
+    }
+
+    let key = KeyId::of::<ProviderReadyKey>();
+    let mut engine = WizardEngine::new(vec![Box::new(SharedInputConsumer)])
+        .unwrap()
+        .with_data_sources(vec![Box::new(FailingSharedSource)]);
+    let mut providers = engine.start_providers().unwrap();
+
+    for consumer in [StepId::MirrorRegion, StepId::Locale] {
+        let error = providers
+            .finish_tasks_for(consumer, &[key], &[key])
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("shared source failed"));
+    }
+
+    // The same failed source only supplies a suggestion to this consumer.
+    providers
+        .finish_tasks_for(StepId::Hostname, &[], &[key])
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn an_unclaimed_shared_source_is_rejected() {
+    let runs = std::sync::Arc::new(AtomicUsize::new(0));
+    let mut engine = WizardEngine::new(vec![question(StepId::Hostname, &[])])
+        .unwrap()
+        .with_data_sources(vec![Box::new(SharedSourceRan(runs.clone()))]);
+    let error = engine.start_providers().err().unwrap();
+
+    assert!(error.to_string().contains("no wizard step declares"));
+    assert_eq!(runs.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn two_providers_claiming_one_slot_are_rejected_before_running() {
+    struct ClashingProvider;
+    #[async_trait::async_trait]
+    impl AsyncDataProvider for ClashingProvider {
+        fn publishes(&self) -> Vec<KeyId> {
+            vec![KeyId::of::<ProviderReadyKey>()]
+        }
+        async fn provide(&self, _context: &InstallContext) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    struct FirstConsumer;
+    #[async_trait::async_trait]
+    impl WizardStep for FirstConsumer {
+        fn id(&self) -> StepId {
+            StepId::Disk
+        }
+        fn data_providers(&self) -> Vec<Box<dyn AsyncDataProvider>> {
+            vec![Box::new(ClashingProvider)]
+        }
+        async fn run(&self, _context: &InstallContext) -> Result<StepOutcome> {
+            Ok(StepOutcome::Answer("a".to_string()))
+        }
+    }
+
+    struct SecondConsumer;
+    #[async_trait::async_trait]
+    impl WizardStep for SecondConsumer {
+        fn id(&self) -> StepId {
+            StepId::SwapPartition
+        }
+        fn data_providers(&self) -> Vec<Box<dyn AsyncDataProvider>> {
+            vec![Box::new(ClashingProvider)]
+        }
+        async fn run(&self, _context: &InstallContext) -> Result<StepOutcome> {
+            Ok(StepOutcome::Answer("b".to_string()))
+        }
+    }
+
+    let mut engine =
+        WizardEngine::new(vec![Box::new(FirstConsumer), Box::new(SecondConsumer)]).unwrap();
+
+    let error = engine.start_providers().err().unwrap();
+    let message = error.to_string();
+    assert!(message.contains("provider_ready"));
+    assert!(message.contains("both Step(Disk) and Step(SwapPartition)"));
+}
+
+#[tokio::test]
+async fn a_shared_input_consumed_by_several_steps_is_allowed() {
+    // Several steps reading one wizard-level source is the intended shape, not
+    // a collision: the consumers declare the slot, they do not provide it.
+    struct FirstConsumer;
+    #[async_trait::async_trait]
+    impl WizardStep for FirstConsumer {
+        fn id(&self) -> StepId {
+            StepId::Timezone
+        }
+        fn optional_data_keys(&self) -> Vec<KeyId> {
+            vec![KeyId::of::<ProviderReadyKey>()]
+        }
+        async fn run(&self, _context: &InstallContext) -> Result<StepOutcome> {
+            Ok(StepOutcome::Answer("a".to_string()))
+        }
+    }
+
+    struct SecondConsumer;
+    #[async_trait::async_trait]
+    impl WizardStep for SecondConsumer {
+        fn id(&self) -> StepId {
+            StepId::Locale
+        }
+        fn optional_data_keys(&self) -> Vec<KeyId> {
+            vec![KeyId::of::<ProviderReadyKey>()]
+        }
+        async fn run(&self, _context: &InstallContext) -> Result<StepOutcome> {
+            Ok(StepOutcome::Answer("b".to_string()))
+        }
+    }
+
+    let mut engine =
+        WizardEngine::new(vec![Box::new(FirstConsumer), Box::new(SecondConsumer)]).unwrap();
+    let source: Vec<Box<dyn AsyncDataProvider>> = vec![Box::new(SharedSourceRan(
+        std::sync::Arc::new(AtomicUsize::new(0)),
+    ))];
+
+    engine = engine.with_data_sources(source);
+    let mut providers = engine.start_providers().unwrap();
+    providers.finish_all().await;
 }
 
 #[test]

@@ -1,5 +1,5 @@
 use crate::arch::engine::{
-    DataKey, DiskPath, InstallContext, PartitioningMethod, StepId, StepOutcome, WizardStep,
+    DiskPath, InstallContext, PartitioningMethod, StepId, StepOutcome, WizardStep,
 };
 use crate::menu_utils::{ConfirmResult, FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder};
 use crate::ui::catppuccin::colors;
@@ -195,8 +195,8 @@ impl WizardStep for DiskQuestion {
         Some("Select the disk for installation")
     }
 
-    fn required_data_keys(&self) -> Vec<String> {
-        vec![crate::arch::disks::DisksKey::KEY.to_string()]
+    fn required_data_keys(&self) -> Vec<crate::arch::engine::KeyId> {
+        vec![crate::arch::engine::KeyId::of::<crate::arch::disks::DisksKey>()]
     }
 
     async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {

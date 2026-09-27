@@ -33,7 +33,7 @@ use crate::menu_utils::{FzfPreview, FzfSelectable};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use std::sync::{LazyLock, Mutex};
+use std::sync::{LazyLock, Mutex, PoisonError};
 #[derive(Debug, Clone)]
 pub struct AnnotatedValue<T> {
     pub value: T,
@@ -185,15 +185,25 @@ static LOCALE_DISPLAY_NAMES: LazyLock<Mutex<HashMap<String, Option<String>>>> =
 fn dynamic_locale_display_name(locale: &str) -> Option<String> {
     let base = crate::settings::language::locale_base(locale);
 
-    let mut cache = LOCALE_DISPLAY_NAMES.lock().unwrap();
-    if let Some(cached) = cache.get(base) {
+    if let Some(cached) = LOCALE_DISPLAY_NAMES
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .get(base)
+    {
         return cached.clone();
     }
 
+    // Read outside the lock: this runs on tokio worker threads, and holding a
+    // std mutex across a blocking read would stall the runtime. A concurrent
+    // miss can duplicate the read, which is harmless.
     let display_name = fs::read_to_string(Path::new("/usr/share/i18n/locales").join(base))
         .ok()
         .and_then(|contents| crate::settings::language::locale_display_name(&contents));
-    cache.insert(base.to_string(), display_name.clone());
+
+    LOCALE_DISPLAY_NAMES
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .insert(base.to_string(), display_name.clone());
     display_name
 }
 
