@@ -9,10 +9,8 @@ pub fn detect_os_from_info(
 ) -> Option<DetectedOS> {
     let fs = filesystem.as_ref()?;
 
-    let fs_type = fs.fs_type.to_lowercase();
-
-    match fs_type.as_str() {
-        "ntfs" => {
+    match fs.fs_type.as_str() {
+        _ if fs.fs_type.matches_ntfs() => {
             // NTFS is almost always Windows
             // Check label for hints
             let name = if let Some(label) = &fs.label {
@@ -34,7 +32,7 @@ pub fn detect_os_from_info(
             os_type: OSType::Windows,
             name: "Windows (BitLocker)".to_string(),
         }),
-        "ext4" | "ext3" | "ext2" | "btrfs" | "xfs" => {
+        _ if fs.fs_type.is_linux_root() => {
             // Linux filesystems
             // Check if it's a root partition
             if mount_point.as_ref().is_some_and(|mp| mp == "/") {

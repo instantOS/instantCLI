@@ -212,7 +212,7 @@ fn is_supported_auto_resize_fs(partition: &PartitionInfo) -> bool {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FilesystemInfo {
     /// Filesystem type (e.g., ntfs, ext4, vfat)
-    pub fs_type: String,
+    pub fs_type: crate::common::blockdev::Filesystem,
     /// UUID
     pub uuid: Option<String>,
     /// Label

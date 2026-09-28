@@ -1,10 +1,11 @@
 //! Resize logic for other filesystems (XFS, FAT, swap, ZFS, LVM, LUKS, etc.)
 
 use crate::arch::dualboot::types::{ResizeInfo, Shrinkability};
+use crate::common::blockdev::Filesystem;
 
-/// Get resize information for other filesystems (non-NTFS/ext/Btrfs)
-pub fn get_other_resize_info(fs_type: &str) -> ResizeInfo {
-    let normalized = fs_type.to_lowercase();
+/// Get resize information for filesystems with no dedicated resize tool.
+pub fn get_other_resize_info(fs_type: &Filesystem) -> ResizeInfo {
+    let normalized = fs_type.as_str().to_lowercase();
 
     match normalized.as_str() {
         "bitlocker" => ResizeInfo {

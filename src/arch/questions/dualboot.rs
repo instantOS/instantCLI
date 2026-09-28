@@ -177,7 +177,7 @@ impl WizardStep for DualBootPartitionQuestion {
             let bitlocker_detected = disk_info.partitions.iter().any(|p| {
                 p.filesystem
                     .as_ref()
-                    .is_some_and(|fs| fs.fs_type.eq_ignore_ascii_case("bitlocker"))
+                    .is_some_and(|fs| fs.fs_type.as_str().eq_ignore_ascii_case("bitlocker"))
             });
 
             if disk_info.has_sufficient_free_space() {

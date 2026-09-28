@@ -6,7 +6,7 @@ use std::process::{Command, Stdio};
 use anyhow::{Context, Result, bail};
 use clap::Args;
 
-use crate::common::blockdev::{BlockDevice, load_lsblk};
+use crate::common::blockdev::{BlockDevice, Filesystem, load_lsblk};
 use crate::common::commands::{ensure_commands, run_interactive_status, run_status};
 use crate::common::format::format_size;
 use crate::menu_utils::{ConfirmResult, FzfPreview, FzfSelectable, FzfWrapper, Header};
@@ -46,7 +46,7 @@ struct ChrootCandidate {
     root_device: String,
     root_mount_option: Option<String>,
     disk: Option<String>,
-    fs_type: Option<String>,
+    fs_type: Option<crate::common::blockdev::Filesystem>,
     size_bytes: Option<u64>,
     encrypted: bool,
     evidence: Vec<String>,
@@ -87,7 +87,10 @@ impl FzfSelectable for ChrootCandidate {
             NerdFont::HardDrive
         };
         let disk = self.disk.as_deref().unwrap_or("unknown disk");
-        let fs = self.fs_type.as_deref().unwrap_or("unknown fs");
+        let fs = self
+            .fs_type
+            .as_ref()
+            .map_or("unknown fs", Filesystem::as_str);
         let size = self
             .size_bytes
             .map(format_size)
@@ -108,7 +111,10 @@ impl FzfSelectable for ChrootCandidate {
             .header(NerdFont::Terminal, "instantOS chroot candidate")
             .field("Root", &self.root_device)
             .field("Disk", self.disk.as_deref().unwrap_or("unknown"))
-            .field("Filesystem", self.fs_type.as_deref().unwrap_or("unknown"))
+            .field(
+                "Filesystem",
+                self.fs_type.as_ref().map_or("unknown", Filesystem::as_str),
+            )
             .field(
                 "Size",
                 &self
@@ -253,9 +259,11 @@ fn candidate_from_root(root: &str, disk: Option<&str>) -> Result<ChrootCandidate
         bail!("Root device does not exist: {root}");
     }
 
-    let fs_type = blkid_type(root).ok().flatten();
+    let fs_type = crate::common::blockdev::blkid_filesystem(root)
+        .ok()
+        .flatten();
     let mut report = ScanReport::default();
-    let root_mount_option = probe_instantos_device(root, fs_type.as_deref(), &mut report)?
+    let root_mount_option = probe_instantos_device(root, fs_type.as_ref(), &mut report)?
         .and_then(|result| result.mount_option);
 
     Ok(ChrootCandidate {
@@ -594,7 +602,7 @@ fn probe_block_device(device: &BlockDevice, report: &mut ScanReport) -> Result<O
             continue;
         }
 
-        if let Some(result) = probe_instantos_device(&path, device.fstype.as_deref(), report)? {
+        if let Some(result) = probe_instantos_device(&path, device.fstype.as_ref(), report)? {
             return Ok(Some(ProbeRoot {
                 device: path,
                 evidence: result.evidence,
@@ -620,7 +628,7 @@ struct ProbeResult {
 
 fn probe_instantos_device(
     device: &str,
-    fs_type: Option<&str>,
+    fs_type: Option<&crate::common::blockdev::Filesystem>,
     report: &mut ScanReport,
 ) -> Result<Option<ProbeResult>> {
     let tempdir = tempfile::Builder::new()
@@ -673,9 +681,11 @@ fn probe_instantos_device(
     Ok(None)
 }
 
-fn root_probe_mount_options(fs_type: Option<&str>) -> Vec<Option<String>> {
+fn root_probe_mount_options(
+    fs_type: Option<&crate::common::blockdev::Filesystem>,
+) -> Vec<Option<String>> {
     let mut options = Vec::new();
-    if fs_type.is_some_and(|fs| fs.eq_ignore_ascii_case("btrfs")) {
+    if fs_type.is_some_and(|fs| fs.as_str() == "btrfs") {
         options.push(Some(format!(
             "subvol={}",
             crate::arch::config::BTRFS_ROOT_SUBVOLUME
@@ -808,20 +818,6 @@ fn mapper_name_for_luks(name: &str) -> String {
     format!("ins-dev-{sanitized}")
 }
 
-fn blkid_type(device: &str) -> Result<Option<String>> {
-    let output = Command::new("blkid")
-        .args(["-o", "value", "-s", "TYPE", device])
-        .output()
-        .context("Failed to run blkid")?;
-
-    if !output.status.success() {
-        return Ok(None);
-    }
-
-    let fs = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    Ok((!fs.is_empty()).then_some(fs))
-}
-
 fn find_boot_device(disk: &BlockDevice) -> Option<String> {
     disk.children
         .iter()
@@ -834,8 +830,8 @@ fn find_boot_device(disk: &BlockDevice) -> Option<String> {
                     child.is_partition()
                         && child
                             .fstype
-                            .as_deref()
-                            .is_some_and(|fs| fs.eq_ignore_ascii_case("ext4"))
+                            .as_ref()
+                            .is_some_and(|fs| fs.as_str() == "ext4")
                         && child.size.unwrap_or(0) <= 2 * 1024 * 1024 * 1024
                 })
                 .map(BlockDevice::path)
@@ -1091,9 +1087,9 @@ mod tests {
     #[test]
     fn probes_installer_btrfs_root_before_default_subvolume() {
         assert_eq!(
-            root_probe_mount_options(Some("btrfs")),
+            root_probe_mount_options(Some(&"btrfs".into())),
             vec![Some("subvol=@".to_string()), None]
         );
-        assert_eq!(root_probe_mount_options(Some("ext4")), vec![None]);
+        assert_eq!(root_probe_mount_options(Some(&"ext4".into())), vec![None]);
     }
 }

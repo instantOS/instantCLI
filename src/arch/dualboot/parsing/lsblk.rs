@@ -1,6 +1,7 @@
 //! lsblk JSON parsing for partition detection
 
 use crate::arch::dualboot::types::*;
+use crate::common::blockdev::Filesystem;
 use crate::common::blockdev::is_efi_partition_type;
 use serde_json::Value;
 use std::process::Command;
@@ -37,13 +38,13 @@ where
         || (should_check_bitlocker && detect_bitlocker(&device_path));
 
     let fs_type = if is_bitlocker {
-        Some("bitlocker".to_string())
+        Some(Filesystem::parse("bitlocker"))
     } else {
-        raw_fs_type.map(|fs| fs.to_string())
+        raw_fs_type.map(Filesystem::parse)
     };
 
-    let filesystem = fs_type.map(|fs| FilesystemInfo {
-        fs_type: fs.to_string(),
+    let filesystem = fs_type.clone().map(|fs| FilesystemInfo {
+        fs_type: fs,
         uuid: value
             .get("uuid")
             .and_then(|v| v.as_str())
@@ -155,7 +156,7 @@ mod tests {
         let p = parse_partition(&json, noop_detect_os, noop_resize_info).unwrap();
         assert_eq!(p.device, "/dev/sda1");
         assert_eq!(p.size_bytes, 1073741824);
-        assert_eq!(p.filesystem.as_ref().unwrap().fs_type, "ext4");
+        assert_eq!(p.filesystem.as_ref().unwrap().fs_type, "ext4".into());
         assert_eq!(p.mount_point, Some("/".to_string()));
         assert!(!p.is_efi);
     }

@@ -1,5 +1,6 @@
 use crate::arch::dualboot::{ResizeStatus, ResizeVerifier, Shrinkability};
 use crate::arch::engine::{DualBootResizeMethod, InstallContext, StepId, StepOutcome, WizardStep};
+use crate::common::blockdev::Filesystem;
 use crate::common::format::format_size;
 use crate::menu_utils::{ConfirmResult, FzfSelectable, FzfWrapper};
 use crate::ui::nerd_font::NerdFont;
@@ -71,13 +72,13 @@ impl WizardStep for ResizeWorkflowStep {
             .find(|p| p.device == *partition_path)
             .context("Partition not found")?;
 
+        let unknown = unknown_filesystem();
         let fs_type = partition
             .filesystem
             .as_ref()
-            .map(|f| f.fs_type.as_str())
-            .unwrap_or("unknown");
+            .map_or(&unknown, |f| &f.fs_type);
 
-        if fs_type.eq_ignore_ascii_case("bitlocker") {
+        if fs_type.as_str().eq_ignore_ascii_case("bitlocker") {
             return Ok(StepOutcome::revisit(
                 StepId::DualBootPartition,
                 "BitLocker encryption must be disabled in Windows before this partition can be resized.",
@@ -142,8 +143,15 @@ impl WizardStep for ResizeWorkflowStep {
     }
 }
 
-fn is_auto_resize_supported(fs_type: &str) -> bool {
-    matches!(fs_type, "ntfs" | "ext4" | "ext3" | "ext2")
+fn is_auto_resize_supported(fs_type: &Filesystem) -> bool {
+    fs_type.shrink_support().is_supported()
+}
+
+/// Stand-in for a partition with no detectable filesystem. `shrink_support`
+/// answers `Unsupported` for it, which is the right outcome: there is nothing
+/// there to resize.
+fn unknown_filesystem() -> Filesystem {
+    Filesystem::parse("unknown")
 }
 
 #[derive(Clone)]
@@ -156,7 +164,7 @@ struct AutoResizeContext {
 struct ResizeFlowContext<'a> {
     disk_path: &'a str,
     partition_path: &'a str,
-    fs_type: &'a str,
+    fs_type: &'a Filesystem,
     original_size: u64,
     target_size: u64,
     linux_size_bytes: u64,
@@ -219,7 +227,7 @@ impl FzfSelectable for UnverifiedResizeAction {
 
 fn confirm_auto_resize(
     partition_path: &str,
-    fs_type: &str,
+    fs_type: &Filesystem,
     original_size: u64,
     target_size: u64,
     new_linux_size_bytes: u64,
@@ -376,7 +384,7 @@ fn build_status_banner(status: &ResizeStatus) -> String {
 
 fn build_instructions_message(
     partition_path: &str,
-    fs_type: &str,
+    fs_type: &Filesystem,
     current_size_human: &str,
     target_size_gb: f64,
     shrink_remaining_gb: f64,
@@ -400,7 +408,7 @@ fn build_instructions_message(
         shrink_remaining_gb
     );
 
-    let detailed_steps = if fs_type == "ntfs" {
+    let detailed_steps = if fs_type.matches_ntfs() {
         format!(
             "1. Boot into Windows (Recommended)\n\
              2. Open 'Disk Management'\n\
@@ -415,7 +423,7 @@ fn build_instructions_message(
             target_size_gb as u64,
             partition_path
         )
-    } else if fs_type.starts_with("ext") {
+    } else if fs_type.is_ext() {
         format!(
             "1. Unmount the partition:\n   sudo umount {}\n\
              2. Check filesystem:\n   sudo e2fsck -f {}\n\

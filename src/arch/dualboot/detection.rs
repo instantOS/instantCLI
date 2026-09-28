@@ -220,7 +220,7 @@ mod tests {
                     name: disk.path_str().to_string(), // Use disk path for partition in mock
                     device_type: "part".to_string(),
                     size: Some(100 * MB),
-                    fstype: Some("vfat".to_string()),
+                    fstype: Some("vfat".into()),
                     uuid: None,
                     label: None,
                     mountpoint: None,

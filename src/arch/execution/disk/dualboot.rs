@@ -9,10 +9,12 @@ use crate::arch::engine::{
     FilesystemPlan, InstallContext,
 };
 use crate::arch::execution::CommandRunner;
+use crate::common::blockdev::{Filesystem, ShrinkTool};
 use crate::common::format::format_size;
 use anyhow::{Context, Result};
 use std::process::Command;
 
+#[derive(Debug)]
 struct ResizePlan {
     preferred_region: FreeRegion,
 }
@@ -182,6 +184,82 @@ pub fn prepare_dualboot_disk(
     Ok(())
 }
 
+/// What shrinking a filesystem takes, as commands rather than as a decision
+/// buried in the executor loop.
+///
+/// Split out because the partition *layout* is read with a real `sfdisk`, so a
+/// test that drives the whole of `auto_resize_partition` would need a block
+/// device. The command sequence does not.
+enum ShrinkCommand {
+    Unmount(String),
+    Run(&'static str, Vec<String>),
+}
+
+fn shrink_commands(
+    filesystem: &Filesystem,
+    mount_point: Option<&str>,
+    partition_path: &str,
+    target_size_bytes: u64,
+) -> Result<Vec<ShrinkCommand>> {
+    let support = filesystem.shrink_support();
+    let Some(tool) = support.tool() else {
+        anyhow::bail!("Filesystem {filesystem} cannot be resized automatically");
+    };
+
+    let mut commands = Vec::new();
+    if support.requires_unmount()
+        && let Some(point) = mount_point
+    {
+        commands.push(ShrinkCommand::Unmount(point.to_string()));
+    }
+
+    let mut run = |program: &'static str, args: Vec<String>| {
+        commands.push(ShrinkCommand::Run(program, args));
+    };
+    match tool {
+        ShrinkTool::NtfsResize => run(
+            "ntfsresize",
+            vec![
+                "--force".to_string(),
+                "--size".to_string(),
+                target_size_bytes.to_string(),
+                partition_path.to_string(),
+            ],
+        ),
+        ShrinkTool::Resize2Fs => {
+            run("e2fsck", vec!["-f".to_string(), partition_path.to_string()]);
+            run(
+                "resize2fs",
+                vec![
+                    partition_path.to_string(),
+                    format!("{}K", target_size_bytes / 1024),
+                ],
+            );
+        }
+        ShrinkTool::Btrfs => {
+            let Some(point) = mount_point else {
+                anyhow::bail!(
+                    "btrfs can only be resized while mounted, and {partition_path} is not"
+                );
+            };
+            let target_gib = target_size_bytes.div_ceil(1024 * 1024 * 1024);
+            println!(
+                "Resizing btrfs in place to {target_gib} GiB; this relocates data and is I/O heavy."
+            );
+            run(
+                "btrfs",
+                vec![
+                    "filesystem".to_string(),
+                    "resize".to_string(),
+                    format!("-{target_gib}G"),
+                    point.to_string(),
+                ],
+            );
+        }
+    }
+    Ok(commands)
+}
+
 fn auto_resize_partition(
     executor: &dyn CommandRunner,
     disk_info: &crate::arch::dualboot::DiskInfo,
@@ -210,16 +288,14 @@ fn auto_resize_partition(
         }
     };
 
-    let fs_type = partition
-        .filesystem
-        .as_ref()
-        .map(|f| f.fs_type.as_str())
-        .unwrap_or("unknown");
-
-    if !matches!(fs_type, "ntfs" | "ext4" | "ext3" | "ext2") {
+    let Some(filesystem) = partition.filesystem.as_ref().map(|f| &f.fs_type) else {
+        anyhow::bail!("Partition {partition_path} has no detectable filesystem");
+    };
+    let support = filesystem.shrink_support();
+    if !support.is_supported() {
         anyhow::bail!(
-            "Filesystem {} is not supported for automatic resize",
-            fs_type
+            "Filesystem {filesystem} cannot be resized automatically; \
+             install to free space or resize it yourself"
         );
     }
 
@@ -280,30 +356,20 @@ fn auto_resize_partition(
         format_size(freed_bytes)
     );
 
-    if let Some(mount_point) = &partition.mount_point {
-        executor.run(Command::new("umount").arg(mount_point))?;
-    }
-
-    match fs_type {
-        "ntfs" => {
-            executor.run(Command::new("ntfsresize").args([
-                "--force",
-                "--size",
-                &target_size_bytes.to_string(),
-                partition_path,
-            ]))?;
-        }
-        "ext4" | "ext3" | "ext2" => {
-            executor.run(Command::new("e2fsck").args(["-f", partition_path]))?;
-            let size_kib = target_size_bytes / 1024;
-            executor.run(
-                Command::new("resize2fs")
-                    .arg(partition_path)
-                    .arg(format!("{}K", size_kib)),
-            )?;
-        }
-        _ => {
-            anyhow::bail!("Filesystem {} is not supported for resize", fs_type);
+    // btrfs is the one case that shrinks in place: the filesystem must stay
+    // mounted, because the subvolume tree is what `btrfs filesystem resize`
+    // operates on. Everything else is unmounted first.
+    for command in shrink_commands(
+        filesystem,
+        partition.mount_point.as_deref(),
+        partition_path,
+        target_size_bytes,
+    )? {
+        match command {
+            ShrinkCommand::Unmount(point) => executor.run(Command::new("umount").arg(point))?,
+            ShrinkCommand::Run(program, args) => {
+                executor.run(Command::new(program).args(&args))?;
+            }
         }
     }
 
@@ -587,4 +653,72 @@ fn create_dualboot_partitions(
     );
 
     Ok((root_path, swap_path))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The commands a shrink would run, rendered for assertion.
+    fn plan(fs: &str, mount_point: Option<&str>) -> Result<String> {
+        let commands = shrink_commands(&fs.into(), mount_point, "/dev/vda1", 512 * 1024 * 1024)?;
+        Ok(commands
+            .iter()
+            .map(|command| match command {
+                ShrinkCommand::Unmount(point) => format!("umount {point}"),
+                ShrinkCommand::Run(program, args) => {
+                    format!("{program} {}", args.join(" "))
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n"))
+    }
+
+    #[test]
+    fn btrfs_shrinks_in_place_and_is_never_unmounted() {
+        // The regression this fixes: the old `matches!` refused btrfs outright,
+        // while the resize module next door could already report it shrinkable.
+        // It is also the only filesystem that shrinks while mounted, which is
+        // what makes dual-boot possible without a live medium.
+        let commands = plan("btrfs", Some("/mnt/dualboot")).unwrap();
+        assert!(commands.contains("btrfs filesystem resize"), "{commands}");
+        assert!(
+            !commands.contains("umount"),
+            "must stay mounted: {commands}"
+        );
+    }
+
+    #[test]
+    fn btrfs_needs_a_mount_point_to_shrink() {
+        let error = plan("btrfs", None).unwrap_err().to_string();
+        assert!(error.contains("only be resized while mounted"), "{error}");
+    }
+
+    #[test]
+    fn ext_is_unmounted_then_checked_then_resized() {
+        let commands = plan("ext4", Some("/mnt/dualboot")).unwrap();
+        assert_eq!(
+            commands,
+            "umount /mnt/dualboot\ne2fsck -f /dev/vda1\nresize2fs /dev/vda1 524288K"
+        );
+    }
+
+    #[test]
+    fn ntfs_uses_ntfsresize_and_never_the_ext_tools() {
+        let commands = plan("ntfs", Some("/mnt/dualboot")).unwrap();
+        assert!(commands.contains("ntfsresize --force --size"), "{commands}");
+        assert!(!commands.contains("e2fsck"), "{commands}");
+        assert!(!commands.contains("resize2fs"), "{commands}");
+    }
+
+    #[test]
+    fn xfs_and_the_unknown_have_no_commands_at_all() {
+        for name in ["xfs", "vfat", "zfs", "unknown"] {
+            let error = plan(name, Some("/mnt/dualboot")).unwrap_err().to_string();
+            assert!(
+                error.contains("cannot be resized automatically"),
+                "{name}: {error}"
+            );
+        }
+    }
 }

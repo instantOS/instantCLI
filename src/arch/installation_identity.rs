@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::arch::engine::{InstallContext, InstallPlan, StepId, StoragePlan};
-use crate::common::blockdev::{BlockDevice, load_lsblk};
+use crate::common::blockdev::{BlockDevice, Filesystem, load_lsblk};
 use crate::common::commands::run_status;
 
 const IDENTITY_SCHEMA_VERSION: u32 = 1;
@@ -86,8 +86,7 @@ pub fn find_matching_installation(
     let tree = load_lsblk(&[disk_path])?;
 
     for device in tree.blockdevices.iter().flat_map(linux_filesystems) {
-        if let Some(found) = probe_marker(&device.path(), device.fstype.as_deref(), intent_sha256)?
-        {
+        if let Some(found) = probe_marker(&device.path(), device.fstype.as_ref(), intent_sha256)? {
             return Ok(Some(found));
         }
     }
@@ -120,7 +119,7 @@ fn linux_filesystems(device: &BlockDevice) -> Vec<&BlockDevice> {
 
 fn probe_marker(
     device: &str,
-    fs_type: Option<&str>,
+    fs_type: Option<&Filesystem>,
     intent_sha256: &str,
 ) -> Result<Option<MatchingInstallation>> {
     if !Path::new(device).exists() {
@@ -132,14 +131,21 @@ fn probe_marker(
         .tempdir()
         .context("Failed to create installation probe mountpoint")?;
 
-    let mount_options = match fs_type.map(str::to_ascii_lowercase).as_deref() {
-        Some("btrfs") => vec![
+    // btrfs is probed twice: once naming the install's subvolume, once at the
+    // top level, because an installation predating the subvolume has no @ to
+    // find. The per-filesystem read-only options come from the type.
+    let mount_options = if fs_type.is_some_and(Filesystem::is_btrfs) {
+        vec![
             format!("ro,subvol={}", crate::arch::config::BTRFS_ROOT_SUBVOLUME),
             "ro".to_string(),
-        ],
-        Some("ext3" | "ext4") => vec!["ro,noload".to_string()],
-        Some("xfs") => vec!["ro,norecovery".to_string()],
-        _ => vec!["ro".to_string()],
+        ]
+    } else {
+        let extra = fs_type.map(Filesystem::read_only_options).unwrap_or(&[]);
+        vec![if extra.is_empty() {
+            "ro".to_string()
+        } else {
+            format!("ro,{}", extra.join(","))
+        }]
     };
 
     for options in mount_options {
@@ -215,8 +221,8 @@ fn probe_encrypted_installation(
         if activation.is_err() {
             return Ok(None);
         }
-        let fs_type = blkid_type("/dev/instantOS/root")?;
-        probe_marker("/dev/instantOS/root", fs_type.as_deref(), intent_sha256)
+        let fs_type = crate::common::blockdev::blkid_filesystem("/dev/instantOS/root")?;
+        probe_marker("/dev/instantOS/root", fs_type.as_ref(), intent_sha256)
     })();
 
     if !root_was_active {
@@ -246,18 +252,6 @@ fn open_luks_read_only(device: &str, mapper_name: &str, password: &str) -> Resul
         .wait_with_output()
         .context("Failed to wait for cryptsetup")?;
     Ok(output.status.success())
-}
-
-fn blkid_type(device: &str) -> Result<Option<String>> {
-    let output = Command::new("blkid")
-        .args(["-o", "value", "-s", "TYPE", device])
-        .output()
-        .context("Failed to inspect root filesystem type")?;
-    if !output.status.success() {
-        return Ok(None);
-    }
-    let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    Ok((!value.is_empty()).then_some(value))
 }
 
 pub fn write_completed_marker(root: &Path, intent_sha256: &str) -> Result<PathBuf> {
