@@ -89,7 +89,8 @@ pub async fn fetch_mirror_regions() -> Result<HashMap<String, String>> {
 /// Single attempt to fetch mirror regions
 async fn try_fetch_mirror_regions() -> Result<HashMap<String, String>> {
     let url = "https://archlinux.org/mirrorlist/";
-    let response = download_text(url).await?;
+    let client = crate::common::pacman_mirrors::http_client()?;
+    let response = download_text(&client, url).await?;
     Ok(parse_region_options(&response))
 }
 
@@ -133,10 +134,14 @@ fn parse_region_options(response: &str) -> HashMap<String, String> {
 /// 2. All HTTPS mirrors from archlinux.org
 /// 3. Local /etc/pacman.d/mirrorlist
 pub async fn fetch_mirrorlist(region_code: &str) -> Result<String> {
+    // One client for the whole chain, so the fetches and the probes that follow
+    // them share a connection pool, a timeout budget and a redirect policy.
+    let client = crate::common::pacman_mirrors::http_client()?;
+
     // Try 1: Region-specific mirrorlist with retries
     if !region_code.is_empty() {
-        match fetch_mirrorlist_with_retry(region_code).await {
-            Ok(list) => match validate_and_prioritize_mirrors(&list).await {
+        match fetch_mirrorlist_with_retry(&client, region_code).await {
+            Ok(list) => match validate_and_prioritize_mirrors(&client, &list).await {
                 Ok(list) => return Ok(list),
                 Err(e) => {
                     eprintln!("No usable mirror found in the selected region: {e:#}");
@@ -150,8 +155,8 @@ pub async fn fetch_mirrorlist(region_code: &str) -> Result<String> {
 
     // Try 2: All HTTPS mirrors fallback
     eprintln!("Trying fallback: all HTTPS mirrors...");
-    match fetch_all_https_mirrors().await {
-        Ok(list) => match validate_and_prioritize_mirrors(&list).await {
+    match fetch_all_https_mirrors(&client).await {
+        Ok(list) => match validate_and_prioritize_mirrors(&client, &list).await {
             Ok(list) => return Ok(list),
             Err(e) => {
                 eprintln!("No usable mirror found in the HTTPS fallback list: {e:#}");
@@ -169,7 +174,7 @@ pub async fn fetch_mirrorlist(region_code: &str) -> Result<String> {
     );
     match std::fs::read_to_string(LOCAL_MIRRORLIST_PATH) {
         Ok(content) if !content.trim().is_empty() => {
-            match validate_and_prioritize_mirrors(&content).await {
+            match validate_and_prioritize_mirrors(&client, &content).await {
                 Ok(content) => {
                     eprintln!("Using validated local mirrorlist as fallback");
                     return Ok(content);
@@ -193,7 +198,10 @@ pub async fn fetch_mirrorlist(region_code: &str) -> Result<String> {
 }
 
 /// Fetch region-specific mirrorlist with retry logic
-async fn fetch_mirrorlist_with_retry(region_code: &str) -> Result<String> {
+async fn fetch_mirrorlist_with_retry(
+    client: &reqwest::Client,
+    region_code: &str,
+) -> Result<String> {
     let url = format!(
         "https://archlinux.org/mirrorlist/?country={}&protocol=https&ip_version=4",
         region_code
@@ -207,7 +215,7 @@ async fn fetch_mirrorlist_with_retry(region_code: &str) -> Result<String> {
             tokio::time::sleep(delay).await;
         }
 
-        match download_text(&url).await {
+        match download_text(client, &url).await {
             Ok(content) => {
                 let uncommented = uncomment_servers(&content);
                 if uncommented.contains("Server =") {
@@ -225,7 +233,7 @@ async fn fetch_mirrorlist_with_retry(region_code: &str) -> Result<String> {
 }
 
 /// Fetch all HTTPS mirrors as fallback
-async fn fetch_all_https_mirrors() -> Result<String> {
+async fn fetch_all_https_mirrors(client: &reqwest::Client) -> Result<String> {
     let mut last_error = None;
 
     for attempt in 0..MAX_RETRIES {
@@ -234,7 +242,7 @@ async fn fetch_all_https_mirrors() -> Result<String> {
             tokio::time::sleep(delay).await;
         }
 
-        match download_text(ALL_HTTPS_MIRRORS_URL).await {
+        match download_text(client, ALL_HTTPS_MIRRORS_URL).await {
             Ok(content) => {
                 let uncommented = uncomment_servers(&content);
                 if uncommented.contains("Server =") {
@@ -251,23 +259,32 @@ async fn fetch_all_https_mirrors() -> Result<String> {
     Err(last_error.unwrap_or_else(|| anyhow!("Failed to fetch all HTTPS mirrors")))
 }
 
-async fn validate_and_prioritize_mirrors(content: &str) -> Result<String> {
-    let prepared = crate::common::pacman_mirrors::prepare_mirrorlist(
-        content,
-        crate::common::pacman_mirrors::DEFAULT_PROBE_LIMIT,
-    )
-    .await?;
+async fn validate_and_prioritize_mirrors(
+    client: &reqwest::Client,
+    content: &str,
+) -> Result<String> {
+    use crate::common::pacman_mirrors::{DEFAULT_PROBE_LIMIT, MirrorList};
+
+    let list = MirrorList::parse(content)?;
+    let (selected, attempts) = list.first_healthy(client, DEFAULT_PROBE_LIMIT).await?;
     println!(
-        "Selected working mirror after {} check(s): {} ({:.0} ms)",
-        prepared.attempts,
-        prepared.selected.mirror.template,
-        prepared.selected.latency.as_secs_f64() * 1000.0
+        "Selected working mirror after {attempts} check(s): {} ({:.0} ms)",
+        selected.mirror.template,
+        selected.latency.as_secs_f64() * 1000.0
     );
-    Ok(prepared.content)
+    list.promote(&selected.mirror)
 }
 
-async fn download_text(url: &str) -> Result<String> {
-    reqwest::get(url)
+/// Fetch a URL as text on the caller's client.
+///
+/// The client is passed in rather than built here: `reqwest::get` constructs a
+/// fresh `Client` — and so a fresh connection pool and TLS handshake — on every
+/// call, and sets no timeout at all, which is the wrong default for a loop that
+/// walks several mirrors.
+async fn download_text(client: &reqwest::Client, url: &str) -> Result<String> {
+    client
+        .get(url)
+        .send()
         .await
         .with_context(|| format!("Failed to request {url}"))?
         .error_for_status()

@@ -99,12 +99,23 @@ impl DoctorCheck for PacmanMirrorCheck {
                 };
             }
         };
-        let mirrors = pacman_mirrors::active_mirrors(&content);
-        let Some(primary) = mirrors.first() else {
-            return CheckStatus::Fail {
-                message: "Pacman mirrorlist has no active Server entries".to_string(),
-                fixable: false,
-            };
+        let list = match pacman_mirrors::MirrorList::parse(&content) {
+            Ok(list) => list,
+            Err(error) => {
+                return CheckStatus::Fail {
+                    message: format!("Could not parse {PACMAN_MIRRORLIST_PATH}: {error:#}"),
+                    fixable: false,
+                };
+            }
+        };
+        let primary = match list.primary() {
+            Ok(primary) => primary,
+            Err(_) => {
+                return CheckStatus::Fail {
+                    message: "Pacman mirrorlist has no active Server entries".to_string(),
+                    fixable: false,
+                };
+            }
         };
         let client = match pacman_mirrors::http_client() {
             Ok(client) => client,
@@ -116,7 +127,7 @@ impl DoctorCheck for PacmanMirrorCheck {
             }
         };
 
-        match pacman_mirrors::probe_mirror(&client, primary).await {
+        match primary.probe(&client).await {
             Ok(probe) => CheckStatus::Pass(format!(
                 "Primary mirror is healthy ({:.0} ms): {}",
                 probe.latency.as_secs_f64() * 1000.0,
@@ -127,7 +138,7 @@ impl DoctorCheck for PacmanMirrorCheck {
                     "Primary mirror is unhealthy: {} ({error:#})",
                     primary.template
                 ),
-                fixable: mirrors.len() > 1,
+                fixable: list.servers().len() > 1,
             },
         }
     }
@@ -139,15 +150,12 @@ impl DoctorCheck for PacmanMirrorCheck {
     async fn fix(&self) -> Result<()> {
         let path = Path::new(PACMAN_MIRRORLIST_PATH);
         let content = tokio::fs::read_to_string(path).await?;
-        let mirrors = pacman_mirrors::active_mirrors(&content);
+        let list = pacman_mirrors::MirrorList::parse(&content)?;
         let client = pacman_mirrors::http_client()?;
-        let (selected, attempts) = pacman_mirrors::first_healthy_mirror(
-            &client,
-            &mirrors,
-            pacman_mirrors::DEFAULT_PROBE_LIMIT,
-        )
-        .await?;
-        let updated = pacman_mirrors::promote_mirror(&content, selected.mirror.line_index)?;
+        let (selected, attempts) = list
+            .first_healthy(&client, pacman_mirrors::DEFAULT_PROBE_LIMIT)
+            .await?;
+        let updated = list.promote(&selected.mirror)?;
 
         if updated != content {
             pacman_mirrors::write_mirrorlist(path, &updated)?;

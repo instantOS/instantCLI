@@ -29,11 +29,206 @@ pub struct MirrorProbe {
     pub latency: Duration,
 }
 
-#[derive(Debug)]
-pub struct PreparedMirrorlist {
-    pub content: String,
-    pub selected: MirrorProbe,
-    pub attempts: usize,
+/// A parsed mirrorlist: the text as it stands, and the active `Server =` lines
+/// within it, carrying the line indices they occupy.
+///
+/// Operations live here rather than as free functions on `&str` so the text is
+/// parsed once and the indices are known to belong to *this* content. Taking a
+/// bare line index from outside made it possible to promote a server parsed out
+/// of one mirrorlist against a different one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MirrorList {
+    content: String,
+    servers: Vec<MirrorEntry>,
+}
+
+impl MirrorList {
+    /// Parse a mirrorlist, keeping only active (uncommented) servers in pacman's
+    /// configured order.
+    pub fn parse(content: &str) -> Result<Self> {
+        let servers = content
+            .lines()
+            .enumerate()
+            .filter_map(|(line_index, line)| {
+                let (key, value) = line.trim().split_once('=')?;
+                if key.trim() != "Server" || value.trim().is_empty() {
+                    return None;
+                }
+                Some(MirrorEntry {
+                    line_index,
+                    template: value.trim().to_string(),
+                })
+            })
+            .collect();
+        Ok(Self {
+            content: content.to_string(),
+            servers,
+        })
+    }
+
+    pub fn servers(&self) -> &[MirrorEntry] {
+        &self.servers
+    }
+
+    /// The mirror pacman would try first.
+    pub fn primary(&self) -> Result<&MirrorEntry> {
+        self.servers
+            .first()
+            .ok_or_else(|| anyhow!("Mirrorlist contains no active Server entries"))
+    }
+
+    /// Probe the configured mirrors in order and return the first healthy one,
+    /// with how many were probed to find it.
+    pub async fn first_healthy(
+        &self,
+        client: &reqwest::Client,
+        limit: usize,
+    ) -> Result<(MirrorProbe, usize)> {
+        let candidates = self.servers.iter().take(limit.max(1));
+        let mut attempts = 0;
+        let mut failures = Vec::new();
+
+        for mirror in candidates {
+            attempts += 1;
+            match mirror.probe(client).await {
+                Ok(probe) => return Ok((probe, attempts)),
+                Err(error) => failures.push(format!("{}: {error:#}", mirror.template)),
+            }
+        }
+
+        if attempts == 0 {
+            return Err(anyhow!("Mirrorlist contains no active Server entries"));
+        }
+
+        Err(anyhow!(
+            "No healthy mirror found in the first {attempts} candidate(s): {}",
+            failures.join("; ")
+        ))
+    }
+
+    /// Return this mirrorlist's text with `server` swapped into the first
+    /// server position.
+    ///
+    /// Only line contents are swapped, so comments, blank lines, and the file's
+    /// original newline style remain intact. Nothing else is reordered, no
+    /// mirror is removed, and the list is not otherwise tidied — this promotes
+    /// one mirror and nothing more.
+    ///
+    /// `server` must come from this list: a server parsed out of a different
+    /// mirrorlist is rejected rather than used to index this one's lines.
+    pub fn promote(&self, server: &MirrorEntry) -> Result<String> {
+        let Some(entry) = self
+            .servers
+            .iter()
+            .find(|candidate| candidate.line_index == server.line_index)
+        else {
+            return Err(anyhow!(
+                "Selected mirror line {} is not an active Server entry",
+                server.line_index
+            ));
+        };
+        if entry.template != server.template {
+            return Err(anyhow!(
+                "Selected mirror line {} ({}) does not belong to this mirrorlist",
+                server.line_index,
+                server.template
+            ));
+        }
+
+        let first = self.primary()?;
+        if first.line_index == entry.line_index {
+            return Ok(self.content.clone());
+        }
+
+        let mut lines: Vec<LinePart<'_>> = split_lines_preserving_endings(&self.content).collect();
+        let first_content = lines[first.line_index].content.to_string();
+        let selected_content = lines[entry.line_index].content.to_string();
+        lines[first.line_index].replacement = Some(selected_content);
+        lines[entry.line_index].replacement = Some(first_content);
+
+        let mut output = String::with_capacity(self.content.len());
+        for line in lines {
+            output.push_str(line.replacement.as_deref().unwrap_or(line.content));
+            output.push_str(line.ending);
+        }
+        Ok(output)
+    }
+}
+
+impl MirrorEntry {
+    /// The URL to request when checking this mirror: the `core` database, with
+    /// pacman's template variables expanded.
+    pub fn probe_url(&self) -> Result<String> {
+        let expanded = self
+            .template
+            .replace("${repo}", PROBE_REPOSITORY)
+            .replace("$repo", PROBE_REPOSITORY)
+            .replace("${arch}", std::env::consts::ARCH)
+            .replace("$arch", std::env::consts::ARCH);
+
+        if expanded.contains('$') {
+            return Err(anyhow!(
+                "mirror URL contains unsupported variables after expansion: {expanded}"
+            ));
+        }
+
+        let mut url = reqwest::Url::parse(&expanded)
+            .with_context(|| format!("Invalid mirror URL: {expanded}"))?;
+        if !matches!(url.scheme(), "http" | "https") {
+            return Err(anyhow!("Unsupported mirror URL scheme: {}", url.scheme()));
+        }
+
+        let path = format!("{}/{}", url.path().trim_end_matches('/'), PROBE_DATABASE);
+        url.set_path(&path);
+        Ok(url.to_string())
+    }
+
+    /// Ask this mirror whether it is serving real repository data.
+    pub async fn probe(&self, client: &reqwest::Client) -> Result<MirrorProbe> {
+        let requested_url = self.probe_url()?;
+        let started = Instant::now();
+        let response = client
+            .get(&requested_url)
+            .header(RANGE, "bytes=0-1023")
+            .send()
+            .await
+            .with_context(|| format!("Could not reach {}", self.template))?;
+        let latency = started.elapsed();
+        let status = response.status();
+        let final_url = response.url().to_string();
+
+        if !status.is_success() {
+            return Err(anyhow!("HTTP {status} from {final_url}"));
+        }
+
+        if response
+            .headers()
+            .get(CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(content_type_is_html)
+        {
+            return Err(anyhow!("Mirror returned HTML instead of repository data"));
+        }
+
+        let mut stream = response.bytes_stream();
+        let first_chunk = stream
+            .next()
+            .await
+            .transpose()
+            .context("Failed to read mirror response")?
+            .ok_or_else(|| anyhow!("Mirror returned an empty response"))?;
+
+        if body_looks_like_html(&first_chunk) {
+            return Err(anyhow!(
+                "Mirror returned an HTML page instead of repository data"
+            ));
+        }
+
+        Ok(MirrorProbe {
+            mirror: self.clone(),
+            latency,
+        })
+    }
 }
 
 pub fn http_client() -> Result<reqwest::Client> {
@@ -44,169 +239,6 @@ pub fn http_client() -> Result<reqwest::Client> {
         .user_agent(format!("ins/{}/mirror-check", env!("CARGO_PKG_VERSION")))
         .build()
         .context("Failed to create mirror health-check HTTP client")
-}
-
-/// Return active (uncommented) servers in pacman's configured order.
-pub fn active_mirrors(content: &str) -> Vec<MirrorEntry> {
-    content
-        .lines()
-        .enumerate()
-        .filter_map(|(line_index, line)| {
-            let (key, value) = line.trim().split_once('=')?;
-            if key.trim() != "Server" || value.trim().is_empty() {
-                return None;
-            }
-            Some(MirrorEntry {
-                line_index,
-                template: value.trim().to_string(),
-            })
-        })
-        .collect()
-}
-
-pub fn probe_url(template: &str) -> Result<String> {
-    let expanded = template
-        .replace("${repo}", PROBE_REPOSITORY)
-        .replace("$repo", PROBE_REPOSITORY)
-        .replace("${arch}", std::env::consts::ARCH)
-        .replace("$arch", std::env::consts::ARCH);
-
-    if expanded.contains('$') {
-        return Err(anyhow!(
-            "mirror URL contains unsupported variables after expansion: {expanded}"
-        ));
-    }
-
-    let mut url = reqwest::Url::parse(&expanded)
-        .with_context(|| format!("Invalid mirror URL: {expanded}"))?;
-    if !matches!(url.scheme(), "http" | "https") {
-        return Err(anyhow!("Unsupported mirror URL scheme: {}", url.scheme()));
-    }
-
-    let path = format!("{}/{}", url.path().trim_end_matches('/'), PROBE_DATABASE);
-    url.set_path(&path);
-    Ok(url.to_string())
-}
-
-pub async fn probe_mirror(client: &reqwest::Client, mirror: &MirrorEntry) -> Result<MirrorProbe> {
-    let requested_url = probe_url(&mirror.template)?;
-    let started = Instant::now();
-    let response = client
-        .get(&requested_url)
-        .header(RANGE, "bytes=0-1023")
-        .send()
-        .await
-        .with_context(|| format!("Could not reach {}", mirror.template))?;
-    let latency = started.elapsed();
-    let status = response.status();
-    let final_url = response.url().to_string();
-
-    if !status.is_success() {
-        return Err(anyhow!("HTTP {status} from {final_url}"));
-    }
-
-    if response
-        .headers()
-        .get(CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok())
-        .is_some_and(content_type_is_html)
-    {
-        return Err(anyhow!("Mirror returned HTML instead of repository data"));
-    }
-
-    let mut stream = response.bytes_stream();
-    let first_chunk = stream
-        .next()
-        .await
-        .transpose()
-        .context("Failed to read mirror response")?
-        .ok_or_else(|| anyhow!("Mirror returned an empty response"))?;
-
-    if body_looks_like_html(&first_chunk) {
-        return Err(anyhow!(
-            "Mirror returned an HTML page instead of repository data"
-        ));
-    }
-
-    Ok(MirrorProbe {
-        mirror: mirror.clone(),
-        latency,
-    })
-}
-
-/// Probe mirrors in their configured order and return the first healthy one.
-pub async fn first_healthy_mirror(
-    client: &reqwest::Client,
-    mirrors: &[MirrorEntry],
-    limit: usize,
-) -> Result<(MirrorProbe, usize)> {
-    let candidates = mirrors.iter().take(limit.max(1));
-    let mut attempts = 0;
-    let mut failures = Vec::new();
-
-    for mirror in candidates {
-        attempts += 1;
-        match probe_mirror(client, mirror).await {
-            Ok(probe) => return Ok((probe, attempts)),
-            Err(error) => failures.push(format!("{}: {error:#}", mirror.template)),
-        }
-    }
-
-    if attempts == 0 {
-        return Err(anyhow!("Mirrorlist contains no active Server entries"));
-    }
-
-    Err(anyhow!(
-        "No healthy mirror found in the first {attempts} candidate(s): {}",
-        failures.join("; ")
-    ))
-}
-
-/// Promote a mirror by swapping it with the first active server line.
-///
-/// Only line contents are swapped, so comments, blank lines, and the file's
-/// original newline style remain intact.
-pub fn promote_mirror(content: &str, selected_line_index: usize) -> Result<String> {
-    let mirrors = active_mirrors(content);
-    let first = mirrors
-        .first()
-        .ok_or_else(|| anyhow!("Mirrorlist contains no active Server entries"))?;
-    if !mirrors
-        .iter()
-        .any(|mirror| mirror.line_index == selected_line_index)
-    {
-        return Err(anyhow!(
-            "Selected mirror line {selected_line_index} is not an active Server entry"
-        ));
-    }
-    if first.line_index == selected_line_index {
-        return Ok(content.to_string());
-    }
-
-    let mut lines: Vec<LinePart<'_>> = split_lines_preserving_endings(content).collect();
-    let first_content = lines[first.line_index].content.to_string();
-    let selected_content = lines[selected_line_index].content.to_string();
-    lines[first.line_index].replacement = Some(selected_content);
-    lines[selected_line_index].replacement = Some(first_content);
-
-    let mut output = String::with_capacity(content.len());
-    for line in lines {
-        output.push_str(line.replacement.as_deref().unwrap_or(line.content));
-        output.push_str(line.ending);
-    }
-    Ok(output)
-}
-
-pub async fn prepare_mirrorlist(content: &str, limit: usize) -> Result<PreparedMirrorlist> {
-    let mirrors = active_mirrors(content);
-    let client = http_client()?;
-    let (selected, attempts) = first_healthy_mirror(&client, &mirrors, limit).await?;
-    let promoted = promote_mirror(content, selected.mirror.line_index)?;
-    Ok(PreparedMirrorlist {
-        content: promoted,
-        selected,
-        attempts,
-    })
 }
 
 /// Rewrite a mirrorlist without changing the existing file's permissions.
@@ -278,17 +310,24 @@ Server = https://one.example/$repo/os/$arch\n\
   Server = https://two.example/$repo/os/$arch  \n\
 CacheServer = https://cache.example/$repo/os/$arch\n";
 
-        let mirrors = active_mirrors(content);
-        assert_eq!(mirrors.len(), 2);
-        assert_eq!(mirrors[0].line_index, 1);
-        assert_eq!(mirrors[0].template, "https://one.example/$repo/os/$arch");
-        assert_eq!(mirrors[1].line_index, 2);
+        let mirrors = MirrorList::parse(content).unwrap();
+        assert_eq!(mirrors.servers().len(), 2);
+        assert_eq!(mirrors.servers()[0].line_index, 1);
+        assert_eq!(
+            mirrors.servers()[0].template,
+            "https://one.example/$repo/os/$arch"
+        );
+        assert_eq!(mirrors.servers()[1].line_index, 2);
     }
 
     #[test]
     fn creates_repository_database_probe_url() {
+        let entry = MirrorEntry {
+            line_index: 0,
+            template: "https://mirror.example/${repo}/os/${arch}/".to_string(),
+        };
         assert_eq!(
-            probe_url("https://mirror.example/${repo}/os/${arch}/").unwrap(),
+            entry.probe_url().unwrap(),
             format!(
                 "https://mirror.example/core/os/{}/core.db",
                 std::env::consts::ARCH
@@ -298,14 +337,20 @@ CacheServer = https://cache.example/$repo/os/$arch\n";
 
     #[test]
     fn rejects_unknown_template_variables() {
-        let error = probe_url("https://mirror.example/$repo/$unknown").unwrap_err();
+        let entry = MirrorEntry {
+            line_index: 0,
+            template: "https://mirror.example/$repo/$unknown".to_string(),
+        };
+        let error = entry.probe_url().unwrap_err();
         assert!(error.to_string().contains("unsupported variables"));
     }
 
     #[test]
     fn promotion_preserves_formatting_and_newlines() {
         let content = "## First\r\nServer = https://one/$repo/os/$arch\r\n\r\n## Second\r\nServer = https://two/$repo/os/$arch\r\n";
-        let promoted = promote_mirror(content, 4).unwrap();
+        let list = MirrorList::parse(content).unwrap();
+        let second = list.servers()[1].clone();
+        let promoted = list.promote(&second).unwrap();
         assert_eq!(
             promoted,
             "## First\r\nServer = https://two/$repo/os/$arch\r\n\r\n## Second\r\nServer = https://one/$repo/os/$arch\r\n"
@@ -332,9 +377,7 @@ CacheServer = https://cache.example/$repo/os/$arch\n";
             template,
         };
 
-        let probe = probe_mirror(&http_client().unwrap(), &mirror)
-            .await
-            .unwrap();
+        let probe = mirror.probe(&http_client().unwrap()).await.unwrap();
         assert_eq!(probe.mirror, mirror);
     }
 
@@ -344,9 +387,7 @@ CacheServer = https://cache.example/$repo/os/$arch\n";
             line_index: 0,
             template: serve_once("404 Not Found", "text/html", b"<html>missing</html>").await,
         };
-        let error = probe_mirror(&http_client().unwrap(), &not_found)
-            .await
-            .unwrap_err();
+        let error = not_found.probe(&http_client().unwrap()).await.unwrap_err();
         assert!(error.to_string().contains("HTTP 404"));
 
         let disguised_html = MirrorEntry {
@@ -354,14 +395,15 @@ CacheServer = https://cache.example/$repo/os/$arch\n";
             template: serve_once("200 OK", "application/octet-stream", b"<!doctype html>oops")
                 .await,
         };
-        let error = probe_mirror(&http_client().unwrap(), &disguised_html)
+        let error = disguised_html
+            .probe(&http_client().unwrap())
             .await
             .unwrap_err();
         assert!(error.to_string().contains("HTML page"));
     }
 
     #[tokio::test]
-    async fn preparation_promotes_first_healthy_fallback() {
+    async fn selecting_a_healthy_mirror_and_promoting_it_are_separate_steps() {
         let broken = serve_once("404 Not Found", "text/html", b"missing").await;
         let healthy = serve_once(
             "206 Partial Content",
@@ -371,13 +413,48 @@ CacheServer = https://cache.example/$repo/os/$arch\n";
         .await;
         let content = format!("Server = {broken}\nServer = {healthy}\n");
 
-        let prepared = prepare_mirrorlist(&content, 8).await.unwrap();
-        assert_eq!(prepared.attempts, 2);
-        assert_eq!(prepared.selected.mirror.template, healthy);
+        let list = MirrorList::parse(&content).unwrap();
+        let client = http_client().unwrap();
+        let (selected, attempts) = list.first_healthy(&client, 8).await.unwrap();
+        assert_eq!(attempts, 2);
+        assert_eq!(selected.mirror.template, healthy);
+
+        // Selecting does not touch the text; promoting does.
+        assert_eq!(list.primary().unwrap().template, broken);
+        let promoted = list.promote(&selected.mirror).unwrap();
+        assert!(promoted.starts_with(&format!("Server = {healthy}\n")));
+    }
+
+    #[test]
+    fn promoting_rejects_a_server_belonging_to_another_mirrorlist() {
+        // The old signature took a bare line index, so a server parsed out of a
+        // different mirrorlist could silently be used to index this one's lines.
+        // The dangerous case is an index that *does* exist here but points at a
+        // different server: only the template tells them apart.
+        let one = MirrorList::parse(
+            "Server = https://one/$repo/os/$arch\nServer = https://two/$repo/os/$arch\n",
+        )
+        .unwrap();
+        let elsewhere = MirrorList::parse(
+            "Server = https://one/$repo/os/$arch\nServer = https://elsewhere/$repo/os/$arch\n",
+        )
+        .unwrap();
+
+        // Same line index, different mirror: refused, not silently used.
+        let error = one.promote(&elsewhere.servers()[1]).unwrap_err();
         assert!(
-            prepared
-                .content
-                .starts_with(&format!("Server = {healthy}\n"))
+            error
+                .to_string()
+                .contains("does not belong to this mirrorlist"),
+            "{error}"
+        );
+
+        // An index this list does not have at all is a different mistake.
+        let short = MirrorList::parse("Server = https://one/$repo/os/$arch\n").unwrap();
+        let error = short.promote(&elsewhere.servers()[1]).unwrap_err();
+        assert!(
+            error.to_string().contains("is not an active Server entry"),
+            "{error}"
         );
     }
 
