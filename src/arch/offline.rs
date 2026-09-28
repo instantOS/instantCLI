@@ -21,7 +21,7 @@ use anyhow::{Context, Result};
 
 use super::execution::CommandRunner;
 use super::execution::paths;
-use crate::common::pacman::INSTANT_MIRRORLIST;
+use crate::arch::execution::pacman::INSTANT_MIRRORLIST;
 
 /// Root of the offline package bundle on the live system.
 pub const BUNDLE_ROOT: &str = "/run/archiso/bootmnt/offline-repo";
@@ -184,7 +184,7 @@ pub fn arch_mirrorlist_action(mode: Mode) -> MirrorlistAction {
     }
 }
 
-/// Offline override for [`crate::common::pacman::setup_instant_repo`]:
+/// Offline override for [`crate::arch::execution::pacman::setup_instant_repo`]:
 /// `None` online (never touch an existing user-authored list), `Some`
 /// content when the bundle must be prepended.
 pub fn instant_mirrorlist_override() -> Option<String> {

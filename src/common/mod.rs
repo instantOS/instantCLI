@@ -16,7 +16,7 @@ pub mod instantwmctl;
 pub mod locale_gen;
 pub mod network;
 pub mod package;
-pub mod pacman;
+
 pub mod pacman_mirrors;
 pub mod paths;
 pub mod progress;

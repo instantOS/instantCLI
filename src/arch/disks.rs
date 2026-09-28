@@ -2,9 +2,41 @@ use anyhow::Result;
 use serde_json::Value;
 use std::process::Command;
 
-use crate::arch::engine::DataKey;
+use crate::arch::engine::{DataKey, DiskPath};
 use crate::menu_utils::FzfPreview;
 use crate::preview::{PreviewId, preview_command};
+
+/// The running root filesystem device, as a validated device path.
+///
+/// The disk guard needs "no running device known" to mean "nothing to refuse"
+/// rather than an error, so a container or a namespace without `findmnt` must
+/// not stop a user from choosing a disk. `None` also covers a root that is not
+/// a block device at all (`overlay`, `tmpfs`, `UUID=…`): those cannot be
+/// confused with an install target, so there is nothing to refuse.
+pub fn root_device() -> Option<DiskPath> {
+    get_root_device()
+        .ok()
+        .flatten()
+        .and_then(|device| DiskPath::parse(&device).ok())
+}
+
+/// The physical disk holding the running root filesystem. See [`root_device`].
+pub fn boot_disk() -> Option<DiskPath> {
+    get_boot_disk()
+        .ok()
+        .flatten()
+        .and_then(|disk| DiskPath::parse(&disk).ok())
+}
+
+/// Strip the subvolume annotation `findmnt` appends to btrfs sources
+/// (`/dev/sda1[/@]`), so every caller sees a bare device path.
+///
+/// Done here, at the boundary where `findmnt` output enters the program:
+/// leaving the annotation attached means every comparison site has to remember
+/// to normalise, and forgetting to is exactly the bug this guard must not have.
+fn bare_device(value: &str) -> &str {
+    value.split('[').next().unwrap_or(value).trim()
+}
 
 /// Get the current root filesystem device (e.g., /dev/mapper/vg-root, /dev/sda2)
 pub fn get_root_device() -> Result<Option<String>> {
@@ -16,7 +48,7 @@ pub fn get_root_device() -> Result<Option<String>> {
         return Ok(None);
     }
 
-    let root_device = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let root_device = bare_device(&String::from_utf8_lossy(&output.stdout)).to_string();
     if root_device.is_empty() {
         return Ok(None);
     }
@@ -24,7 +56,15 @@ pub fn get_root_device() -> Result<Option<String>> {
     Ok(Some(root_device))
 }
 
-/// Get the physical disk that contains the current root filesystem
+/// Get the physical disk that contains the current root filesystem.
+///
+/// Falls back to deriving the disk from the root device's own name when
+/// `lsblk` cannot place it. `lsblk` only reports devices the current mount
+/// namespace exposes, so inside a container it can omit the very disk the
+/// system booted from — and a `None` here makes the disk guard *fail open*,
+/// which is the wrong direction for the one check standing between a running
+/// system and its own destruction. Deriving `vda1` → `vda` is correct
+/// whenever it can be done at all, so it is preferred over reporting nothing.
 pub fn get_boot_disk() -> Result<Option<String>> {
     // First, get the root filesystem device
     let root_device = match get_root_device()? {
@@ -118,10 +158,91 @@ pub fn get_boot_disk() -> Result<Option<String>> {
         false
     }
 
-    if let Some(blockdevices) = lsblk_json.get("blockdevices").and_then(|b| b.as_array()) {
-        Ok(find_physical_disk(blockdevices, &root_device))
-    } else {
-        Ok(None)
+    if let Some(blockdevices) = lsblk_json.get("blockdevices").and_then(|b| b.as_array())
+        && let Some(disk) = find_physical_disk(blockdevices, &root_device)
+    {
+        return Ok(Some(disk));
+    }
+
+    // `lsblk` could not place the root device — a namespace that hides the
+    // boot disk, or a logical volume with no visible parent. Derive the disk
+    // from the partition name instead, so the guard keeps refusing the
+    // running disk rather than silently allowing it.
+    Ok(disk_of_partition(&root_device))
+}
+
+/// The whole disk a partition path belongs to, if the name carries a
+/// partition suffix.
+///
+/// Handles both schemes: `/dev/sda2` → `/dev/sda` and `/dev/nvme0n1p2` →
+/// `/dev/nvme0n1`. Returns `None` when the name is already a whole disk, so a
+/// caller never mistakes one for another.
+fn disk_of_partition(device: &str) -> Option<String> {
+    let (parent, name) = device.rsplit_once('/')?;
+    if let Some(index) = name.rfind('p')
+        && index > 0
+        && name[index + 1..].chars().all(|c| c.is_ascii_digit())
+        && !name[index + 1..].is_empty()
+    {
+        return Some(format!("{parent}/{}", &name[..index]));
+    }
+    // A trailing digit run is a partition only for the non-NVMe naming
+    // scheme: `sda2`, `vdb1`, `md0p` is handled above.
+    let digits = name.len() - name.trim_end_matches(|c: char| c.is_ascii_digit()).len();
+    if digits > 0 && !is_nvme_whole_disk(name) {
+        return Some(format!("{parent}/{}", &name[..name.len() - digits]));
+    }
+    None
+}
+
+/// Whether a device name follows the NVMe whole-disk pattern (`nvme0n1`).
+///
+/// This one family needs its own rule: its partitions are `p`-separated
+/// (`nvme0n1p1`), so a bare numeric suffix after an NVMe name is a *different
+/// disk* — `nvme0n11` is disk 11, not a partition of disk 1. Getting this
+/// wrong reports a disk as "in use" because of an unrelated second NVMe drive.
+fn is_nvme_whole_disk(name: &str) -> bool {
+    let base = name
+        .trim_end_matches('/')
+        .rsplit('/')
+        .next()
+        .unwrap_or(name);
+    let Some(marker) = base.rfind('n') else {
+        return false;
+    };
+    let tail = &base[marker + 1..];
+    !tail.is_empty() && tail.chars().all(|c| c.is_ascii_digit())
+}
+
+/// Whether `source` is `disk` itself or one of its partitions.
+///
+/// A plain `starts_with` is wrong here, and dangerously so off the live ISO:
+/// asking "is this mount on my disk?" of the source `/dev/sdaa1` matched the
+/// disk `/dev/sda`, and a machine with a second disk whose name merely
+/// *extends* the first would report a spurious "disk in use" and abort the
+/// install.
+///
+/// The three naming schemes in play are all covered: numbered partitions
+/// (`/dev/sda1`), `p`-separated ones (`/dev/nvme0n1p1`, `/dev/md0p2`), and
+/// whole disks that must not be mistaken for a partition of a longer name.
+pub fn is_partition_of(disk: &str, source: &str) -> bool {
+    let disk = disk.trim_end_matches('/');
+    let Some(suffix) = source.strip_prefix(disk) else {
+        return false;
+    };
+    if suffix.is_empty() {
+        return true;
+    }
+    if suffix.chars().all(|c| c.is_ascii_digit()) {
+        // `/dev/sda` → `/dev/sda1` is a partition; `/dev/nvme0n1` →
+        // `/dev/nvme0n11` is a different disk.
+        return !is_nvme_whole_disk(disk);
+    }
+    // Only the `p`-separated form is left, and it needs something after the
+    // `p` so `/dev/sda` never claims `/dev/sdapart`.
+    match suffix.strip_prefix('p') {
+        Some(rest) => !rest.is_empty() && rest.chars().all(|c| c.is_ascii_alphanumeric()),
+        None => false,
     }
 }
 
@@ -140,7 +261,7 @@ pub fn get_mounted_partitions(disk: &str) -> Result<Vec<String>> {
 
     for line in stdout.lines() {
         let source = line.trim();
-        if source.starts_with(disk) {
+        if is_partition_of(disk, source) {
             mounted.push(source.to_string());
         }
     }
@@ -156,13 +277,38 @@ pub fn get_swap_partitions(disk: &str) -> Result<Vec<String>> {
     for line in swaps.lines().skip(1) {
         let parts: Vec<&str> = line.split_whitespace().collect();
         if let Some(filename) = parts.first()
-            && filename.starts_with(disk)
+            && is_partition_of(disk, filename)
         {
             swap_parts.push(filename.to_string());
         }
     }
 
     Ok(swap_parts)
+}
+
+/// Refuse to take a disk the running system depends on.
+///
+/// Called before *any* `umount`/`swapoff`, from both the wizard and the
+/// execution layer, so a hand-authored configuration cannot route around the
+/// question step: `umount /` is the operation that would unmount the
+/// filesystem the installer is executing from.
+pub fn ensure_not_running_disk(disk: &str) -> Result<()> {
+    // A target that is not a device path cannot be the running device, so
+    // there is nothing to refuse.
+    let Some(target) = DiskPath::parse(disk).ok() else {
+        return Ok(());
+    };
+    if let Some(conflict) = crate::arch::host::running_disk_conflict(
+        &target,
+        root_device().as_ref(),
+        boot_disk().as_ref(),
+    ) {
+        anyhow::bail!(
+            "{}",
+            crate::arch::host::running_disk_message(disk, conflict)
+        );
+    }
+    Ok(())
 }
 
 /// Result of preparing a disk for installation
@@ -175,6 +321,12 @@ pub struct DiskPrepareResult {
 /// Prepare a disk for installation by unmounting all partitions and disabling swap
 pub fn prepare_disk(disk: &str) -> Result<DiskPrepareResult> {
     let mut result = DiskPrepareResult::default();
+
+    // Refuse the running disk before touching anything. `umount`ing the
+    // device the installer is executing from does not fail cleanly — it
+    // either fails with EBUSY or, with a lazy unmount, leaves every open file
+    // descriptor pointing into a filesystem the install is about to erase.
+    ensure_not_running_disk(disk)?;
 
     // Unmount all mounted partitions
     for partition in get_mounted_partitions(disk)? {
@@ -248,6 +400,145 @@ mod tests {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod partition_match_tests {
+    use super::{disk_of_partition, is_partition_of};
+
+    #[test]
+    fn a_disk_matches_its_own_partitions() {
+        assert!(is_partition_of("/dev/sda", "/dev/sda"));
+        assert!(is_partition_of("/dev/sda", "/dev/sda1"));
+        assert!(is_partition_of("/dev/sda", "/dev/sda12"));
+        assert!(is_partition_of("/dev/nvme0n1", "/dev/nvme0n1p1"));
+        assert!(is_partition_of("/dev/nvme0n1", "/dev/nvme0n1p15"));
+        assert!(is_partition_of("/dev/md0", "/dev/md0p2"));
+    }
+
+    #[test]
+    fn a_disk_does_not_match_a_longer_disk_name() {
+        // The regression this tightening exists for: with `starts_with`,
+        // `/dev/sda` claimed `/dev/sdaa1`, so a machine with a second disk
+        // whose name merely extends the first would abort with a spurious
+        // "disk in use".
+        assert!(!is_partition_of("/dev/sda", "/dev/sdaa"));
+        assert!(!is_partition_of("/dev/sda", "/dev/sdaa1"));
+        assert!(!is_partition_of("/dev/nvme0n1", "/dev/nvme0n11"));
+        assert!(!is_partition_of("/dev/nvme0n1", "/dev/nvme0n11p1"));
+        assert!(!is_partition_of("/dev/sda", "/dev/sdb1"));
+        assert!(!is_partition_of("/dev/sda", "/dev/sdaa1p2"));
+    }
+
+    #[test]
+    fn an_unrelated_device_never_matches() {
+        assert!(!is_partition_of("/dev/sda", "overlay"));
+        assert!(!is_partition_of("/dev/sda", "/dev/mapper/vg-root"));
+        assert!(!is_partition_of("/dev/sda", "tmpfs"));
+        // A `p` with nothing after it is not a partition.
+        assert!(!is_partition_of("/dev/sda", "/dev/sdap"));
+    }
+
+    #[test]
+    fn a_partition_name_yields_its_whole_disk() {
+        // The fallback for when `lsblk` cannot place the running root device,
+        // which happens inside a container's mount namespace. Without it the
+        // disk guard fails open on the one disk that must never be selected.
+        assert_eq!(disk_of_partition("/dev/vda1").as_deref(), Some("/dev/vda"));
+        assert_eq!(disk_of_partition("/dev/sda12").as_deref(), Some("/dev/sda"));
+        assert_eq!(
+            disk_of_partition("/dev/nvme0n1p2").as_deref(),
+            Some("/dev/nvme0n1")
+        );
+        assert_eq!(disk_of_partition("/dev/md0p3").as_deref(), Some("/dev/md0"));
+    }
+
+    #[test]
+    fn a_whole_disk_name_yields_nothing() {
+        // Returning the device itself would make `get_boot_disk` report the
+        // root partition as the disk, which is exactly the confusion the
+        // guard must not have.
+        assert_eq!(disk_of_partition("/dev/vda"), None);
+        assert_eq!(disk_of_partition("/dev/nvme0n1"), None);
+        assert_eq!(disk_of_partition("/dev/sda"), None);
+        // Not a `/dev` path at all: a network root, tmpfs, an overlay.
+        assert_eq!(disk_of_partition("overlay"), None);
+        assert_eq!(disk_of_partition("/dev/mapper/vg-root"), None);
+    }
+}
+
+#[cfg(test)]
+mod prepare_disk_guard_tests {
+    use super::{bare_device, ensure_not_running_disk, root_device};
+    use crate::arch::engine::DiskPath;
+    use crate::arch::host::RunningDisk;
+
+    fn disk(value: &str) -> DiskPath {
+        DiskPath::parse(value).expect("test device path")
+    }
+
+    #[test]
+    fn the_btrfs_subvolume_annotation_is_stripped_at_the_boundary() {
+        // findmnt reports `/dev/nvme0n1p2[/@]` for a btrfs root. Left attached,
+        // it defeats every comparison against the running device.
+        assert_eq!(bare_device("/dev/nvme0n1p2[/@]"), "/dev/nvme0n1p2");
+        assert_eq!(bare_device("/dev/sda2"), "/dev/sda2");
+    }
+
+    #[test]
+    fn a_root_that_is_not_a_device_cannot_be_an_install_target() {
+        // Inside a container the root source is `overlay`, not a block device.
+        // It can never equal an install target, so the guard has nothing to
+        // refuse — and must not refuse every disk instead.
+        assert!(DiskPath::parse("overlay").is_err());
+        assert!(DiskPath::parse("tmpfs").is_err());
+    }
+
+    #[test]
+    fn the_guard_reports_the_root_device_before_the_boot_disk() {
+        // A message that names the wrong device sends the user looking in the
+        // wrong place.
+        assert_eq!(
+            crate::arch::host::running_disk_conflict(
+                &disk("/dev/nvme0n1p2"),
+                Some(&disk("/dev/nvme0n1p2")),
+                Some(&disk("/dev/nvme0n1"))
+            ),
+            Some(RunningDisk::RootDevice)
+        );
+    }
+
+    #[test]
+    fn a_spare_disk_is_never_refused() {
+        // The whole point of Feature A. `root_device` reads the machine, so
+        // pick a device name that cannot be the running one.
+        let spare = "/dev/ins-not-a-real-disk";
+        if let Some(running) = root_device()
+            && running.as_str() == spare
+        {
+            return;
+        }
+        assert!(ensure_not_running_disk(spare).is_ok());
+    }
+
+    #[test]
+    fn the_running_root_is_refused_with_an_actionable_message() {
+        let running = match root_device() {
+            Some(device) => device,
+            // Nothing resolvable on this host (container); the pure guard is
+            // covered by `running_disk_conflict_names_both_refusals`.
+            None => return,
+        };
+        let error = ensure_not_running_disk(running.as_str())
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains(running.as_str()));
+        assert!(error.contains("live ISO"));
+        assert!(
+            error.contains("different disk"),
+            "the message must say what is possible: {error}"
+        );
     }
 }
 

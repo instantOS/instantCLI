@@ -5,8 +5,6 @@ use clap::Subcommand;
 
 pub use commands::handle_arch_command;
 
-pub(crate) const DEFAULT_QUESTIONS_FILE: &str = "/etc/instant/questions.toml";
-
 #[derive(Subcommand, Debug, Clone)]
 pub enum DualbootCommands {
     /// Show information about existing operating systems and partitions
@@ -33,9 +31,12 @@ pub enum ArchCommands {
         /// The step to execute (optional, defaults to all steps)
         #[arg(value_enum)]
         step: Option<String>,
-        /// Path to the questions TOML file
-        #[arg(short = 'f', long = "questions-file", default_value = DEFAULT_QUESTIONS_FILE)]
-        questions_file: std::path::PathBuf,
+        /// Path to the questions TOML file. Defaults to this run's own
+        /// configuration file for the current host.
+        // `-f` is the flag the shell bootstrap and the e2e suite pass; it is
+        // pinned here because deriving it from the long name would give `-q`.
+        #[arg(short = 'f', long = "questions-file")]
+        questions_file: Option<std::path::PathBuf>,
         /// Run in dry-run mode (no changes will be made)
         #[arg(long)]
         dry_run: bool,

@@ -1,5 +1,6 @@
 use super::CommandRunner;
 use crate::arch::engine::InstallPlan;
+use crate::arch::execution::pacman::Pacman;
 use crate::arch::mkinitcpio::MkinitcpioConfig;
 use crate::common::locale_gen::apply_enable_disable;
 use anyhow::{Context, Result};
@@ -57,13 +58,16 @@ pub async fn install_config(plan: &InstallPlan, executor: &dyn CommandRunner) ->
     // Enable multilib for 32-bit support (needed for lib32-vulkan-* GPU drivers)
     // This runs before package installation so lib32 packages can be installed.
     println!("Enabling multilib repository...");
-    crate::common::pacman::enable_multilib(executor.dry_run()).await?;
+    Pacman::current()
+        .enable_multilib(executor.dry_run())
+        .await?;
 
     // Update repos after enabling multilib
     sync_repos(executor)?;
 
     configure_pacman_target(executor).await?;
     install_standard_packages(plan, executor)?;
+    configure_machine_identity(executor)?;
     configure_timezone(plan, executor)?;
     configure_locale(plan, executor)?;
     configure_network(plan, executor)?;
@@ -72,6 +76,136 @@ pub async fn install_config(plan: &InstallPlan, executor: &dyn CommandRunner) ->
     configure_vconsole(plan, executor)?;
     configure_sudo(executor)?;
     configure_mkinitcpio(plan, executor)?;
+    configure_ssh_host_keys(executor)?;
+
+    Ok(())
+}
+
+/// Root of the filesystem the `Config` step configures: inside the chroot,
+/// `/` *is* the target. Unit tests point this at a fixture so the identity
+/// reset — which is destructive by nature — can be exercised without touching
+/// the machine running the tests.
+fn target_root() -> std::path::PathBuf {
+    #[cfg(test)]
+    {
+        test_target_root()
+    }
+
+    #[cfg(not(test))]
+    {
+        std::path::PathBuf::from("/")
+    }
+}
+
+#[cfg(test)]
+fn test_target_root() -> std::path::PathBuf {
+    use std::sync::OnceLock;
+
+    static FIXTURE: OnceLock<std::path::PathBuf> = OnceLock::new();
+
+    FIXTURE
+        .get_or_init(|| {
+            let root = std::env::temp_dir().join("ins-execution-config-target");
+            for directory in ["etc", "var/lib/dbus"] {
+                let _ = std::fs::create_dir_all(root.join(directory));
+            }
+            root
+        })
+        .clone()
+}
+
+/// The machine identity files systemd derives the system's identity from.
+///
+/// Both are cleared before regeneration so a stale value cannot survive: the
+/// target is built by `pacstrap`, so anything found here was either a
+/// placeholder or — in a copied-root scenario — the source system's identity.
+/// Two machines sharing a machine-id break `systemd-firstboot`, journald and
+/// anything else that keys on it.
+fn machine_identity_files() -> Vec<std::path::PathBuf> {
+    let root = target_root();
+    vec![
+        root.join("etc/machine-id"),
+        root.join("var/lib/dbus/machine-id"),
+    ]
+}
+
+/// Give the target its own machine identity.
+///
+/// `pacstrap` builds a brand-new root, so on a live ISO this normally finds
+/// nothing to do. It runs unconditionally because the alternative — a target
+/// that inherits the source system's identity — is a silent, hard-to-debug
+/// failure that only appears once the machine is booted from the new disk.
+fn configure_machine_identity(executor: &dyn CommandRunner) -> Result<()> {
+    println!("Setting up machine identity...");
+
+    let files = machine_identity_files();
+    if executor.dry_run() {
+        for path in &files {
+            println!("[DRY RUN] rm -f {}", path.display());
+        }
+        println!("[DRY RUN] systemd-machine-id-setup");
+        return Ok(());
+    }
+
+    remove_machine_identity(&files)?;
+
+    // Best effort: a target without systemd has no identity to speak of, and
+    // failing the whole Config step over it would be a worse outcome than a
+    // missing machine-id systemd will generate on first boot.
+    let mut cmd = Command::new("systemd-machine-id-setup");
+    if !executor.run_best_effort(&mut cmd, "machine-id generation") {
+        println!(
+            "Warning: could not generate a machine-id; systemd will create one on first boot."
+        );
+    }
+
+    Ok(())
+}
+
+/// Delete any existing machine identity so regeneration cannot be skipped.
+///
+/// An absent file is the normal case on a fresh root and is not an error;
+/// anything else is, because a stale identity is precisely what this exists
+/// to prevent.
+fn remove_machine_identity(paths: &[std::path::PathBuf]) -> Result<()> {
+    for path in paths {
+        match std::fs::remove_file(path) {
+            Ok(()) => println!("Removed existing {}", path.display()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(anyhow::anyhow!(
+                    "Failed to remove {} before regenerating the machine identity: {error}",
+                    path.display()
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Generate the target's SSH host keys.
+///
+/// `ssh-keygen -A` only creates keys that are missing, so an existing key is
+/// never overwritten. Without it a target that somehow received the source
+/// system's key would present the same host identity to every machine it ever
+/// connected from. Best effort: when `openssh` is not installed yet the
+/// command is simply not there, and systemd's own `sshdgenkey` will cover it
+/// at first boot.
+fn configure_ssh_host_keys(executor: &dyn CommandRunner) -> Result<()> {
+    println!("Setting up SSH host keys...");
+
+    if executor.dry_run() {
+        println!("[DRY RUN] ssh-keygen -A");
+        return Ok(());
+    }
+
+    let mut cmd = Command::new("ssh-keygen");
+    cmd.arg("-A");
+    if !executor.run_best_effort(&mut cmd, "SSH host key generation") {
+        println!(
+            "Warning: could not generate SSH host keys now; openssh may not be installed yet."
+        );
+    }
 
     Ok(())
 }
@@ -126,13 +260,14 @@ fn install_standard_packages(plan: &InstallPlan, executor: &dyn CommandRunner) -
     println!("Installing standard packages...");
     let packages = crate::arch::execution::packages::build_standard_package_plan(plan)?;
     let package_refs: Vec<&str> = packages.iter().map(|s| s.as_str()).collect();
-    super::pacman::install(&package_refs, executor)?;
+    Pacman::current().install(&package_refs, executor)?;
     Ok(())
 }
 
 async fn configure_pacman_target(executor: &dyn CommandRunner) -> Result<()> {
     println!("Configuring target pacman settings...");
-    crate::common::pacman::configure_pacman_settings(Some("/etc/pacman.conf"), executor.dry_run())
+    Pacman::current()
+        .configure_settings(executor.dry_run())
         .await?;
     Ok(())
 }
@@ -579,5 +714,74 @@ mod tests {
         assert!(log[0].contains("usermod"));
         assert!(log[0].contains("-aG"));
         assert!(log[0].contains("testuser"));
+    }
+
+    #[test]
+    fn the_target_gets_its_own_machine_identity() {
+        // `MockRunner` stands in for the chroot and `target_root` for the
+        // test fixture, so this exercises the real code path: any identity
+        // left in the target is cleared and a fresh one generated.
+        let mock = MockRunner::new();
+        super::configure_machine_identity(&mock).unwrap();
+
+        let log = mock.command_log();
+        assert!(
+            log.iter()
+                .any(|command| command.starts_with("systemd-machine-id-setup")),
+            "a machine identity must be generated: {log:?}"
+        );
+        for path in super::machine_identity_files() {
+            assert!(
+                !path.exists(),
+                "{} survived into the configured system",
+                path.display()
+            );
+        }
+    }
+
+    #[test]
+    fn an_existing_machine_identity_is_cleared_before_regeneration() {
+        let files = super::machine_identity_files();
+        for path in &files {
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent).unwrap();
+            }
+            std::fs::write(path, "0123456789abcdef0123456789abcdef\n").unwrap();
+        }
+
+        super::remove_machine_identity(&files).unwrap();
+
+        for path in &files {
+            assert!(!path.exists(), "{} was not cleared", path.display());
+        }
+    }
+
+    #[test]
+    fn an_absent_machine_identity_is_not_an_error() {
+        // The normal case on a fresh `pacstrap` root.
+        let dir = tempfile::tempdir().unwrap();
+        super::remove_machine_identity(&[dir.path().join("machine-id")]).unwrap();
+    }
+
+    #[test]
+    fn a_removal_failure_is_reported_rather_than_ignored() {
+        // A directory where a file is expected cannot be removed, and
+        // silently continuing would leave a stale identity in place.
+        let dir = tempfile::tempdir().unwrap();
+        let directory = dir.path().join("machine-id");
+        std::fs::create_dir(&directory).unwrap();
+
+        let error = super::remove_machine_identity(&[directory]).unwrap_err();
+        assert!(error.to_string().contains("machine-id"));
+    }
+
+    #[test]
+    fn ssh_host_keys_are_generated_without_overwriting() {
+        // `ssh-keygen -A` only fills in missing keys, so calling it is safe
+        // and idempotent.
+        let mock = MockRunner::new();
+        super::configure_ssh_host_keys(&mock).unwrap();
+
+        assert_eq!(mock.command_log(), vec!["ssh-keygen -A"]);
     }
 }

@@ -57,30 +57,57 @@ pub static CFDISK: Dependency = Dependency {
 /// btrfs formatting and subvolume tools used by the Arch installer.
 pub static BTRFS_PROGS: Dependency = Dependency {
     name: "btrfs-progs",
-    packages: &[PackageDefinition::new(
-        "btrfs-progs",
-        PackageManager::Pacman,
-    )],
+    packages: &[
+        PackageDefinition::new("btrfs-progs", PackageManager::Pacman),
+        PackageDefinition::new("btrfs-progs", PackageManager::Apt),
+    ],
     tests: &[InstallTest::WhichSucceeds("mkfs.btrfs")],
 };
 
 /// NTFS userspace utilities (mkntfs, ntfsresize, ...).
 ///
 /// Required for dual-boot NTFS partition resize detection and execution.
-/// On Arch these split out of `ntfs-3g` into the `ntfsprogs` package.
-/// Arch-only: `ins arch` is not supported on other distros.
+/// On Arch these split out of `ntfs-3g` into the `ntfsprogs` package; Debian
+/// and Ubuntu ship the same name.
 pub static NTFSPROGS: Dependency = Dependency {
     name: "ntfsprogs",
-    packages: &[PackageDefinition::new("ntfsprogs", PackageManager::Pacman)],
+    packages: &[
+        PackageDefinition::new("ntfsprogs", PackageManager::Pacman),
+        PackageDefinition::new("ntfsprogs", PackageManager::Apt),
+    ],
     tests: &[InstallTest::WhichSucceeds("ntfsresize")],
 };
 
 /// NTFS FUSE driver, for mounting existing Windows NTFS partitions during
-/// dual-boot installation. Arch-only: `ins arch` is not supported on other distros.
+/// dual-boot installation.
 pub static NTFS_3G: Dependency = Dependency {
     name: "ntfs-3g",
-    packages: &[PackageDefinition::new("ntfs-3g", PackageManager::Pacman)],
+    packages: &[
+        PackageDefinition::new("ntfs-3g", PackageManager::Pacman),
+        PackageDefinition::new("ntfs-3g", PackageManager::Apt),
+    ],
     tests: &[InstallTest::WhichSucceeds("ntfs-3g")],
+};
+
+/// The Arch installation toolchain: `pacstrap`, `arch-chroot` and `genfstab`.
+///
+/// Every non-`ins` tool the execution layer shells out to comes from this one
+/// package, so one test decides whether it is usable — `is_installed` passes
+/// when *any* test succeeds, and the three binaries are never split across
+/// packages. Installing instantOS from a running system needs it present,
+/// which is what makes this a preflight dependency rather than an assumed
+/// one.
+pub static ARCH_INSTALL_SCRIPTS: Dependency = Dependency {
+    name: "arch-install-scripts",
+    packages: &[
+        PackageDefinition::new("arch-install-scripts", PackageManager::Pacman),
+        PackageDefinition::new("arch-install-scripts", PackageManager::Apt),
+    ],
+    tests: &[
+        InstallTest::WhichSucceeds("pacstrap"),
+        InstallTest::WhichSucceeds("arch-chroot"),
+        InstallTest::WhichSucceeds("genfstab"),
+    ],
 };
 
 // =============================================================================

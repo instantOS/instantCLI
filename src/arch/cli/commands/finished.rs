@@ -1,11 +1,100 @@
 use anyhow::Result;
 
-use crate::arch::cli::DEFAULT_QUESTIONS_FILE;
 use crate::arch::engine::build_install_summary;
 use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, Header};
 use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
+
+/// What the machine will boot after a reboot.
+///
+/// The finished menu used to say "boot into your newly installed instantOS
+/// system" unconditionally. That is only true when the installer runs from
+/// RAM: from a running system, rebooting returns to *that* system, and the
+/// new install has to be booted from its own disk or the firmware boot menu.
+/// Saying otherwise sends the user looking for a default boot entry that does
+/// not exist.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AfterReboot {
+    /// The installer ran from RAM-resident media; the next boot is the target.
+    Target,
+    /// The machine still runs the source system after a reboot.
+    SourceSystem,
+}
+
+impl AfterReboot {
+    fn detect() -> Self {
+        if crate::arch::host::HostProfile::detect().is_ok_and(|profile| profile.etc_is_ephemeral())
+        {
+            Self::Target
+        } else {
+            Self::SourceSystem
+        }
+    }
+
+    fn reboot_label(self) -> &'static str {
+        match self {
+            Self::Target => "Reboot",
+            Self::SourceSystem => "Reboot into the current system",
+        }
+    }
+
+    fn shutdown_label(self) -> &'static str {
+        match self {
+            Self::Target => "Shutdown",
+            Self::SourceSystem => "Shutdown (into the current system)",
+        }
+    }
+
+    fn continue_label(self) -> &'static str {
+        match self {
+            Self::Target => "Continue in Live Session",
+            Self::SourceSystem => "Keep using the current system",
+        }
+    }
+
+    fn reboot_description(self) -> &'static [&'static str] {
+        match self {
+            Self::Target => &[
+                "Restart the system and boot into your",
+                "newly installed instantOS system.",
+            ],
+            Self::SourceSystem => &[
+                "Restart into the system you are running now.",
+                "instantOS was installed to a different disk:",
+                "select that disk in the firmware boot menu.",
+            ],
+        }
+    }
+
+    fn shutdown_description(self) -> &'static [&'static str] {
+        match self {
+            Self::Target => &[
+                "Power off the system. Boot into your",
+                "new installation when you are ready.",
+            ],
+            Self::SourceSystem => &[
+                "Power off. The next power-on boots the current",
+                "system again; pick the new disk in the firmware",
+                "boot menu to boot instantOS from it.",
+            ],
+        }
+    }
+
+    fn continue_description(self) -> &'static [&'static str] {
+        match self {
+            Self::Target => &[
+                "Return to the live environment without",
+                "rebooting or powering off.",
+            ],
+            Self::SourceSystem => &[
+                "Close the installer and carry on with the",
+                "system you are running now; installing to a",
+                "different disk left it untouched.",
+            ],
+        }
+    }
+}
 
 /// Actions offered after installation completes.
 #[derive(Clone)]
@@ -28,30 +117,21 @@ impl FinishedMenuOption {
         }
     }
 
-    fn label(&self) -> &'static str {
+    fn label(&self, reboot: AfterReboot) -> &'static str {
         match self {
-            Self::Reboot => "Reboot",
-            Self::Shutdown => "Shutdown",
-            Self::Continue => "Continue in Live Session",
+            Self::Reboot => reboot.reboot_label(),
+            Self::Shutdown => reboot.shutdown_label(),
+            Self::Continue => reboot.continue_label(),
             Self::UploadLogs => "Upload Logs",
             Self::ViewLogs => "View Logs",
         }
     }
 
-    fn description_lines(&self) -> &'static [&'static str] {
+    fn description_lines(&self, reboot: AfterReboot) -> &'static [&'static str] {
         match self {
-            Self::Reboot => &[
-                "Restart the system and boot into your",
-                "newly installed instantOS system.",
-            ],
-            Self::Shutdown => &[
-                "Power off the system. Boot into your",
-                "new installation when you are ready.",
-            ],
-            Self::Continue => &[
-                "Return to the live environment without",
-                "rebooting or powering off.",
-            ],
+            Self::Reboot => reboot.reboot_description(),
+            Self::Shutdown => reboot.shutdown_description(),
+            Self::Continue => reboot.continue_description(),
             Self::UploadLogs => &[
                 "Choose what to include, then upload a",
                 "privacy-filtered report to snips.sh.",
@@ -68,6 +148,7 @@ impl FinishedMenuOption {
 #[derive(Clone)]
 struct FinishedMenuItem {
     option: FinishedMenuOption,
+    reboot: AfterReboot,
     preview: FzfPreview,
 }
 
@@ -77,7 +158,7 @@ impl FzfSelectable for FinishedMenuItem {
         format!(
             "{} {}",
             format_icon_colored(icon, color),
-            self.option.label()
+            self.option.label(self.reboot)
         )
     }
 
@@ -111,7 +192,8 @@ fn query_storage_used() -> Option<String> {
 
 /// Load the full install configuration summary text.
 fn load_install_summary() -> Option<String> {
-    let context = crate::arch::engine::InstallContext::load(DEFAULT_QUESTIONS_FILE).ok()?;
+    let context =
+        crate::arch::engine::InstallContext::load(super::default_questions_file()).ok()?;
     Some(build_install_summary(&context).text)
 }
 
@@ -123,6 +205,7 @@ fn load_install_summary() -> Option<String> {
 /// hover over.
 fn build_finished_preview(
     option: &FinishedMenuOption,
+    reboot: AfterReboot,
     duration: Option<&str>,
     storage: Option<&str>,
     summary: Option<&str>,
@@ -130,11 +213,11 @@ fn build_finished_preview(
     let (color, icon) = option.icon();
 
     let mut builder = PreviewBuilder::new()
-        .line(color, Some(icon), option.label())
+        .line(color, Some(icon), option.label(reboot))
         .separator()
         .blank();
 
-    for line in option.description_lines() {
+    for line in option.description_lines(reboot) {
         builder = builder.text(line);
     }
 
@@ -164,7 +247,8 @@ pub(super) async fn handle_finished_command() -> Result<()> {
     let state = crate::arch::execution::state::InstallState::load()?;
 
     // Check if we should upload logs
-    if let Ok(context) = crate::arch::engine::InstallContext::load(DEFAULT_QUESTIONS_FILE) {
+    if let Ok(context) = crate::arch::engine::InstallContext::load(super::default_questions_file())
+    {
         crate::arch::logging::process_requested_log_upload(&context);
     }
 
@@ -172,6 +256,9 @@ pub(super) async fn handle_finished_command() -> Result<()> {
     let duration = format_duration(&state);
     let storage = query_storage_used();
     let summary_text = load_install_summary();
+    // Which system a reboot lands on decides how every power-related option
+    // reads, so it is resolved once and threaded through the menu.
+    let reboot = AfterReboot::detect();
 
     let options = [
         FinishedMenuOption::Reboot,
@@ -186,12 +273,14 @@ pub(super) async fn handle_finished_command() -> Result<()> {
         .map(|opt| {
             let preview = build_finished_preview(
                 &opt,
+                reboot,
                 duration.as_deref(),
                 storage.as_deref(),
                 summary_text.as_deref(),
             );
             FinishedMenuItem {
                 option: opt,
+                reboot,
                 preview,
             }
         })
@@ -217,12 +306,17 @@ pub(super) async fn handle_finished_command() -> Result<()> {
                     break;
                 }
                 FinishedMenuOption::Continue => {
-                    println!("Exiting to live session...");
+                    match item.reboot {
+                        AfterReboot::Target => println!("Exiting to live session..."),
+                        AfterReboot::SourceSystem => {
+                            println!("Closing the installer; the current system is unchanged.")
+                        }
+                    }
                     break;
                 }
                 FinishedMenuOption::UploadLogs => {
                     let context =
-                        crate::arch::engine::InstallContext::load(DEFAULT_QUESTIONS_FILE)?;
+                        crate::arch::engine::InstallContext::load(super::default_questions_file())?;
                     crate::arch::logging::prompt_log_upload(&context)?;
                 }
                 FinishedMenuOption::ViewLogs => {

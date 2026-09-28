@@ -54,7 +54,7 @@ mod manager;
 mod removal;
 
 pub use definition::PackageDefinition;
-pub use dependency::{Dependency, InstallResult, ensure_all};
+pub use dependency::{Dependency, InstallResult, ensure_all, ensure_all_auto};
 pub use install::{install_package_names, uninstall_packages};
 pub use manager::{PackageManager, detect_aur_helper};
 pub use removal::removal_cascade;

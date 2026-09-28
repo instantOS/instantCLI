@@ -1,4 +1,5 @@
 use super::CommandRunner;
+use crate::arch::execution::pacman::Pacman;
 use anyhow::{Context, Result};
 use std::process::Command;
 
@@ -89,7 +90,9 @@ async fn setup_instantos_with_options(
         // Enable multilib for 32-bit support (Steam, Wine, etc.)
         // This is idempotent - only enables if not already enabled
         println!("Enabling multilib repository...");
-        crate::common::pacman::enable_multilib(executor.dry_run()).await?;
+        Pacman::current()
+            .enable_multilib(executor.dry_run())
+            .await?;
 
         // Set up instantOS repository and install instantOS packages
         setup_instant_repo(executor).await?;
@@ -150,7 +153,8 @@ async fn setup_instantos_with_options(
 pub async fn setup_instant_repo(executor: &dyn CommandRunner) -> Result<()> {
     println!("Setting up instantOS repository...");
     let offline_content = crate::arch::offline::instant_mirrorlist_override();
-    crate::common::pacman::setup_instant_repo(executor.dry_run(), offline_content.as_deref())
+    Pacman::current()
+        .setup_instant_repo(executor.dry_run(), offline_content.as_deref())
         .await?;
 
     // Update repositories to include [instant]
@@ -182,7 +186,7 @@ fn install_instant_packages(options: &SetupOptions, executor: &dyn CommandRunner
     }
     println!("Installing packages: {}", packages.join(", "));
     let package_refs: Vec<&str> = packages.iter().map(|s| s.as_str()).collect();
-    super::pacman::install(&package_refs, executor)?;
+    Pacman::current().install(&package_refs, executor)?;
     Ok(())
 }
 

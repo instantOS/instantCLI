@@ -79,10 +79,17 @@ impl FzfSelectable for WelcomeItem {
                 .separator()
                 .blank()
                 .text("Launch the instantOS installation wizard")
-                .text("to install instantOS on this system.")
+                .text("to install instantOS.")
                 .blank()
                 .subtext("This will guide you through disk setup,")
                 .subtext("partitioning, and system installation.")
+                .blank()
+                .line(colors::YELLOW, Some(NerdFont::Warning), "Scope")
+                .bullets([
+                    "From the live ISO: any disk, including the one it booted from",
+                    "From a running system: a disk other than the one you are running from",
+                ])
+                .subtext("The wizard refuses the running disk and says so.")
                 .build(),
             WelcomeItem::ConfigureNetwork => PreviewBuilder::new()
                 .line(colors::RED, Some(NerdFont::Wifi), "Network Setup")
@@ -155,6 +162,16 @@ pub fn run_welcome_ui(force_live: bool, debug: bool) -> Result<()> {
     // Detect live Arch ISO session
     let is_live_session = force_live || crate::common::distro::is_live_iso();
 
+    // The installer entry point is offered on a running Arch-family system
+    // too: `ins arch install` supports installing onto a *different* disk
+    // from a running Arch Linux or instantOS system, and hiding the menu item
+    // is the only thing making that undiscoverable. Gating the *wizard's* own
+    // safety rules on the host environment is what keeps this honest, not the
+    // absence of this menu entry.
+    let offers_installer = is_live_session
+        || crate::common::distro::OperatingSystem::detect()
+            .in_family(&crate::common::distro::OperatingSystem::Arch);
+
     if debug && is_live_session {
         emit(
             Level::Debug,
@@ -171,8 +188,8 @@ pub fn run_welcome_ui(force_live: bool, debug: bool) -> Result<()> {
 
         let mut items = Vec::new();
 
-        // Add Install instantOS option for live sessions
-        if is_live_session {
+        // Add Install instantOS option wherever the installer is reachable.
+        if offers_installer {
             items.push(WelcomeItem::InstallInstantOS);
         }
 

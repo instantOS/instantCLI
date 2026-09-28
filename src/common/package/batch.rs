@@ -28,6 +28,21 @@ pub(crate) struct PackageToInstall {
     pub package_def: &'static PackageDefinition,
 }
 
+/// Whether a batch may install without asking first.
+///
+/// [`Prompt`](Self::Prompt) is the default everywhere a person is present and
+/// the machine is theirs. [`Auto`](Self::Auto) is for installing onto a host
+/// that is throwaway — the live ISO, whose `/etc` is RAM — where asking
+/// permission to modify it would be theatre and there may be nobody at the
+/// keyboard to answer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Confirmation {
+    /// Ask, via a dialog.
+    Prompt,
+    /// Proceed without asking, having said what is about to happen.
+    Auto,
+}
+
 impl InstallBatch {
     /// Create a new empty install batch.
     pub fn new() -> Self {
@@ -100,6 +115,32 @@ impl InstallBatch {
         }
 
         builder.build()
+    }
+
+    /// The packages this batch would install, as `dependency → package` names.
+    pub fn planned(&self) -> Vec<(&'static str, &'static str)> {
+        self.batches
+            .values()
+            .flatten()
+            .map(|entry| (entry.dependency_name, entry.package_def.package_name))
+            .collect()
+    }
+
+    /// Whether to go ahead, honouring `confirmation`.
+    ///
+    /// [`Confirmation::Auto`] still reports what it is about to do — silently
+    /// installing is worse than unasked installing — it just does not wait.
+    pub fn confirm(&self, confirmation: Confirmation) -> Result<bool> {
+        if self.is_empty() {
+            return Ok(true);
+        }
+        if confirmation == Confirmation::Auto {
+            for (dependency, package) in self.planned() {
+                println!("Installing missing dependency: {dependency} ({package})");
+            }
+            return Ok(true);
+        }
+        self.prompt_confirmation()
     }
 
     /// Prompt the user for confirmation to install all packages.

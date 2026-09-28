@@ -1,9 +1,8 @@
 use super::step::InstallStep;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
-use std::path::Path;
 
 use super::paths;
 
@@ -34,9 +33,12 @@ impl InstallState {
     }
 
     pub fn load() -> Result<Self> {
-        if Path::new(paths::STATE_FILE).exists() {
-            let content = fs::read_to_string(paths::STATE_FILE)?;
-            let state: InstallState = toml::from_str(&content)?;
+        let path = paths::host_state_file();
+        if path.exists() {
+            let content = fs::read_to_string(&path)
+                .with_context(|| format!("Failed to read {}", path.display()))?;
+            let state: InstallState = toml::from_str(&content)
+                .with_context(|| format!("Invalid installation state at {}", path.display()))?;
             Ok(state)
         } else {
             Ok(Self::new(String::new()))
@@ -67,13 +69,7 @@ impl InstallState {
 
     pub fn save(&self) -> Result<()> {
         let content = toml::to_string_pretty(self)?;
-        if let Some(parent) = Path::new(paths::STATE_FILE).parent()
-            && !parent.exists()
-        {
-            fs::create_dir_all(parent)?;
-        }
-        fs::write(paths::STATE_FILE, content)?;
-        Ok(())
+        paths::write_host_file(&paths::host_state_file(), &content)
     }
 
     pub fn mark_complete(&mut self, step: InstallStep) {

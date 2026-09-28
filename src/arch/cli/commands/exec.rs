@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use super::super::utils::ensure_root;
 use crate::arch::engine::WizardStep;
@@ -14,15 +14,18 @@ pub(super) async fn handle_exec_command(
     }
 
     let log_file = if !dry_run {
-        let path = std::path::PathBuf::from(crate::arch::execution::paths::LOG_FILE);
-        if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
+        // The log for *this* run. On a running system that is a file in the
+        // installer's ephemeral state directory, not the source system's
+        // `/var/log/instantos/install.log`: truncating the latter would
+        // destroy the log of the machine the user is installing from.
+        let path = crate::arch::execution::paths::host_log_file();
+        crate::arch::execution::paths::ensure_host_state_dir()?;
         // A full installation gets a fresh log so an upload cannot include
         // output left behind by an earlier installation attempt. Explicit
         // single-step execution continues appending to the current attempt.
         if step.is_none() {
-            std::fs::File::create(&path)?;
+            std::fs::File::create(&path)
+                .with_context(|| format!("Failed to create install log {}", path.display()))?;
         }
         Some(path)
     } else {

@@ -36,6 +36,15 @@ impl WizardStep for PrepareDiskStep {
         let device_name = context
             .get_answer(&StepId::Disk)
             .context("No disk selected")?;
+
+        // The disk question already refuses the running disk, but this step is
+        // reachable from a hand-authored configuration too, and its whole job
+        // is unmounting things. Refuse here rather than discover it halfway
+        // through a list of `umount` calls.
+        if let Err(refusal) = crate::arch::disks::ensure_not_running_disk(device_name) {
+            return Ok(StepOutcome::Retry(refusal.to_string()));
+        }
+
         let mounted = crate::arch::disks::get_mounted_partitions(device_name)
             .context("Failed to inspect mounted partitions")?;
         let swap = crate::arch::disks::get_swap_partitions(device_name)
@@ -254,26 +263,21 @@ impl WizardStep for DiskQuestion {
         // answer is now just the device path (e.g., "/dev/sda")
         let device_name = answer;
 
-        // Prevent selecting the current root/boot disk
-        if let Ok(Some(root_device)) = crate::arch::disks::get_root_device()
-            && device_name == root_device
+        // Refuse the running root device and the boot disk. This is the
+        // single biggest blocker for installing from a running system, and it
+        // stays a hard refusal: Feature A is a *different* disk. What changes
+        // is the message — it used to say only "select a different disk",
+        // which reads as though nothing else were possible.
+        if let Some(target) = DiskPath::parse(device_name).ok()
+            && let Some(conflict) = crate::arch::host::running_disk_conflict(
+                &target,
+                crate::arch::disks::root_device().as_ref(),
+                crate::arch::disks::boot_disk().as_ref(),
+            )
         {
-            return Err(format!(
-                "Cannot select the current root filesystem device ({}) for installation.\n\
-                    This device contains the currently running system and would cause data loss.\n\
-                    Please select a different disk.",
-                root_device
-            ));
-        }
-
-        if let Ok(Some(boot_disk)) = crate::arch::disks::get_boot_disk()
-            && device_name == boot_disk
-        {
-            return Err(format!(
-                "Cannot select the current boot disk ({}) for installation.\n\
-                    This disk contains the currently running system and would cause data loss.\n\
-                    Please select a different disk.",
-                boot_disk
+            return Err(crate::arch::host::running_disk_message(
+                device_name,
+                conflict,
             ));
         }
 
@@ -571,5 +575,31 @@ mod tests {
                 .validate(&context, "/dev/../etc/passwd")
                 .is_err()
         );
+    }
+
+    #[test]
+    fn a_spare_disk_validates_on_this_machine() {
+        // The guard refuses the running devices; it must not refuse anything
+        // else, or Feature A would be unreachable.
+        let context = InstallContext::new();
+        let spare = "/dev/ins-not-a-real-disk";
+        if let Some(running) = crate::arch::disks::root_device()
+            && running.as_str() == spare
+        {
+            return;
+        }
+        assert!(DiskQuestion.validate(&context, spare).is_ok());
+    }
+
+    #[test]
+    fn the_refusal_names_the_way_out_not_just_the_prohibition() {
+        // The old message said only "select a different disk", which on a
+        // running system reads as though installing were impossible at all.
+        let message = crate::arch::host::running_disk_message(
+            "/dev/sda",
+            crate::arch::host::RunningDisk::BootDisk,
+        );
+        assert!(message.contains("live ISO"));
+        assert!(message.contains("different disk"));
     }
 }

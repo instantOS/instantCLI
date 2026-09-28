@@ -3,6 +3,7 @@ use crate::arch::engine::{GpuKind, InstallPlan};
 use anyhow::{Context, Result};
 use std::collections::HashSet;
 
+use super::package_source::PackageSource;
 use super::packages::strings;
 
 pub async fn install_base(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
@@ -10,7 +11,9 @@ pub async fn install_base(plan: &InstallPlan, executor: &dyn CommandRunner) -> R
     setup_mirrors(plan, executor).await?;
 
     println!("Configuring pacman settings...");
-    crate::common::pacman::configure_pacman_settings(None, executor.dry_run()).await?;
+    PackageSource::resolve()
+        .configure_host_pacman(executor.dry_run())
+        .await?;
 
     println!("Installing base system...");
     run_pacstrap(plan, executor)?;
@@ -36,6 +39,7 @@ fn offline_region_list(region_name: Option<&String>) -> Option<String> {
 async fn setup_mirrors(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
     // Check if a region was selected (question may have been skipped if fetch failed)
     let region_name = plan.mirror_region.as_ref();
+    let source = PackageSource::resolve();
 
     match crate::arch::offline::arch_mirrorlist_action(crate::arch::offline::mode()) {
         crate::arch::offline::MirrorlistAction::Fetch => {}
@@ -56,7 +60,7 @@ async fn setup_mirrors(plan: &InstallPlan, executor: &dyn CommandRunner) -> Resu
                         crate::arch::offline::file_server_line(),
                         list.trim_end()
                     );
-                    std::fs::write("/etc/pacman.d/mirrorlist", content)?;
+                    source.apply_mirrorlist(&content, false)?;
                     println!(
                         "Offline bundle detected: bundle first, selected region below (stripped from the target at finish)."
                     );
@@ -72,7 +76,7 @@ async fn setup_mirrors(plan: &InstallPlan, executor: &dyn CommandRunner) -> Resu
                 println!("[DRY RUN] Writing file://-only mirrorlist (strict offline)");
                 return Ok(());
             }
-            std::fs::write("/etc/pacman.d/mirrorlist", content)?;
+            source.apply_mirrorlist(&content, false)?;
             println!("Strict offline mode: mirrorlist restricted to the offline bundle.");
             return Ok(());
         }
@@ -87,7 +91,13 @@ async fn setup_mirrors(plan: &InstallPlan, executor: &dyn CommandRunner) -> Resu
                 println!("[DRY RUN] Using fallback mirrorlist (region selection was skipped)");
             }
         }
-        println!("[DRY RUN] Writing to /etc/pacman.d/mirrorlist");
+        if source.is_isolated() {
+            println!(
+                "[DRY RUN] Writing the selected mirrorlist to the target and to a private pacman configuration (the host's mirrorlist is left untouched)"
+            );
+        } else {
+            println!("[DRY RUN] Writing to /etc/pacman.d/mirrorlist");
+        }
         return Ok(());
     }
 
@@ -104,8 +114,10 @@ async fn setup_mirrors(plan: &InstallPlan, executor: &dyn CommandRunner) -> Resu
         }
     };
 
-    // Write to file
-    std::fs::write("/etc/pacman.d/mirrorlist", mirrorlist)?;
+    // Write to the run's own mirrorlist. On a live ISO that is the host's
+    // file, which `pacstrap` copies into the target; on a running system it
+    // is the installer's private copy, and the host is left alone.
+    source.apply_mirrorlist(&mirrorlist, false)?;
     println!("Mirrors updated.");
 
     Ok(())

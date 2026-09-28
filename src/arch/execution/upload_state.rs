@@ -61,11 +61,15 @@ impl UploadRecord {
 
     /// Load the remembered upload without deciding whether it is still current.
     pub fn load() -> Option<Self> {
-        let content = match fs::read_to_string(paths::UPLOAD_STATE_FILE) {
+        let path = paths::host_upload_state_file();
+        let content = match fs::read_to_string(&path) {
             Ok(content) => content,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return None,
             Err(error) => {
-                eprintln!("Warning: could not read the upload record: {error}");
+                eprintln!(
+                    "Warning: could not read the upload record at {}: {error}",
+                    path.display()
+                );
                 return None;
             }
         };
@@ -81,7 +85,7 @@ impl UploadRecord {
     /// The remembered upload, if it still describes the current install log.
     pub fn current() -> Option<Self> {
         let record = Self::load()?;
-        let log_sha256 = fingerprint_file(Path::new(paths::LOG_FILE)).ok()?;
+        let log_sha256 = fingerprint_file(&paths::host_log_file()).ok()?;
         (record.log_sha256 == log_sha256).then_some(record)
     }
 
@@ -90,14 +94,12 @@ impl UploadRecord {
     /// The replacement is atomic so a crash cannot leave a half-written
     /// record behind.
     pub fn save(&self) -> Result<()> {
-        let path = Path::new(paths::UPLOAD_STATE_FILE);
-        let parent = path.parent().context("upload state path has no parent")?;
-        if !parent.exists() {
-            fs::create_dir_all(parent)?;
-        }
-        let mut temp = NamedTempFile::new_in(parent)?;
+        let path = paths::host_upload_state_file();
+        paths::ensure_host_state_dir()?;
+        let mut temp =
+            NamedTempFile::new_in(path.parent().context("upload state path has no parent")?)?;
         temp.write_all(toml::to_string_pretty(self)?.as_bytes())?;
-        temp.persist(path)
+        temp.persist(&path)
             .context("Failed to persist upload record")?;
         Ok(())
     }

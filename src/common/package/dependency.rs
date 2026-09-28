@@ -154,6 +154,22 @@ impl Dependency {
 /// }
 /// ```
 pub fn ensure_all(deps: &[&'static Dependency]) -> anyhow::Result<InstallResult> {
+    ensure_all_with(deps, super::batch::Confirmation::Prompt)
+}
+
+/// Like [`ensure_all`], but installs without asking.
+///
+/// Only for a host that is throwaway — see
+/// [`batch::Confirmation::Auto`]. On a machine the user is still logged into,
+/// installing a package is a change to their system and must be offered.
+pub fn ensure_all_auto(deps: &[&'static Dependency]) -> anyhow::Result<InstallResult> {
+    ensure_all_with(deps, super::batch::Confirmation::Auto)
+}
+
+fn ensure_all_with(
+    deps: &[&'static Dependency],
+    confirmation: super::batch::Confirmation,
+) -> anyhow::Result<InstallResult> {
     use super::batch::InstallBatch;
 
     // Installation tests may spawn subprocesses. Snapshot them once for the
@@ -230,8 +246,8 @@ pub fn ensure_all(deps: &[&'static Dependency]) -> anyhow::Result<InstallResult>
         return Ok(InstallResult::AlreadyInstalled);
     }
 
-    // Single prompt for all packages
-    if !batch.prompt_confirmation()? {
+    // One decision for the whole batch, or none at all on a throwaway host.
+    if !batch.confirm(confirmation)? {
         return Ok(InstallResult::Declined);
     }
 

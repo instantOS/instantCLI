@@ -53,9 +53,14 @@ pub async fn handle_arch_command(command: ArchCommands, debug: bool) -> Result<(
             step,
             questions_file,
             dry_run,
-        } => handle_exec_command(steps, step, questions_file, dry_run)
-            .await
-            .map(|_| ()),
+        } => handle_exec_command(
+            steps,
+            step,
+            questions_file.unwrap_or_else(default_questions_file),
+            dry_run,
+        )
+        .await
+        .map(|_| ()),
         ArchCommands::UploadLogs { path } => handle_upload_logs(path),
         ArchCommands::Info => handle_info_command(),
         ArchCommands::Dualboot { command } => match command {
@@ -64,6 +69,16 @@ pub async fn handle_arch_command(command: ArchCommands, debug: bool) -> Result<(
         ArchCommands::Finished => handle_finished_command().await,
         ArchCommands::Setup { user, dry_run } => handle_setup_command(user, dry_run).await,
     }
+}
+
+/// Where this run's installation configuration lives when no path is given.
+///
+/// Host-relative on purpose: a live ISO reads `/etc/instant/questions.toml`,
+/// a running system reads its own ephemeral copy so the source system's file
+/// is never touched. Inside the chroot the target's own path is correct,
+/// which is what makes the hand-off re-entry work.
+pub(crate) fn default_questions_file() -> std::path::PathBuf {
+    crate::arch::execution::paths::host_questions_file()
 }
 
 pub(super) fn build_steps() -> Vec<Box<dyn WizardStep>> {

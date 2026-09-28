@@ -101,24 +101,47 @@ fn re_execute_current_process() {
     }
 }
 
-/// Try setting up fzf using pacman if running on a live ISO
-fn try_setup_fzf_on_live_iso() -> bool {
-    if crate::common::distro::is_live_iso() {
-        eprintln!("\nRunning on a live ISO. Attempting to install fzf using pacman...");
-        match crate::common::package::install_package_names(
-            crate::common::package::PackageManager::Pacman,
-            &["fzf"],
-        ) {
-            Ok(_) => {
-                eprintln!("\nSuccessfully installed fzf via pacman!");
-                return true;
-            }
-            Err(e) => {
-                eprintln!("Warning: Failed to install fzf via pacman: {}", e);
-            }
+/// Install `fzf` with the host's own package manager.
+///
+/// The live ISO was the only case that needed this: it ships without `fzf`,
+/// and a live session is throwaway, so installing into it costs nothing. A
+/// running Arch or instantOS system running the installer also may not have
+/// `fzf` — it is not in a default install — and without it every dialog in
+/// `ins`, including the one that would ask permission to install anything,
+/// fails immediately. So the same bootstrap now also runs on an Arch-family
+/// host, resolved from the detected operating system rather than hard-coded
+/// to pacman.
+///
+/// Deliberately *not* routed through `ensure_all`: that prompts through an fzf
+/// dialog, and fzf is the thing that is missing. Only the mise fallback below
+/// remains a non-package-manager path, and the ordering (package manager, then
+/// mise) is unchanged.
+fn try_setup_fzf_with_package_manager() -> bool {
+    let manager = match crate::common::distro::OperatingSystem::detect().native_package_manager() {
+        Some(manager) => manager,
+        None => return false,
+    };
+
+    let on_live_iso = crate::common::distro::is_live_iso();
+    eprintln!(
+        "\n{} Attempting to install fzf using {:?}...",
+        if on_live_iso {
+            "Running on a live ISO."
+        } else {
+            "fzf is required for interactive menus."
+        },
+        manager
+    );
+    match crate::common::package::install_package_names(manager, &["fzf"]) {
+        Ok(_) => {
+            eprintln!("\nSuccessfully installed fzf via {manager:?}!");
+            true
+        }
+        Err(e) => {
+            eprintln!("Warning: Failed to install fzf via {manager:?}: {}", e);
+            false
         }
     }
-    false
 }
 
 /// Try setting up fzf using mise if installed and activated
@@ -170,7 +193,7 @@ pub(crate) fn handle_old_fzf_error(stderr: &[u8]) {
         || stderr_str.contains("invalid color specification")
         || stderr_str.contains("unrecognized option")
     {
-        if try_setup_fzf_on_live_iso() {
+        if try_setup_fzf_with_package_manager() {
             re_execute_current_process();
         }
 
@@ -196,7 +219,7 @@ pub(crate) fn handle_old_fzf_error(stderr: &[u8]) {
 /// Handle spawn error indicating fzf is not installed and try to recover/setup fzf
 pub(crate) fn handle_fzf_spawn_error(error: &std::io::Error) {
     if error.kind() == ErrorKind::NotFound {
-        if try_setup_fzf_on_live_iso() {
+        if try_setup_fzf_with_package_manager() {
             re_execute_current_process();
         }
 
@@ -303,9 +326,19 @@ mod tests {
     }
 
     #[test]
-    fn test_try_setup_fzf_on_live_iso_not_live_iso() {
-        // Since we are not on a live ISO during normal unit tests, it should return false
-        assert!(!try_setup_fzf_on_live_iso());
+    fn the_package_manager_bootstrap_resolves_off_a_live_iso() {
+        // The bootstrap used to be gated on `is_live_iso()` and hard-coded
+        // pacman, so a running Arch system without fzf hit the "not
+        // installed" error and exited. It now resolves the manager from the
+        // detected OS, so the gate is gone.
+        //
+        // Only the *decision* is asserted: calling the function would install
+        // a package on the machine running the tests.
+        let manager = crate::common::distro::OperatingSystem::detect().native_package_manager();
+        assert!(
+            manager.is_some(),
+            "every distribution with a supported installer has a native package manager"
+        );
     }
 
     #[test]

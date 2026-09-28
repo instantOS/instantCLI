@@ -18,7 +18,8 @@ pub(super) fn handle_upload_logs(path: Option<std::path::PathBuf>) -> Result<()>
     // The default flow reads the root-owned install log and records the
     // upload in /etc, so it needs the same privileges as the installer.
     ensure_root()?;
-    let context =
-        crate::arch::engine::InstallContext::load(crate::arch::cli::DEFAULT_QUESTIONS_FILE)?;
+    let context = crate::arch::engine::InstallContext::load(
+        crate::arch::execution::paths::host_questions_file(),
+    )?;
     crate::arch::logging::prompt_log_upload(&context)
 }

@@ -5,6 +5,7 @@ use anyhow::{Context, Result, bail};
 
 use super::{BootMode, InstallContext, Kernel, PartitioningMethod, StepId, SystemInfo};
 use crate::arch::config::{BtrfsCompression, DesktopEnvironment, DisplayManager, RootFilesystem};
+use crate::arch::host::InstallEnvironment;
 
 /// Accessor for the validated string types. The type itself carries the
 /// invariant established by `parse`; execution only ever needs the value back
@@ -446,6 +447,10 @@ impl SessionAnswers {
 #[derive(Debug, Clone)]
 pub struct InstallPlan {
     pub system_info: SystemInfo,
+    /// Where the installer runs and how the target relates to it. Resolved
+    /// from the machine, not from an answer: the execution layer's guards
+    /// must not be steerable by a hand-edited configuration.
+    pub environment: InstallEnvironment,
     pub storage: StoragePlan,
     pub hostname: Hostname,
     pub username: Username,
@@ -490,6 +495,9 @@ impl TryFrom<&InstallContext> for InstallPlan {
             }
             RootFilesystem::Ext4 => FilesystemPlan::Ext4,
         };
+
+        // Resolved before `disk` moves into the storage plan below.
+        let environment = InstallEnvironment::detect(&disk);
 
         let partitioning = context.require_partitioning_method()?;
         let storage = match partitioning {
@@ -577,6 +585,7 @@ impl TryFrom<&InstallContext> for InstallPlan {
 
         Ok(Self {
             system_info: context.system_info.clone(),
+            environment,
             storage,
             hostname: Hostname::parse(required(StepId::Hostname)?)?,
             username: Username::parse(required(StepId::Username)?)?,
@@ -609,6 +618,7 @@ pub(crate) fn test_install_plan() -> InstallPlan {
             boot_mode: BootMode::UEFI64,
             ..SystemInfo::default()
         },
+        environment: InstallEnvironment::new(crate::arch::host::HostProfile::LiveIso, None),
         storage: StoragePlan::Automatic {
             disk: DiskPath("/dev/test-disk".to_owned()),
             filesystem: FilesystemPlan::Ext4,
@@ -760,5 +770,33 @@ mod tests {
 
         assert!(!format!("{login:?}").contains("login-secret"));
         assert!(!format!("{encryption:?}").contains("encryption-secret"));
+    }
+
+    #[test]
+    fn the_plan_carries_the_resolved_environment_not_an_answer() {
+        // No `INS_HOST_ENV` here, so this resolves from the machine running
+        // the tests; the point is that the plan always has a value.
+        let plan = InstallPlan::try_from(&required_context("automatic")).unwrap();
+        assert!(
+            plan.environment.target().is_some()
+                || plan.environment.may_probe_for_existing_install()
+        );
+        assert!(!plan.environment.host().label().is_empty());
+    }
+
+    #[test]
+    fn the_environment_is_derived_from_the_disk_not_from_an_answer() {
+        // The disk answer is the only input that shapes the relation, and the
+        // resulting environment must equal a fresh resolution for that disk:
+        // there is no answer that could declare "this disk is a different
+        // disk from the running system".
+        let mut context = required_context("automatic");
+        context.set_answer(StepId::Disk, "/dev/sdb".to_string());
+        let plan = InstallPlan::try_from(&context).unwrap();
+        assert_eq!(plan.storage.disk().as_str(), "/dev/sdb");
+        assert_eq!(
+            plan.environment,
+            InstallEnvironment::detect(&DiskPath::parse("/dev/sdb").unwrap())
+        );
     }
 }

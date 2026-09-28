@@ -240,7 +240,12 @@ fn view_logs_menu_item<T>(value: T) -> MenuItem<T> {
         preview: PreviewBuilder::new()
             .header(NerdFont::FileText, "View Logs")
             .text("Open the local installation log in nvim, or less when nvim is unavailable.")
-            .field("File", crate::arch::execution::paths::LOG_FILE)
+            .field(
+                "File",
+                &crate::arch::execution::paths::host_log_file()
+                    .display()
+                    .to_string(),
+            )
             .build(),
     }
 }
@@ -377,7 +382,7 @@ pub fn show_failed_install_log_menu(context: Option<&InstallContext>) -> Result<
 }
 
 pub fn view_install_log() -> Result<()> {
-    let log_path = Path::new(crate::arch::execution::paths::LOG_FILE);
+    let log_path = crate::arch::execution::paths::host_log_file();
     if !log_path.exists() {
         anyhow::bail!("Log file not found: {}", log_path.display());
     }
@@ -415,8 +420,8 @@ fn upload_install_report(
     scope: UploadScope,
     existing_upload: ExistingUploadPolicy,
 ) -> Result<UploadResult> {
-    let log_path = Path::new(crate::arch::execution::paths::LOG_FILE);
-    let (report, log_sha256) = build_support_report(context, log_path, scope)?;
+    let log_path = crate::arch::execution::paths::host_log_file();
+    let (report, log_sha256) = build_support_report(context, &log_path, scope)?;
 
     if let Some(record) = reusable_upload(UploadRecord::load(), &log_sha256, existing_upload) {
         return Ok(UploadResult::Reused(record));

@@ -10,6 +10,7 @@ pub mod bootloader;
 pub mod config;
 pub mod disk;
 pub mod fstab;
+pub mod package_source;
 pub mod packages;
 pub mod pacman;
 pub mod paths;
@@ -347,13 +348,15 @@ pub async fn execute_installation(
     mut dry_run: bool,
     log_file: Option<PathBuf>,
 ) -> Result<ExecutionOutcome> {
-    // Check for force dry-run file
-    if std::path::Path::new(paths::DRY_RUN_FLAG).exists() {
+    // Check for force dry-run file. Deliberately not honoured on a running
+    // system: there, `/etc/instant/installdryrun` is a real file on the real
+    // root, and a leftover from any past experiment would silently turn every
+    // future install into a no-op. Use `--dry-run`.
+    if let Some(flag) = paths::dry_run_flag()
+        && flag.exists()
+    {
         if !dry_run {
-            println!(
-                "Notice: {} exists, forcing dry-run mode.",
-                paths::DRY_RUN_FLAG
-            );
+            println!("Notice: {} exists, forcing dry-run mode.", flag.display());
         }
         dry_run = true;
     }
@@ -411,23 +414,36 @@ pub async fn execute_installation(
     let intent_sha256 = crate::arch::installation_identity::fingerprint(&context)?;
 
     println!("Loaded configuration for user: {}", plan.username.as_str());
+    println!(
+        "Install environment: {}; target is {}.",
+        plan.environment.host().label(),
+        plan.environment.target_label()
+    );
 
     let is_disk_execution = step
         .as_deref()
         .is_none_or(|name| name.eq_ignore_ascii_case("disk"));
-    if is_disk_execution
-        && !dry_run
-        && !is_chroot()
-        && let Some(existing) =
-            crate::arch::installation_identity::find_matching_installation(&plan, &intent_sha256)?
-    {
-        println!(
-            "This installation configuration is already installed on {} (completed {}).",
-            existing.root_device,
-            existing.installed_at.format("%Y-%m-%d %H:%M UTC")
-        );
-        println!("No changes were made; you do not need to install it again.");
-        return Ok(ExecutionOutcome::AlreadyInstalled);
+    if is_disk_execution && !dry_run && !is_chroot() {
+        if plan.environment.may_probe_for_existing_install() {
+            if let Some(existing) = crate::arch::installation_identity::find_matching_installation(
+                &plan,
+                &intent_sha256,
+            )? {
+                println!(
+                    "This installation configuration is already installed on {} (completed {}).",
+                    existing.root_device,
+                    existing.installed_at.format("%Y-%m-%d %H:%M UTC")
+                );
+                println!("No changes were made; you do not need to install it again.");
+                return Ok(ExecutionOutcome::AlreadyInstalled);
+            }
+        } else {
+            println!(
+                "Skipping the already-installed check: the install target is {}, so reading \
+                 installation markers from it would read the running system.",
+                plan.environment.target_label()
+            );
+        }
     }
 
     if !dry_run {
@@ -700,7 +716,7 @@ async fn execute_step(
             // Sync state to chroot if it exists
             let chroot_state = paths::chroot_path(paths::STATE_FILE);
             if chroot_state.parent().map(|p| p.exists()).unwrap_or(false)
-                && let Err(e) = std::fs::copy(paths::STATE_FILE, &chroot_state)
+                && let Err(e) = std::fs::copy(paths::host_state_file(), &chroot_state)
             {
                 println!("Warning: Failed to sync state to chroot: {}", e);
             }
@@ -763,11 +779,15 @@ fn setup_chroot(executor: &dyn CommandRunner, config_path: &std::path::Path) -> 
     }
 
     // Copy state file
-    let state_file = paths::STATE_FILE;
+    let state_file = paths::host_state_file();
     let target_state = paths::chroot_path(paths::STATE_FILE);
-    if std::path::Path::new(state_file).exists() {
+    if state_file.exists() {
         if executor.dry_run() {
-            println!("[DRY RUN] cp {} {:?}", state_file, target_state);
+            println!(
+                "[DRY RUN] cp {} {:?}",
+                state_file.display(),
+                target_state.display()
+            );
         } else {
             // Ensure directory exists (should be same as config but good to be safe)
             if let Some(parent) = target_state.parent()
@@ -775,7 +795,8 @@ fn setup_chroot(executor: &dyn CommandRunner, config_path: &std::path::Path) -> 
             {
                 std::fs::create_dir_all(parent).context("Failed to create state dir in chroot")?;
             }
-            std::fs::copy(state_file, target_state).context("Failed to copy state to chroot")?;
+            std::fs::copy(&state_file, &target_state)
+                .with_context(|| format!("Failed to copy state from {}", state_file.display()))?;
         }
     }
 

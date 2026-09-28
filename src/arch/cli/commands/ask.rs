@@ -1,11 +1,9 @@
 use anyhow::{Context, Result, bail};
 
-use crate::arch::cli::DEFAULT_QUESTIONS_FILE;
 use crate::arch::engine::{
     InstallContext, InstallPlan, InstallSummary, StepId, SystemInfo, WizardEngine, WizardOutcome,
     build_install_summary,
 };
-use crate::common::distro::is_live_iso;
 use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper};
 use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
@@ -132,7 +130,7 @@ enum ExistingContextOutcome {
 }
 
 fn resolve_config_path(output_config: Option<std::path::PathBuf>) -> std::path::PathBuf {
-    output_config.unwrap_or_else(|| std::path::PathBuf::from(DEFAULT_QUESTIONS_FILE))
+    output_config.unwrap_or_else(super::default_questions_file)
 }
 
 fn ensure_internet(system_info: &SystemInfo, mode: crate::arch::offline::Mode) -> Result<()> {
@@ -150,14 +148,14 @@ fn ensure_internet(system_info: &SystemInfo, mode: crate::arch::offline::Mode) -
     bail!("No internet connection detected. Arch installation requires internet.");
 }
 
-fn install_live_iso_dependencies() -> Result<()> {
-    if !is_live_iso() {
-        return Ok(());
-    }
-
-    println!("Detected Arch Linux Live ISO environment.");
-
-    let dependencies = &[
+/// The tools the wizard and the execution layer need before they can start.
+///
+/// On a live ISO these are installed with one `pacman` call, because the ISO
+/// ships without them and a live session is throwaway. On a running system
+/// they are usually already present — and installing them is a change to the
+/// user's machine, so it is offered rather than done.
+fn required_dependencies() -> Vec<&'static crate::common::package::Dependency> {
+    vec![
         &crate::common::deps::FZF,
         &crate::common::deps::GIT,
         &crate::common::deps::GUM,
@@ -165,32 +163,80 @@ fn install_live_iso_dependencies() -> Result<()> {
         &crate::common::deps::BTRFS_PROGS,
         &crate::common::deps::NTFSPROGS,
         &crate::common::deps::NTFS_3G,
-    ];
+        // pacstrap, arch-chroot and genfstab: every non-`ins` tool the
+        // execution layer shells out to.
+        &crate::common::deps::ARCH_INSTALL_SCRIPTS,
+    ]
+}
 
-    // Collect all missing packages first
-    let mut missing_packages = Vec::new();
-    for dep in dependencies {
-        if !dep.is_installed()
-            && let Some(pkg) = dep
-                .packages
-                .iter()
-                .find(|p| p.manager == crate::common::package::PackageManager::Pacman)
-        {
-            missing_packages.push(pkg.package_name);
-            println!("Will install missing dependency: {}...", dep.name);
+/// Install the wizard's prerequisites on a live ISO, without asking.
+///
+/// A live session's `/etc` is RAM, so this is a change to nothing that
+/// survives the reboot. The same list and the same install machinery serve the
+/// running-system preflight, which *does* offer rather than acts — see
+/// [`required_dependencies`].
+fn install_live_iso_dependencies() -> Result<()> {
+    if !crate::common::distro::is_live_iso() {
+        return Ok(());
+    }
+
+    println!("Detected Arch Linux Live ISO environment.");
+    match crate::common::package::ensure_all_auto(&required_dependencies())? {
+        crate::common::package::InstallResult::AlreadyInstalled
+        | crate::common::package::InstallResult::Installed => Ok(()),
+        other => bail!("Could not install the installer's prerequisites: {other:?}"),
+    }
+}
+
+/// Check the installer's toolchain before the wizard asks anything.
+///
+/// Installing instantOS from a running system means running the Arch
+/// installation tools on a normal desktop, where nothing guarantees they are
+/// present. Discovering that at the first `pacstrap` would be after the disk
+/// was already partitioned, so the check happens up front and the install is
+/// offered here instead.
+fn preflight_dependencies(profile: crate::arch::host::HostProfile) -> Result<()> {
+    install_live_iso_dependencies()?;
+
+    if profile.etc_is_ephemeral() {
+        return Ok(());
+    }
+
+    let dependencies = required_dependencies();
+    let missing: Vec<_> = dependencies
+        .iter()
+        .copied()
+        .filter(|dependency| !dependency.is_installed())
+        .collect();
+    if missing.is_empty() {
+        return Ok(());
+    }
+
+    println!(
+        "Checking the installation toolchain on {}...",
+        profile.label()
+    );
+    if !profile.etc_is_ephemeral() {
+        println!(
+            "A running system is not expected to ship the installer's tools; \
+             anything installed now changes {} itself.",
+            profile.label()
+        );
+    }
+    match crate::common::package::ensure_all(&missing)? {
+        crate::common::package::InstallResult::AlreadyInstalled
+        | crate::common::package::InstallResult::Installed => Ok(()),
+        crate::common::package::InstallResult::Declined => bail!(
+            "The installation toolchain is incomplete. Install the missing packages and run \
+             `ins arch install` again, or boot the instantOS live ISO."
+        ),
+        crate::common::package::InstallResult::NotAvailable { name, hint } => {
+            bail!("Cannot provide the installation dependency {name}.\n{hint}")
+        }
+        crate::common::package::InstallResult::Failed { reason } => {
+            bail!("Installing the installation toolchain failed: {reason}")
         }
     }
-
-    // Install all missing packages in one pacman call
-    if !missing_packages.is_empty() {
-        println!("Installing {} missing packages...", missing_packages.len());
-
-        let executor = crate::arch::execution::CommandExecutor::new(false, None);
-        crate::arch::execution::pacman::install(&missing_packages, &executor)?;
-        println!("Successfully installed {} packages", missing_packages.len());
-    }
-
-    Ok(())
 }
 
 fn print_system_checks(system_info: &SystemInfo, install_mode: crate::arch::offline::Mode) {
@@ -281,15 +327,10 @@ fn print_completion_summary(context: &InstallContext) {
 fn save_config(context: &InstallContext, config_path: &std::path::Path) -> Result<()> {
     let toml_content = context.to_toml()?;
 
-    // Ensure parent directory exists
-    if let Some(parent) = config_path.parent()
-        && !parent.exists()
-    {
-        std::fs::create_dir_all(parent)?;
-    }
-
-    // Write to file
-    std::fs::write(config_path, &toml_content)?;
+    // Written through the installer's own state writer, so the file lands in
+    // the right place and stays private on a running system: the questions
+    // file carries the install password.
+    crate::arch::execution::paths::write_host_file(config_path, &toml_content)?;
     println!("\nConfiguration saved to: {}", config_path.display());
     Ok(())
 }
@@ -338,7 +379,9 @@ async fn run_full_wizard(
     let install_mode = crate::arch::offline::mode();
     crate::arch::offline::validate(install_mode, system_info.internet_connected)?;
     ensure_internet(&system_info, install_mode)?;
-    install_live_iso_dependencies()?;
+    preflight_dependencies(
+        crate::arch::host::HostProfile::detect().unwrap_or(crate::arch::host::HostProfile::LiveIso),
+    )?;
     print_system_checks(&system_info, install_mode);
 
     let existing_context = match load_existing_context(&config_path, &system_info)? {

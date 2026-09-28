@@ -19,6 +19,19 @@ pub fn prepare_disk(
 ) -> Result<()> {
     let disk_path = plan.storage.disk().as_str();
 
+    // Last line of defence before partitioning. The wizard's disk question
+    // refuses the running disk, and `crate::arch::disks::prepare_disk`
+    // refuses to unmount it — but this step is the one that writes a
+    // partition table, so a hand-authored configuration that names the
+    // running disk must still stop here rather than repartition the machine
+    // the installer is executing from.
+    if let Some(conflict) = plan.environment.target() {
+        anyhow::bail!(
+            "{}",
+            crate::arch::host::running_disk_message(disk_path, conflict)
+        );
+    }
+
     println!("Preparing disk: {}", disk_path);
 
     let boot_mode = plan.boot_mode();

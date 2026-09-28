@@ -3,11 +3,11 @@ use std::io::IsTerminal;
 use anyhow::Result;
 use colored::Colorize;
 
-use crate::arch::cli::{ArchCommands, DEFAULT_QUESTIONS_FILE};
+use crate::arch::cli::ArchCommands;
 
 use super::super::utils::ensure_root;
 use super::ask::{AskOutcome, handle_ask_command};
-use super::{build_steps, handle_arch_command};
+use super::{build_steps, default_questions_file, handle_arch_command};
 
 fn confirm_battery_power() -> Result<bool> {
     use crate::menu_utils::{ConfirmResult, FzfWrapper};
@@ -81,6 +81,28 @@ fn ensure_interactive_internet() -> Result<bool> {
     Ok(true)
 }
 
+/// The refusal shown on a host the installer does not support yet.
+///
+/// Two hosts are supported and they are not equivalent: the live ISO can
+/// target any disk including the one it booted from, a running Arch or
+/// instantOS system can only target a different one. A single "only
+/// supported on Arch" sentence conveys neither, so both are named along with
+/// the command that gets the user to a supported host.
+fn unsupported_host_message(distro: &str) -> String {
+    format!(
+        "instantOS can be installed from the live ISO or from a running Arch Linux or \
+         instantOS system — but not yet from {distro}.\n\
+         \n\
+         Two ways forward:\n\
+           •  Boot the instantOS live ISO on this machine and run the installer from there.\n\
+           •  Install Arch Linux first, boot it, then run `ins arch install` to put instantOS \
+         on a different disk.\n\
+         \n\
+         From a running system, the disk you are running from cannot be used — the installer \
+         refuses it and says so."
+    )
+}
+
 /// Handle the Install command - orchestrates the full installation process
 pub(super) async fn handle_install_command(debug: bool) -> Result<()> {
     // The installer is interactive. Graphical launchers should normally open a
@@ -116,16 +138,20 @@ pub(super) async fn handle_install_command(debug: bool) -> Result<()> {
     // Check architecture
     let system_info = crate::arch::engine::SystemInfo::detect();
 
-    // Check distro
-    if !system_info.distro.contains("Arch") && !system_info.distro.contains("instantOS") {
+    // Check distro. Installing from a running Arch Linux or instantOS system
+    // is supported, so this is the only remaining host restriction; the
+    // refusal has to be accurate, because the two supported cases behave very
+    // differently and a user who reads "only supported on Arch" cannot tell
+    // whether a live session is required.
+    let profile = crate::arch::host::HostProfile::detect().unwrap_or_else(|error| {
+        eprintln!("Warning: could not classify this system: {error:#}");
+        crate::arch::host::HostProfile::ForeignDistro
+    });
+    if !profile.supports_installation() {
         eprintln!(
             "{} {}",
             "Error:".red().bold(),
-            format!(
-                "Arch Linux installation is only supported on Arch Linux or instantOS. Detected distro: {}",
-                system_info.distro
-            )
-            .red()
+            unsupported_host_message(&system_info.distro).red()
         );
         return Ok(());
     }
@@ -154,7 +180,7 @@ pub(super) async fn handle_install_command(debug: bool) -> Result<()> {
     let exec_result = Box::pin(super::exec::handle_exec_command(
         build_steps(),
         None,
-        std::path::PathBuf::from(DEFAULT_QUESTIONS_FILE),
+        default_questions_file(),
         false,
     ))
     .await;
@@ -162,7 +188,7 @@ pub(super) async fn handle_install_command(debug: bool) -> Result<()> {
     if exec_result.is_err() {
         // Never upload implicitly after a failure. Keep the installer open so
         // the user can inspect the log or explicitly choose an upload scope.
-        let context = crate::arch::engine::InstallContext::load(DEFAULT_QUESTIONS_FILE).ok();
+        let context = crate::arch::engine::InstallContext::load(default_questions_file()).ok();
         if let Err(error) = crate::arch::logging::show_failed_install_log_menu(context.as_ref()) {
             eprintln!("Could not show log options: {error}");
         }
@@ -179,4 +205,43 @@ pub(super) async fn handle_install_command(debug: bool) -> Result<()> {
     Box::pin(handle_arch_command(ArchCommands::Finished, debug)).await?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_distro_refusal_names_both_supported_hosts() {
+        // The refusal stays, but it has to be accurate. A user on Ubuntu has
+        // to learn that the live ISO is one way out and an existing Arch
+        // install is the other — otherwise "only supported on Arch" reads as
+        // though nothing works from a live session either, and there is no
+        // command to copy.
+        let rendered = unsupported_host_message("Ubuntu");
+
+        assert!(rendered.contains("Ubuntu"));
+        assert!(rendered.contains("live ISO"), "one supported host named");
+        assert!(
+            rendered.contains("Arch Linux"),
+            "the other supported host named"
+        );
+        assert!(
+            rendered.contains("ins arch install"),
+            "the command for the second way forward"
+        );
+        assert!(
+            rendered.contains("different disk"),
+            "and the scope limit of the running-system path: {rendered}"
+        );
+    }
+
+    #[test]
+    fn the_wizard_uses_a_host_relative_configuration_path() {
+        // The path is resolved per host so a running system's own
+        // `/etc/instant/questions.toml` is never the wizard's output.
+        let path = default_questions_file();
+        assert_eq!(path, crate::arch::execution::paths::host_questions_file());
+        assert!(path.ends_with("questions.toml"));
+    }
 }
