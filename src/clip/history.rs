@@ -36,9 +36,27 @@ impl ClipBackend {
     }
 }
 
+/// Where a clipboard entry's content comes from.
+///
+/// `cliphist list` reports an id and a summary, not the content, so an entry
+/// holds the raw list line and decodes it on demand — decoding every entry to
+/// draw a menu of hundreds would be wasteful.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum EntrySource {
+    /// The raw `cliphist list` line, decoded on demand via `cliphist decode`.
     Cliphist(String),
+    /// Content already in hand, so no subprocess is needed.
+    ///
+    /// A test double: it lets a test build a `ClipEntry` without a cliphist
+    /// database or the binary. The content is raw bytes because clipboard
+    /// entries can be images — `restore` sniffs the magic numbers to pick a MIME
+    /// type — so a `String` here would corrupt every image entry.
+    ///
+    /// `#[cfg(test)]`, so this variant does not exist in a release build, no
+    /// user can reach it, and the enum has a single variant there. The arms
+    /// matching on it in `decode` and `delete` are compiled out likewise, which
+    /// is the trade: the fake cannot leak, at the cost of the compiler not
+    /// reminding anyone to add an arm if a further variant ever appears.
     #[cfg(test)]
     Memory(Vec<u8>),
 }

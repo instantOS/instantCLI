@@ -78,20 +78,28 @@ fn detect_disks_from_lsblk(lsblk: crate::common::blockdev::LsblkOutput) -> Resul
             }
         }
 
-        let total_partition_size: u64 = partitions.iter().map(|p| p.size_bytes).sum();
-        let unpartitioned_space_bytes = size_bytes.saturating_sub(total_partition_size);
-
-        // Calculate largest contiguous free space using sfdisk
         let device_path = device.path();
         let max_contiguous_free_space_bytes =
-            get_largest_free_region(&device_path, Some(size_bytes)).unwrap_or(0);
+            match get_largest_free_region(&device_path, Some(size_bytes)) {
+                Ok(largest) => largest.unwrap_or(0),
+                Err(error) => {
+                    // Report zero and carry on: refusing to detect a disk
+                    // because a helper is missing is worse than reporting a
+                    // disk it cannot describe. But say why, because zero here
+                    // is otherwise indistinguishable from a full disk.
+                    eprintln!(
+                        "Could not read the partition table of {device_path}, so its free \\
+                         space is reported as 0. Is sfdisk installed? {error:#}"
+                    );
+                    0
+                }
+            };
 
         disks.push(DiskInfo {
             device: device_path,
             size_bytes,
             partition_table,
             partitions,
-            unpartitioned_space_bytes,
             max_contiguous_free_space_bytes,
         });
     }
@@ -99,13 +107,18 @@ fn detect_disks_from_lsblk(lsblk: crate::common::blockdev::LsblkOutput) -> Resul
     Ok(disks)
 }
 
-/// Get the largest contiguous free region in bytes for a device (Helper wrapper)
-fn get_largest_free_region(device: &str, disk_size_bytes: Option<u64>) -> Option<u64> {
-    parsing::get_free_regions(device, disk_size_bytes)
-        .ok()?
+/// The largest contiguous free region on a device, in bytes.
+///
+/// `Ok(None)` means the partition table was read and offers no free space —
+/// the normal answer for a blank disk. `Err` means the table could not be read
+/// at all, which is different: a disk that happens to be full and a host with
+/// no `sfdisk` both need saying out loud, or the second is reported as the
+/// first.
+fn get_largest_free_region(device: &str, disk_size_bytes: Option<u64>) -> Result<Option<u64>> {
+    Ok(parsing::get_free_regions(device, disk_size_bytes)?
         .into_iter()
-        .map(|r| r.size_bytes)
-        .max()
+        .map(|region| region.size_bytes)
+        .max())
 }
 
 /// Check dual boot feasibility for all detected disks

@@ -728,7 +728,6 @@ mod tests {
             size_bytes: size,
             partition_table: PartitionTableType::GPT,
             partitions: Vec::new(),
-            unpartitioned_space_bytes: 0,
             max_contiguous_free_space_bytes: 0,
         }
     }

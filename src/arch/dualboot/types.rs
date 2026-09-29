@@ -20,8 +20,6 @@ pub struct DiskInfo {
     pub partition_table: PartitionTableType,
     /// List of partitions on this disk
     pub partitions: Vec<PartitionInfo>,
-    /// Unpartitioned space in bytes (calculated)
-    pub unpartitioned_space_bytes: u64,
     /// Largest contiguous unpartitioned space in bytes (detected via sfdisk)
     pub max_contiguous_free_space_bytes: u64,
 }
@@ -30,6 +28,23 @@ impl DiskInfo {
     /// Get human-readable size
     pub fn size_human(&self) -> String {
         format_size(self.size_bytes)
+    }
+
+    /// Total size claimed by the partition list.
+    pub fn partitioned_bytes(&self) -> u64 {
+        self.partitions.iter().map(|p| p.size_bytes).sum()
+    }
+
+    /// Disk size not covered by any partition.
+    ///
+    /// Derived rather than stored: it is fully determined by `size_bytes` and
+    /// `partitions`, so a stored copy could only ever disagree with them.
+    /// Note this is *not* the same as
+    /// [`max_contiguous_free_space_bytes`](Self::max_contiguous_free_space_bytes),
+    /// which is what the partition table actually leaves free — the two differ
+    /// whenever the gaps between partitions are not contiguous.
+    pub fn unpartitioned_bytes(&self) -> u64 {
+        self.size_bytes.saturating_sub(self.partitioned_bytes())
     }
 
     /// Check if disk already has enough unpartitioned space for Linux installation
@@ -347,7 +362,6 @@ mod tests {
             size_bytes: 500 * 1024 * 1024 * 1024,
             partition_table: PartitionTableType::GPT,
             partitions: vec![],
-            unpartitioned_space_bytes: 0,
             max_contiguous_free_space_bytes: crate::arch::dualboot::MIN_LINUX_SIZE,
         };
         assert!(disk.has_sufficient_free_space());
@@ -360,7 +374,6 @@ mod tests {
             size_bytes: 500 * 1024 * 1024 * 1024,
             partition_table: PartitionTableType::GPT,
             partitions: vec![],
-            unpartitioned_space_bytes: 0,
             max_contiguous_free_space_bytes: 1024,
         };
         assert!(!disk.has_sufficient_free_space());
@@ -390,7 +403,6 @@ mod tests {
             size_bytes: 500 * 1024 * 1024 * 1024,
             partition_table: PartitionTableType::GPT,
             partitions: vec![make_esp(MIN_ESP_SIZE)],
-            unpartitioned_space_bytes: 0,
             max_contiguous_free_space_bytes: 0,
         };
         let esp = disk.find_reusable_esp().unwrap();
@@ -405,7 +417,6 @@ mod tests {
             size_bytes: 500 * 1024 * 1024 * 1024,
             partition_table: PartitionTableType::GPT,
             partitions: vec![make_esp(100 * 1024 * 1024)], // 100 MB, below 260 MB minimum
-            unpartitioned_space_bytes: 0,
             max_contiguous_free_space_bytes: 0,
         };
         assert!(disk.find_reusable_esp().is_none());
@@ -428,7 +439,6 @@ mod tests {
             size_bytes: 500 * 1024 * 1024 * 1024,
             partition_table: PartitionTableType::GPT,
             partitions: vec![non_efi],
-            unpartitioned_space_bytes: 0,
             max_contiguous_free_space_bytes: 0,
         };
         assert!(disk.find_reusable_esp().is_none());
@@ -451,7 +461,6 @@ mod tests {
             size_bytes: 500 * 1024 * 1024 * 1024,
             partition_table: PartitionTableType::GPT,
             partitions: vec![small_efi, large_efi],
-            unpartitioned_space_bytes: 0,
             max_contiguous_free_space_bytes: 0,
         };
         let esp = disk.find_reusable_esp().unwrap();
@@ -488,5 +497,75 @@ mod tests {
             Shrinkability::Shrinkable { .. }
         ));
         assert_eq!(info.reason(), Some("Filesystem not supported"));
+    }
+
+    fn partition(device: &str, size: u64) -> PartitionInfo {
+        PartitionInfo {
+            device: device.to_string(),
+            size_bytes: size,
+            filesystem: None,
+            detected_os: None,
+            resize_info: None,
+            mount_point: None,
+            is_efi: false,
+            partition_type: None,
+        }
+    }
+
+    fn disk(size: u64, partitions: Vec<PartitionInfo>) -> DiskInfo {
+        DiskInfo {
+            device: "/dev/vda".to_string(),
+            size_bytes: size,
+            partition_table: PartitionTableType::GPT,
+            partitions,
+            max_contiguous_free_space_bytes: 0,
+        }
+    }
+
+    #[test]
+    fn unpartitioned_space_is_derived_from_the_partition_list() {
+        let disk = disk(
+            1000,
+            vec![partition("/dev/vda1", 300), partition("/dev/vda2", 200)],
+        );
+
+        assert_eq!(disk.partitioned_bytes(), 500);
+        assert_eq!(disk.unpartitioned_bytes(), 500);
+    }
+
+    #[test]
+    fn a_fully_partitioned_disk_has_none_left() {
+        let disk = disk(500, vec![partition("/dev/vda1", 500)]);
+        assert_eq!(disk.unpartitioned_bytes(), 0);
+    }
+
+    #[test]
+    fn unpartitioned_space_saturates_rather_than_underflowing() {
+        // Partitions can report more than the disk holds — a corrupt table, or
+        // a disk resized underneath us — and that must not wrap to a huge
+        // number that reads as "loads of free space".
+        let disk = disk(100, vec![partition("/dev/vda1", 900)]);
+        assert_eq!(disk.unpartitioned_bytes(), 0);
+    }
+
+    #[test]
+    fn an_empty_partition_list_leaves_the_whole_disk_unpartitioned() {
+        assert_eq!(disk(1000, Vec::new()).unpartitioned_bytes(), 1000);
+    }
+
+    #[test]
+    fn unpartitioned_space_is_not_the_same_as_contiguous_free_space() {
+        // The two answer different questions: one is arithmetic on the partition
+        // list, the other is what the partition table actually leaves free. They
+        // differ whenever the gaps between partitions are not adjacent, which is
+        // the common case on a partitioned disk.
+        let mut disk = disk(
+            1000,
+            vec![partition("/dev/vda1", 300), partition("/dev/vda2", 300)],
+        );
+        disk.max_contiguous_free_space_bytes = 100;
+
+        assert_eq!(disk.unpartitioned_bytes(), 400);
+        assert_eq!(disk.max_contiguous_free_space_bytes, 100);
     }
 }

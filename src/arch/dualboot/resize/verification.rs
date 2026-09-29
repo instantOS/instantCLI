@@ -55,7 +55,7 @@ impl ResizeVerifier {
             disk_path: disk.device.clone(),
             partition_path: partition.device.clone(),
             original_partition_size: partition.size_bytes,
-            original_unpartitioned_bytes: disk.unpartitioned_space_bytes,
+            original_unpartitioned_bytes: disk.unpartitioned_bytes(),
             target_partition_size: Some(target_partition_size),
         }
     }
@@ -81,7 +81,7 @@ impl ResizeVerifier {
             .find(|p| p.device == self.partition_path);
 
         let current_partition_size = partition.map(|p| p.size_bytes);
-        let current_unpartitioned = disk.unpartitioned_space_bytes;
+        let current_unpartitioned = disk.unpartitioned_bytes();
         let current_contiguous = disk.max_contiguous_free_space_bytes;
 
         // Check if resize occurred
