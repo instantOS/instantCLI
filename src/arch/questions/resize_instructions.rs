@@ -60,12 +60,11 @@ impl WizardStep for ResizeWorkflowStep {
         let disk_path = context.get_answer(&StepId::Disk).context("No disk")?;
         let disk_path_owned = disk_path.to_string();
 
-        let disks_result = tokio::task::spawn_blocking(crate::arch::dualboot::detect_disks).await?;
-        let disks = disks_result?;
-        let disk_info = disks
-            .iter()
-            .find(|d| d.device == disk_path_owned)
-            .context("Disk not found")?;
+        let disk_info = tokio::task::spawn_blocking(move || {
+            crate::arch::dualboot::detect_disk(&disk_path_owned)
+        })
+        .await??
+        .context("Disk not found")?;
         let partition = disk_info
             .partitions
             .iter()
@@ -135,7 +134,7 @@ impl WizardStep for ResizeWorkflowStep {
             original_size,
             target_size,
             linux_size_bytes: new_linux_size_bytes,
-            disk_info,
+            disk_info: &disk_info,
             partition,
             auto_resize,
         };

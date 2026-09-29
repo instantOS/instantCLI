@@ -14,7 +14,7 @@ pub mod test_utils;
 pub use types::*;
 
 // From detection module
-pub use detection::{analyze_all_disks, detect_disks};
+pub use detection::{analyze_all_disks, detect_disk, detect_disks};
 
 // From display module
 pub use display::display_disks;

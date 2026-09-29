@@ -11,16 +11,38 @@ use crate::arch::dualboot::types::{
 use crate::common::format::format_size;
 use anyhow::Result;
 
-/// Detect all disks and their partitions
+/// Every disk on the machine, with its partitions and free space.
+///
+/// This is the whole-machine read, and it is not cheap: describing a disk runs
+/// `sfdisk` on it to find the largest contiguous free region. Use it where the
+/// set of disks is genuinely the question — the install-target picker, warnings
+/// about existing installations, whole-machine analysis.
+///
+/// Callers that already know which disk they want should use [`detect_disk`],
+/// which pays for one disk rather than all of them.
 pub fn detect_disks() -> Result<Vec<DiskInfo>> {
     let lsblk = crate::common::blockdev::load_lsblk(&[])?;
     detect_disks_from_lsblk(lsblk)
 }
 
-/// Internal implementation of disk detection from lsblk output
-pub fn detect_disks_from_lsblk(
-    lsblk: crate::common::blockdev::LsblkOutput,
-) -> Result<Vec<DiskInfo>> {
+/// One disk, by device path.
+///
+/// `Ok(None)` when the machine has no such disk — a device that was hot-unplugged
+/// between choosing it and acting on it is a normal outcome to report, not an
+/// error.
+pub fn detect_disk(device: &str) -> Result<Option<DiskInfo>> {
+    let lsblk = crate::common::blockdev::load_lsblk(&[device])?;
+    Ok(detect_disks_from_lsblk(lsblk)?
+        .into_iter()
+        .find(|disk| disk.device == device))
+}
+
+/// Parse already-loaded `lsblk` output into disks.
+///
+/// Takes the tree as an argument rather than running `lsblk`, so the tests can
+/// feed a fixture: both public entry points read the whole machine, so there is
+/// no other way to point detection at one disk.
+fn detect_disks_from_lsblk(lsblk: crate::common::blockdev::LsblkOutput) -> Result<Vec<DiskInfo>> {
     let mut disks = Vec::new();
 
     for device in &lsblk.blockdevices {

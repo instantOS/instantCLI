@@ -19,6 +19,26 @@ struct ResizePlan {
     preferred_region: FreeRegion,
 }
 
+/// Replace one disk's entry in the wizard's cache, leaving the rest alone.
+///
+/// The cache holds every disk so later steps can show the whole machine, but
+/// only the disk being installed on can have changed. Re-reading all of them
+/// would cost a `sfdisk` per disk to refresh a single entry.
+fn refresh_cached_disk(context: &InstallContext, disk: &crate::arch::dualboot::DiskInfo) {
+    let mut disks = match context.get::<DualBootDisksKey>() {
+        Some(cached) => cached,
+        // Nothing cached yet — the wizard seeds this from the disk picker, but
+        // `ins arch exec` never runs the wizard. Seed it properly rather than
+        // leaving a cache holding one disk where it used to hold all of them.
+        None => crate::arch::dualboot::detect_disks().unwrap_or_default(),
+    };
+    match disks.iter_mut().find(|entry| entry.device == disk.device) {
+        Some(entry) => *entry = disk.clone(),
+        None => disks.push(disk.clone()),
+    }
+    context.set::<DualBootDisksKey>(disks);
+}
+
 pub fn prepare_dualboot_disk(
     context: &InstallContext,
     filesystem: FilesystemPlan,
@@ -30,15 +50,13 @@ pub fn prepare_dualboot_disk(
 ) -> Result<()> {
     println!("Preparing dual boot installation...");
 
-    let detected = crate::arch::dualboot::detect_disks()
-        .context("Disk detection data not available and re-detection failed")?;
-    context.set::<DualBootDisksKey>(detected.clone());
-    let mut disks = detected;
-
-    let mut disk_info = disks
-        .iter()
-        .find(|d| d.device == disk_path)
+    // One disk is re-read, not the whole machine: describing a disk runs
+    // `sfdisk` on it, so a full pass here would cost a subprocess per disk to
+    // answer a question about the one the user picked.
+    let mut disk_info = crate::arch::dualboot::detect_disk(disk_path)
+        .context("Disk detection data not available and re-detection failed")?
         .context("Selected disk not found in detection data")?;
+    refresh_cached_disk(context, &disk_info);
 
     let mut resized_partition: Option<String> = None;
     let mut resize_plan: Option<ResizePlan> = None;
@@ -57,20 +75,16 @@ pub fn prepare_dualboot_disk(
             resized_partition = Some(partition_path.to_owned());
             resize_plan = Some(auto_resize_partition(
                 executor,
-                disk_info,
+                &disk_info,
                 disk_path,
                 partition_path,
                 desired_free_space_bytes.bytes(),
             )?);
 
-            let detected = crate::arch::dualboot::detect_disks()
-                .context("Failed to refresh disk information after resize")?;
-            context.set::<DualBootDisksKey>(detected.clone());
-            disks = detected;
-            disk_info = disks
-                .iter()
-                .find(|d| d.device == disk_path)
+            disk_info = crate::arch::dualboot::detect_disk(disk_path)
+                .context("Failed to refresh disk information after resize")?
                 .context("Selected disk not found after resize")?;
+            refresh_cached_disk(context, &disk_info);
         }
     }
 
@@ -84,21 +98,17 @@ pub fn prepare_dualboot_disk(
         esp.device.clone()
     } else {
         println!("No suitable ESP found (need >= 260MB). Creating a new EFI System Partition...");
-        let new_esp = create_esp_partition(disk_path, disk_info, executor)?;
+        let new_esp = create_esp_partition(disk_path, &disk_info, executor)?;
         println!("Created new ESP: {}", new_esp);
         esp_needs_format = true;
         new_esp
     };
 
     if esp_needs_format {
-        let detected = crate::arch::dualboot::detect_disks()
-            .context("Failed to refresh disk information after ESP creation")?;
-        context.set::<DualBootDisksKey>(detected.clone());
-        disks = detected;
-        disk_info = disks
-            .iter()
-            .find(|d| d.device == disk_path)
+        disk_info = crate::arch::dualboot::detect_disk(disk_path)
+            .context("Failed to refresh disk information after ESP creation")?
             .context("Selected disk not found after ESP creation")?;
+        refresh_cached_disk(context, &disk_info);
     }
 
     let preferred_region = if let Some(ref partition_path) = resized_partition {
@@ -709,6 +719,40 @@ mod tests {
         assert!(commands.contains("ntfsresize --force --size"), "{commands}");
         assert!(!commands.contains("e2fsck"), "{commands}");
         assert!(!commands.contains("resize2fs"), "{commands}");
+    }
+
+    /// A disk entry for cache tests.
+    fn cache_disk(path: &str, size: u64) -> crate::arch::dualboot::DiskInfo {
+        crate::arch::dualboot::DiskInfo {
+            device: path.to_string(),
+            size_bytes: size,
+            partition_table: PartitionTableType::GPT,
+            partitions: Vec::new(),
+            unpartitioned_space_bytes: 0,
+            max_contiguous_free_space_bytes: 0,
+        }
+    }
+
+    #[test]
+    fn refreshing_one_disk_leaves_the_rest_of_the_cache_alone() {
+        // The cache holds every disk so later steps can show the whole machine.
+        // Only the disk being installed on can have changed, so a refresh must
+        // replace one entry rather than re-reading every disk.
+        let context = InstallContext::new();
+        context.set::<DualBootDisksKey>(vec![
+            cache_disk("/dev/vda", 100),
+            cache_disk("/dev/vdb", 200),
+        ]);
+
+        refresh_cached_disk(&context, &cache_disk("/dev/vda", 999));
+
+        let cached = context.get::<DualBootDisksKey>().unwrap();
+        assert_eq!(cached.len(), 2, "no disk is added or dropped");
+        assert_eq!(cached[0].size_bytes, 999, "the refreshed disk is updated");
+        assert_eq!(
+            cached[1].size_bytes, 200,
+            "an unrelated disk must be left exactly as it was"
+        );
     }
 
     #[test]

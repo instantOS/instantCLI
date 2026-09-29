@@ -390,8 +390,8 @@ impl WizardStep for PartitioningMethodQuestion {
             let disk_path_owned = disk_path.to_string();
             let feasibility_result = tokio::task::spawn_blocking(
                 move || -> anyhow::Result<crate::arch::dualboot::DualBootFeasibility> {
-                    let disks = crate::arch::dualboot::detect_disks()?;
-                    if let Some(disk_info) = disks.iter().find(|d| d.device == disk_path_owned) {
+                    let disk_info = crate::arch::dualboot::detect_disk(&disk_path_owned)?;
+                    if let Some(disk_info) = disk_info {
                         Ok(disk_info.check_disk_dualboot_feasibility())
                     } else {
                         Ok(crate::arch::dualboot::DualBootFeasibility {

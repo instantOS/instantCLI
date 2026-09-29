@@ -5,7 +5,7 @@
 
 use anyhow::Result;
 
-use crate::arch::dualboot::detection::detect_disks;
+use crate::arch::dualboot::detection::detect_disk;
 use crate::arch::dualboot::types::{DiskInfo, PartitionInfo};
 use crate::common::format::format_size;
 
@@ -64,8 +64,7 @@ impl ResizeVerifier {
     ///
     /// This is a synchronous function that should be called from spawn_blocking
     pub fn check(&self) -> Result<ResizeStatus> {
-        let disks = detect_disks()?;
-        let disk = disks.iter().find(|d| d.device == self.disk_path);
+        let disk = detect_disk(&self.disk_path)?;
 
         let Some(disk) = disk else {
             return Ok(ResizeStatus {
