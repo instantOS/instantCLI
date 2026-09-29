@@ -614,22 +614,14 @@ Server = https://mirror2.de/$repo/os/$arch
     }
 }
 
-/// The property this module exists to guarantee: a non-live install writes
-/// nothing outside the target mount and the installer's own state directory.
-///
-/// Enumerated rather than asserted ad hoc, so a future change that adds a
-/// host-side write has to add its path here to stay covered. The check is
-/// deliberately about the *set* of paths, not about which function writes
-/// them: a new host write is a regression regardless of which module does it.
+/// Check known mirror configuration and installer-state paths against the
+/// running host's pacman files. New write paths must be added explicitly.
 #[cfg(test)]
 mod host_write_allowlist {
     use super::tests::{HOST_CONF, MIRRORLIST};
     use super::*;
 
-    /// Every path a non-live install may write outside `/mnt`.
-    ///
-    /// Derived from the same functions the production code uses, so it cannot
-    /// drift from the actual layout.
+    /// Known installer-state write paths outside `/mnt`.
     fn allowed_host_writes() -> Vec<String> {
         let files = PackageSourceFiles::new();
         let mut allowed = vec![
@@ -843,9 +835,7 @@ mod host_write_allowlist {
 
     #[test]
     fn every_allowed_write_resolves_inside_the_installer_state() {
-        // On this test host (not a live ISO, not in a chroot) the only
-        // permitted destinations are the ephemeral state directory and the
-        // target mount. This is the check that would catch a new host write.
+        // Check the enumerated destinations; this does not discover new writes.
         if paths::host_etc_is_ephemeral() {
             return;
         }

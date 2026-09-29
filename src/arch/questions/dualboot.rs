@@ -135,7 +135,6 @@ impl WizardStep for DualBootPartitionQuestion {
     }
 
     async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {
-        // disk_path is now just the device path (e.g., "/dev/sda")
         let disk_path = context
             .get_answer(&StepId::Disk)
             .context("No disk selected")?;
@@ -272,7 +271,6 @@ impl WizardStep for DualBootSizeQuestion {
 
         // Handle free space case - no resize needed
         if part_path == "__free_space__" {
-            // disk_path is now just the device path (e.g., "/dev/sda")
             let disk_path = context
                 .get_answer(&StepId::Disk)
                 .context("No disk selected")?;
@@ -298,7 +296,6 @@ impl WizardStep for DualBootSizeQuestion {
             ));
         }
 
-        // disk_path is now just the device path (e.g., "/dev/sda")
         let disk_path = context
             .get_answer(&StepId::Disk)
             .context("No disk selected")?;

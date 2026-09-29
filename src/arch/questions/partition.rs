@@ -198,7 +198,6 @@ impl WizardStep for PartitionSelectorQuestion {
     }
 
     async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {
-        // disk is now just the device path (e.g., "/dev/sda")
         let disk_path = context
             .get_answer(&StepId::Disk)
             .context("No disk selected")?;
@@ -229,7 +228,6 @@ impl WizardStep for PartitionSelectorQuestion {
     fn validate(&self, context: &InstallContext, answer: &str) -> Result<(), String> {
         PartitionPath::parse(answer).map_err(|error| error.to_string())?;
 
-        // answer is now just the device path (e.g., "/dev/sda1")
         let part_path = answer;
         let current_id = self.id();
 
@@ -238,8 +236,7 @@ impl WizardStep for PartitionSelectorQuestion {
                 continue;
             }
 
-            // Check against other partition questions
-            // val is now just the device path, no parsing needed
+            // Check against other partition questions.
             if matches!(
                 id,
                 StepId::RootPartition

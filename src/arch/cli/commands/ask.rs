@@ -163,8 +163,7 @@ fn required_dependencies() -> Vec<&'static crate::common::package::Dependency> {
         &crate::common::deps::BTRFS_PROGS,
         &crate::common::deps::NTFSPROGS,
         &crate::common::deps::NTFS_3G,
-        // pacstrap, arch-chroot and genfstab: every non-`ins` tool the
-        // execution layer shells out to.
+        // Provides pacstrap, arch-chroot and genfstab.
         &crate::common::deps::ARCH_INSTALL_SCRIPTS,
     ]
 }

@@ -112,13 +112,7 @@ main() {
 	assert_file_equals "${save_file}" "initial save data"
 	assert_file_equals "${other_file}" "other important data"
 
-	# Test 4: Test dependency with single file
-	# TODO: Dependency feature not yet implemented - skipping for now
-
-	# Test 5: Test restore to different location
-	# TODO: --to option not yet implemented - skipping for now
-
-	# Test 6: Verify game functionality still works
+	# Test 4: Verify game functionality still works
 	echo "Testing game functionality..."
 	ins game restic snapshots >/dev/null
 

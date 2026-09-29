@@ -385,7 +385,6 @@ impl WizardStep for PartitioningMethodQuestion {
 
         // Check for dual boot possibility using shared feasibility logic
         if let Some(disk_path) = context.get_answer(&StepId::Disk) {
-            // disk_path is now just the device path (e.g., "/dev/sda")
             let disk_path_owned = disk_path.to_string();
             let feasibility_result = tokio::task::spawn_blocking(
                 move || -> anyhow::Result<crate::arch::dualboot::DualBootFeasibility> {
@@ -491,7 +490,6 @@ impl WizardStep for RunCfdiskStep {
     }
 
     async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {
-        // disk is now just the device path (e.g., "/dev/sda")
         let disk_path = context
             .get_answer(&StepId::Disk)
             .context("No disk selected")?;

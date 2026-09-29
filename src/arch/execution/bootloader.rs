@@ -65,7 +65,6 @@ fn install_grub_uefi(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result
 fn install_grub_bios(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
     println!("Detected BIOS mode. Installing GRUB for BIOS...");
 
-    // disk is now just the device path (e.g., "/dev/sda")
     let disk = plan.storage.disk().as_str();
 
     println!("Installing GRUB to MBR of {}", disk);
