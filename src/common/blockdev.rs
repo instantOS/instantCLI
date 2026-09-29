@@ -1,6 +1,7 @@
 use std::fmt;
+use std::sync::OnceLock;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
 use std::process::Command;
 
@@ -287,6 +288,63 @@ pub fn load_lsblk(extra_args: &[&str]) -> Result<LsblkOutput> {
     serde_json::from_slice(&output.stdout).context("Failed to parse lsblk JSON")
 }
 
+/// What lsblk reports about a device path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeviceKind {
+    /// A whole disk.
+    Disk,
+    /// A partition of a disk.
+    Partition,
+    /// Not listed, or listed as neither — an LVM mapper, a RAID member, a ZFS
+    /// pool. These are legitimate install targets, so this carries no
+    /// objection either way.
+    Unknown,
+}
+
+/// Classify `path` against a parsed lsblk tree, matching on device path so
+/// `/dev/sda` and a name of `sda` resolve to the same entry.
+pub fn classify_device(path: &str, output: &LsblkOutput) -> DeviceKind {
+    fn search(device: &BlockDevice, path: &str) -> Option<DeviceKind> {
+        if device.path() == path {
+            return Some(match device.device_type.as_str() {
+                "disk" => DeviceKind::Disk,
+                "part" => DeviceKind::Partition,
+                _ => DeviceKind::Unknown,
+            });
+        }
+        device.children.iter().find_map(|child| search(child, path))
+    }
+
+    output
+        .blockdevices
+        .iter()
+        .find_map(|device| search(device, path))
+        .unwrap_or(DeviceKind::Unknown)
+}
+
+/// The device tree, read once per process.
+///
+/// Plan construction asks about several device paths in a row and the tree does
+/// not change while it does, so this is a cache and not a per-call `lsblk`.
+pub fn device_tree() -> Result<&'static LsblkOutput> {
+    static TREE: OnceLock<Option<LsblkOutput>> = OnceLock::new();
+    TREE.get_or_init(|| load_lsblk(&[]).ok())
+        .as_ref()
+        .ok_or_else(|| anyhow!("could not read the device tree with lsblk"))
+}
+
+/// Classify a device path against the live lsblk tree.
+///
+/// A tree that cannot be read yields [`DeviceKind::Unknown`] rather than an
+/// error: refusing an install because `lsblk` was unavailable would be a worse
+/// outcome than accepting one whose kind is unverified.
+pub fn classify_device_path(path: &str) -> DeviceKind {
+    match device_tree() {
+        Ok(tree) => classify_device(path, tree),
+        Err(_) => DeviceKind::Unknown,
+    }
+}
+
 /// Ask `blkid` which filesystem is on `device`.
 ///
 /// Shared by the installer-identity probe and `ins dev chroot`, which both need
@@ -369,6 +427,33 @@ mod tests {
         let fs = Filesystem::parse("  crypto_LUKS  ");
         assert_eq!(fs.as_str(), "crypto_LUKS");
         assert_eq!(fs.to_string(), "crypto_LUKS");
+    }
+
+    #[test]
+    fn classifies_disks_partitions_and_anything_else() {
+        let tree: LsblkOutput = serde_json::from_str(
+            r#"{"blockdevices":[{
+                "name":"sda","type":"disk","children":[
+                  {"name":"sda1","type":"part","fstype":"vfat"},
+                  {"name":"sda2","type":"part","fstype":"ext4","children":[
+                    {"name":"mapper/sda2-crypt","type":"crypt"},
+                    {"name":"mapper/vg-root","type":"lvm","fstype":"ext4"}
+                  ]}
+                ]},
+                {"name":"dm-0","type":"lvm"}]}"#,
+        )
+        .expect("valid lsblk json");
+
+        assert_eq!(classify_device("/dev/sda", &tree), DeviceKind::Disk);
+        assert_eq!(classify_device("/dev/sda1", &tree), DeviceKind::Partition);
+        // Nested devices are reachable, so an LVM root on a partition is not
+        // mistaken for something below /dev that nobody knows about.
+        assert_eq!(
+            classify_device("/dev/mapper/vg-root", &tree),
+            DeviceKind::Unknown
+        );
+        // A path lsblk does not list at all.
+        assert_eq!(classify_device("/dev/sdz9", &tree), DeviceKind::Unknown);
     }
 
     #[test]

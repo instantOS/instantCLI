@@ -258,24 +258,19 @@ impl WizardStep for DiskQuestion {
     }
 
     fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
-        DiskPath::parse(answer).map_err(|error| error.to_string())?;
-
-        // The stored answer is the bare device path, e.g. "/dev/sda".
-        let device_name = answer;
+        let target = DiskPath::parse(answer).map_err(|error| error.to_string())?;
 
         // Refuse the running root device and the boot disk. This is the single
         // biggest blocker for installing from a running system and stays a hard
         // refusal; the message names both ways forward so it does not read as
         // though installing from a running system were impossible.
-        if let Some(target) = DiskPath::parse(device_name).ok()
-            && let Some(conflict) = crate::arch::host::running_disk_conflict(
-                &target,
-                crate::arch::disks::root_device().as_ref(),
-                crate::arch::disks::boot_disk().as_ref(),
-            )
-        {
+        if let Some(conflict) = crate::arch::host::running_disk_conflict(
+            &target,
+            crate::arch::disks::root_device().as_ref(),
+            crate::arch::disks::boot_disk().as_ref(),
+        ) {
             return Err(crate::arch::host::running_disk_message(
-                device_name,
+                target.as_str(),
                 conflict,
             ));
         }

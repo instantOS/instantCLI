@@ -214,13 +214,33 @@ fn validate_secret(label: &str, value: &str, reject_colon: bool) -> Result<()> {
     Ok(())
 }
 
+/// A whole disk below `/dev`.
+///
+/// A path lsblk reports as a partition is refused, so a plan cannot name
+/// `/dev/sda1` as the disk to partition. A path lsblk does not classify — an
+/// LVM mapper, a RAID member, a ZFS pool — is accepted, because those are
+/// legitimate targets and refusing them would break installs that work.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiskPath(String);
 
 impl DiskPath {
     pub fn parse(value: &str) -> Result<Self> {
-        if !is_safe_device_path(value) {
+        Self::parse_with(value, &|path| {
+            crate::common::blockdev::classify_device_path(path)
+        })
+    }
+
+    /// Classify through an injected probe, so the disk/partition distinction is
+    /// testable without a block device.
+    fn parse_with(
+        value: &str,
+        classify: &dyn Fn(&str) -> crate::common::blockdev::DeviceKind,
+    ) -> Result<Self> {
+        if !is_device_path(value) {
             bail!("invalid disk path {value:?}; expected a device below /dev")
+        }
+        if classify(value) == crate::common::blockdev::DeviceKind::Partition {
+            bail!("{value:?} is a partition; select the whole disk to partition")
         }
         Ok(Self(value.to_owned()))
     }
@@ -228,13 +248,31 @@ impl DiskPath {
 
 string_value!(DiskPath);
 
+/// A partition below `/dev`.
+///
+/// The mirror of [`DiskPath`]: a path lsblk reports as a whole disk is
+/// refused, and an unclassified path is accepted for the same reason.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PartitionPath(String);
 
 impl PartitionPath {
     pub fn parse(value: &str) -> Result<Self> {
-        if !is_safe_device_path(value) {
+        Self::parse_with(value, &|path| {
+            crate::common::blockdev::classify_device_path(path)
+        })
+    }
+
+    /// Classify through an injected probe, so the disk/partition distinction is
+    /// testable without a block device.
+    fn parse_with(
+        value: &str,
+        classify: &dyn Fn(&str) -> crate::common::blockdev::DeviceKind,
+    ) -> Result<Self> {
+        if !is_device_path(value) {
             bail!("invalid partition path {value:?}; expected a device below /dev")
+        }
+        if classify(value) == crate::common::blockdev::DeviceKind::Disk {
+            bail!("{value:?} is a whole disk; select one of its partitions")
         }
         Ok(Self(value.to_owned()))
     }
@@ -242,7 +280,12 @@ impl PartitionPath {
 
 string_value!(PartitionPath);
 
-fn is_safe_device_path(value: &str) -> bool {
+/// Whether `value` names something below `/dev`, written without traversal.
+///
+/// The component walk rejects `..` and `.` outright. These values reach `mount`,
+/// `umount` and `Command::arg`, where a path that traverses out of `/dev` is a
+/// way to name a file the installer never meant to touch.
+fn is_device_path(value: &str) -> bool {
     let mut components = Path::new(value).components();
     matches!(components.next(), Some(Component::RootDir))
         && matches!(components.next(), Some(Component::Normal(component)) if component == "dev")
@@ -745,12 +788,56 @@ mod tests {
         assert!(EncryptionPassword::parse("").is_err());
         assert!(DiskPath::parse("/dev/../etc/passwd").is_err());
         assert!(PartitionPath::parse("/dev/sda1/../sda2").is_err());
+        assert!(DiskPath::parse("overlay").is_err());
+        assert!(PartitionPath::parse("tmpfs").is_err());
         assert!(DualBootSize::parse("not-a-number").is_err());
         assert!(DualBootSize::parse("0").is_err());
         assert!(DualBootSize::parse("53687091200").is_ok());
         assert!(DualBootResizeMethod::parse("invalid").is_err());
         assert!(DualBootResizeMethod::parse("auto").is_ok());
         assert!(DualBootResizeMethod::parse("confirmed").is_ok());
+    }
+
+    #[test]
+    fn a_disk_path_refuses_a_partition_and_a_partition_path_refuses_a_disk() {
+        use crate::common::blockdev::DeviceKind;
+
+        let partition = |_: &str| DeviceKind::Partition;
+        let disk = |_: &str| DeviceKind::Disk;
+
+        // A partition is not something you can write a partition table to.
+        let error = DiskPath::parse_with("/dev/sda1", &partition).unwrap_err();
+        assert!(error.to_string().contains("is a partition"), "{error}");
+
+        // Nor is a whole disk a mountable root.
+        let error = PartitionPath::parse_with("/dev/sda", &disk).unwrap_err();
+        assert!(error.to_string().contains("is a whole disk"), "{error}");
+
+        // Each accepts the other side's failure case.
+        assert!(DiskPath::parse_with("/dev/sda", &disk).is_ok());
+        assert!(PartitionPath::parse_with("/dev/sda1", &partition).is_ok());
+    }
+
+    #[test]
+    fn an_unclassified_device_is_accepted_by_both() {
+        use crate::common::blockdev::DeviceKind;
+
+        // LVM mappers, RAID members and ZFS pools are not something lsblk
+        // reports as a disk or a partition. They are legitimate install
+        // targets, and refusing them would break installs that work today.
+        let unknown = |_: &str| DeviceKind::Unknown;
+        assert!(DiskPath::parse_with("/dev/mapper/vg-root", &unknown).is_ok());
+        assert!(PartitionPath::parse_with("/dev/mapper/vg-root", &unknown).is_ok());
+    }
+
+    #[test]
+    fn the_device_kind_check_still_rejects_traversal() {
+        use crate::common::blockdev::DeviceKind;
+
+        // Classification happens after the path shape check, so a traversal is
+        // refused even when the probe would call it a disk.
+        let disk = |_: &str| DeviceKind::Disk;
+        assert!(DiskPath::parse_with("/dev/../etc/passwd", &disk).is_err());
     }
 
     #[test]

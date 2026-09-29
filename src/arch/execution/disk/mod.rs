@@ -17,21 +17,27 @@ pub fn prepare_disk(
     context: &InstallContext,
     executor: &dyn CommandRunner,
 ) -> Result<()> {
-    let disk_path = plan.storage.disk().as_str();
+    let disk = plan.storage.disk();
 
     // Last line of defence before partitioning. The wizard's disk question
-    // refuses the running disk, and `crate::arch::disks::prepare_disk`
-    // refuses to unmount it — but this step is the one that writes a
-    // partition table, so a hand-authored configuration that names the
-    // running disk must still stop here rather than repartition the machine
-    // the installer is executing from.
+    // refuses the running disk, and `crate::arch::disks::prepare_disk` refuses
+    // to unmount it — but this step is the one that writes a partition table,
+    // so a hand-authored configuration that names the running disk must still
+    // stop here rather than repartition the machine the installer is executing
+    // from.
+    //
+    // The conflict was resolved when the plan was built, by reading the running
+    // devices at that moment. A device appearing or changing since then is not
+    // re-read here, so this is a guard against a bad plan rather than a fresh
+    // check of the machine.
     if let Some(conflict) = plan.environment.target() {
         anyhow::bail!(
             "{}",
-            crate::arch::host::running_disk_message(disk_path, conflict)
+            crate::arch::host::running_disk_message(disk.as_str(), conflict)
         );
     }
 
+    let disk_path = disk.as_str();
     println!("Preparing disk: {}", disk_path);
 
     let boot_mode = plan.boot_mode();

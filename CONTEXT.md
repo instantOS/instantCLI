@@ -17,7 +17,7 @@ The stable machine-readable value selected for a wizard step, distinct from the 
 _Avoid_: Display label
 
 **Validated value**:
-A domain-specific value whose constructor has established the invariants required by execution, such as a safe username, timezone, or device path.
+A domain-specific value whose constructor has established the invariants required by execution, such as a safe username, a timezone, or a device path below `/dev`.
 _Avoid_: Raw answer, string
 
 **Host profile**:
