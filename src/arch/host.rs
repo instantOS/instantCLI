@@ -1,13 +1,13 @@
 //! Where the installer is running, and what that permits.
 //!
 //! [`HostProfile`] distinguishes a disposable live ISO from a running system,
-//! whose configuration must remain untouched. [`RunningDisk`] prevents the
+//! whose configuration must remain untouched. [`TargetRelation`] prevents the
 //! installer from repartitioning its own host disk. Both come from the machine,
 //! not wizard answers; [`HOST_ENV`] overrides detection in tests.
 
 use anyhow::{Context, Result, bail};
 
-use crate::arch::engine::DiskPath;
+use crate::arch::engine::{DevicePath, DiskPath};
 use crate::common::distro::OperatingSystem;
 
 /// Test/e2e override for [`HostProfile::detect`]: `liveiso`, `running` or
@@ -97,18 +97,18 @@ pub struct InstallEnvironment {
     /// The running disk standing in the way of this target, if any. `None` is
     /// the ordinary case: a spare disk, or a live ISO where nothing is running
     /// from a disk at all.
-    target: Option<RunningDisk>,
+    target: Option<TargetRelation>,
 }
 
 impl InstallEnvironment {
-    pub fn new(host: HostProfile, target: Option<RunningDisk>) -> Self {
+    pub fn new(host: HostProfile, target: Option<TargetRelation>) -> Self {
         Self { host, target }
     }
 
     /// Resolve the environment for an install targeting `disk`.
     ///
     /// Inside the chroot the "running system" *is* the target, so the conflict
-    /// is reported as [`RunningDisk::RootDevice`]. No chroot-side step consults
+    /// is reported as [`TargetRelation::RootDevice`]. No chroot-side step consults
     /// it — partitioning, mirroring and the identity probe all run on the host
     /// — and reporting the truth keeps the value meaningful if that changes.
     pub fn detect(disk: &DiskPath) -> Self {
@@ -117,10 +117,10 @@ impl InstallEnvironment {
             HostProfile::detect_uncached()
         });
         let target = if crate::arch::execution::is_chroot() {
-            Some(RunningDisk::RootDevice)
+            Some(TargetRelation::RootDevice)
         } else {
             running_disk_conflict(
-                disk,
+                disk.as_str(),
                 crate::arch::disks::root_device().as_ref(),
                 crate::arch::disks::boot_disk().as_ref(),
             )
@@ -137,7 +137,7 @@ impl InstallEnvironment {
     /// When this is `Some`, the target may be neither repartitioned (that
     /// destroys the filesystem the installer is executing from — that needs a
     /// live medium, not a wizard) nor probed for an existing installation.
-    pub fn target(&self) -> Option<RunningDisk> {
+    pub fn target(&self) -> Option<TargetRelation> {
         self.target
     }
 
@@ -155,21 +155,24 @@ impl InstallEnvironment {
     pub fn target_label(&self) -> &'static str {
         self.target.map_or(
             "a different disk from the running system",
-            RunningDisk::label,
+            TargetRelation::label,
         )
     }
 }
 
-/// Why the running disk cannot be an install target.
+/// How the install target relates to the running system.
+///
+/// A classification of the target, not a reason for refusing it: both variants
+/// are refused by the same check and differ only in the wording the user sees.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RunningDisk {
+pub enum TargetRelation {
     /// The target is the device the running system is executing from.
     RootDevice,
     /// The target is the disk the running system booted from.
     BootDisk,
 }
 
-impl RunningDisk {
+impl TargetRelation {
     pub fn label(self) -> &'static str {
         match self {
             Self::RootDevice => "the running root filesystem device",
@@ -178,22 +181,28 @@ impl RunningDisk {
     }
 }
 
-/// The running disk `disk` refers to, if any.
+/// The running device `candidate` names, if any.
+///
+/// `candidate` is a plain path because this is a comparison between device
+/// paths, and the caller's own type says nothing useful here: the wizard has a
+/// validated [`DiskPath`], while the execution layer checks a string before it
+/// knows what it is. The running devices are typed because they came from
+/// `findmnt` and `lsblk`, and a non-device there means no root was found.
 ///
 /// Pure: the running devices are passed in, so the guard can be tested
 /// without hardware. Used by both the wizard's disk question and the
 /// execution layer's disk preparation, so a hand-authored configuration
 /// cannot route around the wizard.
 pub fn running_disk_conflict(
-    disk: &DiskPath,
-    root_device: Option<&DiskPath>,
-    boot_disk: Option<&DiskPath>,
-) -> Option<RunningDisk> {
-    if root_device.is_some_and(|root| disk == root) {
-        return Some(RunningDisk::RootDevice);
+    candidate: &str,
+    root_device: Option<&DevicePath>,
+    boot_disk: Option<&DevicePath>,
+) -> Option<TargetRelation> {
+    if root_device.is_some_and(|root| root.is(candidate)) {
+        return Some(TargetRelation::RootDevice);
     }
-    if boot_disk.is_some_and(|boot| disk == boot) {
-        return Some(RunningDisk::BootDisk);
+    if boot_disk.is_some_and(|boot| boot.is(candidate)) {
+        return Some(TargetRelation::BootDisk);
     }
     None
 }
@@ -204,7 +213,7 @@ pub fn running_disk_conflict(
 /// filesystem the installer is running from. The message therefore names the
 /// way out: a different disk works from the running system, while the running
 /// disk itself needs the live ISO.
-pub fn running_disk_message(disk: &str, conflict: RunningDisk) -> String {
+pub fn running_disk_message(disk: &str, conflict: TargetRelation) -> String {
     format!(
         "Cannot install onto {disk}: that is {}.\n\
          \n\
@@ -225,6 +234,10 @@ mod tests {
 
     fn disk(value: &str) -> DiskPath {
         DiskPath::parse(value).expect("test device path")
+    }
+
+    fn device(value: &str) -> DevicePath {
+        DevicePath::parse(value).expect("test device path")
     }
 
     #[test]
@@ -270,7 +283,7 @@ mod tests {
     fn only_a_spare_disk_may_be_probed() {
         let spare = InstallEnvironment::new(HostProfile::RunningArch, None);
         assert!(spare.may_probe_for_existing_install());
-        for conflict in [RunningDisk::RootDevice, RunningDisk::BootDisk] {
+        for conflict in [TargetRelation::RootDevice, TargetRelation::BootDisk] {
             let running = InstallEnvironment::new(HostProfile::RunningArch, Some(conflict));
             assert!(running.target().is_some());
             assert!(!running.may_probe_for_existing_install());
@@ -278,39 +291,46 @@ mod tests {
     }
 
     #[test]
-    fn running_disk_conflict_names_both_refusals() {
+    fn running_disk_conflict_names_which_running_device_matched() {
+        // Root on a whole disk: the root device is itself a legal disk target,
+        // so it can match and is named first.
         assert_eq!(
             running_disk_conflict(
-                &disk("/dev/nvme0n1p2"),
-                Some(&disk("/dev/nvme0n1p2")),
-                Some(&disk("/dev/nvme0n1"))
+                disk("/dev/nvme0n1").as_str(),
+                Some(&device("/dev/nvme0n1")),
+                Some(&device("/dev/nvme0n1"))
             ),
-            Some(RunningDisk::RootDevice)
+            Some(TargetRelation::RootDevice)
+        );
+        // Root on a partition: no disk target can equal it, so the boot disk is
+        // what catches the conflict. This is the case a partitioned host hits.
+        assert_eq!(
+            running_disk_conflict(
+                disk("/dev/nvme0n1").as_str(),
+                Some(&device("/dev/nvme0n1p2")),
+                Some(&device("/dev/nvme0n1"))
+            ),
+            Some(TargetRelation::BootDisk)
         );
         assert_eq!(
             running_disk_conflict(
-                &disk("/dev/nvme0n1"),
-                Some(&disk("/dev/nvme0n1p2")),
-                Some(&disk("/dev/nvme0n1"))
-            ),
-            Some(RunningDisk::BootDisk)
-        );
-        assert_eq!(
-            running_disk_conflict(
-                &disk("/dev/sdb"),
-                Some(&disk("/dev/nvme0n1p2")),
-                Some(&disk("/dev/nvme0n1"))
+                disk("/dev/sdb").as_str(),
+                Some(&device("/dev/nvme0n1p2")),
+                Some(&device("/dev/nvme0n1"))
             ),
             None
         );
         // A container or namespace with no findable root must not fall into a
         // guarded state, or the installer would refuse every disk.
-        assert_eq!(running_disk_conflict(&disk("/dev/sdb"), None, None), None);
+        assert_eq!(
+            running_disk_conflict(disk("/dev/sdb").as_str(), None, None),
+            None
+        );
     }
 
     #[test]
     fn the_refusal_message_names_the_way_out() {
-        let message = running_disk_message("/dev/nvme0n1", RunningDisk::BootDisk);
+        let message = running_disk_message("/dev/nvme0n1", TargetRelation::BootDisk);
         assert!(message.contains("/dev/nvme0n1"));
         assert!(message.contains("live ISO"));
         assert!(
@@ -322,9 +342,9 @@ mod tests {
     #[test]
     fn environment_combines_a_profile_and_a_conflict() {
         let environment =
-            InstallEnvironment::new(HostProfile::RunningArch, Some(RunningDisk::BootDisk));
+            InstallEnvironment::new(HostProfile::RunningArch, Some(TargetRelation::BootDisk));
         assert_eq!(environment.host(), HostProfile::RunningArch);
-        assert_eq!(environment.target(), Some(RunningDisk::BootDisk));
-        assert_eq!(environment.target_label(), RunningDisk::BootDisk.label());
+        assert_eq!(environment.target(), Some(TargetRelation::BootDisk));
+        assert_eq!(environment.target_label(), TargetRelation::BootDisk.label());
     }
 }

@@ -265,7 +265,7 @@ impl WizardStep for DiskQuestion {
         // refusal; the message names both ways forward so it does not read as
         // though installing from a running system were impossible.
         if let Some(conflict) = crate::arch::host::running_disk_conflict(
-            &target,
+            target.as_str(),
             crate::arch::disks::root_device().as_ref(),
             crate::arch::disks::boot_disk().as_ref(),
         ) {
@@ -589,7 +589,7 @@ mod tests {
         // were impossible: it has to name the live ISO and a different disk.
         let message = crate::arch::host::running_disk_message(
             "/dev/sda",
-            crate::arch::host::RunningDisk::BootDisk,
+            crate::arch::host::TargetRelation::BootDisk,
         );
         assert!(message.contains("live ISO"));
         assert!(message.contains("different disk"));

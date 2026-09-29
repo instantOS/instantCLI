@@ -214,6 +214,36 @@ fn validate_secret(label: &str, value: &str, reject_colon: bool) -> Result<()> {
     Ok(())
 }
 
+/// A device path the running system reports, whatever kind of device it is.
+///
+/// `/` is held by a partition on a partitioned disk, an LVM mapper on a
+/// multi-volume system, or a whole disk on a simple layout. All three answer
+/// the same question — what is the installer executing from — so this type
+/// makes no claim about which. [`DiskPath`] and [`PartitionPath`] are about
+/// plan targets, where the distinction decides what may be written.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DevicePath(String);
+
+impl DevicePath {
+    pub fn parse(value: &str) -> Result<Self> {
+        if !is_device_path(value) {
+            bail!("invalid device path {value:?}; expected a device below /dev")
+        }
+        Ok(Self(value.to_owned()))
+    }
+
+    /// Whether this names the same device as `path`.
+    ///
+    /// Spelled as a string comparison because the two sides are different kinds
+    /// of answer: a plan names a disk to write to, this names whatever device
+    /// the system is running from. Textual equality is the only question here.
+    pub fn is(&self, path: &str) -> bool {
+        self.0 == path
+    }
+}
+
+string_value!(DevicePath);
+
 /// A whole disk below `/dev`.
 ///
 /// A path lsblk reports as a partition is refused, so a plan cannot name

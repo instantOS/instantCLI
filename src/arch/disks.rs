@@ -2,25 +2,29 @@ use anyhow::Result;
 use serde_json::Value;
 use std::process::Command;
 
-use crate::arch::engine::{DataKey, DiskPath};
+use crate::arch::engine::{DataKey, DevicePath};
 use crate::menu_utils::FzfPreview;
 use crate::preview::{PreviewId, preview_command};
 
 /// The running root device, if it resolves to a valid device path. Container
 /// roots such as `overlay` and missing `findmnt` results yield `None`.
-pub fn root_device() -> Option<DiskPath> {
+///
+/// This is a [`DevicePath`], not a [`DiskPath`]: on a partitioned system the
+/// device holding `/` is a partition, and holding it as a `DiskPath` would fail
+/// the plan's whole-disk check and report no root at all.
+pub fn root_device() -> Option<DevicePath> {
     get_root_device()
         .ok()
         .flatten()
-        .and_then(|device| DiskPath::parse(&device).ok())
+        .and_then(|device| DevicePath::parse(&device).ok())
 }
 
 /// The physical disk holding the running root filesystem. See [`root_device`].
-pub fn boot_disk() -> Option<DiskPath> {
+pub fn boot_disk() -> Option<DevicePath> {
     get_boot_disk()
         .ok()
         .flatten()
-        .and_then(|disk| DiskPath::parse(&disk).ok())
+        .and_then(|disk| DevicePath::parse(&disk).ok())
 }
 
 /// Strip btrfs subvolume annotations from `findmnt` sources (`/dev/sda1[/@]`).
@@ -252,12 +256,15 @@ pub fn get_swap_partitions(disk: &str) -> Result<Vec<String>> {
 /// bypass the wizard's disk question.
 pub fn ensure_not_running_disk(disk: &str) -> Result<()> {
     // A target that is not a device path cannot be the running device, so
-    // there is nothing to refuse.
-    let Some(target) = DiskPath::parse(disk).ok() else {
+    // there is nothing to refuse. This parses as a `DevicePath` rather than a
+    // `DiskPath`: on a partitioned system the device holding `/` is a
+    // partition, and rejecting that as "not a disk" would skip the guard on
+    // exactly the hosts where a partition could be named.
+    let Some(target) = DevicePath::parse(disk).ok() else {
         return Ok(());
     };
     if let Some(conflict) = crate::arch::host::running_disk_conflict(
-        &target,
+        target.as_str(),
         root_device().as_ref(),
         boot_disk().as_ref(),
     ) {
@@ -428,11 +435,15 @@ mod partition_match_tests {
 #[cfg(test)]
 mod prepare_disk_guard_tests {
     use super::{bare_device, ensure_not_running_disk, root_device};
-    use crate::arch::engine::DiskPath;
-    use crate::arch::host::RunningDisk;
+    use crate::arch::engine::{DevicePath, DiskPath};
+    use crate::arch::host::TargetRelation;
 
     fn disk(value: &str) -> DiskPath {
         DiskPath::parse(value).expect("test device path")
+    }
+
+    fn device(value: &str) -> DevicePath {
+        DevicePath::parse(value).expect("test device path")
     }
 
     #[test]
@@ -448,8 +459,23 @@ mod prepare_disk_guard_tests {
         // Inside a container the root source is `overlay`, not a block device.
         // It can never equal an install target, so the guard has nothing to
         // refuse — and must not refuse every disk instead.
-        assert!(DiskPath::parse("overlay").is_err());
-        assert!(DiskPath::parse("tmpfs").is_err());
+        assert!(DevicePath::parse("overlay").is_err());
+        assert!(DevicePath::parse("tmpfs").is_err());
+    }
+
+    #[test]
+    fn a_partitioned_root_is_still_reported_as_a_device() {
+        // The root device on a partitioned system *is* a partition. Holding it
+        // as a disk path would fail the whole-disk check and report no root at
+        // all, leaving the guard with only the boot disk to catch the conflict.
+        let partitioned_root = root_device();
+        if let Some(root) = &partitioned_root {
+            assert!(
+                !crate::common::blockdev::classify_device_path(root.as_str())
+                    .eq(&crate::common::blockdev::DeviceKind::Disk),
+                "expected a non-disk root on this host, got {root:?}"
+            );
+        }
     }
 
     #[test]
@@ -458,11 +484,11 @@ mod prepare_disk_guard_tests {
         // wrong place.
         assert_eq!(
             crate::arch::host::running_disk_conflict(
-                &disk("/dev/nvme0n1p2"),
-                Some(&disk("/dev/nvme0n1p2")),
-                Some(&disk("/dev/nvme0n1"))
+                disk("/dev/nvme0n1").as_str(),
+                Some(&device("/dev/nvme0n1")),
+                Some(&device("/dev/nvme0n1"))
             ),
-            Some(RunningDisk::RootDevice)
+            Some(TargetRelation::RootDevice)
         );
     }
 
@@ -485,7 +511,7 @@ mod prepare_disk_guard_tests {
         let running = match root_device() {
             Some(device) => device,
             // Nothing resolvable on this host (container); the pure guard is
-            // covered by `running_disk_conflict_names_both_refusals`.
+            // covered by `running_disk_conflict_names_which_running_device_matched`.
             None => return,
         };
         let error = ensure_not_running_disk(running.as_str())

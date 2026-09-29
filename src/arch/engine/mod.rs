@@ -14,7 +14,7 @@ pub(crate) use install_plan::SessionAnswers;
 #[cfg(test)]
 pub(crate) use install_plan::test_install_plan;
 pub use install_plan::{
-    ConsoleKeymap, DiskPath, DualBootResizeMethod, DualBootSize, DualBootTarget,
+    ConsoleKeymap, DevicePath, DiskPath, DualBootResizeMethod, DualBootSize, DualBootTarget,
     EncryptionPassword, EncryptionPlan, FilesystemPlan, Hostname, InstallPlan, LocaleName,
     LoginPassword, ManualPartitions, PartitionPath, StoragePlan, Timezone, Username,
 };
