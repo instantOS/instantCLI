@@ -133,10 +133,9 @@ impl Filesystem {
     /// Whether this filesystem can be swapped in place, for a dual-boot resize.
     ///
     /// btrfs is the only one that shrinks while mounted; NTFS and the ext family
-    /// need the filesystem unmounted first. This is the single answer to that
-    /// question — it used to be written as a `matches!` literal in two places
-    /// and as a dispatch table in a third, and the two had already diverged on
-    /// btrfs.
+    /// need the filesystem unmounted first. Both the resize dispatcher and the
+    /// automatic resize path read their tool from this answer, so they cannot
+    /// disagree about which filesystems are supported.
     pub fn shrink_support(&self) -> ShrinkSupport {
         if self.matches("ntfs") {
             ShrinkSupport::RequiresUnmount {
@@ -232,10 +231,9 @@ impl BlockDevice {
 
     /// A partition holding a Linux root filesystem.
     ///
-    /// Named because "a partition whose filesystem is a Linux root" is one
-    /// question, not two — call sites that spelled it out as
-    /// `is_partition() && is_linux_root_fs()` made the reader decide which half
-    /// mattered.
+    /// Both halves are required: a Linux filesystem on a whole disk is not a
+    /// root partition, and a partition with no Linux filesystem is not one
+    /// either. Callers asking this question want both, so they are one call.
     pub fn is_linux_root_partition(&self) -> bool {
         self.is_partition() && self.is_linux_root_fs()
     }

@@ -260,14 +260,13 @@ impl WizardStep for DiskQuestion {
     fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
         DiskPath::parse(answer).map_err(|error| error.to_string())?;
 
-        // answer is now just the device path (e.g., "/dev/sda")
+        // The stored answer is the bare device path, e.g. "/dev/sda".
         let device_name = answer;
 
-        // Refuse the running root device and the boot disk. This is the
-        // single biggest blocker for installing from a running system, and it
-        // stays a hard refusal: Feature A is a *different* disk. What changes
-        // is the message — it used to say only "select a different disk",
-        // which reads as though nothing else were possible.
+        // Refuse the running root device and the boot disk. This is the single
+        // biggest blocker for installing from a running system and stays a hard
+        // refusal; the message names both ways forward so it does not read as
+        // though installing from a running system were impossible.
         if let Some(target) = DiskPath::parse(device_name).ok()
             && let Some(conflict) = crate::arch::host::running_disk_conflict(
                 &target,
@@ -593,8 +592,8 @@ mod tests {
 
     #[test]
     fn the_refusal_names_the_way_out_not_just_the_prohibition() {
-        // The old message said only "select a different disk", which on a
-        // running system reads as though installing were impossible at all.
+        // The message must not read as though installing from a running system
+        // were impossible: it has to name the live ISO and a different disk.
         let message = crate::arch::host::running_disk_message(
             "/dev/sda",
             crate::arch::host::RunningDisk::BootDisk,

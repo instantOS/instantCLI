@@ -77,7 +77,6 @@ where
     };
 
     // Get resize info based on filesystem type and EFI status
-    // Note: get_resize_info is imported from resize module
     let resize_info = if is_efi {
         Some(get_efi_resize_fn(size_bytes))
     } else {

@@ -103,14 +103,12 @@ fn re_execute_current_process() {
 
 /// Install `fzf` with the host's own package manager.
 ///
-/// The live ISO was the only case that needed this: it ships without `fzf`,
-/// and a live session is throwaway, so installing into it costs nothing. A
-/// running Arch or instantOS system running the installer also may not have
-/// `fzf` — it is not in a default install — and without it every dialog in
-/// `ins`, including the one that would ask permission to install anything,
-/// fails immediately. So the same bootstrap now also runs on an Arch-family
-/// host, resolved from the detected operating system rather than hard-coded
-/// to pacman.
+/// Any supported host may lack `fzf`: the live ISO ships without it, and it is
+/// not in a default install on a running Arch or instantOS system. Without it
+/// every dialog in `ins`, including the one that would ask permission to
+/// install anything, fails immediately — so this bootstrap is not gated on any
+/// particular profile. The manager is resolved from the detected operating
+/// system rather than hard-coded to pacman.
 ///
 /// Deliberately *not* routed through `ensure_all`: that prompts through an fzf
 /// dialog, and fzf is the thing that is missing. Only the mise fallback below
@@ -327,10 +325,9 @@ mod tests {
 
     #[test]
     fn the_package_manager_bootstrap_resolves_off_a_live_iso() {
-        // The bootstrap used to be gated on `is_live_iso()` and hard-coded
-        // pacman, so a running Arch system without fzf hit the "not
-        // installed" error and exited. It now resolves the manager from the
-        // detected OS, so the gate is gone.
+        // The bootstrap has no profile gate and resolves the manager from the
+        // detected OS, so a running Arch system without fzf can still install
+        // it.
         //
         // Only the *decision* is asserted: calling the function would install
         // a package on the machine running the tests.

@@ -4,8 +4,8 @@ use crate::common::distro::OperatingSystem;
 
 /// Represents how a package is installed - SINGLE SOURCE OF TRUTH for package managers.
 ///
-/// This enum replaces the old `PackageManager` enum in `requirements.rs` and adds
-/// support for cross-platform package managers like Flatpak, AUR, and Cargo.
+/// Covers the host's native distro manager as well as the cross-platform ones
+/// (Flatpak, AUR, Cargo).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PackageManager {
     // =========================================================================

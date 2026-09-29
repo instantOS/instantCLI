@@ -5,12 +5,12 @@
 //! copies the host's `/etc/pacman.d/mirrorlist` into the target, because the
 //! `pacman` package it just installed ships an all-commented placeholder list.
 //!
-//! Together those two facts explain the shape of the old installer: to give
-//! the target the user's chosen region, it wrote the selected mirrorlist to
-//! the host's `/etc/pacman.d/mirrorlist` and let `pacstrap` copy it across.
-//! On the live ISO that is free — the ISO's `/etc` is the archiso cowspace —
-//! and on a running Arch or instantOS system it silently reconfigures the
-//! machine the user is installing from.
+//! Together those two facts explain a tempting approach: to give the target the
+//! user's chosen region, write the selected mirrorlist to the host's
+//! `/etc/pacman.d/mirrorlist` and let `pacstrap` copy it across. On the live ISO
+//! that is free — the ISO's `/etc` is the archiso cowspace — and on a running
+//! Arch or instantOS system it silently reconfigures the machine the user is
+//! installing from.
 //!
 //! [`PackageSource::Isolated`] is the alternative: the selected mirrorlist
 //! and a pacman configuration derived from it live in the installer's own
@@ -661,8 +661,8 @@ mod host_write_allowlist {
         allowed
     }
 
-    /// Host pacman files the old install flow rewrote. None of them may be a
-    /// write destination of a non-live install.
+    /// Host pacman files a non-live install must not write. On the live ISO
+    /// rewriting these is free, because its `/etc` is the archiso cowspace.
     const HOST_PACMAN_FILES: &[&str] = &["/etc/pacman.conf", "/etc/pacman.d/mirrorlist"];
 
     #[test]
@@ -731,10 +731,10 @@ mod host_write_allowlist {
 
     #[test]
     fn an_isolated_install_leaves_the_host_pacman_files_byte_identical() {
-        // The regression this whole module exists to prevent. A live ISO gets
-        // away with rewriting them because its `/etc` is RAM; on a running
-        // system that silently reconfigures the machine the user is installing
-        // from, and the mirrorlist the target would have received is the
+        // A live ISO gets away with rewriting the host's pacman files because
+        // its `/etc` is RAM; on a running system that silently reconfigures the
+        // machine the user is installing from, and the mirrorlist the target
+        // would have received is the
         // source system's, not the region the user chose.
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();

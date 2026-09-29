@@ -419,10 +419,9 @@ mod partition_match_tests {
 
     #[test]
     fn a_disk_does_not_match_a_longer_disk_name() {
-        // The regression this tightening exists for: with `starts_with`,
-        // `/dev/sda` claimed `/dev/sdaa1`, so a machine with a second disk
-        // whose name merely extends the first would abort with a spurious
-        // "disk in use".
+        // A prefix match would let `/dev/sda` claim `/dev/sdaa1`, so a machine
+        // with a second disk whose name merely extends the first would abort
+        // with a spurious "disk in use".
         assert!(!is_partition_of("/dev/sda", "/dev/sdaa"));
         assert!(!is_partition_of("/dev/sda", "/dev/sdaa1"));
         assert!(!is_partition_of("/dev/nvme0n1", "/dev/nvme0n11"));
@@ -511,8 +510,9 @@ mod prepare_disk_guard_tests {
 
     #[test]
     fn a_spare_disk_is_never_refused() {
-        // The whole point of Feature A. `root_device` reads the machine, so
-        // pick a device name that cannot be the running one.
+        // A spare disk is installable from a running system. `root_device`
+        // reads the machine, so pick a device name that cannot be the running
+        // one.
         let spare = "/dev/ins-not-a-real-disk";
         if let Some(running) = root_device()
             && running.as_str() == spare

@@ -8,12 +8,11 @@ use crate::ui::preview::PreviewBuilder;
 
 /// What the machine will boot after a reboot.
 ///
-/// The finished menu used to say "boot into your newly installed instantOS
-/// system" unconditionally. That is only true when the installer runs from
-/// RAM: from a running system, rebooting returns to *that* system, and the
-/// new install has to be booted from its own disk or the firmware boot menu.
-/// Saying otherwise sends the user looking for a default boot entry that does
-/// not exist.
+/// "Boot into your newly installed instantOS system" is only true when the
+/// installer runs from RAM: from a running system, rebooting returns to *that*
+/// system, and the new install has to be booted from its own disk or the
+/// firmware boot menu. Saying otherwise sends the user looking for a default
+/// boot entry that does not exist.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum AfterReboot {
     /// The installer ran from RAM-resident media; the next boot is the target.

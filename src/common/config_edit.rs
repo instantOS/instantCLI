@@ -273,7 +273,8 @@ mod tests {
     #[test]
     fn uncomments_stock_arch_grub_cryptodisk() {
         // Stock Arch /etc/default/grub ships `#GRUB_ENABLE_CRYPTODISK=y`
-        // commented; a substring-based check used to silently no-op here.
+        // commented, so the match has to tolerate the leading `#` or it
+        // silently no-ops here.
         let input = "GRUB_DEFAULT=0\n#GRUB_ENABLE_CRYPTODISK=y\nGRUB_TIMEOUT=5\n";
 
         let edit = set_keys(input, &[("GRUB_ENABLE_CRYPTODISK", "y")]);

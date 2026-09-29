@@ -217,10 +217,10 @@ pub fn running_disk_conflict(
 
 /// The user-facing explanation for a refused target.
 ///
-/// The refusal itself is unchanged from the live-ISO behaviour (the running
-/// disk is never a valid target), but the message now says what *is*
-/// possible: a different disk works from the running system, while the
-/// running disk needs the live ISO.
+/// The running disk is never a valid target — partitioning it would destroy the
+/// filesystem the installer is running from. The message therefore names the
+/// way out: a different disk works from the running system, while the running
+/// disk itself needs the live ISO.
 pub fn running_disk_message(disk: &str, conflict: RunningDisk) -> String {
     format!(
         "Cannot install onto {disk}: that is {}.\n\

@@ -1,4 +1,4 @@
-// New modular structure
+//! Dual-boot disk detection, resize feasibility, and display helpers.
 pub mod detection;
 pub mod display;
 pub mod os_detection;

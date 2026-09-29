@@ -2,10 +2,8 @@
 //!
 //! * [`Pacman`] names a pacman installation — its configuration, its
 //!   mirrorlist, the system it belongs to — so the files about to be rewritten
-//!   are always named at the call site. These operations used to disagree about
-//!   whether they named their target at all: some took no path, some took an
-//!   `Option<&str>` whose `None` meant "the host's", which made the file that
-//!   gets rewritten a fact about the caller rather than about the call.
+//!   are always named at the call site. Which file gets rewritten is a fact
+//!   about the pacman being operated on, not about the caller.
 //! * [`PackageSource`] decides *which* pacman a run installs from, separating
 //!   the live ISO's in-place behaviour from leaving a running system untouched.
 //!

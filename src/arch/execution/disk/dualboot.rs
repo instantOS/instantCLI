@@ -28,8 +28,8 @@ fn refresh_cached_disk(context: &InstallContext, disk: &crate::arch::dualboot::D
     let mut disks = match context.get::<DualBootDisksKey>() {
         Some(cached) => cached,
         // Nothing cached yet — the wizard seeds this from the disk picker, but
-        // `ins arch exec` never runs the wizard. Seed it properly rather than
-        // leaving a cache holding one disk where it used to hold all of them.
+        // `ins arch exec` never runs the wizard, so detect the machine here and
+        // leave later steps with the whole-machine view they expect.
         None => crate::arch::dualboot::detect_disks().unwrap_or_default(),
     };
     match disks.iter_mut().find(|entry| entry.device == disk.device) {
@@ -686,10 +686,9 @@ mod tests {
 
     #[test]
     fn btrfs_shrinks_in_place_and_is_never_unmounted() {
-        // The regression this fixes: the old `matches!` refused btrfs outright,
-        // while the resize module next door could already report it shrinkable.
-        // It is also the only filesystem that shrinks while mounted, which is
-        // what makes dual-boot possible without a live medium.
+        // btrfs is the only filesystem that shrinks while mounted, which is what
+        // makes dual-boot possible without a live medium — and it must stay
+        // mounted to do so.
         let commands = plan("btrfs", Some("/mnt/dualboot")).unwrap();
         assert!(commands.contains("btrfs filesystem resize"), "{commands}");
         assert!(
