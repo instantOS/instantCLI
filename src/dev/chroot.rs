@@ -354,7 +354,7 @@ fn scan_disk_for_candidates(
     }
 
     for child in &disk.children {
-        if child.is_partition() && child.is_linux_root_fs() {
+        if child.is_linux_root_partition() {
             let root = child.path();
             report.push(format!(
                 "Found Linux filesystem partition {root}; probing as plaintext root."
@@ -821,7 +821,7 @@ fn mapper_name_for_luks(name: &str) -> String {
 fn find_boot_device(disk: &BlockDevice) -> Option<String> {
     disk.children
         .iter()
-        .find(|child| child.is_partition() && child.is_efi())
+        .find(|child| child.is_esp_partition())
         .map(BlockDevice::path)
         .or_else(|| {
             disk.children
@@ -960,7 +960,7 @@ mod tests {
 
         let disk = &tree.blockdevices[0];
         assert_eq!(find_boot_device(disk).as_deref(), Some("/dev/sda1"));
-        assert!(disk.children[1].is_linux_root_fs());
+        assert!(disk.children[1].is_linux_root_partition());
     }
 
     #[test]

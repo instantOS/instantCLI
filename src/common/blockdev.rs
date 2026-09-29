@@ -220,20 +220,39 @@ impl BlockDevice {
         self.device_type == "part"
     }
 
+    /// An encrypted container, as opposed to a plain filesystem.
     pub fn is_luks(&self) -> bool {
         self.fstype.as_ref().is_some_and(Filesystem::is_encrypted)
     }
 
+    /// A Linux root filesystem: the ext family, btrfs or xfs.
     pub fn is_linux_root_fs(&self) -> bool {
         self.fstype.as_ref().is_some_and(Filesystem::is_linux_root)
+    }
+
+    /// A partition holding a Linux root filesystem.
+    ///
+    /// Named because "a partition whose filesystem is a Linux root" is one
+    /// question, not two — call sites that spelled it out as
+    /// `is_partition() && is_linux_root_fs()` made the reader decide which half
+    /// mattered.
+    pub fn is_linux_root_partition(&self) -> bool {
+        self.is_partition() && self.is_linux_root_fs()
     }
 
     /// An EFI system partition, recognised either by its filesystem or by its
     /// partition-table type — a blank ESP has the right type code before
     /// anything is formatted into it.
-    pub fn is_efi(&self) -> bool {
-        self.fstype.as_ref().is_some_and(Filesystem::is_esp)
-            || self.parttype.as_deref().is_some_and(is_efi_partition_type)
+    ///
+    /// The two conditions are separate facts about separate fields, so the
+    /// question belongs here rather than at a call site. The partition guard
+    /// belongs with it rather than beside it, because every caller asking "is
+    /// this the ESP" wants the partition, and one name for one fact beats a
+    /// guard each caller has to remember.
+    pub fn is_esp_partition(&self) -> bool {
+        self.is_partition()
+            && (self.fstype.as_ref().is_some_and(Filesystem::is_esp)
+                || self.parttype.as_deref().is_some_and(is_efi_partition_type))
     }
 
     pub fn to_json_value(&self) -> serde_json::Value {
@@ -387,5 +406,45 @@ mod tests {
             assert!(!support.requires_unmount());
             assert_eq!(support.tool(), None);
         }
+    }
+
+    /// A device of the given type, with the given filesystem name and
+    /// partition type code.
+    fn device(device_type: &str, fs: Option<&str>, parttype: Option<&str>) -> BlockDevice {
+        BlockDevice {
+            name: "vda1".to_string(),
+            device_type: device_type.to_string(),
+            size: Some(1024 * 1024 * 1024),
+            fstype: fs.map(Filesystem::parse),
+            uuid: None,
+            label: None,
+            mountpoint: None,
+            pttype: None,
+            parttype: parttype.map(str::to_string),
+            children: Vec::new(),
+        }
+    }
+
+    const ESP_GUID: &str = "c12a7328-f81f-11d2-ba4b-00a0c93ec93b";
+
+    #[test]
+    fn a_linux_root_partition_is_a_partition_with_a_linux_filesystem() {
+        assert!(device("part", Some("btrfs"), None).is_linux_root_partition());
+        assert!(device("part", Some("ext4"), None).is_linux_root_partition());
+        assert!(!device("part", Some("vfat"), None).is_linux_root_partition());
+        assert!(!device("part", None, None).is_linux_root_partition());
+        // A whole disk whose filesystem happens to be ext4 is not a partition.
+        assert!(!device("disk", Some("ext4"), None).is_linux_root_partition());
+    }
+
+    #[test]
+    fn an_esp_partition_is_a_partition_recognised_either_way() {
+        // By filesystem, as an ESP ends up once formatted.
+        assert!(device("part", Some("vfat"), None).is_esp_partition());
+        // By partition type code, before anything is written into it.
+        assert!(device("part", None, Some(ESP_GUID)).is_esp_partition());
+        // A whole disk is not a partition, however it is typed.
+        assert!(!device("disk", Some("vfat"), None).is_esp_partition());
+        assert!(!device("part", Some("ext4"), None).is_esp_partition());
     }
 }
