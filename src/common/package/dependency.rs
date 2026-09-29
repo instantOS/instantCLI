@@ -51,15 +51,13 @@ pub struct Dependency {
 }
 
 impl Dependency {
-    /// Check if this dependency is already installed.
-    ///
+    /// Whether this dependency is already installed.
     /// Returns `true` if any of the install tests pass.
     pub fn is_installed(&self) -> bool {
         self.tests.iter().any(|test| test.run())
     }
 
-    /// Get the best package to install for the current system.
-    ///
+    /// The best package to install on the current system.
     /// Returns `None` if no suitable package is found.
     ///
     /// Selection algorithm:

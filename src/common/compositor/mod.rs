@@ -17,7 +17,6 @@ pub mod kwin;
 pub mod niri;
 pub mod sway;
 
-/// Create and launch terminal in background
 pub fn create_terminal_process(config: &ScratchpadConfig) -> Result<()> {
     let term_cmd = config.terminal_command();
     let bg_cmd = format!("nohup {term_cmd} >/dev/null 2>&1 &");
@@ -38,11 +37,8 @@ pub trait ScratchpadProvider: Send + Sync {
     fn hide(&self, config: &ScratchpadConfig) -> Result<()>;
     /// Toggle the scratchpad
     fn toggle(&self, config: &ScratchpadConfig) -> Result<()>;
-    /// Get all scratchpad windows
     fn get_all_windows(&self) -> Result<Vec<ScratchpadWindowInfo>>;
-    /// Check if the scratchpad window is running
     fn is_window_running(&self, config: &ScratchpadConfig) -> Result<bool>;
-    /// Check if the scratchpad window is visible
     fn is_visible(&self, config: &ScratchpadConfig) -> Result<bool>;
     /// Show the scratchpad without checking if it exists (optimistic)
     fn show_unchecked(&self, config: &ScratchpadConfig) -> Result<()> {
@@ -52,7 +48,6 @@ pub trait ScratchpadProvider: Send + Sync {
     fn hide_unchecked(&self, config: &ScratchpadConfig) -> Result<()> {
         self.hide(config)
     }
-    /// Check if this provider supports scratchpad functionality
     fn supports_scratchpad(&self) -> bool {
         false
     }
@@ -91,7 +86,6 @@ pub enum CompositorType {
 }
 
 impl CompositorType {
-    /// Detect the current window compositor
     pub fn detect() -> Self {
         // Fast path: check for instantWM env var (instantWM sets INSTANTWM=1)
         if env::var("INSTANTWM").is_ok() {
@@ -206,7 +200,6 @@ impl CompositorType {
         }
     }
 
-    /// Get the scratchpad provider for this compositor
     pub fn provider(&self) -> Box<dyn ScratchpadProvider> {
         match self {
             CompositorType::I3 => Box::new(i3::I3),
@@ -230,7 +223,6 @@ impl CompositorType {
             .unwrap_or(false)
     }
 
-    /// Check if a process with the given name is running
     fn is_process_running(process_name: &str) -> bool {
         // Try pgrep first (most reliable)
         if let Ok(output) = Command::new("pgrep").arg(process_name).output()
@@ -250,7 +242,6 @@ impl CompositorType {
         false
     }
 
-    /// Get a human-readable name for the compositor
     pub fn name(&self) -> String {
         match self {
             CompositorType::I3 => "i3".to_string(),
@@ -265,7 +256,6 @@ impl CompositorType {
         }
     }
 
-    /// Check if the compositor is Wayland-based
     #[allow(dead_code)]
     pub fn is_wayland(&self) -> bool {
         match self {
@@ -278,7 +268,6 @@ impl CompositorType {
         }
     }
 
-    /// Check if the compositor is X11-based
     #[allow(dead_code)]
     pub fn is_x11(&self) -> bool {
         match self {
@@ -292,7 +281,6 @@ impl CompositorType {
         }
     }
 
-    /// Get the display server type for this compositor
     #[allow(dead_code)]
     pub fn display_server(&self) -> DisplayServer {
         match self {
@@ -316,7 +304,6 @@ impl CompositorType {
         }
     }
 
-    /// Get all scratchpad windows for this compositor
     pub fn get_all_scratchpad_windows(&self) -> anyhow::Result<Vec<ScratchpadWindowInfo>> {
         self.provider().get_all_windows()
     }

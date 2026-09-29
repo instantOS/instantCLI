@@ -111,8 +111,7 @@ fn format_upload_time(timestamp: chrono::DateTime<chrono::Utc>) -> String {
     timestamp.format("%Y-%m-%d %H:%M UTC").to_string()
 }
 
-/// Build the interactive upload menu entries.
-///
+/// The interactive upload menu entries.
 /// When an upload of the current install log is remembered, an entry
 /// reporting it (with the URL) is added, so the user can retrieve the link
 /// without uploading a duplicate report. Uploading a fresh report stays

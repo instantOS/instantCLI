@@ -129,10 +129,8 @@ pub(super) async fn handle_install_command(debug: bool) -> Result<()> {
     // process and do not need to relaunch halfway through the workflow.
     ensure_root()?;
 
-    // Check architecture
     let system_info = crate::arch::engine::SystemInfo::detect();
 
-    // Check whether this host can run the installer.
     let profile = crate::arch::host::HostProfile::detect().unwrap_or_else(|error| {
         eprintln!("Warning: could not classify this system: {error:#}");
         crate::arch::host::HostProfile::ForeignDistro
@@ -159,14 +157,12 @@ pub(super) async fn handle_install_command(debug: bool) -> Result<()> {
         return Ok(());
     }
 
-    // 1. Ask questions
     let questions = build_steps();
     match Box::pin(handle_ask_command(None, None, questions)).await? {
         AskOutcome::Completed => {}
         AskOutcome::Cancelled => return Ok(()),
     }
 
-    // 2. Execute
     let exec_result = Box::pin(super::exec::handle_exec_command(
         build_steps(),
         None,
@@ -191,7 +187,6 @@ pub(super) async fn handle_install_command(debug: bool) -> Result<()> {
         return Ok(());
     }
 
-    // 3. Finished
     Box::pin(handle_arch_command(ArchCommands::Finished, debug)).await?;
 
     Ok(())

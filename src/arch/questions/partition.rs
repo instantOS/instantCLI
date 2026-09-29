@@ -236,7 +236,6 @@ impl WizardStep for PartitionSelectorQuestion {
                 continue;
             }
 
-            // Check against other partition questions.
             if matches!(
                 id,
                 StepId::RootPartition
@@ -252,7 +251,6 @@ impl WizardStep for PartitionSelectorQuestion {
             }
         }
 
-        // Get partition size from lsblk for validation
         let size = get_partition_size(part_path);
 
         // The partition must live on the currently selected disk. ask() only
@@ -267,7 +265,6 @@ impl WizardStep for PartitionSelectorQuestion {
             ));
         }
 
-        // Use the injected validator
         self.validator.validate_partition(part_path, size)?;
 
         Ok(())
@@ -287,7 +284,6 @@ pub fn partition_belongs_to_disk(partition: &str, disk: &str) -> bool {
     !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit())
 }
 
-/// Get partition size from lsblk
 fn get_partition_size(partition_path: &str) -> Option<PartitionSize> {
     let output = std::process::Command::new("lsblk")
         .args(["-n", "-o", "SIZE", "-b", partition_path])
@@ -296,7 +292,6 @@ fn get_partition_size(partition_path: &str) -> Option<PartitionSize> {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let size_bytes: u64 = stdout.trim().parse().ok()?;
-    // Convert bytes to MB
     Some(PartitionSize::from_bytes(size_bytes))
 }
 

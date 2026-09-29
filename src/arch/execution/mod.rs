@@ -147,7 +147,6 @@ impl CommandExecutor {
             self.print_dry_run(command, None);
             Ok(())
         } else {
-            // Stream stdout/stderr to terminal AND log file
             command.stdout(std::process::Stdio::piped());
             command.stderr(std::process::Stdio::piped());
 
@@ -161,7 +160,6 @@ impl CommandExecutor {
 
             let status = child.wait()?;
 
-            // Wait for threads to finish reading
             let _ = stdout_handle.join();
             let _ = stderr_handle.join();
 
@@ -266,7 +264,6 @@ impl CommandExecutor {
             self.print_dry_run(command, None);
             Ok(None)
         } else {
-            // Capture stdout/stderr
             command.stdout(std::process::Stdio::piped());
             // We don't necessarily want to capture stderr, maybe let it inherit?
             // But .output() captures both.
@@ -371,7 +368,6 @@ pub async fn execute_installation(
         && crate::common::network::check_internet();
     crate::arch::offline::validate(install_mode, network_available)?;
 
-    // Increase cowspace if in live ISO
     if crate::common::distro::is_live_iso()
         && !dry_run
         && let Err(e) = crate::common::distro::increase_cowspace()
@@ -453,7 +449,6 @@ pub async fn execute_installation(
     }
 
     if let Some(step_name) = step {
-        // Try to parse the step name
         // In a real implementation we might use clap's value parser if we exposed the enum directly in CLI,
         // but here we take a string to allow flexibility or partial matching if needed.
         // For now, let's just match against our known steps.
@@ -594,16 +589,13 @@ async fn execute_step(
     let requires_chroot = step.requires_chroot();
     let step_started = Instant::now();
 
-    // Load state
     let mut state = InstallState::load_for_configuration(configuration_sha256);
 
-    // Check if already complete
     if state.is_complete(step) && !executor.dry_run() {
         println!("Step {:?} is already complete. Skipping.", step);
         return Ok(());
     }
 
-    // Check dependencies
     if let Err(missing) = state.check_dependencies(step) {
         if executor.dry_run() {
             println!(
@@ -635,13 +627,11 @@ async fn execute_step(
             .arg(paths::CONFIG_FILE);
 
         if executor.dry_run() {
-            // Pass dry-run flag if we are dry-running
             cmd.arg("--dry-run");
         }
 
         executor.run(&mut cmd)?;
 
-        // Collect logs from chroot
         if !executor.dry_run() {
             let chroot_log = paths::chroot_path(paths::LOG_FILE);
             if chroot_log.exists()
@@ -665,7 +655,6 @@ async fn execute_step(
             step_started.elapsed().as_secs_f64()
         ));
 
-        // Mark complete on host after successful chroot execution
         state.mark_complete(step);
         if let Err(e) = state.save() {
             println!("Warning: Failed to save install state on host: {}", e);
@@ -682,18 +671,9 @@ async fn execute_step(
         InstallStep::Disk => disk::prepare_disk(plan, context, executor)?,
         InstallStep::Base => base::install_base(plan, executor).await?,
         InstallStep::Fstab => fstab::generate_fstab(executor)?,
-        InstallStep::Config => {
-            // setup_chroot is handled above if needed
-            config::install_config(plan, executor).await?
-        }
-        InstallStep::Bootloader => {
-            // setup_chroot is handled above if needed
-            bootloader::install_bootloader(plan, executor).await?
-        }
-        InstallStep::Post => {
-            // setup_chroot is handled above if needed
-            post::install_post(plan, executor).await?
-        }
+        InstallStep::Config => config::install_config(plan, executor).await?,
+        InstallStep::Bootloader => bootloader::install_bootloader(plan, executor).await?,
+        InstallStep::Post => post::install_post(plan, executor).await?,
     }
 
     if !executor.dry_run() {
@@ -709,7 +689,6 @@ async fn execute_step(
         if let Err(e) = state.save() {
             println!("Warning: Failed to save install state: {}", e);
         } else if !in_chroot {
-            // Sync state to chroot if it exists
             let chroot_state = paths::chroot_path(paths::STATE_FILE);
             if chroot_state.parent().map(|p| p.exists()).unwrap_or(false)
                 && let Err(e) = std::fs::copy(paths::host_state_file(), &chroot_state)
@@ -725,7 +704,6 @@ async fn execute_step(
 fn setup_chroot(executor: &dyn CommandRunner, config_path: &std::path::Path) -> Result<()> {
     println!("Setting up chroot environment...");
 
-    // Copy binary
     let current_exe = std::env::current_exe()?;
     let target_bin = paths::chroot_path("/usr/bin/ins-install");
 
@@ -760,12 +738,10 @@ fn setup_chroot(executor: &dyn CommandRunner, config_path: &std::path::Path) -> 
         })?;
     }
 
-    // Copy config
     let target_config = paths::chroot_path(paths::CONFIG_FILE);
     if executor.dry_run() {
         println!("[DRY RUN] cp {:?} {:?}", config_path, target_config);
     } else {
-        // Ensure directory exists
         if let Some(parent) = target_config.parent()
             && !parent.exists()
         {
@@ -774,7 +750,6 @@ fn setup_chroot(executor: &dyn CommandRunner, config_path: &std::path::Path) -> 
         std::fs::copy(config_path, target_config).context("Failed to copy config to chroot")?;
     }
 
-    // Copy state file
     let state_file = paths::host_state_file();
     let target_state = paths::chroot_path(paths::STATE_FILE);
     if state_file.exists() {

@@ -103,7 +103,6 @@ async fn setup_mirrors(plan: &InstallPlan, executor: &dyn CommandRunner) -> Resu
 
     let mirrorlist = match region_name {
         Some(region) => {
-            // Normal path: user selected a region
             println!("Selected region: {}", region);
             fetch_mirrorlist_for_region(region).await?
         }
@@ -123,9 +122,7 @@ async fn setup_mirrors(plan: &InstallPlan, executor: &dyn CommandRunner) -> Resu
     Ok(())
 }
 
-/// Fetch mirrorlist for a specific region
 async fn fetch_mirrorlist_for_region(region_name: &str) -> Result<String> {
-    // Fetch region map to get code
     let regions = crate::arch::mirrors::fetch_mirror_regions().await?;
     let region_code = regions
         .get(region_name)
@@ -135,7 +132,6 @@ async fn fetch_mirrorlist_for_region(region_name: &str) -> Result<String> {
     crate::arch::mirrors::fetch_mirrorlist(region_code).await
 }
 
-/// Fetch fallback mirrorlist when region selection was skipped
 async fn fetch_fallback_mirrorlist() -> Result<String> {
     // Use empty region code to trigger fallback chain in fetch_mirrorlist
     crate::arch::mirrors::fetch_mirrorlist("").await
@@ -229,7 +225,6 @@ fn run_pacstrap(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> 
     // Add kernel (headers are installed later alongside extra packages)
     packages.push(kernel.label().to_string());
 
-    // CPU Microcode
     if plan.system_info.has_amd_cpu {
         println!("Detected AMD CPU, adding amd-ucode");
         packages.push("amd-ucode".to_string());
@@ -242,19 +237,16 @@ fn run_pacstrap(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> 
     // GPU drivers are installed later in setup.rs after multilib is enabled,
     // allowing lib32-* packages to be installed properly.
 
-    // Encryption support
     if use_encryption {
         println!("Encryption enabled; required packages will be installed inside chroot.");
     }
 
-    // Plymouth support
     if use_plymouth && !minimal_mode {
         println!("Plymouth enabled; package will be installed after chroot.");
     }
 
     println!("Packages to install: {}", packages.join(" "));
 
-    // Convert Vec<String> to Vec<&str> for pacstrap
     let packages_refs: Vec<&str> = packages.iter().map(|s| s.as_str()).collect();
 
     super::pacman::pacstrap("/mnt", &packages_refs, executor)?;

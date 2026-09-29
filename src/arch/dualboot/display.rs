@@ -8,7 +8,6 @@ use crate::common::format::format_size;
 use crate::ui::nerd_font::NerdFont;
 use colored::Colorize;
 
-/// Display all detected disks with their partitions
 pub fn display_disks(disks: &[&DiskInfo]) {
     if disks.is_empty() {
         println!(
@@ -25,9 +24,7 @@ pub fn display_disks(disks: &[&DiskInfo]) {
     }
 }
 
-/// Display a disk with its partitions
 pub fn display_disk(disk: &DiskInfo) {
-    // Disk header
     println!(
         "  {} {} {} ({})",
         NerdFont::HardDrive.to_string().bright_cyan(),
@@ -50,7 +47,6 @@ pub fn display_disk(disk: &DiskInfo) {
     }
 }
 
-/// Display a single partition as a row
 pub fn display_partition_row(partition: &PartitionInfo) {
     let name = partition
         .device

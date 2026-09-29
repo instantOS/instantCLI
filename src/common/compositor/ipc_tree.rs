@@ -61,7 +61,6 @@ fn sway_selector(id: &str) -> String {
     format!("[app_id=\"{id}\"]")
 }
 
-/// Get window class from an i3 tree node (falls back to `instance`).
 pub(crate) fn window_class_of(node: &Value) -> Option<String> {
     node.get("window_properties")
         .and_then(|wp| wp.get("class"))
@@ -75,7 +74,6 @@ pub(crate) fn window_class_of(node: &Value) -> Option<String> {
         })
 }
 
-/// Get window app_id from a sway tree node.
 pub(crate) fn window_app_id_of(node: &Value) -> Option<String> {
     node.get("app_id")
         .and_then(|a| a.as_str())
@@ -112,7 +110,6 @@ pub(crate) fn get_tree(config: &IpcConfig) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
-/// Check whether a window id appears in the tree (substring match on the id
 /// keys; i3 additionally matches `instance`).
 pub(crate) fn window_exists(config: &IpcConfig, window_id: &str) -> Result<bool> {
     let tree = get_tree(config)?;
@@ -122,7 +119,6 @@ pub(crate) fn window_exists(config: &IpcConfig, window_id: &str) -> Result<bool>
         .any(|key| tree.contains(&format!("\"{key}\": \"{window_id}\""))))
 }
 
-/// Check if a window is currently visible (not in the scratchpad).
 pub(crate) fn is_window_visible(config: &IpcConfig, window_id: &str) -> Result<bool> {
     let tree = get_tree(config)?;
     let parsed: Value = serde_json::from_str(&tree)
@@ -187,7 +183,6 @@ pub(crate) fn configure_scratchpad_window(
     Ok(())
 }
 
-/// Get all scratchpad windows from the tree.
 pub(crate) fn get_all_scratchpad_windows(config: &IpcConfig) -> Result<Vec<ScratchpadWindowInfo>> {
     let tree = get_tree(config)?;
     let parsed: Value = serde_json::from_str(&tree)
@@ -245,7 +240,6 @@ pub(crate) fn create_and_wait(config: &IpcConfig, scratchpad: &ScratchpadConfig)
     Err(anyhow::anyhow!("Terminal window did not appear"))
 }
 
-/// Get the visible field from a node directly
 fn get_node_visible_field(node: &Value) -> Option<bool> {
     node.get("visible").and_then(|v| v.as_bool())
 }
@@ -281,7 +275,6 @@ fn find_nodes_recursive<'a>(node: &'a Value, scratchpad_nodes: &mut Vec<&'a Valu
     }
 }
 
-/// Get window name from node
 fn get_window_name(node: &Value) -> Option<String> {
     node.get("name")
         .and_then(|n| n.as_str())

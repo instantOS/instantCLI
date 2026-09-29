@@ -12,8 +12,7 @@ pub const USER_GROUPS: &[&str] = &["wheel", "video", "docker", "sys", "rfkill"];
 /// System groups that need to exist but users shouldn't be members of
 pub const SYSTEM_GROUPS: &[&str] = &["nobody"];
 
-/// Ensure required groups exist on the system.
-///
+/// Ensure the user and system groups exist.
 /// This creates both user groups (that users should be members of) and
 /// system groups (that need to exist but users shouldn't be members of).
 ///
@@ -666,7 +665,7 @@ pub fn configure_plymouth(
         return Ok(());
     }
 
-    // Set the theme and rebuild initramfs
+    // Set the default theme.
     let mut cmd = Command::new("plymouth-set-default-theme");
     cmd.arg("-R").arg(theme);
     if let Err(e) = executor.run(&mut cmd) {

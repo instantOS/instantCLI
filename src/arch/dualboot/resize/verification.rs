@@ -23,7 +23,6 @@ pub struct ResizeStatus {
 }
 
 impl ResizeStatus {
-    /// Get human-readable space freed
     pub fn space_freed_human(&self) -> String {
         format_size(self.space_freed_bytes)
     }
@@ -45,7 +44,6 @@ pub struct ResizeVerifier {
 }
 
 impl ResizeVerifier {
-    /// Create a new resize verifier with a target size
     pub fn with_target(
         disk: &DiskInfo,
         partition: &PartitionInfo,
@@ -60,7 +58,7 @@ impl ResizeVerifier {
         }
     }
 
-    /// Check if resize has been performed by re-detecting disk state
+    /// Re-detect the disk and report whether the resize happened.
     ///
     /// This is a synchronous function that should be called from spawn_blocking
     pub fn check(&self) -> Result<ResizeStatus> {
@@ -84,7 +82,6 @@ impl ResizeVerifier {
         let current_unpartitioned = disk.unpartitioned_bytes();
         let current_contiguous = disk.max_contiguous_free_space_bytes;
 
-        // Check if resize occurred
         let partition_missing = current_partition_size.is_none();
         let partition_shrunk = current_partition_size
             .map(|s| s < self.original_partition_size)
@@ -96,7 +93,6 @@ impl ResizeVerifier {
         let space_freed_bytes =
             current_unpartitioned.saturating_sub(self.original_unpartitioned_bytes);
 
-        // Build message
         let message = if resize_detected {
             if partition_missing {
                 format!(
@@ -144,7 +140,6 @@ impl ResizeVerifier {
         })
     }
 
-    /// Check resize status asynchronously
     pub async fn check_async(&self) -> Result<ResizeStatus> {
         let verifier = self.clone();
         tokio::task::spawn_blocking(move || verifier.check()).await?

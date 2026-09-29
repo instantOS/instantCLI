@@ -41,7 +41,6 @@ pub enum WindowManager {
 }
 
 impl WindowManager {
-    /// Get the config directory name
     pub fn config_dir_name(&self) -> &'static str {
         match self {
             WindowManager::Sway => "sway",
@@ -51,7 +50,6 @@ impl WindowManager {
         }
     }
 
-    /// Get the display name
     pub fn name(&self) -> &'static str {
         match self {
             WindowManager::Sway => "Sway",
@@ -61,7 +59,6 @@ impl WindowManager {
         }
     }
 
-    /// Get the reload command
     pub fn reload_command(&self) -> &'static str {
         match self {
             WindowManager::Sway => "swaymsg",
@@ -86,7 +83,6 @@ pub struct WmConfigManager {
 }
 
 impl WmConfigManager {
-    /// Create a new WmConfigManager for the given window manager.
     pub fn new(wm: WindowManager) -> Self {
         let config_dir = dirs::config_dir().unwrap_or_else(|| PathBuf::from("~/.config"));
 
@@ -138,17 +134,14 @@ impl WmConfigManager {
         (instant, main)
     }
 
-    /// Get the path to the shared config file.
     pub fn config_path(&self) -> &PathBuf {
         &self.config_path
     }
 
-    /// Get the window manager type.
     pub fn wm(&self) -> WindowManager {
         self.wm
     }
 
-    /// Get the path to the main WM config file.
     pub fn main_config_path(&self) -> &PathBuf {
         &self.main_config_path
     }
@@ -177,7 +170,6 @@ impl WmConfigManager {
             .with_context(|| format!("Failed to write {}", self.config_path.display()))
     }
 
-    /// Check if the config file is included in the main WM config.
     pub fn is_included_in_main_config(&self) -> Result<bool> {
         if !self.main_config_path.exists() {
             return Ok(false);
@@ -193,8 +185,7 @@ impl WmConfigManager {
         Ok(content.contains(marker))
     }
 
-    /// Ensure the config file is included in the main WM config.
-    ///
+    /// Add this config to the main WM config if it is not already there.
     /// Returns `true` if the include was added, `false` if it already existed.
     pub fn ensure_included_in_main_config(&self) -> Result<bool> {
         if !self.main_config_path.exists() {

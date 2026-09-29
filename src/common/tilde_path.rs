@@ -25,13 +25,11 @@ impl TildePath {
         self.0
     }
 
-    /// Check whether the (tilde-expanded) path is an existing directory.
     pub fn is_dir(&self) -> bool {
         self.0.is_dir()
     }
 
-    /// Create from a string with tilde expansion.
-    ///
+    /// Expand a leading `~` against `HOME`.
     /// Infallible: `shellexpand::tilde` never fails, so an unset
     /// `HOME` simply leaves the `~` unexpanded (the resulting path
     /// simply won't exist).

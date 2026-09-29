@@ -267,8 +267,6 @@ mod tests {
         );
     }
 
-    // ── Parse ───────────────────────────────────────────────────────────
-
     #[test]
     fn test_parse_parentheses() {
         let config = MkinitcpioConfig::parse("HOOKS=(base udev)").unwrap();
@@ -305,8 +303,6 @@ mod tests {
         );
         assert_eq!(config.hooks_line_idx, Some(3));
     }
-
-    // ── Serialization ───────────────────────────────────────────────────
 
     #[test]
     fn test_serialization() {
@@ -349,8 +345,6 @@ mod tests {
         assert_eq!(config.to_string(), "HOOKS='base udev keyboard'");
     }
 
-    // ── ensure_hook ─────────────────────────────────────────────────────
-
     #[test]
     fn test_ensure_hook_adds_new() {
         let mut config = MkinitcpioConfig::parse("HOOKS=(base)").unwrap();
@@ -365,8 +359,6 @@ mod tests {
         assert_eq!(config.hooks, vec!["base", "udev"]);
     }
 
-    // ── remove_hook ─────────────────────────────────────────────────────
-
     #[test]
     fn test_remove_hook_existing() {
         let mut config = MkinitcpioConfig::parse("HOOKS=(base udev block)").unwrap();
@@ -380,8 +372,6 @@ mod tests {
         config.remove_hook("filesystems");
         assert_eq!(config.hooks, vec!["base", "udev"]);
     }
-
-    // ── replace_hook ────────────────────────────────────────────────────
 
     #[test]
     fn test_replace_hook_existing() {
@@ -404,8 +394,6 @@ mod tests {
         assert_eq!(config.hooks, vec!["core", "udev", "core"]);
     }
 
-    // ── contains_hook ───────────────────────────────────────────────────
-
     #[test]
     fn test_contains_hook_true() {
         let config = MkinitcpioConfig::parse("HOOKS=(base udev)").unwrap();
@@ -418,8 +406,6 @@ mod tests {
         let config = MkinitcpioConfig::parse("HOOKS=(base udev)").unwrap();
         assert!(!config.contains_hook("filesystems"));
     }
-
-    // ── ensure_hook_position ────────────────────────────────────────────
 
     #[test]
     fn test_ensure_hook_position_already_correct() {
@@ -481,8 +467,6 @@ mod tests {
         config.ensure_hook_position("filesystems", &["udev"], &[]);
         assert_eq!(config.hooks[config.hooks.len() - 1], "filesystems");
     }
-
-    // ── insertion_bounds / target helpers (via ensure_hook_position) ────
 
     #[test]
     fn test_ensure_hook_position_encryption_typical() {

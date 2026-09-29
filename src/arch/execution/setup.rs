@@ -55,7 +55,6 @@ impl SetupOptions {
 }
 
 /// Set up instantOS on a system.
-///
 /// This function is used by both:
 /// - `ins arch install` (Post step, inside chroot after Config installed standard packages)
 /// - `ins arch setup` (on existing vanilla Arch installations)
@@ -110,10 +109,8 @@ async fn setup_instantos_with_options(
         crate::arch::execution::bootloader::configure_grub_theme(executor)?;
     }
 
-    // Determine username: override > context > SUDO_USER
     let username = options.username.clone();
 
-    // Configure user groups (create groups and add user to them)
     // This reuses the same functions as ins arch install for consistency
     println!("Configuring user groups...");
     super::config::ensure_groups_exist(executor)?;
@@ -146,7 +143,6 @@ async fn setup_instantos_with_options(
 }
 
 /// Set up the instantOS repository in pacman.conf.
-///
 /// Note: This does NOT enable multilib. For fresh installations, multilib is enabled
 /// during the Config step. For `ins arch setup` on existing systems, users already
 /// have their own multilib configuration.
@@ -157,7 +153,6 @@ pub async fn setup_instant_repo(executor: &dyn CommandRunner) -> Result<()> {
         .setup_instant_repo(executor.dry_run(), offline_content.as_deref())
         .await?;
 
-    // Update repositories to include [instant]
     println!("Updating repositories...");
     let mut cmd = Command::new("pacman");
     cmd.arg("-Sy");
@@ -193,7 +188,6 @@ fn install_instant_packages(options: &SetupOptions, executor: &dyn CommandRunner
 fn setup_user_dotfiles(username: &str, executor: &dyn CommandRunner) -> Result<()> {
     println!("Setting up dotfiles for user: {}", username);
 
-    // Check if dotfiles repo already exists
     let check_cmd_str = "ins dot repo list";
     let mut cmd_check = Command::new("su");
     cmd_check.arg("-c").arg(check_cmd_str).arg(username);
@@ -260,8 +254,6 @@ fn setup_user_dotfiles(username: &str, executor: &dyn CommandRunner) -> Result<(
 
     executor.run(&mut cmd_apply)?;
 
-    // Change shell to zsh
-    // chsh -s /bin/zsh username
     let mut cmd_chsh = Command::new("chsh");
     cmd_chsh.arg("-s").arg("/bin/zsh").arg(username);
 
@@ -287,7 +279,6 @@ fn setup_wallpaper(username: &str, executor: &dyn CommandRunner) {
 
     println!("Setting up wallpaper for user: {}", username);
 
-    // Run `ins wallpaper random` as the user
     let wallpaper_cmd_str = "ins wallpaper random";
     let mut cmd = Command::new("su");
     cmd.arg("-c").arg(wallpaper_cmd_str).arg(username);
@@ -306,7 +297,6 @@ fn enable_services(executor: &dyn CommandRunner, options: &SetupOptions) -> Resu
     let mut services = vec!["NetworkManager", "sshd", "systemd-timesyncd"];
     let desktop = options.desktop;
 
-    // Enable VM-specific services
     if let Some(vm_type) = &options.system_info.vm_type {
         match vm_type.as_str() {
             "vmware" => {
@@ -543,7 +533,6 @@ fn setup_backlight_udev_rule(executor: &dyn CommandRunner) -> Result<()> {
     let rules_path = "/etc/udev/rules.d/90-backlight.rules";
     let rules_content = r#"ACTION=="add", SUBSYSTEM=="backlight", RUN+="/bin/chgrp video $sys$devpath/brightness", RUN+="/bin/chmod g+w $sys$devpath/brightness""#;
 
-    // Ensure parent directory exists
     if let Some(parent) = std::path::Path::new(rules_path).parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -594,7 +583,6 @@ fn configure_gdm_session(options: &SetupOptions, executor: &dyn CommandRunner) -
     let dir_path = "/var/lib/AccountsService/users";
     let file_path = format!("{}/{}", dir_path, username);
 
-    // Create the directory if it doesn't exist
     std::fs::create_dir_all(dir_path)?;
 
     let content = if std::path::Path::new(&file_path).exists() {

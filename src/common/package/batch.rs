@@ -44,7 +44,6 @@ pub enum Confirmation {
 }
 
 impl InstallBatch {
-    /// Create a new empty install batch.
     pub fn new() -> Self {
         Self::default()
     }
@@ -65,12 +64,10 @@ impl InstallBatch {
             });
     }
 
-    /// Check if there are any packages to install.
     pub fn is_empty(&self) -> bool {
         self.batches.values().all(|v| v.is_empty())
     }
 
-    /// Get the total number of packages to install.
     pub fn package_count(&self) -> usize {
         self.batches.values().map(|v| v.len()).sum()
     }

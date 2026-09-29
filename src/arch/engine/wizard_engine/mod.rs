@@ -170,7 +170,6 @@ impl WizardEngine {
         Self::for_flow(FlowKind::Install, steps)
     }
 
-    /// Create an engine for a specific wizard flow.
     pub fn for_flow(flow: FlowKind, steps: Vec<Box<dyn WizardStep>>) -> Result<Self> {
         let step_graph = StepGraph::new(&steps)?;
         Ok(Self {

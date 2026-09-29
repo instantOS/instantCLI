@@ -189,15 +189,13 @@ fn query_storage_used() -> Option<String> {
     (parts.len() >= 3).then(|| parts[2].to_string())
 }
 
-/// Load the full install configuration summary text.
 fn load_install_summary() -> Option<String> {
     let context =
         crate::arch::engine::InstallContext::load(super::default_questions_file()).ok()?;
     Some(build_install_summary(&context).text)
 }
 
-/// Build the preview for a finished-menu option.
-///
+/// The preview shown for a finished-menu option.
 /// Each preview shows the action description at the top, followed by runtime
 /// results (duration, storage) and the full installation configuration
 /// summary so the user can confirm the install regardless of which option they

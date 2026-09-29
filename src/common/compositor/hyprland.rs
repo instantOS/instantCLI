@@ -125,7 +125,6 @@ impl Hyprland {
     }
 }
 
-/// Ensure generic floating/size/center rules for all `scratchpad_*` windows.
 /// This replaces the previous per-scratchpad batch of 4 window_rules. Workspace
 /// assignment is now handled directly by `exec_cmd`'s `workspace` param.
 fn ensure_scratchpad_rules() -> Result<()> {
@@ -188,7 +187,6 @@ pub struct HyprlandWorkspace {
     pub name: String,
 }
 
-/// Get client info by class
 pub fn get_client_by_class(window_class: &str) -> Result<Option<HyprlandClient>> {
     let output = Command::new("hyprctl")
         .args(["clients", "-j"])
@@ -212,7 +210,6 @@ pub fn get_client_by_class(window_class: &str) -> Result<Option<HyprlandClient>>
     Ok(None)
 }
 
-/// Check if a window with specific class exists in Hyprland using hyprctl
 pub fn window_exists(window_class: &str) -> Result<bool> {
     let output = Command::new("hyprctl")
         .args(["clients", "-j"])
@@ -294,7 +291,6 @@ struct HyprlandMonitorInfo {
     pub special_workspace: HyprlandWorkspace,
 }
 
-/// Check if special workspace is active using hyprctl
 pub fn is_special_workspace_active(workspace_name: &str) -> Result<bool> {
     let monitors_output = Command::new("hyprctl")
         .args(["monitors", "-j"])
@@ -319,7 +315,6 @@ pub fn is_special_workspace_active(workspace_name: &str) -> Result<bool> {
     Ok(false)
 }
 
-/// Get all scratchpad windows in Hyprland
 pub fn get_all_scratchpad_windows() -> Result<Vec<ScratchpadWindowInfo>> {
     let output = Command::new("hyprctl")
         .args(["clients", "-j"])

@@ -6,7 +6,6 @@ use crate::common::blockdev::is_efi_partition_type;
 use serde_json::Value;
 use std::process::Command;
 
-/// Parse a partition from lsblk JSON
 pub fn parse_partition<F, G>(
     value: &Value,
     detect_os_fn: F,
@@ -61,12 +60,10 @@ where
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string());
 
-    // Check if this is an EFI System Partition
     // MBR: 0xef, GPT: C12A7328-F81F-11D2-BA4B-00A0C93EC93B (case insensitive)
     let parttype = value.get("parttype").and_then(|v| v.as_str()).unwrap_or("");
     let is_efi = is_efi_partition_type(parttype);
 
-    // Detect OS based on filesystem type and mount point
     let detected_os = if is_efi {
         Some(DetectedOS {
             os_type: OSType::Unknown,
@@ -76,7 +73,6 @@ where
         detect_os_fn(&filesystem, &mount_point)
     };
 
-    // Get resize info based on filesystem type and EFI status
     let resize_info = if is_efi {
         Some(get_efi_resize_fn(size_bytes))
     } else {
@@ -144,8 +140,6 @@ mod tests {
     fn make_json(json_str: &str) -> serde_json::Value {
         serde_json::from_str(json_str).unwrap()
     }
-
-    // ── parse_partition ─────────────────────────────────────────────────
 
     #[test]
     fn test_parse_partition_basic() {

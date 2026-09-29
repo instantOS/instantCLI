@@ -162,8 +162,8 @@ impl InstallEnvironment {
 
 /// How the install target relates to the running system.
 ///
-/// A classification of the target, not a reason for refusing it: both variants
-/// are refused by the same check and differ only in the wording the user sees.
+/// A classification, not a reason for refusal: both variants are refused by the
+/// same check and differ only in the wording the user sees.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TargetRelation {
     /// The target is the device the running system is executing from.
@@ -183,16 +183,9 @@ impl TargetRelation {
 
 /// The running device `candidate` names, if any.
 ///
-/// `candidate` is a plain path because this is a comparison between device
-/// paths, and the caller's own type says nothing useful here: the wizard has a
-/// validated [`DiskPath`], while the execution layer checks a string before it
-/// knows what it is. The running devices are typed because they came from
-/// `findmnt` and `lsblk`, and a non-device there means no root was found.
-///
-/// Pure: the running devices are passed in, so the guard can be tested
-/// without hardware. Used by both the wizard's disk question and the
-/// execution layer's disk preparation, so a hand-authored configuration
-/// cannot route around the wizard.
+/// The candidate is a plain path because the caller's own type says nothing
+/// useful here: the wizard has a validated [`DiskPath`], the execution layer a
+/// string it has not classified, and the comparison is textual either way.
 pub fn running_disk_conflict(
     candidate: &str,
     root_device: Option<&DevicePath>,

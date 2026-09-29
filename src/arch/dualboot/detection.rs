@@ -121,7 +121,6 @@ fn get_largest_free_region(device: &str, disk_size_bytes: Option<u64>) -> Result
         .max())
 }
 
-/// Check dual boot feasibility for all detected disks
 pub fn analyze_all_disks() -> Result<Vec<DiskAnalysis>> {
     let disks = detect_disks()?;
 
@@ -136,7 +135,6 @@ pub fn analyze_all_disks() -> Result<Vec<DiskAnalysis>> {
     Ok(results)
 }
 
-/// Get resize info for EFI System Partition
 fn get_efi_resize_info(size_bytes: u64) -> ResizeInfo {
     if size_bytes < MIN_ESP_SIZE {
         ResizeInfo {
@@ -150,7 +148,6 @@ fn get_efi_resize_info(size_bytes: u64) -> ResizeInfo {
         }
     } else {
         ResizeInfo {
-            // Don't shrink ESP
             shrinkability: Shrinkability::NotShrinkable {
                 reason: "Reuse for dual boot (do not reformat)".to_string(),
             },
@@ -228,7 +225,6 @@ mod tests {
         let d = &disks[0];
         assert_eq!(d.device, disk.path_str());
         assert_eq!(d.partition_table, PartitionTableType::GPT);
-        // Free space should be detected correctly by sfdisk
         assert!(d.max_contiguous_free_space_bytes > 300 * MB);
     }
 

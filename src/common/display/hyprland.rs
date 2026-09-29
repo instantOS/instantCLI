@@ -12,7 +12,6 @@ use std::process::Command;
 pub struct HyprlandDisplayProvider;
 
 impl HyprlandDisplayProvider {
-    /// Get all active outputs with their modes via hyprctl.
     pub fn get_outputs_sync() -> Result<Vec<OutputInfo>> {
         let monitors = get_monitors()?;
 
@@ -45,7 +44,6 @@ impl HyprlandDisplayProvider {
         Ok(outputs)
     }
 
-    /// Set a display's mode via hyprctl while preserving its placement and extras.
     pub fn set_output_mode_sync(output_name: &str, mode: &DisplayMode) -> Result<()> {
         let monitor = get_monitors()?
             .into_iter()

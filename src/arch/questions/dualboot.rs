@@ -139,7 +139,6 @@ impl WizardStep for DualBootPartitionQuestion {
             .get_answer(&StepId::Disk)
             .context("No disk selected")?;
 
-        // Get disks from cache or detect
         let disks = if let Some(cached) = context.get::<crate::arch::dualboot::DualBootDisksKey>() {
             cached
         } else {
@@ -170,7 +169,7 @@ impl WizardStep for DualBootPartitionQuestion {
             .cloned()
             .collect();
 
-        // Check if we already have enough free space
+        // Nothing is shrinkable, so an unpartitioned gap is the only option.
         if shrinkable_partitions.is_empty() {
             let free_space_bytes = disk_info.max_contiguous_free_space_bytes;
             let bitlocker_detected = disk_info.partitions.iter().any(|p| {
@@ -269,7 +268,6 @@ impl WizardStep for DualBootSizeQuestion {
             .get_answer(&StepId::DualBootPartition)
             .context("No partition selected")?;
 
-        // Handle free space case - no resize needed
         if part_path == "__free_space__" {
             let disk_path = context
                 .get_answer(&StepId::Disk)
@@ -290,7 +288,6 @@ impl WizardStep for DualBootSizeQuestion {
                 .find(|d| d.device == *disk_path)
                 .context("Selected disk not found")?;
 
-            // Return the largest contiguous free space as the Linux size
             return Ok(StepOutcome::Answer(
                 disk_info.max_contiguous_free_space_bytes.to_string(),
             ));
@@ -339,10 +336,9 @@ impl WizardStep for DualBootSizeQuestion {
 
         // Minimum for Linux + swap (swap can be capped but stays at least 1GB)
         const GB: u64 = 1024 * 1024 * 1024;
-        let min_linux = crate::arch::dualboot::MIN_LINUX_SIZE; // 10 GB
+        let min_linux = crate::arch::dualboot::MIN_LINUX_SIZE;
         let min_total = min_linux + GB; // +1GB swap minimum
 
-        // Calculate available space for Linux (Partition size - Existing OS min)
         let max_linux = partition_size.saturating_sub(min_existing);
 
         if max_linux < min_total {

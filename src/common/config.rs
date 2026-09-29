@@ -138,10 +138,8 @@ pub struct ConfigFieldMeta {
 ///
 /// This trait is automatically implemented by the `documented_config!` macro.
 pub trait DocumentedConfig: Sized + Default + Serialize {
-    /// Get metadata for all configuration fields
     fn field_metadata() -> Vec<ConfigFieldMeta>;
 
-    /// Get the TOML-serialized value for a specific field
     fn get_field_value(&self, field_name: &str) -> Option<String>;
 
     /// Save a documented config using pretty TOML plus a commented field
@@ -202,7 +200,6 @@ pub trait DocumentedConfig: Sized + Default + Serialize {
         Ok(())
     }
 
-    /// Load config from string
     fn load_from_str_documented(contents: &str, path: &Path) -> Result<Self>
     where
         Self: DeserializeOwned,

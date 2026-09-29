@@ -11,7 +11,6 @@ use std::process::Command;
 pub struct XrandrDisplayProvider;
 
 impl XrandrDisplayProvider {
-    /// Get all connected outputs with their modes via stock xrandr output.
     pub fn get_outputs_sync() -> Result<Vec<OutputInfo>> {
         let output = Command::new("xrandr")
             .arg("--query")
@@ -27,7 +26,6 @@ impl XrandrDisplayProvider {
         Ok(parse_xrandr_query(&stdout))
     }
 
-    /// Set a display's mode via xrandr
     pub fn set_output_mode_sync(output_name: &str, mode: &DisplayMode) -> Result<()> {
         let mode_str = format!("{}x{}", mode.width, mode.height);
         let refresh = mode.refresh_label();

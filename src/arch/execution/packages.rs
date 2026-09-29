@@ -2,7 +2,6 @@ use crate::arch::engine::{GpuKind, InstallPlan};
 use anyhow::Result;
 use std::collections::HashSet;
 
-/// Small helper to turn a slice of &str into owned `String`s.
 pub fn strings(items: &[&str]) -> Vec<String> {
     items.iter().map(|s| (*s).to_owned()).collect()
 }
@@ -13,8 +12,7 @@ pub fn dedup_preserve(vec: &mut Vec<String>) {
     vec.retain(|s| seen.insert(s.clone()));
 }
 
-/// Build the standard Arch package plan for fresh installations.
-///
+/// The standard Arch package plan for fresh installations.
 /// This collects:
 /// - Extended/system packages (drivers, tools, DE) derived from answers and detected hardware
 /// - Config-required packages (encryption, plymouth)
@@ -34,8 +32,7 @@ pub fn build_standard_package_plan(plan: &InstallPlan) -> Result<Vec<String>> {
     Ok(packages)
 }
 
-/// Build the instantOS package plan from the [instant] repository.
-///
+/// The instantOS package plan, built from the [instant] repository.
 /// These packages are installed by both:
 /// - `ins arch install` (in Post step, after [instant] repo is configured)
 /// - `ins arch setup` (on existing Arch installations converting to instantOS)
@@ -61,8 +58,6 @@ fn collect_language_packages(plan: &InstallPlan) -> Vec<String> {
             .next()
             .unwrap_or(lang_and_country);
 
-        // Mappings from language/locale to packages.
-        // Developers can cleanly add/edit packages per language here.
         let lang_pkgs: &[&str] = match lang_code {
             "de" => &["firefox-i18n-de", "hunspell-de", "man-pages-de"],
             "fr" => &[
@@ -188,7 +183,6 @@ fn collect_extended_packages(plan: &InstallPlan) -> Result<Vec<String>> {
         );
     }
 
-    // VM Guest Tools
     if let Some(vm_type) = &plan.system_info.vm_type {
         println!("Detected VM: {}, adding guest tools", vm_type);
         match vm_type.as_str() {
@@ -199,13 +193,11 @@ fn collect_extended_packages(plan: &InstallPlan) -> Result<Vec<String>> {
         }
     }
 
-    // Plymouth support
     if plan.use_plymouth && !minimal_mode {
         println!("Plymouth enabled, adding plymouth package");
         packages.push("plymouth".to_owned());
     }
 
-    // Append language-specific packages (only if GUI is installed and not in minimal mode)
     if !minimal_mode {
         let desktop = plan.desktop;
         if desktop.requires_display_manager() {

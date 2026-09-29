@@ -376,7 +376,6 @@ pub fn set_remote_url(repo_path: &Path, remote: &str, url: &str) -> Result<()> {
     Ok(())
 }
 
-/// Get the current checked out branch name
 pub fn current_branch(repo_path: &Path) -> Result<String> {
     let branch = run_git(repo_path, &["rev-parse", "--abbrev-ref", "HEAD"])
         .context("Failed to get current branch")?;
@@ -619,7 +618,6 @@ pub enum BranchSyncStatus {
     NoRemote,
 }
 
-/// Get comprehensive git repository status
 pub fn get_repo_status(repo_path: &Path) -> Result<RepoStatus> {
     let branch = current_branch(repo_path)?;
 
@@ -639,7 +637,6 @@ pub fn get_repo_status(repo_path: &Path) -> Result<RepoStatus> {
     })
 }
 
-/// Parse `git status --porcelain` output into file status counts
 fn parse_porcelain_status(output: &str) -> FileStatusCounts {
     let mut counts = FileStatusCounts::default();
 
@@ -737,7 +734,6 @@ pub fn add_and_commit(repo_path: &Path, files: &[&str], message: &str) -> Result
     Ok(())
 }
 
-/// Check if a path is a git repository
 pub fn is_git_repo(path: &Path) -> bool {
     path.join(".git").exists()
         || Command::new("git")

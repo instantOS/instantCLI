@@ -9,7 +9,6 @@ use anyhow::{Context, Result};
 pub struct SwayDisplayProvider;
 
 impl SwayDisplayProvider {
-    /// Get outputs synchronously (for use in settings apply)
     pub fn get_outputs_sync() -> Result<Vec<OutputInfo>> {
         let output = std::process::Command::new("swaymsg")
             .args(["-t", "get_outputs"])
@@ -25,7 +24,6 @@ impl SwayDisplayProvider {
         Self::parse_outputs(&stdout)
     }
 
-    /// Set a display's mode synchronously
     pub fn set_output_mode_sync(output_name: &str, mode: &DisplayMode) -> Result<()> {
         let mode_str = mode.to_swaymsg_format();
         let command = format!("output {} mode {}", output_name, mode_str);
@@ -43,7 +41,6 @@ impl SwayDisplayProvider {
         Ok(())
     }
 
-    /// Parse swaymsg -t get_outputs JSON
     fn parse_outputs(json_str: &str) -> Result<Vec<OutputInfo>> {
         let outputs: Vec<serde_json::Value> =
             serde_json::from_str(json_str).context("Failed to parse swaymsg output JSON")?;

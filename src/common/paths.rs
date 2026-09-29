@@ -5,7 +5,6 @@
 use anyhow::{Context, Result};
 use std::path::PathBuf;
 
-/// Get the main instant config directory
 pub fn instant_config_dir() -> Result<PathBuf> {
     let config_dir = dirs::config_dir()
         .context("Unable to determine user config directory")?
@@ -17,7 +16,6 @@ pub fn instant_config_dir() -> Result<PathBuf> {
     Ok(config_dir)
 }
 
-/// Get the main instant data directory
 pub fn instant_data_dir() -> Result<PathBuf> {
     let data_dir = dirs::data_dir()
         .unwrap_or_else(|| PathBuf::from("~/.local/share"))
@@ -29,7 +27,6 @@ pub fn instant_data_dir() -> Result<PathBuf> {
     Ok(data_dir)
 }
 
-/// Get the instant games config directory
 pub fn games_config_dir() -> Result<PathBuf> {
     let games_dir = instant_config_dir()?.join("games");
     std::fs::create_dir_all(&games_dir)
@@ -37,7 +34,6 @@ pub fn games_config_dir() -> Result<PathBuf> {
     Ok(games_dir)
 }
 
-/// Get the instant dots repository directory
 pub fn dots_repo_dir() -> Result<PathBuf> {
     let dots_dir = instant_data_dir()?.join("dots");
     std::fs::create_dir_all(&dots_dir)
@@ -45,7 +41,6 @@ pub fn dots_repo_dir() -> Result<PathBuf> {
     Ok(dots_dir)
 }
 
-/// Get the instant video data directory
 pub fn instant_video_dir() -> Result<PathBuf> {
     let video_dir = instant_data_dir()?.join("video");
     std::fs::create_dir_all(&video_dir)
@@ -53,7 +48,6 @@ pub fn instant_video_dir() -> Result<PathBuf> {
     Ok(video_dir)
 }
 
-/// Get the instant restic logs directory
 pub fn instant_restic_logs_dir() -> Result<PathBuf> {
     let logs_dir = instant_data_dir()?.join("restic_logs");
     std::fs::create_dir_all(&logs_dir)
@@ -61,7 +55,6 @@ pub fn instant_restic_logs_dir() -> Result<PathBuf> {
     Ok(logs_dir)
 }
 
-/// Get the default local repository path for games (fallback)
 pub fn default_games_repo_path() -> PathBuf {
     dirs::data_dir()
         .unwrap_or_else(|| {
@@ -73,7 +66,6 @@ pub fn default_games_repo_path() -> PathBuf {
         .join("repo")
 }
 
-/// Get the user's Pictures directory
 pub fn pictures_dir() -> Result<PathBuf> {
     let pictures_dir =
         dirs::picture_dir().context("Unable to determine user pictures directory")?;
@@ -84,7 +76,6 @@ pub fn pictures_dir() -> Result<PathBuf> {
     Ok(pictures_dir)
 }
 
-/// Get the user's Videos directory
 pub fn videos_dir() -> Result<PathBuf> {
     let video_dir = dirs::video_dir().unwrap_or_else(|| {
         dirs::home_dir()

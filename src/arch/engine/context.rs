@@ -25,7 +25,6 @@ impl DataKey for EspNeedsFormat {
 /// Used to pass partition paths from prepare_dualboot_disk to format_and_mount_partitions
 pub struct DualBootPartitions;
 
-/// Partition paths for dual boot installation
 #[derive(Clone, Debug)]
 pub struct DualBootPartitionPaths {
     pub root: String,
@@ -77,7 +76,6 @@ impl Serialize for InstallContext {
     }
 }
 
-// Custom Deserialize implementation
 impl<'de> Deserialize<'de> for InstallContext {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -260,27 +258,22 @@ impl InstallContext {
         let mut ctx = Self::new();
         ctx.system_info = SystemInfo::detect();
 
-        // Set username if provided
         if let Some(user) = username {
             ctx.set_answer(StepId::Username, user);
         }
 
-        // Auto-detect locale from /etc/locale.conf
         if let Some(locale) = crate::arch::locales::detect_current_locale() {
             ctx.set_answer(StepId::Locale, locale);
         }
 
-        // Auto-detect timezone from /etc/localtime symlink
         if let Some(tz) = crate::arch::timezones::detect_current_timezone() {
             ctx.set_answer(StepId::Timezone, tz);
         }
 
-        // Auto-detect keymap from /etc/vconsole.conf
         if let Some(keymap) = crate::arch::keymaps::detect_current_keymap() {
             ctx.set_answer(StepId::Keymap, keymap);
         }
 
-        // Read hostname from /etc/hostname
         if let Ok(hostname) = std::fs::read_to_string("/etc/hostname") {
             let hostname = hostname.trim().to_string();
             if !hostname.is_empty() {

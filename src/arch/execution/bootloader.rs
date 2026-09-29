@@ -256,7 +256,6 @@ fn add_grub_param(content: &str, key: &str, param: &str) -> String {
         let trimmed = line.trim();
         if trimmed.starts_with(&key_eq) {
             found = true;
-            // Split key and value
             let parts: Vec<&str> = line.splitn(2, '=').collect();
             if parts.len() != 2 {
                 new_lines.push(line.to_string());
@@ -265,7 +264,6 @@ fn add_grub_param(content: &str, key: &str, param: &str) -> String {
 
             let val = parts[1];
 
-            // Detect quotes
             let (_quote_char, inner_val) = if val.starts_with('"') && val.ends_with('"') {
                 ("\"", &val[1..val.len() - 1])
             } else if val.starts_with('\'') && val.ends_with('\'') {
@@ -277,7 +275,6 @@ fn add_grub_param(content: &str, key: &str, param: &str) -> String {
             let new_val = if inner_val.is_empty() {
                 param.to_string()
             } else {
-                // Check if param is already present to avoid duplication
                 if inner_val.contains(param) {
                     inner_val.to_string()
                 } else {
@@ -293,7 +290,6 @@ fn add_grub_param(content: &str, key: &str, param: &str) -> String {
     }
 
     if !found {
-        // If not found, add it
         new_lines.push(format!("{}=\"{}\"", key, param));
     }
 

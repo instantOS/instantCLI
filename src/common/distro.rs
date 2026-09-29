@@ -40,7 +40,6 @@ pub enum OperatingSystem {
 }
 
 impl OperatingSystem {
-    /// Detect the current operating system from /etc/os-release
     pub fn detect() -> Self {
         static DETECTED_OS: LazyLock<OperatingSystem> =
             LazyLock::new(OperatingSystem::detect_uncached);
@@ -64,7 +63,6 @@ impl OperatingSystem {
         Self::Unknown("No /etc/os-release found".to_string())
     }
 
-    /// Parse os-release content and return the detected OS
     fn parse_os_release(content: &str) -> Self {
         let mut id = String::new();
         let mut id_like = String::new();
@@ -133,8 +131,7 @@ impl OperatingSystem {
         }
     }
 
-    /// Check if this OS belongs to the target OS family.
-    ///
+    /// Whether this OS is, or derives from, the target family.
     /// Returns true if self is the same as target, or if self is transitively
     /// based on target (i.e., target is somewhere in self's ancestry chain).
     ///
@@ -158,8 +155,7 @@ impl OperatingSystem {
         self == root || self.based_on().is_some_and(|p| p.in_family(root))
     }
 
-    /// Check if this OS belongs to any of the target families.
-    ///
+    /// Whether this OS is in any of the given families.
     /// This is useful for checking compatibility with multiple supported families.
     ///
     /// # Examples
@@ -187,8 +183,7 @@ impl OperatingSystem {
     // Package Manager Integration
     // ========================================================================
 
-    /// Get the native package manager for this operating system.
-    ///
+    /// The native package manager for this operating system.
     /// This is the single source of truth for the OS → native package manager mapping.
     /// Returns the new unified `PackageManager` enum from `crate::common::package`.
     ///
@@ -224,7 +219,6 @@ impl OperatingSystem {
         }
     }
 
-    /// Get the display name of the operating system
     pub fn name(&self) -> &str {
         match self {
             Self::InstantOS => "instantOS",
@@ -255,7 +249,6 @@ impl std::fmt::Display for OperatingSystem {
     }
 }
 
-/// Check if running from a live ISO
 pub fn is_live_iso() -> bool {
     Path::new("/run/archiso/cowspace").exists()
 }

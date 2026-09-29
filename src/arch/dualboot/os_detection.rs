@@ -60,7 +60,6 @@ pub fn detect_os_from_info(
     }
 }
 
-/// Parse a field from /etc/os-release format
 pub fn parse_os_release_field(content: &str, field: &str) -> Option<String> {
     for line in content.lines() {
         if line.starts_with(field)

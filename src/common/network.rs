@@ -1,7 +1,6 @@
 use anyhow::{Context, Result};
 use std::process::Command;
 
-/// Get local IP address
 pub fn get_local_ip() -> Option<String> {
     // Try using `ip` command first (more modern)
     if let Ok(output) = Command::new("ip")
@@ -34,7 +33,6 @@ pub fn get_local_ip() -> Option<String> {
     None
 }
 
-/// Get public IP address
 pub fn get_public_ip() -> Result<String> {
     let output = Command::new("curl")
         .args(["-s", "--max-time", "5", "ifconfig.me"])
@@ -53,7 +51,6 @@ pub fn get_public_ip() -> Result<String> {
     Ok(ip)
 }
 
-/// Check if internet is available
 pub fn check_internet() -> bool {
     Command::new("ping")
         .args(["-c", "1", "-W", "2", "1.1.1.1"])

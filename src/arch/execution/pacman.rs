@@ -146,7 +146,6 @@ impl Pacman {
                         if let Err(e) = executor.run(&mut key_cmd) {
                             println!("Warning: Failed to refresh keyring: {e}");
                         } else {
-                            // Mark as refreshed
                             if let Err(e) = std::fs::File::create(keyring_refreshed_path) {
                                 println!("Warning: Failed to create lock file: {e}");
                             }
@@ -165,7 +164,6 @@ impl Pacman {
                         );
                     }
 
-                    // Update mirrors
                     println!("Updating mirrors...");
                     if which::which("reflector").is_ok() {
                         let mut ref_cmd = Command::new("reflector");
@@ -193,7 +191,6 @@ impl Pacman {
                         println!("Warning: Failed to shuffle mirrors: {e}");
                     }
 
-                    // Update repos
                     println!("Updating repositories...");
                     let mut up_cmd = Command::new("pacman");
                     up_cmd.args(["--config", &self.conf().to_string_lossy()]);
@@ -465,11 +462,9 @@ fn enable_multilib_in_string(content: &str) -> Option<String> {
     while i < lines.len() {
         let line = lines[i].trim();
         if line == "#[multilib]" {
-            // Found commented multilib section
             lines[i] = "[multilib]".to_string();
             changed = true;
 
-            // Check next line for Include
             if i + 1 < lines.len() {
                 let next_line = lines[i + 1].trim();
                 if next_line.starts_with("#Include") {
@@ -707,9 +702,6 @@ ParallelDownloads = {}
 "#,
             PARALLEL_DOWNLOADS
         );
-        // Note: ILoveCandy inserted after [options] because VerbosePkgLists is commented out
-        // Wait, in my logic: if VerbosePkgLists is commented, verbose_pkg_lists_idx is None.
-        // So it falls back to options_idx.
 
         let processed = process_pacman_settings(input).unwrap();
         assert_eq!(processed.trim(), expected.trim());

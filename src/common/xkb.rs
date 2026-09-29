@@ -43,7 +43,6 @@ pub fn xkb_rules_path() -> PathBuf {
 }
 
 /// Split a stored layout code into its base layout and optional variant.
-///
 /// `de(nodeadkeys)` splits into `("de", Some("nodeadkeys"))`; a bare `de`
 /// into `("de", None)`. Malformed variants (empty halves) are treated as
 /// "no variant" so they never reach XKB tooling.

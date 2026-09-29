@@ -66,7 +66,6 @@ impl InstantWmController {
     }
 
     /// Set `setting` to an explicit state.
-    ///
     /// `config set` is idempotent, unlike `config toggle`, which would flip a
     /// value that is already in the requested state.
     pub fn apply(&self, setting: InstantWmSetting, action: ControlAction) -> Result<()> {
@@ -128,7 +127,6 @@ pub fn set_left_handed(identifier: &str, enabled: bool) -> Result<()> {
     ])
 }
 
-/// Set the acceleration profile (`flat`/`adaptive`) for one `[input]` entry.
 pub fn set_accel_profile(identifier: &str, profile: &str) -> Result<()> {
     instantwmctl::run([
         "mouse",
@@ -151,7 +149,6 @@ pub fn set_pointer_accel(identifier: &str, value: f64) -> Result<()> {
     ])
 }
 
-/// Set the scroll factor for one `[input]` entry.
 pub fn set_scroll_factor(identifier: &str, value: f64) -> Result<()> {
     let value = value.to_string();
     instantwmctl::run([

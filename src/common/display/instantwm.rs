@@ -34,7 +34,6 @@ struct MonitorMode {
 pub struct InstantWMDisplayProvider;
 
 impl InstantWMDisplayProvider {
-    /// Get all connected outputs with their modes via instantwmctl
     pub fn get_outputs_sync() -> Result<Vec<OutputInfo>> {
         // Ask for the outputs first: `monitor modes` answers for a single
         // output (the focused one unless told otherwise), so every output is
@@ -64,7 +63,6 @@ impl InstantWMDisplayProvider {
         Ok(outputs)
     }
 
-    /// Set a display's mode via instantwmctl
     pub fn set_output_mode_sync(output_name: &str, mode: &DisplayMode) -> Result<()> {
         let resolution = format!("{}x{}", mode.width, mode.height);
         let rate = mode.refresh_label();

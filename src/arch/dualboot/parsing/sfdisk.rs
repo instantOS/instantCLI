@@ -72,7 +72,6 @@ pub fn calculate_free_regions_from_json(
     let mut regions = Vec::new();
     let mut current_sector = first_lba;
 
-    // Check gaps between partitions
     for partition in partitions {
         if partition.start > current_sector {
             let gap_sectors = partition.start - current_sector;
@@ -89,7 +88,6 @@ pub fn calculate_free_regions_from_json(
         current_sector = std::cmp::max(current_sector, partition.start + partition.size);
     }
 
-    // Check gap at the end (between last partition and lastlba)
     if current_sector <= last_lba {
         let gap_sectors = (last_lba - current_sector) + 1; // lastlba is inclusive
 
@@ -106,12 +104,10 @@ pub fn calculate_free_regions_from_json(
     Ok(regions)
 }
 
-/// Get all contiguous free regions for a device
 pub fn get_free_regions(
     device: &str,
     disk_size_bytes: Option<u64>,
 ) -> anyhow::Result<Vec<FreeRegion>> {
-    // Run sfdisk -J <device> to get partition table in JSON
     let output = Command::new("sfdisk")
         .args(["-J", device])
         .output()

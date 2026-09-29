@@ -14,7 +14,6 @@ use super::super::utils::{detect_single_user, ensure_root};
 use super::{AutologinDefault, autologin_question};
 
 pub(super) async fn handle_setup_command(user: Option<String>, dry_run: bool) -> Result<()> {
-    // Check if running on live CD
     if is_live_iso() {
         anyhow::bail!("This command cannot be run on a live CD/ISO.");
     }
@@ -57,7 +56,6 @@ pub(super) async fn handle_setup_command(user: Option<String>, dry_run: bool) ->
         .or_else(|| std::env::var("SUDO_USER").ok())
         .or_else(detect_single_user);
 
-    // Create a context for setup by detecting existing system settings
     let context = crate::arch::engine::InstallContext::for_setup(target_user.clone());
 
     // Run the desktop-related questions from `ins arch install` as a small

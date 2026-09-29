@@ -216,11 +216,10 @@ fn validate_secret(label: &str, value: &str, reject_colon: bool) -> Result<()> {
 
 /// A device path the running system reports, whatever kind of device it is.
 ///
-/// `/` is held by a partition on a partitioned disk, an LVM mapper on a
-/// multi-volume system, or a whole disk on a simple layout. All three answer
-/// the same question — what is the installer executing from — so this type
-/// makes no claim about which. [`DiskPath`] and [`PartitionPath`] are about
-/// plan targets, where the distinction decides what may be written.
+/// `/` is held by a partition, an LVM mapper, or a whole disk depending on the
+/// host. All three answer the same question, so this type makes no claim about
+/// which — unlike [`DiskPath`] and [`PartitionPath`], which are about plan
+/// targets, where the distinction decides what may be written.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DevicePath(String);
 
@@ -232,11 +231,6 @@ impl DevicePath {
         Ok(Self(value.to_owned()))
     }
 
-    /// Whether this names the same device as `path`.
-    ///
-    /// Spelled as a string comparison because the two sides are different kinds
-    /// of answer: a plan names a disk to write to, this names whatever device
-    /// the system is running from. Textual equality is the only question here.
     pub fn is(&self, path: &str) -> bool {
         self.0 == path
     }

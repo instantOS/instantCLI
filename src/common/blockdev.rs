@@ -30,12 +30,10 @@ pub enum ShrinkSupport {
 }
 
 impl ShrinkSupport {
-    /// Whether this filesystem can be shrunk at all.
     pub fn is_supported(self) -> bool {
         !matches!(self, Self::Unsupported)
     }
 
-    /// The tool that performs the shrink, if there is one.
     pub fn tool(self) -> Option<ShrinkTool> {
         match self {
             Self::Unsupported => None,
@@ -43,7 +41,6 @@ impl ShrinkSupport {
         }
     }
 
-    /// Whether the filesystem must be unmounted before shrinking.
     pub fn requires_unmount(self) -> bool {
         matches!(self, Self::RequiresUnmount { .. })
     }
@@ -322,7 +319,7 @@ pub fn classify_device(path: &str, output: &LsblkOutput) -> DeviceKind {
         .unwrap_or(DeviceKind::Unknown)
 }
 
-/// The device tree, read once per process.
+/// The device tree, cached for the process.
 ///
 /// Plan construction asks about several device paths in a row and the tree does
 /// not change while it does, so this is a cache and not a per-call `lsblk`.

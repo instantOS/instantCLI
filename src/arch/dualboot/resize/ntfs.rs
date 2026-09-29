@@ -5,7 +5,6 @@ use std::process::Command;
 
 /// Get NTFS resize information using ntfsresize
 pub fn get_ntfs_resize_info(device: &str) -> ResizeInfo {
-    // Try to get info from ntfsresize
     let output = Command::new("ntfsresize")
         .args(["--info", "--force", device])
         .output();
@@ -16,7 +15,6 @@ pub fn get_ntfs_resize_info(device: &str) -> ResizeInfo {
             let stderr = String::from_utf8_lossy(&output.stderr);
 
             if !output.status.success() {
-                // Check for common issues
                 if stderr.contains("hibernat") || stdout.contains("hibernat") {
                     return ResizeInfo {
                         shrinkability: Shrinkability::NotShrinkable {
@@ -68,22 +66,18 @@ pub fn get_ntfs_resize_info(device: &str) -> ResizeInfo {
                 prerequisites: vec![],
             }
         }
-        Err(e) => {
-            // ntfsresize not installed or other error
-            ResizeInfo {
-                shrinkability: Shrinkability::NotShrinkable {
-                    reason: format!("ntfsresize not available: {}", e),
-                },
-                prerequisites: vec!["Install ntfsprogs package".to_string()],
-            }
-        }
+        Err(e) => ResizeInfo {
+            shrinkability: Shrinkability::NotShrinkable {
+                reason: format!("ntfsresize not available: {}", e),
+            },
+            prerequisites: vec!["Install ntfsprogs package".to_string()],
+        },
     }
 }
 
 /// Parse minimum size from ntfsresize output
 pub fn parse_ntfs_min_size(output: &str) -> Option<u64> {
     for line in output.lines() {
-        // Look for "You might resize at XXXXX bytes"
         if line.contains("You might resize at") && line.contains("bytes") {
             let parts: Vec<&str> = line.split_whitespace().collect();
             for (i, part) in parts.iter().enumerate() {
@@ -112,18 +106,15 @@ mod tests {
 
     #[test]
     fn test_get_ntfs_resize_info_e2e() {
-        // Create a 100MB image
         let disk = TestDisk::new(100);
         disk.format_ntfs();
 
         let info = get_ntfs_resize_info(disk.path_str());
 
-        // On a fresh NTFS, it should be shrinkable
         assert!(matches!(
             info.shrinkability,
             Shrinkability::Shrinkable { .. }
         ));
-        // It should have found a minimum size
         assert_eq!(info.reason(), None);
     }
 }

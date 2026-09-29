@@ -43,8 +43,7 @@ impl PackageDefinition {
         }
     }
 
-    /// Check if this package definition applies to the given OS.
-    ///
+    /// Whether this definition applies to the given OS.
     /// Returns `true` if:
     /// - `distros` is `None` (universal for this package manager), or
     /// - The OS is in the distros list, or
@@ -56,15 +55,13 @@ impl PackageDefinition {
         }
     }
 
-    /// Check if this package definition can be installed now.
-    ///
+    /// Whether the package manager is available on this system.
     /// This checks if the package manager is available on the current system.
     pub fn is_available(&self) -> bool {
         self.manager.is_available()
     }
 
-    /// Get the install hint for this package definition.
-    ///
+    /// A shell command that installs this package.
     /// Returns a string like "pacman -S firefox" or "cargo install xcolor".
     pub fn install_hint(&self) -> String {
         match self.manager {

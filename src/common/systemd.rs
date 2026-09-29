@@ -5,7 +5,6 @@ use std::process::Command;
 const GRAPHICAL_SESSION_ANCHOR: &str = "ins-graphical-session.service";
 
 /// Ensure the standard graphical user-session target is active.
-///
 /// `graphical-session.target` has `RefuseManualStart=yes`, so compositors are
 /// expected to pull it in through a session-specific unit. Use a transient
 /// anchor as a compatibility bridge for lightweight compositors that do not
@@ -57,7 +56,6 @@ impl ServiceScope {
         }
     }
 
-    /// Get the systemctl command arguments for this scope
     pub fn systemctl_args(&self) -> Vec<&'static str> {
         match self {
             ServiceScope::System => vec![],
@@ -102,7 +100,6 @@ pub struct UserServiceConfig {
 }
 
 impl UserServiceConfig {
-    /// Create a new user service configuration
     pub fn new(
         name: impl Into<String>,
         description: impl Into<String>,
@@ -118,7 +115,6 @@ impl UserServiceConfig {
         }
     }
 
-    /// Set the restart policy
     #[allow(dead_code)]
     pub fn with_restart(mut self, restart: impl Into<String>) -> Self {
         self.restart = Some(restart.into());
@@ -132,7 +128,6 @@ impl UserServiceConfig {
         self
     }
 
-    /// Set the target that wants this service
     #[allow(dead_code)]
     pub fn with_wanted_by(mut self, target: impl Into<String>) -> Self {
         self.wanted_by = Some(target.into());
@@ -170,7 +165,6 @@ pub struct SystemdManager {
 }
 
 impl SystemdManager {
-    /// Create a new systemd manager for the given scope
     pub fn new(scope: ServiceScope) -> Self {
         Self {
             scope,
@@ -178,7 +172,6 @@ impl SystemdManager {
         }
     }
 
-    /// Create a new systemd manager for the given scope with sudo support
     pub fn new_with_sudo(scope: ServiceScope) -> Self {
         Self {
             scope,
@@ -186,36 +179,30 @@ impl SystemdManager {
         }
     }
 
-    /// Create a systemd manager for system services
     pub fn system() -> Self {
         Self::new(ServiceScope::System)
     }
 
-    /// Create a systemd manager for system services with sudo support
     pub fn system_with_sudo() -> Self {
         Self::new_with_sudo(ServiceScope::System)
     }
 
-    /// Create a systemd manager for user services
     pub fn user() -> Self {
         Self::new(ServiceScope::User)
     }
 
-    /// Check if a service is currently active
     pub fn is_active(&self, service_name: &str) -> bool {
         self.run_systemctl(&["is-active", "--quiet", service_name])
             .map(|status| status.success())
             .unwrap_or(false)
     }
 
-    /// Check if a service is enabled
     pub fn is_enabled(&self, service_name: &str) -> bool {
         self.run_systemctl(&["is-enabled", "--quiet", service_name])
             .map(|status| status.success())
             .unwrap_or(false)
     }
 
-    /// Check if a service unit file exists (installed)
     pub fn service_exists(&self, service_name: &str) -> bool {
         self.run_systemctl_output(&["list-unit-files"])
             .map(|output| {
@@ -229,7 +216,6 @@ impl SystemdManager {
             .unwrap_or(false)
     }
 
-    /// Get the detailed state of a service
     #[allow(dead_code)]
     pub fn get_state(&self, service_name: &str) -> ServiceState {
         let output = self.run_systemctl(&["is-active", service_name]);
@@ -248,7 +234,6 @@ impl SystemdManager {
         }
     }
 
-    /// Get the enablement state of a service
     #[allow(dead_code)]
     pub fn get_enablement(&self, service_name: &str) -> ServiceEnablement {
         let output = self.run_systemctl_output(&["is-enabled", service_name]);
@@ -371,7 +356,6 @@ impl SystemdManager {
         Ok(())
     }
 
-    /// Create a user service file from configuration
     pub fn create_user_service(&self, config: &UserServiceConfig) -> Result<()> {
         if self.scope != ServiceScope::User {
             anyhow::bail!("create_user_service can only be used with user scope");
@@ -397,7 +381,6 @@ impl SystemdManager {
         Ok(())
     }
 
-    /// Create a user service file with custom content
     #[allow(dead_code)]
     pub fn create_user_service_file(
         &self,
@@ -447,7 +430,6 @@ impl SystemdManager {
         Ok(())
     }
 
-    /// Get the user service directory path
     fn get_user_service_dir(&self) -> Result<std::path::PathBuf> {
         let config_dir = dirs::config_dir().context("unable to determine user config directory")?;
         Ok(config_dir.join("systemd").join("user"))

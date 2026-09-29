@@ -4,7 +4,6 @@ use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// Display server types
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum DisplayServer {
     /// Wayland display server
@@ -16,7 +15,6 @@ pub enum DisplayServer {
 }
 
 impl DisplayServer {
-    /// Detect the current display server type
     pub fn detect() -> Self {
         // instantWM exports its selected backend to direct children. If that
         // detail is unavailable, continue with the standard session variables
@@ -76,7 +74,6 @@ impl DisplayServer {
         DisplayServer::Unknown
     }
 
-    /// Check if any Wayland compositor process is running
     fn is_wayland_process_running() -> bool {
         let wayland_processes = [
             "sway",
@@ -96,7 +93,6 @@ impl DisplayServer {
         false
     }
 
-    /// Check if any X11 window manager process is running
     fn is_x11_process_running() -> bool {
         let x11_processes = [
             "i3",
@@ -116,7 +112,6 @@ impl DisplayServer {
         false
     }
 
-    /// Check if a process with the given name is running
     fn is_process_running(process_name: &str) -> bool {
         // Try pgrep first (most reliable)
         if let Ok(output) = Command::new("pgrep").arg(process_name).output()
@@ -136,23 +131,19 @@ impl DisplayServer {
         false
     }
 
-    /// Check if the display server is Wayland
     pub fn is_wayland(&self) -> bool {
         matches!(self, DisplayServer::Wayland)
     }
 
-    /// Check if the display server is X11
     pub fn is_x11(&self) -> bool {
         matches!(self, DisplayServer::X11)
     }
 
-    /// Check if the display server is unknown/unsupported
     #[allow(dead_code)]
     pub fn is_unknown(&self) -> bool {
         matches!(self, DisplayServer::Unknown)
     }
 
-    /// Get the appropriate clipboard command for the display server
     pub fn get_clipboard_command(&self) -> (&'static str, Vec<&'static str>) {
         match self {
             DisplayServer::Wayland => ("wl-paste", vec![]),
@@ -161,7 +152,6 @@ impl DisplayServer {
         }
     }
 
-    /// Get the appropriate screenshot command for the display server
     #[allow(dead_code)]
     pub fn get_screenshot_command(&self) -> (&'static str, Vec<&'static str>) {
         match self {
@@ -171,7 +161,6 @@ impl DisplayServer {
         }
     }
 
-    /// Check if the current session is a desktop session
     #[allow(dead_code)]
     pub fn is_desktop_session(&self) -> bool {
         !self.is_unknown()

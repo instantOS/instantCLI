@@ -90,7 +90,6 @@ fn install_aur_with_helper(helper: &str, packages: &[&str]) -> Result<()> {
     Ok(())
 }
 
-/// Check if Flathub remote is configured.
 fn is_flathub_configured() -> bool {
     cmd!("flatpak", "remotes", "--columns=name")
         .read()
@@ -103,7 +102,6 @@ fn flathub_remote_listed(output: &str) -> bool {
     output.lines().any(|line| line.trim() == "flathub")
 }
 
-/// Set up Flathub remote.
 fn setup_flathub() -> Result<()> {
     cmd!(
         "flatpak",

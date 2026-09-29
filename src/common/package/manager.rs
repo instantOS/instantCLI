@@ -74,8 +74,7 @@ impl PackageManager {
         }
     }
 
-    /// Check if this manager is available on the current system.
-    ///
+    /// Whether this manager is available on the current system.
     /// For native managers, this delegates to `OperatingSystem::native_package_manager()`
     /// to avoid duplicating the OS → manager mapping logic.
     pub fn is_available(&self) -> bool {
@@ -96,8 +95,7 @@ impl PackageManager {
         }
     }
 
-    /// Get the install command prefix for this package manager.
-    ///
+    /// The command and base arguments used to install packages.
     /// Returns the command and base arguments used to install packages.
     pub fn install_command(&self) -> (&'static str, &'static [&'static str]) {
         match self {
@@ -116,7 +114,6 @@ impl PackageManager {
         }
     }
 
-    /// Get a human-readable name for this package manager.
     pub fn display_name(&self) -> &'static str {
         match self {
             Self::Pacman => "Pacman",
@@ -149,8 +146,7 @@ impl PackageManager {
         }
     }
 
-    /// Get the uninstall command for this package manager.
-    ///
+    /// The command and base arguments used to uninstall packages.
     /// Returns the command and base arguments used to uninstall packages.
     pub fn uninstall_command(&self) -> (&'static str, &'static [&'static str]) {
         match self {
@@ -177,7 +173,6 @@ impl std::str::FromStr for PackageManager {
     type Err = String;
 
     /// Parse a package manager from its string identifier.
-    ///
     /// This is used to map fzf source prefixes to package managers.
     /// Supports both lowercase identifiers and legacy "arch" for Pacman.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -196,8 +191,7 @@ impl std::str::FromStr for PackageManager {
     }
 }
 
-/// Detect available AUR helper (yay, paru, etc.)
-///
+/// The first available AUR helper on this system.
 /// Returns the name of the first available AUR helper found.
 pub fn detect_aur_helper() -> Option<&'static str> {
     const AUR_HELPERS: &[&str] = &["yay", "paru", "pikaur", "trizen"];

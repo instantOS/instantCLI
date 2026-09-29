@@ -9,9 +9,9 @@ use crate::preview::{PreviewId, preview_command};
 /// The running root device, if it resolves to a valid device path. Container
 /// roots such as `overlay` and missing `findmnt` results yield `None`.
 ///
-/// This is a [`DevicePath`], not a [`DiskPath`]: on a partitioned system the
-/// device holding `/` is a partition, and holding it as a `DiskPath` would fail
-/// the plan's whole-disk check and report no root at all.
+/// A [`DevicePath`], not a [`DiskPath`]: on a partitioned system the device
+/// holding `/` is a partition, and a `DiskPath` would reject it and report no
+/// root at all.
 pub fn root_device() -> Option<DevicePath> {
     get_root_device()
         .ok()
@@ -96,13 +96,11 @@ pub fn get_boot_disk() -> Result<Option<String>> {
         None
     }
 
-    // Function to find which disk contains a given partition/volume
     fn find_parent_disk(blockdevices: &[Value], target_name: &str) -> Option<String> {
         for device in blockdevices {
             let device_type = device.get("type")?.as_str()?;
 
             if device_type == "disk" {
-                // Check if this disk contains the target
                 if let Some(children) = device.get("children").and_then(|c| c.as_array())
                     && contains_device(children, target_name)
                 {
@@ -123,7 +121,6 @@ pub fn get_boot_disk() -> Result<Option<String>> {
         None
     }
 
-    // Function to check if a list of children contains the target device (recursively)
     fn contains_device(children: &[Value], target_name: &str) -> bool {
         for child in children {
             if let Some(name) = child.get("name").and_then(|n| n.as_str())
@@ -210,7 +207,6 @@ pub fn is_partition_of(disk: &str, source: &str) -> bool {
     }
 }
 
-/// Get list of mounted partitions on the given disk
 pub fn get_mounted_partitions(disk: &str) -> Result<Vec<String>> {
     let output = Command::new("findmnt")
         .args(["-n", "-o", "SOURCE"])
@@ -233,7 +229,6 @@ pub fn get_mounted_partitions(disk: &str) -> Result<Vec<String>> {
     Ok(mounted)
 }
 
-/// Get list of swap partitions on the given disk
 pub fn get_swap_partitions(disk: &str) -> Result<Vec<String>> {
     let swaps = std::fs::read_to_string("/proc/swaps").unwrap_or_default();
     let mut swap_parts = Vec::new();
@@ -256,10 +251,9 @@ pub fn get_swap_partitions(disk: &str) -> Result<Vec<String>> {
 /// bypass the wizard's disk question.
 pub fn ensure_not_running_disk(disk: &str) -> Result<()> {
     // A target that is not a device path cannot be the running device, so
-    // there is nothing to refuse. This parses as a `DevicePath` rather than a
-    // `DiskPath`: on a partitioned system the device holding `/` is a
-    // partition, and rejecting that as "not a disk" would skip the guard on
-    // exactly the hosts where a partition could be named.
+    // there is nothing to refuse. Parsed as a `DevicePath`, because the device
+    // holding `/` is a partition on a partitioned system and a `DiskPath`
+    // would reject it — skipping the guard on exactly those hosts.
     let Some(target) = DevicePath::parse(disk).ok() else {
         return Ok(());
     };
@@ -293,7 +287,6 @@ pub fn prepare_disk(disk: &str) -> Result<DiskPrepareResult> {
     // descriptor pointing into a filesystem the install is about to erase.
     ensure_not_running_disk(disk)?;
 
-    // Unmount all mounted partitions
     for partition in get_mounted_partitions(disk)? {
         let status = Command::new("umount").arg(&partition).status()?;
         if status.success() {
@@ -303,7 +296,6 @@ pub fn prepare_disk(disk: &str) -> Result<DiskPrepareResult> {
         }
     }
 
-    // Disable swap on all swap partitions
     for partition in get_swap_partitions(disk)? {
         let status = Command::new("swapoff").arg(&partition).status()?;
         if status.success() {

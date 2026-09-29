@@ -14,7 +14,6 @@ const MIN_SHRINK_CANDIDATE_SIZE: u64 = 2 * 1024 * 1024 * 1024;
 pub struct DiskInfo {
     /// Device path (e.g., /dev/nvme0n1)
     pub device: String,
-    /// Size in bytes
     pub size_bytes: u64,
     /// Partition table type
     pub partition_table: PartitionTableType,
@@ -25,7 +24,6 @@ pub struct DiskInfo {
 }
 
 impl DiskInfo {
-    /// Get human-readable size
     pub fn size_human(&self) -> String {
         format_size(self.size_bytes)
     }
@@ -47,7 +45,6 @@ impl DiskInfo {
         self.size_bytes.saturating_sub(self.partitioned_bytes())
     }
 
-    /// Check if disk already has enough unpartitioned space for Linux installation
     pub fn has_sufficient_free_space(&self) -> bool {
         self.max_contiguous_free_space_bytes >= crate::arch::dualboot::MIN_LINUX_SIZE
     }
@@ -60,7 +57,6 @@ impl DiskInfo {
             .find(|p| p.is_efi && p.size_bytes >= MIN_ESP_SIZE)
     }
 
-    /// Check if dual boot is feasible on this disk
     pub fn check_disk_dualboot_feasibility(&self) -> DualBootFeasibility {
         let feasible_partitions: Vec<String> = self
             .partitions
@@ -69,7 +65,6 @@ impl DiskInfo {
             .map(|p| p.device.clone())
             .collect();
 
-        // Check if we have enough unpartitioned space
         // We check CONTIGUOUS space to ensure we can actually create the partition
         let free_space_bytes = self.max_contiguous_free_space_bytes;
         let has_unpartitioned_space = free_space_bytes >= crate::arch::dualboot::MIN_LINUX_SIZE;
@@ -86,7 +81,6 @@ impl DiskInfo {
                 };
             }
 
-            // Check if there are any partitions at all
             if self.partitions.is_empty() {
                 // If empty partitions AND not enough space (checked above), then disk is too small
                 DualBootFeasibility {
@@ -98,7 +92,6 @@ impl DiskInfo {
                     )),
                 }
             } else {
-                // Check if there are shrinkable partitions but not enough space
                 let shrinkable: Vec<_> = self
                     .partitions
                     .iter()
@@ -171,7 +164,6 @@ impl std::fmt::Display for PartitionTableType {
 pub struct PartitionInfo {
     /// Device path (e.g., /dev/nvme0n1p2)
     pub device: String,
-    /// Size in bytes
     pub size_bytes: u64,
     /// Filesystem information
     pub filesystem: Option<FilesystemInfo>,
@@ -188,14 +180,11 @@ pub struct PartitionInfo {
 }
 
 impl PartitionInfo {
-    /// Get human-readable size
     pub fn size_human(&self) -> String {
         format_size(self.size_bytes)
     }
 
-    /// Check if a partition is feasible for dual boot installation
     pub fn is_dualboot_feasible(&self) -> bool {
-        // Cannot resize EFI partitions
         if self.is_efi {
             return false;
         }
@@ -228,9 +217,7 @@ fn is_supported_auto_resize_fs(partition: &PartitionInfo) -> bool {
 pub struct FilesystemInfo {
     /// Filesystem type (e.g., ntfs, ext4, vfat)
     pub fs_type: crate::common::blockdev::Filesystem,
-    /// UUID
     pub uuid: Option<String>,
-    /// Label
     pub label: Option<String>,
 }
 
@@ -301,7 +288,6 @@ impl Shrinkability {
 }
 
 impl ResizeInfo {
-    /// Get human-readable minimum size, if known
     pub fn min_size_human(&self) -> Option<String> {
         match self.shrinkability {
             Shrinkability::Shrinkable { min_size_bytes } => Some(format_size(min_size_bytes)),
@@ -334,9 +320,7 @@ pub struct FreeRegion {
 /// Overall dual boot feasibility result for a disk
 #[derive(Debug, Clone)]
 pub struct DualBootFeasibility {
-    /// Whether dual boot is feasible on this disk
     pub feasible: bool,
-    /// List of partitions that could be used for dual boot
     pub feasible_partitions: Vec<String>,
     /// Reason why dual boot is not feasible (if applicable)
     pub reason: Option<String>,
@@ -345,9 +329,7 @@ pub struct DualBootFeasibility {
 /// Combined disk information and feasibility analysis
 #[derive(Debug, Clone)]
 pub struct DiskAnalysis {
-    /// The disk information
     pub disk: DiskInfo,
-    /// Dual boot feasibility for this disk
     pub feasibility: DualBootFeasibility,
 }
 

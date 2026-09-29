@@ -80,7 +80,6 @@ pub struct OutputInfo {
 }
 
 impl OutputInfo {
-    /// Get the optimal (highest resolution, then highest refresh) mode
     pub fn optimal_mode(&self) -> DisplayMode {
         self.available_modes
             .iter()
@@ -93,12 +92,10 @@ impl OutputInfo {
             .unwrap_or_else(|| self.current_mode.clone())
     }
 
-    /// Check if current mode is optimal
     pub fn is_optimal(&self) -> bool {
         self.current_mode == self.optimal_mode()
     }
 
-    /// Get a human-readable display label
     pub fn display_label(&self) -> String {
         let model_info = if !self.model.is_empty() && self.model != "Unknown" {
             format!(" ({})", self.model)

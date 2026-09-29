@@ -4,8 +4,7 @@ use std::process::Command;
 
 use crate::scratchpad::terminal::Terminal;
 
-/// Detect the available terminal emulator
-///
+/// The available terminal emulator.
 /// Checks for common terminals in order of preference, respecting the $TERMINAL
 /// environment variable if set.
 pub fn detect_terminal() -> String {
@@ -38,13 +37,11 @@ pub fn detect_terminal() -> String {
     "xterm".to_string()
 }
 
-/// Check if a terminal emulator is available
 fn is_available(terminal: &str) -> bool {
     which::which(terminal).is_ok()
 }
 
-/// Get the execute flag for a terminal
-///
+/// The flag needed to execute a command in the terminal.
 /// Returns the flag needed to execute a command in the terminal (e.g., "-e")
 #[allow(dead_code)]
 pub fn get_execute_flag(terminal: &str) -> &'static str {
@@ -102,7 +99,6 @@ pub struct TerminalLauncher {
 }
 
 impl TerminalLauncher {
-    /// Create a new terminal launcher for the specified command
     pub fn new(command: impl Into<String>) -> Self {
         Self {
             command: command.into(),
@@ -128,13 +124,11 @@ impl TerminalLauncher {
         self
     }
 
-    /// Set the window class (e.g., "ins-settings")
     pub fn class(mut self, class: impl Into<String>) -> Self {
         self.class = Some(class.into());
         self
     }
 
-    /// Set the window title
     pub fn title(mut self, title: impl Into<String>) -> Self {
         self.title = Some(title.into());
         self
