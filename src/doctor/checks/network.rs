@@ -155,10 +155,8 @@ impl DoctorCheck for PacmanMirrorCheck {
         let (selected, attempts) = list
             .first_healthy(&client, pacman_mirrors::DEFAULT_PROBE_LIMIT)
             .await?;
-        let updated = list.promote(&selected.mirror)?;
-
-        if updated != content {
-            pacman_mirrors::write_mirrorlist(path, &updated)?;
+        if let Some(promoted) = list.promote(&selected.mirror)? {
+            pacman_mirrors::write_mirrorlist(path, promoted.content())?;
             println!(
                 "Promoted healthy mirror after {} check(s): {}",
                 attempts, selected.mirror.template

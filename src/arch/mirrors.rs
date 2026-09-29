@@ -272,7 +272,11 @@ async fn validate_and_prioritize_mirrors(
         selected.mirror.template,
         selected.latency.as_secs_f64() * 1000.0
     );
-    list.promote(&selected.mirror)
+    match list.promote(&selected.mirror)? {
+        Some(promoted) => Ok(promoted.content().to_string()),
+        // Already first: the text on disk is what this list already holds.
+        None => Ok(content.to_string()),
+    }
 }
 
 /// Fetch a URL as text on the caller's client.

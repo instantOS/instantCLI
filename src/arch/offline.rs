@@ -15,6 +15,7 @@
 //! unit tests can exercise every branch without env or filesystem setup.
 
 use std::borrow::Cow;
+use std::collections::HashSet;
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -22,6 +23,7 @@ use anyhow::{Context, Result};
 use super::execution::CommandRunner;
 use super::execution::paths;
 use crate::arch::execution::pacman::INSTANT_MIRRORLIST;
+use crate::common::pacman_mirrors::MirrorList;
 
 /// Root of the offline package bundle on the live system.
 pub const BUNDLE_ROOT: &str = "/run/archiso/bootmnt/offline-repo";
@@ -52,17 +54,21 @@ pub enum Mode {
 }
 
 impl Mode {
+    /// Pure mode selection, testable without touching env or filesystem.
+    ///
+    /// The two arguments are the results of the environment and bundle probes.
+    /// Those are read by [`mode`], not here, which is the whole reason this is
+    /// separable from it: every branch is reachable from a unit test.
+    pub fn resolve(env_forced: bool, bundle_present: bool) -> Self {
+        match (env_forced, bundle_present) {
+            (true, _) => Self::Strict,
+            (false, true) => Self::Opportunistic,
+            (false, false) => Self::Online,
+        }
+    }
+
     pub fn is_offline(self) -> bool {
         !matches!(self, Mode::Online)
-    }
-}
-
-/// Pure mode selection, testable without touching env or filesystem.
-pub fn resolve(env_forced: bool, bundle_present: bool) -> Mode {
-    match (env_forced, bundle_present) {
-        (true, _) => Mode::Strict,
-        (false, true) => Mode::Opportunistic,
-        (false, false) => Mode::Online,
     }
 }
 
@@ -71,7 +77,7 @@ fn env_forced() -> bool {
 }
 
 /// The bundle probe: every complete bundle ships `core.db`.
-pub fn bundle_present() -> bool {
+fn bundle_present() -> bool {
     Path::new(BUNDLE_ROOT)
         .join("core/os/x86_64/core.db")
         .exists()
@@ -79,7 +85,7 @@ pub fn bundle_present() -> bool {
 
 /// Current install mode. Cheap: one environment read and one stat.
 pub fn mode() -> Mode {
-    resolve(env_forced(), bundle_present())
+    Mode::resolve(env_forced(), bundle_present())
 }
 
 /// Reject an incomplete bundle before disk changes when the install has no
@@ -194,35 +200,59 @@ pub fn instant_mirrorlist_override() -> Option<String> {
     }
 }
 
-fn is_file_server_line(line: &str) -> bool {
-    let trimmed = line.trim_start();
-    trimmed.starts_with("Server") && trimmed.contains("file://")
+/// The line numbers of every active non-network `Server` entry.
+///
+/// Bundle entries are the complement of [`MirrorEntry::is_network`], so what
+/// counts as a network server is defined once. Both the key and the value are
+/// read from the shared mirrorlist parse: a line only qualifies when it is an
+/// active `Server` entry, and its scheme is read from the value rather than
+/// searched for in the line, so a trailing comment cannot disguise a bundle
+/// entry as a network one.
+fn bundle_server_lines(content: &str) -> HashSet<usize> {
+    MirrorList::parse(content)
+        .map(|list| {
+            list.servers()
+                .iter()
+                .filter(|server| !server.is_network())
+                .map(|server| server.line_index)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
-/// Remove every `Server = file://...` bundle line. Idempotent; the result
-/// always ends in a newline unless it is empty.
-pub fn strip_file_servers(content: &str) -> String {
+/// Remove every bundle `Server` line, or `None` when the list holds none.
+///
+/// The result ends in a newline unless it is empty.
+pub fn strip_file_servers(content: &str) -> Option<String> {
+    let bundle_lines = bundle_server_lines(content);
+    if bundle_lines.is_empty() {
+        return None;
+    }
+
     let kept: Vec<&str> = content
         .lines()
-        .filter(|line| !is_file_server_line(line))
+        .enumerate()
+        .filter(|(index, _)| !bundle_lines.contains(index))
+        .map(|(_, line)| line)
         .collect();
     if kept.is_empty() {
-        return String::new();
+        return Some(String::new());
     }
     let mut out = kept.join("\n");
     out.push('\n');
-    out
+    Some(out)
 }
 
-/// Whether any uncommented http(s) `Server` line remains. Commented
-/// `#Server` lines do not count: pacman never uses them, so a stripped list
-/// holding only comments must still be refilled or the target boots with
-/// no active mirror.
+/// Whether the given text holds at least one active network `Server` entry.
+///
+/// Commented `#Server` lines do not count: pacman never uses them, so a
+/// stripped list holding only comments must still be refilled or the target
+/// boots with no active mirror.
+///
+/// A list that fails to parse has no servers, so this answers `false` and the
+/// caller refills — the safe direction when unsure.
 pub fn has_network_mirrors(content: &str) -> bool {
-    content.lines().any(|line| {
-        let trimmed = line.trim_start();
-        trimmed.starts_with("Server") && trimmed.contains("http")
-    })
+    MirrorList::parse(content).is_ok_and(|list| list.has_network_mirrors())
 }
 
 /// What to refill a target file with when stripping the bundle's `file://`
@@ -358,10 +388,10 @@ pub fn cleanup_target(
         }
         let content = std::fs::read_to_string(&target)
             .with_context(|| format!("Failed to read {}", target.display()))?;
-        let stripped = strip_file_servers(&content);
-        if stripped == content {
+        // No bundle lines means this file is already in its final form.
+        let Some(stripped) = strip_file_servers(&content) else {
             continue;
-        }
+        };
         let final_content = match restore {
             // Stripping a network block is the intended end state.
             Restore::None => stripped,
@@ -426,10 +456,10 @@ mod tests {
 
     #[test]
     fn resolve_picks_the_expected_mode() {
-        assert_eq!(resolve(false, false), Mode::Online);
-        assert_eq!(resolve(false, true), Mode::Opportunistic);
-        assert_eq!(resolve(true, true), Mode::Strict);
-        assert_eq!(resolve(true, false), Mode::Strict);
+        assert_eq!(Mode::resolve(false, false), Mode::Online);
+        assert_eq!(Mode::resolve(false, true), Mode::Opportunistic);
+        assert_eq!(Mode::resolve(true, true), Mode::Strict);
+        assert_eq!(Mode::resolve(true, false), Mode::Strict);
     }
 
     #[test]
@@ -506,17 +536,53 @@ Server = file:///run/archiso/bootmnt/offline-repo/$repo/os/$arch
 Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch
 # comment kept
 ";
-        let stripped = strip_file_servers(input);
+        let stripped = strip_file_servers(input).expect("bundle line present");
         assert!(!stripped.contains("file://"));
         assert!(stripped.contains("https://geo.mirror.pkgbuild.com"));
         assert!(stripped.contains("# comment kept"));
-        assert_eq!(strip_file_servers(&stripped), stripped, "idempotent");
+        // Idempotent, and says so: a second pass finds no bundle line to strip.
+        assert_eq!(strip_file_servers(&stripped), None);
+    }
+
+    #[test]
+    fn a_list_with_no_bundle_line_needs_no_stripping() {
+        let input = "Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch\n";
+        assert_eq!(strip_file_servers(input), None);
+    }
+
+    #[test]
+    fn a_trailing_comment_mentioning_http_is_not_a_network_mirror() {
+        // The scheme belongs to the server's value. Searching the whole line
+        // would find the comment and count the list as networked, skipping the
+        // refill and leaving the target with no active server at all.
+        let content = "Server = file:///run/archiso/bootmnt/offline-repo/$repo/os/$arch  # see http://example.invalid\n";
+        assert!(!has_network_mirrors(content));
+        let stripped = strip_file_servers(content).expect("bundle line present");
+        assert!(!has_network_mirrors(&stripped));
+    }
+
+    #[test]
+    fn only_real_server_entries_are_stripped() {
+        // `ServerArchive` and `CacheServer` are not pacman directives, so
+        // neither is a bundle entry no matter what its value looks like.
+        let content = "\
+ServerArchive = file:///keep/me
+CacheServer = https://cache.example/$repo/os/$arch
+Server = file:///run/archiso/bootmnt/offline-repo/$repo/os/$arch
+";
+        let stripped = strip_file_servers(content).expect("bundle line present");
+        assert!(
+            stripped.contains("ServerArchive = file:///keep/me"),
+            "{stripped}"
+        );
+        assert!(stripped.contains("CacheServer = https://cache.example"));
+        assert!(!stripped.contains("offline-repo"));
     }
 
     #[test]
     fn strip_of_a_strict_file_only_list_leaves_no_servers() {
         let input = "Server = file:///run/archiso/bootmnt/offline-repo/$repo/os/$arch\n";
-        let stripped = strip_file_servers(input);
+        let stripped = strip_file_servers(input).expect("bundle line present");
         assert_eq!(stripped, "");
         assert!(!has_network_mirrors(&stripped));
         assert!(has_network_mirrors(
@@ -537,7 +603,7 @@ Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch
 Server = file:///run/archiso/bootmnt/offline-repo/$repo/os/$arch
 #Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch
 ";
-        let stripped = strip_file_servers(shipped);
+        let stripped = strip_file_servers(shipped).expect("bundle line present");
         assert!(!has_network_mirrors(&stripped));
     }
 

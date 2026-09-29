@@ -32,10 +32,9 @@ pub struct MirrorProbe {
 /// A parsed mirrorlist: the text as it stands, and the active `Server =` lines
 /// within it, carrying the line indices they occupy.
 ///
-/// Operations live here rather than as free functions on `&str` so the text is
-/// parsed once and the indices are known to belong to *this* content. Taking a
-/// bare line index from outside made it possible to promote a server parsed out
-/// of one mirrorlist against a different one.
+/// The servers stay attached to the content they were parsed from, so every
+/// operation on this type indexes lines of *this* text and a [`MirrorEntry`]
+/// belonging to a different mirrorlist is rejected rather than applied here.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MirrorList {
     content: String,
@@ -77,6 +76,12 @@ impl MirrorList {
             .ok_or_else(|| anyhow!("Mirrorlist contains no active Server entries"))
     }
 
+    /// Whether any server in this list is fetched over the network, as opposed
+    /// to a local `file://` source.
+    pub fn has_network_mirrors(&self) -> bool {
+        self.servers.iter().any(MirrorEntry::is_network)
+    }
+
     /// Probe the configured mirrors in order and return the first healthy one,
     /// with how many were probed to find it.
     pub async fn first_healthy(
@@ -106,17 +111,26 @@ impl MirrorList {
         ))
     }
 
-    /// Return this mirrorlist's text with `server` swapped into the first
-    /// server position.
+    /// The text as it stands, exactly as it was parsed.
+    pub fn content(&self) -> &str {
+        &self.content
+    }
+
+    /// This mirrorlist with `server` swapped into the first server position, or
+    /// `None` when `server` is already first and the text would not change.
     ///
     /// Only line contents are swapped, so comments, blank lines, and the file's
     /// original newline style remain intact. Nothing else is reordered, no
     /// mirror is removed, and the list is not otherwise tidied — this promotes
     /// one mirror and nothing more.
     ///
+    /// The servers and their line indices stay attached to the content they
+    /// were parsed from, so the result can be promoted again or re-probed
+    /// without re-parsing.
+    ///
     /// `server` must come from this list: a server parsed out of a different
     /// mirrorlist is rejected rather than used to index this one's lines.
-    pub fn promote(&self, server: &MirrorEntry) -> Result<String> {
+    pub fn promote(&self, server: &MirrorEntry) -> Result<Option<Self>> {
         let Some(entry) = self
             .servers
             .iter()
@@ -137,7 +151,7 @@ impl MirrorList {
 
         let first = self.primary()?;
         if first.line_index == entry.line_index {
-            return Ok(self.content.clone());
+            return Ok(None);
         }
 
         let mut lines: Vec<LinePart<'_>> = split_lines_preserving_endings(&self.content).collect();
@@ -151,11 +165,25 @@ impl MirrorList {
             output.push_str(line.replacement.as_deref().unwrap_or(line.content));
             output.push_str(line.ending);
         }
-        Ok(output)
+        Ok(Some(Self::parse(&output)?))
     }
 }
 
 impl MirrorEntry {
+    /// Whether pacman fetches this mirror over the network, as opposed to a
+    /// local `file://` source.
+    ///
+    /// The comparison is case-insensitive because the URL parser lowercases
+    /// schemes, so `HTTP://` probes successfully and is a network mirror here.
+    pub fn is_network(&self) -> bool {
+        let scheme_end = self.template.find("://");
+        let scheme = match scheme_end {
+            Some(end) => &self.template[..end],
+            None => return false,
+        };
+        scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https")
+    }
+
     /// The URL to request when checking this mirror: the `core` database, with
     /// pacman's template variables expanded.
     pub fn probe_url(&self) -> Result<String> {
@@ -346,15 +374,55 @@ CacheServer = https://cache.example/$repo/os/$arch\n";
     }
 
     #[test]
+    fn network_mirrors_are_http_and_https_and_nothing_else() {
+        let list = MirrorList::parse(
+            "\
+#Server = https://commented.example/$repo/os/$arch
+Server = file:///run/archiso/bootmnt/offline-repo/$repo/os/$arch
+",
+        )
+        .unwrap();
+        // The commented entry does not count, so this list is bundle-only.
+        assert!(!list.has_network_mirrors());
+
+        let networked = MirrorList::parse("Server = https://one.example/$repo/os/$arch\n").unwrap();
+        assert!(networked.has_network_mirrors());
+
+        // The URL parser lowercases schemes, so an uppercase one probes fine
+        // and must not read as a non-network mirror here.
+        let shouty = MirrorList::parse("Server = HTTP://one.example/$repo/os/$arch\n").unwrap();
+        assert!(shouty.has_network_mirrors());
+        assert!(shouty.servers()[0].probe_url().is_ok());
+    }
+
+    #[test]
     fn promotion_preserves_formatting_and_newlines() {
         let content = "## First\r\nServer = https://one/$repo/os/$arch\r\n\r\n## Second\r\nServer = https://two/$repo/os/$arch\r\n";
         let list = MirrorList::parse(content).unwrap();
         let second = list.servers()[1].clone();
-        let promoted = list.promote(&second).unwrap();
+        let promoted = list
+            .promote(&second)
+            .unwrap()
+            .expect("second is not the primary");
         assert_eq!(
-            promoted,
+            promoted.content(),
             "## First\r\nServer = https://two/$repo/os/$arch\r\n\r\n## Second\r\nServer = https://one/$repo/os/$arch\r\n"
         );
+        // The servers describe the text this result now holds.
+        assert_eq!(
+            promoted.primary().unwrap().template,
+            "https://two/$repo/os/$arch"
+        );
+    }
+
+    #[test]
+    fn promoting_the_primary_mirror_reports_no_change() {
+        let list = MirrorList::parse(
+            "Server = https://one/$repo/os/$arch\nServer = https://two/$repo/os/$arch\n",
+        )
+        .unwrap();
+        let primary = list.servers()[0].clone();
+        assert!(list.promote(&primary).unwrap().is_none());
     }
 
     #[test]
@@ -421,16 +489,22 @@ CacheServer = https://cache.example/$repo/os/$arch\n";
 
         // Selecting does not touch the text; promoting does.
         assert_eq!(list.primary().unwrap().template, broken);
-        let promoted = list.promote(&selected.mirror).unwrap();
-        assert!(promoted.starts_with(&format!("Server = {healthy}\n")));
+        let promoted = list
+            .promote(&selected.mirror)
+            .unwrap()
+            .expect("selected mirror is not the primary");
+        assert!(
+            promoted
+                .content()
+                .starts_with(&format!("Server = {healthy}\n"))
+        );
     }
 
     #[test]
     fn promoting_rejects_a_server_belonging_to_another_mirrorlist() {
-        // The old signature took a bare line index, so a server parsed out of a
-        // different mirrorlist could silently be used to index this one's lines.
-        // The dangerous case is an index that *does* exist here but points at a
-        // different server: only the template tells them apart.
+        // A server from another mirrorlist is refused even when its line index
+        // happens to exist here, because that index may point at a different
+        // server: only the template tells them apart.
         let one = MirrorList::parse(
             "Server = https://one/$repo/os/$arch\nServer = https://two/$repo/os/$arch\n",
         )
