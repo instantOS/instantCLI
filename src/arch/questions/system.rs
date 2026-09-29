@@ -2,10 +2,10 @@ use super::text_input::TextInputQuestion;
 use crate::arch::annotations::AnnotatedValue;
 use crate::arch::config::DesktopEnvironment;
 use crate::arch::engine::{
-    AskPolicy, ConsoleKeymap, DataKey, EncryptionPassword, Hostname, InstallContext, Kernel,
-    LocaleName, LoginPassword, StepId, StepOutcome, Timezone, Username, WizardStep,
+    AskPolicy, ConsoleKeymap, EncryptionPassword, Hostname, InstallContext, Kernel, LocaleName,
+    LoginPassword, StepId, StepOutcome, Timezone, Username, WizardStep,
 };
-use crate::arch::geo::GeoLocationProvider;
+use crate::arch::geo::GeoLocationKey;
 use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder};
 use crate::preview::{PreviewId, preview_command};
 use crate::ui::catppuccin::{colors, format_icon_colored};
@@ -369,8 +369,11 @@ impl WizardStep for MirrorRegionQuestion {
         Some("Select the closest mirror region for faster downloads")
     }
 
-    fn required_data_keys(&self) -> Vec<String> {
-        vec![crate::arch::mirrors::MirrorRegionsKey::KEY.to_string()]
+    fn required_data_keys(&self) -> Vec<crate::arch::engine::KeyId> {
+        vec![
+            crate::arch::engine::KeyId::of::<crate::arch::mirrors::MirrorRegionsKey>(),
+            crate::arch::engine::KeyId::of::<crate::arch::mirrors::MirrorRegionsFetchFailed>(),
+        ]
     }
 
     /// Skip this question if mirror regions fetch failed.
@@ -416,9 +419,15 @@ impl WizardStep for MirrorRegionQuestion {
     }
 
     fn data_providers(&self) -> Vec<Box<dyn crate::arch::engine::AsyncDataProvider>> {
+        vec![Box::new(crate::arch::mirrors::MirrorlistProvider)]
+    }
+
+    /// The region is preselected from the detected country, which is a shared
+    /// input. Region codes are a best-effort output of this step's provider.
+    fn optional_data_keys(&self) -> Vec<crate::arch::engine::KeyId> {
         vec![
-            Box::new(crate::arch::mirrors::MirrorlistProvider),
-            Box::new(GeoLocationProvider::for_question(StepId::MirrorRegion)),
+            crate::arch::engine::KeyId::of::<GeoLocationKey>(),
+            crate::arch::engine::KeyId::of::<crate::arch::mirrors::MirrorRegionCodesKey>(),
         ]
     }
 
@@ -439,8 +448,10 @@ impl WizardStep for TimezoneQuestion {
         Some("Set the system timezone")
     }
 
-    fn required_data_keys(&self) -> Vec<String> {
-        vec![crate::arch::timezones::TimezonesKey::KEY.to_string()]
+    fn required_data_keys(&self) -> Vec<crate::arch::engine::KeyId> {
+        vec![crate::arch::engine::KeyId::of::<
+            crate::arch::timezones::TimezonesKey,
+        >()]
     }
 
     /// The timezone suggestion falls back to the earlier keymap choice, so a
@@ -479,9 +490,16 @@ impl WizardStep for TimezoneQuestion {
     }
 
     fn data_providers(&self) -> Vec<Box<dyn crate::arch::engine::AsyncDataProvider>> {
+        vec![Box::new(crate::arch::timezones::TimezoneProvider)]
+    }
+
+    /// The timezone is preselected from the detected location, and the
+    /// keymap fallback needs the zone-to-country table. Both are shared inputs
+    /// rather than this step's own data.
+    fn optional_data_keys(&self) -> Vec<crate::arch::engine::KeyId> {
         vec![
-            Box::new(crate::arch::timezones::TimezoneProvider),
-            Box::new(GeoLocationProvider::for_question(StepId::Timezone)),
+            crate::arch::engine::KeyId::of::<GeoLocationKey>(),
+            crate::arch::engine::KeyId::of::<crate::arch::timezones::TimezoneCountriesKey>(),
         ]
     }
 
@@ -504,8 +522,10 @@ impl WizardStep for KeymapQuestion {
         Some("Set the console keyboard layout")
     }
 
-    fn required_data_keys(&self) -> Vec<String> {
-        vec![crate::arch::keymaps::KeymapsKey::KEY.to_string()]
+    fn required_data_keys(&self) -> Vec<crate::arch::engine::KeyId> {
+        vec![crate::arch::engine::KeyId::of::<
+            crate::arch::keymaps::KeymapsKey,
+        >()]
     }
 
     async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {
@@ -564,8 +584,10 @@ impl WizardStep for LocaleQuestion {
         Some("Set the system language and formatting")
     }
 
-    fn required_data_keys(&self) -> Vec<String> {
-        vec![crate::arch::locales::LocalesKey::KEY.to_string()]
+    fn required_data_keys(&self) -> Vec<crate::arch::engine::KeyId> {
+        vec![crate::arch::engine::KeyId::of::<
+            crate::arch::locales::LocalesKey,
+        >()]
     }
 
     /// The locale suggestion matches the earlier keymap and timezone choices,
@@ -603,9 +625,18 @@ impl WizardStep for LocaleQuestion {
     }
 
     fn data_providers(&self) -> Vec<Box<dyn crate::arch::engine::AsyncDataProvider>> {
+        vec![Box::new(crate::arch::locales::LocaleProvider)]
+    }
+
+    /// `locale_suggestion` needs the zone-to-country table, and falls back to
+    /// the detected country when the earlier keymap and timezone choices do not
+    /// yield one. Declaring both here is what makes those reads wait for the
+    /// wizard-level sources rather than relying on a sibling step's provider to
+    /// have filled them.
+    fn optional_data_keys(&self) -> Vec<crate::arch::engine::KeyId> {
         vec![
-            Box::new(crate::arch::locales::LocaleProvider),
-            Box::new(crate::arch::timezones::TimezoneCountriesProvider),
+            crate::arch::engine::KeyId::of::<GeoLocationKey>(),
+            crate::arch::engine::KeyId::of::<crate::arch::timezones::TimezoneCountriesKey>(),
         ]
     }
 
@@ -808,6 +839,60 @@ mod tests {
             LocaleQuestion.depends_on(),
             &[StepId::Keymap, StepId::Timezone]
         );
+    }
+
+    /// The locale suggestion reads the shared location and timezone-country
+    /// inputs. Those reads used to be undeclared, which meant nothing waited
+    /// for them and a silent `None` was the only symptom when they were
+    /// missing.
+    #[test]
+    fn every_step_reading_a_shared_input_declares_it() {
+        for step in [
+            &LocaleQuestion as &dyn WizardStep,
+            &TimezoneQuestion,
+            &MirrorRegionQuestion,
+        ] {
+            let declared = step.optional_data_keys();
+            assert!(
+                declared.contains(&crate::arch::engine::KeyId::of::<GeoLocationKey>()),
+                "{:?} derives a suggestion from the location but does not declare it",
+                step.id()
+            );
+        }
+
+        // The zone-to-country table is read by the timezone keymap fallback and
+        // by the locale suggestion, so both must declare it.
+        for step in [&LocaleQuestion as &dyn WizardStep, &TimezoneQuestion] {
+            assert!(
+                step.optional_data_keys()
+                    .contains(&crate::arch::engine::KeyId::of::<
+                        crate::arch::timezones::TimezoneCountriesKey,
+                    >()),
+                "{:?} reads the zone-to-country table but does not declare it",
+                step.id()
+            );
+        }
+    }
+
+    /// A shared input must not also be attached to a step as its own provider,
+    /// or the engine would have two writers for one slot.
+    #[test]
+    fn no_step_owns_a_provider_for_a_shared_input() {
+        for step in [
+            &TimezoneQuestion as &dyn WizardStep,
+            &MirrorRegionQuestion,
+            &LocaleQuestion,
+        ] {
+            for provider in step.data_providers() {
+                assert!(
+                    !provider
+                        .publishes()
+                        .contains(&crate::arch::engine::KeyId::of::<GeoLocationKey>()),
+                    "{:?} owns a provider for the shared location input",
+                    step.id()
+                );
+            }
+        }
     }
 
     #[test]

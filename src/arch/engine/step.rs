@@ -2,7 +2,7 @@ use anyhow::Result;
 
 use crate::menu_utils::DialogOutcome;
 
-use super::context::{DataKey, InstallContext};
+use super::context::{DataKey, InstallContext, KeyId};
 use super::types::StepId;
 
 /// Result of running one interactive wizard step.
@@ -77,6 +77,19 @@ impl AskPolicy {
 /// Trait for providing async data to the install context
 #[async_trait::async_trait]
 pub trait AsyncDataProvider: Send + Sync {
+    /// The slots this provider may write.
+    ///
+    /// Declared so the engine can index providers by key and reject two
+    /// providers claiming the same slot, which would otherwise be a silent
+    /// last-writer-wins race. The declaration is a claim, not a promise: a
+    /// provider may legitimately write nothing (see
+    /// [`crate::arch::geo::GeoLocationProvider`], which declines to resolve
+    /// its input when no consumer needs it).
+    ///
+    /// Required rather than defaulted so that adding a provider cannot quietly
+    /// leave it invisible to the engine.
+    fn publishes(&self) -> Vec<KeyId>;
+
     /// Fetches data and updates the context
     async fn provide(&self, context: &InstallContext) -> Result<()>;
 
@@ -103,19 +116,35 @@ pub trait AsyncDataProvider: Send + Sync {
 pub trait WizardStep: Send + Sync {
     fn id(&self) -> StepId;
 
-    /// Returns data keys that must exist before this step can run.
-    fn required_data_keys(&self) -> Vec<String> {
+    /// Data this step cannot run without.
+    ///
+    /// Gates readiness: the engine will not ask the question until every slot
+    /// listed here holds a value, and treats a missing one as a fatal provider
+    /// failure. Use [`Self::optional_data_keys`] for inputs that only improve
+    /// the question.
+    fn required_data_keys(&self) -> Vec<KeyId> {
+        vec![]
+    }
+
+    /// Data this step reads if it happens to be available.
+    ///
+    /// Never gates readiness. Declaring a slot here does two things: it makes
+    /// the read auditable (an undeclared read is invisible to the engine), and
+    /// it tells the engine to wait for whichever wizard-level data source
+    /// publishes that slot before asking this question.
+    ///
+    /// Steps that consume a wizard-level source must list it here. A step that
+    /// reads a slot it does not declare is relying on a sibling step's
+    /// provider, which is exactly the coupling that breaks silently.
+    fn optional_data_keys(&self) -> Vec<KeyId> {
         vec![]
     }
 
     /// Returns true if the step is ready to run.
     fn is_ready(&self, context: &InstallContext) -> bool {
-        let keys = self.required_data_keys();
-        if keys.is_empty() {
-            return true;
-        }
-        let data = context.data.lock().unwrap();
-        keys.iter().all(|k| data.contains_key(k))
+        self.required_data_keys()
+            .into_iter()
+            .all(|key| context.has_key(key))
     }
 
     /// Run the step and report an explicit navigation or completion outcome.
@@ -162,7 +191,8 @@ pub trait WizardStep: Send + Sync {
         true
     }
 
-    /// Returns a list of data providers required by this step.
+    /// Returns providers for data this step consumes. Every key a provider
+    /// publishes must appear in this step's required or optional data keys.
     fn data_providers(&self) -> Vec<Box<dyn AsyncDataProvider>> {
         vec![]
     }

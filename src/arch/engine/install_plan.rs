@@ -6,9 +6,11 @@ use anyhow::{Context, Result, bail};
 use super::{BootMode, InstallContext, Kernel, PartitioningMethod, StepId, SystemInfo};
 use crate::arch::config::{BtrfsCompression, DesktopEnvironment, DisplayManager, RootFilesystem};
 
-/// Accessor for the validated string types. The type itself carries the
-/// invariant established by `parse`; execution only ever needs the value back
-/// as a `&str`.
+/// Generates an inherent `as_str` for a validated string newtype.
+///
+/// Requires a newtype whose field 0 is the validated `String`, e.g.
+/// `struct Hostname(String)`. The type carries the invariant established by
+/// `parse`; this only hands the value back to execution code as a `&str`.
 macro_rules! string_value {
     ($type:ty) => {
         impl $type {
