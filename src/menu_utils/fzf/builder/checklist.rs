@@ -15,6 +15,7 @@ use crate::menu_utils::fzf::types::{
 use crate::menu_utils::fzf::wrapper::{FzfWrapper, configure_preview_and_input, fzf_was_cancelled};
 
 impl ChecklistBuilder {
+    //BOZO: should this function be refactored? It is quite long
     pub fn checklist_dialog<T: FzfSelectable + Clone>(
         self,
         items: Vec<T>,

@@ -551,13 +551,17 @@ pub struct DisksKey;
 
 impl DataKey for DisksKey {
     type Value = Vec<DiskEntry>;
-    const KEY: &'static str = "disks";
+    const NAME: &'static str = "disks";
 }
 
 pub struct DiskProvider;
 
 #[async_trait::async_trait]
 impl crate::arch::engine::AsyncDataProvider for DiskProvider {
+    fn publishes(&self) -> Vec<crate::arch::engine::KeyId> {
+        vec![crate::arch::engine::KeyId::of::<DisksKey>()]
+    }
+
     async fn provide(&self, context: &crate::arch::engine::InstallContext) -> Result<()> {
         use crate::arch::dualboot::detect_disks;
 

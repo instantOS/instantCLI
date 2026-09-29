@@ -1,15 +1,52 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::any::Any;
+use std::any::{Any, TypeId};
 use std::collections::{BTreeSet, HashMap};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use super::types::{Kernel, PartitioningMethod, StepId, SystemInfo};
+
+/// Compile-time-unique identity for a slot in the install context's data map.
+///
+/// Identity is the [`DataKey`] type itself — neither the name nor the value
+/// type. Both of those would be unsound: two keys may legitimately share a
+/// `Value` ([`crate::arch::timezones::TimezoneCountriesKey`] and
+/// [`crate::arch::mirrors::MirrorRegionCodesKey`] are both
+/// `HashMap<String, String>`), and names are only ever diagnostic.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct KeyId {
+    owner: TypeId,
+    name: &'static str,
+}
+
+impl KeyId {
+    /// Identity of the slot declared by `K`.
+    pub fn of<K: DataKey>() -> Self {
+        Self {
+            owner: TypeId::of::<K>(),
+            name: K::NAME,
+        }
+    }
+
+    /// Human-readable name, for diagnostics and the provider index.
+    pub fn name(&self) -> &'static str {
+        self.name
+    }
+}
+
+impl std::fmt::Debug for KeyId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.name)
+    }
+}
 
 /// Trait for defining type-safe keys for the data map
 pub trait DataKey: Send + Sync + 'static {
     type Value: Send + Sync + Clone + 'static;
-    const KEY: &'static str;
+    /// Human-readable name for diagnostics and the provider index. This is
+    /// *not* the slot's identity; [`KeyId::of`] derives that from the
+    /// `DataKey` type, so reusing a name cannot alias another key's slot.
+    const NAME: &'static str;
 }
 
 /// Key to store whether ESP needs to be formatted
@@ -18,7 +55,7 @@ pub struct EspNeedsFormat;
 
 impl DataKey for EspNeedsFormat {
     type Value = bool;
-    const KEY: &'static str = "esp_needs_format";
+    const NAME: &'static str = "esp_needs_format";
 }
 
 /// Key to store dual boot partition paths (root, boot, swap)
@@ -34,7 +71,7 @@ pub struct DualBootPartitionPaths {
 
 impl DataKey for DualBootPartitions {
     type Value = DualBootPartitionPaths;
-    const KEY: &'static str = "dualboot_partitions";
+    const NAME: &'static str = "dualboot_partitions";
 }
 
 /// Holds the state of the installation wizard
@@ -53,8 +90,10 @@ pub struct InstallContext {
     /// metadata; absent from a hand-authored installation configuration.
     pub(super) step_dependency_fingerprints: HashMap<StepId, String>,
     pub system_info: SystemInfo,
-    // We use Arc<Mutex> for interior mutability across threads
-    pub data: Arc<Mutex<HashMap<String, Box<dyn Any + Send + Sync>>>>,
+    // Shared mutable data map. Keyed by `TypeId::of::<K>()` for the `DataKey`
+    // type, so a value can only be read back through the same key that wrote
+    // it. Shared by every clone handed to a spawned provider task.
+    pub data: Arc<Mutex<HashMap<TypeId, Box<dyn Any + Send + Sync>>>>,
 }
 
 // Custom Serialize implementation to skip the data field
@@ -239,16 +278,29 @@ impl InstallContext {
 
     /// Set a value in the data map using a strongly-typed key
     pub fn set<K: DataKey>(&self, value: K::Value) {
-        let mut data = self.data.lock().unwrap();
-        data.insert(K::KEY.to_string(), Box::new(value));
+        // The guard is only ever held across a map insert, which cannot panic
+        // while leaving the map inconsistent, so recovering from poisoning is
+        // safe here.
+        let mut data = self.data.lock().unwrap_or_else(PoisonError::into_inner);
+        data.insert(TypeId::of::<K>(), Box::new(value));
     }
 
     /// Get a value from the data map using a strongly-typed key
     pub fn get<K: DataKey>(&self) -> Option<K::Value> {
-        let data = self.data.lock().unwrap();
-        data.get(K::KEY)
+        let data = self.data.lock().unwrap_or_else(PoisonError::into_inner);
+        data.get(&TypeId::of::<K>())
             .and_then(|boxed| boxed.downcast_ref::<K::Value>())
             .cloned()
+    }
+
+    /// Whether the slot identified by `key` currently holds a value.
+    ///
+    /// This is the readiness probe behind [`super::WizardStep::is_ready`]. It
+    /// checks the slot's identity, not its value, so a provider that resolves
+    /// a soft input to "nothing" still counts as having supplied it.
+    pub fn has_key(&self, key: KeyId) -> bool {
+        let data = self.data.lock().unwrap_or_else(PoisonError::into_inner);
+        data.contains_key(&key.owner)
     }
 
     /// Create an InstallContext for setup mode by detecting current system settings.
@@ -292,21 +344,30 @@ impl InstallContext {
 
 #[cfg(test)]
 mod tests {
-    use super::{DataKey, InstallContext};
+    use super::{DataKey, InstallContext, KeyId};
     use crate::arch::engine::StepId;
 
     struct StringKey;
 
     impl DataKey for StringKey {
         type Value = String;
-        const KEY: &'static str = "string_key";
+        const NAME: &'static str = "string_key";
     }
 
     struct IntKey;
 
     impl DataKey for IntKey {
         type Value = i32;
-        const KEY: &'static str = "int_key";
+        const NAME: &'static str = "int_key";
+    }
+
+    /// Distinct `DataKey` sharing `IntKey`'s value type, to prove slot identity
+    /// comes from the key type rather than the value type.
+    struct ShadowedIntKey;
+
+    impl DataKey for ShadowedIntKey {
+        type Value = i32;
+        const NAME: &'static str = "shadowed_int_key";
     }
 
     #[test]
@@ -321,9 +382,33 @@ mod tests {
         struct MissingKey;
         impl DataKey for MissingKey {
             type Value = bool;
-            const KEY: &'static str = "missing";
+            const NAME: &'static str = "missing";
         }
         assert_eq!(context.get::<MissingKey>(), None);
+    }
+
+    #[test]
+    fn keys_sharing_a_value_type_do_not_alias_each_others_slots() {
+        let context = InstallContext::new();
+        context.set::<IntKey>(42);
+
+        assert_eq!(context.get::<IntKey>(), Some(42));
+        assert_eq!(context.get::<ShadowedIntKey>(), None);
+        assert!(context.has_key(KeyId::of::<IntKey>()));
+        assert!(!context.has_key(KeyId::of::<ShadowedIntKey>()));
+    }
+
+    #[test]
+    fn a_resolved_soft_value_counts_as_present_for_readiness() {
+        let context = InstallContext::new();
+        assert!(!context.has_key(KeyId::of::<StringKey>()));
+
+        // An empty value is still a supplied value: soft inputs resolve to
+        // "nothing" rather than going absent.
+        context.set::<StringKey>(String::new());
+
+        assert!(context.has_key(KeyId::of::<StringKey>()));
+        assert_eq!(context.get::<StringKey>(), Some(String::new()));
     }
 
     #[test]

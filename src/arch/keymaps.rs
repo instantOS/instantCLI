@@ -7,7 +7,7 @@ pub struct KeymapsKey;
 
 impl DataKey for KeymapsKey {
     type Value = Vec<AnnotatedValue<String>>;
-    const KEY: &'static str = "keymaps";
+    const NAME: &'static str = "keymaps";
 }
 
 /// The keymap configured for the current system (`KEYMAP=` in
@@ -41,6 +41,10 @@ pub struct KeymapProvider;
 
 #[async_trait::async_trait]
 impl crate::arch::engine::AsyncDataProvider for KeymapProvider {
+    fn publishes(&self) -> Vec<crate::arch::engine::KeyId> {
+        vec![crate::arch::engine::KeyId::of::<KeymapsKey>()]
+    }
+
     async fn provide(&self, context: &crate::arch::engine::InstallContext) -> Result<()> {
         let output = Command::new("localectl").arg("list-keymaps").output()?;
 

@@ -29,5 +29,5 @@ pub struct DualBootDisksKey;
 
 impl crate::arch::engine::DataKey for DualBootDisksKey {
     type Value = Vec<types::DiskInfo>;
-    const KEY: &'static str = "dualboot_disks";
+    const NAME: &'static str = "dualboot_disks";
 }

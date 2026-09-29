@@ -30,6 +30,7 @@ pub(crate) enum PreviewStrategy {
 impl PreviewUtils {
     /// Force every item's preview through the `Mixed` strategy so items
     /// streamed in later can carry either text or command previews.
+    //BOZO: is this a workaround for deeper problems?
     pub fn force_mixed_preview_strategy<T: FzfSelectable>(items: &[T]) -> PreviewStrategy {
         PreviewStrategy::Mixed(
             items

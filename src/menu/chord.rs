@@ -18,6 +18,7 @@ use crate::ui::nerd_font::NerdFont;
 const POLL_TIMEOUT: Duration = Duration::from_millis(200);
 
 /// Converts a Catppuccin hex color (`#RRGGBB`) into a ratatui `Color::Rgb`.
+//BOZO: should this be a method?
 fn rgb(hex: &str) -> Color {
     let hex = hex.trim_start_matches('#');
     if hex.len() != 6 {

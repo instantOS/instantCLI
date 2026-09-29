@@ -8,7 +8,7 @@ pub struct LocalesKey;
 
 impl DataKey for LocalesKey {
     type Value = Vec<AnnotatedValue<String>>;
-    const KEY: &'static str = "locales";
+    const NAME: &'static str = "locales";
 }
 
 /// The locale configured for the current system (`LANG=` in
@@ -42,6 +42,10 @@ pub struct LocaleProvider;
 
 #[async_trait::async_trait]
 impl crate::arch::engine::AsyncDataProvider for LocaleProvider {
+    fn publishes(&self) -> Vec<crate::arch::engine::KeyId> {
+        vec![crate::arch::engine::KeyId::of::<LocalesKey>()]
+    }
+
     async fn provide(&self, context: &crate::arch::engine::InstallContext) -> Result<()> {
         let contents = fs::read_to_string("/etc/locale.gen").context("reading /etc/locale.gen")?;
         let locales = available_locales(&contents);

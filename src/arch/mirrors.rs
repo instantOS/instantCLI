@@ -23,7 +23,7 @@ pub struct MirrorRegionsKey;
 
 impl DataKey for MirrorRegionsKey {
     type Value = Vec<String>;
-    const KEY: &'static str = "mirror_regions";
+    const NAME: &'static str = "mirror_regions";
 }
 
 /// Key for the region-name -> country-code map from archlinux.org.
@@ -35,7 +35,7 @@ pub struct MirrorRegionCodesKey;
 
 impl DataKey for MirrorRegionCodesKey {
     type Value = HashMap<String, String>;
-    const KEY: &'static str = "mirror_region_codes";
+    const NAME: &'static str = "mirror_region_codes";
 }
 
 /// Key to track whether mirror regions fetch failed
@@ -44,7 +44,7 @@ pub struct MirrorRegionsFetchFailed;
 
 impl DataKey for MirrorRegionsFetchFailed {
     type Value = bool;
-    const KEY: &'static str = "mirror_regions_fetch_failed";
+    const NAME: &'static str = "mirror_regions_fetch_failed";
 }
 
 // ============================================================================
@@ -367,6 +367,15 @@ pub struct MirrorlistProvider;
 
 #[async_trait::async_trait]
 impl crate::arch::engine::AsyncDataProvider for MirrorlistProvider {
+    fn publishes(&self) -> Vec<crate::arch::engine::KeyId> {
+        use crate::arch::engine::KeyId;
+        vec![
+            KeyId::of::<MirrorRegionsKey>(),
+            KeyId::of::<MirrorRegionCodesKey>(),
+            KeyId::of::<MirrorRegionsFetchFailed>(),
+        ]
+    }
+
     async fn provide(&self, context: &crate::arch::engine::InstallContext) -> Result<()> {
         provide_mirrorlist(
             context,

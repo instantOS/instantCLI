@@ -8,7 +8,7 @@ mod types;
 mod wizard_engine;
 
 pub use context::{
-    DataKey, DualBootPartitionPaths, DualBootPartitions, EspNeedsFormat, InstallContext,
+    DataKey, DualBootPartitionPaths, DualBootPartitions, EspNeedsFormat, InstallContext, KeyId,
 };
 pub(crate) use install_plan::SessionAnswers;
 #[cfg(test)]
