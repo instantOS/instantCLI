@@ -5,9 +5,7 @@
 use crate::common::package::{Dependency, PackageDefinition, PackageManager};
 use crate::common::requirements::InstallTest;
 
-// =============================================================================
 // Clipboard
-// =============================================================================
 
 pub static CLIPHIST: Dependency = Dependency {
     name: "cliphist",
@@ -15,9 +13,7 @@ pub static CLIPHIST: Dependency = Dependency {
     tests: &[InstallTest::WhichSucceeds("cliphist")],
 };
 
-// =============================================================================
 // Storage
-// =============================================================================
 
 pub static UDISKIE: Dependency = Dependency {
     name: "udiskie",
@@ -28,9 +24,7 @@ pub static UDISKIE: Dependency = Dependency {
     tests: &[InstallTest::WhichSucceeds("udiskie")],
 };
 
-// =============================================================================
 // Bluetooth
-// =============================================================================
 
 pub static BLUEZ: Dependency = Dependency {
     name: "BlueZ bluetooth daemon",
@@ -53,9 +47,7 @@ pub static BLUEZ_UTILS: Dependency = Dependency {
     tests: &[InstallTest::WhichSucceeds("bluetoothctl")],
 };
 
-// =============================================================================
 // System
-// =============================================================================
 
 pub static COCKPIT: Dependency = Dependency {
     name: "Cockpit",
@@ -101,9 +93,7 @@ pub static CHROMIUM: Dependency = Dependency {
 // Cockpit requires both cockpit and chromium for the browser interface
 pub static COCKPIT_DEPS: &[&Dependency] = &[&COCKPIT, &CHROMIUM];
 
-// =============================================================================
 // Default Apps (apps.rs)
-// =============================================================================
 
 pub static XDG_UTILS: Dependency = Dependency {
     name: "xdg-utils",
@@ -114,9 +104,7 @@ pub static XDG_UTILS: Dependency = Dependency {
     tests: &[InstallTest::WhichSucceeds("xdg-open")],
 };
 
-// =============================================================================
 // Network (network.rs)
-// =============================================================================
 
 pub static NM_CONNECTION_EDITOR: Dependency = Dependency {
     name: "Network connection editor",
@@ -136,9 +124,7 @@ pub static NMTUI: Dependency = Dependency {
     tests: &[InstallTest::WhichSucceeds("nmtui")],
 };
 
-// =============================================================================
 // Appearance (appearance.rs)
-// =============================================================================
 
 pub static YAZI: Dependency = Dependency {
     name: "Yazi file manager",
@@ -179,9 +165,7 @@ pub static ZENITY: Dependency = Dependency {
     tests: &[InstallTest::WhichSucceeds("zenity")],
 };
 
-// =============================================================================
 // Printer (printer.rs)
-// =============================================================================
 
 pub static CUPS: Dependency = Dependency {
     name: "CUPS print server",
@@ -253,9 +237,7 @@ pub static PRINTER_DEPS: &[&Dependency] = &[
     &NSS_MDNS,
 ];
 
-// =============================================================================
 // Desktop (desktop.rs)
-// =============================================================================
 
 pub static PIPER: Dependency = Dependency {
     name: "Piper mouse configurator",
@@ -275,9 +257,7 @@ pub static BLUEMAN: Dependency = Dependency {
     tests: &[InstallTest::WhichSucceeds("blueman-manager")],
 };
 
-// =============================================================================
 // Storage (storage.rs)
-// =============================================================================
 
 pub static GNOME_DISKS: Dependency = Dependency {
     name: "GNOME Disks",
@@ -297,9 +277,7 @@ pub static GPARTED: Dependency = Dependency {
     tests: &[InstallTest::WhichSucceeds("gparted")],
 };
 
-// =============================================================================
 // Audio (wiremix.rs)
-// =============================================================================
 
 pub static WIREMIX: Dependency = Dependency {
     name: "Wiremix",
@@ -307,9 +285,7 @@ pub static WIREMIX: Dependency = Dependency {
     tests: &[InstallTest::WhichSucceeds("wiremix")],
 };
 
-// =============================================================================
 // Flatpak
-// =============================================================================
 
 pub static FLATPAK: Dependency = Dependency {
     name: "Flatpak",
@@ -320,9 +296,7 @@ pub static FLATPAK: Dependency = Dependency {
     tests: &[InstallTest::WhichSucceeds("flatpak")],
 };
 
-// =============================================================================
 // AppImages
-// =============================================================================
 
 pub static GEARLEVER: Dependency = Dependency {
     name: "Gear Lever",

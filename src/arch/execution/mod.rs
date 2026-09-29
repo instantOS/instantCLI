@@ -622,11 +622,7 @@ async fn execute_step(
         );
         setup_chroot(executor, config_path)?;
 
-        // Construct command to run inside chroot
-        // arch-chroot /mnt /usr/bin/ins arch exec <step> --config /etc/instant/install_config.toml
-        // Note: we need to pass the step name as string.
-        // We can convert enum to string via Debug or Display if implemented, or just match.
-        // clap::ValueEnum implements Display/FromStr usually but let's be safe.
+        // Re-enter the installer in the target with its copied questions file.
         let step_name = format!("{:?}", step).to_lowercase();
 
         let mut cmd = std::process::Command::new("arch-chroot");

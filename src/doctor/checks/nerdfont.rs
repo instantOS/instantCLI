@@ -1,23 +1,5 @@
-//! Nerd Font check - ensures Nerd Font symbols can be rendered correctly
-//!
-//! Nerd Fonts extend regular fonts with thousands of glyphs in the Private Use Area (PUA).
-//! This check samples symbols from ALL major Nerd Font icon sets to ensure comprehensive
-//! coverage. Without a Nerd Font, these PUA symbols render as boxes or wrong characters
-//! (often Chinese or Arabic glyphs from font fallback chains).
-//!
-//! Nerd Font PUA ranges (v3.x):
-//! - Pomicons: e000 - e00a
-//! - Powerline: e0a0 - e0a2, e0b0 - e0b3
-//! - Powerline Extra: e0b4 - e0c8
-//! - Font Awesome Extension: e200 - e2a9
-//! - Weather Icons: e300 - e3e3
-//! - Seti-UI + Custom: e5fa - e6b5
-//! - Devicons: e700 - e7c5
-//! - Codicons: ea60 - ebeb
-//! - Font Awesome: f000 - f2e0
-//! - Font Logos: f300 - f375
-//! - Octicons: f400 - f532
-//! - Material Design (v3.0+): f0001 - f1af0 (Supplementary PUA-A)
+//! Check glyph coverage across Nerd Font icon ranges. Missing private-use
+//! glyphs can render as boxes or unrelated fallback characters.
 
 use super::{CheckStatus, DoctorCheck, PrivilegeLevel};
 use anyhow::{Context, Result};
@@ -27,12 +9,8 @@ use tokio::process::Command;
 
 use crate::ui::nerd_font::NerdFont;
 
-/// Nerd Font icon set ranges for comprehensive coverage testing (v3.x codepoints).
-/// Each entry: (name, start_codepoint, end_codepoint, sample_count)
-/// We sample a few characters from each range to test coverage without being excessive.
-///
-/// Note: Nerd Fonts v3.0+ relocated Material Design icons to Supplementary PUA-A (f0001+).
-/// The old range (f500-fd46) was deprecated and removed.
+/// Icon ranges and sample counts. Material Design uses Supplementary PUA-A in
+/// Nerd Fonts v3+.
 const NERD_FONT_RANGES: &[(&str, u32, u32, usize)] = &[
     // Basic Multilingual Plane PUA (e000 - f8ff)
     ("Pomicons", 0xe000, 0xe00a, 3),

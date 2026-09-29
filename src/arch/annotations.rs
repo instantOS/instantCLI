@@ -1,33 +1,5 @@
-//! # Annotations Module
-//!
-//! This module provides human-readable annotations for values which might not be
-//! trivial to understand for new users. It enhances user experience by adding
-//! descriptive context to technical values like locale codes, keymap names, etc.
-//!
-//! ## Features
-//!
-//! - **AnnotatedValue<T>**: A wrapper that adds optional annotations to any value
-//! - **AnnotationProvider trait**: Allows custom annotation logic for different value types
-//! - **Built-in providers**: Pre-configured annotations for locales, keymaps, and timezones
-//! - **Dynamic names**: Locale names come from the system's i18n locale definitions and
-//!   keymap names from the XKB layout registry; curated tables act as fast, dependency-free
-//!   fallbacks for the most common entries
-//! - **Detection**: Each provider also knows the current system's configured value and
-//!   marks that entry as detected, so users can spot the value they most likely want
-//! - **FZF integration**: Seamless integration with the fuzzy finder UI
-//! - **Sorting support**: Prioritizes annotated values in UI listings
-//!
-//! ## Examples
-//!
-//! ```rust
-//! // Create annotated values
-//! let locale = AnnotatedValue::new(
-//!     "de_DE.UTF-8".to_string(),
-//!     Some("German (Germany)".to_string())
-//! );
-//!
-//! // Display in FZF: "German (Germany) - de_DE.UTF-8"
-//! ```
+//! Human-readable names for locale, keymap, and timezone choices.
+//! Providers use system metadata when available and curated fallbacks otherwise.
 
 use crate::menu_utils::{FzfPreview, FzfSelectable};
 use std::collections::HashMap;

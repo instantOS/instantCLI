@@ -16,9 +16,7 @@ use crate::settings::setting::{Setting, SettingMetadata, SettingState, SettingTy
 use crate::settings::store::{BoolSettingKey, PACMAN_AUTOCLEAN_KEY};
 use crate::ui::prelude::*;
 
-// ============================================================================
 // Hostname
-// ============================================================================
 
 pub struct Hostname;
 
@@ -189,9 +187,7 @@ fn handle_cloudinit_hostname(ctx: &mut SettingsContext) -> Result<()> {
     Ok(())
 }
 
-// ============================================================================
 // About System (uses shell command with read, can't use macro)
-// ============================================================================
 
 pub struct AboutSystem;
 
@@ -227,9 +223,7 @@ impl Setting for AboutSystem {
     }
 }
 
-// ============================================================================
 // System Doctor (runs ins doctor fix --choose for interactive diagnostics)
-// ============================================================================
 
 pub struct SystemDoctor;
 
@@ -266,9 +260,7 @@ impl Setting for SystemDoctor {
     }
 }
 
-// ============================================================================
 // Dotfile Manager (runs ins dot menu for interactive dotfile management)
-// ============================================================================
 
 pub struct DotfileManager;
 
@@ -297,9 +289,7 @@ impl Setting for DotfileManager {
     }
 }
 
-// ============================================================================
 // Systemd Services (fzf-based menu for managing services)
-// ============================================================================
 
 /// Setting marker that opens the systemd services menu. Named to avoid
 /// confusion with `common::systemd::SystemdManager`, the real manager.
@@ -324,9 +314,7 @@ impl Setting for SystemdServicesSetting {
     }
 }
 
-// ============================================================================
 // Web UI (Cockpit) - Launch Cockpit web interface
-// ============================================================================
 
 pub struct WebUiManager;
 
@@ -349,9 +337,7 @@ impl Setting for WebUiManager {
     }
 }
 
-// ============================================================================
 // Password Manager (launches the pass edit browser)
-// ============================================================================
 
 pub struct PasswordManager;
 
@@ -375,9 +361,7 @@ impl Setting for PasswordManager {
     }
 }
 
-// ============================================================================
 // Firmware Manager (GUI app)
-// ============================================================================
 
 gui_command_setting!(
     FirmwareManager,
@@ -389,9 +373,7 @@ gui_command_setting!(
     &GNOME_FIRMWARE
 );
 
-// ============================================================================
 // System Upgrade (TUI app)
-// ============================================================================
 
 tui_command_setting!(
     SystemUpgrade,
@@ -404,9 +386,7 @@ tui_command_setting!(
     &["update"]
 );
 
-// ============================================================================
 // Pacman Cache Autoclean
-// ============================================================================
 
 pub struct PacmanAutoclean;
 
@@ -438,9 +418,7 @@ impl Setting for PacmanAutoclean {
     }
 }
 
-// ============================================================================
 // Clear Pacman Cache
-// ============================================================================
 
 pub struct ClearPacmanCache;
 
@@ -484,9 +462,7 @@ impl Setting for ClearPacmanCache {
 // to be checked. The simple_toggle_setting! macro is only for toggles with no
 // additional logic beyond flipping the value and showing a message.
 
-// ============================================================================
 // Welcome App Autostart
-// ============================================================================
 
 simple_toggle_setting!(
     WelcomeAutostart,
@@ -499,9 +475,7 @@ simple_toggle_setting!(
     "Welcome app autostart has been disabled"
 );
 
-// ============================================================================
 // Implementations
-// ============================================================================
 
 pub fn apply_pacman_autoclean(ctx: &mut SettingsContext, _enabled: bool) -> Result<()> {
     // set_bool already applied the change to the external source (if one exists)

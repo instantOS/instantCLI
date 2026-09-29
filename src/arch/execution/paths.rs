@@ -1,44 +1,22 @@
 //! Where the installer keeps its own state, and where the target's lives.
 //!
-//! Two sets of paths exist and must not be confused:
-//!
-//! * **Target** paths (`CONFIG_FILE`, `STATE_FILE`, `LOG_FILE`) are the
-//!   canonical `/etc/instant/…` and `/var/log/instantos/…` locations. They are
-//!   always what the *installed* system sees, and they are what the host
-//!   reaches through [`chroot_path`].
-//! * **Host** paths are where this installer run reads and writes its own
-//!   state: the questions file, resumable execution state, the upload record
-//!   and the log.
-//!
-//! On the live ISO both sets coincide, because the live system's `/etc` and
-//! `/var/log` are throwaway RAM: the ISO is discarded on reboot, so writing
-//! the source system's files there costs nothing and everything can live in
-//! the familiar place. On a running Arch or instantOS system they must not
-//! coincide — `/etc/instant/questions.toml` and
-//! `/var/log/instantos/install.log` are the *source* system's real files, and
-//! overwriting them would destroy the machine the user is installing from.
-//!
-//! So a non-live host gets [`EPHEMERAL_STATE_ROOT`], a `tmpfs` directory that
-//! vanishes on reboot, and keeps every host write inside it. The one
-//! exception is deliberate and documented: [`dry_run_flag`] is honoured only
-//! on a live ISO, because on a real system a stray leftover file would
-//! silently turn every future install into a no-op.
+//! Target paths are the canonical paths inside the installed system. The host
+//! reaches them through [`chroot_path`]. On a live ISO, installer state can use
+//! those paths because its `/etc` and `/var/log` are disposable. On a running
+//! system, installer state goes under [`EPHEMERAL_STATE_ROOT`] so the host's
+//! existing files stay untouched. [`dry_run_flag`] is live-ISO-only to avoid a
+//! stale host file silently disabling future installs.
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
-/// Target-side (and live-ISO host-side) canonical paths. These are what the
-/// chroot hand-off and the post-install cleanup address, and they must not
-/// change: the target's copy of the configuration is read back through
-/// `--questions-file /etc/instant/install_config.toml`.
+/// Canonical target paths used by chroot re-entry and post-install cleanup.
 pub const CONFIG_FILE: &str = "/etc/instant/install_config.toml";
 pub const STATE_FILE: &str = "/etc/instant/install_state.toml";
 pub const LOG_FILE: &str = "/var/log/instantos/install.log";
 
-/// File name of the support-report upload record. Only ever written on the
-/// host, so it has no target-side path: the record describes the host's log of
-/// the run that produced it, and nothing inside the target needs it.
+/// Host-only support-report upload record.
 const UPLOAD_STATE_FILE: &str = "upload_state.toml";
 
 /// Live-ISO-only opt-in file that forces dry-run mode. See the module
@@ -47,16 +25,13 @@ pub const DRY_RUN_FLAG: &str = "/etc/instant/installdryrun";
 
 pub const CHROOT_MOUNT: &str = "/mnt";
 
-/// Host-side installer state on a running system. `tmpfs` on every
-/// distribution this project targets, so nothing here survives a reboot —
-/// which is exactly the lifetime an in-progress install needs.
+/// Temporary host-side installer state on a running system.
 pub const EPHEMERAL_STATE_ROOT: &str = "/run/ins-install";
 
 /// Host-side state directory below [`CHROOT_MOUNT`]; `tmpfs` on the live ISO.
 const LIVE_HOST_STATE_DIR: &str = "/etc/instant";
 
-/// File name of the questions file inside whichever host state directory
-/// [`host_state_dir`] selects.
+/// Questions file name in [`host_state_dir`].
 const QUESTIONS_FILE_NAME: &str = "questions.toml";
 
 /// A path inside the target, reachable from the host.
@@ -64,16 +39,8 @@ pub fn chroot_path(path: &str) -> PathBuf {
     PathBuf::from(CHROOT_MOUNT).join(path.trim_start_matches('/'))
 }
 
-/// Whether the installer may rewrite the host's own system configuration.
-///
-/// Only true on a live ISO. Inside the chroot `/etc` *is* the target's own
-/// configuration, so the answer there is always yes — the chroot-side steps
-/// (`Config`, `Bootloader`, `Post`) are supposed to write it.
-///
-/// Routed through [`crate::arch::host::HostProfile`] rather than calling
-/// `is_live_iso` directly, so the `INS_HOST_ENV` test override reaches this
-/// too. A test override that only half-applies would leave the live-ISO
-/// behaviour untestable while looking like it applied.
+/// Whether `/etc` is safe to write: inside the target chroot or on a live ISO.
+/// Uses [`crate::arch::host::HostProfile`] so test overrides apply here too.
 pub fn host_etc_is_ephemeral() -> bool {
     if super::is_chroot() {
         return true;
@@ -92,11 +59,7 @@ pub fn host_state_dir() -> PathBuf {
     }
 }
 
-/// The questions file this run reads and writes.
-///
-/// This is the *host* copy. `setup_chroot` copies it into the target as
-/// [`CONFIG_FILE`], which is the path the chroot re-entry passes to
-/// `ins arch exec --questions-file`.
+/// Host questions file, copied to [`CONFIG_FILE`] before chroot re-entry.
 pub fn host_questions_file() -> PathBuf {
     host_state_dir().join(QUESTIONS_FILE_NAME)
 }
@@ -111,11 +74,7 @@ pub fn host_upload_state_file() -> PathBuf {
     host_state_dir().join(UPLOAD_STATE_FILE)
 }
 
-/// This run's install log.
-///
-/// On a running host this is a distinct file from the source system's
-/// `install.log`, which a full install truncates: the source system's log
-/// belongs to the source system.
+/// This run's install log, separate from the running host's existing log.
 pub fn host_log_file() -> PathBuf {
     if host_etc_is_ephemeral() {
         PathBuf::from(LOG_FILE)
@@ -124,12 +83,7 @@ pub fn host_log_file() -> PathBuf {
     }
 }
 
-/// The force-dry-run opt-in file, when this host honours it.
-///
-/// `None` on a running system: a leftover file there is a real file on the
-/// source system's root, and silently turning every future install into a
-/// no-op is worse than ignoring an escape hatch nobody asked for. Use
-/// `ins arch exec --dry-run` instead.
+/// The live-ISO-only dry-run flag; use `--dry-run` on a running host.
 pub fn dry_run_flag() -> Option<PathBuf> {
     host_etc_is_ephemeral().then(|| PathBuf::from(DRY_RUN_FLAG))
 }

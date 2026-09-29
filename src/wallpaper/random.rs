@@ -387,16 +387,10 @@ async fn apply_overlay(bg_path: &Path, dir: &Path) -> Result<PathBuf> {
         let overlay = overlay_path_buf.to_string_lossy();
         let out = output_path_buf.to_string_lossy();
 
-        // Use a single modern ImageMagick command to process everything
-        // This avoids deprecated 'convert' subcommand and temporary files
-        // Logic (matching working bash implementation):
-        // 1. Load and resize background
-        // 2. Load and resize overlay, extract alpha (mask)
-        // 3. Clone BG and apply CopyOpacity with mask to create cutout, then Negate RGB to invert colors
-        // 4. Delete the mask (index 1)
-        // 5. Composite the Inverted Cutout over the original BG
+        // Composite an inverted copy of the background through the overlay's
+        // alpha mask, preserving soft edges without temporary files.
         run_magick(&[
-            // 1. Load and process Background (Dest)
+            // Background (destination)
             &bg,
             "-resize",
             &format!("{}^", resolution),
@@ -404,13 +398,13 @@ async fn apply_overlay(bg_path: &Path, dir: &Path) -> Result<PathBuf> {
             "center",
             "-extent",
             &resolution,
-            // 2. Create Inverted Background (Source)
+            // Inverted background (source)
             "(",
             "-clone",
             "0",
             "-negate",
             ")",
-            // 3. Load Overlay and create Mask (Mask)
+            // Overlay alpha (mask)
             "(",
             &overlay,
             "-background",
@@ -424,9 +418,7 @@ async fn apply_overlay(bg_path: &Path, dir: &Path) -> Result<PathBuf> {
             "-alpha",
             "extract",
             ")",
-            // 4. Composite Source over Dest using Mask
-            // This blends the Inverted BG onto the Original BG based on the mask opacity
-            // Preserves anti-aliasing and soft edges correctly
+            // Blend source over destination using the mask.
             "-compose",
             "Over",
             "-composite",

@@ -27,9 +27,7 @@ impl InstallableApp {
     }
 }
 
-// =============================================================================
 // PDF Viewers
-// =============================================================================
 
 dep!(OKULAR, "Okular", "okular");
 dep!(EVINCE, "Evince", "evince");
@@ -78,9 +76,7 @@ pub static PDF_VIEWERS: &[InstallableApp] = &[
     },
 ];
 
-// =============================================================================
 // Image Viewers
-// =============================================================================
 
 dep!(IMV, "imv", "imv");
 dep!(FEH, "feh", "feh");
@@ -122,9 +118,7 @@ pub static IMAGE_VIEWERS: &[InstallableApp] = &[
     },
 ];
 
-// =============================================================================
 // Video Players
-// =============================================================================
 
 dep!(VLC, "VLC", "vlc");
 dep!(MPV, "mpv", "mpv");
@@ -165,9 +159,7 @@ pub static VIDEO_PLAYERS: &[InstallableApp] = &[
     },
 ];
 
-// =============================================================================
 // Text Editors
-// =============================================================================
 
 dep!(GEDIT, "gedit", "gedit");
 dep!(KATE, "Kate", "kate");
@@ -209,9 +201,7 @@ pub static TEXT_EDITORS: &[InstallableApp] = &[
     },
 ];
 
-// =============================================================================
 // GTK Themes
-// =============================================================================
 
 pub static ADWAITA_DARK: Dependency = Dependency {
     name: "Adwaita (GNOME default)",
@@ -330,9 +320,7 @@ pub static GTK_THEMES: &[InstallableApp] = &[
     },
 ];
 
-// =============================================================================
 // GTK Icon Themes
-// =============================================================================
 
 pub static ADWAITA_ICON_THEME: Dependency = Dependency {
     name: "Adwaita Icons",
@@ -407,9 +395,7 @@ pub static GTK_ICON_THEMES: &[InstallableApp] = &[
     },
 ];
 
-// =============================================================================
 // File Managers
-// =============================================================================
 
 dep!(NAUTILUS, "Nautilus", "nautilus");
 dep!(DOLPHIN, "Dolphin", "dolphin");
@@ -457,9 +443,7 @@ pub static FILE_MANAGERS: &[InstallableApp] = &[
     },
 ];
 
-// =============================================================================
 // Web Browsers (using legacy packages for now)
-// =============================================================================
 
 pub static FIREFOX: Dependency = Dependency {
     name: "Firefox",
@@ -520,9 +504,7 @@ pub static WEB_BROWSERS: &[InstallableApp] = &[
     },
 ];
 
-// =============================================================================
 // Archive Managers
-// =============================================================================
 
 dep!(FILE_ROLLER, "File Roller", "file-roller");
 dep!(ARK, "Ark", "ark");
@@ -558,9 +540,7 @@ pub static ARCHIVE_MANAGERS: &[InstallableApp] = &[
     },
 ];
 
-// =============================================================================
 // Install More Menu Helper
-// =============================================================================
 
 use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder};
 use crate::ui::catppuccin::{colors, hex_to_ansi_fg};

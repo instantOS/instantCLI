@@ -1,14 +1,4 @@
 //! Encryption key and recipient management operations.
-//!
-//! Sub-modules:
-//! - `generate` — key creation (`handle_init`)
-//! - `discover` — identity discovery (`discover_all_keys_info`, `get_local_public_keys`)
-//! - `authorize` — authorize / de-authorize recipients in repos
-//! - `rotate`   — re-encrypt repos with a new recipient set
-//! - `manage`   — rename, remove, lookup repos using a key
-//! - `status`   — display commands (list, status, show)
-//! - `types`    — shared types (`KeyInfo`, `KeyType`)
-//! - `util`     — internal helpers (`identities_dir`, `find_age_files`)
 
 pub(crate) mod util;
 

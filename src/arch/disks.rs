@@ -6,13 +6,8 @@ use crate::arch::engine::{DataKey, DiskPath};
 use crate::menu_utils::FzfPreview;
 use crate::preview::{PreviewId, preview_command};
 
-/// The running root filesystem device, as a validated device path.
-///
-/// The disk guard needs "no running device known" to mean "nothing to refuse"
-/// rather than an error, so a container or a namespace without `findmnt` must
-/// not stop a user from choosing a disk. `None` also covers a root that is not
-/// a block device at all (`overlay`, `tmpfs`, `UUID=…`): those cannot be
-/// confused with an install target, so there is nothing to refuse.
+/// The running root device, if it resolves to a valid device path. Container
+/// roots such as `overlay` and missing `findmnt` results yield `None`.
 pub fn root_device() -> Option<DiskPath> {
     get_root_device()
         .ok()
@@ -28,12 +23,7 @@ pub fn boot_disk() -> Option<DiskPath> {
         .and_then(|disk| DiskPath::parse(&disk).ok())
 }
 
-/// Strip the subvolume annotation `findmnt` appends to btrfs sources
-/// (`/dev/sda1[/@]`), so every caller sees a bare device path.
-///
-/// Done here, at the boundary where `findmnt` output enters the program:
-/// leaving the annotation attached means every comparison site has to remember
-/// to normalise, and forgetting to is exactly the bug this guard must not have.
+/// Strip btrfs subvolume annotations from `findmnt` sources (`/dev/sda1[/@]`).
 fn bare_device(value: &str) -> &str {
     value.split('[').next().unwrap_or(value).trim()
 }
@@ -58,21 +48,15 @@ pub fn get_root_device() -> Result<Option<String>> {
 
 /// Get the physical disk that contains the current root filesystem.
 ///
-/// Falls back to deriving the disk from the root device's own name when
-/// `lsblk` cannot place it. `lsblk` only reports devices the current mount
-/// namespace exposes, so inside a container it can omit the very disk the
-/// system booted from — and a `None` here makes the disk guard *fail open*,
-/// which is the wrong direction for the one check standing between a running
-/// system and its own destruction. Deriving `vda1` → `vda` is correct
-/// whenever it can be done at all, so it is preferred over reporting nothing.
+/// Falls back to the root device's partition name when `lsblk` cannot see its
+/// parent disk, as can happen in a mount namespace. Returning `None` there
+/// would leave the running-disk guard without a disk to refuse.
 pub fn get_boot_disk() -> Result<Option<String>> {
-    // First, get the root filesystem device
     let root_device = match get_root_device()? {
         Some(device) => device,
         None => return Ok(None),
     };
 
-    // Get the full block device hierarchy as JSON to trace back to physical disk
     let lsblk_output = Command::new("lsblk").args(["-J"]).output()?;
     if !lsblk_output.status.success() {
         return Ok(None);
@@ -80,31 +64,25 @@ pub fn get_boot_disk() -> Result<Option<String>> {
 
     let lsblk_json: Value = serde_json::from_slice(&lsblk_output.stdout)?;
 
-    // Function to recursively find the physical disk for a given device
     fn find_physical_disk(blockdevices: &[Value], target_name: &str) -> Option<String> {
         for device in blockdevices {
             let name = device.get("name")?.as_str()?;
             let device_type = device.get("type")?.as_str()?;
 
-            // Convert name to full path if it doesn't contain /
             let device_path = if name.contains('/') {
                 name.to_string()
             } else {
                 format!("/dev/{}", name)
             };
 
-            // If this device matches our target, trace it up to the physical disk
             if device_path == target_name || name == target_name.trim_start_matches("/dev/") {
                 if device_type == "disk" {
                     return Some(device_path);
                 }
 
-                // If it's not a disk, look for parent by checking children in reverse
-                // We need to find which disk contains this device
                 return find_parent_disk(blockdevices, name);
             }
 
-            // Recursively check children
             if let Some(children) = device.get("children").and_then(|c| c.as_array())
                 && let Some(disk) = find_physical_disk(children, target_name)
             {
@@ -164,19 +142,12 @@ pub fn get_boot_disk() -> Result<Option<String>> {
         return Ok(Some(disk));
     }
 
-    // `lsblk` could not place the root device — a namespace that hides the
-    // boot disk, or a logical volume with no visible parent. Derive the disk
-    // from the partition name instead, so the guard keeps refusing the
-    // running disk rather than silently allowing it.
+    // `lsblk` can miss a parent disk in a mount namespace.
     Ok(disk_of_partition(&root_device))
 }
 
-/// The whole disk a partition path belongs to, if the name carries a
-/// partition suffix.
-///
-/// Handles both schemes: `/dev/sda2` → `/dev/sda` and `/dev/nvme0n1p2` →
-/// `/dev/nvme0n1`. Returns `None` when the name is already a whole disk, so a
-/// caller never mistakes one for another.
+/// Infer a parent disk from a partition suffix, such as `/dev/sda2` or
+/// `/dev/nvme0n1p2`. Returns `None` when no suffix is recognized.
 fn disk_of_partition(device: &str) -> Option<String> {
     let (parent, name) = device.rsplit_once('/')?;
     if let Some(index) = name.rfind('p')
@@ -195,12 +166,8 @@ fn disk_of_partition(device: &str) -> Option<String> {
     None
 }
 
-/// Whether a device name follows the NVMe whole-disk pattern (`nvme0n1`).
-///
-/// This one family needs its own rule: its partitions are `p`-separated
-/// (`nvme0n1p1`), so a bare numeric suffix after an NVMe name is a *different
-/// disk* — `nvme0n11` is disk 11, not a partition of disk 1. Getting this
-/// wrong reports a disk as "in use" because of an unrelated second NVMe drive.
+/// Whether this is an NVMe whole-disk name (`nvme0n1`). Its partitions use
+/// `p`, so `nvme0n11` is a different disk, not a partition of `nvme0n1`.
 fn is_nvme_whole_disk(name: &str) -> bool {
     let base = name
         .trim_end_matches('/')
@@ -216,15 +183,8 @@ fn is_nvme_whole_disk(name: &str) -> bool {
 
 /// Whether `source` is `disk` itself or one of its partitions.
 ///
-/// A plain `starts_with` is wrong here, and dangerously so off the live ISO:
-/// asking "is this mount on my disk?" of the source `/dev/sdaa1` matched the
-/// disk `/dev/sda`, and a machine with a second disk whose name merely
-/// *extends* the first would report a spurious "disk in use" and abort the
-/// install.
-///
-/// The three naming schemes in play are all covered: numbered partitions
-/// (`/dev/sda1`), `p`-separated ones (`/dev/nvme0n1p1`, `/dev/md0p2`), and
-/// whole disks that must not be mistaken for a partition of a longer name.
+/// Checks partition suffixes so `/dev/sdaa1` is not mistaken for a partition
+/// of `/dev/sda`. Handles numbered and `p`-separated partition names.
 pub fn is_partition_of(disk: &str, source: &str) -> bool {
     let disk = disk.trim_end_matches('/');
     let Some(suffix) = source.strip_prefix(disk) else {
@@ -288,10 +248,8 @@ pub fn get_swap_partitions(disk: &str) -> Result<Vec<String>> {
 
 /// Refuse to take a disk the running system depends on.
 ///
-/// Called before *any* `umount`/`swapoff`, from both the wizard and the
-/// execution layer, so a hand-authored configuration cannot route around the
-/// question step: `umount /` is the operation that would unmount the
-/// filesystem the installer is executing from.
+/// Called before `umount` or `swapoff`, including for hand-authored plans that
+/// bypass the wizard's disk question.
 pub fn ensure_not_running_disk(disk: &str) -> Result<()> {
     // A target that is not a device path cannot be the running device, so
     // there is nothing to refuse.

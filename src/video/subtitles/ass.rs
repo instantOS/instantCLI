@@ -113,19 +113,9 @@ impl AssStyle {
     /// * `has_overlays` - If true, position subtitles lower to avoid overlap with overlays
     pub fn for_reels(has_overlays: bool) -> Self {
         let mut style = Self::catppuccin_mocha();
-        // Optimize for Reels/TikTok vertical layout (1080x1920)
-        // The video content (assuming 16:9 source) is scaled to width 1080.
-        // Height = 1080 * (9/16) ≈ 608px.
-        // The video is positioned with a 10% top offset (from ffmpeg_compiler).
-        // Top padding ≈ 1920 * (1 - 608/1920) * 0.1 ≈ 131px.
-        // Video bottom ≈ 131 + 608 = 739px.
-        // Empty space below ≈ 1920 - 739 = 1181px.
-        // Center of empty space from bottom ≈ 1181 / 2 = 590px.
+        // A 16:9 source leaves space below it in a 9:16 frame. Place subtitles
+        // there, lower when overlays are present.
         style.font_size = 70; // Larger for mobile visibility
-        // Position based on overlay presence:
-        // - No overlay: margin_v = 560 (centered in empty space below video)
-        // - With overlay: margin_v = 850 (further down to avoid overlay)
-        //   Overlay is centered at ~30% from top, subtitles at bottom
         style.margin_v = if has_overlays { 850 } else { 560 };
         style
     }
@@ -135,8 +125,6 @@ impl AssStyle {
     /// Uses Catppuccin Mocha theme with the same karaoke animations as reels.
     pub fn for_standard() -> Self {
         let mut style = Self::catppuccin_mocha();
-        // For standard video, position at the bottom with comfortable margin
-        // Similar to typical movie/YouTube subtitle positioning
         style.font_size = 52; // Standard size for desktop viewing
         style.margin_v = 60; // Standard bottom margin for subtitles
         style

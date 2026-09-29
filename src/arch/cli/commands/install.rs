@@ -81,13 +81,7 @@ fn ensure_interactive_internet() -> Result<bool> {
     Ok(true)
 }
 
-/// The refusal shown on a host the installer does not support yet.
-///
-/// Two hosts are supported and they are not equivalent: the live ISO can
-/// target any disk including the one it booted from, a running Arch or
-/// instantOS system can only target a different one. A single "only
-/// supported on Arch" sentence conveys neither, so both are named along with
-/// the command that gets the user to a supported host.
+/// Explain supported hosts and the disk restriction on running systems.
 fn unsupported_host_message(distro: &str) -> String {
     format!(
         "instantOS can be installed from the live ISO or from a running Arch Linux or \
@@ -138,11 +132,7 @@ pub(super) async fn handle_install_command(debug: bool) -> Result<()> {
     // Check architecture
     let system_info = crate::arch::engine::SystemInfo::detect();
 
-    // Check distro. Installing from a running Arch Linux or instantOS system
-    // is supported, so this is the only remaining host restriction; the
-    // refusal has to be accurate, because the two supported cases behave very
-    // differently and a user who reads "only supported on Arch" cannot tell
-    // whether a live session is required.
+    // Check whether this host can run the installer.
     let profile = crate::arch::host::HostProfile::detect().unwrap_or_else(|error| {
         eprintln!("Warning: could not classify this system: {error:#}");
         crate::arch::host::HostProfile::ForeignDistro
@@ -213,11 +203,6 @@ mod tests {
 
     #[test]
     fn the_distro_refusal_names_both_supported_hosts() {
-        // The refusal stays, but it has to be accurate. A user on Ubuntu has
-        // to learn that the live ISO is one way out and an existing Arch
-        // install is the other — otherwise "only supported on Arch" reads as
-        // though nothing works from a live session either, and there is no
-        // command to copy.
         let rendered = unsupported_host_message("Ubuntu");
 
         assert!(rendered.contains("Ubuntu"));

@@ -1,14 +1,4 @@
 //! Parsing and representation of video markdown documents.
-//!
-//! Sub-modules:
-//! - `frontmatter` — splitting front matter from body
-//! - `markdown`    — building markdown from transcript cues (reverse direction)
-//! - `types`       — core document types (`VideoDocument`, `DocumentBlock`, etc.)
-//! - `metadata`    — YAML front matter parsing into `VideoMetadata`
-//! - `body`        — markdown body parsing (state machines for paragraphs, headings, etc.)
-//! - `time`        — timestamp/time-range parsing
-//! - `reference`   — segment reference parsing (`source@time-range`)
-//! - `util`        — internal helpers (html comment stripping, line map, etc.)
 
 pub mod frontmatter;
 pub mod markdown;
@@ -21,7 +11,6 @@ pub(crate) mod transform;
 pub(crate) mod types;
 pub(crate) mod util;
 
-// Re-export public types for external callers
 pub use types::{
     BrollBlock, DocumentBlock, HeadingBlock, MusicDirective, SegmentBlock, SegmentKind,
     UnhandledBlock, VideoDocument, VideoMetadata, VideoSource,

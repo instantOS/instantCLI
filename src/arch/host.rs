@@ -1,21 +1,9 @@
 //! Where the installer is running, and what that permits.
 //!
-//! Two properties of the host decide where the installer may write and which
-//! disks it may touch:
-//!
-//! * [`HostProfile`] — a live ISO's `/etc` is throwaway RAM, so the running
-//!   system's pacman configuration can be rewritten freely. On a running Arch
-//!   or instantOS system the same write reconfigures the machine the user is
-//!   still logged into.
-//! * [`RunningDisk`] — the disk the machine is executing from, which is never
-//!   a valid install target. Repartitioning it destroys the filesystem the
-//!   installer is itself running from.
-//!
-//! Both are resolved from the machine, never from wizard answers, so a
-//! hand-authored configuration cannot talk the installer into treating the
-//! running disk as free. [`HOST_ENV`] forces either value for tests (the shell
-//! e2e suite sets it the same way [`crate::arch::offline::OFFLINE_ENV`] forces
-//! offline mode).
+//! [`HostProfile`] distinguishes a disposable live ISO from a running system,
+//! whose configuration must remain untouched. [`RunningDisk`] prevents the
+//! installer from repartitioning its own host disk. Both come from the machine,
+//! not wizard answers; [`HOST_ENV`] overrides detection in tests.
 
 use anyhow::{Context, Result, bail};
 
@@ -77,13 +65,8 @@ impl HostProfile {
         }
     }
 
-    /// Whether the host's own system configuration may be rewritten.
-    ///
-    /// Only a live ISO qualifies: its `/etc` is the archiso cowspace, so a
-    /// changed mirrorlist disappears on reboot. On a running system the same
-    /// write silently reconfigures the machine the user is still logged into,
-    /// so the installer must confine its writes to the target mount and to
-    /// its own ephemeral state.
+    /// Whether the host's own configuration may be rewritten. Only a live
+    /// ISO qualifies; a running system's `/etc` must remain untouched.
     pub fn etc_is_ephemeral(self) -> bool {
         matches!(self, Self::LiveIso)
     }

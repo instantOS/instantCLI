@@ -1,17 +1,8 @@
-//! The pacman this installer talks to, and the operations it performs on it.
+//! Pacman operations bound to a specific sysroot and configuration.
 //!
-//! * [`Pacman`] names a pacman installation — its configuration, its
-//!   mirrorlist, the system it belongs to — so the files about to be rewritten
-//!   are always named at the call site. Which file gets rewritten is a fact
-//!   about the pacman being operated on, not about the caller.
-//! * [`PackageSource`] decides *which* pacman a run installs from, separating
-//!   the live ISO's in-place behaviour from leaving a running system untouched.
-//!
-//! Which pacman to use is a matter of *process* scope, not call scope: a
-//! `Config`/`Bootloader`/`Post` step only reaches the filesystem by re-executing
-//! itself through `arch-chroot`, at which point [`Pacman::current`] is the
-//! target's. A run that must leave the machine it is running on untouched
-//! passes [`Pacman::for_target`] instead.
+//! [`Pacman::current`] refers to the process's system, including the target
+//! after chroot re-entry. [`PackageSource`] selects an isolated configuration
+//! when installing from a running host whose pacman files must stay untouched.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -51,12 +42,8 @@ impl Pacman {
         Self::for_target("/", "/etc/pacman.conf", "/etc/pacman.d/mirrorlist")
     }
 
-    /// The pacman belonging to `sysroot`, configured by `conf` and reading
-    /// mirrors from `mirrorlist`.
-    ///
-    /// The `[instant]` mirrorlist is placed beside `conf` the way pacman itself
-    /// resolves it: `Include = /etc/pacman.d/…` is relative to the
-    /// configuration's directory.
+    /// Pacman for `sysroot`, using `conf` and `mirrorlist`. The `[instant]`
+    /// mirrorlist is placed beside `conf` for its relative `Include` path.
     pub fn for_target(
         sysroot: impl Into<PathBuf>,
         conf: impl Into<PathBuf>,
@@ -88,14 +75,8 @@ impl Pacman {
         self.sysroot.join("var/cache/pacman/pkg")
     }
 
-    /// The command that empties this pacman's package cache.
-    ///
-    /// Uses `--sysroot` rather than `--root`, which pacman(8) documents as
-    /// *unsuitable* for operating on a mounted guest system, with `--sysroot`
-    /// given for exactly that. The target's own `pacman.conf` is used, not this
-    /// value's: cleaning the target's cache should follow the target's
-    /// configuration, and a config from outside the sysroot would be re-rooted
-    /// by pacman anyway.
+    /// Empty this sysroot's cache. Pacman requires `--sysroot` for a mounted
+    /// guest and reads the guest's configuration from there.
     pub fn clean_cache_command(&self) -> Command {
         let mut cmd = Command::new("pacman");
         cmd.arg("--sysroot").arg(&self.sysroot);
@@ -103,13 +84,8 @@ impl Pacman {
         cmd
     }
 
-    /// Installs packages into this pacman's system with a retry mechanism
-    /// similar to `pacloop`.
-    ///
-    /// Use [`Pacman::current`] from inside the chroot — where those files are
-    /// the *target's* and refreshing them is the point — or on a throwaway live
-    /// session. A run that must leave the source system alone passes its own
-    /// `Pacman`, and every mirror refresh below then lands on that one.
+    /// Install packages with retries. Mirror refreshes use this pacman's
+    /// configuration, so callers on a running host must pass an isolated one.
     pub fn install(&self, packages: &[&str], executor: &dyn CommandRunner) -> Result<()> {
         if packages.is_empty() {
             return Ok(());
@@ -118,8 +94,7 @@ impl Pacman {
         let offline = crate::arch::offline::mode().is_offline();
 
         let mut attempt = 0;
-        // We use a file to track if we've refreshed the keyring, similar to the bash script
-        // This persists across retries within the same session if the file remains.
+        // Remember keyring refreshes across retries.
         let keyring_refreshed_path = Path::new("/tmp/instant_arch_keyring_refreshed");
 
         loop {

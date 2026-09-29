@@ -1,27 +1,11 @@
 //! How the installer reaches the selected package mirrors.
 //!
-//! `pacstrap` populates the target by running `pacman -r <target>` on the
-//! host, which means it reads the **host's** pacman configuration. It then
-//! copies the host's `/etc/pacman.d/mirrorlist` into the target, because the
-//! `pacman` package it just installed ships an all-commented placeholder list.
-//!
-//! Together those two facts explain a tempting approach: to give the target the
-//! user's chosen region, write the selected mirrorlist to the host's
-//! `/etc/pacman.d/mirrorlist` and let `pacstrap` copy it across. On the live ISO
-//! that is free — the ISO's `/etc` is the archiso cowspace — and on a running
-//! Arch or instantOS system it silently reconfigures the machine the user is
-//! installing from.
-//!
-//! [`PackageSource::Isolated`] is the alternative: the selected mirrorlist
-//! and a pacman configuration derived from it live in the installer's own
-//! ephemeral state directory, `pacstrap` is pointed at that configuration
-//! (`-C`) and told not to copy the host's list (`-M`), and the selected list
-//! is written into the target directly. The host's `pacman.conf` and
-//! `pacman.d/mirrorlist` are then byte-identical before and after.
-//!
-//! Inside the chroot the in-place variant is always correct: there `/etc` *is*
-//! the target's own configuration, and rewriting it is exactly what the
-//! `Config` and `Post` steps are for.
+//! `pacstrap` normally reads the host's pacman configuration and copies its
+//! mirrorlist into the target. That is safe on a disposable live ISO but would
+//! reconfigure a running host. [`PackageSource::Isolated`] instead uses files
+//! under the installer's temporary state directory (`pacstrap -C -M`) and
+//! writes the selected mirrorlist into the target. Inside the chroot, `/etc`
+//! belongs to the target, so in-place writes are safe.
 
 use std::path::{Path, PathBuf};
 
