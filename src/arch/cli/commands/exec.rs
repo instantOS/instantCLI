@@ -20,6 +20,11 @@ pub(super) async fn handle_exec_command(
         // destroy the log of the machine the user is installing from.
         let path = crate::arch::execution::paths::host_log_file();
         crate::arch::execution::paths::ensure_host_state_dir()?;
+        // Live media keeps logs under /var/log rather than the state directory;
+        // that directory need not exist on a stock Arch ISO.
+        if let Some(parent) = path.parent() {
+            crate::arch::execution::paths::ensure_state_dir(parent)?;
+        }
         // A full installation gets a fresh log so an upload cannot include
         // output left behind by an earlier installation attempt. Explicit
         // single-step execution continues appending to the current attempt.
