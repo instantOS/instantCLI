@@ -157,6 +157,22 @@ impl FzfSelectable for DiskSelection {
 pub struct DiskQuestion;
 
 impl DiskQuestion {
+    fn validate_running_relation(
+        target: &DiskPath,
+        in_chroot: bool,
+        conflict: Option<crate::arch::host::TargetRelation>,
+    ) -> Result<(), String> {
+        // Chroot re-entry validates the same answers after / has become the
+        // target. Partitioning still has its own guard against that disk.
+        if !in_chroot && let Some(conflict) = conflict {
+            return Err(crate::arch::host::running_disk_message(
+                target.as_str(),
+                conflict,
+            ));
+        }
+        Ok(())
+    }
+
     fn prompt_custom_disk_path(
         &self,
         context: &InstallContext,
@@ -260,20 +276,15 @@ impl WizardStep for DiskQuestion {
     fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
         let target = DiskPath::parse(answer).map_err(|error| error.to_string())?;
 
-        // Refuse the running root device and the boot disk. This is the single
-        // biggest blocker for installing from a running system and stays a hard
-        // refusal; the message names both ways forward so it does not read as
-        // though installing from a running system were impossible.
-        if let Some(conflict) = crate::arch::host::running_disk_conflict(
-            target.as_str(),
-            crate::arch::disks::root_device().as_ref(),
-            crate::arch::disks::boot_disk().as_ref(),
-        ) {
-            return Err(crate::arch::host::running_disk_message(
+        Self::validate_running_relation(
+            &target,
+            crate::arch::execution::is_chroot(),
+            crate::arch::host::running_disk_conflict(
                 target.as_str(),
-                conflict,
-            ));
-        }
+                crate::arch::disks::root_device().as_ref(),
+                crate::arch::disks::boot_disk().as_ref(),
+            ),
+        )?;
 
         // Note: mounted partitions and swap are now handled interactively in ask()
         // with an offer to automatically prepare the disk
@@ -567,6 +578,21 @@ mod tests {
                 .validate(&context, "/dev/../etc/passwd")
                 .is_err()
         );
+    }
+
+    #[test]
+    fn chroot_reentry_accepts_the_target_but_host_validation_still_refuses_it() {
+        let target = DiskPath::parse("/dev/vdb").unwrap();
+        for conflict in [
+            crate::arch::host::TargetRelation::RootDevice,
+            crate::arch::host::TargetRelation::BootDisk,
+        ] {
+            assert!(DiskQuestion::validate_running_relation(&target, true, Some(conflict)).is_ok());
+            assert!(
+                DiskQuestion::validate_running_relation(&target, false, Some(conflict)).is_err()
+            );
+        }
+        assert!(DiskQuestion::validate_running_relation(&target, false, None).is_ok());
     }
 
     #[test]
