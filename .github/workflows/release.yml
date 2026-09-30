@@ -149,21 +149,12 @@ jobs:
         with:
           targets: ${{ matrix.target }}
           components: llvm-tools-preview
-      - name: Install zig
+      - name: Install Zig
         if: matrix.kind == 'zig'
-        env:
-          ZIG_VERSION: 0.15.1
-          ZIG_SHASUM: c61c5da6edeea14ca51ecd5e4520c6f4189ef5250383db33d01848293bfafe05
-        run: |
-          set -euo pipefail
-          tarball="zig-x86_64-linux-${ZIG_VERSION}.tar.xz"
-          curl -fsSL --retry 3 --retry-delay 5 --connect-timeout 15 --max-time 300 \
-            "https://ziglang.org/download/${ZIG_VERSION}/${tarball}" -o "/tmp/${tarball}"
-          echo "${ZIG_SHASUM}  /tmp/${tarball}" | sha256sum -c -
-          tar xf "/tmp/${tarball}" -C /opt
-          rm "/tmp/${tarball}"
-          echo "/opt/zig-x86_64-linux-${ZIG_VERSION}" >> "$GITHUB_PATH"
-          "/opt/zig-x86_64-linux-${ZIG_VERSION}/zig" version
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.15.1
+          cache-key: ${{ matrix.target }}
       - name: Install cargo-zigbuild
         if: matrix.kind == 'zig'
         uses: taiki-e/install-action@v2
