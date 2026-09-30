@@ -15,6 +15,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Other
 
+- sync PKGBUILD version
+- release v0.14.23
+- Refuse foreign source hosts before arch exec writes state or disks
+- Allow target disk answer validation during chroot re-entry
+- Create the install log directory on live media
+
+## [0.14.23](https://github.com/instantOS/instantCLI/compare/v0.14.22...v0.14.23) - 2026-09-30
+
+### Fixed
+
+- fix zig setup
+
+### Other
+
 - Refuse foreign source hosts before arch exec writes state or disks
 - Allow target disk answer validation during chroot re-entry
 - Create the install log directory on live media
