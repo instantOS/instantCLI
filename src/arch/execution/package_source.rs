@@ -641,23 +641,69 @@ mod host_write_allowlist {
     /// rewriting these is free, because its `/etc` is the archiso cowspace.
     const HOST_PACMAN_FILES: &[&str] = &["/etc/pacman.conf", "/etc/pacman.d/mirrorlist"];
 
-    #[test]
-    fn the_offline_keep_path_still_produces_a_usable_configuration() {
+    #[tokio::test]
+    async fn the_offline_keep_path_still_produces_a_usable_configuration() {
         // An offline bundle can leave the run's own mirrorlist unwritten: the
         // ISO's shipped list is already correct. `configure_host_pacman` must
         // still produce a pacstrap config in that case, or the base install
         // would read one that does not exist yet.
+        //
+        // The host's pacman files are a fixture, not this machine's: whether
+        // `/etc/pacman.d/mirrorlist` happens to be readable must not decide
+        // whether this test passes.
         let dir = tempfile::tempdir().unwrap();
-        let files =
-            PackageSourceFiles::in_directory(dir.path().to_path_buf(), HostPacman::detect());
-        let source = PackageSource::Isolated(files);
+        let root = dir.path();
+        let host_config = root.join("host-etc-pacman.conf");
+        let host_mirrorlist = root.join("host-etc-pacman.d-mirrorlist");
+        std::fs::write(&host_config, HOST_CONF).unwrap();
+        std::fs::write(&host_mirrorlist, MIRRORLIST).unwrap();
 
-        // The run's own mirrorlist does not exist yet, and the host's is
-        // unreadable on this test machine, so the failure has to name the
-        // real cause rather than a missing file the caller wrote.
+        let source = PackageSource::Isolated(PackageSourceFiles::in_directory(
+            root.join("state"),
+            HostPacman {
+                config: host_config,
+                mirrorlist: host_mirrorlist,
+            },
+        ));
+
+        // The precondition: the run's own mirrorlist was never written.
+        assert!(!source.effective_mirrorlist().exists());
+
+        source.configure_host_pacman(false).await.unwrap();
+
+        // So the host's list seeded a config `pacstrap -C` can read, and it
+        // lives in the installer's own state rather than the host's `/etc`.
+        let config = std::fs::read_to_string(source.files().unwrap().own_config()).unwrap();
+        assert!(
+            config.contains("https://mirror.de/$repo/os/$arch"),
+            "the host's mirrors must seed the derived config: {config}"
+        );
+        assert!(
+            !config.contains(HOST_MIRRORLIST),
+            "the derived config still points at the host's mirrorlist: {config}"
+        );
+    }
+
+    #[test]
+    fn a_missing_host_mirrorlist_is_reported_by_path() {
+        // The counterpart: when neither the run's own list nor the host's can
+        // be read, the error has to name the host list it fell back to, so the
+        // user is told which file is missing rather than seeing a bare
+        // "No such file or directory" for a path the caller never wrote.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let missing = root.join("absent-host-mirrorlist");
+        let source = PackageSource::Isolated(PackageSourceFiles::in_directory(
+            root.join("state"),
+            HostPacman {
+                config: root.join("host-etc-pacman.conf"),
+                mirrorlist: missing.clone(),
+            },
+        ));
+
         let error = source.installed_mirrorlist().unwrap_err().to_string();
         assert!(
-            error.contains(HOST_MIRRORLIST),
+            error.contains(&missing.display().to_string()),
             "the fallback to the host list must be reported: {error}"
         );
     }
