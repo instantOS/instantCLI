@@ -9,6 +9,8 @@ use anyhow::Result;
 #[derive(Clone, Debug)]
 pub enum WelcomeItem {
     InstallInstantOS,
+    InstallOnAnotherDrive,
+    OpenPackages,
     ConfigureNetwork,
     OpenWebsite,
     OpenSettings,
@@ -38,6 +40,14 @@ impl FzfSelectable for WelcomeItem {
             WelcomeItem::InstallInstantOS => format!(
                 "{} Install instantOS",
                 format_icon_colored(NerdFont::Package, colors::GREEN)
+            ),
+            WelcomeItem::InstallOnAnotherDrive => format!(
+                "{} Install instantOS on another drive",
+                format_icon_colored(NerdFont::Package, colors::GREEN)
+            ),
+            WelcomeItem::OpenPackages => format!(
+                "{} Package management",
+                format_icon_colored(NerdFont::Package, colors::BLUE)
             ),
             WelcomeItem::ConfigureNetwork => format!(
                 "{} Configure Network",
@@ -90,6 +100,36 @@ impl FzfSelectable for WelcomeItem {
                     "From a running system: a disk other than the one you are running from",
                 ])
                 .subtext("The wizard refuses the running disk and says so.")
+                .build(),
+            WelcomeItem::InstallOnAnotherDrive => PreviewBuilder::new()
+                .line(
+                    colors::GREEN,
+                    Some(NerdFont::Package),
+                    "Install on another drive",
+                )
+                .separator()
+                .blank()
+                .text(
+                    if crate::common::distro::OperatingSystem::detect()
+                        == crate::common::distro::OperatingSystem::InstantOS
+                    {
+                        "You are already running instantOS."
+                    } else {
+                        "You are already running an installed system."
+                    },
+                )
+                .text("Use this only to create another instantOS")
+                .text("installation on a different drive.")
+                .blank()
+                .subtext("The wizard refuses the drive you are running from.")
+                .build(),
+            WelcomeItem::OpenPackages => PreviewBuilder::new()
+                .line(colors::BLUE, Some(NerdFont::Package), "Package management")
+                .separator()
+                .blank()
+                .text("Get started by installing the applications you need.")
+                .text("Open package management settings to install")
+                .text("software and manage installed packages.")
                 .build(),
             WelcomeItem::ConfigureNetwork => PreviewBuilder::new()
                 .line(colors::RED, Some(NerdFont::Wifi), "Network Setup")
@@ -162,12 +202,8 @@ pub fn run_welcome_ui(force_live: bool, debug: bool) -> Result<()> {
     // Detect live Arch ISO session
     let is_live_session = force_live || crate::common::distro::is_live_iso();
 
-    // The installer entry point is offered on a running Arch-family system
-    // too: `ins arch install` supports installing onto a *different* disk
-    // from a running Arch Linux or instantOS system, and hiding the menu item
-    // is the only thing making that undiscoverable. Gating the *wizard's* own
-    // safety rules on the host environment is what keeps this honest, not the
-    // absence of this menu entry.
+    // Installed Arch-family systems can install instantOS onto another drive.
+    // Live sessions keep the installer as the primary welcome action.
     let offers_installer = is_live_session
         || crate::common::distro::OperatingSystem::detect()
             .in_family(&crate::common::distro::OperatingSystem::Arch);
@@ -186,21 +222,7 @@ pub fn run_welcome_ui(force_live: bool, debug: bool) -> Result<()> {
     loop {
         let has_internet = crate::common::network::check_internet();
 
-        let mut items = Vec::new();
-
-        // Add Install instantOS option wherever the installer is reachable.
-        if offers_installer {
-            items.push(WelcomeItem::InstallInstantOS);
-        }
-
-        if !has_internet {
-            items.push(WelcomeItem::ConfigureNetwork);
-        }
-
-        items.push(WelcomeItem::OpenWebsite);
-        items.push(WelcomeItem::OpenSettings);
-        items.push(WelcomeItem::DisableAutostart);
-        items.push(WelcomeItem::Close);
+        let items = welcome_items(is_live_session, offers_installer, has_internet);
 
         let initial_cursor = cursor.initial_index(&items);
         match FzfWrapper::menu()
@@ -209,8 +231,17 @@ pub fn run_welcome_ui(force_live: bool, debug: bool) -> Result<()> {
             .padded()
             .select_one()?
         {
-            crate::menu_utils::DialogOutcome::Submitted(WelcomeItem::InstallInstantOS) => {
-                cursor.update(&WelcomeItem::InstallInstantOS, &items);
+            crate::menu_utils::DialogOutcome::Submitted(
+                WelcomeItem::InstallInstantOS | WelcomeItem::InstallOnAnotherDrive,
+            ) => {
+                cursor.update(
+                    if is_live_session {
+                        &WelcomeItem::InstallInstantOS
+                    } else {
+                        &WelcomeItem::InstallOnAnotherDrive
+                    },
+                    &items,
+                );
                 if let Err(e) = install_instantos(debug) {
                     emit(
                         Level::Error,
@@ -253,6 +284,10 @@ pub fn run_welcome_ui(force_live: bool, debug: bool) -> Result<()> {
                         None,
                     );
                 }
+            }
+            crate::menu_utils::DialogOutcome::Submitted(WelcomeItem::OpenPackages) => {
+                cursor.update(&WelcomeItem::OpenPackages, &items);
+                open_package_settings()?;
             }
             crate::menu_utils::DialogOutcome::Submitted(WelcomeItem::OpenSettings) => {
                 cursor.update(&WelcomeItem::OpenSettings, &items);
@@ -430,4 +465,77 @@ fn install_instantos(debug: bool) -> Result<()> {
         .class("ins-install")
         .title("instantOS Installation")
         .launch()
+}
+
+fn welcome_items(
+    is_live_session: bool,
+    offers_installer: bool,
+    has_internet: bool,
+) -> Vec<WelcomeItem> {
+    let mut items = Vec::new();
+    if is_live_session {
+        items.push(WelcomeItem::InstallInstantOS);
+    } else {
+        items.push(WelcomeItem::OpenPackages);
+    }
+    if !has_internet {
+        items.push(WelcomeItem::ConfigureNetwork);
+    }
+    items.extend([
+        WelcomeItem::OpenWebsite,
+        WelcomeItem::OpenSettings,
+        WelcomeItem::DisableAutostart,
+    ]);
+    if !is_live_session && offers_installer {
+        items.push(WelcomeItem::InstallOnAnotherDrive);
+    }
+    items.push(WelcomeItem::Close);
+    items
+}
+
+fn open_package_settings() -> Result<()> {
+    std::process::Command::new(std::env::current_exe()?)
+        .args(["settings", "--gui", "--category", "install"])
+        .spawn()?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn live_session_prioritizes_installation() {
+        let items = welcome_items(true, true, false);
+        assert!(matches!(items[0], WelcomeItem::InstallInstantOS));
+        assert!(
+            !items
+                .iter()
+                .any(|item| matches!(item, WelcomeItem::InstallOnAnotherDrive))
+        );
+    }
+
+    #[test]
+    fn installed_session_prioritizes_packages_and_moves_installer_to_bottom() {
+        let items = welcome_items(false, true, false);
+        assert!(matches!(items[0], WelcomeItem::OpenPackages));
+        assert!(matches!(
+            items[items.len() - 2],
+            WelcomeItem::InstallOnAnotherDrive
+        ));
+        assert!(
+            !items
+                .iter()
+                .any(|item| matches!(item, WelcomeItem::InstallInstantOS))
+        );
+    }
+
+    #[test]
+    fn unsupported_system_does_not_offer_installer() {
+        let items = welcome_items(false, false, true);
+        assert!(!items.iter().any(|item| matches!(
+            item,
+            WelcomeItem::InstallOnAnotherDrive | WelcomeItem::InstallInstantOS
+        )));
+    }
 }
