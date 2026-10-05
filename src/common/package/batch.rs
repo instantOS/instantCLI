@@ -170,7 +170,7 @@ impl InstallBatch {
     /// Execute the batched installation.
     ///
     /// Installs packages in priority order (native managers first, then Flatpak, etc.)
-    pub fn execute(&self) -> Result<()> {
+    pub fn execute(&self, confirmation: Confirmation) -> Result<()> {
         if self.is_empty() {
             return Ok(());
         }
@@ -193,10 +193,14 @@ impl InstallBatch {
                 manager.display_name()
             );
 
-            FzfWrapper::builder()
-                .message(&installing_msg)
-                .title("Installing Packages")
-                .message_dialog()?;
+            if confirmation == Confirmation::Auto {
+                println!("{installing_msg}");
+            } else {
+                FzfWrapper::builder()
+                    .message(&installing_msg)
+                    .title("Installing Packages")
+                    .message_dialog()?;
+            }
 
             // Execute installation for this manager
             super::install::install_packages(*manager, packages)?;

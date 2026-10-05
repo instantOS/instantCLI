@@ -84,6 +84,56 @@ impl Pacman {
         cmd
     }
 
+    /// Bootstrap dependencies on the live ISO without requiring menus or sudo.
+    /// Online ISOs may have no sync databases and an old package keyring.
+    /// Offline sessions use only their existing databases and package cache.
+    pub(crate) fn install_live_dependencies(
+        &self,
+        packages: &[&str],
+        mode: crate::arch::offline::Mode,
+        executor: &dyn CommandRunner,
+    ) -> Result<()> {
+        if packages.is_empty() {
+            return Ok(());
+        }
+
+        println!("Preparing live ISO package dependencies...");
+        for args in [
+            ["--init"].as_slice(),
+            ["--populate", "archlinux"].as_slice(),
+        ] {
+            let mut command = Command::new("pacman-key");
+            command.args(args);
+            executor
+                .run(&mut command)
+                .context("Failed to initialize the Arch Linux keyring")?;
+        }
+
+        if !mode.is_offline() {
+            let mut command = Command::new("pacman");
+            command.arg("--config").arg(self.conf()).args([
+                "-Sy",
+                "--needed",
+                "--noconfirm",
+                "archlinux-keyring",
+            ]);
+            executor.run(&mut command).context(
+                "Failed to synchronize live ISO repositories and update the Arch Linux keyring",
+            )?;
+            return self.install(packages, executor);
+        }
+
+        let mut command = Command::new("pacman");
+        command
+            .arg("--config")
+            .arg(self.conf())
+            .args(["-S", "--needed", "--noconfirm"])
+            .args(packages);
+        executor
+            .run(&mut command)
+            .context("Failed to install live ISO dependencies from the offline package cache")
+    }
+
     /// Install packages with retries. Mirror refreshes use this pacman's
     /// configuration, so callers on a running host must pass an isolated one.
     pub fn install(&self, packages: &[&str], executor: &dyn CommandRunner) -> Result<()> {

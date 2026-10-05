@@ -227,17 +227,22 @@ fn ensure_all_with(
             });
         }
         // Show warning but continue with installable packages
-        crate::menu_utils::FzfWrapper::builder()
-            .message(format!(
-                "Some packages are unavailable:\n{}",
-                not_available
-                    .iter()
-                    .map(|(n, _)| format!("  • {}", n))
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            ))
-            .title("Warning")
-            .message_dialog()?;
+        let warning = format!(
+            "Some packages are unavailable:\n{}",
+            not_available
+                .iter()
+                .map(|(n, _)| format!("  • {}", n))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+        if confirmation == super::batch::Confirmation::Auto {
+            eprintln!("{warning}");
+        } else {
+            crate::menu_utils::FzfWrapper::builder()
+                .message(warning)
+                .title("Warning")
+                .message_dialog()?;
+        }
     }
 
     if batch.is_empty() {
@@ -250,7 +255,7 @@ fn ensure_all_with(
     }
 
     // Execute batched installation
-    match batch.execute() {
+    match batch.execute(confirmation) {
         Ok(_) => {
             // Verify installation
             let all_installed = deps
