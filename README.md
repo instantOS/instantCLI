@@ -15,6 +15,7 @@ system diagnostics, WM keychords, game saves and much more.
 - WM keychord management
 - game save management
 - notification center
+- [password and OTP management](https://instantos.io/docs/pass) via `ins pass`
 - Arch Linux Installer
 - video editing (yes, I know it's random)
 
