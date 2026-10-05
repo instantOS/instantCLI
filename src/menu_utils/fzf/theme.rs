@@ -20,10 +20,10 @@ pub(crate) fn theme_args() -> Vec<String> {
             // reliably distinct on Linux virtual consoles.
             ("bg+", AnsiColor::Blue.fzf_name()),
             ("fg", AnsiColor::BrightWhite.fzf_name()),
-            ("fg+", AnsiColor::BrightWhite.fzf_name()),
+            ("fg+", AnsiColor::Black.fzf_name()),
             ("preview-bg", AnsiColor::Black.fzf_name()),
             ("hl", AnsiColor::Yellow.fzf_name()),
-            ("hl+", AnsiColor::Yellow.fzf_name()),
+            ("hl+", AnsiColor::Black.fzf_name()),
             ("prompt", AnsiColor::BrightWhite.fzf_name()),
             ("pointer", AnsiColor::BrightWhite.fzf_name()),
             ("header", AnsiColor::White.fzf_name()),
@@ -74,7 +74,9 @@ pub(crate) fn theme_args() -> Vec<String> {
     );
     if console_mode {
         args.push("--highlight-line".to_string());
-        args.push("--color=fg+:bold,hl+:bold".to_string());
+        // Bold can promote black to bright-black on a Linux console,
+        // reducing contrast against the Catppuccin blue selection.
+        args.push("--color=hl+:underline".to_string());
     }
     args
 }
