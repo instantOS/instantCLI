@@ -64,7 +64,10 @@ pub fn format_luks(
     filesystem::wipe_signatures(&p2, executor)?;
     println!("Setting up LUKS container on {}...", p2);
     let mut cmd = Command::new("cryptsetup");
-    cmd.arg("-q").arg("luksFormat").arg(&p2).arg("-");
+    // GRUB reads unencrypted /boot; Linux unlocks the LUKS2 root container.
+    cmd.args(["-q", "luksFormat", "--type", "luks2", "--pbkdf", "argon2id"])
+        .arg(&p2)
+        .arg("-");
     executor.run_with_input(&mut cmd, password)?;
 
     if !executor.dry_run() {

@@ -125,7 +125,7 @@ fn generate_grub_config(executor: &dyn CommandRunner) -> Result<()> {
 fn configure_grub_encryption(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
     if executor.dry_run() {
         println!("[DRY RUN] Adding 'rd.luks.name=...=cryptlvm' to GRUB_CMDLINE_LINUX");
-        println!("[DRY RUN] Setting GRUB_ENABLE_CRYPTODISK=y in /etc/default/grub");
+        println!("[DRY RUN] Setting GRUB_ENABLE_CRYPTODISK=n in /etc/default/grub");
         return Ok(());
     }
 
@@ -135,13 +135,16 @@ fn configure_grub_encryption(plan: &InstallPlan, executor: &dyn CommandRunner) -
 
     let grub_default = "/etc/default/grub";
     let content = std::fs::read_to_string(grub_default)?;
-    let param = build_grub_encryption_param(&uuid);
-    let with_param = add_grub_kernel_param(&content, &param);
-    // Reactivates the stock commented `#GRUB_ENABLE_CRYPTODISK=y` default.
-    let edit = set_keys(&with_param, &[("GRUB_ENABLE_CRYPTODISK", "y")]);
-    std::fs::write(grub_default, edit.content)?;
-
+    std::fs::write(grub_default, encrypted_grub_defaults(&content, &uuid))?;
     Ok(())
+}
+
+fn encrypted_grub_defaults(content: &str, uuid: &str) -> String {
+    let param = build_grub_encryption_param(uuid);
+    let with_param = add_grub_kernel_param(content, &param);
+    // The automatic encrypted layout has a separate, unencrypted /boot.
+    // Only the Linux initramfs unlocks root; GRUB must not decrypt it.
+    set_keys(&with_param, &[("GRUB_ENABLE_CRYPTODISK", "n")]).content
 }
 
 fn luks_partition_path(plan: &InstallPlan) -> String {
@@ -214,17 +217,30 @@ pub fn configure_grub_theme(executor: &dyn CommandRunner) -> Result<()> {
         return Ok(());
     }
 
-    // Note: If encryption is used, the theme will not be visible during the initial
-    // boot phase (GRUB password prompt) because /usr is on the encrypted partition.
-    let theme_path = "/usr/share/grub/themes/instantos/theme.txt";
-    if !std::path::Path::new(theme_path).is_file() {
+    let source = std::path::Path::new("/usr/share/grub/themes/instantos");
+    if !source.join("theme.txt").is_file() {
         println!("GRUB theme not installed yet; skipping theme configuration.");
         return Ok(());
     }
 
+    // Package assets live on root, like kernel sources. Stage the complete
+    // theme and fonts onto /boot so GRUB never needs the encrypted root.
+    let theme_path = "/boot/grub/themes/instantos/theme.txt";
+    stage_grub_assets(
+        source,
+        std::path::Path::new("/boot/grub"),
+        std::path::Path::new("/usr/share/grub/unicode.pf2"),
+    )?;
+
     let content = std::fs::read_to_string(grub_default)?;
 
-    let edit = set_keys(&content, &[("GRUB_THEME", &format!("\"{theme_path}\""))]);
+    let edit = set_keys(
+        &content,
+        &[
+            ("GRUB_THEME", &format!("\"{theme_path}\"")),
+            ("GRUB_FONT", "\"/boot/grub/fonts/unicode.pf2\""),
+        ],
+    );
 
     // Only write if changed to ensure idempotency
     if edit.changed {
@@ -244,6 +260,38 @@ pub fn configure_grub_theme(executor: &dyn CommandRunner) -> Result<()> {
         generate_grub_config(executor)?;
     }
 
+    Ok(())
+}
+
+fn stage_grub_assets(
+    source: &std::path::Path,
+    boot_grub: &std::path::Path,
+    unicode_font: &std::path::Path,
+) -> Result<()> {
+    let destination = boot_grub.join("themes/instantos");
+    for entry in walkdir::WalkDir::new(source).follow_links(true) {
+        let entry = entry.context("Failed to read GRUB theme assets")?;
+        let target = destination.join(entry.path().strip_prefix(source)?);
+        if entry.file_type().is_dir() {
+            std::fs::create_dir_all(&target)?;
+        } else if entry.file_type().is_file() {
+            std::fs::copy(entry.path(), &target).with_context(|| {
+                format!("Failed to stage GRUB asset {}", entry.path().display())
+            })?;
+        }
+    }
+    let fonts = boot_grub.join("fonts");
+    std::fs::create_dir_all(&fonts)?;
+    std::fs::copy(unicode_font, fonts.join("unicode.pf2"))
+        .context("Failed to stage the GRUB console font onto /boot")?;
+    // Existing theme packages install their DejaVu fonts here rather than
+    // alongside theme.txt. GRUB's theme loader discovers fonts in the theme directory.
+    for entry in std::fs::read_dir(fonts)? {
+        let entry = entry?;
+        if entry.path().extension().is_some_and(|ext| ext == "pf2") {
+            std::fs::copy(entry.path(), destination.join(entry.file_name()))?;
+        }
+    }
     Ok(())
 }
 
@@ -303,6 +351,48 @@ fn add_grub_kernel_param(content: &str, param: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn encrypted_root_is_unlocked_by_linux_not_grub() {
+        let content = "GRUB_ENABLE_CRYPTODISK=y\nGRUB_CMDLINE_LINUX=\"\"\n";
+        let updated = encrypted_grub_defaults(content, "test-uuid");
+        assert!(updated.contains("GRUB_ENABLE_CRYPTODISK=n"));
+        assert!(updated.contains("rd.luks.name=test-uuid=cryptlvm"));
+        assert!(updated.contains("root=/dev/mapper/instantOS-root"));
+        assert_eq!(encrypted_grub_defaults(&updated, "test-uuid"), updated);
+    }
+
+    #[test]
+    fn stages_all_theme_assets_and_fonts_outside_encrypted_root() {
+        let fixture = tempfile::tempdir().unwrap();
+        let source = fixture.path().join("usr/share/grub/themes/instantos");
+        let boot_grub = fixture.path().join("boot/grub");
+        std::fs::create_dir_all(source.join("icons")).unwrap();
+        std::fs::write(source.join("theme.txt"), "desktop-image: background.jpg").unwrap();
+        std::fs::write(source.join("background.jpg"), b"background").unwrap();
+        std::fs::write(source.join("icons/linux.png"), b"icon").unwrap();
+        let unicode = fixture.path().join("unicode.pf2");
+        std::fs::write(&unicode, b"unicode").unwrap();
+        std::fs::create_dir_all(boot_grub.join("fonts")).unwrap();
+        std::fs::write(boot_grub.join("fonts/dejavu_14.pf2"), b"dejavu").unwrap();
+        stage_grub_assets(&source, &boot_grub, &unicode).unwrap();
+        // After root becomes inaccessible, every referenced asset is still on /boot.
+        std::fs::remove_dir_all(&source).unwrap();
+        let theme = boot_grub.join("themes/instantos");
+        for asset in [
+            "theme.txt",
+            "background.jpg",
+            "icons/linux.png",
+            "dejavu_14.pf2",
+            "unicode.pf2",
+        ] {
+            assert!(theme.join(asset).is_file(), "Missing {asset}");
+        }
+        assert_eq!(
+            std::fs::read(boot_grub.join("fonts/unicode.pf2")).unwrap(),
+            b"unicode"
+        );
+    }
 
     #[test]
     fn test_add_grub_param() {
