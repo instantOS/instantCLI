@@ -212,7 +212,11 @@ pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary 
         .field_indented("Keymap", &keymap)
         .field_indented(
             "TTY font",
-            &answer_or(context, StepId::ConsoleFont, "default8x16"),
+            &crate::arch::console_font::answer_label(&answer_or(
+                context,
+                StepId::ConsoleFont,
+                "default8x16",
+            )),
         )
         .blank()
         .line(colors::TEAL, Some(NerdFont::HardDrive), "Storage Plan")

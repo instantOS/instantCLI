@@ -459,7 +459,12 @@ fn build_support_report(
             || (scope == UploadScope::InstallLogAndSystemDetails
                 && id.answer_privacy() == AnswerPrivacy::SystemDetail);
         if include {
-            writeln!(report, "{id:?} = {answer:?}")?;
+            let display = if *id == crate::arch::engine::StepId::ConsoleFont {
+                crate::arch::console_font::answer_label(answer)
+            } else {
+                answer.clone()
+            };
+            writeln!(report, "{id:?} = {display:?}")?;
         }
     }
 

@@ -161,7 +161,7 @@ impl FzfSelectable for ReviewItem {
                 is_sensitive,
                 ..
             } => {
-                let display_answer = display_answer(answer, *is_sensitive);
+                let display_answer = display_step_answer(*id, answer, *is_sensitive);
                 let truncated = truncate_answer(&display_answer);
                 format!(
                     "{} {id:?}: {truncated}",
@@ -190,7 +190,7 @@ impl FzfSelectable for ReviewItem {
                 is_sensitive,
                 ..
             } => {
-                let answer = display_answer(answer, *is_sensitive);
+                let answer = display_step_answer(*id, answer, *is_sensitive);
                 let mut builder =
                     PreviewBuilder::new().header(NerdFont::Question, &format!("{id:?}"));
                 if !description.is_empty() {
@@ -262,7 +262,7 @@ impl FzfSelectable for AdvancedOption {
                 Some(answer) => format!(
                     "{} {id:?} (Current: {})",
                     NerdFont::Gear,
-                    display_answer(answer, *is_sensitive)
+                    display_step_answer(*id, answer, *is_sensitive)
                 ),
                 None => format!("{} {id:?}", NerdFont::Gear),
             },
@@ -287,9 +287,10 @@ impl FzfSelectable for AdvancedOption {
                     builder = builder.subtext(description);
                 }
                 if let Some(answer) = answer {
-                    builder = builder
-                        .blank()
-                        .field("Current Answer", &display_answer(answer, *is_sensitive));
+                    builder = builder.blank().field(
+                        "Current Answer",
+                        &display_step_answer(*id, answer, *is_sensitive),
+                    );
                 }
                 builder.build()
             }
@@ -448,6 +449,14 @@ fn abort_preview() -> FzfPreview {
         .build()
 }
 
+fn display_step_answer(id: StepId, answer: &str, is_sensitive: bool) -> String {
+    if id == StepId::ConsoleFont && !is_sensitive {
+        crate::arch::console_font::answer_label(answer)
+    } else {
+        display_answer(answer, is_sensitive)
+    }
+}
+
 fn display_answer(answer: &str, is_sensitive: bool) -> String {
     if is_sensitive {
         "******".to_string()
@@ -468,6 +477,26 @@ fn truncate_answer(answer: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{display_answer, truncate_answer};
+
+    #[test]
+    fn console_font_reviews_show_name_without_embedded_font_data() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(
+            directory.path().join("custom.psf"),
+            crate::arch::console_font::tests::psf1(),
+        )
+        .unwrap();
+        let font = crate::arch::console_font::discover(directory.path())
+            .unwrap()
+            .into_iter()
+            .find(|font| font.name() == "custom")
+            .unwrap();
+        let answer = font.to_answer().unwrap();
+        assert_eq!(
+            super::display_step_answer(crate::arch::engine::StepId::ConsoleFont, &answer, false),
+            "custom"
+        );
+    }
 
     #[test]
     fn sensitive_answers_are_masked() {
