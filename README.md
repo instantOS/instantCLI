@@ -207,6 +207,17 @@ cargo test
 just test
 ```
 
+## Terminal icons
+
+Linux virtual consoles automatically use single-cell ASCII icon fallbacks,
+including when running tmux on a console. Status and navigation keep meaningful
+symbols (`+`, `x`, `!`, `<`, `>`); decorative icons use `*` beside their label.
+This detection is independent of `INS_COLOR_MODE`.
+
+Use `INS_ICON_MODE=ascii ins ...` to enable the fallback in any terminal without
+Nerd Fonts, or `INS_ICON_MODE=nerd ins ...` to force the original glyphs.
+Unset the variable (or use `auto`) for automatic detection.
+
 ## Menu action bindings
 
 ```sh

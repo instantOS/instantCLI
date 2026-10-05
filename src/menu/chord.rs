@@ -54,8 +54,14 @@ struct DescriptionParts<'a> {
 fn parse_description(desc: &str) -> DescriptionParts<'_> {
     let mut chars = desc.chars();
     let icon = match (chars.next(), chars.next()) {
-        // A non-ASCII glyph followed by a space is treated as the nerd-font icon.
-        (Some(first), Some(' ')) if !first.is_ascii() => Some(first),
+        // Recognize the icon prefix in both Nerd Font and ASCII console modes.
+        (Some(first), Some(' '))
+            if !first.is_ascii()
+                || (crate::ui::nerd_font::uses_ascii_icons()
+                    && "<>^v+xi?!-|#o.*~".contains(first)) =>
+        {
+            Some(first)
+        }
         _ => None,
     };
     let after_icon = match icon {

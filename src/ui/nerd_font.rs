@@ -1,3 +1,25 @@
+use std::sync::LazyLock;
+
+/// Set INS_ICON_MODE=ascii or nerd to override automatic console detection.
+static ASCII_ICONS: LazyLock<bool> = LazyLock::new(|| {
+    ascii_mode(
+        std::env::var("INS_ICON_MODE").ok().as_deref(),
+        crate::ui::catppuccin::is_linux_console(),
+    )
+});
+
+fn ascii_mode(mode: Option<&str>, linux_console: bool) -> bool {
+    match mode {
+        Some(mode) if mode.eq_ignore_ascii_case("ascii") => true,
+        Some(mode) if mode.eq_ignore_ascii_case("nerd") => false,
+        _ => linux_console,
+    }
+}
+
+pub fn uses_ascii_icons() -> bool {
+    *ASCII_ICONS
+}
+
 /// Custom NerdFont enum with carefully selected icons for InstantCLI
 ///
 /// This replaces the nerd_fonts crate with a curated set of icons that are:
@@ -301,6 +323,61 @@ pub enum NerdFont {
 }
 
 impl NerdFont {
+    /// A single-cell fallback that does not require a patched console font.
+    pub const fn ascii(&self) -> char {
+        match self {
+            Self::ArrowLeft | Self::ChevronLeft => '<',
+            Self::ArrowRight
+            | Self::ChevronRight
+            | Self::ArrowPointer
+            | Self::ArrowSubItem
+            | Self::Continue
+            | Self::Play
+            | Self::PlayCircle => '>',
+            Self::ArrowUp | Self::ChevronUp | Self::Upload | Self::CloudUpload | Self::Upgrade => {
+                '^'
+            }
+            Self::ArrowDown | Self::ChevronDown | Self::Download | Self::CloudDownload => 'v',
+            Self::Check
+            | Self::CheckCircle
+            | Self::CheckSquare
+            | Self::CheckDouble
+            | Self::SquareCheck
+            | Self::CircleCheck
+            | Self::CloudCheck
+            | Self::ShieldCheck => '+',
+            Self::Cross | Self::CrossCircle => 'x',
+            Self::Warning | Self::CloudAlert | Self::ShieldAlert => '!',
+            Self::Info | Self::InfoCircle | Self::About => 'i',
+            Self::Question | Self::Help => '?',
+            Self::Plus | Self::ToggleOn => '+',
+            Self::Minus | Self::ToggleOff => '-',
+            Self::Pause | Self::PauseCircle | Self::Pipe => '|',
+            Self::Stop | Self::CircleStop | Self::Square => '#',
+            Self::Circle | Self::Disc => 'o',
+            Self::Bullet | Self::DotFile => '.',
+            Self::Hash => '#',
+            Self::Refresh
+            | Self::Sync
+            | Self::Sync2
+            | Self::Reboot
+            | Self::BackupRestore
+            | Self::CloudSync => '~',
+            // Decorative icons retain a compact marker; the adjacent label
+            // supplies their meaning without widening menu columns.
+            _ => '*',
+        }
+    }
+
+    /// The glyph appropriate for the current terminal.
+    pub fn rendered(&self) -> char {
+        if uses_ascii_icons() {
+            self.ascii()
+        } else {
+            self.unicode()
+        }
+    }
+
     /// Get the Unicode character for this nerd font icon
     pub const fn unicode(&self) -> char {
         match self {
@@ -597,18 +674,43 @@ impl NerdFont {
 
 impl std::fmt::Display for NerdFont {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.unicode())
+        write!(f, "{}", self.rendered())
     }
 }
 
 impl From<NerdFont> for char {
     fn from(icon: NerdFont) -> Self {
-        icon.unicode()
+        icon.rendered()
     }
 }
 
 impl From<NerdFont> for String {
     fn from(icon: NerdFont) -> Self {
-        icon.unicode().to_string()
+        icon.rendered().to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn icon_mode_is_independent_of_color_mode() {
+        assert!(ascii_mode(None, true));
+        assert!(!ascii_mode(None, false));
+        assert!(ascii_mode(Some("ASCII"), false));
+        assert!(!ascii_mode(Some("nerd"), true));
+        assert!(ascii_mode(Some("auto"), true));
+    }
+
+    #[test]
+    fn console_status_and_navigation_are_distinct() {
+        assert_eq!(NerdFont::Warning.ascii(), '!');
+        assert_eq!(NerdFont::Check.ascii(), '+');
+        assert_eq!(NerdFont::Cross.ascii(), 'x');
+        assert_eq!(NerdFont::ArrowLeft.ascii(), '<');
+        assert_eq!(NerdFont::ArrowRight.ascii(), '>');
+        assert_eq!(NerdFont::Folder.ascii(), '*');
+        assert_eq!(NerdFont::ArrowLeft.unicode(), '');
     }
 }

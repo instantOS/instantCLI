@@ -167,6 +167,11 @@ pub fn color_mode() -> ColorMode {
     *DETECTED_COLOR_MODE
 }
 
+/// Whether the terminal is a Linux virtual console, independent of color overrides.
+pub fn is_linux_console() -> bool {
+    LINUX_CONSOLE_DEVICE.is_some()
+}
+
 pub fn is_console_mode() -> bool {
     color_mode() == ColorMode::Ansi16
 }
