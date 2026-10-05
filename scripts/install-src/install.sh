@@ -15,6 +15,8 @@ DRY_RUN=0
 
 # @include animation.sh
 
+# @include instantos-keyring.sh
+
 # @include environment.sh
 
 # @include releases.sh

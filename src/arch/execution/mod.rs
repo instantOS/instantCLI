@@ -16,6 +16,7 @@ pub mod pacman;
 pub mod paths;
 pub mod post;
 pub mod setup;
+pub mod signing;
 pub mod state;
 pub mod step;
 pub mod upload_state;

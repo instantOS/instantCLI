@@ -218,6 +218,20 @@ impl Pacman {
         dry_run: bool,
         offline_content: Option<&str>,
     ) -> Result<()> {
+        // This runs inside the target after chroot re-entry, or on the current
+        // system for Arch conversion and Doctor repair. Use this pacman's config.
+        let signing_conf = self.conf.clone();
+        tokio::task::spawn_blocking(move || {
+            super::signing::bootstrap(
+                &signing_conf,
+                &super::CommandExecutor {
+                    dry_run,
+                    log_file: None,
+                },
+            )
+        })
+        .await??;
+
         let conf = &self.conf;
         let instant_mirrorlist = &self.instant_mirrorlist;
 

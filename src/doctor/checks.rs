@@ -19,7 +19,7 @@ pub use completions::{ShellCompletionCheck, ZshHealthCheck};
 pub use display::{SwayDisplayCheck, SwaySetupCheck};
 pub use locale::LocaleCheck;
 pub use nerdfont::NerdFontCheck;
-pub use network::{InstantRepoCheck, InternetCheck, PacmanMirrorCheck};
+pub use network::{InstantKeyringCheck, InstantRepoCheck, InternetCheck, PacmanMirrorCheck};
 pub use security::{FaillockCheck, PolkitAgentCheck, SshAuthSockCheck};
 pub use session::SessionEnvironmentCheck;
 pub use storage::{
