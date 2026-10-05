@@ -56,3 +56,15 @@ jobs:
           ./target/debug/ins --help > /dev/null
           ./target/debug/ins --version
           echo "✓ CLI binary basic functionality works"
+  npm-packaging:
+    name: Test npm packaging and launcher
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: Test offline packaging and installation
+        run: python3 npm/test-packaging.py

@@ -273,7 +273,10 @@ async fn configure_pacman_target(executor: &dyn CommandRunner) -> Result<()> {
 
 /// Packages required for configuration steps (installed in a single batch elsewhere)
 pub fn config_package_list(plan: &InstallPlan) -> Vec<String> {
-    let mut packages = Vec::new();
+    let mut packages = vec!["kbd".to_string()];
+    if let Some(package) = plan.console_font.legacy_package() {
+        packages.push(package.to_string());
+    }
 
     if plan.storage.encryption().is_some() {
         packages.push("lvm2".to_string());
@@ -380,12 +383,34 @@ fn configure_mkinitcpio(plan: &InstallPlan, executor: &dyn CommandRunner) -> Res
 fn configure_vconsole(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
     let keymap = plan.keymap.as_str();
 
-    println!("Setting console keymap to {}", keymap);
+    let contents = format!(
+        "KEYMAP={}\nFONT={}\n",
+        keymap,
+        plan.console_font.installed_name()
+    );
+    println!(
+        "Setting console keymap to {} and font to {}",
+        keymap,
+        plan.console_font.name()
+    );
 
     if executor.dry_run() {
-        println!("[DRY RUN] echo 'KEYMAP={}' > /etc/vconsole.conf", keymap);
+        if plan.console_font.data().is_some() {
+            println!(
+                "[DRY RUN] Install selected font as /usr/share/kbd/consolefonts/ins-selected.psf"
+            );
+        }
+        println!("[DRY RUN] Write /etc/vconsole.conf:\n{contents}");
     } else {
-        std::fs::write("/etc/vconsole.conf", format!("KEYMAP={}\n", keymap))?;
+        if let Some(data) = plan.console_font.data() {
+            let directory = target_root().join("usr/share/kbd/consolefonts");
+            std::fs::create_dir_all(&directory)
+                .context("Creating target console font directory")?;
+            std::fs::write(directory.join("ins-selected.psf"), data)
+                .context("Installing selected console font")?;
+        }
+        std::fs::write(target_root().join("etc/vconsole.conf"), contents)
+            .context("Writing console keyboard and font configuration")?;
     }
 
     Ok(())
@@ -679,6 +704,46 @@ pub fn configure_plymouth(
 #[cfg(test)]
 mod tests {
     use crate::arch::execution::mock::MockRunner;
+
+    #[test]
+    fn console_configuration_persists_font_and_keymap_and_plans_font_package() {
+        let mut plan = crate::arch::engine::test_install_plan();
+        plan.console_font = crate::arch::console_font::ConsoleFont::parse("ter-v32n").unwrap();
+        super::configure_vconsole(&plan, &MockRunner::new()).unwrap();
+        let contents =
+            std::fs::read_to_string(super::target_root().join("etc/vconsole.conf")).unwrap();
+        assert_eq!(contents, "KEYMAP=us\nFONT=ter-v32n\n");
+        assert!(super::config_package_list(&plan).contains(&"terminus-font".to_string()));
+        plan.console_font = crate::arch::console_font::ConsoleFont::default();
+        assert!(super::config_package_list(&plan).contains(&"kbd".to_string()));
+    }
+
+    #[test]
+    fn selected_snapshot_is_written_to_target_without_original_package() {
+        let mut plan = crate::arch::engine::test_install_plan();
+        let directory = tempfile::tempdir().unwrap();
+        let data = crate::arch::console_font::tests::psf1();
+        std::fs::write(directory.path().join("custom.psf"), &data).unwrap();
+        plan.console_font = crate::arch::console_font::discover(directory.path())
+            .unwrap()
+            .into_iter()
+            .find(|font| font.name() == "custom")
+            .unwrap();
+        let answer = plan.console_font.to_answer().unwrap();
+        drop(directory);
+        plan.console_font = crate::arch::console_font::ConsoleFont::parse(&answer).unwrap();
+        super::configure_vconsole(&plan, &MockRunner::new()).unwrap();
+        let root = super::target_root();
+        assert_eq!(
+            std::fs::read(root.join("usr/share/kbd/consolefonts/ins-selected.psf")).unwrap(),
+            data
+        );
+        assert_eq!(
+            std::fs::read_to_string(root.join("etc/vconsole.conf")).unwrap(),
+            "KEYMAP=us\nFONT=ins-selected\n"
+        );
+        assert_eq!(super::config_package_list(&plan), ["kbd"]);
+    }
 
     #[test]
     fn test_ensure_groups_exist_commands() {

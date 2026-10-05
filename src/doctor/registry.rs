@@ -17,6 +17,7 @@ impl CheckRegistry {
         registry.register::<InternetCheck>("internet");
         registry.register::<PacmanMirrorCheck>("pacman-mirror");
         registry.register::<InstantRepoCheck>("instant-repo");
+        registry.register::<InstantKeyringCheck>("instant-keyring");
         registry.register::<LocaleCheck>("locale");
         registry.register::<NerdFontCheck>("nerd-font");
         registry.register::<PacmanCacheCheck>("pacman-cache");

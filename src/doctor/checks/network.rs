@@ -232,3 +232,67 @@ impl DoctorCheck for InstantRepoCheck {
             .await
     }
 }
+
+/// Check repository trust independently of its configuration text.
+#[derive(Default)]
+pub struct InstantKeyringCheck;
+
+#[async_trait]
+impl DoctorCheck for InstantKeyringCheck {
+    fn name(&self) -> &'static str {
+        "instantOS Package Signing Key"
+    }
+    fn id(&self) -> &'static str {
+        "instant-keyring"
+    }
+    fn check_privilege_level(&self) -> PrivilegeLevel {
+        PrivilegeLevel::Any
+    }
+    fn fix_privilege_level(&self) -> PrivilegeLevel {
+        PrivilegeLevel::Root
+    }
+
+    async fn execute(&self) -> CheckStatus {
+        let conf = match tokio::fs::read_to_string("/etc/pacman.conf").await {
+            Ok(conf) => conf,
+            Err(_) => return CheckStatus::Skipped("Pacman is not configured".into()),
+        };
+        if !conf.lines().any(|line| line.trim() == "[instant]") {
+            return CheckStatus::Skipped("instantOS repository is not configured".into());
+        }
+        match tokio::task::spawn_blocking(|| {
+            crate::arch::execution::signing::healthy(Path::new("/etc/pacman.conf"))
+        })
+        .await
+        {
+            Ok(Ok(true)) => {
+                CheckStatus::Pass("instantOS signing key is installed and trusted".into())
+            }
+            Ok(Ok(false)) => CheckStatus::Fail {
+                message: "instantOS signing key is missing, unusable, or untrusted".into(),
+                fixable: true,
+            },
+            result => CheckStatus::Fail {
+                message: format!("Could not inspect the instantOS signing key: {result:?}"),
+                fixable: false,
+            },
+        }
+    }
+
+    fn fix_message(&self) -> Option<String> {
+        Some("Import and trust the bundled instantOS public key (works offline)".into())
+    }
+
+    async fn fix(&self) -> Result<()> {
+        tokio::task::spawn_blocking(|| {
+            crate::arch::execution::signing::bootstrap(
+                Path::new("/etc/pacman.conf"),
+                &crate::arch::execution::CommandExecutor {
+                    dry_run: false,
+                    log_file: None,
+                },
+            )
+        })
+        .await?
+    }
+}

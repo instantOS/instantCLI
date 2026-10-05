@@ -8,6 +8,17 @@
 A powerful, Rust-based command-line tool for managing dotfiles,
 system diagnostics, WM keychords, game saves and much more.
 
+## Install with npm
+
+On Linux x64 or ARM64 with Node.js 18 or newer:
+
+```sh
+npm install -g @instantos/cli
+ins --help
+```
+
+See [npm packaging and CI setup](npm/PUBLISHING.md) for release configuration.
+
 ## Features
 
 - dotfile management
@@ -197,6 +208,17 @@ cargo test
 just test
 ```
 
+## Terminal icons
+
+Linux virtual consoles automatically use single-cell ASCII icon fallbacks,
+including when running tmux on a console. Status and navigation keep meaningful
+symbols (`+`, `x`, `!`, `<`, `>`); decorative icons use `*` beside their label.
+This detection is independent of `INS_COLOR_MODE`.
+
+Use `INS_ICON_MODE=ascii ins ...` to enable the fallback in any terminal without
+Nerd Fonts, or `INS_ICON_MODE=nerd ins ...` to force the original glyphs.
+Unset the variable (or use `auto`) for automatic detection.
+
 ## Menu action bindings
 
 ```sh
@@ -226,3 +248,29 @@ key expressions, and duplicate bindings are rejected before launching a menu.
 Install the updated instantMENU binary when using the native backend. This
 change advances the hosted menu protocol to version 5; the client restarts an
 older scratchpad server through the existing compatibility mechanism.
+
+## Installer TTY fonts
+
+`ins arch install` asks for a console font near the start, before the keyboard
+layout. The standard 8x16 font is preselected and marked Default. Available
+Sun and Terminus fonts appear as suggested choices; “All fonts” lists discovered
+PSF/PSFU fonts, including gzip files, custom fonts, and fonts in subdirectories.
+Sizes and glyph counts are read from the font files.
+
+On a Linux virtual console (also through tmux), moving through the font menu
+changes the font live. Enter reapplies and keeps the selected font for the
+installation; cancelling restores the previous font and Unicode map. In Kitty
+or another graphical terminal, previews describe the choices without changing
+the terminal font.
+
+The selected font and its Unicode table are saved with the installer answers.
+The installer installs `kbd`, copies the selected font to
+`/usr/share/kbd/consolefonts/ins-selected.psf`, and writes `FONT=ins-selected`
+alongside `KEYMAP=` in the installed system's `/etc/vconsole.conf`. This also
+works for custom fonts without an owning package and saved choices whose
+original font files are no longer available. Reviews and support reports show
+only the font name. Older plain-name answers still install their original font
+package; older answers without a font choice use the default 8x16 font.
+
+Compressed font discovery uses the system's `gzip` command. No additional Rust
+dependencies are required.

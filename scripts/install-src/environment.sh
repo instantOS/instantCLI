@@ -75,7 +75,7 @@ set_catppuccin_tty() {
 	printf '%s[0m' "$esc"
 }
 
-# Initialize and refresh the Arch keyring, escalating only these commands when needed.
+# Initialize both repository keyrings before the first database sync.
 # Any failure is fatal because the following OS installation depends on pacman.
 prepare_live_keyring() {
 	command -v pacman-key >/dev/null 2>&1 || fatal "required command 'pacman-key' not found"
@@ -85,10 +85,12 @@ prepare_live_keyring() {
 	if [ "$(id -u)" -eq 0 ]; then
 		pacman-key --init || fatal "failed to initialize the package keyring"
 		pacman-key --populate archlinux || fatal "failed to populate the package keyring"
+		bootstrap_instant_keyring || fatal "failed to prepare the instantOS signing key"
 		pacman -Sy --needed archlinux-keyring --noconfirm || fatal "failed to update the Arch Linux keyring"
 	elif command -v sudo >/dev/null 2>&1; then
 		sudo pacman-key --init || fatal "failed to initialize the package keyring"
 		sudo pacman-key --populate archlinux || fatal "failed to populate the package keyring"
+		bootstrap_instant_keyring || fatal "failed to prepare the instantOS signing key"
 		sudo pacman -Sy --needed archlinux-keyring --noconfirm || fatal "failed to update the Arch Linux keyring"
 	else
 		fatal "preparing the package keyring requires root permissions"

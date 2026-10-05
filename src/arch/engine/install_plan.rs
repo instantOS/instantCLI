@@ -525,6 +525,7 @@ pub struct InstallPlan {
     pub username: Username,
     pub password: LoginPassword,
     pub keymap: ConsoleKeymap,
+    pub console_font: crate::arch::console_font::ConsoleFont,
     pub timezone: Timezone,
     pub locale: LocaleName,
     pub mirror_region: Option<String>,
@@ -660,6 +661,12 @@ impl TryFrom<&InstallContext> for InstallPlan {
             username: Username::parse(required(StepId::Username)?)?,
             password: LoginPassword::parse(required(StepId::Password)?)?,
             keymap: ConsoleKeymap::parse(required(StepId::Keymap)?)?,
+            console_font: crate::arch::console_font::ConsoleFont::parse(
+                context
+                    .get_answer(&StepId::ConsoleFont)
+                    .map(String::as_str)
+                    .unwrap_or(crate::arch::console_font::DEFAULT_NAME),
+            )?,
             timezone: Timezone::parse(required(StepId::Timezone)?)?,
             locale: LocaleName::parse(required(StepId::Locale)?)?,
             mirror_region: context.get_answer(&StepId::MirrorRegion).cloned(),
@@ -697,6 +704,7 @@ pub(crate) fn test_install_plan() -> InstallPlan {
         username: Username::parse("test-user").unwrap(),
         password: LoginPassword::parse("test-password").unwrap(),
         keymap: ConsoleKeymap::parse("us").unwrap(),
+        console_font: crate::arch::console_font::ConsoleFont::default(),
         timezone: Timezone::parse("UTC").unwrap(),
         locale: LocaleName::parse("en_US.UTF-8").unwrap(),
         mirror_region: None,
@@ -730,6 +738,22 @@ mod tests {
             context.set_answer(id, answer.to_owned());
         }
         context
+    }
+
+    #[test]
+    fn console_font_defaults_for_old_answers_and_validates_new_answers() {
+        let mut context = required_context("automatic");
+        assert_eq!(
+            InstallPlan::try_from(&context).unwrap().console_font.name(),
+            "default8x16"
+        );
+        context.set_answer(StepId::ConsoleFont, "sun12x22".to_string());
+        assert_eq!(
+            InstallPlan::try_from(&context).unwrap().console_font.name(),
+            "sun12x22"
+        );
+        context.set_answer(StepId::ConsoleFont, "../font".to_string());
+        assert!(InstallPlan::try_from(&context).is_err());
     }
 
     #[test]

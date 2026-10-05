@@ -135,6 +135,39 @@ test_keyring_failure_is_fatal() {
 	fi
 }
 
+test_instant_key_is_prepared_before_repository_sync() (
+	local work_dir
+	work_dir="$(mktemp -d)"
+	trap 'rm -rf "${work_dir}"' EXIT
+	pacman-key() { return 0; }
+	id() { printf '0\n'; }
+	bootstrap_instant_keyring() { printf 'instant-key\n' >>"${work_dir}/order"; }
+	pacman() { printf 'sync\n' >>"${work_dir}/order"; }
+	prepare_live_keyring
+	assert_equals "$(printf 'instant-key\nsync')" "$(cat "${work_dir}/order")"
+)
+
+test_instant_key_failure_aborts_before_repository_sync() (
+	local work_dir
+	work_dir="$(mktemp -d)"
+	trap 'rm -rf "${work_dir}"' EXIT
+	pacman-key() { return 0; }
+	id() { printf '0\n'; }
+	bootstrap_instant_keyring() { return 1; }
+	pacman() { touch "${work_dir}/synced"; }
+	if (prepare_live_keyring) >/dev/null 2>&1; then
+		echo "An instantOS keyring failure must abort installation" >&2
+		return 1
+	fi
+	[ ! -e "${work_dir}/synced" ]
+)
+
+test_embedded_instant_key_matches_bundled_resource() (
+	local embedded
+	embedded="$(sed -n "/^-----BEGIN PGP PUBLIC KEY BLOCK-----$/,/^-----END PGP PUBLIC KEY BLOCK-----$/p" "${INSTALL_SCRIPT}")"
+	assert_equals "$(cat "${REPO_ROOT}/resources/instantos-signing-key.asc")" "${embedded}"
+)
+
 test_published_checksum_download_failure_is_fatal() (
 	local work_dir
 	work_dir="$(mktemp -d)"
@@ -529,6 +562,9 @@ test_argument_conflicts
 test_non_tty_animation_is_plain
 test_launch_mode_selection
 test_keyring_failure_is_fatal
+test_instant_key_is_prepared_before_repository_sync
+test_instant_key_failure_aborts_before_repository_sync
+test_embedded_instant_key_matches_bundled_resource
 test_published_checksum_download_failure_is_fatal
 test_non_tty_download_is_quiet
 test_local_validation_precedes_animation

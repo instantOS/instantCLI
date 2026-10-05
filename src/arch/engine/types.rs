@@ -19,6 +19,7 @@ pub enum StepId {
     Username,
     Password,
     Keymap,
+    ConsoleFont,
     Disk,
     PrepareDisk,
     MirrorRegion,
@@ -161,6 +162,7 @@ impl StepId {
             | Self::DualBootPartition
             | Self::DualBootSize => AnswerPrivacy::SystemDetail,
             Self::PrepareDisk
+            | Self::ConsoleFont
             | Self::Kernel
             | Self::DesktopEnvironment
             | Self::RootFilesystem
