@@ -110,9 +110,16 @@ pub fn sync_game_saves(
     let installations =
         InstallationsConfig::load().context("Failed to load installations configuration")?;
 
-    // Check restic availability and game manager initialization
-    validation::check_restic_and_game_manager(&game_config)?;
+    sync_configured_game_saves(game_name, force, progress, game_config, installations)
+}
 
+fn sync_configured_game_saves(
+    game_name: Option<String>,
+    force: bool,
+    progress: &mut dyn FnMut(&str),
+    game_config: InstantGameConfig,
+    installations: InstallationsConfig,
+) -> Result<SyncReport> {
     // Determine which games to sync
     let games_to_sync = if let Some(name) = game_name {
         // Sync specific game
@@ -136,6 +143,9 @@ pub fn sync_game_saves(
         ui::report_no_games_configured();
         return Ok(SyncReport::default());
     }
+
+    // Empty installations need neither a repository nor restic.
+    validation::check_restic_and_game_manager(&game_config)?;
 
     let mut report = SyncReport::default();
 
@@ -247,6 +257,20 @@ fn sync_status(result: Result<()>, completed: GameSyncStatus) -> GameSyncStatus 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn empty_installations_sync_without_initialized_repository() {
+        let report = sync_configured_game_saves(
+            None,
+            false,
+            &mut |_| panic!("Empty sync must not report progress"),
+            InstantGameConfig::default(),
+            InstallationsConfig::default(),
+        )
+        .unwrap();
+        assert!(report.games.is_empty());
+        assert_eq!(report.summary.errors, 0);
+    }
 
     #[test]
     fn failure_for_returns_only_failed_game_errors() {

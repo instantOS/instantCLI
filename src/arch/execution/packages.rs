@@ -293,6 +293,26 @@ mod tests {
     }
 
     #[test]
+    fn instantwm_installs_launcher_wallpaper_and_browser_fonts() {
+        let mut plan = base_plan();
+        plan.desktop = DesktopEnvironment::InstantWM;
+        let packages = build_standard_package_plan(&plan).unwrap();
+        for required in [
+            "fuzzel",
+            "swaybg",
+            "noto-fonts",
+            "noto-fonts-cjk",
+            "noto-fonts-emoji",
+            "ttf-liberation",
+        ] {
+            assert!(
+                packages.iter().any(|pkg| pkg == required),
+                "Missing {required}"
+            );
+        }
+    }
+
+    #[test]
     fn selecting_german_locale_adds_german_firefox_i18n_package() {
         let mut plan = base_plan();
         plan.locale = crate::arch::engine::LocaleName::parse("de_DE.UTF-8").unwrap();

@@ -84,22 +84,24 @@ impl DesktopEnvironment {
         match self {
             Self::Sway => &["sway", "swayidle", "swaylock"],
             Self::Niri => &["niri"],
-            Self::InstantWM => &[],
+            Self::InstantWM => &["fuzzel", "swaybg"],
             Self::Hyprland => &["hyprland", "hypridle", "hyprlock"],
             Self::Tty => &[],
         }
     }
 
-    /// Font packages required by this desktop environment's configuration.
-    ///
-    /// These ensure that fonts referenced in the DE's config templates
-    /// (bars, window titles, terminal emulators, etc.) are available.
+    /// Fonts for desktop configuration, browser text, and multilingual fallback.
     pub fn font_packages(&self) -> &'static [&'static str] {
         match self {
             Self::Tty => &[],
-            Self::Sway | Self::Niri | Self::InstantWM | Self::Hyprland => {
-                &["ttf-jetbrains-mono-nerd", "inter-font"]
-            }
+            Self::Sway | Self::Niri | Self::InstantWM | Self::Hyprland => &[
+                "ttf-jetbrains-mono-nerd",
+                "inter-font",
+                "noto-fonts",
+                "noto-fonts-cjk",
+                "noto-fonts-emoji",
+                "ttf-liberation",
+            ],
         }
     }
 
