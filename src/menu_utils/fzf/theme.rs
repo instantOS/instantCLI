@@ -16,14 +16,16 @@ pub(crate) fn theme_args() -> Vec<String> {
     let color_args = if console_mode {
         [
             ("bg", AnsiColor::Black.fzf_name()),
-            ("bg+", AnsiColor::BrightBlack.fzf_name()),
+            // Use a standard background color: bright backgrounds are not
+            // reliably distinct on Linux virtual consoles.
+            ("bg+", AnsiColor::Blue.fzf_name()),
             ("fg", AnsiColor::BrightWhite.fzf_name()),
             ("fg+", AnsiColor::BrightWhite.fzf_name()),
             ("preview-bg", AnsiColor::Black.fzf_name()),
             ("hl", AnsiColor::Yellow.fzf_name()),
             ("hl+", AnsiColor::Yellow.fzf_name()),
             ("prompt", AnsiColor::BrightWhite.fzf_name()),
-            ("pointer", AnsiColor::Blue.fzf_name()),
+            ("pointer", AnsiColor::BrightWhite.fzf_name()),
             ("header", AnsiColor::White.fzf_name()),
             ("border", AnsiColor::BrightBlack.fzf_name()),
             ("gutter", AnsiColor::Black.fzf_name()),
@@ -62,7 +64,7 @@ pub(crate) fn theme_args() -> Vec<String> {
         "--list-border=none".to_string(),
         "--input-border=none".to_string(),
         "--preview-border=left".to_string(),
-        "--pointer=▌".to_string(),
+        format!("--pointer={}", if console_mode { ">>" } else { "▌" }),
         "--ignore-case".to_string(),
     ];
     args.extend(
@@ -70,5 +72,9 @@ pub(crate) fn theme_args() -> Vec<String> {
             .into_iter()
             .map(|(name, value)| format!("--color={name}:{value}")),
     );
+    if console_mode {
+        args.push("--highlight-line".to_string());
+        args.push("--color=fg+:bold,hl+:bold".to_string());
+    }
     args
 }
