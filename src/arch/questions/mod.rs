@@ -3,6 +3,7 @@ use crate::menu_utils::{DialogOutcome, FzfSelectable, ItemSelection};
 use anyhow::Result;
 
 pub mod boolean;
+pub mod console_font;
 pub mod disk;
 pub mod display_manager;
 pub mod dualboot;
@@ -96,6 +97,7 @@ pub(crate) fn select_one_for_step<T: FzfSelectable + Clone>(
 
 // Re-exports
 pub use boolean::BooleanQuestion;
+pub use console_font::ConsoleFontQuestion;
 pub use disk::{DiskQuestion, PartitioningMethodQuestion, PrepareDiskStep, RunCfdiskStep};
 pub use display_manager::DisplayManagerQuestion;
 pub use dualboot::{DualBootPartitionQuestion, DualBootSizeQuestion};

@@ -1,6 +1,7 @@
 pub mod annotations;
 pub mod cli;
 pub mod config;
+pub(crate) mod console_font;
 pub mod disks;
 pub mod dualboot;
 pub mod engine;

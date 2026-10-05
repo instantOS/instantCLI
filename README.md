@@ -247,3 +247,20 @@ key expressions, and duplicate bindings are rejected before launching a menu.
 Install the updated instantMENU binary when using the native backend. This
 change advances the hosted menu protocol to version 5; the client restarts an
 older scratchpad server through the existing compatibility mechanism.
+
+## Installer TTY fonts
+
+`ins arch install` asks for a console font near the start, before the keyboard
+layout. The standard 8x16 font is preselected and marked Default. Larger Sun
+and Terminus fonts are offered when their console font files are available on
+the live system.
+
+On a Linux virtual console (also through tmux), moving through the font menu
+changes the font live. Enter reapplies and keeps the selected font for the
+installation; cancelling restores the previous font and Unicode map. In Kitty
+or another graphical terminal, previews describe the choices without changing
+the terminal font.
+
+The installer installs the selected font's package and writes `FONT=` alongside
+`KEYMAP=` in the installed system's `/etc/vconsole.conf`. Older saved installer
+answers without a font choice use the default 8x16 font.

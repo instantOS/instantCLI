@@ -210,6 +210,10 @@ pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary 
         .field_indented("Timezone", &timezone)
         .field_indented("Locale", &locale)
         .field_indented("Keymap", &keymap)
+        .field_indented(
+            "TTY font",
+            &answer_or(context, StepId::ConsoleFont, "default8x16"),
+        )
         .blank()
         .line(colors::TEAL, Some(NerdFont::HardDrive), "Storage Plan")
         .field_indented("Disk", &disk)

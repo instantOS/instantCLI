@@ -97,6 +97,7 @@ pub(super) fn build_steps() -> Vec<Box<dyn WizardStep>> {
     vec![
         Box::new(VirtualBoxWarning),
         Box::new(crate::arch::questions::warnings::LowRamWarning),
+        Box::new(crate::arch::questions::ConsoleFontQuestion),
         Box::new(KeymapQuestion),
         Box::new(DiskQuestion),
         Box::new(PrepareDiskStep),
