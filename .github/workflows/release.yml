@@ -339,3 +339,46 @@ jobs:
           files: dist/**/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  npm:
+    name: Publish npm packages
+    runs-on: ubuntu-26.04
+    needs:
+      - cross-compile
+      - release
+    if: github.repository == 'instantOS/instantCLI' && startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: npm-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v7
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+      - name: Download musl binaries
+        uses: actions/download-artifact@v8
+        with:
+          pattern: ins-*-*-unknown-linux-musl
+          path: npm-artifacts
+          merge-multiple: true
+      - name: Stage npm packages
+        run: python3 npm/build-packages.py --artifacts npm-artifacts --output target/npm --tag "$GITHUB_REF_NAME"
+      - name: Smoke test Linux x64 binary
+        run: |
+          target/npm/cli-linux-x64/bin/ins --version
+          target/npm/cli-linux-x64/bin/ins --help > /dev/null
+      - name: Check package contents
+        run: |
+          for package in target/npm/*; do
+            npm pack "$PWD/$package" --dry-run
+          done
+      - name: Publish binaries and launcher
+        run: node npm/publish.cjs target/npm
+        env:
+          # Bootstrap with a granular token; remove it after configuring OIDC on all three packages.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

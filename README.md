@@ -8,6 +8,17 @@
 A powerful, Rust-based command-line tool for managing dotfiles,
 system diagnostics, WM keychords, game saves and much more.
 
+## Install with npm
+
+On Linux x64 or ARM64 with Node.js 18 or newer:
+
+```sh
+npm install -g @instantos/cli
+ins --help
+```
+
+See [npm packaging and CI setup](npm/PUBLISHING.md) for release configuration.
+
 ## Features
 
 - dotfile management
