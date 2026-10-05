@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.24](https://github.com/instantOS/instantCLI/compare/v0.14.23...v0.14.24) - 2026-10-05
+
+### Fixed
+
+- encrypted grub theming and password
+- better welcome UI
+- instantWM dependencies
+- unreadable tty text
+- live iso bootstrap problem
+- console mode selections hard to view
+- add nerd font fallback icons
+
+### Other
+
+- Discover console fonts and persist portable installer font snapshots
+- Add installer console font picker with live previews and persistence
+- Bootstrap instantOS signing key offline and add Doctor repair
+- activate npm
+- init npm js support
+- bump stuff
+
 ## [0.14.23](https://github.com/instantOS/instantCLI/compare/v0.14.22...v0.14.23) - 2026-09-30
 
 ### Fixed
