@@ -9,6 +9,7 @@ mod common;
 mod completions;
 mod debug;
 mod dev;
+mod display;
 mod doctor;
 mod dot;
 mod frecency;
@@ -93,6 +94,8 @@ pub(crate) fn cli_command() -> clap::Command {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
+    /// Choose a display layout using instantmenu
+    Display,
     /// Arch Linux installation commands
     Arch {
         #[command(subcommand)]
@@ -330,6 +333,7 @@ fn dispatch_command(cli: &Cli) -> Result<()> {
                 )
             })?;
         }
+        Some(Commands::Display) => display::run()?,
         Some(Commands::Launch {
             list,
             include_path,

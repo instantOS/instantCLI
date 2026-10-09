@@ -30,6 +30,20 @@ See [npm packaging and CI setup](npm/PUBLISHING.md) for release configuration.
 - Arch Linux Installer
 - video editing (yes, I know it's random)
 
+### Display menu
+
+`ins display` opens an instantMENU picker with Mirror, Extend, one “Only display”
+entry per connected output, and Other… (wdisplays on Wayland, arandr on X11).
+instantWM binds it to Super+Shift+P by default. Both instantWM backends are
+supported; other compositors can be added through the display provider interface.
+
+Requires instantMENU and an instantWM version with `monitor modes all`. Disabled
+and mirrored outputs remain selectable. Presets use each display’s highest
+resolution and refresh rate, normal orientation, and 100% scale; Extend arranges
+displays left to right with the internal panel first. Changes apply to the current
+session. X11 mirroring uses the largest resolution shared by all displays.
+Escape closes the menu without changing the layout.
+
 ### Emoji picker
 
 `ins assist run e` opens a searchable instantMENU emoji picker and copies the
