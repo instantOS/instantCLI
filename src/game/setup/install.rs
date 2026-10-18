@@ -574,7 +574,7 @@ fn resolve_single_file_save_path(
 }
 
 /// Let the user pick a save path during reconciliation, without any snapshot context.
-pub(super) fn choose_reconciliation_path(
+pub(crate) fn choose_reconciliation_path(
     game_name: &str,
 ) -> Result<Option<(TildePath, PathContentKind)>> {
     let game_config = InstantGameConfig::load().context("Failed to load game configuration")?;

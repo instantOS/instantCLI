@@ -45,9 +45,7 @@ fn interpret_quick_access_selection(
     })
 }
 
-pub(super) fn interactive_pass_menu() -> Result<i32> {
-    interactive_pass_quick_access()
-}
+pub(super) use interactive_pass_quick_access as interactive_pass_menu;
 
 pub(super) fn interactive_pass_quick_access() -> Result<i32> {
     ensure_core_dependencies()?;
@@ -116,9 +114,7 @@ pub(super) fn interactive_pass_quick_access() -> Result<i32> {
     }
 }
 
-pub(super) fn interactive_pass_menu_server() -> Result<i32> {
-    interactive_pass_quick_access_server()
-}
+pub(super) use interactive_pass_quick_access_server as interactive_pass_menu_server;
 
 pub(super) fn interactive_pass_quick_access_server() -> Result<i32> {
     ensure_core_dependencies()?;

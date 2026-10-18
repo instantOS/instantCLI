@@ -27,10 +27,6 @@ pub fn list_command(scope: ServiceScope) -> StreamingCommand {
 }
 
 pub fn generate_and_print_list(scope: ServiceScope) -> Result<()> {
-    stream_services(scope)
-}
-
-fn stream_services(scope: ServiceScope) -> Result<()> {
     let scope_args = scope.systemctl_args();
 
     let mut child = Command::new("systemctl")

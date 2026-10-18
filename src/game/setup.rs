@@ -19,11 +19,7 @@ mod install;
 mod paths;
 mod restic;
 
-pub(crate) fn choose_reconciliation_path(
-    game_name: &str,
-) -> Result<Option<(crate::common::TildePath, PathContentKind)>> {
-    install::choose_reconciliation_path(game_name)
-}
+pub(crate) use install::choose_reconciliation_path;
 
 pub fn setup_uninstalled_games() -> Result<()> {
     let mut game_config = InstantGameConfig::load().context("Failed to load game configuration")?;

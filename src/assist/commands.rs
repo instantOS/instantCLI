@@ -11,6 +11,11 @@ use super::registry;
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum AssistCommands {
+    #[command(hide = true)]
+    RecordingIndicator {
+        #[arg(long)]
+        pid: u32,
+    },
     /// List available assists
     List,
     /// Run an assist by its key sequence
@@ -99,6 +104,9 @@ pub fn dispatch_assist_command(
 ) -> Result<()> {
     match command {
         None => run_assist_selector(use_instantmenu),
+        Some(AssistCommands::RecordingIndicator { pid }) => {
+            super::actions::screenrecord::run_recording_indicator(pid)
+        }
         Some(AssistCommands::List) => list_assists(),
         Some(AssistCommands::MouseSet { value }) => super::actions::mouse::set_mouse_speed(value),
         Some(AssistCommands::BrightnessSet { value }) => {

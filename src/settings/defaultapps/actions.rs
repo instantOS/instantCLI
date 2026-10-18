@@ -288,7 +288,7 @@ fn manage_default_app_for_mimes(
                     continue;
                 }
                 DefaultAppMenuEntry::App(app_info) => {
-                    apply_default_for_mimes(mime_types, &app_info.desktop_id)?;
+                    set_default_apps(mime_types, &app_info.desktop_id)?;
                     notify_success(ctx, app_name, mime_types.len(), &app_info);
                     return Ok(());
                 }
@@ -377,10 +377,6 @@ fn handle_missing_apps(
             ),
         );
     }
-}
-
-fn apply_default_for_mimes(mime_types: &[&str], desktop_file: &str) -> Result<()> {
-    set_default_apps(mime_types, desktop_file)
 }
 
 fn notify_success(

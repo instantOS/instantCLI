@@ -22,7 +22,6 @@ use crate::settings::store::{
     is_audio_sources_default, parse_audio_source_selection,
 };
 
-const MAX_RECORDING_SECONDS: u64 = 300;
 const PID_FILE: &str = "wf-recorder.pid";
 const KOOHA_FLATPAK_ID: &str = "io.github.seadve.Kooha";
 
@@ -691,21 +690,19 @@ fn write_recording_pid_file(pid: u32, output_path: &Path, audio_module_ids: &[u3
     fs::write(get_pid_file(), pid_content).context("Failed to write PID file")
 }
 
-fn schedule_recording_timeout(output_path: PathBuf) {
-    std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_secs(MAX_RECORDING_SECONDS));
-        if is_recording() {
-            let _ = stop_recording();
-            let _ = show_notification(
-                "Recording stopped (timeout)",
-                &format!(
-                    "Max {} seconds reached. Saved to {}",
-                    MAX_RECORDING_SECONDS,
-                    output_path.display()
-                ),
-            );
-        }
-    });
+mod indicator;
+
+pub(crate) use indicator::run as run_recording_indicator;
+
+fn spawn_recording_indicator(pid: u32) -> Result<()> {
+    Command::new("setsid")
+        .arg(std::env::current_exe().context("Failed to locate ins executable")?)
+        .args(["assist", "recording-indicator", "--pid", &pid.to_string()])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .spawn()
+        .context("Failed to start recording indicator")?;
+    Ok(())
 }
 
 fn start_recording_impl(geometry: Option<&str>, format: RecordingFormat) -> Result<()> {
@@ -754,7 +751,10 @@ fn start_recording_impl(geometry: Option<&str>, format: RecordingFormat) -> Resu
         return Err(err);
     }
 
-    schedule_recording_timeout(output_path.clone());
+    if let Err(err) = spawn_recording_indicator(pid) {
+        let _ = stop_recording();
+        return Err(err);
+    }
 
     show_notification(
         "Recording started",
