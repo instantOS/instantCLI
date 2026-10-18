@@ -5,7 +5,7 @@ use ksni::TrayMethods;
 
 use super::{
     RecordingPidInfo, cleanup_recording_state, get_pid_file, read_recording_pid_info,
-    show_notification, stop_recording,
+    show_notification, stop_recording_action,
 };
 
 struct RecordingTray {
@@ -27,7 +27,10 @@ impl ksni::Tray for RecordingTray {
     }
 
     fn icon_pixmap(&self) -> Vec<ksni::Icon> {
-        vec![recording_icon()]
+        [16, 20, 22, 24, 32, 48, 64]
+            .into_iter()
+            .map(recording_icon)
+            .collect()
     }
 
     fn tool_tip(&self) -> ksni::ToolTip {
@@ -52,18 +55,52 @@ impl ksni::Tray for RecordingTray {
     }
 }
 
-fn recording_icon() -> ksni::Icon {
-    let mut data = Vec::with_capacity(32 * 32 * 4);
-    for y in 0_i32..32 {
-        for x in 0_i32..32 {
-            let inside = (x - 16).pow(2) + (y - 16).pow(2) <= 13 * 13;
-            // StatusNotifier pixmaps use network-byte-order ARGB.
-            data.extend_from_slice(if inside { &[255, 235, 45, 45] } else { &[0; 4] });
+fn recording_icon(size: i32) -> ksni::Icon {
+    // Catppuccin Mocha Text, Base and Red, in network-byte-order ARGB.
+    const TEXT: [u8; 4] = [255, 205, 214, 244];
+    const BASE: [u8; 4] = [255, 30, 30, 46];
+    const RED: [u8; 4] = [255, 243, 139, 168];
+
+    // Snap all edges to whole pixels and offer native panel sizes so the host
+    // needn't resize a jagged circle. The monitor and stop mark have square corners.
+    let margin = (size / 8).max(2);
+    let stroke = (size / 16).max(1);
+    let top = margin;
+    let bottom = size - margin - 3 * stroke;
+    let mark_size = (size / 3).max(4);
+    let mark_left = (size - mark_size) / 2;
+    let mark_top = (top + bottom - mark_size) / 2;
+    let mut data = Vec::with_capacity((size * size * 4) as usize);
+    for y in 0..size {
+        for x in 0..size {
+            let screen = (margin..size - margin).contains(&x) && (top..bottom).contains(&y);
+            let interior = (margin + stroke..size - margin - stroke).contains(&x)
+                && (top + stroke..bottom - stroke).contains(&y);
+            let mark = (mark_left..mark_left + mark_size).contains(&x)
+                && (mark_top..mark_top + mark_size).contains(&y);
+            let stem = (size / 2 - stroke..size / 2 + stroke).contains(&x)
+                && (bottom..bottom + stroke).contains(&y);
+            let foot = (size / 4..size - size / 4).contains(&x)
+                && (bottom + stroke..bottom + 2 * stroke).contains(&y);
+            let pixel = if screen {
+                if !interior {
+                    TEXT
+                } else if mark {
+                    RED
+                } else {
+                    BASE
+                }
+            } else if stem || foot {
+                TEXT
+            } else {
+                [0; 4]
+            };
+            data.extend_from_slice(&pixel);
         }
     }
     ksni::Icon {
-        width: 32,
-        height: 32,
+        width: size,
+        height: size,
         data,
     }
 }
@@ -73,18 +110,23 @@ fn matches_recording(info: &RecordingPidInfo, pid: u32) -> bool {
 }
 
 pub(crate) fn run(pid: u32) -> Result<()> {
-    tokio::runtime::Builder::new_current_thread()
+    let stop_requested = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .context("Failed to create recording indicator runtime")?
-        .block_on(monitor(pid))
+        .block_on(monitor(pid))?;
+    if stop_requested {
+        // Use the same stop and post-recording menu flow as the sx assist.
+        stop_recording_action()?;
+    }
+    Ok(())
 }
 
-async fn monitor(pid: u32) -> Result<()> {
+async fn monitor(pid: u32) -> Result<bool> {
     let pid_file = get_pid_file();
     let info = match read_recording_pid_info(&pid_file) {
         Ok(info) if matches_recording(&info, pid) => info,
-        _ => return Ok(()),
+        _ => return Ok(false),
     };
     let output_path = info.output_path.clone().unwrap_or_default();
     let (stop, mut requests) = tokio::sync::mpsc::unbounded_channel();
@@ -107,13 +149,13 @@ async fn monitor(pid: u32) -> Result<()> {
             None
         }
     };
-    loop {
+    let stop_requested = loop {
         tokio::time::sleep(Duration::from_millis(250)).await;
         // An old helper must never stop a newer recording.
         if !read_recording_pid_info(&pid_file).is_ok_and(|current| {
             matches_recording(&current, pid) && current.output_path == info.output_path
         }) {
-            break;
+            break false;
         }
         let running = fs::read_to_string(format!("/proc/{pid}/stat"))
             .ok()
@@ -124,21 +166,16 @@ async fn monitor(pid: u32) -> Result<()> {
             .unwrap_or(false);
         if !running {
             cleanup_recording_state(&pid_file, &info.audio_module_ids);
-            break;
+            break false;
         }
         if requests.try_recv().is_ok() {
-            stop_recording()?;
-            show_notification(
-                "Recording saved",
-                &format!("Saved to {}", output_path.display()),
-            )?;
-            break;
+            break true;
         }
-    }
+    };
     if let Some(handle) = handle {
         handle.shutdown().await;
     }
-    Ok(())
+    Ok(stop_requested)
 }
 
 #[cfg(test)]
