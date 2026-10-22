@@ -120,6 +120,33 @@ mod tests {
     }
 
     #[test]
+    fn pcsx2_image_prefill_preserves_source_and_quotes_game_path() {
+        let hint = DiscoveryLaunchHint::Emulator {
+            platform: EmulatorPlatform::Pcsx2,
+            source: EmulatorSaveSource::Native,
+            game: Some("/games/It's a game.iso".into()),
+        };
+        let appimage = EmulatorLauncher::AppImage {
+            path: "/emulators/PCSX2.AppImage".into(),
+        };
+        let flatpak = EmulatorLauncher::Flatpak {
+            app_id: "net.pcsx2.PCSX2",
+        };
+        let command = hint
+            .command_from_launchers(&[flatpak, appimage.clone()])
+            .unwrap();
+        assert_eq!(
+            command.to_string().parse::<LaunchCommand>().unwrap(),
+            command
+        );
+        let LaunchCommandKind::Emulator(emulator) = command.kind else {
+            panic!("Expected emulator command")
+        };
+        assert_eq!(emulator.launcher, appimage);
+        assert_eq!(emulator.game, PathBuf::from("/games/It's a game.iso"));
+    }
+
+    #[test]
     fn incomplete_discovery_retains_hint_without_inventing_a_command() {
         for hint in [
             DiscoveryLaunchHint::Wine {

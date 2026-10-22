@@ -37,7 +37,10 @@ fn render_game_save_preview_impl(ctx: &PreviewContext, writer: &mut PreviewWrite
     writer
         .header(platform_icon(&payload.platform_short), &payload.name)
         .field("Platform", &payload.platform)
-        .field("Save path", &payload.save_path);
+        .field(
+            "Save path",
+            payload.save_path.as_deref().unwrap_or("Not selected"),
+        );
 
     if let Some(game_path) = &payload.game_path {
         writer.field("Game path", game_path);
@@ -60,7 +63,11 @@ fn render_game_save_preview_impl(ctx: &PreviewContext, writer: &mut PreviewWrite
 
     writer.blank().separator().blank();
 
-    let path = Path::new(&payload.save_path);
+    let Some(save_path) = payload.save_path.as_deref() else {
+        writer.subtext("Select a memory card or shared save group when adding this game.");
+        return Ok(());
+    };
+    let path = Path::new(save_path);
     if !path.exists() {
         writer
             .line(
@@ -69,7 +76,7 @@ fn render_game_save_preview_impl(ctx: &PreviewContext, writer: &mut PreviewWrite
                 "Detected path does not exist",
             )
             .blank()
-            .subtext(&payload.save_path);
+            .subtext(save_path);
         return Ok(());
     }
 

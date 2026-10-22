@@ -62,6 +62,11 @@ impl GameManager {
                             discovered_save_path.as_deref(),
                         );
                     }
+                    EmulatorPrefillResult::OpenPrefilledSharedAddEditor { options, group } => {
+                        return crate::game::menu::open_prefilled_shared_add_editor(
+                            options, &group,
+                        );
+                    }
                     EmulatorPrefillResult::OpenPrefilledAddEditor(new_options) => {
                         return crate::game::menu::open_prefilled_add_editor(new_options);
                     }

@@ -33,6 +33,10 @@ main() {
 	echo "card" >"${HOME}/.config/PCSX2/memcards/Native.PS2"
 	mkdir -p "${HOME}/.config/PCSX2/memcards/Folder.ps2"
 	echo "card" >"${HOME}/.var/app/net.pcsx2.PCSX2/config/PCSX2/memcards/Flatpak.ps2"
+	mkdir -p "${HOME}/roms/native" "${HOME}/roms/flatpak" "${HOME}/.config/PCSX2/inis" "${HOME}/.var/app/net.pcsx2.PCSX2/config/PCSX2/inis"
+	touch "${HOME}/roms/native/Native.iso" "${HOME}/roms/native/Folder.iso" "${HOME}/roms/flatpak/Flatpak.chd"
+	printf '[GameList]\nPaths = %s\n' "${HOME}/roms/native" >"${HOME}/.config/PCSX2/inis/PCSX2.ini"
+	printf '[GameList]\nPaths = %s\n' "${HOME}/roms/flatpak" >"${HOME}/.var/app/net.pcsx2.PCSX2/config/PCSX2/inis/PCSX2.ini"
 
 	cat >"${XDG_CACHE_HOME}/instant/ludusavi-manifest.yaml" <<'EOF'
 "Sable":
@@ -146,8 +150,9 @@ EOF
 	ps2_json="$(ins --output json game discover --source ps2)"
 	echo "${ps2_json}" | jq -e '
 		(.data.games | length) == 3 and
-        (.data.games | map(select(.name == "Folder" and (.save_path | endswith("/Folder.ps2")))) | length) == 1 and
-		(.data.games | map(select(.name == "Native" and .launch_hint.platform == "pcsx2" and .launch_hint.source == "native" and .launch_hint.game == null)) | length) == 1 and
+        (.data.games | all(.save_path == null)) and
+        (.data.games | map(select(.name == "Folder" and (.game_path | endswith("/Folder.iso")))) | length) == 1 and
+		(.data.games | map(select(.name == "Native" and .launch_hint.platform == "pcsx2" and .launch_hint.source == "native" and .launch_hint.game != null)) | length) == 1 and
 		(.data.games | map(select(.name == "Flatpak" and .launch_hint.platform == "pcsx2" and .launch_hint.source == "flatpak")) | length) == 1
 	' >/dev/null
 

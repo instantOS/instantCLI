@@ -1085,55 +1085,74 @@ fn run_edit_menu_for_game(
 }
 
 pub fn open_prefilled_add_editor(options: AddGameOptions) -> Result<()> {
-    let mut game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
-    let mut installations =
+    open_prefilled_editor(options, None)
+}
+
+pub(crate) fn open_prefilled_shared_add_editor(options: AddGameOptions, group: &str) -> Result<()> {
+    open_prefilled_editor(options, Some(group))
+}
+
+fn open_prefilled_editor(options: AddGameOptions, group: Option<&str>) -> Result<()> {
+    let game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
+    let installations =
         InstallationsConfig::load().context("Failed to load installations configuration")?;
+    let mut state = prepare_prefilled_state(options, group, game_config, installations)?;
+    let name = state.game().name.0.clone();
+    edit_menu::run_edit_menu(&name, &mut state)
+}
 
+fn prepare_prefilled_state(
+    options: AddGameOptions,
+    group: Option<&str>,
+    mut game_config: InstantGameConfig,
+    mut installations: InstallationsConfig,
+) -> Result<EditState> {
     let game_name = options.name.unwrap_or_default().trim().to_string();
-    if game_name.is_empty() {
-        return Err(anyhow!("Discovered game is missing a name"));
-    }
-
-    if game_config
-        .games
-        .iter()
-        .any(|game| game.name.0 == game_name)
-    {
-        return Err(anyhow!("Game '{}' already exists", game_name));
-    }
-
+    anyhow::ensure!(!game_name.is_empty(), "Discovered game is missing a name");
+    anyhow::ensure!(
+        !game_config
+            .games
+            .iter()
+            .any(|game| game.name.0 == game_name),
+        "Game '{game_name}' already exists"
+    );
     let mut game = Game::new(game_name.clone());
     game.description = options.description.filter(|value| !value.trim().is_empty());
     game.launch_command = options
         .launch_command
         .filter(|value| !value.trim().is_empty())
         .map(LaunchCommand::from_shell_or_manual);
-    game_config.games.push(game);
-
-    let save_path = options
-        .save_path
-        .filter(|value| !value.trim().is_empty())
-        .map(|path| TildePath::from_str(path.trim()))
-        .unwrap_or_else(|| TildePath::new(std::path::PathBuf::new()));
-
-    let save_path_type = if save_path.as_path().exists() {
-        std::fs::metadata(save_path.as_path())
-            .map(PathContentKind::from)
-            .context("Failed to inspect discovered save path")?
+    let installation_index = if let Some(id) = group {
+        anyhow::ensure!(
+            game_config.save_groups.iter().any(|group| group.id == id),
+            "Unknown save group '{id}'"
+        );
+        anyhow::ensure!(
+            installations.save_groups.iter().any(|group| group.id == id),
+            "Save group '{id}' is not bound on this device"
+        );
+        game.save_group = Some(id.into());
+        None
     } else {
-        PathContentKind::Directory
+        let path = options
+            .save_path
+            .filter(|value| !value.trim().is_empty())
+            .context("Choose a save path or shared group before adding this game")?;
+        let path = TildePath::from_str(path.trim());
+        let kind = std::fs::metadata(path.as_path())
+            .map(PathContentKind::from)
+            .context("Failed to inspect selected save path")?;
+        installations
+            .installations
+            .push(GameInstallation::with_kind(game_name.clone(), path, kind));
+        Some(installations.installations.len() - 1)
     };
-
-    let installation = GameInstallation::with_kind(game_name.clone(), save_path, save_path_type);
-    installations.installations.push(installation);
-
+    game_config.games.push(game);
     let game_index = game_config.games.len() - 1;
-    let installation_index = Some(installations.installations.len() - 1);
     let mut state = EditState::new(game_config, installations, game_index, installation_index);
     state.discovery_launch_hint = options.discovery_launch_hint;
     state.mark_dirty();
-
-    edit_menu::run_edit_menu(&game_name, &mut state)
+    Ok(state)
 }
 
 /// Show menu when game manager is not initialized
@@ -1189,6 +1208,68 @@ fn show_uninitialized_menu() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn discovered_game_can_use_shared_saves_without_a_private_installation() -> Result<()> {
+        use crate::game::config::{OwnedSaves, SaveGroupBinding, SharedSaveGroup};
+        let temp = tempfile::tempdir()?;
+        let path = temp.path().join("shared.ps2");
+        std::fs::write(&path, "card")?;
+        let config = InstantGameConfig {
+            save_groups: vec![SharedSaveGroup {
+                id: "card".into(),
+                name: "Shared card".into(),
+            }],
+            ..Default::default()
+        };
+        let local = InstallationsConfig {
+            save_groups: vec![SaveGroupBinding {
+                id: "card".into(),
+                saves: OwnedSaves::new(TildePath::new(path), PathContentKind::File),
+            }],
+            ..Default::default()
+        };
+        let mut state = prepare_prefilled_state(
+            AddGameOptions {
+                name: Some("Discovered game".into()),
+                launch_command: Some("pcsx2-qt -- '/games/disc.iso'".into()),
+                ..Default::default()
+            },
+            Some("card"),
+            config.clone(),
+            local.clone(),
+        )?;
+        assert_eq!(state.game().save_group.as_deref(), Some("card"));
+        assert!(state.installation().is_none());
+        assert!(state.installations.installations.is_empty());
+        state.game_config.validate_ownership(&state.installations)?;
+        assert!(config.games.is_empty());
+        let before = toml::to_string(&local)?;
+        assert_eq!(toml::to_string(&state.installations)?, before);
+        let _mock = crate::menu_utils::MockQueue::new()
+            .cancel_selection()
+            .confirm_yes()
+            .guard();
+        edit_menu::run_edit_menu("Discovered game", &mut state)?;
+        assert_eq!(crate::menu_utils::scripted_responses_remaining(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn discovered_game_requires_a_save_choice_before_opening_the_editor() {
+        assert!(
+            prepare_prefilled_state(
+                AddGameOptions {
+                    name: Some("Game".into()),
+                    ..Default::default()
+                },
+                None,
+                InstantGameConfig::default(),
+                InstallationsConfig::default()
+            )
+            .is_err()
+        );
+    }
 
     #[test]
     fn save_directory_target_uses_parent_for_file_paths() {

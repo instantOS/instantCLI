@@ -22,7 +22,7 @@ use crate::ui::preview::FzfPreview;
 
 use super::manager::GameCreationContext;
 
-const DISCOVERY_CACHE_VERSION: u32 = 4;
+const DISCOVERY_CACHE_VERSION: u32 = 5;
 const DISCOVERY_CACHE_FILE: &str = "game-discovery-cache.json";
 const DISCOVERY_CACHE_MAX_BYTES: u64 = 4 * 1024 * 1024;
 
@@ -32,7 +32,7 @@ pub struct DiscoveredGameRecord {
     pub platform: String,
     pub platform_short: String,
     pub unique_key: String,
-    pub save_path: String,
+    pub save_path: Option<String>,
     pub game_path: Option<String>,
     pub launch_hint: Option<crate::game::platforms::discovery::DiscoveryLaunchHint>,
     pub prefix_path: Option<String>,
@@ -105,7 +105,7 @@ pub fn print_streaming_menu_rows(
                         existing: game.record.existing,
                         display_name: Some(game.record.name.clone()),
                         tracked_name: game.record.tracked_name.clone(),
-                        save_path: Some(game.record.save_path.clone()),
+                        save_path: game.record.save_path.clone(),
                         game_path: game.record.game_path.clone(),
                         launch_hint: game.record.launch_hint.clone(),
                         platform_short: Some(game.record.platform_short.clone()),
@@ -241,7 +241,11 @@ fn create_discovery_progress(source_count: usize) -> ProgressBar {
 fn render_discovered_game(game: &DiscoveredGameRecord) -> String {
     let mut text = format!(
         "- {} ({})\n  Save path: {}\n",
-        game.name, game.platform, game.save_path
+        game.name,
+        game.platform,
+        game.save_path
+            .as_deref()
+            .unwrap_or("Choose a save card or group when adding")
     );
     if let Some(game_path) = &game.game_path {
         text.push_str(&format!("  Game path: {}\n", game_path));
@@ -253,9 +257,12 @@ fn render_discovered_game(game: &DiscoveredGameRecord) -> String {
         text.push_str(&format!("  Tracked as: {}\n", tracked_name));
     } else {
         text.push_str(&format!(
-            "  Add with: ins game add --name {} --save-path {}\n",
+            "  Add with: ins game add --name {}{}\n",
             shell_quote(&game.name),
-            shell_quote(&game.save_path)
+            game.save_path
+                .as_deref()
+                .map(|path| format!(" --save-path {}", shell_quote(path)))
+                .unwrap_or_default()
         ));
     }
     text
@@ -281,7 +288,7 @@ where
     G: FnMut(DiscoveredGameWithPreview) -> Result<()>,
 {
     let context = GameCreationContext::load().ok();
-    let mut seen_save_paths = HashSet::new();
+    let mut seen_game_keys = HashSet::new();
     let result_root = scan_path
         .map(expand_scan_path)
         .transpose()?
@@ -289,7 +296,7 @@ where
     let mut cache_entries = if use_cache {
         load_valid_cached_entries()?
             .into_iter()
-            .map(|entry| (entry.record.save_path.clone(), entry))
+            .map(|entry| (entry.record.unique_key.clone(), entry))
             .collect()
     } else {
         HashMap::new()
@@ -300,7 +307,7 @@ where
         for cached in cached_snapshot {
             let runtime_game = cached_into_runtime_game(cached, context.as_ref());
             if cached_record_matches_request(&runtime_game.record, sources, result_root.as_deref())
-                && seen_save_paths.insert(runtime_game.record.save_path.clone())
+                && seen_game_keys.insert(runtime_game.record.unique_key.clone())
             {
                 on_game(runtime_game)?;
             }
@@ -308,9 +315,9 @@ where
     }
 
     let mut emit_game = |game: DiscoveredGameWithPreview| {
-        if seen_save_paths.insert(game.record.save_path.clone()) {
+        if seen_game_keys.insert(game.record.unique_key.clone()) {
             cache_entries.insert(
-                game.record.save_path.clone(),
+                game.record.unique_key.clone(),
                 CachedDiscoveredGame {
                     record: game.record.clone(),
                     preview_text: game.preview_text.clone(),
@@ -515,7 +522,14 @@ where
 
 fn record_is_under_root(record: &DiscoveredGameRecord, root: &Path) -> bool {
     record_prefix_path(record).is_some_and(|path| path.starts_with(root))
-        || Path::new(&record.save_path).starts_with(root)
+        || record
+            .save_path
+            .as_deref()
+            .is_some_and(|path| Path::new(path).starts_with(root))
+        || record
+            .game_path
+            .as_deref()
+            .is_some_and(|path| Path::new(path).starts_with(root))
 }
 
 fn record_prefix_path(record: &DiscoveredGameRecord) -> Option<PathBuf> {
@@ -530,9 +544,15 @@ fn into_record_with_preview(
     mut game: Box<dyn DiscoveredGame>,
     context: Option<&GameCreationContext>,
 ) -> DiscoveredGameWithPreview {
-    if let Some(existing_name) = context
-        .and_then(|ctx| find_existing_game(game.display_name(), game.save_path().as_path(), ctx))
-    {
+    if let Some(existing_name) = context.and_then(|ctx| {
+        find_existing_discovery(
+            game.display_name(),
+            game.save_path().map(|p| p.as_path()),
+            game.game_path().map(|p| p.as_path()),
+            game.launch_hint().as_ref(),
+            ctx,
+        )
+    }) {
         game.set_existing(existing_name);
     }
 
@@ -544,7 +564,9 @@ fn into_record_with_preview(
             platform: game.platform_name().to_string(),
             platform_short: game.platform_short().to_string(),
             unique_key: game.unique_key(),
-            save_path: game.save_path().to_string_lossy().to_string(),
+            save_path: game
+                .save_path()
+                .map(|path| path.to_string_lossy().to_string()),
             game_path: game
                 .game_path()
                 .map(|path| path.to_string_lossy().to_string()),
@@ -565,9 +587,11 @@ fn cached_into_runtime_game(
     cached.record.tracked_name = None;
 
     if let Some(existing_name) = context.and_then(|ctx| {
-        find_existing_game(
+        find_existing_discovery(
             &cached.record.name,
-            Path::new(&cached.record.save_path),
+            cached.record.save_path.as_deref().map(Path::new),
+            cached.record.game_path.as_deref().map(Path::new),
+            cached.record.launch_hint.as_ref(),
             ctx,
         )
     }) {
@@ -622,6 +646,12 @@ fn read_cache_file(path: &Path) -> Result<Option<DiscoveryCacheFile>> {
 }
 
 fn save_discovery_cache(entries: Vec<CachedDiscoveredGame>) -> Result<()> {
+    // ROM-only sources already read their emulator cache. Recheck configured
+    // paths every time rather than resurrecting removed roots or exclusions.
+    let entries = entries
+        .into_iter()
+        .filter(|entry| entry.record.save_path.is_some())
+        .collect();
     let path = discovery_cache_path()?;
     let cache = DiscoveryCacheFile {
         version: DISCOVERY_CACHE_VERSION,
@@ -639,10 +669,17 @@ fn save_discovery_cache(entries: Vec<CachedDiscoveredGame>) -> Result<()> {
 }
 
 fn is_cached_record_valid(record: &DiscoveredGameRecord) -> bool {
-    if !Path::new(&record.save_path).exists() {
+    if record
+        .save_path
+        .as_deref()
+        .is_some_and(|path| !Path::new(path).exists())
+    {
         return false;
     }
 
+    if record.save_path.is_none() && record.game_path.is_none() {
+        return false;
+    }
     record
         .game_path
         .as_deref()
@@ -726,6 +763,56 @@ fn find_prefixes_under_root(root: &Path) -> Vec<PathBuf> {
     prefixes.sort();
     prefixes.dedup();
     prefixes
+}
+
+fn find_existing_discovery(
+    name: &str,
+    save_path: Option<&Path>,
+    game_path: Option<&Path>,
+    hint: Option<&crate::game::platforms::discovery::DiscoveryLaunchHint>,
+    context: &GameCreationContext,
+) -> Option<String> {
+    if let Some(path) = game_path {
+        let wanted = crate::game::ownership::normalized_path(path).ok()?;
+        for game in &context.config.games {
+            let command = context
+                .installations
+                .installations
+                .iter()
+                .find(|entry| entry.game_name == game.name)
+                .and_then(|entry| entry.launch_command.as_ref())
+                .or(game.launch_command.as_ref());
+            if let Some(crate::game::launch_command::LaunchCommand {
+                kind: crate::game::launch_command::LaunchCommandKind::Emulator(emulator),
+                ..
+            }) = command
+                && crate::game::ownership::normalized_path(&emulator.game)
+                    .is_ok_and(|path| path == wanted)
+                && match hint {
+                    Some(crate::game::platforms::discovery::DiscoveryLaunchHint::Emulator {
+                        platform,
+                        source,
+                        ..
+                    }) => *platform == emulator.platform && source.matches(&emulator.launcher),
+                    _ => true,
+                }
+            {
+                return Some(game.name.0.clone());
+            }
+        }
+    }
+    if game_path.is_some() && save_path.is_none() {
+        return None;
+    }
+    match save_path {
+        Some(path) => find_existing_game(name, path, context),
+        None => context
+            .config
+            .games
+            .iter()
+            .find(|game| game.name.0 == name)
+            .map(|game| game.name.0.clone()),
+    }
 }
 
 fn find_existing_game(
@@ -915,7 +1002,7 @@ mod tests {
             platform: "Wine".to_string(),
             platform_short: "Wine".to_string(),
             unique_key: "wine:test".to_string(),
-            save_path: "/definitely/missing".to_string(),
+            save_path: Some("/definitely/missing".to_string()),
             game_path: None,
             launch_hint: None,
             prefix_path: None,
@@ -933,7 +1020,7 @@ mod tests {
             platform: "Epic Games".to_string(),
             platform_short: "Epic".to_string(),
             unique_key: "epic:test".to_string(),
-            save_path: "/tmp/save".to_string(),
+            save_path: Some("/tmp/save".to_string()),
             game_path: None,
             launch_hint: None,
             prefix_path: None,
@@ -960,7 +1047,7 @@ mod tests {
             platform: "Wine Prefix".to_string(),
             platform_short: "Wine".to_string(),
             unique_key: "wine:test".to_string(),
-            save_path: "/tmp/save".to_string(),
+            save_path: Some("/tmp/save".to_string()),
             game_path: None,
             launch_hint: None,
             prefix_path: Some("/tmp/prefix".to_string()),
@@ -987,7 +1074,7 @@ mod tests {
             platform: "Wine Prefix".to_string(),
             platform_short: "Wine".to_string(),
             unique_key: "wine:test".to_string(),
-            save_path: "/tmp/save".to_string(),
+            save_path: Some("/tmp/save".to_string()),
             game_path: None,
             launch_hint: None,
             prefix_path: Some("/tmp/prefix".to_string()),
@@ -1019,7 +1106,7 @@ mod tests {
             platform: "Wine Prefix".to_string(),
             platform_short: "Wine".to_string(),
             unique_key: "wine:test".to_string(),
-            save_path: "/tmp/save".to_string(),
+            save_path: Some("/tmp/save".to_string()),
             game_path: Some(install.to_string_lossy().to_string()),
             launch_hint: None,
             prefix_path: Some(prefix.to_string_lossy().to_string()),
@@ -1062,6 +1149,64 @@ mod tests {
             Some("Shared game")
         );
         assert!(find_existing_game_for_save(Path::new("/tmp/private.ps2"), &context).is_none());
+    }
+
+    #[test]
+    fn image_identity_finds_renamed_game_and_keeps_save_namespaces_separate() {
+        use crate::game::launch_command::{EmulatorPlatform, LaunchCommand};
+        use crate::game::platforms::discovery::{DiscoveryLaunchHint, EmulatorSaveSource};
+        let mut tracked = Game::new("Renamed game");
+        tracked.launch_command = Some(LaunchCommand::from_shell_or_manual(
+            "pcsx2-qt -- '/games/title.iso'",
+        ));
+        let context = GameCreationContext {
+            config: InstantGameConfig {
+                games: vec![tracked],
+                ..Default::default()
+            },
+            installations: InstallationsConfig::default(),
+        };
+        let native = DiscoveryLaunchHint::Emulator {
+            platform: EmulatorPlatform::Pcsx2,
+            source: EmulatorSaveSource::Native,
+            game: Some("/games/title.iso".into()),
+        };
+        let flatpak = DiscoveryLaunchHint::Emulator {
+            platform: EmulatorPlatform::Pcsx2,
+            source: EmulatorSaveSource::Flatpak,
+            game: Some("/games/title.iso".into()),
+        };
+        assert_eq!(
+            find_existing_discovery(
+                "Database title",
+                None,
+                Some(Path::new("/games/title.iso")),
+                Some(&native),
+                &context
+            )
+            .as_deref(),
+            Some("Renamed game")
+        );
+        assert!(
+            find_existing_discovery(
+                "Renamed game",
+                None,
+                Some(Path::new("/games/title.iso")),
+                Some(&flatpak),
+                &context
+            )
+            .is_none()
+        );
+        assert!(
+            find_existing_discovery(
+                "Renamed game",
+                None,
+                Some(Path::new("/games/another.iso")),
+                Some(&native),
+                &context
+            )
+            .is_none()
+        );
     }
 
     #[test]

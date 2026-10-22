@@ -21,6 +21,7 @@ pub enum MenuAction {
     EditDescription,
     EditLaunchCommand,
     EditSavePath,
+    ShowSaveGroup,
     Save,
     Back,
 }
@@ -32,6 +33,7 @@ impl std::fmt::Display for MenuAction {
             MenuAction::EditDescription => write!(f, "edit_description"),
             MenuAction::EditLaunchCommand => write!(f, "edit_launch_command"),
             MenuAction::EditSavePath => write!(f, "edit_save_path"),
+            MenuAction::ShowSaveGroup => write!(f, "show_save_group"),
             MenuAction::Save => write!(f, "save"),
             MenuAction::Back => write!(f, "back"),
         }
@@ -132,6 +134,11 @@ fn handle_menu_action(action: MenuAction, state: &mut EditState) -> Result<Flow>
                     char::from(NerdFont::Warning)
                 );
             }
+        }
+        MenuAction::ShowSaveGroup => {
+            FzfWrapper::message(
+                "This game uses the selected shared save group. Its path and history belong to the group and are shared by all members.",
+            )?;
         }
         MenuAction::Save => {
             if state.is_dirty() {
@@ -285,6 +292,33 @@ fn build_menu_items(state: &EditState) -> Vec<MenuItem> {
             ),
             save_preview,
             MenuAction::EditSavePath,
+        ));
+    }
+
+    if let Some(id) = &state.game().save_group {
+        let binding = state
+            .installations
+            .save_groups
+            .iter()
+            .find(|binding| binding.id == *id);
+        items.push(MenuItem::new(
+            format!(
+                "{} Shared saves: {}",
+                format_icon_colored(NerdFont::Folder, colors::LAVENDER),
+                id
+            ),
+            PreviewBuilder::new()
+                .header(NerdFont::Folder, "Shared save group")
+                .field("Group", id)
+                .field(
+                    "Path",
+                    &binding
+                        .map(|binding| binding.saves.save_path.display_string())
+                        .unwrap_or_else(|| "Not bound".into()),
+                )
+                .text("Every member shares this history and restores together.")
+                .build_string(),
+            MenuAction::ShowSaveGroup,
         ));
     }
 

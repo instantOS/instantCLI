@@ -8,7 +8,8 @@ pub mod eden;
 pub mod epic;
 pub mod faugus;
 mod launch_hint;
-mod memcard;
+pub(crate) mod memcard;
+mod pcsx2;
 pub(crate) mod prefix;
 pub mod steam;
 mod utils;
@@ -24,7 +25,7 @@ use crate::menu::protocol::FzfPreview;
 /// Common trait for discovered games across different emulators
 pub trait DiscoveredGame: std::fmt::Debug {
     fn display_name(&self) -> &str;
-    fn save_path(&self) -> &PathBuf;
+    fn save_path(&self) -> Option<&PathBuf>;
     fn game_path(&self) -> Option<&PathBuf>;
     fn prefix_path(&self) -> Option<&PathBuf> {
         None
@@ -107,7 +108,7 @@ where
 fn source_label(source: DiscoverySource) -> &'static str {
     match source {
         DiscoverySource::Switch => "Scanning Nintendo Switch saves",
-        DiscoverySource::Ps2 => "Scanning PS2 saves",
+        DiscoverySource::Ps2 => "Scanning PCSX2 games",
         DiscoverySource::Ps1 => "Scanning PS1 saves",
         DiscoverySource::ThreeDs => "Scanning 3DS saves",
         DiscoverySource::Epic => "Scanning Epic Games prefixes",
@@ -146,13 +147,15 @@ where
                 eden::discover_eden_games,
                 &mut |game| on_event(DiscoveryEvent::GameFound(game)),
             )?,
-            DiscoverySource::Ps2 | DiscoverySource::Ps1 => {
-                let platform = if source == DiscoverySource::Ps2 {
-                    crate::game::launch_command::EmulatorPlatform::Pcsx2
-                } else {
-                    crate::game::launch_command::EmulatorPlatform::DuckStation
-                };
-                for card in memcard::discover(platform)? {
+            DiscoverySource::Ps2 => {
+                for game in pcsx2::discover()? {
+                    on_event(DiscoveryEvent::GameFound(Box::new(game)))?;
+                }
+            }
+            DiscoverySource::Ps1 => {
+                for card in
+                    memcard::discover(crate::game::launch_command::EmulatorPlatform::DuckStation)?
+                {
                     on_event(DiscoveryEvent::GameFound(Box::new(card)))?;
                 }
             }

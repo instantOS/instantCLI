@@ -89,8 +89,8 @@ impl DiscoveredGame for AzaharDiscoveredGame {
         &self.display_name
     }
 
-    fn save_path(&self) -> &PathBuf {
-        &self.save_path
+    fn save_path(&self) -> Option<&PathBuf> {
+        Some(&self.save_path)
     }
 
     fn game_path(&self) -> Option<&PathBuf> {

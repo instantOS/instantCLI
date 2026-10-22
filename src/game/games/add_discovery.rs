@@ -19,6 +19,10 @@ pub(super) enum EmulatorPrefillResult {
         discovered_save_path: Option<String>,
     },
     OpenPrefilledAddEditor(AddGameOptions),
+    OpenPrefilledSharedAddEditor {
+        options: AddGameOptions,
+        group: String,
+    },
     Cancelled,
 }
 
@@ -253,7 +257,7 @@ fn prompt_scan_directory() -> Result<Option<String>> {
 }
 
 fn resolve_discovered_selection(
-    payload: MenuSelectionPayload,
+    mut payload: MenuSelectionPayload,
     context: &GameCreationContext,
     no_cache: bool,
 ) -> Result<EmulatorPrefillResult> {
@@ -272,6 +276,37 @@ fn resolve_discovered_selection(
             })
         }
     } else {
+        let mut group = None;
+        if payload.save_path.is_none()
+            && let Some(crate::game::platforms::discovery::DiscoveryLaunchHint::Emulator {
+                platform: crate::game::launch_command::EmulatorPlatform::Pcsx2,
+                source,
+                ..
+            }) = &payload.launch_hint
+        {
+            match select_pcsx2_saves(
+                payload.display_name.as_deref().unwrap_or("PS2 game"),
+                *source,
+                context,
+            )? {
+                Some(SaveMapping::Card(path)) => payload.save_path = Some(path),
+                Some(SaveMapping::Group(id)) => group = Some(id),
+                _ => return Ok(EmulatorPrefillResult::Cancelled),
+            }
+        }
+        if let Some(name) = &payload.display_name
+            && context.game_exists(name)
+        {
+            payload.display_name =
+                match FzfWrapper::input(&format!("'{name}' is already tracked. Name this game"))? {
+                    crate::menu_utils::DialogOutcome::Submitted(name)
+                        if !name.trim().is_empty() =>
+                    {
+                        Some(name.trim().into())
+                    }
+                    _ => return Ok(EmulatorPrefillResult::Cancelled),
+                };
+        }
         let launch_command = payload
             .launch_hint
             .as_ref()
@@ -279,17 +314,132 @@ fn resolve_discovered_selection(
             .transpose()?
             .flatten()
             .map(|command| command.to_string());
-        Ok(EmulatorPrefillResult::OpenPrefilledAddEditor(
-            AddGameOptions {
-                discovery_launch_hint: payload.launch_hint,
-                name: payload.display_name,
-                description: None,
-                launch_command,
-                save_path: payload.save_path,
-                create_save_path: false,
-                no_cache,
-            },
-        ))
+        let options = AddGameOptions {
+            discovery_launch_hint: payload.launch_hint,
+            name: payload.display_name,
+            description: None,
+            launch_command,
+            save_path: payload.save_path,
+            create_save_path: false,
+            no_cache,
+        };
+        Ok(match group {
+            Some(group) => EmulatorPrefillResult::OpenPrefilledSharedAddEditor { options, group },
+            None => EmulatorPrefillResult::OpenPrefilledAddEditor(options),
+        })
+    }
+}
+
+#[derive(Clone)]
+enum SaveMapping {
+    Card(String),
+    Group(String),
+    Manual,
+}
+
+#[derive(Clone)]
+struct SaveMappingItem {
+    label: String,
+    key: String,
+    preview: crate::menu::protocol::FzfPreview,
+    mapping: SaveMapping,
+}
+
+impl crate::menu_utils::FzfSelectable for SaveMappingItem {
+    fn fzf_display_text(&self) -> String {
+        self.label.clone()
+    }
+    fn fzf_key(&self) -> String {
+        self.key.clone()
+    }
+    fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
+        self.preview.clone()
+    }
+}
+
+fn select_pcsx2_saves(
+    game: &str,
+    source: crate::game::platforms::discovery::EmulatorSaveSource,
+    context: &GameCreationContext,
+) -> Result<Option<SaveMapping>> {
+    use crate::game::platforms::discovery::{DiscoveredGame, DiscoveryLaunchHint};
+    let mut items = Vec::new();
+    for group in &context.config.save_groups {
+        if let Some(binding) = context
+            .installations
+            .save_groups
+            .iter()
+            .find(|binding| binding.id == group.id)
+        {
+            items.push(SaveMappingItem {
+                label: format!("Shared group: {} ({})", group.name, group.id),
+                key: format!("group:{}", group.id),
+                preview: PreviewBuilder::new()
+                    .header(NerdFont::Folder, &group.name)
+                    .field("Path", &binding.saves.save_path.display_string())
+                    .text("All games in this group share one save history and restore together.")
+                    .build(),
+                mapping: SaveMapping::Group(group.id.clone()),
+            });
+        }
+    }
+    for card in crate::game::platforms::discovery::memcard::discover(
+        crate::game::launch_command::EmulatorPlatform::Pcsx2,
+    )? {
+        if !matches!(card.launch_hint(), Some(DiscoveryLaunchHint::Emulator { source: found, .. }) if found == source)
+        {
+            continue;
+        }
+        let Some(path) = card.save_path() else {
+            continue;
+        };
+        let normalized = crate::game::ownership::normalized_path(path)?;
+        let already_owned = context
+            .config
+            .bound_owner_ids(&context.installations)
+            .iter()
+            .any(|id| {
+                context
+                    .config
+                    .resolve_owner(&context.installations, id)
+                    .is_ok_and(|owner| {
+                        crate::game::ownership::normalized_path(owner.save_path.as_path())
+                            .is_ok_and(|bound| {
+                                normalized.starts_with(&bound) || bound.starts_with(&normalized)
+                            })
+                    })
+            });
+        if already_owned {
+            continue;
+        }
+        items.push(SaveMappingItem {
+            label: format!("Card: {}", card.display_name()),
+            key: format!("card:{}", path.display()),
+            preview: card.build_preview(),
+            mapping: SaveMapping::Card(path.to_string_lossy().into_owned()),
+        });
+    }
+    items.push(SaveMappingItem {
+        label: "Choose another save path".into(),
+        key: "manual".into(),
+        preview: PreviewBuilder::new()
+            .header(NerdFont::Folder, "Choose saves")
+            .text("Choose an individual file card or folder card.")
+            .text("Cards already owned by a game must be assigned to a shared group before reuse.")
+            .build(),
+        mapping: SaveMapping::Manual,
+    });
+    match FzfWrapper::builder()
+        .header(Header::fancy(&format!("Save card for {game}")))
+        .items(items)
+        .select_one()?
+    {
+        crate::menu_utils::DialogOutcome::Submitted(item) => match item.mapping {
+            SaveMapping::Manual => Ok(super::add::prompt_manual_save_path(game)?
+                .map(|path| SaveMapping::Card(path.as_path().to_string_lossy().into_owned()))),
+            mapping => Ok(Some(mapping)),
+        },
+        _ => Ok(None),
     }
 }
 

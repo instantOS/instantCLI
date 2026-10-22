@@ -26,8 +26,8 @@ impl DiscoveredGame for DiscoveredMemcard {
     fn display_name(&self) -> &str {
         &self.display_name
     }
-    fn save_path(&self) -> &PathBuf {
-        &self.memcard_path
+    fn save_path(&self) -> Option<&PathBuf> {
+        Some(&self.memcard_path)
     }
     fn game_path(&self) -> Option<&PathBuf> {
         None
@@ -212,10 +212,22 @@ mod tests {
             let mut cards =
                 scan_directory(temp.path(), platform, EmulatorSaveSource::Flatpak).unwrap();
             assert_eq!(cards.len(), count);
-            assert!(cards.iter().all(|card| card.save_path() != temp.path()));
+            assert!(
+                cards
+                    .iter()
+                    .all(|card| card.save_path().is_none_or(|path| path != temp.path()))
+            );
             if platform == EmulatorPlatform::Pcsx2 {
-                assert!(cards.iter().any(|card| card.save_path().is_file()));
-                assert!(cards.iter().any(|card| card.save_path().is_dir()));
+                assert!(
+                    cards
+                        .iter()
+                        .any(|card| card.save_path().is_some_and(|path| path.is_file()))
+                );
+                assert!(
+                    cards
+                        .iter()
+                        .any(|card| card.save_path().is_some_and(|path| path.is_dir()))
+                );
             }
             assert!(matches!(
                 cards[0].launch_hint(),
@@ -245,7 +257,7 @@ mod tests {
             EmulatorSaveSource::Native,
         )?;
         assert_eq!(cards.len(), 1);
-        assert_eq!(cards[0].save_path(), &folder);
+        assert_eq!(cards[0].save_path(), Some(&folder));
         Ok(())
     }
 
